@@ -1,0 +1,21 @@
+﻿# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Node.js
+node_modules/
+frontend/dist/
+
+# IDE
+.idea/
+
+# Секреты и логи
+.env
+logs/
+
+# Временные
+*.log
+.DS_Store
+Thumbs.db
