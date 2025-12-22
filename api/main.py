@@ -1,9 +1,12 @@
-"""
-FastAPI приложение — точка входа
-"""
+
+
+import os
+from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 from api.routers import (
     instruments_router,
@@ -39,24 +42,25 @@ app.include_router(open_interest_router)
 app.include_router(chart_router)
 app.include_router(stats.router)
 
-
-@app.get("/")
-def root():
-    """Главная страница API"""
-    return {
-        "message": "MOEX Aggregator API",
-        "docs": "/docs",
-        "endpoints": {
-            "instruments": "/api/instruments",
-            "candles": "/api/candles/{sec_id}",
-            "open_interest": "/api/openinterest/{sectype}",
-            "chart": "/api/chart/{sec_id}",
-            "stats": "/api/stats",
-        }
-    }
+# Путь к билду фронтенда
+FRONTEND_DIR = Path(__file__).parent.parent / "frontend" / "dist"
 
 
 @app.get("/health")
 def health():
     """Проверка работоспособности"""
     return {"status": "ok"}
+
+
+# Раздача фронтенда (после всех API роутов!)
+if FRONTEND_DIR.exists():
+    # Статика (JS, CSS, картинки)
+    app.mount("/assets", StaticFiles(directory=FRONTEND_DIR / "assets"), name="assets")
+    
+    # Все остальные пути -> index.html (SPA)
+    @app.get("/{path:path}")
+    async def serve_spa(path: str):
+        file_path = FRONTEND_DIR / path
+        if file_path.exists() and file_path.is_file():
+            return FileResponse(file_path)
+        return FileResponse(FRONTEND_DIR / "index.html")

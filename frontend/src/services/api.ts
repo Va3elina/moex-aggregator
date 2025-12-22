@@ -1,3 +1,4 @@
+
 import type {
   Instrument,
   ChartResponse,
@@ -6,7 +7,9 @@ import type {
   TopInstrumentsResponse
 } from '../types';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+// В продакшене - относительные пути (тот же сервер)
+// В dev - localhost:8000
+const API_BASE = import.meta.env.DEV ? 'http://localhost:8000' : '';
 
 // ==================== ИНСТРУМЕНТЫ ====================
 
