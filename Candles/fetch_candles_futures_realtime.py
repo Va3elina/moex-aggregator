@@ -38,7 +38,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 load_dotenv(Path(__file__).parent.parent / ".env")
 
 DB_URL = os.getenv("DB_URL", "postgresql+pg8000://postgres:1803@localhost:5432/moex_db")
-ALGOPACK_API_KEY = os.getenv("ALGOPACK_API_KEY", "eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJaVHA2Tjg1ekE4YTBFVDZ5SFBTajJ2V0ZldzNOc2xiSVR2bnVaYWlSNS1NIn0.eyJleHAiOjE3NjYzNDk1MTYsImlhdCI6MTc2Mzc1NzUxNiwiYXV0aF90aW1lIjoxNzYzNzU3NDMzLCJqdGkiOiI2ODAxMGI5MC0wMjVjLTQ0MDctYTdiNS05OGVmMGJiZjEzNWEiLCJpc3MiOiJodHRwczovL3NzbzIubW9leC5jb20vYXV0aC9yZWFsbXMvY3JhbWwiLCJhdWQiOlsiYWNjb3VudCIsImlzcyJdLCJzdWIiOiJmOjBiYTZhOGYwLWMzOGEtNDlkNi1iYTBlLTg1NmYxZmU0YmY3ZTpmYjZjNGExMy0yYTI5LTQ3OTktOWNlNi00NDIxMmQ3Yjk3ZTMiLCJ0eXAiOiJCZWFyZXIiLCJhenAiOiJpc3MiLCJzaWQiOiI3NmI0ZDU1NC03Zjc2LTQ3ZmUtODZhOC02YTQwN2EwMDUzNTIiLCJhY3IiOiIxIiwiYWxsb3dlZC1vcmlnaW5zIjpbIi8qIl0sInJlYWxtX2FjY2VzcyI6eyJyb2xlcyI6WyJvZmZsaW5lX2FjY2VzcyIsInVtYV9hdXRob3JpemF0aW9uIl19LCJyZXNvdXJjZV9hY2Nlc3MiOnsiYWNjb3VudCI6eyJyb2xlcyI6WyJtYW5hZ2UtYWNjb3VudCIsInZpZXctcHJvZmlsZSJdfX0sInNjb3BlIjoib3BlbmlkIGlzc19hbGdvcGFjayBwcm9maWxlIG9mZmxpbmVfYWNjZXNzIGVtYWlsIGJhY2t3YXJkc19jb21wYXRpYmxlIiwiZW1haWxfdmVyaWZpZWQiOmZhbHNlLCJpc3NfcGVybWlzc2lvbnMiOiIxMzcsIDEzOCwgMTM5LCAxNDAsIDE2NSwgMTY2LCAxNjcsIDE2OCwgMzI5LCA0MjEiLCJuYW1lIjoi0JDQu9C10LrRgdCw0L3QtNGAINCi0L7RgNC40Y8iLCJwcmVmZXJyZWRfdXNlcm5hbWUiOiJmYjZjNGExMy0yYTI5LTQ3OTktOWNlNi00NDIxMmQ3Yjk3ZTMiLCJnaXZlbl9uYW1lIjoi0JDQu9C10LrRgdCw0L3QtNGAIiwic2Vzc2lvbl9zdGF0ZSI6Ijc2YjRkNTU0LTdmNzYtNDdmZS04NmE4LTZhNDA3YTAwNTM1MiIsImZhbWlseV9uYW1lIjoi0KLQvtGA0LjRjyJ9.HY_5Y4AXzl2oj4cVWP8UdReIzkaxV1EXO5gzOUhtdpaXslGPUUjOXSPInEAkLunsxlB5iD2YFNWNSLj_5TBk1Avkap8BglK2oeZS_S6O4Q03nsNndSSzyCftcCxs-PxZzP78FYMVTPeVmwEonvx4vnASW-U6p-f8mjfOo6fgoflcD82dmStwOEN0OQ-hRSaaa3vuBmOqp-_GHtkBDOXxRy9idVJN4yQ_8euLTlr753b6fQd7trjXjJjfJAbHEy_idCuHI1dZTFGdSZXXSBy-E18PDUMgW4KqJIc3P8Eywi9if1ki31Dw-2XIMgMLBKC27ht0g5-BRewafepXJdkqOw")
+ALGOPACK_API_KEY = os.getenv("ALGOPACK_API_KEY", "eyJhbGciOiJSUzI1NiIsInR5cCIgOiAiSldUIiwia2lkIiA6ICJaVHA2Tjg1ekE4YTBFVDZ5SFBTajJ2V0ZldzNOc2xiSVR2bnVaYWlSNS1NIn0.eyJleHAiOjE3NjkwMTUxNTYsImlhdCI6MTc2NjQyMzE1NiwianRpIjoiZjBjODFmNDEtZTE3NC00NmRlLWIwMGUtZjAzZGQxY2I2YjhmIiwiaXNzIjoiaHR0cHM6Ly9zc28yLm1vZXguY29tL2F1dGgvcmVhbG1zL2NyYW1sIiwiYXVkIjpbImFjY291bnQiLCJpc3MiXSwic3ViIjoiZjowYmE2YThmMC1jMzhhLTQ5ZDYtYmEwZS04NTZmMWZlNGJmN2U6ZmI2YzRhMTMtMmEyOS00Nzk5LTljZTYtNDQyMTJkN2I5N2UzIiwidHlwIjoiQmVhcmVyIiwiYXpwIjoiaXNzIiwic2lkIjoiYmM0ZDYwMTYtYTg4MS00MDc2LThlNGEtNzY3NzAyMGI4NzkyIiwiYWNyIjoiMSIsImFsbG93ZWQtb3JpZ2lucyI6WyIvKiJdLCJyZWFsbV9hY2Nlc3MiOnsicm9sZXMiOlsib2ZmbGluZV9hY2Nlc3MiLCJ1bWFfYXV0aG9yaXphdGlvbiJdfSwicmVzb3VyY2VfYWNjZXNzIjp7ImFjY291bnQiOnsicm9sZXMiOlsibWFuYWdlLWFjY291bnQiLCJ2aWV3LXByb2ZpbGUiXX19LCJzY29wZSI6Im9wZW5pZCBpc3NfYWxnb3BhY2sgcHJvZmlsZSBvZmZsaW5lX2FjY2VzcyBlbWFpbCBiYWNrd2FyZHNfY29tcGF0aWJsZSIsImVtYWlsX3ZlcmlmaWVkIjpmYWxzZSwiaXNzX3Blcm1pc3Npb25zIjoiMTM3LCAxMzgsIDEzOSwgMTQwLCAxNjUsIDE2NiwgMTY3LCAxNjgsIDMyOSwgNDIxIiwibmFtZSI6ItCQ0LvQtdC60YHQsNC90LTRgCDQotC-0YDQuNGPIiwicHJlZmVycmVkX3VzZXJuYW1lIjoiZmI2YzRhMTMtMmEyOS00Nzk5LTljZTYtNDQyMTJkN2I5N2UzIiwiZ2l2ZW5fbmFtZSI6ItCQ0LvQtdC60YHQsNC90LTRgCIsInNlc3Npb25fc3RhdGUiOiJiYzRkNjAxNi1hODgxLTQwNzYtOGU0YS03Njc3MDIwYjg3OTIiLCJmYW1pbHlfbmFtZSI6ItCi0L7RgNC40Y8ifQ.ht68EDUCuDP_dweBnZalCQlwrkyEXtzfCxRwkO3V6H0zHtveqHh7S0AqIs2KDo57IepE83P20H2aZqWIHHOHlk66DhMn0EDu2V6CJLKHV8InWaoW_uKoinni1tND1b829VcnP5Bd2AdgHif8EWuUOg78P4u7EiRApf1CTMpVg_s2WKdIRmMdRSEFOlWi52oG5uYjqNdGsAT7J-HTzoSPqfQWiRKArnNp_tfPqB2lFkO2-hQgyx79c0ltQ4fQ2PtLyJxC4w25_R8bArpUrhUwvL8XhG4rlfRdC12RTdzJgvNptI_imm0LDgDe4km9oTYWYUn1av5HVW1Wg3sTvMkZcA")
 
 try:
     from moex_calendar import (
@@ -199,11 +199,11 @@ class FuturesManager:
             session: aiohttp.ClientSession,
             secid: str,
             days: int
-    ) -> Tuple[bool, int]:
+    ) -> Tuple[bool, int, Optional[str]]:
         """
         Проверяет наличие данных у контракта.
 
-        Returns: (has_data, candles_count)
+        Returns: (has_data, candles_count, last_date)
         """
         url = f"https://apim.moex.com/iss/engines/futures/markets/forts/boards/rfud/securities/{secid}/candles.json"
 
@@ -221,15 +221,22 @@ class FuturesManager:
                     timeout=aiohttp.ClientTimeout(total=15)
             ) as resp:
                 if resp.status != 200:
-                    return False, 0
+                    return False, 0, None
 
                 data = await resp.json()
                 candles = data.get('candles', {}).get('data', [])
-                return len(candles) > 0, len(candles)
+
+                if not candles:
+                    return False, 0, None
+
+                # НОВОЕ: дата последней свечи
+                last_date = candles[-1][6][:10]
+
+                return True, len(candles), last_date
 
         except Exception as e:
             log.debug(f"[{secid}] Ошибка проверки: {e}")
-            return False, 0
+            return False, 0, None
 
     def _generate_candidates(self, prefix: str) -> List[str]:
         """Генерирует кандидатов в правильном порядке"""
@@ -286,46 +293,63 @@ class FuturesManager:
             name: str
     ) -> Optional[tuple]:
         """
-        Находит активный контракт двухэтапной проверкой.
+        Находит активный контракт с самыми свежими данными.
+
+        Логика: выбираем контракт с самой поздней датой последней свечи.
+        При равной дате — ближайший по экспирации.
         """
         candidates = self._generate_candidates(prefix)
 
-        # === ЭТАП 1: Быстрая проверка (14 дней, первые 6) ===
-        log.debug(f"[{sectype}] Этап 1: быстрая проверка...")
-
-        for secid in candidates[:6]:
-            has_data, count = await self._check_contract(session, secid, days=14)
-
-            if has_data:
-                base_secid = secid[:-1]
-                log.debug(f"[{sectype}] ✓ {secid} (Этап 1, свечей: {count})")
-                return (secid, base_secid, name, sectype)
-
-        # === ЭТАП 2: Глубокая проверка (60 дней, первые 10) ===
-        log.debug(f"[{sectype}] Этап 2: глубокая проверка...")
-
         found = []
 
-        for secid in candidates[:10]:
-            has_data, count = await self._check_contract(session, secid, days=60)
+        # === ЭТАП 1: Быстрая проверка (14 дней, первые 8) ===
+        log.debug(f"[{sectype}] Этап 1: быстрая проверка...")
 
-            if has_data:
+        for secid in candidates[:8]:
+            has_data, count, last_date = await self._check_contract(session, secid, days=14)
+
+            if has_data and last_date:
                 found.append({
                     'secid': secid,
                     'base_secid': secid[:-1],
                     'count': count,
+                    'last_date': last_date,
                     'order': self._get_expiry_order(secid)
                 })
+
+        # === ЭТАП 2: Глубокая проверка (если ничего не нашли) ===
+        if not found:
+            log.debug(f"[{sectype}] Этап 2: глубокая проверка...")
+
+            for secid in candidates[:10]:
+                has_data, count, last_date = await self._check_contract(session, secid, days=60)
+
+                if has_data and last_date:
+                    found.append({
+                        'secid': secid,
+                        'base_secid': secid[:-1],
+                        'count': count,
+                        'last_date': last_date,
+                        'order': self._get_expiry_order(secid)
+                    })
 
         if not found:
             log.warning(f"[{sectype}] ✗ Контракт не найден!")
             return None
 
-        # Выбираем ближайший по экспирации
-        found.sort(key=lambda x: x['order'])
+        # === КЛЮЧЕВОЕ ИЗМЕНЕНИЕ ===
+        # Сортируем по дате последней свечи (свежие первыми)
+        # При равной дате — по экспирации (ближайший первым)
+        found.sort(key=lambda x: (-int(x['last_date'].replace('-', '')), x['order']))
         best = found[0]
 
-        log.debug(f"[{sectype}] ✓ {best['secid']} (Этап 2, ближайший)")
+        # Логируем смену контракта (если выбрали не ближайший по экспирации)
+        closest_by_expiry = min(found, key=lambda x: x['order'])
+        if best['secid'] != closest_by_expiry['secid']:
+            log.info(
+                f"[{sectype}] 🔄 Ротация: {closest_by_expiry['secid']} → {best['secid']} (данные: {best['last_date']} vs {closest_by_expiry['last_date']})")
+
+        log.debug(f"[{sectype}] ✓ {best['secid']} (последняя свеча: {best['last_date']})")
         return (best['secid'], best['base_secid'], name, sectype)
 
     def load_instruments(self) -> Dict:
