@@ -13,6 +13,7 @@ from api.routers import (
     candles_router,
     open_interest_router,
     chart_router,
+    heatmap_router,
 )
 from api.routers import stats
 
@@ -41,6 +42,7 @@ app.include_router(candles_router)
 app.include_router(open_interest_router)
 app.include_router(chart_router)
 app.include_router(stats.router)
+app.include_router(heatmap_router)
 
 # Путь к билду фронтенда
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend" / "dist"

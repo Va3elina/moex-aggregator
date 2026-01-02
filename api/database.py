@@ -37,3 +37,7 @@ def get_db():
         yield db
     finally:
         db.close()
+
+def get_engine():
+    """Возвращает engine для прямых SQL запросов"""
+    return engine

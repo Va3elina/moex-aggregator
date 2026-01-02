@@ -115,3 +115,52 @@ export async function getTopInstruments(
   if (!response.ok) throw new Error('Failed to fetch top instruments');
   return response.json();
 }
+
+// ==================== КАРТА РЫНКА ====================
+
+export interface HeatmapStock {
+  secId: string;
+  name: string;
+  sector: string;
+  price: number;
+  change_1d: number;
+  change_1w: number;
+  change_1m: number;
+  volume_1d: number;
+  volume_1w: number;
+  volume_1m: number;
+  value_1d: number;
+  value_1w: number;
+  value_1m: number;
+}
+
+export interface HeatmapSector {
+  name: string;
+  stocks: HeatmapStock[];
+  totalValue: number;
+}
+
+export interface HeatmapResponse {
+  stocks: HeatmapStock[];
+  sectors: HeatmapSector[];
+  params: {
+    size_by: string;
+    color_by: string;
+    group_by: string;
+  };
+}
+
+export async function getHeatmapData(
+  sizeBy: string = 'value_1d',
+  colorBy: string = 'change_1d',
+  groupBy: string = 'sector'
+): Promise<HeatmapResponse> {
+  const params = new URLSearchParams({
+    size_by: sizeBy,
+    color_by: colorBy,
+    group_by: groupBy
+  });
+  const response = await fetch(`${API_BASE}/api/heatmap/stocks?${params}`);
+  if (!response.ok) throw new Error('Failed to fetch heatmap data');
+  return response.json();
+}

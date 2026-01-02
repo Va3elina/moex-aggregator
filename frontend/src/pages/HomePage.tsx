@@ -132,7 +132,6 @@ function InteractiveOIChart({
   }>({ visible: false, x: 0, y: 0, value: 0, date: '' });
   const [animated, setAnimated] = useState(false);
 
-  // Измерение ширины контейнера
   useEffect(() => {
     const updateWidth = () => {
       if (containerRef.current) {
@@ -143,7 +142,6 @@ function InteractiveOIChart({
       }
     };
 
-    // Измеряем сразу и после небольшой задержки
     updateWidth();
     const timer1 = setTimeout(updateWidth, 50);
     const timer2 = setTimeout(updateWidth, 200);
@@ -155,7 +153,7 @@ function InteractiveOIChart({
       clearTimeout(timer1);
       clearTimeout(timer2);
     };
-  }, [data]); // Перемеряем при изменении данных
+  }, [data]);
 
   useEffect(() => {
     if (data.length > 0 && !loading) {
@@ -209,13 +207,11 @@ function InteractiveOIChart({
   const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
   const areaPath = `${linePath} L ${points[points.length - 1].x} ${chartHeight} L ${points[0].x} ${chartHeight} Z`;
 
-  // Y тики
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map(pct => ({
     value: yMin + (yMax - yMin) * pct,
     y: scaleY(yMin + (yMax - yMin) * pct)
   }));
 
-  // X тики
   const xTickCount = Math.min(10, data.length);
   const xTicks = Array.from({ length: xTickCount }, (_, i) => {
     const index = Math.floor((i / Math.max(xTickCount - 1, 1)) * (data.length - 1));
@@ -285,7 +281,6 @@ function InteractiveOIChart({
           </defs>
 
           <g transform={`translate(${padding.left}, ${padding.top})`}>
-            {/* Горизонтальные линии */}
             {yTicks.map((tick, i) => (
               <g key={i}>
                 <line
@@ -310,7 +305,6 @@ function InteractiveOIChart({
               </g>
             ))}
 
-            {/* X метки */}
             {xTicks.map((tick, i) => (
               <text
                 key={i}
@@ -324,7 +318,6 @@ function InteractiveOIChart({
               </text>
             ))}
 
-            {/* Область графика с клиппингом */}
             <g clipPath="url(#chartClipHome)">
               <path
                 d={areaPath}
@@ -355,7 +348,6 @@ function InteractiveOIChart({
               )}
             </g>
 
-            {/* Вертикальная линия и точка */}
             {tooltip.visible && (
               <>
                 <line
@@ -380,7 +372,6 @@ function InteractiveOIChart({
             )}
           </g>
 
-          {/* Тултип */}
           {tooltip.visible && (
             <foreignObject x={tooltipX} y={tooltipY} width="160" height="80">
               <div className="bg-slate-800/95 backdrop-blur-sm rounded-xl p-3 border border-slate-600/50 shadow-xl">
@@ -412,7 +403,6 @@ export default function HomePage() {
   const [period, setPeriod] = useState<Period>('1w');
   const [clgroup, setClgroup] = useState<'FIZ' | 'YUR'>('FIZ');
 
-  // Загрузка инструментов
   useEffect(() => {
     async function loadInstruments() {
       try {
@@ -449,7 +439,6 @@ export default function HomePage() {
     void loadInstruments();
   }, [typeFilter]);
 
-  // Загрузка статистики
   useEffect(() => {
     async function loadStats() {
       try {
@@ -471,196 +460,187 @@ export default function HomePage() {
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
-      {/* Background Effects */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-0 left-1/4 w-96 h-96 bg-emerald-500/5 rounded-full blur-3xl" />
-        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-indigo-500/5 rounded-full blur-3xl" />
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      {/* Header */}
+      <div className="mb-8">
+        <h1 className="text-3xl md:text-4xl font-bold text-white tracking-tight">
+          Открытый интерес
+        </h1>
+        <p className="text-slate-400 mt-2">
+          Мониторинг открытого интереса на Московской бирже
+        </p>
       </div>
 
-      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl md:text-4xl font-bold text-white tracking-tight">
-            Open Interest
-            <span className="text-emerald-400"> Tracker</span>
-          </h1>
-          <p className="text-slate-400 mt-2">
-            Мониторинг открытого интереса на Московской бирже
-          </p>
+      {/* Период и группа */}
+      <div className="flex gap-4 mb-6 flex-wrap">
+        <div className="flex gap-1 bg-slate-800/50 p-1 rounded-xl">
+          {(Object.keys(PERIOD_LABELS) as Period[]).map((p) => (
+            <button
+              key={p}
+              onClick={() => setPeriod(p)}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                period === p
+                  ? 'bg-emerald-600 text-white shadow-lg'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
+              }`}
+            >
+              {PERIOD_LABELS[p]}
+            </button>
+          ))}
         </div>
 
-        {/* Период и группа */}
-        <div className="flex gap-4 mb-6 flex-wrap">
-          <div className="flex gap-1 bg-slate-800/50 p-1 rounded-xl">
-            {(Object.keys(PERIOD_LABELS) as Period[]).map((p) => (
+        <div className="flex gap-1 bg-slate-800/50 p-1 rounded-xl">
+          <button
+            onClick={() => setClgroup('FIZ')}
+            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${
+              clgroup === 'FIZ'
+                ? 'bg-emerald-600 text-white shadow-lg'
+                : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
+            }`}
+          >
+            Физлица
+          </button>
+          <button
+            onClick={() => setClgroup('YUR')}
+            className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${
+              clgroup === 'YUR'
+                ? 'bg-emerald-600 text-white shadow-lg'
+                : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
+            }`}
+          >
+            Юрлица
+          </button>
+        </div>
+      </div>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <StatsCard
+          title="Total Open Interest"
+          value={stats ? formatNumber(stats.stats.total_oi) : '—'}
+          change={stats?.stats.oi_change}
+          icon={IconActivity}
+          loading={statsLoading}
+        />
+        <StatsCard
+          title="Покупки (Long)"
+          value={stats ? formatNumber(stats.stats.total_long) : '—'}
+          change={stats?.stats.long_change}
+          icon={IconChart}
+          loading={statsLoading}
+        />
+        <StatsCard
+          title="Продажи (Short)"
+          value={stats ? formatNumber(stats.stats.total_short) : '—'}
+          change={stats?.stats.short_change}
+          icon={IconTrending}
+          loading={statsLoading}
+        />
+        <StatsCard
+          title="Участников"
+          value={stats ? formatNumber(stats.stats.participants) : '—'}
+          change={stats?.stats.participants_change}
+          icon={IconUsers}
+          loading={statsLoading}
+        />
+      </div>
+
+      {/* График на всю ширину */}
+      <div className="mb-8">
+        <InteractiveOIChart
+          data={stats?.chart_data || []}
+          title={`Динамика Open Interest за ${PERIOD_LABELS[period].toLowerCase()}`}
+          loading={statsLoading}
+        />
+      </div>
+
+      {/* Поиск и фильтры */}
+      <div className="bg-slate-800/30 backdrop-blur-sm rounded-2xl border border-slate-700/50 p-4 mb-6">
+        <div className="flex flex-col md:flex-row gap-4">
+          <div className="flex-1 relative">
+            <input
+              type="text"
+              placeholder="Поиск инструмента..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full bg-slate-900/50 text-white placeholder-slate-500 border border-slate-700/50 rounded-xl px-4 py-3 pl-11 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all"
+            />
+            <svg
+              className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500"
+              fill="none" stroke="currentColor" viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+          </div>
+
+          <div className="flex gap-2">
+            {['', 'futures', 'stock'].map((type) => (
               <button
-                key={p}
-                onClick={() => setPeriod(p)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                  period === p
+                key={type}
+                onClick={() => setTypeFilter(type)}
+                className={`px-4 py-2.5 rounded-xl font-medium transition-all ${
+                  typeFilter === type
                     ? 'bg-emerald-600 text-white shadow-lg'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
+                    : 'bg-slate-700/50 text-slate-400 hover:bg-slate-600/50 hover:text-white'
                 }`}
               >
-                {PERIOD_LABELS[p]}
+                {type === '' ? 'Все' : type === 'futures' ? '🔥 Фьючерсы' : '📈 Акции'}
               </button>
             ))}
           </div>
+        </div>
+      </div>
 
-          <div className="flex gap-1 bg-slate-800/50 p-1 rounded-xl">
-            <button
-              onClick={() => setClgroup('FIZ')}
-              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                clgroup === 'FIZ'
-                  ? 'bg-emerald-600 text-white shadow-lg'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
+      {/* Список инструментов */}
+      {!loading && (
+        <div className="bg-slate-800/30 backdrop-blur-sm rounded-2xl border border-slate-700/50 overflow-hidden">
+          <div className="hidden md:grid grid-cols-12 gap-4 px-5 py-3 bg-slate-900/50 border-b border-slate-700/50 text-sm text-slate-400 font-medium">
+            <div className="col-span-3">Инструмент</div>
+            <div className="col-span-4">Название</div>
+            <div className="col-span-2">Тип</div>
+            <div className="col-span-3 text-right">Контракты</div>
+          </div>
+
+          {filteredInstruments.slice(0, 50).map((inst, index) => (
+            <Link
+              key={`${inst.sectype}-${inst.type}`}
+              to={`/chart/${inst.contracts[0].sec_id}?sectype=${inst.sectype}&type=${inst.type}`}
+              className={`grid grid-cols-12 gap-4 px-5 py-4 items-center hover:bg-slate-700/30 transition-colors group ${
+                index !== Math.min(filteredInstruments.length, 50) - 1 ? 'border-b border-slate-700/30' : ''
               }`}
             >
-              Физлица
-            </button>
-            <button
-              onClick={() => setClgroup('YUR')}
-              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                clgroup === 'YUR'
-                  ? 'bg-emerald-600 text-white shadow-lg'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
-              }`}
-            >
-              Юрлица
-            </button>
-          </div>
-        </div>
-
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          <StatsCard
-            title="Total Open Interest"
-            value={stats ? formatNumber(stats.stats.total_oi) : '—'}
-            change={stats?.stats.oi_change}
-            icon={IconActivity}
-            loading={statsLoading}
-          />
-          <StatsCard
-            title="Покупки (Long)"
-            value={stats ? formatNumber(stats.stats.total_long) : '—'}
-            change={stats?.stats.long_change}
-            icon={IconChart}
-            loading={statsLoading}
-          />
-          <StatsCard
-            title="Продажи (Short)"
-            value={stats ? formatNumber(stats.stats.total_short) : '—'}
-            change={stats?.stats.short_change}
-            icon={IconTrending}
-            loading={statsLoading}
-          />
-          <StatsCard
-            title="Участников"
-            value={stats ? formatNumber(stats.stats.participants) : '—'}
-            change={stats?.stats.participants_change}
-            icon={IconUsers}
-            loading={statsLoading}
-          />
-        </div>
-
-        {/* График на всю ширину */}
-        <div className="mb-8">
-          <InteractiveOIChart
-            data={stats?.chart_data || []}
-            title={`Динамика Open Interest за ${PERIOD_LABELS[period].toLowerCase()}`}
-            loading={statsLoading}
-          />
-        </div>
-
-        {/* Поиск и фильтры */}
-        <div className="bg-slate-800/30 backdrop-blur-sm rounded-2xl border border-slate-700/50 p-4 mb-6">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1 relative">
-              <input
-                type="text"
-                placeholder="Поиск инструмента..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full bg-slate-900/50 text-white placeholder-slate-500 border border-slate-700/50 rounded-xl px-4 py-3 pl-11 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transition-all"
-              />
-              <svg
-                className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500"
-                fill="none" stroke="currentColor" viewBox="0 0 24 24"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-            </div>
-
-            <div className="flex gap-2">
-              {['', 'futures', 'stock'].map((type) => (
-                <button
-                  key={type}
-                  onClick={() => setTypeFilter(type)}
-                  className={`px-4 py-2.5 rounded-xl font-medium transition-all ${
-                    typeFilter === type
-                      ? 'bg-emerald-600 text-white shadow-lg'
-                      : 'bg-slate-700/50 text-slate-400 hover:bg-slate-600/50 hover:text-white'
-                  }`}
-                >
-                  {type === '' ? 'Все' : type === 'futures' ? '🔥 Фьючерсы' : '📈 Акции'}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Список инструментов */}
-        {!loading && (
-          <div className="bg-slate-800/30 backdrop-blur-sm rounded-2xl border border-slate-700/50 overflow-hidden">
-            <div className="hidden md:grid grid-cols-12 gap-4 px-5 py-3 bg-slate-900/50 border-b border-slate-700/50 text-sm text-slate-400 font-medium">
-              <div className="col-span-3">Инструмент</div>
-              <div className="col-span-4">Название</div>
-              <div className="col-span-2">Тип</div>
-              <div className="col-span-3 text-right">Контракты</div>
-            </div>
-
-            {filteredInstruments.slice(0, 50).map((inst, index) => (
-              <Link
-                key={`${inst.sectype}-${inst.type}`}
-                to={`/chart/${inst.contracts[0].sec_id}?sectype=${inst.sectype}&type=${inst.type}`}
-                className={`grid grid-cols-12 gap-4 px-5 py-4 items-center hover:bg-slate-700/30 transition-colors group ${
-                  index !== Math.min(filteredInstruments.length, 50) - 1 ? 'border-b border-slate-700/30' : ''
-                }`}
-              >
-                <div className="col-span-6 md:col-span-3 flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500/20 to-blue-500/20 flex items-center justify-center text-white font-bold text-sm">
-                    {inst.sectype.slice(0, 2)}
-                  </div>
-                  <span className="text-lg font-bold text-white group-hover:text-emerald-400 transition-colors">
-                    {inst.sectype}
-                  </span>
+              <div className="col-span-6 md:col-span-3 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500/20 to-blue-500/20 flex items-center justify-center text-white font-bold text-sm">
+                  {inst.sectype.slice(0, 2)}
                 </div>
-                <div className="hidden md:block col-span-4 text-slate-400 truncate">{inst.name}</div>
-                <div className="hidden md:block col-span-2">
-                  <span className={`px-2.5 py-1 rounded-lg text-xs font-medium ${
-                    inst.type === 'futures' ? 'bg-indigo-500/20 text-indigo-300' : 'bg-emerald-500/20 text-emerald-300'
-                  }`}>
-                    {inst.type === 'futures' ? 'Фьючерс' : 'Акция'}
-                  </span>
-                </div>
-                <div className="col-span-6 md:col-span-3 flex items-center justify-end gap-2">
-                  <span className="text-slate-500">{inst.contracts.length} шт</span>
-                  <span className="text-slate-500 group-hover:text-emerald-400">→</span>
-                </div>
-              </Link>
-            ))}
+                <span className="text-lg font-bold text-white group-hover:text-emerald-400 transition-colors">
+                  {inst.sectype}
+                </span>
+              </div>
+              <div className="hidden md:block col-span-4 text-slate-400 truncate">{inst.name}</div>
+              <div className="hidden md:block col-span-2">
+                <span className={`px-2.5 py-1 rounded-lg text-xs font-medium ${
+                  inst.type === 'futures' ? 'bg-indigo-500/20 text-indigo-300' : 'bg-emerald-500/20 text-emerald-300'
+                }`}>
+                  {inst.type === 'futures' ? 'Фьючерс' : 'Акция'}
+                </span>
+              </div>
+              <div className="col-span-6 md:col-span-3 flex items-center justify-end gap-2">
+                <span className="text-slate-500">{inst.contracts.length} шт</span>
+                <span className="text-slate-500 group-hover:text-emerald-400">→</span>
+              </div>
+            </Link>
+          ))}
 
-            {filteredInstruments.length === 0 && (
-              <div className="text-center py-16 text-slate-500">Ничего не найдено</div>
-            )}
-          </div>
-        )}
-
-        {/* Footer */}
-        <div className="mt-12 text-center text-slate-600 text-sm">
-          <p>MOEX Open Interest Tracker • {instruments.length} инструментов • {new Date().getFullYear()}</p>
+          {filteredInstruments.length === 0 && (
+            <div className="text-center py-16 text-slate-500">Ничего не найдено</div>
+          )}
         </div>
+      )}
+
+      {/* Footer */}
+      <div className="mt-12 text-center text-slate-600 text-sm">
+        <p>MOEX Analytics • {instruments.length} инструментов • {new Date().getFullYear()}</p>
       </div>
     </div>
   );
