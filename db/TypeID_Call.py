@@ -4,6 +4,7 @@
 - Правильные группы (Акции, Валюта, Сырьё, Индексы, Зарубежные активы)
 - Исправленные sectype
 - Особые случаи: GL/GLDRUBF, EU/Eu
+- ИСПРАВЛЕНО: имя колонки sec_id в SQL запросах
 """
 
 import re
@@ -26,7 +27,7 @@ ASSETS = [
     ("Сбербанк (вечн)", "SB", "Акции"),
     ("Т-Технологии (Тинькофф)", "TB", "Акции"),
     ("Лукойл", "LK", "Акции"),
-    ("НОВАТЭК", "NK", "Акции"),
+    ("НОВАТЭК", "NV", "Акции"),
     ("Газпром (вечн)", "GA", "Акции"),
     ("СПБ биржа", "SE", "Акции"),
     ("Норильский никель", "GK", "Акции"),
@@ -233,8 +234,9 @@ def insert_instruments(df_moex: pd.DataFrame):
             if not name:
                 continue
 
+            # !!! ИСПРАВЛЕНО: secid -> sec_id
             conn.execute(text("""
-                              INSERT INTO instruments (name, sectype, secid, type, "group")
+                              INSERT INTO instruments (name, sectype, sec_id, type, "group")
                               VALUES (:name, :sectype, :secid, 'futures', :group) ON CONFLICT DO NOTHING
                               """), {
                              "name": name,
@@ -259,8 +261,9 @@ def handle_special_cases(df_moex: pd.DataFrame):
         for name, sectype, group, special_secid in SPECIAL_CASES:
             if special_secid:
                 # Вечный контракт с фиксированным secid
+                # !!! ИСПРАВЛЕНО: secid -> sec_id
                 conn.execute(text("""
-                                  INSERT INTO instruments (name, sectype, secid, type, "group")
+                                  INSERT INTO instruments (name, sectype, sec_id, type, "group")
                                   VALUES (:name, :sectype, :secid, 'futures', :group) ON CONFLICT DO NOTHING
                                   """), {
                                  "name": name,
@@ -277,8 +280,9 @@ def handle_special_cases(df_moex: pd.DataFrame):
 
                 for secid_base in df_gl["secid_base"].unique():
                     if secid_base != "GLDRUBF":
+                        # !!! ИСПРАВЛЕНО: secid -> sec_id
                         conn.execute(text("""
-                                          INSERT INTO instruments (name, sectype, secid, type, "group")
+                                          INSERT INTO instruments (name, sectype, sec_id, type, "group")
                                           VALUES (:name, :sectype, :secid, 'futures', :group) ON CONFLICT DO NOTHING
                                           """), {
                                          "name": name,

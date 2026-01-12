@@ -12,11 +12,16 @@
 4. Candles/fetch_candles_futures_realtime.py — свечи фьючерсов (Algopack)
 5. Candles/fetch_candles_spot_realtime.py — свечи акций (Algopack)
 
+=== Материализованные представления ===
+- mv_heatmap_stocks — карта рынка акций
+- mv_oi_daily_stats — статистика открытого интереса
+
 Расписание (МСК):
 - Каждые 5 минут (XX:00:10, XX:05:10...):
     → OI 5м
     → Candles Futures
     → Candles Spot
+    → REFRESH mv_heatmap_stocks, mv_oi_daily_stats
 - Каждый час (XX:02:00):
     → Агрегация OI 5м → 60м
 - Раз в день (00:10):
@@ -36,6 +41,14 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Tuple, Dict, List
 import signal
+
+# === Импорт для БД и представлений ===
+from sqlalchemy import create_engine, text
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+DB_URL = os.getenv("DB_URL", "postgresql+pg8000://postgres:1803@localhost:5432/moex_db")
 
 # === Импорт календаря MOEX ===
 try:
@@ -98,6 +111,12 @@ SCRIPTS = {
     # Candles скрипты
     'candles_futures': BASE_DIR / 'Candles' / 'fetch_candles_futures_realtime.py',
     'candles_spot': BASE_DIR / 'Candles' / 'fetch_candles_spot_realtime.py',
+}
+
+# Материализованные представления
+MATERIALIZED_VIEWS = {
+    'mv_heatmap_stocks': 'Карта рынка акций',
+    'mv_oi_daily_stats': 'Статистика OI',
 }
 
 # Время дневного обновления OI
@@ -171,6 +190,51 @@ def setup_logging():
 
 
 log = setup_logging()
+
+
+# ======================================================================
+#                    ОБНОВЛЕНИЕ МАТЕРИАЛИЗОВАННЫХ ПРЕДСТАВЛЕНИЙ
+# ======================================================================
+
+def refresh_materialized_views(views: List[str] = None) -> Dict[str, Tuple[bool, float]]:
+    """
+    Обновляет материализованные представления.
+
+    Args:
+        views: список представлений для обновления.
+               None = все представления
+
+    Returns:
+        {'view_name': (success, duration_sec), ...}
+    """
+    if views is None:
+        views = list(MATERIALIZED_VIEWS.keys())
+
+    results = {}
+
+    try:
+        engine = create_engine(DB_URL)
+
+        with engine.connect() as conn:
+            for view_name in views:
+                try:
+                    start = datetime.now()
+                    conn.execute(text(f"REFRESH MATERIALIZED VIEW {view_name}"))
+                    conn.commit()
+                    duration = (datetime.now() - start).total_seconds()
+                    results[view_name] = (True, duration)
+                    desc = MATERIALIZED_VIEWS.get(view_name, view_name)
+                    log.info(f"    ✅ {desc} ({duration:.1f}с)")
+                except Exception as e:
+                    results[view_name] = (False, 0)
+                    log.warning(f"    ⚠️ {view_name}: {e}")
+
+        engine.dispose()
+
+    except Exception as e:
+        log.error(f"Ошибка подключения к БД: {e}")
+
+    return results
 
 
 # ======================================================================
@@ -268,6 +332,9 @@ class MainOrchestrator:
             'candles_futures_success': 0,
             'candles_spot_runs': 0,
             'candles_spot_success': 0,
+            # Представления
+            'views_refresh_runs': 0,
+            'views_refresh_success': 0,
             # Общее
             'errors': 0,
             'total_duration': 0,
@@ -335,6 +402,17 @@ class MainOrchestrator:
             self.stats['errors'] += 1
             log.error(f"    ✗ Candles Spot: {msg}")
 
+        # 4. Обновление материализованных представлений
+        log.info("  🔄 Обновление представлений...")
+        self.stats['views_refresh_runs'] += 1
+        view_results = refresh_materialized_views()
+
+        # Считаем успешные обновления
+        all_success = all(r[0] for r in view_results.values())
+        if all_success:
+            self.stats['views_refresh_success'] += 1
+        results['views'] = all_success
+
         total_duration = (datetime.now() - total_start).total_seconds()
         self.stats['total_duration'] += total_duration
         self.stats['cycles'] += 1
@@ -391,6 +469,8 @@ class MainOrchestrator:
         log.info("  --- Candles ---")
         log.info(f"    Futures: {self.stats['candles_futures_success']}/{self.stats['candles_futures_runs']}")
         log.info(f"    Spot: {self.stats['candles_spot_success']}/{self.stats['candles_spot_runs']}")
+        log.info("  --- Представления ---")
+        log.info(f"    Обновлений: {self.stats['views_refresh_success']}/{self.stats['views_refresh_runs']}")
         log.info(f"  Ошибок: {self.stats['errors']}")
         log.info("=" * 60)
 
@@ -409,6 +489,9 @@ class MainOrchestrator:
         for key, path in SCRIPTS.items():
             exists = "✓" if path.exists() else "✗"
             log.info(f"    [{exists}] {key}: {path.name}")
+        log.info("  Материализованные представления:")
+        for view, desc in MATERIALIZED_VIEWS.items():
+            log.info(f"    • {view}: {desc}")
         log.info(f"  Торговые часы: {TRADING_START_HOUR}:00 - {TRADING_END_HOUR}:00 МСК")
         log.info(f"  Расписание:")
         log.info(f"    5м цикл: XX:00:{BUFFER_5MIN:02d}, XX:05:{BUFFER_5MIN:02d}...")
@@ -441,6 +524,10 @@ class MainOrchestrator:
 
             # Daily
             await self.run_daily_update()
+
+            # Обновляем все представления после полной синхронизации
+            log.info("  🔄 Финальное обновление представлений...")
+            refresh_materialized_views()
         else:
             log.info(f"  ⏭️ Пропуск синхронизации: {reason}")
 
