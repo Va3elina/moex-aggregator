@@ -1,8 +1,9 @@
 """
 API endpoint для получения свечей и данных OI
+С валидацией входных данных и защитой от SQL injection
 """
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from datetime import datetime, date, time as dt_time, timedelta
@@ -13,6 +14,15 @@ import time
 from api.database import get_db
 from api.models import Instrument
 from api.schemas import CandleResponse, OpenInterestResponse
+from api.schemas.validators import (
+    ChartParams,
+    IntervalsParams,
+    IntervalType,
+    ClgroupType,
+    PeriodType,
+    InstTypeType,
+    validate_safe_id
+)
 
 router = APIRouter(prefix='/api/chart', tags=['chart'])
 
@@ -41,7 +51,7 @@ class ChartResponse(BaseModel):
 
 class AvailableIntervalsResponse(BaseModel):
     sectype: str
-    intervals: list[dict]  # [{interval: 5, count: 1000, start: "2020-01-01", end: "2025-12-01"}, ...]
+    intervals: list[dict]
 
 
 PERIODS = {
@@ -53,12 +63,17 @@ PERIODS = {
 @router.get("/intervals/{sectype}", response_model=AvailableIntervalsResponse)
 def get_available_intervals(
     sectype: str,
-    clgroup: str = Query("FIZ"),
+    clgroup: ClgroupType = Query("FIZ"),
     db: Session = Depends(get_db)
 ):
-    """
-    Получить доступные интервалы OI для инструмента
-    """
+    """Получить доступные интервалы OI для инструмента"""
+
+    # Валидация sectype
+    try:
+        sectype = validate_safe_id(sectype, "sectype")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     query = text("""
         SELECT 
             interval,
@@ -93,20 +108,33 @@ def get_available_intervals(
 def get_chart_data(
         sec_id: str,
         sectype: str = Query(...),
-        inst_type: str = Query("futures"),
-        interval: int = Query(24),
-        clgroup: str = Query("FIZ"),
+        inst_type: InstTypeType = Query("futures"),
+        interval: IntervalType = Query(24),
+        clgroup: ClgroupType = Query("FIZ"),
         show_oi: bool = Query(True),
-        period: str = Query("6m"),
+        period: PeriodType = Query("6m"),
         date_from: Optional[date] = Query(None),
         date_to: Optional[date] = Query(None),
         db: Session = Depends(get_db)
 ):
+    """Получить данные графика с валидацией"""
+
+    # Валидация sec_id и sectype
+    try:
+        sec_id = validate_safe_id(sec_id, "sec_id")
+        sectype = validate_safe_id(sectype, "sectype")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # Валидация диапазона дат
+    if date_from and date_to and date_to < date_from:
+        raise HTTPException(status_code=400, detail="date_to не может быть раньше date_from")
+
     print(f"\n{'='*60}")
     print(f"REQUEST: {sec_id}, sectype={sectype}, interval={interval}, period={period}")
     total_start = time.time()
 
-    # 1. Получаем sec_ids
+    # 1. Получаем sec_ids (БЕЗОПАСНО через параметризованный запрос)
     t0 = time.time()
     sec_ids_result = db.execute(text("""
         SELECT DISTINCT sec_id FROM instruments 
@@ -115,14 +143,14 @@ def get_chart_data(
     sec_ids = [r[0] for r in sec_ids_result] or [sec_id]
     print(f"[1] sec_ids: {(time.time()-t0)*1000:.0f} мс | {sec_ids}")
 
-    # 2. Границы свечей — быстрые отдельные запросы
+    # 2. Границы свечей — безопасные запросы
     t0 = time.time()
 
     c_start = None
     c_end = None
 
     for sid in sec_ids:
-        # MIN
+        # MIN (sid уже провалидирован через instruments из БД)
         row = db.execute(text("""
             SELECT begin_time FROM candles 
             WHERE sec_id = :sec_id AND interval = :interval
@@ -189,19 +217,19 @@ def get_chart_data(
 
     print(f"[4] work period: {work_start} - {work_end}")
 
-    # 5. Запрос свечей
+    # 5. Запрос свечей — ИСПРАВЛЕНО: используем параметризованный запрос с ANY
     t0 = time.time()
-    sec_ids_sql = ",".join(f"'{s}'" for s in sec_ids)
-    candles_raw = db.execute(text(f"""
+    candles_raw = db.execute(text("""
         SELECT begin_time, open, high, low, close, volume
         FROM candles
-        WHERE sec_id IN ({sec_ids_sql})
+        WHERE sec_id = ANY(:sec_ids)
           AND interval = :interval
           AND begin_time >= :start_time
           AND begin_time <= :end_time
           AND close > 0
         ORDER BY begin_time
     """), {
+        "sec_ids": sec_ids,  # PostgreSQL массив — безопасно!
         "interval": interval,
         "start_time": datetime.combine(work_start, dt_time.min),
         "end_time": datetime.combine(work_end, dt_time.max)
@@ -218,7 +246,7 @@ def get_chart_data(
     sorted_candles = sorted(candles_map.values(), key=lambda x: x[0])
     print(f"[6] dedup: {(time.time()-t0)*1000:.0f} мс | unique: {len(sorted_candles)}")
 
-    # 7. Запрос OI (ИСПРАВЛЕНО: добавлено поле pos)
+    # 7. Запрос OI
     oi_raw = []
     if show_oi and has_oi_data and sorted_candles:
         t0 = time.time()
@@ -263,22 +291,14 @@ def get_chart_data(
         ) for c in sorted_candles
     ]
 
-    # ИСПРАВЛЕНО: правильные расчёты OI
-    # r[0] = tradedate
-    # r[1] = tradetime
-    # r[2] = pos (чистая позиция = pos_long + pos_short)
-    # r[3] = pos_long
-    # r[4] = pos_short (отрицательное в БД!)
-    # r[5] = pos_long_num
-    # r[6] = pos_short_num
     oi_list = [
         OpenInterestResponse(
             time=datetime.combine(r[0], r[1]),
-            pos=r[2],  # чистая позиция из БД
-            pos_long=r[3],  # позиции лонг
-            pos_short=r[4],  # позиции шорт (отрицательное!)
-            pos_long_num=r[5],  # количество покупателей
-            pos_short_num=r[6]  # количество продавцов
+            pos=r[2],
+            pos_long=r[3],
+            pos_short=r[4],
+            pos_long_num=r[5],
+            pos_short_num=r[6]
         ) for r in oi_raw
     ]
     print(f"[8] build response: {(time.time()-t0)*1000:.0f} мс")

@@ -1,5 +1,6 @@
 """
 API endpoints для свечей
+С валидацией входных данных
 """
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
@@ -8,6 +9,7 @@ from datetime import datetime, date
 from api.database import get_db
 from api.models import Candle
 from api.schemas import CandleResponse, CandleListResponse
+from api.schemas.validators import IntervalType, validate_safe_id
 
 router = APIRouter(prefix="/api/candles", tags=["candles"])
 
@@ -15,13 +17,23 @@ router = APIRouter(prefix="/api/candles", tags=["candles"])
 @router.get("/{sec_id}", response_model=CandleListResponse)
 def get_candles(
         sec_id: str,
-        interval: int = Query(60, description="Таймфрейм: 5, 60 или 24 минут"),
+        interval: IntervalType = Query(60, description="Таймфрейм: 5, 60 или 24 минут"),
         date_from: date | None = Query(None, description="Дата начала (YYYY-MM-DD)"),
         date_to: date | None = Query(None, description="Дата окончания (YYYY-MM-DD)"),
-        limit: int = Query(10000, description="Максимум записей", le=50000),
+        limit: int = Query(10000, description="Максимум записей", ge=1, le=50000),
         db: Session = Depends(get_db)
 ):
     """Получить свечи по sec_id"""
+
+    # Валидация sec_id
+    try:
+        sec_id = validate_safe_id(sec_id, "sec_id")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # Валидация диапазона дат
+    if date_from and date_to and date_to < date_from:
+        raise HTTPException(status_code=400, detail="date_to не может быть раньше date_from")
 
     query = db.query(Candle).filter(Candle.sec_id == sec_id)
 

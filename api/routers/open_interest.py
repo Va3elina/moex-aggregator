@@ -1,5 +1,6 @@
 """
 API endpoints для открытого интереса
+С валидацией входных данных
 """
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
@@ -8,6 +9,7 @@ from datetime import datetime, date
 from api.database import get_db
 from api.models import OpenInterest
 from api.schemas import OpenInterestResponse, OpenInterestListResponse
+from api.schemas.validators import IntervalType, ClgroupType, validate_safe_id
 
 router = APIRouter(prefix="/api/openinterest", tags=["open_interest"])
 
@@ -15,14 +17,24 @@ router = APIRouter(prefix="/api/openinterest", tags=["open_interest"])
 @router.get("/{sectype}", response_model=OpenInterestListResponse)
 def get_open_interest(
         sectype: str,
-        clgroup: str = Query("FIZ", description="Группа: FIZ (физлица) или YUR (юрлица)"),
-        interval: int = Query(60, description="Таймфрейм: 5, 60 или 24 минут"),
+        clgroup: ClgroupType = Query("FIZ", description="Группа: FIZ (физлица) или YUR (юрлица)"),
+        interval: IntervalType = Query(60, description="Таймфрейм: 5, 60 или 24 минут"),
         date_from: date | None = Query(None, description="Дата начала (YYYY-MM-DD)"),
         date_to: date | None = Query(None, description="Дата окончания (YYYY-MM-DD)"),
-        limit: int = Query(10000, description="Максимум записей", le=50000),
+        limit: int = Query(10000, description="Максимум записей", ge=1, le=50000),
         db: Session = Depends(get_db)
 ):
     """Получить открытый интерес по sectype"""
+
+    # Валидация sectype
+    try:
+        sectype = validate_safe_id(sectype, "sectype")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # Валидация диапазона дат
+    if date_from and date_to and date_to < date_from:
+        raise HTTPException(status_code=400, detail="date_to не может быть раньше date_from")
 
     query = db.query(OpenInterest).filter(
         OpenInterest.sectype == sectype,

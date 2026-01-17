@@ -1,17 +1,19 @@
 """
 API endpoint для общей статистики открытого интереса
+С валидацией входных данных
 """
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from datetime import datetime, timedelta
 
 from api.database import get_db
+from api.schemas.validators import PeriodType, ClgroupType, SortByType, validate_safe_id
 
 router = APIRouter(prefix="/api/stats", tags=["stats"])
 
 
-def get_period_days(period: str) -> int:
+def get_period_days(period: PeriodType) -> int:
     """Преобразует период в количество дней"""
     periods = {
         '1d': 1,
@@ -27,13 +29,11 @@ def get_period_days(period: str) -> int:
 
 @router.get("")
 async def get_stats(
-    period: str = Query(default="1w", description="Период: 1d, 1w, 1m, 3m, 6m, 1y, all"),
-    clgroup: str = Query(default="FIZ", description="Группа: FIZ или YUR"),
+    period: PeriodType = Query(default="1w", description="Период: 1d, 1w, 1m, 3m, 6m, 1y, all"),
+    clgroup: ClgroupType = Query(default="FIZ", description="Группа: FIZ или YUR"),
     db: Session = Depends(get_db)
 ):
-    """
-    Получить общую статистику OI за период
-    """
+    """Получить общую статистику OI за период"""
     days = get_period_days(period)
     start_date = datetime.now() - timedelta(days=days)
 
@@ -132,15 +132,13 @@ async def get_stats(
 
 @router.get("/top")
 async def get_top_instruments(
-    period: str = Query(default="1w", description="Период"),
-    clgroup: str = Query(default="FIZ", description="Группа"),
-    limit: int = Query(default=10, description="Количество"),
-    sort_by: str = Query(default="change", description="Сортировка: oi, change"),
+    period: PeriodType = Query(default="1w", description="Период"),
+    clgroup: ClgroupType = Query(default="FIZ", description="Группа"),
+    limit: int = Query(default=10, description="Количество", ge=1, le=100),
+    sort_by: SortByType = Query(default="change", description="Сортировка: oi, change"),
     db: Session = Depends(get_db)
 ):
-    """
-    Получить топ инструментов по изменению OI за период
-    """
+    """Получить топ инструментов по изменению OI за период"""
     days = get_period_days(period)
     start_date = datetime.now() - timedelta(days=days)
 
@@ -227,13 +225,18 @@ async def get_top_instruments(
 
 @router.get("/debug")
 async def debug_oi(
-    sectype: str = Query(default="SR"),
-    clgroup: str = Query(default="FIZ"),
+    sectype: str = Query(default="SR", max_length=50),
+    clgroup: ClgroupType = Query(default="FIZ"),
     db: Session = Depends(get_db)
 ):
-    """
-    Отладочный endpoint для проверки данных OI
-    """
+    """Отладочный endpoint для проверки данных OI"""
+
+    # Валидация sectype
+    try:
+        sectype = validate_safe_id(sectype, "sectype")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     query = text("""
         SELECT 
             tradedate,

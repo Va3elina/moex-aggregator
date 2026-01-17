@@ -1,25 +1,29 @@
 """
 API для карты рынка (Heatmap) — стиль TradingView
+С валидацией входных данных
 """
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, HTTPException
 from sqlalchemy import text
 
 from api.database import get_engine
+from api.schemas.validators import HeatmapSizeByType, HeatmapColorByType, HeatmapGroupByType
 
 router = APIRouter(prefix="/api/heatmap", tags=["heatmap"])
 
 
 @router.get("/stocks")
 async def get_stocks_heatmap(
-    size_by: str = Query("value_1d", description="Размер блока"),
-    color_by: str = Query("change_1d", description="Цвет блока"),
-    group_by: str = Query("sector", description="Группировка"),
+    size_by: HeatmapSizeByType = Query("value_1d", description="Размер блока"),
+    color_by: HeatmapColorByType = Query("change_1d", description="Цвет блока"),
+    group_by: HeatmapGroupByType = Query("sector", description="Группировка"),
 ):
     """
     Возвращает данные для карты рынка из материализованного представления.
+    Параметры валидируются автоматически через Literal типы.
     """
     engine = get_engine()
 
+    # Безопасный запрос — без пользовательских данных в SQL
     query = text("""
         SELECT 
             sec_id, name, sector, price,
@@ -30,9 +34,12 @@ async def get_stocks_heatmap(
         ORDER BY value_1d DESC NULLS LAST
     """)
 
-    with engine.connect() as conn:
-        result = conn.execute(query)
-        rows = result.fetchall()
+    try:
+        with engine.connect() as conn:
+            result = conn.execute(query)
+            rows = result.fetchall()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Ошибка получения данных heatmap")
 
     stocks = []
     for row in rows:
@@ -77,7 +84,11 @@ async def get_stocks_heatmap(
 async def refresh_heatmap():
     """Обновляет материализованное представление"""
     engine = get_engine()
-    with engine.connect() as conn:
-        conn.execute(text("REFRESH MATERIALIZED VIEW mv_heatmap_stocks"))
-        conn.commit()
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("REFRESH MATERIALIZED VIEW mv_heatmap_stocks"))
+            conn.commit()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Ошибка обновления heatmap")
+
     return {"status": "ok", "message": "Heatmap обновлён"}
