@@ -1,47 +1,51 @@
 """
-Middleware для логирования HTTP запросов
-- Логирует все входящие запросы и ответы
-- Измеряет время выполнения
-- Генерирует request_id для трейсинга
+Middleware для MOEX Analytics API
+- Логирование запросов
+- Security Headers
+- Rate Limiting
+- Exception Handlers
 """
 
 import time
 import uuid
-from fastapi import Request, Response
+import asyncio
+import traceback
+from collections import defaultdict
+from fastapi import Request, Response, HTTPException
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from api.logger import get_logger
 
 logger = get_logger()
 
 
+# ═══════════════════════════════════════════════════════════════
+# Логирование запросов
+# ═══════════════════════════════════════════════════════════════
+
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
     """Middleware для логирования всех HTTP запросов"""
 
     def __init__(self, app: ASGIApp, exclude_paths: list[str] | None = None):
         super().__init__(app)
-        # Пути, которые не логируем (health checks, статика)
         self.exclude_paths = exclude_paths or ["/health", "/assets", "/favicon.ico"]
 
     async def dispatch(self, request: Request, call_next) -> Response:
-        # Пропускаем excluded пути
         if any(request.url.path.startswith(p) for p in self.exclude_paths):
             return await call_next(request)
 
-        # Генерируем уникальный ID запроса
         request_id = str(uuid.uuid4())[:8]
-
-        # Сохраняем в state для использования в эндпоинтах
         request.state.request_id = request_id
 
-        # Данные запроса
-        client_ip = request.client.host if request.client else "unknown"
+        client_ip = self._get_client_ip(request)
         method = request.method
         path = request.url.path
         query = str(request.query_params) if request.query_params else ""
 
-        # Логируем входящий запрос
         logger.info(
             f"→ {method} {path}",
             extra={
@@ -57,16 +61,12 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             }
         )
 
-        # Замеряем время
         start_time = time.perf_counter()
 
         try:
             response = await call_next(request)
-
-            # Время выполнения
             duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
 
-            # Логируем ответ
             log_method = logger.info if response.status_code < 400 else logger.warning
             log_method(
                 f"← {response.status_code} {path} ({duration_ms}ms)",
@@ -82,16 +82,11 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                 }
             )
 
-            # Добавляем request_id в headers ответа (для дебага)
             response.headers["X-Request-ID"] = request_id
-
             return response
 
         except Exception as e:
-            # Время до ошибки
             duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
-
-            # Логируем ошибку
             logger.error(
                 f"✕ {method} {path} - {type(e).__name__}: {str(e)}",
                 extra={
@@ -108,6 +103,15 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                 exc_info=True,
             )
             raise
+
+    def _get_client_ip(self, request: Request) -> str:
+        forwarded = request.headers.get("X-Forwarded-For")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+        real_ip = request.headers.get("X-Real-IP")
+        if real_ip:
+            return real_ip.strip()
+        return request.client.host if request.client else "unknown"
 
 
 class SlowRequestMiddleware(BaseHTTPMiddleware):
@@ -136,3 +140,236 @@ class SlowRequestMiddleware(BaseHTTPMiddleware):
             )
 
         return response
+
+
+# ═══════════════════════════════════════════════════════════════
+# Security Headers
+# ═══════════════════════════════════════════════════════════════
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """
+    Добавляет HTTP заголовки безопасности:
+    - X-Content-Type-Options: защита от MIME sniffing
+    - X-Frame-Options: защита от clickjacking
+    - X-XSS-Protection: защита от XSS (legacy браузеры)
+    - Referrer-Policy: контроль передачи referrer
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+
+        # Защита от MIME type sniffing
+        response.headers["X-Content-Type-Options"] = "nosniff"
+
+        # Защита от clickjacking
+        response.headers["X-Frame-Options"] = "DENY"
+
+        # XSS фильтр (для старых браузеров)
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+
+        # Контроль Referrer
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+
+        # Ограничение API браузера
+        response.headers["Permissions-Policy"] = (
+            "geolocation=(), microphone=(), camera=()"
+        )
+
+        return response
+
+
+# ═══════════════════════════════════════════════════════════════
+# Rate Limiting
+# ═══════════════════════════════════════════════════════════════
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    """
+    Ограничение запросов по IP адресу
+
+    - Общий лимит: 100 запросов в минуту
+    - Auth эндпоинты: 10 запросов в минуту
+    - Тяжёлые эндпоинты: 30 запросов в минуту
+    """
+
+    def __init__(
+        self,
+        app,
+        requests_per_minute: int = 100,
+        auth_requests_per_minute: int = 10,
+        heavy_requests_per_minute: int = 30,
+    ):
+        super().__init__(app)
+        self.requests_per_minute = requests_per_minute
+        self.auth_requests_per_minute = auth_requests_per_minute
+        self.heavy_requests_per_minute = heavy_requests_per_minute
+
+        self.requests: dict[str, list[float]] = defaultdict(list)
+        self.lock = asyncio.Lock()
+
+        self.heavy_endpoints = ["/api/heatmap", "/api/stats", "/api/chart"]
+        self.auth_endpoints = ["/api/auth"]
+
+    def _get_client_ip(self, request: Request) -> str:
+        forwarded = request.headers.get("X-Forwarded-For")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+        real_ip = request.headers.get("X-Real-IP")
+        if real_ip:
+            return real_ip.strip()
+        return request.client.host if request.client else "unknown"
+
+    def _get_limit_for_path(self, path: str) -> int:
+        if any(path.startswith(ep) for ep in self.auth_endpoints):
+            return self.auth_requests_per_minute
+        if any(path.startswith(ep) for ep in self.heavy_endpoints):
+            return self.heavy_requests_per_minute
+        return self.requests_per_minute
+
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        if path in ["/health", "/favicon.ico"] or path.startswith("/assets"):
+            return await call_next(request)
+
+        client_ip = self._get_client_ip(request)
+        limit = self._get_limit_for_path(path)
+
+        async with self.lock:
+            now = time.time()
+            minute_ago = now - 60
+
+            key = f"{client_ip}:{limit}"
+            self.requests[key] = [t for t in self.requests[key] if t > minute_ago]
+
+            if len(self.requests[key]) >= limit:
+                retry_after = int(60 - (now - self.requests[key][0]))
+
+                logger.warning(
+                    f"Rate limit exceeded for {client_ip} on {path}",
+                    extra={
+                        "extra_data": {
+                            "type": "rate_limit",
+                            "client_ip": client_ip,
+                            "path": path,
+                            "limit": limit,
+                        }
+                    }
+                )
+
+                return JSONResponse(
+                    status_code=429,
+                    content={
+                        "success": False,
+                        "error": {
+                            "code": 429,
+                            "message": "Слишком много запросов. Попробуйте позже.",
+                            "retry_after": retry_after
+                        }
+                    },
+                    headers={
+                        "Retry-After": str(retry_after),
+                        "X-RateLimit-Limit": str(limit),
+                        "X-RateLimit-Remaining": "0",
+                    }
+                )
+
+            self.requests[key].append(now)
+            remaining = limit - len(self.requests[key])
+
+        response = await call_next(request)
+        response.headers["X-RateLimit-Limit"] = str(limit)
+        response.headers["X-RateLimit-Remaining"] = str(remaining)
+
+        return response
+
+
+# ═══════════════════════════════════════════════════════════════
+# Exception Handlers
+# ═══════════════════════════════════════════════════════════════
+
+async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    """Обработка HTTP ошибок"""
+    if exc.status_code >= 500:
+        logger.error(f"HTTP {exc.status_code}: {exc.detail}")
+
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "success": False,
+            "error": {
+                "code": exc.status_code,
+                "message": exc.detail
+            }
+        }
+    )
+
+
+async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """Обработка ошибок валидации"""
+    errors = []
+    for error in exc.errors():
+        field_path = ".".join(str(loc) for loc in error["loc"] if loc != "body")
+        msg = error["msg"]
+        error_type = error["type"]
+
+        if error_type == "missing":
+            msg = "Обязательное поле"
+        elif error_type == "string_too_short":
+            msg = "Слишком короткое значение"
+        elif error_type == "string_too_long":
+            msg = "Слишком длинное значение"
+        elif error_type == "literal_error":
+            msg = "Недопустимое значение"
+        elif "pattern" in error_type:
+            msg = "Недопустимые символы"
+
+        errors.append({"field": field_path, "message": msg})
+
+    logger.warning(f"Validation error on {request.url.path}: {errors}")
+
+    return JSONResponse(
+        status_code=422,
+        content={
+            "success": False,
+            "error": {
+                "code": 422,
+                "message": "Ошибка валидации данных",
+                "details": errors
+            }
+        }
+    )
+
+
+async def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """
+    Обработка непредвиденных ошибок
+    ВАЖНО: НЕ раскрываем stack trace клиенту!
+    """
+    logger.error(
+        f"Unhandled exception: {type(exc).__name__}: {str(exc)}",
+        extra={
+            "extra_data": {
+                "type": "unhandled_exception",
+                "path": request.url.path,
+                "traceback": traceback.format_exc()
+            }
+        }
+    )
+
+    return JSONResponse(
+        status_code=500,
+        content={
+            "success": False,
+            "error": {
+                "code": 500,
+                "message": "Внутренняя ошибка сервера"
+            }
+        }
+    )
+
+
+def setup_exception_handlers(app):
+    """Регистрация обработчиков ошибок"""
+    app.add_exception_handler(HTTPException, http_exception_handler)
+    app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+    app.add_exception_handler(RequestValidationError, validation_exception_handler)
+    app.add_exception_handler(Exception, generic_exception_handler)

@@ -165,11 +165,27 @@ class ISSOIFetcher:
             ) as resp:
 
                 if resp.status != 200:
-                    log.debug(f"[{iss_code}] HTTP {resp.status}")
+                    if resp.status == 500:
+                        log.error(f"[{iss_code}] Ошибка сервера (500). MOEX ISS временно недоступен.")
+                    elif resp.status == 502:
+                        log.error(f"[{iss_code}] Bad Gateway (502). Проблемы с MOEX.")
+                    elif resp.status == 503:
+                        log.error(f"[{iss_code}] Сервис недоступен (503). Техработы на MOEX.")
+                    elif resp.status == 404:
+                        log.debug(f"[{iss_code}] Не найден (404)")
+                    else:
+                        log.warning(f"[{iss_code}] HTTP {resp.status}")
                     self.stats['errors'] += 1
                     return None
 
-                data = await resp.json()
+                try:
+                    data = await resp.json()
+                except Exception as json_err:
+                    log.error(f"[{iss_code}] Ошибка парсинга JSON: {json_err}. API изменился?")
+                    text = await resp.text()
+                    log.debug(f"    Ответ: {text[:300]}")
+                    self.stats['errors'] += 1
+                    return None
 
                 rows = data.get('open_positions', {}).get('data', [])
                 columns = data.get('open_positions', {}).get('columns', [])
@@ -182,11 +198,20 @@ class ISSOIFetcher:
                 return [dict(zip(columns, row)) for row in rows]
 
         except asyncio.TimeoutError:
-            log.error(f"[{iss_code}] Таймаут")
+            log.error(f"[{iss_code}] Таймаут соединения (30с). MOEX ISS не отвечает.")
+            self.stats['errors'] += 1
+            return None
+        except aiohttp.ClientConnectorError as e:
+            log.error(f"[{iss_code}] Ошибка соединения: {e}. Проверьте интернет.")
+            self.stats['errors'] += 1
+            return None
+        except aiohttp.ServerDisconnectedError:
+            log.error(f"[{iss_code}] Сервер разорвал соединение.")
             self.stats['errors'] += 1
             return None
         except Exception as e:
-            log.debug(f"[{iss_code}] Ошибка: {e}")
+            log.error(f"[{iss_code}] Неизвестная ошибка: {type(e).__name__}: {e}")
+            log.debug(f"    Traceback:", exc_info=True)
             self.stats['errors'] += 1
             return None
 

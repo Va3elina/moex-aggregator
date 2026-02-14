@@ -1,0 +1,80 @@
+# api/models/user.py
+"""
+Модель пользователя для базы данных.
+"""
+
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text
+from sqlalchemy.sql import func
+from enum import Enum
+
+from api.database import Base
+
+
+class UserRole(str, Enum):
+    """
+    Роли пользователей.
+    ВАЖНО: значения должны быть lowercase — так они хранятся в PostgreSQL!
+    """
+    USER = "user"  # ← lowercase!
+    PRO = "pro"
+    ADMIN = "admin"
+
+
+class User(Base):
+    """Таблица пользователей."""
+    __tablename__ = "users"
+
+    # === Идентификация ===
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String(255), unique=True, index=True, nullable=False)
+
+    # === Безопасность ===
+    hashed_password = Column(String(255), nullable=False)
+
+    # === Профиль ===
+    username = Column(String(50), unique=True, index=True, nullable=True)
+
+    # === Роль и доступ ===
+    # Используем String вместо SQLEnum для совместимости с существующим enum в БД
+    role = Column(String(20), default="user", nullable=False)
+
+    is_active = Column(Boolean, default=True, nullable=False)
+    is_verified = Column(Boolean, default=False, nullable=False)
+
+    # === Защита от брутфорса ===
+    failed_login_attempts = Column(Integer, default=0, nullable=False)
+    locked_until = Column(DateTime(timezone=True), nullable=True)
+
+    # === Метаданные ===
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
+
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False
+    )
+
+    last_login_at = Column(DateTime(timezone=True), nullable=True)
+    last_login_ip = Column(String(45), nullable=True)
+
+    def __repr__(self):
+        return f"<User {self.email} ({self.role})>"
+
+
+class RefreshToken(Base):
+    """Таблица refresh токенов."""
+    __tablename__ = "refresh_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, index=True, nullable=False)
+    token_hash = Column(String(255), unique=True, nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    is_revoked = Column(Boolean, default=False, nullable=False)
+    user_agent = Column(String(500), nullable=True)
+    ip_address = Column(String(45), nullable=True)

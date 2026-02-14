@@ -1,14 +1,15 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, ExternalLink } from 'lucide-react';
+import { ArrowRight, ExternalLink, Activity, TrendingUp, TrendingDown, LayoutGrid, MessageCircle, BarChart3, Compass } from 'lucide-react';
 import SimpleChart from '../components/SimpleChart';
-import { getChartData } from '../services/api';
+import { getChartData, getFearIndex, getFearIndexHistory } from '../services/api';
+import type { FearIndexResponse, FearIndexHistoryResponse } from '../services/api';
 
 // Типы
 interface HeatmapStock {
   sec_id: string;
   name: string;
-  change_1d: number;
+  change_1m: number;
 }
 
 interface TelegramPost {
@@ -18,18 +19,45 @@ interface TelegramPost {
   time: string;
 }
 
+// Цвета для Fear Index
+const FEAR_COLORS: Record<string, string> = {
+  'Extreme Greed': '#22c55e',
+  'Greed': '#84cc16',
+  'Neutral': '#eab308',
+  'Fear': '#f97316',
+  'Extreme Fear': '#ef4444',
+};
+
+const FEAR_LABELS_RU: Record<string, string> = {
+  'Extreme Greed': 'Экстремальная жадность',
+  'Greed': 'Жадность',
+  'Neutral': 'Нейтрально',
+  'Fear': 'Страх',
+  'Extreme Fear': 'Экстремальный страх',
+};
+
+function getFearColorByScore(score: number): string {
+  if (score < 25) return FEAR_COLORS['Extreme Greed'];
+  if (score < 45) return FEAR_COLORS['Greed'];
+  if (score < 55) return FEAR_COLORS['Neutral'];
+  if (score < 75) return FEAR_COLORS['Fear'];
+  return FEAR_COLORS['Extreme Fear'];
+}
+
 export default function OverviewPage() {
-  const [fearIndex] = useState(62);
-  const [yesterdayFear] = useState(58);
-  const [weekAgoFear] = useState(45);
+  // Fear Index state
+  const [fearData, setFearData] = useState<FearIndexResponse | null>(null);
+  const [fearHistory, setFearHistory] = useState<FearIndexHistoryResponse | null>(null);
+  const [fearLoading, setFearLoading] = useState(true);
+
   const [heatmapData, setHeatmapData] = useState<HeatmapStock[]>([]);
   const [heatmapLoading, setHeatmapLoading] = useState(true);
 
   // OI данные
   const [oiLoading, setOiLoading] = useState(true);
-  const [oiChartData, setOiChartData] = useState<{time: string; value: number}[]>([]);
-  const [oiBuys, setOiBuys] = useState<{time: string; value: number}[]>([]);
-  const [oiSells, setOiSells] = useState<{time: string; value: number}[]>([]);
+  const [oiChartData, setOiChartData] = useState<{ time: string; value: number }[]>([]);
+  const [oiBuys, setOiBuys] = useState<{ time: string; value: number }[]>([]);
+  const [oiSells, setOiSells] = useState<{ time: string; value: number }[]>([]);
 
   // Telegram посты (mock)
   const [telegramPosts] = useState<TelegramPost[]>([
@@ -53,11 +81,30 @@ export default function OverviewPage() {
     }
   ]);
 
-  // Загрузка heatmap
+  // Загрузка Fear Index
+  useEffect(() => {
+    async function loadFearIndex() {
+      try {
+        const [current, history] = await Promise.all([
+          getFearIndex(),
+          getFearIndexHistory('1m')
+        ]);
+        setFearData(current);
+        setFearHistory(history);
+      } catch (err) {
+        console.error('Ошибка загрузки Fear Index:', err);
+      } finally {
+        setFearLoading(false);
+      }
+    }
+    loadFearIndex();
+  }, []);
+
+  // Загрузка heatmap (за месяц — более стабильные данные)
   useEffect(() => {
     async function loadHeatmap() {
       try {
-        const resp = await fetch('/api/heatmap/stocks');
+        const resp = await fetch('/api/heatmap/stocks?size_by=value_1m&color_by=change_1m&group_by=none');
         const data = await resp.json();
         const stocks = (data.stocks || []).slice(0, 12);
         setHeatmapData(stocks);
@@ -106,107 +153,137 @@ export default function OverviewPage() {
     loadOI();
   }, []);
 
-  // Цвет для Fear Index
-  const getFearColor = (value: number) => {
-    if (value <= 25) return '#FF4D4D';
-    if (value <= 45) return '#FF8C00';
-    if (value <= 55) return '#FFD700';
-    if (value <= 75) return '#C8FF2E';
-    return '#2EE59D';
+  // Расчёт изменений Fear Index
+  const getYesterdayFear = () => {
+    if (!fearHistory?.history?.length || fearHistory.history.length < 2) return null;
+    return fearHistory.history[fearHistory.history.length - 2]?.fear_index;
   };
 
-  const getFearText = (value: number) => {
-    if (value <= 25) return 'Сильный страх';
-    if (value <= 45) return 'Страх';
-    if (value <= 55) return 'Нейтрально';
-    if (value <= 75) return 'Умеренная жадность';
-    return 'Сильная жадность';
-  };
+  const fearIndex = fearData?.fear_index ?? 50;
+  const fearColor = getFearColorByScore(fearIndex);
+  const yesterdayFear = getYesterdayFear();
+  const fearChange = yesterdayFear ? fearIndex - yesterdayFear : 0;
 
-  // Цвет для heatmap
+  // Цвет для heatmap (для месячных данных — шире диапазон)
   const getHeatmapColor = (change: number) => {
-    if (change >= 2) return 'bg-[#22C55E]';
-    if (change >= 0.5) return 'bg-[#16A34A]';
-    if (change >= 0) return 'bg-[#15803D]';
-    if (change >= -0.5) return 'bg-[#991B1B]';
-    if (change >= -2) return 'bg-[#DC2626]';
-    return 'bg-[#EF4444]';
+    if (change >= 10) return 'bg-[#16A34A]';
+    if (change >= 5) return 'bg-[#22C55E]';
+    if (change >= 2) return 'bg-[#4ADE80]';
+    if (change >= 0) return 'bg-[#86EFAC]';
+    if (change >= -2) return 'bg-[#FCA5A5]';
+    if (change >= -5) return 'bg-[#F87171]';
+    if (change >= -10) return 'bg-[#EF4444]';
+    return 'bg-[#DC2626]';
   };
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-8">
       {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-4xl font-bold text-[#F4F6FA] mb-2">Обзор рынка</h1>
-        <p className="text-[#A7ADBC]">
-          Аналитика и индикаторы настроений российского рынка в реальном времени
-        </p>
+      <div className="flex items-center gap-3 mb-6">
+        <div className="p-3 bg-gradient-to-br from-[#C8FF2E] to-[#22c55e] rounded-xl">
+          <Compass className="w-6 h-6 text-black" />
+        </div>
+        <div>
+          <h1 className="text-2xl font-bold text-theme-primary">Обзор рынка</h1>
+          <p className="text-theme-secondary text-sm">Аналитика и индикаторы в реальном времени</p>
+        </div>
       </div>
 
       {/* Widgets Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
 
-        {/* Fear Index Widget */}
+        {/* Fear Index Widget — УЛУЧШЕННЫЙ */}
         <Link
           to="/fear"
-          className="bg-[#1A1F2E] border border-white/10 rounded-2xl p-6 hover:border-[#C8FF2E]/30 transition-all group flex flex-col"
+          className="widget p-6 hover:border-[#C8FF2E]/30 transition-all group flex flex-col"
         >
+          {/* Header */}
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-[#F4F6FA]">Индекс страха</h2>
-            <ArrowRight size={18} className="text-[#A7ADBC] group-hover:text-[#C8FF2E] transition-colors" />
-          </div>
-
-          {/* Circular Gauge */}
-          <div className="flex justify-center mb-4 flex-1">
-            <div className="relative w-32 h-32">
-              <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
-                <circle cx="50" cy="50" r="40" fill="none" stroke="#2A2F3E" strokeWidth="10" />
-                <circle
-                  cx="50" cy="50" r="40" fill="none"
-                  stroke={getFearColor(fearIndex)}
-                  strokeWidth="10"
-                  strokeLinecap="round"
-                  strokeDasharray={`${(fearIndex / 100) * 251} 251`}
-                  className="transition-all duration-1000"
-                />
-              </svg>
-              <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-3xl font-bold" style={{ color: getFearColor(fearIndex) }}>
-                  {fearIndex}
-                </span>
-              </div>
+            <div className="flex items-center gap-2">
+              <Activity size={20} style={{ color: fearColor }} />
+              <h2 className="text-xl font-semibold text-theme-primary">Индекс страха</h2>
             </div>
+            <ArrowRight size={18} className="text-theme-secondary group-hover:text-[#C8FF2E] transition-colors" />
           </div>
 
-          <div className="text-center mb-4">
-            <span className="text-sm text-[#A7ADBC]">{getFearText(fearIndex)}</span>
+          {/* Main Value */}
+          <div className="flex-1 flex flex-col items-center justify-center py-8">
+            {fearLoading ? (
+              <div className="w-10 h-10 border-2 border-[#C8FF2E] border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <>
+                {/* Большое число */}
+                <div
+                  className="text-8xl font-bold mb-4 transition-all duration-500"
+                  style={{ color: fearColor }}
+                >
+                  {fearIndex.toFixed(0)}
+                </div>
+
+                {/* Метка */}
+                <div
+                  className="text-base font-medium px-4 py-2 rounded-full mb-4"
+                  style={{
+                    backgroundColor: `${fearColor}22`,
+                    color: fearColor,
+                    border: `1px solid ${fearColor}44`
+                  }}
+                >
+                  {fearData?.classification ? FEAR_LABELS_RU[fearData.classification] || fearData.classification : '—'}
+                </div>
+
+                {/* Изменение */}
+                <div className="flex items-center gap-2 text-base">
+                  {fearChange > 0 ? (
+                    <TrendingUp size={18} className="text-[#ef4444]" />
+                  ) : fearChange < 0 ? (
+                    <TrendingDown size={18} className="text-[#22c55e]" />
+                  ) : null}
+                  <span className={fearChange > 0 ? 'text-[#ef4444]' : fearChange < 0 ? 'text-[#22c55e]' : 'text-theme-secondary'}>
+                    {fearChange > 0 ? '+' : ''}{fearChange.toFixed(1)} за день
+                  </span>
+                </div>
+              </>
+            )}
           </div>
 
-          {/* Historical */}
-          <div className="space-y-2 text-sm border-t border-white/10 pt-4">
-            <div className="flex justify-between">
-              <span className="text-[#A7ADBC]">Вчера</span>
-              <span className="text-[#F4F6FA] font-medium">{yesterdayFear}</span>
+          {/* Scale */}
+          <div className="mt-auto">
+            <div className="h-3 rounded-full overflow-hidden flex">
+              <div className="flex-1 bg-[#22c55e]" />
+              <div className="flex-1 bg-[#84cc16]" />
+              <div className="flex-1 bg-[#eab308]" />
+              <div className="flex-1 bg-[#f97316]" />
+              <div className="flex-1 bg-[#ef4444]" />
             </div>
-            <div className="flex justify-between">
-              <span className="text-[#A7ADBC]">Неделю назад</span>
-              <span className="text-[#F4F6FA] font-medium">{weekAgoFear}</span>
+            <div className="flex justify-between mt-2 text-sm text-theme-secondary">
+              <span>Жадность</span>
+              <span>Страх</span>
             </div>
-          </div>
-
-          <div className="mt-4 pt-4 border-t border-white/10 text-center">
-            <span className="text-[#A7ADBC] text-sm">Открыть</span>
+            {/* Indicator */}
+            <div className="relative h-0">
+              <div
+                className="absolute -top-5 w-1 h-4 bg-white rounded-full transition-all duration-500"
+                style={{ left: `${fearIndex}%`, transform: 'translateX(-50%)' }}
+              />
+            </div>
           </div>
         </Link>
 
         {/* Market Heatmap Widget */}
         <Link
           to="/heatmap"
-          className="bg-[#1A1F2E] border border-white/10 rounded-2xl p-6 hover:border-[#C8FF2E]/30 transition-all group flex flex-col"
+          className="widget p-6 hover:border-[#C8FF2E]/30 transition-all group flex flex-col"
         >
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-[#F4F6FA]">Карта рынка</h2>
-            <ArrowRight size={18} className="text-[#A7ADBC] group-hover:text-[#C8FF2E] transition-colors" />
+            <div className="flex items-center gap-2">
+              <LayoutGrid size={20} className="text-[#C8FF2E]" />
+              <div>
+                <h2 className="text-xl font-semibold text-theme-primary">Карта рынка</h2>
+                <span className="text-xs text-theme-secondary">За месяц</span>
+              </div>
+            </div>
+            <ArrowRight size={18} className="text-theme-secondary group-hover:text-[#C8FF2E] transition-colors" />
           </div>
 
           {/* Mini Heatmap */}
@@ -220,11 +297,11 @@ export default function OverviewPage() {
                 {heatmapData.map((stock) => (
                   <div
                     key={stock.sec_id}
-                    className={`${getHeatmapColor(stock.change_1d)} rounded-lg p-3 text-center aspect-square flex flex-col items-center justify-center`}
+                    className={`${getHeatmapColor(stock.change_1m)} rounded-lg p-2 text-center aspect-square flex flex-col items-center justify-center shadow-lg`}
                   >
-                    <div className="text-white text-xs font-bold">{stock.sec_id}</div>
-                    <div className="text-white/80 text-[10px]">
-                      {stock.change_1d >= 0 ? '+' : ''}{stock.change_1d?.toFixed(1)}%
+                    <div className="text-white text-sm font-bold drop-shadow-md">{stock.sec_id}</div>
+                    <div className="text-white text-xs font-semibold drop-shadow-md">
+                      {stock.change_1m >= 0 ? '+' : ''}{stock.change_1m?.toFixed(1)}%
                     </div>
                   </div>
                 ))}
@@ -233,19 +310,22 @@ export default function OverviewPage() {
           </div>
 
           <div className="mt-4 pt-4 border-t border-white/10 text-center">
-            <span className="text-[#A7ADBC] text-sm">Открыть</span>
+            <span className="text-theme-secondary text-sm">Открыть</span>
           </div>
         </Link>
 
         {/* Telegram Widget */}
-        <div className="bg-[#1A1F2E] border border-white/10 rounded-2xl p-6 flex flex-col">
+        <div className="widget p-6 flex flex-col">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-[#F4F6FA]">Новости из Telegram</h2>
+            <div className="flex items-center gap-2">
+              <MessageCircle size={20} className="text-[#3B82F6]" />
+              <h2 className="text-xl font-semibold text-theme-primary">Новости из Telegram</h2>
+            </div>
             <a
               href="https://t.me/Thor_INV"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-[#A7ADBC] hover:text-[#C8FF2E] transition-colors"
+              className="text-theme-secondary hover:text-[#C8FF2E] transition-colors"
             >
               <ExternalLink size={18} />
             </a>
@@ -255,13 +335,13 @@ export default function OverviewPage() {
           <div className="space-y-4 flex-1">
             {telegramPosts.map((post) => (
               <div key={post.id}>
-                <h3 className="text-[#F4F6FA] font-medium text-sm mb-1">
+                <h3 className="text-theme-primary font-medium text-sm mb-1">
                   {post.title}
                 </h3>
-                <p className="text-[#A7ADBC] text-xs line-clamp-2 mb-1">
+                <p className="text-theme-secondary text-xs line-clamp-2 mb-1">
                   {post.preview}
                 </p>
-                <span className="text-[#5E6576] text-xs">{post.time}</span>
+                <span className="text-theme-muted text-xs">{post.time}</span>
               </div>
             ))}
           </div>
@@ -270,7 +350,7 @@ export default function OverviewPage() {
             href="https://t.me/Thor_INV"
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-4 pt-4 border-t border-white/10 flex items-center justify-center gap-2 text-[#A7ADBC] text-sm hover:text-[#C8FF2E] transition-colors"
+            className="mt-4 pt-4 border-t border-white/10 flex items-center justify-center gap-2 text-theme-secondary text-sm hover:text-[#C8FF2E] transition-colors"
           >
             Открыть канал <ExternalLink size={14} />
           </a>
@@ -278,15 +358,18 @@ export default function OverviewPage() {
       </div>
 
       {/* Open Interest Preview */}
-      <div className="bg-[#1A1F2E] border border-white/10 rounded-2xl p-6">
+      <div className="widget p-6">
         <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-xl font-semibold text-[#F4F6FA]">Открытый интерес</h2>
-            <p className="text-sm text-[#A7ADBC]">Сбербанк (SR) • Физлица • 1 месяц</p>
+          <div className="flex items-center gap-3">
+            <BarChart3 size={24} className="text-[#6366f1]" />
+            <div>
+              <h2 className="text-xl font-semibold text-theme-primary">Открытый интерес</h2>
+              <p className="text-sm text-theme-secondary">Сбербанк (SR) • Физлица • 1 месяц</p>
+            </div>
           </div>
           <Link
             to="/oi"
-            className="flex items-center gap-2 text-[#C8FF2E] hover:text-[#9DCC24] transition-colors text-sm font-medium"
+            className="flex items-center gap-2 text-theme-accent hover:text-[#9DCC24] transition-colors text-sm font-medium"
           >
             Полный график <ArrowRight size={16} />
           </Link>

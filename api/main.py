@@ -1,3 +1,8 @@
+"""
+MOEX Analytics API
+Главный файл приложения
+"""
+
 import os
 from pathlib import Path
 from fastapi import FastAPI
@@ -12,15 +17,29 @@ from api.routers import (
     open_interest_router,
     chart_router,
     heatmap_router,
+    funds_router,
+    breadth_router,
+    buffett_router,
 )
 from api.routers import stats
+from api.routers import auth  # ← НОВОЕ: Аутентификация
 
 # Логирование
 from api.logger import setup_logging, get_logger
-from api.middleware import RequestLoggingMiddleware, SlowRequestMiddleware
 
-# Настраиваем логирование (до создания app!)
-# Для продакшена: json_logs=True
+# Middleware
+from api.middleware import (
+    RequestLoggingMiddleware,
+    SlowRequestMiddleware,
+    SecurityHeadersMiddleware,
+    RateLimitMiddleware,
+    setup_exception_handlers,
+)
+
+# ═══════════════════════════════════════════════════════════════
+# Настройка логирования (до создания app!)
+# ═══════════════════════════════════════════════════════════════
+
 setup_logging(
     level=os.getenv("LOG_LEVEL", "INFO"),
     json_logs=os.getenv("JSON_LOGS", "false").lower() == "true",
@@ -28,38 +47,80 @@ setup_logging(
 )
 logger = get_logger()
 
-# Создаём приложение
+# ═══════════════════════════════════════════════════════════════
+# Создание приложения
+# ═══════════════════════════════════════════════════════════════
+
 app = FastAPI(
     title="MOEX Aggregator API",
     description="API для данных Московской биржи: инструменты, свечи, открытый интерес",
     version="1.0.0",
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    openapi_url="/api/openapi.json",
 )
 
-# === MIDDLEWARE (порядок важен — снизу вверх!) ===
+# ═══════════════════════════════════════════════════════════════
+# Обработчики ошибок (без утечки stack trace)
+# ═══════════════════════════════════════════════════════════════
 
-# 4. GZip сжатие (сжимает ответы больше 500 байт)
+setup_exception_handlers(app)
+
+# ═══════════════════════════════════════════════════════════════
+# MIDDLEWARE (порядок важен — выполняются снизу вверх!)
+# ═══════════════════════════════════════════════════════════════
+
+# 6. GZip сжатие
 app.add_middleware(GZipMiddleware, minimum_size=500)
 
-# 3. Настройка CORS (для фронтенда)
+# 5. CORS
+# ВАЖНО: В production заменить "*" на конкретные домены!
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(",")
+
+if ALLOWED_ORIGINS == ["*"]:
+    # Development mode
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    # Production mode
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=ALLOWED_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "DELETE"],
+        allow_headers=["Authorization", "Content-Type"],
+        expose_headers=["X-Request-ID", "X-RateLimit-Remaining"],
+        max_age=600,
+    )
+
+# 4. Security Headers
+app.add_middleware(SecurityHeadersMiddleware)
+
+# 3. Rate Limiting
 app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # TODO: ограничить для продакшена
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    RateLimitMiddleware,
+    requests_per_minute=100,
+    auth_requests_per_minute=10,
+    heavy_requests_per_minute=30,
 )
 
 # 2. Логирование медленных запросов (> 1 сек)
 app.add_middleware(SlowRequestMiddleware, threshold_ms=1000)
 
-# 1. Логирование всех запросов (первый в цепочке)
+# 1. Логирование всех запросов
 app.add_middleware(
     RequestLoggingMiddleware,
     exclude_paths=["/health", "/assets", "/favicon.ico", "/vite.svg"]
 )
 
-
-# === СОБЫТИЯ ЖИЗНЕННОГО ЦИКЛА ===
+# ═══════════════════════════════════════════════════════════════
+# События жизненного цикла
+# ═══════════════════════════════════════════════════════════════
 
 @app.on_event("startup")
 async def startup_event():
@@ -67,15 +128,15 @@ async def startup_event():
         "extra_data": {"type": "startup", "version": "1.0.0"}
     })
 
-
 @app.on_event("shutdown")
 async def shutdown_event():
     logger.info("👋 MOEX Analytics API остановлен", extra={
         "extra_data": {"type": "shutdown"}
     })
 
-
-# === РОУТЕРЫ ===
+# ═══════════════════════════════════════════════════════════════
+# Роутеры API
+# ═══════════════════════════════════════════════════════════════
 
 app.include_router(instruments_router)
 app.include_router(candles_router)
@@ -83,13 +144,18 @@ app.include_router(open_interest_router)
 app.include_router(chart_router)
 app.include_router(stats.router)
 app.include_router(heatmap_router)
+app.include_router(funds_router)
+app.include_router(breadth_router)
+app.include_router(buffett_router)
+app.include_router(auth.router, prefix="/api")  # ← НОВОЕ: /api/auth/*
 
-
-# === СЛУЖЕБНЫЕ ЭНДПОИНТЫ ===
+# ═══════════════════════════════════════════════════════════════
+# Служебные эндпоинты
+# ═══════════════════════════════════════════════════════════════
 
 @app.get("/health")
 def health():
-    """Проверка работоспособности"""
+    """Проверка работоспособности (для load balancer)"""
     return {"status": "ok"}
 
 
@@ -102,17 +168,15 @@ def api_info():
         "status": "running",
     }
 
-
-# === РАЗДАЧА ФРОНТЕНДА ===
+# ═══════════════════════════════════════════════════════════════
+# Раздача фронтенда (SPA)
+# ═══════════════════════════════════════════════════════════════
 
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend" / "dist"
 
 if FRONTEND_DIR.exists():
-    # Статика (JS, CSS, картинки)
     app.mount("/assets", StaticFiles(directory=FRONTEND_DIR / "assets"), name="assets")
 
-
-    # Все остальные пути -> index.html (SPA)
     @app.get("/{path:path}")
     async def serve_spa(path: str):
         file_path = FRONTEND_DIR / path

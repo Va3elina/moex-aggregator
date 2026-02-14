@@ -165,7 +165,7 @@ class AlgopackOIFetcher:
     ) -> Optional[List[dict]]:
         """
         Загружает OI для одного тикера.
-
+        
         Returns: список записей или None
         """
         url = f"{self.BASE_URL}/{ticker}.json"
@@ -180,62 +180,78 @@ class AlgopackOIFetcher:
 
         self.stats['requests'] += 1
 
-        try:
-            async with session.get(
-                url,
-                headers=self.headers,
-                params=params,
-                timeout=aiohttp.ClientTimeout(total=30)
-            ) as resp:
+        # Ретрай внутри запроса для надежности
+        for attempt in range(3):
+            try:
+                async with session.get(
+                    url,
+                    headers=self.headers,
+                    params=params,
+                    timeout=aiohttp.ClientTimeout(total=45) # Увеличил таймаут
+                ) as resp:
 
-                if resp.status == 401:
-                    log.error(f"[{ticker}] Ошибка авторизации (401)")
-                    self.stats['errors'] += 1
-                    return None
+                    if resp.status == 401:
+                        log.error(f"[{ticker}] Ошибка авторизации (401)")
+                        self.stats['errors'] += 1
+                        return None
 
-                if resp.status == 404:
-                    log.debug(f"[{ticker}] Не найден (404)")
-                    self.stats['empty'] += 1
-                    return None
+                    if resp.status == 404:
+                        log.debug(f"[{ticker}] Не найден (404)")
+                        self.stats['empty'] += 1
+                        return None
 
-                if resp.status == 429:
-                    log.warning(f"[{ticker}] Лимит запросов (429), ждём 60 сек...")
-                    await asyncio.sleep(60)
-                    return None
+                    if resp.status == 429:
+                        log.warning(f"[{ticker}] Лимит запросов (429), ждём 60 сек...")
+                        await asyncio.sleep(60)
+                        continue # Retry
 
-                if resp.status != 200:
-                    log.debug(f"[{ticker}] HTTP {resp.status}")
-                    self.stats['errors'] += 1
-                    return None
+                    if resp.status != 200:
+                        if resp.status >= 500:
+                            log.warning(f"[{ticker}] Ошибка сервера {resp.status}, попытка {attempt+1}/3")
+                            await asyncio.sleep(2)
+                            continue
+                        else:
+                            log.warning(f"[{ticker}] HTTP {resp.status}")
+                            self.stats['errors'] += 1
+                            return None
 
-                data = await resp.json()
+                    try:
+                        data = await resp.json()
+                    except Exception as json_err:
+                        log.error(f"[{ticker}] Ошибка парсинга JSON: {json_err}")
+                        self.stats['errors'] += 1
+                        return None
 
-                if "futoi" not in data:
-                    self.stats['empty'] += 1
-                    return None
+                    if "futoi" not in data:
+                        self.stats['empty'] += 1
+                        return None
 
-                futoi = data["futoi"]
-                columns = futoi.get("columns", [])
-                rows = futoi.get("data", [])
+                    futoi = data["futoi"]
+                    columns = futoi.get("columns", [])
+                    rows = futoi.get("data", [])
 
-                if not rows:
-                    self.stats['empty'] += 1
-                    return None
+                    if not rows:
+                        self.stats['empty'] += 1
+                        return None
 
-                self.stats['success'] += 1
+                    self.stats['success'] += 1
 
-                # Преобразуем в list of dict
-                records = [dict(zip(columns, row)) for row in rows]
-                return records
+                    # Преобразуем в list of dict
+                    records = [dict(zip(columns, row)) for row in rows]
+                    return records
 
-        except asyncio.TimeoutError:
-            log.error(f"[{ticker}] Таймаут")
-            self.stats['errors'] += 1
-            return None
-        except Exception as e:
-            log.error(f"[{ticker}] Ошибка: {e}")
-            self.stats['errors'] += 1
-            return None
+            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                if attempt < 2:
+                    await asyncio.sleep(1 + attempt)
+                    continue
+                log.error(f"[{ticker}] Ошибка сети после 3 попыток: {e}")
+                self.stats['errors'] += 1
+                return None
+            except Exception as e:
+                log.error(f"[{ticker}] Неизвестная ошибка: {e}")
+                self.stats['errors'] += 1
+                return None
+        return None
 
 
 # ======================================================================
@@ -344,6 +360,70 @@ class OI5minUpdater:
             self.session_stats['errors'] += 1
             return 0, 0
 
+    def _fill_gaps(self, records: List[dict], ticker: str) -> List[dict]:
+        """Заполняет пропуски в данных (forward fill)"""
+        if not records:
+            return []
+            
+        try:
+            # Используем pandas для удобной работы с временными рядами
+            import pandas as pd
+            
+            df = pd.DataFrame(records)
+            
+            # Собираем datetime колонку
+            df['ts'] = pd.to_datetime(df['tradedate'].astype(str) + ' ' + df['tradetime'].astype(str))
+            
+            # Разделяем по группам (FIZ/YUR)
+            filled_records = []
+            
+            for clgroup in df['clgroup'].unique():
+                group_df = df[df['clgroup'] == clgroup].copy()
+                group_df = group_df.sort_values('ts').set_index('ts')
+                
+                # Создаем полный индекс (5 мин)
+                # Берем начало и конец из данных + округляем до 5 мин
+                start_ts = group_df.index.min().floor('5min')
+                end_ts = group_df.index.max().floor('5min')
+                
+                full_range = pd.date_range(start=start_ts, end=end_ts, freq='5min')
+                
+                # Реиндексация
+                group_df = group_df.reindex(full_range)
+                
+                # Forward Fill значений
+                cols_to_fill = ['pos', 'pos_long', 'pos_short', 'pos_long_num', 'pos_short_num']
+                group_df[cols_to_fill] = group_df[cols_to_fill].ffill()
+                
+                # Заполняем метаданные
+                group_df['ticker'] = ticker
+                group_df['clgroup'] = clgroup
+                group_df['sectype'] = ticker # на всякий случай
+                
+                # Восстанавливаем tradedate/tradetime
+                group_df = group_df.reset_index().rename(columns={'index': 'ts'})
+                group_df = group_df.dropna(subset=['pos']) # Удаляем начальные NaN если есть
+                
+                group_df['tradedate'] = group_df['ts'].dt.date
+                group_df['tradetime'] = group_df['ts'].dt.time
+                
+                # Заполняем systime текущим временем для новых записей
+                group_df['systime'] = group_df['systime'].fillna(datetime.now().isoformat())
+                
+                # Обратно в dict
+                recs = group_df.to_dict('records')
+                # date/time объекты могут не сериализоваться, но save_records принимает их нормально
+                filled_records.extend(recs)
+                
+            return filled_records
+            
+        except ImportError:
+            log.warning("Pandas не установлен, пропуск заполнения гэпов")
+            return records
+        except Exception as e:
+            log.error(f"Ошибка заполнения гэпов: {e}")
+            return records
+
     async def update_ticker(
         self,
         session: aiohttp.ClientSession,
@@ -357,8 +437,11 @@ class OI5minUpdater:
 
         if not records:
             return 0, 0
+            
+        # Заполняем пропуски
+        filled_records = self._fill_gaps(records, ticker)
 
-        return self.save_records(records)
+        return self.save_records(filled_records)
 
     async def update_all(
         self,

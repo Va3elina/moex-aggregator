@@ -9,7 +9,7 @@ from datetime import datetime, date
 from api.database import get_db
 from api.models import Candle
 from api.schemas import CandleResponse, CandleListResponse
-from api.schemas.validators import IntervalType, validate_safe_id
+from api.schemas.validators import validate_safe_id
 
 router = APIRouter(prefix="/api/candles", tags=["candles"])
 
@@ -17,13 +17,17 @@ router = APIRouter(prefix="/api/candles", tags=["candles"])
 @router.get("/{sec_id}", response_model=CandleListResponse)
 def get_candles(
         sec_id: str,
-        interval: IntervalType = Query(60, description="Таймфрейм: 5, 60 или 24 минут"),
+        interval: int = Query(60, description="Таймфрейм: 5, 60 или 24 минут"),
         date_from: date | None = Query(None, description="Дата начала (YYYY-MM-DD)"),
         date_to: date | None = Query(None, description="Дата окончания (YYYY-MM-DD)"),
         limit: int = Query(10000, description="Максимум записей", ge=1, le=50000),
         db: Session = Depends(get_db)
 ):
     """Получить свечи по sec_id"""
+
+    # Валидация interval
+    if interval not in {5, 60, 24}:
+        raise HTTPException(status_code=400, detail="interval должен быть 5, 60 или 24")
 
     # Валидация sec_id
     try:

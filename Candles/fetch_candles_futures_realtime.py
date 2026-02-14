@@ -535,14 +535,23 @@ class AlgopackFetcher:
                         continue
 
                     if resp.status != 200:
-                        log.debug(f"[{secid}] HTTP {resp.status}")
+                        if resp.status == 500:
+                            log.error(f"[{secid}] Ошибка сервера (500). MOEX API временно недоступен.")
+                        elif resp.status == 502:
+                            log.error(f"[{secid}] Bad Gateway (502). Проблемы с MOEX.")
+                        elif resp.status == 503:
+                            log.error(f"[{secid}] Сервис недоступен (503). Техработы на MOEX.")
+                        else:
+                            log.warning(f"[{secid}] HTTP {resp.status}")
                         self.stats['errors'] += 1
                         return None
 
                     try:
                         data = await resp.json()
-                    except:
-                        log.warning(f"[{secid}] Ошибка парсинга JSON")
+                    except Exception as json_err:
+                        log.error(f"[{secid}] Ошибка парсинга JSON: {json_err}. API изменился?")
+                        text = await resp.text()
+                        log.debug(f"    Ответ: {text[:300]}")
                         self.stats['errors'] += 1
                         return None
 
@@ -562,11 +571,20 @@ class AlgopackFetcher:
                     await asyncio.sleep(0.05)
 
             except asyncio.TimeoutError:
-                log.error(f"[{secid}] Таймаут")
+                log.error(f"[{secid}] Таймаут соединения (30с). MOEX API не отвечает.")
+                self.stats['errors'] += 1
+                return None
+            except aiohttp.ClientConnectorError as e:
+                log.error(f"[{secid}] Ошибка соединения: {e}. Проверьте интернет.")
+                self.stats['errors'] += 1
+                return None
+            except aiohttp.ServerDisconnectedError:
+                log.error(f"[{secid}] Сервер разорвал соединение.")
                 self.stats['errors'] += 1
                 return None
             except Exception as e:
-                log.error(f"[{secid}] Ошибка: {e}")
+                log.error(f"[{secid}] Неизвестная ошибка: {type(e).__name__}: {e}")
+                log.debug(f"    Traceback:", exc_info=True)
                 self.stats['errors'] += 1
                 return None
 
@@ -591,7 +609,7 @@ class AlgopackFetcher:
 # ======================================================================
 
 def aggregate_to_5min(df_1min: pd.DataFrame) -> pd.DataFrame:
-    """Агрегирует 1-минутные свечи в 5-минутные"""
+    """Агрегирует 1-минутные свечи в 5-минутные с заполнением пропусков"""
 
     if df_1min.empty:
         return pd.DataFrame()
@@ -602,6 +620,7 @@ def aggregate_to_5min(df_1min: pd.DataFrame) -> pd.DataFrame:
     secid = df['secid'].iloc[0]
     sec_id = df['sec_id'].iloc[0] if 'sec_id' in df.columns else None
 
+    # Агрегация
     agg = {
         'open': 'first',
         'high': 'max',
@@ -611,13 +630,39 @@ def aggregate_to_5min(df_1min: pd.DataFrame) -> pd.DataFrame:
         'value': 'sum',
     }
 
-    df_5min = df.groupby('interval_5min').agg(agg).reset_index()
-    df_5min.rename(columns={'interval_5min': 'begin_time'}, inplace=True)
+    df_5min = df.groupby('interval_5min').agg(agg)
+
+    # === Заполнение пропусков (Zero-Fill) ===
+    # Создаем полный индекс от начала до конца с шагом 5 мин
+    full_idx = pd.date_range(start=df_5min.index.min(), end=df_5min.index.max(), freq='5min')
+    
+    # Переиндексация (появятся NaN там где не было торгов)
+    df_5min = df_5min.reindex(full_idx)
+    
+    # Заполнение пропусков
+    # Close протягиваем вперед (ffill)
+    df_5min['close'] = df_5min['close'].ffill()
+    
+    # Open, High, Low заполняем значениями Close (Doji)
+    df_5min['open'] = df_5min['open'].fillna(df_5min['close'])
+    df_5min['high'] = df_5min['high'].fillna(df_5min['close'])
+    df_5min['low'] = df_5min['low'].fillna(df_5min['close'])
+    
+    # Volume и Value заполняем 0
+    df_5min['volume'] = df_5min['volume'].fillna(0)
+    df_5min['value'] = df_5min['value'].fillna(0)
+    
+    # Сброс индекса и форматирование
+    df_5min = df_5min.reset_index().rename(columns={'index': 'begin_time'})
+    
     df_5min['end_time'] = df_5min['begin_time'] + pd.Timedelta(minutes=5)
     df_5min['interval'] = 5
     df_5min['secid'] = secid
     df_5min['sec_id'] = sec_id
     df_5min['type'] = 'futures'
+
+    # Удаляем строки, где close всё ещё NaN (если пропуски были в самом начале)
+    df_5min = df_5min.dropna(subset=['close'])
 
     return df_5min
 

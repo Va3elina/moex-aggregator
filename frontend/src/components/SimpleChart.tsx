@@ -1,5 +1,5 @@
 import { useMemo, useState, useRef, useEffect, useCallback } from 'react';
-import { Download } from 'lucide-react';
+import { Download, BarChart2, TrendingUp } from 'lucide-react';
 
 interface DataPoint {
   time: string;
@@ -17,11 +17,15 @@ interface SimpleChartProps {
   showSecondary?: boolean;
   showThird?: boolean;
   formatValue?: (value: number) => string;
+  formatSecondaryValue?: (value: number) => string;
+  formatThirdValue?: (value: number) => string;
   formatTime?: (time: string) => string;
   loading?: boolean;
   primaryLabel?: string;
   secondaryLabel?: string;
   thirdLabel?: string;
+  allowHistogram?: boolean;
+  histogramDisabled?: boolean;
 }
 
 // Интерполяция между двумя значениями
@@ -91,18 +95,30 @@ export default function SimpleChart({
   showSecondary = false,
   showThird = false,
   formatValue = (v) => v.toLocaleString('ru-RU'),
+  formatSecondaryValue,
+  formatThirdValue,
   formatTime = (t) => {
     const date = new Date(t);
-    return date.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' });
+    return date.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short', year: '2-digit' });
   },
   loading = false,
   primaryLabel = 'Цена',
   secondaryLabel = 'OI',
   thirdLabel = '',
+  allowHistogram = false,
+  histogramDisabled = false,
 }: SimpleChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [width, setWidth] = useState(800);
+  const [chartMode, setChartMode] = useState<'line' | 'histogram'>('line');
+
+  useEffect(() => {
+    if (histogramDisabled && chartMode === 'histogram') {
+      setChartMode('line');
+    }
+  }, [histogramDisabled, chartMode]);
+
   const animationRef = useRef<number | null>(null);
   const [tooltip, setTooltip] = useState<{
     x: number;
@@ -123,6 +139,9 @@ export default function SimpleChart({
     secondary: '',
     third: '',
   });
+
+  // Opacity для OI линий (для fade-in эффекта)
+  const [oiOpacity, setOiOpacity] = useState(1);
 
   // Предыдущие точки для интерполяции
   const prevPointsRef = useRef<{
@@ -145,7 +164,7 @@ export default function SimpleChart({
     return () => window.removeEventListener('resize', updateWidth);
   }, []);
 
-  const padding = { top: 40, right: 30, bottom: 50, left: 80 };
+  const padding = { top: 40, right: 90, bottom: 50, left: 80 };
   const chartWidth = Math.max(width - padding.left - padding.right, 100);
   const chartHeight = height - padding.top - padding.bottom;
 
@@ -223,12 +242,20 @@ export default function SimpleChart({
       }));
     }
 
-    // Y ticks
+    // Y ticks (primary - price)
     const yTickCount = 5;
     const yTicks = Array.from({ length: yTickCount }, (_, i) => {
       const value = yMinVal + ((yMaxVal - yMinVal) * i) / (yTickCount - 1);
       return { value, y: scaleY(value) };
     });
+
+    // Secondary Y ticks (OI - right axis)
+    const secYTicks = allSecondaryValues.length > 0
+      ? Array.from({ length: yTickCount }, (_, i) => {
+        const value = secYMin + ((secYMax - secYMin) * i) / (yTickCount - 1);
+        return { value, y: scaleSecondaryY(value) };
+      })
+      : [];
 
     // X ticks
     const xTickCount = Math.min(7, data.length);
@@ -237,7 +264,7 @@ export default function SimpleChart({
       return { time: data[index].time, x: scaleX(index, data.length) };
     });
 
-    return { points, secondaryPoints, thirdPoints, yTicks, xTicks };
+    return { points, secondaryPoints, thirdPoints, yTicks, secYTicks, xTicks };
   }, [data, secondaryData, thirdData, chartWidth, chartHeight, showSecondary, showThird]);
 
   // Анимация морфинга
@@ -248,7 +275,7 @@ export default function SimpleChart({
     const targetSecondary = targetCalc.secondaryPoints.map(p => ({ x: p.x, y: p.y }));
     const targetThird = targetCalc.thirdPoints.map(p => ({ x: p.x, y: p.y }));
 
-    // Если первый рендер или нет предыдущих данных - показываем сразу с fade
+    // Если первый рендер или нет предыдущих данных - показываем с fade
     if (isFirstRender.current || prevPointsRef.current.primary.length === 0) {
       isFirstRender.current = false;
       prevPointsRef.current = {
@@ -266,29 +293,26 @@ export default function SimpleChart({
         const t = Math.min(elapsed / duration, 1);
         const eased = easeOutCubic(t);
 
-        // Анимируем от нижней границы графика
+        // Анимируем primary от нижней границы графика
         const animatedPrimary = targetPrimary.map(p => ({
           x: p.x,
           y: chartHeight - (chartHeight - p.y) * eased,
         }));
-        const animatedSecondary = targetSecondary.map(p => ({
-          x: p.x,
-          y: chartHeight - (chartHeight - p.y) * eased,
-        }));
-        const animatedThird = targetThird.map(p => ({
-          x: p.x,
-          y: chartHeight - (chartHeight - p.y) * eased,
-        }));
+
+        // OI линии показываем сразу, но с fade opacity
+        setOiOpacity(eased);
 
         setAnimatedPaths({
           primary: pointsToPath(animatedPrimary),
           area: pointsToAreaPath(animatedPrimary, chartHeight),
-          secondary: pointsToPath(animatedSecondary),
-          third: pointsToPath(animatedThird),
+          secondary: pointsToPath(targetSecondary),
+          third: pointsToPath(targetThird),
         });
 
         if (t < 1) {
           animationRef.current = requestAnimationFrame(fadeIn);
+        } else {
+          setOiOpacity(1);
         }
       };
 
@@ -310,22 +334,36 @@ export default function SimpleChart({
       const t = Math.min(elapsed / duration, 1);
       const eased = easeOutCubic(t);
 
-      // Интерполяция всех линий
+      // Интерполяция primary линии
       const interpolatedPrimary = interpolatePoints(fromPrimary, targetPrimary, eased);
-      const interpolatedSecondary = fromSecondary.length > 0 || targetSecondary.length > 0
-        ? interpolatePoints(
-            fromSecondary.length > 0 ? fromSecondary : targetSecondary.map(p => ({ ...p, y: chartHeight })),
-            targetSecondary.length > 0 ? targetSecondary : fromSecondary.map(p => ({ ...p, y: chartHeight })),
-            eased
-          )
-        : [];
-      const interpolatedThird = fromThird.length > 0 || targetThird.length > 0
-        ? interpolatePoints(
-            fromThird.length > 0 ? fromThird : targetThird.map(p => ({ ...p, y: chartHeight })),
-            targetThird.length > 0 ? targetThird : fromThird.map(p => ({ ...p, y: chartHeight })),
-            eased
-          )
-        : [];
+
+      // Интерполяция secondary - только если есть откуда и куда
+      let interpolatedSecondary: { x: number; y: number }[] = [];
+      if (targetSecondary.length > 0) {
+        if (fromSecondary.length > 0) {
+          interpolatedSecondary = interpolatePoints(fromSecondary, targetSecondary, eased);
+        } else {
+          // Появление с fade
+          interpolatedSecondary = targetSecondary;
+          setOiOpacity(eased);
+        }
+      } else if (fromSecondary.length > 0) {
+        // Исчезновение с fade
+        interpolatedSecondary = fromSecondary;
+        setOiOpacity(1 - eased);
+      }
+
+      // Интерполяция third - аналогично
+      let interpolatedThird: { x: number; y: number }[] = [];
+      if (targetThird.length > 0) {
+        if (fromThird.length > 0) {
+          interpolatedThird = interpolatePoints(fromThird, targetThird, eased);
+        } else {
+          interpolatedThird = targetThird;
+        }
+      } else if (fromThird.length > 0) {
+        interpolatedThird = fromThird;
+      }
 
       setAnimatedPaths({
         primary: pointsToPath(interpolatedPrimary),
@@ -343,6 +381,7 @@ export default function SimpleChart({
           secondary: targetSecondary,
           third: targetThird,
         };
+        setOiOpacity(1);
       }
     };
 
@@ -426,22 +465,43 @@ export default function SimpleChart({
     img.src = url;
   }, [width, height]);
 
-  // Поиск ближайшей точки по X координате
-  const findClosestPoint = (points: typeof targetCalc.points, mouseX: number) => {
+  // Интерполяция точки на линии по X координате (ОПТИМИЗИРОВАНО: бинарный поиск O(log n))
+  const interpolatePointOnLine = (points: typeof targetCalc.points, mouseX: number) => {
     if (points.length === 0) return null;
-    let closest = points[0];
-    let closestDist = Math.abs(points[0].x - mouseX);
-    for (const p of points) {
-      const dist = Math.abs(p.x - mouseX);
-      if (dist < closestDist) {
-        closestDist = dist;
-        closest = p;
+    if (points.length === 1) return points[0];
+
+    // Бинарный поиск вместо линейного (O(log n) вместо O(n))
+    let left = 0;
+    let right = points.length - 1;
+
+    // Если mouseX за пределами — вернуть ближайшую крайнюю точку
+    if (mouseX <= points[0].x) return points[0];
+    if (mouseX >= points[right].x) return points[right];
+
+    while (left < right - 1) {
+      const mid = Math.floor((left + right) / 2);
+      if (points[mid].x <= mouseX) {
+        left = mid;
+      } else {
+        right = mid;
       }
     }
-    return closest;
+
+    const p1 = points[left];
+    const p2 = points[right];
+
+    // Линейная интерполяция между найденными точками
+    const t = (mouseX - p1.x) / (p2.x - p1.x);
+    return {
+      x: mouseX,
+      y: p1.y + (p2.y - p1.y) * t,
+      value: p1.value + (p2.value - p1.value) * t,
+      time: p1.time, // Используем время ближайшей точки
+    };
   };
 
   const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+
     if (targetCalc.points.length === 0) return;
 
     const svg = e.currentTarget;
@@ -453,9 +513,9 @@ export default function SimpleChart({
       return;
     }
 
-    const primaryPoint = findClosestPoint(targetCalc.points, mouseX);
-    const secondaryPoint = showSecondary ? findClosestPoint(targetCalc.secondaryPoints, mouseX) : null;
-    const thirdPoint = showThird ? findClosestPoint(targetCalc.thirdPoints, mouseX) : null;
+    const primaryPoint = interpolatePointOnLine(targetCalc.points, mouseX);
+    const secondaryPoint = showSecondary ? interpolatePointOnLine(targetCalc.secondaryPoints, mouseX) : null;
+    const thirdPoint = showThird ? interpolatePointOnLine(targetCalc.thirdPoints, mouseX) : null;
 
     if (!primaryPoint) return;
 
@@ -479,8 +539,8 @@ export default function SimpleChart({
   // Показываем полный лоадер только если нет данных вообще
   if (data.length === 0 && loading) {
     return (
-      <div ref={containerRef} className="rounded-2xl flex items-center justify-center bg-[#121523]" style={{ height }}>
-        <div className="flex items-center gap-3 text-[#A7ADBC]">
+      <div ref={containerRef} className="rounded-2xl flex items-center justify-center bg-theme-secondary" style={{ height }}>
+        <div className="flex items-center gap-3 text-theme-secondary">
           <div className="w-6 h-6 border-2 border-[#C8FF2E] border-t-transparent rounded-full animate-spin" />
           <span className="text-lg">Загрузка...</span>
         </div>
@@ -490,8 +550,8 @@ export default function SimpleChart({
 
   if (data.length === 0 && !loading) {
     return (
-      <div ref={containerRef} className="rounded-2xl flex items-center justify-center bg-[#121523]" style={{ height }}>
-        <p className="text-[#A7ADBC] text-lg">Нет данных для отображения</p>
+      <div ref={containerRef} className="rounded-2xl flex items-center justify-center bg-theme-secondary" style={{ height }}>
+        <p className="text-theme-secondary text-lg">Нет данных для отображения</p>
       </div>
     );
   }
@@ -502,15 +562,27 @@ export default function SimpleChart({
   const changePercent = firstValue !== 0 ? (change / firstValue) * 100 : 0;
   const isPositive = change >= 0;
 
-  const tooltipX = Math.min(Math.max(tooltip.x, padding.left + 10), width - 180);
-  const tooltipY = Math.max(30, Math.min(tooltip.primaryY - 70, height - 140));
-
   return (
-    <div ref={containerRef} className="rounded-2xl p-5 bg-[#121523] border border-white/10 relative">
+    <div ref={containerRef} className="rounded-2xl p-5 bg-theme-secondary border border-theme relative">
+      {/* Кнопка переключения линия/гистограмма */}
+      {allowHistogram && (
+        <button
+          onClick={() => !histogramDisabled && setChartMode(m => m === 'line' ? 'histogram' : 'line')}
+          disabled={histogramDisabled}
+          className={`absolute top-4 right-14 z-10 flex items-center justify-center w-9 h-9 bg-theme-tertiary/90 backdrop-blur-sm rounded-lg border border-theme transition-all duration-150 ease-out ${histogramDisabled
+            ? 'text-theme-muted/40 cursor-not-allowed opacity-40'
+            : 'text-theme-secondary hover:text-[#C8FF2E] hover:border-[#C8FF2E]/30 hover:scale-110 active:scale-95 active:bg-[#0B0D12]'
+            }`}
+          title={histogramDisabled ? 'Гистограмма недоступна в этом режиме' : chartMode === 'line' ? 'Переключить на гистограмму' : 'Переключить на линию'}
+        >
+          {chartMode === 'line' ? <BarChart2 size={18} /> : <TrendingUp size={18} />}
+        </button>
+      )}
+
       {/* Кнопка скачивания */}
       <button
         onClick={downloadChart}
-        className="absolute top-4 right-4 z-10 flex items-center justify-center w-9 h-9 bg-[#1A1F2E]/90 backdrop-blur-sm rounded-lg border border-white/10 text-[#A7ADBC] hover:text-[#C8FF2E] hover:border-[#C8FF2E]/30 hover:scale-110 active:scale-95 active:bg-[#0B0D12] transition-all duration-150 ease-out"
+        className="absolute top-4 right-4 z-10 flex items-center justify-center w-9 h-9 bg-theme-tertiary/90 backdrop-blur-sm rounded-lg border border-theme text-theme-secondary hover:text-[#C8FF2E] hover:border-[#C8FF2E]/30 hover:scale-110 active:scale-95 active:bg-[#0B0D12] transition-all duration-150 ease-out"
         title="Скачать график как PNG"
       >
         <Download size={18} />
@@ -518,22 +590,21 @@ export default function SimpleChart({
 
       {/* Маленький индикатор загрузки поверх графика */}
       {loading && (
-        <div className="absolute top-4 right-16 z-10 flex items-center gap-2 bg-[#1A1F2E]/90 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-white/10">
+        <div className={`absolute top-4 ${allowHistogram ? 'right-[6.5rem]' : 'right-16'} z-10 flex items-center gap-2 bg-theme-tertiary/90 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-theme`}>
           <div className="w-4 h-4 border-2 border-[#C8FF2E] border-t-transparent rounded-full animate-spin" />
-          <span className="text-xs text-[#A7ADBC]">Обновление...</span>
+          <span className="text-xs text-theme-secondary">Обновление...</span>
         </div>
       )}
 
-      {/* Заголовок с ценой */}
+      {/* Заголовок с текущим значением */}
       <div className="mb-2 flex items-baseline gap-4">
-        <span className="text-4xl font-bold text-[#F4F6FA] tracking-tight transition-all duration-500">
+        <span className="text-4xl font-bold text-theme-primary tracking-tight">
           {formatValue(currentValue)}
         </span>
-        <span className={`text-base font-semibold px-2 py-0.5 rounded-lg transition-all duration-500 ${
-          isPositive 
-            ? 'text-[#2EE59D] bg-[#2EE59D]/10' 
-            : 'text-[#FF4D4D] bg-[#FF4D4D]/10'
-        }`}>
+        <span className={`text-base font-semibold px-2 py-0.5 rounded-lg ${isPositive
+          ? 'text-[#2EE59D] bg-[#2EE59D]/10'
+          : 'text-[#FF4D4D] bg-[#FF4D4D]/10'
+          }`}>
           {isPositive ? '↑' : '↓'} {Math.abs(changePercent).toFixed(2)}%
         </span>
       </div>
@@ -585,6 +656,22 @@ export default function SimpleChart({
             </g>
           ))}
 
+          {/* Правая ось Y (OI) */}
+          {showSecondary && targetCalc.secYTicks && targetCalc.secYTicks.map((tick, i) => (
+            <text
+              key={`sec-${i}`}
+              x={chartWidth + 12}
+              y={tick.y + 4}
+              textAnchor="start"
+              fill={secondaryColor}
+              fontSize="11"
+              fontWeight="500"
+              opacity="0.8"
+            >
+              {tick.value.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
+            </text>
+          ))}
+
           {/* X метки */}
           {targetCalc.xTicks.map((tick, i) => (
             <text
@@ -610,8 +697,29 @@ export default function SimpleChart({
               />
             )}
 
-            {/* Third линия (продажи) */}
-            {showThird && animatedPaths.third && (
+            {/* Third данные — гистограмма или линия */}
+            {showThird && chartMode === 'histogram' && targetCalc.thirdPoints.length > 0 && (
+              <g opacity={oiOpacity} className="transition-opacity duration-300">
+                {targetCalc.thirdPoints.map((p, i) => {
+                  const barWidth = Math.max((chartWidth / targetCalc.thirdPoints.length) * 0.35, 1);
+                  const barHeight = Math.max(chartHeight - p.y, 0);
+                  return (
+                    <rect
+                      key={`third-bar-${i}`}
+                      x={p.x - barWidth / 2 + barWidth * 0.5}
+                      y={p.y}
+                      width={barWidth}
+                      height={barHeight}
+                      fill={thirdColor}
+                      fillOpacity={0.5}
+                      stroke={thirdColor}
+                      strokeWidth={0.5}
+                    />
+                  );
+                })}
+              </g>
+            )}
+            {showThird && chartMode === 'line' && animatedPaths.third && (
               <path
                 d={animatedPaths.third}
                 fill="none"
@@ -619,11 +727,34 @@ export default function SimpleChart({
                 strokeWidth="2.5"
                 strokeLinecap="round"
                 strokeLinejoin="round"
+                opacity={oiOpacity}
               />
             )}
 
-            {/* Secondary линия (покупки) */}
-            {showSecondary && animatedPaths.secondary && (
+            {/* Secondary данные — гистограмма или линия */}
+            {showSecondary && chartMode === 'histogram' && targetCalc.secondaryPoints.length > 0 && (
+              <g opacity={oiOpacity} className="transition-opacity duration-300">
+                {targetCalc.secondaryPoints.map((p, i) => {
+                  const totalSeries = showThird ? 2 : 1;
+                  const barWidth = Math.max((chartWidth / targetCalc.secondaryPoints.length) * 0.35, 1);
+                  const barHeight = Math.max(chartHeight - p.y, 0);
+                  return (
+                    <rect
+                      key={`sec-bar-${i}`}
+                      x={p.x - barWidth / 2 - (totalSeries > 1 ? barWidth * 0.5 : 0)}
+                      y={p.y}
+                      width={barWidth}
+                      height={barHeight}
+                      fill={secondaryColor}
+                      fillOpacity={0.5}
+                      stroke={secondaryColor}
+                      strokeWidth={0.5}
+                    />
+                  );
+                })}
+              </g>
+            )}
+            {showSecondary && chartMode === 'line' && animatedPaths.secondary && (
               <path
                 d={animatedPaths.secondary}
                 fill="none"
@@ -631,10 +762,11 @@ export default function SimpleChart({
                 strokeWidth="2.5"
                 strokeLinecap="round"
                 strokeLinejoin="round"
+                opacity={oiOpacity}
               />
             )}
 
-            {/* Основная линия */}
+            {/* Основная линия (всегда линия) */}
             {animatedPaths.primary && (
               <path
                 d={animatedPaths.primary}
@@ -709,57 +841,96 @@ export default function SimpleChart({
           )}
         </g>
 
-        {/* Тултип */}
-        {tooltip.visible && (
-          <foreignObject
-            x={tooltipX}
-            y={tooltipY}
-            width="170"
-            height="130"
-          >
-            <div className="bg-[#1A1F2E]/95 backdrop-blur-sm rounded-xl p-3 border border-white/10 shadow-xl">
-              <p className="text-[#A7ADBC] text-xs mb-1">
-                {new Date(tooltip.time).toLocaleDateString('ru-RU', {
-                  day: '2-digit', month: 'short', year: 'numeric'
-                })}
-              </p>
-              <p className="text-[#F4F6FA] font-bold text-lg">
-                {formatValue(tooltip.value)}
-              </p>
-              {showSecondary && tooltip.secondaryValue !== undefined && (
-                <p className="text-sm mt-1" style={{ color: secondaryColor }}>
-                  {secondaryLabel}: {tooltip.secondaryValue.toLocaleString('ru-RU')}
-                </p>
-              )}
-              {showThird && tooltip.thirdValue !== undefined && (
-                <p className="text-sm" style={{ color: thirdColor }}>
-                  {thirdLabel}: {tooltip.thirdValue.toLocaleString('ru-RU')}
-                </p>
-              )}
-            </div>
-          </foreignObject>
-        )}
+        {/* Тултип: дата вверху вертикальной линии + карточка значений */}
+        {tooltip.visible && (() => {
+          const d = new Date(tooltip.time);
+          const dateStr = d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' });
+          const hours = d.getHours();
+          const minutes = d.getMinutes();
+          const dateLabel = (hours !== 0 || minutes !== 0)
+            ? `${dateStr} ${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`
+            : dateStr;
+
+          const cardWidth = 200;
+          const isRightHalf = tooltip.x > padding.left + chartWidth / 2;
+          const cardX = isRightHalf
+            ? tooltip.x - cardWidth - 12
+            : tooltip.x + 12;
+
+          const fmtSecondary = formatSecondaryValue || formatValue;
+          const fmtThird = formatThirdValue || formatValue;
+
+          const lines: { color: string; label: string; value: string }[] = [
+            { color: primaryColor, label: primaryLabel, value: formatValue(tooltip.value) },
+          ];
+          if (showSecondary && tooltip.secondaryValue !== undefined) {
+            lines.push({ color: secondaryColor, label: secondaryLabel, value: fmtSecondary(tooltip.secondaryValue) });
+          }
+          if (showThird && tooltip.thirdValue !== undefined) {
+            lines.push({ color: thirdColor, label: thirdLabel, value: fmtThird(tooltip.thirdValue) });
+          }
+
+          const cardHeight = 8 + lines.length * 26 + 8;
+
+          return (
+            <>
+              {/* Дата — вверху вертикальной линии */}
+              <foreignObject
+                x={Math.min(Math.max(tooltip.x - 55, padding.left), width - padding.right - 110)}
+                y={padding.top - 24}
+                width="110"
+                height="22"
+              >
+                <div className="flex justify-center pointer-events-none">
+                  <span className="text-[11px] text-theme-secondary bg-theme-tertiary/90 backdrop-blur-sm px-2 py-0.5 rounded border border-theme whitespace-nowrap">
+                    {dateLabel}
+                  </span>
+                </div>
+              </foreignObject>
+
+              {/* Карточка значений рядом с курсором */}
+              <foreignObject
+                x={cardX}
+                y={Math.min(Math.max(tooltip.primaryY - cardHeight / 2, padding.top), padding.top + chartHeight - cardHeight)}
+                width={cardWidth}
+                height={cardHeight}
+              >
+                <div className="bg-theme-tertiary/95 backdrop-blur-sm rounded-lg border border-theme shadow-xl pointer-events-none py-1.5 px-3">
+                  {lines.map((line, i) => (
+                    <div key={i} className="flex items-center justify-between gap-2 py-0.5">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: line.color }} />
+                        <span className="text-[11px] text-theme-secondary truncate">{line.label}</span>
+                      </div>
+                      <span className="text-xs font-semibold text-theme-primary whitespace-nowrap">{line.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </foreignObject>
+            </>
+          );
+        })()}
       </svg>
 
       {/* Легенда */}
       <div className="flex gap-6 mt-4 text-sm flex-wrap justify-center">
         <span className="flex items-center gap-2">
           <span className="w-3 h-3 rounded-full" style={{ backgroundColor: primaryColor }} />
-          <span className="text-[#A7ADBC]">{primaryLabel}</span>
+          <span className="text-theme-secondary">{primaryLabel}</span>
         </span>
         {showSecondary && (
           <span className="flex items-center gap-2">
             <span className="w-3 h-3 rounded-full" style={{ backgroundColor: secondaryColor }} />
-            <span className="text-[#A7ADBC]">{secondaryLabel}</span>
+            <span className="text-theme-secondary">{secondaryLabel}</span>
           </span>
         )}
         {showThird && (
           <span className="flex items-center gap-2">
             <span className="w-3 h-3 rounded-full" style={{ backgroundColor: thirdColor }} />
-            <span className="text-[#A7ADBC]">{thirdLabel}</span>
+            <span className="text-theme-secondary">{thirdLabel}</span>
           </span>
         )}
       </div>
-    </div>
+    </div >
   );
 }

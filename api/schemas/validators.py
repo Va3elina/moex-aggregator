@@ -31,7 +31,7 @@ def validate_safe_id(value: str, field_name: str = "значение") -> str:
         raise ValueError(f"{field_name} слишком длинный (макс. 50 символов)")
     if not SAFE_ID_PATTERN.match(value):
         raise ValueError(f"{field_name} содержит недопустимые символы (разрешены: A-Z, 0-9, _, -)")
-    return value.upper()
+    return value  # Сохраняем оригинальный регистр (Si, а не SI)
 
 
 def validate_search_query(value: str) -> str:
@@ -56,14 +56,16 @@ def validate_search_query(value: str) -> str:
 # ═══════════════════════════════════════════════════════════════
 
 # Допустимые значения
-IntervalType = Literal[5, 60, 24]
+# Допустимые интервалы (FastAPI конвертирует строки в int автоматически)
+ALLOWED_INTERVALS = {5, 60, 24}
+IntervalType = int  # Валидация будет в роутерах
 ClgroupType = Literal["FIZ", "YUR"]
 PeriodType = Literal["1d", "1w", "1m", "3m", "6m", "1y", "all"]
 InstTypeType = Literal["futures", "stock"]
 SortByType = Literal["oi", "change"]
 HeatmapSizeByType = Literal["value_1d", "value_1w", "value_1m", "volume_1d", "volume_1w", "volume_1m"]
 HeatmapColorByType = Literal["change_1d", "change_1w", "change_1m"]
-HeatmapGroupByType = Literal["sector", "all"]
+HeatmapGroupByType = Literal["sector", "none"]
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -209,7 +211,7 @@ class HeatmapParams(BaseModel):
     """Параметры карты рынка"""
     size_by: HeatmapSizeByType = "value_1d"
     color_by: HeatmapColorByType = "change_1d"
-    group_by: HeatmapGroupByType = "sector"
+    group_by: HeatmapGroupByType = "none"
 
 
 # ═══════════════════════════════════════════════════════════════

@@ -47,7 +47,7 @@ async def get_stats(
             SUM(pos_long) as total_long,
             SUM(ABS(pos_short)) as total_short,
             SUM(pos_long) + SUM(ABS(pos_short)) as total_oi,
-            SUM(pos) as net_position,
+            SUM(pos_long + pos_short) as net_position,
             SUM(pos_long_num) as total_long_num,
             SUM(pos_short_num) as total_short_num
         FROM open_interest 

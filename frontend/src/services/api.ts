@@ -164,3 +164,280 @@ export async function getHeatmapData(
   if (!response.ok) throw new Error('Failed to fetch heatmap data');
   return response.json();
 }
+
+// ==================== ФОНДЫ ====================
+
+export interface FundDataPoint {
+  date: string;
+  nav: number | null;
+}
+
+export interface FundInfo {
+  fund_id: number;
+  ticker: string;
+  name: string;
+  data: FundDataPoint[];
+}
+
+export interface IndexDataPoint {
+  date: string;
+  close: number | null;
+}
+
+export interface FundsChartResponse {
+  category: string;
+  category_name: string;
+  period: string;
+  funds: FundInfo[];
+  total_nav: FundDataPoint[];
+  index: {
+    secid: string;
+    data: IndexDataPoint[];
+  };
+}
+
+export interface FundsSummaryCategory {
+  category: string;
+  name: string;
+  index: string;
+  funds_count: number;
+  total_nav: number;
+  total_nav_formatted: string;
+  change_pct: number;
+  last_date: string | null;
+}
+
+export interface FundsSummaryResponse {
+  categories: FundsSummaryCategory[];
+}
+
+export type FundCategory = 'money_market' | 'stocks' | 'bonds' | 'gold';
+export type FundPeriod = '1w' | '1m' | '3m' | '6m' | '1y' | '2y' | '3y' | 'all';
+
+export async function getFundsChartData(
+  category: FundCategory,
+  period: FundPeriod = '6m'
+): Promise<FundsChartResponse> {
+  const params = new URLSearchParams({
+    category,
+    period
+  });
+  const response = await fetch(`${API_BASE}/api/funds/chart?${params}`);
+  if (!response.ok) throw new Error('Failed to fetch funds chart data');
+  return response.json();
+}
+
+export async function getFundsSummary(): Promise<FundsSummaryResponse> {
+  const response = await fetch(`${API_BASE}/api/funds/summary`);
+  if (!response.ok) throw new Error('Failed to fetch funds summary');
+  return response.json();
+}
+
+export async function getFundsCategories() {
+  const response = await fetch(`${API_BASE}/api/funds/categories`);
+  if (!response.ok) throw new Error('Failed to fetch funds categories');
+  return response.json();
+}
+
+// Flows (притоки/оттоки)
+export type FlowTimeframe = '1d' | '1w' | '1m' | '3m' | '1y';
+
+export interface FlowDataPoint {
+  period_start: string;
+  period_end: string;
+  flow: number;      // В млрд рублей
+  flow_pct: number;  // В процентах
+}
+
+export interface FundsFlowsResponse {
+  category: string;
+  timeframe: FlowTimeframe;
+  period: string;
+  flows: FlowDataPoint[];
+}
+
+export async function getFundsFlows(
+  category: FundCategory,
+  timeframe: FlowTimeframe = '1w',
+  period: FundPeriod = '1y',
+  fundIds?: number[]
+): Promise<FundsFlowsResponse> {
+  const params = new URLSearchParams({ category, timeframe, period });
+  if (fundIds && fundIds.length > 0) {
+    params.set('fund_ids', fundIds.join(','));
+  }
+  const response = await fetch(`${API_BASE}/api/funds/flows?${params}`);
+  if (!response.ok) throw new Error('Failed to fetch funds flows');
+  return response.json();
+}
+
+// ==================== FEAR INDEX ====================
+
+export interface FearIndexComponents {
+  rotation_ratio: number;
+  money_market_flow: number;
+  stocks_flow: number;
+  velocity: number;
+}
+
+export interface FearIndexRawValues {
+  rotation_ratio: number;
+  mm_flow_pct: number;
+  stocks_flow_pct: number;
+  velocity: number;
+}
+
+export interface FearIndexTotals {
+  money_market_nav: number;
+  stocks_nav: number;
+}
+
+export interface FearIndexResponse {
+  date: string;
+  fear_index: number;
+  classification: string;
+  classification_ru: string;
+  components: FearIndexComponents;
+  raw_values: FearIndexRawValues;
+  totals: FearIndexTotals;
+  error?: string;
+}
+
+export interface FearIndexHistoryPoint {
+  date: string;
+  fear_index: number;
+  rotation_ratio: number;
+  mm_nav: number;
+  stocks_nav: number;
+}
+
+export interface FearIndexHistoryResponse {
+  period: string;
+  count: number;
+  history: FearIndexHistoryPoint[];
+  error?: string;
+}
+
+export type FearIndexPeriod = '1m' | '3m' | '6m' | '1y' | 'all';
+
+export async function getFearIndex(): Promise<FearIndexResponse> {
+  const response = await fetch(`${API_BASE}/api/funds/fear-index`);
+  if (!response.ok) throw new Error('Failed to fetch fear index');
+  return response.json();
+}
+
+export async function getFearIndexHistory(
+  period: FearIndexPeriod = '3m'
+): Promise<FearIndexHistoryResponse> {
+  const params = new URLSearchParams({ period });
+  const response = await fetch(`${API_BASE}/api/funds/fear-index/history?${params}`);
+  if (!response.ok) throw new Error('Failed to fetch fear index history');
+  return response.json();
+}
+
+// ==================== MARKET BREADTH ====================
+
+export interface BreadthStock {
+  ticker: string;
+  price: number;
+  ema: number;
+  is_above: boolean;
+  diff_percent: number;
+}
+
+export interface BreadthCurrentResponse {
+  percent_above: number;
+  count_above: number;
+  count_total: number;
+  ema_period: number;
+  classification: 'overbought' | 'bullish' | 'neutral' | 'oversold';
+  stocks: BreadthStock[];
+}
+
+export interface BreadthHistoryPoint {
+  date: string;
+  percent_above: number;
+  count_above: number;
+  count_total: number;
+  imoex?: number;  // IMOEX close price for this date
+}
+
+export interface BreadthHistoryResponse {
+  ema_period: number;
+  data: BreadthHistoryPoint[];
+  imoex: { date: string; close: number }[];
+}
+
+export async function getBreadthCurrent(
+  emaPeriod: number = 200
+): Promise<BreadthCurrentResponse> {
+  const params = new URLSearchParams({ ema_period: emaPeriod.toString() });
+  const response = await fetch(`${API_BASE}/api/breadth/current?${params}`);
+  if (!response.ok) throw new Error('Failed to fetch market breadth');
+  return response.json();
+}
+
+export async function getBreadthHistory(
+  emaPeriod: number = 200,
+  days: number = 365
+): Promise<BreadthHistoryResponse> {
+  const params = new URLSearchParams({
+    ema_period: emaPeriod.toString(),
+    days: days.toString()
+  });
+  const response = await fetch(`${API_BASE}/api/breadth/history?${params}`);
+  if (!response.ok) throw new Error('Failed to fetch breadth history');
+  return response.json();
+}
+
+// ==================== BUFFETT INDICATOR ====================
+
+export interface BuffettCapGdpPoint {
+  date: string;
+  buffett: number;
+  buffett_raw: number;
+  cap: number;
+  gdp_ttm: number;
+}
+
+export interface BuffettCapGdpResponse {
+  data: BuffettCapGdpPoint[];
+  period: string;
+}
+
+export interface BuffettMcftrM2Point {
+  date: string;
+  ratio: number;
+  mcftr: number;
+  m2: number;
+}
+
+export interface BuffettMcftrM2Response {
+  data: BuffettMcftrM2Point[];
+  period: string;
+}
+
+export type BuffettPeriod = '1y' | '2y' | '3y' | '5y' | 'all';
+
+export async function getBuffettCapGdp(
+  period: BuffettPeriod = '3y',
+  smooth: boolean = true
+): Promise<BuffettCapGdpResponse> {
+  const params = new URLSearchParams({
+    period,
+    smooth: smooth.toString()
+  });
+  const response = await fetch(`${API_BASE}/api/buffett/cap-gdp?${params}`);
+  if (!response.ok) throw new Error('Failed to fetch Buffett cap/gdp');
+  return response.json();
+}
+
+export async function getBuffettMcftrM2(
+  period: BuffettPeriod = '3y',
+  smooth: boolean = true
+): Promise<BuffettMcftrM2Response> {
+  const params = new URLSearchParams({ period, smooth: smooth.toString() });
+  const response = await fetch(`${API_BASE}/api/buffett/mcftr-m2?${params}`);
+  if (!response.ok) throw new Error('Failed to fetch Buffett mcftr/m2');
+  return response.json();
+}

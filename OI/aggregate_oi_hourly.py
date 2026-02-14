@@ -102,7 +102,7 @@ def get_missing_hours(engine, sectype: str, limit_days: int = None) -> list[tupl
             FROM open_interest
             WHERE sectype = :sectype 
               AND interval = 5
-              AND EXTRACT(MINUTE FROM tradetime) = 55
+              AND EXTRACT(MINUTE FROM tradetime) >= 50
               {date_filter}
         ),
         existing_hourly AS (
@@ -131,37 +131,48 @@ def aggregate_hour(engine, sectype: str, tradedate: date, hour: int) -> int:
     """
     Агрегировать один час для тикера.
 
-    Берём запись с tradetime = HH:55:00 и копируем как interval=60 с tradetime = HH:00:00
+    Берём ПОСЛЕДНЮЮ 5-минутку часа (любую с минутой >= 50) и копируем как interval=60 с tradetime = HH:00:00
+    Это более надёжно чем строго 55-я минута, т.к. данные могут приходить с задержкой.
     """
-    # Получаем данные за 55-ю минуту
-    # Используем прямое сравнение времени вместо EXTRACT чтобы избежать проблем с pg8000
-    time_55 = dt_time(hour, 55, 0)
+    # Находим последнюю 5-минутку часа (minute >= 50)
+    time_start = dt_time(hour, 50, 0)
+    time_end = dt_time(hour, 59, 59)
 
     query = text("""
         SELECT sectype, tradedate, clgroup, pos, pos_long, pos_short, 
-               pos_long_num, pos_short_num, systime
+               pos_long_num, pos_short_num, systime, tradetime
         FROM open_interest
         WHERE sectype = :sectype
           AND tradedate = :tradedate
           AND interval = 5
-          AND tradetime = :time_55
+          AND tradetime >= :time_start
+          AND tradetime <= :time_end
+        ORDER BY tradetime DESC
     """)
 
     with engine.connect() as conn:
         result = conn.execute(query, {
             "sectype": sectype,
             "tradedate": tradedate,
-            "time_55": time_55
+            "time_start": time_start,
+            "time_end": time_end
         })
-        rows = result.fetchall()
+        all_rows = result.fetchall()
 
-        if not rows:
+        if not all_rows:
             return 0
 
-        inserted = 0
-        hourly_time = dt_time(hour, 0, 0)  # Объект time вместо строки
+        # Группируем по clgroup и берём последнюю запись для каждой группы
+        clgroup_data = {}
+        for row in all_rows:
+            clgroup = row[2]
+            if clgroup not in clgroup_data:
+                clgroup_data[clgroup] = row  # Первая (т.е. последняя по времени из-за ORDER BY DESC)
 
-        for row in rows:
+        inserted = 0
+        hourly_time = dt_time(hour, 0, 0)
+
+        for clgroup, row in clgroup_data.items():
             try:
                 conn.execute(text("""
                     INSERT INTO open_interest
@@ -179,7 +190,7 @@ def aggregate_hour(engine, sectype: str, tradedate: date, hour: int) -> int:
                     "pos_long": row[4],
                     "pos_short": row[5],
                     "pos_long_num": row[6],
-                                 "pos_short_num": row[7],
+                    "pos_short_num": row[7],
                     "systime": row[8],
                 })
                 inserted += 1

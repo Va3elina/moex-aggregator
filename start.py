@@ -3,6 +3,25 @@ import sys
 import time
 import re
 import threading
+import os
+
+
+def build_frontend():
+    """Собирает фронтенд"""
+    frontend_dir = os.path.join(os.path.dirname(__file__), "frontend")
+    print("📦 Сборка фронтенда...")
+    result = subprocess.run(
+        ["npm", "run", "build"],
+        cwd=frontend_dir,
+        shell=True,
+        capture_output=True,
+        text=True
+    )
+    if result.returncode != 0:
+        print("❌ Ошибка сборки фронтенда:")
+        print(result.stderr)
+        sys.exit(1)
+    print("✅ Фронтенд собран!\n")
 
 
 def run_server():
@@ -41,7 +60,11 @@ if __name__ == "__main__":
     print("=" * 60)
     print("   MOEX Analytics - Запуск")
     print("=" * 60)
-    print("\nЗапускаю сервер и туннель...")
+    
+    # Сборка фронтенда
+    build_frontend()
+    
+    print("Запускаю сервер и туннель...")
     print("Подожди 5-10 секунд...\n")
 
     server_thread = threading.Thread(target=run_server, daemon=True)

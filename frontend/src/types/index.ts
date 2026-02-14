@@ -37,6 +37,7 @@ export interface OpenInterest {
   pos_short: number | null;
   pos_long_num: number | null;
   pos_short_num: number | null;
+  net_position: number | null;
 }
 
 // ==================== ГРАФИК ====================

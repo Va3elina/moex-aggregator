@@ -3,6 +3,7 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
+.pytest_cache/
 
 # Node.js
 node_modules/
@@ -19,10 +20,17 @@ logs/
 *.log
 .DS_Store
 Thumbs.db
+nul
 
-# ═══════════════════════════════════════════════════════════════
-# Логирование
-# ═══════════════════════════════════════════════════════════════
+# Данные (Excel, CSV, JSON-кэш)
+*.xlsx
+*.csv
+buffett_tmp*
 
-LOG_LEVEL=INFO
-JSON_LOGS=false
+# AI assistants
+.claude/
+.gemini/
+.antigravityignore
+
+# Заметки (не код)
+Заметки

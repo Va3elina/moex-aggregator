@@ -12,6 +12,9 @@
 4. Candles/fetch_candles_futures_realtime.py — свечи фьючерсов (Algopack)
 5. Candles/fetch_candles_spot_realtime.py — свечи акций (Algopack)
 
+=== Macro (Макроданные) ===
+6. Macro/fetch_macro_realtime.py — M2 с ЦБ РФ (автоматически)
+
 === Материализованные представления ===
 - mv_heatmap_stocks — карта рынка акций
 - mv_oi_daily_stats — статистика открытого интереса
@@ -111,6 +114,12 @@ SCRIPTS = {
     # Candles скрипты
     'candles_futures': BASE_DIR / 'Candles' / 'fetch_candles_futures_realtime.py',
     'candles_spot': BASE_DIR / 'Candles' / 'fetch_candles_spot_realtime.py',
+    # Funds скрипты
+    'funds_daily': BASE_DIR / 'Funds' / 'fetch_funds_realtime.py',
+    # Indices скрипты
+    'indices_daily': BASE_DIR / 'Funds' / 'fetch_indices_realtime.py',
+    # Macro скрипты (M2, GDP)
+    'macro_daily': BASE_DIR / 'Macro' / 'fetch_macro_realtime.py',
 }
 
 # Материализованные представления
@@ -134,6 +143,9 @@ TIMEOUTS = {
     'oi_daily': 1800,  # 30 минут
     'candles_futures': 300,  # 5 минут
     'candles_spot': 300,  # 5 минут
+    'funds_daily': 600,  # 10 минут
+    'indices_daily': 300,  # 5 минут
+    'macro_daily': 120,  # 2 минуты
 }
 
 # Директория логов
@@ -332,6 +344,15 @@ class MainOrchestrator:
             'candles_futures_success': 0,
             'candles_spot_runs': 0,
             'candles_spot_success': 0,
+            # Funds
+            'funds_daily_runs': 0,
+            'funds_daily_success': 0,
+            # Indices
+            'indices_daily_runs': 0,
+            'indices_daily_success': 0,
+            # Macro
+            'macro_daily_runs': 0,
+            'macro_daily_success': 0,
             # Представления
             'views_refresh_runs': 0,
             'views_refresh_success': 0,
@@ -453,6 +474,54 @@ class MainOrchestrator:
 
         return success
 
+    async def run_funds_update(self) -> bool:
+        """Запускает дневное обновление фондов"""
+        log.info("  📊 Funds Daily...")
+        self.stats['funds_daily_runs'] += 1
+
+        success, msg, dur = await run_script('funds_daily', ['--once', '--force'])
+
+        if success:
+            self.stats['funds_daily_success'] += 1
+            log.info(f"    ✓ Funds Daily ({dur:.1f}с)")
+        else:
+            self.stats['errors'] += 1
+            log.error(f"    ✗ Funds Daily: {msg}")
+
+        return success
+
+    async def run_indices_update(self) -> bool:
+        """Запускает дневное обновление индексов MOEX"""
+        log.info("  📊 Indices Daily...")
+        self.stats['indices_daily_runs'] += 1
+
+        success, msg, dur = await run_script('indices_daily', ['--once'])
+
+        if success:
+            self.stats['indices_daily_success'] += 1
+            log.info(f"    ✓ Indices Daily ({dur:.1f}с)")
+        else:
+            self.stats['errors'] += 1
+            log.error(f"    ✗ Indices Daily: {msg}")
+
+        return success
+
+    async def run_macro_update(self) -> bool:
+        """Запускает обновление макроданных (M2 с ЦБ)"""
+        log.info("  📊 Macro Daily (M2)...")
+        self.stats['macro_daily_runs'] += 1
+
+        success, msg, dur = await run_script('macro_daily', ['--once', '--force'])
+
+        if success:
+            self.stats['macro_daily_success'] += 1
+            log.info(f"    ✓ Macro Daily ({dur:.1f}с)")
+        else:
+            self.stats['errors'] += 1
+            log.error(f"    ✗ Macro Daily: {msg}")
+
+        return success
+
     def print_stats(self):
         """Выводит статистику"""
         uptime = datetime.now() - self.stats['start_time']
@@ -469,6 +538,10 @@ class MainOrchestrator:
         log.info("  --- Candles ---")
         log.info(f"    Futures: {self.stats['candles_futures_success']}/{self.stats['candles_futures_runs']}")
         log.info(f"    Spot: {self.stats['candles_spot_success']}/{self.stats['candles_spot_runs']}")
+        log.info("  --- Funds ---")
+        log.info(f"    Daily: {self.stats['funds_daily_success']}/{self.stats['funds_daily_runs']}")
+        log.info("  --- Macro ---")
+        log.info(f"    Daily: {self.stats['macro_daily_success']}/{self.stats['macro_daily_runs']}")
         log.info("  --- Представления ---")
         log.info(f"    Обновлений: {self.stats['views_refresh_success']}/{self.stats['views_refresh_runs']}")
         log.info(f"  Ошибок: {self.stats['errors']}")
@@ -522,8 +595,11 @@ class MainOrchestrator:
             if results.get('oi_5min'):
                 await self.run_hourly_aggregate()
 
-            # Daily
+            # Daily (OI + Funds + Indices + Macro)
             await self.run_daily_update()
+            await self.run_funds_update()
+            await self.run_indices_update()
+            await self.run_macro_update()
 
             # Обновляем все представления после полной синхронизации
             log.info("  🔄 Финальное обновление представлений...")
@@ -575,6 +651,9 @@ class MainOrchestrator:
                             now.minute >= DAILY_UPDATE_MINUTE):
                         log.info(f"⏰ [{now:%H:%M:%S} МСК] Дневное обновление...")
                         await self.run_daily_update()
+                        await self.run_funds_update()
+                        await self.run_indices_update()
+                        await self.run_macro_update()
                         self.last_daily_update = slot_day
                         self.print_stats()
 

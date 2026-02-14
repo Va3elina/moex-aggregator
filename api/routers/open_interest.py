@@ -9,7 +9,7 @@ from datetime import datetime, date
 from api.database import get_db
 from api.models import OpenInterest
 from api.schemas import OpenInterestResponse, OpenInterestListResponse
-from api.schemas.validators import IntervalType, ClgroupType, validate_safe_id
+from api.schemas.validators import ClgroupType, validate_safe_id
 
 router = APIRouter(prefix="/api/openinterest", tags=["open_interest"])
 
@@ -18,13 +18,17 @@ router = APIRouter(prefix="/api/openinterest", tags=["open_interest"])
 def get_open_interest(
         sectype: str,
         clgroup: ClgroupType = Query("FIZ", description="Группа: FIZ (физлица) или YUR (юрлица)"),
-        interval: IntervalType = Query(60, description="Таймфрейм: 5, 60 или 24 минут"),
+        interval: int = Query(60, description="Таймфрейм: 5, 60 или 24 минут"),
         date_from: date | None = Query(None, description="Дата начала (YYYY-MM-DD)"),
         date_to: date | None = Query(None, description="Дата окончания (YYYY-MM-DD)"),
         limit: int = Query(10000, description="Максимум записей", ge=1, le=50000),
         db: Session = Depends(get_db)
 ):
     """Получить открытый интерес по sectype"""
+
+    # Валидация interval
+    if interval not in {5, 60, 24}:
+        raise HTTPException(status_code=400, detail="interval должен быть 5, 60 или 24")
 
     # Валидация sectype
     try:

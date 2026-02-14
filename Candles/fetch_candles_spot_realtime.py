@@ -289,14 +289,23 @@ class AlgopackStocksFetcher:
                         continue
 
                     if resp.status != 200:
-                        log.debug(f"[{ticker}] HTTP {resp.status}")
+                        if resp.status == 500:
+                            log.error(f"[{ticker}] Ошибка сервера (500). MOEX API временно недоступен.")
+                        elif resp.status == 502:
+                            log.error(f"[{ticker}] Bad Gateway (502). Проблемы с MOEX.")
+                        elif resp.status == 503:
+                            log.error(f"[{ticker}] Сервис недоступен (503). Техработы на MOEX.")
+                        else:
+                            log.warning(f"[{ticker}] HTTP {resp.status}")
                         self.stats['errors'] += 1
                         return None
 
                     try:
                         data = await resp.json()
-                    except:
-                        log.warning(f"[{ticker}] Ошибка парсинга JSON")
+                    except Exception as json_err:
+                        log.error(f"[{ticker}] Ошибка парсинга JSON: {json_err}. API изменился?")
+                        text = await resp.text()
+                        log.debug(f"    Ответ: {text[:300]}")
                         self.stats['errors'] += 1
                         return None
 
@@ -316,11 +325,20 @@ class AlgopackStocksFetcher:
                     await asyncio.sleep(0.05)
 
             except asyncio.TimeoutError:
-                log.error(f"[{ticker}] Таймаут")
+                log.error(f"[{ticker}] Таймаут соединения (30с). MOEX API не отвечает.")
+                self.stats['errors'] += 1
+                return None
+            except aiohttp.ClientConnectorError as e:
+                log.error(f"[{ticker}] Ошибка соединения: {e}. Проверьте интернет.")
+                self.stats['errors'] += 1
+                return None
+            except aiohttp.ServerDisconnectedError:
+                log.error(f"[{ticker}] Сервер разорвал соединение.")
                 self.stats['errors'] += 1
                 return None
             except Exception as e:
-                log.error(f"[{ticker}] Ошибка: {e}")
+                log.error(f"[{ticker}] Неизвестная ошибка: {type(e).__name__}: {e}")
+                log.debug(f"    Traceback:", exc_info=True)
                 self.stats['errors'] += 1
                 return None
 

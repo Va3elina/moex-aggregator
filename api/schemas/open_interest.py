@@ -14,6 +14,10 @@ class OpenInterestResponse(BaseModel):
     pos_long_num: int | None = None
     pos_short_num: int | None = None
 
+    # ДОБАВЛЕНО: Чистая позиция = pos_long + pos_short
+    # (pos_short в БД уже отрицательный, поэтому ПЛЮС)
+    net_position: int | None = None
+
     class Config:
         from_attributes = True
 

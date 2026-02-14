@@ -6,6 +6,9 @@ from api.routers.candles import router as candles_router
 from api.routers.open_interest import router as open_interest_router
 from api.routers.chart import router as chart_router
 from api.routers.heatmap import router as heatmap_router
+from api.routers.funds import router as funds_router
+from api.routers.breadth import router as breadth_router
+from api.routers.buffett import router as buffett_router
 
 __all__ = [
     "instruments_router",
@@ -13,4 +16,7 @@ __all__ = [
     "open_interest_router",
     "chart_router",
     "heatmap_router",
+    "funds_router",
+    "breadth_router",
+    "buffett_router",
 ]

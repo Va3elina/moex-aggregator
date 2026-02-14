@@ -1,6 +1,9 @@
 """
 API endpoint для получения свечей и данных OI
 С валидацией входных данных и защитой от SQL injection
+
+ИСПРАВЛЕНО: добавлено поле net_position = pos_long + pos_short
+(pos_short в БД уже отрицательный, поэтому используем ПЛЮС)
 """
 
 from fastapi import APIRouter, Depends, Query, HTTPException
@@ -17,7 +20,6 @@ from api.schemas import CandleResponse, OpenInterestResponse
 from api.schemas.validators import (
     ChartParams,
     IntervalsParams,
-    IntervalType,
     ClgroupType,
     PeriodType,
     InstTypeType,
@@ -68,7 +70,6 @@ def get_available_intervals(
 ):
     """Получить доступные интервалы OI для инструмента"""
 
-    # Валидация sectype
     try:
         sectype = validate_safe_id(sectype, "sectype")
     except ValueError as e:
@@ -109,7 +110,7 @@ def get_chart_data(
         sec_id: str,
         sectype: str = Query(...),
         inst_type: InstTypeType = Query("futures"),
-        interval: IntervalType = Query(24),
+        interval: int = Query(24),
         clgroup: ClgroupType = Query("FIZ"),
         show_oi: bool = Query(True),
         period: PeriodType = Query("6m"),
@@ -119,14 +120,15 @@ def get_chart_data(
 ):
     """Получить данные графика с валидацией"""
 
-    # Валидация sec_id и sectype
+    if interval not in {5, 60, 24}:
+        raise HTTPException(status_code=400, detail="interval должен быть 5, 60 или 24")
+
     try:
         sec_id = validate_safe_id(sec_id, "sec_id")
         sectype = validate_safe_id(sectype, "sectype")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    # Валидация диапазона дат
     if date_from and date_to and date_to < date_from:
         raise HTTPException(status_code=400, detail="date_to не может быть раньше date_from")
 
@@ -134,7 +136,7 @@ def get_chart_data(
     print(f"REQUEST: {sec_id}, sectype={sectype}, interval={interval}, period={period}")
     total_start = time.time()
 
-    # 1. Получаем sec_ids (БЕЗОПАСНО через параметризованный запрос)
+    # 1. Получаем sec_ids
     t0 = time.time()
     sec_ids_result = db.execute(text("""
         SELECT DISTINCT sec_id FROM instruments 
@@ -143,14 +145,12 @@ def get_chart_data(
     sec_ids = [r[0] for r in sec_ids_result] or [sec_id]
     print(f"[1] sec_ids: {(time.time()-t0)*1000:.0f} мс | {sec_ids}")
 
-    # 2. Границы свечей — безопасные запросы
+    # 2. Границы свечей
     t0 = time.time()
-
     c_start = None
     c_end = None
 
     for sid in sec_ids:
-        # MIN (sid уже провалидирован через instruments из БД)
         row = db.execute(text("""
             SELECT begin_time FROM candles 
             WHERE sec_id = :sec_id AND interval = :interval
@@ -160,7 +160,6 @@ def get_chart_data(
             if c_start is None or row[0] < c_start:
                 c_start = row[0]
 
-        # MAX
         row = db.execute(text("""
             SELECT begin_time FROM candles 
             WHERE sec_id = :sec_id AND interval = :interval
@@ -217,10 +216,10 @@ def get_chart_data(
 
     print(f"[4] work period: {work_start} - {work_end}")
 
-    # 5. Запрос свечей — ИСПРАВЛЕНО: используем параметризованный запрос с ANY
+    # 5. Запрос свечей (включаем sec_id для умной дедупликации)
     t0 = time.time()
     candles_raw = db.execute(text("""
-        SELECT begin_time, open, high, low, close, volume
+        SELECT begin_time, open, high, low, close, volume, sec_id
         FROM candles
         WHERE sec_id = ANY(:sec_ids)
           AND interval = :interval
@@ -229,22 +228,46 @@ def get_chart_data(
           AND close > 0
         ORDER BY begin_time
     """), {
-        "sec_ids": sec_ids,  # PostgreSQL массив — безопасно!
+        "sec_ids": sec_ids,
         "interval": interval,
         "start_time": datetime.combine(work_start, dt_time.min),
         "end_time": datetime.combine(work_end, dt_time.max)
     }).fetchall()
     print(f"[5] candles query: {(time.time()-t0)*1000:.0f} мс | rows: {len(candles_raw)}")
 
-    # 6. Дедупликация
+    # 6. Склейка контрактов: для каждого ДНЯ выбираем самый ликвидный контракт
+    # Это позволяет плавно переходить между контрактами при ролловере
     t0 = time.time()
-    candles_map = {}
+    
+    # Группируем свечи по дням и контрактам
+    daily_volume = {}  # {date: {sec_id: total_volume}}
     for c in candles_raw:
-        t = c[0]
-        if t not in candles_map or (c[5] or 0) > (candles_map[t][5] or 0):
-            candles_map[t] = c
-    sorted_candles = sorted(candles_map.values(), key=lambda x: x[0])
-    print(f"[6] dedup: {(time.time()-t0)*1000:.0f} мс | unique: {len(sorted_candles)}")
+        day = c[0].date()
+        sec_id = c[6] if len(c) > 6 else 'unknown'
+        vol = float(c[5] or 0)
+        
+        if day not in daily_volume:
+            daily_volume[day] = {}
+        daily_volume[day][sec_id] = daily_volume[day].get(sec_id, 0) + vol
+    
+    # Определяем лучший контракт для каждого дня
+    best_contract_by_day = {}
+    for day, contracts in daily_volume.items():
+        if contracts:
+            best_contract_by_day[day] = max(contracts, key=contracts.get)
+    
+    # Фильтруем свечи: для каждой метки времени берем только свечу "лучшего" контракта дня
+    filtered_candles = []
+    for c in candles_raw:
+        day = c[0].date()
+        sec_id = c[6] if len(c) > 6 else 'unknown'
+        best_for_day = best_contract_by_day.get(day, sec_id)
+        
+        if sec_id == best_for_day:
+            filtered_candles.append(c)
+    
+    sorted_candles = sorted(filtered_candles, key=lambda x: x[0])
+    print(f"[6] chain: {(time.time()-t0)*1000:.0f} мс | candles: {len(sorted_candles)}")
 
     # 7. Запрос OI
     oi_raw = []
@@ -291,16 +314,31 @@ def get_chart_data(
         ) for c in sorted_candles
     ]
 
-    oi_list = [
-        OpenInterestResponse(
+    # ============================================================
+    # ИСПРАВЛЕНО: Вычисляем net_position = pos_long + pos_short
+    # pos_short в БД уже ОТРИЦАТЕЛЬНЫЙ, поэтому используем ПЛЮС!
+    #
+    # Пример: pos_long=128694, pos_short=-26535
+    #   net_position = 128694 + (-26535) = 102159 (физики в лонге)
+    # ============================================================
+    oi_list = []
+    for r in oi_raw:
+        pos_long = r[3] or 0
+        pos_short = r[4] or 0
+
+        # ПРАВИЛЬНАЯ ФОРМУЛА!
+        net_position = pos_long + pos_short
+
+        oi_list.append(OpenInterestResponse(
             time=datetime.combine(r[0], r[1]),
             pos=r[2],
-            pos_long=r[3],
-            pos_short=r[4],
+            pos_long=pos_long,
+            pos_short=pos_short,
             pos_long_num=r[5],
-            pos_short_num=r[6]
-        ) for r in oi_raw
-    ]
+            pos_short_num=r[6],
+            net_position=net_position
+        ))
+
     print(f"[8] build response: {(time.time()-t0)*1000:.0f} мс")
 
     total_ms = (time.time() - total_start) * 1000
