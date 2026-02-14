@@ -10,12 +10,20 @@ import FundsFlowPage from './pages/FundsFlowPage';
 import FundsMoneyPage from './pages/FundsMoneyPage';
 import StrengthPage from './pages/StrengthPage';
 import BuffettPage from './pages/BuffettPage';
+import LoginPage from './pages/LoginPage';
+import AuthCallback from './pages/AuthCallback';
 
 export default function App() {
   return (
     <ThemeProvider>
       <BrowserRouter>
         <Routes>
+          {/* Auth — без Layout (своя полная страница) */}
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/auth/callback/google" element={<AuthCallback />} />
+          <Route path="/auth/callback/vk" element={<AuthCallback />} />
+
+          {/* Основное приложение */}
           <Route element={<Layout />}>
             <Route path="/" element={<OverviewPage />} />
             <Route path="/oi" element={<OpenInterestPage />} />

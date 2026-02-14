@@ -3,7 +3,7 @@
 Модель пользователя для базы данных.
 """
 
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, UniqueConstraint
 from sqlalchemy.sql import func
 from enum import Enum
 
@@ -23,16 +23,24 @@ class UserRole(str, Enum):
 class User(Base):
     """Таблица пользователей."""
     __tablename__ = "users"
+    __table_args__ = (
+        UniqueConstraint('oauth_provider', 'oauth_id', name='uq_oauth_provider_id'),
+    )
 
     # === Идентификация ===
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String(255), unique=True, index=True, nullable=False)
 
     # === Безопасность ===
-    hashed_password = Column(String(255), nullable=False)
+    hashed_password = Column(String(255), nullable=True)  # nullable для OAuth
 
     # === Профиль ===
     username = Column(String(50), unique=True, index=True, nullable=True)
+    avatar_url = Column(String(500), nullable=True)
+
+    # === OAuth ===
+    oauth_provider = Column(String(20), nullable=True)  # "google", "telegram", "vk"
+    oauth_id = Column(String(255), nullable=True)         # ID у провайдера
 
     # === Роль и доступ ===
     # Используем String вместо SQLEnum для совместимости с существующим enum в БД

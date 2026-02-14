@@ -9,6 +9,7 @@ Middleware для MOEX Analytics API
 import time
 import uuid
 import asyncio
+import os
 import traceback
 from collections import defaultdict
 from fastapi import Request, Response, HTTPException
@@ -174,6 +175,12 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Permissions-Policy"] = (
             "geolocation=(), microphone=(), camera=()"
         )
+
+        # HSTS — принудительный HTTPS (только в production)
+        if os.getenv("RENDER"):
+            response.headers["Strict-Transport-Security"] = (
+                "max-age=31536000; includeSubDomains"
+            )
 
         return response
 

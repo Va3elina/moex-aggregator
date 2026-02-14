@@ -23,6 +23,7 @@ from api.routers import (
 )
 from api.routers import stats
 from api.routers import auth  # ← НОВОЕ: Аутентификация
+from api.routers import oauth  # ← OAuth (Google, VK, Telegram)
 
 # Логирование
 from api.logger import setup_logging, get_logger
@@ -37,13 +38,19 @@ from api.middleware import (
 )
 
 # ═══════════════════════════════════════════════════════════════
+# Определение среды
+# ═══════════════════════════════════════════════════════════════
+
+IS_PRODUCTION = bool(os.getenv("RENDER"))  # Render.com ставит RENDER=true
+
+# ═══════════════════════════════════════════════════════════════
 # Настройка логирования (до создания app!)
 # ═══════════════════════════════════════════════════════════════
 
 setup_logging(
     level=os.getenv("LOG_LEVEL", "INFO"),
-    json_logs=os.getenv("JSON_LOGS", "false").lower() == "true",
-    log_to_file=True,
+    json_logs=IS_PRODUCTION or os.getenv("JSON_LOGS", "false").lower() == "true",
+    log_to_file=not IS_PRODUCTION,  # На Render файловая система ephemeral
 )
 logger = get_logger()
 
@@ -52,8 +59,8 @@ logger = get_logger()
 # ═══════════════════════════════════════════════════════════════
 
 app = FastAPI(
-    title="MOEX Aggregator API",
-    description="API для данных Московской биржи: инструменты, свечи, открытый интерес",
+    title="Фрейм API",
+    description="API аналитики Московской биржи: инструменты, свечи, открытый интерес",
     version="1.0.0",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
@@ -148,6 +155,7 @@ app.include_router(funds_router)
 app.include_router(breadth_router)
 app.include_router(buffett_router)
 app.include_router(auth.router, prefix="/api")  # ← НОВОЕ: /api/auth/*
+app.include_router(oauth.router, prefix="/api")  # ← OAuth: /api/auth/oauth/*
 
 # ═══════════════════════════════════════════════════════════════
 # Служебные эндпоинты
@@ -156,7 +164,20 @@ app.include_router(auth.router, prefix="/api")  # ← НОВОЕ: /api/auth/*
 @app.get("/health")
 def health():
     """Проверка работоспособности (для load balancer)"""
-    return {"status": "ok"}
+    result = {"status": "ok"}
+
+    # Проверяем подключение к БД
+    try:
+        from api.database import get_engine
+        from sqlalchemy import text
+        with get_engine().connect() as conn:
+            conn.execute(text("SELECT 1"))
+        result["database"] = "ok"
+    except Exception:
+        result["database"] = "error"
+        result["status"] = "degraded"
+
+    return result
 
 
 @app.get("/api/info")
