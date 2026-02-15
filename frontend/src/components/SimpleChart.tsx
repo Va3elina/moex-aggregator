@@ -111,6 +111,7 @@ export default function SimpleChart({
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [width, setWidth] = useState(800);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [chartMode, setChartMode] = useState<'line' | 'histogram'>('line');
 
   useEffect(() => {
@@ -158,15 +159,22 @@ export default function SimpleChart({
       if (containerRef.current) {
         setWidth(containerRef.current.clientWidth);
       }
+      setIsMobile(window.innerWidth < 768);
     };
     updateWidth();
     window.addEventListener('resize', updateWidth);
     return () => window.removeEventListener('resize', updateWidth);
   }, []);
 
-  const padding = { top: 40, right: 90, bottom: 50, left: 80 };
+  // Адаптивные отступы: на мобиле меньше
+  const padding = isMobile
+    ? { top: 30, right: 10, bottom: 40, left: 45 }
+    : { top: 40, right: 90, bottom: 50, left: 80 };
+
+  // На мобиле ограничиваем высоту графика
+  const effectiveHeight = isMobile ? Math.min(height, 300) : height;
   const chartWidth = Math.max(width - padding.left - padding.right, 100);
-  const chartHeight = height - padding.top - padding.bottom;
+  const chartHeight = effectiveHeight - padding.top - padding.bottom;
 
   // Вычисление целевых точек
   const targetCalc = useMemo(() => {
@@ -500,13 +508,12 @@ export default function SimpleChart({
     };
   };
 
-  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
-
+  // Общая логика обновления tooltip по X-координате
+  const updateTooltipAtX = useCallback((clientX: number, svgElement: SVGSVGElement) => {
     if (targetCalc.points.length === 0) return;
 
-    const svg = e.currentTarget;
-    const rect = svg.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left - padding.left;
+    const rect = svgElement.getBoundingClientRect();
+    const mouseX = clientX - rect.left - padding.left;
 
     if (mouseX < 0 || mouseX > chartWidth) {
       setTooltip(prev => ({ ...prev, visible: false }));
@@ -530,16 +537,43 @@ export default function SimpleChart({
       time: primaryPoint.time,
       visible: true,
     });
+  }, [targetCalc, chartWidth, padding, showSecondary, showThird]);
+
+  // Mouse events
+  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    updateTooltipAtX(e.clientX, e.currentTarget);
   };
 
   const handleMouseLeave = () => {
     setTooltip((prev) => ({ ...prev, visible: false }));
   };
 
+  // Touch events — для мобильных
+  const handleTouchStart = (e: React.TouchEvent<SVGSVGElement>) => {
+    if (e.touches.length === 1) {
+      e.preventDefault(); // Предотвращаем скролл
+      updateTooltipAtX(e.touches[0].clientX, e.currentTarget);
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent<SVGSVGElement>) => {
+    if (e.touches.length === 1) {
+      e.preventDefault();
+      updateTooltipAtX(e.touches[0].clientX, e.currentTarget);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    // Скрываем tooltip через 1.5 сек после отпускания пальца
+    setTimeout(() => {
+      setTooltip((prev) => ({ ...prev, visible: false }));
+    }, 1500);
+  };
+
   // Показываем полный лоадер только если нет данных вообще
   if (data.length === 0 && loading) {
     return (
-      <div ref={containerRef} className="rounded-2xl flex items-center justify-center bg-theme-secondary" style={{ height }}>
+      <div ref={containerRef} className="rounded-2xl flex items-center justify-center bg-theme-secondary" style={{ height: effectiveHeight }}>
         <div className="flex items-center gap-3 text-theme-secondary">
           <div className="w-6 h-6 border-2 border-[#C8FF2E] border-t-transparent rounded-full animate-spin" />
           <span className="text-lg">Загрузка...</span>
@@ -550,7 +584,7 @@ export default function SimpleChart({
 
   if (data.length === 0 && !loading) {
     return (
-      <div ref={containerRef} className="rounded-2xl flex items-center justify-center bg-theme-secondary" style={{ height }}>
+      <div ref={containerRef} className="rounded-2xl flex items-center justify-center bg-theme-secondary" style={{ height: effectiveHeight }}>
         <p className="text-theme-secondary text-lg">Нет данных для отображения</p>
       </div>
     );
@@ -613,10 +647,14 @@ export default function SimpleChart({
       <svg
         ref={svgRef}
         width={width}
-        height={height}
+        height={effectiveHeight}
         className="cursor-crosshair select-none"
+        style={{ touchAction: 'none' }}
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
       >
         <defs>
           <linearGradient id="primaryGradient" x1="0" y1="0" x2="0" y2="1">
@@ -656,8 +694,8 @@ export default function SimpleChart({
             </g>
           ))}
 
-          {/* Правая ось Y (OI) */}
-          {showSecondary && targetCalc.secYTicks && targetCalc.secYTicks.map((tick, i) => (
+          {/* Правая ось Y (OI) — скрыта на мобиле */}
+          {!isMobile && showSecondary && targetCalc.secYTicks && targetCalc.secYTicks.map((tick, i) => (
             <text
               key={`sec-${i}`}
               x={chartWidth + 12}
@@ -851,11 +889,11 @@ export default function SimpleChart({
             ? `${dateStr} ${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`
             : dateStr;
 
-          const cardWidth = 200;
+          const cardWidth = isMobile ? 150 : 200;
           const isRightHalf = tooltip.x > padding.left + chartWidth / 2;
           const cardX = isRightHalf
-            ? tooltip.x - cardWidth - 12
-            : tooltip.x + 12;
+            ? tooltip.x - cardWidth - 8
+            : tooltip.x + 8;
 
           const fmtSecondary = formatSecondaryValue || formatValue;
           const fmtThird = formatThirdValue || formatValue;

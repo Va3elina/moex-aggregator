@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Loader2, CheckCircle, XCircle } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 
 /**
  * OAuth callback handler.
@@ -17,6 +18,7 @@ import { Loader2, CheckCircle, XCircle } from 'lucide-react';
 
 export default function AuthCallback() {
     const navigate = useNavigate();
+    const auth = useAuth();
     const [searchParams] = useSearchParams();
     const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
     const [errorMsg, setErrorMsg] = useState('');
@@ -49,9 +51,8 @@ export default function AuthCallback() {
                     throw new Error(data.error?.message || data.detail || 'Ошибка авторизации');
                 }
 
-                // Сохраняем токены
-                localStorage.setItem('access_token', data.access_token);
-                localStorage.setItem('refresh_token', data.refresh_token);
+                // Сохраняем токены через AuthContext
+                await auth.login({ access_token: data.access_token, refresh_token: data.refresh_token });
 
                 setStatus('success');
 
@@ -62,7 +63,7 @@ export default function AuthCallback() {
                 setStatus('error');
                 setErrorMsg(err.message || 'Произошла ошибка');
             });
-    }, [searchParams, navigate]);
+    }, [searchParams, navigate, auth]);
 
     return (
         <div

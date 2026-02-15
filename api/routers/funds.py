@@ -81,6 +81,12 @@ async def get_funds_chart(
     start_time = time.time()
     print(f"REQUEST: /funds/chart category={category}, period={period}")
 
+    from api.cache import get_or_set
+    cache_key = f"funds_chart:{category}:{period}"
+    cached = get_or_set(cache_key)
+    if cached is not None:
+        return cached
+
     fund_categories = load_fund_categories()
     if category not in fund_categories:
         raise HTTPException(status_code=400, detail=f"Неизвестная категория: {category}")
@@ -175,7 +181,7 @@ async def get_funds_chart(
             duration = time.time() - start_time
             print(f"DONE: /funds/chart {len(funds_data)} funds, {duration:.2f}s")
             
-            return {
+            response = {
                 "category": category,
                 "category_name": cat_config["name"],
                 "period": period,
@@ -186,6 +192,8 @@ async def get_funds_chart(
                     "data": index_data
                 }
             }
+            get_or_set(cache_key, response, ttl=600)  # 10 мин
+            return response
             
     except Exception as e:
         log.error(f"Ошибка получения данных фондов: {e}")
@@ -441,6 +449,12 @@ async def get_fear_index():
     - 55-75: Fear (страх)
     - 75-100: Extreme Fear (экстремальный страх)
     """
+    from api.cache import get_or_set
+    cache_key = "fear_index"
+    cached = get_or_set(cache_key)
+    if cached is not None:
+        return cached
+
     engine = get_engine()
     fear_funds = get_fear_index_fund_ids()
 
@@ -549,7 +563,7 @@ async def get_fear_index():
                 classification = "Extreme Fear"
                 classification_ru = "Экстремальный страх"
             
-            return {
+            response = {
                 "date": common_dates[-1].isoformat(),
                 "fear_index": round(fear_index, 1),
                 "classification": classification,
@@ -571,6 +585,8 @@ async def get_fear_index():
                     "stocks_nav": round(stocks_data[common_dates[-1]] / 1e9, 2),
                 }
             }
+            get_or_set(cache_key, response, ttl=300)  # 5 мин
+            return response
             
     except Exception as e:
         log.error(f"Ошибка расчёта Fear Index: {e}")
@@ -584,6 +600,12 @@ async def get_fear_index_history(
     """
     История Fund Fear Index
     """
+    from api.cache import get_or_set
+    cache_key = f"fear_history:{period}"
+    cached = get_or_set(cache_key)
+    if cached is not None:
+        return cached
+
     engine = get_engine()
     fear_funds = get_fear_index_fund_ids()
 
@@ -674,11 +696,13 @@ async def get_fear_index_history(
                     "stocks_nav": round(float(row[2]) / 1e9, 2),
                 })
             
-            return {
+            response = {
                 "period": period,
                 "count": len(history),
                 "history": history
             }
+            get_or_set(cache_key, response, ttl=600)  # 10 мин
+            return response
             
     except Exception as e:
         log.error(f"Ошибка получения истории Fear Index: {e}")

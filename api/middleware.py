@@ -177,7 +177,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         )
 
         # HSTS — принудительный HTTPS (только в production)
-        if os.getenv("RENDER"):
+        if os.getenv("ENV") == "production":
             response.headers["Strict-Transport-Security"] = (
                 "max-age=31536000; includeSubDomains"
             )

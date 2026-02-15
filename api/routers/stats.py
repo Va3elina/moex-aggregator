@@ -34,6 +34,12 @@ async def get_stats(
     db: Session = Depends(get_db)
 ):
     """Получить общую статистику OI за период"""
+    from api.cache import get_or_set
+    cache_key = f"stats:{period}:{clgroup}"
+    cached = get_or_set(cache_key)
+    if cached is not None:
+        return cached
+
     days = get_period_days(period)
     start_date = datetime.now() - timedelta(days=days)
 
@@ -111,7 +117,7 @@ async def get_stats(
         "clgroup": clgroup
     }).fetchone()
 
-    return {
+    response = {
         "period": period,
         "clgroup": clgroup,
         "stats": {
@@ -128,6 +134,8 @@ async def get_stats(
         "chart_data": chart_data,
         "data_points": len(chart_data),
     }
+    get_or_set(cache_key, response, ttl=300)  # 5 мин
+    return response
 
 
 @router.get("/top")

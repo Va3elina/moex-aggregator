@@ -21,6 +21,13 @@ async def get_stocks_heatmap(
     Возвращает данные для карты рынка из материализованного представления.
     Параметры валидируются автоматически через Literal типы.
     """
+    from api.cache import get_or_set
+
+    cache_key = f"heatmap:{size_by}:{color_by}:{group_by}"
+    cached = get_or_set(cache_key)
+    if cached is not None:
+        return cached
+
     engine = get_engine()
 
     # Безопасный запрос — без пользовательских данных в SQL
@@ -73,16 +80,20 @@ async def get_stocks_heatmap(
     else:
         sectors_list = [{"name": "Все акции", "stocks": stocks, "totalValue": sum(s["value_1d"] for s in stocks)}]
 
-    return {
+    response = {
         "stocks": stocks,
         "sectors": sectors_list,
         "params": {"size_by": size_by, "color_by": color_by, "group_by": group_by}
     }
+    get_or_set(cache_key, response, ttl=300)  # 5 мин
+    return response
 
 
 @router.post("/refresh")
 async def refresh_heatmap():
     """Обновляет материализованное представление"""
+    from api.cache import invalidate
+
     engine = get_engine()
     try:
         with engine.connect() as conn:
@@ -91,4 +102,5 @@ async def refresh_heatmap():
     except Exception as e:
         raise HTTPException(status_code=500, detail="Ошибка обновления heatmap")
 
+    invalidate("heatmap")
     return {"status": "ok", "message": "Heatmap обновлён"}

@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useTheme } from '../contexts/ThemeContext';
-import { Menu, X } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
+import { Menu, X, LogIn } from 'lucide-react';
 
 const NAV_ITEMS: { path: string; label: string; disabled?: boolean }[] = [
   { path: '/fear', label: 'Индекс страха' },
@@ -14,6 +15,8 @@ const NAV_ITEMS: { path: string; label: string; disabled?: boolean }[] = [
 
 export default function Layout() {
   const { cycleTheme, themeName, themeIcon } = useTheme();
+  const { user, isAuthenticated } = useAuth();
+  const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   return (
@@ -27,7 +30,7 @@ export default function Layout() {
           <div className="flex items-center justify-between h-14 md:h-16">
             {/* Логотип */}
             <NavLink to="/" className="flex items-center gap-2">
-              <span className="text-lg md:text-xl font-bold" style={{ color: 'var(--accent)' }}>TradingLens</span>
+              <span className="text-lg md:text-xl font-bold" style={{ color: 'var(--accent)' }}>Фрейм</span>
               <span className="px-2 py-0.5 text-xs font-medium rounded-full hidden sm:inline" style={{
                 color: 'var(--text-secondary)',
                 backgroundColor: 'var(--border-color)'
@@ -85,6 +88,27 @@ export default function Layout() {
                   {themeName}
                 </span>
               </button>
+
+              {/* Auth button */}
+              {isAuthenticated ? (
+                <button
+                  onClick={() => navigate('/profile')}
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-opacity hover:opacity-80"
+                  style={{ backgroundColor: 'var(--accent)', color: 'var(--bg-primary)' }}
+                  title="Личный кабинет"
+                >
+                  {(user?.username || user?.email || '?')[0].toUpperCase()}
+                </button>
+              ) : (
+                <button
+                  onClick={() => navigate('/login')}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium transition-all hover:bg-white/10"
+                  style={{ color: 'var(--text-secondary)' }}
+                >
+                  <LogIn size={16} />
+                  <span className="hidden md:inline">Войти</span>
+                </button>
+              )}
 
               {/* Plus версия - скрыта на мобильных */}
               <button
@@ -149,6 +173,32 @@ export default function Layout() {
                   {item.label}
                 </NavLink>
               ))}
+
+              {/* Auth в мобильном меню */}
+              {isAuthenticated ? (
+                <button
+                  onClick={() => { navigate('/profile'); setMobileMenuOpen(false); }}
+                  className="w-full mt-3 flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all"
+                  style={{ color: 'var(--text-secondary)', backgroundColor: 'color-mix(in srgb, var(--accent) 10%, transparent)' }}
+                >
+                  <div
+                    className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold"
+                    style={{ backgroundColor: 'var(--accent)', color: 'var(--bg-primary)' }}
+                  >
+                    {(user?.username || user?.email || '?')[0].toUpperCase()}
+                  </div>
+                  Личный кабинет
+                </button>
+              ) : (
+                <button
+                  onClick={() => { navigate('/login'); setMobileMenuOpen(false); }}
+                  className="w-full mt-3 flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-medium transition-all"
+                  style={{ color: 'var(--accent)', backgroundColor: 'color-mix(in srgb, var(--accent) 10%, transparent)' }}
+                >
+                  <LogIn size={16} />
+                  Войти
+                </button>
+              )}
 
               {/* Plus версия в мобильном меню */}
               <button

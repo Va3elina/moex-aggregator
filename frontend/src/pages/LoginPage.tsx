@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { LogIn, Mail, Lock, Eye, EyeOff, ArrowRight } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, ArrowRight, X } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 
 // SVG иконки провайдеров
 const GoogleIcon = () => (
@@ -32,7 +33,14 @@ interface OAuthProvider {
 
 export default function LoginPage() {
     const navigate = useNavigate();
+    const auth = useAuth();
     const [mode, setMode] = useState<'login' | 'register'>('login');
+
+    // Если уже залогинен — редирект на главную
+    useEffect(() => {
+        if (auth.isAuthenticated) navigate('/');
+    }, [auth.isAuthenticated, navigate]);
+
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [username, setUsername] = useState('');
@@ -73,9 +81,8 @@ export default function LoginPage() {
                 throw new Error(data.error?.message || data.detail || 'Ошибка');
             }
 
-            // Сохраняем токены
-            localStorage.setItem('access_token', data.access_token);
-            localStorage.setItem('refresh_token', data.refresh_token);
+            // Сохраняем токены через AuthContext
+            await auth.login({ access_token: data.access_token, refresh_token: data.refresh_token });
             navigate('/');
         } catch (err: any) {
             setError(err.message || 'Произошла ошибка');
@@ -100,7 +107,7 @@ export default function LoginPage() {
         }
     };
 
-    const providerIcons: Record<string, JSX.Element> = {
+    const providerIcons: Record<string, React.ReactNode> = {
         google: <GoogleIcon />,
         vk: <VKIcon />,
         telegram: <TelegramIcon />,
@@ -112,167 +119,207 @@ export default function LoginPage() {
         telegram: 'hover:border-[#26A5E4]/50 hover:bg-[#26A5E4]/10',
     };
 
+    const handleClose = () => {
+        navigate('/');
+    };
+
     return (
-        <div className="min-h-screen flex items-center justify-center px-4 py-12"
-            style={{
-                background: 'radial-gradient(ellipse at top, #1a1f2e 0%, #0f1117 50%, #0a0c10 100%)'
-            }}>
-            <div className="w-full max-w-md">
-                {/* Logo */}
-                <div className="text-center mb-8">
-                    <div className="inline-flex items-center gap-3 mb-4">
-                        <div className="w-10 h-10 bg-gradient-to-br from-[#C8FF2E] to-[#22c55e] rounded-xl flex items-center justify-center">
-                            <LogIn className="w-5 h-5 text-black" />
-                        </div>
-                        <span className="text-2xl font-bold text-white">Фрейм</span>
-                    </div>
-                    <p className="text-gray-400 text-sm">
-                        {mode === 'login' ? 'Войдите в аккаунт' : 'Создайте аккаунт'}
+        <div className="fixed inset-0 z-[100] flex items-center justify-center px-4"
+            style={{ backgroundColor: 'rgba(0, 0, 0, 0.6)' }}
+        >
+            {/* Backdrop — клик закрывает */}
+            <div className="absolute inset-0" onClick={handleClose} />
+
+            {/* Модальное окно */}
+            <div
+                className="relative w-full max-w-md backdrop-blur-2xl border rounded-2xl p-6 md:p-8 shadow-2xl max-h-[90vh] overflow-y-auto"
+                style={{
+                    backgroundColor: 'var(--glass-bg)',
+                    borderColor: 'var(--border-color)',
+                }}
+            >
+                {/* Кнопка закрытия */}
+                <button
+                    onClick={handleClose}
+                    className="absolute top-4 right-4 p-1.5 rounded-lg transition-all hover:bg-white/10"
+                    style={{ color: 'var(--text-muted)' }}
+                >
+                    <X size={20} />
+                </button>
+
+                {/* Заголовок */}
+                <div className="text-center mb-6">
+                    <h2 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
+                        {mode === 'login' ? 'Войти в аккаунт' : 'Создать аккаунт'}
+                    </h2>
+                    <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
+                        {mode === 'login' ? 'Добро пожаловать в Фрейм' : 'Регистрация в Фрейм'}
                     </p>
                 </div>
 
-                {/* Card */}
-                <div className="bg-[#1a1f2e]/80 backdrop-blur-xl border border-white/10 rounded-2xl p-8 shadow-2xl">
+                {/* OAuth buttons */}
+                <div className="space-y-2.5 mb-5">
+                    {providers.map(p => (
+                        <button
+                            key={p.id}
+                            onClick={() => handleOAuth(p.id)}
+                            className={`w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-xl border font-medium transition-all duration-200 ${providerColors[p.id] || ''} ${!p.configured ? 'opacity-50' : ''}`}
+                            style={{
+                                borderColor: 'var(--border-color)',
+                                color: 'var(--text-primary)',
+                                backgroundColor: 'color-mix(in srgb, var(--text-primary) 5%, transparent)',
+                            }}
+                            disabled={!p.configured}
+                        >
+                            {providerIcons[p.id]}
+                            <span className="text-sm">
+                                {mode === 'login' ? 'Войти' : 'Регистрация'} через {p.name}
+                            </span>
+                            {!p.configured && (
+                                <span className="text-xs ml-auto" style={{ color: 'var(--text-muted)' }}>скоро</span>
+                            )}
+                        </button>
+                    ))}
+                </div>
 
-                    {/* OAuth buttons */}
-                    <div className="space-y-3 mb-6">
-                        {providers.map(p => (
-                            <button
-                                key={p.id}
-                                onClick={() => handleOAuth(p.id)}
-                                className={`w-full flex items-center justify-center gap-3 py-3 px-4 rounded-xl border border-white/10 bg-white/5 text-white font-medium transition-all duration-200 ${providerColors[p.id] || ''} ${!p.configured ? 'opacity-50' : ''}`}
-                                disabled={!p.configured}
-                            >
-                                {providerIcons[p.id]}
-                                <span>
-                                    {mode === 'login' ? 'Войти' : 'Регистрация'} через {p.name}
-                                </span>
-                                {!p.configured && (
-                                    <span className="text-xs text-gray-500 ml-auto">скоро</span>
-                                )}
-                            </button>
-                        ))}
+                {/* Divider */}
+                <div className="flex items-center gap-4 mb-5">
+                    <div className="flex-1 h-px" style={{ backgroundColor: 'var(--border-color)' }} />
+                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>или по email</span>
+                    <div className="flex-1 h-px" style={{ backgroundColor: 'var(--border-color)' }} />
+                </div>
+
+                {/* Error */}
+                {error && (
+                    <div className="mb-4 p-3 rounded-xl text-sm"
+                        style={{
+                            backgroundColor: 'color-mix(in srgb, #ef4444 15%, transparent)',
+                            color: '#ef4444',
+                            border: '1px solid color-mix(in srgb, #ef4444 30%, transparent)',
+                        }}
+                    >
+                        {error}
                     </div>
+                )}
 
-                    {/* Divider */}
-                    <div className="flex items-center gap-4 mb-6">
-                        <div className="flex-1 h-px bg-white/10" />
-                        <span className="text-gray-500 text-sm">или по email</span>
-                        <div className="flex-1 h-px bg-white/10" />
-                    </div>
-
-                    {/* Error */}
-                    {error && (
-                        <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
-                            {error}
+                {/* Form */}
+                <form onSubmit={handleSubmit} className="space-y-3.5">
+                    {/* Username (only register) */}
+                    {mode === 'register' && (
+                        <div>
+                            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+                                Имя пользователя
+                            </label>
+                            <input
+                                type="text"
+                                value={username}
+                                onChange={e => setUsername(e.target.value)}
+                                placeholder="trader123"
+                                className="w-full px-4 py-2.5 rounded-xl border outline-none transition-all text-sm"
+                                style={{
+                                    backgroundColor: 'color-mix(in srgb, var(--text-primary) 5%, transparent)',
+                                    borderColor: 'var(--border-color)',
+                                    color: 'var(--text-primary)',
+                                }}
+                            />
                         </div>
                     )}
 
-                    {/* Form */}
-                    <form onSubmit={handleSubmit} className="space-y-4">
-                        {/* Username (only register) */}
-                        {mode === 'register' && (
-                            <div>
-                                <label className="block text-sm font-medium text-gray-400 mb-1.5">
-                                    Имя пользователя
-                                </label>
-                                <input
-                                    type="text"
-                                    value={username}
-                                    onChange={e => setUsername(e.target.value)}
-                                    placeholder="trader123"
-                                    className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-gray-600 focus:border-[#C8FF2E]/50 focus:ring-1 focus:ring-[#C8FF2E]/30 outline-none transition-all"
-                                />
-                            </div>
-                        )}
-
-                        {/* Email */}
-                        <div>
-                            <label className="block text-sm font-medium text-gray-400 mb-1.5">Email</label>
-                            <div className="relative">
-                                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
-                                <input
-                                    type="email"
-                                    value={email}
-                                    onChange={e => setEmail(e.target.value)}
-                                    placeholder="you@example.com"
-                                    required
-                                    className="w-full pl-11 pr-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-gray-600 focus:border-[#C8FF2E]/50 focus:ring-1 focus:ring-[#C8FF2E]/30 outline-none transition-all"
-                                />
-                            </div>
+                    {/* Email */}
+                    <div>
+                        <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>Email</label>
+                        <div className="relative">
+                            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+                            <input
+                                type="email"
+                                value={email}
+                                onChange={e => setEmail(e.target.value)}
+                                placeholder="you@example.com"
+                                required
+                                className="w-full pl-10 pr-4 py-2.5 rounded-xl border outline-none transition-all text-sm"
+                                style={{
+                                    backgroundColor: 'color-mix(in srgb, var(--text-primary) 5%, transparent)',
+                                    borderColor: 'var(--border-color)',
+                                    color: 'var(--text-primary)',
+                                }}
+                            />
                         </div>
+                    </div>
 
-                        {/* Password */}
-                        <div>
-                            <label className="block text-sm font-medium text-gray-400 mb-1.5">Пароль</label>
-                            <div className="relative">
-                                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
-                                <input
-                                    type={showPassword ? 'text' : 'password'}
-                                    value={password}
-                                    onChange={e => setPassword(e.target.value)}
-                                    placeholder={mode === 'register' ? 'Минимум 8 символов' : '••••••••'}
-                                    required
-                                    minLength={mode === 'register' ? 8 : 1}
-                                    className="w-full pl-11 pr-12 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-gray-600 focus:border-[#C8FF2E]/50 focus:ring-1 focus:ring-[#C8FF2E]/30 outline-none transition-all"
-                                />
-                                <button
-                                    type="button"
-                                    onClick={() => setShowPassword(!showPassword)}
-                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
-                                >
-                                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                                </button>
-                            </div>
+                    {/* Password */}
+                    <div>
+                        <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>Пароль</label>
+                        <div className="relative">
+                            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+                            <input
+                                type={showPassword ? 'text' : 'password'}
+                                value={password}
+                                onChange={e => setPassword(e.target.value)}
+                                placeholder={mode === 'register' ? 'Минимум 8 символов' : '••••••••'}
+                                required
+                                minLength={mode === 'register' ? 8 : 1}
+                                className="w-full pl-10 pr-11 py-2.5 rounded-xl border outline-none transition-all text-sm"
+                                style={{
+                                    backgroundColor: 'color-mix(in srgb, var(--text-primary) 5%, transparent)',
+                                    borderColor: 'var(--border-color)',
+                                    color: 'var(--text-primary)',
+                                }}
+                            />
+                            <button
+                                type="button"
+                                onClick={() => setShowPassword(!showPassword)}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 transition-colors hover:opacity-80"
+                                style={{ color: 'var(--text-muted)' }}
+                            >
+                                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                            </button>
                         </div>
+                    </div>
 
-                        {/* Submit */}
-                        <button
-                            type="submit"
-                            disabled={loading}
-                            className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-gradient-to-r from-[#C8FF2E] to-[#9DCC24] text-black font-bold text-base hover:opacity-90 transition-opacity disabled:opacity-50"
-                        >
-                            {loading ? (
-                                <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin" />
-                            ) : (
-                                <>
-                                    {mode === 'login' ? 'Войти' : 'Зарегистрироваться'}
-                                    <ArrowRight size={18} />
-                                </>
-                            )}
-                        </button>
-                    </form>
-
-                    {/* Toggle mode */}
-                    <div className="mt-6 text-center text-sm text-gray-400">
-                        {mode === 'login' ? (
-                            <>
-                                Нет аккаунта?{' '}
-                                <button
-                                    onClick={() => { setMode('register'); setError(''); }}
-                                    className="text-[#C8FF2E] hover:underline font-medium"
-                                >
-                                    Зарегистрироваться
-                                </button>
-                            </>
+                    {/* Submit */}
+                    <button
+                        type="submit"
+                        disabled={loading}
+                        className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-bold text-sm transition-opacity disabled:opacity-50 hover:opacity-90"
+                        style={{ backgroundColor: 'var(--accent)', color: 'var(--bg-primary)' }}
+                    >
+                        {loading ? (
+                            <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
                         ) : (
                             <>
-                                Уже есть аккаунт?{' '}
-                                <button
-                                    onClick={() => { setMode('login'); setError(''); }}
-                                    className="text-[#C8FF2E] hover:underline font-medium"
-                                >
-                                    Войти
-                                </button>
+                                {mode === 'login' ? 'Войти' : 'Зарегистрироваться'}
+                                <ArrowRight size={16} />
                             </>
                         )}
-                    </div>
-                </div>
+                    </button>
+                </form>
 
-                {/* Footer */}
-                <p className="text-center text-xs text-gray-600 mt-6">
-                    Нажимая «Войти», вы соглашаетесь с условиями использования сервиса
-                </p>
+                {/* Toggle mode */}
+                <div className="mt-5 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
+                    {mode === 'login' ? (
+                        <>
+                            Нет аккаунта?{' '}
+                            <button
+                                onClick={() => { setMode('register'); setError(''); }}
+                                className="font-medium hover:underline"
+                                style={{ color: 'var(--accent)' }}
+                            >
+                                Зарегистрироваться
+                            </button>
+                        </>
+                    ) : (
+                        <>
+                            Уже есть аккаунт?{' '}
+                            <button
+                                onClick={() => { setMode('login'); setError(''); }}
+                                className="font-medium hover:underline"
+                                style={{ color: 'var(--accent)' }}
+                            >
+                                Войти
+                            </button>
+                        </>
+                    )}
+                </div>
             </div>
         </div>
     );

@@ -181,28 +181,6 @@ export default function StrengthPage() {
     // Текущие значения для тултипа
     const hoverData = hoverIndex !== null && syncedData[hoverIndex] ? syncedData[hoverIndex] : null;
 
-    if (loading && !current) {
-        return (
-            <div className="p-4 md:p-6 max-w-7xl mx-auto">
-                <div className="animate-pulse">
-                    <div className="h-8 bg-white/5 rounded w-64 mb-6" />
-                    <div className="h-96 bg-white/5 rounded-2xl" />
-                </div>
-            </div>
-        );
-    }
-
-    if (error) {
-        return (
-            <div className="p-4 md:p-6 max-w-7xl mx-auto">
-                <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-6 text-center">
-                    <Activity className="w-12 h-12 text-red-400 mx-auto mb-3" />
-                    <p className="text-red-400">{error}</p>
-                </div>
-            </div>
-        );
-    }
-
     const stocksAbove = current?.stocks ? current.stocks.filter(s => s.is_above).length : current?.count_above ?? 0;
     const stocksTotal = current?.stocks?.length ?? current?.count_total ?? 0;
 
@@ -283,6 +261,22 @@ export default function StrengthPage() {
                 onMouseMove={handleMouseMove}
                 onMouseLeave={handleMouseLeave}
             >
+                {/* Полный loading / error на месте графика */}
+                {loading && !current ? (
+                    <div className="flex items-center justify-center h-[400px]">
+                        <div className="flex flex-col items-center gap-3">
+                            <div className="w-8 h-8 border-2 border-[#8b5cf6] border-t-transparent rounded-full animate-spin" />
+                            <span className="text-theme-secondary">Загрузка...</span>
+                        </div>
+                    </div>
+                ) : error && !current ? (
+                    <div className="flex items-center justify-center h-[400px]">
+                        <div className="text-center">
+                            <Activity className="w-12 h-12 text-red-400 mx-auto mb-3" />
+                            <p className="text-red-400">{error}</p>
+                        </div>
+                    </div>
+                ) : (<>
                 {/* Индикатор обновления данных */}
                 {loading && syncedData.length > 0 && (
                     <div className="absolute top-3 right-4 z-20 flex items-center gap-2 bg-theme-tertiary/90 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-theme">
@@ -422,6 +416,7 @@ export default function StrengthPage() {
                         </div>
                     )}
                 </div>
+                </>)}
             </div>
 
             {/* Таблица акций с фильтром по секторам */}

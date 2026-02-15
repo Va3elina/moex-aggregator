@@ -41,7 +41,7 @@ from api.middleware import (
 # Определение среды
 # ═══════════════════════════════════════════════════════════════
 
-IS_PRODUCTION = bool(os.getenv("RENDER"))  # Render.com ставит RENDER=true
+IS_PRODUCTION = os.getenv("ENV", "development") == "production"
 
 # ═══════════════════════════════════════════════════════════════
 # Настройка логирования (до создания app!)
