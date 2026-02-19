@@ -27,6 +27,7 @@ const PERIOD_DAYS: Record<Period, number> = {
 };
 
 const EMA_PERIOD = 200; // Fixed EMA period
+const MAX_CHART_POINTS = 800; // Максимум точек на графике — выше начинается лаг
 
 const CLASSIFICATION_LABELS: Record<string, { label: string; color: string; bg: string }> = {
     overbought: { label: 'Перекупленность', color: 'text-emerald-400', bg: 'bg-emerald-500/20' },
@@ -65,6 +66,7 @@ export default function StrengthPage() {
     const [hoverY, setHoverY] = useState<number>(0);
 
     const containerRef = useRef<HTMLDivElement>(null);
+    const mouseMoveRaf = useRef<number | null>(null);
 
     useEffect(() => {
         const fetchData = async () => {
@@ -105,20 +107,32 @@ export default function StrengthPage() {
         }));
     }, [history]);
 
-    // Синхронизированные данные - только даты где есть оба значения
+    // Синхронизированные данные — breadth + IMOEX по датам
     const syncedData = useMemo(() => {
         if (!breadthData.length || !imoexData.length) return [];
 
         const imoexMap = new Map(imoexData.map(d => [d.time, d.value]));
-
-        // Используем даты из breadth как основу, ищем соответствующие IMOEX
-        return breadthData
+        const full = breadthData
             .filter(d => imoexMap.has(d.time))
             .map(d => ({
                 time: d.time,
                 breadth: d.value,
-                imoex: imoexMap.get(d.time)!
+                imoex: imoexMap.get(d.time)!,
             }));
+
+        // Downsample для больших периодов — иначе 4600+ точек лагают SVG
+        if (full.length <= MAX_CHART_POINTS) return full;
+        const step = full.length / MAX_CHART_POINTS;
+        return Array.from({ length: MAX_CHART_POINTS }, (_, i) => {
+            const lo = Math.floor(i * step);
+            const hi = Math.min(Math.floor((i + 1) * step), full.length);
+            const bucket = full.slice(lo, hi);
+            return {
+                time: bucket[Math.floor(bucket.length / 2)].time,
+                breadth: bucket.reduce((s, d) => s + d.breadth, 0) / bucket.length,
+                imoex: bucket.reduce((s, d) => s + d.imoex, 0) / bucket.length,
+            };
+        });
     }, [breadthData, imoexData]);
 
     // Реальное количество акций в каждом секторе (только те, что вернул API)
@@ -161,20 +175,31 @@ export default function StrengthPage() {
 
     const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
         if (!containerRef.current || !syncedData.length) return;
+        if (mouseMoveRaf.current !== null) return; // throttle до одного RAF
 
-        const rect = containerRef.current.getBoundingClientRect();
-        const x = e.clientX - rect.left - padding.left;
-        const y = e.clientY - rect.top;
-        const chartWidth = rect.width - padding.left - padding.right;
-        const idx = Math.round((x / chartWidth) * (syncedData.length - 1));
+        const clientX = e.clientX;
+        const clientY = e.clientY;
 
-        if (idx >= 0 && idx < syncedData.length) {
-            setHoverIndex(idx);
-            setHoverY(y);
-        }
+        mouseMoveRaf.current = requestAnimationFrame(() => {
+            mouseMoveRaf.current = null;
+            if (!containerRef.current) return;
+            const rect = containerRef.current.getBoundingClientRect();
+            const x = clientX - rect.left - padding.left;
+            const y = clientY - rect.top;
+            const chartWidth = rect.width - padding.left - padding.right;
+            const idx = Math.round((x / chartWidth) * (syncedData.length - 1));
+            if (idx >= 0 && idx < syncedData.length) {
+                setHoverIndex(idx);
+                setHoverY(y);
+            }
+        });
     }, [syncedData.length, padding.left, padding.right]);
 
     const handleMouseLeave = useCallback(() => {
+        if (mouseMoveRaf.current !== null) {
+            cancelAnimationFrame(mouseMoveRaf.current);
+            mouseMoveRaf.current = null;
+        }
         setHoverIndex(null);
     }, []);
 
@@ -866,10 +891,20 @@ function SyncedBreadthChart({
             ))}
 
             {/* Animated histogram bars */}
-            {mode === 'histogram' && animBars.map((bar, i) => (
-                <rect key={i} x={bar.x} y={bar.y} width={bar.width} height={bar.height}
-                    fill={bar.color} opacity={hoverIndex === i ? 1 : 0.8} />
-            ))}
+            {mode === 'histogram' && (
+                <>
+                    {animBars.map((bar, i) => (
+                        <rect key={i} x={bar.x} y={bar.y} width={bar.width} height={bar.height}
+                            fill={bar.color} opacity={0.75} />
+                    ))}
+                    {/* Highlight активного бара отдельно — не перерисовываем все 800 */}
+                    {hoverIndex !== null && animBars[hoverIndex] && (() => {
+                        const bar = animBars[hoverIndex];
+                        return <rect x={bar.x} y={bar.y} width={bar.width} height={bar.height}
+                            fill={bar.color} opacity={1} />;
+                    })()}
+                </>
+            )}
 
             {/* Animated line with colored segments */}
             {mode === 'line' && chartData.points.length > 1 && (() => {
