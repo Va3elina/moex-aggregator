@@ -453,7 +453,11 @@ export default function StrengthPage() {
 
                 {/* Навигатор временного диапазона */}
                 {syncedData.length > 0 && (
-                    <div className="px-4 pb-3">
+                    <div
+                        className="px-4 pb-3"
+                        onMouseMove={e => e.stopPropagation()}
+                        onMouseEnter={() => setHoverIndex(null)}
+                    >
                         <ChartNavigator
                             data={navigatorData}
                             onChange={(s, e) => setNavRange([s, e])}

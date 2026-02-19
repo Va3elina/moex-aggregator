@@ -191,6 +191,9 @@ export default function SimpleChart({
   // Флаг первой загрузки
   const isFirstRender = useRef(true);
 
+  // Ссылка на предыдущий массив data — чтобы различать смену данных от перетаскивания навигатора
+  const prevDataRef = useRef(data);
+
   useEffect(() => {
     const updateWidth = () => {
       if (containerRef.current) {
@@ -320,8 +323,12 @@ export default function SimpleChart({
     const targetSecondary = targetCalc.secondaryPoints.map(p => ({ x: p.x, y: p.y }));
     const targetThird = targetCalc.thirdPoints.map(p => ({ x: p.x, y: p.y }));
 
-    // Навигатор: мгновенное обновление без анимации
-    if (showNavigator) {
+    // Навигатор: мгновенное обновление ТОЛЬКО при перетаскивании диапазона
+    // (data — тот же массив). При смене периода data меняется → анимируем как обычно.
+    const isNavDrag = showNavigator && data === prevDataRef.current;
+    prevDataRef.current = data;
+
+    if (isNavDrag) {
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
       setAnimatedPaths({
         primary: pointsToPath(targetPrimary),
@@ -451,7 +458,7 @@ export default function SimpleChart({
     }
 
     animationRef.current = requestAnimationFrame(animate);
-  }, [loading, displayData, targetCalc, chartHeight, showNavigator]);
+  }, [loading, data, displayData, targetCalc, chartHeight, showNavigator]);
 
   // Запуск анимации при изменении данных
   useEffect(() => {
