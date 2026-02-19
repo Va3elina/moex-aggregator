@@ -474,6 +474,7 @@ export default function OpenInterestPage() {
         showValueHeader={false}
         legendPosition="top"
         showDownloadButton={false}
+        showNavigator={true}
       />
 
       {/* Легенда */}

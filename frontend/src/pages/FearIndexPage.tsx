@@ -331,6 +331,7 @@ export default function FearIndexPage() {
             secondaryLabel="Rotation Ratio"
             loading={loading}
             allowHistogram={true}
+            showNavigator={true}
           />
         ) : (
           <div className="h-96 flex items-center justify-center text-theme-muted">

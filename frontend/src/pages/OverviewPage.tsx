@@ -391,6 +391,7 @@ export default function OverviewPage() {
           primaryLabel="Цена"
           secondaryLabel="Покупки"
           thirdLabel="Продажи"
+          showNavigator={true}
         />
       </div>
     </div>

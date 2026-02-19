@@ -1,5 +1,6 @@
 import { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { Download, BarChart2, TrendingUp } from 'lucide-react';
+import ChartNavigator from './ChartNavigator';
 
 interface DataPoint {
   time: string;
@@ -29,6 +30,7 @@ interface SimpleChartProps {
   showValueHeader?: boolean;
   legendPosition?: 'top' | 'bottom';
   showDownloadButton?: boolean;
+  showNavigator?: boolean;
 }
 
 // Интерполяция между двумя значениями
@@ -113,11 +115,40 @@ export default function SimpleChart({
   showValueHeader = true,
   legendPosition = 'bottom',
   showDownloadButton = true,
+  showNavigator = false,
 }: SimpleChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [width, setWidth] = useState(800);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+  // Navigator: диапазон видимых данных (индексы в массиве data)
+  const [navRange, setNavRange] = useState<[number, number]>([0, Math.max(0, data.length - 1)]);
+
+  // Сброс навигатора при смене данных (новый период)
+  useEffect(() => {
+    setNavRange([0, Math.max(0, data.length - 1)]);
+  }, [data.length, data[0]?.time]);
+
+  // Срез данных по выбранному диапазону навигатора
+  const displayData = useMemo(() => {
+    if (!showNavigator || !data.length) return data;
+    return data.slice(navRange[0], navRange[1] + 1);
+  }, [showNavigator, data, navRange]);
+
+  const displaySecondaryData = useMemo(() => {
+    if (!showNavigator || !secondaryData || !displayData.length) return secondaryData;
+    const t0 = displayData[0].time;
+    const t1 = displayData[displayData.length - 1].time;
+    return secondaryData.filter(d => d.time >= t0 && d.time <= t1);
+  }, [showNavigator, secondaryData, displayData]);
+
+  const displayThirdData = useMemo(() => {
+    if (!showNavigator || !thirdData || !displayData.length) return thirdData;
+    const t0 = displayData[0].time;
+    const t1 = displayData[displayData.length - 1].time;
+    return thirdData.filter(d => d.time >= t0 && d.time <= t1);
+  }, [showNavigator, thirdData, displayData]);
   const [chartMode, setChartMode] = useState<'line' | 'histogram'>('line');
 
   useEffect(() => {
@@ -182,9 +213,9 @@ export default function SimpleChart({
   const chartWidth = Math.max(width - padding.left - padding.right, 100);
   const chartHeight = effectiveHeight - padding.top - padding.bottom;
 
-  // Вычисление целевых точек
+  // Вычисление целевых точек (использует displayData — срез по навигатору)
   const targetCalc = useMemo(() => {
-    if (data.length === 0) {
+    if (displayData.length === 0) {
       return {
         points: [],
         secondaryPoints: [],
@@ -195,7 +226,7 @@ export default function SimpleChart({
     }
 
     // Primary scale (price)
-    const values = data.map((d) => d.value);
+    const values = displayData.map((d) => d.value);
     const minVal = Math.min(...values);
     const maxVal = Math.max(...values);
     const range = maxVal - minVal || 1;
@@ -207,11 +238,11 @@ export default function SimpleChart({
     let secYMin = 0;
     let secYMax = 1;
     const allSecondaryValues: number[] = [];
-    if (showSecondary && secondaryData && secondaryData.length > 0) {
-      allSecondaryValues.push(...secondaryData.map((d) => d.value));
+    if (showSecondary && displaySecondaryData && displaySecondaryData.length > 0) {
+      allSecondaryValues.push(...displaySecondaryData.map((d) => d.value));
     }
-    if (showThird && thirdData && thirdData.length > 0) {
-      allSecondaryValues.push(...thirdData.map((d) => d.value));
+    if (showThird && displayThirdData && displayThirdData.length > 0) {
+      allSecondaryValues.push(...displayThirdData.map((d) => d.value));
     }
     if (allSecondaryValues.length > 0) {
       const secMin = Math.min(...allSecondaryValues);
@@ -227,8 +258,8 @@ export default function SimpleChart({
       chartHeight - ((value - secYMin) / (secYMax - secYMin)) * chartHeight;
 
     // Primary points
-    const points = data.map((d, i) => ({
-      x: scaleX(i, data.length),
+    const points = displayData.map((d, i) => ({
+      x: scaleX(i, displayData.length),
       y: scaleY(d.value),
       value: d.value,
       time: d.time,
@@ -236,9 +267,9 @@ export default function SimpleChart({
 
     // Secondary points
     let secondaryPoints: typeof points = [];
-    if (showSecondary && secondaryData && secondaryData.length > 0) {
-      secondaryPoints = secondaryData.map((d, i) => ({
-        x: scaleX(i, secondaryData.length),
+    if (showSecondary && displaySecondaryData && displaySecondaryData.length > 0) {
+      secondaryPoints = displaySecondaryData.map((d, i) => ({
+        x: scaleX(i, displaySecondaryData.length),
         y: scaleSecondaryY(d.value),
         value: d.value,
         time: d.time,
@@ -247,9 +278,9 @@ export default function SimpleChart({
 
     // Third points
     let thirdPoints: typeof points = [];
-    if (showThird && thirdData && thirdData.length > 0) {
-      thirdPoints = thirdData.map((d, i) => ({
-        x: scaleX(i, thirdData.length),
+    if (showThird && displayThirdData && displayThirdData.length > 0) {
+      thirdPoints = displayThirdData.map((d, i) => ({
+        x: scaleX(i, displayThirdData.length),
         y: scaleSecondaryY(d.value),
         value: d.value,
         time: d.time,
@@ -272,22 +303,37 @@ export default function SimpleChart({
       : [];
 
     // X ticks
-    const xTickCount = Math.min(7, data.length);
+    const xTickCount = Math.min(7, displayData.length);
     const xTicks = Array.from({ length: xTickCount }, (_, i) => {
-      const index = Math.floor((i / Math.max(xTickCount - 1, 1)) * (data.length - 1));
-      return { time: data[index].time, x: scaleX(index, data.length) };
+      const index = Math.floor((i / Math.max(xTickCount - 1, 1)) * (displayData.length - 1));
+      return { time: displayData[index].time, x: scaleX(index, displayData.length) };
     });
 
     return { points, secondaryPoints, thirdPoints, yTicks, secYTicks, xTicks };
-  }, [data, secondaryData, thirdData, chartWidth, chartHeight, showSecondary, showThird]);
+  }, [displayData, displaySecondaryData, displayThirdData, chartWidth, chartHeight, showSecondary, showThird]);
 
   // Анимация морфинга
   const animateMorph = useCallback(() => {
-    if (loading || data.length === 0) return;
+    if (loading || displayData.length === 0) return;
 
     const targetPrimary = targetCalc.points.map(p => ({ x: p.x, y: p.y }));
     const targetSecondary = targetCalc.secondaryPoints.map(p => ({ x: p.x, y: p.y }));
     const targetThird = targetCalc.thirdPoints.map(p => ({ x: p.x, y: p.y }));
+
+    // Навигатор: мгновенное обновление без анимации
+    if (showNavigator) {
+      if (animationRef.current) cancelAnimationFrame(animationRef.current);
+      setAnimatedPaths({
+        primary: pointsToPath(targetPrimary),
+        area: pointsToAreaPath(targetPrimary, chartHeight),
+        secondary: pointsToPath(targetSecondary),
+        third: pointsToPath(targetThird),
+      });
+      prevPointsRef.current = { primary: targetPrimary, secondary: targetSecondary, third: targetThird };
+      isFirstRender.current = false;
+      setOiOpacity(1);
+      return;
+    }
 
     // Если первый рендер или нет предыдущих данных - показываем с fade
     if (isFirstRender.current || prevPointsRef.current.primary.length === 0) {
@@ -405,7 +451,7 @@ export default function SimpleChart({
     }
 
     animationRef.current = requestAnimationFrame(animate);
-  }, [loading, data, targetCalc, chartHeight]);
+  }, [loading, displayData, targetCalc, chartHeight, showNavigator]);
 
   // Запуск анимации при изменении данных
   useEffect(() => {
@@ -596,8 +642,8 @@ export default function SimpleChart({
     );
   }
 
-  const currentValue = data[data.length - 1]?.value || 0;
-  const firstValue = data[0]?.value || currentValue;
+  const currentValue = displayData[displayData.length - 1]?.value || 0;
+  const firstValue = displayData[0]?.value || currentValue;
   const change = currentValue - firstValue;
   const changePercent = firstValue !== 0 ? (change / firstValue) * 100 : 0;
   const isPositive = change >= 0;
@@ -986,6 +1032,15 @@ export default function SimpleChart({
           );
         })()}
       </svg>
+
+      {/* Навигатор временного диапазона */}
+      {showNavigator && (
+        <ChartNavigator
+          data={data}
+          onChange={(s, e) => setNavRange([s, e])}
+          color={primaryColor}
+        />
+      )}
 
       {/* Легенда — внизу */}
       {legendPosition === 'bottom' && (

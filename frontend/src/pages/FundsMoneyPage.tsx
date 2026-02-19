@@ -307,6 +307,7 @@ export default function FundsMoneyPage() {
                         showValueHeader={false}
                         legendPosition="top"
                         showDownloadButton={false}
+                        showNavigator={true}
                     />
                 </div>
             ) : (

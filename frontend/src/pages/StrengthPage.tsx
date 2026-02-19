@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { TrendingUp, Activity, ArrowUp, ArrowDown, BarChart2, LineChart, Filter } from 'lucide-react';
+import ChartNavigator from '../components/ChartNavigator';
 import {
     getBreadthCurrent,
     getBreadthHistory,
@@ -135,6 +136,17 @@ export default function StrengthPage() {
         });
     }, [breadthData, imoexData]);
 
+    // Навигатор временного диапазона
+    const [navRange, setNavRange] = useState<[number, number]>([0, 0]);
+    useEffect(() => {
+        setNavRange([0, Math.max(0, syncedData.length - 1)]);
+    }, [syncedData.length, syncedData[0]?.time]);
+
+    const displaySyncedData = useMemo(() => {
+        if (!syncedData.length) return syncedData;
+        return syncedData.slice(navRange[0], navRange[1] + 1);
+    }, [syncedData, navRange]);
+
     // Реальное количество акций в каждом секторе (только те, что вернул API)
     const sectorCounts = useMemo(() => {
         if (!current?.stocks) return {};
@@ -174,7 +186,7 @@ export default function StrengthPage() {
     const padding = { left: 10, right: 70, top: 20, bottom: 30 };
 
     const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-        if (!containerRef.current || !syncedData.length) return;
+        if (!containerRef.current || !displaySyncedData.length) return;
         if (mouseMoveRaf.current !== null) return; // throttle до одного RAF
 
         const clientX = e.clientX;
@@ -187,13 +199,13 @@ export default function StrengthPage() {
             const x = clientX - rect.left - padding.left;
             const y = clientY - rect.top;
             const chartWidth = rect.width - padding.left - padding.right;
-            const idx = Math.round((x / chartWidth) * (syncedData.length - 1));
-            if (idx >= 0 && idx < syncedData.length) {
+            const idx = Math.round((x / chartWidth) * (displaySyncedData.length - 1));
+            if (idx >= 0 && idx < displaySyncedData.length) {
                 setHoverIndex(idx);
                 setHoverY(y);
             }
         });
-    }, [syncedData.length, padding.left, padding.right]);
+    }, [displaySyncedData.length, padding.left, padding.right]);
 
     const handleMouseLeave = useCallback(() => {
         if (mouseMoveRaf.current !== null) {
@@ -204,7 +216,7 @@ export default function StrengthPage() {
     }, []);
 
     // Текущие значения для тултипа
-    const hoverData = hoverIndex !== null && syncedData[hoverIndex] ? syncedData[hoverIndex] : null;
+    const hoverData = hoverIndex !== null && displaySyncedData[hoverIndex] ? displaySyncedData[hoverIndex] : null;
 
     const stocksAbove = current?.stocks ? current.stocks.filter(s => s.is_above).length : current?.count_above ?? 0;
     const stocksTotal = current?.stocks?.length ?? current?.count_total ?? 0;
@@ -314,7 +326,7 @@ export default function StrengthPage() {
                 {hoverData && hoverIndex !== null && containerRef.current && (() => {
                     const rect = containerRef.current!.getBoundingClientRect();
                     const chartWidth = rect.width - padding.left - padding.right;
-                    const hoverX = padding.left + (hoverIndex / Math.max(syncedData.length - 1, 1)) * chartWidth;
+                    const hoverX = padding.left + (hoverIndex / Math.max(displaySyncedData.length - 1, 1)) * chartWidth;
                     const isRightHalf = hoverX > padding.left + chartWidth / 2;
                     const cardLeft = isRightHalf ? hoverX - 190 - 12 : hoverX + 12;
 
@@ -383,14 +395,14 @@ export default function StrengthPage() {
                 })()}
 
                 {/* График IMOEX (верхний) */}
-                {showPrice && syncedData.length > 0 && (
+                {showPrice && displaySyncedData.length > 0 && (
                     <div className="px-4 pt-3 pb-2 border-b border-theme relative">
                         <div className="flex items-center gap-2 mb-1">
                             <span className="w-2.5 h-2.5 rounded-full bg-[#6366f1]" />
                             <span className="text-xs text-theme-secondary">Индекс МосБиржи</span>
                         </div>
                         <SyncedPriceChart
-                            syncedData={syncedData}
+                            syncedData={displaySyncedData}
                             hoverIndex={hoverIndex}
                             height={300}
                             padding={padding}
@@ -418,9 +430,9 @@ export default function StrengthPage() {
                             </span>
                         </div>
                     </div>
-                    {syncedData.length > 0 ? (
+                    {displaySyncedData.length > 0 ? (
                         <SyncedBreadthChart
-                            syncedData={syncedData}
+                            syncedData={displaySyncedData}
                             hoverIndex={hoverIndex}
                             height={150}
                             mode={chartMode}
@@ -432,6 +444,17 @@ export default function StrengthPage() {
                         </div>
                     )}
                 </div>
+
+                {/* Навигатор временного диапазона */}
+                {syncedData.length > 0 && (
+                    <div className="px-4 pb-3">
+                        <ChartNavigator
+                            data={syncedData.map(d => ({ time: d.time, value: d.breadth }))}
+                            onChange={(s, e) => setNavRange([s, e])}
+                            color="#8b5cf6"
+                        />
+                    </div>
+                )}
                 </>)}
             </div>
 
