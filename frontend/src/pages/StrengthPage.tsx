@@ -35,16 +35,16 @@ const CLASSIFICATION_LABELS: Record<string, { label: string; color: string; bg: 
     oversold: { label: 'Перепроданность', color: 'text-red-400', bg: 'bg-red-500/20' },
 };
 
-// Секторы для фильтрации - только акции которые реально есть в TOP_STOCKS
+// Секторы для фильтрации — соответствуют реальным тикерам в БД
 const SECTORS: Record<string, string[]> = {
     'Все': [],
-    'Финансы': ['SBER', 'VTBR', 'MOEX'],
-    'Нефть и газ': ['ROSN', 'LKOH', 'GAZP', 'NVTK', 'SIBN', 'TATN', 'SNGS'],
+    'Финансы': ['SBER', 'SBERP', 'VTBR', 'MOEX', 'T', 'BSPB', 'CBOM', 'SVCB', 'RENI'],
+    'Нефть и газ': ['ROSN', 'LKOH', 'GAZP', 'NVTK', 'TATN', 'TATNP', 'SNGS', 'SNGSP', 'TRNFP'],
     'Металлургия': ['GMKN', 'NLMK', 'CHMF', 'MAGN', 'RUAL', 'ALRS', 'PLZL'],
-    'Телеком и IT': ['YDEX', 'MTSS', 'OZON'],
-    'Ритейл': ['MGNT', 'FIVE'],
-    'Энергетика': ['IRAO', 'HYDR'],
-    'Другое': ['AFLT', 'PHOR', 'POLY', 'CBOM'],
+    'Энергетика': ['IRAO', 'MSNG', 'OGKB', 'UPRO', 'ENPG'],
+    'Телеком и IT': ['YDEX', 'MTSS', 'RTKM', 'POSI', 'VKCO', 'HEAD'],
+    'Транспорт': ['AFLT', 'FLOT'],
+    'Другое': ['PHOR', 'PIKK', 'AFKS', 'MDMG'],
 };
 
 

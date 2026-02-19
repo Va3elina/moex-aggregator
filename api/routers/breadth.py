@@ -179,17 +179,17 @@ async def get_breadth_history(
         for row in rows
     ]
 
-    # ── 2. IMOEX для наложения ─────────────────────────────────────────────
+    # ── 2. IMOEX для наложения (из index_data — данные с 1997 года) ────────
     imoex_data = []
     try:
         with engine.connect() as conn:
             imoex_rows = conn.execute(text("""
-                SELECT begin_time::date as date, close
-                FROM candles
-                WHERE secid = 'IMOEXF'
-                  AND interval = 24
-                  AND begin_time::date >= :date_from
-                ORDER BY begin_time
+                SELECT trade_date as date, close
+                FROM index_data
+                WHERE secid = 'IMOEX'
+                  AND trade_date >= :date_from
+                  AND close IS NOT NULL
+                ORDER BY trade_date
             """), {"date_from": date_from}).fetchall()
 
         imoex_by_date = {str(row[0]): float(row[1]) for row in imoex_rows if row[1]}
