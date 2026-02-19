@@ -40,13 +40,17 @@ export default function ChartNavigator({
         return () => ro.disconnect();
     }, []);
 
+    // Стабильная ссылка на onChange — не вызывает бесконечный цикл
+    const onChangeRef = useRef(onChange);
+    onChangeRef.current = onChange;
+
     // Сообщаем родителю при изменении выделения
     useEffect(() => {
         if (!data.length || width === 0) return;
         const s = Math.max(0, Math.round(selFrac[0] * (data.length - 1)));
         const e = Math.min(data.length - 1, Math.round(selFrac[1] * (data.length - 1)));
-        onChange(s, e);
-    }, [selFrac, data.length, width, onChange]);
+        onChangeRef.current(s, e);
+    }, [selFrac, data.length, width]);
 
     // Мини-график всех данных
     const miniPath = useMemo(() => {

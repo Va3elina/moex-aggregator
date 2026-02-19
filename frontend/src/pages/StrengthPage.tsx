@@ -147,6 +147,12 @@ export default function StrengthPage() {
         return syncedData.slice(navRange[0], navRange[1] + 1);
     }, [syncedData, navRange]);
 
+    // Данные для мини-графика навигатора (мемоизированы — стабильная ссылка)
+    const navigatorData = useMemo(
+        () => syncedData.map(d => ({ time: d.time, value: d.breadth })),
+        [syncedData]
+    );
+
     // Реальное количество акций в каждом секторе (только те, что вернул API)
     const sectorCounts = useMemo(() => {
         if (!current?.stocks) return {};
@@ -449,7 +455,7 @@ export default function StrengthPage() {
                 {syncedData.length > 0 && (
                     <div className="px-4 pb-3">
                         <ChartNavigator
-                            data={syncedData.map(d => ({ time: d.time, value: d.breadth }))}
+                            data={navigatorData}
                             onChange={(s, e) => setNavRange([s, e])}
                             color="#8b5cf6"
                         />
