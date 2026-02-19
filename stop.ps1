@@ -1,4 +1,4 @@
-# Останавливает все процессы на портах 8000 и 5173
+# Останавливает все процессы на портах 8000 и 5173, а также cloudflared
 
 foreach ($port in @(8000, 5173)) {
     $pids = (netstat -ano | Select-String ":$port\s" | ForEach-Object {
@@ -13,7 +13,13 @@ foreach ($port in @(8000, 5173)) {
 }
 
 # Дополнительно убиваем uvicorn и vite по имени процесса
-Get-Process -Name "uvicorn" -ErrorAction SilentlyContinue | Stop-Process -Force
-Get-Process -Name "node" -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -match "vite|npm" } | Stop-Process -Force
+Get-Process -Name "uvicorn"     -ErrorAction SilentlyContinue | Stop-Process -Force
+Get-Process -Name "cloudflared" -ErrorAction SilentlyContinue | Stop-Process -Force
+Get-Process -Name "node"        -ErrorAction SilentlyContinue |
+    Where-Object { $_.MainWindowTitle -match "vite|npm" }     | Stop-Process -Force
+
+# Чистим лог туннеля
+$log = Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) "tunnel.log"
+if (Test-Path $log) { Remove-Item $log -Force }
 
 Write-Host "Готово." -ForegroundColor Green

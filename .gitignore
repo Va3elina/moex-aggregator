@@ -22,6 +22,10 @@ logs/
 Thumbs.db
 nul
 
+# Cloudflare Tunnel (бинарник скачивается отдельно)
+cloudflared.exe
+tunnel.log
+
 # Данные (Excel, CSV, JSON-кэш)
 *.xlsx
 *.csv
