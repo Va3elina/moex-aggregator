@@ -191,8 +191,8 @@ export default function SimpleChart({
   // Флаг первой загрузки
   const isFirstRender = useRef(true);
 
-  // Ссылка на предыдущий массив data — чтобы различать смену данных от перетаскивания навигатора
-  const prevDataRef = useRef(data);
+  // true только когда пользователь тащит навигатор — сбрасывается после animateMorph
+  const navDragRef = useRef(false);
 
   useEffect(() => {
     const updateWidth = () => {
@@ -323,10 +323,10 @@ export default function SimpleChart({
     const targetSecondary = targetCalc.secondaryPoints.map(p => ({ x: p.x, y: p.y }));
     const targetThird = targetCalc.thirdPoints.map(p => ({ x: p.x, y: p.y }));
 
-    // Навигатор: мгновенное обновление ТОЛЬКО при перетаскивании диапазона
-    // (data — тот же массив). При смене периода data меняется → анимируем как обычно.
-    const isNavDrag = showNavigator && data === prevDataRef.current;
-    prevDataRef.current = data;
+    // Навигатор: мгновенное обновление только при реальном перетаскивании.
+    // При смене периода/режима навигатор сбрасывает navRange без флага → анимируем.
+    const isNavDrag = navDragRef.current;
+    navDragRef.current = false;
 
     if (isNavDrag) {
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
@@ -458,7 +458,7 @@ export default function SimpleChart({
     }
 
     animationRef.current = requestAnimationFrame(animate);
-  }, [loading, data, displayData, targetCalc, chartHeight, showNavigator]);
+  }, [loading, displayData, targetCalc, chartHeight, showNavigator]);
 
   // Запуск анимации при изменении данных
   useEffect(() => {
@@ -1044,7 +1044,7 @@ export default function SimpleChart({
       {showNavigator && (
         <ChartNavigator
           data={data}
-          onChange={(s, e) => setNavRange([s, e])}
+          onChange={(s, e) => { navDragRef.current = true; setNavRange([s, e]); }}
           color={primaryColor}
         />
       )}
