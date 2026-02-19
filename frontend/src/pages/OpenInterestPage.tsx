@@ -471,8 +471,9 @@ export default function OpenInterestPage() {
         primaryLabel="Цена"
         secondaryLabel={labels.secondary}
         thirdLabel={labels.third}
-        allowHistogram={true}
-        histogramDisabled={oiVariant === 'both'}
+        showValueHeader={false}
+        legendPosition="top"
+        showDownloadButton={false}
       />
 
       {/* Легенда */}

@@ -169,79 +169,49 @@ export default function BuffettPage() {
                 </label>
             </div>
 
-            {/* Легенда */}
-            <div className="flex flex-wrap gap-2 mb-4">
-                {viewMode === 'cap-gdp' ? (
-                    <>
-                        <div className="flex items-center gap-2 px-3 py-1.5 bg-theme-secondary rounded-lg border border-[#f59e0b]/30">
-                            <div className="w-3 h-3 rounded-full bg-[#f59e0b]" />
-                            <span className="text-sm text-theme-secondary">Капитализация / ВВП, %</span>
-                        </div>
-                        <div className="flex items-center gap-2 px-3 py-1.5 bg-theme-secondary rounded-lg border border-[#C8FF2E]/30">
-                            <div className="w-3 h-3 rounded-full bg-[#C8FF2E]" />
-                            <span className="text-sm text-[#C8FF2E]">Капитализация, трлн ₽</span>
-                        </div>
-                    </>
-                ) : (
-                    <>
-                        <div className="flex items-center gap-2 px-3 py-1.5 bg-theme-secondary rounded-lg border border-[#f59e0b]/30">
-                            <div className="w-3 h-3 rounded-full bg-[#f59e0b]" />
-                            <span className="text-sm text-theme-secondary">MCFTR / M2</span>
-                        </div>
-                        <div className="flex items-center gap-2 px-3 py-1.5 bg-theme-secondary rounded-lg border border-[#C8FF2E]/30">
-                            <div className="w-3 h-3 rounded-full bg-[#C8FF2E]" />
-                            <span className="text-sm text-[#C8FF2E]">MCFTR</span>
-                        </div>
-                    </>
-                )}
-            </div>
-
             {/* График */}
-            <div className="bg-theme-secondary rounded-2xl p-6 border border-theme">
-                {loading && ((viewMode === 'cap-gdp' && !capGdpData) || (viewMode === 'mcftr-m2' && !mcftrM2Data)) ? (
-                    <div className="flex items-center justify-center h-[450px]">
-                        <div className="flex flex-col items-center gap-3">
-                            <div className="w-8 h-8 border-2 border-[#f59e0b] border-t-transparent rounded-full animate-spin" />
-                            <span className="text-theme-secondary">Загрузка...</span>
-                        </div>
+            {error ? (
+                <div className="flex items-center justify-center h-[450px] bg-theme-secondary rounded-2xl border border-theme">
+                    <div className="text-[#FF4D4D] text-center">
+                        <p className="text-lg font-medium">{error}</p>
+                        <p className="text-sm text-theme-secondary mt-2">Попробуйте обновить страницу</p>
                     </div>
-                ) : error ? (
-                    <div className="flex items-center justify-center h-[450px]">
-                        <div className="text-[#FF4D4D] text-center">
-                            <p className="text-lg font-medium">{error}</p>
-                            <p className="text-sm text-theme-secondary mt-2">Попробуйте обновить страницу</p>
-                        </div>
-                    </div>
-                ) : viewMode === 'cap-gdp' ? (
-                    <SimpleChart
-                        data={capGdpChartData.primary}
-                        secondaryData={capGdpChartData.secondary}
-                        height={450}
-                        primaryColor="#f59e0b"
-                        secondaryColor="#C8FF2E"
-                        showSecondary={true}
-                        formatValue={(v) => `${v.toFixed(1)}%`}
-                        formatSecondaryValue={(v) => `${v.toFixed(1)} трлн ₽`}
-                        primaryLabel="Капитализация / ВВП"
-                        secondaryLabel="Капитализация"
-                        loading={loading}
-                    />
-                ) : (
-                    <SimpleChart
-                        data={mcftrM2ChartData.primary}
-                        secondaryData={mcftrM2ChartData.secondary}
-                        height={450}
-                        primaryColor="#f59e0b"
-                        secondaryColor="#C8FF2E"
-                        showSecondary={true}
-                        formatValue={(v) => v.toFixed(4)}
-                        formatSecondaryValue={(v) => v.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
-                        primaryLabel="MCFTR / M2"
-                        secondaryLabel="MCFTR"
-                        loading={loading}
-                    />
-                )}
-            </div>
+                </div>
+            ) : viewMode === 'cap-gdp' ? (
+                <SimpleChart
+                    data={capGdpChartData.primary}
+                    secondaryData={capGdpChartData.secondary}
+                    height={450}
+                    primaryColor="#f59e0b"
+                    secondaryColor="#C8FF2E"
+                    showSecondary={true}
+                    formatValue={(v) => `${v.toFixed(1)}%`}
+                    formatSecondaryValue={(v) => `${v.toFixed(1)} трлн ₽`}
+                    primaryLabel="Капитализация / ВВП"
+                    secondaryLabel="Капитализация"
+                    loading={loading}
+                    showValueHeader={false}
+                    legendPosition="top"
+                    showDownloadButton={false}
+                />
+            ) : (
+                <SimpleChart
+                    data={mcftrM2ChartData.primary}
+                    secondaryData={mcftrM2ChartData.secondary}
+                    height={450}
+                    primaryColor="#f59e0b"
+                    secondaryColor="#C8FF2E"
+                    showSecondary={true}
+                    formatValue={(v) => v.toFixed(4)}
+                    formatSecondaryValue={(v) => v.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
+                    primaryLabel="MCFTR / M2"
+                    secondaryLabel="MCFTR"
+                    loading={loading}
+                    showValueHeader={false}
+                    legendPosition="top"
+                    showDownloadButton={false}
+                />
+            )}
 
             {/* Описание */}
             <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">

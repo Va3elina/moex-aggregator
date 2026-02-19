@@ -26,6 +26,9 @@ interface SimpleChartProps {
   thirdLabel?: string;
   allowHistogram?: boolean;
   histogramDisabled?: boolean;
+  showValueHeader?: boolean;
+  legendPosition?: 'top' | 'bottom';
+  showDownloadButton?: boolean;
 }
 
 // Интерполяция между двумя значениями
@@ -107,6 +110,9 @@ export default function SimpleChart({
   thirdLabel = '',
   allowHistogram = false,
   histogramDisabled = false,
+  showValueHeader = true,
+  legendPosition = 'bottom',
+  showDownloadButton = true,
 }: SimpleChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -596,14 +602,41 @@ export default function SimpleChart({
   const changePercent = firstValue !== 0 ? (change / firstValue) * 100 : 0;
   const isPositive = change >= 0;
 
+  // Блок легенды — переиспользуем в двух местах
+  const legendBlock = (
+    <div className="flex gap-6 text-sm flex-wrap">
+      <span className="flex items-center gap-2">
+        <span className="w-3 h-3 rounded-full" style={{ backgroundColor: primaryColor }} />
+        <span className="text-theme-secondary">{primaryLabel}</span>
+      </span>
+      {showSecondary && (
+        <span className="flex items-center gap-2">
+          <span className="w-3 h-3 rounded-full" style={{ backgroundColor: secondaryColor }} />
+          <span className="text-theme-secondary">{secondaryLabel}</span>
+        </span>
+      )}
+      {showThird && (
+        <span className="flex items-center gap-2">
+          <span className="w-3 h-3 rounded-full" style={{ backgroundColor: thirdColor }} />
+          <span className="text-theme-secondary">{thirdLabel}</span>
+        </span>
+      )}
+    </div>
+  );
+
   return (
     <div ref={containerRef} className="rounded-2xl p-5 bg-theme-secondary border border-theme relative">
+      {/* Легенда — вверху, по центру */}
+      {legendPosition === 'top' && (
+        <div className="mb-3 flex justify-center">{legendBlock}</div>
+      )}
+
       {/* Кнопка переключения линия/гистограмма */}
       {allowHistogram && (
         <button
           onClick={() => !histogramDisabled && setChartMode(m => m === 'line' ? 'histogram' : 'line')}
           disabled={histogramDisabled}
-          className={`absolute top-4 right-14 z-10 flex items-center justify-center w-9 h-9 bg-theme-tertiary/90 backdrop-blur-sm rounded-lg border border-theme transition-all duration-150 ease-out ${histogramDisabled
+          className={`absolute top-4 ${showDownloadButton ? 'right-14' : 'right-4'} z-10 flex items-center justify-center w-9 h-9 bg-theme-tertiary/90 backdrop-blur-sm rounded-lg border border-theme transition-all duration-150 ease-out ${histogramDisabled
             ? 'text-theme-muted/40 cursor-not-allowed opacity-40'
             : 'text-theme-secondary hover:text-[#C8FF2E] hover:border-[#C8FF2E]/30 hover:scale-110 active:scale-95 active:bg-[#0B0D12]'
             }`}
@@ -614,34 +647,38 @@ export default function SimpleChart({
       )}
 
       {/* Кнопка скачивания */}
-      <button
-        onClick={downloadChart}
-        className="absolute top-4 right-4 z-10 flex items-center justify-center w-9 h-9 bg-theme-tertiary/90 backdrop-blur-sm rounded-lg border border-theme text-theme-secondary hover:text-[#C8FF2E] hover:border-[#C8FF2E]/30 hover:scale-110 active:scale-95 active:bg-[#0B0D12] transition-all duration-150 ease-out"
-        title="Скачать график как PNG"
-      >
-        <Download size={18} />
-      </button>
+      {showDownloadButton && (
+        <button
+          onClick={downloadChart}
+          className="absolute top-4 right-4 z-10 flex items-center justify-center w-9 h-9 bg-theme-tertiary/90 backdrop-blur-sm rounded-lg border border-theme text-theme-secondary hover:text-[#C8FF2E] hover:border-[#C8FF2E]/30 hover:scale-110 active:scale-95 active:bg-[#0B0D12] transition-all duration-150 ease-out"
+          title="Скачать график как PNG"
+        >
+          <Download size={18} />
+        </button>
+      )}
 
       {/* Маленький индикатор загрузки поверх графика */}
       {loading && (
-        <div className={`absolute top-4 ${allowHistogram ? 'right-[6.5rem]' : 'right-16'} z-10 flex items-center gap-2 bg-theme-tertiary/90 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-theme`}>
+        <div className={`absolute top-4 ${allowHistogram && showDownloadButton ? 'right-[6.5rem]' : allowHistogram || showDownloadButton ? 'right-16' : 'right-4'} z-10 flex items-center gap-2 bg-theme-tertiary/90 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-theme`}>
           <div className="w-4 h-4 border-2 border-[#C8FF2E] border-t-transparent rounded-full animate-spin" />
           <span className="text-xs text-theme-secondary">Обновление...</span>
         </div>
       )}
 
       {/* Заголовок с текущим значением */}
-      <div className="mb-2 flex items-baseline gap-4">
-        <span className="text-4xl font-bold text-theme-primary tracking-tight">
-          {formatValue(currentValue)}
-        </span>
-        <span className={`text-base font-semibold px-2 py-0.5 rounded-lg ${isPositive
-          ? 'text-[#2EE59D] bg-[#2EE59D]/10'
-          : 'text-[#FF4D4D] bg-[#FF4D4D]/10'
-          }`}>
-          {isPositive ? '↑' : '↓'} {Math.abs(changePercent).toFixed(2)}%
-        </span>
-      </div>
+      {showValueHeader && (
+        <div className="mb-2 flex items-baseline gap-4">
+          <span className="text-4xl font-bold text-theme-primary tracking-tight">
+            {formatValue(currentValue)}
+          </span>
+          <span className={`text-base font-semibold px-2 py-0.5 rounded-lg ${isPositive
+            ? 'text-[#2EE59D] bg-[#2EE59D]/10'
+            : 'text-[#FF4D4D] bg-[#FF4D4D]/10'
+            }`}>
+            {isPositive ? '↑' : '↓'} {Math.abs(changePercent).toFixed(2)}%
+          </span>
+        </div>
+      )}
 
       {/* SVG График */}
       <svg
@@ -950,25 +987,10 @@ export default function SimpleChart({
         })()}
       </svg>
 
-      {/* Легенда */}
-      <div className="flex gap-6 mt-4 text-sm flex-wrap justify-center">
-        <span className="flex items-center gap-2">
-          <span className="w-3 h-3 rounded-full" style={{ backgroundColor: primaryColor }} />
-          <span className="text-theme-secondary">{primaryLabel}</span>
-        </span>
-        {showSecondary && (
-          <span className="flex items-center gap-2">
-            <span className="w-3 h-3 rounded-full" style={{ backgroundColor: secondaryColor }} />
-            <span className="text-theme-secondary">{secondaryLabel}</span>
-          </span>
-        )}
-        {showThird && (
-          <span className="flex items-center gap-2">
-            <span className="w-3 h-3 rounded-full" style={{ backgroundColor: thirdColor }} />
-            <span className="text-theme-secondary">{thirdLabel}</span>
-          </span>
-        )}
-      </div>
-    </div >
+      {/* Легенда — внизу */}
+      {legendPosition === 'bottom' && (
+        <div className="mt-4 justify-center">{legendBlock}</div>
+      )}
+    </div>
   );
 }

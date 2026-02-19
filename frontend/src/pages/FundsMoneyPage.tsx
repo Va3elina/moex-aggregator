@@ -282,35 +282,16 @@ export default function FundsMoneyPage() {
                 )}
             </div>
 
-            {/* Легенда графика */}
-            <div className="flex flex-wrap gap-2 mb-4">
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-theme-secondary rounded-lg border border-[#6366f1]/30">
-                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: '#6366f1' }} />
-                    <span className="text-sm text-theme-secondary">Суммарная СЧА (выбранные)</span>
-                </div>
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-theme-secondary rounded-lg border border-[#C8FF2E]/30">
-                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: INDEX_COLOR }} />
-                    <span className="text-sm text-[#C8FF2E]">{currentCategory?.index}</span>
-                </div>
-            </div>
-
             {/* График */}
-            <div className="bg-theme-secondary rounded-2xl p-6 border border-theme">
-                {loading && (!data || (viewMode === 'flows' && !flowsData)) ? (
-                    <div className="flex items-center justify-center h-[450px]">
-                        <div className="flex flex-col items-center gap-3">
-                            <div className="w-8 h-8 border-2 border-[#6366f1] border-t-transparent rounded-full animate-spin" />
-                            <span className="text-theme-secondary">Загрузка...</span>
-                        </div>
+            {error ? (
+                <div className="flex items-center justify-center h-[450px] bg-theme-secondary rounded-2xl border border-theme mb-6">
+                    <div className="text-[#FF4D4D] text-center">
+                        <p className="text-lg font-medium">{error}</p>
+                        <p className="text-sm text-theme-secondary mt-2">Попробуйте обновить страницу</p>
                     </div>
-                ) : error ? (
-                    <div className="flex items-center justify-center h-[450px]">
-                        <div className="text-[#FF4D4D] text-center">
-                            <p className="text-lg font-medium">{error}</p>
-                            <p className="text-sm text-theme-secondary mt-2">Попробуйте обновить страницу</p>
-                        </div>
-                    </div>
-                ) : viewMode === 'aum' ? (
+                </div>
+            ) : viewMode === 'aum' ? (
+                <div className="mb-6">
                     <SimpleChart
                         data={aggregatedData.chartData}
                         secondaryData={indexData}
@@ -323,8 +304,20 @@ export default function FundsMoneyPage() {
                         primaryLabel="Суммарная СЧА"
                         secondaryLabel={currentCategory?.index || 'Индекс'}
                         loading={loading}
-                        allowHistogram={true}
+                        showValueHeader={false}
+                        legendPosition="top"
+                        showDownloadButton={false}
                     />
+                </div>
+            ) : (
+            <div className="bg-theme-secondary rounded-2xl p-6 border border-theme mb-6">
+                {loading && !flowsData ? (
+                    <div className="flex items-center justify-center h-[450px]">
+                        <div className="flex flex-col items-center gap-3">
+                            <div className="w-8 h-8 border-2 border-[#6366f1] border-t-transparent rounded-full animate-spin" />
+                            <span className="text-theme-secondary">Загрузка...</span>
+                        </div>
+                    </div>
                 ) : (
                     /* Гистограмма притоков/оттоков */
                     <div className="h-[450px]">
@@ -488,6 +481,7 @@ export default function FundsMoneyPage() {
                     </div>
                 )}
             </div>
+            )}
 
             {/* Таблица фондов */}
             <div className="mt-6 bg-theme-secondary rounded-2xl border border-theme overflow-hidden">

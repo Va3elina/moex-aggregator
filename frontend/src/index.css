@@ -282,7 +282,6 @@ body {
 }
 
 .widget:hover {
-  border-color: var(--border-hover);
   box-shadow: var(--shadow-lg);
 }
 
@@ -294,7 +293,6 @@ body {
 }
 
 .widget-flat:hover {
-  border-color: var(--border-hover);
 }
 
 /* Control Groups */
@@ -308,6 +306,23 @@ body {
 /* ============================================
    BUTTON CLASSES
    ============================================ */
+
+/* Глобальная анимация нажатия для всех кнопок */
+button,
+[role="button"],
+a.btn-control,
+a.btn-accent {
+  transition: transform 0.15s ease, opacity 0.15s ease,
+    background-color 0.2s ease, color 0.2s ease,
+    border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+button:active:not(:disabled),
+[role="button"]:active:not(:disabled),
+a.btn-control:active,
+a.btn-accent:active {
+  transform: scale(0.95);
+}
 
 .btn-control {
   padding: 0.5rem 1rem;

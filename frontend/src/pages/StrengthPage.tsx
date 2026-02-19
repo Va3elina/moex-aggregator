@@ -23,7 +23,7 @@ const PERIOD_DAYS: Record<Period, number> = {
     '6m': 180,
     '1y': 365,
     '2y': 730,
-    'all': 1500
+    'all': 7000
 };
 
 const EMA_PERIOD = 200; // Fixed EMA period
@@ -307,17 +307,14 @@ export default function StrengthPage() {
                     const containerHeight = rect.height;
                     const clampedCardTop = Math.min(Math.max(hoverY - cardHeight / 2, 4), containerHeight - cardHeight - 4);
 
-                    // Дата-бейдж: над карточкой, привязан к линии crosshair
-                    const dateTop = Math.max(clampedCardTop - 22, 4);
-
                     return (
                         <>
-                            {/* Дата — над карточкой, привязана к вертикальной линии */}
+                            {/* Дата — закреплена наверху, привязана к вертикальной линии */}
                             <div
                                 className="absolute z-30 pointer-events-none"
                                 style={{
                                     left: Math.min(Math.max(hoverX - 50, padding.left), rect.width - padding.right - 100),
-                                    top: dateTop,
+                                    top: 4,
                                 }}
                             >
                                 <span className="text-[11px] text-theme-secondary bg-theme-tertiary/90 backdrop-blur-sm px-2 py-0.5 rounded border border-theme whitespace-nowrap">
@@ -373,7 +370,7 @@ export default function StrengthPage() {
                         <SyncedPriceChart
                             syncedData={syncedData}
                             hoverIndex={hoverIndex}
-                            height={150}
+                            height={300}
                             padding={padding}
                         />
                     </div>
@@ -406,7 +403,7 @@ export default function StrengthPage() {
                         <SyncedBreadthChart
                             syncedData={syncedData}
                             hoverIndex={hoverIndex}
-                            height={220}
+                            height={150}
                             mode={chartMode}
                             padding={padding}
                         />
@@ -579,8 +576,8 @@ function SyncedPriceChart({
         const minVal = Math.min(...values);
         const maxVal = Math.max(...values);
         const range = maxVal - minVal || 1;
-        const yMin = minVal - range * 0.05;
-        const yMax = maxVal + range * 0.05;
+        const yMin = minVal - range * 0.01;
+        const yMax = maxVal + range * 0.01;
 
         const scaleX = (i: number) => padding.left + (i / Math.max(syncedData.length - 1, 1)) * chartWidth;
         const scaleY = (v: number) => padding.top + chartHeight - ((v - yMin) / (yMax - yMin)) * chartHeight;

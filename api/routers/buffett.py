@@ -89,18 +89,18 @@ async def get_buffett_cap_gdp(
     engine = get_engine()
 
     days = PERIODS.get(period)
-    date_from = date.today() - timedelta(days=days) if days else date(2000, 1, 1)
+    date_from = date.today() - timedelta(days=days) if days else date(1997, 1, 1)
 
     with engine.connect() as conn:
-        # 1. Капитализация IMOEX
+        # 1. Полная капитализация рынка РФ (млрд руб)
         cap_rows = conn.execute(text("""
-            SELECT trade_date, capitalization
-            FROM index_data
-            WHERE secid = 'IMOEX'
-              AND trade_date >= :date_from
-              AND capitalization IS NOT NULL
-              AND capitalization > 0
-            ORDER BY trade_date
+            SELECT period_date, value
+            FROM macro_data
+            WHERE indicator = 'MARKET_CAP_TOTAL'
+              AND period_date >= :date_from
+              AND value IS NOT NULL
+              AND value > 0
+            ORDER BY period_date
         """), {"date_from": date_from}).fetchall()
 
         # 2. GDP квартальный (берём всю историю для расчёта TTM)
@@ -114,37 +114,46 @@ async def get_buffett_cap_gdp(
     if not cap_rows or len(gdp_rows) < 4:
         return {"data": [], "period": period}
 
-    # 3. Рассчитать GDP_TTM (сумма 4 последних кварталов)
+    # 3. Агрегация дневных данных cap по месяцам (последнее значение месяца)
+    monthly_cap: dict = {}
+    for row in cap_rows:
+        d = row[0]
+        month_key = (d.year, d.month)
+        # Последняя запись в месяце (строки отсортированы по дате)
+        monthly_cap[month_key] = (d, float(row[1]))
+    cap_monthly = sorted(monthly_cap.values(), key=lambda x: x[0])
+
+    if not cap_monthly:
+        return {"data": [], "period": period}
+
+    # 4. Рассчитать GDP_TTM (сумма 4 последних кварталов)
     gdp_ttm_points = []
     for i in range(3, len(gdp_rows)):
         ttm = sum(float(gdp_rows[j][1]) for j in range(i - 3, i + 1))
         gdp_ttm_points.append((gdp_rows[i][0], ttm))
 
-    # 4. Интерполяция GDP_TTM на ежедневную сетку
-    daily_dates = [row[0] for row in cap_rows]
-    gdp_daily = _interpolate_daily(gdp_ttm_points, daily_dates)
+    # 5. Интерполяция GDP_TTM на месячную сетку
+    monthly_dates = [row[0] for row in cap_monthly]
+    gdp_monthly = _interpolate_daily(gdp_ttm_points, monthly_dates)
 
-    # 5. Рассчитать buffett = 100 * cap / gdp_ttm
-    # Капитализация в рублях, GDP в млрд руб → приведение: cap / (gdp * 1e9) * 100
+    # 6. Рассчитать buffett = 100 * cap / gdp_ttm на месячных данных
     raw_values = []
     data_points = []
-    for row in cap_rows:
-        d = row[0]
-        cap = float(row[1])
-        gdp_ttm = gdp_daily.get(d)
+    for d, cap in cap_monthly:
+        gdp_ttm = gdp_monthly.get(d)
         if gdp_ttm and gdp_ttm > 0:
-            buffett_raw = 100.0 * cap / (gdp_ttm * 1e9)
+            buffett_raw = 100.0 * cap / gdp_ttm
             raw_values.append(buffett_raw)
             data_points.append({
                 "date": d.isoformat(),
                 "buffett_raw": round(buffett_raw, 2),
-                "cap": round(cap / 1e12, 3),  # трлн руб
+                "cap": round(cap / 1e3, 3),  # трлн руб
                 "gdp_ttm": round(gdp_ttm / 1e3, 2),  # трлн руб
             })
 
-    # 6. Сглаживание EMA(60)
+    # 7. Сглаживание EMA(12) — 12 месяцев = 1 год (для месячных данных)
     if smooth and raw_values:
-        smoothed = _ema(raw_values, 60)
+        smoothed = _ema(raw_values, 12)
         for i, point in enumerate(data_points):
             point["buffett"] = round(smoothed[i], 2)
     else:

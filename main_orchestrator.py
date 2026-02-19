@@ -120,6 +120,10 @@ SCRIPTS = {
     'indices_daily': BASE_DIR / 'Funds' / 'fetch_indices_realtime.py',
     # Macro скрипты (M2, GDP)
     'macro_daily': BASE_DIR / 'Macro' / 'fetch_macro_realtime.py',
+    # Market Cap (полная капитализация рынка)
+    'market_cap_daily': BASE_DIR / 'Macro' / 'fetch_market_cap.py',
+    # Market Breadth (% акций выше EMA — предвычисление)
+    'breadth_daily': BASE_DIR / 'Candles' / 'compute_breadth_history.py',
 }
 
 # Материализованные представления
@@ -146,6 +150,8 @@ TIMEOUTS = {
     'funds_daily': 600,  # 10 минут
     'indices_daily': 300,  # 5 минут
     'macro_daily': 120,  # 2 минуты
+    'market_cap_daily': 120,  # 2 минуты
+    'breadth_daily': 600,  # 10 минут (полный пересчёт ~2 мин)
 }
 
 # Директория логов
@@ -353,6 +359,12 @@ class MainOrchestrator:
             # Macro
             'macro_daily_runs': 0,
             'macro_daily_success': 0,
+            # Market Cap
+            'market_cap_daily_runs': 0,
+            'market_cap_daily_success': 0,
+            # Breadth
+            'breadth_daily_runs': 0,
+            'breadth_daily_success': 0,
             # Представления
             'views_refresh_runs': 0,
             'views_refresh_success': 0,
@@ -522,6 +534,38 @@ class MainOrchestrator:
 
         return success
 
+    async def run_breadth_update(self) -> bool:
+        """Запускает предвычисление Market Breadth (инкрементально)"""
+        log.info("  📊 Breadth Daily...")
+        self.stats['breadth_daily_runs'] += 1
+
+        success, msg, dur = await run_script('breadth_daily', ['--once', '--force'])
+
+        if success:
+            self.stats['breadth_daily_success'] += 1
+            log.info(f"    ✓ Breadth Daily ({dur:.1f}с)")
+        else:
+            self.stats['errors'] += 1
+            log.error(f"    ✗ Breadth Daily: {msg}")
+
+        return success
+
+    async def run_market_cap_update(self) -> bool:
+        """Запускает обновление полной капитализации рынка (SmartLab)"""
+        log.info("  📊 Market Cap Daily...")
+        self.stats['market_cap_daily_runs'] += 1
+
+        success, msg, dur = await run_script('market_cap_daily', ['--once', '--force'])
+
+        if success:
+            self.stats['market_cap_daily_success'] += 1
+            log.info(f"    ✓ Market Cap Daily ({dur:.1f}с)")
+        else:
+            self.stats['errors'] += 1
+            log.error(f"    ✗ Market Cap Daily: {msg}")
+
+        return success
+
     def print_stats(self):
         """Выводит статистику"""
         uptime = datetime.now() - self.stats['start_time']
@@ -542,6 +586,10 @@ class MainOrchestrator:
         log.info(f"    Daily: {self.stats['funds_daily_success']}/{self.stats['funds_daily_runs']}")
         log.info("  --- Macro ---")
         log.info(f"    Daily: {self.stats['macro_daily_success']}/{self.stats['macro_daily_runs']}")
+        log.info("  --- Market Cap ---")
+        log.info(f"    Daily: {self.stats['market_cap_daily_success']}/{self.stats['market_cap_daily_runs']}")
+        log.info("  --- Breadth ---")
+        log.info(f"    Daily: {self.stats['breadth_daily_success']}/{self.stats['breadth_daily_runs']}")
         log.info("  --- Представления ---")
         log.info(f"    Обновлений: {self.stats['views_refresh_success']}/{self.stats['views_refresh_runs']}")
         log.info(f"  Ошибок: {self.stats['errors']}")
@@ -595,11 +643,13 @@ class MainOrchestrator:
             if results.get('oi_5min'):
                 await self.run_hourly_aggregate()
 
-            # Daily (OI + Funds + Indices + Macro)
+            # Daily (OI + Funds + Indices + Macro + Market Cap + Breadth)
             await self.run_daily_update()
             await self.run_funds_update()
             await self.run_indices_update()
             await self.run_macro_update()
+            await self.run_market_cap_update()
+            await self.run_breadth_update()
 
             # Обновляем все представления после полной синхронизации
             log.info("  🔄 Финальное обновление представлений...")
@@ -654,6 +704,8 @@ class MainOrchestrator:
                         await self.run_funds_update()
                         await self.run_indices_update()
                         await self.run_macro_update()
+                        await self.run_market_cap_update()
+                        await self.run_breadth_update()
                         self.last_daily_update = slot_day
                         self.print_stats()
 
