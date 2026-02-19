@@ -388,9 +388,6 @@ export default function StrengthPage() {
                         <div className="flex items-center gap-2 mb-1">
                             <span className="w-2.5 h-2.5 rounded-full bg-[#6366f1]" />
                             <span className="text-xs text-theme-secondary">Индекс МосБиржи</span>
-                            <span className="text-xs font-semibold text-theme-primary ml-auto">
-                                {syncedData[syncedData.length - 1]?.imoex?.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
-                            </span>
                         </div>
                         <SyncedPriceChart
                             syncedData={syncedData}
@@ -406,9 +403,6 @@ export default function StrengthPage() {
                     <div className="flex items-center gap-2 mb-1">
                         <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: 'var(--accent)' }} />
                         <span className="text-xs text-theme-secondary">% акций выше EMA{emaPeriod}</span>
-                        <span className="text-xs font-semibold text-theme-primary ml-1">
-                            {syncedData[syncedData.length - 1]?.breadth?.toFixed(1)}%
-                        </span>
                         <div className="flex items-center gap-2 ml-auto text-[10px]">
                             <span className="flex items-center gap-1">
                                 <span className="w-3 border-t border-dashed border-emerald-500" />
