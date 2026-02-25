@@ -1,0 +1,81 @@
+//@version=6
+strategy("EMA200 + EMA20/5 + VIX + RSI Exit (Daily Engine • Weekly Logic)",
+     overlay=true,
+     initial_capital=100,
+     pyramiding=3,
+     default_qty_type=strategy.fixed,
+     default_qty_value=1)
+
+// === 📆 WEEKLY данные для логики ===
+weeklyClose = request.security(syminfo.tickerid, "W", close)
+ema200_w    = request.security(syminfo.tickerid, "W", ta.ema(close, 200))
+ema20_w     = request.security(syminfo.tickerid, "W", ta.ema(close, 20))
+ema5_w      = request.security(syminfo.tickerid, "W", ta.ema(close, 5))
+rsi_w       = request.security(syminfo.tickerid, "W", ta.rsi(close, 14))
+rsiMa_w     = request.security(syminfo.tickerid, "W", ta.sma(rsi_w, 14))
+
+// === 📈 VIX: дневной сигнал ===
+vixHighD = request.security("CBOE:VIX", "D", high)
+vixCrossDaily = vixHighD >= 76
+
+// === Сигналы входа
+crossBelowEMA200 = ta.crossunder(weeklyClose, ema200_w)
+crossEMA20over5  = ta.crossover(ema20_w, ema5_w)
+
+// === 📉 Выход по RSI
+exitCond = ta.crossunder(rsiMa_w, 70)
+
+// === Флаги позиции
+var bool firstEntry  = false
+var bool secondEntry = false
+if strategy.position_size == 0
+    firstEntry  := false
+    secondEntry := false
+
+// === 💰 Объёмы
+float eq     = na(strategy.equity) or strategy.equity <= 0 ? strategy.initial_capital : strategy.equity
+float price  = close
+float qty33  = (eq * 0.33) / price
+float qty67  = (eq * 0.67) / price
+float qty100 = (eq * 1.00) / price
+
+// === 📈 Визуализация
+plot(ema200_w, title="Weekly EMA200", color=color.yellow, linewidth=2)
+plot(ema20_w, title="Weekly EMA20", color=color.orange)
+plot(ema5_w,  title="Weekly EMA5",  color=color.new(color.orange, 60))
+plotshape(vixCrossDaily, title="VIX >= 76 (Daily)", location=location.belowbar, color=color.purple, style=shape.triangleup, size=size.tiny, text="VIX")
+plotshape(crossBelowEMA200, title="Signal 33%", location=location.belowbar, color=color.green, style=shape.triangleup, size=size.tiny, text="33%")
+plotshape(crossEMA20over5 and firstEntry and not secondEntry, title="Signal 67%", location=location.belowbar, color=color.teal, style=shape.triangleup, size=size.tiny, text="67%")
+plotshape(exitCond, title="Exit", location=location.abovebar, color=color.red, style=shape.triangledown, size=size.tiny, text="SELL")
+
+// ================== 📈 ВХОДЫ ==================
+
+// 🟣 Абсолютный приоритет: если VIX >= 76 и позиции нет — входим на 100%
+if vixCrossDaily and strategy.position_size == 0
+    strategy.entry("VIX 100%", strategy.long, qty=qty100)
+    label.new(bar_index, low, "BUY 100% (VIX >= 76)", style=label.style_label_up, color=color.purple, textcolor=color.white)
+    firstEntry  := true
+    secondEntry := true
+
+// 🟢 Если VIX не касался — обычный вход 33% по EMA200
+if not vixCrossDaily and crossBelowEMA200 and strategy.position_size == 0
+    strategy.entry("Long 33%", strategy.long, qty=qty33)
+    label.new(bar_index, low, "BUY 33% (EMA200 cross)", style=label.style_label_up, color=color.green, textcolor=color.white)
+    firstEntry := true
+
+// 🟪 Если уже есть 33% и VIX появился раньше чем EMA20>EMA5 — докупаем оставшиеся 67%
+if firstEntry and not secondEntry and vixCrossDaily and not crossEMA20over5
+    strategy.entry("Add 67% (VIX)", strategy.long, qty=qty67)
+    label.new(bar_index, low, "ADD 67% (VIX >= 76)", style=label.style_label_up, color=color.purple, textcolor=color.white)
+    secondEntry := true
+
+// 🟦 Если VIX не появлялся, но EMA20 > EMA5 — добор по EMA
+if firstEntry and not secondEntry and crossEMA20over5 and not vixCrossDaily
+    strategy.entry("Add 67% (EMA20>EMA5)", strategy.long, qty=qty67)
+    label.new(bar_index, low, "ADD 67% (EMA20>EMA5)", style=label.style_label_up, color=color.teal, textcolor=color.white)
+    secondEntry := true
+
+// ================== 📉 ВЫХОД ==================
+if exitCond and strategy.position_size > 0
+    strategy.close_all(comment="RSI Exit (cross)")
+    label.new(bar_index, high, "SELL (SMA RSI < 70)", style=label.style_label_down, color=color.red, textcolor=color.white)

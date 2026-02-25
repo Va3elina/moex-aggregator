@@ -26,6 +26,9 @@ nul
 cloudflared.exe
 tunnel.log
 
+# Бэкапы БД
+backups/
+
 # Данные (Excel, CSV, JSON-кэш)
 *.xlsx
 *.csv

@@ -58,7 +58,7 @@ INDICES = {
         "engine": "stock",
         "market": "index",
         "board": "SNDX",
-        "start_date": date(2011, 12, 1),  # capitalization available from 2011-12-15
+        "start_date": date(1997, 9, 22),  # IMOEX inception date
     },
     "RGBITR": {
         "name": "Индекс гособлигаций полной доходности",

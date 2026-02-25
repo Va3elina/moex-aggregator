@@ -1,0 +1,618 @@
+#!/usr/bin/env python3
+"""
+Полная капитализация фондового рынка РФ.
+
+Источники:
+- SmartLab (ежедневно): парсинг HTML https://smart-lab.ru/q/shares_fundamental/?field=market_cap
+- GuruFocus/WebArchive (исторические, одноразовый импорт): 321 точка, 1997-2024
+
+Хранение: macro_data, indicator = 'MARKET_CAP_TOTAL', значения в млрд руб.
+
+Использование:
+  python Macro/fetch_market_cap.py --once               # Парсит SmartLab, сохраняет сегодня
+  python Macro/fetch_market_cap.py --once --force        # Принудительно (даже в выходной)
+  python Macro/fetch_market_cap.py --import-historical FILE  # Импорт GuruFocus HTML
+  python Macro/fetch_market_cap.py --check               # Проверка целостности данных
+"""
+
+import asyncio
+import argparse
+import logging
+import sys
+import os
+import re
+import json
+import urllib.request
+from pathlib import Path
+from datetime import datetime, date, timedelta, timezone
+from typing import List, Tuple, Dict
+
+from dotenv import load_dotenv
+from sqlalchemy import create_engine, text
+
+# === Пути ===
+BASE_DIR = Path(__file__).parent
+PROJECT_DIR = BASE_DIR.parent
+
+load_dotenv(PROJECT_DIR / ".env")
+DB_URL = os.getenv("DB_URL")
+
+LOG_DIR = BASE_DIR / "logs"
+LOG_DIR.mkdir(exist_ok=True)
+
+# === Лимиты валидации ===
+CAP_MIN_VALUE = 10          # Минимум 10 млрд руб (1998 кризис)
+CAP_MAX_VALUE = 200_000     # Максимум 200 трлн руб (200 000 млрд)
+CAP_MIN_DATE = date(1997, 1, 1)
+CAP_MAX_JUMP_PCT = 50       # Максимальный скачок между соседними точками (%)
+
+# === SmartLab URL ===
+SMARTLAB_URL = "https://smart-lab.ru/q/shares_fundamental/?field=market_cap"
+
+# === Календарь MOEX ===
+sys.path.insert(0, str(PROJECT_DIR))
+try:
+    from moex_calendar import get_moscow_time, is_trading_day
+except ImportError:
+    def get_moscow_time():
+        return datetime.utcnow() + timedelta(hours=3)
+    def is_trading_day(check_date=None):
+        check = check_date or get_moscow_time().date()
+        if check.weekday() in [5, 6]:
+            return False, "Выходной"
+        return True, "Торговый день"
+
+
+# ======================================================================
+#                         ЛОГИРОВАНИЕ
+# ======================================================================
+
+def setup_logging():
+    detailed_fmt = logging.Formatter(
+        '%(asctime)s | %(levelname)-8s | %(funcName)s:%(lineno)d | %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    console_fmt = logging.Formatter(
+        '%(asctime)s | %(levelname)-8s | %(message)s',
+        datefmt='%H:%M:%S'
+    )
+
+    root = logging.getLogger()
+    root.setLevel(logging.DEBUG)
+    root.handlers.clear()
+
+    if sys.platform == 'win32':
+        import io
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    ch = logging.StreamHandler(sys.stdout)
+    ch.setLevel(logging.INFO)
+    ch.setFormatter(console_fmt)
+    root.addHandler(ch)
+
+    fh_all = logging.FileHandler(
+        LOG_DIR / f"market_cap_{datetime.now():%Y%m%d}.log",
+        encoding='utf-8'
+    )
+    fh_all.setLevel(logging.DEBUG)
+    fh_all.setFormatter(detailed_fmt)
+    root.addHandler(fh_all)
+
+    fh_err = logging.FileHandler(
+        LOG_DIR / f"market_cap_errors_{datetime.now():%Y%m%d}.log",
+        encoding='utf-8'
+    )
+    fh_err.setLevel(logging.WARNING)
+    fh_err.setFormatter(detailed_fmt)
+    root.addHandler(fh_err)
+
+    return logging.getLogger(__name__)
+
+
+log = setup_logging()
+
+
+# ======================================================================
+#                         БАЗА ДАННЫХ
+# ======================================================================
+
+def get_engine():
+    if not DB_URL:
+        raise ValueError("DB_URL не установлен в .env")
+    return create_engine(DB_URL)
+
+
+def ensure_table(engine):
+    """Убедиться что таблицы macro/macro_data существуют и зарегистрировать индикатор."""
+    with engine.connect() as conn:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS macro (
+                id SERIAL PRIMARY KEY,
+                indicator VARCHAR(50) UNIQUE NOT NULL,
+                name VARCHAR(255) NOT NULL,
+                frequency VARCHAR(20) NOT NULL,
+                source VARCHAR(100),
+                start_date DATE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS macro_data (
+                id SERIAL PRIMARY KEY,
+                indicator VARCHAR(50) NOT NULL,
+                period_date DATE NOT NULL,
+                value NUMERIC(24, 2) NOT NULL,
+                source VARCHAR(100),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(indicator, period_date)
+            )
+        """))
+        conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_macro_data_indicator_date
+            ON macro_data(indicator, period_date)
+        """))
+        conn.execute(text("""
+            INSERT INTO macro (indicator, name, frequency, source)
+            VALUES ('MARKET_CAP_TOTAL', 'Полная капитализация фондового рынка РФ', 'daily', 'SMARTLAB')
+            ON CONFLICT (indicator) DO UPDATE SET
+                name = EXCLUDED.name,
+                frequency = EXCLUDED.frequency,
+                source = EXCLUDED.source
+        """))
+        conn.commit()
+
+
+# ======================================================================
+#                         ВАЛИДАЦИЯ
+# ======================================================================
+
+def validate_value(value: float) -> Tuple[bool, str]:
+    if value is None:
+        return False, "значение None"
+    if value <= 0:
+        return False, f"отрицательное или нулевое: {value}"
+    if value < CAP_MIN_VALUE:
+        return False, f"слишком мало: {value} < {CAP_MIN_VALUE} млрд"
+    if value > CAP_MAX_VALUE:
+        return False, f"слишком велико: {value} > {CAP_MAX_VALUE} млрд"
+    return True, "OK"
+
+
+def validate_date(period_date: date) -> Tuple[bool, str]:
+    today = date.today()
+    if period_date > today + timedelta(days=7):
+        return False, f"дата в будущем: {period_date}"
+    if period_date < CAP_MIN_DATE:
+        return False, f"дата до {CAP_MIN_DATE}: {period_date}"
+    return True, "OK"
+
+
+def validate_series_jumps(data: List[Tuple[date, float]]) -> List[str]:
+    warnings = []
+    sorted_data = sorted(data, key=lambda x: x[0])
+    for i in range(1, len(sorted_data)):
+        prev_date, prev_val = sorted_data[i - 1]
+        curr_date, curr_val = sorted_data[i]
+        if prev_val == 0:
+            continue
+        change_pct = abs(curr_val - prev_val) / prev_val * 100
+        if change_pct > CAP_MAX_JUMP_PCT:
+            warnings.append(
+                f"Скачок {change_pct:.1f}% между {prev_date} ({prev_val:,.0f}) "
+                f"и {curr_date} ({curr_val:,.0f})"
+            )
+    return warnings
+
+
+# ======================================================================
+#               SmartLab: ежедневная капитализация
+# ======================================================================
+
+def fetch_from_smartlab(engine) -> int:
+    """Парсит SmartLab и сохраняет сегодняшнюю полную капитализацию рынка."""
+    log.info("Загрузка капитализации с SmartLab...")
+    log.debug(f"  URL: {SMARTLAB_URL}")
+
+    try:
+        req = urllib.request.Request(SMARTLAB_URL, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        })
+        resp = urllib.request.urlopen(req, timeout=30)
+        status = resp.getcode()
+        log.info(f"  HTTP статус: {status}")
+
+        if status != 200:
+            log.error(f"  Неожиданный HTTP статус: {status}")
+            return 0
+
+        html = resp.read().decode('utf-8', errors='replace')
+        log.info(f"  HTML получен: {len(html):,} байт")
+
+        # Нормализуем HTML: заменяем &nbsp; на пробелы
+        html_clean = html.replace('&nbsp;', ' ').replace('\xa0', ' ')
+
+        # Формат SmartLab:
+        #   <td ...>Всего:</td>
+        #   <td><strong> 54 273 </strong></td>
+        # Ищем "Всего:" и далее первое число в следующих тегах
+        pattern = r'Всего:</td>\s*<td[^>]*>\s*(?:<[^>]+>\s*)*([\d\s]+)\s*(?:</[^>]+>)*'
+        match = re.search(pattern, html_clean, re.DOTALL)
+
+        if not match:
+            # Фолбек: "Всего" + число на той же или следующей строке
+            pattern2 = r'Всего[:\s]*?(?:<[^>]*>)*\s*([\d\s]{3,})'
+            match = re.search(pattern2, html_clean, re.DOTALL)
+
+        if not match:
+            log.error("  Не найдена строка 'Всего' с числом в HTML SmartLab")
+            return 0
+
+        raw_number = match.group(1).strip()
+        # Убираем пробелы из числа: "54 273" -> "54273"
+        cap_value = float(raw_number.replace(' ', ''))
+
+        log.info(f"  Найдено: '{match.group(0).strip()}'")
+        log.info(f"  Капитализация: {cap_value:,.0f} млрд руб")
+
+        # Валидация
+        ok, msg = validate_value(cap_value)
+        if not ok:
+            log.error(f"  Валидация не пройдена: {msg}")
+            return 0
+
+        # Сохраняем
+        today = date.today()
+        with engine.connect() as conn:
+            conn.execute(text("""
+                INSERT INTO macro_data (indicator, period_date, value, source)
+                VALUES ('MARKET_CAP_TOTAL', :pd, :val, 'SMARTLAB')
+                ON CONFLICT (indicator, period_date) DO UPDATE SET
+                    value = EXCLUDED.value, source = EXCLUDED.source,
+                    created_at = CURRENT_TIMESTAMP
+            """), {"pd": today, "val": cap_value})
+            conn.commit()
+
+        log.info(f"  Сохранено: {today} = {cap_value:,.0f} млрд руб")
+        return 1
+
+    except urllib.error.URLError as e:
+        log.error(f"  Ошибка сети: {e}")
+        return 0
+    except Exception as e:
+        log.error(f"  Ошибка загрузки: {e}", exc_info=True)
+        return 0
+
+
+# ======================================================================
+#     GuruFocus/WebArchive: импорт исторических данных
+# ======================================================================
+
+def import_historical(engine, html_path: str) -> int:
+    """Импорт исторической капитализации из сохранённого HTML GuruFocus."""
+    if not os.path.exists(html_path):
+        log.error(f"Файл не найден: {html_path}")
+        return 0
+
+    file_size = os.path.getsize(html_path)
+    log.info(f"Импорт из {html_path} ({file_size:,} байт)...")
+
+    try:
+        with open(html_path, 'r', encoding='utf-8', errors='replace') as f:
+            content = f.read()
+    except Exception as e:
+        log.error(f"  Не удалось прочитать файл: {e}")
+        return 0
+
+    # Ищем серию "Russia Total Market Cap (Billion, National Currency)"
+    marker = "Russia Total Market Cap (Billion, National Currency)"
+    idx = content.find(marker)
+    if idx < 0:
+        log.error(f"  Не найдена серия '{marker}' в HTML")
+        return 0
+
+    # Ищем 'data :' после маркера и извлекаем JSON-массив
+    data_prefix = content.find('data :', idx)
+    if data_prefix < 0:
+        log.error("  Не найден блок 'data :' после маркера")
+        return 0
+
+    # Находим начало массива [[
+    i = data_prefix + len('data :')
+    while i < len(content) and content[i] != '[':
+        i += 1
+    if i >= len(content):
+        log.error("  Не найдено начало массива данных")
+        return 0
+
+    # Находим конец массива, считая скобки
+    start = i
+    bracket_count = 0
+    while i < len(content):
+        if content[i] == '[':
+            bracket_count += 1
+        elif content[i] == ']':
+            bracket_count -= 1
+            if bracket_count == 0:
+                break
+        i += 1
+    end = i + 1
+
+    data_str = content[start:end]
+
+    try:
+        raw_data = json.loads(data_str)
+    except json.JSONDecodeError as e:
+        log.error(f"  Ошибка парсинга JSON: {e}")
+        return 0
+
+    log.info(f"  Распарсено точек: {len(raw_data)}")
+
+    # Конвертируем [timestamp_ms, value_bln] -> [(date, value)]
+    data = []
+    validation_errors = []
+
+    for item in raw_data:
+        if not isinstance(item, (list, tuple)) or len(item) != 2:
+            validation_errors.append(f"  Некорректный формат: {item}")
+            continue
+
+        ts_ms, value = item
+        try:
+            dt = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc)
+            period_date = dt.date()
+            value = float(value)
+
+            ok, msg = validate_date(period_date)
+            if not ok:
+                validation_errors.append(f"  Дата: {msg}")
+                continue
+
+            ok, msg = validate_value(value)
+            if not ok:
+                validation_errors.append(f"  Значение {period_date}: {msg}")
+                continue
+
+            data.append((period_date, value))
+        except (ValueError, TypeError, OSError) as e:
+            validation_errors.append(f"  Ошибка парсинга: {item}: {e}")
+            continue
+
+    if not data:
+        log.error("  Не удалось распарсить ни одной записи!")
+        for err in validation_errors[:10]:
+            log.error(err)
+        return 0
+
+    data.sort(key=lambda x: x[0])
+    log.info(f"  Валидных точек: {len(data)} ({data[0][0]} - {data[-1][0]})")
+
+    if validation_errors:
+        log.warning(f"  Ошибок валидации: {len(validation_errors)}")
+        for err in validation_errors[:5]:
+            log.warning(err)
+
+    # Проверка на аномальные скачки
+    jumps = validate_series_jumps(data)
+    if jumps:
+        log.warning(f"  Аномальных скачков: {len(jumps)}")
+        for j in jumps[:5]:
+            log.warning(f"    {j}")
+
+    # Получаем текущее состояние БД
+    with engine.connect() as conn:
+        r = conn.execute(text(
+            "SELECT COUNT(*) FROM macro_data WHERE indicator = 'MARKET_CAP_TOTAL'"
+        )).fetchone()
+        db_count_before = r[0] if r else 0
+
+    # Upsert
+    inserted = 0
+    errors = 0
+    with engine.connect() as conn:
+        for period_date, value in data:
+            try:
+                conn.execute(text("""
+                    INSERT INTO macro_data (indicator, period_date, value, source)
+                    VALUES ('MARKET_CAP_TOTAL', :pd, :val, 'GURUFOCUS')
+                    ON CONFLICT (indicator, period_date) DO UPDATE SET
+                        value = EXCLUDED.value, source = EXCLUDED.source,
+                        created_at = CURRENT_TIMESTAMP
+                """), {"pd": period_date, "val": value})
+                inserted += 1
+            except Exception as e:
+                errors += 1
+                log.error(f"  Ошибка вставки {period_date}: {e}")
+        conn.commit()
+
+    # Верификация
+    with engine.connect() as conn:
+        r = conn.execute(text(
+            "SELECT COUNT(*) FROM macro_data WHERE indicator = 'MARKET_CAP_TOTAL'"
+        )).fetchone()
+        db_count_after = r[0] if r else 0
+
+    log.info(f"  Итог: {inserted} upserted, {errors} ошибок")
+    log.info(f"  В БД: было {db_count_before}, стало {db_count_after}")
+
+    return inserted
+
+
+# ======================================================================
+#                      ПРОВЕРКА ЦЕЛОСТНОСТИ
+# ======================================================================
+
+def check_market_cap(engine) -> Dict:
+    """Проверить MARKET_CAP_TOTAL на целостность."""
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            SELECT period_date, value, source FROM macro_data
+            WHERE indicator = 'MARKET_CAP_TOTAL'
+            ORDER BY period_date
+        """)).fetchall()
+
+    if not rows:
+        return {'status': 'empty', 'total': 0, 'first': None, 'last': None}
+
+    dates = [r[0] for r in rows]
+    values = [float(r[1]) for r in rows]
+    sources = [r[2] for r in rows]
+
+    # Считаем по источникам
+    source_counts = {}
+    for s in sources:
+        source_counts[s] = source_counts.get(s, 0) + 1
+
+    # Проверка на большие дыры (> 60 дней)
+    gaps = []
+    for i in range(1, len(dates)):
+        diff = (dates[i] - dates[i - 1]).days
+        if diff > 60:
+            gaps.append({
+                'from': dates[i - 1],
+                'to': dates[i],
+                'days': diff
+            })
+
+    # Аномальные скачки
+    jump_warnings = validate_series_jumps(list(zip(dates, values)))
+
+    return {
+        'status': 'ok' if not gaps and not jump_warnings else 'issues',
+        'total': len(dates),
+        'first': dates[0],
+        'last': dates[-1],
+        'last_value': values[-1],
+        'source_counts': source_counts,
+        'gaps': gaps,
+        'jump_warnings': jump_warnings,
+    }
+
+
+def print_check_report(engine):
+    """Вывести полный отчёт о целостности MARKET_CAP_TOTAL."""
+    sep = '=' * 60
+    log.info(sep)
+    log.info("ПРОВЕРКА ЦЕЛОСТНОСТИ MARKET_CAP_TOTAL")
+    log.info(sep)
+
+    result = check_market_cap(engine)
+
+    if result['status'] == 'empty':
+        log.warning("  НЕТ ДАННЫХ в БД!")
+        log.info(sep)
+        return result
+
+    log.info(f"  Записей: {result['total']}")
+    log.info(f"  Период: {result['first']} - {result['last']}")
+    log.info(f"  Последнее значение: {result['last_value']:,.0f} млрд руб")
+    log.info(f"  Источники: {result['source_counts']}")
+
+    if result['gaps']:
+        log.warning(f"  ДЫРЫ: {len(result['gaps'])} пропусков > 60 дней:")
+        for g in result['gaps']:
+            log.warning(f"    {g['from']} -> {g['to']} ({g['days']} дней)")
+    else:
+        log.info("  Больших дыр нет (< 60 дней)")
+
+    if result.get('jump_warnings'):
+        log.warning(f"  АНОМАЛИИ: {len(result['jump_warnings'])} скачков:")
+        for w in result['jump_warnings']:
+            log.warning(f"    {w}")
+    else:
+        log.info("  Аномальных скачков нет")
+
+    # Актуальность
+    today = date.today()
+    age = (today - result['last']).days
+    if age > 7:
+        log.warning(f"  АКТУАЛЬНОСТЬ: последняя запись {result['last']} ({age} дней назад) — УСТАРЕЛА")
+    else:
+        log.info(f"  АКТУАЛЬНОСТЬ: последняя запись {result['last']} ({age} дней назад) — OK")
+
+    log.info(sep)
+    return result
+
+
+# ======================================================================
+#                              MAIN
+# ======================================================================
+
+async def update_market_cap(force: bool = False) -> dict:
+    """Обновить капитализацию (SmartLab)."""
+    engine = get_engine()
+    ensure_table(engine)
+
+    count = fetch_from_smartlab(engine)
+
+    engine.dispose()
+    return {'MARKET_CAP_TOTAL': count}
+
+
+async def main():
+    parser = argparse.ArgumentParser(description="Market cap total updater (SmartLab + GuruFocus)")
+    parser.add_argument("--once", action="store_true", help="Single update from SmartLab")
+    parser.add_argument("--force", action="store_true", help="Force (ignore trading day check)")
+    parser.add_argument("--import-historical", type=str, metavar="FILE",
+                        help="Import historical data from GuruFocus HTML")
+    parser.add_argument("--check", action="store_true", help="Check data integrity only")
+    args = parser.parse_args()
+
+    sep = '=' * 60
+    log.info(sep)
+    log.info("MARKET CAP TOTAL UPDATER")
+    log.info(f"Time: {datetime.now()}")
+    log.info(f"Args: once={args.once}, force={args.force}, check={args.check}")
+    log.info(sep)
+
+    engine = get_engine()
+    ensure_table(engine)
+
+    if args.check:
+        print_check_report(engine)
+        engine.dispose()
+        return
+
+    if args.import_historical:
+        count = import_historical(engine, args.import_historical)
+        if count > 0:
+            log.info("Проверка целостности после импорта...")
+            print_check_report(engine)
+        engine.dispose()
+        return
+
+    if args.once:
+        is_trading, reason = is_trading_day()
+        if not is_trading and not args.force:
+            log.info(f"Skip: {reason} (use --force)")
+            engine.dispose()
+            return
+        results = await update_market_cap(force=args.force)
+        for k, v in results.items():
+            log.info(f"  {k}: {v}")
+        engine.dispose()
+    else:
+        log.info("Daemon mode: checking daily at 10:00 MSK")
+        last_update = None
+        while True:
+            now = get_moscow_time()
+            today = now.date()
+            is_trade, _ = is_trading_day(today)
+
+            if is_trade and now.hour >= 10 and last_update != today:
+                log.info(f"Daily update ({now:%H:%M})...")
+                try:
+                    await update_market_cap()
+                except Exception as e:
+                    log.error(f"Ошибка daily update: {e}", exc_info=True)
+                last_update = today
+
+            await asyncio.sleep(300)
+
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        log.info("Stopped")
+    except Exception as e:
+        log.critical(f"Error: {e}", exc_info=True)
+        sys.exit(1)

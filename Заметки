@@ -32,6 +32,7 @@ uvicorn api.main:app --reload
 cd C:\Users\Vadim\PycharmProjects\MOEX\frontend
 npm run dev
 
+
 # Открыть: http://127.0.0.1:5173
 ```
 

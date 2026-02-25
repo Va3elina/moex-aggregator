@@ -53,7 +53,7 @@ export default function Layout() {
                       ? 'cursor-not-allowed'
                       : isActive
                         ? 'border'
-                        : 'hover:bg-white/5'
+                        : ''
                     }
                   `}
                   style={({ isActive }) => ({

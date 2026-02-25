@@ -3,11 +3,11 @@
  * Показывает мини-график всех данных с перетаскиваемым окном выбора.
  * Аналог Highcharts / TradingView navigator.
  */
-import { useRef, useState, useEffect, useMemo, useCallback } from 'react';
+import { useRef, useState, useEffect, useLayoutEffect, useMemo, useCallback } from 'react';
 
 interface ChartNavigatorProps {
     data: { time: string; value: number }[];
-    onChange: (startIdx: number, endIdx: number) => void;
+    onChange: (startIdx: number, endIdx: number, isDrag: boolean) => void;
     color?: string;
     height?: number;
 }
@@ -25,10 +25,22 @@ export default function ChartNavigator({
     const [width, setWidth] = useState(0);
     const [selFrac, setSelFrac] = useState<[number, number]>([0, 1]);
 
+    // true только во время реального перетаскивания пользователем
+    const isDraggingRef = useRef(false);
+
     // Уникальный ID для градиента (несколько навигаторов на одной странице)
     const gradId = useRef(`ng-${Math.random().toString(36).slice(2, 6)}`).current;
 
-    // Наблюдаем за шириной контейнера
+    // Синхронная инициализация ширины до первой отрисовки — иначе хендлы
+    // позиционируются в 0 и некликабельны до срабатывания ResizeObserver.
+    useLayoutEffect(() => {
+        if (containerRef.current) {
+            const w = containerRef.current.clientWidth;
+            if (w > 0) setWidth(w);
+        }
+    }, []);
+
+    // Наблюдаем за шириной контейнера при изменениях размера
     useEffect(() => {
         const el = containerRef.current;
         if (!el) return;
@@ -44,12 +56,15 @@ export default function ChartNavigator({
     const onChangeRef = useRef(onChange);
     onChangeRef.current = onChange;
 
-    // Сообщаем родителю при изменении выделения
+    // Сообщаем родителю при изменении выделения.
+    // isDraggingRef.current = true только когда пользователь активно тащит ручку.
+    // При смене data.length (новый таймфрейм) isDraggingRef = false → родитель не
+    // сбрасывает navDragRef в true → морфинг анимируется корректно.
     useEffect(() => {
         if (!data.length || width === 0) return;
         const s = Math.max(0, Math.round(selFrac[0] * (data.length - 1)));
         const e = Math.min(data.length - 1, Math.round(selFrac[1] * (data.length - 1)));
-        onChangeRef.current(s, e);
+        onChangeRef.current(s, e, isDraggingRef.current);
     }, [selFrac, data.length, width]);
 
     // Мини-график всех данных
@@ -81,6 +96,7 @@ export default function ChartNavigator({
         e.stopPropagation();
         if (width === 0) return;
 
+        isDraggingRef.current = true;
         const startX = e.clientX;
         const startFrac: [number, number] = [selFrac[0], selFrac[1]];
 
@@ -102,11 +118,14 @@ export default function ChartNavigator({
         };
 
         const onUp = () => {
-            window.removeEventListener('mousemove', onMove);
+            isDraggingRef.current = false;
+            // capture: true — должен совпадать с тем, как listener был добавлен
+            window.removeEventListener('mousemove', onMove, true);
             window.removeEventListener('mouseup', onUp);
         };
 
-        window.addEventListener('mousemove', onMove);
+        // capture: true — срабатывает ДО React-обработчиков (до их stopPropagation)
+        window.addEventListener('mousemove', onMove, true);
         window.addEventListener('mouseup', onUp);
     }, [selFrac, width]);
 
@@ -116,6 +135,7 @@ export default function ChartNavigator({
         type: 'left' | 'right' | 'window'
     ) => {
         if (width === 0 || !e.touches.length) return;
+        isDraggingRef.current = true;
         const startX = e.touches[0].clientX;
         const startFrac: [number, number] = [selFrac[0], selFrac[1]];
 
@@ -136,6 +156,7 @@ export default function ChartNavigator({
         };
 
         const onEnd = () => {
+            isDraggingRef.current = false;
             window.removeEventListener('touchmove', onMove);
             window.removeEventListener('touchend', onEnd);
         };

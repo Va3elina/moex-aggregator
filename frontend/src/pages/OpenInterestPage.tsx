@@ -142,11 +142,14 @@ export default function OpenInterestPage() {
     setIsModalOpen(false);
   };
 
-  // Данные для графика
-  const chartData = data?.candles.map((c) => ({
-    time: c.time,
-    value: c.close,
-  })) || [];
+  // Данные для графика (мемоизированы — иначе каждый рендер создаёт новый массив,
+  // что приводит к ложным перезапускам анимации в SimpleChart)
+  const chartData = useMemo(() =>
+    data?.candles.map((c) => ({
+      time: c.time,
+      value: c.close,
+    })) || []
+    , [data]);
 
   // Выравнивание OI данных по временным меткам свечей.
   // OI имеет меньше точек в час (нет 08:00, 18:00), что вызывает

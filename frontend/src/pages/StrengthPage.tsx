@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
+import { memo, useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { TrendingUp, Activity, ArrowUp, ArrowDown, BarChart2, LineChart, Filter } from 'lucide-react';
 import ChartNavigator from '../components/ChartNavigator';
 import {
@@ -28,7 +28,7 @@ const PERIOD_DAYS: Record<Period, number> = {
 };
 
 const EMA_PERIOD = 200; // Fixed EMA period
-const MAX_CHART_POINTS = 800; // Максимум точек на графике — выше начинается лаг
+const MAX_CHART_POINTS = 300; // Максимум точек на графике — выше начинается лаг
 
 const CLASSIFICATION_LABELS: Record<string, { label: string; color: string; bg: string }> = {
     overbought: { label: 'Перекупленность', color: 'text-emerald-400', bg: 'bg-emerald-500/20' },
@@ -50,6 +50,11 @@ const SECTORS: Record<string, string[]> = {
 };
 
 
+// Константа уровня модуля — стабильная ссылка, не пересоздаётся при рендерах.
+// Это критично: SyncedPriceChart/SyncedBreadthChart используют padding в useMemo-deps,
+// пересоздание объекта каждый рендер сбрасывает chartData и прерывает морфинг-анимацию.
+const CHART_PADDING = { left: 10, right: 70, top: 10, bottom: 30 } as const;
+
 export default function StrengthPage() {
     const [period, setPeriod] = useState<Period>('1y');
     const emaPeriod = EMA_PERIOD; // Fixed EMA200
@@ -68,6 +73,7 @@ export default function StrengthPage() {
 
     const containerRef = useRef<HTMLDivElement>(null);
     const mouseMoveRaf = useRef<number | null>(null);
+    const isNavDragRef = useRef(false);
 
     useEffect(() => {
         const fetchData = async () => {
@@ -142,6 +148,18 @@ export default function StrengthPage() {
         setNavRange([0, Math.max(0, syncedData.length - 1)]);
     }, [syncedData.length, syncedData[0]?.time]);
 
+    // Блокировка hover во время начальной анимации (500–600мс) чтобы не прерывать fade-in
+    const [isAnimating, setIsAnimating] = useState(false);
+    const animTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    useEffect(() => {
+        if (syncedData.length > 0) {
+            setIsAnimating(true);
+            if (animTimerRef.current) clearTimeout(animTimerRef.current);
+            animTimerRef.current = setTimeout(() => setIsAnimating(false), 700);
+        }
+        return () => { if (animTimerRef.current) clearTimeout(animTimerRef.current); };
+    }, [syncedData[0]?.time, syncedData.length]);
+
     const displaySyncedData = useMemo(() => {
         if (!syncedData.length) return syncedData;
         return syncedData.slice(navRange[0], navRange[1] + 1);
@@ -189,7 +207,7 @@ export default function StrengthPage() {
         : CLASSIFICATION_LABELS.neutral;
 
     // Общие размеры графиков
-    const padding = { left: 10, right: 70, top: 20, bottom: 30 };
+    const padding = CHART_PADDING;
 
     const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
         if (!containerRef.current || !displaySyncedData.length) return;
@@ -301,7 +319,7 @@ export default function StrengthPage() {
             <div
                 ref={containerRef}
                 className="widget overflow-hidden mb-6 relative cursor-crosshair"
-                onMouseMove={handleMouseMove}
+                onMouseMove={isAnimating ? undefined : handleMouseMove}
                 onMouseLeave={handleMouseLeave}
             >
                 {/* Полный loading / error на месте графика */}
@@ -412,6 +430,7 @@ export default function StrengthPage() {
                             hoverIndex={hoverIndex}
                             height={300}
                             padding={padding}
+                            isNavDragRef={isNavDragRef}
                         />
                     </div>
                 )}
@@ -443,6 +462,7 @@ export default function StrengthPage() {
                             height={150}
                             mode={chartMode}
                             padding={padding}
+                            isNavDragRef={isNavDragRef}
                         />
                     ) : (
                         <div className="h-48 flex items-center justify-center text-theme-muted">
@@ -460,7 +480,7 @@ export default function StrengthPage() {
                     >
                         <ChartNavigator
                             data={navigatorData}
-                            onChange={(s, e) => setNavRange([s, e])}
+                            onChange={(s, e, isDrag) => { isNavDragRef.current = isDrag; setNavRange([s, e]); }}
                             color="#8b5cf6"
                         />
                     </div>
@@ -592,12 +612,14 @@ function SyncedPriceChart({
     syncedData,
     hoverIndex,
     height,
-    padding
+    padding,
+    isNavDragRef,
 }: {
     syncedData: { time: string; breadth: number; imoex: number }[];
     hoverIndex: number | null;
     height: number;
     padding: { left: number; right: number; top: number; bottom: number };
+    isNavDragRef?: { current: boolean };
 }) {
     const svgRef = useRef<SVGSVGElement>(null);
     const [width, setWidth] = useState(800);
@@ -651,6 +673,14 @@ function SyncedPriceChart({
         const bottom = padding.top + chartHeight;
 
         if (animRef.current) cancelAnimationFrame(animRef.current);
+
+        // Во время перетаскивания навигатора — мгновенное обновление без анимации
+        if (isNavDragRef?.current) {
+            prevPtsRef.current = target;
+            setAnimLinePath(ptsToPath(target));
+            setAnimAreaPath(ptsToArea(target, bottom));
+            return;
+        }
 
         if (isFirstRef.current || prevPtsRef.current.length === 0) {
             isFirstRef.current = false;
@@ -715,7 +745,9 @@ function SyncedPriceChart({
             )}
 
             {chartData.yTicks.map((tick, i) => (
-                <text key={i} x={width - padding.right + 8} y={tick.y}
+                <text key={i}
+                    x={width - padding.right + 8}
+                    y={Math.max(padding.top + 6, Math.min(tick.y, padding.top + chartHeight - 6))}
                     textAnchor="start" dominantBaseline="middle" fill="var(--text-muted)" fontSize="11">
                     {tick.value.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
                 </text>
@@ -724,19 +756,64 @@ function SyncedPriceChart({
     );
 }
 
+// Мемоизированные рендереры — не перерисовываются при смене hoverIndex
+
+type BarDef = { x: number; y: number; width: number; height: number; color: string };
+
+const HistogramBars = memo(({ bars }: { bars: BarDef[] }) => (
+    <>
+        {bars.map((bar, i) => (
+            <rect key={i} x={bar.x} y={bar.y} width={bar.width} height={bar.height}
+                fill={bar.color} opacity={0.75} />
+        ))}
+    </>
+));
+
+const BreadthLineRenderer = memo(({ animLinePath, dataLength, breadthValues, getColor }: {
+    animLinePath: string;
+    dataLength: number;
+    breadthValues: number[];
+    getColor: (v: number) => string;
+}) => {
+    if (!animLinePath || dataLength < 2) return null;
+    const pathParts = animLinePath.match(/[\d.]+/g);
+    if (!pathParts || pathParts.length < 4) return null;
+    const aPts: { x: number; y: number }[] = [];
+    for (let i = 0; i < pathParts.length; i += 2) {
+        aPts.push({ x: parseFloat(pathParts[i]), y: parseFloat(pathParts[i + 1]) });
+    }
+    return (
+        <>
+            {aPts.slice(0, -1).map((pt, i) => {
+                const origIdx = (i / Math.max(aPts.length - 1, 1)) * (dataLength - 1);
+                const lo = Math.floor(origIdx);
+                const hi = Math.min(lo + 1, dataLength - 1);
+                const val = (breadthValues[lo] + breadthValues[hi]) / 2;
+                return (
+                    <path key={i}
+                        d={`M ${pt.x} ${pt.y} L ${aPts[i + 1].x} ${aPts[i + 1].y}`}
+                        fill="none" stroke={getColor(val)} strokeWidth="2.5" strokeLinecap="round" />
+                );
+            })}
+        </>
+    );
+});
+
 // Синхронизированный график Breadth с морфинг-анимацией
 function SyncedBreadthChart({
     syncedData,
     hoverIndex,
     height,
     mode,
-    padding
+    padding,
+    isNavDragRef,
 }: {
     syncedData: { time: string; breadth: number; imoex: number }[];
     hoverIndex: number | null;
     height: number;
     mode: ChartMode;
     padding: { left: number; right: number; top: number; bottom: number };
+    isNavDragRef?: { current: boolean };
 }) {
     const svgRef = useRef<SVGSVGElement>(null);
     const [width, setWidth] = useState(800);
@@ -771,6 +848,9 @@ function SyncedBreadthChart({
         if (value < 30) return '#ef4444';
         return '#fbbf24';
     }, []);
+
+    // Мемоизированный массив значений для BreadthLineRenderer — стабильная ссылка
+    const breadthValues = useMemo(() => syncedData.map(d => d.breadth), [syncedData]);
 
     const chartData = useMemo(() => {
         if (!syncedData.length) return null;
@@ -827,6 +907,17 @@ function SyncedBreadthChart({
         if (animRef.current) cancelAnimationFrame(animRef.current);
 
         const bottom = padding.top + chartHeight;
+
+        // Во время перетаскивания навигатора — мгновенное обновление без анимации
+        if (isNavDragRef?.current) {
+            const targetPts = chartData.points.map(p => ({ x: p.x, y: p.y }));
+            const targetBars = chartData.bars;
+            prevPtsRef.current = targetPts;
+            prevBarsRef.current = targetBars.map(b => ({ y: b.y, height: b.height }));
+            setAnimLinePath(ptsToPath(targetPts));
+            setAnimBars(targetBars);
+            return;
+        }
 
         if (mode === 'line' || mode === 'histogram') {
             const targetPts = chartData.points.map(p => ({ x: p.x, y: p.y }));
@@ -909,6 +1000,10 @@ function SyncedBreadthChart({
                     <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.3" />
                     <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
                 </linearGradient>
+                {/* Клип: бары не выходят за пределы области графика */}
+                <clipPath id="breadthChartClip">
+                    <rect x={padding.left} y={padding.top} width={chartWidth} height={chartHeight} />
+                </clipPath>
             </defs>
 
             {/* Reference levels */}
@@ -917,47 +1012,28 @@ function SyncedBreadthChart({
                     stroke={level.color} strokeWidth="1" strokeDasharray={level.dash} opacity="0.5" />
             ))}
 
-            {/* Animated histogram bars */}
+            {/* Animated histogram bars — clipPath не даёт барам заходить на Y-метки и за левый край */}
             {mode === 'histogram' && (
-                <>
-                    {animBars.map((bar, i) => (
-                        <rect key={i} x={bar.x} y={bar.y} width={bar.width} height={bar.height}
-                            fill={bar.color} opacity={0.75} />
-                    ))}
-                    {/* Highlight активного бара отдельно — не перерисовываем все 800 */}
+                <g clipPath="url(#breadthChartClip)">
+                    <HistogramBars bars={animBars} />
+                    {/* Highlight активного бара — перерисовывается только при смене hoverIndex (1 элемент) */}
                     {hoverIndex !== null && animBars[hoverIndex] && (() => {
                         const bar = animBars[hoverIndex];
                         return <rect x={bar.x} y={bar.y} width={bar.width} height={bar.height}
                             fill={bar.color} opacity={1} />;
                     })()}
-                </>
+                </g>
             )}
 
-            {/* Animated line with colored segments */}
-            {mode === 'line' && chartData.points.length > 1 && (() => {
-                // Parse animated path to get interpolated points for coloring
-                const pathParts = animLinePath.match(/[\d.]+/g);
-                if (!pathParts || pathParts.length < 4) return null;
-                const aPts: { x: number; y: number }[] = [];
-                for (let i = 0; i < pathParts.length; i += 2) {
-                    aPts.push({ x: parseFloat(pathParts[i]), y: parseFloat(pathParts[i + 1]) });
-                }
-                // Use original values for coloring, resampled to animated points count
-                const segments: { path: string; color: string }[] = [];
-                for (let i = 0; i < aPts.length - 1; i++) {
-                    const origIdx = (i / Math.max(aPts.length - 1, 1)) * (syncedData.length - 1);
-                    const lo = Math.floor(origIdx);
-                    const hi = Math.min(lo + 1, syncedData.length - 1);
-                    const val = (syncedData[lo].breadth + syncedData[hi].breadth) / 2;
-                    segments.push({
-                        path: `M ${aPts[i].x} ${aPts[i].y} L ${aPts[i + 1].x} ${aPts[i + 1].y}`,
-                        color: getColor(val),
-                    });
-                }
-                return segments.map((seg, i) => (
-                    <path key={i} d={seg.path} fill="none" stroke={seg.color} strokeWidth="2.5" strokeLinecap="round" />
-                ));
-            })()}
+            {/* Animated line with colored segments — в memo-компоненте, не перерисовывается при смене hoverIndex */}
+            {mode === 'line' && (
+                <BreadthLineRenderer
+                    animLinePath={animLinePath}
+                    dataLength={syncedData.length}
+                    breadthValues={breadthValues}
+                    getColor={getColor}
+                />
+            )}
 
             {/* Crosshair */}
             {crosshairX !== null && (
@@ -977,10 +1053,11 @@ function SyncedBreadthChart({
                 </text>
             ))}
 
-            {/* X axis */}
+            {/* X axis — первая метка прижата влево, последняя вправо */}
             {chartData.xTicks.map((tick, i) => (
                 <text key={i} x={tick.x} y={padding.top + chartData.chartHeight + 18}
-                    textAnchor="middle" fill="var(--text-muted)" fontSize="11">
+                    textAnchor={i === 0 ? 'start' : i === chartData.xTicks.length - 1 ? 'end' : 'middle'}
+                    fill="var(--text-muted)" fontSize="11">
                     {tick.label}
                 </text>
             ))}

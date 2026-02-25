@@ -281,10 +281,6 @@ body {
   transition: all 0.3s ease;
 }
 
-.widget:hover {
-  box-shadow: var(--shadow-lg);
-}
-
 .widget-flat {
   background-color: var(--bg-secondary);
   border: 1px solid var(--border-color);
@@ -292,8 +288,7 @@ body {
   transition: all 0.3s ease;
 }
 
-.widget-flat:hover {
-}
+
 
 /* Control Groups */
 .control-group {

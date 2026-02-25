@@ -44,6 +44,23 @@ const FUND_COLORS = [
 
 const INDEX_COLOR = '#C8FF2E';
 
+// Easing для анимации гистограммы
+const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+
+// Ресемплинг массива значений до нужной длины (для морфинга при смене кол-ва баров)
+const resampleFlows = (vals: number[], len: number): number[] => {
+    if (len === 0) return [];
+    if (vals.length === 0) return new Array(len).fill(0);
+    if (vals.length === len) return vals;
+    return Array.from({ length: len }, (_, i) => {
+        const t = len === 1 ? 0 : i / (len - 1);
+        const si = t * (vals.length - 1);
+        const lo = Math.floor(si);
+        const hi = Math.min(lo + 1, vals.length - 1);
+        return vals[lo] + (vals[hi] - vals[lo]) * (si - lo);
+    });
+};
+
 export default function FundsMoneyPage() {
     const [category, setCategory] = useState<FundCategory>('money_market');
     const [period, setPeriod] = useState<Period>('6m');
@@ -58,6 +75,12 @@ export default function FundsMoneyPage() {
     const [flowHoverPos, setFlowHoverPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
     const flowChartRef = useRef<SVGSVGElement>(null);
     const flowContainerRef = useRef<HTMLDivElement>(null);
+
+    // Анимация баров гистограммы (морфинг при смене данных)
+    const [animatedBars, setAnimatedBars] = useState<number[]>([]);
+    const prevBarsRef = useRef<number[]>([]);
+    const barsAnimRef = useRef<number | null>(null);
+    const isFirstBarsRender = useRef(true);
 
     // Загрузка данных
     useEffect(() => {
@@ -179,6 +202,53 @@ export default function FundsMoneyPage() {
     const handleFlowMouseLeave = useCallback(() => {
         setHoveredFlowIndex(null);
     }, []);
+
+    // Сброс анимации при выходе из режима flows — следующее появление будет fade-in из нуля
+    useEffect(() => {
+        if (viewMode !== 'flows') {
+            if (barsAnimRef.current) cancelAnimationFrame(barsAnimRef.current);
+            setAnimatedBars([]);
+            prevBarsRef.current = [];
+            isFirstBarsRender.current = true;
+        }
+    }, [viewMode]);
+
+    // Морфинг гистограммы при смене flowsData
+    useEffect(() => {
+        if (!flowsData?.flows?.length) return;
+
+        if (barsAnimRef.current) cancelAnimationFrame(barsAnimRef.current);
+
+        const targetValues = flowsData.flows.map(f => f.flow);
+        const fromValues = (isFirstBarsRender.current || prevBarsRef.current.length === 0)
+            ? new Array(targetValues.length).fill(0)
+            : resampleFlows(prevBarsRef.current, targetValues.length);
+
+        isFirstBarsRender.current = false;
+
+        const duration = 600;
+        let startTime: number | null = null;
+
+        const animate = (timestamp: number) => {
+            if (!startTime) startTime = timestamp;
+            const t = Math.min((timestamp - startTime) / duration, 1);
+            const eased = easeOutCubic(t);
+
+            setAnimatedBars(targetValues.map((v, i) => fromValues[i] + (v - fromValues[i]) * eased));
+
+            if (t < 1) {
+                barsAnimRef.current = requestAnimationFrame(animate);
+            } else {
+                prevBarsRef.current = targetValues;
+            }
+        };
+
+        barsAnimRef.current = requestAnimationFrame(animate);
+
+        return () => {
+            if (barsAnimRef.current) cancelAnimationFrame(barsAnimRef.current);
+        };
+    }, [flowsData]);
 
     const currentCategory = CATEGORIES.find(c => c.key === category);
 
@@ -312,7 +382,7 @@ export default function FundsMoneyPage() {
                 </div>
             ) : (
             <div className="bg-theme-secondary rounded-2xl p-6 border border-theme mb-6">
-                {loading && !flowsData ? (
+                {loading && animatedBars.length === 0 ? (
                     <div className="flex items-center justify-center h-[450px]">
                         <div className="flex flex-col items-center gap-3">
                             <div className="w-8 h-8 border-2 border-[#6366f1] border-t-transparent rounded-full animate-spin" />
@@ -322,15 +392,16 @@ export default function FundsMoneyPage() {
                 ) : (
                     /* Гистограмма притоков/оттоков */
                     <div className="h-[450px]">
-                        {/* Заголовок — всегда показывает суммарное значение за период */}
-                        <div className="mb-2 flex items-baseline gap-4">
-                            <span className="text-4xl font-bold text-theme-primary tracking-tight">
-                                {(() => {
-                                    const total = flowsData?.flows.reduce((sum, f) => sum + f.flow, 0) ?? 0;
-                                    return `${total > 0 ? '+' : ''}${total.toFixed(1)} млрд ₽`;
-                                })()}
+                        {/* Легенда — сверху */}
+                        <div className="flex items-center justify-center gap-6 mb-2 text-sm">
+                            <span className="flex items-center gap-2">
+                                <span className="w-3 h-3 rounded-full bg-[#2EE59D]" />
+                                <span className="text-theme-secondary">Приток</span>
                             </span>
-                            <span className="text-sm text-theme-secondary">за период</span>
+                            <span className="flex items-center gap-2">
+                                <span className="w-3 h-3 rounded-full bg-[#FF4D4D]" />
+                                <span className="text-theme-secondary">Отток</span>
+                            </span>
                         </div>
 
                         {/* График с тултипом */}
@@ -346,15 +417,17 @@ export default function FundsMoneyPage() {
                                 height="100%"
                                 preserveAspectRatio="none"
                             >
-                                {flowsData?.flows && (() => {
-                                    const flows = flowsData.flows;
-                                    const maxAbsFlow = Math.max(...flows.map(f => Math.abs(f.flow)), 1);
-                                    const barWidth = 100 / (flows.length || 1);
+                                {animatedBars.length > 0 && (() => {
+                                    // Используем animatedBars для высот — это и есть анимированные значения.
+                                    // barWidth вычисляем по длине animatedBars, чтобы не было пустых кадров
+                                    // при смене flowsData (когда animatedBars ещё старой длины).
+                                    const maxAbsFlow = Math.max(...animatedBars.map(v => Math.abs(v)), 1);
+                                    const barWidth = 100 / (animatedBars.length || 1);
                                     const midY = 50;
 
-                                    return flows.map((f, i) => {
-                                        const h = (Math.abs(f.flow) / maxAbsFlow) * 45;
-                                        const isPositive = f.flow >= 0;
+                                    return animatedBars.map((animFlow, i) => {
+                                        const h = (Math.abs(animFlow) / maxAbsFlow) * 45;
+                                        const isPositive = animFlow >= 0;
                                         const y = isPositive ? midY - h : midY;
                                         const baseColor = isPositive ? '#2EE59D' : '#FF4D4D';
                                         const isHovered = hoveredFlowIndex === i;
@@ -459,25 +532,20 @@ export default function FundsMoneyPage() {
                                 );
                             })()}
 
-                            {/* Даты оси X */}
+                            {/* Даты оси X — равномерно по всей ширине */}
                             <div className="absolute bottom-0 left-0 right-0 flex justify-between text-xs text-theme-secondary px-2">
-                                {flowsData?.flows && flowsData.flows.length > 0 && (
-                                    <>
-                                        <span>{new Date(flowsData.flows[0].period_start).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}</span>
-                                        <span>{new Date(flowsData.flows[flowsData.flows.length - 1].period_end).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}</span>
-                                    </>
-                                )}
+                                {flowsData?.flows && flowsData.flows.length > 0 && (() => {
+                                    const flows = flowsData.flows;
+                                    const tickCount = Math.min(6, flows.length);
+                                    return Array.from({ length: tickCount }, (_, i) => {
+                                        const idx = Math.round(i * (flows.length - 1) / (tickCount - 1));
+                                        const date = new Date(flows[idx].period_start);
+                                        return (
+                                            <span key={i}>{date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: '2-digit' })}</span>
+                                        );
+                                    });
+                                })()}
                             </div>
-                        </div>
-                        <div className="flex items-center justify-center gap-6 mt-4 text-sm">
-                            <span className="flex items-center gap-2">
-                                <span className="w-3 h-3 rounded-full bg-[#2EE59D]" />
-                                <span className="text-theme-secondary">Приток</span>
-                            </span>
-                            <span className="flex items-center gap-2">
-                                <span className="w-3 h-3 rounded-full bg-[#FF4D4D]" />
-                                <span className="text-theme-secondary">Отток</span>
-                            </span>
                         </div>
                     </div>
                 )}

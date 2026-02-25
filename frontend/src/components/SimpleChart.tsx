@@ -125,14 +125,22 @@ export default function SimpleChart({
   // Navigator: диапазон видимых данных (индексы в массиве data)
   const [navRange, setNavRange] = useState<[number, number]>([0, Math.max(0, data.length - 1)]);
 
+  // Отслеживаем ссылку на текущий data — если сменилась, navRange устарел
+  const prevDataRef = useRef(data);
+
   // Сброс навигатора при смене данных (новый период)
   useEffect(() => {
+    prevDataRef.current = data;
     setNavRange([0, Math.max(0, data.length - 1)]);
-  }, [data.length, data[0]?.time]);
+  }, [data]);
 
   // Срез данных по выбранному диапазону навигатора
   const displayData = useMemo(() => {
     if (!showNavigator || !data.length) return data;
+    const isStale = data !== prevDataRef.current;
+    const isFullRange = navRange[0] === 0 && navRange[1] >= data.length - 1;
+    if (isStale) return data;
+    if (isFullRange) return data;
     return data.slice(navRange[0], navRange[1] + 1);
   }, [showNavigator, data, navRange]);
 
@@ -208,8 +216,8 @@ export default function SimpleChart({
 
   // Адаптивные отступы: на мобиле меньше
   const padding = isMobile
-    ? { top: 30, right: 10, bottom: 40, left: 45 }
-    : { top: 40, right: 90, bottom: 50, left: 80 };
+    ? { top: 20, right: 10, bottom: 40, left: 45 }
+    : { top: 28, right: 90, bottom: 50, left: 80 };
 
   // На мобиле ограничиваем высоту графика
   const effectiveHeight = isMobile ? Math.min(height, 300) : height;
@@ -317,7 +325,7 @@ export default function SimpleChart({
 
   // Анимация морфинга
   const animateMorph = useCallback(() => {
-    if (loading || displayData.length === 0) return;
+    if (displayData.length === 0) return;
 
     const targetPrimary = targetCalc.points.map(p => ({ x: p.x, y: p.y }));
     const targetSecondary = targetCalc.secondaryPoints.map(p => ({ x: p.x, y: p.y }));
@@ -442,7 +450,9 @@ export default function SimpleChart({
       if (t < 1) {
         animationRef.current = requestAnimationFrame(animate);
       } else {
-        // Сохраняем конечные точки как предыдущие
+        // Обновляем prevPointsRef ТОЛЬКО при завершении — StrictMode-safe:
+        // cleanup отменяет RAF → t никогда не дойдёт до 1 → ref не обновится →
+        // повторный вызов animateMorph увидит старые from → морфинг работает
         prevPointsRef.current = {
           primary: targetPrimary,
           secondary: targetSecondary,
@@ -458,7 +468,7 @@ export default function SimpleChart({
     }
 
     animationRef.current = requestAnimationFrame(animate);
-  }, [loading, displayData, targetCalc, chartHeight, showNavigator]);
+  }, [displayData, targetCalc, chartHeight, showNavigator]);
 
   // Запуск анимации при изменении данных
   useEffect(() => {
@@ -773,8 +783,9 @@ export default function SimpleChart({
               />
               <text
                 x={-12}
-                y={tick.y + 4}
+                y={tick.y}
                 textAnchor="end"
+                dominantBaseline="middle"
                 fill="#5E6576"
                 fontSize="12"
                 fontWeight="500"
@@ -789,8 +800,9 @@ export default function SimpleChart({
             <text
               key={`sec-${i}`}
               x={chartWidth + 12}
-              y={tick.y + 4}
+              y={tick.y}
               textAnchor="start"
+              dominantBaseline="middle"
               fill={secondaryColor}
               fontSize="11"
               fontWeight="500"
@@ -800,20 +812,24 @@ export default function SimpleChart({
             </text>
           ))}
 
-          {/* X метки */}
-          {targetCalc.xTicks.map((tick, i) => (
-            <text
-              key={i}
-              x={Math.min(tick.x, chartWidth - 20)}
-              y={chartHeight + 30}
-              textAnchor="middle"
-              fill="#5E6576"
-              fontSize="12"
-              fontWeight="500"
-            >
-              {formatTime(tick.time)}
-            </text>
-          ))}
+          {/* X метки — первая прижата влево, последняя вправо, чтобы не выходить за края */}
+          {targetCalc.xTicks.map((tick, i) => {
+            const isFirst = i === 0;
+            const isLast = i === targetCalc.xTicks.length - 1;
+            return (
+              <text
+                key={i}
+                x={isFirst ? 0 : isLast ? chartWidth : tick.x}
+                y={chartHeight + 30}
+                textAnchor={isFirst ? 'start' : isLast ? 'end' : 'middle'}
+                fill="#5E6576"
+                fontSize="12"
+                fontWeight="500"
+              >
+                {formatTime(tick.time)}
+              </text>
+            );
+          })}
 
           {/* Область графика с клиппингом */}
           <g clipPath="url(#chartClip)">
@@ -1044,7 +1060,7 @@ export default function SimpleChart({
       {showNavigator && (
         <ChartNavigator
           data={data}
-          onChange={(s, e) => { navDragRef.current = true; setNavRange([s, e]); }}
+          onChange={(s, e, isDrag) => { navDragRef.current = isDrag; setNavRange([s, e]); }}
           color={primaryColor}
         />
       )}
