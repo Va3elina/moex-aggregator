@@ -1019,18 +1019,24 @@ export default function SimpleChart({
           return (
             <>
               {/* Дата — вверху вертикальной линии */}
-              <foreignObject
-                x={Math.min(Math.max(tooltip.x - 80, padding.left), width - padding.right - 160)}
-                y={padding.top - 24}
-                width="160"
-                height="22"
-              >
-                <div className="flex justify-center pointer-events-none">
-                  <span className="text-[11px] text-theme-secondary bg-theme-tertiary/90 backdrop-blur-sm px-2 py-0.5 rounded border border-theme whitespace-nowrap">
-                    {dateLabel}
-                  </span>
-                </div>
-              </foreignObject>
+              {(() => {
+                const labelW = dateLabel.length > 16 ? 200 : 140;
+                const halfW = labelW / 2;
+                return (
+                  <foreignObject
+                    x={Math.min(Math.max(tooltip.x - halfW, padding.left), width - padding.right - labelW)}
+                    y={padding.top - 24}
+                    width={labelW}
+                    height="22"
+                  >
+                    <div className="flex justify-center pointer-events-none">
+                      <span className="text-[11px] text-theme-secondary bg-theme-tertiary/90 backdrop-blur-sm px-2 py-0.5 rounded border border-theme whitespace-nowrap">
+                        {dateLabel}
+                      </span>
+                    </div>
+                  </foreignObject>
+                );
+              })()}
 
               {/* Карточка значений рядом с курсором */}
               <foreignObject

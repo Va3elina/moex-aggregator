@@ -490,9 +490,8 @@ export default function FundsMoneyPage() {
                                         <div
                                             className="absolute z-30 pointer-events-none"
                                             style={{
-                                                left: Math.min(Math.max(hoverX, 70), containerW - 70),
+                                                left: Math.min(Math.max(hoverX - 60, 4), containerW - 128),
                                                 top: 4,
-                                                transform: 'translateX(-50%)',
                                             }}
                                         >
                                             <span className="text-[11px] text-theme-secondary bg-theme-tertiary/90 backdrop-blur-sm px-2 py-0.5 rounded border border-theme whitespace-nowrap">
