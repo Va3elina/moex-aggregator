@@ -1020,9 +1020,9 @@ export default function SimpleChart({
             <>
               {/* Дата — вверху вертикальной линии */}
               <foreignObject
-                x={Math.min(Math.max(tooltip.x - 55, padding.left), width - padding.right - 110)}
+                x={Math.min(Math.max(tooltip.x - 80, padding.left), width - padding.right - 160)}
                 y={padding.top - 24}
-                width="110"
+                width="160"
                 height="22"
               >
                 <div className="flex justify-center pointer-events-none">

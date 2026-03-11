@@ -129,17 +129,22 @@ export default function StrengthPage() {
 
         // Downsample для больших периодов — иначе 4600+ точек лагают SVG
         if (full.length <= MAX_CHART_POINTS) return full;
-        const step = full.length / MAX_CHART_POINTS;
-        return Array.from({ length: MAX_CHART_POINTS }, (_, i) => {
+        // Всегда включаем первую и последнюю точки, чтобы показывать актуальную дату
+        const inner = MAX_CHART_POINTS - 2;
+        const step = (full.length - 1) / (inner + 1);
+        const result = [{ time: full[0].time, breadth: full[0].breadth, imoex: full[0].imoex }];
+        for (let i = 1; i <= inner; i++) {
             const lo = Math.floor(i * step);
-            const hi = Math.min(Math.floor((i + 1) * step), full.length);
-            const bucket = full.slice(lo, hi);
-            return {
+            const hi = Math.min(Math.floor((i + 1) * step), full.length - 1);
+            const bucket = full.slice(lo, hi + 1);
+            result.push({
                 time: bucket[Math.floor(bucket.length / 2)].time,
                 breadth: bucket.reduce((s, d) => s + d.breadth, 0) / bucket.length,
                 imoex: bucket.reduce((s, d) => s + d.imoex, 0) / bucket.length,
-            };
-        });
+            });
+        }
+        result.push({ time: full[full.length - 1].time, breadth: full[full.length - 1].breadth, imoex: full[full.length - 1].imoex });
+        return result;
     }, [breadthData, imoexData]);
 
     // Навигатор временного диапазона
@@ -374,8 +379,9 @@ export default function StrengthPage() {
                             <div
                                 className="absolute z-30 pointer-events-none"
                                 style={{
-                                    left: Math.min(Math.max(hoverX - 50, padding.left), rect.width - padding.right - 100),
+                                    left: Math.min(Math.max(hoverX, padding.left + 70), rect.width - padding.right - 70),
                                     top: 4,
+                                    transform: 'translateX(-50%)',
                                 }}
                             >
                                 <span className="text-[11px] text-theme-secondary bg-theme-tertiary/90 backdrop-blur-sm px-2 py-0.5 rounded border border-theme whitespace-nowrap">
