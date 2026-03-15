@@ -41,6 +41,7 @@ try:
         get_moscow_time,
         is_trading_hours,
         is_trading_day,
+        is_holiday,
         TRADING_START_HOUR,
         TRADING_END_HOUR
     )
@@ -155,6 +156,8 @@ class AlgopackOIFetcher:
         for k in self.stats:
             self.stats[k] = 0
 
+    PAGE_SIZE = 1000  # Лимит API Algopack на один запрос
+
     async def fetch_oi(
         self,
         session: aiohttp.ClientSession,
@@ -164,94 +167,108 @@ class AlgopackOIFetcher:
         latest: bool = False
     ) -> Optional[List[dict]]:
         """
-        Загружает OI для одного тикера.
-        
+        Загружает OI для одного тикера с пагинацией (start=0, 1000, 2000...).
+        Algopack возвращает max 1000 записей за запрос — без пагинации
+        широкие диапазоны дат молча обрезались.
+
         Returns: список записей или None
         """
         url = f"{self.BASE_URL}/{ticker}.json"
 
-        params = {
+        base_params = {
             'from': from_date,
             'till': till_date
         }
 
         if latest:
-            params['latest'] = 1
+            base_params['latest'] = 1
 
-        self.stats['requests'] += 1
+        all_records: List[dict] = []
+        start = 0
 
-        # Ретрай внутри запроса для надежности
-        for attempt in range(3):
-            try:
-                async with session.get(
-                    url,
-                    headers=self.headers,
-                    params=params,
-                    timeout=aiohttp.ClientTimeout(total=45) # Увеличил таймаут
-                ) as resp:
+        while True:
+            params = {**base_params, 'start': start}
+            self.stats['requests'] += 1
 
-                    if resp.status == 401:
-                        log.error(f"[{ticker}] Ошибка авторизации (401)")
-                        self.stats['errors'] += 1
-                        return None
+            # Ретрай внутри одной страницы
+            page_records = None
+            for attempt in range(3):
+                try:
+                    async with session.get(
+                        url,
+                        headers=self.headers,
+                        params=params,
+                        timeout=aiohttp.ClientTimeout(total=45)
+                    ) as resp:
 
-                    if resp.status == 404:
-                        log.debug(f"[{ticker}] Не найден (404)")
-                        self.stats['empty'] += 1
-                        return None
-
-                    if resp.status == 429:
-                        log.warning(f"[{ticker}] Лимит запросов (429), ждём 60 сек...")
-                        await asyncio.sleep(60)
-                        continue # Retry
-
-                    if resp.status != 200:
-                        if resp.status >= 500:
-                            log.warning(f"[{ticker}] Ошибка сервера {resp.status}, попытка {attempt+1}/3")
-                            await asyncio.sleep(2)
-                            continue
-                        else:
-                            log.warning(f"[{ticker}] HTTP {resp.status}")
+                        if resp.status == 401:
+                            log.error(f"[{ticker}] Ошибка авторизации (401)")
                             self.stats['errors'] += 1
-                            return None
+                            return all_records or None
 
-                    try:
-                        data = await resp.json()
-                    except Exception as json_err:
-                        log.error(f"[{ticker}] Ошибка парсинга JSON: {json_err}")
-                        self.stats['errors'] += 1
-                        return None
+                        if resp.status == 404:
+                            log.debug(f"[{ticker}] Не найден (404)")
+                            self.stats['empty'] += 1
+                            return all_records or None
 
-                    if "futoi" not in data:
-                        self.stats['empty'] += 1
-                        return None
+                        if resp.status == 429:
+                            log.warning(f"[{ticker}] Лимит запросов (429), ждём 60 сек...")
+                            await asyncio.sleep(60)
+                            continue
 
-                    futoi = data["futoi"]
-                    columns = futoi.get("columns", [])
-                    rows = futoi.get("data", [])
+                        if resp.status != 200:
+                            if resp.status >= 500:
+                                log.warning(f"[{ticker}] Ошибка сервера {resp.status}, попытка {attempt+1}/3")
+                                await asyncio.sleep(2)
+                                continue
+                            else:
+                                log.warning(f"[{ticker}] HTTP {resp.status}")
+                                self.stats['errors'] += 1
+                                return all_records or None
 
-                    if not rows:
-                        self.stats['empty'] += 1
-                        return None
+                        try:
+                            data = await resp.json()
+                        except Exception as json_err:
+                            log.error(f"[{ticker}] Ошибка парсинга JSON: {json_err}")
+                            self.stats['errors'] += 1
+                            return all_records or None
 
-                    self.stats['success'] += 1
+                        if "futoi" not in data:
+                            self.stats['empty'] += 1
+                            page_records = []
+                            break
 
-                    # Преобразуем в list of dict
-                    records = [dict(zip(columns, row)) for row in rows]
-                    return records
+                        futoi = data["futoi"]
+                        columns = futoi.get("columns", [])
+                        rows = futoi.get("data", [])
+                        page_records = [dict(zip(columns, row)) for row in rows]
+                        self.stats['success'] += 1
+                        break
 
-            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-                if attempt < 2:
-                    await asyncio.sleep(1 + attempt)
-                    continue
-                log.error(f"[{ticker}] Ошибка сети после 3 попыток: {e}")
-                self.stats['errors'] += 1
-                return None
-            except Exception as e:
-                log.error(f"[{ticker}] Неизвестная ошибка: {e}")
-                self.stats['errors'] += 1
-                return None
-        return None
+                except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                    if attempt < 2:
+                        await asyncio.sleep(1 + attempt)
+                        continue
+                    log.error(f"[{ticker}] Ошибка сети после 3 попыток: {e}")
+                    self.stats['errors'] += 1
+                    return all_records or None
+                except Exception as e:
+                    log.error(f"[{ticker}] Неизвестная ошибка: {e}")
+                    self.stats['errors'] += 1
+                    return all_records or None
+
+            if not page_records:
+                break  # Пустая страница — данные кончились
+
+            all_records.extend(page_records)
+
+            # Если вернули меньше PAGE_SIZE — это последняя страница
+            if len(page_records) < self.PAGE_SIZE or latest:
+                break
+
+            start += self.PAGE_SIZE
+
+        return all_records if all_records else None
 
 
 # ======================================================================
@@ -265,7 +282,7 @@ class OI5minUpdater:
         log.info("Инициализация OI5minUpdater...")
 
         try:
-            self.engine = create_engine(db_url)
+            self.engine = create_engine(db_url, connect_args={"ssl_context": False})
             with self.engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
             log.info("✓ БД подключена")
@@ -304,12 +321,31 @@ class OI5minUpdater:
             log.error(f"Ошибка получения последней даты: {e}")
             return None
 
+    @staticmethod
+    def _is_non_trading_date(d) -> bool:
+        """Проверяет, является ли дата выходным или праздником MOEX"""
+        from datetime import date as date_type
+        if isinstance(d, str):
+            d = datetime.strptime(d, '%Y-%m-%d').date()
+        if hasattr(d, 'date'):
+            d = d.date()
+        # Суббота (5) или воскресенье (6)
+        if d.weekday() >= 5:
+            return True
+        return is_holiday(d)
+
     def save_records(self, records: List[dict]) -> Tuple[int, int]:
         """
         Сохраняет записи OI в БД.
+        Фильтрует выходные и праздники MOEX.
 
         Returns: (попыток, вставлено)
         """
+        if not records:
+            return 0, 0
+
+        # Отфильтровываем выходные и праздники
+        records = [r for r in records if not self._is_non_trading_date(r.get('tradedate'))]
         if not records:
             return 0, 0
 
@@ -318,6 +354,18 @@ class OI5minUpdater:
             cursor = raw_conn.cursor()
 
             inserted = 0
+
+            def to_int(v):
+                if v is None or v == "":
+                    return 0
+                if isinstance(v, bool):
+                    return int(v)
+                if isinstance(v, (int, float)):
+                    return int(v)
+                try:
+                    return int(float(str(v).replace(',', '.')))
+                except Exception:
+                    return 0
 
             for rec in records:
                 try:
@@ -337,16 +385,21 @@ class OI5minUpdater:
                         tradedate,
                         rec.get('tradetime'),
                         rec.get('clgroup'),
-                        rec.get('pos', 0),
-                        rec.get('pos_long', 0),
-                        rec.get('pos_short', 0),
-                        rec.get('pos_long_num', 0),
-                        rec.get('pos_short_num', 0),
+                        to_int(rec.get('pos', 0)),
+                        to_int(rec.get('pos_long', 0)),
+                        to_int(rec.get('pos_short', 0)),
+                        to_int(rec.get('pos_long_num', 0)),
+                        to_int(rec.get('pos_short_num', 0)),
                         rec.get('systime'),
                     ))
                     inserted += cursor.rowcount
 
                 except Exception as e:
+                    # Сбрасываем aborted transaction и продолжаем со следующей записью
+                    try:
+                        raw_conn.rollback()
+                    except Exception:
+                        pass
                     log.debug(f"Ошибка вставки: {e}")
 
             raw_conn.commit()

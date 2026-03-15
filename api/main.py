@@ -161,9 +161,7 @@ app.include_router(oauth.router, prefix="/api")  # ← OAuth: /api/auth/oauth/*
 # Служебные эндпоинты
 # ═══════════════════════════════════════════════════════════════
 
-@app.get("/health")
-def health():
-    """Проверка работоспособности (для load balancer)"""
+def _health_payload():
     result = {"status": "ok"}
 
     # Проверяем подключение к БД
@@ -178,6 +176,18 @@ def health():
         result["status"] = "degraded"
 
     return result
+
+
+@app.get("/health")
+def health():
+    """Проверка работоспособности (для load balancer)"""
+    return _health_payload()
+
+
+@app.get("/api/health")
+def api_health():
+    """Health endpoint для фронтенда (через /api/*)"""
+    return _health_payload()
 
 
 @app.get("/api/info")

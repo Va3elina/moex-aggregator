@@ -227,7 +227,7 @@ class OIDailyUpdater:
         log.info("Инициализация OIDailyUpdater...")
 
         try:
-            self.engine = create_engine(db_url)
+            self.engine = create_engine(db_url, connect_args={"ssl_context": False})
             with self.engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
             log.info("✓ БД подключена")

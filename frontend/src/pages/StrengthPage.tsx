@@ -28,7 +28,6 @@ const PERIOD_DAYS: Record<Period, number> = {
 };
 
 const EMA_PERIOD = 200; // Fixed EMA period
-const MAX_CHART_POINTS = 300; // Максимум точек на графике — выше начинается лаг
 
 const CLASSIFICATION_LABELS: Record<string, { label: string; color: string; bg: string }> = {
     overbought: { label: 'Перекупленность', color: 'text-emerald-400', bg: 'bg-emerald-500/20' },
@@ -127,24 +126,7 @@ export default function StrengthPage() {
                 imoex: imoexMap.get(d.time)!,
             }));
 
-        // Downsample для больших периодов — иначе 4600+ точек лагают SVG
-        if (full.length <= MAX_CHART_POINTS) return full;
-        // Всегда включаем первую и последнюю точки, чтобы показывать актуальную дату
-        const inner = MAX_CHART_POINTS - 2;
-        const step = (full.length - 1) / (inner + 1);
-        const result = [{ time: full[0].time, breadth: full[0].breadth, imoex: full[0].imoex }];
-        for (let i = 1; i <= inner; i++) {
-            const lo = Math.floor(i * step);
-            const hi = Math.min(Math.floor((i + 1) * step), full.length - 1);
-            const bucket = full.slice(lo, hi + 1);
-            result.push({
-                time: bucket[Math.floor(bucket.length / 2)].time,
-                breadth: bucket.reduce((s, d) => s + d.breadth, 0) / bucket.length,
-                imoex: bucket.reduce((s, d) => s + d.imoex, 0) / bucket.length,
-            });
-        }
-        result.push({ time: full[full.length - 1].time, breadth: full[full.length - 1].breadth, imoex: full[full.length - 1].imoex });
-        return result;
+        return full;
     }, [breadthData, imoexData]);
 
     // Навигатор временного диапазона
@@ -225,9 +207,10 @@ export default function StrengthPage() {
             mouseMoveRaf.current = null;
             if (!containerRef.current) return;
             const rect = containerRef.current.getBoundingClientRect();
-            const x = clientX - rect.left - padding.left;
+            const px4 = 16; // px-4 на внутренних div-обёртках графиков
+            const x = clientX - rect.left - px4 - padding.left;
             const y = clientY - rect.top;
-            const chartWidth = rect.width - padding.left - padding.right;
+            const chartWidth = rect.width - 2 * px4 - padding.left - padding.right;
             const idx = Math.round((x / chartWidth) * (displaySyncedData.length - 1));
             if (idx >= 0 && idx < displaySyncedData.length) {
                 setHoverIndex(idx);
@@ -354,9 +337,10 @@ export default function StrengthPage() {
                 {/* Тултип-карточка при hover — следует за мышью между графиками */}
                 {hoverData && hoverIndex !== null && containerRef.current && (() => {
                     const rect = containerRef.current!.getBoundingClientRect();
-                    const chartWidth = rect.width - padding.left - padding.right;
-                    const hoverX = padding.left + (hoverIndex / Math.max(displaySyncedData.length - 1, 1)) * chartWidth;
-                    const isRightHalf = hoverX > padding.left + chartWidth / 2;
+                    const px4 = 16; // px-4 на внутренних div-обёртках графиков
+                    const chartWidth = rect.width - 2 * px4 - padding.left - padding.right;
+                    const hoverX = px4 + padding.left + (hoverIndex / Math.max(displaySyncedData.length - 1, 1)) * chartWidth;
+                    const isRightHalf = hoverX > px4 + padding.left + chartWidth / 2;
                     const cardLeft = isRightHalf ? hoverX - 190 - 12 : hoverX + 12;
 
                     const dateStr = new Date(hoverData.time).toLocaleDateString('ru-RU', {
@@ -637,7 +621,7 @@ function SyncedPriceChart({
     useEffect(() => {
         const updateWidth = () => {
             if (svgRef.current?.parentElement) {
-                setWidth(svgRef.current.parentElement.clientWidth);
+                setWidth(svgRef.current.getBoundingClientRect().width);
             }
         };
         updateWidth();
@@ -765,14 +749,23 @@ function SyncedPriceChart({
 
 type BarDef = { x: number; y: number; width: number; height: number; color: string };
 
-const HistogramBars = memo(({ bars }: { bars: BarDef[] }) => (
-    <>
-        {bars.map((bar, i) => (
-            <rect key={i} x={bar.x} y={bar.y} width={bar.width} height={bar.height}
-                fill={bar.color} opacity={0.75} />
-        ))}
-    </>
-));
+const HistogramBars = memo(({ bars }: { bars: BarDef[] }) => {
+    // Группируем бары по цвету и строим один <path> на цвет — вместо тысяч <rect>
+    const byColor = new Map<string, string[]>();
+    for (const bar of bars) {
+        if (bar.height <= 0) continue;
+        let arr = byColor.get(bar.color);
+        if (!arr) { arr = []; byColor.set(bar.color, arr); }
+        arr.push(`M${bar.x},${bar.y + bar.height}V${bar.y}H${bar.x + bar.width}V${bar.y + bar.height}Z`);
+    }
+    return (
+        <g shapeRendering="crispEdges">
+            {Array.from(byColor.entries()).map(([color, parts]) => (
+                <path key={color} d={parts.join('')} fill={color} />
+            ))}
+        </g>
+    );
+});
 
 const BreadthLineRenderer = memo(({ animLinePath, dataLength, breadthValues, getColor }: {
     animLinePath: string;
@@ -787,19 +780,24 @@ const BreadthLineRenderer = memo(({ animLinePath, dataLength, breadthValues, get
     for (let i = 0; i < pathParts.length; i += 2) {
         aPts.push({ x: parseFloat(pathParts[i]), y: parseFloat(pathParts[i + 1]) });
     }
+    // Группируем сегменты по цвету — один <path> на цвет вместо тысяч отдельных
+    const byColor = new Map<string, string[]>();
+    for (let i = 0; i < aPts.length - 1; i++) {
+        const origIdx = (i / Math.max(aPts.length - 1, 1)) * (dataLength - 1);
+        const lo = Math.floor(origIdx);
+        const hi = Math.min(lo + 1, dataLength - 1);
+        const val = (breadthValues[lo] + breadthValues[hi]) / 2;
+        const color = getColor(val);
+        let arr = byColor.get(color);
+        if (!arr) { arr = []; byColor.set(color, arr); }
+        arr.push(`M${aPts[i].x},${aPts[i].y}L${aPts[i + 1].x},${aPts[i + 1].y}`);
+    }
     return (
         <>
-            {aPts.slice(0, -1).map((pt, i) => {
-                const origIdx = (i / Math.max(aPts.length - 1, 1)) * (dataLength - 1);
-                const lo = Math.floor(origIdx);
-                const hi = Math.min(lo + 1, dataLength - 1);
-                const val = (breadthValues[lo] + breadthValues[hi]) / 2;
-                return (
-                    <path key={i}
-                        d={`M ${pt.x} ${pt.y} L ${aPts[i + 1].x} ${aPts[i + 1].y}`}
-                        fill="none" stroke={getColor(val)} strokeWidth="2.5" strokeLinecap="round" />
-                );
-            })}
+            {Array.from(byColor.entries()).map(([color, parts]) => (
+                <path key={color} d={parts.join('')}
+                    fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" />
+            ))}
         </>
     );
 });
@@ -836,7 +834,7 @@ function SyncedBreadthChart({
     useEffect(() => {
         const updateWidth = () => {
             if (svgRef.current?.parentElement) {
-                setWidth(svgRef.current.parentElement.clientWidth);
+                setWidth(svgRef.current.getBoundingClientRect().width);
             }
         };
         updateWidth();
@@ -883,10 +881,13 @@ function SyncedBreadthChart({
             });
         }
 
-        const barWidth = Math.max(chartWidth / syncedData.length - 1, 2);
         const bottom = padding.top + chartHeight;
+        // Ширина бара = шаг между точками (sub-pixel для плотных данных — без наложений)
+        const stepPx = chartWidth / Math.max(syncedData.length - 1, 1);
+        const barWidth = Math.max(stepPx, 0.5);
         const bars = syncedData.map((d, i) => {
-            const x = scaleX(i) - barWidth / 2;
+            const cx = scaleX(i);
+            const x = cx - barWidth / 2;
             const y = scaleY(d.breadth);
             const h = bottom - y;
             return { x, y, width: barWidth, height: h, color: getColor(d.breadth) };

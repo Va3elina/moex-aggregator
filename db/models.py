@@ -95,7 +95,7 @@ class OpenInterest(Base):
 
 
 # Подключение к БД
-engine = create_engine(DATABASE_URL)
+engine = create_engine(DATABASE_URL, connect_args={"ssl_context": False})
 
 
 # 6️⃣ Индексы для ускорения запросов

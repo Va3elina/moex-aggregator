@@ -7,9 +7,9 @@ import type {
   TopInstrumentsResponse
 } from '../types';
 
-// В продакшене - относительные пути (тот же сервер)
-// В dev - localhost:8000
-const API_BASE = import.meta.env.DEV ? 'http://localhost:8000' : '';
+// Для Cloudflare Tunnel и локалки используем относительный /api через Vite proxy.
+// При необходимости можно переопределить через VITE_API_BASE.
+const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '';
 
 // ==================== ИНСТРУМЕНТЫ ====================
 

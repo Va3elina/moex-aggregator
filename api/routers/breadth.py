@@ -13,6 +13,9 @@ import time
 
 from api.database import get_engine
 from api.cache import get_or_set
+from api.logger import get_logger
+
+log = get_logger()
 
 router = APIRouter(prefix="/api/breadth", tags=["breadth"])
 
@@ -60,7 +63,7 @@ async def get_current_breadth(
         return cached
 
     start_time = time.time()
-    print(f"REQUEST: /breadth/current ema_period={ema_period}")
+    log.info(f"REQUEST: /breadth/current ema_period={ema_period}")
 
     engine = get_engine()
     stock_tickers = get_stock_tickers()
@@ -109,7 +112,7 @@ async def get_current_breadth(
             })
 
         except Exception as e:
-            print(f"Error processing {ticker}: {e}")
+            log.debug(f"Error processing {ticker}: {e}")
             continue
 
     count_total = len(stocks_data)
@@ -125,7 +128,7 @@ async def get_current_breadth(
         classification = "oversold"
 
     duration = time.time() - start_time
-    print(f"DONE: /breadth/current {count_total} stocks, {duration:.2f}s")
+    log.info(f"DONE: /breadth/current {count_total} stocks, {duration:.2f}s")
 
     result = {
         "percent_above": percent_above,
@@ -154,7 +157,7 @@ async def get_breadth_history(
         return cached
 
     start_time = time.time()
-    print(f"REQUEST: /breadth/history ema={ema_period}, days={days}")
+    log.info(f"REQUEST: /breadth/history ema={ema_period}, days={days}")
 
     engine = get_engine()
     date_from = date.today() - timedelta(days=days)
@@ -202,10 +205,10 @@ async def get_breadth_history(
             for row in imoex_rows if row[1]
         ]
     except Exception as e:
-        print(f"Error fetching IMOEX: {e}")
+        log.error(f"Error fetching IMOEX: {e}")
 
     duration = time.time() - start_time
-    print(f"DONE: /breadth/history {len(history)} points, {duration:.2f}s")
+    log.info(f"DONE: /breadth/history {len(history)} points, {duration:.2f}s")
 
     result = {
         "ema_period": ema_period,

@@ -275,7 +275,7 @@ async def fetch_index_full(
 def get_engine():
     if not DB_URL:
         raise ValueError("DB_URL не установлен в .env")
-    return create_engine(DB_URL)
+    return create_engine(DB_URL, connect_args={"ssl_context": False})
 
 
 def create_tables(engine):

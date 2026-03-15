@@ -32,7 +32,61 @@ kill_port() {
 
 kill_port 8000
 kill_port 5173
-sleep 0.4
+# Подчищаем зависшие процессы dev-сервера/туннеля
+pkill -f "vite --host 127.0.0.1 --port 5173" 2>/dev/null || true
+pkill -f "cloudflared tunnel --url http://127.0.0.1:5173" 2>/dev/null || true
+sleep 0.6
+
+# ── PostgreSQL ───────────────────────────────────────────────────
+PG_DATA="/opt/homebrew/var/postgresql@18"
+
+start_pg() {
+  # Сначала stop (сбрасывает error-состояние в brew services)
+  brew services stop postgresql@18 >/dev/null 2>&1 || true
+  sleep 0.3
+
+  # Удаляем stale postmaster.pid если процесс уже не postgres
+  if [[ -f "$PG_DATA/postmaster.pid" ]]; then
+    local old_pid
+    old_pid="$(head -1 "$PG_DATA/postmaster.pid" 2>/dev/null || true)"
+    if [[ -n "$old_pid" ]]; then
+      local cmd
+      cmd="$(ps -p "$old_pid" -o comm= 2>/dev/null || true)"
+      if [[ "$cmd" != *postgres* ]]; then
+        echo "  Удаляю stale postmaster.pid (PID $old_pid → $cmd)"
+        rm -f "$PG_DATA/postmaster.pid"
+      fi
+    fi
+  fi
+
+  brew services start postgresql@18 2>/dev/null \
+    || brew services start postgresql 2>/dev/null \
+    || return 1
+}
+
+echo "Проверяю PostgreSQL..."
+if ! lsof -tiTCP:5432 -sTCP:LISTEN >/dev/null 2>&1; then
+  echo "PostgreSQL не запущен, запускаю..."
+  start_pg || { echo "❌ Не удалось запустить PostgreSQL"; exit 1; }
+
+  # Ждём готовности до ~10 сек
+  PG_READY=false
+  for _ in $(seq 1 20); do
+    sleep 0.5
+    if lsof -tiTCP:5432 -sTCP:LISTEN >/dev/null 2>&1; then
+      PG_READY=true
+      break
+    fi
+  done
+
+  if [[ "$PG_READY" != "true" ]]; then
+    echo "❌ PostgreSQL не запустился за 10 секунд. Проверь: brew services list"
+    exit 1
+  fi
+  echo "✓ PostgreSQL запущен"
+else
+  echo "✓ PostgreSQL уже работает"
+fi
 
 if [[ ! -x "$VENV_PY" ]]; then
   echo "❌ Не найден Python из venv: $VENV_PY"
@@ -54,7 +108,7 @@ echo $! > "$BACKEND_PID_FILE"
 sleep 1.5
 
 echo "Запускаю frontend (127.0.0.1:5173)..."
-nohup bash -lc "cd '$FRONTEND_DIR' && npm run dev -- --host 127.0.0.1 --port 5173" \
+nohup bash -lc "cd '$FRONTEND_DIR' && npm run dev -- --host 127.0.0.1 --port 5173 --strictPort" \
   > "$LOG_DIR/frontend.log" 2>&1 &
 echo $! > "$FRONTEND_PID_FILE"
 

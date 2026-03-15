@@ -231,7 +231,7 @@ def refresh_materialized_views(views: List[str] = None) -> Dict[str, Tuple[bool,
     results = {}
 
     try:
-        engine = create_engine(DB_URL)
+        engine = create_engine(DB_URL, connect_args={"ssl_context": False})
 
         with engine.connect() as conn:
             for view_name in views:
@@ -334,6 +334,7 @@ class MainOrchestrator:
         self.last_5min_update = None
         self.last_hourly_aggregate = None
         self.last_daily_update = None
+        self.last_weekend_catchup = None
 
         self.stats = {
             'start_time': datetime.now(),
@@ -550,6 +551,64 @@ class MainOrchestrator:
 
         return success
 
+    async def run_weekend_catchup(self) -> bool:
+        """
+        Докачивает все данные с момента последней записи в БД до текущего момента.
+        Каждый скрипт сам определяет from_date по последней записи в БД.
+        Запускается один раз в сутки в выходной/праздник.
+        """
+        log.info("=" * 60)
+        log.info("📅 ВЫХОДНОЙ — докачка всех пропущенных данных (с последней записи в БД)")
+        log.info("=" * 60)
+
+        any_success = False
+
+        # 1. 5-минутные данные (OI + свечи)
+        log.info("  📊 5-минутные данные...")
+        for key, args in [
+            ('oi_5min', ['--once', '--force']),
+            ('candles_futures', ['--once', '--force']),
+            ('candles_spot', ['--once', '--force']),
+        ]:
+            self.stats[f'{key}_runs'] += 1
+            success, msg, dur = await run_script(key, args)
+            if success:
+                self.stats[f'{key}_success'] += 1
+                log.info(f"    ✓ {key} ({dur:.1f}с)")
+                any_success = True
+            else:
+                self.stats['errors'] += 1
+                log.error(f"    ✗ {key}: {msg}")
+
+        # 2. Агрегация OI 5м → 60м
+        log.info("  📊 Агрегация OI 5м → 60м...")
+        agg_ok = await self.run_hourly_aggregate()
+        if agg_ok:
+            any_success = True
+
+        # 3. Дневные данные
+        log.info("  📊 Дневные данные...")
+        for fn in [
+            self.run_daily_update,
+            self.run_funds_update,
+            self.run_indices_update,
+            self.run_macro_update,
+            self.run_market_cap_update,
+            self.run_breadth_update,
+        ]:
+            success = await fn()
+            if success:
+                any_success = True
+
+        # 4. Обновление представлений
+        log.info("  🔄 Обновление представлений после докачки...")
+        refresh_materialized_views()
+
+        self.last_weekend_catchup = get_moscow_time().date()
+        log.info("✅ Докачка пропущенных данных завершена")
+        log.info("=" * 60)
+        return any_success
+
     async def run_market_cap_update(self) -> bool:
         """Запускает обновление полной капитализации рынка (SmartLab)"""
         log.info("  📊 Market Cap Daily...")
@@ -655,7 +714,8 @@ class MainOrchestrator:
             log.info("  🔄 Финальное обновление представлений...")
             refresh_materialized_views()
         else:
-            log.info(f"  ⏭️ Пропуск синхронизации: {reason}")
+            log.info(f"  ⏭️ Выходной/праздник: {reason} — запускаем докачку пропущенных данных...")
+            await self.run_weekend_catchup()
 
         self.last_5min_update = self._get_5min_slot()
         self.last_hourly_aggregate = self._get_hour_slot()
@@ -676,6 +736,19 @@ class MainOrchestrator:
                 slot_hour = self._get_hour_slot()
                 slot_day = self._get_day_slot()
 
+                is_trade_day, trade_day_reason = is_trading_day()
+
+                # === Выходной / праздник ===
+                if not is_trade_day:
+                    today = now.date()
+                    if self.last_weekend_catchup != today:
+                        log.info(f"⏰ [{now:%H:%M:%S} МСК] Выходной ({trade_day_reason}) — докачка...")
+                        await self.run_weekend_catchup()
+                    else:
+                        log.debug(f"Выходной, докачка уже выполнена сегодня")
+                    await asyncio.sleep(300)  # Проверяем раз в 5 минут
+                    continue
+
                 # === 5-минутный цикл (только в торговые часы) ===
                 if is_trading:
                     if slot_5min != self.last_5min_update and now.second >= BUFFER_5MIN:
@@ -692,22 +765,19 @@ class MainOrchestrator:
                 else:
                     log.debug(f"Вне торгов: {reason}")
 
-                # === Дневное обновление OI (в 00:10, только в торговые дни) ===
-                is_trade_day, _ = is_trading_day()
-
-                if is_trade_day:
-                    if (slot_day != self.last_daily_update and
-                            now.hour == DAILY_UPDATE_HOUR and
-                            now.minute >= DAILY_UPDATE_MINUTE):
-                        log.info(f"⏰ [{now:%H:%M:%S} МСК] Дневное обновление...")
-                        await self.run_daily_update()
-                        await self.run_funds_update()
-                        await self.run_indices_update()
-                        await self.run_macro_update()
-                        await self.run_market_cap_update()
-                        await self.run_breadth_update()
-                        self.last_daily_update = slot_day
-                        self.print_stats()
+                # === Дневное обновление (в 00:10, только в торговые дни) ===
+                if (slot_day != self.last_daily_update and
+                        now.hour == DAILY_UPDATE_HOUR and
+                        now.minute >= DAILY_UPDATE_MINUTE):
+                    log.info(f"⏰ [{now:%H:%M:%S} МСК] Дневное обновление...")
+                    await self.run_daily_update()
+                    await self.run_funds_update()
+                    await self.run_indices_update()
+                    await self.run_macro_update()
+                    await self.run_market_cap_update()
+                    await self.run_breadth_update()
+                    self.last_daily_update = slot_day
+                    self.print_stats()
 
                 await asyncio.sleep(1)
 

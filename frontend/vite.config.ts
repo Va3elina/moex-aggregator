@@ -7,6 +7,8 @@ export default defineConfig({
   server: {
     host: '127.0.0.1',
     port: 5173,
+    // Нужен для cloudflared quick tunnel (динамический хост *.trycloudflare.com)
+    allowedHosts: true,
     proxy: {
       '/api': {
         target: 'http://127.0.0.1:8000',

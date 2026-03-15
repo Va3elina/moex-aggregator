@@ -193,7 +193,7 @@ async def fetch_full(session, url_template, secid, date_from, date_to):
 def get_engine():
     if not DB_URL:
         raise ValueError("DB_URL не установлен в .env")
-    return create_engine(DB_URL)
+    return create_engine(DB_URL, connect_args={"ssl_context": False})
 
 
 def get_last_date(engine, fund_id: int) -> Optional[date]:

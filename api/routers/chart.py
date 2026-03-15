@@ -14,6 +14,10 @@ from typing import Optional
 from pydantic import BaseModel
 import time
 
+from api.logger import get_logger
+
+log = get_logger()
+
 from api.database import get_db
 from api.models import Instrument
 from api.schemas import CandleResponse, OpenInterestResponse
@@ -132,8 +136,7 @@ def get_chart_data(
     if date_from and date_to and date_to < date_from:
         raise HTTPException(status_code=400, detail="date_to не может быть раньше date_from")
 
-    print(f"\n{'='*60}")
-    print(f"REQUEST: {sec_id}, sectype={sectype}, interval={interval}, period={period}")
+    log.info(f"REQUEST: {sec_id}, sectype={sectype}, interval={interval}, period={period}")
     total_start = time.time()
 
     # 1. Получаем sec_ids
@@ -143,7 +146,7 @@ def get_chart_data(
         WHERE sectype = :sectype AND type = :inst_type
     """), {"sectype": sectype, "inst_type": inst_type}).fetchall()
     sec_ids = [r[0] for r in sec_ids_result] or [sec_id]
-    print(f"[1] sec_ids: {(time.time()-t0)*1000:.0f} мс | {sec_ids}")
+    log.debug(f"[1] sec_ids: {(time.time()-t0)*1000:.0f} мс | {sec_ids}")
 
     # 2. Границы свечей
     t0 = time.time()
@@ -174,7 +177,7 @@ def get_chart_data(
     if c_end:
         c_end = c_end.date() if hasattr(c_end, 'date') else c_end
 
-    print(f"[2] candles bounds: {(time.time()-t0)*1000:.0f} мс | {c_start} - {c_end}")
+    log.debug(f"[2] candles bounds: {(time.time()-t0)*1000:.0f} мс | {c_start} - {c_end}")
 
     # 3. Границы OI
     t0 = time.time()
@@ -183,10 +186,10 @@ def get_chart_data(
         WHERE sectype = :sectype AND clgroup = :clgroup AND interval = :interval
     """), {"sectype": sectype, "clgroup": clgroup, "interval": interval}).fetchone()
     oi_start, oi_end = oi_bounds if oi_bounds else (None, None)
-    print(f"[3] OI bounds: {(time.time()-t0)*1000:.0f} мс | {oi_start} - {oi_end}")
+    log.debug(f"[3] OI bounds: {(time.time()-t0)*1000:.0f} мс | {oi_start} - {oi_end}")
 
     if not c_end:
-        print(f"[!] Нет данных свечей!")
+        log.warning("[!] Нет данных свечей!")
         return ChartResponse(
             sec_id=sec_id, sectype=sectype, interval=interval, clgroup=clgroup,
             candles_count=0, oi_count=0, candles=[], open_interest=[],
@@ -214,7 +217,7 @@ def get_chart_data(
         period_start = work_end - timedelta(days=days)
         work_start = max(data_start, period_start)
 
-    print(f"[4] work period: {work_start} - {work_end}")
+    log.debug(f"[4] work period: {work_start} - {work_end}")
 
     # 5. Запрос свечей (включаем sec_id для умной дедупликации)
     t0 = time.time()
@@ -233,7 +236,7 @@ def get_chart_data(
         "start_time": datetime.combine(work_start, dt_time.min),
         "end_time": datetime.combine(work_end, dt_time.max)
     }).fetchall()
-    print(f"[5] candles query: {(time.time()-t0)*1000:.0f} мс | rows: {len(candles_raw)}")
+    log.debug(f"[5] candles query: {(time.time()-t0)*1000:.0f} мс | rows: {len(candles_raw)}")
 
     # 6. Склейка контрактов: для каждого ДНЯ выбираем самый ликвидный контракт
     # Это позволяет плавно переходить между контрактами при ролловере
@@ -267,7 +270,7 @@ def get_chart_data(
             filtered_candles.append(c)
     
     sorted_candles = sorted(filtered_candles, key=lambda x: x[0])
-    print(f"[6] chain: {(time.time()-t0)*1000:.0f} мс | candles: {len(sorted_candles)}")
+    log.debug(f"[6] chain: {(time.time()-t0)*1000:.0f} мс | candles: {len(sorted_candles)}")
 
     # 7. Запрос OI
     oi_raw = []
@@ -299,7 +302,7 @@ def get_chart_data(
             "start_date": actual_start,
             "end_date": actual_end
         }).fetchall()
-        print(f"[7] OI query: {(time.time()-t0)*1000:.0f} мс | rows: {len(oi_raw)}")
+        log.debug(f"[7] OI query: {(time.time()-t0)*1000:.0f} мс | rows: {len(oi_raw)}")
 
     # 8. Формируем ответ
     t0 = time.time()
@@ -339,12 +342,10 @@ def get_chart_data(
             net_position=net_position
         ))
 
-    print(f"[8] build response: {(time.time()-t0)*1000:.0f} мс")
+    log.debug(f"[8] build response: {(time.time()-t0)*1000:.0f} мс")
 
     total_ms = (time.time() - total_start) * 1000
-    print(f"{'='*60}")
-    print(f"TOTAL: {total_ms:.0f} мс")
-    print(f"{'='*60}\n")
+    log.info(f"TOTAL: {sec_id} {total_ms:.0f} мс")
 
     # 9. Получаем доступные интервалы OI
     available_intervals_query = text("""

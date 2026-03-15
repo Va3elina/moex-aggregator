@@ -73,7 +73,54 @@ export default function OpenInterestPage() {
   const [oiVariant, setOiVariant] = useState<OIVariant>('oi');
   const [period, setPeriod] = useState<Period>('6m');
 
-  const availableIntervals = data?.available_intervals || [24];
+  // Фильтрация нерабочих дней и пре-маркета.
+  // Алгопак возвращает forward-fill данные за выходные, праздники и
+  // пре-маркет (07:40-08:55) — значения идентичны предыдущему закрытию.
+  const filteredData = useMemo(() => {
+    if (!data) return null;
+
+    // Праздники MOEX 2024-2026 (YYYY-MM-DD)
+    const MOEX_HOLIDAYS = new Set([
+      '2024-01-01','2024-01-02','2024-01-03','2024-01-04','2024-01-05','2024-01-08',
+      '2024-02-23','2024-03-08','2024-05-01','2024-05-09','2024-06-12','2024-11-04','2024-12-31',
+      '2025-01-01','2025-01-02','2025-01-03','2025-01-06','2025-01-07','2025-01-08',
+      '2025-02-24','2025-03-10','2025-05-01','2025-05-02','2025-05-09','2025-06-12','2025-06-13',
+      '2025-11-04','2025-12-31',
+      '2026-01-01','2026-01-02','2026-01-05','2026-01-06','2026-01-07','2026-01-08',
+      '2026-02-23','2026-03-09','2026-05-01','2026-05-11','2026-06-12','2026-11-04','2026-12-31',
+    ]);
+
+    const isNonTrading = (timeStr: string): boolean => {
+      const d = new Date(timeStr);
+      const day = d.getDay(); // 0=Sun, 6=Sat
+      if (day === 0 || day === 6) return true;
+      // Проверяем праздники по YYYY-MM-DD
+      const dateKey = timeStr.slice(0, 10);
+      if (MOEX_HOLIDAYS.has(dateKey)) return true;
+      // Пре-маркет (до 09:00) — только для 5-мин
+      if (interval === 5 && d.getHours() < 9) return true;
+      return false;
+    };
+
+    const filterItems = <T extends { time: string }>(items: T[]): T[] =>
+      items.filter((item) => !isNonTrading(item.time));
+
+    const newCandles = filterItems(data.candles);
+    const newOi = filterItems(data.open_interest);
+
+    // Если ничего не отфильтровалось — вернуть оригинал (избежать лишних ре-рендеров)
+    if (newCandles.length === data.candles.length && newOi.length === data.open_interest.length) {
+      return data;
+    }
+
+    return {
+      ...data,
+      candles: newCandles,
+      open_interest: newOi,
+    };
+  }, [data, interval]);
+
+  const availableIntervals = filteredData?.available_intervals || [24];
   const hasInterval = (int: number) => availableIntervals.includes(int);
   const showOi = displayMode !== 'price';
 
@@ -145,11 +192,11 @@ export default function OpenInterestPage() {
   // Данные для графика (мемоизированы — иначе каждый рендер создаёт новый массив,
   // что приводит к ложным перезапускам анимации в SimpleChart)
   const chartData = useMemo(() =>
-    data?.candles.map((c) => ({
+    filteredData?.candles.map((c) => ({
       time: c.time,
       value: c.close,
     })) || []
-    , [data]);
+    , [filteredData]);
 
   // Выравнивание OI данных по временным меткам свечей.
   // OI имеет меньше точек в час (нет 08:00, 18:00), что вызывает
@@ -182,7 +229,7 @@ export default function OpenInterestPage() {
   };
 
   const { secondary: oiData, third: oiDataThird } = useMemo(() => {
-    if (!data?.open_interest || displayMode === 'price') {
+    if (!filteredData?.open_interest || displayMode === 'price') {
       return { secondary: undefined, third: undefined };
     }
     const isPositions = displayMode === 'positions';
@@ -191,7 +238,7 @@ export default function OpenInterestPage() {
 
     switch (oiVariant) {
       case 'oi':
-        secondary = data.open_interest.map((oi) => ({
+        secondary = filteredData.open_interest.map((oi) => ({
           time: oi.time,
           value: isPositions
             ? (oi.pos_long || 0) + Math.abs(oi.pos_short || 0)
@@ -199,29 +246,29 @@ export default function OpenInterestPage() {
         }));
         break;
       case 'long':
-        secondary = data.open_interest.map((oi) => ({
+        secondary = filteredData.open_interest.map((oi) => ({
           time: oi.time,
           value: isPositions ? (oi.pos_long || 0) : (oi.pos_long_num || 0),
         }));
         break;
       case 'short':
-        secondary = data.open_interest.map((oi) => ({
+        secondary = filteredData.open_interest.map((oi) => ({
           time: oi.time,
           value: isPositions ? Math.abs(oi.pos_short || 0) : (oi.pos_short_num || 0),
         }));
         break;
       case 'both':
-        secondary = data.open_interest.map((oi) => ({
+        secondary = filteredData.open_interest.map((oi) => ({
           time: oi.time,
           value: isPositions ? (oi.pos_long || 0) : (oi.pos_long_num || 0),
         }));
-        third = data.open_interest.map((oi) => ({
+        third = filteredData.open_interest.map((oi) => ({
           time: oi.time,
           value: isPositions ? Math.abs(oi.pos_short || 0) : (oi.pos_short_num || 0),
         }));
         break;
       case 'net':
-        secondary = data.open_interest.map((oi) => ({
+        secondary = filteredData.open_interest.map((oi) => ({
           time: oi.time,
           value: isPositions
             ? (oi.net_position ?? ((oi.pos_long || 0) + (oi.pos_short || 0)))
@@ -234,7 +281,7 @@ export default function OpenInterestPage() {
       secondary: alignToCandles(secondary),
       third: alignToCandles(third),
     };
-  }, [data, displayMode, oiVariant, chartData]);
+  }, [filteredData, displayMode, oiVariant, chartData]);
 
   const getColors = () => {
     switch (oiVariant) {

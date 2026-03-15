@@ -262,7 +262,7 @@ def main() -> None:
     import time
     t0 = time.time()
 
-    engine = create_engine(DB_URL)
+    engine = create_engine(DB_URL, connect_args={"ssl_context": False})
     create_schema(engine)
 
     tickers = get_stock_tickers(engine)

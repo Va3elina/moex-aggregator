@@ -79,7 +79,7 @@ async def get_funds_chart(
     - total_nav: суммарная СЧА по дням
     """
     start_time = time.time()
-    print(f"REQUEST: /funds/chart category={category}, period={period}")
+    log.info(f"REQUEST: /funds/chart category={category}, period={period}")
 
     from api.cache import get_or_set
     cache_key = f"funds_chart:{category}:{period}"
@@ -179,7 +179,7 @@ async def get_funds_chart(
             ]
             
             duration = time.time() - start_time
-            print(f"DONE: /funds/chart {len(funds_data)} funds, {duration:.2f}s")
+            log.info(f"DONE: /funds/chart {len(funds_data)} funds, {duration:.2f}s")
             
             response = {
                 "category": category,

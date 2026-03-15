@@ -70,7 +70,7 @@ ALGOPACK_TICKERS = [
 
 
 def get_engine():
-    return create_engine(DB_URL)
+    return create_engine(DB_URL, connect_args={"ssl_context": False})
 
 
 def get_missing_hours(engine, sectype: str, limit_days: int = None) -> list[tuple[date, int]]:
