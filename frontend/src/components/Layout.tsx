@@ -103,7 +103,7 @@ export default function Layout() {
                   style={{ backgroundColor: 'var(--accent)', color: 'var(--bg-primary)' }}
                   title="Личный кабинет"
                 >
-                  {(user?.username || user?.email || '?')[0].toUpperCase()}
+                  {(user?.email || '?')[0].toUpperCase()}
                 </button>
               ) : (
                 <button
@@ -191,7 +191,7 @@ export default function Layout() {
                     className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold"
                     style={{ backgroundColor: 'var(--accent)', color: 'var(--bg-primary)' }}
                   >
-                    {(user?.username || user?.email || '?')[0].toUpperCase()}
+                    {(user?.email || '?')[0].toUpperCase()}
                   </div>
                   Личный кабинет
                 </button>

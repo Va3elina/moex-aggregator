@@ -3,9 +3,9 @@ import { createContext, useContext, useState, useEffect, useCallback, type React
 interface User {
   id: number;
   email: string;
-  username: string | null;
   role: string;
   has_password: boolean;
+  avatar_url: string | null;
   created_at: string;
   oauth_providers: string[];
 }

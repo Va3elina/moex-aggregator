@@ -37,7 +37,6 @@ from api.schemas.auth import (
     TokenResponse,
     RefreshTokenRequest,
     UserResponse,
-    UserUpdate,
     PasswordChange,
 )
 
@@ -228,7 +227,6 @@ async def register(
     user = User(
         email=data.email.lower(),
         hashed_password=hash_password(data.password),
-        username=data.username,
         role="user",
         is_active=True,
         is_verified=False,
@@ -246,9 +244,10 @@ async def register(
     return UserResponse(
         id=user.id,
         email=user.email,
-        username=user.username,
         role=user.role,
         is_verified=user.is_verified,
+        has_password=True,
+        oauth_providers=[],
         created_at=user.created_at,
     )
 
@@ -436,52 +435,21 @@ async def logout(
     response_model=UserResponse,
     summary="Информация о текущем пользователе",
 )
-async def get_me(user: User = Depends(get_current_user)):
+async def get_me(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Возвращает информацию о текущем авторизованном пользователе."""
-    return UserResponse(
-        id=user.id,
-        email=user.email,
-        username=user.username,
-        role=user.role,
-        is_verified=user.is_verified,
-        created_at=user.created_at,
-    )
-
-
-@router.put(
-    "/profile",
-    response_model=UserResponse,
-    summary="Обновление профиля",
-)
-async def update_profile(
-        data: UserUpdate,
-        user: User = Depends(get_current_user),
-        db: Session = Depends(get_db)
-):
-    """Обновление профиля пользователя."""
-    if data.username:
-        # Проверяем, не занят ли username
-        existing = db.query(User).filter(
-            User.username == data.username,
-            User.id != user.id
-        ).first()
-
-        if existing:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Этот username уже занят",
-            )
-        user.username = data.username
-
-    db.commit()
-    db.refresh(user)
+    # Собираем список OAuth провайдеров
+    oauth_providers = []
+    if user.oauth_provider:
+        oauth_providers.append(user.oauth_provider)
 
     return UserResponse(
         id=user.id,
         email=user.email,
-        username=user.username,
         role=user.role,
         is_verified=user.is_verified,
+        avatar_url=user.avatar_url,
+        has_password=bool(user.hashed_password),
+        oauth_providers=oauth_providers,
         created_at=user.created_at,
     )
 

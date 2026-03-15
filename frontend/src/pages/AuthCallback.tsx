@@ -68,35 +68,37 @@ export default function AuthCallback() {
     return (
         <div
             className="min-h-screen flex items-center justify-center"
-            style={{
-                background: 'radial-gradient(ellipse at top, #1a1f2e 0%, #0f1117 50%, #0a0c10 100%)',
-            }}
+            style={{ backgroundColor: 'var(--bg-primary)' }}
         >
             <div className="text-center">
                 {status === 'loading' && (
                     <>
-                        <Loader2 className="w-12 h-12 text-[#C8FF2E] animate-spin mx-auto mb-4" />
-                        <p className="text-white text-lg">Авторизация...</p>
-                        <p className="text-gray-500 text-sm mt-2">Подождите, проверяем данные</p>
+                        <Loader2 className="w-12 h-12 animate-spin mx-auto mb-4" style={{ color: 'var(--accent)' }} />
+                        <p className="text-lg" style={{ color: 'var(--text-primary)' }}>Авторизация...</p>
+                        <p className="text-sm mt-2" style={{ color: 'var(--text-muted)' }}>Подождите, проверяем данные</p>
                     </>
                 )}
 
                 {status === 'success' && (
                     <>
-                        <CheckCircle className="w-12 h-12 text-[#22c55e] mx-auto mb-4" />
-                        <p className="text-white text-lg">Успешно!</p>
-                        <p className="text-gray-500 text-sm mt-2">Перенаправляем...</p>
+                        <CheckCircle className="w-12 h-12 text-emerald-400 mx-auto mb-4" />
+                        <p className="text-lg" style={{ color: 'var(--text-primary)' }}>Успешно!</p>
+                        <p className="text-sm mt-2" style={{ color: 'var(--text-muted)' }}>Перенаправляем...</p>
                     </>
                 )}
 
                 {status === 'error' && (
                     <>
                         <XCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
-                        <p className="text-white text-lg">Ошибка авторизации</p>
-                        <p className="text-red-400 text-sm mt-2">{errorMsg}</p>
+                        <p className="text-lg" style={{ color: 'var(--text-primary)' }}>Ошибка авторизации</p>
+                        <p className="text-sm mt-2 text-red-400">{errorMsg}</p>
                         <button
                             onClick={() => navigate('/login')}
-                            className="mt-4 px-6 py-2 rounded-xl bg-white/10 text-white hover:bg-white/20 transition-colors"
+                            className="mt-4 px-6 py-2 rounded-xl transition-colors text-sm"
+                            style={{
+                                backgroundColor: 'color-mix(in srgb, var(--text-primary) 10%, transparent)',
+                                color: 'var(--text-primary)',
+                            }}
                         >
                             Попробовать снова
                         </button>

@@ -43,7 +43,6 @@ export default function LoginPage() {
 
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
-    const [username, setUsername] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
@@ -65,9 +64,7 @@ export default function LoginPage() {
 
         try {
             const url = mode === 'login' ? '/api/auth/login' : '/api/auth/register';
-            const body = mode === 'login'
-                ? { email, password }
-                : { email, password, username: username || undefined };
+            const body = { email, password };
 
             const resp = await fetch(url, {
                 method: 'POST',
@@ -204,27 +201,6 @@ export default function LoginPage() {
 
                 {/* Form */}
                 <form onSubmit={handleSubmit} className="space-y-3.5">
-                    {/* Username (only register) */}
-                    {mode === 'register' && (
-                        <div>
-                            <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>
-                                Имя пользователя
-                            </label>
-                            <input
-                                type="text"
-                                value={username}
-                                onChange={e => setUsername(e.target.value)}
-                                placeholder="trader123"
-                                className="w-full px-4 py-2.5 rounded-xl border outline-none transition-all text-sm"
-                                style={{
-                                    backgroundColor: 'color-mix(in srgb, var(--text-primary) 5%, transparent)',
-                                    borderColor: 'var(--border-color)',
-                                    color: 'var(--text-primary)',
-                                }}
-                            />
-                        </div>
-                    )}
-
                     {/* Email */}
                     <div>
                         <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>Email</label>

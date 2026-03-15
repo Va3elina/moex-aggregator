@@ -104,7 +104,6 @@ def _find_or_create_oauth_user(
     provider: str,
     oauth_id: str,
     email: Optional[str],
-    username: Optional[str],
     avatar_url: Optional[str],
 ) -> tuple[User, bool]:
     """
@@ -144,7 +143,6 @@ def _find_or_create_oauth_user(
         email=email or f"{provider}_{oauth_id}@oauth.local",
         oauth_provider=provider,
         oauth_id=oauth_id,
-        username=username,
         avatar_url=avatar_url,
         is_verified=True,  # OAuth пользователи уже верифицированы
         is_active=True,
@@ -169,7 +167,6 @@ def _make_token_response(user: User, is_new: bool) -> dict:
         "user": {
             "id": user.id,
             "email": user.email,
-            "username": user.username,
             "avatar_url": user.avatar_url,
             "role": user.role,
         },
@@ -279,7 +276,6 @@ async def google_oauth_callback(
             provider="google",
             oauth_id=str(profile["id"]),
             email=profile.get("email"),
-            username=profile.get("name"),
             avatar_url=profile.get("picture"),
         )
 
@@ -338,7 +334,6 @@ async def vk_oauth_callback(
 
         profile = profile_resp.json().get("response", [{}])[0]
 
-        username = profile.get("screen_name") or f"{profile.get('first_name', '')} {profile.get('last_name', '')}".strip()
         avatar = profile.get("photo_200")
 
         # 3. Создаём/находим пользователя
@@ -347,7 +342,6 @@ async def vk_oauth_callback(
             provider="vk",
             oauth_id=str(vk_user_id or profile.get("id")),
             email=email,
-            username=username,
             avatar_url=avatar,
         )
 
@@ -410,13 +404,11 @@ async def telegram_oauth_callback(
             raise HTTPException(400, "Невалидная подпись Telegram")
 
         # 3. Создаём/находим пользователя
-        username = data.username or data.first_name
         user, is_new = _find_or_create_oauth_user(
             db=db,
             provider="telegram",
             oauth_id=str(data.id),
             email=None,  # Telegram не даёт email
-            username=username,
             avatar_url=data.photo_url,
         )
 

@@ -15,7 +15,6 @@ Pydantic автоматически валидирует данные и воз�
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional
 from datetime import datetime
-import re
 
 
 # === РЕГИСТРАЦИЯ ===
@@ -28,12 +27,11 @@ class UserRegister(BaseModel):
     POST /api/auth/register
     {
         "email": "user@example.com",
-        "password": "SecurePass123!",
-        "username": "myusername"
+        "password": "SecurePass123!"
     }
     """
     email: EmailStr = Field(
-        ...,  # ... означает обязательное поле
+        ...,
         description="Email пользователя",
         examples=["user@example.com"]
     )
@@ -44,14 +42,6 @@ class UserRegister(BaseModel):
         max_length=128,
         description="Пароль (минимум 8 символов)",
         examples=["SecurePass123!"]
-    )
-
-    username: Optional[str] = Field(
-        None,
-        min_length=3,
-        max_length=50,
-        description="Имя пользователя (опционально)",
-        examples=["trader123"]
     )
 
     @field_validator("password")
@@ -70,20 +60,6 @@ class UserRegister(BaseModel):
         if not any(c.isalpha() for c in v):
             raise ValueError("Пароль должен содержать хотя бы одну букву")
         return v
-
-    @field_validator("username")
-    @classmethod
-    def validate_username(cls, v: Optional[str]) -> Optional[str]:
-        """
-        Проверяет формат username.
-
-        Разрешены: буквы, цифры, подчёркивание, дефис
-        """
-        if v is None:
-            return v
-        if not re.match(r'^[a-zA-Z0-9_-]+$', v):
-            raise ValueError("Username может содержать только буквы, цифры, _ и -")
-        return v.lower()  # Приводим к нижнему регистру
 
 
 # === ЛОГИН ===
@@ -155,7 +131,6 @@ class UserResponse(BaseModel):
     {
         "id": 123,
         "email": "user@example.com",
-        "username": "trader123",
         "role": "user",
         "is_verified": true,
         "created_at": "2025-01-18T12:00:00Z"
@@ -163,39 +138,15 @@ class UserResponse(BaseModel):
     """
     id: int
     email: str
-    username: Optional[str]
     role: str
     is_verified: bool
+    avatar_url: Optional[str] = None
+    has_password: bool = True
+    oauth_providers: list[str] = []
     created_at: datetime
 
     class Config:
-        from_attributes = True  # Позволяет создавать из SQLAlchemy модели
-
-
-class UserUpdate(BaseModel):
-    """
-    Схема для обновления профиля.
-
-    Пример запроса:
-    PUT /api/auth/profile
-    {
-        "username": "new_username"
-    }
-    """
-    username: Optional[str] = Field(
-        None,
-        min_length=3,
-        max_length=50
-    )
-
-    @field_validator("username")
-    @classmethod
-    def validate_username(cls, v: Optional[str]) -> Optional[str]:
-        if v is None:
-            return v
-        if not re.match(r'^[a-zA-Z0-9_-]+$', v):
-            raise ValueError("Username может содержать только буквы, цифры, _ и -")
-        return v.lower()
+        from_attributes = True
 
 
 # === СМЕНА ПАРОЛЯ ===
