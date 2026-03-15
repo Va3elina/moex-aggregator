@@ -29,6 +29,8 @@ from api.schemas.validators import (
     InstTypeType,
     validate_safe_id
 )
+from api.routers.auth import get_current_user_optional
+from api.security.access_control import enforce_guest_limits
 
 router = APIRouter(prefix='/api/chart', tags=['chart'])
 
@@ -120,12 +122,16 @@ def get_chart_data(
         period: PeriodType = Query("6m"),
         date_from: Optional[date] = Query(None),
         date_to: Optional[date] = Query(None),
-        db: Session = Depends(get_db)
+        db: Session = Depends(get_db),
+        user = Depends(get_current_user_optional)
 ):
     """Получить данные графика с валидацией"""
 
     if interval not in {5, 60, 24}:
         raise HTTPException(status_code=400, detail="interval должен быть 5, 60 или 24")
+
+    # Ограничения для гостей
+    enforce_guest_limits(user, interval=interval, period=period)
 
     try:
         sec_id = validate_safe_id(sec_id, "sec_id")

@@ -1,15 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Grid3X3 } from 'lucide-react';
 import { getHeatmapData } from '../services/api';
+import { useRealtimeData } from '../hooks/useRealtimeData';
 import type { HeatmapStock, HeatmapSector } from '../services/api';
 
 // Опции для фильтров
-const SIZE_OPTIONS = [
-  { value: 'value_1d', label: 'Оборот 1Д' },
-  { value: 'value_1w', label: 'Оборот 1Н' },
-  { value: 'value_1m', label: 'Оборот 1М' },
-];
-
 const COLOR_OPTIONS = [
   { value: 'change_1d', label: 'Изменение 1Д' },
   { value: 'change_1w', label: 'Изменение 1Н' },
@@ -127,7 +122,7 @@ export default function HeatmapPage() {
   const [lastUpdate, setLastUpdate] = useState<string>('');
 
   // Фильтры
-  const [sizeBy, setSizeBy] = useState('value_1d');
+  const sizeBy = 'market_cap';
   const [colorBy, setColorBy] = useState('change_1d');
   const [groupBy, setGroupBy] = useState('none');
 
@@ -161,11 +156,7 @@ export default function HeatmapPage() {
   }, []);
 
   // Загрузка данных
-  useEffect(() => {
-    loadData();
-  }, [sizeBy, colorBy, groupBy]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
       const data = await getHeatmapData(sizeBy, colorBy, groupBy);
@@ -178,7 +169,12 @@ export default function HeatmapPage() {
       console.error('Error loading heatmap:', error);
     }
     setLoading(false);
-  };
+  }, [sizeBy, colorBy, groupBy]);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  // SSE: автоматическое обновление хитмапа
+  useRealtimeData(['5min', 'mv_refresh'], loadData);
 
   // Получение значения для размера
   const getSizeValue = (stock: HeatmapStock): number => {
@@ -375,16 +371,6 @@ export default function HeatmapPage() {
 
         <div className="flex flex-wrap gap-2">
           <select
-            value={sizeBy}
-            onChange={(e) => setSizeBy(e.target.value)}
-            className="bg-theme-secondary border border-theme text-theme-primary px-3 py-2 rounded-lg text-sm cursor-pointer hover:border-[var(--border-hover)] focus:border-[var(--accent)] focus:outline-none"
-          >
-            {SIZE_OPTIONS.map(opt => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
-
-          <select
             value={colorBy}
             onChange={(e) => setColorBy(e.target.value)}
             className="bg-theme-secondary border border-theme text-theme-primary px-3 py-2 rounded-lg text-sm cursor-pointer hover:border-[var(--border-hover)] focus:border-[var(--accent)] focus:outline-none"
@@ -447,9 +433,9 @@ export default function HeatmapPage() {
         <div
           className="fixed z-50 bg-theme-secondary border border-theme rounded-lg p-3 shadow-xl pointer-events-none"
           style={{
-            left: tooltip.x,
-            top: tooltip.y < 150 ? tooltip.y + 20 : tooltip.y - 10,
-            transform: tooltip.y < 150 ? 'translate(-50%, 0)' : 'translate(-50%, -100%)'
+            left: Math.min(tooltip.x, window.innerWidth - 160),
+            top: tooltip.y < 200 ? tooltip.y + 30 : tooltip.y - 10,
+            transform: tooltip.y < 200 ? 'translate(-50%, 0)' : 'translate(-50%, -100%)'
           }}
         >
           <div className="font-bold text-white text-base">{tooltip.stock.name}</div>

@@ -486,6 +486,13 @@ async def update_profile(
     )
 
 
+@router.get("/guest-limits")
+async def get_guest_limits():
+    """Возвращает ограничения для неавторизованных пользователей."""
+    from api.security.access_control import GUEST_LIMITS
+    return GUEST_LIMITS
+
+
 @router.post(
     "/change-password",
     status_code=status.HTTP_204_NO_CONTENT,

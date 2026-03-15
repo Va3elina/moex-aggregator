@@ -1,39 +1,37 @@
-import { useEffect, useState, useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { ChevronDown, BarChart3 } from 'lucide-react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
+import { ChevronDown, BarChart3, Lock } from 'lucide-react';
 import { getChartData } from '../services/api';
 import type { ChartResponse } from '../types';
 import SimpleChart from '../components/SimpleChart';
 import InstrumentSearchModal from '../components/InstrumentSearchModal';
+import { PERIOD_LABELS as ALL_PERIOD_LABELS, INTERVAL_LABELS, CHART_COLORS } from '../config/chartConfig';
+import { useAuth } from '../contexts/AuthContext';
+import { isIntervalAllowed, isPeriodAllowed } from '../config/accessControl';
+import { useRealtimeData } from '../hooks/useRealtimeData';
 
 type DisplayMode = 'price' | 'positions' | 'participants';
 type OIVariant = 'oi' | 'long' | 'short' | 'both' | 'net';
 type Period = '1d' | '1w' | '1m' | '3m' | '6m' | '1y' | 'all';
 
 const PERIOD_LABELS: Record<Period, string> = {
-  '1d': '1Д',
-  '1w': '1Н',
-  '1m': '1М',
-  '3m': '3М',
-  '6m': '6М',
-  '1y': '1Г',
-  'all': 'Всё'
-};
-
-const INTERVAL_LABELS: Record<number, string> = {
-  5: '5м',
-  60: '1ч',
-  24: '1д'
+  '1d':  ALL_PERIOD_LABELS['1d'],
+  '1w':  ALL_PERIOD_LABELS['1w'],
+  '1m':  ALL_PERIOD_LABELS['1m'],
+  '3m':  ALL_PERIOD_LABELS['3m'],
+  '6m':  ALL_PERIOD_LABELS['6m'],
+  '1y':  ALL_PERIOD_LABELS['1y'],
+  'all': ALL_PERIOD_LABELS['all'],
 };
 
 // Цветовая палитра
 const COLORS = {
-  primary: '#6366f1',
-  emerald: '#2EE59D',
-  rose: '#FF4D4D',
-  amber: '#FFB020',
-  cyan: '#22D3EE',  // Для чистой позиции
-  lime: '#C8FF2E',
+  primary: CHART_COLORS.primary,
+  emerald: CHART_COLORS.emerald,
+  rose:    CHART_COLORS.rose,
+  amber:   CHART_COLORS.amber,
+  cyan:    CHART_COLORS.cyan,
+  lime:    CHART_COLORS.lime,
 };
 
 // Генерация цвета из строки
@@ -53,6 +51,8 @@ const stringToColor = (str: string) => {
 
 export default function OpenInterestPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const { isAuthenticated } = useAuth();
+  const navigate = useNavigate();
 
   // Инструмент
   const [selectedInstrument, setSelectedInstrument] = useState(
@@ -65,6 +65,8 @@ export default function OpenInterestPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<ChartResponse | null>(null);
+  // Интервал, для которого загружены текущие данные — обновляется атомарно с data
+  const [dataInterval, setDataInterval] = useState(24);
 
   // Настройки
   const [interval, setIntervalValue] = useState(24);
@@ -98,7 +100,7 @@ export default function OpenInterestPage() {
       const dateKey = timeStr.slice(0, 10);
       if (MOEX_HOLIDAYS.has(dateKey)) return true;
       // Пре-маркет (до 09:00) — только для 5-мин
-      if (interval === 5 && d.getHours() < 9) return true;
+      if (dataInterval === 5 && d.getHours() < 9) return true;
       return false;
     };
 
@@ -118,7 +120,7 @@ export default function OpenInterestPage() {
       candles: newCandles,
       open_interest: newOi,
     };
-  }, [data, interval]);
+  }, [data, dataInterval]);
 
   const availableIntervals = filteredData?.available_intervals || [24];
   const hasInterval = (int: number) => availableIntervals.includes(int);
@@ -149,37 +151,40 @@ export default function OpenInterestPage() {
   };
 
   // Загрузка данных графика
-  useEffect(() => {
-    async function loadData() {
-      if (!selectedInstrument) return;
+  const loadData = useCallback(async () => {
+    if (!selectedInstrument) return;
 
-      try {
-        setLoading(true);
-        setError(null);
-        const result = await getChartData(
-          selectedInstrument,
-          selectedInstrument,
-          'futures',
-          interval,
-          clgroup,
-          showOi,
-          period
-        );
-        setData(result);
+    try {
+      setLoading(true);
+      setError(null);
+      const result = await getChartData(
+        selectedInstrument,
+        selectedInstrument,
+        'futures',
+        interval,
+        clgroup,
+        showOi,
+        period
+      );
+      setData(result);
+      setDataInterval(interval); // обновляем вместе с data (React 18 batches)
 
-        if (result.available_intervals?.length > 0 &&
-          !result.available_intervals.includes(interval)) {
-          setIntervalValue(Math.max(...result.available_intervals));
-        }
-      } catch (err) {
-        setError('Ошибка загрузки данных');
-        console.error(err);
-      } finally {
-        setLoading(false);
+      if (result.available_intervals?.length > 0 &&
+        !result.available_intervals.includes(interval)) {
+        setIntervalValue(Math.max(...result.available_intervals));
       }
+    } catch (err) {
+      setError('Ошибка загрузки данных');
+      console.error(err);
+    } finally {
+      setLoading(false);
     }
-    loadData();
   }, [selectedInstrument, interval, clgroup, showOi, period]);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  // SSE: автоматическое обновление при новых данных
+  useRealtimeData(['5min', 'hourly'], loadData);
 
   // Выбор инструмента из модалки
   const handleSelectInstrument = (sectype: string, name: string) => {
@@ -351,7 +356,7 @@ export default function OpenInterestPage() {
             <div className="flex items-center bg-theme-secondary rounded-xl border border-theme p-1">
               <button
                 onClick={() => setClgroup('FIZ')}
-                className={`px-4 py-2 text-sm font-medium rounded-lg transition-all duration-300 ${clgroup === 'FIZ'
+                className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors duration-200 ${clgroup === 'FIZ'
                   ? 'btn-control active'
                   : 'text-[#A7ADBC] hover:text-theme-primary'
                   }`}
@@ -360,7 +365,7 @@ export default function OpenInterestPage() {
               </button>
               <button
                 onClick={() => setClgroup('YUR')}
-                className={`px-4 py-2 text-sm font-medium rounded-lg transition-all duration-300 ${clgroup === 'YUR'
+                className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors duration-200 ${clgroup === 'YUR'
                   ? 'btn-control active'
                   : 'text-[#A7ADBC] hover:text-theme-primary'
                   }`}
@@ -374,19 +379,28 @@ export default function OpenInterestPage() {
           <div className="flex items-center bg-theme-secondary rounded-xl border border-theme p-1">
             {[5, 60, 24].map((int) => {
               const available = displayMode === 'price' || hasInterval(int);
+              const allowed = isIntervalAllowed(int, isAuthenticated);
               return (
                 <button
                   key={int}
-                  onClick={() => available && handleIntervalChange(int)}
-                  disabled={!available}
-                  className={`px-3 py-2 text-sm font-medium rounded-lg transition-all duration-300 ${interval === int
-                    ? 'btn-control active'
-                    : available
-                      ? 'text-[#A7ADBC] hover:text-theme-primary'
-                      : 'text-theme-muted cursor-not-allowed'
-                    }`}
+                  onClick={() => {
+                    if (!allowed) { navigate('/login'); return; }
+                    if (available) handleIntervalChange(int);
+                  }}
+                  disabled={!available && allowed}
+                  title={!allowed ? 'Войдите для доступа' : undefined}
+                  className={`px-3 py-2 text-sm font-medium rounded-lg transition-colors duration-200 relative ${
+                    !allowed
+                      ? 'text-theme-muted cursor-not-allowed opacity-50'
+                      : interval === int
+                        ? 'btn-control active'
+                        : available
+                          ? 'text-[#A7ADBC] hover:text-theme-primary'
+                          : 'text-theme-muted cursor-not-allowed'
+                  }`}
                 >
                   {INTERVAL_LABELS[int]}
+                  {!allowed && <Lock className="inline-block ml-0.5 w-3 h-3" />}
                 </button>
               );
             })}
@@ -397,19 +411,28 @@ export default function OpenInterestPage() {
         <div className="flex items-center gap-1 mb-4 bg-theme-secondary rounded-xl border border-theme p-1 w-fit">
           {(Object.keys(PERIOD_LABELS) as Period[]).map((p) => {
             const available = isPeriodAvailable(p);
+            const allowed = isPeriodAllowed(p, isAuthenticated);
             return (
               <button
                 key={p}
-                onClick={() => available && setPeriod(p)}
-                disabled={!available}
-                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-all duration-300 ${period === p
-                  ? 'btn-control active'
-                  : available
-                    ? 'text-[#A7ADBC] hover:text-theme-primary'
-                    : 'text-theme-muted cursor-not-allowed'
-                  }`}
+                onClick={() => {
+                  if (!allowed) { navigate('/login'); return; }
+                  if (available) setPeriod(p);
+                }}
+                disabled={!available && allowed}
+                title={!allowed ? 'Войдите для доступа' : undefined}
+                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors duration-200 ${
+                  !allowed
+                    ? 'text-theme-muted cursor-not-allowed opacity-50'
+                    : period === p
+                      ? 'btn-control active'
+                      : available
+                        ? 'text-[#A7ADBC] hover:text-theme-primary'
+                        : 'text-theme-muted cursor-not-allowed'
+                }`}
               >
                 {PERIOD_LABELS[p]}
+                {!allowed && <Lock className="inline-block ml-0.5 w-3 h-3" />}
               </button>
             );
           })}
@@ -419,7 +442,7 @@ export default function OpenInterestPage() {
         <div className="flex gap-2 mb-4 flex-wrap">
           <button
             onClick={() => setDisplayMode('price')}
-            className={`px-4 py-2 rounded-xl text-sm font-medium transition-all duration-300 ${displayMode === 'price'
+            className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors duration-200 ${displayMode === 'price'
               ? 'bg-[#6366f1] text-white'
               : 'bg-theme-secondary text-[#A7ADBC] hover:text-theme-primary border border-theme'
               }`}
@@ -428,7 +451,7 @@ export default function OpenInterestPage() {
           </button>
           <button
             onClick={() => { setDisplayMode('positions'); setOiVariant('oi'); }}
-            className={`px-4 py-2 rounded-xl text-sm font-medium transition-all duration-300 ${displayMode === 'positions'
+            className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors duration-200 ${displayMode === 'positions'
               ? 'bg-[#6366f1] text-white'
               : 'bg-theme-secondary text-[#A7ADBC] hover:text-theme-primary border border-theme'
               }`}
@@ -437,7 +460,7 @@ export default function OpenInterestPage() {
           </button>
           <button
             onClick={() => { setDisplayMode('participants'); setOiVariant('oi'); }}
-            className={`px-4 py-2 rounded-xl text-sm font-medium transition-all duration-300 ${displayMode === 'participants'
+            className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors duration-200 ${displayMode === 'participants'
               ? 'bg-[#6366f1] text-white'
               : 'bg-theme-secondary text-[#A7ADBC] hover:text-theme-primary border border-theme'
               }`}
@@ -451,7 +474,7 @@ export default function OpenInterestPage() {
           <div className="flex gap-2 flex-wrap">
             <button
               onClick={() => setOiVariant('oi')}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-300 ${oiVariant === 'oi'
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors duration-200 ${oiVariant === 'oi'
                 ? 'bg-[#FFB020]/20 text-[#FFB020] ring-1 ring-[#FFB020]/50'
                 : 'bg-theme-secondary text-[#A7ADBC] hover:text-theme-primary'
                 }`}
@@ -460,7 +483,7 @@ export default function OpenInterestPage() {
             </button>
             <button
               onClick={() => setOiVariant('long')}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-300 ${oiVariant === 'long'
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors duration-200 ${oiVariant === 'long'
                 ? 'bg-[#2EE59D]/20 text-[#2EE59D] ring-1 ring-[#2EE59D]/50'
                 : 'bg-theme-secondary text-[#A7ADBC] hover:text-theme-primary'
                 }`}
@@ -469,7 +492,7 @@ export default function OpenInterestPage() {
             </button>
             <button
               onClick={() => setOiVariant('short')}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-300 ${oiVariant === 'short'
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors duration-200 ${oiVariant === 'short'
                 ? 'bg-[#FF4D4D]/20 text-[#FF4D4D] ring-1 ring-[#FF4D4D]/50'
                 : 'bg-theme-secondary text-[#A7ADBC] hover:text-theme-primary'
                 }`}
@@ -478,7 +501,7 @@ export default function OpenInterestPage() {
             </button>
             <button
               onClick={() => setOiVariant('both')}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-300 ${oiVariant === 'both'
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors duration-200 ${oiVariant === 'both'
                 ? 'bg-[#A855F7]/20 text-[#A855F7] ring-1 ring-[#A855F7]/50'
                 : 'bg-theme-secondary text-[#A7ADBC] hover:text-theme-primary'
                 }`}
@@ -487,7 +510,7 @@ export default function OpenInterestPage() {
             </button>
             <button
               onClick={() => setOiVariant('net')}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-300 ${oiVariant === 'net'
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors duration-200 ${oiVariant === 'net'
                 ? 'bg-[#22D3EE]/20 text-[#22D3EE] ring-1 ring-[#22D3EE]/50'
                 : 'bg-theme-secondary text-[#A7ADBC] hover:text-theme-primary'
                 }`}

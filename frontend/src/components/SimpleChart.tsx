@@ -119,6 +119,7 @@ export default function SimpleChart({
 }: SimpleChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
+  const chartWrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(800);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
@@ -128,10 +129,12 @@ export default function SimpleChart({
   // Отслеживаем ссылку на текущий data — если сменилась, navRange устарел
   const prevDataRef = useRef(data);
 
-  // Сброс навигатора при смене данных (новый период)
+  // Сброс навигатора при смене данных (новый период/интервал)
   useEffect(() => {
-    prevDataRef.current = data;
-    setNavRange([0, Math.max(0, data.length - 1)]);
+    if (data !== prevDataRef.current) {
+      prevDataRef.current = data;
+      setNavRange([0, Math.max(0, data.length - 1)]);
+    }
   }, [data]);
 
   // Срез данных по выбранному диапазону навигатора
@@ -189,6 +192,7 @@ export default function SimpleChart({
   // Opacity для OI линий (для fade-in эффекта)
   const [oiOpacity, setOiOpacity] = useState(1);
 
+
   // Предыдущие точки для интерполяции
   const prevPointsRef = useRef<{
     primary: { x: number; y: number }[];
@@ -196,8 +200,20 @@ export default function SimpleChart({
     third: { x: number; y: number }[];
   }>({ primary: [], secondary: [], third: [] });
 
+  // Текущие отрисованные точки (обновляются каждый кадр анимации)
+  const currentPointsRef = useRef<{
+    primary: { x: number; y: number }[];
+    secondary: { x: number; y: number }[];
+    third: { x: number; y: number }[];
+  }>({ primary: [], secondary: [], third: [] });
+
   // Флаг первой загрузки
   const isFirstRender = useRef(true);
+  const [revealed, setRevealed] = useState(false);
+
+  // Ширина стабилизировалась — не запускаем animateMorph пока не замерим реальный размер
+  const widthStableRef = useRef(false);
+  const prevWidthRef = useRef(0);
 
   // true только когда пользователь тащит навигатор — сбрасывается после animateMorph
   const navDragRef = useRef(false);
@@ -216,8 +232,8 @@ export default function SimpleChart({
 
   // Адаптивные отступы: на мобиле меньше
   const padding = isMobile
-    ? { top: 20, right: 10, bottom: 40, left: 45 }
-    : { top: 28, right: 90, bottom: 50, left: 80 };
+    ? { top: 16, right: 10, bottom: 40, left: 45 }
+    : { top: 19, right: 90, bottom: 50, left: 80 };
 
   // На мобиле ограничиваем высоту графика
   const effectiveHeight = isMobile ? Math.min(height, 300) : height;
@@ -327,6 +343,31 @@ export default function SimpleChart({
   const animateMorph = useCallback(() => {
     if (displayData.length === 0) return;
 
+    // При первом resize (800 → реальная ширина) — не морфим, а перезапускаем reveal
+    if (!widthStableRef.current) {
+      widthStableRef.current = true;
+      // Первый вызов — продолжаем (это первый reveal)
+    } else if (prevWidthRef.current !== chartWidth && prevWidthRef.current > 0) {
+      // Ширина изменилась (resize) — просто обновляем пути без анимации
+      prevWidthRef.current = chartWidth;
+      const targetPrimary = targetCalc.points.map(p => ({ x: p.x, y: p.y }));
+      const targetSecondary = targetCalc.secondaryPoints.map(p => ({ x: p.x, y: p.y }));
+      const targetThird = targetCalc.thirdPoints.map(p => ({ x: p.x, y: p.y }));
+      if (animationRef.current) cancelAnimationFrame(animationRef.current);
+      setAnimatedPaths({
+        primary: pointsToPath(targetPrimary),
+        area: pointsToAreaPath(targetPrimary, chartHeight),
+        secondary: pointsToPath(targetSecondary),
+        third: pointsToPath(targetThird),
+      });
+      prevPointsRef.current = { primary: targetPrimary, secondary: targetSecondary, third: targetThird };
+      currentPointsRef.current = { primary: [], secondary: [], third: [] };
+      // Если reveal ещё не запущен — запускаем
+      if (!revealed) setRevealed(true);
+      return;
+    }
+    prevWidthRef.current = chartWidth;
+
     const targetPrimary = targetCalc.points.map(p => ({ x: p.x, y: p.y }));
     const targetSecondary = targetCalc.secondaryPoints.map(p => ({ x: p.x, y: p.y }));
     const targetThird = targetCalc.thirdPoints.map(p => ({ x: p.x, y: p.y }));
@@ -345,12 +386,13 @@ export default function SimpleChart({
         third: pointsToPath(targetThird),
       });
       prevPointsRef.current = { primary: targetPrimary, secondary: targetSecondary, third: targetThird };
+      currentPointsRef.current = { primary: [], secondary: [], third: [] };
       isFirstRender.current = false;
       setOiOpacity(1);
       return;
     }
 
-    // Если первый рендер или нет предыдущих данных - показываем с fade
+    // Если первый рендер или нет предыдущих данных — reveal слева направо
     if (isFirstRender.current || prevPointsRef.current.primary.length === 0) {
       isFirstRender.current = false;
       prevPointsRef.current = {
@@ -359,46 +401,24 @@ export default function SimpleChart({
         third: targetThird,
       };
 
-      // Анимация появления
-      let startTime: number | null = null;
-      const fadeIn = (timestamp: number) => {
-        if (!startTime) startTime = timestamp;
-        const elapsed = timestamp - startTime;
-        const duration = 500;
-        const t = Math.min(elapsed / duration, 1);
-        const eased = easeOutCubic(t);
-
-        // Анимируем primary от нижней границы графика
-        const animatedPrimary = targetPrimary.map(p => ({
-          x: p.x,
-          y: chartHeight - (chartHeight - p.y) * eased,
-        }));
-
-        // OI линии показываем сразу, но с fade opacity
-        setOiOpacity(eased);
-
-        setAnimatedPaths({
-          primary: pointsToPath(animatedPrimary),
-          area: pointsToAreaPath(animatedPrimary, chartHeight),
-          secondary: pointsToPath(targetSecondary),
-          third: pointsToPath(targetThird),
-        });
-
-        if (t < 1) {
-          animationRef.current = requestAnimationFrame(fadeIn);
-        } else {
-          setOiOpacity(1);
-        }
-      };
-
-      animationRef.current = requestAnimationFrame(fadeIn);
+      // Сразу ставим финальные пути, CSS анимирует reveal
+      setAnimatedPaths({
+        primary: pointsToPath(targetPrimary),
+        area: pointsToAreaPath(targetPrimary, chartHeight),
+        secondary: pointsToPath(targetSecondary),
+        third: pointsToPath(targetThird),
+      });
+      setOiOpacity(1);
+      setRevealed(true);
       return;
     }
 
-    // Морфинг от предыдущих данных к новым
-    const fromPrimary = prevPointsRef.current.primary;
-    const fromSecondary = prevPointsRef.current.secondary;
-    const fromThird = prevPointsRef.current.third;
+    // Если анимация уже идёт — стартуем с текущей визуальной позиции, не с начальной
+    // Это устраняет "дёргание" при быстром переключении периодов
+    const hasCurrentState = currentPointsRef.current.primary.length > 0;
+    const fromPrimary = hasCurrentState ? currentPointsRef.current.primary : prevPointsRef.current.primary;
+    const fromSecondary = hasCurrentState ? currentPointsRef.current.secondary : prevPointsRef.current.secondary;
+    const fromThird = hasCurrentState ? currentPointsRef.current.third : prevPointsRef.current.third;
 
     let startTime: number | null = null;
     const duration = 600; // мс
@@ -440,6 +460,13 @@ export default function SimpleChart({
         interpolatedThird = fromThird;
       }
 
+      // Сохраняем текущую визуальную позицию для плавного прерывания
+      currentPointsRef.current = {
+        primary: interpolatedPrimary,
+        secondary: interpolatedSecondary,
+        third: interpolatedThird,
+      };
+
       setAnimatedPaths({
         primary: pointsToPath(interpolatedPrimary),
         area: pointsToAreaPath(interpolatedPrimary, chartHeight),
@@ -450,14 +477,12 @@ export default function SimpleChart({
       if (t < 1) {
         animationRef.current = requestAnimationFrame(animate);
       } else {
-        // Обновляем prevPointsRef ТОЛЬКО при завершении — StrictMode-safe:
-        // cleanup отменяет RAF → t никогда не дойдёт до 1 → ref не обновится →
-        // повторный вызов animateMorph увидит старые from → морфинг работает
         prevPointsRef.current = {
           primary: targetPrimary,
           secondary: targetSecondary,
           third: targetThird,
         };
+        currentPointsRef.current = { primary: [], secondary: [], third: [] };
         setOiOpacity(1);
       }
     };
@@ -468,7 +493,7 @@ export default function SimpleChart({
     }
 
     animationRef.current = requestAnimationFrame(animate);
-  }, [displayData, targetCalc, chartHeight, showNavigator]);
+  }, [displayData, targetCalc, chartHeight, chartWidth, showNavigator]);
 
   // Запуск анимации при изменении данных
   useEffect(() => {
@@ -667,20 +692,20 @@ export default function SimpleChart({
 
   // Блок легенды — переиспользуем в двух местах
   const legendBlock = (
-    <div className="flex gap-6 text-sm flex-wrap">
-      <span className="flex items-center gap-2">
-        <span className="w-3 h-3 rounded-full" style={{ backgroundColor: primaryColor }} />
+    <div className="flex gap-4 text-xs flex-wrap">
+      <span className="flex items-center gap-1.5">
+        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: primaryColor }} />
         <span className="text-theme-secondary">{primaryLabel}</span>
       </span>
       {showSecondary && (
-        <span className="flex items-center gap-2">
-          <span className="w-3 h-3 rounded-full" style={{ backgroundColor: secondaryColor }} />
+        <span className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: secondaryColor }} />
           <span className="text-theme-secondary">{secondaryLabel}</span>
         </span>
       )}
       {showThird && (
-        <span className="flex items-center gap-2">
-          <span className="w-3 h-3 rounded-full" style={{ backgroundColor: thirdColor }} />
+        <span className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: thirdColor }} />
           <span className="text-theme-secondary">{thirdLabel}</span>
         </span>
       )}
@@ -691,7 +716,7 @@ export default function SimpleChart({
     <div ref={containerRef} className="rounded-2xl p-5 bg-theme-secondary border border-theme relative">
       {/* Легенда — вверху, по центру */}
       {legendPosition === 'top' && (
-        <div className="mb-3 flex justify-center">{legendBlock}</div>
+        <div className="mb-2 flex justify-center">{legendBlock}</div>
       )}
 
       {/* Кнопка переключения линия/гистограмма */}
@@ -744,323 +769,327 @@ export default function SimpleChart({
       )}
 
       {/* SVG График */}
-      <svg
-        ref={svgRef}
-        width={width}
-        height={effectiveHeight}
-        className="cursor-crosshair select-none"
-        style={{ touchAction: 'none' }}
-        onMouseMove={handleMouseMove}
-        onMouseLeave={handleMouseLeave}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-      >
-        <defs>
-          <linearGradient id="primaryGradient" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={primaryColor} stopOpacity="0.3" />
-            <stop offset="50%" stopColor={primaryColor} stopOpacity="0.1" />
-            <stop offset="100%" stopColor={primaryColor} stopOpacity="0" />
-          </linearGradient>
-          <clipPath id="chartClip">
-            <rect x={0} y={0} width={chartWidth} height={chartHeight} />
-          </clipPath>
-        </defs>
+      <div ref={chartWrapRef}
+        className={revealed ? 'chart-reveal' : ''}
+        style={revealed ? undefined : { visibility: 'hidden' }}>
+        <svg
+          ref={svgRef}
+          width={width}
+          height={effectiveHeight}
+          className="cursor-crosshair select-none"
+          style={{ touchAction: 'none' }}
+          onMouseMove={handleMouseMove}
+          onMouseLeave={handleMouseLeave}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+        >
+          <defs>
+            <linearGradient id="primaryGradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={primaryColor} stopOpacity="0.3" />
+              <stop offset="50%" stopColor={primaryColor} stopOpacity="0.1" />
+              <stop offset="100%" stopColor={primaryColor} stopOpacity="0" />
+            </linearGradient>
+            <clipPath id="chartClip">
+              <rect x={0} y={0} width={chartWidth} height={chartHeight} />
+            </clipPath>
+          </defs>
 
-        <g transform={`translate(${padding.left}, ${padding.top})`}>
-          {/* Горизонтальные линии сетки */}
-          {targetCalc.yTicks.map((tick, i) => (
-            <g key={i}>
-              <line
-                x1={0}
-                y1={tick.y}
-                x2={chartWidth}
-                y2={tick.y}
-                stroke="#2A2F3E"
-                strokeWidth="1"
-                strokeDasharray="4,6"
-                opacity="0.5"
-              />
+          <g transform={`translate(${padding.left}, ${padding.top})`}>
+            {/* Горизонтальные линии сетки */}
+            {targetCalc.yTicks.map((tick, i) => (
+              <g key={i}>
+                <line
+                  x1={0}
+                  y1={tick.y}
+                  x2={chartWidth}
+                  y2={tick.y}
+                  stroke="#2A2F3E"
+                  strokeWidth="1"
+                  strokeDasharray="4,6"
+                  opacity="0.5"
+                />
+                <text
+                  x={-12}
+                  y={tick.y}
+                  textAnchor="end"
+                  dominantBaseline="middle"
+                  fill="#5E6576"
+                  fontSize="12"
+                  fontWeight="500"
+                >
+                  {formatValue(tick.value)}
+                </text>
+              </g>
+            ))}
+
+            {/* Правая ось Y (OI) — скрыта на мобиле */}
+            {!isMobile && showSecondary && targetCalc.secYTicks && targetCalc.secYTicks.map((tick, i) => (
               <text
-                x={-12}
+                key={`sec-${i}`}
+                x={chartWidth + 12}
                 y={tick.y}
-                textAnchor="end"
+                textAnchor="start"
                 dominantBaseline="middle"
-                fill="#5E6576"
-                fontSize="12"
+                fill={secondaryColor}
+                fontSize="11"
                 fontWeight="500"
+                opacity="0.8"
               >
-                {formatValue(tick.value)}
+                {tick.value.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
               </text>
+            ))}
+
+            {/* X метки — первая прижата влево, последняя вправо, чтобы не выходить за края */}
+            {targetCalc.xTicks.map((tick, i) => {
+              const isFirst = i === 0;
+              const isLast = i === targetCalc.xTicks.length - 1;
+              return (
+                <text
+                  key={i}
+                  x={isFirst ? 0 : isLast ? chartWidth : tick.x}
+                  y={chartHeight + 30}
+                  textAnchor={isFirst ? 'start' : isLast ? 'end' : 'middle'}
+                  fill="#5E6576"
+                  fontSize="12"
+                  fontWeight="500"
+                >
+                  {formatTime(tick.time)}
+                </text>
+              );
+            })}
+
+            {/* Область графика с клиппингом */}
+            <g clipPath="url(#chartClip)">
+              {/* Область под основной линией */}
+              {animatedPaths.area && (
+                <path
+                  d={animatedPaths.area}
+                  fill="url(#primaryGradient)"
+                />
+              )}
+
+              {/* Third данные — гистограмма или линия */}
+              {showThird && chartMode === 'histogram' && targetCalc.thirdPoints.length > 0 && (
+                <g opacity={oiOpacity} className="transition-opacity duration-300">
+                  {targetCalc.thirdPoints.map((p, i) => {
+                    const barWidth = Math.max((chartWidth / targetCalc.thirdPoints.length) * 0.35, 1);
+                    const barHeight = Math.max(chartHeight - p.y, 0);
+                    return (
+                      <rect
+                        key={`third-bar-${i}`}
+                        x={p.x - barWidth / 2 + barWidth * 0.5}
+                        y={p.y}
+                        width={barWidth}
+                        height={barHeight}
+                        fill={thirdColor}
+                        fillOpacity={0.5}
+                        stroke={thirdColor}
+                        strokeWidth={0.5}
+                      />
+                    );
+                  })}
+                </g>
+              )}
+              {showThird && chartMode === 'line' && animatedPaths.third && (
+                <path
+                  d={animatedPaths.third}
+                  fill="none"
+                  stroke={thirdColor}
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  opacity={oiOpacity}
+                />
+              )}
+
+              {/* Secondary данные — гистограмма или линия */}
+              {showSecondary && chartMode === 'histogram' && targetCalc.secondaryPoints.length > 0 && (
+                <g opacity={oiOpacity} className="transition-opacity duration-300">
+                  {targetCalc.secondaryPoints.map((p, i) => {
+                    const totalSeries = showThird ? 2 : 1;
+                    const barWidth = Math.max((chartWidth / targetCalc.secondaryPoints.length) * 0.35, 1);
+                    const barHeight = Math.max(chartHeight - p.y, 0);
+                    return (
+                      <rect
+                        key={`sec-bar-${i}`}
+                        x={p.x - barWidth / 2 - (totalSeries > 1 ? barWidth * 0.5 : 0)}
+                        y={p.y}
+                        width={barWidth}
+                        height={barHeight}
+                        fill={secondaryColor}
+                        fillOpacity={0.5}
+                        stroke={secondaryColor}
+                        strokeWidth={0.5}
+                      />
+                    );
+                  })}
+                </g>
+              )}
+              {showSecondary && chartMode === 'line' && animatedPaths.secondary && (
+                <path
+                  d={animatedPaths.secondary}
+                  fill="none"
+                  stroke={secondaryColor}
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  opacity={oiOpacity}
+                />
+              )}
+
+              {/* Основная линия (всегда линия) */}
+              {animatedPaths.primary && (
+                <path
+                  d={animatedPaths.primary}
+                  fill="none"
+                  stroke={primaryColor}
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              )}
+
+              {/* Затемнение области после курсора */}
+              {tooltip.visible && (
+                <rect
+                  x={tooltip.x - padding.left}
+                  y={0}
+                  width={Math.max(0, chartWidth - (tooltip.x - padding.left))}
+                  height={chartHeight}
+                  fill="#0B0D12"
+                  opacity="0.5"
+                  className="transition-opacity duration-150"
+                />
+              )}
             </g>
-          ))}
 
-          {/* Правая ось Y (OI) — скрыта на мобиле */}
-          {!isMobile && showSecondary && targetCalc.secYTicks && targetCalc.secYTicks.map((tick, i) => (
-            <text
-              key={`sec-${i}`}
-              x={chartWidth + 12}
-              y={tick.y}
-              textAnchor="start"
-              dominantBaseline="middle"
-              fill={secondaryColor}
-              fontSize="11"
-              fontWeight="500"
-              opacity="0.8"
-            >
-              {tick.value.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
-            </text>
-          ))}
-
-          {/* X метки — первая прижата влево, последняя вправо, чтобы не выходить за края */}
-          {targetCalc.xTicks.map((tick, i) => {
-            const isFirst = i === 0;
-            const isLast = i === targetCalc.xTicks.length - 1;
-            return (
-              <text
-                key={i}
-                x={isFirst ? 0 : isLast ? chartWidth : tick.x}
-                y={chartHeight + 30}
-                textAnchor={isFirst ? 'start' : isLast ? 'end' : 'middle'}
-                fill="#5E6576"
-                fontSize="12"
-                fontWeight="500"
-              >
-                {formatTime(tick.time)}
-              </text>
-            );
-          })}
-
-          {/* Область графика с клиппингом */}
-          <g clipPath="url(#chartClip)">
-            {/* Область под основной линией */}
-            {animatedPaths.area && (
-              <path
-                d={animatedPaths.area}
-                fill="url(#primaryGradient)"
-              />
-            )}
-
-            {/* Third данные — гистограмма или линия */}
-            {showThird && chartMode === 'histogram' && targetCalc.thirdPoints.length > 0 && (
-              <g opacity={oiOpacity} className="transition-opacity duration-300">
-                {targetCalc.thirdPoints.map((p, i) => {
-                  const barWidth = Math.max((chartWidth / targetCalc.thirdPoints.length) * 0.35, 1);
-                  const barHeight = Math.max(chartHeight - p.y, 0);
-                  return (
-                    <rect
-                      key={`third-bar-${i}`}
-                      x={p.x - barWidth / 2 + barWidth * 0.5}
-                      y={p.y}
-                      width={barWidth}
-                      height={barHeight}
-                      fill={thirdColor}
-                      fillOpacity={0.5}
-                      stroke={thirdColor}
-                      strokeWidth={0.5}
-                    />
-                  );
-                })}
-              </g>
-            )}
-            {showThird && chartMode === 'line' && animatedPaths.third && (
-              <path
-                d={animatedPaths.third}
-                fill="none"
-                stroke={thirdColor}
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                opacity={oiOpacity}
-              />
-            )}
-
-            {/* Secondary данные — гистограмма или линия */}
-            {showSecondary && chartMode === 'histogram' && targetCalc.secondaryPoints.length > 0 && (
-              <g opacity={oiOpacity} className="transition-opacity duration-300">
-                {targetCalc.secondaryPoints.map((p, i) => {
-                  const totalSeries = showThird ? 2 : 1;
-                  const barWidth = Math.max((chartWidth / targetCalc.secondaryPoints.length) * 0.35, 1);
-                  const barHeight = Math.max(chartHeight - p.y, 0);
-                  return (
-                    <rect
-                      key={`sec-bar-${i}`}
-                      x={p.x - barWidth / 2 - (totalSeries > 1 ? barWidth * 0.5 : 0)}
-                      y={p.y}
-                      width={barWidth}
-                      height={barHeight}
-                      fill={secondaryColor}
-                      fillOpacity={0.5}
-                      stroke={secondaryColor}
-                      strokeWidth={0.5}
-                    />
-                  );
-                })}
-              </g>
-            )}
-            {showSecondary && chartMode === 'line' && animatedPaths.secondary && (
-              <path
-                d={animatedPaths.secondary}
-                fill="none"
-                stroke={secondaryColor}
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                opacity={oiOpacity}
-              />
-            )}
-
-            {/* Основная линия (всегда линия) */}
-            {animatedPaths.primary && (
-              <path
-                d={animatedPaths.primary}
-                fill="none"
-                stroke={primaryColor}
-                strokeWidth="3"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            )}
-
-            {/* Затемнение области после курсора */}
+            {/* Вертикальная линия и точки курсора */}
             {tooltip.visible && (
-              <rect
-                x={tooltip.x - padding.left}
-                y={0}
-                width={Math.max(0, chartWidth - (tooltip.x - padding.left))}
-                height={chartHeight}
-                fill="#0B0D12"
-                opacity="0.5"
-                className="transition-opacity duration-150"
-              />
+              <>
+                <line
+                  x1={tooltip.x - padding.left}
+                  y1={0}
+                  x2={tooltip.x - padding.left}
+                  y2={chartHeight}
+                  stroke="#C8FF2E"
+                  strokeWidth="1"
+                  strokeDasharray="4,4"
+                  opacity="0.5"
+                />
+                {/* Точка на основной линии */}
+                <circle
+                  cx={tooltip.x - padding.left}
+                  cy={tooltip.primaryY - padding.top}
+                  r="6"
+                  fill={primaryColor}
+                  stroke="#0B0D12"
+                  strokeWidth="2"
+                  className="drop-shadow-lg"
+                />
+                {/* Точка на secondary линии */}
+                {showSecondary && tooltip.secondaryY !== null && (
+                  <circle
+                    cx={tooltip.x - padding.left}
+                    cy={tooltip.secondaryY - padding.top}
+                    r="5"
+                    fill={secondaryColor}
+                    stroke="#0B0D12"
+                    strokeWidth="2"
+                  />
+                )}
+                {/* Точка на third линии */}
+                {showThird && tooltip.thirdY !== null && (
+                  <circle
+                    cx={tooltip.x - padding.left}
+                    cy={tooltip.thirdY - padding.top}
+                    r="5"
+                    fill={thirdColor}
+                    stroke="#0B0D12"
+                    strokeWidth="2"
+                  />
+                )}
+              </>
             )}
           </g>
 
-          {/* Вертикальная линия и точки курсора */}
-          {tooltip.visible && (
-            <>
-              <line
-                x1={tooltip.x - padding.left}
-                y1={0}
-                x2={tooltip.x - padding.left}
-                y2={chartHeight}
-                stroke="#C8FF2E"
-                strokeWidth="1"
-                strokeDasharray="4,4"
-                opacity="0.5"
-              />
-              {/* Точка на основной линии */}
-              <circle
-                cx={tooltip.x - padding.left}
-                cy={tooltip.primaryY - padding.top}
-                r="6"
-                fill={primaryColor}
-                stroke="#0B0D12"
-                strokeWidth="2"
-                className="drop-shadow-lg"
-              />
-              {/* Точка на secondary линии */}
-              {showSecondary && tooltip.secondaryY !== null && (
-                <circle
-                  cx={tooltip.x - padding.left}
-                  cy={tooltip.secondaryY - padding.top}
-                  r="5"
-                  fill={secondaryColor}
-                  stroke="#0B0D12"
-                  strokeWidth="2"
-                />
-              )}
-              {/* Точка на third линии */}
-              {showThird && tooltip.thirdY !== null && (
-                <circle
-                  cx={tooltip.x - padding.left}
-                  cy={tooltip.thirdY - padding.top}
-                  r="5"
-                  fill={thirdColor}
-                  stroke="#0B0D12"
-                  strokeWidth="2"
-                />
-              )}
-            </>
-          )}
-        </g>
+          {/* Тултип: дата вверху вертикальной линии + карточка значений */}
+          {tooltip.visible && (() => {
+            const d = new Date(tooltip.time);
+            const dateStr = d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' });
+            const hours = d.getHours();
+            const minutes = d.getMinutes();
+            const dateLabel = (hours !== 0 || minutes !== 0)
+              ? `${dateStr} ${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`
+              : dateStr;
 
-        {/* Тултип: дата вверху вертикальной линии + карточка значений */}
-        {tooltip.visible && (() => {
-          const d = new Date(tooltip.time);
-          const dateStr = d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' });
-          const hours = d.getHours();
-          const minutes = d.getMinutes();
-          const dateLabel = (hours !== 0 || minutes !== 0)
-            ? `${dateStr} ${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`
-            : dateStr;
+            const cardWidth = isMobile ? 150 : 200;
+            const isRightHalf = tooltip.x > padding.left + chartWidth / 2;
+            const cardX = isRightHalf
+              ? tooltip.x - cardWidth - 8
+              : tooltip.x + 8;
 
-          const cardWidth = isMobile ? 150 : 200;
-          const isRightHalf = tooltip.x > padding.left + chartWidth / 2;
-          const cardX = isRightHalf
-            ? tooltip.x - cardWidth - 8
-            : tooltip.x + 8;
+            const fmtSecondary = formatSecondaryValue || formatValue;
+            const fmtThird = formatThirdValue || formatValue;
 
-          const fmtSecondary = formatSecondaryValue || formatValue;
-          const fmtThird = formatThirdValue || formatValue;
+            const lines: { color: string; label: string; value: string }[] = [
+              { color: primaryColor, label: primaryLabel, value: formatValue(tooltip.value) },
+            ];
+            if (showSecondary && tooltip.secondaryValue !== undefined) {
+              lines.push({ color: secondaryColor, label: secondaryLabel, value: fmtSecondary(tooltip.secondaryValue) });
+            }
+            if (showThird && tooltip.thirdValue !== undefined) {
+              lines.push({ color: thirdColor, label: thirdLabel, value: fmtThird(tooltip.thirdValue) });
+            }
 
-          const lines: { color: string; label: string; value: string }[] = [
-            { color: primaryColor, label: primaryLabel, value: formatValue(tooltip.value) },
-          ];
-          if (showSecondary && tooltip.secondaryValue !== undefined) {
-            lines.push({ color: secondaryColor, label: secondaryLabel, value: fmtSecondary(tooltip.secondaryValue) });
-          }
-          if (showThird && tooltip.thirdValue !== undefined) {
-            lines.push({ color: thirdColor, label: thirdLabel, value: fmtThird(tooltip.thirdValue) });
-          }
+            const cardHeight = 8 + lines.length * 26 + 8;
 
-          const cardHeight = 8 + lines.length * 26 + 8;
-
-          return (
-            <>
-              {/* Дата — вверху вертикальной линии */}
-              {(() => {
-                const labelW = dateLabel.length > 16 ? 200 : 140;
-                const halfW = labelW / 2;
-                return (
-                  <foreignObject
-                    x={Math.min(Math.max(tooltip.x - halfW, padding.left), width - padding.right - labelW)}
-                    y={padding.top - 24}
-                    width={labelW}
-                    height="22"
-                  >
-                    <div className="flex justify-center pointer-events-none">
-                      <span className="text-[11px] text-theme-secondary bg-theme-tertiary/90 backdrop-blur-sm px-2 py-0.5 rounded border border-theme whitespace-nowrap">
-                        {dateLabel}
-                      </span>
-                    </div>
-                  </foreignObject>
-                );
-              })()}
-
-              {/* Карточка значений рядом с курсором */}
-              <foreignObject
-                x={cardX}
-                y={Math.min(Math.max(tooltip.primaryY - cardHeight / 2, padding.top), padding.top + chartHeight - cardHeight)}
-                width={cardWidth}
-                height={cardHeight}
-              >
-                <div className="bg-theme-tertiary/95 backdrop-blur-sm rounded-lg border border-theme shadow-xl pointer-events-none py-1.5 px-3">
-                  {lines.map((line, i) => (
-                    <div key={i} className="flex items-center justify-between gap-2 py-0.5">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: line.color }} />
-                        <span className="text-[11px] text-theme-secondary truncate">{line.label}</span>
+            return (
+              <>
+                {/* Дата — вверху вертикальной линии */}
+                {(() => {
+                  const labelW = dateLabel.length > 16 ? 200 : 140;
+                  const halfW = labelW / 2;
+                  return (
+                    <foreignObject
+                      x={Math.min(Math.max(tooltip.x - halfW, padding.left), width - padding.right - labelW)}
+                      y={padding.top - 24}
+                      width={labelW}
+                      height="22"
+                    >
+                      <div className="flex justify-center pointer-events-none">
+                        <span className="text-[11px] text-theme-secondary bg-theme-tertiary/90 backdrop-blur-sm px-2 py-0.5 rounded border border-theme whitespace-nowrap">
+                          {dateLabel}
+                        </span>
                       </div>
-                      <span className="text-xs font-semibold text-theme-primary whitespace-nowrap">{line.value}</span>
-                    </div>
-                  ))}
-                </div>
-              </foreignObject>
-            </>
-          );
-        })()}
-      </svg>
+                    </foreignObject>
+                  );
+                })()}
+
+                {/* Карточка значений рядом с курсором */}
+                <foreignObject
+                  x={cardX}
+                  y={Math.min(Math.max(tooltip.primaryY - cardHeight / 2, padding.top), padding.top + chartHeight - cardHeight)}
+                  width={cardWidth}
+                  height={cardHeight}
+                >
+                  <div className="bg-theme-tertiary/95 backdrop-blur-sm rounded-lg border border-theme shadow-xl pointer-events-none py-1.5 px-3">
+                    {lines.map((line, i) => (
+                      <div key={i} className="flex items-center justify-between gap-2 py-0.5">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: line.color }} />
+                          <span className="text-[11px] text-theme-secondary truncate">{line.label}</span>
+                        </div>
+                        <span className="text-xs font-semibold text-theme-primary whitespace-nowrap">{line.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </foreignObject>
+              </>
+            );
+          })()}
+        </svg>
+      </div>
 
       {/* Навигатор временного диапазона */}
       {showNavigator && (

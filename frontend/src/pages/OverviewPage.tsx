@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, ExternalLink, Activity, TrendingUp, TrendingDown, LayoutGrid, MessageCircle, BarChart3, Compass } from 'lucide-react';
 import SimpleChart from '../components/SimpleChart';
 import { getChartData, getFearIndex, getFearIndexHistory } from '../services/api';
+import { useRealtimeData } from '../hooks/useRealtimeData';
 import type { FearIndexResponse, FearIndexHistoryResponse } from '../services/api';
 
 // Типы
@@ -82,40 +83,44 @@ export default function OverviewPage() {
   ]);
 
   // Загрузка Fear Index
-  useEffect(() => {
-    async function loadFearIndex() {
-      try {
-        const [current, history] = await Promise.all([
-          getFearIndex(),
-          getFearIndexHistory('1m')
-        ]);
-        setFearData(current);
-        setFearHistory(history);
-      } catch (err) {
-        console.error('Ошибка загрузки Fear Index:', err);
-      } finally {
-        setFearLoading(false);
-      }
+  const loadFearIndex = useCallback(async () => {
+    try {
+      const [current, history] = await Promise.all([
+        getFearIndex(),
+        getFearIndexHistory('1m')
+      ]);
+      setFearData(current);
+      setFearHistory(history);
+    } catch (err) {
+      console.error('Ошибка загрузки Fear Index:', err);
+    } finally {
+      setFearLoading(false);
     }
-    loadFearIndex();
   }, []);
 
+  useEffect(() => { loadFearIndex(); }, [loadFearIndex]);
+
   // Загрузка heatmap (за месяц — более стабильные данные)
-  useEffect(() => {
-    async function loadHeatmap() {
-      try {
-        const resp = await fetch('/api/heatmap/stocks?size_by=value_1m&color_by=change_1m&group_by=none');
-        const data = await resp.json();
-        const stocks = (data.stocks || []).slice(0, 12);
-        setHeatmapData(stocks);
-      } catch (err) {
-        console.error('Ошибка загрузки heatmap:', err);
-      } finally {
-        setHeatmapLoading(false);
-      }
+  const loadHeatmap = useCallback(async () => {
+    try {
+      const resp = await fetch('/api/heatmap/stocks?size_by=value_1m&color_by=change_1m&group_by=none');
+      const data = await resp.json();
+      const stocks = (data.stocks || []).slice(0, 12);
+      setHeatmapData(stocks);
+    } catch (err) {
+      console.error('Ошибка загрузки heatmap:', err);
+    } finally {
+      setHeatmapLoading(false);
     }
-    loadHeatmap();
   }, []);
+
+  useEffect(() => { loadHeatmap(); }, [loadHeatmap]);
+
+  // SSE: автоматическое обновление
+  useRealtimeData(['5min', 'mv_refresh', 'funds'], useCallback(() => {
+    loadFearIndex();
+    loadHeatmap();
+  }, [loadFearIndex, loadHeatmap]));
 
   // Загрузка OI для превью (Сбербанк, 1 месяц) — как на странице OI
   useEffect(() => {

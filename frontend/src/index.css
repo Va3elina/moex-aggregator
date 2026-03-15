@@ -278,14 +278,14 @@ body {
   border: 1px solid var(--border-color);
   border-radius: 1rem;
   box-shadow: var(--shadow-md);
-  transition: all 0.3s ease;
+  transition: background 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
 .widget-flat {
   background-color: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: 0.75rem;
-  transition: all 0.3s ease;
+  transition: background-color 0.3s ease, border-color 0.3s ease;
 }
 
 
@@ -325,7 +325,7 @@ a.btn-accent:active {
   font-weight: 500;
   border-radius: 0.5rem;
   color: var(--text-secondary);
-  transition: all 0.2s ease;
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
 }
 
 .btn-control:hover {
@@ -477,6 +477,28 @@ a.btn-accent:active {
     min-height: 44px;
     min-width: 44px;
   }
+}
+
+/* ============================================
+   PAGE ENTRANCE ANIMATION — left-to-right reveal
+   ============================================ */
+@keyframes page-reveal {
+  from { clip-path: inset(0 100% 0 0); opacity: 0.6; }
+  to   { clip-path: inset(0 0% 0 0);   opacity: 1; }
+}
+
+.page-enter {
+  animation: page-reveal 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes chart-reveal {
+  from { clip-path: inset(0 100% 0 0); }
+  to   { clip-path: inset(0 0 0 0); }
+}
+
+.chart-reveal {
+  animation: chart-reveal 1s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+  overflow: hidden;
 }
 
 /* Stack layout on mobile */

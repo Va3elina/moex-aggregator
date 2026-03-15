@@ -3,6 +3,7 @@ MOEX Analytics API
 Главный файл приложения
 """
 
+import asyncio
 import os
 from pathlib import Path
 from fastapi import FastAPI
@@ -24,6 +25,7 @@ from api.routers import (
 from api.routers import stats
 from api.routers import auth  # ← НОВОЕ: Аутентификация
 from api.routers import oauth  # ← OAuth (Google, VK, Telegram)
+from api.routers import events  # ← SSE real-time events
 
 # Логирование
 from api.logger import setup_logging, get_logger
@@ -129,14 +131,27 @@ app.add_middleware(
 # События жизненного цикла
 # ═══════════════════════════════════════════════════════════════
 
+_notify_task = None
+
 @app.on_event("startup")
 async def startup_event():
-    logger.info("🚀 MOEX Analytics API запущен", extra={
+    global _notify_task
+    # Запускаем NOTIFY listener для SSE
+    from api.notify_listener import start_notify_listener
+    _notify_task = asyncio.create_task(start_notify_listener())
+    logger.info("🚀 MOEX Analytics API запущен (SSE enabled)", extra={
         "extra_data": {"type": "startup", "version": "1.0.0"}
     })
 
 @app.on_event("shutdown")
 async def shutdown_event():
+    global _notify_task
+    if _notify_task:
+        _notify_task.cancel()
+        try:
+            await _notify_task
+        except asyncio.CancelledError:
+            pass
     logger.info("👋 MOEX Analytics API остановлен", extra={
         "extra_data": {"type": "shutdown"}
     })
@@ -156,6 +171,7 @@ app.include_router(breadth_router)
 app.include_router(buffett_router)
 app.include_router(auth.router, prefix="/api")  # ← НОВОЕ: /api/auth/*
 app.include_router(oauth.router, prefix="/api")  # ← OAuth: /api/auth/oauth/*
+app.include_router(events.router)  # ← SSE: /api/events/*
 
 # ═══════════════════════════════════════════════════════════════
 # Служебные эндпоинты

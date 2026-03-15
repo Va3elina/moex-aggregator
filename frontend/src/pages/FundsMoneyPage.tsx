@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { TrendingUp, DollarSign, Banknote, LineChart, BarChart2, Gem, Wallet } from 'lucide-react';
+import { TrendingUp, DollarSign, Banknote, LineChart, BarChart2, Gem, Wallet, Lock } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import {
     getFundsChartData,
     getFundsFlows,
@@ -10,6 +11,9 @@ import {
     type FlowTimeframe
 } from '../services/api';
 import SimpleChart from '../components/SimpleChart';
+import { useAuth } from '../contexts/AuthContext';
+import { isPeriodAllowed } from '../config/accessControl';
+import { useRealtimeData } from '../hooks/useRealtimeData';
 
 // Режимы отображения
 type ViewMode = 'aum' | 'flows';
@@ -62,6 +66,8 @@ const resampleFlows = (vals: number[], len: number): number[] => {
 };
 
 export default function FundsMoneyPage() {
+    const { isAuthenticated } = useAuth();
+    const navigate = useNavigate();
     const [category, setCategory] = useState<FundCategory>('money_market');
     const [period, setPeriod] = useState<Period>('6m');
     const [viewMode, setViewMode] = useState<ViewMode>('aum');
@@ -83,24 +89,26 @@ export default function FundsMoneyPage() {
     const isFirstBarsRender = useRef(true);
 
     // Загрузка данных
-    useEffect(() => {
-        async function loadData() {
-            try {
-                setLoading(true);
-                setError(null);
-                const result = await getFundsChartData(category, period as FundPeriod);
-                setData(result);
-                // Сброс скрытых фондов при смене категории/периода
-                setHiddenFunds(new Set());
-            } catch (err) {
-                setError('Ошибка загрузки данных');
-                console.error(err);
-            } finally {
-                setLoading(false);
-            }
+    const loadData = useCallback(async () => {
+        try {
+            setLoading(true);
+            setError(null);
+            const result = await getFundsChartData(category, period as FundPeriod);
+            setData(result);
+            // Сброс скрытых фондов при смене категории/периода
+            setHiddenFunds(new Set());
+        } catch (err) {
+            setError('Ошибка загрузки данных');
+            console.error(err);
+        } finally {
+            setLoading(false);
         }
-        loadData();
     }, [category, period]);
+
+    useEffect(() => { loadData(); }, [loadData]);
+
+    // SSE: автоматическое обновление при новых данных
+    useRealtimeData(['funds'], loadData);
 
     // Видимые fund_ids (для фильтрации flows)
     const visibleFundIds = useMemo(() => {
@@ -274,7 +282,7 @@ export default function FundsMoneyPage() {
                         <button
                             key={cat.key}
                             onClick={() => setCategory(cat.key)}
-                            className={`flex items-center gap-2 px-4 py-3 rounded-xl font-medium transition-all duration-300 ${isActive
+                            className={`flex items-center gap-2 px-4 py-3 rounded-xl font-medium transition-colors duration-200 ${isActive
                                 ? 'bg-[#6366f1] text-white shadow-lg shadow-[#6366f1]/25'
                                 : 'bg-theme-secondary text-theme-secondary hover:text-theme-primary border border-theme'
                                 }`}
@@ -293,18 +301,29 @@ export default function FundsMoneyPage() {
             {/* Периоды */}
             <div className="flex items-center gap-4 mb-6 flex-wrap">
                 <div className="flex items-center gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
-                    {(Object.keys(PERIOD_LABELS) as Period[]).map((p) => (
-                        <button
-                            key={p}
-                            onClick={() => setPeriod(p)}
-                            className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-all duration-300 ${period === p
-                                ? 'btn-control active'
-                                : 'text-theme-secondary hover:text-theme-primary'
+                    {(Object.keys(PERIOD_LABELS) as Period[]).map((p) => {
+                        const allowed = isPeriodAllowed(p, isAuthenticated);
+                        return (
+                            <button
+                                key={p}
+                                onClick={() => {
+                                    if (!allowed) { navigate('/login'); return; }
+                                    setPeriod(p);
+                                }}
+                                title={!allowed ? 'Войдите для доступа' : undefined}
+                                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors duration-200 ${
+                                    !allowed
+                                        ? 'text-theme-muted cursor-not-allowed opacity-50'
+                                        : period === p
+                                            ? 'btn-control active'
+                                            : 'text-theme-secondary hover:text-theme-primary'
                                 }`}
-                        >
-                            {PERIOD_LABELS[p]}
-                        </button>
-                    ))}
+                            >
+                                {PERIOD_LABELS[p]}
+                                {!allowed && <Lock className="inline-block ml-0.5 w-3 h-3" />}
+                            </button>
+                        );
+                    })}
                 </div>
 
                 {/* Режим: СЧА / Притоки-оттоки */}
@@ -312,7 +331,7 @@ export default function FundsMoneyPage() {
                     <button
                         onClick={() => setViewMode('aum')}
                         title="СЧА (объём активов)"
-                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all duration-300 ${viewMode === 'aum'
+                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors duration-200 ${viewMode === 'aum'
                             ? 'btn-control active'
                             : 'text-theme-secondary hover:text-theme-primary'
                             }`}
@@ -323,7 +342,7 @@ export default function FundsMoneyPage() {
                     <button
                         onClick={() => setViewMode('flows')}
                         title="Притоки и оттоки"
-                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all duration-300 ${viewMode === 'flows'
+                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors duration-200 ${viewMode === 'flows'
                             ? 'btn-control active'
                             : 'text-theme-secondary hover:text-theme-primary'
                             }`}
@@ -340,7 +359,7 @@ export default function FundsMoneyPage() {
                             <button
                                 key={tf}
                                 onClick={() => setFlowTimeframe(tf)}
-                                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-all duration-300 ${flowTimeframe === tf
+                                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors duration-200 ${flowTimeframe === tf
                                     ? 'btn-control active'
                                     : 'text-theme-secondary hover:text-theme-primary'
                                     }`}

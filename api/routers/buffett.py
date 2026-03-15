@@ -4,7 +4,7 @@ API роутер для Индикатора Баффетта
 - MCFTR / M2 (индекс полной доходности / денежная масса)
 """
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Depends
 from sqlalchemy import text
 from typing import Literal
 from datetime import date, timedelta
@@ -12,6 +12,8 @@ import time
 
 from api.database import get_engine
 from api.logger import get_logger
+from api.routers.auth import get_current_user_optional
+from api.security.access_control import enforce_guest_limits
 
 router = APIRouter(prefix="/api/buffett", tags=["buffett"])
 log = get_logger()
@@ -80,11 +82,15 @@ def _ema(values: list[float], span: int) -> list[float]:
 async def get_buffett_cap_gdp(
     period: PeriodType = Query("3y", description="Период"),
     smooth: bool = Query(True, description="Сглаживание EMA(60)"),
+    user = Depends(get_current_user_optional),
 ):
     """
     Индикатор Баффетта: 100 × Капитализация / ВВП (TTM).
     GDP_TTM = скользящая сумма 4 последних кварталов, линейно интерполированная на ежедневную сетку.
     """
+    # Ограничения для гостей
+    enforce_guest_limits(user, period=period)
+
     start_time = time.time()
     engine = get_engine()
 
@@ -170,11 +176,15 @@ async def get_buffett_cap_gdp(
 async def get_buffett_mcftr_m2(
     period: PeriodType = Query("3y", description="Период"),
     smooth: bool = Query(True, description="Сглаживание EMA(60)"),
+    user = Depends(get_current_user_optional),
 ):
     """
     MCFTR / M2: индекс полной доходности / денежная масса.
     M2 линейно интерполирована на ежедневную сетку.
     """
+    # Ограничения для гостей
+    enforce_guest_limits(user, period=period)
+
     start_time = time.time()
     engine = get_engine()
 

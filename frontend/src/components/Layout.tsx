@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useSSE } from '../hooks/useSSE';
 import { Menu, X, LogIn } from 'lucide-react';
 
 const NAV_ITEMS: { path: string; label: string; disabled?: boolean }[] = [
@@ -16,6 +17,7 @@ const NAV_ITEMS: { path: string; label: string; disabled?: boolean }[] = [
 export default function Layout() {
   const { cycleTheme, themeName, themeIcon } = useTheme();
   const { user, isAuthenticated } = useAuth();
+  const { connected } = useSSE();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -37,6 +39,10 @@ export default function Layout() {
               }}>
                 Beta
               </span>
+              <span
+                title={connected ? 'Live: данные обновляются автоматически' : 'Нет соединения с сервером'}
+                className={`w-2 h-2 rounded-full hidden sm:inline-block ${connected ? 'bg-emerald-400' : 'bg-gray-500'}`}
+              />
             </NavLink>
 
             {/* Desktop Навигация */}
@@ -214,7 +220,7 @@ export default function Layout() {
 
       {/* Контент страницы */}
       <main className="relative">
-        <Outlet />
+          <Outlet />
       </main>
     </div>
   );

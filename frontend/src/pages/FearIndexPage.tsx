@@ -1,8 +1,12 @@
-import { useState, useEffect, useMemo } from 'react';
-import { TrendingUp, TrendingDown, AlertTriangle, Gauge, DollarSign, BarChart3 } from 'lucide-react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { TrendingUp, TrendingDown, AlertTriangle, Gauge, DollarSign, BarChart3, Lock } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { getFearIndex, getFearIndexHistory } from '../services/api';
 import type { FearIndexResponse, FearIndexHistoryResponse, FearIndexPeriod } from '../services/api';
 import SimpleChart from '../components/SimpleChart';
+import { useAuth } from '../contexts/AuthContext';
+import { isPeriodAllowed } from '../config/accessControl';
+import { useRealtimeData } from '../hooks/useRealtimeData';
 
 type Period = '1m' | '3m' | '6m' | '1y' | 'all';
 
@@ -45,6 +49,8 @@ function getFearGradient(score: number): string {
 }
 
 export default function FearIndexPage() {
+  const { isAuthenticated } = useAuth();
+  const navigate = useNavigate();
   const [period, setPeriod] = useState<Period>('3m');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -52,26 +58,28 @@ export default function FearIndexPage() {
   const [history, setHistory] = useState<FearIndexHistoryResponse | null>(null);
 
   // Загрузка данных
-  useEffect(() => {
-    async function loadData() {
-      try {
-        setLoading(true);
-        setError(null);
-        const [currentData, historyData] = await Promise.all([
-          getFearIndex(),
-          getFearIndexHistory(period as FearIndexPeriod)
-        ]);
-        setCurrent(currentData);
-        setHistory(historyData);
-      } catch (err) {
-        setError('Ошибка загрузки данных');
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
+  const loadData = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const [currentData, historyData] = await Promise.all([
+        getFearIndex(),
+        getFearIndexHistory(period as FearIndexPeriod)
+      ]);
+      setCurrent(currentData);
+      setHistory(historyData);
+    } catch (err) {
+      setError('Ошибка загрузки данных');
+      console.error(err);
+    } finally {
+      setLoading(false);
     }
-    loadData();
   }, [period]);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  // SSE: автоматическое обновление при новых данных
+  useRealtimeData(['funds'], loadData);
 
   // Подготовка данных для графика
   const chartData = useMemo(() => {
@@ -293,18 +301,29 @@ export default function FearIndexPage() {
         <div className="flex flex-wrap items-center gap-3">
           <span className="text-theme-muted text-sm">Период:</span>
           <div className="flex items-center bg-[#0B0D12] rounded-xl border border-white/10 p-1">
-            {PERIODS.map(p => (
-              <button
-                key={p.key}
-                onClick={() => setPeriod(p.key)}
-                className={`px-4 py-2 text-sm font-medium rounded-lg transition-all duration-300 ${period === p.key
-                  ? 'btn-control active'
-                  : 'text-theme-secondary hover:text-theme-primary'
+            {PERIODS.map(p => {
+              const allowed = isPeriodAllowed(p.key, isAuthenticated);
+              return (
+                <button
+                  key={p.key}
+                  onClick={() => {
+                    if (!allowed) { navigate('/login'); return; }
+                    setPeriod(p.key);
+                  }}
+                  title={!allowed ? 'Войдите для доступа' : undefined}
+                  className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors duration-200 ${
+                    !allowed
+                      ? 'text-theme-muted cursor-not-allowed opacity-50'
+                      : period === p.key
+                        ? 'btn-control active'
+                        : 'text-theme-secondary hover:text-theme-primary'
                   }`}
-              >
-                {p.label}
-              </button>
-            ))}
+                >
+                  {p.label}
+                  {!allowed && <Lock className="inline-block ml-0.5 w-3 h-3" />}
+                </button>
+              );
+            })}
           </div>
 
           <div className="flex-1" />

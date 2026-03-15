@@ -32,11 +32,12 @@ async def get_stocks_heatmap(
 
     # Безопасный запрос — без пользовательских данных в SQL
     query = text("""
-        SELECT 
+        SELECT
             sec_id, name, sector, price,
             change_1d, change_1w, change_1m,
             volume_1d, volume_1w, volume_1m,
-            value_1d, value_1w, value_1m
+            value_1d, value_1w, value_1m,
+            market_cap
         FROM mv_heatmap_stocks
         ORDER BY value_1d DESC NULLS LAST
     """)
@@ -64,6 +65,7 @@ async def get_stocks_heatmap(
             "value_1d": float(row[10]) if row[10] else 0,
             "value_1w": float(row[11]) if row[11] else 0,
             "value_1m": float(row[12]) if row[12] else 0,
+            "market_cap": float(row[13]) if row[13] else 0,
         })
 
     # Группировка

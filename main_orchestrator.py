@@ -211,6 +211,30 @@ log = setup_logging()
 
 
 # ======================================================================
+#                    POSTGRESQL NOTIFY (SSE)
+# ======================================================================
+
+def send_data_notify(source: str, tables: list = None):
+    """Отправить PostgreSQL NOTIFY о обновлении данных."""
+    import json as _json
+    payload = _json.dumps({
+        "source": source,
+        "tables": tables or [],
+        "ts": datetime.now().isoformat()
+    })
+    try:
+        engine = create_engine(DB_URL, connect_args={"ssl_context": False})
+        with engine.connect() as conn:
+            # Payload в NOTIFY должен быть строкой, экранируем кавычки
+            conn.execute(text(f"NOTIFY data_updated, '{payload}'"))
+            conn.commit()
+        engine.dispose()
+        log.info(f"NOTIFY sent: source={source}")
+    except Exception as e:
+        log.error(f"NOTIFY failed: {e}")
+
+
+# ======================================================================
 #                    ОБНОВЛЕНИЕ МАТЕРИАЛИЗОВАННЫХ ПРЕДСТАВЛЕНИЙ
 # ======================================================================
 
@@ -447,6 +471,10 @@ class MainOrchestrator:
             self.stats['views_refresh_success'] += 1
         results['views'] = all_success
 
+        # NOTIFY: уведомляем API о новых данных
+        send_data_notify("5min", ["candles", "open_interest"])
+        send_data_notify("mv_refresh", ["mv_heatmap_stocks", "mv_oi_daily_stats"])
+
         total_duration = (datetime.now() - total_start).total_seconds()
         self.stats['total_duration'] += total_duration
         self.stats['cycles'] += 1
@@ -465,6 +493,7 @@ class MainOrchestrator:
         if success:
             self.stats['oi_aggregate_success'] += 1
             log.info(f"    ✓ Агрегация OI ({dur:.1f}с)")
+            send_data_notify("hourly", ["open_interest"])
         else:
             self.stats['errors'] += 1
             log.error(f"    ✗ Агрегация OI: {msg}")
@@ -776,6 +805,7 @@ class MainOrchestrator:
                     await self.run_macro_update()
                     await self.run_market_cap_update()
                     await self.run_breadth_update()
+                    send_data_notify("daily")
                     self.last_daily_update = slot_day
                     self.print_stats()
 

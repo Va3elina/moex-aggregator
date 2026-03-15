@@ -122,7 +122,7 @@ def get_engine():
 
 
 def ensure_table(engine):
-    """Убедиться что таблицы macro/macro_data существуют и зарегистрировать индикатор."""
+    """Убедиться что таблицы macro/macro_data/stock_market_cap существуют и зарегистрировать индикатор."""
     with engine.connect() as conn:
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS macro (
@@ -149,6 +149,20 @@ def ensure_table(engine):
         conn.execute(text("""
             CREATE INDEX IF NOT EXISTS idx_macro_data_indicator_date
             ON macro_data(indicator, period_date)
+        """))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS stock_market_cap (
+                id SERIAL PRIMARY KEY,
+                sec_id VARCHAR(20) NOT NULL,
+                period_date DATE NOT NULL,
+                market_cap NUMERIC(24, 2) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(sec_id, period_date)
+            )
+        """))
+        conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS idx_stock_market_cap_secid
+            ON stock_market_cap(sec_id, period_date DESC)
         """))
         conn.execute(text("""
             INSERT INTO macro (indicator, name, frequency, source)
@@ -207,8 +221,103 @@ def validate_series_jumps(data: List[Tuple[date, float]]) -> List[str]:
 #               SmartLab: ежедневная капитализация
 # ======================================================================
 
+def parse_per_company_caps(html_clean: str) -> List[Tuple[str, float]]:
+    """
+    Парсит HTML SmartLab и извлекает капитализацию по каждой компании.
+
+    Формат строки:
+        <td>1</td>
+        <td><a href="/forum/SBER">Сбербанк</a></td>
+        <td>SBER</td>
+        <td>...</td>  <!-- chart icon -->
+        <td>...</td>  <!-- fundamental icon -->
+        <td><strong> 7 151 </strong></td>  <!-- market cap -->
+
+    Возвращает список (ticker, market_cap_bln).
+    """
+    results = []
+    rows = re.findall(r'<tr[^>]*>(.*?)</tr>', html_clean, re.DOTALL)
+
+    for row in rows:
+        # Ищем строки с тикерами (ссылка на /q/TICKER, но не на shares_fundamental)
+        if '/q/' not in row or 'shares_fundamental' in row:
+            continue
+
+        cells = re.findall(r'<td[^>]*>(.*?)</td>', row, re.DOTALL)
+        if len(cells) < 6:
+            continue
+
+        # cells[2] = тикер (plain text)
+        ticker = re.sub(r'<[^>]+>', '', cells[2]).strip()
+        if not ticker or not re.match(r'^[A-Za-z0-9]+$', ticker):
+            continue
+
+        # cells[5] = капитализация в <strong>, убираем HTML-теги
+        cap_text = re.sub(r'<[^>]+>', '', cells[5]).strip()
+        cap_match = re.search(r'([\d][\d\s]*)', cap_text)
+        if not cap_match:
+            continue
+
+        raw_cap = cap_match.group(1).strip().replace(' ', '')
+        if not raw_cap:
+            continue
+
+        try:
+            cap_value = float(raw_cap)
+            if cap_value > 0:
+                results.append((ticker, cap_value))
+        except ValueError:
+            continue
+
+    return results
+
+
+def save_per_company_caps(engine, caps: List[Tuple[str, float]]) -> int:
+    """Сохраняет капитализацию по компаниям, только для тикеров из instruments."""
+    # Загружаем список нужных тикеров
+    with engine.connect() as conn:
+        rows = conn.execute(text(
+            "SELECT sec_id FROM instruments WHERE type = 'stock'"
+        )).fetchall()
+    stock_tickers = {r[0] for r in rows}
+
+    # Маппинг привилегированных акций к SmartLab тикерам (SmartLab показывает одну капитализацию)
+    # SBERP → SBER, SNGSP → SNGS, TATNP → TATN, TRNFP → TRNF
+    pref_to_smartlab = {"TRNFP": "TRNF"}  # Транснефть: в instruments только TRNFP
+    for t in stock_tickers:
+        if t.endswith('P') and t[:-1] not in pref_to_smartlab:
+            common = t[:-1]
+            pref_to_smartlab[t] = common
+
+    # Строим словарь тикер→капитализация
+    cap_by_ticker = {ticker: cap for ticker, cap in caps}
+
+    today = date.today()
+    saved = 0
+
+    with engine.connect() as conn:
+        for ticker in stock_tickers:
+            # Для привилегированных берём капитализацию обыкновенных
+            lookup = pref_to_smartlab.get(ticker, ticker)
+            cap_value = cap_by_ticker.get(lookup)
+            if cap_value is None:
+                continue
+            conn.execute(text("""
+                INSERT INTO stock_market_cap (sec_id, period_date, market_cap)
+                VALUES (:sec_id, :pd, :cap)
+                ON CONFLICT (sec_id, period_date) DO UPDATE SET
+                    market_cap = EXCLUDED.market_cap,
+                    created_at = CURRENT_TIMESTAMP
+            """), {"sec_id": ticker, "pd": today, "cap": cap_value})
+            saved += 1
+        conn.commit()
+
+    log.info(f"  Капитализация по компаниям: {saved}/{len(stock_tickers)} сохранено (из {len(caps)} на SmartLab)")
+    return saved
+
+
 def fetch_from_smartlab(engine) -> int:
-    """Парсит SmartLab и сохраняет сегодняшнюю полную капитализацию рынка."""
+    """Парсит SmartLab и сохраняет капитализацию (общую + по компаниям)."""
     log.info("Загрузка капитализации с SmartLab...")
     log.debug(f"  URL: {SMARTLAB_URL}")
 
@@ -230,6 +339,7 @@ def fetch_from_smartlab(engine) -> int:
         # Нормализуем HTML: заменяем &nbsp; на пробелы
         html_clean = html.replace('&nbsp;', ' ').replace('\xa0', ' ')
 
+        # === Общая капитализация ===
         # Формат SmartLab:
         #   <td ...>Всего:</td>
         #   <td><strong> 54 273 </strong></td>
@@ -259,7 +369,7 @@ def fetch_from_smartlab(engine) -> int:
             log.error(f"  Валидация не пройдена: {msg}")
             return 0
 
-        # Сохраняем
+        # Сохраняем общую
         today = date.today()
         with engine.connect() as conn:
             conn.execute(text("""
@@ -272,6 +382,14 @@ def fetch_from_smartlab(engine) -> int:
             conn.commit()
 
         log.info(f"  Сохранено: {today} = {cap_value:,.0f} млрд руб")
+
+        # === Капитализация по компаниям ===
+        per_company = parse_per_company_caps(html_clean)
+        if per_company:
+            save_per_company_caps(engine, per_company)
+        else:
+            log.warning("  Не удалось распарсить капитализацию по компаниям")
+
         return 1
 
     except urllib.error.URLError as e:

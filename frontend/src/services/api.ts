@@ -11,6 +11,26 @@ import type {
 // При необходимости можно переопределить через VITE_API_BASE.
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '';
 
+/**
+ * Обёртка над fetch с автоматической авторизацией и обработкой 403.
+ * Добавляет Bearer token если он есть в localStorage.
+ */
+export async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
+  const token = localStorage.getItem('access_token');
+  const headers: Record<string, string> = {};
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  if (init?.headers) Object.assign(headers, init.headers);
+
+  const response = await fetch(url, { ...init, headers });
+
+  if (response.status === 403) {
+    const data = await response.json().catch(() => ({ detail: 'Доступ ограничен' }));
+    throw new Error(data.detail || 'Для доступа необходима авторизация');
+  }
+
+  return response;
+}
+
 // ==================== ИНСТРУМЕНТЫ ====================
 
 export async function getInstruments(
@@ -77,7 +97,7 @@ export async function getChartData(
     period
   });
 
-  const response = await fetch(`${API_BASE}/api/chart/${secId}?${params}`);
+  const response = await apiFetch(`${API_BASE}/api/chart/${secId}?${params}`);
   if (!response.ok) throw new Error('Failed to fetch chart data');
   return response.json();
 }
@@ -132,6 +152,7 @@ export interface HeatmapStock {
   value_1d: number;
   value_1w: number;
   value_1m: number;
+  market_cap: number;
 }
 
 export interface HeatmapSector {
@@ -222,7 +243,7 @@ export async function getFundsChartData(
     category,
     period
   });
-  const response = await fetch(`${API_BASE}/api/funds/chart?${params}`);
+  const response = await apiFetch(`${API_BASE}/api/funds/chart?${params}`);
   if (!response.ok) throw new Error('Failed to fetch funds chart data');
   return response.json();
 }
@@ -266,7 +287,7 @@ export async function getFundsFlows(
   if (fundIds && fundIds.length > 0) {
     params.set('fund_ids', fundIds.join(','));
   }
-  const response = await fetch(`${API_BASE}/api/funds/flows?${params}`);
+  const response = await apiFetch(`${API_BASE}/api/funds/flows?${params}`);
   if (!response.ok) throw new Error('Failed to fetch funds flows');
   return response.json();
 }
@@ -330,7 +351,7 @@ export async function getFearIndexHistory(
   period: FearIndexPeriod = '3m'
 ): Promise<FearIndexHistoryResponse> {
   const params = new URLSearchParams({ period });
-  const response = await fetch(`${API_BASE}/api/funds/fear-index/history?${params}`);
+  const response = await apiFetch(`${API_BASE}/api/funds/fear-index/history?${params}`);
   if (!response.ok) throw new Error('Failed to fetch fear index history');
   return response.json();
 }
@@ -385,7 +406,7 @@ export async function getBreadthHistory(
     ema_period: emaPeriod.toString(),
     days: days.toString()
   });
-  const response = await fetch(`${API_BASE}/api/breadth/history?${params}`);
+  const response = await apiFetch(`${API_BASE}/api/breadth/history?${params}`);
   if (!response.ok) throw new Error('Failed to fetch breadth history');
   return response.json();
 }
@@ -427,7 +448,7 @@ export async function getBuffettCapGdp(
     period,
     smooth: smooth.toString()
   });
-  const response = await fetch(`${API_BASE}/api/buffett/cap-gdp?${params}`);
+  const response = await apiFetch(`${API_BASE}/api/buffett/cap-gdp?${params}`);
   if (!response.ok) throw new Error('Failed to fetch Buffett cap/gdp');
   return response.json();
 }
@@ -437,7 +458,7 @@ export async function getBuffettMcftrM2(
   smooth: boolean = true
 ): Promise<BuffettMcftrM2Response> {
   const params = new URLSearchParams({ period, smooth: smooth.toString() });
-  const response = await fetch(`${API_BASE}/api/buffett/mcftr-m2?${params}`);
+  const response = await apiFetch(`${API_BASE}/api/buffett/mcftr-m2?${params}`);
   if (!response.ok) throw new Error('Failed to fetch Buffett mcftr/m2');
   return response.json();
 }

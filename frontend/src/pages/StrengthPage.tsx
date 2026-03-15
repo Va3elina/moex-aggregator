@@ -1,5 +1,6 @@
-import { memo, useEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { TrendingUp, Activity, ArrowUp, ArrowDown, BarChart2, LineChart, Filter } from 'lucide-react';
+import { memo, useEffect, useLayoutEffect, useState, useMemo, useRef, useCallback } from 'react';
+import { TrendingUp, Activity, ArrowUp, ArrowDown, BarChart2, LineChart, Filter, Lock } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import ChartNavigator from '../components/ChartNavigator';
 import {
     getBreadthCurrent,
@@ -7,6 +8,9 @@ import {
     type BreadthCurrentResponse,
     type BreadthHistoryResponse,
 } from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
+import { isPeriodAllowed } from '../config/accessControl';
+import { useRealtimeData } from '../hooks/useRealtimeData';
 
 type Period = '3m' | '6m' | '1y' | '2y' | 'all';
 type ChartMode = 'line' | 'histogram';
@@ -55,6 +59,8 @@ const SECTORS: Record<string, string[]> = {
 const CHART_PADDING = { left: 10, right: 70, top: 10, bottom: 30 } as const;
 
 export default function StrengthPage() {
+    const { isAuthenticated } = useAuth();
+    const navigate = useNavigate();
     const [period, setPeriod] = useState<Period>('1y');
     const emaPeriod = EMA_PERIOD; // Fixed EMA200
     const [chartMode, setChartMode] = useState<ChartMode>('histogram');
@@ -74,27 +80,29 @@ export default function StrengthPage() {
     const mouseMoveRaf = useRef<number | null>(null);
     const isNavDragRef = useRef(false);
 
-    useEffect(() => {
-        const fetchData = async () => {
-            // Показываем loading только при первой загрузке (нет данных)
-            if (!current && !history) setLoading(true);
-            setError(null);
-            try {
-                const [currentData, historyData] = await Promise.all([
-                    getBreadthCurrent(emaPeriod),
-                    getBreadthHistory(emaPeriod, PERIOD_DAYS[period])
-                ]);
-                setCurrent(currentData);
-                setHistory(historyData);
-            } catch (err) {
-                setError('Не удалось загрузить данные');
-                console.error(err);
-            } finally {
-                setLoading(false);
-            }
-        };
-        fetchData();
+    const loadData = useCallback(async () => {
+        // Показываем loading только при первой загрузке (нет данных)
+        if (!current && !history) setLoading(true);
+        setError(null);
+        try {
+            const [currentData, historyData] = await Promise.all([
+                getBreadthCurrent(emaPeriod),
+                getBreadthHistory(emaPeriod, PERIOD_DAYS[period])
+            ]);
+            setCurrent(currentData);
+            setHistory(historyData);
+        } catch (err) {
+            setError('Не удалось загрузить данные');
+            console.error(err);
+        } finally {
+            setLoading(false);
+        }
     }, [emaPeriod, period]);
+
+    useEffect(() => { loadData(); }, [loadData]);
+
+    // SSE: автоматическое обновление при новых данных
+    useRealtimeData(['daily', 'breadth'], loadData);
 
     // Данные для графиков
     const breadthData = useMemo(() => {
@@ -250,29 +258,43 @@ export default function StrengthPage() {
             <div className="flex items-center gap-4 mb-6 flex-wrap">
                 {/* Период */}
                 <div className="flex items-center gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
-                    {(Object.entries(PERIOD_LABELS) as [Period, string][]).map(([key, label]) => (
-                        <button
-                            key={key}
-                            onClick={() => setPeriod(key)}
-                            className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-all ${period === key ? 'btn-control active' : 'text-theme-secondary hover:text-theme-primary'}`}
-                        >
-                            {label}
-                        </button>
-                    ))}
+                    {(Object.entries(PERIOD_LABELS) as [Period, string][]).map(([key, label]) => {
+                        const allowed = isPeriodAllowed(key, isAuthenticated);
+                        return (
+                            <button
+                                key={key}
+                                onClick={() => {
+                                    if (!allowed) { navigate('/login'); return; }
+                                    setPeriod(key);
+                                }}
+                                title={!allowed ? 'Войдите для доступа' : undefined}
+                                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                                    !allowed
+                                        ? 'text-theme-muted cursor-not-allowed opacity-50'
+                                        : period === key
+                                            ? 'btn-control active'
+                                            : 'text-theme-secondary hover:text-theme-primary'
+                                }`}
+                            >
+                                {label}
+                                {!allowed && <Lock className="inline-block ml-0.5 w-3 h-3" />}
+                            </button>
+                        );
+                    })}
                 </div>
 
                 {/* Тип графика breadth */}
                 <div className="flex items-center gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
                     <button
                         onClick={() => setChartMode('line')}
-                        className={`p-2 rounded-lg transition-all ${chartMode === 'line' ? 'bg-white/10' : ''}`}
+                        className={`p-2 rounded-lg transition-colors ${chartMode === 'line' ? 'bg-white/10' : ''}`}
                         title="Линия"
                     >
                         <LineChart size={18} className={chartMode === 'line' ? 'text-theme-accent' : 'text-theme-secondary'} />
                     </button>
                     <button
                         onClick={() => setChartMode('histogram')}
-                        className={`p-2 rounded-lg transition-all ${chartMode === 'histogram' ? 'bg-white/10' : ''}`}
+                        className={`p-2 rounded-lg transition-colors ${chartMode === 'histogram' ? 'bg-white/10' : ''}`}
                         title="Гистограмма"
                     >
                         <BarChart2 size={18} className={chartMode === 'histogram' ? 'text-theme-accent' : 'text-theme-secondary'} />
@@ -282,7 +304,7 @@ export default function StrengthPage() {
                 {/* Показать IMOEX */}
                 <button
                     onClick={() => setShowPrice(!showPrice)}
-                    className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-all border ${showPrice ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400' : 'border-theme text-theme-secondary'
+                    className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors border ${showPrice ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400' : 'border-theme text-theme-secondary'
                         }`}
                 >
                     IMOEX
@@ -326,154 +348,140 @@ export default function StrengthPage() {
                         </div>
                     </div>
                 ) : (<>
-                {/* Индикатор обновления данных */}
-                {loading && syncedData.length > 0 && (
-                    <div className="absolute top-3 right-4 z-20 flex items-center gap-2 bg-theme-tertiary/90 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-theme">
-                        <div className="w-4 h-4 border-2 border-[#C8FF2E] border-t-transparent rounded-full animate-spin" />
-                        <span className="text-xs text-theme-secondary">Обновление...</span>
-                    </div>
-                )}
-
-                {/* Тултип-карточка при hover — следует за мышью между графиками */}
-                {hoverData && hoverIndex !== null && containerRef.current && (() => {
-                    const rect = containerRef.current!.getBoundingClientRect();
-                    const px4 = 16; // px-4 на внутренних div-обёртках графиков
-                    const chartWidth = rect.width - 2 * px4 - padding.left - padding.right;
-                    const hoverX = px4 + padding.left + (hoverIndex / Math.max(displaySyncedData.length - 1, 1)) * chartWidth;
-                    const isRightHalf = hoverX > px4 + padding.left + chartWidth / 2;
-                    const cardLeft = isRightHalf ? hoverX - 190 - 12 : hoverX + 12;
-
-                    const dateStr = new Date(hoverData.time).toLocaleDateString('ru-RU', {
-                        day: 'numeric', month: 'short', year: 'numeric'
-                    });
-
-                    const breadthColor = hoverData.breadth >= 70 ? '#22c55e'
-                        : hoverData.breadth >= 50 ? '#4ade80'
-                        : hoverData.breadth < 30 ? '#ef4444'
-                        : '#fbbf24';
-
-                    // Карточка ~60px высотой, ограничиваем в пределах контейнера
-                    const cardHeight = showPrice ? 60 : 34;
-                    const containerHeight = rect.height;
-                    const clampedCardTop = Math.min(Math.max(hoverY - cardHeight / 2, 4), containerHeight - cardHeight - 4);
-
-                    return (
-                        <>
-                            {/* Дата — закреплена наверху, привязана к вертикальной линии */}
-                            <div
-                                className="absolute z-30 pointer-events-none"
-                                style={{
-                                    left: Math.min(Math.max(hoverX - 60, 4), rect.width - 128),
-                                    top: 4,
-                                }}
-                            >
-                                <span className="text-[11px] text-theme-secondary bg-theme-tertiary/90 backdrop-blur-sm px-2 py-0.5 rounded border border-theme whitespace-nowrap">
-                                    {dateStr}
-                                </span>
-                            </div>
-
-                            {/* Карточка значений — следует за курсором */}
-                            <div
-                                className="absolute z-30 pointer-events-none"
-                                style={{
-                                    left: cardLeft,
-                                    top: clampedCardTop,
-                                }}
-                            >
-                                <div className="bg-theme-tertiary/95 backdrop-blur-sm rounded-lg border border-theme shadow-xl py-1.5 px-3">
-                                    {showPrice && (
-                                        <div className="flex items-center justify-between gap-3 py-0.5">
-                                            <div className="flex items-center gap-1.5">
-                                                <span className="w-2 h-2 rounded-full flex-shrink-0 bg-[#6366f1]" />
-                                                <span className="text-[11px] text-theme-secondary">IMOEX</span>
-                                            </div>
-                                            <span className="text-xs font-semibold text-theme-primary whitespace-nowrap">
-                                                {hoverData.imoex.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
-                                            </span>
-                                        </div>
-                                    )}
-                                    <div className="flex items-center justify-between gap-3 py-0.5">
-                                        <div className="flex items-center gap-1.5">
-                                            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: breadthColor }} />
-                                            <span className="text-[11px] text-theme-secondary">% выше EMA</span>
-                                        </div>
-                                        <span className="text-xs font-semibold text-theme-primary whitespace-nowrap">
-                                            {hoverData.breadth.toFixed(1)}%
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-                        </>
-                    );
-                })()}
-
-                {/* График IMOEX (верхний) */}
-                {showPrice && displaySyncedData.length > 0 && (
-                    <div className="px-4 pt-3 pb-2 border-b border-theme relative">
-                        <div className="flex items-center gap-2 mb-1">
-                            <span className="w-2.5 h-2.5 rounded-full bg-[#6366f1]" />
-                            <span className="text-xs text-theme-secondary">Индекс МосБиржи</span>
-                        </div>
-                        <SyncedPriceChart
-                            syncedData={displaySyncedData}
-                            hoverIndex={hoverIndex}
-                            height={300}
-                            padding={padding}
-                            isNavDragRef={isNavDragRef}
-                        />
-                    </div>
-                )}
-
-                {/* График Breadth (нижний) */}
-                <div className="px-4 pt-3 pb-2 relative">
-                    <div className="flex items-center gap-2 mb-1">
-                        <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: 'var(--accent)' }} />
-                        <span className="text-xs text-theme-secondary">% акций выше EMA{emaPeriod}</span>
-                        <div className="flex items-center gap-2 ml-auto text-[10px]">
-                            <span className="flex items-center gap-1">
-                                <span className="w-3 border-t border-dashed border-emerald-500" />
-                                <span className="text-emerald-400">70</span>
-                            </span>
-                            <span className="flex items-center gap-1">
-                                <span className="w-3 border-t border-amber-500" />
-                                <span className="text-amber-400">50</span>
-                            </span>
-                            <span className="flex items-center gap-1">
-                                <span className="w-3 border-t border-dashed border-red-500" />
-                                <span className="text-red-400">30</span>
-                            </span>
-                        </div>
-                    </div>
-                    {displaySyncedData.length > 0 ? (
-                        <SyncedBreadthChart
-                            syncedData={displaySyncedData}
-                            hoverIndex={hoverIndex}
-                            height={150}
-                            mode={chartMode}
-                            padding={padding}
-                            isNavDragRef={isNavDragRef}
-                        />
-                    ) : (
-                        <div className="h-48 flex items-center justify-center text-theme-muted">
-                            Нет данных для отображения
+                    {/* Индикатор обновления данных */}
+                    {loading && syncedData.length > 0 && (
+                        <div className="absolute top-3 right-4 z-20 flex items-center gap-2 bg-theme-tertiary/90 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-theme">
+                            <div className="w-4 h-4 border-2 border-[#C8FF2E] border-t-transparent rounded-full animate-spin" />
+                            <span className="text-xs text-theme-secondary">Обновление...</span>
                         </div>
                     )}
-                </div>
 
-                {/* Навигатор временного диапазона */}
-                {syncedData.length > 0 && (
-                    <div
-                        className="px-4 pb-3"
-                        onMouseMove={e => e.stopPropagation()}
-                        onMouseEnter={() => setHoverIndex(null)}
-                    >
-                        <ChartNavigator
-                            data={navigatorData}
-                            onChange={(s, e, isDrag) => { isNavDragRef.current = isDrag; setNavRange([s, e]); }}
-                            color="#8b5cf6"
-                        />
+                    {/* Тултип-карточка при hover — следует за мышью между графиками */}
+                    {hoverData && hoverIndex !== null && containerRef.current && (() => {
+                        const rect = containerRef.current!.getBoundingClientRect();
+                        const px4 = 16; // px-4 на внутренних div-обёртках графиков
+                        const chartWidth = rect.width - 2 * px4 - padding.left - padding.right;
+                        const hoverX = px4 + padding.left + (hoverIndex / Math.max(displaySyncedData.length - 1, 1)) * chartWidth;
+                        const isRightHalf = hoverX > px4 + padding.left + chartWidth / 2;
+                        const cardLeft = isRightHalf ? hoverX - 190 - 12 : hoverX + 12;
+
+                        const dateStr = new Date(hoverData.time).toLocaleDateString('ru-RU', {
+                            day: 'numeric', month: 'short', year: 'numeric'
+                        });
+
+                        const breadthColor = hoverData.breadth >= 70 ? '#22c55e'
+                            : hoverData.breadth >= 50 ? '#4ade80'
+                                : hoverData.breadth < 30 ? '#ef4444'
+                                    : '#fbbf24';
+
+                        // Карточка ~60px высотой, ограничиваем в пределах контейнера
+                        const cardHeight = showPrice ? 60 : 34;
+                        const containerHeight = rect.height;
+                        const clampedCardTop = Math.min(Math.max(hoverY - cardHeight / 2, 4), containerHeight - cardHeight - 4);
+
+                        return (
+                            <>
+                                {/* Дата — закреплена наверху, привязана к вертикальной линии */}
+                                <div
+                                    className="absolute z-30 pointer-events-none"
+                                    style={{
+                                        left: Math.min(Math.max(hoverX - 60, 4), rect.width - 128),
+                                        top: 4,
+                                    }}
+                                >
+                                    <span className="text-[11px] text-theme-secondary bg-theme-tertiary/90 backdrop-blur-sm px-2 py-0.5 rounded border border-theme whitespace-nowrap">
+                                        {dateStr}
+                                    </span>
+                                </div>
+
+                                {/* Карточка значений — следует за курсором */}
+                                <div
+                                    className="absolute z-30 pointer-events-none"
+                                    style={{
+                                        left: cardLeft,
+                                        top: clampedCardTop,
+                                    }}
+                                >
+                                    <div className="bg-theme-tertiary/95 backdrop-blur-sm rounded-lg border border-theme shadow-xl py-1.5 px-3">
+                                        {showPrice && (
+                                            <div className="flex items-center justify-between gap-3 py-0.5">
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="w-2 h-2 rounded-full flex-shrink-0 bg-[#6366f1]" />
+                                                    <span className="text-[11px] text-theme-secondary">IMOEX</span>
+                                                </div>
+                                                <span className="text-xs font-semibold text-theme-primary whitespace-nowrap">
+                                                    {hoverData.imoex.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
+                                                </span>
+                                            </div>
+                                        )}
+                                        <div className="flex items-center justify-between gap-3 py-0.5">
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: breadthColor }} />
+                                                <span className="text-[11px] text-theme-secondary">% выше EMA</span>
+                                            </div>
+                                            <span className="text-xs font-semibold text-theme-primary whitespace-nowrap">
+                                                {hoverData.breadth.toFixed(1)}%
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </>
+                        );
+                    })()}
+
+                    {/* График IMOEX (верхний) */}
+                    {showPrice && displaySyncedData.length > 0 && (
+                        <div className="px-4 pt-3 pb-2 border-b border-theme relative" style={{ minHeight: 324 }}>
+                            <div className="flex items-center justify-center gap-2 mb-1">
+                                <span className="w-2 h-2 rounded-full bg-[#6366f1]" />
+                                <span className="text-xs text-theme-secondary">Индекс МосБиржи</span>
+                            </div>
+                            <SyncedPriceChart
+                                syncedData={displaySyncedData}
+                                hoverIndex={hoverIndex}
+                                height={300}
+                                padding={padding}
+                                isNavDragRef={isNavDragRef}
+                            />
+                        </div>
+                    )}
+
+                    {/* График Breadth (нижний) */}
+                    <div className="px-4 pt-3 pb-2 relative" style={{ minHeight: 174 }}>
+                        <div className="flex items-center justify-center gap-2 mb-1">
+                            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--accent)' }} />
+                            <span className="text-xs text-theme-secondary">% акций выше EMA{emaPeriod}</span>
+                        </div>
+                        {displaySyncedData.length > 0 ? (
+                            <SyncedBreadthChart
+                                syncedData={displaySyncedData}
+                                hoverIndex={hoverIndex}
+                                height={150}
+                                mode={chartMode}
+                                padding={padding}
+                                isNavDragRef={isNavDragRef}
+                            />
+                        ) : (
+                            <div className="h-48 flex items-center justify-center text-theme-muted">
+                                Нет данных для отображения
+                            </div>
+                        )}
                     </div>
-                )}
+
+                    {/* Навигатор временного диапазона */}
+                    {syncedData.length > 0 && (
+                        <div
+                            className="px-4 pb-3"
+                            onMouseMove={e => e.stopPropagation()}
+                            onMouseEnter={() => setHoverIndex(null)}
+                        >
+                            <ChartNavigator
+                                data={navigatorData}
+                                onChange={(s, e, isDrag) => { isNavDragRef.current = isDrag; setNavRange([s, e]); }}
+                                color="#8b5cf6"
+                            />
+                        </div>
+                    )}
                 </>)}
             </div>
 
@@ -491,20 +499,20 @@ export default function StrengthPage() {
                             {Object.keys(SECTORS)
                                 .filter(sector => (sectorCounts[sector] ?? 0) > 0)
                                 .map((sector) => (
-                                <button
-                                    key={sector}
-                                    onClick={() => setSelectedSector(sector)}
-                                    className={`px-3 py-1 text-xs font-medium rounded-full transition-all ${selectedSector === sector
-                                        ? 'bg-white/10 text-theme-primary border border-theme'
-                                        : 'text-theme-secondary hover:text-theme-primary'
-                                        }`}
-                                >
-                                    {sector}
-                                    {sector !== 'Все' && (
-                                        <span className="ml-1 opacity-50">({sectorCounts[sector]})</span>
-                                    )}
-                                </button>
-                            ))}
+                                    <button
+                                        key={sector}
+                                        onClick={() => setSelectedSector(sector)}
+                                        className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${selectedSector === sector
+                                            ? 'bg-white/10 text-theme-primary border border-theme'
+                                            : 'text-theme-secondary hover:text-theme-primary'
+                                            }`}
+                                    >
+                                        {sector}
+                                        {sector !== 'Все' && (
+                                            <span className="ml-1 opacity-50">({sectorCounts[sector]})</span>
+                                        )}
+                                    </button>
+                                ))}
                         </div>
                     </div>
 
@@ -611,29 +619,34 @@ function SyncedPriceChart({
     isNavDragRef?: { current: boolean };
 }) {
     const svgRef = useRef<SVGSVGElement>(null);
-    const [width, setWidth] = useState(800);
+    const chartWrapRef = useRef<HTMLDivElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [width, setWidth] = useState(0);
     const [animLinePath, setAnimLinePath] = useState('');
     const [animAreaPath, setAnimAreaPath] = useState('');
     const prevPtsRef = useRef<{ x: number; y: number }[]>([]);
+    const currPtsRef = useRef<{ x: number; y: number }[]>([]); // текущая визуальная позиция
     const animRef = useRef<number | null>(null);
     const isFirstRef = useRef(true);
+    const prevWidthRef = useRef(0);
+    const [revealed, setRevealed] = useState(false);
 
     useEffect(() => {
-        const updateWidth = () => {
-            if (svgRef.current?.parentElement) {
-                setWidth(svgRef.current.getBoundingClientRect().width);
-            }
-        };
-        updateWidth();
-        window.addEventListener('resize', updateWidth);
-        return () => window.removeEventListener('resize', updateWidth);
+        const el = containerRef.current;
+        if (!el) return;
+        const ro = new ResizeObserver(entries => {
+            const w = entries[0]?.contentRect.width;
+            if (w && w > 0) setWidth(w);
+        });
+        ro.observe(el);
+        return () => ro.disconnect();
     }, []);
 
     const chartWidth = width - padding.left - padding.right;
     const chartHeight = height - padding.top - padding.bottom;
 
     const chartData = useMemo(() => {
-        if (!syncedData.length) return null;
+        if (!syncedData.length || chartWidth <= 0) return null;
 
         const values = syncedData.map(d => d.imoex);
         const minVal = Math.min(...values);
@@ -656,16 +669,29 @@ function SyncedPriceChart({
     }, [syncedData, chartWidth, chartHeight, padding]);
 
     // Анимация морфинга
-    useEffect(() => {
+    useLayoutEffect(() => {
         if (!chartData) return;
         const target = chartData.points.map(p => ({ x: p.x, y: p.y }));
         const bottom = padding.top + chartHeight;
 
         if (animRef.current) cancelAnimationFrame(animRef.current);
 
+        // Resize — мгновенное обновление без анимации
+        if (prevWidthRef.current !== 0 && prevWidthRef.current !== chartWidth) {
+            prevWidthRef.current = chartWidth;
+            prevPtsRef.current = target;
+            currPtsRef.current = [];
+            setAnimLinePath(ptsToPath(target));
+            setAnimAreaPath(ptsToArea(target, bottom));
+            if (!revealed) setRevealed(true);
+            return;
+        }
+        prevWidthRef.current = chartWidth;
+
         // Во время перетаскивания навигатора — мгновенное обновление без анимации
         if (isNavDragRef?.current) {
             prevPtsRef.current = target;
+            currPtsRef.current = [];
             setAnimLinePath(ptsToPath(target));
             setAnimAreaPath(ptsToArea(target, bottom));
             return;
@@ -674,32 +700,29 @@ function SyncedPriceChart({
         if (isFirstRef.current || prevPtsRef.current.length === 0) {
             isFirstRef.current = false;
             prevPtsRef.current = target;
-            // Fade-in снизу
-            let start: number | null = null;
-            const fadeIn = (ts: number) => {
-                if (!start) start = ts;
-                const t = easeOutCubic(Math.min((ts - start) / 500, 1));
-                const anim = target.map(p => ({ x: p.x, y: bottom - (bottom - p.y) * t }));
-                setAnimLinePath(ptsToPath(anim));
-                setAnimAreaPath(ptsToArea(anim, bottom));
-                if (t < 1) animRef.current = requestAnimationFrame(fadeIn);
-            };
-            animRef.current = requestAnimationFrame(fadeIn);
+            currPtsRef.current = [];
+            // CSS reveal слева направо
+            setAnimLinePath(ptsToPath(target));
+            setAnimAreaPath(ptsToArea(target, bottom));
+            setRevealed(true);
             return;
         }
 
-        const from = prevPtsRef.current;
+        // Стартуем с текущей визуальной позиции (если анимация была прервана)
+        const from = currPtsRef.current.length > 0 ? currPtsRef.current : prevPtsRef.current;
         let start: number | null = null;
         const animate = (ts: number) => {
             if (!start) start = ts;
             const t = easeOutCubic(Math.min((ts - start) / 600, 1));
             const interp = morphPts(from, target, t);
+            currPtsRef.current = interp;
             setAnimLinePath(ptsToPath(interp));
             setAnimAreaPath(ptsToArea(interp, bottom));
             if (t < 1) {
                 animRef.current = requestAnimationFrame(animate);
             } else {
                 prevPtsRef.current = target;
+                currPtsRef.current = [];
             }
         };
         animRef.current = requestAnimationFrame(animate);
@@ -707,41 +730,47 @@ function SyncedPriceChart({
         return () => { if (animRef.current) cancelAnimationFrame(animRef.current); };
     }, [chartData, chartHeight, padding.top]);
 
-    if (!chartData) return null;
-
-    const crosshairX = hoverIndex !== null && hoverIndex < syncedData.length
+    const crosshairX = chartData && hoverIndex !== null && hoverIndex < syncedData.length
         ? chartData.scaleX(hoverIndex) : null;
 
     return (
-        <svg ref={svgRef} width="100%" height={height} className="overflow-visible">
-            <defs>
-                <linearGradient id="priceGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#6366f1" stopOpacity="0.3" />
-                    <stop offset="100%" stopColor="#6366f1" stopOpacity="0" />
-                </linearGradient>
-            </defs>
+        <div ref={containerRef}>
+            <div ref={chartWrapRef}
+                className={revealed ? 'chart-reveal' : ''}
+                style={revealed ? undefined : { visibility: 'hidden' }}>
+                {width > 0 && chartData && (
+                    <svg ref={svgRef} width={width} height={height} className="overflow-visible">
+                        <defs>
+                            <linearGradient id="priceGradient" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#6366f1" stopOpacity="0.3" />
+                                <stop offset="100%" stopColor="#6366f1" stopOpacity="0" />
+                            </linearGradient>
+                        </defs>
 
-            <path d={animAreaPath} fill="url(#priceGradient)" />
-            <path d={animLinePath} fill="none" stroke="#6366f1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                        <path d={animAreaPath} fill="url(#priceGradient)" />
+                        <path d={animLinePath} fill="none" stroke="#6366f1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
 
-            {crosshairX !== null && (
-                <line x1={crosshairX} y1={padding.top} x2={crosshairX} y2={padding.top + chartHeight}
-                    stroke="var(--text-muted)" strokeWidth="1" strokeDasharray="3,3" />
-            )}
-            {crosshairX !== null && hoverIndex !== null && hoverIndex < chartData.points.length && (
-                <circle cx={chartData.points[hoverIndex].x} cy={chartData.points[hoverIndex].y}
-                    r={5} fill="#6366f1" stroke="white" strokeWidth="2" />
-            )}
+                        {crosshairX !== null && (
+                            <line x1={crosshairX} y1={padding.top} x2={crosshairX} y2={padding.top + chartHeight}
+                                stroke="var(--text-muted)" strokeWidth="1" strokeDasharray="3,3" />
+                        )}
+                        {crosshairX !== null && hoverIndex !== null && hoverIndex < chartData.points.length && (
+                            <circle cx={chartData.points[hoverIndex].x} cy={chartData.points[hoverIndex].y}
+                                r={5} fill="#6366f1" stroke="white" strokeWidth="2" />
+                        )}
 
-            {chartData.yTicks.map((tick, i) => (
-                <text key={i}
-                    x={width - padding.right + 8}
-                    y={Math.max(padding.top + 6, Math.min(tick.y, padding.top + chartHeight - 6))}
-                    textAnchor="start" dominantBaseline="middle" fill="var(--text-muted)" fontSize="11">
-                    {tick.value.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
-                </text>
-            ))}
-        </svg>
+                        {chartData.yTicks.map((tick, i) => (
+                            <text key={i}
+                                x={width - padding.right + 8}
+                                y={Math.max(padding.top + 6, Math.min(tick.y, padding.top + chartHeight - 6))}
+                                textAnchor="start" dominantBaseline="middle" fill="var(--text-muted)" fontSize="11">
+                                {tick.value.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
+                            </text>
+                        ))}
+                    </svg>
+                )}
+            </div>
+        </div>
     );
 }
 
@@ -819,27 +848,33 @@ function SyncedBreadthChart({
     isNavDragRef?: { current: boolean };
 }) {
     const svgRef = useRef<SVGSVGElement>(null);
-    const [width, setWidth] = useState(800);
+    const chartWrapRef = useRef<HTMLDivElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [width, setWidth] = useState(0);
 
     // Анимация для line mode
     const [animLinePath, setAnimLinePath] = useState('');
     const prevPtsRef = useRef<{ x: number; y: number }[]>([]);
+    const currPtsRef = useRef<{ x: number; y: number }[]>([]); // текущая визуальная позиция
     const animRef = useRef<number | null>(null);
     const isFirstRef = useRef(true);
 
     // Анимация для histogram mode
     const [animBars, setAnimBars] = useState<{ x: number; y: number; width: number; height: number; color: string }[]>([]);
     const prevBarsRef = useRef<{ y: number; height: number }[]>([]);
+    const currBarsRef = useRef<{ y: number; height: number }[]>([]);
+    const prevWidthRef = useRef(0);
+    const [revealed, setRevealed] = useState(false);
 
     useEffect(() => {
-        const updateWidth = () => {
-            if (svgRef.current?.parentElement) {
-                setWidth(svgRef.current.getBoundingClientRect().width);
-            }
-        };
-        updateWidth();
-        window.addEventListener('resize', updateWidth);
-        return () => window.removeEventListener('resize', updateWidth);
+        const el = containerRef.current;
+        if (!el) return;
+        const ro = new ResizeObserver(entries => {
+            const w = entries[0]?.contentRect.width;
+            if (w && w > 0) setWidth(w);
+        });
+        ro.observe(el);
+        return () => ro.disconnect();
     }, []);
 
     const chartWidth = width - padding.left - padding.right;
@@ -856,7 +891,7 @@ function SyncedBreadthChart({
     const breadthValues = useMemo(() => syncedData.map(d => d.breadth), [syncedData]);
 
     const chartData = useMemo(() => {
-        if (!syncedData.length) return null;
+        if (!syncedData.length || chartWidth <= 0) return null;
 
         const yMin = 0;
         const yMax = 100;
@@ -902,24 +937,46 @@ function SyncedBreadthChart({
             };
         });
 
-        const yTicks = [0, 25, 50, 75, 100].map(v => ({ value: v, y: scaleY(v) }));
+        const levelColors: Record<number, string> = { 70: '#22c55e', 50: '#f59e0b', 30: '#ef4444' };
+        const yTicks = [30, 50, 70].map(v => ({
+            value: v,
+            y: scaleY(v),
+            color: levelColors[v],
+        }));
 
         return { points, lineSegments, bars, levels, xTicks, yTicks, chartWidth, chartHeight, scaleX };
     }, [syncedData, chartWidth, chartHeight, padding, getColor]);
 
     // Морфинг-анимация
-    useEffect(() => {
+    useLayoutEffect(() => {
         if (!chartData) return;
         if (animRef.current) cancelAnimationFrame(animRef.current);
 
         const bottom = padding.top + chartHeight;
+
+        // Resize — мгновенное обновление без анимации
+        if (prevWidthRef.current !== 0 && prevWidthRef.current !== chartWidth) {
+            prevWidthRef.current = chartWidth;
+            const targetPts = chartData.points.map(p => ({ x: p.x, y: p.y }));
+            prevPtsRef.current = targetPts;
+            currPtsRef.current = [];
+            prevBarsRef.current = chartData.bars.map(b => ({ y: b.y, height: b.height }));
+            currBarsRef.current = [];
+            setAnimLinePath(ptsToPath(targetPts));
+            setAnimBars(chartData.bars);
+            if (!revealed) setRevealed(true);
+            return;
+        }
+        prevWidthRef.current = chartWidth;
 
         // Во время перетаскивания навигатора — мгновенное обновление без анимации
         if (isNavDragRef?.current) {
             const targetPts = chartData.points.map(p => ({ x: p.x, y: p.y }));
             const targetBars = chartData.bars;
             prevPtsRef.current = targetPts;
+            currPtsRef.current = [];
             prevBarsRef.current = targetBars.map(b => ({ y: b.y, height: b.height }));
+            currBarsRef.current = [];
             setAnimLinePath(ptsToPath(targetPts));
             setAnimBars(targetBars);
             return;
@@ -932,61 +989,47 @@ function SyncedBreadthChart({
             if (isFirstRef.current || prevPtsRef.current.length === 0) {
                 isFirstRef.current = false;
                 prevPtsRef.current = targetPts;
+                currPtsRef.current = [];
                 prevBarsRef.current = targetBars.map(b => ({ y: b.y, height: b.height }));
+                currBarsRef.current = [];
 
-                let start: number | null = null;
-                const fadeIn = (ts: number) => {
-                    if (!start) start = ts;
-                    const t = easeOutCubic(Math.min((ts - start) / 500, 1));
-
-                    // Animate line from bottom
-                    const animPts = targetPts.map(p => ({ x: p.x, y: bottom - (bottom - p.y) * t }));
-                    setAnimLinePath(ptsToPath(animPts));
-
-                    // Animate bars growing from bottom
-                    setAnimBars(targetBars.map(b => ({
-                        ...b,
-                        y: bottom - b.height * t,
-                        height: b.height * t,
-                    })));
-
-                    if (t < 1) animRef.current = requestAnimationFrame(fadeIn);
-                };
-                animRef.current = requestAnimationFrame(fadeIn);
+                // CSS reveal слева направо
+                setAnimLinePath(ptsToPath(targetPts));
+                setAnimBars(targetBars);
+                setRevealed(true);
                 return;
             }
 
-            const fromPts = prevPtsRef.current;
-            const fromBars = prevBarsRef.current;
+            // Стартуем с текущей визуальной позиции (если анимация была прервана)
+            const fromPts = currPtsRef.current.length > 0 ? currPtsRef.current : prevPtsRef.current;
+            const fromBars = currBarsRef.current.length > 0 ? currBarsRef.current : prevBarsRef.current;
             let start: number | null = null;
 
             const animate = (ts: number) => {
                 if (!start) start = ts;
                 const t = easeOutCubic(Math.min((ts - start) / 600, 1));
 
-                // Morph line
                 const interp = morphPts(fromPts, targetPts, t);
+                currPtsRef.current = interp;
                 setAnimLinePath(ptsToPath(interp));
 
-                // Morph bars
                 const n = Math.max(fromBars.length, targetBars.length);
                 const morphedBars: typeof targetBars = [];
                 for (let i = 0; i < n; i++) {
                     const fb = fromBars[Math.min(i, fromBars.length - 1)] || { y: bottom, height: 0 };
                     const tb = targetBars[Math.min(i, targetBars.length - 1)];
-                    morphedBars.push({
-                        ...tb,
-                        y: lerp(fb.y, tb.y, t),
-                        height: lerp(fb.height, tb.height, t),
-                    });
+                    morphedBars.push({ ...tb, y: lerp(fb.y, tb.y, t), height: lerp(fb.height, tb.height, t) });
                 }
+                currBarsRef.current = morphedBars.map(b => ({ y: b.y, height: b.height }));
                 setAnimBars(morphedBars);
 
                 if (t < 1) {
                     animRef.current = requestAnimationFrame(animate);
                 } else {
                     prevPtsRef.current = targetPts;
+                    currPtsRef.current = [];
                     prevBarsRef.current = targetBars.map(b => ({ y: b.y, height: b.height }));
+                    currBarsRef.current = [];
                 }
             };
             animRef.current = requestAnimationFrame(animate);
@@ -995,78 +1038,88 @@ function SyncedBreadthChart({
         return () => { if (animRef.current) cancelAnimationFrame(animRef.current); };
     }, [chartData, chartHeight, padding.top, mode]);
 
-    if (!chartData) return null;
-
-    const crosshairX = hoverIndex !== null && hoverIndex < syncedData.length ? chartData.scaleX(hoverIndex) : null;
+    const crosshairX = chartData && hoverIndex !== null && hoverIndex < syncedData.length ? chartData.scaleX(hoverIndex) : null;
 
     return (
-        <svg ref={svgRef} width="100%" height={height} className="overflow-visible">
-            <defs>
-                <linearGradient id="breadthGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.3" />
-                    <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
-                </linearGradient>
-                {/* Клип: бары не выходят за пределы области графика */}
-                <clipPath id="breadthChartClip">
-                    <rect x={padding.left} y={padding.top} width={chartWidth} height={chartHeight} />
-                </clipPath>
-            </defs>
+        <div ref={containerRef}>
+            <div ref={chartWrapRef}
+                className={revealed ? 'chart-reveal' : ''}
+                style={revealed ? undefined : { visibility: 'hidden' }}>
+                {width > 0 && chartData && (
+                    <svg ref={svgRef} width={width} height={height} className="overflow-visible">
+                        <defs>
+                            <linearGradient id="breadthGradient" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.3" />
+                                <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
+                            </linearGradient>
+                            {/* Клип: бары не выходят за пределы области графика */}
+                            <clipPath id="breadthChartClip">
+                                <rect x={padding.left} y={padding.top} width={chartWidth} height={chartHeight} />
+                            </clipPath>
+                        </defs>
 
-            {/* Reference levels */}
-            {chartData.levels.map((level, i) => (
-                <line key={i} x1={padding.left} y1={level.y} x2={width - padding.right} y2={level.y}
-                    stroke={level.color} strokeWidth="1" strokeDasharray={level.dash} opacity="0.5" />
-            ))}
+                        <g>
+                            {/* Reference levels */}
+                            {chartData.levels.map((level, i) => (
+                                <line key={i} x1={padding.left} y1={level.y} x2={width - padding.right} y2={level.y}
+                                    stroke={level.color} strokeWidth="1" strokeDasharray={level.dash} opacity="0.5" />
+                            ))}
 
-            {/* Animated histogram bars — clipPath не даёт барам заходить на Y-метки и за левый край */}
-            {mode === 'histogram' && (
-                <g clipPath="url(#breadthChartClip)">
-                    <HistogramBars bars={animBars} />
-                    {/* Highlight активного бара — перерисовывается только при смене hoverIndex (1 элемент) */}
-                    {hoverIndex !== null && animBars[hoverIndex] && (() => {
-                        const bar = animBars[hoverIndex];
-                        return <rect x={bar.x} y={bar.y} width={bar.width} height={bar.height}
-                            fill={bar.color} opacity={1} />;
-                    })()}
-                </g>
-            )}
+                            {/* Animated histogram bars — clipPath не даёт барам заходить на Y-метки и за левый край */}
+                            {mode === 'histogram' && (
+                                <g clipPath="url(#breadthChartClip)">
+                                    <HistogramBars bars={animBars} />
+                                    {/* Highlight активного бара — перерисовывается только при смене hoverIndex (1 элемент) */}
+                                    {hoverIndex !== null && animBars[hoverIndex] && (() => {
+                                        const bar = animBars[hoverIndex];
+                                        return <rect x={bar.x} y={bar.y} width={bar.width} height={bar.height}
+                                            fill={bar.color} opacity={1} />;
+                                    })()}
+                                </g>
+                            )}
 
-            {/* Animated line with colored segments — в memo-компоненте, не перерисовывается при смене hoverIndex */}
-            {mode === 'line' && (
-                <BreadthLineRenderer
-                    animLinePath={animLinePath}
-                    dataLength={syncedData.length}
-                    breadthValues={breadthValues}
-                    getColor={getColor}
-                />
-            )}
+                            {/* Animated line with colored segments — в memo-компоненте, не перерисовывается при смене hoverIndex */}
+                            {mode === 'line' && (
+                                <BreadthLineRenderer
+                                    animLinePath={animLinePath}
+                                    dataLength={syncedData.length}
+                                    breadthValues={breadthValues}
+                                    getColor={getColor}
+                                />
+                            )}
 
-            {/* Crosshair */}
-            {crosshairX !== null && (
-                <line x1={crosshairX} y1={padding.top} x2={crosshairX} y2={padding.top + chartData.chartHeight}
-                    stroke="var(--text-muted)" strokeWidth="1" strokeDasharray="3,3" />
-            )}
-            {crosshairX !== null && hoverIndex !== null && hoverIndex < chartData.points.length && (
-                <circle cx={chartData.points[hoverIndex].x} cy={chartData.points[hoverIndex].y}
-                    r={5} fill="var(--accent)" stroke="white" strokeWidth="2" />
-            )}
+                            {/* Crosshair */}
+                            {crosshairX !== null && (
+                                <line x1={crosshairX} y1={padding.top} x2={crosshairX} y2={padding.top + chartData.chartHeight}
+                                    stroke="var(--text-muted)" strokeWidth="1" strokeDasharray="3,3" />
+                            )}
+                            {crosshairX !== null && hoverIndex !== null && hoverIndex < chartData.points.length && (
+                                <circle cx={chartData.points[hoverIndex].x} cy={chartData.points[hoverIndex].y}
+                                    r={5} fill="var(--accent)" stroke="white" strokeWidth="2" />
+                            )}
 
-            {/* Y axis */}
-            {chartData.yTicks.map((tick, i) => (
-                <text key={i} x={width - padding.right + 8} y={tick.y}
-                    textAnchor="start" dominantBaseline="middle" fill="var(--text-muted)" fontSize="11">
-                    {tick.value}%
-                </text>
-            ))}
+                        </g>
 
-            {/* X axis — первая метка прижата влево, последняя вправо */}
-            {chartData.xTicks.map((tick, i) => (
-                <text key={i} x={tick.x} y={padding.top + chartData.chartHeight + 18}
-                    textAnchor={i === 0 ? 'start' : i === chartData.xTicks.length - 1 ? 'end' : 'middle'}
-                    fill="var(--text-muted)" fontSize="11">
-                    {tick.label}
-                </text>
-            ))}
-        </svg>
+                        {/* Y axis */}
+                        {chartData.yTicks.map((tick, i) => (
+                            <text key={i} x={width - padding.right + 8} y={tick.y}
+                                textAnchor="start" dominantBaseline="middle"
+                                fill={tick.color || 'var(--text-muted)'} fontSize="11">
+                                {tick.value}%
+                            </text>
+                        ))}
+
+                        {/* X axis — первая метка прижата влево, последняя вправо */}
+                        {chartData.xTicks.map((tick, i) => (
+                            <text key={i} x={tick.x} y={padding.top + chartData.chartHeight + 18}
+                                textAnchor={i === 0 ? 'start' : i === chartData.xTicks.length - 1 ? 'end' : 'middle'}
+                                fill="var(--text-muted)" fontSize="11">
+                                {tick.label}
+                            </text>
+                        ))}
+                    </svg>
+                )}
+            </div>
+        </div>
     );
 }

@@ -10,6 +10,8 @@ from api.database import get_db
 from api.models import Candle
 from api.schemas import CandleResponse, CandleListResponse
 from api.schemas.validators import validate_safe_id
+from api.routers.auth import get_current_user_optional
+from api.security.access_control import enforce_guest_limits
 
 router = APIRouter(prefix="/api/candles", tags=["candles"])
 
@@ -21,13 +23,17 @@ def get_candles(
         date_from: date | None = Query(None, description="Дата начала (YYYY-MM-DD)"),
         date_to: date | None = Query(None, description="Дата окончания (YYYY-MM-DD)"),
         limit: int = Query(10000, description="Максимум записей", ge=1, le=50000),
-        db: Session = Depends(get_db)
+        db: Session = Depends(get_db),
+        user = Depends(get_current_user_optional)
 ):
     """Получить свечи по sec_id"""
 
     # Валидация interval
     if interval not in {5, 60, 24}:
         raise HTTPException(status_code=400, detail="interval должен быть 5, 60 или 24")
+
+    # Ограничения для гостей
+    enforce_guest_limits(user, interval=interval)
 
     # Валидация sec_id
     try:

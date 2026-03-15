@@ -1,0 +1,23 @@
+// Ограничения для неавторизованных пользователей
+
+// Гости: только дневной таймфрейм
+export const GUEST_ALLOWED_INTERVALS = new Set([24]);
+
+// Гости: максимум 1 месяц данных
+export const GUEST_MAX_PERIOD = '1m';
+
+// Порядок периодов для сравнения
+const PERIOD_ORDER: Record<string, number> = {
+  '1d': 1, '1w': 7, '1m': 30, '3m': 90, '6m': 180,
+  '1y': 365, '2y': 730, '3y': 1095, '5y': 1825, 'all': 99999,
+};
+
+export function isIntervalAllowed(interval: number, isAuthenticated: boolean): boolean {
+  if (isAuthenticated) return true;
+  return GUEST_ALLOWED_INTERVALS.has(interval);
+}
+
+export function isPeriodAllowed(period: string, isAuthenticated: boolean): boolean {
+  if (isAuthenticated) return true;
+  return (PERIOD_ORDER[period] ?? 0) <= PERIOD_ORDER[GUEST_MAX_PERIOD];
+}

@@ -1,5 +1,6 @@
-import { useEffect, useState, useMemo } from 'react';
-import { Scale } from 'lucide-react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
+import { Scale, Lock } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import {
     getBuffettCapGdp,
     getBuffettMcftrM2,
@@ -8,6 +9,9 @@ import {
     type BuffettPeriod,
 } from '../services/api';
 import SimpleChart from '../components/SimpleChart';
+import { useAuth } from '../contexts/AuthContext';
+import { isPeriodAllowed } from '../config/accessControl';
+import { useRealtimeData } from '../hooks/useRealtimeData';
 
 type ViewMode = 'cap-gdp' | 'mcftr-m2';
 
@@ -20,6 +24,8 @@ const PERIOD_LABELS: Record<BuffettPeriod, string> = {
 };
 
 export default function BuffettPage() {
+    const { isAuthenticated } = useAuth();
+    const navigate = useNavigate();
     const [viewMode, setViewMode] = useState<ViewMode>('cap-gdp');
     const [period, setPeriod] = useState<BuffettPeriod>('3y');
     const [smooth, setSmooth] = useState(true);
@@ -28,47 +34,30 @@ export default function BuffettPage() {
     const [capGdpData, setCapGdpData] = useState<BuffettCapGdpResponse | null>(null);
     const [mcftrM2Data, setMcftrM2Data] = useState<BuffettMcftrM2Response | null>(null);
 
-    // Загрузка данных Cap/GDP
-    useEffect(() => {
-        if (viewMode !== 'cap-gdp') return;
-        let cancelled = false;
-        async function load() {
-            try {
-                setLoading(true);
-                setError(null);
+    // Загрузка данных
+    const loadData = useCallback(async () => {
+        try {
+            setLoading(true);
+            setError(null);
+            if (viewMode === 'cap-gdp') {
                 const result = await getBuffettCapGdp(period, smooth);
-                if (!cancelled) setCapGdpData(result);
-            } catch (err) {
-                if (!cancelled) setError('Ошибка загрузки данных');
-                console.error(err);
-            } finally {
-                if (!cancelled) setLoading(false);
+                setCapGdpData(result);
+            } else {
+                const result = await getBuffettMcftrM2(period, smooth);
+                setMcftrM2Data(result);
             }
+        } catch (err) {
+            setError('Ошибка загрузки данных');
+            console.error(err);
+        } finally {
+            setLoading(false);
         }
-        load();
-        return () => { cancelled = true; };
     }, [period, smooth, viewMode]);
 
-    // Загрузка данных MCFTR/M2
-    useEffect(() => {
-        if (viewMode !== 'mcftr-m2') return;
-        let cancelled = false;
-        async function load() {
-            try {
-                setLoading(true);
-                setError(null);
-                const result = await getBuffettMcftrM2(period, smooth);
-                if (!cancelled) setMcftrM2Data(result);
-            } catch (err) {
-                if (!cancelled) setError('Ошибка загрузки данных');
-                console.error(err);
-            } finally {
-                if (!cancelled) setLoading(false);
-            }
-        }
-        load();
-        return () => { cancelled = true; };
-    }, [period, smooth, viewMode]);
+    useEffect(() => { loadData(); }, [loadData]);
+
+    // SSE: автоматическое обновление
+    useRealtimeData(['daily', 'buffett'], loadData);
 
     // Подготовка данных для SimpleChart: Cap/GDP
     const capGdpChartData = useMemo(() => {
@@ -119,7 +108,7 @@ export default function BuffettPage() {
                 <div className="flex items-center gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
                     <button
                         onClick={() => setViewMode('cap-gdp')}
-                        className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-all duration-300 ${viewMode === 'cap-gdp'
+                        className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors duration-200 ${viewMode === 'cap-gdp'
                             ? 'btn-control active'
                             : 'text-theme-secondary hover:text-theme-primary'
                             }`}
@@ -128,7 +117,7 @@ export default function BuffettPage() {
                     </button>
                     <button
                         onClick={() => setViewMode('mcftr-m2')}
-                        className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-all duration-300 ${viewMode === 'mcftr-m2'
+                        className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors duration-200 ${viewMode === 'mcftr-m2'
                             ? 'btn-control active'
                             : 'text-theme-secondary hover:text-theme-primary'
                             }`}
@@ -139,18 +128,29 @@ export default function BuffettPage() {
 
                 {/* Периоды */}
                 <div className="flex items-center gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
-                    {(Object.keys(PERIOD_LABELS) as BuffettPeriod[]).map((p) => (
-                        <button
-                            key={p}
-                            onClick={() => setPeriod(p)}
-                            className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-all duration-300 ${period === p
-                                ? 'btn-control active'
-                                : 'text-theme-secondary hover:text-theme-primary'
+                    {(Object.keys(PERIOD_LABELS) as BuffettPeriod[]).map((p) => {
+                        const allowed = isPeriodAllowed(p, isAuthenticated);
+                        return (
+                            <button
+                                key={p}
+                                onClick={() => {
+                                    if (!allowed) { navigate('/login'); return; }
+                                    setPeriod(p);
+                                }}
+                                title={!allowed ? 'Войдите для доступа' : undefined}
+                                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors duration-200 ${
+                                    !allowed
+                                        ? 'text-theme-muted cursor-not-allowed opacity-50'
+                                        : period === p
+                                            ? 'btn-control active'
+                                            : 'text-theme-secondary hover:text-theme-primary'
                                 }`}
-                        >
-                            {PERIOD_LABELS[p]}
-                        </button>
-                    ))}
+                            >
+                                {PERIOD_LABELS[p]}
+                                {!allowed && <Lock className="inline-block ml-0.5 w-3 h-3" />}
+                            </button>
+                        );
+                    })}
                 </div>
 
                 {/* Сглаживание EMA(60) */}

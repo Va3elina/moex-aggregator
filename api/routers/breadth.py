@@ -5,7 +5,7 @@ Market Breadth API — Сила рынка
 /history — читает из pre-computed таблицы breadth_history (мгновенно)
 /current — считает на лету для текущей даты (быстро, 42 тикера)
 """
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Depends
 from sqlalchemy import text
 from datetime import date, timedelta
 import pandas as pd
@@ -14,6 +14,8 @@ import time
 from api.database import get_engine
 from api.cache import get_or_set
 from api.logger import get_logger
+from api.routers.auth import get_current_user_optional
+from api.security.access_control import enforce_guest_limits
 
 log = get_logger()
 
@@ -146,11 +148,14 @@ async def get_current_breadth(
 async def get_breadth_history(
     ema_period: int = Query(200, ge=10, le=500, description="Период EMA"),
     days: int = Query(365, ge=30, le=9000, description="Количество дней истории"),
+    user = Depends(get_current_user_optional),
 ):
     """
     Возвращает историю Market Breadth из pre-computed таблицы breadth_history.
     Для каждой даты: % акций выше EMA + данные IMOEX для наложения.
     """
+    # Ограничения для гостей
+    enforce_guest_limits(user, days=days)
     cache_key = f"breadth:history:{ema_period}:{days}"
     cached = get_or_set(cache_key)
     if cached is not None:

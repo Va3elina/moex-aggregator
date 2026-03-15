@@ -3,7 +3,7 @@ API роутер для данных фондов и индексов
 Раздел: Деньги в Фондах
 """
 
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Depends
 from sqlalchemy import text
 from typing import Literal, Optional, List
 from datetime import date, timedelta
@@ -12,6 +12,8 @@ import time
 
 from api.database import get_engine
 from api.logger import get_logger
+from api.routers.auth import get_current_user_optional
+from api.security.access_control import enforce_guest_limits
 
 router = APIRouter(prefix="/api/funds", tags=["funds"])
 log = get_logger()
@@ -68,16 +70,20 @@ PeriodType = Literal["1w", "1m", "3m", "6m", "1y", "2y", "3y", "all"]
 @router.get("/chart")
 async def get_funds_chart(
     category: CategoryType = Query(..., description="Категория фондов"),
-    period: PeriodType = Query("6m", description="Период")
+    period: PeriodType = Query("6m", description="Период"),
+    user = Depends(get_current_user_optional)
 ):
     """
     Данные для графика фондов + индекс
-    
+
     Возвращает:
     - funds: список фондов с данными СЧА
     - index: данные индекса
     - total_nav: суммарная СЧА по дням
     """
+    # Ограничения для гостей
+    enforce_guest_limits(user, period=period)
+
     start_time = time.time()
     log.info(f"REQUEST: /funds/chart category={category}, period={period}")
 
@@ -157,6 +163,7 @@ async def get_funds_chart(
             total_nav = [
                 {"date": row[0].isoformat(), "nav": float(row[1])}
                 for row in total_result
+                if float(row[1]) > 0
             ]
             
             # === Данные индекса ===
@@ -294,7 +301,8 @@ async def get_funds_flows(
     category: CategoryType = Query(..., description="Категория фондов"),
     timeframe: FlowTimeframeType = Query("1w", description="Таймфрейм агрегации"),
     period: PeriodType = Query("1y", description="Общий период данных"),
-    fund_ids_filter: Optional[str] = Query(None, alias="fund_ids", description="ID фондов через запятую (если не указаны — все)")
+    fund_ids_filter: Optional[str] = Query(None, alias="fund_ids", description="ID фондов через запятую (если не указаны — все)"),
+    user = Depends(get_current_user_optional)
 ):
     """
     Притоки и оттоки в фондах (изменение AUM по периодам)
@@ -303,6 +311,9 @@ async def get_funds_flows(
     - flow > 0 → приток (зелёный)
     - flow < 0 → отток (красный)
     """
+    # Ограничения для гостей
+    enforce_guest_limits(user, period=period)
+
     fund_categories = load_fund_categories()
     if category not in fund_categories:
         raise HTTPException(status_code=400, detail=f"Неизвестная категория: {category}")
@@ -595,11 +606,15 @@ async def get_fear_index():
 
 @router.get("/fear-index/history")
 async def get_fear_index_history(
-    period: PeriodType = Query("3m", description="Период")
+    period: PeriodType = Query("3m", description="Период"),
+    user = Depends(get_current_user_optional)
 ):
     """
     История Fund Fear Index
     """
+    # Ограничения для гостей
+    enforce_guest_limits(user, period=period)
+
     from api.cache import get_or_set
     cache_key = f"fear_history:{period}"
     cached = get_or_set(cache_key)
