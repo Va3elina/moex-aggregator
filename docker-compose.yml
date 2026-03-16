@@ -1,0 +1,102 @@
+# ═══════════════════════════════════════════════════════════════
+# Docker Compose — таймфрейм.рф
+# Запуск: docker compose up -d
+# ═══════════════════════════════════════════════════════════════
+
+services:
+  # ═══════════════════════════════════════════════════════════════
+  # PostgreSQL
+  # ═══════════════════════════════════════════════════════════════
+  db:
+    image: postgres:15-alpine
+    restart: always
+    environment:
+      POSTGRES_DB: ${DB_NAME:-moex_db}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-moex_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    shm_size: 256mb
+
+  # ═══════════════════════════════════════════════════════════════
+  # FastAPI + Frontend (SPA)
+  # ═══════════════════════════════════════════════════════════════
+  api:
+    build: .
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - DB_URL=postgresql+pg8000://${DB_USER:-postgres}:${DB_PASSWORD}@db:5432/${DB_NAME:-moex_db}
+      - DB_URL_ASYNC=postgresql://postgres:${DB_PASSWORD}@db:5432/${DB_NAME:-moex_db}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - ALGOPACK_API_KEY=${ALGOPACK_API_KEY}
+      - HTTP_PROXY=${HTTP_PROXY:-}
+      - ENV=production
+      - ALLOWED_ORIGINS=https://таймфрейм.рф,https://xn--80aagfbdcefbpg5j.xn--p1ai
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - GOOGLE_REDIRECT_URI=https://xn--80aagfbdcefbpg5j.xn--p1ai/api/auth/oauth/google/callback
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ═══════════════════════════════════════════════════════════════
+  # Оркестратор (сбор данных)
+  # ═══════════════════════════════════════════════════════════════
+  orchestrator:
+    build: .
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - DB_URL=postgresql+pg8000://${DB_USER:-postgres}:${DB_PASSWORD}@db:5432/${DB_NAME:-moex_db}
+      - DB_URL_ASYNC=postgresql://postgres:${DB_PASSWORD}@db:5432/${DB_NAME:-moex_db}
+      - ALGOPACK_API_KEY=${ALGOPACK_API_KEY}
+      - HTTP_PROXY=${HTTP_PROXY:-}
+    command: ["python", "main_orchestrator.py"]
+
+  # ═══════════════════════════════════════════════════════════════
+  # Nginx (reverse proxy + SSL)
+  # ═══════════════════════════════════════════════════════════════
+  nginx:
+    image: nginx:alpine
+    restart: always
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - certbot_data:/var/www/certbot:ro
+      - certbot_certs:/etc/letsencrypt:ro
+
+  # ═══════════════════════════════════════════════════════════════
+  # Certbot (SSL сертификаты Let's Encrypt)
+  # ═══════════════════════════════════════════════════════════════
+  certbot:
+    image: certbot/certbot
+    volumes:
+      - certbot_data:/var/www/certbot
+      - certbot_certs:/etc/letsencrypt
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done'"
+
+volumes:
+  postgres_data:
+  certbot_data:
+  certbot_certs:

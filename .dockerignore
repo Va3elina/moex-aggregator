@@ -1,0 +1,31 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# IDE
+.idea/
+.run/
+.vscode/
+
+# Env files (копируются вручную)
+.env
+.env.production
+
+# Logs & data
+logs/
+*.log
+
+# Git
+.git/
+.gitignore
+
+# Misc
+ml4t_repo/
+*.pine
+btc_quant_lab.py
