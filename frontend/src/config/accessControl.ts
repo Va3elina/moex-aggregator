@@ -21,3 +21,9 @@ export function isPeriodAllowed(period: string, isAuthenticated: boolean): boole
   if (isAuthenticated) return true;
   return (PERIOD_ORDER[period] ?? 0) <= PERIOD_ORDER[GUEST_MAX_PERIOD];
 }
+
+/** Возвращает дефолтный период с учётом авторизации */
+export function getDefaultPeriod(preferredPeriod: string, isAuthenticated: boolean): string {
+  if (isAuthenticated) return preferredPeriod;
+  return isPeriodAllowed(preferredPeriod, false) ? preferredPeriod : GUEST_MAX_PERIOD;
+}
