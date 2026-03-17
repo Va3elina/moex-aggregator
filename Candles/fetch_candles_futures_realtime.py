@@ -89,7 +89,7 @@ except ImportError as e:
 # === ⚙️ НАСТРОЙКИ ===
 
 # Параллельность
-MAX_CONCURRENT_FETCH = 20  # Для скачивания свечей
+MAX_CONCURRENT_FETCH = 10  # Для скачивания свечей (было 20, снижено для экономии CPU)
 MAX_CONCURRENT_CHECK = 5  # Для проверки контрактов
 
 # Буфер после закрытия свечи (секунды)
@@ -753,14 +753,43 @@ class CandlesUpdater:
                            """
 
             inserted = 0
-            for record in records:
-                cursor.execute(insert_query, record)
-                inserted += cursor.rowcount
+            BATCH_SIZE = 500
+            for i in range(0, len(records), BATCH_SIZE):
+                batch = records[i:i + BATCH_SIZE]
+                try:
+                    placeholders = ','.join(
+                        ['(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)'] * len(batch)
+                    )
+                    flat_values = [v for row in batch for v in row]
+                    cursor.execute(f"""
+                        INSERT INTO candles (secid, begin_time, interval, type, end_time,
+                                             open, close, high, low, value, volume, sec_id)
+                        VALUES {placeholders}
+                        ON CONFLICT (secid, begin_time, interval, type) DO NOTHING
+                    """, flat_values)
+                    inserted += cursor.rowcount
+                    raw_conn.commit()
+                except Exception as e:
+                    log.warning(f"Batch insert ошибка, fallback на row-by-row: {e}")
+                    try:
+                        raw_conn.rollback()
+                    except Exception:
+                        pass
+                    for record in batch:
+                        try:
+                            cursor.execute(insert_query, record)
+                            inserted += cursor.rowcount
+                        except Exception:
+                            try:
+                                raw_conn.rollback()
+                            except Exception:
+                                pass
+                    raw_conn.commit()
 
-            raw_conn.commit()
             cursor.close()
             raw_conn.close()
 
+            log.info(f"Batch insert: {inserted}/{len(records)} свечей")
             return len(records), inserted
 
         except Exception as e:
@@ -807,7 +836,7 @@ class CandlesUpdater:
                 if df_5min.empty:
                     return 0, 0
 
-                return self.save_candles(df_5min)
+                return await asyncio.to_thread(self.save_candles, df_5min)
 
         tasks = [process(c[0], c[1], c[2], c[3]) for c in contracts]
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -858,7 +887,7 @@ class CandlesUpdater:
                 if df.empty:
                     return 0, 0
 
-                return self.save_candles(df)
+                return await asyncio.to_thread(self.save_candles, df)
 
         tasks = [process(c[0], c[1], c[2], c[3]) for c in contracts]
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -909,7 +938,7 @@ class CandlesUpdater:
                 if df.empty:
                     return 0, 0
 
-                return self.save_candles(df)
+                return await asyncio.to_thread(self.save_candles, df)
 
         tasks = [process(c[0], c[1], c[2], c[3]) for c in contracts]
         results = await asyncio.gather(*tasks, return_exceptions=True)

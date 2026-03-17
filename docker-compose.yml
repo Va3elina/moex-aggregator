@@ -8,7 +8,7 @@ services:
   # PostgreSQL
   # ═══════════════════════════════════════════════════════════════
   db:
-    image: postgres:15-alpine
+    image: postgres:17-alpine
     restart: always
     environment:
       POSTGRES_DB: ${DB_NAME:-moex_db}
@@ -39,7 +39,6 @@ services:
       - DB_URL_ASYNC=postgresql://postgres:${DB_PASSWORD}@db:5432/${DB_NAME:-moex_db}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
       - ALGOPACK_API_KEY=${ALGOPACK_API_KEY}
-      - HTTP_PROXY=${HTTP_PROXY:-}
       - ENV=production
       - ALLOWED_ORIGINS=https://таймфрейм.рф,https://xn--80aagfbdcefbpg5j.xn--p1ai
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
@@ -66,7 +65,6 @@ services:
       - DB_URL=postgresql+pg8000://${DB_USER:-postgres}:${DB_PASSWORD}@db:5432/${DB_NAME:-moex_db}
       - DB_URL_ASYNC=postgresql://postgres:${DB_PASSWORD}@db:5432/${DB_NAME:-moex_db}
       - ALGOPACK_API_KEY=${ALGOPACK_API_KEY}
-      - HTTP_PROXY=${HTTP_PROXY:-}
     command: ["python", "main_orchestrator.py"]
 
   # ═══════════════════════════════════════════════════════════════

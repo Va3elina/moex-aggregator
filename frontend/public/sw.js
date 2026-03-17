@@ -1,5 +1,5 @@
 // Фрейм PWA Service Worker
-const CACHE_NAME = 'frame-v1';
+const CACHE_NAME = 'frame-v2';
 const STATIC_ASSETS = [
     '/',
     '/manifest.json',
@@ -32,12 +32,23 @@ self.addEventListener('fetch', (event) => {
     const { request } = event;
     const url = new URL(request.url);
 
+    // SSE стримы — пропускаем, нельзя кешировать бесконечные потоки
+    if (url.pathname.startsWith('/api/events/')) {
+        return; // Браузер обработает напрямую
+    }
+
+    // Auth запросы — не кешируем (токены, профиль)
+    if (url.pathname.startsWith('/api/auth/')) {
+        event.respondWith(fetch(request));
+        return;
+    }
+
     // API запросы — network-first (данные должны быть свежие)
     if (url.pathname.startsWith('/api/')) {
         event.respondWith(
             fetch(request)
                 .then((response) => {
-                    // Кешируем GET-запросы к API для оффлайна
+                    // Кешируем только успешные GET-запросы (не 403/401)
                     if (request.method === 'GET' && response.ok) {
                         const clone = response.clone();
                         caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));

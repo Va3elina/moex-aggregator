@@ -8,7 +8,7 @@ import type { FearIndexResponse, FearIndexHistoryResponse } from '../services/ap
 
 // Типы
 interface HeatmapStock {
-  sec_id: string;
+  secId: string;
   name: string;
   change_1m: number;
 }
@@ -301,10 +301,10 @@ export default function OverviewPage() {
               <div className="grid grid-cols-4 gap-2 w-full">
                 {heatmapData.map((stock) => (
                   <div
-                    key={stock.sec_id}
+                    key={stock.secId}
                     className={`${getHeatmapColor(stock.change_1m)} rounded-lg p-2 text-center aspect-square flex flex-col items-center justify-center shadow-lg`}
                   >
-                    <div className="text-white text-sm font-bold drop-shadow-md">{stock.sec_id}</div>
+                    <div className="text-white text-sm font-bold drop-shadow-md">{stock.secId}</div>
                     <div className="text-white text-xs font-semibold drop-shadow-md">
                       {stock.change_1m >= 0 ? '+' : ''}{stock.change_1m?.toFixed(1)}%
                     </div>

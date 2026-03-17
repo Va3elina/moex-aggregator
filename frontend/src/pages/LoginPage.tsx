@@ -48,6 +48,13 @@ export default function LoginPage() {
     const [error, setError] = useState('');
     const [providers, setProviders] = useState<OAuthProvider[]>([]);
 
+    const passwordChecks = {
+        length: password.length >= 8,
+        upper: /[A-Z]/.test(password),
+        lower: /[a-z]/.test(password),
+        digit: /[0-9]/.test(password),
+    };
+
     // Загрузка списка провайдеров
     useEffect(() => {
         fetch('/api/auth/oauth/providers')
@@ -231,7 +238,7 @@ export default function LoginPage() {
                                 type={showPassword ? 'text' : 'password'}
                                 value={password}
                                 onChange={e => setPassword(e.target.value)}
-                                placeholder={mode === 'register' ? 'Минимум 8 символов' : '••••••••'}
+                                placeholder="••••••••"
                                 required
                                 minLength={mode === 'register' ? 8 : 1}
                                 className="w-full pl-10 pr-11 py-2.5 rounded-xl border outline-none transition-all text-sm"
@@ -250,6 +257,23 @@ export default function LoginPage() {
                                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                             </button>
                         </div>
+                        {/* Требования к паролю — только при регистрации */}
+                        {mode === 'register' && (
+                            <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1">
+                                {([
+                                    [passwordChecks.length, 'Минимум 8 символов'],
+                                    [passwordChecks.upper,  'Заглавная буква'],
+                                    [passwordChecks.lower,  'Строчная буква'],
+                                    [passwordChecks.digit,  'Цифра'],
+                                ] as [boolean, string][]).map(([ok, label]) => (
+                                    <span key={label} className="flex items-center gap-1 text-xs transition-colors duration-200"
+                                        style={{ color: ok ? '#2EE59D' : 'var(--text-muted)' }}>
+                                        <span className="text-base leading-none">{ok ? '✓' : '○'}</span>
+                                        {label}
+                                    </span>
+                                ))}
+                            </div>
+                        )}
                     </div>
 
                     {/* Submit */}

@@ -1,0 +1,95 @@
+//@version=6
+indicator("Crypto Breadth", "CrBrth%", overlay=false, max_bars_back=500)
+
+// ============================================================================
+// SETTINGS
+// ============================================================================
+ma_type    = input.string("EMA", "MA тип", options=["EMA", "SMA", "WMA", "RMA"], group="Breadth")
+ma_len     = input.int(200, "MA период", minval=1, maxval=500, group="Breadth")
+breadth_tf = input.timeframe("D", "Таймфрейм", group="Breadth")
+
+show_histogram = input.bool(true, "Гистограмма", group="Вид")
+show_ma        = input.bool(true, "MA на breadth", group="Вид")
+ind_ma_type    = input.string("SMA", "  Тип", options=["SMA", "EMA", "WMA", "RMA"], group="Вид")
+ind_ma_len     = input.int(10, "  Длина", minval=1, maxval=200, group="Вид")
+
+// ============================================================================
+// TOP 30 CRYPTO
+// ============================================================================
+tickers = array.from(
+     "BINANCE:BTCUSDT",   "BINANCE:ETHUSDT",    "BINANCE:XRPUSDT",
+     "BINANCE:BNBUSDT",   "BINANCE:SOLUSDT",    "BINANCE:DOGEUSDT",
+     "BINANCE:ADAUSDT",   "BINANCE:TRXUSDT",    "BINANCE:AVAXUSDT",
+     "BINANCE:LINKUSDT",  "BINANCE:TONUSDT",    "BINANCE:SHIBUSDT",
+     "BINANCE:XLMUSDT",   "BINANCE:DOTUSDT",    "BINANCE:SUIUSDT",
+     "BINANCE:HBARUSDT",  "BINANCE:BCHUSDT",    "BINANCE:LTCUSDT",
+     "BINANCE:UNIUSDT",   "BINANCE:NEARUSDT",   "BINANCE:APTUSDT",
+     "BINANCE:PEPEUSDT",  "BINANCE:ICPUSDT",    "BINANCE:POLUSDT",
+     "BINANCE:ETCUSDT",   "BINANCE:RENDERUSDT", "BINANCE:FETUSDT",
+     "BINANCE:ATOMUSDT",  "BINANCE:FILUSDT",    "BINANCE:ARBUSDT")
+
+// ============================================================================
+// HELPERS
+// ============================================================================
+f_ma(src, len, typ) =>
+    switch typ
+        "EMA" => ta.ema(src, len)
+        "SMA" => ta.sma(src, len)
+        "WMA" => ta.wma(src, len)
+        "RMA" => ta.rma(src, len)
+        => ta.sma(src, len)
+
+// ============================================================================
+// BREADTH
+// ============================================================================
+f_cond(symbol) =>
+    switch ma_type
+        "EMA" =>
+            [p, m] = request.security(symbol, breadth_tf, [close, ta.ema(close, ma_len)], barmerge.gaps_on)
+            p > m and not na(p) and not na(m)
+        "SMA" =>
+            [p, m] = request.security(symbol, breadth_tf, [close, ta.sma(close, ma_len)], barmerge.gaps_on)
+            p > m and not na(p) and not na(m)
+        "WMA" =>
+            [p, m] = request.security(symbol, breadth_tf, [close, ta.wma(close, ma_len)], barmerge.gaps_on)
+            p > m and not na(p) and not na(m)
+        "RMA" =>
+            [p, m] = request.security(symbol, breadth_tf, [close, ta.rma(close, ma_len)], barmerge.gaps_on)
+            p > m and not na(p) and not na(m)
+        =>
+            [p, m] = request.security(symbol, breadth_tf, [close, ta.ema(close, ma_len)], barmerge.gaps_on)
+            p > m and not na(p) and not na(m)
+
+countAbove = 0
+for i = 0 to array.size(tickers) - 1
+    if f_cond(array.get(tickers, i))
+        countAbove := countAbove + 1
+
+countTotal   = array.size(tickers)
+percentAbove = (countAbove / countTotal) * 100
+
+// ============================================================================
+// VISUALIZATION
+// ============================================================================
+plot_color = percentAbove >= 70 ? color.green : percentAbove >= 50 ? color.new(color.green, 40) : percentAbove >= 30 ? color.new(color.orange, 40) : color.red
+
+plot(percentAbove, "Breadth %", color=plot_color, linewidth=2)
+plot(show_histogram ? percentAbove : na, "Гистограмма", color=plot_color, style=plot.style_columns, linewidth=2)
+plot(show_ma ? f_ma(percentAbove, ind_ma_len, ind_ma_type) : na, "MA", color=color.yellow, linewidth=2)
+
+hline(70, "70%", color.new(color.green, 50), hline.style_dashed, 1)
+hline(50, "50%", color.gray, hline.style_solid, 1)
+hline(30, "30%", color.new(color.red, 50), hline.style_dashed, 1)
+
+// ============================================================================
+// TABLE
+// ============================================================================
+var table info = table.new(position.top_right, 2, 3, bgcolor=color.new(#1e1e1e, 10), border_width=1, border_color=color.new(color.gray, 60))
+
+if barstate.islast
+    table.cell(info, 0, 0, "Выше " + ma_type + str.tostring(ma_len) + ":", text_color=color.gray, text_size=size.small)
+    table.cell(info, 1, 0, str.tostring(math.round(countAbove)) + " / " + str.tostring(countTotal), text_color=color.white, text_size=size.small)
+    table.cell(info, 0, 1, "Breadth:", text_color=color.gray, text_size=size.small)
+    table.cell(info, 1, 1, str.tostring(math.round(percentAbove, 1)) + "%", text_color=plot_color, text_size=size.small)
+    table.cell(info, 0, 2, "TF:", text_color=color.gray, text_size=size.small)
+    table.cell(info, 1, 2, breadth_tf, text_color=color.aqua, text_size=size.small)

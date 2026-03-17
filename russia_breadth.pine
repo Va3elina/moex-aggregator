@@ -1,0 +1,183 @@
+//@version=6
+strategy("Russia Market Breadth", "RuBrth%", overlay=false, max_bars_back=500, pyramiding=2, default_qty_type=strategy.percent_of_equity, default_qty_value=50)
+
+// ============================================================================
+// SETTINGS / НАСТРОЙКИ
+// ============================================================================
+show_histogram = input.bool(true, "Показать гистограмму")
+ema_period     = input.int(200, "Период EMA", minval=1, maxval=500)
+
+// Сигналы
+entry_level     = input.int(14, "Вход 1: breadth ≤ %", minval=1, maxval=100, group="Сигналы")
+entry_ema_level = input.float(10, "Вход 2: ниже EMA200 и breadth ≤ %", minval=1, maxval=100, step=1, group="Сигналы")
+use_exit_breadth    = input.bool(true, "Выход по breadth", group="Сигналы")
+breadth_daily_mode  = input.bool(true, "  Дневной breadth (вместо недельного)", group="Сигналы")
+exit_level          = input.int(60, "  Выход 1: breadth ≥ %", minval=1, maxval=100, group="Сигналы")
+use_exit_rsi     = input.bool(true, "Выход по RSI", group="Выход RSI")
+rsi_daily_mode   = input.bool(true, "  Дневной RSI (вместо недельного)", group="Выход RSI")
+rsi_len          = input.int(14, "  RSI период", minval=2, maxval=50, group="Выход RSI")
+rsi_ma_len       = input.int(14, "  SMA на RSI", minval=2, maxval=50, group="Выход RSI")
+rsi_exit_level   = input.int(70, "  Выход 2: RSI SMA <", minval=30, maxval=90, group="Выход RSI")
+
+// MA на индикатор
+show_ma1  = input.bool(true,  "MA 1")
+ma1_type  = input.string("SMA", "  Тип", options=["SMA", "EMA"], group="MA 1")
+ma1_len   = input.int(10, "  Длина", minval=1, maxval=200, group="MA 1")
+ma1_color = input.color(color.yellow, "  Цвет", group="MA 1")
+
+show_ma2  = input.bool(false, "MA 2")
+ma2_type  = input.string("SMA", "  Тип", options=["SMA", "EMA"], group="MA 2")
+ma2_len   = input.int(30, "  Длина", minval=1, maxval=200, group="MA 2")
+ma2_color = input.color(color.white, "  Цвет", group="MA 2")
+
+show_ma3  = input.bool(false, "MA 3")
+ma3_type  = input.string("EMA", "  Тип", options=["SMA", "EMA"], group="MA 3")
+ma3_len   = input.int(50, "  Длина", minval=1, maxval=200, group="MA 3")
+ma3_color = input.color(color.aqua, "  Цвет", group="MA 3")
+
+// ============================================================================
+// TOP 30 RUSSIA STOCKS (IMOEX) / ТОП 30 АКЦИЙ МОСКОВСКОЙ БИРЖИ
+// ============================================================================
+tickers = array.from(
+     "MOEX:SBER",  "MOEX:GAZP",  "MOEX:LKOH",
+     "MOEX:ROSN",  "MOEX:NVTK",  "MOEX:GMKN",
+     "MOEX:YDEX",  "MOEX:TATN",  "MOEX:SBERP",
+     "MOEX:MGNT",  "MOEX:CHMF",  "MOEX:ALRS",
+     "MOEX:MTSS",  "MOEX:PHOR",  "MOEX:X5",
+     "MOEX:TCSG",  "MOEX:RUAL",  "MOEX:PIKK",
+     "MOEX:NLMK",  "MOEX:MAGN",  "MOEX:SNGS",
+     "MOEX:VTBR",  "MOEX:AFLT",  "MOEX:PLZL",
+     "MOEX:IRAO",  "MOEX:HYDR",  "MOEX:OZON",
+     "MOEX:VKCO",  "MOEX:SMLT",  "MOEX:RAGR")
+
+// ============================================================================
+// BREADTH / РАСЧЕТ (Daily EMA)
+// ============================================================================
+f_getEMAcondition(symbol, period) =>
+    [price, ema_val] = request.security(symbol, "D", [close, ta.ema(close, period)], barmerge.gaps_on)
+    price > ema_val and not na(price) and not na(ema_val)
+
+countAbove = 0
+for i = 0 to array.size(tickers) - 1
+    if f_getEMAcondition(array.get(tickers, i), ema_period)
+        countAbove := countAbove + 1
+
+countTotal   = array.size(tickers)
+percentAbove = (countAbove / countTotal) * 100
+
+// ============================================================================
+// WEEKLY EMA200 цены графика (применяй к IMOEX или нужному тикеру)
+// ============================================================================
+[chartClose_w, chartEma200_w] = request.security(syminfo.tickerid, "W", [close, ta.ema(close, 200)], barmerge.gaps_on)
+priceBelowEMA200 = chartClose_w < chartEma200_w and not na(chartClose_w) and not na(chartEma200_w)
+
+// ============================================================================
+// RSI для выхода (Weekly или Daily — по переключателю)
+// ============================================================================
+[rsi_w, rsiMa_w] = request.security(syminfo.tickerid, "W", [ta.rsi(close, rsi_len), ta.sma(ta.rsi(close, rsi_len), rsi_ma_len)])
+rsiMa_d          = ta.sma(ta.rsi(close, rsi_len), rsi_ma_len)
+
+// Активное значение RSI MA
+rsiMa_active     = rsi_daily_mode ? rsiMa_d : rsiMa_w
+
+// ============================================================================
+// MA ON INDICATOR / СКОЛЬЗЯЩИЕ НА ИНДИКАТОРЕ
+// ============================================================================
+f_ma(src, len, typ) => typ == "EMA" ? ta.ema(src, len) : ta.sma(src, len)
+
+ma1_val = f_ma(percentAbove, ma1_len, ma1_type)
+ma2_val = f_ma(percentAbove, ma2_len, ma2_type)
+ma3_val = f_ma(percentAbove, ma3_len, ma3_type)
+
+// ============================================================================
+// STRATEGY / СДЕЛКИ
+// ============================================================================
+
+// --- ВХОДЫ ---
+// 1. Breadth пересёк entry_level вниз
+entry1 = ta.crossunder(percentAbove, entry_level)
+
+// 2. Цена ниже Weekly EMA200 И breadth ≤ entry_ema_level
+entry2 = priceBelowEMA200 and percentAbove <= entry_ema_level
+
+if entry1
+    strategy.entry("Long Breadth", strategy.long)
+    label.new(bar_index, percentAbove, "BUY: breadth≤" + str.tostring(entry_level) + "%", style=label.style_label_up, color=color.green, textcolor=color.white, size=size.small)
+
+if entry2
+    strategy.entry("Long EMA", strategy.long)
+    label.new(bar_index, percentAbove, "BUY: EMA200+" + str.tostring(entry_ema_level) + "%", style=label.style_label_up, color=color.purple, textcolor=color.white, size=size.small)
+
+// --- ВЫХОДЫ ---
+// Флаг: RSI поднимался выше rsi_exit_level во время текущей сделки
+var bool _rsi_was_above = false
+if strategy.position_size > 0 and rsiMa_active >= rsi_exit_level
+    _rsi_was_above := true
+if strategy.position_size == 0
+    _rsi_was_above := false
+
+// Первый торговый день новой недели (нужен только для недельного режима)
+is_first_day_of_week = na(time[1]) or dayofweek(time, "Europe/Moscow") <= dayofweek(time[1], "Europe/Moscow")
+
+// 1. Breadth пересёк exit_level вверх:
+//    - дневной режим: ta.crossover на каждом баре
+//    - недельный режим: проверка только в начале новой недели
+exit1 = breadth_daily_mode
+     ? ta.crossover(percentAbove, exit_level)
+     : is_first_day_of_week and percentAbove >= exit_level and percentAbove[1] < exit_level
+
+// 2. RSI SMA упал ниже rsi_exit_level:
+//    - дневной режим: ta.crossunder на каждом баре
+//    - недельный режим: проверка только в начале новой недели
+exit2 = rsi_daily_mode
+     ? _rsi_was_above and ta.crossunder(rsiMa_active, rsi_exit_level)
+     : _rsi_was_above and is_first_day_of_week and rsiMa_active < rsi_exit_level
+
+if use_exit_breadth and exit1 and strategy.position_size > 0
+    strategy.close_all()
+    label.new(bar_index, percentAbove, "SELL: breadth≥" + str.tostring(exit_level) + "%", style=label.style_label_down, color=color.red, textcolor=color.white, size=size.small)
+
+if use_exit_rsi and exit2 and strategy.position_size > 0
+    strategy.close_all()
+    label.new(bar_index, percentAbove, "SELL: RSI<" + str.tostring(rsi_exit_level), style=label.style_label_down, color=color.orange, textcolor=color.white, size=size.small)
+
+// ============================================================================
+// COLOR LOGIC / ЛОГИКА ЦВЕТОВ
+// ============================================================================
+plot_color = percentAbove >= 70 ? color.green : percentAbove >= 50 ? color.new(color.green, 40) : percentAbove >= 30 ? color.new(color.orange, 40) : color.red
+
+// ============================================================================
+// VISUALIZATION / ВИЗУАЛИЗАЦИЯ
+// ============================================================================
+plot(percentAbove, "% Акций выше EMA", color=plot_color, linewidth=2, style=plot.style_line)
+plot(show_histogram ? percentAbove : na, "Гистограмма", color=plot_color, style=plot.style_columns, linewidth=2)
+
+plot(show_ma1 ? ma1_val : na, "MA 1", color=ma1_color, linewidth=2)
+plot(show_ma2 ? ma2_val : na, "MA 2", color=ma2_color, linewidth=2)
+plot(show_ma3 ? ma3_val : na, "MA 3", color=ma3_color, linewidth=2)
+
+// ============================================================================
+// LEVELS / УРОВНИ
+// ============================================================================
+hline(entry_level, "Вход 1", color.lime, hline.style_dashed, 1)
+hline(exit_level,  "Выход 1", color.red, hline.style_dashed, 1)
+hline(50, "50%", color.gray, hline.style_solid, 1)
+
+// ============================================================================
+// INFO TABLE / ТАБЛИЦА ИНФОРМАЦИИ
+// ============================================================================
+var table info_table = table.new(position.top_right, 2, 6, bgcolor=color.new(color.white, 20), border_width=1)
+
+if barstate.islast
+    table.cell(info_table, 0, 0, "Акций выше D EMA" + str.tostring(ema_period) + ":", text_color=color.gray, text_size=size.small)
+    table.cell(info_table, 1, 0, str.tostring(math.round(countAbove)) + " / " + str.tostring(countTotal), text_color=color.white, text_size=size.small)
+    table.cell(info_table, 0, 1, "Процент:", text_color=color.gray, text_size=size.small)
+    table.cell(info_table, 1, 1, str.tostring(math.round(percentAbove, 1)) + "%", text_color=plot_color, text_size=size.small)
+    table.cell(info_table, 0, 2, "Ниже W EMA200:", text_color=color.gray, text_size=size.small)
+    table.cell(info_table, 1, 2, priceBelowEMA200 ? "ДА" : "НЕТ", text_color=priceBelowEMA200 ? color.red : color.green, text_size=size.small)
+    table.cell(info_table, 0, 3, (rsi_daily_mode ? "D" : "W") + " RSI SMA:", text_color=color.gray, text_size=size.small)
+    table.cell(info_table, 1, 3, str.tostring(math.round(rsiMa_active, 1)), text_color=rsiMa_active >= rsi_exit_level ? color.green : color.red, text_size=size.small)
+    table.cell(info_table, 0, 4, "Вход:", text_color=color.gray, text_size=size.small)
+    table.cell(info_table, 1, 4, "≤" + str.tostring(entry_level) + "% | EMA200+" + str.tostring(entry_ema_level) + "%", text_color=color.lime, text_size=size.small)
+    table.cell(info_table, 0, 5, "Выход:", text_color=color.gray, text_size=size.small)
+    table.cell(info_table, 1, 5, "≥" + str.tostring(exit_level) + "% | RSI<" + str.tostring(rsi_exit_level), text_color=color.red, text_size=size.small)

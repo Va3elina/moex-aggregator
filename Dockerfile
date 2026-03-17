@@ -32,6 +32,7 @@ COPY Candles/ ./Candles/
 COPY Funds/ ./Funds/
 COPY Macro/ ./Macro/
 COPY main_orchestrator.py .
+COPY moex_calendar.py .
 
 # Frontend из stage 1
 COPY --from=frontend-build /app/frontend/dist ./frontend/dist

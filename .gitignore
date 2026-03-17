@@ -14,7 +14,11 @@ frontend/dist/
 
 # Секреты и логи
 .env
+.env.*
 logs/
+
+# Деплой-заметки с паролями
+DEPLOY_NOTES.md
 
 # Временные
 *.log
@@ -38,6 +42,12 @@ buffett_tmp*
 .claude/
 .gemini/
 .antigravityignore
+
+# IDE run configs
+.run/
+
+# Внешние репо
+ml4t_repo/
 
 # Заметки (не код)
 Заметки

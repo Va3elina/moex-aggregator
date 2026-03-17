@@ -438,7 +438,7 @@ export interface BuffettMcftrM2Response {
   period: string;
 }
 
-export type BuffettPeriod = '1y' | '2y' | '3y' | '5y' | 'all';
+export type BuffettPeriod = '1m' | '1y' | '2y' | '3y' | '5y' | 'all';
 
 export async function getBuffettCapGdp(
   period: BuffettPeriod = '3y',

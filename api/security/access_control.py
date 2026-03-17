@@ -14,8 +14,8 @@ from fastapi import HTTPException, status
 
 # Разрешённые значения для гостей
 GUEST_ALLOWED_INTERVALS = {24}  # Только дневной
-GUEST_MAX_PERIOD = "1m"
-GUEST_MAX_DAYS = 30
+GUEST_MAX_PERIOD = "1y"
+GUEST_MAX_DAYS = 365
 
 # Порядок периодов для сравнения
 PERIOD_ORDER = {

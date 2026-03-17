@@ -7,7 +7,7 @@ import SimpleChart from '../components/SimpleChart';
 import InstrumentSearchModal from '../components/InstrumentSearchModal';
 import { PERIOD_LABELS as ALL_PERIOD_LABELS, INTERVAL_LABELS, CHART_COLORS } from '../config/chartConfig';
 import { useAuth } from '../contexts/AuthContext';
-import { isIntervalAllowed, isPeriodAllowed } from '../config/accessControl';
+import { isIntervalAllowed, isPeriodAllowed, getDefaultPeriod } from '../config/accessControl';
 import { useRealtimeData } from '../hooks/useRealtimeData';
 
 type DisplayMode = 'price' | 'positions' | 'participants';
@@ -73,7 +73,7 @@ export default function OpenInterestPage() {
   const [clgroup, setClgroup] = useState<'FIZ' | 'YUR'>('FIZ');
   const [displayMode, setDisplayMode] = useState<DisplayMode>('positions');
   const [oiVariant, setOiVariant] = useState<OIVariant>('oi');
-  const [period, setPeriod] = useState<Period>('6m');
+  const [period, setPeriod] = useState<Period>(getDefaultPeriod('6m', isAuthenticated) as Period);
 
   // Фильтрация нерабочих дней и пре-маркета.
   // Алгопак возвращает forward-fill данные за выходные, праздники и

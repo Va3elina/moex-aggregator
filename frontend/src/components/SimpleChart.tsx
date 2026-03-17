@@ -592,13 +592,15 @@ export default function SimpleChart({
     const p1 = points[left];
     const p2 = points[right];
 
-    // Линейная интерполяция между найденными точками
+    // y интерполируем — точка плавно идёт по видимой линии
+    // time/value привязываем к ближайшей реальной точке данных
     const t = (mouseX - p1.x) / (p2.x - p1.x);
+    const nearest = t < 0.5 ? p1 : p2;
     return {
       x: mouseX,
       y: p1.y + (p2.y - p1.y) * t,
-      value: p1.value + (p2.value - p1.value) * t,
-      time: p1.time, // Используем время ближайшей точки
+      value: nearest.value,
+      time: nearest.time,
     };
   };
 

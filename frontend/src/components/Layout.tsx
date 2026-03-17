@@ -41,7 +41,7 @@ export default function Layout() {
               </span>
               <span
                 title={connected ? 'Live: данные обновляются автоматически' : 'Нет соединения с сервером'}
-                className={`w-2 h-2 rounded-full hidden sm:inline-block ${connected ? 'bg-emerald-400' : 'bg-gray-500'}`}
+                className={`w-2 h-2 rounded-full hidden sm:inline-block mr-2 ${connected ? 'bg-emerald-400' : 'bg-gray-500'}`}
               />
             </NavLink>
 

@@ -53,8 +53,9 @@ except ImportError as e:
 
 # === ⚙️ НАСТРОЙКИ ===
 
-# Параллельность
-MAX_CONCURRENT = 10
+# Параллельность (backfill — щадящий режим, realtime — побыстрее)
+MAX_CONCURRENT_BACKFILL = 3
+MAX_CONCURRENT_REALTIME = 10
 
 # Буфер после закрытия 5-минутки (секунды)
 BUFFER_SECONDS = 30
@@ -156,8 +157,6 @@ class AlgopackOIFetcher:
         for k in self.stats:
             self.stats[k] = 0
 
-    PAGE_SIZE = 1000  # Лимит API Algopack на один запрос
-
     async def fetch_oi(
         self,
         session: aiohttp.ClientSession,
@@ -167,108 +166,120 @@ class AlgopackOIFetcher:
         latest: bool = False
     ) -> Optional[List[dict]]:
         """
-        Загружает OI для одного тикера с пагинацией (start=0, 1000, 2000...).
-        Algopack возвращает max 1000 записей за запрос — без пагинации
-        широкие диапазоны дат молча обрезались.
+        Загружает OI для одного тикера.
+        Algopack futoi НЕ поддерживает пагинацию через start —
+        поэтому разбиваем запросы по дням.
 
         Returns: список записей или None
         """
+        import time as _time
+
         url = f"{self.BASE_URL}/{ticker}.json"
 
-        base_params = {
-            'from': from_date,
-            'till': till_date
-        }
-
+        # Для latest — один запрос
         if latest:
-            base_params['latest'] = 1
+            return await self._fetch_oi_single(session, ticker, url, from_date, till_date, latest=True)
+
+        # Разбиваем диапазон по дням
+        from datetime import date
+        d_from = datetime.strptime(from_date, '%Y-%m-%d').date()
+        d_till = datetime.strptime(till_date, '%Y-%m-%d').date()
 
         all_records: List[dict] = []
-        start = 0
+        t_start = _time.time()
+        current = d_from
 
-        while True:
-            params = {**base_params, 'start': start}
-            self.stats['requests'] += 1
+        while current <= d_till:
+            day_str = current.strftime('%Y-%m-%d')
+            day_records = await self._fetch_oi_single(session, ticker, url, day_str, day_str)
+            if day_records:
+                all_records.extend(day_records)
+            current += timedelta(days=1)
+            await asyncio.sleep(0.05)
 
-            # Ретрай внутри одной страницы
-            page_records = None
-            for attempt in range(3):
-                try:
-                    async with session.get(
-                        url,
-                        headers=self.headers,
-                        params=params,
-                        timeout=aiohttp.ClientTimeout(total=45)
-                    ) as resp:
-
-                        if resp.status == 401:
-                            log.error(f"[{ticker}] Ошибка авторизации (401)")
-                            self.stats['errors'] += 1
-                            return all_records or None
-
-                        if resp.status == 404:
-                            log.debug(f"[{ticker}] Не найден (404)")
-                            self.stats['empty'] += 1
-                            return all_records or None
-
-                        if resp.status == 429:
-                            log.warning(f"[{ticker}] Лимит запросов (429), ждём 60 сек...")
-                            await asyncio.sleep(60)
-                            continue
-
-                        if resp.status != 200:
-                            if resp.status >= 500:
-                                log.warning(f"[{ticker}] Ошибка сервера {resp.status}, попытка {attempt+1}/3")
-                                await asyncio.sleep(2)
-                                continue
-                            else:
-                                log.warning(f"[{ticker}] HTTP {resp.status}")
-                                self.stats['errors'] += 1
-                                return all_records or None
-
-                        try:
-                            data = await resp.json()
-                        except Exception as json_err:
-                            log.error(f"[{ticker}] Ошибка парсинга JSON: {json_err}")
-                            self.stats['errors'] += 1
-                            return all_records or None
-
-                        if "futoi" not in data:
-                            self.stats['empty'] += 1
-                            page_records = []
-                            break
-
-                        futoi = data["futoi"]
-                        columns = futoi.get("columns", [])
-                        rows = futoi.get("data", [])
-                        page_records = [dict(zip(columns, row)) for row in rows]
-                        self.stats['success'] += 1
-                        break
-
-                except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-                    if attempt < 2:
-                        await asyncio.sleep(1 + attempt)
-                        continue
-                    log.error(f"[{ticker}] Ошибка сети после 3 попыток: {e}")
-                    self.stats['errors'] += 1
-                    return all_records or None
-                except Exception as e:
-                    log.error(f"[{ticker}] Неизвестная ошибка: {e}")
-                    self.stats['errors'] += 1
-                    return all_records or None
-
-            if not page_records:
-                break  # Пустая страница — данные кончились
-
-            all_records.extend(page_records)
-
-            # Если вернули меньше PAGE_SIZE — это последняя страница
-            if len(page_records) < self.PAGE_SIZE or latest:
-                break
-
-            start += self.PAGE_SIZE
-
+        if all_records:
+            elapsed = _time.time() - t_start
+            log.info(f"  [{ticker}] {len(all_records)} records, {(d_till - d_from).days + 1} days ({elapsed:.1f}s)")
         return all_records if all_records else None
+
+    async def _fetch_oi_single(
+        self,
+        session: aiohttp.ClientSession,
+        ticker: str,
+        url: str,
+        from_date: str,
+        till_date: str,
+        latest: bool = False
+    ) -> Optional[List[dict]]:
+        """Один запрос к API (один день или latest)"""
+        params = {'from': from_date, 'till': till_date}
+        if latest:
+            params['latest'] = 1
+
+        self.stats['requests'] += 1
+
+        for attempt in range(3):
+            try:
+                async with session.get(
+                    url,
+                    headers=self.headers,
+                    params=params,
+                    timeout=aiohttp.ClientTimeout(total=45)
+                ) as resp:
+
+                    if resp.status == 401:
+                        log.error(f"[{ticker}] Ошибка авторизации (401)")
+                        self.stats['errors'] += 1
+                        return None
+
+                    if resp.status == 404:
+                        self.stats['empty'] += 1
+                        return None
+
+                    if resp.status == 429:
+                        log.warning(f"[{ticker}] Лимит запросов (429), ждём 60 сек...")
+                        await asyncio.sleep(60)
+                        continue
+
+                    if resp.status != 200:
+                        if resp.status >= 500:
+                            log.warning(f"[{ticker}] Ошибка сервера {resp.status}, попытка {attempt+1}/3")
+                            await asyncio.sleep(2)
+                            continue
+                        else:
+                            log.warning(f"[{ticker}] HTTP {resp.status}")
+                            self.stats['errors'] += 1
+                            return None
+
+                    try:
+                        data = await resp.json()
+                    except Exception as json_err:
+                        log.error(f"[{ticker}] Ошибка парсинга JSON: {json_err}")
+                        self.stats['errors'] += 1
+                        return None
+
+                    if "futoi" not in data:
+                        self.stats['empty'] += 1
+                        return None
+
+                    futoi = data["futoi"]
+                    columns = futoi.get("columns", [])
+                    rows = futoi.get("data", [])
+                    self.stats['success'] += 1
+                    return [dict(zip(columns, row)) for row in rows]
+
+            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                if attempt < 2:
+                    await asyncio.sleep(1 + attempt)
+                    continue
+                log.error(f"[{ticker}] Ошибка сети после 3 попыток: {e}")
+                self.stats['errors'] += 1
+                return None
+            except Exception as e:
+                log.error(f"[{ticker}] Неизвестная ошибка: {e}")
+                self.stats['errors'] += 1
+                return None
+        return None
 
 
 # ======================================================================
@@ -367,20 +378,15 @@ class OI5minUpdater:
                 except Exception:
                     return 0
 
+            # Подготовка всех значений
+            values_list = []
             for rec in records:
                 try:
-                    # Приводим типы
                     tradedate = rec.get('tradedate')
                     if isinstance(tradedate, str):
                         tradedate = datetime.strptime(tradedate, '%Y-%m-%d').date()
 
-                    cursor.execute("""
-                        INSERT INTO open_interest 
-                        (sectype, tradedate, tradetime, clgroup, pos, pos_long, pos_short,
-                         pos_long_num, pos_short_num, systime, interval)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 5)
-                        ON CONFLICT (sectype, tradedate, tradetime, clgroup, interval) DO NOTHING
-                    """, (
+                    values_list.append((
                         rec.get('ticker'),
                         tradedate,
                         rec.get('tradetime'),
@@ -392,20 +398,56 @@ class OI5minUpdater:
                         to_int(rec.get('pos_short_num', 0)),
                         rec.get('systime'),
                     ))
-                    inserted += cursor.rowcount
-
                 except Exception as e:
-                    # Сбрасываем aborted transaction и продолжаем со следующей записью
+                    log.debug(f"Ошибка подготовки записи: {e}")
+
+            # Batch INSERT по 500 записей
+            BATCH_SIZE = 500
+            for i in range(0, len(values_list), BATCH_SIZE):
+                batch = values_list[i:i + BATCH_SIZE]
+                try:
+                    placeholders = ','.join(
+                        ['(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,5)'] * len(batch)
+                    )
+                    flat_values = [v for row in batch for v in row]
+                    cursor.execute(f"""
+                        INSERT INTO open_interest
+                        (sectype, tradedate, tradetime, clgroup, pos, pos_long, pos_short,
+                         pos_long_num, pos_short_num, systime, interval)
+                        VALUES {placeholders}
+                        ON CONFLICT (sectype, tradedate, tradetime, clgroup, interval) DO NOTHING
+                    """, flat_values)
+                    inserted += cursor.rowcount
+                    raw_conn.commit()
+                except Exception as e:
+                    log.warning(f"Batch insert ошибка, fallback на row-by-row: {e}")
                     try:
                         raw_conn.rollback()
                     except Exception:
                         pass
-                    log.debug(f"Ошибка вставки: {e}")
+                    # Fallback: вставляем по одной
+                    for row in batch:
+                        try:
+                            cursor.execute("""
+                                INSERT INTO open_interest
+                                (sectype, tradedate, tradetime, clgroup, pos, pos_long, pos_short,
+                                 pos_long_num, pos_short_num, systime, interval)
+                                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,5)
+                                ON CONFLICT (sectype, tradedate, tradetime, clgroup, interval) DO NOTHING
+                            """, row)
+                            inserted += cursor.rowcount
+                        except Exception as row_e:
+                            try:
+                                raw_conn.rollback()
+                            except Exception:
+                                pass
+                            log.debug(f"Ошибка вставки строки: {row_e}")
+                    raw_conn.commit()
 
-            raw_conn.commit()
             cursor.close()
             raw_conn.close()
 
+            log.info(f"Batch insert: {inserted}/{len(values_list)} записей")
             return len(records), inserted
 
         except Exception as e:
@@ -446,7 +488,7 @@ class OI5minUpdater:
                 
                 # Forward Fill значений
                 cols_to_fill = ['pos', 'pos_long', 'pos_short', 'pos_long_num', 'pos_short_num']
-                group_df[cols_to_fill] = group_df[cols_to_fill].ffill()
+                group_df[cols_to_fill] = group_df[cols_to_fill].ffill(limit=6)  # макс 30 мин (6 интервалов)
                 
                 # Заполняем метаданные
                 group_df['ticker'] = ticker
@@ -485,16 +527,37 @@ class OI5minUpdater:
         till_date: str
     ) -> Tuple[int, int]:
         """Обновляет OI для одного тикера"""
+        import time
 
+        t0 = time.time()
         records = await self.fetcher.fetch_oi(session, ticker, from_date, till_date)
+        t_fetch = time.time() - t0
 
         if not records:
             return 0, 0
-            
-        # Заполняем пропуски
-        filled_records = self._fill_gaps(records, ticker)
 
-        return self.save_records(filled_records)
+        # Фильтруем: оставляем только записи НОВЕЕ last_datetime (как в Candles)
+        last_dt = await asyncio.to_thread(self.get_last_datetime, ticker)
+        if last_dt:
+            before_filter = len(records)
+            records = [
+                r for r in records
+                if datetime.strptime(f"{r['tradedate']} {r['tradetime']}", '%Y-%m-%d %H:%M:%S') > last_dt
+            ]
+            log.info(f"  [{ticker}] filtered {before_filter}→{len(records)} (after {last_dt})")
+            if not records:
+                return 0, 0
+
+        t1 = time.time()
+        filled_records = self._fill_gaps(records, ticker)
+        t_gap = time.time() - t1
+
+        t2 = time.time()
+        result = await asyncio.to_thread(self.save_records, filled_records)
+        t_save = time.time() - t2
+
+        log.info(f"  [{ticker}] fetch={t_fetch:.1f}s gap_fill={t_gap:.1f}s save={t_save:.1f}s records={len(records)}→{len(filled_records)}")
+        return result
 
     async def update_all(
         self,
@@ -512,7 +575,7 @@ class OI5minUpdater:
         total_attempted = 0
         total_inserted = 0
 
-        semaphore = asyncio.Semaphore(MAX_CONCURRENT)
+        semaphore = asyncio.Semaphore(MAX_CONCURRENT_BACKFILL)
 
         async def process(ticker):
             async with semaphore:
@@ -520,7 +583,7 @@ class OI5minUpdater:
                 if from_date:
                     ticker_from = from_date
                 else:
-                    last_dt = self.get_last_datetime(ticker)
+                    last_dt = await asyncio.to_thread(self.get_last_datetime, ticker)
                     if last_dt:
                         ticker_from = (last_dt - timedelta(days=1)).strftime('%Y-%m-%d')
                     else:
@@ -550,7 +613,7 @@ class OI5minUpdater:
         total_attempted = 0
         total_inserted = 0
 
-        semaphore = asyncio.Semaphore(MAX_CONCURRENT)
+        semaphore = asyncio.Semaphore(MAX_CONCURRENT_REALTIME)
 
         async def process(ticker):
             async with semaphore:
@@ -620,13 +683,13 @@ class OI5minUpdater:
         log.info("🚀 ЗАПУСК РЕАЛТАЙМ ОБНОВЛЕНИЯ OI (5 мин)")
         log.info(f"  API: Algopack")
         log.info(f"  Тикеров: {len(self.tickers)}")
-        log.info(f"  Параллельность: {MAX_CONCURRENT}")
+        log.info(f"  Параллельность: backfill={MAX_CONCURRENT_BACKFILL}, realtime={MAX_CONCURRENT_REALTIME}")
         log.info(f"  Торговые часы: {TRADING_START_HOUR}:00 - {TRADING_END_HOUR}:00 МСК")
         log.info(f"  Расписание: XX:00:30, XX:05:30...")
         log.info(f"  Логи: {LOG_DIR.absolute()}")
         log.info("=" * 60)
 
-        connector = aiohttp.TCPConnector(limit=MAX_CONCURRENT)
+        connector = aiohttp.TCPConnector(limit=MAX_CONCURRENT_REALTIME, ssl=False)
         timeout = aiohttp.ClientTimeout(total=120)
 
         retry_count = 0
@@ -734,7 +797,7 @@ async def main():
 
         if args.once:
             # Однократное обновление
-            connector = aiohttp.TCPConnector(limit=MAX_CONCURRENT)
+            connector = aiohttp.TCPConnector(limit=MAX_CONCURRENT_BACKFILL, ssl=False)
             async with aiohttp.ClientSession(connector=connector) as session:
                 att, ins = await updater.update_all(session)
                 log.info(f"✓ Загружено: {att}, сохранено: +{ins}")

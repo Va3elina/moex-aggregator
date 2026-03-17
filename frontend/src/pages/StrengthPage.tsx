@@ -9,13 +9,14 @@ import {
     type BreadthHistoryResponse,
 } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
-import { isPeriodAllowed } from '../config/accessControl';
+import { isPeriodAllowed, getDefaultPeriod } from '../config/accessControl';
 import { useRealtimeData } from '../hooks/useRealtimeData';
 
-type Period = '3m' | '6m' | '1y' | '2y' | 'all';
+type Period = '1m' | '3m' | '6m' | '1y' | '2y' | 'all';
 type ChartMode = 'line' | 'histogram';
 
 const PERIOD_LABELS: Record<Period, string> = {
+    '1m': '1М',
     '3m': '3М',
     '6m': '6М',
     '1y': '1Г',
@@ -24,6 +25,7 @@ const PERIOD_LABELS: Record<Period, string> = {
 };
 
 const PERIOD_DAYS: Record<Period, number> = {
+    '1m': 30,
     '3m': 90,
     '6m': 180,
     '1y': 365,
@@ -61,7 +63,7 @@ const CHART_PADDING = { left: 10, right: 70, top: 10, bottom: 30 } as const;
 export default function StrengthPage() {
     const { isAuthenticated } = useAuth();
     const navigate = useNavigate();
-    const [period, setPeriod] = useState<Period>('1y');
+    const [period, setPeriod] = useState<Period>(getDefaultPeriod('1y', isAuthenticated) as Period);
     const emaPeriod = EMA_PERIOD; // Fixed EMA200
     const [chartMode, setChartMode] = useState<ChartMode>('histogram');
     const [showPrice, setShowPrice] = useState(true);

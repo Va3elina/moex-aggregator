@@ -3,8 +3,8 @@
 // Гости: только дневной таймфрейм
 export const GUEST_ALLOWED_INTERVALS = new Set([24]);
 
-// Гости: максимум 1 месяц данных
-export const GUEST_MAX_PERIOD = '1m';
+// Гости: максимум 1 год данных
+export const GUEST_MAX_PERIOD = '1y';
 
 // Порядок периодов для сравнения
 const PERIOD_ORDER: Record<string, number> = {

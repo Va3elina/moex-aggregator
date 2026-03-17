@@ -5,7 +5,7 @@ import { getFearIndex, getFearIndexHistory } from '../services/api';
 import type { FearIndexResponse, FearIndexHistoryResponse, FearIndexPeriod } from '../services/api';
 import SimpleChart from '../components/SimpleChart';
 import { useAuth } from '../contexts/AuthContext';
-import { isPeriodAllowed } from '../config/accessControl';
+import { isPeriodAllowed, getDefaultPeriod } from '../config/accessControl';
 import { useRealtimeData } from '../hooks/useRealtimeData';
 
 type Period = '1m' | '3m' | '6m' | '1y' | 'all';
@@ -51,7 +51,7 @@ function getFearGradient(score: number): string {
 export default function FearIndexPage() {
   const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
-  const [period, setPeriod] = useState<Period>('3m');
+  const [period, setPeriod] = useState<Period>(getDefaultPeriod('3m', isAuthenticated) as Period);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [current, setCurrent] = useState<FearIndexResponse | null>(null);

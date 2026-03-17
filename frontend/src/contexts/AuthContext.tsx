@@ -119,6 +119,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await loadUser();
   }, [loadUser]);
 
+  // Не рендерим приложение пока auth не разрешился —
+  // иначе страницы инициализируют state с гостевыми значениями,
+  // а потом получают 403 при запросе данных.
+  if (loading) {
+    return (
+      <div style={{
+        height: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'var(--color-bg, #0a0a0f)',
+        color: 'var(--color-text-secondary, #888)',
+      }}>
+        Загрузка...
+      </div>
+    );
+  }
+
   return (
     <AuthContext.Provider value={{
       user,

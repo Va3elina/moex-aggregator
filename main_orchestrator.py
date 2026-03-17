@@ -142,7 +142,7 @@ BUFFER_HOUR = 120  # 2 минуты после часа для агрегаци�
 
 # Таймауты (секунды)
 TIMEOUTS = {
-    'oi_5min': 300,  # 5 минут
+    'oi_5min': 900,  # 15 минут (нужно для backfill после простоя)
     'oi_aggregate': 600,  # 10 минут
     'oi_daily': 1800,  # 30 минут
     'candles_futures': 300,  # 5 минут
@@ -436,6 +436,9 @@ class MainOrchestrator:
             self.stats['errors'] += 1
             log.error(f"    ✗ OI 5м: {msg}")
 
+        # Пауза между скриптами для снижения нагрузки на CPU
+        await asyncio.sleep(3)
+
         # 2. Candles Futures
         log.info("  📊 Candles Futures...")
         self.stats['candles_futures_runs'] += 1
@@ -447,6 +450,9 @@ class MainOrchestrator:
         else:
             self.stats['errors'] += 1
             log.error(f"    ✗ Candles Futures: {msg}")
+
+        # Пауза между скриптами для снижения нагрузки на CPU
+        await asyncio.sleep(3)
 
         # 3. Candles Spot
         log.info("  📊 Candles Spot...")
@@ -463,7 +469,7 @@ class MainOrchestrator:
         # 4. Обновление материализованных представлений
         log.info("  🔄 Обновление представлений...")
         self.stats['views_refresh_runs'] += 1
-        view_results = refresh_materialized_views()
+        view_results = await asyncio.to_thread(refresh_materialized_views)
 
         # Считаем успешные обновления
         all_success = all(r[0] for r in view_results.values())

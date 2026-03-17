@@ -12,7 +12,7 @@ import {
 } from '../services/api';
 import SimpleChart from '../components/SimpleChart';
 import { useAuth } from '../contexts/AuthContext';
-import { isPeriodAllowed } from '../config/accessControl';
+import { isPeriodAllowed, getDefaultPeriod } from '../config/accessControl';
 import { useRealtimeData } from '../hooks/useRealtimeData';
 
 // Режимы отображения
@@ -69,7 +69,7 @@ export default function FundsMoneyPage() {
     const { isAuthenticated } = useAuth();
     const navigate = useNavigate();
     const [category, setCategory] = useState<FundCategory>('money_market');
-    const [period, setPeriod] = useState<Period>('6m');
+    const [period, setPeriod] = useState<Period>(getDefaultPeriod('6m', isAuthenticated) as Period);
     const [viewMode, setViewMode] = useState<ViewMode>('aum');
     const [flowTimeframe, setFlowTimeframe] = useState<FlowTimeframe>('1w');
     const [loading, setLoading] = useState(true);

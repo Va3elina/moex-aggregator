@@ -30,7 +30,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 load_dotenv(Path(__file__).parent.parent / ".env")
 
 DB_URL = os.getenv("DB_URL")
-HTTP_PROXY = os.getenv("HTTP_PROXY")
 
 try:
     from moex_calendar import get_moscow_time, is_trading_day
@@ -201,7 +200,7 @@ async def fetch_index_chunk(
     }
 
     try:
-        async with session.get(url, params=params, headers=HEADERS, timeout=30, proxy=HTTP_PROXY) as response:
+        async with session.get(url, params=params, headers=HEADERS, timeout=30) as response:
             if response.status == 404:
                 log.error(f"❌ [{secid}] Индекс не найден (404).")
                 return []

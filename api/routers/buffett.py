@@ -18,9 +18,10 @@ from api.security.access_control import enforce_guest_limits
 router = APIRouter(prefix="/api/buffett", tags=["buffett"])
 log = get_logger()
 
-PeriodType = Literal["1y", "2y", "3y", "5y", "all"]
+PeriodType = Literal["1m", "1y", "2y", "3y", "5y", "all"]
 
 PERIODS = {
+    "1m": 30,
     "1y": 365,
     "2y": 730,
     "3y": 1095,

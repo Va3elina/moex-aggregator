@@ -10,12 +10,13 @@ import {
 } from '../services/api';
 import SimpleChart from '../components/SimpleChart';
 import { useAuth } from '../contexts/AuthContext';
-import { isPeriodAllowed } from '../config/accessControl';
+import { isPeriodAllowed, getDefaultPeriod } from '../config/accessControl';
 import { useRealtimeData } from '../hooks/useRealtimeData';
 
 type ViewMode = 'cap-gdp' | 'mcftr-m2';
 
 const PERIOD_LABELS: Record<BuffettPeriod, string> = {
+    '1m': '1М',
     '1y': '1Г',
     '2y': '2Г',
     '3y': '3Г',
@@ -27,7 +28,7 @@ export default function BuffettPage() {
     const { isAuthenticated } = useAuth();
     const navigate = useNavigate();
     const [viewMode, setViewMode] = useState<ViewMode>('cap-gdp');
-    const [period, setPeriod] = useState<BuffettPeriod>('3y');
+    const [period, setPeriod] = useState<BuffettPeriod>(getDefaultPeriod('3y', isAuthenticated) as BuffettPeriod);
     const [smooth, setSmooth] = useState(true);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
