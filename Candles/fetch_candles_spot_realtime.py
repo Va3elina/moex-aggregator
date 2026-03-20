@@ -421,12 +421,13 @@ class StocksCandlesUpdater:
         self.last_5min_update = None
         self.last_60min_update = None
         self.last_daily_update = None
+        self.last_weekly_update = None
         self.last_gap_check = None
 
         self.session_stats = {
             'start_time': datetime.now(),
             'cycles': 0,
-            'candles_saved': {5: 0, 60: 0, 24: 0},
+            'candles_saved': {5: 0, 60: 0, 24: 0, 7: 0},
             'errors': 0
         }
 
@@ -675,6 +676,55 @@ class StocksCandlesUpdater:
         self.session_stats['candles_saved'][24] += total_inserted
         return total_attempted, total_inserted
 
+    async def update_weekly(
+            self,
+            session: aiohttp.ClientSession,
+            stocks: List[Tuple[str, str]]
+    ) -> Tuple[int, int]:
+        """Обновляет недельные свечи"""
+
+        now = get_moscow_time()
+        till_date = now.strftime('%Y-%m-%d')
+        total_attempted = 0
+        total_inserted = 0
+
+        semaphore = asyncio.Semaphore(MAX_CONCURRENT_FETCH)
+
+        async def process(ticker, name):
+            async with semaphore:
+                last_time = self.get_last_candle_time(ticker, 7)
+
+                if last_time:
+                    from_date = last_time.strftime('%Y-%m-%d')
+                else:
+                    from_date = (now - timedelta(days=365)).strftime('%Y-%m-%d')
+
+                df = await self.fetcher.fetch_candles(
+                    session, ticker, 7, from_date, till_date
+                )
+
+                if df is None or df.empty:
+                    return 0, 0
+
+                if last_time:
+                    df = df[df['begin_time'] > last_time]
+
+                if df.empty:
+                    return 0, 0
+
+                return await asyncio.to_thread(self.save_candles, df)
+
+        tasks = [process(ticker, name) for ticker, name in stocks]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for r in results:
+            if isinstance(r, tuple):
+                total_attempted += r[0]
+                total_inserted += r[1]
+
+        self.session_stats['candles_saved'][7] += total_inserted
+        return total_attempted, total_inserted
+
     async def check_data_gaps(self, stocks: List[Tuple[str, str]]):
         """Проверяет пропуски в данных"""
         log.info("🔍 Проверка пропусков...")
@@ -723,6 +773,7 @@ class StocksCandlesUpdater:
         log.info(f"    5м: {self.session_stats['candles_saved'][5]}")
         log.info(f"    60м: {self.session_stats['candles_saved'][60]}")
         log.info(f"    24ч: {self.session_stats['candles_saved'][24]}")
+        log.info(f"    7д: {self.session_stats['candles_saved'][7]}")
         log.info(f"  API: {api['requests']} запросов, {api['success']} успешных")
         log.info("=" * 50)
 
@@ -758,6 +809,12 @@ class StocksCandlesUpdater:
         att, ins = await self.update_daily(session, stocks)
         results[24] = ins
         log.info(f"  ✓ 24ч: +{ins} новых")
+
+        # Недельные
+        log.info("🔄 Обновление 7д...")
+        att, ins = await self.update_weekly(session, stocks)
+        results[7] = ins
+        log.info(f"  ✓ 7д: +{ins} новых")
 
         return results
 
