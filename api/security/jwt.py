@@ -54,7 +54,11 @@ import os
 # Секретный ключ для подписи токенов
 # КРИТИЧЕСКИ ВАЖНО: должен быть случайным и храниться в секрете!
 # Генерация: python -c "import secrets; print(secrets.token_urlsafe(32))"
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "CHANGE_ME_IN_PRODUCTION_32_chars!")
+SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "")
+if not SECRET_KEY:
+    import warnings
+    warnings.warn("JWT_SECRET_KEY not set! Using insecure default for local development only.", stacklevel=2)
+    SECRET_KEY = "LOCAL_DEV_ONLY_NOT_FOR_PRODUCTION_KEY"
 
 # Алгоритм подписи
 # HS256 — HMAC с SHA-256, симметричный (один ключ для подписи и проверки)

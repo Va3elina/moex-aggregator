@@ -21,8 +21,9 @@ ENDPOINTS:
 from fastapi import APIRouter, HTTPException, status, Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional
+import hashlib
 
 # База данных
 from api.database import get_db
@@ -72,11 +73,9 @@ security = HTTPBearer(auto_error=False)
 # ============================================================================
 
 def get_client_ip(request: Request) -> str:
-    """Получить IP клиента (учитывая прокси)."""
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+    """Получить IP клиента (доверяя proxy-заголовкам только от nginx)."""
+    from api.middleware import get_client_ip_safe
+    return get_client_ip_safe(request)
 
 
 def get_user_by_email(db: Session, email: str) -> Optional[User]:
@@ -388,6 +387,15 @@ async def refresh_tokens(
             detail="Невалидный или истёкший refresh токен",
         )
 
+    # Проверяем, не отозван ли токен
+    token_hash = hashlib.sha256(data.refresh_token.encode()).hexdigest()
+    stored = db.query(RefreshToken).filter(RefreshToken.token_hash == token_hash).first()
+    if stored and stored.is_revoked:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh токен отозван",
+        )
+
     user = get_user_by_id(db, int(payload.sub))
 
     if not user or not user.is_active:
@@ -396,8 +404,24 @@ async def refresh_tokens(
             detail="Пользователь не найден или деактивирован",
         )
 
+    # Отзываем старый refresh токен (ротация)
+    if stored:
+        stored.is_revoked = True
+        db.commit()
+
     # Создаём новую пару токенов
     tokens = create_token_pair(user.id, user.role)
+
+    # Сохраняем новый refresh токен в БД
+    new_token_hash = hashlib.sha256(tokens.refresh_token.encode()).hexdigest()
+    db.add(RefreshToken(
+        user_id=user.id,
+        token_hash=new_token_hash,
+        expires_at=datetime.now(timezone.utc) + timedelta(days=7),
+        ip_address=get_client_ip(request),
+        user_agent=request.headers.get("user-agent", "")[:500],
+    ))
+    db.commit()
 
     logger.info(
         f"Tokens refreshed for user {user.id}",
@@ -419,14 +443,29 @@ async def refresh_tokens(
 )
 async def logout(
         request: Request,
-        user: User = Depends(get_current_user)
+        data: Optional[RefreshTokenRequest] = None,
+        user: User = Depends(get_current_user),
+        db: Session = Depends(get_db),
 ):
-    """Выход из системы."""
+    """Выход из системы — отзывает refresh token."""
+    # Отзываем конкретный токен если передан
+    if data and data.refresh_token:
+        token_hash = hashlib.sha256(data.refresh_token.encode()).hexdigest()
+        stored = db.query(RefreshToken).filter(RefreshToken.token_hash == token_hash).first()
+        if stored:
+            stored.is_revoked = True
+
+    # Отзываем все токены пользователя (полный logout)
+    db.query(RefreshToken).filter(
+        RefreshToken.user_id == user.id,
+        RefreshToken.is_revoked == False,
+    ).update({"is_revoked": True})
+    db.commit()
+
     logger.info(
         f"User logged out: {user.id}",
         extra={"extra_data": {"event": "logout", "user_id": user.id}}
     )
-    # TODO: Добавить refresh_token в blacklist в таблице refresh_tokens
     return None
 
 

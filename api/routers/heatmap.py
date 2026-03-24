@@ -3,10 +3,11 @@ API для карты рынка (Heatmap) — стиль TradingView
 С валидацией входных данных
 """
 import httpx
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Depends
 from sqlalchemy import text
 
 from api.database import get_engine
+from api.routers.auth import require_admin
 from api.schemas.validators import HeatmapSizeByType, HeatmapColorByType, HeatmapGroupByType
 
 IMOEX_ISS_URL = "https://iss.moex.com/iss/statistics/engines/stock/markets/index/analytics/IMOEX.json?limit=100"
@@ -95,7 +96,7 @@ async def get_stocks_heatmap(
 
 
 @router.post("/refresh")
-async def refresh_heatmap():
+async def refresh_heatmap(user=Depends(require_admin)):
     """Обновляет материализованное представление"""
     from api.cache import invalidate
 

@@ -43,14 +43,7 @@ Size: $DB_SIZE
 Date: $(date '+%d.%m.%Y %H:%M')"
 fi
 
-# 2. .env file
-if [ -f "/app/.env" ]; then
-  send_file "/app/.env" "🔐 .env (production)
-Date: $(date '+%d.%m.%Y %H:%M')"
-elif [ -f "/opt/frame/.env" ]; then
-  send_file "/opt/frame/.env" "🔐 .env (production)
-Date: $(date '+%d.%m.%Y %H:%M')"
-fi
+# .env НЕ отправляем — содержит секреты, нельзя передавать через Telegram
 
 # Чистим старые бэкапы (оставляем 2 последних)
 ls -t "$BACKUP_DIR"/*.sql.gz 2>/dev/null | tail -n +3 | xargs -r rm --

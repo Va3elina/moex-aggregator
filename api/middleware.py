@@ -18,6 +18,37 @@ from fastapi.exceptions import RequestValidationError
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 from starlette.exceptions import HTTPException as StarletteHTTPException
+import ipaddress
+
+# Docker internal networks — только от этих прокси доверяем X-Forwarded-For
+_TRUSTED_PROXY_NETS = [
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("192.168.0.0/16"),
+]
+
+
+def _is_trusted_proxy(ip: str) -> bool:
+    try:
+        addr = ipaddress.ip_address(ip)
+        return any(addr in net for net in _TRUSTED_PROXY_NETS)
+    except ValueError:
+        return False
+
+
+def get_client_ip_safe(request: Request) -> str:
+    """Получить IP клиента, доверяя proxy-заголовкам только от nginx/Docker."""
+    direct_ip = request.client.host if request.client else "unknown"
+    if _is_trusted_proxy(direct_ip):
+        forwarded = request.headers.get("X-Forwarded-For")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+        real_ip = request.headers.get("X-Real-IP")
+        if real_ip:
+            return real_ip.strip()
+    return direct_ip
 
 from api.logger import get_logger
 
@@ -106,13 +137,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             raise
 
     def _get_client_ip(self, request: Request) -> str:
-        forwarded = request.headers.get("X-Forwarded-For")
-        if forwarded:
-            return forwarded.split(",")[0].strip()
-        real_ip = request.headers.get("X-Real-IP")
-        if real_ip:
-            return real_ip.strip()
-        return request.client.host if request.client else "unknown"
+        return get_client_ip_safe(request)
 
 
 class SlowRequestMiddleware(BaseHTTPMiddleware):
@@ -217,13 +242,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.auth_endpoints = ["/api/auth"]
 
     def _get_client_ip(self, request: Request) -> str:
-        forwarded = request.headers.get("X-Forwarded-For")
-        if forwarded:
-            return forwarded.split(",")[0].strip()
-        real_ip = request.headers.get("X-Real-IP")
-        if real_ip:
-            return real_ip.strip()
-        return request.client.host if request.client else "unknown"
+        return get_client_ip_safe(request)
 
     def _get_limit_for_path(self, path: str) -> int:
         # /api/auth/me и /api/auth/oauth/providers — read-only, общий лимит

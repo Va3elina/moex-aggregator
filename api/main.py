@@ -88,11 +88,11 @@ app.add_middleware(GZipMiddleware, minimum_size=500)
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(",")
 
 if ALLOWED_ORIGINS == ["*"]:
-    # Development mode
+    # Development mode — credentials=False с wildcard (CORS spec требует)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
-        allow_credentials=True,
+        allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
     )

@@ -12,8 +12,9 @@ import type {
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '';
 
 /**
- * Обёртка над fetch с автоматической авторизацией и обработкой 403.
- * Добавляет Bearer token если он есть в localStorage.
+ * Обёртка над fetch с авторизацией.
+ * Refresh токенов — только в AuthContext (единая точка),
+ * чтобы избежать гонки при параллельных запросах.
  */
 export async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
   const token = localStorage.getItem('access_token');
@@ -21,32 +22,7 @@ export async function apiFetch(url: string, init?: RequestInit): Promise<Respons
   if (token) headers['Authorization'] = `Bearer ${token}`;
   if (init?.headers) Object.assign(headers, init.headers);
 
-  let response = await fetch(url, { ...init, headers });
-
-  // Если 401 — пробуем обновить токен и повторить
-  if (response.status === 401 && token) {
-    const refreshToken = localStorage.getItem('refresh_token');
-    if (refreshToken) {
-      const refreshResp = await fetch('/api/auth/refresh', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refresh_token: refreshToken }),
-      });
-      if (refreshResp.ok) {
-        const tokens = await refreshResp.json();
-        localStorage.setItem('access_token', tokens.access_token);
-        localStorage.setItem('refresh_token', tokens.refresh_token);
-        // Повторяем оригинальный запрос с новым токеном
-        const retryHeaders: Record<string, string> = { Authorization: `Bearer ${tokens.access_token}` };
-        if (init?.headers) Object.assign(retryHeaders, init.headers);
-        response = await fetch(url, { ...init, headers: retryHeaders });
-      } else {
-        // Refresh не удался — очищаем токены
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-      }
-    }
-  }
+  const response = await fetch(url, { ...init, headers });
 
   if (response.status === 403) {
     const data = await response.json().catch(() => ({ detail: 'Доступ ограничен' }));

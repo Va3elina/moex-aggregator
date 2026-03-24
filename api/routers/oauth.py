@@ -142,18 +142,27 @@ def _find_or_create_oauth_user(
         return user, False
 
     # 2. Если есть email — проверяем, может уже зареган через email+password
+    #    НЕ привязываем OAuth автоматически к чужому аккаунту — это позволило бы
+    #    захватить аккаунт через подмену email в OAuth провайдере.
+    #    Вместо этого создаём отдельный OAuth-аккаунт.
     if email:
         existing = db.query(User).filter(User.email == email).first()
         if existing:
-            # Привязываем OAuth к существующему аккаунту
-            existing.oauth_provider = provider
-            existing.oauth_id = oauth_id
-            if avatar_url:
-                existing.avatar_url = avatar_url
-            if display_name:
-                existing.display_name = display_name
-            db.commit()
-            return existing, False
+            # Аккаунт с таким email уже есть, но это может быть другой человек.
+            # Если у существующего аккаунта есть пароль (не OAuth) — не привязываем.
+            if existing.hashed_password:
+                # Создаём OAuth-пользователя с уникальным email
+                email = f"{provider}_{oauth_id}@oauth.local"
+            else:
+                # Аккаунт без пароля (уже OAuth) — безопасно привязать
+                existing.oauth_provider = provider
+                existing.oauth_id = oauth_id
+                if avatar_url:
+                    existing.avatar_url = avatar_url
+                if display_name:
+                    existing.display_name = display_name
+                db.commit()
+                return existing, False
 
     # 3. Создаём нового пользователя
     new_user = User(

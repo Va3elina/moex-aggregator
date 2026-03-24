@@ -228,8 +228,7 @@ def send_data_notify(source: str, tables: list = None):
     try:
         engine = create_engine(DB_URL, connect_args={"ssl_context": False})
         with engine.connect() as conn:
-            # Payload в NOTIFY должен быть строкой, экранируем кавычки
-            conn.execute(text(f"NOTIFY data_updated, '{payload}'"))
+            conn.execute(text("SELECT pg_notify('data_updated', :payload)"), {"payload": payload})
             conn.commit()
         engine.dispose()
         log.info(f"NOTIFY sent: source={source}")
