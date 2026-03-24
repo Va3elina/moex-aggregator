@@ -267,14 +267,16 @@ def get_chart_data(
     
     # Фильтруем свечи: для каждой метки времени берем только свечу "лучшего" контракта дня
     filtered_candles = []
+    seen_times = set()
     for c in candles_raw:
         day = c[0].date()
         sec_id = c[6] if len(c) > 6 else 'unknown'
         best_for_day = best_contract_by_day.get(day, sec_id)
-        
-        if sec_id == best_for_day:
+
+        if sec_id == best_for_day and c[0] not in seen_times:
             filtered_candles.append(c)
-    
+            seen_times.add(c[0])
+
     sorted_candles = sorted(filtered_candles, key=lambda x: x[0])
     log.debug(f"[6] chain: {(time.time()-t0)*1000:.0f} мс | candles: {len(sorted_candles)}")
 

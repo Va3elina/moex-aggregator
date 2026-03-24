@@ -404,25 +404,29 @@ async def get_funds_flows(
                     periods_data[period_key].append((d, nav))
                 
                 # Сортируем периоды и считаем дельту
+                # Flow = конец текущего периода - конец предыдущего периода
+                # (а не start-end внутри периода, иначе неполная неделя = 0)
                 sorted_periods = sorted(periods_data.keys())
-                
+                prev_end_nav = None
+
                 for period_key in sorted_periods:
                     data_points = periods_data[period_key]
                     if len(data_points) < 1:
                         continue
-                    
-                    # Начало и конец периода
+
                     data_points.sort(key=lambda x: x[0])
-                    start_date, start_nav = data_points[0]
+                    start_date = data_points[0][0]
                     end_date, end_nav = data_points[-1]
-                    
-                    flow = end_nav - start_nav
-                    flows.append({
-                        "period_start": start_date.isoformat(),
-                        "period_end": end_date.isoformat(),
-                        "flow": round(flow / 1e9, 2),  # В млрд
-                        "flow_pct": round((flow / start_nav) * 100, 2) if start_nav else 0
-                    })
+
+                    if prev_end_nav is not None:
+                        flow = end_nav - prev_end_nav
+                        flows.append({
+                            "period_start": start_date.isoformat(),
+                            "period_end": end_date.isoformat(),
+                            "flow": round(flow / 1e9, 2),  # В млрд
+                            "flow_pct": round((flow / prev_end_nav) * 100, 2) if prev_end_nav else 0
+                        })
+                    prev_end_nav = end_nav
             
             return {
                 "category": category,

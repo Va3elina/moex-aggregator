@@ -713,21 +713,21 @@ export default function SimpleChart({
 
   // Блок легенды — переиспользуем в двух местах
   const legendBlock = (
-    <div className="flex gap-4 text-xs flex-wrap">
-      <span className="flex items-center gap-1.5">
-        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: primaryColor }} />
-        <span className="text-theme-secondary">{primaryLabel}</span>
+    <div className="flex gap-5 text-sm flex-wrap">
+      <span className="flex items-center gap-2">
+        <span className="w-3 h-3 rounded-full" style={{ backgroundColor: primaryColor }} />
+        <span className="text-theme-primary font-medium">{primaryLabel}</span>
       </span>
       {showSecondary && (
-        <span className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: secondaryColor }} />
-          <span className="text-theme-secondary">{secondaryLabel}</span>
+        <span className="flex items-center gap-2">
+          <span className="w-3 h-3 rounded-full" style={{ backgroundColor: secondaryColor }} />
+          <span className="text-theme-primary font-medium">{secondaryLabel}</span>
         </span>
       )}
       {showThird && (
-        <span className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: thirdColor }} />
-          <span className="text-theme-secondary">{thirdLabel}</span>
+        <span className="flex items-center gap-2">
+          <span className="w-3 h-3 rounded-full" style={{ backgroundColor: thirdColor }} />
+          <span className="text-theme-primary font-medium">{thirdLabel}</span>
         </span>
       )}
     </div>
@@ -836,9 +836,9 @@ export default function SimpleChart({
                   y={tick.y}
                   textAnchor="end"
                   dominantBaseline="middle"
-                  fill="#5E6576"
-                  fontSize="12"
-                  fontWeight="500"
+                  fill="#9CA3B8"
+                  fontSize="16"
+                  fontWeight="600"
                 >
                   {formatValue(tick.value)}
                 </text>
@@ -854,9 +854,9 @@ export default function SimpleChart({
                 textAnchor="start"
                 dominantBaseline="middle"
                 fill={secondaryColor}
-                fontSize="11"
-                fontWeight="500"
-                opacity="0.8"
+                fontSize="16"
+                fontWeight="600"
+                opacity="0.9"
               >
                 {tick.value.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
               </text>
@@ -882,9 +882,9 @@ export default function SimpleChart({
                     x={isFirst ? 0 : isLast ? chartWidth : tick.x}
                     y={chartHeight + 30}
                     textAnchor={isFirst ? 'start' : isLast ? 'end' : 'middle'}
-                    fill="#5E6576"
-                    fontSize="12"
-                    fontWeight="500"
+                    fill="#9CA3B8"
+                    fontSize="14"
+                    fontWeight="600"
                   >
                     {formatTime(tick.time)}
                   </text>
