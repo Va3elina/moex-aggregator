@@ -193,29 +193,27 @@ export default function HeatmapPage() {
     return (stock[key] as number) || 0;
   };
 
-  // Цвета: тёмный центр (0%) → кислотные яркие на краях
+  // Цвета в стиле Finviz: тёмный центр → насыщенный (но не неоновый) на краях
   const getColor = (change: number): string => {
     const maxChange = colorBy === 'change_1y' ? 30 : colorBy === 'change_1m' ? 10 : 3;
     const abs = Math.abs(change);
     const t = Math.min(abs / maxChange, 1); // 0..1
-    // Ускоряем нарастание яркости (квадратичная кривая)
-    const t2 = t * t;
 
     if (change > 0) {
-      // Тёмный #1a1a22 → кислотный зелёный #30ff30
-      const r = Math.round(26 - t2 * 26);         // 26 → 0
-      const g = Math.round(26 + t2 * (255 - 26));  // 26 → 255
-      const b = Math.round(34 - t2 * 2);           // 34 → 32
+      // #2a2a2a → #245528 → #2d8c2d → #30a830 (Finviz green)
+      const r = Math.round(42 - t * 18);          // 42 → 24
+      const g = Math.round(42 + t * (168 - 42));   // 42 → 168
+      const b = Math.round(42 - t * 18);           // 42 → 24
       return `rgb(${r},${g},${b})`;
     }
     if (change < 0) {
-      // Тёмный #1a1a22 → кислотный красный #ff2020
-      const r = Math.round(26 + t2 * (255 - 26));  // 26 → 255
-      const g = Math.round(26 - t2 * 6);           // 26 → 20
-      const b = Math.round(34 - t2 * 2);           // 34 → 32
+      // #2a2a2a → #6b2828 → #b82020 → #dc2626 (Finviz red)
+      const r = Math.round(42 + t * (220 - 42));   // 42 → 220
+      const g = Math.round(42 - t * 4);            // 42 → 38
+      const b = Math.round(42 - t * 4);            // 42 → 38
       return `rgb(${r},${g},${b})`;
     }
-    return '#1a1a22';
+    return '#2a2a2a';
   };
 
   // Форматирование процента (с запятой)
