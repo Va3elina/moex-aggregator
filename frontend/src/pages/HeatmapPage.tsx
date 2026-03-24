@@ -193,28 +193,29 @@ export default function HeatmapPage() {
     return (stock[key] as number) || 0;
   };
 
-  // Цвета в стиле Finviz — тёмный центр, яркие края
+  // Цвета: тёмный центр (0%) → кислотные яркие на краях
   const getColor = (change: number): string => {
-    // Масштаб зависит от выбранного периода
     const maxChange = colorBy === 'change_1y' ? 30 : colorBy === 'change_1m' ? 10 : 3;
     const abs = Math.abs(change);
     const t = Math.min(abs / maxChange, 1); // 0..1
+    // Ускоряем нарастание яркости (квадратичная кривая)
+    const t2 = t * t;
 
     if (change > 0) {
-      // Зелёная шкала: #1a1a22 → #2d4a22 → #2f6b2f → #3c9e3c → #30cc30
-      const r = Math.round(26 + t * (48 - 26));
-      const g = Math.round(26 + t * (204 - 26));
-      const b = Math.round(34 + t * (48 - 34));
+      // Тёмный #1a1a22 → кислотный зелёный #30ff30
+      const r = Math.round(26 - t2 * 26);         // 26 → 0
+      const g = Math.round(26 + t2 * (255 - 26));  // 26 → 255
+      const b = Math.round(34 - t2 * 2);           // 34 → 32
       return `rgb(${r},${g},${b})`;
     }
     if (change < 0) {
-      // Красная шкала: #1a1a22 → #6b2d2d → #a83030 → #cc3030
-      const r = Math.round(26 + t * (204 - 26));
-      const g = Math.round(26 + t * (48 - 26));
-      const b = Math.round(34 + t * (48 - 34));
+      // Тёмный #1a1a22 → кислотный красный #ff2020
+      const r = Math.round(26 + t2 * (255 - 26));  // 26 → 255
+      const g = Math.round(26 - t2 * 6);           // 26 → 20
+      const b = Math.round(34 - t2 * 2);           // 34 → 32
       return `rgb(${r},${g},${b})`;
     }
-    return '#1a1a22'; // нулевое изменение — почти чёрный
+    return '#1a1a22';
   };
 
   // Форматирование процента (с запятой)
