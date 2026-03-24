@@ -17,6 +17,7 @@ FROM python:3.11-slim
 # Системные зависимости
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -33,6 +34,8 @@ COPY Funds/ ./Funds/
 COPY Macro/ ./Macro/
 COPY main_orchestrator.py .
 COPY moex_calendar.py .
+COPY tg_bot.py .
+COPY backup_db.sh .
 
 # Frontend из stage 1
 COPY --from=frontend-build /app/frontend/dist ./frontend/dist

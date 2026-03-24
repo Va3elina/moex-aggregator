@@ -107,7 +107,7 @@ export default function FearIndexPage() {
 
   if (isInitialLoading) {
     return (
-      <div className="p-4 md:p-6 max-w-7xl mx-auto">
+      <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8">
         <div className="animate-pulse">
           <div className="h-8 bg-white/5 rounded w-64 mb-6" />
           <div className="h-96 bg-white/5 rounded-2xl" />
@@ -118,7 +118,7 @@ export default function FearIndexPage() {
 
   if (error) {
     return (
-      <div className="p-4 md:p-6 max-w-7xl mx-auto">
+      <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8">
         <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-6 text-center">
           <AlertTriangle className="w-12 h-12 text-red-400 mx-auto mb-3" />
           <p className="text-red-400">{error}</p>
@@ -128,7 +128,7 @@ export default function FearIndexPage() {
   }
 
   return (
-    <div className="p-4 md:p-6 max-w-7xl mx-auto">
+    <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8">
       {/* Заголовок */}
       <div className="flex items-center gap-3 mb-6">
         <div className="p-3 bg-gradient-to-br from-[#f97316] to-[#ef4444] rounded-xl">
@@ -362,7 +362,7 @@ export default function FearIndexPage() {
       {/* Легенда */}
       <div className="mt-6 widget p-5">
         <h3 className="text-theme-primary font-medium mb-4">Шкала Fear Index</h3>
-        <div className="grid grid-cols-5 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
           {Object.entries(FEAR_COLORS).map(([classification, color]) => (
             <div
               key={classification}
@@ -370,7 +370,7 @@ export default function FearIndexPage() {
               style={{ backgroundColor: `${color}11`, border: `1px solid ${color}33` }}
             >
               <div
-                className="text-2xl font-bold mb-1"
+                className="text-xl sm:text-2xl font-bold mb-1"
                 style={{ color }}
               >
                 {classification === 'Extreme Greed' && '0-25'}

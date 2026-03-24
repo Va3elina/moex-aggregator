@@ -21,6 +21,7 @@ from api.routers import (
     funds_router,
     breadth_router,
     buffett_router,
+    seasonality_router,
 )
 from api.routers import stats
 from api.routers import auth  # ← НОВОЕ: Аутентификация
@@ -169,6 +170,7 @@ app.include_router(heatmap_router)
 app.include_router(funds_router)
 app.include_router(breadth_router)
 app.include_router(buffett_router)
+app.include_router(seasonality_router)
 app.include_router(auth.router, prefix="/api")  # ← НОВОЕ: /api/auth/*
 app.include_router(oauth.router, prefix="/api")  # ← OAuth: /api/auth/oauth/*
 app.include_router(events.router)  # ← SSE: /api/events/*
@@ -228,5 +230,15 @@ if FRONTEND_DIR.exists():
     async def serve_spa(path: str):
         file_path = FRONTEND_DIR / path
         if file_path.exists() and file_path.is_file():
+            # sw.js и manifest — никогда не кешировать
+            if path in ("sw.js", "manifest.json"):
+                return FileResponse(
+                    file_path,
+                    headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+                )
             return FileResponse(file_path)
-        return FileResponse(FRONTEND_DIR / "index.html")
+        # index.html (SPA fallback) — никогда не кешировать
+        return FileResponse(
+            FRONTEND_DIR / "index.html",
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+        )

@@ -58,6 +58,10 @@ VK_REDIRECT_URI = os.getenv("VK_REDIRECT_URI", "")
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 
+YANDEX_CLIENT_ID = os.getenv("YANDEX_CLIENT_ID", "")
+YANDEX_CLIENT_SECRET = os.getenv("YANDEX_CLIENT_SECRET", "")
+YANDEX_REDIRECT_URI = os.getenv("YANDEX_REDIRECT_URI", "")
+
 
 # ============================================================================
 # СХЕМЫ
@@ -66,6 +70,8 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 class OAuthCodeRequest(BaseModel):
     """Запрос с authorization code от провайдера."""
     code: str
+    device_id: Optional[str] = None  # VK ID requires device_id
+    code_verifier: Optional[str] = None  # VK ID PKCE
 
 
 class TelegramAuthRequest(BaseModel):
@@ -83,6 +89,8 @@ class OAuthURLResponse(BaseModel):
     """URL для редиректа на провайдера."""
     url: str
     provider: str
+    code_verifier: Optional[str] = None  # VK PKCE: фронт сохраняет и отправляет при обмене
+    device_id: Optional[str] = None  # VK ID: фронт сохраняет и отправляет при обмене
 
 
 class OAuthTokenResponse(BaseModel):
@@ -105,6 +113,7 @@ def _find_or_create_oauth_user(
     oauth_id: str,
     email: Optional[str],
     avatar_url: Optional[str],
+    display_name: Optional[str] = None,
 ) -> tuple[User, bool]:
     """
     Ищет пользователя по OAuth провайдеру+ID.
@@ -120,9 +129,15 @@ def _find_or_create_oauth_user(
     ).first()
 
     if user:
-        # Обновляем аватар если изменился
+        # Обновляем аватар и display_name если изменились
+        changed = False
         if avatar_url and user.avatar_url != avatar_url:
             user.avatar_url = avatar_url
+            changed = True
+        if display_name and user.display_name != display_name:
+            user.display_name = display_name
+            changed = True
+        if changed:
             db.commit()
         return user, False
 
@@ -135,6 +150,8 @@ def _find_or_create_oauth_user(
             existing.oauth_id = oauth_id
             if avatar_url:
                 existing.avatar_url = avatar_url
+            if display_name:
+                existing.display_name = display_name
             db.commit()
             return existing, False
 
@@ -144,6 +161,7 @@ def _find_or_create_oauth_user(
         oauth_provider=provider,
         oauth_id=oauth_id,
         avatar_url=avatar_url,
+        display_name=display_name,
         is_verified=True,  # OAuth пользователи уже верифицированы
         is_active=True,
     )
@@ -206,18 +224,54 @@ async def google_auth_url():
 
 @router.get("/vk/url")
 async def vk_auth_url():
-    """Получить URL для авторизации через VK."""
+    """Получить URL для авторизации через VK ID (OAuth 2.1 + PKCE)."""
     _check_configured("VK", VK_CLIENT_ID, VK_REDIRECT_URI)
 
+    import secrets
+    import base64
+    state = secrets.token_urlsafe(16)
+
+    # PKCE: генерируем code_verifier и code_challenge
+    code_verifier = secrets.token_urlsafe(64)  # 43-128 символов
+    code_challenge = base64.urlsafe_b64encode(
+        hashlib.sha256(code_verifier.encode()).digest()
+    ).rstrip(b"=").decode()
+
+    # VK ID требует uuid (device_id)
+    device_id = secrets.token_hex(16)
+
+    from urllib.parse import quote
     url = (
         "https://id.vk.com/authorize?"
         f"client_id={VK_CLIENT_ID}"
-        f"&redirect_uri={VK_REDIRECT_URI}"
+        f"&redirect_uri={quote(VK_REDIRECT_URI, safe='')}"
         "&response_type=code"
-        "&scope=email"
-        "&display=popup"
+        f"&state={state}"
+        f"&code_challenge={code_challenge}"
+        "&code_challenge_method=s256"
+        f"&uuid={device_id}"
     )
-    return OAuthURLResponse(url=url, provider="vk")
+    return OAuthURLResponse(
+        url=url,
+        provider="vk",
+        code_verifier=code_verifier,
+        device_id=device_id,
+    )
+
+
+@router.get("/yandex/url")
+async def yandex_auth_url():
+    """Получить URL для авторизации через Яндекс."""
+    _check_configured("Yandex", YANDEX_CLIENT_ID, YANDEX_REDIRECT_URI)
+
+    url = (
+        "https://oauth.yandex.ru/authorize?"
+        f"client_id={YANDEX_CLIENT_ID}"
+        f"&redirect_uri={YANDEX_REDIRECT_URI}"
+        "&response_type=code"
+        "&force_confirm=yes"
+    )
+    return OAuthURLResponse(url=url, provider="yandex")
 
 
 # ============================================================================
@@ -299,50 +353,68 @@ async def vk_oauth_callback(
     _check_configured("VK", VK_CLIENT_ID, VK_CLIENT_SECRET)
 
     try:
-        # 1. Обмениваем code на access_token
+        # 1. Обмениваем code на access_token (VK ID OAuth 2.1 + PKCE)
+        token_payload = {
+            "grant_type": "authorization_code",
+            "code": data.code,
+            "client_id": VK_CLIENT_ID,
+            "redirect_uri": VK_REDIRECT_URI,
+            "device_id": data.device_id or "",
+            "state": "",
+        }
+        if data.code_verifier:
+            token_payload["code_verifier"] = data.code_verifier
+
         async with httpx.AsyncClient() as client:
             token_resp = await client.post(
                 "https://id.vk.com/oauth2/auth",
-                data={
-                    "code": data.code,
-                    "client_id": VK_CLIENT_ID,
-                    "client_secret": VK_CLIENT_SECRET,
-                    "redirect_uri": VK_REDIRECT_URI,
-                    "grant_type": "authorization_code",
-                },
+                data=token_payload,
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
             )
 
-        if token_resp.status_code != 200:
-            log.error(f"VK token error: {token_resp.text}")
-            raise HTTPException(400, "Не удалось получить токен от VK")
-
         token_data = token_resp.json()
+        log.info(f"VK token response keys: {list(token_data.keys())}")
+
+        if "error" in token_data:
+            log.error(f"VK token error: {token_data}")
+            raise HTTPException(400, f"VK: {token_data.get('error_description', token_data.get('error'))}")
+
         access_token = token_data.get("access_token")
         vk_user_id = token_data.get("user_id")
         email = token_data.get("email")
 
-        # 2. Получаем профиль
+        if not access_token:
+            log.error(f"VK: no access_token in response: {token_data}")
+            raise HTTPException(400, "VK: не получен access_token")
+
+        # 2. Получаем профиль через VK ID user_info
         async with httpx.AsyncClient() as client:
-            profile_resp = await client.get(
-                "https://api.vk.com/method/users.get",
-                params={
+            profile_resp = await client.post(
+                "https://id.vk.com/oauth2/user_info",
+                data={
                     "access_token": access_token,
-                    "fields": "photo_200,screen_name",
-                    "v": "5.131",
+                    "client_id": VK_CLIENT_ID,
                 },
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
             )
 
-        profile = profile_resp.json().get("response", [{}])[0]
+        profile = profile_resp.json().get("user", profile_resp.json())
 
-        avatar = profile.get("photo_200")
+        avatar = profile.get("avatar")
+        first = profile.get("first_name", "")
+        last = profile.get("last_name", "")
+        display_name = f"{first} {last}".strip() or None
+        if not email:
+            email = profile.get("email")
 
         # 3. Создаём/находим пользователя
         user, is_new = _find_or_create_oauth_user(
             db=db,
             provider="vk",
-            oauth_id=str(vk_user_id or profile.get("id")),
+            oauth_id=str(vk_user_id or profile.get("user_id") or profile.get("id")),
             email=email,
             avatar_url=avatar,
+            display_name=display_name,
         )
 
         return _make_token_response(user, is_new)
@@ -352,6 +424,75 @@ async def vk_oauth_callback(
     except Exception as e:
         log.error(f"VK OAuth error: {e}", exc_info=True)
         raise HTTPException(500, "Ошибка авторизации через VK")
+
+
+@router.post("/yandex")
+async def yandex_oauth_callback(
+    data: OAuthCodeRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Обмен Yandex authorization code на JWT.
+    """
+    _check_configured("Yandex", YANDEX_CLIENT_ID, YANDEX_CLIENT_SECRET)
+
+    try:
+        # 1. Обмениваем code на access_token
+        async with httpx.AsyncClient() as client:
+            token_resp = await client.post(
+                "https://oauth.yandex.ru/token",
+                data={
+                    "code": data.code,
+                    "client_id": YANDEX_CLIENT_ID,
+                    "client_secret": YANDEX_CLIENT_SECRET,
+                    "grant_type": "authorization_code",
+                },
+            )
+
+        if token_resp.status_code != 200:
+            log.error(f"Yandex token error: {token_resp.text}")
+            raise HTTPException(400, "Не удалось получить токен от Яндекс")
+
+        token_data = token_resp.json()
+        access_token = token_data.get("access_token")
+
+        # 2. Получаем профиль
+        async with httpx.AsyncClient() as client:
+            profile_resp = await client.get(
+                "https://login.yandex.ru/info",
+                headers={"Authorization": f"OAuth {access_token}"},
+                params={"format": "json"},
+            )
+
+        if profile_resp.status_code != 200:
+            raise HTTPException(400, "Не удалось получить профиль от Яндекс")
+
+        profile = profile_resp.json()
+
+        avatar_id = profile.get("default_avatar_id")
+        avatar_url = (
+            f"https://avatars.yandex.net/get-yapic/{avatar_id}/islands-200"
+            if avatar_id and avatar_id != "0/0-0"
+            else None
+        )
+
+        # 3. Создаём/находим пользователя
+        user, is_new = _find_or_create_oauth_user(
+            db=db,
+            provider="yandex",
+            oauth_id=str(profile["id"]),
+            email=profile.get("default_email"),
+            avatar_url=avatar_url,
+            display_name=profile.get("display_name"),
+        )
+
+        return _make_token_response(user, is_new)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f"Yandex OAuth error: {e}", exc_info=True)
+        raise HTTPException(500, "Ошибка авторизации через Яндекс")
 
 
 @router.post("/telegram")
@@ -404,12 +545,14 @@ async def telegram_oauth_callback(
             raise HTTPException(400, "Невалидная подпись Telegram")
 
         # 3. Создаём/находим пользователя
+        tg_display = f"@{data.username}" if data.username else data.first_name
         user, is_new = _find_or_create_oauth_user(
             db=db,
             provider="telegram",
             oauth_id=str(data.id),
             email=None,  # Telegram не даёт email
             avatar_url=data.photo_url,
+            display_name=tg_display,
         )
 
         return _make_token_response(user, is_new)
@@ -444,6 +587,12 @@ async def get_oauth_providers():
                 "name": "ВКонтакте",
                 "icon": "vk",
                 "configured": bool(VK_CLIENT_ID and VK_CLIENT_SECRET),
+            },
+            {
+                "id": "yandex",
+                "name": "Яндекс",
+                "icon": "yandex",
+                "configured": bool(YANDEX_CLIENT_ID and YANDEX_CLIENT_SECRET),
             },
             {
                 "id": "telegram",

@@ -31,6 +31,7 @@ interface SimpleChartProps {
   legendPosition?: 'top' | 'bottom';
   showDownloadButton?: boolean;
   showNavigator?: boolean;
+  chartPadding?: { left?: number; right?: number };
 }
 
 // Интерполяция между двумя значениями
@@ -116,6 +117,7 @@ export default function SimpleChart({
   legendPosition = 'bottom',
   showDownloadButton = true,
   showNavigator = false,
+  chartPadding,
 }: SimpleChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -230,13 +232,30 @@ export default function SimpleChart({
     return () => window.removeEventListener('resize', updateWidth);
   }, []);
 
-  // Адаптивные отступы: на мобиле меньше
-  const padding = isMobile
-    ? { top: 16, right: 10, bottom: 40, left: 45 }
-    : { top: 19, right: 90, bottom: 50, left: 80 };
+  // Перемерить ширину когда данные загрузились (containerRef мог переключиться с loading-div на основной)
+  useEffect(() => {
+    if (containerRef.current && data.length > 0) {
+      const w = containerRef.current.clientWidth;
+      if (w !== width && w > 0) setWidth(w);
+    }
+  }, [data.length > 0]);
+
+  // Адаптивные отступы
+  const defaultPad = isMobile
+    ? { top: 16, right: 20, bottom: 40, left: 45 }
+    : {
+        top: 19,
+        right: showSecondary ? 85 : 12,
+        bottom: 50,
+        left: 85
+      };
+  const padding = {
+    ...defaultPad,
+    ...(chartPadding && !isMobile ? { left: chartPadding.left ?? defaultPad.left, right: chartPadding.right ?? defaultPad.right } : {}),
+  };
 
   // На мобиле ограничиваем высоту графика
-  const effectiveHeight = isMobile ? Math.min(height, 300) : height;
+  const effectiveHeight = isMobile ? Math.min(height, 350) : height;
   const chartWidth = Math.max(width - padding.left - padding.right, 100);
   const chartHeight = effectiveHeight - padding.top - padding.bottom;
 
@@ -715,12 +734,7 @@ export default function SimpleChart({
   );
 
   return (
-    <div ref={containerRef} className="rounded-2xl p-5 bg-theme-secondary border border-theme relative">
-      {/* Легенда — вверху, по центру */}
-      {legendPosition === 'top' && (
-        <div className="mb-2 flex justify-center">{legendBlock}</div>
-      )}
-
+    <div className="rounded-2xl p-5 bg-theme-secondary border border-theme relative">
       {/* Кнопка переключения линия/гистограмма */}
       {allowHistogram && (
         <button
@@ -753,6 +767,14 @@ export default function SimpleChart({
           <div className="w-4 h-4 border-2 border-[#C8FF2E] border-t-transparent rounded-full animate-spin" />
           <span className="text-xs text-theme-secondary">Обновление...</span>
         </div>
+      )}
+
+      {/* Область измерения ширины (без padding) */}
+      <div ref={containerRef}>
+
+      {/* Легенда — вверху, по центру */}
+      {legendPosition === 'top' && (
+        <div className="mb-2 flex justify-center">{legendBlock}</div>
       )}
 
       {/* Заголовок с текущим значением */}
@@ -806,13 +828,11 @@ export default function SimpleChart({
                   y1={tick.y}
                   x2={chartWidth}
                   y2={tick.y}
-                  stroke="#2A2F3E"
+                  stroke="rgba(255,255,255,0.08)"
                   strokeWidth="1"
-                  strokeDasharray="4,6"
-                  opacity="0.5"
                 />
                 <text
-                  x={-12}
+                  x={-18}
                   y={tick.y}
                   textAnchor="end"
                   dominantBaseline="middle"
@@ -829,7 +849,7 @@ export default function SimpleChart({
             {!isMobile && showSecondary && targetCalc.secYTicks && targetCalc.secYTicks.map((tick, i) => (
               <text
                 key={`sec-${i}`}
-                x={chartWidth + 12}
+                x={chartWidth + 18}
                 y={tick.y}
                 textAnchor="start"
                 dominantBaseline="middle"
@@ -842,22 +862,33 @@ export default function SimpleChart({
               </text>
             ))}
 
-            {/* X метки — первая прижата влево, последняя вправо, чтобы не выходить за края */}
+            {/* Вертикальные линии сетки + X метки */}
             {targetCalc.xTicks.map((tick, i) => {
               const isFirst = i === 0;
               const isLast = i === targetCalc.xTicks.length - 1;
               return (
-                <text
-                  key={i}
-                  x={isFirst ? 0 : isLast ? chartWidth : tick.x}
-                  y={chartHeight + 30}
-                  textAnchor={isFirst ? 'start' : isLast ? 'end' : 'middle'}
-                  fill="#5E6576"
-                  fontSize="12"
-                  fontWeight="500"
-                >
-                  {formatTime(tick.time)}
-                </text>
+                <g key={i}>
+                  {!isFirst && !isLast && (
+                    <line
+                      x1={tick.x}
+                      y1={0}
+                      x2={tick.x}
+                      y2={chartHeight}
+                      stroke="rgba(255,255,255,0.08)"
+                      strokeWidth="1"
+                    />
+                  )}
+                  <text
+                    x={isFirst ? 0 : isLast ? chartWidth : tick.x}
+                    y={chartHeight + 30}
+                    textAnchor={isFirst ? 'start' : isLast ? 'end' : 'middle'}
+                    fill="#5E6576"
+                    fontSize="12"
+                    fontWeight="500"
+                  >
+                    {formatTime(tick.time)}
+                  </text>
+                </g>
               );
             })}
 
@@ -868,6 +899,18 @@ export default function SimpleChart({
                 <path
                   d={animatedPaths.area}
                   fill="url(#primaryGradient)"
+                />
+              )}
+
+              {/* Основная линия (цена — под индикаторами) */}
+              {animatedPaths.primary && (
+                <path
+                  d={animatedPaths.primary}
+                  fill="none"
+                  stroke={primaryColor}
+                  strokeWidth="3"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
                 />
               )}
 
@@ -937,18 +980,6 @@ export default function SimpleChart({
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   opacity={oiOpacity}
-                />
-              )}
-
-              {/* Основная линия (всегда линия) */}
-              {animatedPaths.primary && (
-                <path
-                  d={animatedPaths.primary}
-                  fill="none"
-                  stroke={primaryColor}
-                  strokeWidth="3"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
                 />
               )}
 
@@ -1106,6 +1137,8 @@ export default function SimpleChart({
       {legendPosition === 'bottom' && (
         <div className="mt-4 justify-center">{legendBlock}</div>
       )}
+
+      </div>{/* end containerRef */}
     </div>
   );
 }

@@ -35,6 +35,7 @@ class User(Base):
     hashed_password = Column(String(255), nullable=True)  # nullable для OAuth
 
     # === Профиль ===
+    display_name = Column(String(255), nullable=True)
     avatar_url = Column(String(500), nullable=True)
 
     # === OAuth ===

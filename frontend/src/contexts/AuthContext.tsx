@@ -3,6 +3,7 @@ import { createContext, useContext, useState, useEffect, useCallback, type React
 interface User {
   id: number;
   email: string;
+  display_name: string | null;
   role: string;
   has_password: boolean;
   avatar_url: string | null;
@@ -21,8 +22,45 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+function isTokenExpiringSoon(token: string): boolean {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    const exp = payload.exp * 1000; // ms
+    return exp - Date.now() < 60_000; // меньше 1 минуты до истечения
+  } catch {
+    return true;
+  }
+}
+
+async function tryRefreshToken(): Promise<string | null> {
+  const refreshToken = localStorage.getItem('refresh_token');
+  if (!refreshToken) return null;
+
+  try {
+    const resp = await fetch('/api/auth/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+    if (resp.ok) {
+      const tokens = await resp.json();
+      localStorage.setItem('access_token', tokens.access_token);
+      localStorage.setItem('refresh_token', tokens.refresh_token);
+      return tokens.access_token;
+    }
+  } catch { /* ignore */ }
+  return null;
+}
+
 async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
-  const token = localStorage.getItem('access_token');
+  let token = localStorage.getItem('access_token');
+
+  // Проактивный refresh если токен скоро протухнет
+  if (token && isTokenExpiringSoon(token)) {
+    const newToken = await tryRefreshToken();
+    if (newToken) token = newToken;
+  }
+
   return fetch(url, {
     ...options,
     headers: {
@@ -122,7 +160,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Не рендерим приложение пока auth не разрешился —
   // иначе страницы инициализируют state с гостевыми значениями,
   // а потом получают 403 при запросе данных.
-  if (loading) {
+  // НО: на /auth/callback/* не блокируем — AuthCallback сам покажет свой спиннер.
+  const isAuthCallback = typeof window !== 'undefined' && window.location.pathname.startsWith('/auth/callback');
+  if (loading && !isAuthCallback) {
     return (
       <div style={{
         height: '100vh',

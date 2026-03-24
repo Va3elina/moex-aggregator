@@ -10,6 +10,7 @@ import FearIndexPage from './pages/FearIndexPage';
 import FundsMoneyPage from './pages/FundsMoneyPage';
 import StrengthPage from './pages/StrengthPage';
 import BuffettPage from './pages/BuffettPage';
+import SeasonalityPage from './pages/SeasonalityPage';
 import LoginPage from './pages/LoginPage';
 import AuthCallback from './pages/AuthCallback';
 import ProfilePage from './pages/ProfilePage';
@@ -23,6 +24,8 @@ export default function App() {
           {/* Auth callback — без Layout */}
           <Route path="/auth/callback/google" element={<AuthCallback />} />
           <Route path="/auth/callback/vk" element={<AuthCallback />} />
+          <Route path="/auth/callback/yandex" element={<AuthCallback />} />
+          <Route path="/auth/callback/telegram" element={<AuthCallback />} />
 
           {/* Основное приложение */}
           <Route element={<Layout />}>
@@ -36,6 +39,7 @@ export default function App() {
             <Route path="/funds-money" element={<FundsMoneyPage />} />
             <Route path="/buffett" element={<BuffettPage />} />
             <Route path="/strength" element={<StrengthPage />} />
+            <Route path="/seasonality" element={<SeasonalityPage />} />
             <Route path="/profile" element={<ProfilePage />} />
           </Route>
         </Routes>

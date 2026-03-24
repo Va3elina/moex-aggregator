@@ -50,4 +50,28 @@ buffett_tmp*
 ml4t_repo/
 
 # Заметки (не код)
-Заметки
+Заметки/
+сила рынка/
+тз на баффета/
+трендевушка/
+
+# Старые скрипты
+btc_quant_lab.py
+crypto_breadth*.pine
+russia_breadth.pine
+excel_content.json
+render.yaml
+restart_hourly.sh
+start.ps1
+start.sh
+stop.ps1
+stop.sh
+deploy.sh
+
+# Бэктесты и стратегии (не часть сайта)
+backtest_*.py
+backtest_*.json
+backtest_*.png
+pinescript_strategy.pine
+STRATEGY_PARAMS.md
+compare_stocks.py

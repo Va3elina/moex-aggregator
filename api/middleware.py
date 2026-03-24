@@ -226,6 +226,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return request.client.host if request.client else "unknown"
 
     def _get_limit_for_path(self, path: str) -> int:
+        # /api/auth/me и /api/auth/oauth/providers — read-only, общий лимит
+        if path in ("/api/auth/me", "/api/auth/oauth/providers"):
+            return self.requests_per_minute
         if any(path.startswith(ep) for ep in self.auth_endpoints):
             return self.auth_requests_per_minute
         if any(path.startswith(ep) for ep in self.heavy_endpoints):

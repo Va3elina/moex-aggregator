@@ -95,6 +95,7 @@ FUNDS = {
     6225: {"shares": "AKMB", "inav": "AKMBA", "name": "Альфа Управляемые облигации"},
     10331: {"shares": "SBLB", "inav": "SBLBA", "name": "Первая Долгосрочные гособлигации"},
     11445: {"shares": "TOFZ", "inav": "TOFZA", "name": "Т-Капитал ОФЗ"},
+    11705: {"shares": "AMGB", "inav": "AMGBA", "name": "АТОН Длинные ОФЗ"},
 
     # Золото
     4713: {"shares": "AKGD", "inav": "AKGDA", "name": "Альфа-Капитал Золото"},

@@ -1,5 +1,5 @@
 // Фрейм PWA Service Worker
-const CACHE_NAME = 'frame-v2';
+const CACHE_NAME = 'frame-v11';
 const STATIC_ASSETS = [
     '/',
     '/manifest.json',
@@ -37,9 +37,8 @@ self.addEventListener('fetch', (event) => {
         return; // Браузер обработает напрямую
     }
 
-    // Auth запросы — не кешируем (токены, профиль)
+    // Auth запросы — пропускаем, браузер обработает напрямую
     if (url.pathname.startsWith('/api/auth/')) {
-        event.respondWith(fetch(request));
         return;
     }
 
@@ -60,23 +59,23 @@ self.addEventListener('fetch', (event) => {
         return;
     }
 
-    // Статика (JS, CSS, шрифты, изображения) — cache-first
+    // Статика (JS, CSS, шрифты, изображения) — network-first
+    // Vite генерирует уникальные хэши в именах, но SW cache-first мешает обновлениям
     if (
         url.pathname.match(/\.(js|css|woff2?|png|svg|jpg|webp|ico)$/) ||
         url.hostname === 'fonts.googleapis.com' ||
         url.hostname === 'fonts.gstatic.com'
     ) {
         event.respondWith(
-            caches.match(request).then((cached) => {
-                if (cached) return cached;
-                return fetch(request).then((response) => {
+            fetch(request)
+                .then((response) => {
                     if (response.ok) {
                         const clone = response.clone();
                         caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
                     }
                     return response;
-                });
-            })
+                })
+                .catch(() => caches.match(request))
         );
         return;
     }

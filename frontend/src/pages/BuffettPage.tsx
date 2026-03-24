@@ -47,7 +47,13 @@ export default function BuffettPage() {
                 const result = await getBuffettMcftrM2(period, smooth);
                 setMcftrM2Data(result);
             }
-        } catch (err) {
+        } catch (err: unknown) {
+            const msg = err instanceof Error ? err.message : '';
+            // При 403 (гость или протухший токен) — фолбэк на 1y
+            if (msg.includes('авторизац') && period !== '1y') {
+                setPeriod('1y');
+                return;
+            }
             setError('Ошибка загрузки данных');
             console.error(err);
         } finally {

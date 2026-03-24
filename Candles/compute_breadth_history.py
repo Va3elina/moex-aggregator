@@ -5,7 +5,11 @@
 Загружает дневные свечи акций, считает EMA(50/100/200) для каждого тикера
 и сохраняет результаты в таблицу breadth_history для мгновенного API-доступа.
 
-Таблица: breadth_history(trade_date, ema_period, percent_above, count_above, count_total)
+Поддерживает две вселенные:
+- all: все акции из БД
+- imoex: только акции из индекса IMOEX
+
+Таблица: breadth_history(trade_date, ema_period, universe, percent_above, count_above, count_total)
 
 Запуск:
     python compute_breadth_history.py           # инкрементальное обновление
@@ -18,6 +22,7 @@ import sys
 import logging
 import argparse
 import numpy as np
+import httpx
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -46,6 +51,8 @@ EXCLUDED = {
     'GLDRUBF', 'GAZPF', 'SBERF',
 }
 
+IMOEX_ISS_URL = "https://iss.moex.com/iss/statistics/engines/stock/markets/index/analytics/IMOEX.json?limit=100"
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 #  БД: создание таблицы и индексов
@@ -54,36 +61,57 @@ EXCLUDED = {
 def create_schema(engine) -> None:
     """Создаёт таблицу breadth_history и индексы если не существуют."""
     with engine.connect() as conn:
+        # Добавляем колонку universe если таблица уже есть
         conn.execute(text("""
             CREATE TABLE IF NOT EXISTS breadth_history (
                 trade_date    DATE     NOT NULL,
                 ema_period    SMALLINT NOT NULL,
+                universe      VARCHAR(10) NOT NULL DEFAULT 'all',
                 percent_above REAL     NOT NULL,
                 count_above   SMALLINT NOT NULL,
                 count_total   SMALLINT NOT NULL,
-                PRIMARY KEY (trade_date, ema_period)
+                PRIMARY KEY (trade_date, ema_period, universe)
             )
         """))
+
+        # Миграция: если старая таблица без universe — добавить колонку и пересоздать PK
+        try:
+            conn.execute(text("""
+                ALTER TABLE breadth_history ADD COLUMN IF NOT EXISTS universe VARCHAR(10) NOT NULL DEFAULT 'all'
+            """))
+        except Exception:
+            pass
+
+        # Попытка пересоздать PK (если он без universe)
+        try:
+            conn.execute(text("""
+                ALTER TABLE breadth_history DROP CONSTRAINT IF EXISTS breadth_history_pkey
+            """))
+            conn.execute(text("""
+                ALTER TABLE breadth_history ADD PRIMARY KEY (trade_date, ema_period, universe)
+            """))
+        except Exception:
+            pass
+
         conn.execute(text("""
             CREATE INDEX IF NOT EXISTS idx_breadth_history_lookup
-            ON breadth_history(ema_period, trade_date DESC)
+            ON breadth_history(ema_period, universe, trade_date DESC)
         """))
-        # Индекс для быстрой выборки свечей в расчёте
         conn.execute(text("""
             CREATE INDEX IF NOT EXISTS idx_candles_breadth
             ON candles(interval, secid, begin_time, close)
             WHERE interval = 24
         """))
         conn.commit()
-    log.info("Схема breadth_history готова")
+    log.info("Схема breadth_history готова (с universe)")
 
 
-def get_last_computed_date(engine) -> date | None:
-    """Возвращает максимальную дату в breadth_history (для инкрементального режима)."""
+def get_last_computed_date(engine, universe: str = "all") -> date | None:
+    """Возвращает максимальную дату в breadth_history для данной вселенной."""
     with engine.connect() as conn:
         row = conn.execute(text(
-            "SELECT MAX(trade_date) FROM breadth_history WHERE ema_period = 200"
-        )).fetchone()
+            "SELECT MAX(trade_date) FROM breadth_history WHERE ema_period = 200 AND universe = :universe"
+        ), {"universe": universe}).fetchone()
         return row[0] if row and row[0] else None
 
 
@@ -103,8 +131,25 @@ def get_stock_tickers(engine) -> list[str]:
             ORDER BY secid
         """)).fetchall()
     tickers = [r[0] for r in rows if r[0] not in EXCLUDED]
-    log.info(f"Тикеры: {len(tickers)} акций")
+    log.info(f"Тикеры (all): {len(tickers)} акций")
     return tickers
+
+
+def get_imoex_tickers() -> list[str]:
+    """Получает список тикеров из индекса IMOEX через ISS API."""
+    try:
+        resp = httpx.get(IMOEX_ISS_URL, timeout=15)
+        resp.raise_for_status()
+        data = resp.json()
+        cols = data["analytics"]["columns"]
+        rows_data = data["analytics"]["data"]
+        idx_ticker = cols.index("ticker")
+        tickers = [row[idx_ticker] for row in rows_data]
+        log.info(f"Тикеры (imoex): {len(tickers)} акций")
+        return tickers
+    except Exception as e:
+        log.error(f"Ошибка загрузки тикеров IMOEX: {e}")
+        return []
 
 
 def load_candles(engine, tickers: list[str], date_from: date) -> dict[str, tuple[list, list]]:
@@ -194,7 +239,7 @@ def compute_all(
     return counts
 
 
-def build_records(counts: dict[int, dict]) -> list[dict]:
+def build_records(counts: dict[int, dict], universe: str = "all") -> list[dict]:
     """Преобразует counts в список словарей для upsert."""
     records = []
     for period, date_counts in counts.items():
@@ -204,11 +249,12 @@ def build_records(counts: dict[int, dict]) -> list[dict]:
             records.append({
                 "trade_date": d,
                 "ema_period": period,
+                "universe": universe,
                 "percent_above": round(above / total * 100, 2),
                 "count_above": above,
                 "count_total": total,
             })
-    log.info(f"Записей для upsert: {len(records):,}")
+    log.info(f"Записей для upsert ({universe}): {len(records):,}")
     return records
 
 
@@ -222,7 +268,6 @@ def upsert(engine, records: list[dict]) -> None:
         log.warning("Нет записей для сохранения")
         return
 
-    # pg8000 executemany работает медленно, используем чанки по 1000
     chunk_size = 1000
     total = 0
     with engine.connect() as conn:
@@ -230,9 +275,9 @@ def upsert(engine, records: list[dict]) -> None:
             chunk = records[i: i + chunk_size]
             conn.execute(text("""
                 INSERT INTO breadth_history
-                    (trade_date, ema_period, percent_above, count_above, count_total)
-                VALUES (:trade_date, :ema_period, :percent_above, :count_above, :count_total)
-                ON CONFLICT (trade_date, ema_period) DO UPDATE SET
+                    (trade_date, ema_period, universe, percent_above, count_above, count_total)
+                VALUES (:trade_date, :ema_period, :universe, :percent_above, :count_above, :count_total)
+                ON CONFLICT (trade_date, ema_period, universe) DO UPDATE SET
                     percent_above = EXCLUDED.percent_above,
                     count_above   = EXCLUDED.count_above,
                     count_total   = EXCLUDED.count_total
@@ -265,10 +310,14 @@ def main() -> None:
     engine = create_engine(DB_URL, connect_args={"ssl_context": False})
     create_schema(engine)
 
-    tickers = get_stock_tickers(engine)
-    if not tickers:
+    # ── 1. Все акции (universe=all) ──
+    all_tickers = get_stock_tickers(engine)
+    if not all_tickers:
         log.error("Нет тикеров в БД — выход")
         return
+
+    # ── 2. IMOEX тикеры ──
+    imoex_tickers = get_imoex_tickers()
 
     max_period = max(EMA_PERIODS)
     warmup = max_period + 50  # дней для «прогрева» EMA
@@ -276,14 +325,12 @@ def main() -> None:
     if args.full:
         date_from = date(2007, 1, 1) - timedelta(days=warmup)
         log.info(f"Режим: полный пересчёт (с {date_from})")
-
     elif args.days:
         date_from = date.today() - timedelta(days=args.days + warmup)
         log.info(f"Режим: последние {args.days} дней (загрузка с {date_from})")
-
     else:
         # Инкрементальный: обновляем последние 30 дней
-        last = get_last_computed_date(engine)
+        last = get_last_computed_date(engine, "all")
         if last:
             date_from = last - timedelta(days=30 + warmup)
             log.info(f"Режим: инкрементальный, последняя дата={last}, загрузка с {date_from}")
@@ -291,13 +338,29 @@ def main() -> None:
             date_from = date(2007, 1, 1) - timedelta(days=warmup)
             log.info(f"Режим: первый запуск — полный расчёт с {date_from}")
 
-    ticker_data = load_candles(engine, tickers, date_from)
-    counts = compute_all(ticker_data, EMA_PERIODS)
-    records = build_records(counts)
-    upsert(engine, records)
+    # Загружаем все свечи одним запросом (union тикеров)
+    all_unique_tickers = list(set(all_tickers) | set(imoex_tickers))
+    all_candle_data = load_candles(engine, all_unique_tickers, date_from)
+
+    # ── Вычисление для all ──
+    log.info("=== Вычисление breadth для ALL ===")
+    all_ticker_data = {t: all_candle_data[t] for t in all_tickers if t in all_candle_data}
+    counts_all = compute_all(all_ticker_data, EMA_PERIODS)
+    records_all = build_records(counts_all, "all")
+    upsert(engine, records_all)
+
+    # ── Вычисление для IMOEX ──
+    if imoex_tickers:
+        log.info("=== Вычисление breadth для IMOEX ===")
+        imoex_ticker_data = {t: all_candle_data[t] for t in imoex_tickers if t in all_candle_data}
+        counts_imoex = compute_all(imoex_ticker_data, EMA_PERIODS)
+        records_imoex = build_records(counts_imoex, "imoex")
+        upsert(engine, records_imoex)
+    else:
+        log.warning("Не удалось получить тикеры IMOEX — пропускаем")
 
     engine.dispose()
-    log.info(f"✅ Готово за {time.time() - t0:.1f}с")
+    log.info(f"Готово за {time.time() - t0:.1f}с")
 
 
 if __name__ == "__main__":

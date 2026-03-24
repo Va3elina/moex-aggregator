@@ -119,6 +119,7 @@ async def get_funds_chart(
                 WHERE fd.fund_id = ANY(:fund_ids)
                   AND fd.trade_date >= :date_from
                   AND fd.nav IS NOT NULL
+                  AND fd.nav > 0
                 ORDER BY fd.fund_id, fd.trade_date
             """)
             

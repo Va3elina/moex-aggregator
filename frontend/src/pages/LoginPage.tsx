@@ -19,6 +19,12 @@ const VKIcon = () => (
     </svg>
 );
 
+const YandexIcon = () => (
+    <svg viewBox="0 0 24 24" width="20" height="20">
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1.75 15h-1.72V11.6L9.8 17H7.97l2.5-5.02L8.5 7h1.82l2.05 4.34V7h1.38v10z" fill="#FC3F1D" />
+    </svg>
+);
+
 const TelegramIcon = () => (
     <svg viewBox="0 0 24 24" width="20" height="20" fill="#26A5E4">
         <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.479.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z" />
@@ -47,13 +53,6 @@ export default function LoginPage() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [providers, setProviders] = useState<OAuthProvider[]>([]);
-
-    const passwordChecks = {
-        length: password.length >= 8,
-        upper: /[A-Z]/.test(password),
-        lower: /[a-z]/.test(password),
-        digit: /[0-9]/.test(password),
-    };
 
     // Загрузка списка провайдеров
     useEffect(() => {
@@ -97,11 +96,28 @@ export default function LoginPage() {
 
     // Обработка OAuth
     const handleOAuth = async (providerId: string) => {
+        if (providerId === 'telegram') {
+            // Прямой редирект на Telegram OAuth (без popup-виджета)
+            const botId = '8604817597';
+            const origin = encodeURIComponent(window.location.origin);
+            const returnTo = encodeURIComponent(window.location.origin + '/auth/callback/telegram');
+            window.location.href = `https://oauth.telegram.org/auth?bot_id=${botId}&origin=${origin}&embed=0&request_access=write&return_to=${returnTo}`;
+            return;
+        }
+
+        // Google, VK, Yandex — стандартный redirect
         try {
             const resp = await fetch(`/api/auth/oauth/${providerId}/url`);
             const data = await resp.json();
 
             if (resp.ok && data.url) {
+                // VK ID PKCE: сохраняем code_verifier и device_id для callback
+                if (data.code_verifier) {
+                    sessionStorage.setItem('vk_code_verifier', data.code_verifier);
+                }
+                if (data.device_id) {
+                    sessionStorage.setItem('vk_device_id', data.device_id);
+                }
                 window.location.href = data.url;
             } else {
                 setError(data.detail || 'OAuth не настроен');
@@ -114,12 +130,14 @@ export default function LoginPage() {
     const providerIcons: Record<string, React.ReactNode> = {
         google: <GoogleIcon />,
         vk: <VKIcon />,
+        yandex: <YandexIcon />,
         telegram: <TelegramIcon />,
     };
 
     const providerColors: Record<string, string> = {
         google: 'hover:border-[#4285F4]/50 hover:bg-[#4285F4]/10',
         vk: 'hover:border-[#0077FF]/50 hover:bg-[#0077FF]/10',
+        yandex: 'hover:border-[#FC3F1D]/50 hover:bg-[#FC3F1D]/10',
         telegram: 'hover:border-[#26A5E4]/50 hover:bg-[#26A5E4]/10',
     };
 
@@ -257,23 +275,6 @@ export default function LoginPage() {
                                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                             </button>
                         </div>
-                        {/* Требования к паролю — только при регистрации */}
-                        {mode === 'register' && (
-                            <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1">
-                                {([
-                                    [passwordChecks.length, 'Минимум 8 символов'],
-                                    [passwordChecks.upper,  'Заглавная буква'],
-                                    [passwordChecks.lower,  'Строчная буква'],
-                                    [passwordChecks.digit,  'Цифра'],
-                                ] as [boolean, string][]).map(([ok, label]) => (
-                                    <span key={label} className="flex items-center gap-1 text-xs transition-colors duration-200"
-                                        style={{ color: ok ? '#2EE59D' : 'var(--text-muted)' }}>
-                                        <span className="text-base leading-none">{ok ? '✓' : '○'}</span>
-                                        {label}
-                                    </span>
-                                ))}
-                            </div>
-                        )}
                     </div>
 
                     {/* Submit */}

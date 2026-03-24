@@ -22,27 +22,108 @@ export default function AuthCallback() {
     const [searchParams] = useSearchParams();
     const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
     const [errorMsg, setErrorMsg] = useState('');
+    const [providerName, setProviderName] = useState('');
 
     useEffect(() => {
-        const code = searchParams.get('code');
-
         // Определяем провайдера по URL path
         const path = window.location.pathname;
         let provider = '';
         if (path.includes('google')) provider = 'google';
         else if (path.includes('vk')) provider = 'vk';
+        else if (path.includes('yandex')) provider = 'yandex';
+        else if (path.includes('telegram')) provider = 'telegram';
 
-        if (!code || !provider) {
+        const names: Record<string, string> = { google: 'Google', vk: 'VK', yandex: 'Яндекс', telegram: 'Telegram' };
+        setProviderName(names[provider] || provider);
+
+        if (!provider) {
+            setStatus('error');
+            setErrorMsg('Неизвестный провайдер');
+            return;
+        }
+
+        // Telegram: данные приходят в hash (#tgAuthResult=base64) или query params
+        if (provider === 'telegram') {
+            let tgData: Record<string, string> = {};
+
+            // Вариант 1: hash fragment (#tgAuthResult=base64json)
+            const hash = window.location.hash;
+            if (hash.includes('tgAuthResult=')) {
+                try {
+                    const b64 = hash.split('tgAuthResult=')[1];
+                    const json = atob(b64);
+                    tgData = JSON.parse(json);
+                } catch {
+                    // fallback to query params
+                }
+            }
+
+            // Вариант 2: query params (?id=...&hash=...&auth_date=...)
+            if (!tgData.id) {
+                for (const [key, value] of searchParams.entries()) {
+                    tgData[key] = value;
+                }
+            }
+
+            if (!tgData.id || !tgData.hash) {
+                setStatus('error');
+                setErrorMsg('Не удалось получить данные от Telegram. Убедитесь, что вы вошли в Telegram и разрешили доступ.');
+                return;
+            }
+
+            fetch('/api/auth/oauth/telegram', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(tgData),
+            })
+                .then(async (resp) => {
+                    const data = await resp.json();
+                    if (!resp.ok) throw new Error(data.error?.message || data.detail || 'Ошибка авторизации');
+                    await auth.login({ access_token: data.access_token, refresh_token: data.refresh_token });
+                    setStatus('success');
+                    setTimeout(() => navigate('/'), 1000);
+                })
+                .catch((err) => {
+                    setStatus('error');
+                    setErrorMsg(err.message || 'Ошибка авторизации через Telegram');
+                });
+            return;
+        }
+
+        // Google, VK: данные приходят как code
+        const code = searchParams.get('code');
+        if (!code) {
             setStatus('error');
             setErrorMsg('Не удалось получить код авторизации');
             return;
         }
 
+        // Дедупликация: Google code одноразовый, нельзя отправить дважды
+        const storageKey = `oauth_code_${code.slice(0, 20)}`;
+        if (sessionStorage.getItem(storageKey)) {
+            if (auth.isAuthenticated) {
+                setStatus('success');
+                setTimeout(() => navigate('/'), 500);
+            }
+            return;
+        }
+        sessionStorage.setItem(storageKey, '1');
+
+        // Собираем payload — VK ID PKCE: code_verifier и device_id из sessionStorage
+        const payload: Record<string, string> = { code };
+        const deviceId = searchParams.get('device_id') || sessionStorage.getItem('vk_device_id') || '';
+        if (deviceId) payload.device_id = deviceId;
+        const codeVerifier = sessionStorage.getItem('vk_code_verifier') || '';
+        if (codeVerifier) payload.code_verifier = codeVerifier;
+        // Очищаем после использования
+        sessionStorage.removeItem('vk_code_verifier');
+        sessionStorage.removeItem('vk_device_id');
+
         // Отправляем code на backend
         fetch(`/api/auth/oauth/${provider}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ code }),
+            body: JSON.stringify(payload),
         })
             .then(async (resp) => {
                 const data = await resp.json();
@@ -62,8 +143,11 @@ export default function AuthCallback() {
             .catch((err) => {
                 setStatus('error');
                 setErrorMsg(err.message || 'Произошла ошибка');
+                // Очищаем флаг чтобы можно было повторить
+                sessionStorage.removeItem(storageKey);
             });
-    }, [searchParams, navigate, auth]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     return (
         <div
@@ -74,7 +158,9 @@ export default function AuthCallback() {
                 {status === 'loading' && (
                     <>
                         <Loader2 className="w-12 h-12 animate-spin mx-auto mb-4" style={{ color: 'var(--accent)' }} />
-                        <p className="text-lg" style={{ color: 'var(--text-primary)' }}>Авторизация...</p>
+                        <p className="text-lg" style={{ color: 'var(--text-primary)' }}>
+                            {providerName ? `Входим через ${providerName}...` : 'Авторизация...'}
+                        </p>
                         <p className="text-sm mt-2" style={{ color: 'var(--text-muted)' }}>Подождите, проверяем данные</p>
                     </>
                 )}

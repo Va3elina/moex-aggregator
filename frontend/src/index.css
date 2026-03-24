@@ -262,10 +262,15 @@
    GLOBAL STYLES
    ============================================ */
 
+html {
+  overflow-y: scroll; /* Всегда показывать скроллбар — предотвращает сдвиг при навигации */
+}
+
 body {
   background-color: var(--bg-primary);
   color: var(--text-primary);
   transition: background-color 0.3s ease, color 0.3s ease;
+  overflow-x: hidden;
 }
 
 /* ============================================
@@ -444,6 +449,21 @@ a.btn-accent:active {
   display: none;
 }
 
+/* Fade-in анимация */
+.animate-in {
+  animation-fill-mode: both;
+}
+.fade-in {
+  animation-name: fadeIn;
+}
+.duration-500 {
+  animation-duration: 500ms;
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 /* Mobile-friendly widget */
 @media (max-width: 768px) {
   .widget {
@@ -493,12 +513,11 @@ a.btn-accent:active {
 
 @keyframes chart-reveal {
   from { clip-path: inset(0 100% 0 0); }
-  to   { clip-path: inset(0 0 0 0); }
+  to   { clip-path: inset(-100px); }
 }
 
 .chart-reveal {
   animation: chart-reveal 1s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
-  overflow: hidden;
 }
 
 /* Stack layout on mobile */

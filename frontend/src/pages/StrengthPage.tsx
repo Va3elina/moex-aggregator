@@ -7,6 +7,7 @@ import {
     getBreadthHistory,
     type BreadthCurrentResponse,
     type BreadthHistoryResponse,
+    type BreadthUniverse,
 } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { isPeriodAllowed, getDefaultPeriod } from '../config/accessControl';
@@ -42,23 +43,14 @@ const CLASSIFICATION_LABELS: Record<string, { label: string; color: string; bg: 
     oversold: { label: 'Перепроданность', color: 'text-red-400', bg: 'bg-red-500/20' },
 };
 
-// Секторы для фильтрации — соответствуют реальным тикерам в БД
-const SECTORS: Record<string, string[]> = {
-    'Все': [],
-    'Финансы': ['SBER', 'SBERP', 'VTBR', 'MOEX', 'T', 'BSPB', 'CBOM', 'SVCB', 'RENI'],
-    'Нефть и газ': ['ROSN', 'LKOH', 'GAZP', 'NVTK', 'TATN', 'TATNP', 'SNGS', 'SNGSP', 'TRNFP'],
-    'Металлургия': ['GMKN', 'NLMK', 'CHMF', 'MAGN', 'RUAL', 'ALRS', 'PLZL'],
-    'Энергетика': ['IRAO', 'MSNG', 'OGKB', 'UPRO', 'ENPG'],
-    'Телеком и IT': ['YDEX', 'MTSS', 'RTKM', 'POSI', 'VKCO', 'HEAD'],
-    'Транспорт': ['AFLT', 'FLOT'],
-    'Другое': ['PHOR', 'PIKK', 'AFKS', 'MDMG'],
-};
+// Секторы строятся динамически из ответа API (поле sector)
 
 
 // Константа уровня модуля — стабильная ссылка, не пересоздаётся при рендерах.
 // Это критично: SyncedPriceChart/SyncedBreadthChart используют padding в useMemo-deps,
 // пересоздание объекта каждый рендер сбрасывает chartData и прерывает морфинг-анимацию.
-const CHART_PADDING = { left: 10, right: 70, top: 10, bottom: 30 } as const;
+const EDGE_MARGIN = 8;
+const CHART_PADDING = { left: 45, right: 65, top: 10, bottom: 30 } as const;
 
 export default function StrengthPage() {
     const { isAuthenticated } = useAuth();
@@ -68,6 +60,7 @@ export default function StrengthPage() {
     const [chartMode, setChartMode] = useState<ChartMode>('histogram');
     const [showPrice, setShowPrice] = useState(true);
     const [selectedSector, setSelectedSector] = useState('Все');
+    const [universe, setUniverse] = useState<BreadthUniverse>('all');
 
     const [current, setCurrent] = useState<BreadthCurrentResponse | null>(null);
     const [history, setHistory] = useState<BreadthHistoryResponse | null>(null);
@@ -88,8 +81,8 @@ export default function StrengthPage() {
         setError(null);
         try {
             const [currentData, historyData] = await Promise.all([
-                getBreadthCurrent(emaPeriod),
-                getBreadthHistory(emaPeriod, PERIOD_DAYS[period])
+                getBreadthCurrent(emaPeriod, universe),
+                getBreadthHistory(emaPeriod, PERIOD_DAYS[period], universe)
             ]);
             setCurrent(currentData);
             setHistory(historyData);
@@ -99,7 +92,7 @@ export default function StrengthPage() {
         } finally {
             setLoading(false);
         }
-    }, [emaPeriod, period]);
+    }, [emaPeriod, period, universe]);
 
     useEffect(() => { loadData(); }, [loadData]);
 
@@ -168,17 +161,20 @@ export default function StrengthPage() {
         [syncedData]
     );
 
-    // Реальное количество акций в каждом секторе (только те, что вернул API)
+    // Динамические секторы из ответа API
+    const sectorNames = useMemo(() => {
+        if (!current?.stocks) return ['Все'];
+        const names = new Set(current.stocks.map(s => s.sector).filter(Boolean));
+        return ['Все', ...Array.from(names).sort()];
+    }, [current?.stocks]);
+
+    // Реальное количество акций в каждом секторе
     const sectorCounts = useMemo(() => {
         if (!current?.stocks) return {};
-        const availableTickers = new Set(current.stocks.map(s => s.ticker));
-        const counts: Record<string, number> = {};
-        for (const [sector, tickers] of Object.entries(SECTORS)) {
-            if (sector === 'Все') {
-                counts[sector] = current.stocks.length;
-            } else {
-                counts[sector] = tickers.filter(t => availableTickers.has(t)).length;
-            }
+        const counts: Record<string, number> = { 'Все': current.stocks.length };
+        for (const stock of current.stocks) {
+            const sec = stock.sector || 'Другое';
+            counts[sec] = (counts[sec] || 0) + 1;
         }
         return counts;
     }, [current?.stocks]);
@@ -188,8 +184,7 @@ export default function StrengthPage() {
         if (!current?.stocks) return [];
         if (selectedSector === 'Все') return current.stocks;
 
-        const sectorTickers = SECTORS[selectedSector] || [];
-        return current.stocks.filter(s => sectorTickers.includes(s.ticker));
+        return current.stocks.filter(s => s.sector === selectedSector);
     }, [current?.stocks, selectedSector]);
 
     // Сбросить сектор если он стал пустым после обновления данных
@@ -244,7 +239,7 @@ export default function StrengthPage() {
     const stocksTotal = current?.stocks?.length ?? current?.count_total ?? 0;
 
     return (
-        <div className="p-4 md:p-6 max-w-7xl mx-auto">
+        <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8">
             {/* Заголовок */}
             <div className="flex items-center gap-3 mb-6">
                 <div className="p-3 bg-gradient-to-br from-[#8b5cf6] to-[#ec4899] rounded-xl">
@@ -252,7 +247,9 @@ export default function StrengthPage() {
                 </div>
                 <div>
                     <h1 className="text-2xl font-bold text-theme-primary">Сила рынка</h1>
-                    <p className="text-theme-secondary text-sm">% акций выше EMA{emaPeriod}</p>
+                    <p className="text-theme-secondary text-sm">
+                        % {universe === 'imoex' ? 'акций индекса MOEX' : 'акций'} выше EMA{emaPeriod}
+                    </p>
                 </div>
             </div>
 
@@ -303,6 +300,26 @@ export default function StrengthPage() {
                     </button>
                 </div>
 
+                {/* Вселенная: все акции / IMOEX */}
+                <div className="flex items-center gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
+                    <button
+                        onClick={() => setUniverse('all')}
+                        className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                            universe === 'all' ? 'btn-control active' : 'text-theme-secondary hover:text-theme-primary'
+                        }`}
+                    >
+                        Все акции
+                    </button>
+                    <button
+                        onClick={() => setUniverse('imoex')}
+                        className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                            universe === 'imoex' ? 'btn-control active' : 'text-theme-secondary hover:text-theme-primary'
+                        }`}
+                    >
+                        Индекс MOEX
+                    </button>
+                </div>
+
                 {/* Показать IMOEX */}
                 <button
                     onClick={() => setShowPrice(!showPrice)}
@@ -314,7 +331,7 @@ export default function StrengthPage() {
 
                 {/* Статус + счётчик — справа */}
                 {current && (
-                    <div className="flex items-center gap-3 ml-auto">
+                    <div className="flex items-center gap-3 sm:ml-auto">
                         <span className="text-sm text-theme-secondary">
                             <span className="font-bold text-theme-primary">{stocksAbove}</span>/{stocksTotal} выше EMA
                         </span>
@@ -448,8 +465,8 @@ export default function StrengthPage() {
                         </div>
                     )}
 
-                    {/* График Breadth (нижний) */}
-                    <div className="px-4 pt-3 pb-2 relative" style={{ minHeight: 174 }}>
+                    {/* График Breadth (нижний) — расширяется когда IMOEX скрыт */}
+                    <div className="px-4 pt-3 pb-2 relative transition-all duration-500 ease-in-out" style={{ minHeight: showPrice ? 174 : 474 }}>
                         <div className="flex items-center justify-center gap-2 mb-1">
                             <span className="w-2 h-2 rounded-full" style={{ backgroundColor: 'var(--accent)' }} />
                             <span className="text-xs text-theme-secondary">% акций выше EMA{emaPeriod}</span>
@@ -458,7 +475,7 @@ export default function StrengthPage() {
                             <SyncedBreadthChart
                                 syncedData={displaySyncedData}
                                 hoverIndex={hoverIndex}
-                                height={150}
+                                height={showPrice ? 150 : 450}
                                 mode={chartMode}
                                 padding={padding}
                                 isNavDragRef={isNavDragRef}
@@ -498,7 +515,7 @@ export default function StrengthPage() {
                         {/* Фильтр по секторам */}
                         <div className="flex flex-wrap items-center gap-2">
                             <Filter size={16} className="text-theme-muted" />
-                            {Object.keys(SECTORS)
+                            {sectorNames
                                 .filter(sector => (sectorCounts[sector] ?? 0) > 0)
                                 .map((sector) => (
                                     <button
@@ -667,7 +684,13 @@ function SyncedPriceChart({
             return { value: v, y: scaleY(v) };
         });
 
-        return { points, yTicks, scaleX };
+        const xTickCount = Math.min(7, syncedData.length);
+        const xTicks = Array.from({ length: xTickCount }, (_, i) => {
+            const idx = Math.floor((i / Math.max(xTickCount - 1, 1)) * (syncedData.length - 1));
+            return { x: scaleX(idx) };
+        });
+
+        return { points, yTicks, xTicks, scaleX };
     }, [syncedData, chartWidth, chartHeight, padding]);
 
     // Анимация морфинга
@@ -761,13 +784,29 @@ function SyncedPriceChart({
                                 r={5} fill="#6366f1" stroke="white" strokeWidth="2" />
                         )}
 
+                        {chartData.xTicks.map((tick, i) => (
+                            i > 0 && i < chartData.xTicks.length - 1 ? (
+                                <line key={`vg-${i}`}
+                                    x1={tick.x} x2={tick.x}
+                                    y1={padding.top} y2={padding.top + chartHeight}
+                                    stroke="rgba(255,255,255,0.08)" strokeWidth="1"
+                                />
+                            ) : null
+                        ))}
                         {chartData.yTicks.map((tick, i) => (
-                            <text key={i}
-                                x={width - padding.right + 8}
-                                y={Math.max(padding.top + 6, Math.min(tick.y, padding.top + chartHeight - 6))}
-                                textAnchor="start" dominantBaseline="middle" fill="var(--text-muted)" fontSize="11">
-                                {tick.value.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
-                            </text>
+                            <g key={i}>
+                                <line
+                                    x1={padding.left} x2={width - padding.right}
+                                    y1={tick.y} y2={tick.y}
+                                    stroke="rgba(255,255,255,0.08)" strokeWidth="1"
+                                />
+                                <text
+                                    x={width - EDGE_MARGIN}
+                                    y={Math.max(padding.top + 6, Math.min(tick.y, padding.top + chartHeight - 6))}
+                                    textAnchor="end" dominantBaseline="middle" fill="var(--text-muted)" fontSize="11">
+                                    {tick.value.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
+                                </text>
+                            </g>
                         ))}
                     </svg>
                 )}
@@ -1104,8 +1143,8 @@ function SyncedBreadthChart({
 
                         {/* Y axis */}
                         {chartData.yTicks.map((tick, i) => (
-                            <text key={i} x={width - padding.right + 8} y={tick.y}
-                                textAnchor="start" dominantBaseline="middle"
+                            <text key={i} x={width - EDGE_MARGIN} y={tick.y}
+                                textAnchor="end" dominantBaseline="middle"
                                 fill={tick.color || 'var(--text-muted)'} fontSize="11">
                                 {tick.value}%
                             </text>

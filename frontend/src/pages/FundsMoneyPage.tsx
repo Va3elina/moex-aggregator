@@ -274,7 +274,7 @@ export default function FundsMoneyPage() {
             </div>
 
             {/* Вкладки категорий */}
-            <div className="flex gap-2 mb-6">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-6">
                 {CATEGORIES.map(cat => {
                     const Icon = cat.icon;
                     const isActive = category === cat.key;
@@ -282,14 +282,14 @@ export default function FundsMoneyPage() {
                         <button
                             key={cat.key}
                             onClick={() => setCategory(cat.key)}
-                            className={`flex items-center gap-2 px-4 py-3 rounded-xl font-medium transition-colors duration-200 ${isActive
+                            className={`flex items-center gap-2 px-3 py-3 rounded-xl font-medium transition-colors duration-200 min-w-0 ${isActive
                                 ? 'bg-[#6366f1] text-white shadow-lg shadow-[#6366f1]/25'
                                 : 'bg-theme-secondary text-theme-secondary hover:text-theme-primary border border-theme'
                                 }`}
                         >
-                            <Icon className="w-5 h-5" />
-                            <span>{cat.name}</span>
-                            <span className={`text-xs px-2 py-0.5 rounded-full ${isActive ? 'bg-white/20' : 'bg-white/5'
+                            <Icon className="w-5 h-5 shrink-0" />
+                            <span className="truncate text-sm">{cat.name}</span>
+                            <span className={`text-xs px-1.5 py-0.5 rounded-full shrink-0 ${isActive ? 'bg-white/20' : 'bg-white/5'
                                 }`}>
                                 {cat.index}
                             </span>
@@ -397,6 +397,7 @@ export default function FundsMoneyPage() {
                         legendPosition="top"
                         showDownloadButton={false}
                         showNavigator={true}
+                        chartPadding={{ left: 120 }}
                     />
                 </div>
             ) : (

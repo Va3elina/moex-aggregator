@@ -341,7 +341,9 @@ class OIDailyUpdater:
 
         last_date = self.get_last_date(sectype)
         start_date = (last_date + timedelta(days=1)) if last_date else ISS_START_DATE
-        end_date = date.today() - timedelta(days=1)
+        # Используем МСК время, т.к. контейнер на UTC
+        # В 00:10 МСК (= 21:10 UTC) date.today() вернёт вчерашний UTC день
+        end_date = get_moscow_time().date() - timedelta(days=1)
 
         if start_date > end_date:
             return 0

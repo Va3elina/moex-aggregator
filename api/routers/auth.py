@@ -445,6 +445,7 @@ async def get_me(user: User = Depends(get_current_user), db: Session = Depends(g
     return UserResponse(
         id=user.id,
         email=user.email,
+        display_name=getattr(user, 'display_name', None),
         role=user.role,
         is_verified=user.is_verified,
         avatar_url=user.avatar_url,

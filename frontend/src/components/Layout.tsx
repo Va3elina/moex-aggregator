@@ -12,6 +12,7 @@ const NAV_ITEMS: { path: string; label: string; disabled?: boolean }[] = [
   { path: '/funds-money', label: 'Деньги в фондах' },
   { path: '/buffett', label: 'Индикатор Баффетта' },
   { path: '/strength', label: 'Сила рынка' },
+  { path: '/seasonality', label: 'Сезонность' },
 ];
 
 export default function Layout() {
@@ -53,13 +54,13 @@ export default function Layout() {
                   to={item.disabled ? '#' : item.path}
                   onClick={(e) => item.disabled && e.preventDefault()}
                   className={({ isActive }) => `
-                    px-3 xl:px-4 py-2 rounded-xl text-sm font-medium 
-                    whitespace-nowrap transition-all
+                    px-3 xl:px-4 py-2 rounded-xl text-sm font-medium
+                    whitespace-nowrap transition-all border
                     ${item.disabled
-                      ? 'cursor-not-allowed'
+                      ? 'cursor-not-allowed border-transparent'
                       : isActive
-                        ? 'border'
-                        : ''
+                        ? ''
+                        : 'border-transparent'
                     }
                   `}
                   style={({ isActive }) => ({

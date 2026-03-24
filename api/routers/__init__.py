@@ -9,6 +9,7 @@ from api.routers.heatmap import router as heatmap_router
 from api.routers.funds import router as funds_router
 from api.routers.breadth import router as breadth_router
 from api.routers.buffett import router as buffett_router
+from api.routers.seasonality import router as seasonality_router
 
 __all__ = [
     "instruments_router",
@@ -19,4 +20,5 @@ __all__ = [
     "funds_router",
     "breadth_router",
     "buffett_router",
+    "seasonality_router",
 ]

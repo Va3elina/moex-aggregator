@@ -40,10 +40,17 @@ services:
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
       - ALGOPACK_API_KEY=${ALGOPACK_API_KEY}
       - ENV=production
-      - ALLOWED_ORIGINS=https://таймфрейм.рф,https://xn--80aagfbdcefbpg5j.xn--p1ai
+      - ALLOWED_ORIGINS=https://таймфрейм.рф,https://xn--80aklbnczmv.xn--p1ai
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
-      - GOOGLE_REDIRECT_URI=https://xn--80aagfbdcefbpg5j.xn--p1ai/api/auth/oauth/google/callback
+      - GOOGLE_REDIRECT_URI=https://xn--80aklbnczmv.xn--p1ai/auth/callback/google
+      - VK_CLIENT_ID=${VK_CLIENT_ID:-}
+      - VK_CLIENT_SECRET=${VK_CLIENT_SECRET:-}
+      - VK_REDIRECT_URI=https://xn--80aklbnczmv.xn--p1ai/auth/callback/vk
+      - YANDEX_CLIENT_ID=${YANDEX_CLIENT_ID:-}
+      - YANDEX_CLIENT_SECRET=${YANDEX_CLIENT_SECRET:-}
+      - YANDEX_REDIRECT_URI=https://xn--80aklbnczmv.xn--p1ai/auth/callback/yandex
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
     expose:
       - "8000"
     healthcheck:
@@ -66,6 +73,31 @@ services:
       - DB_URL_ASYNC=postgresql://postgres:${DB_PASSWORD}@db:5432/${DB_NAME:-moex_db}
       - ALGOPACK_API_KEY=${ALGOPACK_API_KEY}
     command: ["python", "main_orchestrator.py"]
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /proc/1/cmdline"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ═══════════════════════════════════════════════════════════════
+  # Telegram Admin Bot
+  # ═══════════════════════════════════════════════════════════════
+  tg-bot:
+    build: .
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - BOT_TOKEN=${BOT_TOKEN}
+      - ADMIN_CHAT_ID=${ADMIN_CHAT_ID}
+      - DB_URL_SYNC=postgresql://${DB_USER:-postgres}:${DB_PASSWORD}@db:5432/${DB_NAME:-moex_db}
+    command: ["python", "tg_bot.py"]
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /proc/1/cmdline"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
   # ═══════════════════════════════════════════════════════════════
   # Nginx (reverse proxy + SSL)

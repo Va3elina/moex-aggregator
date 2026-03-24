@@ -138,6 +138,7 @@ class UserResponse(BaseModel):
     """
     id: int
     email: str
+    display_name: Optional[str] = None
     role: str
     is_verified: bool
     avatar_url: Optional[str] = None

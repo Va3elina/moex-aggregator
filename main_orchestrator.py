@@ -124,6 +124,8 @@ SCRIPTS = {
     'market_cap_daily': BASE_DIR / 'Macro' / 'fetch_market_cap.py',
     # Market Breadth (% акций выше EMA — предвычисление)
     'breadth_daily': BASE_DIR / 'Candles' / 'compute_breadth_history.py',
+    # Дивиденды (загрузка с ISS + определение экс-дат)
+    'dividends_daily': BASE_DIR / 'Candles' / 'fetch_dividends.py',
 }
 
 # Материализованные представления
@@ -152,6 +154,7 @@ TIMEOUTS = {
     'macro_daily': 120,  # 2 минуты
     'market_cap_daily': 120,  # 2 минуты
     'breadth_daily': 600,  # 10 минут (полный пересчёт ~2 мин)
+    'dividends_daily': 900,  # 15 минут (много HTTP-запросов к ISS)
 }
 
 # Директория логов
@@ -390,6 +393,9 @@ class MainOrchestrator:
             # Breadth
             'breadth_daily_runs': 0,
             'breadth_daily_success': 0,
+            # Dividends
+            'dividends_daily_runs': 0,
+            'dividends_daily_success': 0,
             # Представления
             'views_refresh_runs': 0,
             'views_refresh_success': 0,
@@ -489,12 +495,21 @@ class MainOrchestrator:
 
         return results
 
-    async def run_hourly_aggregate(self) -> bool:
-        """Запускает агрегацию OI 5м → 60м"""
-        log.info("  📊 Агрегация OI...")
-        self.stats['oi_aggregate_runs'] += 1
+    async def run_hourly_aggregate(self, recent_days: int = None) -> bool:
+        """Запускает агрегацию OI 5м → 60м.
 
-        success, msg, dur = await run_script('oi_aggregate', ['--last-hour', '--force'])
+        recent_days=None — только последний час (для оркестратора в реалтайме)
+        recent_days=N    — последние N дней (для докачки)
+        """
+        if recent_days:
+            log.info(f"  📊 Агрегация OI (последние {recent_days} дней)...")
+            args = ['--recent', str(recent_days), '--force']
+        else:
+            log.info("  📊 Агрегация OI (последний час)...")
+            args = ['--last-hour', '--force']
+
+        self.stats['oi_aggregate_runs'] += 1
+        success, msg, dur = await run_script('oi_aggregate', args)
 
         if success:
             self.stats['oi_aggregate_success'] += 1
@@ -505,6 +520,24 @@ class MainOrchestrator:
             log.error(f"    ✗ Агрегация OI: {msg}")
 
         return success
+
+    def _get_oi_hourly_gap_days(self) -> int:
+        """Возвращает кол-во дней с последней часовой агрегации OI (минимум 1, максимум 90)."""
+        try:
+            engine = create_engine(DB_URL, connect_args={"ssl_context": False})
+            with engine.connect() as conn:
+                result = conn.execute(text(
+                    "SELECT MAX(tradedate) FROM open_interest WHERE interval = 60"
+                ))
+                last_date = result.scalar()
+            engine.dispose()
+            if last_date is None:
+                return 90
+            gap = (get_moscow_time().date() - last_date).days + 1
+            return max(1, min(gap, 90))
+        except Exception as e:
+            log.warning(f"  ⚠️ Не удалось определить период дыры OI: {e}, используем 7 дней")
+            return 7
 
     async def run_daily_update(self) -> bool:
         """Запускает дневное обновление OI"""
@@ -586,6 +619,22 @@ class MainOrchestrator:
 
         return success
 
+    async def run_dividends_update(self) -> bool:
+        """Запускает загрузку дивидендов с ISS MOEX"""
+        log.info("  📊 Dividends Daily...")
+        self.stats['dividends_daily_runs'] += 1
+
+        success, msg, dur = await run_script('dividends_daily', ['--once', '--force'])
+
+        if success:
+            self.stats['dividends_daily_success'] += 1
+            log.info(f"    ✓ Dividends Daily ({dur:.1f}с)")
+        else:
+            self.stats['errors'] += 1
+            log.error(f"    ✗ Dividends Daily: {msg}")
+
+        return success
+
     async def run_weekend_catchup(self) -> bool:
         """
         Докачивает все данные с момента последней записи в БД до текущего момента.
@@ -615,9 +664,10 @@ class MainOrchestrator:
                 self.stats['errors'] += 1
                 log.error(f"    ✗ {key}: {msg}")
 
-        # 2. Агрегация OI 5м → 60м
-        log.info("  📊 Агрегация OI 5м → 60м...")
-        agg_ok = await self.run_hourly_aggregate()
+        # 2. Агрегация OI 5м → 60м (только докаченный период)
+        gap_days = self._get_oi_hourly_gap_days()
+        log.info(f"  📊 Агрегация OI 5м → 60м (последние {gap_days} дней)...")
+        agg_ok = await self.run_hourly_aggregate(recent_days=gap_days)
         if agg_ok:
             any_success = True
 
@@ -630,6 +680,7 @@ class MainOrchestrator:
             self.run_macro_update,
             self.run_market_cap_update,
             self.run_breadth_update,
+            self.run_dividends_update,
         ]:
             success = await fn()
             if success:
@@ -684,6 +735,8 @@ class MainOrchestrator:
         log.info(f"    Daily: {self.stats['market_cap_daily_success']}/{self.stats['market_cap_daily_runs']}")
         log.info("  --- Breadth ---")
         log.info(f"    Daily: {self.stats['breadth_daily_success']}/{self.stats['breadth_daily_runs']}")
+        log.info("  --- Dividends ---")
+        log.info(f"    Daily: {self.stats['dividends_daily_success']}/{self.stats['dividends_daily_runs']}")
         log.info("  --- Представления ---")
         log.info(f"    Обновлений: {self.stats['views_refresh_success']}/{self.stats['views_refresh_runs']}")
         log.info(f"  Ошибок: {self.stats['errors']}")
@@ -733,9 +786,10 @@ class MainOrchestrator:
             # 5-минутный цикл
             results = await self.run_5min_cycle()
 
-            # Агрегация (если OI 5м успешно)
+            # Агрегация OI 5м → 60м (заполняем все пропущенные часы при старте)
             if results.get('oi_5min'):
-                await self.run_hourly_aggregate()
+                gap_days = self._get_oi_hourly_gap_days()
+                await self.run_hourly_aggregate(recent_days=gap_days)
 
             # Daily (OI + Funds + Indices + Macro + Market Cap + Breadth)
             await self.run_daily_update()
@@ -744,6 +798,7 @@ class MainOrchestrator:
             await self.run_macro_update()
             await self.run_market_cap_update()
             await self.run_breadth_update()
+            await self.run_dividends_update()
 
             # Обновляем все представления после полной синхронизации
             log.info("  🔄 Финальное обновление представлений...")
@@ -811,6 +866,7 @@ class MainOrchestrator:
                     await self.run_macro_update()
                     await self.run_market_cap_update()
                     await self.run_breadth_update()
+                    await self.run_dividends_update()
                     send_data_notify("daily")
                     self.last_daily_update = slot_day
                     self.print_stats()

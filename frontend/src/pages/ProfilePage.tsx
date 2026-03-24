@@ -30,6 +30,8 @@ export default function ProfilePage() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
+  // Avatar — always show initials
+
   // Password change
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -43,7 +45,9 @@ export default function ProfilePage() {
     return null;
   }
 
-  const initials = user.email[0].toUpperCase();
+  const displayName = user.display_name || user.email;
+  const isOAuthLocal = user.email.endsWith('@oauth.local');
+  const initials = displayName[0].toUpperCase();
   const roleStyle = ROLE_COLORS[user.role] || ROLE_COLORS.user;
 
   const handlePasswordChange = async (e: React.FormEvent) => {
@@ -101,24 +105,16 @@ export default function ProfilePage() {
       {/* ============ Секция 1: Шапка профиля ============ */}
       <div className="rounded-2xl border p-6" style={cardStyle}>
         <div className="flex items-center gap-4 mb-5">
-          {/* Аватар */}
-          {user.avatar_url ? (
-            <img
-              src={user.avatar_url}
-              alt="Avatar"
-              className="w-16 h-16 rounded-full object-cover"
-            />
-          ) : (
-            <div
-              className="w-16 h-16 rounded-full flex items-center justify-center text-2xl font-bold"
-              style={{ backgroundColor: 'var(--accent)', color: 'var(--bg-primary)' }}
-            >
-              {initials}
-            </div>
-          )}
-          <div>
+          {/* Аватар — инициал */}
+          <div
+            className="w-16 h-16 rounded-full flex items-center justify-center text-2xl font-bold shrink-0"
+            style={{ backgroundColor: 'var(--accent)', color: 'var(--bg-primary)' }}
+          >
+            {initials}
+          </div>
+          <div className="text-left">
             <div className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
-              {user.email}
+              {displayName}
             </div>
             <div className="flex items-center gap-2 mt-1">
               <span
@@ -132,10 +128,12 @@ export default function ProfilePage() {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-          <div className="flex items-center gap-2" style={{ color: 'var(--text-secondary)' }}>
-            <Mail size={16} style={{ color: 'var(--text-muted)' }} />
-            <span>{user.email}</span>
-          </div>
+          {!isOAuthLocal && (
+            <div className="flex items-center gap-2" style={{ color: 'var(--text-secondary)' }}>
+              <Mail size={16} style={{ color: 'var(--text-muted)' }} />
+              <span>{user.email}</span>
+            </div>
+          )}
           <div className="flex items-center gap-2" style={{ color: 'var(--text-secondary)' }}>
             <Calendar size={16} style={{ color: 'var(--text-muted)' }} />
             <span>Регистрация: {formatDate(user.created_at)}</span>
@@ -305,8 +303,8 @@ export default function ProfilePage() {
             </div>
 
             {/* OAuth провайдеры */}
-            {['Google', 'ВКонтакте', 'Telegram'].map(name => {
-              const key = name === 'ВКонтакте' ? 'vk' : name.toLowerCase();
+            {['Google', 'ВКонтакте', 'Яндекс', 'Telegram'].map(name => {
+              const key = name === 'ВКонтакте' ? 'vk' : name === 'Яндекс' ? 'yandex' : name.toLowerCase();
               const connected = user.oauth_providers.includes(key);
               return (
                 <div

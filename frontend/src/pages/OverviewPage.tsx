@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, ExternalLink, Activity, TrendingUp, TrendingDown, LayoutGrid, MessageCircle, BarChart3, Compass } from 'lucide-react';
+import { ArrowRight, ExternalLink, Activity, TrendingUp, TrendingDown, LayoutGrid, MessageCircle, BarChart3, Compass, Gauge, DollarSign } from 'lucide-react';
 import SimpleChart from '../components/SimpleChart';
-import { getChartData, getFearIndex, getFearIndexHistory } from '../services/api';
+import { getChartData, getFearIndex, getFearIndexHistory, getBreadthCurrent, getFundsSummary, getBuffettCapGdp } from '../services/api';
 import { useRealtimeData } from '../hooks/useRealtimeData';
-import type { FearIndexResponse, FearIndexHistoryResponse } from '../services/api';
+import type { FearIndexResponse, FearIndexHistoryResponse, BreadthCurrentResponse, FundsSummaryResponse } from '../services/api';
 
 // Типы
 interface HeatmapStock {
@@ -59,6 +59,18 @@ export default function OverviewPage() {
   const [oiChartData, setOiChartData] = useState<{ time: string; value: number }[]>([]);
   const [oiBuys, setOiBuys] = useState<{ time: string; value: number }[]>([]);
   const [oiSells, setOiSells] = useState<{ time: string; value: number }[]>([]);
+
+  // Сила рынка
+  const [breadthData, setBreadthData] = useState<BreadthCurrentResponse | null>(null);
+  const [breadthLoading, setBreadthLoading] = useState(true);
+
+  // Фонды
+  const [fundsSummary, setFundsSummary] = useState<FundsSummaryResponse | null>(null);
+  const [fundsLoading, setFundsLoading] = useState(true);
+
+  // Баффетт
+  const [buffettRatio, setBuffettRatio] = useState<number | null>(null);
+  const [buffettLoading, setBuffettLoading] = useState(true);
 
   // Telegram посты (mock)
   const [telegramPosts] = useState<TelegramPost[]>([
@@ -158,6 +170,33 @@ export default function OverviewPage() {
     loadOI();
   }, []);
 
+  // Загрузка Сила рынка
+  useEffect(() => {
+    getBreadthCurrent(200)
+      .then(data => setBreadthData(data))
+      .catch(err => console.error('Ошибка загрузки breadth:', err))
+      .finally(() => setBreadthLoading(false));
+  }, []);
+
+  // Загрузка Фонды
+  useEffect(() => {
+    getFundsSummary()
+      .then(data => setFundsSummary(data))
+      .catch(err => console.error('Ошибка загрузки фондов:', err))
+      .finally(() => setFundsLoading(false));
+  }, []);
+
+  // Загрузка Баффетт
+  useEffect(() => {
+    getBuffettCapGdp('1y', true)
+      .then(data => {
+        const last = data.data?.[data.data.length - 1];
+        if (last) setBuffettRatio(last.buffett);
+      })
+      .catch(err => console.error('Ошибка загрузки Баффетт:', err))
+      .finally(() => setBuffettLoading(false));
+  }, []);
+
   // Расчёт изменений Fear Index
   const getYesterdayFear = () => {
     if (!fearHistory?.history?.length || fearHistory.history.length < 2) return null;
@@ -182,7 +221,7 @@ export default function OverviewPage() {
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-6 py-8">
+    <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8">
       {/* Header */}
       <div className="flex items-center gap-3 mb-6">
         <div className="p-3 bg-gradient-to-br from-[#C8FF2E] to-[#22c55e] rounded-xl">
@@ -360,6 +399,171 @@ export default function OverviewPage() {
             Открыть канал <ExternalLink size={14} />
           </a>
         </div>
+      </div>
+
+      {/* Вторая строка виджетов — Сила рынка, Фонды, Баффетт */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+        {/* Сила рынка */}
+        <Link
+          to="/strength"
+          className="widget p-6 hover:border-[#C8FF2E]/30 transition-all group flex flex-col"
+        >
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <TrendingUp size={20} className="text-[#8b5cf6]" />
+              <h2 className="text-xl font-semibold text-theme-primary">Сила рынка</h2>
+            </div>
+            <ArrowRight size={18} className="text-theme-secondary group-hover:text-[#C8FF2E] transition-colors" />
+          </div>
+
+          <div className="flex-1 flex flex-col items-center justify-center py-6">
+            {breadthLoading ? (
+              <div className="w-10 h-10 border-2 border-[#8b5cf6] border-t-transparent rounded-full animate-spin" />
+            ) : breadthData ? (
+              <>
+                <div className="text-7xl font-bold mb-3" style={{
+                  color: breadthData.percent_above >= 70 ? '#22c55e'
+                    : breadthData.percent_above >= 50 ? '#4ade80'
+                    : breadthData.percent_above >= 30 ? '#fbbf24'
+                    : '#ef4444'
+                }}>
+                  {breadthData.percent_above.toFixed(0)}%
+                </div>
+                <div className="text-theme-secondary text-sm mb-3">акций выше EMA200</div>
+                <div className="flex items-center gap-4 text-sm">
+                  <span className="text-green-400 font-medium">{breadthData.count_above} выше</span>
+                  <span className="text-red-400 font-medium">{breadthData.count_total - breadthData.count_above} ниже</span>
+                </div>
+              </>
+            ) : (
+              <span className="text-theme-muted">Нет данных</span>
+            )}
+          </div>
+
+          {breadthData && (
+            <div className="mt-auto">
+              <div className="h-2 rounded-full overflow-hidden bg-theme-tertiary">
+                <div
+                  className="h-full rounded-full transition-all duration-500"
+                  style={{
+                    width: `${breadthData.percent_above}%`,
+                    background: breadthData.percent_above >= 70 ? 'linear-gradient(90deg, #22c55e, #4ade80)'
+                      : breadthData.percent_above >= 50 ? 'linear-gradient(90deg, #4ade80, #86efac)'
+                      : breadthData.percent_above >= 30 ? 'linear-gradient(90deg, #fbbf24, #fcd34d)'
+                      : 'linear-gradient(90deg, #ef4444, #f87171)'
+                  }}
+                />
+              </div>
+              <div className="flex justify-between mt-2 text-xs text-theme-muted">
+                <span>Перепроданность</span>
+                <span>Перекупленность</span>
+              </div>
+            </div>
+          )}
+        </Link>
+
+        {/* Фонды */}
+        <Link
+          to="/funds-money"
+          className="widget p-6 hover:border-[#C8FF2E]/30 transition-all group flex flex-col"
+        >
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <DollarSign size={20} className="text-[#2EE59D]" />
+              <h2 className="text-xl font-semibold text-theme-primary">Фонды</h2>
+            </div>
+            <ArrowRight size={18} className="text-theme-secondary group-hover:text-[#C8FF2E] transition-colors" />
+          </div>
+
+          <div className="flex-1">
+            {fundsLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="w-8 h-8 border-2 border-[#2EE59D] border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : fundsSummary?.categories ? (
+              <div className="space-y-3">
+                {fundsSummary.categories.map((cat) => (
+                  <div key={cat.name} className="flex items-center justify-between p-3 rounded-lg bg-theme-tertiary/50">
+                    <div>
+                      <div className="text-theme-primary text-sm font-medium">{cat.name}</div>
+                      <div className="text-theme-muted text-xs">{cat.funds_count} фондов</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-theme-primary text-sm font-semibold">
+                        {(cat.total_nav / 1e9).toFixed(0)} млрд ₽
+                      </div>
+                      <div className={`text-xs font-medium ${cat.change_pct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                        {cat.change_pct >= 0 ? '+' : ''}{cat.change_pct.toFixed(2)}%
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <span className="text-theme-muted">Нет данных</span>
+            )}
+          </div>
+
+          <div className="mt-4 pt-4 border-t border-white/10 text-center">
+            <span className="text-theme-secondary text-sm">Открыть</span>
+          </div>
+        </Link>
+
+        {/* Индикатор Баффетта */}
+        <Link
+          to="/buffett"
+          className="widget p-6 hover:border-[#C8FF2E]/30 transition-all group flex flex-col"
+        >
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Gauge size={20} className="text-[#f59e0b]" />
+              <h2 className="text-xl font-semibold text-theme-primary">Индикатор Баффетта</h2>
+            </div>
+            <ArrowRight size={18} className="text-theme-secondary group-hover:text-[#C8FF2E] transition-colors" />
+          </div>
+
+          <div className="flex-1 flex flex-col items-center justify-center py-6">
+            {buffettLoading ? (
+              <div className="w-10 h-10 border-2 border-[#f59e0b] border-t-transparent rounded-full animate-spin" />
+            ) : buffettRatio !== null ? (
+              <>
+                <div className="text-7xl font-bold mb-3" style={{
+                  color: buffettRatio > 100 ? '#ef4444'
+                    : buffettRatio > 75 ? '#f59e0b'
+                    : '#22c55e'
+                }}>
+                  {buffettRatio.toFixed(0)}%
+                </div>
+                <div className="text-theme-secondary text-sm mb-3">Капитализация / ВВП</div>
+                <div className="px-4 py-2 rounded-full text-xs font-medium" style={{
+                  backgroundColor: buffettRatio > 100 ? '#ef444422' : buffettRatio > 75 ? '#f59e0b22' : '#22c55e22',
+                  color: buffettRatio > 100 ? '#ef4444' : buffettRatio > 75 ? '#f59e0b' : '#22c55e',
+                  border: `1px solid ${buffettRatio > 100 ? '#ef444444' : buffettRatio > 75 ? '#f59e0b44' : '#22c55e44'}`
+                }}>
+                  {buffettRatio > 100 ? 'Рынок переоценён'
+                    : buffettRatio > 75 ? 'Справедливая оценка'
+                    : 'Рынок недооценён'}
+                </div>
+              </>
+            ) : (
+              <span className="text-theme-muted">Нет данных</span>
+            )}
+          </div>
+
+          <div className="mt-auto">
+            <div className="flex items-center gap-2 text-xs text-theme-muted">
+              <div className="flex-1 h-2 rounded-full overflow-hidden flex">
+                <div className="flex-1 bg-[#22c55e]" />
+                <div className="flex-1 bg-[#f59e0b]" />
+                <div className="flex-1 bg-[#ef4444]" />
+              </div>
+            </div>
+            <div className="flex justify-between mt-2 text-xs text-theme-muted">
+              <span>Недооценён</span>
+              <span>Переоценён</span>
+            </div>
+          </div>
+        </Link>
       </div>
 
       {/* Open Interest Preview */}

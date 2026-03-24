@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Grid3X3 } from 'lucide-react';
-import { getHeatmapData } from '../services/api';
+import { getHeatmapData, getHeatmapImoex } from '../services/api';
 import { useRealtimeData } from '../hooks/useRealtimeData';
 import type { HeatmapStock, HeatmapSector } from '../services/api';
 
@@ -122,9 +122,10 @@ export default function HeatmapPage() {
   const [lastUpdate, setLastUpdate] = useState<string>('');
 
   // Фильтры
+  const [mapMode, setMapMode] = useState<'imoex' | 'all'>('imoex');
   const sizeBy = 'market_cap';
-  const [colorBy, setColorBy] = useState('change_1d');
-  const [groupBy, setGroupBy] = useState('none');
+  const [colorBy, setColorBy] = useState('change_1w');
+  const [groupBy, setGroupBy] = useState('sector');
 
   // Тултип
   const [tooltip, setTooltip] = useState<{
@@ -159,7 +160,9 @@ export default function HeatmapPage() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await getHeatmapData(sizeBy, colorBy, groupBy);
+      const data = mapMode === 'imoex'
+        ? await getHeatmapImoex(colorBy, groupBy)
+        : await getHeatmapData(sizeBy, colorBy, groupBy);
       setSectors(data.sectors);
       setAllStocks(data.stocks);
 
@@ -169,17 +172,18 @@ export default function HeatmapPage() {
       console.error('Error loading heatmap:', error);
     }
     setLoading(false);
-  }, [sizeBy, colorBy, groupBy]);
+  }, [mapMode, sizeBy, colorBy, groupBy]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
   // SSE: автоматическое обновление хитмапа
   useRealtimeData(['5min', 'mv_refresh'], loadData);
 
-  // Получение значения для размера
+  // Получение значения для размера (sqrt сглаживает разницу между крупными и мелкими)
   const getSizeValue = (stock: HeatmapStock): number => {
     const key = sizeBy as keyof HeatmapStock;
-    return Math.max((stock[key] as number) || 1, 1);
+    const raw = Math.max((stock[key] as number) || 1, 1);
+    return Math.sqrt(raw);
   };
 
   // Получение значения для цвета
@@ -195,7 +199,7 @@ export default function HeatmapPage() {
     if (change >= 1) return '#4ade80';
     if (change >= 0.5) return '#86efac';
     if (change > 0) return '#bbf7d0';
-    if (change === 0) return '#374151';
+    if (change === 0) return '#6b7280';
     if (change > -0.5) return '#fecaca';
     if (change > -1) return '#fca5a5';
     if (change > -2) return '#f87171';
@@ -228,11 +232,13 @@ export default function HeatmapPage() {
     const gap = 3;
 
     if (groupBy === 'none') {
-      const items = allStocks.map(stock => ({
-        id: stock.secId,
-        value: getSizeValue(stock),
-        data: stock
-      }));
+      const items = allStocks
+        .filter(stock => stock.change_1d !== 0 || stock.change_1w !== 0 || stock.change_1m !== 0)
+        .map(stock => ({
+          id: stock.secId,
+          value: getSizeValue(stock),
+          data: stock
+        }));
       return { type: 'flat' as const, rects: squarify(items, gap, gap, containerSize.width - gap * 2, containerSize.height - gap * 2) };
     }
 
@@ -261,11 +267,13 @@ export default function HeatmapPage() {
         y: sectorRect.y + 16
       });
 
-      const stockItems = sector.stocks.map(stock => ({
-        id: stock.secId,
-        value: getSizeValue(stock),
-        data: stock
-      }));
+      const stockItems = sector.stocks
+        .filter(stock => stock.change_1d !== 0 || stock.change_1w !== 0 || stock.change_1m !== 0)
+        .map(stock => ({
+          id: stock.secId,
+          value: getSizeValue(stock),
+          data: stock
+        }));
 
       const rects = squarify(
         stockItems,
@@ -370,6 +378,29 @@ export default function HeatmapPage() {
         </div>
 
         <div className="flex flex-wrap gap-2">
+          <div className="flex rounded-lg overflow-hidden border border-theme">
+            <button
+              onClick={() => setMapMode('imoex')}
+              className={`px-3 py-2 text-sm font-medium transition-colors ${
+                mapMode === 'imoex'
+                  ? 'bg-[var(--accent)] text-black'
+                  : 'bg-theme-secondary text-theme-primary hover:bg-theme-tertiary'
+              }`}
+            >
+              Индекс IMOEX
+            </button>
+            <button
+              onClick={() => setMapMode('all')}
+              className={`px-3 py-2 text-sm font-medium transition-colors ${
+                mapMode === 'all'
+                  ? 'bg-[var(--accent)] text-black'
+                  : 'bg-theme-secondary text-theme-primary hover:bg-theme-tertiary'
+              }`}
+            >
+              Все акции
+            </button>
+          </div>
+
           <select
             value={colorBy}
             onChange={(e) => setColorBy(e.target.value)}
@@ -400,10 +431,14 @@ export default function HeatmapPage() {
       >
         {loading ? (
           <div className="absolute inset-0 flex items-center justify-center text-slate-400">
-            <div className="animate-spin w-8 h-8 border-2 border-[#C8FF2E] border-t-transparent rounded-full" />
+            <div className="flex flex-col items-center gap-3">
+              <div className="animate-spin w-8 h-8 border-2 border-[#C8FF2E] border-t-transparent rounded-full" />
+              <span className="text-sm text-theme-secondary">Загрузка карты...</span>
+            </div>
           </div>
         ) : treemapData && treemapData.type === 'grouped' ? (
-          <svg width={containerSize.width} height={containerSize.height}>
+          <svg width={containerSize.width} height={containerSize.height}
+            className="animate-in fade-in duration-500">
             {treemapData.stockRects.map((rect) => renderStock(rect, `${rect.sector}-${rect.id}`))}
 
             {/* Названия секторов */}
@@ -422,7 +457,8 @@ export default function HeatmapPage() {
             ))}
           </svg>
         ) : treemapData && treemapData.type === 'flat' ? (
-          <svg width={containerSize.width} height={containerSize.height}>
+          <svg width={containerSize.width} height={containerSize.height}
+            className="animate-in fade-in duration-500">
             {treemapData.rects.map((rect) => renderStock(rect, rect.id))}
           </svg>
         ) : null}
@@ -441,6 +477,12 @@ export default function HeatmapPage() {
           <div className="font-bold text-white text-base">{tooltip.stock.name}</div>
           <div className="text-slate-400 text-sm mb-2">{tooltip.stock.secId} • {tooltip.stock.sector}</div>
           <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+            {tooltip.stock.weight != null && (
+              <>
+                <span className="text-slate-400">Вес:</span>
+                <span className="text-white font-medium">{tooltip.stock.weight.toFixed(2)}%</span>
+              </>
+            )}
             <span className="text-slate-400">Цена:</span>
             <span className="text-white font-medium">{tooltip.stock.price.toFixed(2)} ₽</span>
             <span className="text-slate-400">День:</span>

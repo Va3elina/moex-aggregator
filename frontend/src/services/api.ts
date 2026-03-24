@@ -21,7 +21,32 @@ export async function apiFetch(url: string, init?: RequestInit): Promise<Respons
   if (token) headers['Authorization'] = `Bearer ${token}`;
   if (init?.headers) Object.assign(headers, init.headers);
 
-  const response = await fetch(url, { ...init, headers });
+  let response = await fetch(url, { ...init, headers });
+
+  // Если 401 — пробуем обновить токен и повторить
+  if (response.status === 401 && token) {
+    const refreshToken = localStorage.getItem('refresh_token');
+    if (refreshToken) {
+      const refreshResp = await fetch('/api/auth/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+      if (refreshResp.ok) {
+        const tokens = await refreshResp.json();
+        localStorage.setItem('access_token', tokens.access_token);
+        localStorage.setItem('refresh_token', tokens.refresh_token);
+        // Повторяем оригинальный запрос с новым токеном
+        const retryHeaders: Record<string, string> = { Authorization: `Bearer ${tokens.access_token}` };
+        if (init?.headers) Object.assign(retryHeaders, init.headers);
+        response = await fetch(url, { ...init, headers: retryHeaders });
+      } else {
+        // Refresh не удался — очищаем токены
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+      }
+    }
+  }
 
   if (response.status === 403) {
     const data = await response.json().catch(() => ({ detail: 'Доступ ограничен' }));
@@ -153,6 +178,7 @@ export interface HeatmapStock {
   value_1w: number;
   value_1m: number;
   market_cap: number;
+  weight?: number;
 }
 
 export interface HeatmapSector {
@@ -183,6 +209,19 @@ export async function getHeatmapData(
   });
   const response = await fetch(`${API_BASE}/api/heatmap/stocks?${params}`);
   if (!response.ok) throw new Error('Failed to fetch heatmap data');
+  return response.json();
+}
+
+export async function getHeatmapImoex(
+  colorBy: string = 'change_1w',
+  groupBy: string = 'sector'
+): Promise<HeatmapResponse> {
+  const params = new URLSearchParams({
+    color_by: colorBy,
+    group_by: groupBy
+  });
+  const response = await fetch(`${API_BASE}/api/heatmap/imoex?${params}`);
+  if (!response.ok) throw new Error('Failed to fetch IMOEX heatmap');
   return response.json();
 }
 
@@ -360,6 +399,7 @@ export async function getFearIndexHistory(
 
 export interface BreadthStock {
   ticker: string;
+  sector: string;
   price: number;
   ema: number;
   is_above: boolean;
@@ -389,10 +429,13 @@ export interface BreadthHistoryResponse {
   imoex: { date: string; close: number }[];
 }
 
+export type BreadthUniverse = 'all' | 'imoex';
+
 export async function getBreadthCurrent(
-  emaPeriod: number = 200
+  emaPeriod: number = 200,
+  universe: BreadthUniverse = 'all',
 ): Promise<BreadthCurrentResponse> {
-  const params = new URLSearchParams({ ema_period: emaPeriod.toString() });
+  const params = new URLSearchParams({ ema_period: emaPeriod.toString(), universe });
   const response = await fetch(`${API_BASE}/api/breadth/current?${params}`);
   if (!response.ok) throw new Error('Failed to fetch market breadth');
   return response.json();
@@ -400,11 +443,13 @@ export async function getBreadthCurrent(
 
 export async function getBreadthHistory(
   emaPeriod: number = 200,
-  days: number = 365
+  days: number = 365,
+  universe: BreadthUniverse = 'all',
 ): Promise<BreadthHistoryResponse> {
   const params = new URLSearchParams({
     ema_period: emaPeriod.toString(),
-    days: days.toString()
+    days: days.toString(),
+    universe,
   });
   const response = await apiFetch(`${API_BASE}/api/breadth/history?${params}`);
   if (!response.ok) throw new Error('Failed to fetch breadth history');
@@ -460,5 +505,65 @@ export async function getBuffettMcftrM2(
   const params = new URLSearchParams({ period, smooth: smooth.toString() });
   const response = await apiFetch(`${API_BASE}/api/buffett/mcftr-m2?${params}`);
   if (!response.ok) throw new Error('Failed to fetch Buffett mcftr/m2');
+  return response.json();
+}
+
+// ==================== СЕЗОННОСТЬ ====================
+
+export interface SeasonalityBar {
+  label: string;
+  key: number;
+  avg_change: number;
+  count: number;
+}
+
+export interface SeasonalityResponse {
+  secid: string;
+  mode: string;
+  iterations: number;
+  exclude_dividends: boolean;
+  ex_dates_count: number;
+  bars: SeasonalityBar[];
+}
+
+export type SeasonalityMode = 'intraday' | 'weekday' | 'monthday' | 'monthly';
+
+export async function getSeasonality(
+  secid: string,
+  mode: SeasonalityMode = 'weekday',
+  iterations: number = 90,
+  excludeDividends: boolean = false,
+): Promise<SeasonalityResponse> {
+  const params = new URLSearchParams({
+    secid,
+    mode,
+    iterations: iterations.toString(),
+    exclude_dividends: excludeDividends.toString(),
+  });
+  const response = await apiFetch(`${API_BASE}/api/seasonality?${params}`);
+  if (!response.ok) throw new Error('Failed to fetch seasonality');
+  return response.json();
+}
+
+export interface PricePoint {
+  date: string;
+  close: number;
+  adjusted: number;
+}
+
+export interface PriceChartResponse {
+  secid: string;
+  days: number;
+  ex_dates_count: number;
+  data: PricePoint[];
+}
+
+export async function getSeasonalityPrice(
+  secid: string,
+  days: number = 365,
+): Promise<PriceChartResponse> {
+  const params = new URLSearchParams({ secid, days: days.toString() });
+  const response = await apiFetch(`${API_BASE}/api/seasonality/price?${params}`);
+  if (!response.ok) throw new Error('Failed to fetch price chart');
   return response.json();
 }
