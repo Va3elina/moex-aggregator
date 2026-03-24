@@ -245,6 +245,9 @@ class AlgopackStocksFetcher:
         for k in self.stats:
             self.stats[k] = 0
 
+    # Для дневных свечей используем стандартный ISS (Algopack даёт неполные данные)
+    ISS_URL = "https://iss.moex.com/iss/engines/stock/markets/shares/boards/tqbr/securities"
+
     async def fetch_candles(
             self,
             session: aiohttp.ClientSession,
@@ -255,7 +258,11 @@ class AlgopackStocksFetcher:
     ) -> Optional[pd.DataFrame]:
         """Загружает свечи с пагинацией"""
 
-        url = f"{self.BASE_URL}/{ticker}/candles.json"
+        # Дневные свечи берём из ISS — Algopack даёт неполные данные за сутки
+        if interval == 24:
+            url = f"{self.ISS_URL}/{ticker}/candles.json"
+        else:
+            url = f"{self.BASE_URL}/{ticker}/candles.json"
         params = {
             'interval': interval,
             'from': from_date,
@@ -271,9 +278,11 @@ class AlgopackStocksFetcher:
             self.stats['requests'] += 1
 
             try:
+                # ISS не требует auth header
+                hdrs = {} if interval == 24 else self.headers
                 async with session.get(
                         url,
-                        headers=self.headers,
+                        headers=hdrs,
                         params=params,
                         timeout=aiohttp.ClientTimeout(total=30)
                 ) as resp:
