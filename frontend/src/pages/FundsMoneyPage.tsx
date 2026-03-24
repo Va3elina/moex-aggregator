@@ -431,6 +431,8 @@ export default function FundsMoneyPage() {
                             onMouseMove={handleFlowMouseMove}
                             onMouseLeave={handleFlowMouseLeave}
                         >
+                            {/* Область графика: 88% слева для баров, 12% справа для подписей */}
+                            <div className="absolute inset-0" style={{ right: '12%' }}>
                             <svg
                                 ref={flowChartRef}
                                 width="100%"
@@ -441,11 +443,10 @@ export default function FundsMoneyPage() {
                                     const maxAbsFlow = Math.max(...animatedBars.map(v => Math.abs(v)), 0.01);
                                     const barWidth = 100 / (animatedBars.length || 1);
                                     const midY = 50;
-                                    // Минимальная высота бара (1.5%) чтобы мелкие значения были видны
                                     const minBarH = 1.5;
 
                                     return animatedBars.map((animFlow, i) => {
-                                        const rawH = (Math.abs(animFlow) / maxAbsFlow) * 45;
+                                        const rawH = (Math.abs(animFlow) / maxAbsFlow) * 40;
                                         const h = animFlow !== 0 ? Math.max(rawH, minBarH) : 0;
                                         const isPositive = animFlow >= 0;
                                         const y = isPositive ? midY - h : midY;
@@ -472,7 +473,7 @@ export default function FundsMoneyPage() {
                                     const maxAbsFlow = Math.max(...animatedBars.map(v => Math.abs(v)), 0.01);
                                     const ticks = [-maxAbsFlow, -maxAbsFlow / 2, 0, maxAbsFlow / 2, maxAbsFlow];
                                     return ticks.map((val, i) => {
-                                        const yPct = 50 - (val / maxAbsFlow) * 45;
+                                        const yPct = 50 - (val / maxAbsFlow) * 40;
                                         return (
                                             <line key={`grid-${i}`}
                                                 x1="0" y1={`${yPct}%`} x2="100%" y2={`${yPct}%`}
@@ -502,18 +503,19 @@ export default function FundsMoneyPage() {
                                     );
                                 })()}
                             </svg>
+                            </div>
 
-                            {/* Подписи значений справа (как на SimpleChart) */}
+                            {/* Подписи значений справа — в отдельной зоне */}
                             {animatedBars.length > 0 && (() => {
                                 const maxAbsFlow = Math.max(...animatedBars.map(v => Math.abs(v)), 0.01);
                                 const ticks = [maxAbsFlow, maxAbsFlow / 2, 0, -maxAbsFlow / 2, -maxAbsFlow];
                                 return ticks.map((val, i) => {
-                                    const yPct = 50 - (val / maxAbsFlow) * 45;
+                                    const yPct = 50 - (val / maxAbsFlow) * 40;
                                     const label = val === 0 ? '0' : `${val > 0 ? '+' : ''}${val.toFixed(2)}`;
                                     return (
                                         <div key={`label-${i}`}
-                                            className="absolute right-1 pointer-events-none"
-                                            style={{ top: `${yPct}%`, transform: 'translateY(-50%)' }}
+                                            className="absolute pointer-events-none"
+                                            style={{ top: `${yPct}%`, right: 4, transform: 'translateY(-50%)' }}
                                         >
                                             <span className="text-[13px] font-semibold text-[#9CA3B8]">
                                                 {label}
@@ -587,7 +589,7 @@ export default function FundsMoneyPage() {
                             })()}
 
                             {/* Даты оси X — равномерно по всей ширине */}
-                            <div className="absolute bottom-0 left-0 right-0 flex justify-between text-[14px] font-semibold text-[#9CA3B8] px-2">
+                            <div className="absolute bottom-0 left-0 flex justify-between text-[14px] font-semibold text-[#9CA3B8] px-2" style={{ right: '12%' }}>
                                 {flowsData?.flows && flowsData.flows.length > 0 && (() => {
                                     const flows = flowsData.flows;
                                     const tickCount = Math.min(6, flows.length);
