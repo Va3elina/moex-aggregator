@@ -265,19 +265,16 @@ def get_chart_data(
         if contracts:
             best_contract_by_day[day] = max(contracts, key=contracts.get)
     
-    # Фильтруем свечи: для каждой метки времени берем только свечу "лучшего" контракта дня
-    filtered_candles = []
-    seen_times = set()
+    # Фильтруем: для каждого begin_time оставляем свечу с максимальным объёмом
+    # (best_contract_by_day может чередоваться из-за разных ликвидных контрактов в разные дни)
+    best_by_time = {}  # {begin_time: candle_row}
     for c in candles_raw:
-        day = c[0].date()
-        sec_id = c[6] if len(c) > 6 else 'unknown'
-        best_for_day = best_contract_by_day.get(day, sec_id)
+        bt = c[0]
+        vol = float(c[5] or 0)
+        if bt not in best_by_time or vol > float(best_by_time[bt][5] or 0):
+            best_by_time[bt] = c
 
-        if sec_id == best_for_day and c[0] not in seen_times:
-            filtered_candles.append(c)
-            seen_times.add(c[0])
-
-    sorted_candles = sorted(filtered_candles, key=lambda x: x[0])
+    sorted_candles = sorted(best_by_time.values(), key=lambda x: x[0])
     log.debug(f"[6] chain: {(time.time()-t0)*1000:.0f} мс | candles: {len(sorted_candles)}")
 
     # 7. Запрос OI
