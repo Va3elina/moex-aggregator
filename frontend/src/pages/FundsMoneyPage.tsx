@@ -431,8 +431,8 @@ export default function FundsMoneyPage() {
                             onMouseMove={handleFlowMouseMove}
                             onMouseLeave={handleFlowMouseLeave}
                         >
-                            {/* Область графика: 88% слева для баров, 12% справа для подписей */}
-                            <div className="absolute inset-0" style={{ right: '12%' }}>
+                            {/* Область графика: отступ справа для подписей */}
+                            <div className="absolute inset-0" style={{ right: 80 }}>
                             <svg
                                 ref={flowChartRef}
                                 width="100%"
@@ -589,7 +589,7 @@ export default function FundsMoneyPage() {
                             })()}
 
                             {/* Даты оси X — равномерно по всей ширине */}
-                            <div className="absolute bottom-0 left-0 flex justify-between text-[14px] font-semibold text-[#9CA3B8] px-2" style={{ right: '12%' }}>
+                            <div className="absolute bottom-0 left-0 flex justify-between text-[14px] font-semibold text-[#9CA3B8] px-2" style={{ right: 80 }}>
                                 {flowsData?.flows && flowsData.flows.length > 0 && (() => {
                                     const flows = flowsData.flows;
                                     const tickCount = Math.min(6, flows.length);

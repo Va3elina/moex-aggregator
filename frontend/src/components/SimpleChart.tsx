@@ -245,9 +245,9 @@ export default function SimpleChart({
     ? { top: 16, right: 20, bottom: 40, left: 45 }
     : {
         top: 19,
-        right: showSecondary ? 85 : 12,
+        right: showSecondary ? 95 : 12,
         bottom: 50,
-        left: 85
+        left: 100
       };
   const padding = {
     ...defaultPad,
@@ -832,7 +832,7 @@ export default function SimpleChart({
                   strokeWidth="1"
                 />
                 <text
-                  x={-18}
+                  x={-12}
                   y={tick.y}
                   textAnchor="end"
                   dominantBaseline="middle"
@@ -849,7 +849,7 @@ export default function SimpleChart({
             {!isMobile && showSecondary && targetCalc.secYTicks && targetCalc.secYTicks.map((tick, i) => (
               <text
                 key={`sec-${i}`}
-                x={chartWidth + 18}
+                x={chartWidth + 12}
                 y={tick.y}
                 textAnchor="start"
                 dominantBaseline="middle"
