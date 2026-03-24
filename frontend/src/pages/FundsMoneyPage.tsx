@@ -413,14 +413,14 @@ export default function FundsMoneyPage() {
                     /* Гистограмма притоков/оттоков */
                     <div className="h-[450px]">
                         {/* Легенда — сверху */}
-                        <div className="flex items-center justify-center gap-6 mb-2 text-sm">
+                        <div className="flex items-center justify-center gap-5 mb-2 text-sm">
                             <span className="flex items-center gap-2">
                                 <span className="w-3 h-3 rounded-full bg-[#2EE59D]" />
-                                <span className="text-theme-secondary">Приток</span>
+                                <span className="text-theme-primary font-medium">Приток</span>
                             </span>
                             <span className="flex items-center gap-2">
                                 <span className="w-3 h-3 rounded-full bg-[#FF4D4D]" />
-                                <span className="text-theme-secondary">Отток</span>
+                                <span className="text-theme-primary font-medium">Отток</span>
                             </span>
                         </div>
 
@@ -438,15 +438,15 @@ export default function FundsMoneyPage() {
                                 preserveAspectRatio="none"
                             >
                                 {animatedBars.length > 0 && (() => {
-                                    // Используем animatedBars для высот — это и есть анимированные значения.
-                                    // barWidth вычисляем по длине animatedBars, чтобы не было пустых кадров
-                                    // при смене flowsData (когда animatedBars ещё старой длины).
-                                    const maxAbsFlow = Math.max(...animatedBars.map(v => Math.abs(v)), 1);
+                                    const maxAbsFlow = Math.max(...animatedBars.map(v => Math.abs(v)), 0.01);
                                     const barWidth = 100 / (animatedBars.length || 1);
                                     const midY = 50;
+                                    // Минимальная высота бара (1.5%) чтобы мелкие значения были видны
+                                    const minBarH = 1.5;
 
                                     return animatedBars.map((animFlow, i) => {
-                                        const h = (Math.abs(animFlow) / maxAbsFlow) * 45;
+                                        const rawH = (Math.abs(animFlow) / maxAbsFlow) * 45;
+                                        const h = animFlow !== 0 ? Math.max(rawH, minBarH) : 0;
                                         const isPositive = animFlow >= 0;
                                         const y = isPositive ? midY - h : midY;
                                         const baseColor = isPositive ? '#2EE59D' : '#FF4D4D';
@@ -467,8 +467,22 @@ export default function FundsMoneyPage() {
                                         );
                                     });
                                 })()}
-                                {/* Центральная линия */}
-                                <line x1="0" y1="50%" x2="100%" y2="50%" stroke="#2A2F3E" strokeWidth="1" />
+                                {/* Горизонтальные линии сетки */}
+                                {animatedBars.length > 0 && (() => {
+                                    const maxAbsFlow = Math.max(...animatedBars.map(v => Math.abs(v)), 0.01);
+                                    const ticks = [-maxAbsFlow, -maxAbsFlow / 2, 0, maxAbsFlow / 2, maxAbsFlow];
+                                    return ticks.map((val, i) => {
+                                        const yPct = 50 - (val / maxAbsFlow) * 45;
+                                        return (
+                                            <line key={`grid-${i}`}
+                                                x1="0" y1={`${yPct}%`} x2="100%" y2={`${yPct}%`}
+                                                stroke="rgba(255,255,255,0.08)" strokeWidth="1"
+                                            />
+                                        );
+                                    });
+                                })()}
+                                {/* Центральная линия (ноль) */}
+                                <line x1="0" y1="50%" x2="100%" y2="50%" stroke="rgba(255,255,255,0.15)" strokeWidth="1" />
                                 {/* Вертикальный курсор */}
                                 {hoveredFlowIndex !== null && flowsData?.flows && (() => {
                                     const barWidth = 100 / flowsData.flows.length;
@@ -488,6 +502,26 @@ export default function FundsMoneyPage() {
                                     );
                                 })()}
                             </svg>
+
+                            {/* Подписи значений справа (как на SimpleChart) */}
+                            {animatedBars.length > 0 && (() => {
+                                const maxAbsFlow = Math.max(...animatedBars.map(v => Math.abs(v)), 0.01);
+                                const ticks = [maxAbsFlow, maxAbsFlow / 2, 0, -maxAbsFlow / 2, -maxAbsFlow];
+                                return ticks.map((val, i) => {
+                                    const yPct = 50 - (val / maxAbsFlow) * 45;
+                                    const label = val === 0 ? '0' : `${val > 0 ? '+' : ''}${val.toFixed(2)}`;
+                                    return (
+                                        <div key={`label-${i}`}
+                                            className="absolute right-1 pointer-events-none"
+                                            style={{ top: `${yPct}%`, transform: 'translateY(-50%)' }}
+                                        >
+                                            <span className="text-[13px] font-semibold text-[#9CA3B8]">
+                                                {label}
+                                            </span>
+                                        </div>
+                                    );
+                                });
+                            })()}
 
                             {/* Тултип-карточка */}
                             {hoveredFlowIndex !== null && flowsData?.flows[hoveredFlowIndex] && flowContainerRef.current && (() => {
@@ -514,7 +548,7 @@ export default function FundsMoneyPage() {
                                                 top: 4,
                                             }}
                                         >
-                                            <span className="text-[11px] text-theme-secondary bg-theme-tertiary/90 backdrop-blur-sm px-2 py-0.5 rounded border border-theme whitespace-nowrap">
+                                            <span className="text-[13px] font-medium text-theme-secondary bg-theme-tertiary/90 backdrop-blur-sm px-2 py-0.5 rounded border border-theme whitespace-nowrap">
                                                 {dateStr}
                                             </span>
                                         </div>
@@ -531,7 +565,7 @@ export default function FundsMoneyPage() {
                                                 <div className="flex items-center justify-between gap-3 py-0.5">
                                                     <div className="flex items-center gap-1.5">
                                                         <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: flowColor }} />
-                                                        <span className="text-[11px] text-theme-secondary">{f.flow >= 0 ? 'Приток' : 'Отток'}</span>
+                                                        <span className="text-[13px] text-theme-secondary">{f.flow >= 0 ? 'Приток' : 'Отток'}</span>
                                                     </div>
                                                     <span className="text-xs font-semibold text-theme-primary whitespace-nowrap">
                                                         {f.flow > 0 ? '+' : ''}{f.flow.toFixed(2)} млрд ₽
@@ -540,7 +574,7 @@ export default function FundsMoneyPage() {
                                                 <div className="flex items-center justify-between gap-3 py-0.5">
                                                     <div className="flex items-center gap-1.5">
                                                         <span className="w-2 h-2 rounded-full flex-shrink-0 bg-[#6366f1]" />
-                                                        <span className="text-[11px] text-theme-secondary">Изменение</span>
+                                                        <span className="text-[13px] text-theme-secondary">Изменение</span>
                                                     </div>
                                                     <span className="text-xs font-semibold text-theme-primary whitespace-nowrap">
                                                         {f.flow_pct > 0 ? '+' : ''}{f.flow_pct.toFixed(2)}%
@@ -553,7 +587,7 @@ export default function FundsMoneyPage() {
                             })()}
 
                             {/* Даты оси X — равномерно по всей ширине */}
-                            <div className="absolute bottom-0 left-0 right-0 flex justify-between text-xs text-theme-secondary px-2">
+                            <div className="absolute bottom-0 left-0 right-0 flex justify-between text-[14px] font-semibold text-[#9CA3B8] px-2">
                                 {flowsData?.flows && flowsData.flows.length > 0 && (() => {
                                     const flows = flowsData.flows;
                                     const tickCount = Math.min(6, flows.length);

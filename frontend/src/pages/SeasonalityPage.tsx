@@ -461,7 +461,7 @@ export default function SeasonalityPage() {
                   <g key={i}>
                     <line x1={marginLeft} x2={chartWidth - marginRight} y1={scaleY(val)} y2={scaleY(val)}
                       stroke="rgba(255,255,255,0.08)" strokeWidth={val === 0 ? 1.5 : 1} />
-                    <text x={marginLeft - 8} y={scaleY(val) + 4} textAnchor="end" fontSize={11} fill="var(--text-muted)">
+                    <text x={marginLeft - 8} y={scaleY(val) + 5} textAnchor="end" fontSize={16} fontWeight={600} fill="#9CA3B8">
                       {val === 0 ? '0' : `${val > 0 ? '+' : ''}${val.toFixed(2)}%`}
                     </text>
                   </g>
@@ -506,7 +506,7 @@ export default function SeasonalityPage() {
                 {/* X labels */}
                 {bars.map((bar, i) => (
                   <text key={bar.key} x={marginLeft + i * gap + gap / 2} y={chartHeight - 10}
-                    textAnchor="middle" fontSize={12} fill="var(--text-secondary)" fontWeight="500">
+                    textAnchor="middle" fontSize={14} fill="#9CA3B8" fontWeight="600">
                     {bar.label}
                   </text>
                 ))}
@@ -572,7 +572,7 @@ export default function SeasonalityPage() {
 
                 {/* X labels */}
                 {priceXTicks.map((tick, i) => (
-                  <text key={i} x={tick.x} y={chartHeight - 10} textAnchor="middle" fontSize={12} fill="var(--text-secondary)">
+                  <text key={i} x={tick.x} y={chartHeight - 10} textAnchor="middle" fontSize={14} fontWeight={600} fill="#9CA3B8">
                     {tick.label}
                   </text>
                 ))}
