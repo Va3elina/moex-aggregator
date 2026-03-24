@@ -432,7 +432,7 @@ export default function FundsMoneyPage() {
                             onMouseLeave={handleFlowMouseLeave}
                         >
                             {/* Область графика: отступ справа для подписей */}
-                            <div className="absolute inset-0" style={{ right: 80 }}>
+                            <div className="absolute inset-0" style={{ right: 60 }}>
                             <svg
                                 ref={flowChartRef}
                                 width="100%"
@@ -440,16 +440,22 @@ export default function FundsMoneyPage() {
                                 preserveAspectRatio="none"
                             >
                                 {animatedBars.length > 0 && (() => {
-                                    const maxAbsFlow = Math.max(...animatedBars.map(v => Math.abs(v)), 0.01);
+                                    const maxFlow = Math.max(...animatedBars, 0.01);
+                                    const minFlow = Math.min(...animatedBars, -0.01);
+                                    const maxAbsFlow = Math.max(Math.abs(maxFlow), Math.abs(minFlow));
+                                    // Нулевая линия: пропорционально данным, не фиксированно 50%
+                                    const topPad = 8;   // % отступ сверху
+                                    const botPad = 12;  // % отступ снизу (для дат)
+                                    const plotH = 100 - topPad - botPad;
+                                    const zeroY = topPad + (maxFlow / (maxFlow - minFlow)) * plotH;
                                     const barWidth = 100 / (animatedBars.length || 1);
-                                    const midY = 50;
-                                    const minBarH = 1.5;
+                                    const minBarH = 1.2;
 
                                     return animatedBars.map((animFlow, i) => {
-                                        const rawH = (Math.abs(animFlow) / maxAbsFlow) * 40;
+                                        const rawH = (Math.abs(animFlow) / maxAbsFlow) * (plotH / 2);
                                         const h = animFlow !== 0 ? Math.max(rawH, minBarH) : 0;
                                         const isPositive = animFlow >= 0;
-                                        const y = isPositive ? midY - h : midY;
+                                        const y = isPositive ? zeroY - h : zeroY;
                                         const baseColor = isPositive ? '#2EE59D' : '#FF4D4D';
                                         const isHovered = hoveredFlowIndex === i;
 
@@ -468,22 +474,25 @@ export default function FundsMoneyPage() {
                                         );
                                     });
                                 })()}
-                                {/* Горизонтальные линии сетки */}
+                                {/* Горизонтальные линии сетки + центральная */}
                                 {animatedBars.length > 0 && (() => {
-                                    const maxAbsFlow = Math.max(...animatedBars.map(v => Math.abs(v)), 0.01);
-                                    const ticks = [-maxAbsFlow, -maxAbsFlow / 2, 0, maxAbsFlow / 2, maxAbsFlow];
+                                    const maxF = Math.max(...animatedBars, 0.01);
+                                    const minF = Math.min(...animatedBars, -0.01);
+                                    const maxAbs = Math.max(Math.abs(maxF), Math.abs(minF));
+                                    const tpd = 8; const bpd = 12; const pH = 100 - tpd - bpd;
+                                    const zY = tpd + (maxF / (maxF - minF)) * pH;
+                                    const ticks = [-maxAbs, -maxAbs / 2, 0, maxAbs / 2, maxAbs];
                                     return ticks.map((val, i) => {
-                                        const yPct = 50 - (val / maxAbsFlow) * 40;
+                                        const yPct = zY - (val / maxAbs) * (pH / 2);
+                                        if (yPct < tpd - 2 || yPct > 100 - bpd + 2) return null;
                                         return (
                                             <line key={`grid-${i}`}
                                                 x1="0" y1={`${yPct}%`} x2="100%" y2={`${yPct}%`}
-                                                stroke="rgba(255,255,255,0.08)" strokeWidth="1"
+                                                stroke={val === 0 ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.08)"} strokeWidth="1"
                                             />
                                         );
                                     });
                                 })()}
-                                {/* Центральная линия (ноль) */}
-                                <line x1="0" y1="50%" x2="100%" y2="50%" stroke="rgba(255,255,255,0.15)" strokeWidth="1" />
                                 {/* Вертикальный курсор */}
                                 {hoveredFlowIndex !== null && flowsData?.flows && (() => {
                                     const barWidth = 100 / flowsData.flows.length;
@@ -505,12 +514,17 @@ export default function FundsMoneyPage() {
                             </svg>
                             </div>
 
-                            {/* Подписи значений справа — в отдельной зоне */}
+                            {/* Подписи значений справа */}
                             {animatedBars.length > 0 && (() => {
-                                const maxAbsFlow = Math.max(...animatedBars.map(v => Math.abs(v)), 0.01);
-                                const ticks = [maxAbsFlow, maxAbsFlow / 2, 0, -maxAbsFlow / 2, -maxAbsFlow];
+                                const maxF = Math.max(...animatedBars, 0.01);
+                                const minF = Math.min(...animatedBars, -0.01);
+                                const maxAbs = Math.max(Math.abs(maxF), Math.abs(minF));
+                                const tpd = 8; const bpd = 12; const pH = 100 - tpd - bpd;
+                                const zY = tpd + (maxF / (maxF - minF)) * pH;
+                                const ticks = [maxAbs, maxAbs / 2, 0, -maxAbs / 2, -maxAbs];
                                 return ticks.map((val, i) => {
-                                    const yPct = 50 - (val / maxAbsFlow) * 40;
+                                    const yPct = zY - (val / maxAbs) * (pH / 2);
+                                    if (yPct < tpd - 2 || yPct > 100 - bpd + 2) return null;
                                     const label = val === 0 ? '0' : `${val > 0 ? '+' : ''}${val.toFixed(2)}`;
                                     return (
                                         <div key={`label-${i}`}
@@ -589,7 +603,7 @@ export default function FundsMoneyPage() {
                             })()}
 
                             {/* Даты оси X — равномерно по всей ширине */}
-                            <div className="absolute bottom-0 left-0 flex justify-between text-[14px] font-semibold text-[#9CA3B8] px-2" style={{ right: 80 }}>
+                            <div className="absolute bottom-0 left-0 flex justify-between text-[14px] font-semibold text-[#9CA3B8] px-2" style={{ right: 60 }}>
                                 {flowsData?.flows && flowsData.flows.length > 0 && (() => {
                                     const flows = flowsData.flows;
                                     const tickCount = Math.min(6, flows.length);
