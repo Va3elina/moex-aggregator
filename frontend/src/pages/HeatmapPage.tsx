@@ -9,6 +9,7 @@ const COLOR_OPTIONS = [
   { value: 'change_1d', label: 'Изменение 1Д' },
   { value: 'change_1w', label: 'Изменение 1Н' },
   { value: 'change_1m', label: 'Изменение 1М' },
+  { value: 'change_1y', label: 'Изменение 1Г' },
 ];
 
 const GROUP_OPTIONS = [
@@ -192,19 +193,28 @@ export default function HeatmapPage() {
     return (stock[key] as number) || 0;
   };
 
-  // Цвета как на референсе
+  // Цвета в стиле Finviz — тёмный центр, яркие края
   const getColor = (change: number): string => {
-    if (change >= 3) return '#16a34a';
-    if (change >= 2) return '#22c55e';
-    if (change >= 1) return '#4ade80';
-    if (change >= 0.5) return '#86efac';
-    if (change > 0) return '#bbf7d0';
-    if (change === 0) return '#6b7280';
-    if (change > -0.5) return '#fecaca';
-    if (change > -1) return '#fca5a5';
-    if (change > -2) return '#f87171';
-    if (change > -3) return '#ef4444';
-    return '#dc2626';
+    // Масштаб зависит от выбранного периода
+    const maxChange = colorBy === 'change_1y' ? 30 : colorBy === 'change_1m' ? 10 : 3;
+    const abs = Math.abs(change);
+    const t = Math.min(abs / maxChange, 1); // 0..1
+
+    if (change > 0) {
+      // Зелёная шкала: #1a1a22 → #2d4a22 → #2f6b2f → #3c9e3c → #30cc30
+      const r = Math.round(26 + t * (48 - 26));
+      const g = Math.round(26 + t * (204 - 26));
+      const b = Math.round(34 + t * (48 - 34));
+      return `rgb(${r},${g},${b})`;
+    }
+    if (change < 0) {
+      // Красная шкала: #1a1a22 → #6b2d2d → #a83030 → #cc3030
+      const r = Math.round(26 + t * (204 - 26));
+      const g = Math.round(26 + t * (48 - 26));
+      const b = Math.round(34 + t * (48 - 34));
+      return `rgb(${r},${g},${b})`;
+    }
+    return '#1a1a22'; // нулевое изменение — почти чёрный
   };
 
   // Форматирование процента (с запятой)
@@ -496,6 +506,10 @@ export default function HeatmapPage() {
             <span className="text-slate-400">Месяц:</span>
             <span className={`font-medium ${tooltip.stock.change_1m >= 0 ? 'text-green-400' : 'text-red-400'}`}>
               {formatPercent(tooltip.stock.change_1m)}
+            </span>
+            <span className="text-slate-400">Год:</span>
+            <span className={`font-medium ${tooltip.stock.change_1y >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              {formatPercent(tooltip.stock.change_1y)}
             </span>
           </div>
         </div>

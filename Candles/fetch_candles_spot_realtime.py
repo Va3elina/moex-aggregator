@@ -475,12 +475,19 @@ class StocksCandlesUpdater:
 
             records = [tuple(x) for x in df[columns].to_numpy()]
 
+            upsert_suffix = """
+                           ON CONFLICT (secid, begin_time, interval, type) DO UPDATE SET
+                               open = EXCLUDED.open, close = EXCLUDED.close,
+                               high = EXCLUDED.high, low = EXCLUDED.low,
+                               value = EXCLUDED.value, volume = EXCLUDED.volume,
+                               end_time = EXCLUDED.end_time
+                           WHERE EXCLUDED.volume > candles.volume
+                           """
             insert_query = """
                            INSERT INTO candles (secid, begin_time, interval, type, end_time,
                                                 open, close, high, low, value, volume, sec_id)
                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                           ON CONFLICT (secid, begin_time, interval, type) DO NOTHING
-                           """
+                           """ + upsert_suffix
 
             inserted = 0
             BATCH_SIZE = 500
@@ -495,7 +502,7 @@ class StocksCandlesUpdater:
                         INSERT INTO candles (secid, begin_time, interval, type, end_time,
                                              open, close, high, low, value, volume, sec_id)
                         VALUES {placeholders}
-                        ON CONFLICT (secid, begin_time, interval, type) DO NOTHING
+                        {upsert_suffix}
                     """, flat_values)
                     inserted += cursor.rowcount
                     raw_conn.commit()

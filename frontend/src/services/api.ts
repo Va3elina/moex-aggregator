@@ -147,6 +147,7 @@ export interface HeatmapStock {
   change_1d: number;
   change_1w: number;
   change_1m: number;
+  change_1y: number;
   volume_1d: number;
   volume_1w: number;
   volume_1m: number;

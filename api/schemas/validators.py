@@ -64,7 +64,7 @@ PeriodType = Literal["1d", "1w", "1m", "3m", "6m", "1y", "all"]
 InstTypeType = Literal["futures", "stock"]
 SortByType = Literal["oi", "change"]
 HeatmapSizeByType = Literal["value_1d", "value_1w", "value_1m", "volume_1d", "volume_1w", "volume_1m", "market_cap"]
-HeatmapColorByType = Literal["change_1d", "change_1w", "change_1m"]
+HeatmapColorByType = Literal["change_1d", "change_1w", "change_1m", "change_1y"]
 HeatmapGroupByType = Literal["sector", "none"]
 
 
