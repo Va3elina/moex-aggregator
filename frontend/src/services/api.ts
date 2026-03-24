@@ -12,17 +12,72 @@ import type {
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '';
 
 /**
- * Обёртка над fetch с авторизацией.
- * Refresh токенов — только в AuthContext (единая точка),
- * чтобы избежать гонки при параллельных запросах.
+ * Проверяет, истекает ли JWT через < 60 сек.
+ */
+function isTokenExpiringSoon(token: string): boolean {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    return payload.exp * 1000 - Date.now() < 60_000;
+  } catch { return true; }
+}
+
+/**
+ * Mutex для refresh — только один refresh за раз.
+ * Параллельные запросы ждут тот же промис.
+ */
+let refreshPromise: Promise<string | null> | null = null;
+
+async function ensureFreshToken(): Promise<string | null> {
+  const token = localStorage.getItem('access_token');
+  if (!token) return null;
+  if (!isTokenExpiringSoon(token)) return token;
+
+  // Если refresh уже идёт — ждём его
+  if (refreshPromise) return refreshPromise;
+
+  refreshPromise = (async () => {
+    const refreshToken = localStorage.getItem('refresh_token');
+    if (!refreshToken) return null;
+    try {
+      const resp = await fetch('/api/auth/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+      if (resp.ok) {
+        const tokens = await resp.json();
+        localStorage.setItem('access_token', tokens.access_token);
+        localStorage.setItem('refresh_token', tokens.refresh_token);
+        return tokens.access_token as string;
+      }
+    } catch { /* ignore */ }
+    return null;
+  })().finally(() => { refreshPromise = null; });
+
+  return refreshPromise;
+}
+
+/**
+ * Обёртка над fetch с авторизацией и проактивным refresh.
  */
 export async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
-  const token = localStorage.getItem('access_token');
+  const token = await ensureFreshToken() || localStorage.getItem('access_token');
   const headers: Record<string, string> = {};
   if (token) headers['Authorization'] = `Bearer ${token}`;
   if (init?.headers) Object.assign(headers, init.headers);
 
-  const response = await fetch(url, { ...init, headers });
+  let response = await fetch(url, { ...init, headers });
+
+  // Если всё равно 401 — пробуем refresh и retry
+  if (response.status === 401 && token) {
+    localStorage.removeItem('access_token'); // форсируем refresh
+    const newToken = await ensureFreshToken();
+    if (newToken) {
+      const retryHeaders: Record<string, string> = { Authorization: `Bearer ${newToken}` };
+      if (init?.headers) Object.assign(retryHeaders, init.headers);
+      response = await fetch(url, { ...init, headers: retryHeaders });
+    }
+  }
 
   if (response.status === 403) {
     const data = await response.json().catch(() => ({ detail: 'Доступ ограничен' }));
