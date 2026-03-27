@@ -212,18 +212,25 @@ export default function OpenInterestPage() {
   ): { time: string; value: number }[] | undefined => {
     if (!oiSeries || oiSeries.length === 0 || chartData.length === 0) return oiSeries;
 
+    // Для дневных свечей: ключ по ДАТЕ (свечи T00:00:00, OI T23:50:00).
+    // Для интрадей (5мин/1час): ключ по полному timestamp — OI и свечи
+    // имеют одинаковые метки, и нужно сохранить внутридневную гранулярность.
+    const isIntraday = dataInterval !== 24;
+
     const oiMap = new Map<string, number>();
     for (const p of oiSeries) {
-      oiMap.set(p.time, p.value);
+      const key = isIntraday ? p.time : p.time.slice(0, 10);
+      oiMap.set(key, p.value);
     }
 
     const aligned: { time: string; value: number }[] = [];
     let lastValue: number | null = null;
 
     for (const candle of chartData) {
-      const exact = oiMap.get(candle.time);
-      if (exact !== undefined) {
-        lastValue = exact;
+      const key = isIntraday ? candle.time : candle.time.slice(0, 10);
+      const val = oiMap.get(key);
+      if (val !== undefined) {
+        lastValue = val;
       }
       if (lastValue !== null) {
         aligned.push({ time: candle.time, value: lastValue });

@@ -443,7 +443,7 @@ export default function FundsMoneyPage() {
                                     const maxAbsFlow = Math.max(...animatedBars.map(v => Math.abs(v)), 0.01);
                                     const barWidth = 100 / (animatedBars.length || 1);
                                     const midY = 50;  // фиксированная нулевая линия
-                                    const halfH = 44; // макс высота бара (% от SVG)
+                                    const halfH = 47; // макс высота бара (% от SVG)
                                     const minBarH = 1.2;
 
                                     return animatedBars.map((animFlow, i) => {
@@ -470,11 +470,11 @@ export default function FundsMoneyPage() {
                                     });
                                 })()}
                                 {/* Горизонтальные линии сетки */}
-                                {animatedBars.length > 0 && (() => {
-                                    const maxAbsF = Math.max(...animatedBars.map(v => Math.abs(v)), 0.01);
+                                {flowsData?.flows?.length && (() => {
+                                    const maxAbsF = Math.max(...flowsData.flows.map(f => Math.abs(f.flow)), 0.01);
                                     const ticks = [-maxAbsF, -maxAbsF / 2, 0, maxAbsF / 2, maxAbsF];
                                     return ticks.map((val, i) => {
-                                        const yPct = 50 - (val / maxAbsF) * 44;
+                                        const yPct = 50 - (val / maxAbsF) * 47;
                                         return (
                                             <line key={`grid-${i}`}
                                                 x1="0" y1={`${yPct}%`} x2="100%" y2={`${yPct}%`}
@@ -505,11 +505,11 @@ export default function FundsMoneyPage() {
                             </div>
 
                             {/* Подписи значений справа */}
-                            {animatedBars.length > 0 && (() => {
-                                const maxAbs = Math.max(...animatedBars.map(v => Math.abs(v)), 0.01);
+                            {flowsData?.flows?.length && (() => {
+                                const maxAbs = Math.max(...flowsData.flows.map(f => Math.abs(f.flow)), 0.01);
                                 const ticks = [maxAbs, maxAbs / 2, 0, -maxAbs / 2, -maxAbs];
                                 return ticks.map((val, i) => {
-                                    const yPct = 50 - (val / maxAbs) * 44;
+                                    const yPct = 50 - (val / maxAbs) * 47;
                                     const label = val === 0 ? '0' : `${val > 0 ? '+' : ''}${val.toFixed(1)}`;
                                     return (
                                         <div key={`label-${i}`}

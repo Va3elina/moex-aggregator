@@ -151,16 +151,17 @@ export default function SimpleChart({
 
   const displaySecondaryData = useMemo(() => {
     if (!showNavigator || !secondaryData || !displayData.length) return secondaryData;
-    const t0 = displayData[0].time;
-    const t1 = displayData[displayData.length - 1].time;
-    return secondaryData.filter(d => d.time >= t0 && d.time <= t1);
+    // Сравниваем только даты (YYYY-MM-DD) — свечи 00:00, OI 23:50
+    const d0 = displayData[0].time.slice(0, 10);
+    const d1 = displayData[displayData.length - 1].time.slice(0, 10);
+    return secondaryData.filter(d => d.time.slice(0, 10) >= d0 && d.time.slice(0, 10) <= d1);
   }, [showNavigator, secondaryData, displayData]);
 
   const displayThirdData = useMemo(() => {
     if (!showNavigator || !thirdData || !displayData.length) return thirdData;
-    const t0 = displayData[0].time;
-    const t1 = displayData[displayData.length - 1].time;
-    return thirdData.filter(d => d.time >= t0 && d.time <= t1);
+    const d0 = displayData[0].time.slice(0, 10);
+    const d1 = displayData[displayData.length - 1].time.slice(0, 10);
+    return thirdData.filter(d => d.time.slice(0, 10) >= d0 && d.time.slice(0, 10) <= d1);
   }, [showNavigator, thirdData, displayData]);
   const [chartMode, setChartMode] = useState<'line' | 'histogram'>('line');
 

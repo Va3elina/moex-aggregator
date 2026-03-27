@@ -632,22 +632,28 @@ def aggregate_to_5min(df_1min: pd.DataFrame) -> pd.DataFrame:
 
     df_5min = df.groupby('interval_5min').agg(agg)
 
-    # === Заполнение пропусков (Zero-Fill) ===
-    # Создаем полный индекс от начала до конца с шагом 5 мин
+    # === Заполнение пропусков (Zero-Fill) только в торговые часы ===
+    # MOEX фьючерсы: 07:00–23:50. Без фильтра reindex создаёт фейки 00:00–06:55.
+    trading_hours = set()
+    for ts in df_5min.index:
+        if 7 <= ts.hour <= 23:
+            trading_hours.add(ts)
+
     full_idx = pd.date_range(start=df_5min.index.min(), end=df_5min.index.max(), freq='5min')
-    
-    # Переиндексация (появятся NaN там где не было торгов)
+    full_idx = full_idx[full_idx.map(lambda t: 7 <= t.hour <= 23)]
+
+    # Переиндексация (появятся NaN там где не было торгов в рабочие часы)
     df_5min = df_5min.reindex(full_idx)
-    
-    # Заполнение пропусков
+
+    # Заполнение пропусков (только внутри торговой сессии)
     # Close протягиваем вперед (ffill)
     df_5min['close'] = df_5min['close'].ffill()
-    
+
     # Open, High, Low заполняем значениями Close (Doji)
     df_5min['open'] = df_5min['open'].fillna(df_5min['close'])
     df_5min['high'] = df_5min['high'].fillna(df_5min['close'])
     df_5min['low'] = df_5min['low'].fillna(df_5min['close'])
-    
+
     # Volume и Value заполняем 0
     df_5min['volume'] = df_5min['volume'].fillna(0)
     df_5min['value'] = df_5min['value'].fillna(0)

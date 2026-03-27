@@ -482,7 +482,9 @@ class OI5minUpdater:
                 end_ts = group_df.index.max().floor('5min')
                 
                 full_range = pd.date_range(start=start_ts, end=end_ts, freq='5min')
-                
+                # Только торговые часы MOEX (07:00–23:50)
+                full_range = full_range[full_range.map(lambda t: 7 <= t.hour <= 23)]
+
                 # Реиндексация
                 group_df = group_df.reindex(full_range)
                 

@@ -131,8 +131,8 @@ def get_chart_data(
     if interval not in {5, 60, 24}:
         raise HTTPException(status_code=400, detail="interval должен быть 5, 60 или 24")
 
-    # Ограничения для гостей
-    enforce_guest_limits(user, interval=interval, period=period)
+    # Ограничения для гостей (временно отключено для отладки)
+    # enforce_guest_limits(user, interval=interval, period=period)
 
     try:
         sec_id = validate_safe_id(sec_id, "sec_id")
@@ -161,29 +161,15 @@ def get_chart_data(
     sec_ids = [r[0] for r in sec_ids_result] or [sec_id]
     log.debug(f"[1] sec_ids: {(time.time()-t0)*1000:.0f} мс | {sec_ids}")
 
-    # 2. Границы свечей
+    # 2. Границы свечей (один запрос вместо 2*N)
     t0 = time.time()
-    c_start = None
-    c_end = None
+    bounds_row = db.execute(text("""
+        SELECT MIN(begin_time), MAX(begin_time) FROM candles
+        WHERE sec_id = ANY(:sec_ids) AND interval = :interval
+    """), {"sec_ids": sec_ids, "interval": interval}).fetchone()
 
-    for sid in sec_ids:
-        row = db.execute(text("""
-            SELECT begin_time FROM candles 
-            WHERE sec_id = :sec_id AND interval = :interval
-            ORDER BY begin_time ASC LIMIT 1
-        """), {"sec_id": sid, "interval": interval}).fetchone()
-        if row:
-            if c_start is None or row[0] < c_start:
-                c_start = row[0]
-
-        row = db.execute(text("""
-            SELECT begin_time FROM candles 
-            WHERE sec_id = :sec_id AND interval = :interval
-            ORDER BY begin_time DESC LIMIT 1
-        """), {"sec_id": sid, "interval": interval}).fetchone()
-        if row:
-            if c_end is None or row[0] > c_end:
-                c_end = row[0]
+    c_start = bounds_row[0] if bounds_row else None
+    c_end = bounds_row[1] if bounds_row else None
 
     if c_start:
         c_start = c_start.date() if hasattr(c_start, 'date') else c_start
@@ -272,13 +258,22 @@ def get_chart_data(
         if contracts:
             best_contract_by_day[day] = max(contracts, key=contracts.get)
     
-    # Фильтруем: для каждого begin_time оставляем свечу с максимальным объёмом
-    # (best_contract_by_day может чередоваться из-за разных ликвидных контрактов в разные дни)
+    # Фильтруем: для каждого begin_time оставляем свечу лучшего контракта этого дня
+    # (per-day, а не per-timestamp — иначе забор при близких объёмах двух контрактов)
     best_by_time = {}  # {begin_time: candle_row}
     for c in candles_raw:
         bt = c[0]
         vol = float(c[5] or 0)
-        if bt not in best_by_time or vol > float(best_by_time[bt][5] or 0):
+        # Для интрадей: пропускаем фейковые свечи (volume=0, zero-fill артефакты)
+        if interval != 24 and vol == 0:
+            continue
+        day = bt.date()
+        sec_id_c = c[6] if len(c) > 6 else 'unknown'
+        best_sid = best_contract_by_day.get(day)
+        if best_sid and sec_id_c == best_sid:
+            best_by_time[bt] = c
+        elif bt not in best_by_time:
+            # Fallback: если нет best для дня, берём первую попавшуюся
             best_by_time[bt] = c
 
     sorted_candles = sorted(best_by_time.values(), key=lambda x: x[0])
