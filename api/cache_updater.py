@@ -14,7 +14,7 @@ from sqlalchemy import text
 
 from api.cache import get_all_by_prefix, set_cache, DEFAULT_TTL
 from api.database import SessionLocal
-from api.schemas import CandleResponse, OpenInterestResponse
+from datetime import datetime, time as dt_time
 
 log = logging.getLogger(__name__)
 
@@ -48,10 +48,10 @@ def _update_single_entry(db, key: str, cached_response) -> bool:
 
     try:
         # Определяем активный контракт из последней свечи в кеше
-        if not cached_response.candles:
+        if not cached_response["candles"]:
             return False
 
-        last_candle_time = cached_response.candles[-1].time
+        last_candle_time = datetime.fromisoformat(cached_response["candles"][-1]["time"])
 
         # Запрашиваем все sec_id для этого sectype
         sec_ids = [r[0] for r in db.execute(text(
@@ -103,24 +103,24 @@ def _update_single_entry(db, key: str, cached_response) -> bool:
             if sid == best:
                 filtered.append(c)
 
-        # Дописываем свечи
+        # Дописываем свечи (dict, как в chart.py)
         appended_candles = 0
         for c in filtered:
-            candle = CandleResponse(
-                time=c[0],
-                open=float(c[1] or 0),
-                high=float(c[2] or 0),
-                low=float(c[3] or 0),
-                close=float(c[4] or 0),
-                volume=float(c[5] or 0),
-            )
-            cached_response.candles.append(candle)
+            cached_response["candles"].append({
+                "time": c[0].isoformat(),
+                "open": float(c[1] or 0),
+                "high": float(c[2] or 0),
+                "low": float(c[3] or 0),
+                "close": float(c[4] or 0),
+                "volume": float(c[5] or 0),
+            })
             appended_candles += 1
 
         # Дописываем OI
         appended_oi = 0
-        if show_oi and cached_response.open_interest:
-            last_oi_time = cached_response.open_interest[-1].time
+        if show_oi and cached_response["open_interest"]:
+            last_oi_time_str = cached_response["open_interest"][-1]["time"]
+            last_oi_dt = datetime.fromisoformat(last_oi_time_str)
 
             new_oi_raw = db.execute(text("""
                 SELECT tradedate, tradetime, pos, pos_long, pos_short,
@@ -134,12 +134,11 @@ def _update_single_entry(db, key: str, cached_response) -> bool:
                 "sectype": sectype,
                 "clgroup": clgroup,
                 "interval": interval,
-                "last_date": last_oi_time.date(),
-                "last_time_part": last_oi_time.time(),
+                "last_date": last_oi_dt.date(),
+                "last_time_part": last_oi_dt.time(),
             }).fetchall()
 
             for oi in new_oi_raw:
-                from datetime import datetime, time as dt_time
                 trade_date = oi[0]
                 trade_time = oi[1] if oi[1] else dt_time(23, 50)
 
@@ -148,28 +147,27 @@ def _update_single_entry(db, key: str, cached_response) -> bool:
                     trade_time = dt_time(int(parts[0]), int(parts[1]),
                                          int(parts[2]) if len(parts) > 2 else 0)
 
-                oi_datetime = datetime.combine(trade_date, trade_time)
                 pos_long = int(oi[3] or 0)
                 pos_short = int(oi[4] or 0)
 
-                oi_response = OpenInterestResponse(
-                    time=oi_datetime,
-                    pos=int(oi[2] or 0),
-                    pos_long=pos_long,
-                    pos_short=pos_short,
-                    pos_long_num=int(oi[5] or 0),
-                    pos_short_num=int(oi[6] or 0),
-                    net_position=pos_long + pos_short,
-                )
-                cached_response.open_interest.append(oi_response)
+                cached_response["open_interest"].append({
+                    "time": datetime.combine(trade_date, trade_time).isoformat(),
+                    "pos": int(oi[2] or 0),
+                    "pos_long": pos_long,
+                    "pos_short": pos_short,
+                    "pos_long_num": int(oi[5] or 0),
+                    "pos_short_num": int(oi[6] or 0),
+                    "net_position": pos_long + pos_short,
+                })
                 appended_oi += 1
 
         # Обновляем метаданные
-        cached_response.candles_count = len(cached_response.candles)
-        cached_response.oi_count = len(cached_response.open_interest)
-        if cached_response.candles:
-            cached_response.candles_end_date = str(cached_response.candles[-1].time.date())
-            cached_response.data_end = str(cached_response.candles[-1].time.date())
+        cached_response["candles_count"] = len(cached_response["candles"])
+        cached_response["oi_count"] = len(cached_response["open_interest"])
+        if cached_response["candles"]:
+            last_time = cached_response["candles"][-1]["time"][:10]
+            cached_response["candles_end_date"] = last_time
+            cached_response["data_end"] = last_time
 
         # Перезаписываем кеш с обновлённым TTL
         set_cache(key, cached_response, ttl=DEFAULT_TTL)

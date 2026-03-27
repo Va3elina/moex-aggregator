@@ -21,7 +21,7 @@ log = get_logger()
 
 from api.database import get_db
 from api.models import Instrument
-from api.schemas import CandleResponse, OpenInterestResponse
+# CandleResponse/OpenInterestResponse не используются — строим dict напрямую для скорости
 from api.schemas.validators import (
     ChartParams,
     IntervalsParams,
@@ -36,26 +36,8 @@ from api.security.access_control import enforce_guest_limits
 router = APIRouter(prefix='/api/chart', tags=['chart'])
 
 
-class ChartResponse(BaseModel):
-    sec_id: str
-    sectype: str
-    interval: int
-    clgroup: str
-    candles_count: int
-    oi_count: int
-    candles: list[CandleResponse]
-    open_interest: list[OpenInterestResponse]
-    oi_start_date: str | None = None
-    oi_end_date: str | None = None
-    candles_start_date: str | None = None
-    candles_end_date: str | None = None
-    has_oi_data: bool = False
-    contracts: list[str] = []
-    mode: str = "price_and_oi"
-    period: str = "6m"
-    data_start: str | None = None
-    data_end: str | None = None
-    available_intervals: list[int] = []
+# ChartResponse больше не Pydantic — endpoint возвращает dict напрямую для скорости
+# (Pydantic сериализация 13000 объектов занимала ~1 сек)
 
 
 class AvailableIntervalsResponse(BaseModel):
@@ -112,7 +94,7 @@ def get_available_intervals(
     )
 
 
-@router.get("/{sec_id}", response_model=ChartResponse)
+@router.get("/{sec_id}")
 def get_chart_data(
         sec_id: str,
         sectype: str = Query(...),
@@ -159,7 +141,7 @@ def get_chart_data(
         WHERE sectype = :sectype AND type = :inst_type
     """), {"sectype": sectype, "inst_type": inst_type}).fetchall()
     sec_ids = [r[0] for r in sec_ids_result] or [sec_id]
-    log.debug(f"[1] sec_ids: {(time.time()-t0)*1000:.0f} мс | {sec_ids}")
+    log.info(f"[1] sec_ids: {(time.time()-t0)*1000:.0f} мс | {sec_ids}")
 
     # 2. Границы свечей (один запрос вместо 2*N)
     t0 = time.time()
@@ -176,7 +158,7 @@ def get_chart_data(
     if c_end:
         c_end = c_end.date() if hasattr(c_end, 'date') else c_end
 
-    log.debug(f"[2] candles bounds: {(time.time()-t0)*1000:.0f} мс | {c_start} - {c_end}")
+    log.info(f"[2] candles bounds: {(time.time()-t0)*1000:.0f} мс | {c_start} - {c_end}")
 
     # 3. Границы OI
     t0 = time.time()
@@ -185,15 +167,16 @@ def get_chart_data(
         WHERE sectype = :sectype AND clgroup = :clgroup AND interval = :interval
     """), {"sectype": sectype, "clgroup": clgroup, "interval": interval}).fetchone()
     oi_start, oi_end = oi_bounds if oi_bounds else (None, None)
-    log.debug(f"[3] OI bounds: {(time.time()-t0)*1000:.0f} мс | {oi_start} - {oi_end}")
+    log.info(f"[3] OI bounds: {(time.time()-t0)*1000:.0f} мс | {oi_start} - {oi_end}")
 
     if not c_end:
         log.warning("[!] Нет данных свечей!")
-        return ChartResponse(
-            sec_id=sec_id, sectype=sectype, interval=interval, clgroup=clgroup,
-            candles_count=0, oi_count=0, candles=[], open_interest=[],
-            has_oi_data=False, contracts=sec_ids, mode="price_only", period=period
-        )
+        return {
+            "sec_id": sec_id, "sectype": sectype, "interval": interval, "clgroup": clgroup,
+            "candles_count": 0, "oi_count": 0, "candles": [], "open_interest": [],
+            "has_oi_data": False, "contracts": sec_ids, "mode": "price_only", "period": period,
+            "available_intervals": [],
+        }
 
     has_oi_data = oi_end is not None
 
@@ -216,7 +199,7 @@ def get_chart_data(
         period_start = work_end - timedelta(days=days)
         work_start = max(data_start, period_start)
 
-    log.debug(f"[4] work period: {work_start} - {work_end}")
+    log.info(f"[4] work period: {work_start} - {work_end}")
 
     # 5. Запрос свечей (включаем sec_id для умной дедупликации)
     t0 = time.time()
@@ -235,7 +218,7 @@ def get_chart_data(
         "start_time": datetime.combine(work_start, dt_time.min),
         "end_time": datetime.combine(work_end, dt_time.max)
     }).fetchall()
-    log.debug(f"[5] candles query: {(time.time()-t0)*1000:.0f} мс | rows: {len(candles_raw)}")
+    log.info(f"[5] candles query: {(time.time()-t0)*1000:.0f} мс | rows: {len(candles_raw)}")
 
     # 6. Склейка контрактов (необратимый ролловер, как TradingView)
     # Для каждого дня определяем лидера по объёму, но после переключения
@@ -298,7 +281,7 @@ def get_chart_data(
                 best_by_time[bt] = c
 
     sorted_candles = sorted(best_by_time.values(), key=lambda x: x[0])
-    log.debug(f"[6] chain: {(time.time()-t0)*1000:.0f} мс | candles: {len(sorted_candles)}")
+    log.info(f"[6] chain: {(time.time()-t0)*1000:.0f} мс | candles: {len(sorted_candles)}")
 
     # 7. Запрос OI
     oi_raw = []
@@ -330,86 +313,73 @@ def get_chart_data(
             "start_date": actual_start,
             "end_date": actual_end
         }).fetchall()
-        log.debug(f"[7] OI query: {(time.time()-t0)*1000:.0f} мс | rows: {len(oi_raw)}")
+        log.info(f"[7] OI query: {(time.time()-t0)*1000:.0f} мс | rows: {len(oi_raw)}")
 
-    # 8. Формируем ответ
+    # 8. Формируем ответ (прямые dict вместо Pydantic — в 5-10x быстрее)
     t0 = time.time()
     candles_list = [
-        CandleResponse(
-            time=c[0],
-            open=float(c[1] or 0),
-            high=float(c[2] or 0),
-            low=float(c[3] or 0),
-            close=float(c[4] or 0),
-            volume=float(c[5] or 0)
-        ) for c in sorted_candles
+        {
+            "time": c[0].isoformat(),
+            "open": float(c[1] or 0),
+            "high": float(c[2] or 0),
+            "low": float(c[3] or 0),
+            "close": float(c[4] or 0),
+            "volume": float(c[5] or 0),
+        } for c in sorted_candles
     ]
 
-    # ============================================================
-    # ИСПРАВЛЕНО: Вычисляем net_position = pos_long + pos_short
-    # pos_short в БД уже ОТРИЦАТЕЛЬНЫЙ, поэтому используем ПЛЮС!
-    #
-    # Пример: pos_long=128694, pos_short=-26535
-    #   net_position = 128694 + (-26535) = 102159 (физики в лонге)
-    # ============================================================
+    # net_position = pos_long + pos_short
+    # pos_short в БД уже ОТРИЦАТЕЛЬНЫЙ, поэтому ПЛЮС
     oi_list = []
     for r in oi_raw:
-        pos_long = r[3] or 0
-        pos_short = r[4] or 0
+        pos_long = int(r[3] or 0)
+        pos_short = int(r[4] or 0)
+        oi_list.append({
+            "time": datetime.combine(r[0], r[1]).isoformat(),
+            "pos": int(r[2] or 0),
+            "pos_long": pos_long,
+            "pos_short": pos_short,
+            "pos_long_num": int(r[5] or 0),
+            "pos_short_num": int(r[6] or 0),
+            "net_position": pos_long + pos_short,
+        })
 
-        # ПРАВИЛЬНАЯ ФОРМУЛА!
-        net_position = pos_long + pos_short
-
-        oi_list.append(OpenInterestResponse(
-            time=datetime.combine(r[0], r[1]),
-            pos=r[2],
-            pos_long=pos_long,
-            pos_short=pos_short,
-            pos_long_num=r[5],
-            pos_short_num=r[6],
-            net_position=net_position
-        ))
-
-    log.debug(f"[8] build response: {(time.time()-t0)*1000:.0f} мс")
+    log.info(f"[8] build response: {(time.time()-t0)*1000:.0f} мс")
 
     total_ms = (time.time() - total_start) * 1000
     log.info(f"TOTAL: {sec_id} {total_ms:.0f} мс")
 
     # 9. Получаем доступные интервалы OI
-    available_intervals_query = text("""
-        SELECT DISTINCT interval 
-        FROM open_interest 
-        WHERE sectype = :sectype AND clgroup = :clgroup
-        ORDER BY interval
-    """)
     available_intervals = [
-        row[0] for row in db.execute(
-            available_intervals_query,
-            {"sectype": sectype, "clgroup": clgroup}
-        ).fetchall()
+        row[0] for row in db.execute(text("""
+            SELECT DISTINCT interval
+            FROM open_interest
+            WHERE sectype = :sectype AND clgroup = :clgroup
+            ORDER BY interval
+        """), {"sectype": sectype, "clgroup": clgroup}).fetchall()
     ]
 
-    response = ChartResponse(
-        sec_id=sec_id,
-        sectype=sectype,
-        interval=interval,
-        clgroup=clgroup,
-        candles_count=len(candles_list),
-        oi_count=len(oi_list),
-        candles=candles_list,
-        open_interest=oi_list,
-        oi_start_date=str(oi_raw[0][0]) if oi_raw else None,
-        oi_end_date=str(oi_raw[-1][0]) if oi_raw else None,
-        candles_start_date=str(sorted_candles[0][0].date()) if sorted_candles else None,
-        candles_end_date=str(sorted_candles[-1][0].date()) if sorted_candles else None,
-        has_oi_data=has_oi_data,
-        contracts=sec_ids,
-        mode=mode,
-        period=period,
-        data_start=str(data_start) if data_start else None,
-        data_end=str(data_end) if data_end else None,
-        available_intervals=available_intervals
-    )
+    response = {
+        "sec_id": sec_id,
+        "sectype": sectype,
+        "interval": interval,
+        "clgroup": clgroup,
+        "candles_count": len(candles_list),
+        "oi_count": len(oi_list),
+        "candles": candles_list,
+        "open_interest": oi_list,
+        "oi_start_date": str(oi_raw[0][0]) if oi_raw else None,
+        "oi_end_date": str(oi_raw[-1][0]) if oi_raw else None,
+        "candles_start_date": str(sorted_candles[0][0].date()) if sorted_candles else None,
+        "candles_end_date": str(sorted_candles[-1][0].date()) if sorted_candles else None,
+        "has_oi_data": has_oi_data,
+        "contracts": sec_ids,
+        "mode": mode,
+        "period": period,
+        "data_start": str(data_start) if data_start else None,
+        "data_end": str(data_end) if data_end else None,
+        "available_intervals": available_intervals,
+    }
 
     get_or_set(cache_key, response, ttl=DEFAULT_TTL)
     return response
