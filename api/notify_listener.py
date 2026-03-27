@@ -105,13 +105,25 @@ async def _handle_notification(payload: str):
         source = data.get("source", "unknown")
         logger.info(f"NOTIFY received: source={source}")
 
-        # Инвалидация кеша
-        prefixes = SOURCE_CACHE_MAP.get(source)
-        if prefixes is None:
-            invalidate()  # Очистить весь кеш
+        # Обновление кеша
+        if source in ("5min", "hourly"):
+            # Инкрементально дописываем новые данные в существующий кеш
+            # (chart: обновляем, остальные префиксы инвалидируем)
+            for prefix in (SOURCE_CACHE_MAP.get(source) or []):
+                if prefix == "chart:":
+                    # Дописываем в кеш вместо удаления
+                    from api.cache_updater import async_update_chart_caches
+                    asyncio.ensure_future(async_update_chart_caches(source))
+                else:
+                    invalidate(prefix)
         else:
-            for prefix in prefixes:
-                invalidate(prefix)
+            # daily и остальные — полная инвалидация (раз в день допустимо)
+            prefixes = SOURCE_CACHE_MAP.get(source)
+            if prefixes is None:
+                invalidate()
+            else:
+                for prefix in prefixes:
+                    invalidate(prefix)
 
         # SSE broadcast
         await sse_manager.broadcast(payload)

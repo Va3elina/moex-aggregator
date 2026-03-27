@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from datetime import datetime, date, time as dt_time, timedelta
-from api.cache import get_or_set
+from api.cache import get_or_set, DEFAULT_TTL
 from typing import Optional
 from pydantic import BaseModel
 import time
@@ -143,7 +143,7 @@ def get_chart_data(
     if date_from and date_to and date_to < date_from:
         raise HTTPException(status_code=400, detail="date_to не может быть раньше date_from")
 
-    # Кеширование (TTL 60с — обновляется каждую минуту)
+    # Кеширование (TTL 30мин — инкрементально обновляется при NOTIFY)
     cache_key = f"chart:{sec_id}:{sectype}:{inst_type}:{interval}:{clgroup}:{show_oi}:{period}:{date_from}:{date_to}"
     cached = get_or_set(cache_key)
     if cached is not None:
@@ -390,5 +390,5 @@ def get_chart_data(
         available_intervals=available_intervals
     )
 
-    get_or_set(cache_key, response, ttl=60)
+    get_or_set(cache_key, response, ttl=DEFAULT_TTL)
     return response

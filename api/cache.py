@@ -23,11 +23,13 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_TTL = 1800  # 30 минут (кеш обновляется инкрементально при NOTIFY)
+
 # Глобальное хранилище кеша: {key: (data, expire_at)}
 _cache: dict[str, tuple[Any, float]] = {}
 
 
-def get_or_set(key: str, value: Any = None, ttl: int = 300) -> Any | None:
+def get_or_set(key: str, value: Any = None, ttl: int = DEFAULT_TTL) -> Any | None:
     """
     Получить из кеша или сохранить значение.
 
@@ -71,6 +73,21 @@ def invalidate(prefix: str | None = None):
             del _cache[k]
         if keys_to_delete:
             logger.info(f"Cache INVALIDATE '{prefix}': {len(keys_to_delete)} entries removed")
+
+
+def set_cache(key: str, value: Any, ttl: int = DEFAULT_TTL):
+    """Явная запись в кеш. Используется cache_updater для инкрементальных обновлений."""
+    _cache[key] = (value, time.time() + ttl)
+
+
+def get_all_by_prefix(prefix: str) -> dict[str, Any]:
+    """Вернуть все живые записи с данным префиксом. {key: data}"""
+    now = time.time()
+    result = {}
+    for key, (data, expire_at) in _cache.items():
+        if key.startswith(prefix) and now < expire_at:
+            result[key] = data
+    return result
 
 
 def cache_stats() -> dict:

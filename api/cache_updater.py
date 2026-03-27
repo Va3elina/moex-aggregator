@@ -1,0 +1,216 @@
+"""
+Инкрементальное обновление кеша графиков при NOTIFY.
+
+Вместо полной инвалидации (→ cold query 7 сек) — дописываем
+последние свечи/OI в закешированные ответы.
+
+Вызывается из notify_listener при source="5min".
+"""
+import asyncio
+import logging
+import time
+
+from sqlalchemy import text
+
+from api.cache import get_all_by_prefix, set_cache, DEFAULT_TTL
+from api.database import SessionLocal
+from api.schemas import CandleResponse, OpenInterestResponse
+
+log = logging.getLogger(__name__)
+
+
+def _parse_cache_key(key: str) -> dict | None:
+    """Парсит ключ chart:SR:SR:futures:24:FIZ:True:all:None:None → dict."""
+    parts = key.split(":")
+    if len(parts) < 10 or parts[0] != "chart":
+        return None
+    return {
+        "sec_id": parts[1],
+        "sectype": parts[2],
+        "inst_type": parts[3],
+        "interval": int(parts[4]),
+        "clgroup": parts[5],
+        "show_oi": parts[6] == "True",
+        "period": parts[7],
+    }
+
+
+def _update_single_entry(db, key: str, cached_response) -> bool:
+    """Обновляет одну запись кеша. Возвращает True если обновлено."""
+    params = _parse_cache_key(key)
+    if not params:
+        return False
+
+    sectype = params["sectype"]
+    interval = params["interval"]
+    clgroup = params["clgroup"]
+    show_oi = params["show_oi"]
+
+    try:
+        # Определяем активный контракт из последней свечи в кеше
+        if not cached_response.candles:
+            return False
+
+        last_candle_time = cached_response.candles[-1].time
+
+        # Запрашиваем все sec_id для этого sectype
+        sec_ids = [r[0] for r in db.execute(text(
+            "SELECT sec_id FROM instruments WHERE sectype = :sectype"
+        ), {"sectype": sectype}).fetchall()]
+
+        if not sec_ids:
+            return False
+
+        # Берём новые свечи после последней в кеше
+        new_candles_raw = db.execute(text("""
+            SELECT begin_time, open, high, low, close, volume, sec_id
+            FROM candles
+            WHERE sec_id = ANY(:sec_ids) AND interval = :interval
+              AND begin_time > :last_time
+            ORDER BY begin_time
+        """), {
+            "sec_ids": sec_ids,
+            "interval": interval,
+            "last_time": last_candle_time,
+        }).fetchall()
+
+        if not new_candles_raw:
+            return False  # Нет новых данных
+
+        # Фильтруем volume=0 для интрадей (как в chart.py)
+        if interval != 24:
+            new_candles_raw = [c for c in new_candles_raw if float(c[5] or 0) > 0]
+
+        # Определяем лучший контракт за сегодня (как в chart.py)
+        from collections import defaultdict
+        daily_volume = defaultdict(lambda: defaultdict(float))
+        for c in new_candles_raw:
+            day = c[0].date()
+            sid = c[6]
+            daily_volume[day][sid] += float(c[5] or 0)
+
+        best_by_day = {}
+        for day, contracts in daily_volume.items():
+            if contracts:
+                best_by_day[day] = max(contracts, key=contracts.get)
+
+        # Фильтруем по лучшему контракту
+        filtered = []
+        for c in new_candles_raw:
+            day = c[0].date()
+            sid = c[6]
+            best = best_by_day.get(day, sid)
+            if sid == best:
+                filtered.append(c)
+
+        # Дописываем свечи
+        appended_candles = 0
+        for c in filtered:
+            candle = CandleResponse(
+                time=c[0],
+                open=float(c[1] or 0),
+                high=float(c[2] or 0),
+                low=float(c[3] or 0),
+                close=float(c[4] or 0),
+                volume=float(c[5] or 0),
+            )
+            cached_response.candles.append(candle)
+            appended_candles += 1
+
+        # Дописываем OI
+        appended_oi = 0
+        if show_oi and cached_response.open_interest:
+            last_oi_time = cached_response.open_interest[-1].time
+
+            new_oi_raw = db.execute(text("""
+                SELECT tradedate, tradetime, pos, pos_long, pos_short,
+                       pos_long_num, pos_short_num
+                FROM open_interest
+                WHERE sectype = :sectype AND clgroup = :clgroup AND interval = :interval
+                  AND (tradedate > :last_date
+                       OR (tradedate = :last_date AND tradetime > :last_time_part))
+                ORDER BY tradedate, tradetime
+            """), {
+                "sectype": sectype,
+                "clgroup": clgroup,
+                "interval": interval,
+                "last_date": last_oi_time.date(),
+                "last_time_part": last_oi_time.time(),
+            }).fetchall()
+
+            for oi in new_oi_raw:
+                from datetime import datetime, time as dt_time
+                trade_date = oi[0]
+                trade_time = oi[1] if oi[1] else dt_time(23, 50)
+
+                if isinstance(trade_time, str):
+                    parts = trade_time.split(":")
+                    trade_time = dt_time(int(parts[0]), int(parts[1]),
+                                         int(parts[2]) if len(parts) > 2 else 0)
+
+                oi_datetime = datetime.combine(trade_date, trade_time)
+                pos_long = int(oi[3] or 0)
+                pos_short = int(oi[4] or 0)
+
+                oi_response = OpenInterestResponse(
+                    time=oi_datetime,
+                    pos=int(oi[2] or 0),
+                    pos_long=pos_long,
+                    pos_short=pos_short,
+                    pos_long_num=int(oi[5] or 0),
+                    pos_short_num=int(oi[6] or 0),
+                    net_position=pos_long + pos_short,
+                )
+                cached_response.open_interest.append(oi_response)
+                appended_oi += 1
+
+        # Обновляем метаданные
+        cached_response.candles_count = len(cached_response.candles)
+        cached_response.oi_count = len(cached_response.open_interest)
+        if cached_response.candles:
+            cached_response.candles_end_date = str(cached_response.candles[-1].time.date())
+            cached_response.data_end = str(cached_response.candles[-1].time.date())
+
+        # Перезаписываем кеш с обновлённым TTL
+        set_cache(key, cached_response, ttl=DEFAULT_TTL)
+
+        if appended_candles > 0 or appended_oi > 0:
+            log.info(f"Cache UPDATE: {key[:50]}... +{appended_candles} candles +{appended_oi} OI")
+
+        return appended_candles > 0
+
+    except Exception as e:
+        log.error(f"Cache update failed for {key[:50]}...: {e}")
+        return False
+
+
+def update_chart_caches(source: str = "5min"):
+    """
+    Инкрементально обновляет все закешированные chart-ответы.
+    Sync-функция — вызывается из async обёртки через run_in_executor.
+    """
+    t0 = time.time()
+    entries = get_all_by_prefix("chart:")
+
+    if not entries:
+        return
+
+    log.info(f"Cache updater: {len(entries)} chart entries to update (source={source})")
+
+    db = SessionLocal()
+    updated = 0
+    try:
+        for key, cached_response in entries.items():
+            if _update_single_entry(db, key, cached_response):
+                updated += 1
+    finally:
+        db.close()
+
+    elapsed = (time.time() - t0) * 1000
+    log.info(f"Cache updater done: {updated}/{len(entries)} updated in {elapsed:.0f}ms")
+
+
+async def async_update_chart_caches(source: str = "5min"):
+    """Async обёртка для вызова из notify_listener."""
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, update_chart_caches, source)
