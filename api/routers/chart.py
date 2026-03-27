@@ -137,69 +137,88 @@ def get_chart_data(
     # 1. Получаем sec_ids
     t0 = time.time()
     sec_ids_result = db.execute(text("""
-        SELECT DISTINCT sec_id FROM instruments 
+        SELECT DISTINCT sec_id FROM instruments
         WHERE sectype = :sectype AND type = :inst_type
     """), {"sectype": sectype, "inst_type": inst_type}).fetchall()
     sec_ids = [r[0] for r in sec_ids_result] or [sec_id]
     log.info(f"[1] sec_ids: {(time.time()-t0)*1000:.0f} мс | {sec_ids}")
 
-    # 2. Границы свечей (один запрос вместо 2*N)
+    # 2-4. Рабочий период
+    # Для интрадей (5мин/1час) с фиксированным period — пропускаем тяжёлые
+    # MIN/MAX bounds запросы (экономим ~3 сек) и считаем даты от сегодня.
+    # Для дневных или period=all — нужны точные границы из БД.
     t0 = time.time()
-    bounds_row = db.execute(text("""
-        SELECT MIN(begin_time), MAX(begin_time) FROM candles
-        WHERE sec_id = ANY(:sec_ids) AND interval = :interval
-    """), {"sec_ids": sec_ids, "interval": interval}).fetchone()
+    use_fast_path = interval != 24 and period != "all" and not (date_from and date_to)
 
-    c_start = bounds_row[0] if bounds_row else None
-    c_end = bounds_row[1] if bounds_row else None
-
-    if c_start:
-        c_start = c_start.date() if hasattr(c_start, 'date') else c_start
-    if c_end:
-        c_end = c_end.date() if hasattr(c_end, 'date') else c_end
-
-    log.info(f"[2] candles bounds: {(time.time()-t0)*1000:.0f} мс | {c_start} - {c_end}")
-
-    # 3. Границы OI
-    t0 = time.time()
-    oi_bounds = db.execute(text("""
-        SELECT MIN(tradedate), MAX(tradedate) FROM open_interest 
-        WHERE sectype = :sectype AND clgroup = :clgroup AND interval = :interval
-    """), {"sectype": sectype, "clgroup": clgroup, "interval": interval}).fetchone()
-    oi_start, oi_end = oi_bounds if oi_bounds else (None, None)
-    log.info(f"[3] OI bounds: {(time.time()-t0)*1000:.0f} мс | {oi_start} - {oi_end}")
-
-    if not c_end:
-        log.warning("[!] Нет данных свечей!")
-        return {
-            "sec_id": sec_id, "sectype": sectype, "interval": interval, "clgroup": clgroup,
-            "candles_count": 0, "oi_count": 0, "candles": [], "open_interest": [],
-            "has_oi_data": False, "contracts": sec_ids, "mode": "price_only", "period": period,
-            "available_intervals": [],
-        }
-
-    has_oi_data = oi_end is not None
-
-    # 4. Рабочий период
-    if show_oi and has_oi_data:
-        data_start = max(c_start, oi_start)
-        data_end = min(c_end, oi_end)
-        mode = "price_and_oi"
-    else:
-        data_start = c_start
-        data_end = c_end
-        mode = "price_only"
-
-    if date_from and date_to:
-        work_start = max(data_start, date_from)
-        work_end = min(data_end, date_to)
-    else:
-        work_end = data_end
+    if use_fast_path:
+        # Fast path: считаем от сегодня, без bounds запросов
+        work_end = date.today()
         days = PERIODS.get(period, 180)
-        period_start = work_end - timedelta(days=days)
-        work_start = max(data_start, period_start)
+        work_start = work_end - timedelta(days=days)
+        has_oi_data = show_oi
+        mode = "price_and_oi" if show_oi else "price_only"
+        data_start = work_start
+        data_end = work_end
+        c_start = work_start
+        c_end = work_end
+        oi_start = work_start
+        oi_end = work_end
+        log.info(f"[2-4] fast path: {(time.time()-t0)*1000:.0f} мс | {work_start} - {work_end}")
+    else:
+        # Full path: запрашиваем точные границы из БД
+        bounds_row = db.execute(text("""
+            SELECT MIN(begin_time), MAX(begin_time) FROM candles
+            WHERE sec_id = ANY(:sec_ids) AND interval = :interval
+        """), {"sec_ids": sec_ids, "interval": interval}).fetchone()
 
-    log.info(f"[4] work period: {work_start} - {work_end}")
+        c_start = bounds_row[0] if bounds_row else None
+        c_end = bounds_row[1] if bounds_row else None
+
+        if c_start:
+            c_start = c_start.date() if hasattr(c_start, 'date') else c_start
+        if c_end:
+            c_end = c_end.date() if hasattr(c_end, 'date') else c_end
+
+        log.info(f"[2] candles bounds: {(time.time()-t0)*1000:.0f} мс | {c_start} - {c_end}")
+
+        t0 = time.time()
+        oi_bounds = db.execute(text("""
+            SELECT MIN(tradedate), MAX(tradedate) FROM open_interest
+            WHERE sectype = :sectype AND clgroup = :clgroup AND interval = :interval
+        """), {"sectype": sectype, "clgroup": clgroup, "interval": interval}).fetchone()
+        oi_start, oi_end = oi_bounds if oi_bounds else (None, None)
+        log.info(f"[3] OI bounds: {(time.time()-t0)*1000:.0f} мс | {oi_start} - {oi_end}")
+
+        if not c_end:
+            log.warning("[!] Нет данных свечей!")
+            return {
+                "sec_id": sec_id, "sectype": sectype, "interval": interval, "clgroup": clgroup,
+                "candles_count": 0, "oi_count": 0, "candles": [], "open_interest": [],
+                "has_oi_data": False, "contracts": sec_ids, "mode": "price_only", "period": period,
+                "available_intervals": [],
+            }
+
+        has_oi_data = oi_end is not None
+
+        if show_oi and has_oi_data:
+            data_start = max(c_start, oi_start)
+            data_end = min(c_end, oi_end)
+            mode = "price_and_oi"
+        else:
+            data_start = c_start
+            data_end = c_end
+            mode = "price_only"
+
+        if date_from and date_to:
+            work_start = max(data_start, date_from)
+            work_end = min(data_end, date_to)
+        else:
+            work_end = data_end
+            days = PERIODS.get(period, 180)
+            period_start = work_end - timedelta(days=days)
+            work_start = max(data_start, period_start)
+
+        log.info(f"[4] work period: {(time.time()-t0)*1000:.0f} мс | {work_start} - {work_end}")
 
     # 5. Запрос свечей (включаем sec_id для умной дедупликации)
     t0 = time.time()
@@ -219,6 +238,17 @@ def get_chart_data(
         "end_time": datetime.combine(work_end, dt_time.max)
     }).fetchall()
     log.info(f"[5] candles query: {(time.time()-t0)*1000:.0f} мс | rows: {len(candles_raw)}")
+
+    # Fast path fallback: если данных нет — инструмент не торгуется или снят
+    if use_fast_path and len(candles_raw) == 0:
+        log.warning(f"[!] Fast path: нет данных для {sec_id} interval={interval} period={period}, "
+                     f"диапазон {work_start}..{work_end}. Инструмент может быть снят с торгов.")
+        return {
+            "sec_id": sec_id, "sectype": sectype, "interval": interval, "clgroup": clgroup,
+            "candles_count": 0, "oi_count": 0, "candles": [], "open_interest": [],
+            "has_oi_data": False, "contracts": sec_ids, "mode": "price_only", "period": period,
+            "available_intervals": [],
+        }
 
     # 6. Склейка контрактов (необратимый ролловер, как TradingView)
     # Для каждого дня определяем лидера по объёму, но после переключения
