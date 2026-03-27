@@ -237,44 +237,65 @@ def get_chart_data(
     }).fetchall()
     log.debug(f"[5] candles query: {(time.time()-t0)*1000:.0f} мс | rows: {len(candles_raw)}")
 
-    # 6. Склейка контрактов: для каждого ДНЯ выбираем самый ликвидный контракт
-    # Это позволяет плавно переходить между контрактами при ролловере
+    # 6. Склейка контрактов (необратимый ролловер, как TradingView)
+    # Для каждого дня определяем лидера по объёму, но после переключения
+    # на новый контракт — НЕ возвращаемся на старый.
     t0 = time.time()
-    
-    # Группируем свечи по дням и контрактам
-    daily_volume = {}  # {date: {sec_id: total_volume}}
-    for c in candles_raw:
-        day = c[0].date()
-        sec_id = c[6] if len(c) > 6 else 'unknown'
-        vol = float(c[5] or 0)
-        
-        if day not in daily_volume:
-            daily_volume[day] = {}
-        daily_volume[day][sec_id] = daily_volume[day].get(sec_id, 0) + vol
-    
-    # Определяем лучший контракт для каждого дня
-    best_contract_by_day = {}
-    for day, contracts in daily_volume.items():
-        if contracts:
-            best_contract_by_day[day] = max(contracts, key=contracts.get)
-    
-    # Фильтруем: для каждого begin_time оставляем свечу лучшего контракта этого дня
-    # (per-day, а не per-timestamp — иначе забор при близких объёмах двух контрактов)
-    best_by_time = {}  # {begin_time: candle_row}
+
+    # 6a. Дедупликация: для каждого (begin_time, sec_id) оставляем свечу с макс volume
+    # (ISS иногда отдаёт дубли с разных бордов — vol=269k и vol=20)
+    dedup = {}  # {(begin_time, sec_id): candle_row}
     for c in candles_raw:
         bt = c[0]
         vol = float(c[5] or 0)
+        sec_id_c = c[6] if len(c) > 6 else 'unknown'
         # Для интрадей: пропускаем фейковые свечи (volume=0, zero-fill артефакты)
         if interval != 24 and vol == 0:
             continue
+        key = (bt, sec_id_c)
+        if key not in dedup or vol > float(dedup[key][5] or 0):
+            dedup[key] = c
+
+    # 6b. Группируем по дням, считаем объём каждого контракта
+    daily_volume = {}  # {date: {sec_id: total_volume}}
+    for (bt, sid), c in dedup.items():
         day = bt.date()
-        sec_id_c = c[6] if len(c) > 6 else 'unknown'
+        vol = float(c[5] or 0)
+        if day not in daily_volume:
+            daily_volume[day] = {}
+        daily_volume[day][sid] = daily_volume[day].get(sid, 0) + vol
+
+    # 6c. Необратимый ролловер: после первого переключения не возвращаемся
+    sorted_days = sorted(daily_volume.keys())
+    best_contract_by_day = {}
+    current_contract = None
+
+    for day in sorted_days:
+        contracts = daily_volume[day]
+        day_leader = max(contracts, key=contracts.get)
+
+        if current_contract is None:
+            # Первый день — берём лидера
+            current_contract = day_leader
+        elif day_leader != current_contract and day_leader in contracts:
+            # Лидер сменился — проверяем что новый контракт реально обогнал
+            old_vol = contracts.get(current_contract, 0)
+            new_vol = contracts.get(day_leader, 0)
+            if new_vol > old_vol:
+                # Необратимый переход
+                current_contract = day_leader
+
+        best_contract_by_day[day] = current_contract
+
+    # 6d. Фильтруем свечи: оставляем только лучший контракт каждого дня
+    best_by_time = {}  # {begin_time: candle_row}
+    for (bt, sid), c in dedup.items():
+        day = bt.date()
         best_sid = best_contract_by_day.get(day)
-        if best_sid and sec_id_c == best_sid:
-            best_by_time[bt] = c
-        elif bt not in best_by_time:
-            # Fallback: если нет best для дня, берём первую попавшуюся
-            best_by_time[bt] = c
+        if sid == best_sid:
+            # Если на тот же timestamp уже есть свеча — берём с большим volume
+            if bt not in best_by_time or float(c[5] or 0) > float(best_by_time[bt][5] or 0):
+                best_by_time[bt] = c
 
     sorted_candles = sorted(best_by_time.values(), key=lambda x: x[0])
     log.debug(f"[6] chain: {(time.time()-t0)*1000:.0f} мс | candles: {len(sorted_candles)}")
