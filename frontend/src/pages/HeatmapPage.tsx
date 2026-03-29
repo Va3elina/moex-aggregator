@@ -180,11 +180,11 @@ export default function HeatmapPage() {
   // SSE: автоматическое обновление хитмапа
   useRealtimeData(['5min', 'mv_refresh'], loadData);
 
-  // Получение значения для размера (sqrt сглаживает разницу между крупными и мелкими)
+  // Получение значения для размера (экспонента усиливает разницу крупных/мелких)
   const getSizeValue = (stock: HeatmapStock): number => {
     const key = sizeBy as keyof HeatmapStock;
     const raw = Math.max((stock[key] as number) || 1, 1);
-    return Math.pow(raw, 0.65);
+    return Math.pow(raw, 0.45);
   };
 
   // Получение значения для цвета
@@ -195,7 +195,7 @@ export default function HeatmapPage() {
 
   // Цвета в стиле Finviz: тёмный центр → насыщенный (но не неоновый) на краях
   const getColor = (change: number): string => {
-    const maxChange = colorBy === 'change_1y' ? 30 : colorBy === 'change_1m' ? 7 : colorBy === 'change_1w' ? 3 : 1.5;
+    const maxChange = colorBy === 'change_1y' ? 20 : colorBy === 'change_1m' ? 5 : colorBy === 'change_1w' ? 2 : 0.8;
     const abs = Math.abs(change);
     const t = Math.min(abs / maxChange, 1); // 0..1
 
