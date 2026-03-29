@@ -22,8 +22,8 @@ log = get_logger()
 CATEGORY_INDEX_MAP = {
     "money_market": {"name": "Денежный рынок", "index": "RUSFAR3M"},
     "stocks": {"name": "Акции", "index": "IMOEX"},
-    "bonds": {"name": "Облигации", "index": "RGBITR"},
-    "gold": {"name": "Золото", "index": "GLDRUB_TOM"},
+    "bonds": {"name": "Облигации", "index": "RGBITR", "min_date": "2023-04-01"},
+    "gold": {"name": "Золото", "index": "GLDRUB_TOM", "min_date": "2022-08-01"},
 }
 
 
@@ -32,12 +32,12 @@ def load_fund_categories() -> dict:
     engine = get_engine()
     with engine.connect() as conn:
         rows = conn.execute(text(
-            "SELECT fund_id, ticker, name, category FROM funds ORDER BY category, ticker"
+            "SELECT fund_id, ticker, name, category, subcategory FROM funds ORDER BY category, subcategory NULLS FIRST, ticker"
         )).fetchall()
 
     categories = {}
     for row in rows:
-        fund_id, ticker, name, cat = row[0], row[1], row[2], row[3]
+        fund_id, ticker, name, cat, subcat = row[0], row[1], row[2], row[3], row[4]
         if cat not in CATEGORY_INDEX_MAP:
             continue
         if cat not in categories:
@@ -47,7 +47,7 @@ def load_fund_categories() -> dict:
                 "index": meta["index"],
                 "funds": {}
             }
-        categories[cat]["funds"][fund_id] = {"ticker": ticker, "name": name}
+        categories[cat]["funds"][fund_id] = {"ticker": ticker, "name": name, "subcategory": subcat}
 
     return categories
 
@@ -100,16 +100,20 @@ async def get_funds_chart(
     cat_config = fund_categories[category]
     fund_ids = list(cat_config["funds"].keys())
     index_secid = cat_config["index"]
-    
-    # Расчёт периода
+
+    # Расчёт периода (с учётом min_date категории)
     days = PERIODS.get(period)
     if days:
         date_from = date.today() - timedelta(days=days)
     else:
         date_from = date(2020, 1, 1)
-    
+    min_date_str = CATEGORY_INDEX_MAP.get(category, {}).get("min_date")
+    if min_date_str:
+        min_date = date.fromisoformat(min_date_str)
+        date_from = max(date_from, min_date)
+
     engine = get_engine()
-    
+
     try:
         with engine.connect() as conn:
             # === Данные фондов (СЧА) ===
@@ -138,6 +142,7 @@ async def get_funds_chart(
                         "fund_id": fid,
                         "ticker": fund_info.get("ticker", str(fid)),
                         "name": fund_info.get("name", f"Фонд {fid}"),
+                        "subcategory": fund_info.get("subcategory"),
                         "data": []
                     }
                 funds_data[fid]["data"].append({
@@ -335,28 +340,49 @@ async def get_funds_flows(
     if not fund_ids:
         return {"category": category, "timeframe": timeframe, "period": period, "flows": []}
 
-    # Период
+    # Период (с учётом min_date категории)
     days = PERIODS.get(period)
     if days:
         date_from = date.today() - timedelta(days=days)
     else:
         date_from = date(2020, 1, 1)
-    
+    min_date_str = CATEGORY_INDEX_MAP.get(category, {}).get("min_date")
+    if min_date_str:
+        date_from = max(date_from, date.fromisoformat(min_date_str))
+
     engine = get_engine()
     
     try:
         with engine.connect() as conn:
-            # Получаем суммарную СЧА по датам
+            # Получаем суммарную СЧА по датам с forward-fill
+            # (ПИФы и БПИФы публикуют данные в разные дни —
+            #  без ffill SUM проваливается когда часть фондов молчит)
             query = text("""
+                WITH all_dates AS (
+                    SELECT DISTINCT trade_date FROM fund_data
+                    WHERE fund_id = ANY(:fund_ids) AND trade_date >= :date_from
+                ),
+                fund_nav AS (
+                    SELECT d.trade_date, f.fund_id,
+                        -- forward-fill: берём последнее известное NAV
+                        COALESCE(
+                            fd.nav,
+                            (SELECT fd2.nav FROM fund_data fd2
+                             WHERE fd2.fund_id = f.fund_id AND fd2.trade_date < d.trade_date
+                               AND fd2.nav IS NOT NULL
+                             ORDER BY fd2.trade_date DESC LIMIT 1)
+                        ) as nav
+                    FROM all_dates d
+                    CROSS JOIN (SELECT DISTINCT fund_id FROM fund_data WHERE fund_id = ANY(:fund_ids)) f
+                    LEFT JOIN fund_data fd ON fd.fund_id = f.fund_id AND fd.trade_date = d.trade_date
+                )
                 SELECT trade_date, SUM(nav) as total_nav
-                FROM fund_data
-                WHERE fund_id = ANY(:fund_ids)
-                  AND trade_date >= :date_from
-                  AND nav IS NOT NULL
+                FROM fund_nav
+                WHERE nav IS NOT NULL
                 GROUP BY trade_date
                 ORDER BY trade_date
             """)
-            
+
             result = conn.execute(query, {
                 "fund_ids": fund_ids,
                 "date_from": date_from

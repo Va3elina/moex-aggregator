@@ -268,6 +268,7 @@ export interface FundInfo {
   fund_id: number;
   ticker: string;
   name: string;
+  subcategory?: string | null;
   data: FundDataPoint[];
 }
 

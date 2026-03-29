@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { TrendingUp, DollarSign, Banknote, LineChart, BarChart2, Gem, Wallet, Lock } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -173,12 +173,25 @@ export default function FundsMoneyPage() {
         });
         const responsiveDates = Array.from(allDates).sort();
 
-        // Суммируем NAV по датам
+        // Forward-fill: для каждого фонда строим карту date→nav с протяжкой
+        // (ПИФы и БПИФы публикуют данные в разные дни — без ffill будут провалы)
+        const fundNavMaps = visibleFunds.map(fund => {
+            const map = new Map<string, number>();
+            let lastNav = 0;
+            const sorted = [...fund.data].sort((a, b) => a.date.localeCompare(b.date));
+            for (const d of responsiveDates) {
+                const point = sorted.find(p => p.date === d);
+                if (point?.nav) lastNav = point.nav;
+                if (lastNav > 0) map.set(d, lastNav);
+            }
+            return map;
+        });
+
+        // Суммируем NAV по датам (с forward-fill)
         const chartData = responsiveDates.map(date => {
             let totalNav = 0;
-            visibleFunds.forEach(fund => {
-                const point = fund.data.find(d => d.date === date);
-                if (point?.nav) totalNav += point.nav;
+            fundNavMaps.forEach(navMap => {
+                totalNav += navMap.get(date) || 0;
             });
             return {
                 time: date,
@@ -440,7 +453,7 @@ export default function FundsMoneyPage() {
                     </div>
                 ) : (
                     /* Гистограмма притоков/оттоков */
-                    <div className="h-[450px]">
+                    <div className="h-[450px] pb-6">
                         {/* Легенда — сверху */}
                         <div className="flex items-center justify-center gap-5 mb-2 text-sm">
                             <span className="flex items-center gap-2">
@@ -617,7 +630,7 @@ export default function FundsMoneyPage() {
                             })()}
 
                             {/* Даты оси X — равномерно по всей ширине */}
-                            <div className="absolute bottom-0 left-0 flex justify-between text-[14px] font-semibold text-[#9CA3B8] px-2" style={{ right: 60 }}>
+                            <div className="absolute -bottom-6 left-0 flex justify-between text-[14px] font-semibold text-[#9CA3B8] px-2" style={{ right: 60 }}>
                                 {flowsData?.flows && flowsData.flows.length > 0 && (() => {
                                     const flows = flowsData.flows;
                                     const tickCount = Math.min(6, flows.length);
@@ -659,46 +672,107 @@ export default function FundsMoneyPage() {
                             </tr>
                         </thead>
                         <tbody>
-                            {data?.funds?.map((fund, i) => {
-                                const lastData = fund.data[fund.data.length - 1];
-                                const isHidden = hiddenFunds.has(fund.fund_id);
-                                return (
-                                    <tr
-                                        key={fund.fund_id}
-                                        className={`border-t border-theme transition-colors ${isHidden ? 'opacity-50 grayscale' : 'hover:bg-white/5'}`}
-                                    >
-                                        <td className="px-4 py-3">
-                                            <div
-                                                className="flex items-center justify-center w-8 h-8 rounded-lg hover:bg-white/5 cursor-pointer transition-colors"
-                                                onClick={() => toggleFundVisibility(fund.fund_id)}
-                                            >
-                                                <input
-                                                    type="checkbox"
-                                                    checked={!isHidden}
-                                                    onChange={() => { }} // Обработка клика на div
-                                                    className="w-4 h-4 rounded border-white/20 bg-white/5 text-[#6366f1] focus:ring-[#6366f1] focus:ring-offset-[#121523] cursor-pointer"
-                                                />
-                                            </div>
-                                        </td>
-                                        <td className="px-4 py-3">
-                                            <div className="flex items-center gap-2">
-                                                <div
-                                                    className="w-3 h-3 rounded-full"
-                                                    style={{ backgroundColor: FUND_COLORS[i % FUND_COLORS.length] }}
-                                                />
-                                                <span className="font-medium">{fund.ticker}</span>
-                                            </div>
-                                        </td>
-                                        <td className="px-4 py-3 text-theme-secondary">{fund.name}</td>
-                                        <td className="px-4 py-3 text-right font-mono">
-                                            {lastData?.nav ? `${(lastData.nav / 1e9).toFixed(2)} млрд ₽` : '—'}
-                                        </td>
-                                        <td className="px-4 py-3 text-right text-theme-secondary">
-                                            {lastData?.date || '—'}
-                                        </td>
-                                    </tr>
-                                );
-                            })}
+                            {(() => {
+                                if (!data?.funds) return null;
+                                // Группируем фонды по подкатегории
+                                const groups: { subcat: string | null; funds: typeof data.funds }[] = [];
+                                const subcatMap = new Map<string | null, typeof data.funds>();
+                                for (const fund of data.funds) {
+                                    const key = fund.subcategory || null;
+                                    if (!subcatMap.has(key)) subcatMap.set(key, []);
+                                    subcatMap.get(key)!.push(fund);
+                                }
+                                subcatMap.forEach((funds, subcat) => groups.push({ subcat, funds }));
+
+                                let globalIdx = 0;
+                                return groups.map(({ subcat, funds: groupFunds }) => {
+                                    const groupIds = groupFunds.map(f => f.fund_id);
+                                    const allHidden = groupIds.every(id => hiddenFunds.has(id));
+                                    const someHidden = groupIds.some(id => hiddenFunds.has(id));
+
+                                    const toggleSubcat = () => {
+                                        setHiddenFunds(prev => {
+                                            const next = new Set(prev);
+                                            if (allHidden) {
+                                                groupIds.forEach(id => next.delete(id));
+                                            } else {
+                                                groupIds.forEach(id => next.add(id));
+                                            }
+                                            return next;
+                                        });
+                                    };
+
+                                    return (
+                                        <React.Fragment key={subcat || '__none__'}>
+                                            {subcat && (
+                                                <tr className="bg-white/[0.03]">
+                                                    <td className="px-4 py-2">
+                                                        <div
+                                                            className="flex items-center justify-center w-8 h-8 rounded-lg hover:bg-white/5 cursor-pointer transition-colors"
+                                                            onClick={toggleSubcat}
+                                                        >
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={!allHidden}
+                                                                ref={el => { if (el) el.indeterminate = someHidden && !allHidden; }}
+                                                                onChange={() => {}}
+                                                                className="w-4 h-4 rounded border-white/20 bg-white/5 text-[#6366f1] focus:ring-[#6366f1] focus:ring-offset-[#121523] cursor-pointer"
+                                                            />
+                                                        </div>
+                                                    </td>
+                                                    <td colSpan={4} className="px-4 py-2">
+                                                        <span className="text-sm font-semibold text-theme-primary cursor-pointer" onClick={toggleSubcat}>
+                                                            {subcat}
+                                                        </span>
+                                                        <span className="text-xs text-theme-secondary ml-2">({groupFunds.length})</span>
+                                                    </td>
+                                                </tr>
+                                            )}
+                                            {groupFunds.map((fund) => {
+                                                const colorIdx = globalIdx++;
+                                                const lastData = fund.data[fund.data.length - 1];
+                                                const isHidden = hiddenFunds.has(fund.fund_id);
+                                                return (
+                                                    <tr
+                                                        key={fund.fund_id}
+                                                        className={`border-t border-theme transition-colors ${isHidden ? 'opacity-50 grayscale' : 'hover:bg-white/5'}`}
+                                                    >
+                                                        <td className="px-4 py-3">
+                                                            <div
+                                                                className="flex items-center justify-center w-8 h-8 rounded-lg hover:bg-white/5 cursor-pointer transition-colors"
+                                                                onClick={() => toggleFundVisibility(fund.fund_id)}
+                                                            >
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={!isHidden}
+                                                                    onChange={() => {}}
+                                                                    className="w-4 h-4 rounded border-white/20 bg-white/5 text-[#6366f1] focus:ring-[#6366f1] focus:ring-offset-[#121523] cursor-pointer"
+                                                                />
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-4 py-3">
+                                                            <div className="flex items-center gap-2">
+                                                                <div
+                                                                    className="w-3 h-3 rounded-full"
+                                                                    style={{ backgroundColor: FUND_COLORS[colorIdx % FUND_COLORS.length] }}
+                                                                />
+                                                                <span className="font-medium">{fund.ticker}</span>
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-4 py-3 text-theme-secondary">{fund.name}</td>
+                                                        <td className="px-4 py-3 text-right font-mono">
+                                                            {lastData?.nav ? `${(lastData.nav / 1e9).toFixed(2)} млрд ₽` : '—'}
+                                                        </td>
+                                                        <td className="px-4 py-3 text-right text-theme-secondary">
+                                                            {lastData?.date || '—'}
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </React.Fragment>
+                                    );
+                                });
+                            })()}
                         </tbody>
                     </table>
                 </div>
