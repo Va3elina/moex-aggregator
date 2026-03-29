@@ -76,32 +76,68 @@ HEADERS = {
     "Accept": "application/json",
 }
 
-# Конфигурация фондов
+# Конфигурация фондов (ISS MOEX — БПИФы)
 # ID соответствует `fund_id` в базе данных (таблица funds)
 FUNDS = {
     # Денежный рынок
-    8181: {"shares": "AKMM", "inav": "AKMMA", "name": "Альфа-Капитал Денежный рынок"},
-    8628: {"shares": "TMON", "inav": "TMONA", "name": "Т-Капитал Денежный Рынок"},
-    7373: {"shares": "SBMM", "inav": "SBMMA", "name": "Первая Сберегательный"},
-    5973: {"shares": "LQDT", "inav": "LQDTM", "name": "ВИМ Ликвидность"},
+    8181:  {"shares": "AKMM", "inav": "AKMMA", "name": "Альфа-Капитал Денежный рынок"},
+    8628:  {"shares": "TMON", "inav": "TMONA", "name": "Т-Капитал Денежный Рынок"},
+    7373:  {"shares": "SBMM", "inav": "SBMMA", "name": "Первая Сберегательный"},
+    5973:  {"shares": "LQDT", "inav": "LQDTM", "name": "ВИМ Ликвидность"},
+    10053: {"shares": "AMNR", "inav": "AMNRA", "name": "АТОН Накопительный в рублях"},
 
     # Акции
-    6333: {"shares": "TMOS", "inav": "TMOSA", "name": "Т-Капитал Индекс МосБиржи"},
-    5247: {"shares": "SBMX", "inav": "SBMXA", "name": "Первая Топ Российских акций"},
-    6073: {"shares": "EQMX", "inav": "EQMXE", "name": "Индекс МосБиржи ВИМ"},
-    6575: {"shares": "AKME", "inav": "AKMEI", "name": "Альфа-Капитал Управляемые акции"},
+    6333:  {"shares": "TMOS", "inav": "TMOSA", "name": "Т-Капитал Индекс МосБиржи"},
+    5247:  {"shares": "SBMX", "inav": "SBMXA", "name": "Первая Топ Российских акций"},
+    6073:  {"shares": "EQMX", "inav": "EQMXE", "name": "Индекс МосБиржи ВИМ"},
+    6575:  {"shares": "AKME", "inav": "AKMEI", "name": "Альфа-Капитал Управляемые акции"},
 
     # Облигации
-    6225: {"shares": "AKMB", "inav": "AKMBA", "name": "Альфа Управляемые облигации"},
+    6225:  {"shares": "AKMB", "inav": "AKMBA", "name": "Альфа Управляемые облигации"},
     10331: {"shares": "SBLB", "inav": "SBLBA", "name": "Первая Долгосрочные гособлигации"},
     11445: {"shares": "TOFZ", "inav": "TOFZA", "name": "Т-Капитал ОФЗ"},
     11705: {"shares": "AMGB", "inav": "AMGBA", "name": "АТОН Длинные ОФЗ"},
+    10113: {"shares": "SBFR", "inav": "SBFRA", "name": "Первая Облигации флоатеры"},
+    7067:  {"shares": "TBRU", "inav": "TBRUA", "name": "Т-Капитал Облигации"},
+    7007:  {"shares": "SAFE", "inav": "SAFEA", "name": "Первая Консерватив"},
+    5713:  {"shares": "SBRB", "inav": "SBRBA", "name": "Первая Корпоративные облигации"},
 
     # Золото
-    4713: {"shares": "AKGD", "inav": "AKGDA", "name": "Альфа-Капитал Золото"},
-    4038: {"shares": "GOLD", "inav": "GOLDO", "name": "Золото Биржевой"},
-    5061: {"shares": "SBGD", "inav": "SBGDA", "name": "Первая Доступное золото"},
-    4098: {"shares": "TGLD", "inav": "TGLDB", "name": "Т-Капитал Золото"},
+    4713:  {"shares": "AKGD", "inav": "AKGDA", "name": "Альфа-Капитал Золото"},
+    4038:  {"shares": "GOLD", "inav": "GOLDO", "name": "Золото Биржевой"},
+    5061:  {"shares": "SBGD", "inav": "SBGDA", "name": "Первая Доступное золото"},
+    4098:  {"shares": "TGLD", "inav": "TGLDB", "name": "Т-Капитал Золото"},
+}
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Cbonds API — ПИФы (не торгуются на MOEX, данные через Cbonds REST API)
+# fund_id: тот же что в таблице funds, cbonds_id: ID в системе Cbonds
+# ═══════════════════════════════════════════════════════════════════════════════
+
+CBONDS_URL = "https://rest2.cbonds.info"
+CBONDS_UA = "Cbonds.K/3.0.8 (ru.cbonds.cbonds; build:636; Android 9) OkHttp/4.12.0"
+CBONDS_LOGIN = os.getenv("CBONDS_LOGIN", "ermolaeffvadick@yandex.ru")
+CBONDS_PASSWORD = os.getenv("CBONDS_PASSWORD", "Qwghty56")
+
+CBONDS_FUNDS = {
+    # Акции (управляемые)
+    8123:  {"cbonds_id": 209397, "name": "Первая - Фонд акций с выплатой дохода"},
+    432:   {"cbonds_id": 206895, "name": "Альфа-Капитал Ликвидные акции"},
+    43:    {"cbonds_id": 206601, "name": "Первая - Фонд российских акций"},
+    281:   {"cbonds_id": 206781, "name": "Райффайзен - Акции"},
+    1003:  {"cbonds_id": 207285, "name": "ВИМ - Акции"},
+    282:   {"cbonds_id": 206783, "name": "Райффайзен - Компании роста"},
+    63:    {"cbonds_id": 206625, "name": "Атон - Петр Столыпин"},
+
+    # Облигации (смешанные)
+    8119:  {"cbonds_id": 209395, "name": "Первая - Фонд облигаций с выплатой дохода"},
+    9113:  {"cbonds_id": 209453, "name": "Альфа-Капитал Облигации с выплатой дохода"},
+    9165:  {"cbonds_id": 219221, "name": "ВИМ - Облигации. Рантье"},
+    47:    {"cbonds_id": 206607, "name": "Первая - Фонд Рублевые сбережения"},
+    33:    {"cbonds_id": 206593, "name": "Альфа-Капитал Облигации Плюс"},
+    11259: {"cbonds_id": 231147, "name": "Альфа-Капитал Облигации с переменным купоном"},
+    54:    {"cbonds_id": 206617, "name": "ВИМ - Казначейский"},
+    4995:  {"cbonds_id": 208851, "name": "Первая - Накопительный"},
 }
 
 
@@ -245,6 +281,114 @@ def save_fund_data(engine, fund_id: int, merged: Dict[str, dict]) -> int:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# CBONDS API
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def cbonds_auth(session) -> bool:
+    """Авторизация в Cbonds API. Устанавливает PHPSESSID в сессии."""
+    url = f"{CBONDS_URL}/m/auth/tariffs/global/json/logout=1?lang=rus"
+    headers = {"Content-Type": "application/json; charset=UTF-8", "User-Agent": CBONDS_UA}
+    body = {"login": CBONDS_LOGIN, "password": CBONDS_PASSWORD}
+    try:
+        async with session.post(url, json=body, headers=headers, timeout=15) as resp:
+            data = await resp.json()
+            err = data.get("error", {}).get("err_no", -1)
+            if err == 0:
+                user = data.get("auth", {}).get("title", "?")
+                log.info(f"  Cbonds авторизация: ✅ {user}")
+                return True
+            else:
+                log.error(f"  Cbonds авторизация: ❌ {data.get('error', {}).get('err_str', '?')}")
+                return False
+    except Exception as e:
+        log.error(f"  Cbonds авторизация: ❌ {e}")
+        return False
+
+
+async def fetch_cbonds_nav(session, cbonds_id: int, date_from: date, date_to: date) -> Dict[str, dict]:
+    """Получить историю NAV фонда из Cbonds API → {date_str: {pay, nav}}"""
+    url = (f"{CBONDS_URL}/m/exchange_traded_funds/nav/global/json/"
+           f"{cbonds_id}/{date_from.isoformat()}/{date_to.isoformat()}/?lang=rus")
+    headers = {"Content-Type": "application/json; charset=UTF-8", "User-Agent": CBONDS_UA}
+    try:
+        async with session.post(url, headers=headers, timeout=30) as resp:
+            data = await resp.json()
+            err = data.get("error", {}).get("err_no", -1)
+            if err != 0:
+                log.warning(f"  Cbonds NAV {cbonds_id}: err={err}")
+                return {}
+            items = data.get("response", {}).get("items", [])
+            merged = {}
+            for item in items:
+                ts = item.get("date")
+                if not ts:
+                    continue
+                # date — unix timestamp, конвертируем
+                dt = datetime.utcfromtimestamp(ts).date()
+                nav_per_share = item.get("nav_per_share")  # СЧА на пай
+                nav_total = item.get("nav")  # Общая СЧА фонда
+                if nav_per_share is not None:
+                    merged[dt.isoformat()] = {
+                        "pay": nav_per_share,  # пай = nav_per_share
+                        "nav": nav_total,       # общая СЧА
+                    }
+            return merged
+    except Exception as e:
+        log.error(f"  Cbonds NAV {cbonds_id}: ❌ {e}")
+        return {}
+
+
+async def update_cbonds_funds(engine, force: bool = False) -> Dict[int, int]:
+    """Обновить ПИФы через Cbonds API"""
+    if not CBONDS_FUNDS:
+        return {}
+
+    results = {}
+    today = date.today()
+
+    log.info("")
+    log.info("=" * 60)
+    log.info("📊 ОБНОВЛЕНИЕ ПИФов (Cbonds API)")
+    log.info("=" * 60)
+
+    async with aiohttp.ClientSession(cookie_jar=aiohttp.CookieJar()) as session:
+        if not await cbonds_auth(session):
+            log.error("  Пропуск Cbonds: не удалось авторизоваться")
+            return results
+
+        for fund_id, info in CBONDS_FUNDS.items():
+            cbonds_id = info["cbonds_id"]
+            name = info["name"]
+
+            log.info(f"\n── cbonds:{cbonds_id} │ fund_id={fund_id} │ {name}")
+
+            last_date = get_last_date(engine, fund_id)
+            if last_date and not force:
+                start = last_date - timedelta(days=3)
+                log.info(f"   Докачка с {start} (последняя: {last_date})")
+            else:
+                start = today - timedelta(days=365 * 3)  # ПИФы — берём 3 года
+                log.info(f"   Полная загрузка с {start}")
+
+            merged = await fetch_cbonds_nav(session, cbonds_id, start, today)
+            log.info(f"   Cbonds: {len(merged)} дат")
+
+            saved = save_fund_data(engine, fund_id, merged)
+            results[fund_id] = saved
+
+            if saved > 0:
+                log.info(f"   ✅ Сохранено: {saved}")
+            else:
+                log.debug(f"   — нет новых данных")
+
+            await asyncio.sleep(0.5)  # Не спамим Cbonds
+
+    total = sum(results.values())
+    log.info(f"\n✅ Cbonds ГОТОВО: {total} записей из {len(CBONDS_FUNDS)} фондов")
+    return results
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # ОСНОВНАЯ ЛОГИКА
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -293,11 +437,15 @@ async def update_all_funds(force: bool = False) -> Dict[int, int]:
 
             await asyncio.sleep(0.3)
 
+    # Cbonds API — ПИФы
+    cbonds_results = await update_cbonds_funds(engine, force=force)
+    results.update(cbonds_results)
+
     engine.dispose()
 
     total = sum(results.values())
     log.info("=" * 60)
-    log.info(f"✅ ГОТОВО: {total} записей")
+    log.info(f"✅ ГОТОВО: {total} записей (ISS: {len(FUNDS)}, Cbonds: {len(CBONDS_FUNDS)} фондов)")
     log.info("=" * 60)
 
     return results

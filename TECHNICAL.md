@@ -188,6 +188,136 @@ Nginx сжимает JSON ответы: 833KB → 154KB (82% экономия).
 
 ---
 
+## Android эмулятор + mitmproxy (перехват API мобильных приложений)
+
+**Когда нужен:** для reverse-engineering API мобильных приложений (Cbonds, investfunds и др.).
+
+**Установка (одноразово):**
+```bash
+brew install mitmproxy
+brew install --cask android-commandlinetools
+brew install openjdk@17
+
+export JAVA_HOME=/opt/homebrew/opt/openjdk@17
+export PATH="$JAVA_HOME/bin:$PATH"
+export ANDROID_HOME=/opt/homebrew/share/android-commandlinetools
+
+# SDK компоненты
+yes | sdkmanager --sdk_root=$ANDROID_HOME "platform-tools" "emulator" \
+  "platforms;android-28" "system-images;android-28;google_apis;arm64-v8a" \
+  "build-tools;34.0.0"
+
+# Создание виртуального устройства (ARM64 для M-серии Mac)
+echo "no" | avdmanager create avd --name "mitm_device" \
+  --package "system-images;android-28;google_apis;arm64-v8a" \
+  --device "pixel_2" --force
+```
+
+**Запуск сессии перехвата:**
+```bash
+# 1. Запустить mitmproxy (записывает в файл)
+mitmdump -w capture.flow --set block_global=false -p 8080 &
+
+# 2. Запустить эмулятор
+$ANDROID_HOME/emulator/emulator -avd mitm_device \
+  -http-proxy http://10.0.2.2:8080 -no-snapshot -no-boot-anim \
+  -gpu swiftshader_indirect &
+
+# 3. Установить сертификат (после загрузки устройства)
+ADB=$ANDROID_HOME/platform-tools/adb
+$ADB wait-for-device
+$ADB root  # работает только на google_apis (НЕ google_apis_playstore)
+$ADB push ~/.mitmproxy/mitmproxy-ca-cert.cer /sdcard/Download/mitmproxy.cer
+# Далее вручную: Settings → Security → Install from storage
+
+# 4. Для приложений с targetSdk >= 24 — патч APK:
+apktool d app.apk -o patched -f
+# Редактировать res/xml/network_security_config.xml:
+#   <base-config><trust-anchors>
+#     <certificates src="system" /><certificates src="user" />
+#   </trust-anchors></base-config>
+apktool b patched -o patched.apk
+$ANDROID_HOME/build-tools/34.0.0/zipalign -v 4 patched.apk final.apk
+keytool -genkeypair -v -keystore debug.keystore -alias debug -keyalg RSA \
+  -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Debug"
+$ANDROID_HOME/build-tools/34.0.0/apksigner sign --ks debug.keystore \
+  --ks-pass pass:android final.apk
+$ADB install final.apk
+```
+
+**Чтение перехвата:**
+```bash
+mitmdump -r capture.flow --set flow_detail=4 -n 2>&1 | grep "rest2.cbonds"
+```
+
+**Важно:**
+- `google_apis` образ → поддерживает `adb root`, но нет Play Store
+- `google_apis_playstore` → есть Play Store, но нет root (нужен патч APK)
+- API 28 (Android 9) — последний где приложения доверяют пользовательским CA по умолчанию
+- На M-серии Mac использовать только `arm64-v8a` образы
+- Прокси из эмулятора: `10.0.2.2` = хост-машина (не `127.0.0.1`)
+- PIN для установки сертификата: `adb shell locksettings set-pin 1234`
+
+---
+
+## Cbonds API (перехваченный из мобильного приложения)
+
+**Базовый URL:** `https://rest2.cbonds.info`
+**User-Agent:** `Cbonds.K/3.0.8 (ru.cbonds.cbonds; build:636; Android 9) OkHttp/4.12.0`
+**Авторизация:** cookie-based (`PHPSESSID`)
+
+### Эндпоинты
+
+| Эндпоинт | Метод | Описание |
+|---|---|---|
+| `/m/auth/tariffs/global/json/logout=1?lang=rus` | POST | Авторизация. Body: `{"login":"...","password":"..."}` → `Set-Cookie: PHPSESSID` |
+| `/m/exchange_traded_funds/suggest/global/json/{query}?lang=rus` | POST | Поиск фондов по названию (URL-encoded кириллица) |
+| `/m/exchange_traded_funds/nav/global/json/{fund_id}/{date_from}/{date_to}/?lang=rus` | POST | **История NAV**. Возвращает: `date` (unix ts), `nav` (общая СЧА), `nav_per_share` (пай) |
+| `/m/exchange_traded_funds/structure/global/json/{parent_fund_id}/?lang=rus` | POST | Состав фонда (активы + доли). Body: `{"quantity":{"limit":50,"offset":0}}` |
+| `/m/exchange_traded_funds/share_class_information/global/json/{fund_id}/0/?lang=rus` | POST | Информация о фонде (УК, валюта, тип) |
+| `/m/exchange_traded_funds/quotes/global/json/{fund_id}/1/{from}/{to}/?lang=rus` | POST | Котировки (если торгуется на бирже) |
+
+### Маппинг фондов (investfunds ID → Cbonds ID)
+
+**ПИФы (данные только через Cbonds API):**
+
+| investfunds | cbonds_id | Название | Категория |
+|---|---|---|---|
+| 8123 | 209397 | Первая - Фонд акций с выплатой дохода | Акции (управляемые) |
+| 432 | 206895 | Альфа-Капитал Ликвидные акции | Акции (управляемые) |
+| 43 | 206601 | Первая - Фонд российских акций | Акции (управляемые) |
+| 281 | 206781 | Райффайзен - Акции | Акции (управляемые) |
+| 1003 | 207285 | ВИМ - Акции | Акции (управляемые) |
+| 282 | 206783 | Райффайзен - Компании роста | Акции (управляемые) |
+| 63 | 206625 | Атон - Петр Столыпин | Акции (управляемые) |
+| 8119 | 209395 | Первая - Фонд облигаций с выплатой дохода | Облигации (смешанные) |
+| 9113 | 209453 | Альфа-Капитал Облигации с выплатой дохода | Облигации (смешанные) |
+| 9165 | 219221 | ВИМ - Облигации. Рантье | Облигации (смешанные) |
+| 47 | 206607 | Первая - Фонд Рублевые сбережения | Облигации (смешанные) |
+| 33 | 206593 | Альфа-Капитал Облигации Плюс | Облигации (смешанные) |
+| 11259 | 231147 | Альфа-Капитал Облигации с переменным купоном | Облигации (смешанные) |
+| 54 | 206617 | ВИМ - Казначейский | Облигации (смешанные) |
+| 4995 | 208851 | Первая - Накопительный | Облигации (смешанные) |
+
+**БПИФы (данные через ISS MOEX + дублируются в Cbonds):**
+
+| investfunds | cbonds_id | Тикер MOEX | Название | Категория |
+|---|---|---|---|---|
+| 10053 | 209519 | AMNR | АТОН - Накопительный в рублях | Денежный рынок |
+| 10113 | — | SBFR | Первая Облигации флоатеры | Облигации (ОФЗ) |
+| 7067 | — | TBRU | Т-Капитал Облигации | Облигации (смешанные) |
+| 7007 | — | SAFE | Первая Консерватив | Облигации (смешанные) |
+| 5713 | — | SBRB | Первая Корп облигации | Облигации (смешанные) |
+| 11259 | — | AKFB | Альфа-Капитал Облигации с перем. купоном | Облигации (смешанные) |
+
+### Учётные данные
+
+- **Login:** ermolaeffvadick@yandex.ru
+- **Password:** Qwghty56
+- **User ID:** 948191
+
+---
+
 ## Changelog (27.03.2026)
 
 - Фикс OI alignment (дневной по дате, интрадей по timestamp)
