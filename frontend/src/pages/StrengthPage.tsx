@@ -13,12 +13,10 @@ import { useAuth } from '../contexts/AuthContext';
 import { isPeriodAllowed, getDefaultPeriod } from '../config/accessControl';
 import { useRealtimeData } from '../hooks/useRealtimeData';
 
-type Period = '1m' | '3m' | '6m' | '1y' | '2y' | 'all';
+type Period = '6m' | '1y' | '2y' | 'all';
 type ChartMode = 'line' | 'histogram';
 
 const PERIOD_LABELS: Record<Period, string> = {
-    '1m': '1М',
-    '3m': '3М',
     '6m': '6М',
     '1y': '1Г',
     '2y': '2Г',
@@ -26,8 +24,6 @@ const PERIOD_LABELS: Record<Period, string> = {
 };
 
 const PERIOD_DAYS: Record<Period, number> = {
-    '1m': 30,
-    '3m': 90,
     '6m': 180,
     '1y': 365,
     '2y': 730,
@@ -388,10 +384,13 @@ export default function StrengthPage() {
                             day: 'numeric', month: 'short', year: 'numeric'
                         });
 
-                        const breadthColor = hoverData.breadth >= 70 ? '#22c55e'
-                            : hoverData.breadth >= 50 ? '#4ade80'
-                                : hoverData.breadth < 30 ? '#ef4444'
-                                    : '#fbbf24';
+                        const bv = hoverData.breadth;
+                        const bt = Math.max(0, Math.min(bv / 100, 1));
+                        const breadthColor = bt <= 0.35
+                            ? `rgb(${Math.round(239-bt/0.35*30)},${Math.round(68+bt/0.35*60)},${Math.round(68-bt/0.35*40)})`
+                            : bt <= 0.65
+                            ? `rgb(${Math.round(209-(bt-0.35)/0.3*170)},${Math.round(128+(bt-0.35)/0.3*69)},${Math.round(28+(bt-0.35)/0.3*66)})`
+                            : `rgb(${Math.round(39-(bt-0.65)/0.35*5)},${Math.round(197+(bt-0.65)/0.35*3)},94)`;
 
                         // Карточка ~60px высотой, ограничиваем в пределах контейнера
                         const cardHeight = showPrice ? 60 : 34;
@@ -922,10 +921,30 @@ function SyncedBreadthChart({
     const chartHeight = height - padding.top - padding.bottom;
 
     const getColor = useCallback((value: number) => {
-        if (value >= 70) return '#22c55e';
-        if (value >= 50) return '#4ade80';
-        if (value < 30) return '#ef4444';
-        return '#fbbf24';
+        // Плавный градиент: яркий красный (0%) → зелёный (100%), минимум оранжевого
+        const t = Math.max(0, Math.min(value / 100, 1));
+        if (t <= 0.35) {
+            // 0..0.35 → яркий красный → тёмно-оранжевый
+            const s = t / 0.35;
+            const r = Math.round(239 - s * 30);
+            const g = Math.round(68 + s * 60);
+            const b = Math.round(68 - s * 40);
+            return `rgb(${r},${g},${b})`;
+        }
+        if (t <= 0.65) {
+            // 0.35..0.65 → быстрый переход через нейтральную зону
+            const s = (t - 0.35) / 0.3;
+            const r = Math.round(209 - s * 170);
+            const g = Math.round(128 + s * 69);
+            const b = Math.round(28 + s * 66);
+            return `rgb(${r},${g},${b})`;
+        }
+        // 0.65..1 → зелёный всё ярче
+        const s = (t - 0.65) / 0.35;
+        const r = Math.round(39 - s * 5);
+        const g = Math.round(197 + s * 3);
+        const b = Math.round(94 - s * 0);
+        return `rgb(${r},${g},${b})`;
     }, []);
 
     // Мемоизированный массив значений для BreadthLineRenderer — стабильная ссылка
@@ -940,11 +959,12 @@ function SyncedBreadthChart({
         const scaleX = (i: number) => padding.left + (i / Math.max(syncedData.length - 1, 1)) * chartWidth;
         const scaleY = (v: number) => padding.top + chartHeight - ((v - yMin) / (yMax - yMin)) * chartHeight;
 
-        const levels = [
-            { value: 70, color: '#22c55e', dash: '4,4' },
-            { value: 50, color: '#f59e0b', dash: '0' },
-            { value: 30, color: '#ef4444', dash: '4,4' },
-        ].map(l => ({ ...l, y: scaleY(l.value) }));
+        const levels = [10, 20, 30, 40, 50, 60, 70, 80, 90].map(value => ({
+            value,
+            color: 'rgba(255,255,255,0.08)',
+            dash: '0',
+            y: scaleY(value),
+        }));
 
         const points = syncedData.map((d, i) => ({ x: scaleX(i), y: scaleY(d.breadth), value: d.breadth }));
 
@@ -978,11 +998,10 @@ function SyncedBreadthChart({
             };
         });
 
-        const levelColors: Record<number, string> = { 70: '#22c55e', 50: '#f59e0b', 30: '#ef4444' };
-        const yTicks = [30, 50, 70].map(v => ({
+        const yTicks = [10, 20, 30, 40, 50, 60, 70, 80, 90].map(v => ({
             value: v,
             y: scaleY(v),
-            color: levelColors[v],
+            color: 'var(--text-muted)',
         }));
 
         return { points, lineSegments, bars, levels, xTicks, yTicks, chartWidth, chartHeight, scaleX };
