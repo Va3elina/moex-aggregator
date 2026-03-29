@@ -269,7 +269,18 @@ export interface FundInfo {
   ticker: string;
   name: string;
   subcategory?: string | null;
+  uk_id?: string | null;
   data: FundDataPoint[];
+}
+
+export interface FundHolding {
+  name: string;
+  weight: number;
+}
+
+export interface FundHoldingsResponse {
+  fund_id: number;
+  holdings: FundHolding[];
 }
 
 export interface IndexDataPoint {
@@ -361,6 +372,14 @@ export async function getFundsFlows(
   }
   const response = await apiFetch(`${API_BASE}/api/funds/flows?${params}`);
   if (!response.ok) throw new Error('Failed to fetch funds flows');
+  return response.json();
+}
+
+// ==================== FUND HOLDINGS ====================
+
+export async function getFundHoldings(fundId: number): Promise<FundHoldingsResponse> {
+  const response = await apiFetch(`${API_BASE}/api/funds/holdings/${fundId}`);
+  if (!response.ok) throw new Error('Failed to fetch fund holdings');
   return response.json();
 }
 

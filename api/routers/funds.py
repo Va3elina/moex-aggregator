@@ -32,12 +32,12 @@ def load_fund_categories() -> dict:
     engine = get_engine()
     with engine.connect() as conn:
         rows = conn.execute(text(
-            "SELECT fund_id, ticker, name, category, subcategory FROM funds ORDER BY category, subcategory NULLS FIRST, ticker"
+            "SELECT fund_id, ticker, name, category, subcategory, uk_id FROM funds ORDER BY category, subcategory NULLS FIRST, ticker"
         )).fetchall()
 
     categories = {}
     for row in rows:
-        fund_id, ticker, name, cat, subcat = row[0], row[1], row[2], row[3], row[4]
+        fund_id, ticker, name, cat, subcat, uk_id = row[0], row[1], row[2], row[3], row[4], row[5]
         if cat not in CATEGORY_INDEX_MAP:
             continue
         if cat not in categories:
@@ -47,7 +47,7 @@ def load_fund_categories() -> dict:
                 "index": meta["index"],
                 "funds": {}
             }
-        categories[cat]["funds"][fund_id] = {"ticker": ticker, "name": name, "subcategory": subcat}
+        categories[cat]["funds"][fund_id] = {"ticker": ticker, "name": name, "subcategory": subcat, "uk_id": uk_id}
 
     return categories
 
@@ -143,6 +143,7 @@ async def get_funds_chart(
                         "ticker": fund_info.get("ticker", str(fid)),
                         "name": fund_info.get("name", f"Фонд {fid}"),
                         "subcategory": fund_info.get("subcategory"),
+                        "uk_id": fund_info.get("uk_id"),
                         "data": []
                     }
                 funds_data[fid]["data"].append({
@@ -277,6 +278,22 @@ async def get_funds_summary():
     except Exception as e:
         log.error(f"Ошибка получения сводки: {e}")
         raise HTTPException(status_code=500, detail="Ошибка получения данных")
+
+
+@router.get("/holdings/{fund_id}")
+async def get_fund_holdings(fund_id: int):
+    """Состав фонда (топ позиции с долями)"""
+    engine = get_engine()
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            SELECT asset_name, weight FROM fund_holdings
+            WHERE fund_id = :fid ORDER BY weight DESC
+        """), {"fid": fund_id}).fetchall()
+    engine.dispose()
+    return {
+        "fund_id": fund_id,
+        "holdings": [{"name": r[0], "weight": float(r[1])} for r in rows]
+    }
 
 
 @router.get("/categories")

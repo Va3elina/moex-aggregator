@@ -389,6 +389,89 @@ async def update_cbonds_funds(engine, force: bool = False) -> Dict[int, int]:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# СОСТАВ ФОНДОВ (Cbonds API)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def fetch_cbonds_holdings(session, parent_fund_id: int) -> List[dict]:
+    """Получить состав фонда из Cbonds API."""
+    url = f"{CBONDS_URL}/m/exchange_traded_funds/structure/global/json/{parent_fund_id}/?lang=rus"
+    headers = {"Content-Type": "application/json; charset=UTF-8", "User-Agent": CBONDS_UA}
+    body = {"quantity": {"limit": 50, "offset": 0}}
+    try:
+        async with session.post(url, json=body, headers=headers, timeout=30) as resp:
+            data = await resp.json()
+            items = data.get("response", {}).get("items", [])
+            # Дедуп по имени (Cbonds может вернуть дубли с пустым name)
+            seen = set()
+            result = []
+            for i in items:
+                name = str(i.get("asset_name") or i.get("name") or "Прочее").strip()
+                weight = float(i.get("weight", 0))
+                if weight > 0 and name not in seen:
+                    seen.add(name)
+                    result.append({"name": name, "weight": weight})
+            return result
+    except Exception as e:
+        log.warning(f"  Cbonds holdings {parent_fund_id}: {e}")
+        return []
+
+
+def save_fund_holdings(engine, fund_id: int, holdings: List[dict]) -> int:
+    """Сохранить состав фонда в fund_holdings."""
+    if not holdings:
+        return 0
+    with engine.connect() as conn:
+        # Удаляем старый состав
+        conn.execute(text("DELETE FROM fund_holdings WHERE fund_id = :fid"), {"fid": fund_id})
+        n = 0
+        for h in holdings:
+            conn.execute(text("""
+                INSERT INTO fund_holdings (fund_id, asset_name, weight, updated_at)
+                VALUES (:fid, :name, :weight, NOW())
+            """), {"fid": fund_id, "name": h["name"], "weight": h["weight"]})
+            n += 1
+        conn.commit()
+        return n
+
+
+async def update_all_holdings(engine) -> int:
+    """Обновить состав всех фондов через Cbonds API."""
+    log.info("")
+    log.info("=" * 60)
+    log.info("📊 ОБНОВЛЕНИЕ СОСТАВА ФОНДОВ (Cbonds API)")
+    log.info("=" * 60)
+
+    # Получаем все фонды с cbonds_parent_id из БД
+    with engine.connect() as conn:
+        rows = conn.execute(text(
+            "SELECT fund_id, ticker, cbonds_parent_id FROM funds WHERE cbonds_parent_id IS NOT NULL"
+        )).fetchall()
+
+    if not rows:
+        log.info("  Нет фондов с cbonds_parent_id")
+        return 0
+
+    total_saved = 0
+    async with aiohttp.ClientSession(cookie_jar=aiohttp.CookieJar()) as session:
+        if not await cbonds_auth(session):
+            log.error("  Пропуск: не удалось авторизоваться")
+            return 0
+
+        for fund_id, ticker, parent_id in rows:
+            holdings = await fetch_cbonds_holdings(session, parent_id)
+            if holdings:
+                saved = save_fund_holdings(engine, fund_id, holdings)
+                log.info(f"  {ticker:12s} fund_id={fund_id:>6d}: {saved} позиций")
+                total_saved += saved
+            else:
+                log.debug(f"  {ticker:12s} fund_id={fund_id:>6d}: нет данных")
+            await asyncio.sleep(0.3)
+
+    log.info(f"\n✅ Состав ГОТОВО: {total_saved} позиций для {len(rows)} фондов")
+    return total_saved
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # ОСНОВНАЯ ЛОГИКА
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -440,6 +523,9 @@ async def update_all_funds(force: bool = False) -> Dict[int, int]:
     # Cbonds API — ПИФы
     cbonds_results = await update_cbonds_funds(engine, force=force)
     results.update(cbonds_results)
+
+    # Состав фондов (раз в день)
+    await update_all_holdings(engine)
 
     engine.dispose()
 
