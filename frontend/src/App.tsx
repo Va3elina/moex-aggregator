@@ -11,6 +11,7 @@ import FundsMoneyPage from './pages/FundsMoneyPage';
 import StrengthPage from './pages/StrengthPage';
 import BuffettPage from './pages/BuffettPage';
 import SeasonalityPage from './pages/SeasonalityPage';
+import FundsCatalogPage from './pages/FundsCatalogPage';
 import LoginPage from './pages/LoginPage';
 import AuthCallback from './pages/AuthCallback';
 import ProfilePage from './pages/ProfilePage';
@@ -37,6 +38,7 @@ export default function App() {
             <Route path="/fear" element={<FearIndexPage />} />
             <Route path="/funds" element={<Navigate to="/funds-money" replace />} />
             <Route path="/funds-money" element={<FundsMoneyPage />} />
+            <Route path="/funds-catalog" element={<FundsCatalogPage />} />
             <Route path="/buffett" element={<BuffettPage />} />
             <Route path="/strength" element={<StrengthPage />} />
             <Route path="/seasonality" element={<SeasonalityPage />} />

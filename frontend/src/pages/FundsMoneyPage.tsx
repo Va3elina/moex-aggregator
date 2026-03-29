@@ -35,6 +35,9 @@ const PERIOD_LABELS: Record<Period, string> = {
     'all': 'Всё'
 };
 
+// Периоды для режима СЧА (ограниченный набор)
+const AUM_PERIODS: Period[] = ['1m', '6m', '2y', 'all'];
+
 // Категории
 const CATEGORIES: { key: FundCategory; name: string; icon: React.ElementType; index: string }[] = [
     { key: 'money_market', name: 'Денежный рынок', icon: Banknote, index: 'RUSFAR3M' },
@@ -49,15 +52,7 @@ const FUND_COLORS = [
     '#00D9FF', '#FF6B9D', '#FCD34D', '#14B8A6', '#F97316'
 ];
 
-// Логотипы УК — простые буквенные иконки
-const UK_LOGOS: Record<string, { letter: string; bg: string; color: string }> = {
-    '3597': { letter: 'Т', bg: '#FFDD2D', color: '#000000' },  // Т-Капитал (Т-Банк)
-    '5':    { letter: 'А', bg: '#EF3124', color: '#FFFFFF' },  // Альфа-Капитал
-    '34':   { letter: 'П', bg: '#21A038', color: '#FFFFFF' },  // Первая (Сбер)
-    '7':    { letter: 'В', bg: '#009FDF', color: '#FFFFFF' },  // ВИМ (ex-ВТБ)
-    '20':   { letter: 'Р', bg: '#FEE600', color: '#000000' },  // Райффайзен
-    'aton': { letter: 'A', bg: '#1A3C6E', color: '#FFFFFF' },  // АТОН
-};
+import { UK_LOGOS } from '../config/fundConfig';
 
 const INDEX_COLOR = '#C8FF2E';
 
@@ -371,7 +366,7 @@ export default function FundsMoneyPage() {
             {/* Периоды */}
             <div className="flex items-center gap-4 mb-6 flex-wrap">
                 <div className="flex items-center gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
-                    {(Object.keys(PERIOD_LABELS) as Period[]).map((p) => {
+                    {(Object.keys(PERIOD_LABELS) as Period[]).filter(p => viewMode === 'flows' || AUM_PERIODS.includes(p)).map((p) => {
                         const available = isFlowPeriodAvailable(p);
                         const allowed = isPeriodAllowed(p, isAuthenticated);
                         return (
@@ -403,7 +398,7 @@ export default function FundsMoneyPage() {
                 {/* Режим: СЧА / Притоки-оттоки */}
                 <div className="flex items-center gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
                     <button
-                        onClick={() => setViewMode('aum')}
+                        onClick={() => { setViewMode('aum'); if (!AUM_PERIODS.includes(period)) setPeriod('6m'); }}
                         title="СЧА (объём активов)"
                         className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors duration-200 ${viewMode === 'aum'
                             ? 'btn-control active'

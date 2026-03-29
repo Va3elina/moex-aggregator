@@ -20,8 +20,8 @@ log = get_logger()
 
 # Маппинг category → отображаемое имя и индекс-бенчмарк
 CATEGORY_INDEX_MAP = {
-    "money_market": {"name": "Денежный рынок", "index": "RUSFAR3M"},
-    "stocks": {"name": "Акции", "index": "IMOEX"},
+    "money_market": {"name": "Денежный рынок", "index": "RUSFAR3M", "min_date": "2022-07-15"},
+    "stocks": {"name": "Акции", "index": "IMOEX", "min_date": "2021-12-17"},
     "bonds": {"name": "Облигации", "index": "RGBITR", "min_date": "2023-04-01"},
     "gold": {"name": "Золото", "index": "GLDRUB_TOM", "min_date": "2022-08-01"},
 }
@@ -32,7 +32,7 @@ def load_fund_categories() -> dict:
     engine = get_engine()
     with engine.connect() as conn:
         rows = conn.execute(text(
-            "SELECT fund_id, ticker, name, category, subcategory, uk_id FROM funds ORDER BY category, subcategory NULLS FIRST, ticker"
+            "SELECT fund_id, ticker, name, category, subcategory, uk_id FROM funds ORDER BY category, subcategory_order, ticker"
         )).fetchall()
 
     categories = {}
@@ -199,7 +199,7 @@ async def get_funds_chart(
                 "category": category,
                 "category_name": cat_config["name"],
                 "period": period,
-                "funds": list(funds_data.values()),
+                "funds": [funds_data[fid] for fid in cat_config["funds"] if fid in funds_data],
                 "total_nav": total_nav,
                 "index": {
                     "secid": index_secid,
@@ -278,6 +278,95 @@ async def get_funds_summary():
     except Exception as e:
         log.error(f"Ошибка получения сводки: {e}")
         raise HTTPException(status_code=500, detail="Ошибка получения данных")
+
+
+@router.get("/catalog")
+async def get_funds_catalog():
+    """Каталог всех фондов с метриками и составом."""
+    from api.cache import get_or_set
+    cache_key = "funds_catalog"
+    cached = get_or_set(cache_key)
+    if cached is not None:
+        return cached
+
+    engine = get_engine()
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            SELECT f.fund_id, f.ticker, f.name, f.category, f.subcategory, f.uk_id,
+                fd_last.nav AS last_nav, fd_last.pay AS last_pay, fd_last.trade_date AS last_date,
+                fd_1m.pay AS pay_1m, fd_3m.pay AS pay_3m, fd_6m.pay AS pay_6m, fd_1y.pay AS pay_1y,
+                (SELECT COUNT(*) FROM fund_holdings fh WHERE fh.fund_id = f.fund_id) AS holdings_count
+            FROM funds f
+            LEFT JOIN LATERAL (
+                SELECT nav, pay, trade_date FROM fund_data WHERE fund_id = f.fund_id AND nav IS NOT NULL
+                ORDER BY trade_date DESC LIMIT 1
+            ) fd_last ON true
+            LEFT JOIN LATERAL (
+                SELECT pay FROM fund_data WHERE fund_id = f.fund_id AND pay IS NOT NULL
+                AND trade_date <= CURRENT_DATE - 30 ORDER BY trade_date DESC LIMIT 1
+            ) fd_1m ON true
+            LEFT JOIN LATERAL (
+                SELECT pay FROM fund_data WHERE fund_id = f.fund_id AND pay IS NOT NULL
+                AND trade_date <= CURRENT_DATE - 90 ORDER BY trade_date DESC LIMIT 1
+            ) fd_3m ON true
+            LEFT JOIN LATERAL (
+                SELECT pay FROM fund_data WHERE fund_id = f.fund_id AND pay IS NOT NULL
+                AND trade_date <= CURRENT_DATE - 180 ORDER BY trade_date DESC LIMIT 1
+            ) fd_6m ON true
+            LEFT JOIN LATERAL (
+                SELECT pay FROM fund_data WHERE fund_id = f.fund_id AND pay IS NOT NULL
+                AND trade_date <= CURRENT_DATE - 365 ORDER BY trade_date DESC LIMIT 1
+            ) fd_1y ON true
+            ORDER BY f.category, f.subcategory_order, f.ticker
+        """)).fetchall()
+
+        # Загрузим топ-5 holdings для каждого фонда
+        holdings_rows = conn.execute(text("""
+            SELECT fund_id, asset_name, weight FROM fund_holdings
+            WHERE fund_id IN (SELECT fund_id FROM funds)
+            ORDER BY fund_id, weight DESC
+        """)).fetchall()
+
+    engine.dispose()
+
+    # Группируем holdings по fund_id (топ-5)
+    from collections import defaultdict
+    holdings_map = defaultdict(list)
+    for r in holdings_rows:
+        if len(holdings_map[r[0]]) < 5:
+            holdings_map[r[0]].append({"name": r[1], "weight": float(r[2])})
+
+    def calc_return(last, prev):
+        if last and prev and float(prev) > 0:
+            return round((float(last) - float(prev)) / float(prev) * 100, 2)
+        return None
+
+    funds = []
+    for r in rows:
+        fid = r[0]
+        last_nav = float(r[6]) if r[6] else None
+        last_pay = float(r[7]) if r[7] else None
+        funds.append({
+            "fund_id": fid,
+            "ticker": r[1],
+            "name": r[2],
+            "category": r[3],
+            "subcategory": r[4],
+            "uk_id": r[5],
+            "last_nav": last_nav,
+            "last_pay": last_pay,
+            "last_date": r[8].isoformat() if r[8] else None,
+            "return_1m": calc_return(last_pay, float(r[9]) if r[9] else None),
+            "return_3m": calc_return(last_pay, float(r[10]) if r[10] else None),
+            "return_6m": calc_return(last_pay, float(r[11]) if r[11] else None),
+            "return_1y": calc_return(last_pay, float(r[12]) if r[12] else None),
+            "holdings_count": int(r[13]),
+            "top_holdings": holdings_map.get(fid, []),
+        })
+
+    result = {"funds": funds, "total": len(funds)}
+    get_or_set(cache_key, result, ttl=600)
+    return result
 
 
 @router.get("/holdings/{fund_id}")

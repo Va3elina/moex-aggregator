@@ -383,6 +383,37 @@ export async function getFundHoldings(fundId: number): Promise<FundHoldingsRespo
   return response.json();
 }
 
+// ==================== FUND CATALOG ====================
+
+export interface CatalogFund {
+  fund_id: number;
+  ticker: string;
+  name: string;
+  category: string;
+  subcategory: string | null;
+  uk_id: string | null;
+  last_nav: number | null;
+  last_pay: number | null;
+  last_date: string | null;
+  return_1m: number | null;
+  return_3m: number | null;
+  return_6m: number | null;
+  return_1y: number | null;
+  holdings_count: number;
+  top_holdings: FundHolding[];
+}
+
+export interface FundsCatalogResponse {
+  funds: CatalogFund[];
+  total: number;
+}
+
+export async function getFundsCatalog(): Promise<FundsCatalogResponse> {
+  const response = await apiFetch(`${API_BASE}/api/funds/catalog`);
+  if (!response.ok) throw new Error('Failed to fetch funds catalog');
+  return response.json();
+}
+
 // ==================== FEAR INDEX ====================
 
 export interface FearIndexComponents {

@@ -10,6 +10,7 @@ const NAV_ITEMS: { path: string; label: string; disabled?: boolean }[] = [
   { path: '/heatmap', label: 'Карта рынка' },
   { path: '/oi', label: 'Открытый интерес' },
   { path: '/funds-money', label: 'Деньги в фондах' },
+  { path: '/funds-catalog', label: 'Каталог фондов' },
   { path: '/buffett', label: 'Индикатор Баффетта' },
   { path: '/strength', label: 'Сила рынка' },
   { path: '/seasonality', label: 'Сезонность' },
@@ -29,7 +30,7 @@ export default function Layout() {
         backgroundColor: 'var(--glass-bg)',
         borderColor: 'var(--border-color)'
       }}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-14 md:h-16">
             {/* Логотип */}
             <NavLink to="/" className="flex items-center gap-2">
