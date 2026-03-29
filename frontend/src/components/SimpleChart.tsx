@@ -802,7 +802,7 @@ export default function SimpleChart({
           width={width}
           height={effectiveHeight}
           className="cursor-crosshair select-none"
-          style={{ touchAction: 'none' }}
+          style={{ touchAction: 'none', backgroundColor: 'var(--bg-secondary)' }}
           onMouseMove={handleMouseMove}
           onMouseLeave={handleMouseLeave}
           onTouchStart={handleTouchStart}

@@ -598,6 +598,7 @@ export default function OpenInterestPage() {
       )}
 
       {/* График */}
+      <div className="bg-theme-secondary rounded-2xl border border-theme overflow-hidden">
       <SimpleChart
         data={chartData}
         secondaryData={oiData}
@@ -618,6 +619,7 @@ export default function OpenInterestPage() {
         showDownloadButton={false}
         showNavigator={true}
       />
+      </div>
 
       {/* Легенда */}
       <div className="mt-6 bg-theme-secondary border border-theme rounded-2xl p-5">
