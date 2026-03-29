@@ -19,10 +19,9 @@ import { useRealtimeData } from '../hooks/useRealtimeData';
 type ViewMode = 'aum' | 'flows';
 
 // Периоды
-type Period = '1w' | '1m' | '3m' | '6m' | '1y' | '2y' | '3y' | 'all';
+type Period = '1m' | '3m' | '6m' | '1y' | '2y' | '3y' | 'all';
 
 const PERIOD_LABELS: Record<Period, string> = {
-    '1w': '1Н',
     '1m': '1М',
     '3m': '3М',
     '6m': '6М',
@@ -71,7 +70,30 @@ export default function FundsMoneyPage() {
     const [category, setCategory] = useState<FundCategory>('money_market');
     const [period, setPeriod] = useState<Period>(getDefaultPeriod('6m', isAuthenticated) as Period);
     const [viewMode, setViewMode] = useState<ViewMode>('aum');
-    const [flowTimeframe, setFlowTimeframe] = useState<FlowTimeframe>('1w');
+    const [flowTimeframe, setFlowTimeframeRaw] = useState<FlowTimeframe>('1w');
+
+    // Ограничения периодов для flow таймфреймов (как на ОИ)
+    const FLOW_MIN_PERIODS: Record<FlowTimeframe, Period[]> = {
+        '1d': ['1m', '3m', '6m', '1y', '2y', '3y', 'all'],
+        '1w': ['6m', '1y', '2y', '3y', 'all'],
+        '1m': ['2y', '3y', 'all'],
+        '3m': ['2y', '3y', 'all'],
+        '1y': ['3y', 'all'],
+    };
+
+    const isFlowPeriodAvailable = (p: Period): boolean => {
+        if (viewMode !== 'flows') return true;
+        const allowed = FLOW_MIN_PERIODS[flowTimeframe] || FLOW_MIN_PERIODS['1w'];
+        return allowed.includes(p);
+    };
+
+    const setFlowTimeframe = (tf: FlowTimeframe) => {
+        setFlowTimeframeRaw(tf);
+        const allowed = FLOW_MIN_PERIODS[tf];
+        if (!allowed.includes(period)) {
+            setPeriod(allowed[0]);
+        }
+    };
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [data, setData] = useState<FundsChartResponse | null>(null);
@@ -302,21 +324,25 @@ export default function FundsMoneyPage() {
             <div className="flex items-center gap-4 mb-6 flex-wrap">
                 <div className="flex items-center gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
                     {(Object.keys(PERIOD_LABELS) as Period[]).map((p) => {
+                        const available = isFlowPeriodAvailable(p);
                         const allowed = isPeriodAllowed(p, isAuthenticated);
                         return (
                             <button
                                 key={p}
                                 onClick={() => {
                                     if (!allowed) { navigate('/login'); return; }
-                                    setPeriod(p);
+                                    if (available) setPeriod(p);
                                 }}
-                                title={!allowed ? 'Войдите для доступа' : undefined}
+                                disabled={!available && allowed}
+                                title={!allowed ? 'Войдите для доступа' : !available ? 'Недоступно для этого таймфрейма' : undefined}
                                 className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors duration-200 ${
                                     !allowed
                                         ? 'text-theme-muted cursor-not-allowed opacity-50'
                                         : period === p
                                             ? 'btn-control active'
-                                            : 'text-theme-secondary hover:text-theme-primary'
+                                            : available
+                                                ? 'text-theme-secondary hover:text-theme-primary'
+                                                : 'text-theme-muted cursor-not-allowed'
                                 }`}
                             >
                                 {PERIOD_LABELS[p]}
