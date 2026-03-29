@@ -401,10 +401,10 @@ export default function StrengthPage() {
                             <>
                                 {/* Дата — закреплена наверху, привязана к вертикальной линии */}
                                 <div
-                                    className="absolute z-30 pointer-events-none"
+                                    className="absolute z-20 pointer-events-none"
                                     style={{
                                         left: Math.min(Math.max(hoverX - 60, 4), rect.width - 128),
-                                        top: 4,
+                                        top: 28,
                                     }}
                                 >
                                     <span className="text-[11px] text-theme-secondary bg-theme-tertiary/90 backdrop-blur-sm px-2 py-0.5 rounded border border-theme whitespace-nowrap">
@@ -450,9 +450,9 @@ export default function StrengthPage() {
                     {/* График IMOEX (верхний) */}
                     {showPrice && displaySyncedData.length > 0 && (
                         <div className="px-4 pt-3 pb-2 border-b border-theme relative" style={{ minHeight: 324 }}>
-                            <div className="flex items-center justify-center gap-2 mb-2 -mt-1">
+                            <div className="flex items-center justify-center gap-2 mb-2 relative z-10">
                                 <span className="w-2.5 h-2.5 rounded-full bg-[#6366f1]" />
-                                <span className="text-sm font-medium text-theme-secondary">Индекс МосБиржи</span>
+                                <span className="text-sm font-semibold text-theme-primary">Индекс МосБиржи</span>
                             </div>
                             <SyncedPriceChart
                                 syncedData={displaySyncedData}
@@ -466,9 +466,9 @@ export default function StrengthPage() {
 
                     {/* График Breadth (нижний) — расширяется когда IMOEX скрыт */}
                     <div className="px-4 pt-3 pb-2 relative transition-all duration-500 ease-in-out" style={{ minHeight: showPrice ? 174 : 474 }}>
-                        <div className="flex items-center justify-center gap-2 mb-2">
+                        <div className="flex items-center justify-center gap-2 mb-2 relative z-10">
                             <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: 'var(--accent)' }} />
-                            <span className="text-sm font-medium text-theme-secondary">% акций выше EMA{emaPeriod}</span>
+                            <span className="text-sm font-semibold text-theme-primary">% акций выше EMA{emaPeriod}</span>
                         </div>
                         {displaySyncedData.length > 0 ? (
                             <SyncedBreadthChart
@@ -802,7 +802,7 @@ function SyncedPriceChart({
                                 <text
                                     x={width - EDGE_MARGIN}
                                     y={Math.max(padding.top + 6, Math.min(tick.y, padding.top + chartHeight - 6))}
-                                    textAnchor="end" dominantBaseline="middle" fill="var(--text-muted)" fontSize="13" fontWeight="500">
+                                    textAnchor="end" dominantBaseline="middle" fill="var(--text-muted)" fontSize="16" fontWeight="600">
                                     {tick.value.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
                                 </text>
                             </g>
@@ -994,7 +994,7 @@ function SyncedBreadthChart({
             const idx = Math.floor(i * (syncedData.length - 1) / Math.max(xTickCount - 1, 1));
             return {
                 x: scaleX(idx),
-                label: new Date(syncedData[idx].time).toLocaleDateString('ru-RU', { day: '2-digit', month: 'short' })
+                label: new Date(syncedData[idx].time).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: '2-digit' })
             };
         });
 
@@ -1164,7 +1164,7 @@ function SyncedBreadthChart({
                         {chartData.yTicks.map((tick, i) => (
                             <text key={i} x={width - EDGE_MARGIN} y={tick.y}
                                 textAnchor="end" dominantBaseline="middle"
-                                fill={tick.color || 'var(--text-muted)'} fontSize="13" fontWeight="500">
+                                fill={tick.color || 'var(--text-muted)'} fontSize="16" fontWeight="600">
                                 {tick.value}%
                             </text>
                         ))}
@@ -1173,7 +1173,7 @@ function SyncedBreadthChart({
                         {chartData.xTicks.map((tick, i) => (
                             <text key={i} x={tick.x} y={padding.top + chartData.chartHeight + 18}
                                 textAnchor={i === 0 ? 'start' : i === chartData.xTicks.length - 1 ? 'end' : 'middle'}
-                                fill="var(--text-muted)" fontSize="13" fontWeight="500">
+                                fill="var(--text-muted)" fontSize="16" fontWeight="600">
                                 {tick.label}
                             </text>
                         ))}
