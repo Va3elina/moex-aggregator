@@ -28,6 +28,57 @@ const stringToColor = (str: string) => {
   return colors[Math.abs(hash) % colors.length];
 };
 
+const INSTRUMENT_ICONS: Record<string, { icon: string; bg: string; color: string }> = {
+  'Si': { icon: '$/₽', bg: '#2563EB', color: '#fff' },
+  'Eu': { icon: '€/₽', bg: '#1D4ED8', color: '#fff' },
+  'CR': { icon: '¥/₽', bg: '#DC2626', color: '#fff' },
+  'CNYRUBF': { icon: '¥/₽', bg: '#DC2626', color: '#fff' },
+  'ED': { icon: '€/$', bg: '#7C3AED', color: '#fff' },
+  'USDRUBF': { icon: '$/₽', bg: '#2563EB', color: '#fff' },
+  'EURRUBF': { icon: '€/₽', bg: '#1D4ED8', color: '#fff' },
+  'BR': { icon: '🛢', bg: '#92400E', color: '#fff' },
+  'BM': { icon: '🛢', bg: '#92400E', color: '#fff' },
+  'NG': { icon: '🔥', bg: '#EA580C', color: '#fff' },
+  'GZ': { icon: 'ГП', bg: '#0EA5E9', color: '#fff' },
+  'GD': { icon: 'Au', bg: '#D97706', color: '#fff' },
+  'GL': { icon: 'Au', bg: '#D97706', color: '#fff' },
+  'SV': { icon: 'Ag', bg: '#6B7280', color: '#fff' },
+  'PT': { icon: 'Pt', bg: '#9CA3AF', color: '#000' },
+  'PD': { icon: 'Pd', bg: '#A3A3A3', color: '#000' },
+  'AL': { icon: '💎', bg: '#2DD4BF', color: '#000' },
+  'CE': { icon: 'Cu', bg: '#B45309', color: '#fff' },
+  'RI': { icon: 'РТС', bg: '#6366F1', color: '#fff' },
+  'MX': { icon: 'МБ', bg: '#6366F1', color: '#fff' },
+  'SR': { icon: 'Сб', bg: '#21A038', color: '#fff' },
+  'GK': { icon: 'ЛК', bg: '#E11D48', color: '#fff' },
+  'YD': { icon: 'Я', bg: '#FC3F1D', color: '#fff' },
+  'TT': { icon: 'Т', bg: '#FFDD2D', color: '#000' },
+  'VB': { icon: 'ВТБ', bg: '#009FDF', color: '#fff' },
+  'NK': { icon: 'НН', bg: '#F59E0B', color: '#000' },
+  'RN': { icon: 'РН', bg: '#FFD700', color: '#000' },
+  'TN': { icon: 'ТН', bg: '#16A34A', color: '#fff' },
+  'NA': { icon: 'НВ', bg: '#0284C7', color: '#fff' },
+  'SF': { icon: 'СН', bg: '#1E3A5F', color: '#fff' },
+  'AF': { icon: 'АФ', bg: '#0369A1', color: '#fff' },
+  'SE': { icon: 'СС', bg: '#475569', color: '#fff' },
+};
+
+const InstrumentIcon = ({ sectype }: { sectype: string }) => {
+  const icon = INSTRUMENT_ICONS[sectype];
+  if (icon) {
+    return (
+      <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 font-black text-xs"
+        style={{ backgroundColor: icon.bg, color: icon.color }}>
+        {icon.icon}
+      </div>
+    );
+  }
+  return (
+    <div className="w-10 h-10 rounded-full flex-shrink-0"
+      style={{ backgroundColor: stringToColor(sectype) }} />
+  );
+};
+
 export default function InstrumentSearchModal({ onSelect, onClose }: InstrumentSearchModalProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [instruments, setInstruments] = useState<Instrument[]>([]);
@@ -94,8 +145,8 @@ export default function InstrumentSearchModal({ onSelect, onClose }: InstrumentS
         onClick={onClose}
       />
 
-      {/* Modal */}
-      <div className="relative w-full max-w-lg bg-[#1A1F2E] rounded-2xl shadow-2xl max-h-[70vh] overflow-hidden">
+      {/* Modal — glassmorphism */}
+      <div className="relative w-full max-w-lg bg-white/[0.08] backdrop-blur-xl rounded-2xl border border-white/15 shadow-2xl max-h-[70vh] overflow-hidden" style={{ boxShadow: '0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1)' }}>
         {/* Header */}
         <div className="px-6 pt-6 pb-4">
           <div className="flex items-center justify-between mb-6">
@@ -143,10 +194,7 @@ export default function InstrumentSearchModal({ onSelect, onClose }: InstrumentS
                         onClick={() => onSelect(inst.sectype, inst.name)}
                         className="flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 transition-colors cursor-pointer"
                       >
-                        <div
-                          className="w-10 h-10 rounded-full flex-shrink-0"
-                          style={{ backgroundColor: stringToColor(inst.sectype) }}
-                        />
+                        <InstrumentIcon sectype={inst.sectype} />
                         <div className="flex-1">
                           <div className="font-semibold text-[#F4F6FA]">{inst.name}</div>
                           <div className="text-sm text-[#A7ADBC]">{inst.sectype}</div>
