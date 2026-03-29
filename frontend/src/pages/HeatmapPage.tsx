@@ -184,7 +184,7 @@ export default function HeatmapPage() {
   const getSizeValue = (stock: HeatmapStock): number => {
     const key = sizeBy as keyof HeatmapStock;
     const raw = Math.max((stock[key] as number) || 1, 1);
-    return Math.sqrt(raw);
+    return Math.pow(raw, 0.65);
   };
 
   // Получение значения для цвета
@@ -195,7 +195,7 @@ export default function HeatmapPage() {
 
   // Цвета в стиле Finviz: тёмный центр → насыщенный (но не неоновый) на краях
   const getColor = (change: number): string => {
-    const maxChange = colorBy === 'change_1y' ? 30 : colorBy === 'change_1m' ? 10 : 3;
+    const maxChange = colorBy === 'change_1y' ? 30 : colorBy === 'change_1m' ? 7 : colorBy === 'change_1w' ? 3 : 1.5;
     const abs = Math.abs(change);
     const t = Math.min(abs / maxChange, 1); // 0..1
 
@@ -305,8 +305,8 @@ export default function HeatmapPage() {
   const renderStock = (rect: { id: string; x: number; y: number; width: number; height: number; data: HeatmapStock }, key: string) => {
     const change = getColorValue(rect.data);
     const fonts = getFontSize(rect.width, rect.height);
-    const showTicker = rect.width > 25 && rect.height > 20;
-    const showPercent = rect.width > 40 && rect.height > 35;
+    const showTicker = rect.width > 18 && rect.height > 14;
+    const showPercent = rect.width > 30 && rect.height > 25;
     const gap = 2;
     const radius = 6;
 

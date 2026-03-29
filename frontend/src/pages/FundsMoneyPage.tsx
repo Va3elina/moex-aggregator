@@ -110,6 +110,9 @@ export default function FundsMoneyPage() {
     const barsAnimRef = useRef<number | null>(null);
     const isFirstBarsRender = useRef(true);
 
+    // Сброс скрытых фондов только при смене категории (не периода/таймфрейма)
+    useEffect(() => { setHiddenFunds(new Set()); }, [category]);
+
     // Загрузка данных
     const loadData = useCallback(async () => {
         try {
@@ -117,8 +120,6 @@ export default function FundsMoneyPage() {
             setError(null);
             const result = await getFundsChartData(category, period as FundPeriod);
             setData(result);
-            // Сброс скрытых фондов при смене категории/периода
-            setHiddenFunds(new Set());
         } catch (err) {
             setError('Ошибка загрузки данных');
             console.error(err);
@@ -221,7 +222,9 @@ export default function FundsMoneyPage() {
         const rect = flowContainerRef.current.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
-        const barWidth = rect.width / flowsData.flows.length;
+        // SVG область уже контейнера на 60px (правые подписи)
+        const chartWidth = rect.width - 60;
+        const barWidth = chartWidth / flowsData.flows.length;
         const idx = Math.floor(x / barWidth);
         if (idx >= 0 && idx < flowsData.flows.length) {
             setHoveredFlowIndex(idx);
@@ -553,10 +556,10 @@ export default function FundsMoneyPage() {
                             {/* Тултип-карточка */}
                             {hoveredFlowIndex !== null && flowsData?.flows[hoveredFlowIndex] && flowContainerRef.current && (() => {
                                 const f = flowsData.flows[hoveredFlowIndex];
-                                const containerW = flowContainerRef.current!.getBoundingClientRect().width;
-                                const barWidth = containerW / flowsData.flows.length;
+                                const chartW = flowContainerRef.current!.getBoundingClientRect().width - 60;
+                                const barWidth = chartW / flowsData.flows.length;
                                 const hoverX = hoveredFlowIndex * barWidth + barWidth / 2;
-                                const isRightHalf = hoverX > containerW / 2;
+                                const isRightHalf = hoverX > chartW / 2;
                                 const cardLeft = isRightHalf ? hoverX - 180 - 12 : hoverX + 12;
 
                                 const dateStr = new Date(f.period_end).toLocaleDateString('ru-RU', {
@@ -571,7 +574,7 @@ export default function FundsMoneyPage() {
                                         <div
                                             className="absolute z-30 pointer-events-none"
                                             style={{
-                                                left: Math.min(Math.max(hoverX - 60, 4), containerW - 128),
+                                                left: Math.min(Math.max(hoverX - 60, 4), chartW - 128),
                                                 top: 4,
                                             }}
                                         >
