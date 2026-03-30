@@ -343,7 +343,7 @@ export default function StrengthPage() {
             {/* Синхронизированные графики */}
             <div
                 ref={containerRef}
-                className="widget overflow-hidden mb-6 relative cursor-crosshair"
+                className="bg-theme-secondary rounded-2xl border border-theme overflow-hidden mb-6 relative cursor-crosshair"
                 onMouseMove={isAnimating ? undefined : handleMouseMove}
                 onMouseLeave={handleMouseLeave}
             >
@@ -404,7 +404,7 @@ export default function StrengthPage() {
                                     className="absolute z-20 pointer-events-none"
                                     style={{
                                         left: Math.min(Math.max(hoverX - 60, 4), rect.width - 128),
-                                        top: 28,
+                                        top: 38,
                                     }}
                                 >
                                     <span className="text-[11px] text-theme-secondary bg-theme-tertiary/90 backdrop-blur-sm px-2 py-0.5 rounded border border-theme whitespace-nowrap">
@@ -449,9 +449,9 @@ export default function StrengthPage() {
 
                     {/* График IMOEX (верхний) */}
                     {showPrice && displaySyncedData.length > 0 && (
-                        <div className="px-4 pt-3 pb-2 border-b border-theme relative" style={{ minHeight: 324 }}>
-                            <div className="flex items-center justify-center gap-2 mb-2 relative z-10">
-                                <span className="w-2.5 h-2.5 rounded-full bg-[#6366f1]" />
+                        <div className="px-4 pt-4 pb-2 border-b border-theme relative" style={{ minHeight: 334 }}>
+                            <div className="flex items-center justify-center gap-2 mb-5 relative z-10">
+                                <span className="w-3 h-3 rounded-full bg-[#6366f1]" />
                                 <span className="text-sm font-semibold text-theme-primary">Индекс МосБиржи</span>
                             </div>
                             <SyncedPriceChart
@@ -825,7 +825,7 @@ const HistogramBars = memo(({ bars }: { bars: BarDef[] }) => {
         if (bar.height <= 0) continue;
         let arr = byColor.get(bar.color);
         if (!arr) { arr = []; byColor.set(bar.color, arr); }
-        arr.push(`M${bar.x},${bar.y + bar.height}V${bar.y}H${bar.x + bar.width}V${bar.y + bar.height}Z`);
+        arr.push(`M${bar.x - 0.5},${bar.y + bar.height}V${bar.y}H${bar.x + bar.width + 0.5}V${bar.y + bar.height}Z`);
     }
     return (
         <g shapeRendering="crispEdges">
@@ -1065,17 +1065,25 @@ function SyncedBreadthChart({
             const fromBars = currBarsRef.current.length > 0 ? currBarsRef.current : prevBarsRef.current;
             let start: number | null = null;
 
+            const isFirstAnim = fromBars.length === 0;
+            const totalDuration = isFirstAnim ? 1200 : 600;
+            const staggerDelay = isFirstAnim ? 600 : 0;
+
             const animate = (ts: number) => {
                 if (!start) start = ts;
-                const t = easeOutCubic(Math.min((ts - start) / 600, 1));
+                const elapsed = ts - start;
+                const lineT = easeOutCubic(Math.min(elapsed / totalDuration, 1));
 
-                const interp = morphPts(fromPts, targetPts, t);
+                const interp = morphPts(fromPts, targetPts, lineT);
                 currPtsRef.current = interp;
                 setAnimLinePath(ptsToPath(interp));
 
                 const n = Math.max(fromBars.length, targetBars.length);
                 const morphedBars: typeof targetBars = [];
                 for (let i = 0; i < n; i++) {
+                    const barDelay = (i / Math.max(n - 1, 1)) * staggerDelay;
+                    const barElapsed = Math.max(0, elapsed - barDelay);
+                    const t = easeOutCubic(Math.min(barElapsed / (totalDuration - staggerDelay), 1));
                     const fb = fromBars[Math.min(i, fromBars.length - 1)] || { y: bottom, height: 0 };
                     const tb = targetBars[Math.min(i, targetBars.length - 1)];
                     morphedBars.push({ ...tb, y: lerp(fb.y, tb.y, t), height: lerp(fb.height, tb.height, t) });
@@ -1083,7 +1091,7 @@ function SyncedBreadthChart({
                 currBarsRef.current = morphedBars.map(b => ({ y: b.y, height: b.height }));
                 setAnimBars(morphedBars);
 
-                if (t < 1) {
+                if (elapsed < totalDuration) {
                     animRef.current = requestAnimationFrame(animate);
                 } else {
                     prevPtsRef.current = targetPts;

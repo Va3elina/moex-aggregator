@@ -10,7 +10,7 @@ const NAV_ITEMS: { path: string; label: string; disabled?: boolean }[] = [
   { path: '/heatmap', label: 'Карта рынка' },
   { path: '/oi', label: 'Открытый интерес' },
   { path: '/funds-money', label: 'Деньги в фондах' },
-  { path: '/funds-catalog', label: 'Каталог фондов' },
+  { path: '/funds-catalog', label: 'Состав фондов' },
   { path: '/buffett', label: 'Индикатор Баффетта' },
   { path: '/strength', label: 'Сила рынка' },
   { path: '/seasonality', label: 'Сезонность' },

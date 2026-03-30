@@ -1049,14 +1049,6 @@ export default function SimpleChart({
 
           {/* Тултип: дата вверху вертикальной линии + карточка значений */}
           {tooltip.visible && (() => {
-            const d = new Date(tooltip.time);
-            const dateStr = d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' });
-            const hours = d.getHours();
-            const minutes = d.getMinutes();
-            const dateLabel = (hours !== 0 || minutes !== 0)
-              ? `${dateStr} ${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`
-              : dateStr;
-
             const cardWidth = isMobile ? 150 : 200;
             const isRightHalf = tooltip.x > padding.left + chartWidth / 2;
             const cardX = isRightHalf
@@ -1080,25 +1072,7 @@ export default function SimpleChart({
 
             return (
               <>
-                {/* Дата — вверху вертикальной линии */}
-                {(() => {
-                  const labelW = dateLabel.length > 16 ? 200 : 140;
-                  const halfW = labelW / 2;
-                  return (
-                    <foreignObject
-                      x={Math.min(Math.max(tooltip.x - halfW, padding.left), width - padding.right - labelW)}
-                      y={padding.top - 24}
-                      width={labelW}
-                      height="22"
-                    >
-                      <div className="flex justify-center pointer-events-none">
-                        <span className="text-[11px] text-theme-secondary bg-theme-tertiary/90 backdrop-blur-sm px-2 py-0.5 rounded border border-theme whitespace-nowrap">
-                          {dateLabel}
-                        </span>
-                      </div>
-                    </foreignObject>
-                  );
-                })()}
+                {/* Дата рендерится через HTML div — см. ниже после </svg> */}
 
                 {/* Карточка значений рядом с курсором */}
                 <foreignObject
@@ -1123,6 +1097,30 @@ export default function SimpleChart({
             );
           })()}
         </svg>
+
+        {/* HTML тултип даты — над SVG, не обрезается */}
+        {tooltip.visible && (() => {
+          const d = new Date(tooltip.time);
+          const dateStr = d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' });
+          const hours = d.getHours();
+          const minutes = d.getMinutes();
+          const htmlDateLabel = (hours !== 0 || minutes !== 0)
+            ? `${dateStr} ${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`
+            : dateStr;
+          return (
+            <div
+              className="absolute z-20 pointer-events-none"
+              style={{
+                left: Math.min(Math.max(tooltip.x + 20 - 60, 4), width - 128),
+                top: legendPosition === 'top' ? 38 : 8,
+              }}
+            >
+              <span className="text-[11px] text-theme-secondary bg-theme-tertiary/90 backdrop-blur-sm px-2 py-0.5 rounded border border-theme whitespace-nowrap">
+                {htmlDateLabel}
+              </span>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Навигатор временного диапазона */}

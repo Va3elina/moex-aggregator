@@ -566,15 +566,17 @@ export interface BuffettMcftrM2Response {
   period: string;
 }
 
-export type BuffettPeriod = '1m' | '1y' | '2y' | '3y' | '5y' | 'all';
+export type BuffettPeriod = '1m' | '1y' | '2y' | '3y' | '5y' | '10y' | '20y' | 'all';
 
 export async function getBuffettCapGdp(
   period: BuffettPeriod = '3y',
-  smooth: boolean = true
+  smooth: boolean = true,
+  timeframe: string = '1m'
 ): Promise<BuffettCapGdpResponse> {
   const params = new URLSearchParams({
     period,
-    smooth: smooth.toString()
+    smooth: smooth.toString(),
+    timeframe
   });
   const response = await apiFetch(`${API_BASE}/api/buffett/cap-gdp?${params}`);
   if (!response.ok) throw new Error('Failed to fetch Buffett cap/gdp');

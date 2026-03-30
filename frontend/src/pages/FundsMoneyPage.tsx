@@ -293,23 +293,34 @@ export default function FundsMoneyPage() {
         if (barsAnimRef.current) cancelAnimationFrame(barsAnimRef.current);
 
         const targetValues = flowsData.flows.map(f => f.flow);
-        const fromValues = (isFirstBarsRender.current || prevBarsRef.current.length === 0)
+        const isFirst = isFirstBarsRender.current || prevBarsRef.current.length === 0;
+        const fromValues = isFirst
             ? new Array(targetValues.length).fill(0)
             : resampleFlows(prevBarsRef.current, targetValues.length);
 
         isFirstBarsRender.current = false;
 
-        const duration = 600;
+        // Каскадная анимация: бары появляются слева направо
+        const totalDuration = isFirst ? 1200 : 600;
+        const staggerDelay = isFirst ? 600 : 0; // задержка каскада только при первом появлении
         let startTime: number | null = null;
 
         const animate = (timestamp: number) => {
             if (!startTime) startTime = timestamp;
-            const t = Math.min((timestamp - startTime) / duration, 1);
-            const eased = easeOutCubic(t);
+            const elapsed = timestamp - startTime;
 
-            setAnimatedBars(targetValues.map((v, i) => fromValues[i] + (v - fromValues[i]) * eased));
+            const bars = targetValues.map((v, i) => {
+                // Каждый бар начинает анимацию с задержкой пропорциональной позиции
+                const barDelay = (i / targetValues.length) * staggerDelay;
+                const barElapsed = Math.max(0, elapsed - barDelay);
+                const t = Math.min(barElapsed / (totalDuration - staggerDelay), 1);
+                const eased = easeOutCubic(t);
+                return fromValues[i] + (v - fromValues[i]) * eased;
+            });
 
-            if (t < 1) {
+            setAnimatedBars(bars);
+
+            if (elapsed < totalDuration) {
                 barsAnimRef.current = requestAnimationFrame(animate);
             } else {
                 prevBarsRef.current = targetValues;

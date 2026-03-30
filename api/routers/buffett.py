@@ -18,7 +18,7 @@ from api.security.access_control import enforce_guest_limits
 router = APIRouter(prefix="/api/buffett", tags=["buffett"])
 log = get_logger()
 
-PeriodType = Literal["1m", "1y", "2y", "3y", "5y", "all"]
+PeriodType = Literal["1m", "1y", "2y", "3y", "5y", "10y", "20y", "all"]
 
 PERIODS = {
     "1m": 30,
@@ -26,6 +26,8 @@ PERIODS = {
     "2y": 730,
     "3y": 1095,
     "5y": 1825,
+    "10y": 3650,
+    "20y": 7300,
     "all": None,
 }
 
@@ -83,6 +85,7 @@ def _ema(values: list[float], span: int) -> list[float]:
 async def get_buffett_cap_gdp(
     period: PeriodType = Query("3y", description="Период"),
     smooth: bool = Query(True, description="Сглаживание EMA(60)"),
+    timeframe: str = Query("1m", description="Таймфрейм агрегации: 1w или 1m"),
     user = Depends(get_current_user_optional),
 ):
     """
@@ -121,14 +124,20 @@ async def get_buffett_cap_gdp(
     if not cap_rows or len(gdp_rows) < 4:
         return {"data": [], "period": period}
 
-    # 3. Агрегация дневных данных cap по месяцам (последнее значение месяца)
-    monthly_cap: dict = {}
-    for row in cap_rows:
-        d = row[0]
-        month_key = (d.year, d.month)
-        # Последняя запись в месяце (строки отсортированы по дате)
-        monthly_cap[month_key] = (d, float(row[1]))
-    cap_monthly = sorted(monthly_cap.values(), key=lambda x: x[0])
+    # 3. Агрегация дневных данных cap по периодам (день, неделя или месяц)
+    if timeframe == "1d":
+        # Без агрегации — каждый день
+        cap_monthly = [(row[0], float(row[1])) for row in cap_rows]
+    else:
+        period_cap: dict = {}
+        for row in cap_rows:
+            d = row[0]
+            if timeframe == "1w":
+                period_key = d.isocalendar()[:2]
+            else:
+                period_key = (d.year, d.month)
+            period_cap[period_key] = (d, float(row[1]))
+        cap_monthly = sorted(period_cap.values(), key=lambda x: x[0])
 
     if not cap_monthly:
         return {"data": [], "period": period}

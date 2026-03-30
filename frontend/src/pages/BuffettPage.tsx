@@ -10,17 +10,14 @@ import {
 } from '../services/api';
 import SimpleChart from '../components/SimpleChart';
 import { useAuth } from '../contexts/AuthContext';
-import { isPeriodAllowed, getDefaultPeriod } from '../config/accessControl';
+import { isPeriodAllowed } from '../config/accessControl';
 import { useRealtimeData } from '../hooks/useRealtimeData';
 
 type ViewMode = 'cap-gdp' | 'mcftr-m2';
 
-const PERIOD_LABELS: Record<BuffettPeriod, string> = {
-    '1m': '1М',
-    '1y': '1Г',
-    '2y': '2Г',
-    '3y': '3Г',
-    '5y': '5Г',
+const PERIOD_LABELS: Partial<Record<BuffettPeriod, string>> = {
+    '10y': '10Г',
+    '20y': '20Г',
     'all': 'Всё',
 };
 
@@ -28,8 +25,9 @@ export default function BuffettPage() {
     const { isAuthenticated } = useAuth();
     const navigate = useNavigate();
     const [viewMode, setViewMode] = useState<ViewMode>('cap-gdp');
-    const [period, setPeriod] = useState<BuffettPeriod>(getDefaultPeriod('3y', isAuthenticated) as BuffettPeriod);
-    const [smooth, setSmooth] = useState(true);
+    const [period, setPeriod] = useState<BuffettPeriod>('10y');
+    const smooth = false;
+    const [timeframe, setTimeframe] = useState<'1d' | '1w' | '1m'>('1m');
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [capGdpData, setCapGdpData] = useState<BuffettCapGdpResponse | null>(null);
@@ -41,7 +39,7 @@ export default function BuffettPage() {
             setLoading(true);
             setError(null);
             if (viewMode === 'cap-gdp') {
-                const result = await getBuffettCapGdp(period, smooth);
+                const result = await getBuffettCapGdp(period, smooth, timeframe);
                 setCapGdpData(result);
             } else {
                 const result = await getBuffettMcftrM2(period, smooth);
@@ -59,7 +57,7 @@ export default function BuffettPage() {
         } finally {
             setLoading(false);
         }
-    }, [period, smooth, viewMode]);
+    }, [period, smooth, viewMode, timeframe]);
 
     useEffect(() => { loadData(); }, [loadData]);
 
@@ -160,20 +158,21 @@ export default function BuffettPage() {
                     })}
                 </div>
 
-                {/* Сглаживание EMA(60) */}
-                <label className="flex items-center gap-2 cursor-pointer select-none">
-                    <div
-                        onClick={() => setSmooth(!smooth)}
-                        className={`relative w-10 h-5 rounded-full transition-colors duration-300 ${smooth ? 'bg-[#f59e0b]' : 'bg-white/10'
-                            }`}
-                    >
-                        <div
-                            className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform duration-300 ${smooth ? 'translate-x-5' : 'translate-x-0.5'
-                                }`}
-                        />
+                {/* Таймфрейм — только для cap-gdp */}
+                {viewMode === 'cap-gdp' && (
+                    <div className="flex items-center gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
+                        {(['1d', '1w', '1m'] as const).map((tf) => (
+                            <button
+                                key={tf}
+                                onClick={() => setTimeframe(tf)}
+                                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors duration-200 ${timeframe === tf ? 'btn-control active' : 'text-theme-secondary hover:text-theme-primary'}`}
+                            >
+                                {tf === '1d' ? '1Д' : tf === '1w' ? '1Н' : '1М'}
+                            </button>
+                        ))}
                     </div>
-                    <span className="text-sm text-theme-secondary">EMA(60)</span>
-                </label>
+                )}
+
             </div>
 
             {/* График */}
