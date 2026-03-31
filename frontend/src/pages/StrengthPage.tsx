@@ -235,7 +235,7 @@ export default function StrengthPage() {
     const stocksTotal = current?.stocks?.length ?? current?.count_total ?? 0;
 
     return (
-        <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8">
+        <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8 min-h-screen">
             {/* Заголовок */}
             <div className="flex items-center gap-3 mb-6">
                 <div className="p-3 bg-gradient-to-br from-[#8b5cf6] to-[#ec4899] rounded-xl">
@@ -343,7 +343,7 @@ export default function StrengthPage() {
             {/* Синхронизированные графики */}
             <div
                 ref={containerRef}
-                className="bg-theme-secondary rounded-2xl border border-theme overflow-hidden mb-6 relative cursor-crosshair"
+                className="bg-theme-secondary rounded-2xl border border-theme mb-6 relative cursor-crosshair min-h-[500px]"
                 onMouseMove={isAnimating ? undefined : handleMouseMove}
                 onMouseLeave={handleMouseLeave}
             >
@@ -448,8 +448,8 @@ export default function StrengthPage() {
                     })()}
 
                     {/* График IMOEX (верхний) */}
-                    {showPrice && displaySyncedData.length > 0 && (
-                        <div className="px-4 pt-4 pb-2 border-b border-theme relative" style={{ minHeight: 334 }}>
+                    {showPrice && (
+                        <div className="px-4 pt-4 pb-2 border-b border-theme relative bg-theme-secondary" style={{ minHeight: 334 }}>
                             <div className="flex items-center justify-center gap-2 mb-5 relative z-10">
                                 <span className="w-3 h-3 rounded-full bg-[#6366f1]" />
                                 <span className="text-sm font-semibold text-theme-primary">Индекс МосБиржи</span>
@@ -465,7 +465,7 @@ export default function StrengthPage() {
                     )}
 
                     {/* График Breadth (нижний) — расширяется когда IMOEX скрыт */}
-                    <div className="px-4 pt-3 pb-2 relative transition-all duration-500 ease-in-out" style={{ minHeight: showPrice ? 174 : 474 }}>
+                    <div className="px-4 pt-3 pb-2 relative bg-theme-secondary" style={{ minHeight: showPrice ? 174 : 474 }}>
                         <div className="flex items-center justify-center gap-2 mb-2 relative z-10">
                             <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: 'var(--accent)' }} />
                             <span className="text-sm font-semibold text-theme-primary">% акций выше EMA{emaPeriod}</span>
@@ -760,10 +760,9 @@ function SyncedPriceChart({
     return (
         <div ref={containerRef}>
             <div ref={chartWrapRef}
-                className={revealed ? 'chart-reveal' : ''}
-                style={revealed ? undefined : { visibility: 'hidden' }}>
+                style={{ opacity: revealed ? 1 : 0, transition: 'opacity 0.3s ease' }}>
                 {width > 0 && chartData && (
-                    <svg ref={svgRef} width={width} height={height} className="overflow-visible">
+                    <svg ref={svgRef} width={width} height={height} className="overflow-visible" style={{ backgroundColor: 'var(--bg-secondary)' }}>
                         <defs>
                             <linearGradient id="priceGradient" x1="0" y1="0" x2="0" y2="1">
                                 <stop offset="0%" stopColor="#6366f1" stopOpacity="0.3" />
@@ -1111,10 +1110,9 @@ function SyncedBreadthChart({
     return (
         <div ref={containerRef}>
             <div ref={chartWrapRef}
-                className={revealed ? 'chart-reveal' : ''}
-                style={revealed ? undefined : { visibility: 'hidden' }}>
+                style={{ opacity: revealed ? 1 : 0, transition: 'opacity 0.3s ease' }}>
                 {width > 0 && chartData && (
-                    <svg ref={svgRef} width={width} height={height} className="overflow-visible">
+                    <svg ref={svgRef} width={width} height={height} className="overflow-visible" style={{ backgroundColor: 'var(--bg-secondary)' }}>
                         <defs>
                             <linearGradient id="breadthGradient" x1="0" y1="0" x2="0" y2="1">
                                 <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.3" />

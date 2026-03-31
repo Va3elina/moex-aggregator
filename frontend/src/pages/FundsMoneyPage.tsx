@@ -114,6 +114,7 @@ export default function FundsMoneyPage() {
     const [collapsedSubcats, setCollapsedSubcats] = useState<Set<string>>(new Set());
     const [hoveredFlowIndex, setHoveredFlowIndex] = useState<number | null>(null);
     const [flowHoverPos, setFlowHoverPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+    const [flowNavRange, setFlowNavRange] = useState<[number, number]>([0, 0]);
     const flowChartRef = useRef<SVGSVGElement>(null);
     const flowContainerRef = useRef<HTMLDivElement>(null);
 
@@ -264,13 +265,14 @@ export default function FundsMoneyPage() {
         const y = e.clientY - rect.top;
         // SVG область уже контейнера на 60px (правые подписи)
         const chartWidth = rect.width - 60;
-        const barWidth = chartWidth / flowsData.flows.length;
+        const visibleCount = flowNavRange[1] - flowNavRange[0] + 1;
+        const barWidth = chartWidth / visibleCount;
         const idx = Math.floor(x / barWidth);
-        if (idx >= 0 && idx < flowsData.flows.length) {
+        if (idx >= 0 && idx < visibleCount) {
             setHoveredFlowIndex(idx);
             setFlowHoverPos({ x, y });
         }
-    }, [flowsData]);
+    }, [flowsData, flowNavRange]);
 
     const handleFlowMouseLeave = useCallback(() => {
         setHoveredFlowIndex(null);
@@ -285,6 +287,13 @@ export default function FundsMoneyPage() {
             isFirstBarsRender.current = true;
         }
     }, [viewMode]);
+
+    // Сброс навигатора при смене данных
+    useEffect(() => {
+        if (flowsData?.flows?.length) {
+            setFlowNavRange([0, flowsData.flows.length - 1]);
+        }
+    }, [flowsData]);
 
     // Морфинг гистограммы при смене flowsData
     useEffect(() => {
@@ -337,7 +346,7 @@ export default function FundsMoneyPage() {
     const currentCategory = CATEGORIES.find(c => c.key === category);
 
     return (
-        <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8 text-theme-primary">
+        <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8 text-theme-primary min-h-screen">
             {/* Заголовок */}
             <div className="flex items-center gap-3 mb-6">
                 <div className="p-3 bg-gradient-to-br from-[#6366f1] to-[#9D4DFF] rounded-xl">
@@ -451,7 +460,8 @@ export default function FundsMoneyPage() {
                 )}
             </div>
 
-            {/* График */}
+            {/* График — общий контейнер с фоном чтобы не мигал при переключении */}
+            <div className="bg-theme-secondary rounded-2xl border border-theme overflow-hidden mb-6" style={{ minHeight: 500 }}>
             {error ? (
                 <div className="flex items-center justify-center h-[450px] bg-theme-secondary rounded-2xl border border-theme mb-6">
                     <div className="text-[#FF4D4D] text-center">
@@ -520,13 +530,15 @@ export default function FundsMoneyPage() {
                                 preserveAspectRatio="none"
                             >
                                 {animatedBars.length > 0 && (() => {
-                                    const maxAbsFlow = Math.max(...animatedBars.map(v => Math.abs(v)), 0.01);
-                                    const barWidth = 100 / (animatedBars.length || 1);
+                                    // Видимый диапазон баров
+                                    const visibleBars = animatedBars.slice(flowNavRange[0], flowNavRange[1] + 1);
+                                    const maxAbsFlow = Math.max(...visibleBars.map(v => Math.abs(v)), 0.01);
+                                    const barWidth = 100 / (visibleBars.length || 1);
                                     const midY = 50;  // фиксированная нулевая линия
                                     const halfH = 47; // макс высота бара (% от SVG)
                                     const minBarH = 1.2;
 
-                                    return animatedBars.map((animFlow, i) => {
+                                    return visibleBars.map((animFlow, i) => {
                                         const rawH = (Math.abs(animFlow) / maxAbsFlow) * halfH;
                                         const h = animFlow !== 0 ? Math.max(rawH, minBarH) : 0;
                                         const isPositive = animFlow >= 0;
@@ -565,7 +577,8 @@ export default function FundsMoneyPage() {
                                 })()}
                                 {/* Вертикальный курсор */}
                                 {hoveredFlowIndex !== null && flowsData?.flows && (() => {
-                                    const barWidth = 100 / flowsData.flows.length;
+                                    const visibleCount = flowNavRange[1] - flowNavRange[0] + 1;
+                                    const barWidth = 100 / visibleCount;
                                     const cx = hoveredFlowIndex * barWidth + barWidth / 2;
                                     return (
                                         <line
@@ -586,7 +599,8 @@ export default function FundsMoneyPage() {
 
                             {/* Подписи значений справа */}
                             {flowsData?.flows?.length && (() => {
-                                const maxAbs = Math.max(...flowsData.flows.map(f => Math.abs(f.flow)), 0.01);
+                                const visibleF = flowsData.flows.slice(flowNavRange[0], flowNavRange[1] + 1);
+                                const maxAbs = Math.max(...visibleF.map(f => Math.abs(f.flow)), 0.01);
                                 const ticks = [maxAbs, maxAbs / 2, 0, -maxAbs / 2, -maxAbs];
                                 return ticks.map((val, i) => {
                                     const yPct = 50 - (val / maxAbs) * 47;
@@ -606,9 +620,11 @@ export default function FundsMoneyPage() {
 
                             {/* Тултип-карточка */}
                             {hoveredFlowIndex !== null && flowsData?.flows[hoveredFlowIndex] && flowContainerRef.current && (() => {
-                                const f = flowsData.flows[hoveredFlowIndex];
+                                const visibleFlowsList = flowsData.flows.slice(flowNavRange[0], flowNavRange[1] + 1);
+                                const f = visibleFlowsList[hoveredFlowIndex];
+                                if (!f) return null;
                                 const chartW = flowContainerRef.current!.getBoundingClientRect().width - 60;
-                                const barWidth = chartW / flowsData.flows.length;
+                                const barWidth = chartW / visibleFlowsList.length;
                                 const hoverX = hoveredFlowIndex * barWidth + barWidth / 2;
                                 const isRightHalf = hoverX > chartW / 2;
                                 const cardLeft = isRightHalf ? hoverX - 180 - 12 : hoverX + 12;
@@ -670,10 +686,12 @@ export default function FundsMoneyPage() {
                             {/* Даты оси X — равномерно по всей ширине */}
                             <div className="absolute -bottom-6 left-0 flex justify-between text-[14px] font-semibold text-[#9CA3B8] px-2" style={{ right: 60 }}>
                                 {flowsData?.flows && flowsData.flows.length > 0 && (() => {
-                                    const flows = flowsData.flows;
+                                    const flows = flowsData.flows.slice(flowNavRange[0], flowNavRange[1] + 1);
+                                    if (!flows.length) return null;
                                     const tickCount = Math.min(6, flows.length);
                                     return Array.from({ length: tickCount }, (_, i) => {
-                                        const idx = Math.round(i * (flows.length - 1) / (tickCount - 1));
+                                        const idx = Math.min(Math.round(i * (flows.length - 1) / Math.max(tickCount - 1, 1)), flows.length - 1);
+                                        if (!flows[idx]) return null;
                                         const date = new Date(flows[idx].period_start);
                                         return (
                                             <span key={i}>{date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: '2-digit' })}</span>
@@ -682,10 +700,66 @@ export default function FundsMoneyPage() {
                                 })()}
                             </div>
                         </div>
+
+                        {/* Скользящее окно — минималистичный ползунок */}
+                        {flowsData?.flows && flowsData.flows.length > 1 && (() => {
+                            const n = flowsData.flows.length;
+                            const [s0, s1] = flowNavRange;
+                            const handleNavMouse = (e: React.MouseEvent<HTMLDivElement>, type: 'left' | 'right' | 'window') => {
+                                e.preventDefault();
+                                const container = e.currentTarget.closest('[data-flow-nav]') as HTMLDivElement;
+                                if (!container) return;
+                                const rect = container.getBoundingClientRect();
+                                const startX = e.clientX;
+                                const startS0 = s0, startS1 = s1;
+                                const onMove = (ev: MouseEvent) => {
+                                    const dx = ev.clientX - startX;
+                                    const di = Math.round((dx / rect.width) * (n - 1));
+                                    if (type === 'left') {
+                                        setFlowNavRange([Math.max(0, Math.min(startS0 + di, s1 - 1)), s1]);
+                                    } else if (type === 'right') {
+                                        setFlowNavRange([s0, Math.max(s0 + 1, Math.min(startS1 + di, n - 1))]);
+                                    } else {
+                                        const range = startS1 - startS0;
+                                        let ns = Math.max(0, Math.min(startS0 + di, n - 1 - range));
+                                        setFlowNavRange([ns, ns + range]);
+                                    }
+                                };
+                                const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+                                document.addEventListener('mousemove', onMove);
+                                document.addEventListener('mouseup', onUp);
+                            };
+
+                            const selLeftPct = (s0 / Math.max(n - 1, 1)) * 100;
+                            const selRightPct = (s1 / Math.max(n - 1, 1)) * 100;
+
+                            return (
+                                <div className="mt-8 relative select-none" style={{ height: 32 }} data-flow-nav>
+                                    {/* Неактивный трек — полная ширина */}
+                                    <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-[10px] bg-white/[0.05] rounded-full" />
+                                    {/* Активная зона */}
+                                    <div className="absolute top-1/2 -translate-y-1/2 h-[10px] bg-[#6366f1]/25 rounded-full cursor-grab"
+                                        style={{ left: `${selLeftPct}%`, width: `${selRightPct - selLeftPct}%` }}
+                                        onMouseDown={(e) => handleNavMouse(e, 'window')}
+                                    />
+                                    {/* Левый хэндл */}
+                                    <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-5 h-5 bg-[#6366f1] rounded-full cursor-ew-resize shadow-lg border-2 border-[#1A1F2E] hover:scale-110 transition-transform"
+                                        style={{ left: `${selLeftPct}%` }}
+                                        onMouseDown={(e) => handleNavMouse(e, 'left')}
+                                    />
+                                    {/* Правый хэндл */}
+                                    <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-5 h-5 bg-[#6366f1] rounded-full cursor-ew-resize shadow-lg border-2 border-[#1A1F2E] hover:scale-110 transition-transform"
+                                        style={{ left: `${selRightPct}%` }}
+                                        onMouseDown={(e) => handleNavMouse(e, 'right')}
+                                    />
+                                </div>
+                            );
+                        })()}
                     </div>
                 )}
             </div>
             )}
+            </div>
 
             {/* Таблица фондов */}
             <div className="mt-6 bg-theme-secondary rounded-2xl border border-theme overflow-hidden">

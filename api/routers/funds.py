@@ -460,30 +460,34 @@ async def get_funds_flows(
     
     try:
         with engine.connect() as conn:
-            # Получаем суммарную СЧА по датам с forward-fill
-            # (ПИФы и БПИФы публикуют данные в разные дни —
-            #  без ffill SUM проваливается когда часть фондов молчит)
+            # Получаем суммарную СЧА + средневзвешенный пай по датам с forward-fill
             query = text("""
                 WITH all_dates AS (
                     SELECT DISTINCT trade_date FROM fund_data
                     WHERE fund_id = ANY(:fund_ids) AND trade_date >= :date_from
                 ),
-                fund_nav AS (
+                fund_filled AS (
                     SELECT d.trade_date, f.fund_id,
-                        -- forward-fill: берём последнее известное NAV
                         COALESCE(
                             fd.nav,
                             (SELECT fd2.nav FROM fund_data fd2
                              WHERE fd2.fund_id = f.fund_id AND fd2.trade_date < d.trade_date
                                AND fd2.nav IS NOT NULL
                              ORDER BY fd2.trade_date DESC LIMIT 1)
-                        ) as nav
+                        ) as nav,
+                        COALESCE(
+                            fd.pay,
+                            (SELECT fd2.pay FROM fund_data fd2
+                             WHERE fd2.fund_id = f.fund_id AND fd2.trade_date < d.trade_date
+                               AND fd2.pay IS NOT NULL
+                             ORDER BY fd2.trade_date DESC LIMIT 1)
+                        ) as pay
                     FROM all_dates d
                     CROSS JOIN (SELECT DISTINCT fund_id FROM fund_data WHERE fund_id = ANY(:fund_ids)) f
                     LEFT JOIN fund_data fd ON fd.fund_id = f.fund_id AND fd.trade_date = d.trade_date
                 )
-                SELECT trade_date, SUM(nav) as total_nav
-                FROM fund_nav
+                SELECT trade_date, SUM(nav) as total_nav, SUM(pay) as total_pay
+                FROM fund_filled
                 WHERE nav IS NOT NULL
                 GROUP BY trade_date
                 ORDER BY trade_date
@@ -501,16 +505,23 @@ async def get_funds_flows(
             flows = []
             
             if timeframe == "1d":
-                # Дневное изменение
+                # Дневное изменение с чистым притоком
                 for i in range(1, len(result)):
-                    prev_date, prev_nav = result[i-1]
-                    curr_date, curr_nav = result[i]
-                    flow = float(curr_nav) - float(prev_nav)
+                    prev_date, prev_nav, prev_pay = result[i-1][0], float(result[i-1][1]), float(result[i-1][2] or 0)
+                    curr_date, curr_nav, curr_pay = result[i][0], float(result[i][1]), float(result[i][2] or 0)
+                    total_flow = curr_nav - prev_nav
+                    # Чистый приток = Δ(СЧА) - СЧА_prev × доходность_пая
+                    if prev_pay > 0 and curr_pay > 0:
+                        pay_return = (curr_pay - prev_pay) / prev_pay
+                        market_change = prev_nav * pay_return
+                        net_flow = total_flow - market_change
+                    else:
+                        net_flow = total_flow
                     flows.append({
                         "period_start": prev_date.isoformat(),
                         "period_end": curr_date.isoformat(),
-                        "flow": round(flow / 1e9, 2),  # В млрд
-                        "flow_pct": round((flow / float(prev_nav)) * 100, 2) if prev_nav else 0
+                        "flow": round(net_flow / 1e9, 2),
+                        "flow_pct": round((net_flow / prev_nav) * 100, 2) if prev_nav else 0
                     })
             else:
                 # Группировка по неделям/месяцам/кварталам/годам
@@ -519,10 +530,10 @@ async def get_funds_flows(
                 for row in result:
                     d = row[0]
                     nav = float(row[1])
-                    
+                    pay = float(row[2] or 0)
+
                     if timeframe == "1w":
-                        # Неделя (ISO week)
-                        period_key = d.isocalendar()[:2]  # (year, week)
+                        period_key = d.isocalendar()[:2]
                     elif timeframe == "1m":
                         period_key = (d.year, d.month)
                     elif timeframe == "3m":
@@ -532,14 +543,12 @@ async def get_funds_flows(
                         period_key = (d.year,)
                     else:
                         period_key = d.isocalendar()[:2]
-                    
-                    periods_data[period_key].append((d, nav))
-                
-                # Сортируем периоды и считаем дельту
-                # Flow = конец текущего периода - конец предыдущего периода
-                # (а не start-end внутри периода, иначе неполная неделя = 0)
+
+                    periods_data[period_key].append((d, nav, pay))
+
                 sorted_periods = sorted(periods_data.keys())
                 prev_end_nav = None
+                prev_end_pay = None
 
                 for period_key in sorted_periods:
                     data_points = periods_data[period_key]
@@ -548,17 +557,25 @@ async def get_funds_flows(
 
                     data_points.sort(key=lambda x: x[0])
                     start_date = data_points[0][0]
-                    end_date, end_nav = data_points[-1]
+                    end_date, end_nav, end_pay = data_points[-1]
 
                     if prev_end_nav is not None:
-                        flow = end_nav - prev_end_nav
+                        total_flow = end_nav - prev_end_nav
+                        # Чистый приток = Δ(СЧА) - СЧА_prev × доходность_пая
+                        if prev_end_pay and prev_end_pay > 0 and end_pay > 0:
+                            pay_return = (end_pay - prev_end_pay) / prev_end_pay
+                            market_change = prev_end_nav * pay_return
+                            net_flow = total_flow - market_change
+                        else:
+                            net_flow = total_flow
                         flows.append({
                             "period_start": start_date.isoformat(),
                             "period_end": end_date.isoformat(),
-                            "flow": round(flow / 1e9, 2),  # В млрд
-                            "flow_pct": round((flow / prev_end_nav) * 100, 2) if prev_end_nav else 0
+                            "flow": round(net_flow / 1e9, 2),
+                            "flow_pct": round((net_flow / prev_end_nav) * 100, 2) if prev_end_nav else 0
                         })
                     prev_end_nav = end_nav
+                    prev_end_pay = end_pay
             
             return {
                 "category": category,

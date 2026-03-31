@@ -264,13 +264,19 @@
 
 html {
   overflow-y: scroll; /* Всегда показывать скроллбар — предотвращает сдвиг при навигации */
+  background-color: var(--bg-primary);
 }
 
 body {
   background-color: var(--bg-primary);
   color: var(--text-primary);
-  transition: background-color 0.3s ease, color 0.3s ease;
   overflow-x: hidden;
+}
+
+/* Предотвращаем чёрные вспышки при перерендере */
+#root {
+  background-color: var(--bg-primary);
+  min-height: 100vh;
 }
 
 /* ============================================
@@ -513,7 +519,7 @@ a.btn-accent:active {
 
 @keyframes chart-reveal {
   from { clip-path: inset(0 100% 0 0); }
-  to   { clip-path: inset(-100px); }
+  to   { clip-path: inset(0); }
 }
 
 .chart-reveal {

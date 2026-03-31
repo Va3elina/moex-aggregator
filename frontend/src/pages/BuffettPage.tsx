@@ -95,7 +95,7 @@ export default function BuffettPage() {
     }, [mcftrM2Data]);
 
     return (
-        <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8 text-theme-primary">
+        <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8 text-theme-primary min-h-screen">
             {/* Заголовок */}
             <div className="flex items-center gap-3 mb-6">
                 <div className="p-3 bg-gradient-to-br from-[#f59e0b] to-[#ef4444] rounded-xl">
@@ -183,7 +183,9 @@ export default function BuffettPage() {
                         <p className="text-sm text-theme-secondary mt-2">Попробуйте обновить страницу</p>
                     </div>
                 </div>
-            ) : viewMode === 'cap-gdp' ? (
+            ) : (
+            <div className="bg-theme-secondary rounded-2xl border border-theme overflow-hidden" style={{ minHeight: 500 }}>
+            {viewMode === 'cap-gdp' ? (
                 <SimpleChart
                     data={capGdpChartData.primary}
                     secondaryData={capGdpChartData.secondary}
@@ -219,6 +221,8 @@ export default function BuffettPage() {
                     showDownloadButton={false}
                     showNavigator={true}
                 />
+            )}
+            </div>
             )}
 
             {/* Описание */}
