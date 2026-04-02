@@ -12,7 +12,7 @@ interface ChartNavigatorProps {
     height?: number;
 }
 
-const HANDLE_W = 8;
+const HANDLE_W = 14;
 const MIN_WIN_FRAC = 0.01; // минимум 1% данных в окне
 
 export default function ChartNavigator({
@@ -171,7 +171,7 @@ export default function ChartNavigator({
     return (
         <div
             ref={containerRef}
-            className="relative select-none mt-3 border-t border-theme pt-1"
+            className="relative select-none mt-3"
             style={{ height: height + 4 }}
         >
             <svg width="100%" height={height} className="block overflow-visible">
@@ -210,24 +210,40 @@ export default function ChartNavigator({
                 />
 
                 {/* Левая ручка */}
-                <rect
-                    x={leftPx - HANDLE_W / 2} y={height * 0.15}
-                    width={HANDLE_W} height={height * 0.7}
-                    rx={3} fill="rgba(56,98,251,0.9)"
-                    style={{ cursor: 'ew-resize' }}
+                <g style={{ cursor: 'ew-resize' }}
                     onMouseDown={e => startDrag(e, 'left')}
                     onTouchStart={e => startTouchDrag(e, 'left')}
-                />
+                >
+                    <rect
+                        x={leftPx - HANDLE_W / 2} y={height * 0.15}
+                        width={HANDLE_W} height={height * 0.7}
+                        rx={3} fill="rgba(56,98,251,0.9)"
+                    />
+                    <text
+                        x={leftPx} y={height / 2}
+                        textAnchor="middle" dominantBaseline="central"
+                        fill="#fff" fontSize="9" fontWeight="bold"
+                        style={{ pointerEvents: 'none' }}
+                    >◀</text>
+                </g>
 
                 {/* Правая ручка */}
-                <rect
-                    x={rightPx - HANDLE_W / 2} y={height * 0.15}
-                    width={HANDLE_W} height={height * 0.7}
-                    rx={3} fill="rgba(56,98,251,0.9)"
-                    style={{ cursor: 'ew-resize' }}
+                <g style={{ cursor: 'ew-resize' }}
                     onMouseDown={e => startDrag(e, 'right')}
                     onTouchStart={e => startTouchDrag(e, 'right')}
-                />
+                >
+                    <rect
+                        x={rightPx - HANDLE_W / 2} y={height * 0.15}
+                        width={HANDLE_W} height={height * 0.7}
+                        rx={3} fill="rgba(56,98,251,0.9)"
+                    />
+                    <text
+                        x={rightPx} y={height / 2}
+                        textAnchor="middle" dominantBaseline="central"
+                        fill="#fff" fontSize="9" fontWeight="bold"
+                        style={{ pointerEvents: 'none' }}
+                    >▶</text>
+                </g>
             </svg>
         </div>
     );

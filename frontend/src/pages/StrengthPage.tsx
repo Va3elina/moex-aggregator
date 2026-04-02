@@ -45,8 +45,7 @@ const CLASSIFICATION_LABELS: Record<string, { label: string; color: string; bg: 
 // Константа уровня модуля — стабильная ссылка, не пересоздаётся при рендерах.
 // Это критично: SyncedPriceChart/SyncedBreadthChart используют padding в useMemo-deps,
 // пересоздание объекта каждый рендер сбрасывает chartData и прерывает морфинг-анимацию.
-const EDGE_MARGIN = 8;
-const CHART_PADDING = { left: 45, right: 65, top: 10, bottom: 30 } as const;
+const CHART_PADDING = { left: 0, right: 70, top: 10, bottom: 30 } as const;
 
 export default function StrengthPage() {
     const { isAuthenticated } = useAuth();
@@ -343,7 +342,7 @@ export default function StrengthPage() {
             {/* Синхронизированные графики */}
             <div
                 ref={containerRef}
-                className="bg-theme-secondary rounded-2xl border border-theme mb-6 relative cursor-crosshair min-h-[500px]"
+                className="bg-theme-secondary rounded-2xl border border-theme mb-6 relative cursor-crosshair min-h-[500px] overflow-hidden"
                 onMouseMove={isAnimating ? undefined : handleMouseMove}
                 onMouseLeave={handleMouseLeave}
             >
@@ -449,7 +448,7 @@ export default function StrengthPage() {
 
                     {/* График IMOEX (верхний) */}
                     {showPrice && (
-                        <div className="px-4 pt-4 pb-2 border-b border-theme relative bg-theme-secondary" style={{ minHeight: 334 }}>
+                        <div className="px-4 pt-4 pb-1 border-b border-theme relative overflow-hidden" style={{ minHeight: 334 }}>
                             <div className="flex items-center justify-center gap-2 mb-5 relative z-10">
                                 <span className="w-3 h-3 rounded-full bg-[#6366f1]" />
                                 <span className="text-sm font-semibold text-theme-primary">Индекс МосБиржи</span>
@@ -465,7 +464,7 @@ export default function StrengthPage() {
                     )}
 
                     {/* График Breadth (нижний) — расширяется когда IMOEX скрыт */}
-                    <div className="px-4 pt-3 pb-2 relative bg-theme-secondary" style={{ minHeight: showPrice ? 174 : 474 }}>
+                    <div className="px-4 pt-2 pb-1 relative overflow-hidden" style={{ minHeight: showPrice ? 174 : 474 }}>
                         <div className="flex items-center justify-center gap-2 mb-2 relative z-10">
                             <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: 'var(--accent)' }} />
                             <span className="text-sm font-semibold text-theme-primary">% акций выше EMA{emaPeriod}</span>
@@ -647,7 +646,6 @@ function SyncedPriceChart({
     const animRef = useRef<number | null>(null);
     const isFirstRef = useRef(true);
     const prevWidthRef = useRef(0);
-    const [revealed, setRevealed] = useState(false);
 
     useEffect(() => {
         const el = containerRef.current;
@@ -707,7 +705,6 @@ function SyncedPriceChart({
             currPtsRef.current = [];
             setAnimLinePath(ptsToPath(target));
             setAnimAreaPath(ptsToArea(target, bottom));
-            if (!revealed) setRevealed(true);
             return;
         }
         prevWidthRef.current = chartWidth;
@@ -725,10 +722,8 @@ function SyncedPriceChart({
             isFirstRef.current = false;
             prevPtsRef.current = target;
             currPtsRef.current = [];
-            // CSS reveal слева направо
             setAnimLinePath(ptsToPath(target));
             setAnimAreaPath(ptsToArea(target, bottom));
-            setRevealed(true);
             return;
         }
 
@@ -759,10 +754,9 @@ function SyncedPriceChart({
 
     return (
         <div ref={containerRef}>
-            <div ref={chartWrapRef}
-                style={{ opacity: revealed ? 1 : 0, transition: 'opacity 0.3s ease' }}>
+            <div ref={chartWrapRef}>
                 {width > 0 && chartData && (
-                    <svg ref={svgRef} width={width} height={height} className="overflow-visible" style={{ backgroundColor: 'var(--bg-secondary)' }}>
+                    <svg ref={svgRef} width={width} height={height} className="block" style={{ backgroundColor: 'var(--bg-secondary)', contain: 'paint' }}>
                         <defs>
                             <linearGradient id="priceGradient" x1="0" y1="0" x2="0" y2="1">
                                 <stop offset="0%" stopColor="#6366f1" stopOpacity="0.3" />
@@ -799,9 +793,10 @@ function SyncedPriceChart({
                                     stroke="rgba(255,255,255,0.08)" strokeWidth="1"
                                 />
                                 <text
-                                    x={width - EDGE_MARGIN}
+                                    x={width - padding.right + 12}
                                     y={Math.max(padding.top + 6, Math.min(tick.y, padding.top + chartHeight - 6))}
-                                    textAnchor="end" dominantBaseline="middle" fill="var(--text-muted)" fontSize="16" fontWeight="600">
+                                    textAnchor="start" dominantBaseline="middle" fill="var(--text-muted)" fontSize="16" fontWeight="600"
+                                    paintOrder="stroke" stroke="var(--bg-secondary)" strokeWidth="4" strokeLinejoin="round">
                                     {tick.value.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
                                 </text>
                             </g>
@@ -903,7 +898,6 @@ function SyncedBreadthChart({
     const prevBarsRef = useRef<{ y: number; height: number }[]>([]);
     const currBarsRef = useRef<{ y: number; height: number }[]>([]);
     const prevWidthRef = useRef(0);
-    const [revealed, setRevealed] = useState(false);
 
     useEffect(() => {
         const el = containerRef.current;
@@ -1023,7 +1017,6 @@ function SyncedBreadthChart({
             currBarsRef.current = [];
             setAnimLinePath(ptsToPath(targetPts));
             setAnimBars(chartData.bars);
-            if (!revealed) setRevealed(true);
             return;
         }
         prevWidthRef.current = chartWidth;
@@ -1052,10 +1045,8 @@ function SyncedBreadthChart({
                 prevBarsRef.current = targetBars.map(b => ({ y: b.y, height: b.height }));
                 currBarsRef.current = [];
 
-                // CSS reveal слева направо
                 setAnimLinePath(ptsToPath(targetPts));
                 setAnimBars(targetBars);
-                setRevealed(true);
                 return;
             }
 
@@ -1109,10 +1100,9 @@ function SyncedBreadthChart({
 
     return (
         <div ref={containerRef}>
-            <div ref={chartWrapRef}
-                style={{ opacity: revealed ? 1 : 0, transition: 'opacity 0.3s ease' }}>
+            <div ref={chartWrapRef}>
                 {width > 0 && chartData && (
-                    <svg ref={svgRef} width={width} height={height} className="overflow-visible" style={{ backgroundColor: 'var(--bg-secondary)' }}>
+                    <svg ref={svgRef} width={width} height={height} className="block" style={{ backgroundColor: 'var(--bg-secondary)', contain: 'paint' }}>
                         <defs>
                             <linearGradient id="breadthGradient" x1="0" y1="0" x2="0" y2="1">
                                 <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.3" />
@@ -1168,9 +1158,10 @@ function SyncedBreadthChart({
 
                         {/* Y axis */}
                         {chartData.yTicks.map((tick, i) => (
-                            <text key={i} x={width - EDGE_MARGIN} y={tick.y}
-                                textAnchor="end" dominantBaseline="middle"
-                                fill={tick.color || 'var(--text-muted)'} fontSize="16" fontWeight="600">
+                            <text key={i} x={width - padding.right + 12} y={tick.y}
+                                textAnchor="start" dominantBaseline="middle"
+                                fill={tick.color || 'var(--text-muted)'} fontSize="16" fontWeight="600"
+                                paintOrder="stroke" stroke="var(--bg-secondary)" strokeWidth="4" strokeLinejoin="round">
                                 {tick.value}%
                             </text>
                         ))}
@@ -1179,7 +1170,7 @@ function SyncedBreadthChart({
                         {chartData.xTicks.map((tick, i) => (
                             <text key={i} x={tick.x} y={padding.top + chartData.chartHeight + 18}
                                 textAnchor={i === 0 ? 'start' : i === chartData.xTicks.length - 1 ? 'end' : 'middle'}
-                                fill="var(--text-muted)" fontSize="16" fontWeight="600">
+                                fill="var(--text-muted)" fontSize="14" fontWeight="600">
                                 {tick.label}
                             </text>
                         ))}

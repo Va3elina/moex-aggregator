@@ -79,7 +79,7 @@ export default function FundsMoneyPage() {
     const [category, setCategory] = useState<FundCategory>('money_market');
     const [period, setPeriod] = useState<Period>(getDefaultPeriod('6m', isAuthenticated) as Period);
     const [viewMode, setViewMode] = useState<ViewMode>('aum');
-    const [flowTimeframe, setFlowTimeframeRaw] = useState<FlowTimeframe>('1w');
+    const [flowTimeframe, setFlowTimeframeRaw] = useState<FlowTimeframe>('1d');
 
     // Ограничения периодов для flow таймфреймов (как на ОИ)
     const FLOW_MIN_PERIODS: Record<FlowTimeframe, Period[]> = {
@@ -112,15 +112,18 @@ export default function FundsMoneyPage() {
     const [holdingsLoading, setHoldingsLoading] = useState(false);
     const [hiddenFunds, setHiddenFunds] = useState<Set<number>>(new Set());
     const [collapsedSubcats, setCollapsedSubcats] = useState<Set<string>>(new Set());
+    const [navSortDir, setNavSortDir] = useState<'desc' | 'asc'>('desc');
     const [hoveredFlowIndex, setHoveredFlowIndex] = useState<number | null>(null);
-    const [flowHoverPos, setFlowHoverPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+    const flowTooltipRef = useRef<HTMLDivElement>(null);
     const [flowNavRange, setFlowNavRange] = useState<[number, number]>([0, 0]);
     const flowChartRef = useRef<SVGSVGElement>(null);
     const flowContainerRef = useRef<HTMLDivElement>(null);
 
     // Анимация баров гистограммы (морфинг при смене данных)
-    const [animatedBars, setAnimatedBars] = useState<number[]>([]);
-    const prevBarsRef = useRef<number[]>([]);
+    const [animatedBarsIn, setAnimatedBarsIn] = useState<number[]>([]);
+    const [animatedBarsOut, setAnimatedBarsOut] = useState<number[]>([]);
+    const prevBarsInRef = useRef<number[]>([]);
+    const prevBarsOutRef = useRef<number[]>([]);
     const barsAnimRef = useRef<number | null>(null);
     const isFirstBarsRender = useRef(true);
 
@@ -258,21 +261,27 @@ export default function FundsMoneyPage() {
         }
     };
 
-    const handleFlowMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const handleFlowMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
         if (!flowsData?.flows?.length || !flowContainerRef.current) return;
         const rect = flowContainerRef.current.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
-        // SVG область уже контейнера на 60px (правые подписи)
         const chartWidth = rect.width - 60;
         const visibleCount = flowNavRange[1] - flowNavRange[0] + 1;
         const barWidth = chartWidth / visibleCount;
         const idx = Math.floor(x / barWidth);
         if (idx >= 0 && idx < visibleCount) {
             setHoveredFlowIndex(idx);
-            setFlowHoverPos({ x, y });
+            // Двигаем тултип напрямую через ref (без ре-рендера)
+            if (flowTooltipRef.current) {
+                const hoverX = idx * barWidth + barWidth / 2;
+                const isRightHalf = hoverX > chartWidth / 2;
+                const cardLeft = isRightHalf ? hoverX - 188 : hoverX + 8;
+                flowTooltipRef.current.style.left = `${cardLeft}px`;
+                flowTooltipRef.current.style.top = `${Math.min(Math.max(y - 20, 4), 330)}px`;
+            }
         }
-    }, [flowsData, flowNavRange]);
+    };
 
     const handleFlowMouseLeave = useCallback(() => {
         setHoveredFlowIndex(null);
@@ -282,8 +291,10 @@ export default function FundsMoneyPage() {
     useEffect(() => {
         if (viewMode !== 'flows') {
             if (barsAnimRef.current) cancelAnimationFrame(barsAnimRef.current);
-            setAnimatedBars([]);
-            prevBarsRef.current = [];
+            setAnimatedBarsIn([]);
+            setAnimatedBarsOut([]);
+            prevBarsInRef.current = [];
+            prevBarsOutRef.current = [];
             isFirstBarsRender.current = true;
         }
     }, [viewMode]);
@@ -301,38 +312,37 @@ export default function FundsMoneyPage() {
 
         if (barsAnimRef.current) cancelAnimationFrame(barsAnimRef.current);
 
-        const targetValues = flowsData.flows.map(f => f.flow);
-        const isFirst = isFirstBarsRender.current || prevBarsRef.current.length === 0;
-        const fromValues = isFirst
-            ? new Array(targetValues.length).fill(0)
-            : resampleFlows(prevBarsRef.current, targetValues.length);
+        const targetFlows = flowsData.flows.map(f => f.flow);
+        const isFirst = isFirstBarsRender.current || prevBarsInRef.current.length === 0;
+        const fromFlows = isFirst ? new Array(targetFlows.length).fill(0) : resampleFlows(prevBarsInRef.current, targetFlows.length);
 
         isFirstBarsRender.current = false;
 
         // Каскадная анимация: бары появляются слева направо
         const totalDuration = isFirst ? 1200 : 600;
-        const staggerDelay = isFirst ? 600 : 0; // задержка каскада только при первом появлении
+        const staggerDelay = isFirst ? 600 : 0;
         let startTime: number | null = null;
 
         const animate = (timestamp: number) => {
             if (!startTime) startTime = timestamp;
             const elapsed = timestamp - startTime;
 
-            const bars = targetValues.map((v, i) => {
-                // Каждый бар начинает анимацию с задержкой пропорциональной позиции
-                const barDelay = (i / targetValues.length) * staggerDelay;
+            const flows = targetFlows.map((v, i) => {
+                const barDelay = (i / targetFlows.length) * staggerDelay;
                 const barElapsed = Math.max(0, elapsed - barDelay);
                 const t = Math.min(barElapsed / (totalDuration - staggerDelay), 1);
-                const eased = easeOutCubic(t);
-                return fromValues[i] + (v - fromValues[i]) * eased;
+                return fromFlows[i] + (v - fromFlows[i]) * easeOutCubic(t);
             });
 
-            setAnimatedBars(bars);
+            // Разделяем на in/out по знаку текущего анимированного значения
+            setAnimatedBarsIn(flows.map(v => Math.max(0, v)));
+            setAnimatedBarsOut(flows.map(v => Math.min(0, v)));
 
             if (elapsed < totalDuration) {
                 barsAnimRef.current = requestAnimationFrame(animate);
             } else {
-                prevBarsRef.current = targetValues;
+                prevBarsInRef.current = targetFlows;
+                prevBarsOutRef.current = [];
             }
         };
 
@@ -386,7 +396,7 @@ export default function FundsMoneyPage() {
             {/* Периоды */}
             <div className="flex items-center gap-4 mb-6 flex-wrap">
                 <div className="flex items-center gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
-                    {(Object.keys(PERIOD_LABELS) as Period[]).filter(p => viewMode === 'flows' || AUM_PERIODS.includes(p)).map((p) => {
+                    {(Object.keys(PERIOD_LABELS) as Period[]).filter(p => AUM_PERIODS.includes(p)).map((p) => {
                         const available = isFlowPeriodAvailable(p);
                         const allowed = isPeriodAllowed(p, isAuthenticated);
                         return (
@@ -463,14 +473,14 @@ export default function FundsMoneyPage() {
             {/* График — общий контейнер с фоном чтобы не мигал при переключении */}
             <div className="bg-theme-secondary rounded-2xl border border-theme overflow-hidden mb-6" style={{ minHeight: 500 }}>
             {error ? (
-                <div className="flex items-center justify-center h-[450px] bg-theme-secondary rounded-2xl border border-theme mb-6">
+                <div className="flex items-center justify-center h-[450px]">
                     <div className="text-[#FF4D4D] text-center">
                         <p className="text-lg font-medium">{error}</p>
                         <p className="text-sm text-theme-secondary mt-2">Попробуйте обновить страницу</p>
                     </div>
                 </div>
             ) : viewMode === 'aum' ? (
-                <div className="mb-6">
+                <div>
                     <SimpleChart
                         data={aggregatedData.chartData}
                         secondaryData={indexData}
@@ -491,18 +501,25 @@ export default function FundsMoneyPage() {
                     />
                 </div>
             ) : (
-            <div className="bg-theme-secondary rounded-2xl p-6 border border-theme mb-6">
-                {loading && animatedBars.length === 0 ? (
-                    <div className="flex items-center justify-center h-[450px]">
-                        <div className="flex flex-col items-center gap-3">
-                            <div className="w-8 h-8 border-2 border-[#6366f1] border-t-transparent rounded-full animate-spin" />
-                            <span className="text-theme-secondary">Загрузка...</span>
+            <div className="p-6 relative" style={{ minHeight: 850 }}>
+                    {/* Спиннер загрузки — в углу если есть старые данные, в центре если первая загрузка */}
+                    {loading && !flowsData?.flows?.length && animatedBarsIn.length === 0 ? (
+                        <div className="flex items-center justify-center" style={{ height: 450 }}>
+                            <div className="flex flex-col items-center gap-3">
+                                <div className="w-8 h-8 border-2 border-[#6366f1] border-t-transparent rounded-full animate-spin" />
+                                <span className="text-theme-secondary">Загрузка...</span>
+                            </div>
                         </div>
-                    </div>
-                ) : (
-                    /* Гистограмма притоков/оттоков */
-                    <div className="h-[450px] pb-6">
-                        {/* Легенда — сверху */}
+                    ) : (<>
+                    {loading && (
+                        <div className="absolute top-4 right-4 z-20 flex items-center gap-2 bg-theme-tertiary/90 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-theme">
+                            <div className="w-4 h-4 border-2 border-[#C8FF2E] border-t-transparent rounded-full animate-spin" />
+                            <span className="text-xs text-theme-secondary">Обновление...</span>
+                        </div>
+                    )}
+                    {/* Гистограмма притоков/оттоков */}
+                    <div className="pb-6">
+                        {/* Легенда */}
                         <div className="flex items-center justify-center gap-5 mb-2 text-sm">
                             <span className="flex items-center gap-2">
                                 <span className="w-3 h-3 rounded-full bg-[#2EE59D]" />
@@ -514,10 +531,39 @@ export default function FundsMoneyPage() {
                             </span>
                         </div>
 
+                        {/* Плавающая дата — между легендой и графиком */}
+                        <div className="relative h-6 mb-1">
+                            {hoveredFlowIndex !== null && flowsData?.flows && (() => {
+                                const visibleFlowsList = flowsData.flows.slice(flowNavRange[0], flowNavRange[1] + 1);
+                                const f = visibleFlowsList[hoveredFlowIndex];
+                                if (!f) return null;
+                                const visibleCount = flowNavRange[1] - flowNavRange[0] + 1;
+                                const chartWidth = flowContainerRef.current ? flowContainerRef.current.getBoundingClientRect().width - 60 : 0;
+                                const barWidth = chartWidth / visibleCount;
+                                const dateX = hoveredFlowIndex * barWidth + barWidth / 2;
+                                const dateStr = new Date(f.period_end).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' });
+                                return (
+                                    <div
+                                        className="absolute z-30 pointer-events-none"
+                                        style={{
+                                            left: dateX,
+                                            top: 0,
+                                            transform: 'translateX(-50%)',
+                                        }}
+                                    >
+                                        <span className="text-[11px] text-theme-secondary bg-theme-tertiary/90 backdrop-blur-sm px-2 py-0.5 rounded border border-theme whitespace-nowrap">
+                                            {dateStr}
+                                        </span>
+                                    </div>
+                                );
+                            })()}
+                        </div>
+
                         {/* График с тултипом */}
                         <div
                             ref={flowContainerRef}
-                            className="h-[370px] relative cursor-crosshair"
+                            className="relative cursor-crosshair"
+                            style={{ aspectRatio: '16 / 9' }}
                             onMouseMove={handleFlowMouseMove}
                             onMouseLeave={handleFlowMouseLeave}
                         >
@@ -529,41 +575,50 @@ export default function FundsMoneyPage() {
                                 height="100%"
                                 preserveAspectRatio="none"
                             >
-                                {animatedBars.length > 0 && (() => {
-                                    // Видимый диапазон баров
-                                    const visibleBars = animatedBars.slice(flowNavRange[0], flowNavRange[1] + 1);
-                                    const maxAbsFlow = Math.max(...visibleBars.map(v => Math.abs(v)), 0.01);
-                                    const barWidth = 100 / (visibleBars.length || 1);
-                                    const midY = 50;  // фиксированная нулевая линия
-                                    const halfH = 47; // макс высота бара (% от SVG)
+                                {animatedBarsIn.length > 0 && (() => {
+                                    const visibleIn = animatedBarsIn.slice(flowNavRange[0], flowNavRange[1] + 1);
+                                    const visibleOut = animatedBarsOut.slice(flowNavRange[0], flowNavRange[1] + 1);
+                                    const maxScale = Math.max(
+                                        ...visibleIn.map(v => Math.abs(v)),
+                                        ...visibleOut.map(v => Math.abs(v)),
+                                        0.001
+                                    );
+                                    const barWidth = 100 / (visibleIn.length || 1);
+                                    const midY = 50;
+                                    const halfH = 47;
                                     const minBarH = 1.2;
 
-                                    return visibleBars.map((animFlow, i) => {
-                                        const rawH = (Math.abs(animFlow) / maxAbsFlow) * halfH;
-                                        const h = animFlow !== 0 ? Math.max(rawH, minBarH) : 0;
-                                        const isPositive = animFlow >= 0;
-                                        const y = isPositive ? midY - h : midY;
-                                        const baseColor = isPositive ? '#2EE59D' : '#FF4D4D';
+                                    return visibleIn.map((inVal, i) => {
+                                        const outVal = visibleOut[i] ?? 0;
                                         const isHovered = hoveredFlowIndex === i;
+                                        const opacity = hoveredFlowIndex === null ? 1 : isHovered ? 1 : 0.35;
+                                        const x = `${i * barWidth + barWidth * 0.15}%`;
+                                        const w = `${barWidth * 0.7}%`;
+
+                                        const hIn = inVal > 0 ? Math.max((inVal / maxScale) * halfH, minBarH) : 0;
+                                        const hOut = outVal < 0 ? Math.max((Math.abs(outVal) / maxScale) * halfH, minBarH) : 0;
 
                                         return (
-                                            <rect
-                                                key={i}
-                                                x={`${i * barWidth + barWidth * 0.1}%`}
-                                                y={`${y}%`}
-                                                width={`${barWidth * 0.8}%`}
-                                                height={`${h}%`}
-                                                fill={baseColor}
-                                                opacity={hoveredFlowIndex === null ? 1 : isHovered ? 1 : 0.35}
-                                                rx="2"
-                                                className="transition-opacity duration-150"
-                                            />
+                                            <g key={i} opacity={opacity} className="transition-opacity duration-150">
+                                                {hIn > 0 && (
+                                                    <rect x={x} y={`${midY - hIn}%`} width={w} height={`${hIn}%`}
+                                                        fill="#2EE59D" rx="2" />
+                                                )}
+                                                {hOut > 0 && (
+                                                    <rect x={x} y={`${midY}%`} width={w} height={`${hOut}%`}
+                                                        fill="#FF4D4D" rx="2" />
+                                                )}
+                                            </g>
                                         );
                                     });
                                 })()}
                                 {/* Горизонтальные линии сетки */}
                                 {flowsData?.flows?.length && (() => {
-                                    const maxAbsF = Math.max(...flowsData.flows.map(f => Math.abs(f.flow)), 0.01);
+                                    const visibleF = flowsData.flows.slice(flowNavRange[0], flowNavRange[1] + 1);
+                                    const maxAbsF = Math.max(
+                                        ...visibleF.map(f => Math.abs(f.flow)),
+                                        0.001
+                                    );
                                     const ticks = [-maxAbsF, -maxAbsF / 2, 0, maxAbsF / 2, maxAbsF];
                                     return ticks.map((val, i) => {
                                         const yPct = 50 - (val / maxAbsF) * 47;
@@ -597,20 +652,58 @@ export default function FundsMoneyPage() {
                             </svg>
                             </div>
 
+                            {/* Тултип-карточка со значением — позиция через ref */}
+                            {hoveredFlowIndex !== null && flowsData?.flows && (() => {
+                                const visibleFlowsList = flowsData.flows.slice(flowNavRange[0], flowNavRange[1] + 1);
+                                const f = visibleFlowsList[hoveredFlowIndex];
+                                if (!f) return null;
+                                const flowStr = `${f.flow > 0 ? '+' : ''}${Math.abs(f.flow) >= 0.01 ? f.flow.toFixed(2) : f.flow.toFixed(3)} млрд ₽`;
+                                const pctStr = `${f.flow_pct > 0 ? '+' : ''}${f.flow_pct.toFixed(2)}%`;
+                                const color = f.flow >= 0 ? '#2EE59D' : '#FF4D4D';
+                                return (
+                                    <div
+                                        ref={flowTooltipRef}
+                                        className="absolute z-30 pointer-events-none"
+                                    >
+                                        <div className="bg-theme-tertiary/95 backdrop-blur-sm rounded-lg border border-theme shadow-xl pointer-events-none py-1.5 px-3">
+                                            <div className="flex items-center justify-between gap-3">
+                                                <div className="flex items-center gap-1.5 min-w-0">
+                                                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
+                                                    <span className="text-[11px] text-theme-secondary truncate">{f.flow >= 0 ? 'Приток' : 'Отток'}</span>
+                                                </div>
+                                                <span className="text-xs font-semibold whitespace-nowrap" style={{ color }}>
+                                                    {flowStr}
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center gap-1.5 mt-1">
+                                                <span className="w-2 h-2 rounded-full flex-shrink-0 bg-[#6366f1]" />
+                                                <span className="text-[11px] text-theme-secondary">Изменение</span>
+                                                <span className="text-[11px] font-semibold whitespace-nowrap ml-auto" style={{ color }}>
+                                                    {pctStr}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+
                             {/* Подписи значений справа */}
                             {flowsData?.flows?.length && (() => {
                                 const visibleF = flowsData.flows.slice(flowNavRange[0], flowNavRange[1] + 1);
-                                const maxAbs = Math.max(...visibleF.map(f => Math.abs(f.flow)), 0.01);
+                                const maxAbs = Math.max(
+                                    ...visibleF.map(f => Math.abs(f.flow)),
+                                    0.001
+                                );
                                 const ticks = [maxAbs, maxAbs / 2, 0, -maxAbs / 2, -maxAbs];
                                 return ticks.map((val, i) => {
                                     const yPct = 50 - (val / maxAbs) * 47;
-                                    const label = val === 0 ? '0' : `${val > 0 ? '+' : ''}${val.toFixed(1)}`;
+                                    const label = val === 0 ? '0' : `${val > 0 ? '+' : ''}${Math.abs(val) >= 0.1 ? val.toFixed(1) : val.toFixed(2)}`;
                                     return (
                                         <div key={`label-${i}`}
                                             className="absolute pointer-events-none"
                                             style={{ top: `${yPct}%`, right: 4, transform: 'translateY(-50%)' }}
                                         >
-                                            <span className="text-[13px] font-semibold text-[#9CA3B8]">
+                                            <span className="text-[16px] font-semibold text-[#9CA3B8]">
                                                 {label}
                                             </span>
                                         </div>
@@ -618,70 +711,7 @@ export default function FundsMoneyPage() {
                                 });
                             })()}
 
-                            {/* Тултип-карточка */}
-                            {hoveredFlowIndex !== null && flowsData?.flows[hoveredFlowIndex] && flowContainerRef.current && (() => {
-                                const visibleFlowsList = flowsData.flows.slice(flowNavRange[0], flowNavRange[1] + 1);
-                                const f = visibleFlowsList[hoveredFlowIndex];
-                                if (!f) return null;
-                                const chartW = flowContainerRef.current!.getBoundingClientRect().width - 60;
-                                const barWidth = chartW / visibleFlowsList.length;
-                                const hoverX = hoveredFlowIndex * barWidth + barWidth / 2;
-                                const isRightHalf = hoverX > chartW / 2;
-                                const cardLeft = isRightHalf ? hoverX - 180 - 12 : hoverX + 12;
 
-                                const dateStr = new Date(f.period_end).toLocaleDateString('ru-RU', {
-                                    day: 'numeric', month: 'short', year: 'numeric'
-                                });
-
-                                const flowColor = f.flow >= 0 ? '#2EE59D' : '#FF4D4D';
-
-                                return (
-                                    <>
-                                        {/* Дата над crosshair */}
-                                        <div
-                                            className="absolute z-30 pointer-events-none"
-                                            style={{
-                                                left: Math.min(Math.max(hoverX - 60, 4), chartW - 128),
-                                                top: 4,
-                                            }}
-                                        >
-                                            <span className="text-[13px] font-medium text-theme-secondary bg-theme-tertiary/90 backdrop-blur-sm px-2 py-0.5 rounded border border-theme whitespace-nowrap">
-                                                {dateStr}
-                                            </span>
-                                        </div>
-
-                                        {/* Карточка значений */}
-                                        <div
-                                            className="absolute z-30 pointer-events-none"
-                                            style={{
-                                                left: cardLeft,
-                                                top: Math.min(Math.max(flowHoverPos.y - 25, 28), 320),
-                                            }}
-                                        >
-                                            <div className="bg-theme-tertiary/95 backdrop-blur-sm rounded-lg border border-theme shadow-xl py-1.5 px-3">
-                                                <div className="flex items-center justify-between gap-3 py-0.5">
-                                                    <div className="flex items-center gap-1.5">
-                                                        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: flowColor }} />
-                                                        <span className="text-[13px] text-theme-secondary">{f.flow >= 0 ? 'Приток' : 'Отток'}</span>
-                                                    </div>
-                                                    <span className="text-xs font-semibold text-theme-primary whitespace-nowrap">
-                                                        {f.flow > 0 ? '+' : ''}{f.flow.toFixed(2)} млрд ₽
-                                                    </span>
-                                                </div>
-                                                <div className="flex items-center justify-between gap-3 py-0.5">
-                                                    <div className="flex items-center gap-1.5">
-                                                        <span className="w-2 h-2 rounded-full flex-shrink-0 bg-[#6366f1]" />
-                                                        <span className="text-[13px] text-theme-secondary">Изменение</span>
-                                                    </div>
-                                                    <span className="text-xs font-semibold text-theme-primary whitespace-nowrap">
-                                                        {f.flow_pct > 0 ? '+' : ''}{f.flow_pct.toFixed(2)}%
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </>
-                                );
-                            })()}
 
                             {/* Даты оси X — равномерно по всей ширине */}
                             <div className="absolute -bottom-6 left-0 flex justify-between text-[14px] font-semibold text-[#9CA3B8] px-2" style={{ right: 60 }}>
@@ -692,7 +722,7 @@ export default function FundsMoneyPage() {
                                     return Array.from({ length: tickCount }, (_, i) => {
                                         const idx = Math.min(Math.round(i * (flows.length - 1) / Math.max(tickCount - 1, 1)), flows.length - 1);
                                         if (!flows[idx]) return null;
-                                        const date = new Date(flows[idx].period_start);
+                                        const date = new Date(flows[idx].period_end);
                                         return (
                                             <span key={i}>{date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: '2-digit' })}</span>
                                         );
@@ -734,29 +764,55 @@ export default function FundsMoneyPage() {
                             const selRightPct = (s1 / Math.max(n - 1, 1)) * 100;
 
                             return (
-                                <div className="mt-8 relative select-none" style={{ height: 32 }} data-flow-nav>
-                                    {/* Неактивный трек — полная ширина */}
-                                    <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-[10px] bg-white/[0.05] rounded-full" />
+                                <div className="mt-10 relative select-none" style={{ height: 56 }} data-flow-nav>
+                                    {/* Неактивный трек */}
+                                    <div className="absolute inset-x-0 inset-y-0 bg-white/[0.03] rounded-lg" />
+                                    {/* Маска слева */}
+                                    <div className="absolute inset-y-0 left-0 bg-black/50 rounded-l-lg"
+                                        style={{ width: `${selLeftPct}%` }} />
+                                    {/* Маска справа */}
+                                    <div className="absolute inset-y-0 right-0 bg-black/50 rounded-r-lg"
+                                        style={{ width: `${100 - selRightPct}%` }} />
                                     {/* Активная зона */}
-                                    <div className="absolute top-1/2 -translate-y-1/2 h-[10px] bg-[#6366f1]/25 rounded-full cursor-grab"
-                                        style={{ left: `${selLeftPct}%`, width: `${selRightPct - selLeftPct}%` }}
+                                    <div className="absolute inset-y-0 cursor-grab"
+                                        style={{
+                                            left: `${selLeftPct}%`,
+                                            width: `${selRightPct - selLeftPct}%`,
+                                            background: 'rgba(56,98,251,0.08)',
+                                            borderTop: '1px solid rgba(56,98,251,0.45)',
+                                            borderBottom: '1px solid rgba(56,98,251,0.45)',
+                                        }}
                                         onMouseDown={(e) => handleNavMouse(e, 'window')}
                                     />
                                     {/* Левый хэндл */}
-                                    <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-5 h-5 bg-[#6366f1] rounded-full cursor-ew-resize shadow-lg border-2 border-[#1A1F2E] hover:scale-110 transition-transform"
-                                        style={{ left: `${selLeftPct}%` }}
+                                    <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 flex items-center justify-center cursor-ew-resize"
+                                        style={{
+                                            left: `${selLeftPct}%`,
+                                            width: 14, height: 56 * 0.7,
+                                            borderRadius: 3,
+                                            background: 'rgba(56,98,251,0.9)',
+                                        }}
                                         onMouseDown={(e) => handleNavMouse(e, 'left')}
-                                    />
+                                    >
+                                        <span className="text-white text-[9px] font-bold pointer-events-none">◀</span>
+                                    </div>
                                     {/* Правый хэндл */}
-                                    <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-5 h-5 bg-[#6366f1] rounded-full cursor-ew-resize shadow-lg border-2 border-[#1A1F2E] hover:scale-110 transition-transform"
-                                        style={{ left: `${selRightPct}%` }}
+                                    <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 flex items-center justify-center cursor-ew-resize"
+                                        style={{
+                                            left: `${selRightPct}%`,
+                                            width: 14, height: 56 * 0.7,
+                                            borderRadius: 3,
+                                            background: 'rgba(56,98,251,0.9)',
+                                        }}
                                         onMouseDown={(e) => handleNavMouse(e, 'right')}
-                                    />
+                                    >
+                                        <span className="text-white text-[9px] font-bold pointer-events-none">▶</span>
+                                    </div>
                                 </div>
                             );
                         })()}
                     </div>
-                )}
+                    </>)}
             </div>
             )}
             </div>
@@ -779,7 +835,15 @@ export default function FundsMoneyPage() {
                                 <th className="px-4 py-3 font-medium w-10"></th>
                                 <th className="px-4 py-3 font-medium">Тикер</th>
                                 <th className="px-4 py-3 font-medium">Название</th>
-                                <th className="px-4 py-3 font-medium text-right">Последняя СЧА</th>
+                                <th className="px-4 py-3 font-medium text-right">
+                                    <button
+                                        onClick={() => setNavSortDir(d => d === 'desc' ? 'asc' : 'desc')}
+                                        className="inline-flex items-center gap-1 hover:text-theme-primary transition-colors"
+                                    >
+                                        СЧА
+                                        <span className="text-xs">{navSortDir === 'desc' ? '↓' : '↑'}</span>
+                                    </button>
+                                </th>
                                 <th className="px-4 py-3 font-medium text-right">Дата</th>
                             </tr>
                         </thead>
@@ -794,7 +858,14 @@ export default function FundsMoneyPage() {
                                     if (!subcatMap.has(key)) subcatMap.set(key, []);
                                     subcatMap.get(key)!.push(fund);
                                 }
-                                subcatMap.forEach((funds, subcat) => groups.push({ subcat, funds }));
+                                subcatMap.forEach((funds, subcat) => groups.push({
+                                    subcat,
+                                    funds: [...funds].sort((a, b) => {
+                                        const navA = a.data[a.data.length - 1]?.nav ?? 0;
+                                        const navB = b.data[b.data.length - 1]?.nav ?? 0;
+                                        return navSortDir === 'desc' ? navB - navA : navA - navB;
+                                    }),
+                                }));
 
                                 let globalIdx = 0;
                                 return groups.map(({ subcat, funds: groupFunds }) => {
@@ -882,7 +953,7 @@ export default function FundsMoneyPage() {
                                                                     const uk = fund.uk_id ? UK_LOGOS[fund.uk_id] : null;
                                                                     if (uk) {
                                                                         return (
-                                                                            <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 font-black text-sm"
+                                                                            <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-sm"
                                                                                 style={{ backgroundColor: uk.bg, color: uk.color }}>
                                                                                 {uk.letter}
                                                                             </div>

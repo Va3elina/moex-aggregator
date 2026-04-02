@@ -564,7 +564,7 @@ export default function SeasonalityPage() {
                   <g key={i}>
                     <line x1={marginLeft} x2={chartWidth - marginRight} y1={tick.y} y2={tick.y}
                       stroke="rgba(255,255,255,0.08)" strokeWidth={1} />
-                    <text x={marginLeft - 8} y={tick.y + 4} textAnchor="end" fontSize={11} fill="var(--text-muted)">
+                    <text x={marginLeft - 8} y={tick.y + 4} textAnchor="end" fontSize={16} fontWeight={600} fill="var(--text-muted)">
                       {tick.value.toFixed(0)}
                     </text>
                   </g>

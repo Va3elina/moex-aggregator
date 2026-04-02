@@ -188,7 +188,7 @@ export default function FundsCatalogPage() {
                                 {/* Header */}
                                 <div className="px-4 pt-4 pb-2 flex items-center gap-2.5">
                                     {uk && (
-                                        <div className="w-8 h-8 rounded-lg flex items-center justify-center font-black text-xs flex-shrink-0"
+                                        <div className="w-8 h-8 rounded-full flex items-center justify-center font-black text-xs flex-shrink-0"
                                             style={{ backgroundColor: uk.bg, color: uk.color }}>
                                             {uk.letter}
                                         </div>

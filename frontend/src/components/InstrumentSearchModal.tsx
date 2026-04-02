@@ -67,7 +67,7 @@ const InstrumentIcon = ({ sectype }: { sectype: string }) => {
   const icon = INSTRUMENT_ICONS[sectype];
   if (icon) {
     return (
-      <div className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 font-black text-xs"
+      <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs"
         style={{ backgroundColor: icon.bg, color: icon.color }}>
         {icon.icon}
       </div>

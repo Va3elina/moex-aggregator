@@ -457,10 +457,23 @@ async def get_funds_flows(
         date_from = max(date_from, date.fromisoformat(min_date_str))
 
     engine = get_engine()
-    
+
+    def get_period_key(d):
+        if timeframe == "1w":
+            return d.isocalendar()[:2]
+        elif timeframe == "1m":
+            return (d.year, d.month)
+        elif timeframe == "3m":
+            return (d.year, (d.month - 1) // 3)
+        elif timeframe == "1y":
+            return (d.year,)
+        else:
+            return d.isocalendar()[:2]
+
     try:
         with engine.connect() as conn:
-            # Получаем суммарную СЧА + средневзвешенный пай по датам с forward-fill
+            # Получаем данные per-fund с forward-fill (не агрегируем в SQL —
+            # агрегация по сумме pay некорректна при появлении новых фондов)
             query = text("""
                 WITH all_dates AS (
                     SELECT DISTINCT trade_date FROM fund_data
@@ -486,104 +499,142 @@ async def get_funds_flows(
                     CROSS JOIN (SELECT DISTINCT fund_id FROM fund_data WHERE fund_id = ANY(:fund_ids)) f
                     LEFT JOIN fund_data fd ON fd.fund_id = f.fund_id AND fd.trade_date = d.trade_date
                 )
-                SELECT trade_date, SUM(nav) as total_nav, SUM(pay) as total_pay
+                SELECT fund_id, trade_date, nav, pay
                 FROM fund_filled
                 WHERE nav IS NOT NULL
-                GROUP BY trade_date
-                ORDER BY trade_date
+                ORDER BY fund_id, trade_date
             """)
 
             result = conn.execute(query, {
                 "fund_ids": fund_ids,
                 "date_from": date_from
             }).fetchall()
-            
+
             if len(result) < 2:
                 return {"flows": [], "timeframe": timeframe}
-            
-            # Группируем по периодам и считаем дельту
+
+            # Группируем данные по фондам
+            fund_series: dict = defaultdict(list)
+            for row in result:
+                fund_series[row[0]].append((row[1], float(row[2]), float(row[3] or 0)))
+
             flows = []
-            
+
             if timeframe == "1d":
-                # Дневное изменение с чистым притоком
-                for i in range(1, len(result)):
-                    prev_date, prev_nav, prev_pay = result[i-1][0], float(result[i-1][1]), float(result[i-1][2] or 0)
-                    curr_date, curr_nav, curr_pay = result[i][0], float(result[i][1]), float(result[i][2] or 0)
-                    total_flow = curr_nav - prev_nav
-                    # Чистый приток = Δ(СЧА) - СЧА_prev × доходность_пая
-                    if prev_pay > 0 and curr_pay > 0:
-                        pay_return = (curr_pay - prev_pay) / prev_pay
-                        market_change = prev_nav * pay_return
-                        net_flow = total_flow - market_change
-                    else:
-                        net_flow = total_flow
-                    flows.append({
-                        "period_start": prev_date.isoformat(),
-                        "period_end": curr_date.isoformat(),
-                        "flow": round(net_flow / 1e9, 2),
-                        "flow_pct": round((net_flow / prev_nav) * 100, 2) if prev_nav else 0
-                    })
-            else:
-                # Группировка по неделям/месяцам/кварталам/годам
-                periods_data = defaultdict(list)
-                
-                for row in result:
-                    d = row[0]
-                    nav = float(row[1])
-                    pay = float(row[2] or 0)
+                # Строим date -> (nav, pay) per fund
+                fund_date_map: dict = {
+                    fid: {d: (nav, pay) for d, nav, pay in rows}
+                    for fid, rows in fund_series.items()
+                }
+                all_dates = sorted(set(d for rows in fund_series.values() for d, _, _ in rows))
 
-                    if timeframe == "1w":
-                        period_key = d.isocalendar()[:2]
-                    elif timeframe == "1m":
-                        period_key = (d.year, d.month)
-                    elif timeframe == "3m":
-                        quarter = (d.month - 1) // 3
-                        period_key = (d.year, quarter)
-                    elif timeframe == "1y":
-                        period_key = (d.year,)
-                    else:
-                        period_key = d.isocalendar()[:2]
+                for i in range(1, len(all_dates)):
+                    prev_d = all_dates[i - 1]
+                    curr_d = all_dates[i]
+                    total_net = 0.0
+                    gross_in = 0.0
+                    gross_out = 0.0
+                    prev_total = 0.0
 
-                    periods_data[period_key].append((d, nav, pay))
-
-                sorted_periods = sorted(periods_data.keys())
-                prev_end_nav = None
-                prev_end_pay = None
-
-                for period_key in sorted_periods:
-                    data_points = periods_data[period_key]
-                    if len(data_points) < 1:
-                        continue
-
-                    data_points.sort(key=lambda x: x[0])
-                    start_date = data_points[0][0]
-                    end_date, end_nav, end_pay = data_points[-1]
-
-                    if prev_end_nav is not None:
-                        total_flow = end_nav - prev_end_nav
-                        # Чистый приток = Δ(СЧА) - СЧА_prev × доходность_пая
-                        if prev_end_pay and prev_end_pay > 0 and end_pay > 0:
-                            pay_return = (end_pay - prev_end_pay) / prev_end_pay
-                            market_change = prev_end_nav * pay_return
+                    for fid, date_map in fund_date_map.items():
+                        if prev_d not in date_map or curr_d not in date_map:
+                            continue  # фонд отсутствует в одном из дней — пропускаем
+                        prev_nav, prev_pay = date_map[prev_d]
+                        curr_nav, curr_pay = date_map[curr_d]
+                        prev_total += prev_nav
+                        total_flow = curr_nav - prev_nav
+                        if prev_pay > 0 and curr_pay > 0:
+                            market_change = prev_nav * (curr_pay - prev_pay) / prev_pay
                             net_flow = total_flow - market_change
                         else:
                             net_flow = total_flow
+                        total_net += net_flow
+                        if net_flow >= 0:
+                            gross_in += net_flow
+                        else:
+                            gross_out += net_flow
+
+                    flows.append({
+                        "period_start": prev_d.isoformat(),
+                        "period_end": curr_d.isoformat(),
+                        "flow": round(total_net / 1e9, 4),
+                        "gross_in": round(gross_in / 1e9, 4),
+                        "gross_out": round(gross_out / 1e9, 4),
+                        "flow_pct": round((total_net / prev_total) * 100, 2) if prev_total > 0 else 0
+                    })
+            else:
+                # Группируем каждый фонд по периодам отдельно
+                fund_period: dict = {}
+                for fid, rows in fund_series.items():
+                    periods: dict = defaultdict(list)
+                    for d, nav, pay in rows:
+                        periods[get_period_key(d)].append((d, nav, pay))
+                    fund_period[fid] = dict(periods)
+
+                all_period_keys = sorted(
+                    set(pk for fp in fund_period.values() for pk in fp.keys())
+                )
+
+                for i in range(1, len(all_period_keys)):
+                    pk = all_period_keys[i]
+                    ppk = all_period_keys[i - 1]
+                    total_net = 0.0
+                    gross_in = 0.0
+                    gross_out = 0.0
+                    prev_total = 0.0
+                    period_start = None
+                    period_end = None
+
+                    for fid, fp in fund_period.items():
+                        curr_pts = fp.get(pk)
+                        if not curr_pts:
+                            continue
+                        curr_pts_s = sorted(curr_pts, key=lambda x: x[0])
+                        start_d = curr_pts_s[0][0]
+                        end_d, end_nav, end_pay = curr_pts_s[-1]
+
+                        if period_start is None or start_d < period_start:
+                            period_start = start_d
+                        if period_end is None or end_d > period_end:
+                            period_end = end_d
+
+                        prev_pts = fp.get(ppk)
+                        if not prev_pts:
+                            # Фонд появился впервые — пропускаем (структурное изменение, не поток)
+                            continue
+
+                        prev_nav = sorted(prev_pts, key=lambda x: x[0])[-1][1]
+                        prev_pay = sorted(prev_pts, key=lambda x: x[0])[-1][2]
+                        prev_total += prev_nav
+                        total_flow = end_nav - prev_nav
+                        if prev_pay > 0 and end_pay > 0:
+                            market_change = prev_nav * (end_pay - prev_pay) / prev_pay
+                            net_flow = total_flow - market_change
+                        else:
+                            net_flow = total_flow
+                        total_net += net_flow
+                        if net_flow >= 0:
+                            gross_in += net_flow
+                        else:
+                            gross_out += net_flow
+
+                    if period_start is not None:
                         flows.append({
-                            "period_start": start_date.isoformat(),
-                            "period_end": end_date.isoformat(),
-                            "flow": round(net_flow / 1e9, 2),
-                            "flow_pct": round((net_flow / prev_end_nav) * 100, 2) if prev_end_nav else 0
+                            "period_start": period_start.isoformat(),
+                            "period_end": period_end.isoformat(),
+                            "flow": round(total_net / 1e9, 4),
+                            "gross_in": round(gross_in / 1e9, 4),
+                            "gross_out": round(gross_out / 1e9, 4),
+                            "flow_pct": round((total_net / prev_total) * 100, 2) if prev_total > 0 else 0
                         })
-                    prev_end_nav = end_nav
-                    prev_end_pay = end_pay
-            
+
             return {
                 "category": category,
                 "timeframe": timeframe,
                 "period": period,
                 "flows": flows
             }
-            
+
     except Exception as e:
         log.error(f"Ошибка получения flows: {e}")
         raise HTTPException(status_code=500, detail="Ошибка получения данных")

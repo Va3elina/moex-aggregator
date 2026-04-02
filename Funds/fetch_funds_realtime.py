@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """
-Реалтайм обновление данных фондов с ISS MOEX.
+Обновление данных фондов через Cbonds API.
 
-Источник: ISS MOEX API (https://iss.moex.com)
+Источник: Cbonds REST API (https://rest2.cbonds.info)
 Данные:
-- ПАЙ (CLOSE) берётся с торгов (market=shares, board=TQTF)
-- СЧА (CAPITALIZATION) берётся с iNAV (market=index)
+- ПАЙ (nav_per_share) — расчётная стоимость пая от УК
+- СЧА (nav) — общая стоимость чистых активов фонда
+- Состав фондов (holdings) — активы и доли
+
+Конфигурация фондов: таблица `funds` (поле cbonds_id).
 
 Расписание (МСК):
 - Раз в день: 09:00 (данные за вчера появляются к утру)
@@ -59,86 +62,11 @@ UPDATE_MINUTE = 0
 LOG_DIR = Path(__file__).parent / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 
-CHUNK_SIZE_DAYS = 100
-
-# URL шаблоны
-URL_SHARES = (
-    "https://iss.moex.com/iss/history/engines/stock/markets/shares"
-    "/boards/TQTF/securities/{secid}.json"
-)
-URL_INDEX = (
-    "https://iss.moex.com/iss/history/engines/stock/markets/index"
-    "/securities/{secid}.json"
-)
-
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    "Accept": "application/json",
-}
-
-# Конфигурация фондов (ISS MOEX — БПИФы)
-# ID соответствует `fund_id` в базе данных (таблица funds)
-FUNDS = {
-    # Денежный рынок
-    8181:  {"shares": "AKMM", "inav": "AKMMA", "name": "Альфа-Капитал Денежный рынок"},
-    8628:  {"shares": "TMON", "inav": "TMONA", "name": "Т-Капитал Денежный Рынок"},
-    7373:  {"shares": "SBMM", "inav": "SBMMA", "name": "Первая Сберегательный"},
-    5973:  {"shares": "LQDT", "inav": "LQDTM", "name": "ВИМ Ликвидность"},
-    10053: {"shares": "AMNR", "inav": "AMNRA", "name": "АТОН Накопительный в рублях"},
-
-    # Акции
-    6333:  {"shares": "TMOS", "inav": "TMOSA", "name": "Т-Капитал Индекс МосБиржи"},
-    5247:  {"shares": "SBMX", "inav": "SBMXA", "name": "Первая Топ Российских акций"},
-    6073:  {"shares": "EQMX", "inav": "EQMXE", "name": "Индекс МосБиржи ВИМ"},
-    6575:  {"shares": "AKME", "inav": "AKMEI", "name": "Альфа-Капитал Управляемые акции"},
-
-    # Облигации
-    6225:  {"shares": "AKMB", "inav": "AKMBA", "name": "Альфа Управляемые облигации"},
-    10331: {"shares": "SBLB", "inav": "SBLBA", "name": "Первая Долгосрочные гособлигации"},
-    11445: {"shares": "TOFZ", "inav": "TOFZA", "name": "Т-Капитал ОФЗ"},
-    11705: {"shares": "AMGB", "inav": "AMGBA", "name": "АТОН Длинные ОФЗ"},
-    10113: {"shares": "SBFR", "inav": "SBFRA", "name": "Первая Облигации флоатеры"},
-    7067:  {"shares": "TBRU", "inav": "TBRUA", "name": "Т-Капитал Облигации"},
-    7007:  {"shares": "SAFE", "inav": "SAFEA", "name": "Первая Консерватив"},
-    5713:  {"shares": "SBRB", "inav": "SBRBA", "name": "Первая Корпоративные облигации"},
-
-    # Золото
-    4713:  {"shares": "AKGD", "inav": "AKGDA", "name": "Альфа-Капитал Золото"},
-    4038:  {"shares": "GOLD", "inav": "GOLDO", "name": "Золото Биржевой"},
-    5061:  {"shares": "SBGD", "inav": "SBGDA", "name": "Первая Доступное золото"},
-    4098:  {"shares": "TGLD", "inav": "TGLDB", "name": "Т-Капитал Золото"},
-}
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# Cbonds API — ПИФы (не торгуются на MOEX, данные через Cbonds REST API)
-# fund_id: тот же что в таблице funds, cbonds_id: ID в системе Cbonds
-# ═══════════════════════════════════════════════════════════════════════════════
-
+# Cbonds API
 CBONDS_URL = "https://rest2.cbonds.info"
 CBONDS_UA = "Cbonds.K/3.0.8 (ru.cbonds.cbonds; build:636; Android 9) OkHttp/4.12.0"
 CBONDS_LOGIN = os.getenv("CBONDS_LOGIN", "ermolaeffvadick@yandex.ru")
 CBONDS_PASSWORD = os.getenv("CBONDS_PASSWORD", "Qwghty56")
-
-CBONDS_FUNDS = {
-    # Акции (управляемые)
-    8123:  {"cbonds_id": 209397, "name": "Первая - Фонд акций с выплатой дохода"},
-    432:   {"cbonds_id": 206895, "name": "Альфа-Капитал Ликвидные акции"},
-    43:    {"cbonds_id": 206601, "name": "Первая - Фонд российских акций"},
-    281:   {"cbonds_id": 206781, "name": "Райффайзен - Акции"},
-    1003:  {"cbonds_id": 207285, "name": "ВИМ - Акции"},
-    282:   {"cbonds_id": 206783, "name": "Райффайзен - Компании роста"},
-    63:    {"cbonds_id": 206625, "name": "Атон - Петр Столыпин"},
-
-    # Облигации (смешанные)
-    8119:  {"cbonds_id": 209395, "name": "Первая - Фонд облигаций с выплатой дохода"},
-    9113:  {"cbonds_id": 209453, "name": "Альфа-Капитал Облигации с выплатой дохода"},
-    9165:  {"cbonds_id": 219221, "name": "ВИМ - Облигации. Рантье"},
-    47:    {"cbonds_id": 206607, "name": "Первая - Фонд Рублевые сбережения"},
-    33:    {"cbonds_id": 206593, "name": "Альфа-Капитал Облигации Плюс"},
-    11259: {"cbonds_id": 231147, "name": "Альфа-Капитал Облигации с переменным купоном"},
-    54:    {"cbonds_id": 206617, "name": "ВИМ - Казначейский"},
-    4995:  {"cbonds_id": 208851, "name": "Первая - Накопительный"},
-}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -187,43 +115,6 @@ log = setup_logging()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# ISS MOEX API
-# ═══════════════════════════════════════════════════════════════════════════════
-
-async def fetch_chunk(session, url_template, secid, date_from, date_to):
-    """Получить данные за один чанк (до ~100 записей)."""
-    params = {
-        "from": date_from.isoformat(), "till": date_to.isoformat(),
-        "limit": 100, "iss.meta": "off", "iss.json": "extended", "lang": "ru",
-    }
-    url = url_template.format(secid=secid)
-    try:
-        async with session.get(url, params=params, headers=HEADERS, timeout=30) as resp:
-            if resp.status != 200:
-                log.warning(f"  [{secid}] HTTP {resp.status}")
-                return []
-            raw = await resp.json()
-            return raw[1].get("history", []) if len(raw) >= 2 else []
-    except Exception as e:
-        log.error(f"  [{secid}] Ошибка: {e}")
-        return []
-
-
-async def fetch_full(session, url_template, secid, date_from, date_to):
-    """Получить все данные с пагинацией по чанкам."""
-    all_records = []
-    current = date_from
-    while current <= date_to:
-        chunk_end = min(current + timedelta(days=CHUNK_SIZE_DAYS), date_to)
-        records = await fetch_chunk(session, url_template, secid, current, chunk_end)
-        all_records.extend(records)
-        log.debug(f"  [{secid}] {current}—{chunk_end}: {len(records)}")
-        current = chunk_end + timedelta(days=1)
-        await asyncio.sleep(0.2)
-    return all_records
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
 # БАЗА ДАННЫХ
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -240,20 +131,6 @@ def get_last_date(engine, fund_id: int) -> Optional[date]:
             SELECT MAX(trade_date) FROM fund_data WHERE fund_id = :fund_id
         """), {"fund_id": fund_id}).fetchone()
         return result[0] if result and result[0] else None
-
-
-def merge_shares_inav(shares_rows, inav_rows):
-    """Объединить данные shares и iNAV по дате → {date: {pay, nav}}"""
-    merged = {}
-    for r in shares_rows:
-        td = r.get("TRADEDATE")
-        if td:
-            merged.setdefault(td, {})["pay"] = r.get("CLOSE")
-    for r in inav_rows:
-        td = r.get("TRADEDATE")
-        if td:
-            merged.setdefault(td, {})["nav"] = r.get("CAPITALIZATION")
-    return merged
 
 
 def save_fund_data(engine, fund_id: int, merged: Dict[str, dict]) -> int:
@@ -278,6 +155,15 @@ def save_fund_data(engine, fund_id: int, merged: Dict[str, dict]) -> int:
             n += 1
         conn.commit()
         return n
+
+
+def load_funds_from_db(engine) -> List[dict]:
+    """Загрузить список фондов с cbonds_share_id из БД."""
+    with engine.connect() as conn:
+        rows = conn.execute(text(
+            "SELECT fund_id, ticker, name, cbonds_share_id FROM funds WHERE cbonds_share_id IS NOT NULL ORDER BY fund_id"
+        )).fetchall()
+        return [{"fund_id": r[0], "ticker": r[1], "name": r[2], "cbonds_id": r[3]} for r in rows]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -305,8 +191,20 @@ async def cbonds_auth(session) -> bool:
         return False
 
 
+def _next_business_day(d: date) -> date:
+    """Следующий рабочий день (пропускает Сб/Вс)."""
+    d += timedelta(days=1)
+    while d.weekday() >= 5:  # 5=Сб, 6=Вс
+        d += timedelta(days=1)
+    return d
+
+
 async def fetch_cbonds_nav(session, cbonds_id: int, date_from: date, date_to: date) -> Dict[str, dict]:
-    """Получить историю NAV фонда из Cbonds API → {date_str: {pay, nav}}"""
+    """Получить историю NAV фонда из Cbonds API → {date_str: {pay, nav}}
+
+    Cbonds отдаёт дату расчёта УК (T), а MOEX использует дату торгов (T+1).
+    Сдвигаем дату на следующий рабочий день для совместимости.
+    """
     url = (f"{CBONDS_URL}/m/exchange_traded_funds/nav/global/json/"
            f"{cbonds_id}/{date_from.isoformat()}/{date_to.isoformat()}/?lang=rus")
     headers = {"Content-Type": "application/json; charset=UTF-8", "User-Agent": CBONDS_UA}
@@ -325,10 +223,12 @@ async def fetch_cbonds_nav(session, cbonds_id: int, date_from: date, date_to: da
                     continue
                 # date — unix timestamp, конвертируем
                 dt = datetime.utcfromtimestamp(ts).date()
-                nav_per_share = item.get("nav_per_share")  # СЧА на пай
+                # Cbonds дата = дата расчёта УК (T), сдвигаем на дату торгов (T+1 рабочий день)
+                trade_date = _next_business_day(dt)
+                nav_per_share = item.get("nav_per_share")  # СЧА на пай (расчётный пай от УК)
                 nav_total = item.get("nav")  # Общая СЧА фонда
                 if nav_per_share is not None:
-                    merged[dt.isoformat()] = {
+                    merged[trade_date.isoformat()] = {
                         "pay": nav_per_share,  # пай = nav_per_share
                         "nav": nav_total,       # общая СЧА
                     }
@@ -336,56 +236,6 @@ async def fetch_cbonds_nav(session, cbonds_id: int, date_from: date, date_to: da
     except Exception as e:
         log.error(f"  Cbonds NAV {cbonds_id}: ❌ {e}")
         return {}
-
-
-async def update_cbonds_funds(engine, force: bool = False) -> Dict[int, int]:
-    """Обновить ПИФы через Cbonds API"""
-    if not CBONDS_FUNDS:
-        return {}
-
-    results = {}
-    today = date.today()
-
-    log.info("")
-    log.info("=" * 60)
-    log.info("📊 ОБНОВЛЕНИЕ ПИФов (Cbonds API)")
-    log.info("=" * 60)
-
-    async with aiohttp.ClientSession(cookie_jar=aiohttp.CookieJar()) as session:
-        if not await cbonds_auth(session):
-            log.error("  Пропуск Cbonds: не удалось авторизоваться")
-            return results
-
-        for fund_id, info in CBONDS_FUNDS.items():
-            cbonds_id = info["cbonds_id"]
-            name = info["name"]
-
-            log.info(f"\n── cbonds:{cbonds_id} │ fund_id={fund_id} │ {name}")
-
-            last_date = get_last_date(engine, fund_id)
-            if last_date and not force:
-                start = last_date - timedelta(days=3)
-                log.info(f"   Докачка с {start} (последняя: {last_date})")
-            else:
-                start = today - timedelta(days=365 * 3)  # ПИФы — берём 3 года
-                log.info(f"   Полная загрузка с {start}")
-
-            merged = await fetch_cbonds_nav(session, cbonds_id, start, today)
-            log.info(f"   Cbonds: {len(merged)} дат")
-
-            saved = save_fund_data(engine, fund_id, merged)
-            results[fund_id] = saved
-
-            if saved > 0:
-                log.info(f"   ✅ Сохранено: {saved}")
-            else:
-                log.debug(f"   — нет новых данных")
-
-            await asyncio.sleep(0.5)  # Не спамим Cbonds
-
-    total = sum(results.values())
-    log.info(f"\n✅ Cbonds ГОТОВО: {total} записей из {len(CBONDS_FUNDS)} фондов")
-    return results
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -476,22 +326,37 @@ async def update_all_holdings(engine) -> int:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 async def update_all_funds(force: bool = False) -> Dict[int, int]:
-    """Обновить все фонды"""
+    """Обновить все фонды через Cbonds API.
+
+    Загружает список фондов из таблицы funds (WHERE cbonds_id IS NOT NULL),
+    для каждого получает NAV и nav_per_share из Cbonds.
+    """
     engine = get_engine()
     results = {}
     today = date.today()
 
+    # Загружаем список фондов из БД
+    funds = load_funds_from_db(engine)
+    if not funds:
+        log.warning("Нет фондов с cbonds_id в таблице funds")
+        return results
+
     log.info("=" * 60)
-    log.info("📊 ОБНОВЛЕНИЕ ФОНДОВ (ISS MOEX)")
+    log.info(f"📊 ОБНОВЛЕНИЕ ФОНДОВ (Cbonds API) — {len(funds)} фондов")
     log.info("=" * 60)
 
-    async with aiohttp.ClientSession() as session:
-        for fund_id, info in FUNDS.items():
-            name = info["name"]
-            ticker = info["shares"]
-            secid_inav = info["inav"]
+    async with aiohttp.ClientSession(cookie_jar=aiohttp.CookieJar()) as session:
+        if not await cbonds_auth(session):
+            log.error("  Пропуск: не удалось авторизоваться в Cbonds")
+            return results
 
-            log.info(f"\n── {ticker:6s} │ iNAV={secid_inav} │ fund_id={fund_id}")
+        for fund in funds:
+            fund_id = fund["fund_id"]
+            cbonds_id = fund["cbonds_id"]
+            ticker = fund["ticker"] or str(fund_id)
+            name = fund["name"] or ""
+
+            log.info(f"\n── {ticker:8s} │ cbonds={cbonds_id} │ fund_id={fund_id} │ {name}")
 
             # Определяем дату начала
             last_date = get_last_date(engine, fund_id)
@@ -499,16 +364,11 @@ async def update_all_funds(force: bool = False) -> Dict[int, int]:
                 start = last_date - timedelta(days=3)
                 log.info(f"   Докачка с {start} (последняя: {last_date})")
             else:
-                start = today - timedelta(days=365)
+                start = today - timedelta(days=365 * 3)  # 3 года истории
                 log.info(f"   Полная загрузка с {start}")
 
-            # Параллельно грузим shares и iNAV (с пагинацией)
-            shares_task = fetch_full(session, URL_SHARES, ticker, start, today)
-            inav_task = fetch_full(session, URL_INDEX, secid_inav, start, today)
-            shares_rows, inav_rows = await asyncio.gather(shares_task, inav_task)
-
-            merged = merge_shares_inav(shares_rows, inav_rows)
-            log.info(f"   shares: {len(shares_rows)}, iNAV: {len(inav_rows)}, дат: {len(merged)}")
+            merged = await fetch_cbonds_nav(session, cbonds_id, start, today)
+            log.info(f"   Cbonds: {len(merged)} дат")
 
             saved = save_fund_data(engine, fund_id, merged)
             results[fund_id] = saved
@@ -518,11 +378,7 @@ async def update_all_funds(force: bool = False) -> Dict[int, int]:
             else:
                 log.debug(f"   — нет новых данных")
 
-            await asyncio.sleep(0.3)
-
-    # Cbonds API — ПИФы
-    cbonds_results = await update_cbonds_funds(engine, force=force)
-    results.update(cbonds_results)
+            await asyncio.sleep(0.5)  # Не спамим Cbonds
 
     # Состав фондов (раз в день)
     await update_all_holdings(engine)
@@ -531,7 +387,7 @@ async def update_all_funds(force: bool = False) -> Dict[int, int]:
 
     total = sum(results.values())
     log.info("=" * 60)
-    log.info(f"✅ ГОТОВО: {total} записей (ISS: {len(FUNDS)}, Cbonds: {len(CBONDS_FUNDS)} фондов)")
+    log.info(f"✅ ГОТОВО: {total} записей для {len(funds)} фондов")
     log.info("=" * 60)
 
     return results
@@ -573,13 +429,13 @@ async def run_daemon():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 async def main():
-    parser = argparse.ArgumentParser(description="Обновление данных фондов (ISS MOEX)")
+    parser = argparse.ArgumentParser(description="Обновление данных фондов (Cbonds API)")
     parser.add_argument("--once", action="store_true", help="Однократный запуск")
     parser.add_argument("--force", action="store_true", help="Принудительное обновление")
     args = parser.parse_args()
 
     log.info("=" * 60)
-    log.info("ЗАПУСК СКРИПТА ФОНДОВ (БПИФ) - ISS MOEX")
+    log.info("ЗАПУСК СКРИПТА ФОНДОВ — Cbonds API")
     log.info(f"Время: {datetime.now()}")
     log.info(f"МСК: {get_moscow_time()}")
     log.info(f"Режим: {'однократный' if args.once else 'daemon'}")

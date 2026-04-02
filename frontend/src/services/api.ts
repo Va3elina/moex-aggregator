@@ -349,8 +349,10 @@ export type FlowTimeframe = '1d' | '1w' | '1m' | '3m' | '1y';
 export interface FlowDataPoint {
   period_start: string;
   period_end: string;
-  flow: number;      // В млрд рублей
-  flow_pct: number;  // В процентах
+  flow: number;       // Нетто (млрд ₽)
+  gross_in: number;   // Суммарный приток (>= 0, млрд ₽)
+  gross_out: number;  // Суммарный отток (<= 0, млрд ₽)
+  flow_pct: number;   // Нетто в %
 }
 
 export interface FundsFlowsResponse {

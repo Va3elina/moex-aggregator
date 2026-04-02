@@ -402,7 +402,7 @@ export default function OpenInterestPage() {
               const icon = getInstrumentIcon(selectedInstrument);
               if (icon) {
                 return (
-                  <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 font-black text-[10px]"
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 font-black text-[10px]"
                     style={{ backgroundColor: icon.bg, color: icon.color }}>
                     {icon.icon}
                   </div>
