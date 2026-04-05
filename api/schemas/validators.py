@@ -60,7 +60,7 @@ def validate_search_query(value: str) -> str:
 ALLOWED_INTERVALS = {5, 60, 24}
 IntervalType = int  # Валидация будет в роутерах
 ClgroupType = Literal["FIZ", "YUR"]
-PeriodType = Literal["1d", "1w", "1m", "3m", "6m", "1y", "all"]
+PeriodType = Literal["1d", "1w", "1m", "3m", "6m", "1y", "2y", "5y", "all"]
 InstTypeType = Literal["futures", "stock"]
 SortByType = Literal["oi", "change"]
 HeatmapSizeByType = Literal["value_1d", "value_1w", "value_1m", "volume_1d", "volume_1w", "volume_1m", "market_cap"]
