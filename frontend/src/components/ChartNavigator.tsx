@@ -52,6 +52,11 @@ export default function ChartNavigator({
         return () => ro.disconnect();
     }, []);
 
+    // Сброс выделения при смене данных (новый период/инструмент)
+    useEffect(() => {
+        setSelFrac([0, 1]);
+    }, [data]);
+
     // Стабильная ссылка на onChange — не вызывает бесконечный цикл
     const onChangeRef = useRef(onChange);
     onChangeRef.current = onChange;

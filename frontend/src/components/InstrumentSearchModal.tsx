@@ -6,7 +6,18 @@ interface Instrument {
   sectype: string;
   name: string;
   type: string;
+  group?: string;
+  daily_volume?: number;
 }
+
+const CATEGORY_FILTERS = [
+  { key: 'all', label: 'Все' },
+  { key: 'Индексы', label: 'Индексы' },
+  { key: 'Валюта', label: 'Валюта' },
+  { key: 'Сырьё', label: 'Сырьё' },
+  { key: 'Акции', label: 'Акции' },
+  { key: 'Зарубежные активы', label: 'Другое' },
+];
 
 interface InstrumentSearchModalProps {
   onSelect: (sectype: string, name: string) => void;
@@ -67,15 +78,17 @@ const InstrumentIcon = ({ sectype }: { sectype: string }) => {
   const icon = INSTRUMENT_ICONS[sectype];
   if (icon) {
     return (
-      <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 font-black text-xs"
+      <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-bold text-[10px]"
         style={{ backgroundColor: icon.bg, color: icon.color }}>
         {icon.icon}
       </div>
     );
   }
   return (
-    <div className="w-10 h-10 rounded-full flex-shrink-0"
-      style={{ backgroundColor: stringToColor(sectype) }} />
+    <div className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-bold text-white/70"
+      style={{ backgroundColor: stringToColor(sectype) }}>
+      {sectype.slice(0, 2)}
+    </div>
   );
 };
 
@@ -83,6 +96,7 @@ export default function InstrumentSearchModal({ onSelect, onClose }: InstrumentS
   const [searchQuery, setSearchQuery] = useState('');
   const [instruments, setInstruments] = useState<Instrument[]>([]);
   const [loading, setLoading] = useState(true);
+  const [categoryFilter, setCategoryFilter] = useState('all');
 
   // Избранные из localStorage
   const [favorites, setFavorites] = useState<string[]>(() => {
@@ -111,22 +125,31 @@ export default function InstrumentSearchModal({ onSelect, onClose }: InstrumentS
     load();
   }, []);
 
-  // Фильтрация по поиску
-  const filteredInstruments = instruments.filter(inst =>
-    inst.sectype.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    inst.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Фильтрация по поиску и категории
+  const filteredInstruments = instruments.filter(inst => {
+    const matchesSearch = !searchQuery ||
+      inst.sectype.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      inst.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesCategory = categoryFilter === 'all' || inst.group === categoryFilter;
+    return matchesSearch && matchesCategory;
+  });
 
   // Уникальные по sectype (убираем дубликаты контрактов)
   const uniqueInstruments = filteredInstruments.reduce((acc, inst) => {
-    if (!acc.find(i => i.sectype === inst.sectype)) {
+    const existing = acc.find(i => i.sectype === inst.sectype);
+    if (!existing) {
       acc.push(inst);
+    } else if ((inst.daily_volume || 0) > (existing.daily_volume || 0)) {
+      // Берём запись с бОльшим объёмом (актуальный контракт)
+      acc[acc.indexOf(existing)] = inst;
     }
     return acc;
-  }, [] as Instrument[]);
+  }, [] as Instrument[])
+  .sort((a, b) => (b.daily_volume || 0) - (a.daily_volume || 0));
 
-  const favoriteInstruments = uniqueInstruments.filter(inst => favorites.includes(inst.sectype));
-  const regularInstruments = uniqueInstruments.filter(inst => !favorites.includes(inst.sectype));
+  // При поиске — все инструменты в одном списке (избранные не прячутся)
+  const favoriteInstruments = searchQuery ? [] : uniqueInstruments.filter(inst => favorites.includes(inst.sectype));
+  const regularInstruments = searchQuery ? uniqueInstruments : uniqueInstruments.filter(inst => !favorites.includes(inst.sectype));
 
   const toggleFavorite = (sectype: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -171,10 +194,27 @@ export default function InstrumentSearchModal({ onSelect, onClose }: InstrumentS
               autoFocus
             />
           </div>
+
+          {/* Категории */}
+          <div className="flex gap-1.5 mt-4 flex-wrap">
+            {CATEGORY_FILTERS.map(cat => (
+              <button
+                key={cat.key}
+                onClick={() => setCategoryFilter(cat.key)}
+                className={`px-3 py-1 text-[12px] font-medium rounded-full transition-colors ${
+                  categoryFilter === cat.key
+                    ? 'bg-[#C8FF2E] text-[#0B0D12]'
+                    : 'bg-white/[0.06] text-[#A7ADBC] hover:bg-white/10 hover:text-[#F4F6FA]'
+                }`}
+              >
+                {cat.label}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Results */}
-        <div className="overflow-y-auto max-h-[calc(70vh-180px)] px-6 pb-6">
+        <div className="overflow-y-auto max-h-[calc(70vh-220px)] px-6 pb-6 styled-scrollbar">
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <div className="w-8 h-8 border-2 border-[#C8FF2E] border-t-transparent rounded-full animate-spin" />
@@ -187,23 +227,21 @@ export default function InstrumentSearchModal({ onSelect, onClose }: InstrumentS
                   <h3 className="text-xs font-semibold text-[#A7ADBC] uppercase tracking-wider mb-4">
                     Избранные
                   </h3>
-                  <div className="space-y-1">
+                  <div className="space-y-0.5">
                     {favoriteInstruments.map((inst) => (
                       <div
                         key={inst.sectype}
                         onClick={() => onSelect(inst.sectype, inst.name)}
-                        className="flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 transition-colors cursor-pointer"
+                        className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 transition-colors cursor-pointer"
                       >
                         <InstrumentIcon sectype={inst.sectype} />
-                        <div className="flex-1">
-                          <div className="font-semibold text-[#F4F6FA]">{inst.name}</div>
-                          <div className="text-sm text-[#A7ADBC]">{inst.sectype}</div>
-                        </div>
+                        <span className="font-bold text-[13px] text-[#F4F6FA] flex-shrink-0 mr-2">{inst.sectype}</span>
+                        <span className="text-[12px] text-[#7A8194] truncate flex-1">{inst.name}</span>
                         <button
                           onClick={(e) => toggleFavorite(inst.sectype, e)}
-                          className="p-2 text-[#FFB020]"
+                          className="p-1.5 text-[#FFB020]"
                         >
-                          <Star size={20} fill="#FFB020" />
+                          <Star size={16} fill="#FFB020" />
                         </button>
                       </div>
                     ))}
@@ -222,26 +260,21 @@ export default function InstrumentSearchModal({ onSelect, onClose }: InstrumentS
                   Ничего не найдено
                 </div>
               ) : (
-                <div className="space-y-1">
+                <div className="space-y-0.5">
                   {regularInstruments.map((inst) => (
                     <div
                       key={inst.sectype}
                       onClick={() => onSelect(inst.sectype, inst.name)}
-                      className="flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 transition-colors cursor-pointer"
+                      className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 transition-colors cursor-pointer"
                     >
-                      <div
-                        className="w-10 h-10 rounded-full flex-shrink-0"
-                        style={{ backgroundColor: stringToColor(inst.sectype) }}
-                      />
-                      <div className="flex-1">
-                        <div className="font-semibold text-[#F4F6FA]">{inst.name}</div>
-                        <div className="text-sm text-[#A7ADBC]">{inst.sectype}</div>
-                      </div>
+                      <InstrumentIcon sectype={inst.sectype} />
+                      <span className="font-bold text-[13px] text-[#F4F6FA] flex-shrink-0 mr-2">{inst.sectype}</span>
+                      <span className="text-[12px] text-[#7A8194] truncate flex-1">{inst.name}</span>
                       <button
                         onClick={(e) => toggleFavorite(inst.sectype, e)}
-                        className="p-2 text-[#5E6576] hover:text-[#FFB020] transition-colors"
+                        className="p-1.5 text-[#5E6576] hover:text-[#FFB020] transition-colors"
                       >
-                        <Star size={20} />
+                        <Star size={16} />
                       </button>
                     </div>
                   ))}

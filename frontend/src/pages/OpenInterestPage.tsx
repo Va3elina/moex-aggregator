@@ -13,7 +13,7 @@ import { useRealtimeData } from '../hooks/useRealtimeData';
 
 type DisplayMode = 'price' | 'positions' | 'participants';
 type OIVariant = 'oi' | 'long' | 'short' | 'both' | 'net';
-type Period = '1d' | '1w' | '1m' | '3m' | '6m' | '1y' | 'all';
+type Period = '1d' | '1w' | '1m' | '3m' | '6m' | '1y' | '2y' | '5y' | 'all';
 
 const PERIOD_LABELS: Record<Period, string> = {
   '1d':  ALL_PERIOD_LABELS['1d'],
@@ -22,6 +22,8 @@ const PERIOD_LABELS: Record<Period, string> = {
   '3m':  ALL_PERIOD_LABELS['3m'],
   '6m':  ALL_PERIOD_LABELS['6m'],
   '1y':  ALL_PERIOD_LABELS['1y'],
+  '2y':  ALL_PERIOD_LABELS['2y'],
+  '5y':  ALL_PERIOD_LABELS['5y'],
   'all': ALL_PERIOD_LABELS['all'],
 };
 
@@ -183,7 +185,7 @@ export default function OpenInterestPage() {
   const MAX_PERIODS_BY_INTERVAL: Record<number, Period[]> = {
     5: ['1d', '1w', '1m'],
     60: ['1d', '1w', '1m', '3m', '6m'],
-    24: ['1d', '1w', '1m', '3m', '6m', '1y', 'all']
+    24: ['1d', '1w', '1m', '3m', '6m', '1y', '2y', '5y', 'all']
   };
 
   const isPeriodAvailable = (p: Period): boolean => {
@@ -195,6 +197,12 @@ export default function OpenInterestPage() {
   const handleIntervalChange = (newInterval: number) => {
     const allowed = MAX_PERIODS_BY_INTERVAL[newInterval] || MAX_PERIODS_BY_INTERVAL[24];
     setIntervalValue(newInterval);
+
+    // 1Д ТФ + 1Д период не имеет смысла → переключаем на 1Н
+    if (newInterval === 24 && period === '1d') {
+      setPeriod('1w');
+      return;
+    }
 
     // Если текущий период недоступен — переключаем на максимальный доступный
     if (!allowed.includes(period)) {
@@ -487,7 +495,12 @@ export default function OpenInterestPage() {
                 key={p}
                 onClick={() => {
                   if (!allowed) { navigate('/login'); return; }
-                  if (available) setPeriod(p);
+                  if (!available) return;
+                  if (p === '1d' && interval === 24) {
+                    // 1Д период на дневном ТФ не имеет смысла — переключаем ТФ на 1ч
+                    setIntervalValue(60);
+                  }
+                  setPeriod(p);
                 }}
                 disabled={!available && allowed}
                 title={!allowed ? 'Войдите для доступа' : undefined}

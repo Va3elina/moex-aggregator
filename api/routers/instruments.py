@@ -25,17 +25,43 @@ def get_instruments(
         group: str | None = Query(None, max_length=100, description="Фильтр по группе: Валюта, Акции и т.д."),
         db: Session = Depends(get_db)
 ):
-    """Получить список всех инструментов"""
-    query = db.query(Instrument)
+    """Получить список всех инструментов, отсортированных по объёму торгов"""
+    from sqlalchemy import text
 
+    filters = []
+    params = {}
     if type:
-        query = query.filter(Instrument.type == type)
+        filters.append("i.type = :type")
+        params["type"] = type
     if group:
-        # Базовая санитизация группы
-        group = group.strip()[:100]
-        query = query.filter(Instrument.group == group)
+        filters.append("i.\"group\" = :group")
+        params["group"] = group.strip()[:100]
 
-    instruments = query.all()
+    where_clause = "WHERE " + " AND ".join(filters) if filters else ""
+
+    rows = db.execute(text(f"""
+        SELECT i.sec_id, i.sectype, i.name, i.type, i."group", i.iss_code,
+               COALESCE(v.vol, 0) as daily_volume
+        FROM instruments i
+        LEFT JOIN (
+            SELECT sec_id, SUM(volume) as vol
+            FROM candles
+            WHERE interval = 24
+              AND begin_time >= CURRENT_DATE - INTERVAL '3 days'
+            GROUP BY sec_id
+        ) v ON v.sec_id = i.sec_id
+        {where_clause}
+        ORDER BY daily_volume DESC
+    """), params).fetchall()
+
+    instruments = [
+        InstrumentResponse(
+            sec_id=r[0], sectype=r[1], name=r[2],
+            type=r[3], group=r[4], iss_code=r[5],
+            daily_volume=float(r[6]) if r[6] else 0
+        )
+        for r in rows
+    ]
 
     return InstrumentListResponse(
         count=len(instruments),

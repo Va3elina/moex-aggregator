@@ -455,6 +455,28 @@ a.btn-accent:active {
   display: none;
 }
 
+/* Стилизованный скроллбар */
+.styled-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.1) transparent;
+}
+.styled-scrollbar:hover {
+  scrollbar-color: rgba(255,255,255,0.2) transparent;
+}
+.styled-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.styled-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.styled-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.1);
+  border-radius: 3px;
+}
+.styled-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.25);
+}
+
 /* Fade-in анимация */
 .animate-in {
   animation-fill-mode: both;

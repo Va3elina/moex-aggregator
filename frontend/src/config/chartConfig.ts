@@ -9,6 +9,7 @@ export const PERIOD_LABELS: Record<string, string> = {
   '1y':  '1Г',
   '2y':  '2Г',
   '3y':  '3Г',
+  '5y':  '5Л',
   'all': 'Всё',
 };
 

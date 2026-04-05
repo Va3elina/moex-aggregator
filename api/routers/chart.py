@@ -47,7 +47,7 @@ class AvailableIntervalsResponse(BaseModel):
 
 PERIODS = {
     "1d": 1, "1w": 7, "1m": 30, "3m": 90,
-    "6m": 180, "1y": 365, "all": 10000
+    "6m": 180, "1y": 365, "2y": 730, "5y": 1825, "all": 10000
 }
 
 

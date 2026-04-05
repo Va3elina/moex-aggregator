@@ -311,7 +311,7 @@ export default function StrengthPage() {
                             universe === 'imoex' ? 'btn-control active' : 'text-theme-secondary hover:text-theme-primary'
                         }`}
                     >
-                        Индекс MOEX
+                        Индекс МосБиржи
                     </button>
                 </div>
 
