@@ -195,7 +195,7 @@ def get_chart_data(
                 "sec_id": sec_id, "sectype": sectype, "interval": interval, "clgroup": clgroup,
                 "candles_count": 0, "oi_count": 0, "candles": [], "open_interest": [],
                 "has_oi_data": False, "contracts": sec_ids, "mode": "price_only", "period": period,
-                "available_intervals": [],
+                "available_intervals": [], "contract_switches": [],
             }
 
         has_oi_data = oi_end is not None
@@ -247,7 +247,7 @@ def get_chart_data(
             "sec_id": sec_id, "sectype": sectype, "interval": interval, "clgroup": clgroup,
             "candles_count": 0, "oi_count": 0, "candles": [], "open_interest": [],
             "has_oi_data": False, "contracts": sec_ids, "mode": "price_only", "period": period,
-            "available_intervals": [],
+            "available_intervals": [], "contract_switches": [],
         }
 
     # 6. Склейка контрактов (необратимый ролловер, как TradingView)
@@ -279,24 +279,46 @@ def get_chart_data(
         daily_volume[day][sid] = daily_volume[day].get(sid, 0) + vol
 
     # 6c. Необратимый ролловер: после первого переключения не возвращаемся
+    # на предыдущий контракт в течение 30 дней (защита от "дёрганья" при экспирации)
     sorted_days = sorted(daily_volume.keys())
     best_contract_by_day = {}
     current_contract = None
+    prev_contract = None  # Предыдущий контракт — нельзя вернуться
+    last_switch_day = None  # Дата последнего переключения
+    COOLDOWN_DAYS = 45  # Период блокировки возврата
+    contract_switches = []  # Точки переключения контрактов
 
     for day in sorted_days:
         contracts = daily_volume[day]
         day_leader = max(contracts, key=contracts.get)
 
         if current_contract is None:
-            # Первый день — берём лидера
             current_contract = day_leader
+            last_switch_day = day
+            contract_switches.append({
+                "date": day.isoformat(),
+                "to": day_leader,
+                "from": None
+            })
         elif day_leader != current_contract and day_leader in contracts:
-            # Лидер сменился — проверяем что новый контракт реально обогнал
             old_vol = contracts.get(current_contract, 0)
             new_vol = contracts.get(day_leader, 0)
-            if new_vol > old_vol:
-                # Необратимый переход
-                current_contract = day_leader
+            total_day_vol = sum(contracts.values())
+            if new_vol > old_vol and total_day_vol > 1000:
+                # Блокируем возврат на prev_contract только в период cooldown
+                # Также игнорируем дни с аномально низким объёмом (<1000)
+                days_since = (day - last_switch_day).days if last_switch_day else 999
+                if day_leader == prev_contract and days_since < COOLDOWN_DAYS:
+                    pass  # Слишком рано для возврата — дёрганье при экспирации
+                else:
+                    contract_switches.append({
+                        "date": day.isoformat(),
+                        "from": current_contract,
+                        "to": day_leader
+                    })
+                    prev_contract = current_contract
+                    current_contract = day_leader
+                    last_switch_day = day
 
         best_contract_by_day[day] = current_contract
 
@@ -409,6 +431,7 @@ def get_chart_data(
         "data_start": str(data_start) if data_start else None,
         "data_end": str(data_end) if data_end else None,
         "available_intervals": available_intervals,
+        "contract_switches": contract_switches,
     }
 
     get_or_set(cache_key, response, ttl=DEFAULT_TTL)

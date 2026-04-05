@@ -53,6 +53,7 @@ const FUND_COLORS = [
 ];
 
 import { UK_LOGOS } from '../config/fundConfig';
+import { FUND_ANNOTATIONS } from '../config/fundAnnotations';
 
 const INDEX_COLOR = '#C8FF2E';
 
@@ -114,6 +115,7 @@ export default function FundsMoneyPage() {
     const [collapsedSubcats, setCollapsedSubcats] = useState<Set<string>>(new Set());
     const [navSortDir, setNavSortDir] = useState<'desc' | 'asc'>('desc');
     const [hoveredFlowIndex, setHoveredFlowIndex] = useState<number | null>(null);
+    const [hoveredAnnotation, setHoveredAnnotation] = useState<string | null>(null); // date key
     const flowTooltipRef = useRef<HTMLDivElement>(null);
     const [flowNavRange, setFlowNavRange] = useState<[number, number]>([0, 0]);
     const flowChartRef = useRef<SVGSVGElement>(null);
@@ -649,6 +651,21 @@ export default function FundsMoneyPage() {
                                         />
                                     );
                                 })()}
+                                {/* Вертикальная линия аномалии — только при hover на кружок */}
+                                {hoveredAnnotation && flowsData?.flows && (() => {
+                                    const visibleFlows = flowsData.flows.slice(flowNavRange[0], flowNavRange[1] + 1);
+                                    const idx = visibleFlows.findIndex(f => f.period_end.slice(0, 10) === hoveredAnnotation);
+                                    if (idx === -1) return null;
+                                    const barW = 100 / visibleFlows.length;
+                                    const cx = idx * barW + barW / 2;
+                                    return (
+                                        <line
+                                            x1={`${cx}%`} y1="0" x2={`${cx}%`} y2="100%"
+                                            stroke="#9CA3B8" strokeWidth="1" strokeDasharray="3 4"
+                                            opacity="0.4" style={{ pointerEvents: 'none' }}
+                                        />
+                                    );
+                                })()}
                             </svg>
                             </div>
 
@@ -730,6 +747,66 @@ export default function FundsMoneyPage() {
                                 })()}
                             </div>
                         </div>
+
+                        {/* Маркеры аномальных событий */}
+                        {flowsData?.flows && flowsData.flows.length > 0 && (() => {
+                            const visibleFlows = flowsData.flows.slice(flowNavRange[0], flowNavRange[1] + 1);
+                            const chartWidth = flowContainerRef.current ? flowContainerRef.current.getBoundingClientRect().width - 60 : 0;
+                            const barWidth = chartWidth / visibleFlows.length;
+
+                            // Находим аннотации для текущей категории в видимом диапазоне
+                            const markers = FUND_ANNOTATIONS
+                                .filter(a => a.category === category)
+                                .map(annotation => {
+                                    const idx = visibleFlows.findIndex(f => f.period_end.slice(0, 10) === annotation.date);
+                                    if (idx === -1) return null;
+                                    const logo = UK_LOGOS[annotation.ukId];
+                                    if (!logo) return null;
+                                    return { ...annotation, idx, logo, x: idx * barWidth + barWidth / 2 };
+                                })
+                                .filter(Boolean) as (typeof FUND_ANNOTATIONS[0] & { idx: number; logo: typeof UK_LOGOS[string]; x: number })[];
+
+                            if (!markers.length) return null;
+
+                            return (
+                                <div className="relative" style={{ height: 20, marginTop: -28 }}>
+                                    {markers.map((m, i) => (
+                                        <div
+                                            key={i}
+                                            className="absolute -translate-x-1/2 group"
+                                            style={{ left: m.x }}
+                                            onMouseEnter={() => setHoveredAnnotation(m.date)}
+                                            onMouseLeave={() => setHoveredAnnotation(null)}
+                                        >
+                                            {/* Кружок — серый, мелкий */}
+                                            <div
+                                                className="w-7 h-7 rounded-full flex items-center justify-center cursor-pointer transition-opacity opacity-50 hover:opacity-100"
+                                                style={{ backgroundColor: '#3a3f4f', color: '#9CA3B8', fontSize: 11, fontWeight: 600 }}
+                                            >
+                                                {m.logo.letter}
+                                            </div>
+
+                                            {/* Тултип при hover */}
+                                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-50 pointer-events-none">
+                                                <div className="bg-theme-tertiary/95 backdrop-blur-sm rounded-lg border border-theme shadow-xl py-1.5 px-2.5 whitespace-nowrap max-w-[320px]">
+                                                    <div className="flex items-center gap-2 mb-0.5">
+                                                        <span className="text-[10px] font-medium text-[#9CA3B8]">
+                                                            {m.type === 'merger' ? 'Слияние' : m.type === 'liquidation' ? 'Ликвидация' : 'Реорганизация'}
+                                                        </span>
+                                                        <span className="text-[10px] text-theme-secondary">
+                                                            {new Date(m.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-[11px] text-theme-primary whitespace-normal leading-tight">
+                                                        {m.description}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            );
+                        })()}
 
                         {/* Скользящее окно — минималистичный ползунок */}
                         {flowsData?.flows && flowsData.flows.length > 1 && (() => {

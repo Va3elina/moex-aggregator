@@ -62,6 +62,7 @@ export interface ChartResponse {
   data_start: string | null;
   data_end: string | null;
   available_intervals: number[];
+  contract_switches?: { date: string; from: string | null; to: string }[];
 }
 
 // ==================== СТАТИСТИКА ====================

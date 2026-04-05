@@ -7,6 +7,14 @@ interface DataPoint {
   value: number;
 }
 
+export interface ChartAnnotation {
+  time: string;         // ISO date matching data point
+  label: string;        // Short label (e.g. "SiM6")
+  description: string;  // Full description for tooltip
+  color: string;        // Background color
+  textColor: string;    // Text color
+}
+
 interface SimpleChartProps {
   data: DataPoint[];
   secondaryData?: DataPoint[];
@@ -32,6 +40,7 @@ interface SimpleChartProps {
   showDownloadButton?: boolean;
   showNavigator?: boolean;
   chartPadding?: { left?: number; right?: number };
+  annotations?: ChartAnnotation[];
 }
 
 // Интерполяция между двумя значениями
@@ -118,12 +127,14 @@ export default function SimpleChart({
   showDownloadButton = true,
   showNavigator = false,
   chartPadding,
+  annotations,
 }: SimpleChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const chartWrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(800);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [hoveredAnnotationIdx, setHoveredAnnotationIdx] = useState<number | null>(null);
 
   // Navigator: диапазон видимых данных (индексы в массиве data)
   const [navRange, setNavRange] = useState<[number, number]>([0, Math.max(0, data.length - 1)]);
@@ -795,7 +806,7 @@ export default function SimpleChart({
 
       {/* SVG График */}
       <div ref={chartWrapRef}
-        className={revealed ? 'chart-reveal' : ''}
+        className={`relative ${revealed ? 'chart-reveal' : ''}`}
         style={revealed ? undefined : { visibility: 'hidden' }}>
         <svg
           ref={svgRef}
@@ -1097,6 +1108,57 @@ export default function SimpleChart({
             );
           })()}
         </svg>
+
+        {/* Аннотации контрактов — кружки под графиком */}
+        {annotations && annotations.length > 0 && (() => {
+          const visibleAnnotations = annotations
+            .map((ann, idx) => {
+              const dataIdx = displayData.findIndex(d => d.time.slice(0, 10) === ann.time.slice(0, 10));
+              if (dataIdx === -1) return null;
+              const x = padding.left + (dataIdx / Math.max(displayData.length - 1, 1)) * chartWidth;
+              return { ...ann, x, origIdx: idx };
+            })
+            .filter(Boolean) as (ChartAnnotation & { x: number; origIdx: number })[];
+
+          if (!visibleAnnotations.length) return null;
+
+          return visibleAnnotations.map((ann) => (
+            <div
+              key={ann.origIdx}
+              className="absolute -translate-x-1/2 group z-30"
+              style={{ left: ann.x, top: padding.top + chartHeight - 14 }}
+              onMouseEnter={() => setHoveredAnnotationIdx(ann.origIdx)}
+              onMouseLeave={() => setHoveredAnnotationIdx(null)}
+            >
+              <div
+                className="w-7 h-7 rounded-full flex items-center justify-center cursor-pointer transition-opacity opacity-50 hover:opacity-100"
+                style={{ backgroundColor: '#3a3f4f', color: '#9CA3B8', fontSize: 11, fontWeight: 600 }}
+              >
+                {ann.label.slice(0, 2)}
+              </div>
+              {/* Тултип при hover */}
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block pointer-events-none">
+                <div className="bg-theme-tertiary/95 backdrop-blur-sm rounded-lg border border-theme shadow-xl py-1.5 px-2.5 whitespace-nowrap">
+                  <span className="text-[11px] font-medium text-theme-primary">{ann.description}</span>
+                </div>
+              </div>
+            </div>
+          ));
+        })()}
+
+        {/* Вертикальная линия аннотации при hover */}
+        {hoveredAnnotationIdx !== null && annotations && (() => {
+          const ann = annotations[hoveredAnnotationIdx];
+          if (!ann) return null;
+          const dataIdx = displayData.findIndex(d => d.time.slice(0, 10) === ann.time.slice(0, 10));
+          if (dataIdx === -1) return null;
+          const x = padding.left + (dataIdx / Math.max(displayData.length - 1, 1)) * chartWidth;
+          return (
+            <div className="absolute pointer-events-none" style={{ left: x, top: padding.top, height: chartHeight, width: 1 }}>
+              <div className="w-full h-full" style={{ borderLeft: '1px dashed rgba(156, 163, 184, 0.4)' }} />
+            </div>
+          );
+        })()}
 
         {/* HTML тултип даты — над SVG, не обрезается */}
         {tooltip.visible && (() => {

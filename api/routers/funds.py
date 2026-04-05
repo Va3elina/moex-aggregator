@@ -20,10 +20,10 @@ log = get_logger()
 
 # Маппинг category → отображаемое имя и индекс-бенчмарк
 CATEGORY_INDEX_MAP = {
-    "money_market": {"name": "Денежный рынок", "index": "RUSFAR3M", "min_date": "2022-07-15"},
-    "stocks": {"name": "Акции", "index": "IMOEX", "min_date": "2021-12-17"},
-    "bonds": {"name": "Облигации", "index": "RGBITR", "min_date": "2023-04-01"},
-    "gold": {"name": "Золото", "index": "GLDRUB_TOM", "min_date": "2022-08-01"},
+    "money_market": {"name": "Денежный рынок", "index": "RUSFAR3M", "min_date": "2020-01-15"},
+    "stocks": {"name": "Акции", "index": "IMOEX", "min_date": "1997-05-26"},
+    "bonds": {"name": "Облигации", "index": "RGBITR", "min_date": "1997-03-24"},
+    "gold": {"name": "Золото", "index": "GLDRUB_TOM", "min_date": "2020-06-03"},
 }
 
 

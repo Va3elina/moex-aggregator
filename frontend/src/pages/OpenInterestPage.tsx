@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { ChevronDown, BarChart3, Lock } from 'lucide-react';
 import { getChartData } from '../services/api';
 import type { ChartResponse } from '../types';
+import type { ChartAnnotation } from '../components/SimpleChart';
 import SimpleChart from '../components/SimpleChart';
 import InstrumentSearchModal from '../components/InstrumentSearchModal';
 import { PERIOD_LABELS as ALL_PERIOD_LABELS, INTERVAL_LABELS, CHART_COLORS } from '../config/chartConfig';
@@ -618,6 +619,25 @@ export default function OpenInterestPage() {
         legendPosition="top"
         showDownloadButton={false}
         showNavigator={true}
+        annotations={useMemo(() => {
+          const switches = filteredData?.contract_switches;
+          if (!switches || switches.length <= 1) return undefined;
+          // Пропускаем первый (начальный контракт) — аннотируем только переключения
+          return switches.slice(1).map((sw, i): ChartAnnotation => {
+            const prevSw = switches[i]; // предыдущий switch (i, т.к. slice(1) сдвигает)
+            const prevDate = prevSw?.date
+              ? new Date(prevSw.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: '2-digit' })
+              : '';
+            const currDate = new Date(sw.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: '2-digit' });
+            return {
+              time: sw.date,
+              label: sw.to,
+              description: `Ролловер: ${sw.from} (${prevDate}) → ${sw.to} (${currDate})`,
+              color: '#3a3f4f',
+              textColor: '#9CA3B8',
+            };
+          });
+        }, [filteredData?.contract_switches])}
       />
       </div>
 
