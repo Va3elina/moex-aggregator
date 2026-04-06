@@ -17,8 +17,9 @@ import { useRealtimeData } from '../hooks/useRealtimeData';
 type ViewMode = 'cap-gdp' | 'mcftr-m2' | 'cap-m2';
 
 const PERIOD_LABELS: Partial<Record<BuffettPeriod, string>> = {
-    '10y': '10Г',
-    '20y': '20Г',
+    '5y': '5Л',
+    '10y': '10Л',
+    '20y': '20Л',
     'all': 'Всё',
 };
 
