@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import {
     getBuffettCapGdp,
     getBuffettMcftrM2,
+    getBuffettCapM2,
     type BuffettCapGdpResponse,
     type BuffettMcftrM2Response,
     type BuffettPeriod,
@@ -13,7 +14,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { isPeriodAllowed } from '../config/accessControl';
 import { useRealtimeData } from '../hooks/useRealtimeData';
 
-type ViewMode = 'cap-gdp' | 'mcftr-m2';
+type ViewMode = 'cap-gdp' | 'mcftr-m2' | 'cap-m2';
 
 const PERIOD_LABELS: Partial<Record<BuffettPeriod, string>> = {
     '10y': '10Г',
@@ -32,6 +33,7 @@ export default function BuffettPage() {
     const [error, setError] = useState<string | null>(null);
     const [capGdpData, setCapGdpData] = useState<BuffettCapGdpResponse | null>(null);
     const [mcftrM2Data, setMcftrM2Data] = useState<BuffettMcftrM2Response | null>(null);
+    const [capM2Data, setCapM2Data] = useState<BuffettMcftrM2Response | null>(null);
 
     // Загрузка данных
     const loadData = useCallback(async () => {
@@ -41,9 +43,12 @@ export default function BuffettPage() {
             if (viewMode === 'cap-gdp') {
                 const result = await getBuffettCapGdp(period, smooth, timeframe);
                 setCapGdpData(result);
-            } else {
+            } else if (viewMode === 'mcftr-m2') {
                 const result = await getBuffettMcftrM2(period, smooth);
                 setMcftrM2Data(result);
+            } else {
+                const result = await getBuffettCapM2(period, smooth);
+                setCapM2Data(result);
             }
         } catch (err: unknown) {
             const msg = err instanceof Error ? err.message : '';
@@ -94,6 +99,21 @@ export default function BuffettPage() {
         };
     }, [mcftrM2Data]);
 
+    // Подготовка данных для SimpleChart: Cap/M2
+    const capM2ChartData = useMemo(() => {
+        if (!capM2Data?.data?.length) return { primary: [], secondary: [] };
+        return {
+            primary: capM2Data.data.map(d => ({
+                time: d.date,
+                value: d.ratio,
+            })),
+            secondary: capM2Data.data.map(d => ({
+                time: d.date,
+                value: d.cap ?? 0,
+            })),
+        };
+    }, [capM2Data]);
+
     return (
         <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8 text-theme-primary min-h-screen">
             {/* Заголовок */}
@@ -128,6 +148,15 @@ export default function BuffettPage() {
                             }`}
                     >
                         MCFTR / M2
+                    </button>
+                    <button
+                        onClick={() => setViewMode('cap-m2')}
+                        className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors duration-200 ${viewMode === 'cap-m2'
+                            ? 'btn-control active'
+                            : 'text-theme-secondary hover:text-theme-primary'
+                            }`}
+                    >
+                        Кап / M2
                     </button>
                 </div>
 
@@ -190,8 +219,8 @@ export default function BuffettPage() {
                     data={capGdpChartData.primary}
                     secondaryData={capGdpChartData.secondary}
                     height={450}
-                    primaryColor="#f59e0b"
-                    secondaryColor="#C8FF2E"
+                    primaryColor="#C8FF2E"
+                    secondaryColor="#f59e0b"
                     showSecondary={true}
                     formatValue={(v) => `${v.toFixed(1)}%`}
                     formatSecondaryValue={(v) => `${v.toFixed(1)} трлн ₽`}
@@ -204,18 +233,37 @@ export default function BuffettPage() {
                     showNavigator={true}
                     hideTime={true}
                 />
-            ) : (
+            ) : viewMode === 'mcftr-m2' ? (
                 <SimpleChart
                     data={mcftrM2ChartData.primary}
                     secondaryData={mcftrM2ChartData.secondary}
                     height={450}
-                    primaryColor="#f59e0b"
-                    secondaryColor="#C8FF2E"
+                    primaryColor="#C8FF2E"
+                    secondaryColor="#f59e0b"
                     showSecondary={true}
                     formatValue={(v) => v.toFixed(4)}
                     formatSecondaryValue={(v) => v.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
                     primaryLabel="MCFTR / M2"
                     secondaryLabel="MCFTR"
+                    loading={loading}
+                    showValueHeader={false}
+                    legendPosition="top"
+                    showDownloadButton={false}
+                    showNavigator={true}
+                    hideTime={true}
+                />
+            ) : (
+                <SimpleChart
+                    data={capM2ChartData.primary}
+                    secondaryData={capM2ChartData.secondary}
+                    height={450}
+                    primaryColor="#C8FF2E"
+                    secondaryColor="#f59e0b"
+                    showSecondary={true}
+                    formatValue={(v) => v.toFixed(2)}
+                    formatSecondaryValue={(v) => `${v.toFixed(1)} трлн ₽`}
+                    primaryLabel="Капитализация / M2"
+                    secondaryLabel="Капитализация"
                     loading={loading}
                     showValueHeader={false}
                     legendPosition="top"

@@ -126,8 +126,25 @@ async def get_buffett_cap_gdp(
 
     # 3. Агрегация дневных данных cap по периодам (день, неделя или месяц)
     if timeframe == "1d":
-        # Без агрегации — каждый день
-        cap_monthly = [(row[0], float(row[1])) for row in cap_rows]
+        # Линейная интерполяция между точками (до 2024 данные месячные)
+        raw = [(row[0], float(row[1])) for row in cap_rows]
+        if len(raw) >= 2:
+            cap_monthly = []
+            for i in range(len(raw) - 1):
+                d0, v0 = raw[i]
+                d1, v1 = raw[i + 1]
+                gap = (d1 - d0).days
+                cap_monthly.append((d0, v0))
+                if gap > 2:
+                    for day_offset in range(1, gap):
+                        t = day_offset / gap
+                        interp_date = d0 + timedelta(days=day_offset)
+                        interp_val = v0 + (v1 - v0) * t
+                        if interp_date.weekday() < 5:  # пн-пт
+                            cap_monthly.append((interp_date, interp_val))
+            cap_monthly.append(raw[-1])
+        else:
+            cap_monthly = raw
     else:
         period_cap: dict = {}
         for row in cap_rows:
@@ -254,5 +271,74 @@ async def get_buffett_mcftr_m2(
 
     duration = time.time() - start_time
     log.info(f"GET /buffett/mcftr-m2 period={period} smooth={smooth} -> {len(data_points)} points, {duration:.2f}s")
+
+    return {"data": data_points, "period": period}
+
+
+@router.get("/cap-m2")
+async def get_buffett_cap_m2(
+    period: PeriodType = Query("3y", description="Период"),
+    smooth: bool = Query(True, description="Сглаживание EMA(12)"),
+    user = Depends(get_current_user_optional),
+):
+    """
+    Капитализация / M2: рыночная капитализация / денежная масса.
+    M2 линейно интерполирована на сетку дат капитализации.
+    """
+    enforce_guest_limits(user, period=period)
+
+    start_time = time.time()
+    engine = get_engine()
+
+    days = PERIODS.get(period)
+    date_from = date.today() - timedelta(days=days) if days else date(1997, 1, 1)
+
+    with engine.connect() as conn:
+        cap_rows = conn.execute(text("""
+            SELECT period_date, value
+            FROM macro_data
+            WHERE indicator = 'MARKET_CAP_TOTAL'
+              AND period_date >= :date_from
+              AND value IS NOT NULL AND value > 0
+            ORDER BY period_date
+        """), {"date_from": date_from}).fetchall()
+
+        m2_rows = conn.execute(text("""
+            SELECT period_date, value
+            FROM macro_data
+            WHERE indicator = 'M2_MONTHLY'
+            ORDER BY period_date
+        """)).fetchall()
+
+    if not cap_rows or not m2_rows:
+        return {"data": [], "period": period}
+
+    daily_dates = [row[0] for row in cap_rows]
+    m2_sparse = [(row[0], float(row[1])) for row in m2_rows]
+    m2_daily = _interpolate_daily(m2_sparse, daily_dates)
+
+    data_points = []
+    for row in cap_rows:
+        d = row[0]
+        cap = float(row[1])
+        m2 = m2_daily.get(d)
+        if m2 and m2 > 0:
+            ratio = cap / m2
+            data_points.append({
+                "date": d.isoformat(),
+                "ratio": round(ratio, 4),
+                "cap": round(cap / 1000, 2),
+                "m2": round(m2, 1),
+            })
+
+    if smooth and data_points:
+        raw_ratios = [p["ratio"] for p in data_points]
+        smoothed = _ema(raw_ratios, 12)
+        for i, point in enumerate(data_points):
+            point["ratio_raw"] = point["ratio"]
+            point["ratio"] = round(smoothed[i], 4)
+
+    duration = time.time() - start_time
+    log.info(f"GET /buffett/cap-m2 period={period} smooth={smooth} -> {len(data_points)} points, {duration:.2f}s")
 
     return {"data": data_points, "period": period}

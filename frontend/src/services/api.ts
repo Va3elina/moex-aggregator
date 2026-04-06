@@ -561,6 +561,7 @@ export interface BuffettMcftrM2Point {
   ratio: number;
   mcftr: number;
   m2: number;
+  cap?: number;
 }
 
 export interface BuffettMcftrM2Response {
@@ -592,6 +593,16 @@ export async function getBuffettMcftrM2(
   const params = new URLSearchParams({ period, smooth: smooth.toString() });
   const response = await apiFetch(`${API_BASE}/api/buffett/mcftr-m2?${params}`);
   if (!response.ok) throw new Error('Failed to fetch Buffett mcftr/m2');
+  return response.json();
+}
+
+export async function getBuffettCapM2(
+  period: BuffettPeriod = '3y',
+  smooth: boolean = true
+): Promise<BuffettMcftrM2Response> {
+  const params = new URLSearchParams({ period, smooth: smooth.toString() });
+  const response = await apiFetch(`${API_BASE}/api/buffett/cap-m2?${params}`);
+  if (!response.ok) throw new Error('Failed to fetch Buffett cap/m2');
   return response.json();
 }
 
