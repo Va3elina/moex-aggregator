@@ -42,6 +42,8 @@ interface SimpleChartProps {
   chartPadding?: { left?: number; right?: number };
   annotations?: ChartAnnotation[];
   hideTime?: boolean;
+  forecastCount?: number; // reserved for future use
+  horizontalLines?: { value: number; color: string; label?: string; axis?: 'primary' | 'secondary' }[];
 }
 
 // Интерполяция между двумя значениями
@@ -130,6 +132,9 @@ export default function SimpleChart({
   chartPadding,
   annotations,
   hideTime = false,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  forecastCount: _forecastCount = 0,
+  horizontalLines: _horizontalLines,
 }: SimpleChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -908,15 +913,27 @@ export default function SimpleChart({
 
             {/* Область графика с клиппингом */}
             <g clipPath="url(#chartClip)">
+              {/* ClipPath для обрезки сплошной линии (без прогнозных точек) */}
+              {_forecastCount > 0 && targetCalc.points.length > _forecastCount && (
+                <defs>
+                  <clipPath id="solidClip">
+                    <rect x={0} y={0}
+                      width={targetCalc.points[targetCalc.points.length - 1 - _forecastCount].x + 1}
+                      height={chartHeight} />
+                  </clipPath>
+                </defs>
+              )}
+
               {/* Область под основной линией */}
               {animatedPaths.area && (
                 <path
                   d={animatedPaths.area}
                   fill="url(#primaryGradient)"
+                  clipPath={_forecastCount > 0 ? "url(#solidClip)" : undefined}
                 />
               )}
 
-              {/* Основная линия (цена — под индикаторами) */}
+              {/* Основная линия (цена — сплошная до прогноза) */}
               {animatedPaths.primary && (
                 <path
                   d={animatedPaths.primary}
@@ -925,8 +942,64 @@ export default function SimpleChart({
                   strokeWidth="3"
                   strokeLinecap="round"
                   strokeLinejoin="round"
+                  clipPath={_forecastCount > 0 ? "url(#solidClip)" : undefined}
                 />
               )}
+
+              {/* Пунктирный прогноз — хаотичная траектория */}
+              {_forecastCount > 0 && targetCalc.points.length > _forecastCount && (() => {
+                const pPts = targetCalc.points;
+                const sPts = targetCalc.secondaryPoints;
+                const fc = _forecastCount;
+                const pForecast = pPts.slice(pPts.length - fc - 1);
+                const sForecast = sPts.length > fc ? sPts.slice(sPts.length - fc - 1) : [];
+                if (pForecast.length < 2) return null;
+                const pPath = pForecast.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
+                const sPath = sForecast.length >= 2 ? sForecast.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ') : '';
+                const pLast = pForecast[pForecast.length - 1];
+                const sLast = sForecast.length > 0 ? sForecast[sForecast.length - 1] : null;
+                // Длина пути для анимации stroke-dashoffset
+                const pLen = pForecast.reduce((sum, p, i) => {
+                  if (i === 0) return 0;
+                  const prev = pForecast[i - 1];
+                  return sum + Math.sqrt((p.x - prev.x) ** 2 + (p.y - prev.y) ** 2);
+                }, 0);
+
+                return (
+                  <g>
+                    <path d={pPath} fill="none"
+                      stroke={primaryColor} strokeWidth="2.5"
+                      strokeDasharray="6 4" strokeLinecap="round" opacity="0.7"
+                      strokeDashoffset={pLen}
+                    >
+                      <animate attributeName="stroke-dashoffset" from={pLen} to="0" dur="2s" fill="freeze" />
+                    </path>
+                    <circle cx={pLast.x} cy={pLast.y} r="4" fill={primaryColor} opacity="0">
+                      <animate attributeName="opacity" from="0" to="0.8" dur="0.4s" begin="1.8s" fill="freeze" />
+                    </circle>
+                    <text x={pLast.x + 8} y={pLast.y + 4}
+                      fill={primaryColor} fontSize="12" fontWeight="700" opacity="0">
+                      {pLast.value.toFixed(0)}%
+                      <animate attributeName="opacity" from="0" to="0.9" dur="0.4s" begin="1.8s" fill="freeze" />
+                    </text>
+
+                    {showSecondary && sPath && sLast && (
+                      <>
+                        <path d={sPath} fill="none"
+                          stroke={secondaryColor} strokeWidth="2"
+                          strokeDasharray="6 4" strokeLinecap="round" opacity="0.6"
+                          strokeDashoffset={pLen}
+                        >
+                          <animate attributeName="stroke-dashoffset" from={pLen} to="0" dur="2s" fill="freeze" />
+                        </path>
+                        <circle cx={sLast.x} cy={sLast.y} r="3.5" fill={secondaryColor} opacity="0">
+                          <animate attributeName="opacity" from="0" to="0.7" dur="0.4s" begin="1.8s" fill="freeze" />
+                        </circle>
+                      </>
+                    )}
+                  </g>
+                );
+              })()}
 
               {/* Third данные — гистограмма или линия */}
               {showThird && chartMode === 'histogram' && targetCalc.thirdPoints.length > 0 && (
@@ -994,6 +1067,7 @@ export default function SimpleChart({
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   opacity={oiOpacity}
+                  clipPath={_forecastCount > 0 ? "url(#solidClip)" : undefined}
                 />
               )}
 

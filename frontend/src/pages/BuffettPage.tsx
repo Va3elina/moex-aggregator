@@ -30,6 +30,7 @@ export default function BuffettPage() {
     const [period, setPeriod] = useState<BuffettPeriod>('10y');
     const smooth = false;
     const [timeframe, setTimeframe] = useState<'1d' | '1w' | '1m'>('1m');
+    const [forecastTarget, setForecastTarget] = useState<number | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [capGdpData, setCapGdpData] = useState<BuffettCapGdpResponse | null>(null);
@@ -70,20 +71,42 @@ export default function BuffettPage() {
     // SSE: автоматическое обновление
     useRealtimeData(['daily', 'buffett'], loadData);
 
-    // Подготовка данных для SimpleChart: Cap/GDP
+    // Подготовка данных для SimpleChart: Cap/GDP (с прогнозом)
     const capGdpChartData = useMemo(() => {
         if (!capGdpData?.data?.length) return { primary: [], secondary: [] };
-        return {
-            primary: capGdpData.data.map(d => ({
-                time: d.date,
-                value: d.buffett,
-            })),
-            secondary: capGdpData.data.map(d => ({
-                time: d.date,
-                value: d.cap,
-            })),
-        };
-    }, [capGdpData]);
+
+        const primary = capGdpData.data.map(d => ({ time: d.date, value: d.buffett }));
+        const secondary = capGdpData.data.map(d => ({ time: d.date, value: d.cap }));
+
+        if (forecastTarget !== null) {
+            const last = capGdpData.data[capGdpData.data.length - 1];
+            if (last.gdp_ttm > 0) {
+                const targetCap = last.gdp_ttm * forecastTarget / 100;
+                const currentRatio = last.buffett;
+                const currentCap = last.cap;
+                const lastDate = new Date(last.date);
+                // 12 промежуточных точек за 12 месяцев с хаотичным шумом
+                const steps = 12;
+                const ratioDiff = forecastTarget - currentRatio;
+                const capDiff = targetCap - currentCap;
+                // Разный шум для ratio и cap (разные seed)
+                const seedR = forecastTarget * 7 + 13;
+                const seedC = forecastTarget * 11 + 37;
+                for (let i = 1; i <= steps; i++) {
+                    const t = i / steps;
+                    const noiseR = Math.sin(seedR * i * 0.7) * 0.2 * (1 - t * 0.5);
+                    const noiseC = Math.sin(seedC * i * 0.9 + 2) * 0.18 * (1 - t * 0.5);
+                    const stepDate = new Date(lastDate);
+                    stepDate.setMonth(stepDate.getMonth() + i);
+                    const stepDateStr = stepDate.toISOString().slice(0, 10);
+                    primary.push({ time: stepDateStr, value: currentRatio + ratioDiff * Math.max(0, t + noiseR) });
+                    secondary.push({ time: stepDateStr, value: currentCap + capDiff * Math.max(0, t + noiseC) });
+                }
+            }
+        }
+
+        return { primary, secondary };
+    }, [capGdpData, forecastTarget]);
 
     // Подготовка данных для SimpleChart: MCFTR/M2
     const mcftrM2ChartData = useMemo(() => {
@@ -203,6 +226,23 @@ export default function BuffettPage() {
                     </div>
                 )}
 
+                {/* Прогноз — только для cap-gdp */}
+                {viewMode === 'cap-gdp' && (
+                    <div className="flex items-center gap-2">
+                        <span className="text-sm text-theme-secondary">Прогноз:</span>
+                        <select
+                            value={forecastTarget ?? ''}
+                            onChange={(e) => setForecastTarget(e.target.value ? Number(e.target.value) : null)}
+                            className="bg-theme-secondary border border-theme rounded-lg px-3 py-1.5 text-sm text-theme-primary focus:outline-none focus:border-[#C8FF2E]"
+                        >
+                            <option value="">Выкл</option>
+                            {[10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110].map(v => (
+                                <option key={v} value={v}>{v}%</option>
+                            ))}
+                        </select>
+                    </div>
+                )}
+
             </div>
 
             {/* График */}
@@ -228,6 +268,7 @@ export default function BuffettPage() {
                     primaryLabel="Капитализация / ВВП"
                     secondaryLabel="Капитализация"
                     loading={loading}
+                    forecastCount={forecastTarget !== null ? 12 : 0}
                     showValueHeader={false}
                     legendPosition="top"
                     showDownloadButton={false}
