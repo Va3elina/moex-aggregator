@@ -114,8 +114,8 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType }:
   useEffect(() => {
     async function load() {
       try {
-        const typeParam = filterType || 'futures';
-        const resp = await fetch(`/api/instruments?type=${typeParam}`);
+        const url = filterType ? `/api/instruments?type=${filterType}` : '/api/instruments';
+        const resp = await fetch(url);
         const data = await resp.json();
         setInstruments(data.instruments || []);
       } catch (err) {

@@ -32,6 +32,21 @@ log = get_logger()
 
 router = APIRouter(prefix="/api/seasonality", tags=["seasonality"])
 
+# Инструменты из index_data (не candles)
+INDEX_DATA_INSTRUMENTS = {"IMOEX", "RTSI", "GLDRUB_TOM", "RGBITR", "USD000UTSTOM", "MCFTR", "RUSFAR3M"}
+
+# Вечные фьючерсы (candles, type='futures')
+PERPETUAL_FUTURES = {"USDRUBF", "EURRUBF", "CNYRUBF", "IMOEXF"}
+
+
+def _resolve_source(secid: str) -> tuple[str, str]:
+    """Определяет источник данных: ('index_data'|'candles', type_filter)"""
+    if secid in INDEX_DATA_INSTRUMENTS:
+        return "index_data", ""
+    if secid in PERPETUAL_FUTURES:
+        return "candles", "futures"
+    return "candles", "stock"
+
 HOUR_LABELS = {h: f"{h}:00" for h in range(10, 19)}  # 10:00 - 18:00
 WEEKDAY_LABELS = {1: "Пн", 2: "Вт", 3: "Ср", 4: "Чт", 5: "Пт"}
 MONTH_LABELS = {
@@ -68,18 +83,92 @@ def _get_ex_dates_from_db(engine, secid: str) -> dict[str, float]:
     return ex_dates
 
 
+def _compute_seasonality_index_data(engine, secid: str, mode: str, iterations: int) -> list[dict]:
+    """Сезонность для инструментов из index_data (IMOEX, RTSI, GLDRUB_TOM и т.д.)."""
+    from collections import defaultdict
+
+    if mode == "weekday":
+        group_expr = "EXTRACT(ISODOW FROM trade_date)::int"
+        iter_expr = "date_trunc('week', trade_date)"
+        extra = "AND EXTRACT(ISODOW FROM trade_date) BETWEEN 1 AND 5"
+        labels = WEEKDAY_LABELS
+    elif mode == "monthday":
+        group_expr = "EXTRACT(DAY FROM trade_date)::int"
+        iter_expr = "date_trunc('month', trade_date)"
+        extra = "AND EXTRACT(ISODOW FROM trade_date) BETWEEN 1 AND 5"
+        labels = None
+    else:  # monthly
+        group_expr = "EXTRACT(MONTH FROM trade_date)::int"
+        iter_expr = "EXTRACT(YEAR FROM trade_date)::int"
+        extra = "AND EXTRACT(ISODOW FROM trade_date) BETWEEN 1 AND 5"
+        labels = MONTH_LABELS
+
+    with engine.connect() as conn:
+        rows = conn.execute(text(f"""
+            WITH recent_iters AS (
+                SELECT DISTINCT {iter_expr} AS iter_key
+                FROM index_data
+                WHERE secid = :secid AND close > 0
+                ORDER BY iter_key DESC
+                LIMIT :iterations
+            ),
+            with_prev AS (
+                SELECT
+                    d.trade_date,
+                    d.close,
+                    ({group_expr}) as grp_key,
+                    LAG(d.close) OVER (ORDER BY d.trade_date) as prev_close
+                FROM index_data d
+                INNER JOIN recent_iters ri ON {iter_expr} = ri.iter_key
+                WHERE d.secid = :secid AND d.close > 0 {extra}
+            )
+            SELECT grp_key, trade_date, close, prev_close
+            FROM with_prev
+            WHERE prev_close IS NOT NULL AND prev_close > 0
+            ORDER BY trade_date
+        """), {"secid": secid, "iterations": iterations}).fetchall()
+
+    if not rows:
+        return []
+
+    groups = defaultdict(list)
+    for grp_key, trade_date, close, prev_close in rows:
+        ret = (float(close) - float(prev_close)) / float(prev_close) * 100
+        groups[int(grp_key)].append(ret)
+
+    bars = []
+    for key in sorted(groups.keys()):
+        vals = groups[key]
+        label = (labels or {}).get(key, str(key))
+        bars.append({
+            "label": label,
+            "key": key,
+            "avg_change": round(sum(vals) / len(vals), 4),
+            "count": len(vals),
+        })
+    return bars
+
+
 def _compute_seasonality_daily(engine, secid: str, mode: str, iterations: int,
                                 ex_dates: dict[str, float]) -> list[dict]:
     """
     Вычисляет сезонность для дневных режимов (weekday, monthday, monthly).
     Использует close-to-close returns с опциональной дивидендной корректировкой.
     """
+    source, inst_type = _resolve_source(secid)
+
+    # Для index_data — отдельная логика
+    if source == "index_data":
+        return _compute_seasonality_index_data(engine, secid, mode, iterations)
+
+    type_filter = f"type = '{inst_type}'" if inst_type else "TRUE"
+
     # Определяем группировку и CTE для итераций
     if mode == "weekday":
-        iteration_cte = """
+        iteration_cte = f"""
             SELECT DISTINCT date_trunc('week', begin_time::date) AS iter_key
             FROM candles
-            WHERE secid = :secid AND interval = 24 AND type = 'stock' AND open > 0
+            WHERE secid = :secid AND interval = 24 AND {type_filter} AND open > 0
             ORDER BY iter_key DESC
             LIMIT :iterations
         """
@@ -89,10 +178,10 @@ def _compute_seasonality_daily(engine, secid: str, mode: str, iterations: int,
         labels = WEEKDAY_LABELS
 
     elif mode == "monthday":
-        iteration_cte = """
+        iteration_cte = f"""
             SELECT DISTINCT date_trunc('month', begin_time::date) AS iter_key
             FROM candles
-            WHERE secid = :secid AND interval = 24 AND type = 'stock' AND open > 0
+            WHERE secid = :secid AND interval = 24 AND {type_filter} AND open > 0
               AND EXTRACT(ISODOW FROM begin_time) BETWEEN 1 AND 5
             ORDER BY iter_key DESC
             LIMIT :iterations
@@ -103,10 +192,10 @@ def _compute_seasonality_daily(engine, secid: str, mode: str, iterations: int,
         labels = None
 
     else:  # monthly
-        iteration_cte = """
+        iteration_cte = f"""
             SELECT DISTINCT EXTRACT(YEAR FROM begin_time)::int AS iter_key
             FROM candles
-            WHERE secid = :secid AND interval = 24 AND type = 'stock' AND open > 0
+            WHERE secid = :secid AND interval = 24 AND {type_filter} AND open > 0
               AND EXTRACT(ISODOW FROM begin_time) BETWEEN 1 AND 5
             ORDER BY iter_key DESC
             LIMIT :iterations
@@ -134,7 +223,7 @@ def _compute_seasonality_daily(engine, secid: str, mode: str, iterations: int,
                 INNER JOIN recent_iters ri ON {join_cond}
                 WHERE c.secid = :secid
                   AND c.interval = 24
-                  AND c.type = 'stock'
+                  AND {type_filter}
                   AND c.open > 0
                   {extra_filter}
             ),
@@ -224,13 +313,20 @@ async def get_seasonality(
 
     engine = get_engine()
 
+    source, inst_type = _resolve_source(secid)
+
     if mode == "intraday":
+        # Intraday: index_data не поддерживает
+        if source == "index_data":
+            raise HTTPException(status_code=404, detail=f"Нет интрадей данных для {secid}")
+
+        intra_type_filter = f"type = '{inst_type}'" if inst_type else "TRUE"
         # Intraday: open-to-close per hour, дивиденды не влияют
-        query = text("""
+        query = text(f"""
             WITH recent_days AS (
                 SELECT DISTINCT begin_time::date AS trade_date
                 FROM candles
-                WHERE secid = :secid AND interval = 60 AND type = 'stock' AND open > 0
+                WHERE secid = :secid AND interval = 60 AND {intra_type_filter} AND open > 0
                 ORDER BY trade_date DESC
                 LIMIT :iterations
             )
@@ -242,7 +338,7 @@ async def get_seasonality(
             INNER JOIN recent_days rd ON c.begin_time::date = rd.trade_date
             WHERE c.secid = :secid
               AND c.interval = 60
-              AND c.type = 'stock'
+              AND {intra_type_filter}
               AND EXTRACT(HOUR FROM c.begin_time) BETWEEN 10 AND 18
               AND c.open > 0
             GROUP BY EXTRACT(HOUR FROM c.begin_time)
@@ -261,8 +357,10 @@ async def get_seasonality(
             })
     else:
         # Дневные режимы: close-to-close returns с дивидендной корректировкой
+        # Дивиденды только для акций
+        _, src_type = _resolve_source(secid)
         ex_dates: dict[str, float] = {}
-        if exclude_dividends:
+        if exclude_dividends and src_type == "stock":
             ex_dates = _get_ex_dates_from_db(engine, secid)
             if ex_dates:
                 log.info(f"  Found {len(ex_dates)} ex-dividend dates for {secid} from DB")
@@ -313,17 +411,28 @@ async def get_price_chart(
     from datetime import date as date_type
     date_from = date_type.today() - timedelta(days=days)
 
+    source, inst_type = _resolve_source(secid)
+
     with engine.connect() as conn:
-        rows = conn.execute(text("""
-            SELECT begin_time::date as trade_date, close
-            FROM candles
-            WHERE secid = :secid
-              AND interval = 24
-              AND type = 'stock'
-              AND close > 0
-              AND begin_time::date >= :date_from
-            ORDER BY begin_time
-        """), {"secid": secid, "date_from": date_from.isoformat()}).fetchall()
+        if source == "index_data":
+            rows = conn.execute(text("""
+                SELECT trade_date, close
+                FROM index_data
+                WHERE secid = :secid AND close > 0 AND trade_date >= :date_from
+                ORDER BY trade_date
+            """), {"secid": secid, "date_from": date_from.isoformat()}).fetchall()
+        else:
+            price_type_filter = f"type = '{inst_type}'" if inst_type else "TRUE"
+            rows = conn.execute(text(f"""
+                SELECT begin_time::date as trade_date, close
+                FROM candles
+                WHERE secid = :secid
+                  AND interval = 24
+                  AND {price_type_filter}
+                  AND close > 0
+                  AND begin_time::date >= :date_from
+                ORDER BY begin_time
+            """), {"secid": secid, "date_from": date_from.isoformat()}).fetchall()
 
     if not rows:
         raise HTTPException(404, f"Нет данных для {secid}")

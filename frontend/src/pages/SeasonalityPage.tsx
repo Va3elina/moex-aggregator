@@ -273,7 +273,6 @@ export default function SeasonalityPage() {
             <InstrumentSearchModal
               onSelect={handleSelectInstrument}
               onClose={() => setIsModalOpen(false)}
-              filterType="stock"
             />
           )}
         </div>
