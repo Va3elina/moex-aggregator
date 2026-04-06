@@ -93,18 +93,12 @@ def _compute_seasonality_daily(engine, secid: str, mode: str, iterations: int,
             SELECT DISTINCT date_trunc('month', begin_time::date) AS iter_key
             FROM candles
             WHERE secid = :secid AND interval = 24 AND type = 'stock' AND open > 0
+              AND EXTRACT(ISODOW FROM begin_time) BETWEEN 1 AND 5
             ORDER BY iter_key DESC
             LIMIT :iterations
         """
-        # Выходные → понедельник
-        group_expr = """CASE
-            WHEN EXTRACT(ISODOW FROM c.begin_time) = 6
-                THEN EXTRACT(DAY FROM c.begin_time::date + interval '2 days')
-            WHEN EXTRACT(ISODOW FROM c.begin_time) = 7
-                THEN EXTRACT(DAY FROM c.begin_time::date + interval '1 day')
-            ELSE EXTRACT(DAY FROM c.begin_time)
-        END::int"""
-        extra_filter = ""
+        group_expr = "EXTRACT(DAY FROM c.begin_time)::int"
+        extra_filter = "AND EXTRACT(ISODOW FROM c.begin_time) BETWEEN 1 AND 5"
         join_cond = "date_trunc('month', c.begin_time::date) = ri.iter_key"
         labels = None
 
@@ -113,11 +107,12 @@ def _compute_seasonality_daily(engine, secid: str, mode: str, iterations: int,
             SELECT DISTINCT EXTRACT(YEAR FROM begin_time)::int AS iter_key
             FROM candles
             WHERE secid = :secid AND interval = 24 AND type = 'stock' AND open > 0
+              AND EXTRACT(ISODOW FROM begin_time) BETWEEN 1 AND 5
             ORDER BY iter_key DESC
             LIMIT :iterations
         """
         group_expr = "EXTRACT(MONTH FROM c.begin_time)::int"
-        extra_filter = ""
+        extra_filter = "AND EXTRACT(ISODOW FROM c.begin_time) BETWEEN 1 AND 5"
         join_cond = "EXTRACT(YEAR FROM c.begin_time)::int = ri.iter_key"
         labels = MONTH_LABELS
 

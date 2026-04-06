@@ -1,8 +1,9 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
-import { Search, ChevronDown, X, BarChart3, TrendingUp, CalendarDays } from 'lucide-react';
-import { getInstruments, getSeasonality, getSeasonalityPrice } from '../services/api';
+import { ChevronDown, BarChart3, TrendingUp, CalendarDays } from 'lucide-react';
+import { getSeasonality, getSeasonalityPrice } from '../services/api';
+import InstrumentSearchModal from '../components/InstrumentSearchModal';
 import type { SeasonalityResponse, SeasonalityMode, PriceChartResponse } from '../services/api';
-import type { Instrument } from '../types';
+// types removed — InstrumentSearchModal handles instrument loading
 
 const MODE_LABELS: Record<SeasonalityMode, string> = {
   intraday: 'Внутри дня',
@@ -42,12 +43,9 @@ type ChartType = 'histogram' | 'price';
 
 export default function SeasonalityPage() {
   // Stock selector
-  const [stocks, setStocks] = useState<Instrument[]>([]);
   const [selectedStock, setSelectedStock] = useState<string>('SBER');
   const [selectedName, setSelectedName] = useState<string>('Сбербанк');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Mode & params
   const [mode, setMode] = useState<SeasonalityMode>('weekday');
@@ -55,6 +53,12 @@ export default function SeasonalityPage() {
   const [chartType, setChartType] = useState<ChartType>('histogram');
   const [excludeDividends, setExcludeDividends] = useState(false);
   const [priceDays, setPriceDays] = useState(365);
+
+  // Animated bars (like flows)
+  const [animatedHeights, setAnimatedHeights] = useState<number[]>([]);
+  const barsAnimRef = useRef<number | null>(null);
+  const prevHeightsRef = useRef<number[]>([]);
+  const isFirstBarRender = useRef(true);
 
   // Data
   const [dataRaw, setDataRaw] = useState<SeasonalityResponse | null>(null);
@@ -71,35 +75,11 @@ export default function SeasonalityPage() {
     priceDate?: string; priceClose?: number; priceAdj?: number;
   } | null>(null);
 
-  // Load stocks
-  useEffect(() => {
-    getInstruments('stock').then(res => {
-      const list = res.instruments || [];
-      setStocks(list);
-      const sber = list.find(s => s.sec_id === 'SBER');
-      if (sber) setSelectedName(sber.name);
-    }).catch(() => {});
-  }, []);
-
-  // Close dropdown on outside click
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setDropdownOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
-
-  // Filtered stocks
-  const filteredStocks = useMemo(() => {
-    if (!searchQuery) return stocks.slice(0, 50);
-    const q = searchQuery.toLowerCase();
-    return stocks.filter(s =>
-      s.sec_id.toLowerCase().includes(q) || s.name.toLowerCase().includes(q)
-    ).slice(0, 50);
-  }, [stocks, searchQuery]);
+  const handleSelectInstrument = (sectype: string, name: string) => {
+    setSelectedStock(sectype);
+    setSelectedName(name);
+    setIsModalOpen(false);
+  };
 
   // Fetch seasonality data
   const fetchSeasonality = useCallback(async () => {
@@ -160,27 +140,54 @@ export default function SeasonalityPage() {
   // ===== HISTOGRAM CALCULATIONS =====
   const bars = data?.bars || [];
   const maxAbs = Math.max(...bars.map(b => Math.abs(b.avg_change)), 0.01);
-  const barWidth = bars.length > 0 ? Math.min(plotWidth / bars.length * 0.7, 40) : 20;
-  const gap = bars.length > 0 ? plotWidth / bars.length : 0;
-  const rawBars = dataRaw?.bars || [];
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _rawBars = dataRaw?.bars; void _rawBars;
 
-  const getBarColor = (val: number) => {
-    const intensity = Math.min(Math.abs(val) / maxAbs, 1);
-    if (val >= 0) {
-      const r = Math.round(20 + (1 - intensity) * 60);
-      const g = Math.round(100 + intensity * 155);
-      const b = Math.round(20 + (1 - intensity) * 60);
-      return `rgb(${r}, ${g}, ${b})`;
-    } else {
-      const r = Math.round(100 + intensity * 155);
-      const g = Math.round(20 + (1 - intensity) * 60);
-      const b = Math.round(20 + (1 - intensity) * 60);
-      return `rgb(${r}, ${g}, ${b})`;
-    }
-  };
+  // Анимация баров (как притоки-оттоки)
+  const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
 
-  const zeroY = marginTop + plotHeight / 2;
-  const scaleY = (val: number) => zeroY - (val / maxAbs) * (plotHeight / 2);
+  useEffect(() => {
+    if (!bars.length) { setAnimatedHeights([]); return; }
+    if (barsAnimRef.current) cancelAnimationFrame(barsAnimRef.current);
+
+    const target = bars.map(b => b.avg_change / maxAbs);
+    const isFirst = isFirstBarRender.current || prevHeightsRef.current.length === 0;
+    const from = isFirst ? new Array(target.length).fill(0) : (() => {
+      // Ресемплинг если кол-во баров изменилось
+      const prev = prevHeightsRef.current;
+      if (prev.length === target.length) return prev;
+      return target.map((_, i) => {
+        const si = (i / (target.length - 1)) * (prev.length - 1);
+        const lo = Math.floor(si);
+        const hi = Math.min(lo + 1, prev.length - 1);
+        return prev[lo] + (prev[hi] - prev[lo]) * (si - lo);
+      });
+    })();
+
+    isFirstBarRender.current = false;
+    const totalDuration = isFirst ? 1200 : 600;
+    const staggerDelay = isFirst ? 600 : 0;
+    let startTime: number | null = null;
+
+    const animate = (ts: number) => {
+      if (!startTime) startTime = ts;
+      const elapsed = ts - startTime;
+      const heights = target.map((v, i) => {
+        const barDelay = (i / target.length) * staggerDelay;
+        const barElapsed = Math.max(0, elapsed - barDelay);
+        const t = Math.min(barElapsed / (totalDuration - staggerDelay), 1);
+        return from[i] + (v - from[i]) * easeOutCubic(t);
+      });
+      setAnimatedHeights(heights);
+      if (elapsed < totalDuration) {
+        barsAnimRef.current = requestAnimationFrame(animate);
+      } else {
+        prevHeightsRef.current = target;
+      }
+    };
+    barsAnimRef.current = requestAnimationFrame(animate);
+    return () => { if (barsAnimRef.current) cancelAnimationFrame(barsAnimRef.current); };
+  }, [bars, maxAbs]);
 
   // ===== PRICE CHART CALCULATIONS =====
   const pricePoints = priceData?.data || [];
@@ -231,12 +238,6 @@ export default function SeasonalityPage() {
     });
   }, [pricePoints, scalePriceX]);
 
-  const selectStock = (secId: string, name: string) => {
-    setSelectedStock(secId);
-    setSelectedName(name);
-    setDropdownOpen(false);
-    setSearchQuery('');
-  };
 
   const showDivToggle = chartType === 'histogram' && mode !== 'intraday';
 
@@ -256,66 +257,28 @@ export default function SeasonalityPage() {
       {/* Controls Row 1 */}
       <div className="flex flex-wrap items-start gap-4 mb-4">
         {/* Stock selector */}
-        <div className="relative" ref={dropdownRef}>
+        <div className="relative">
           <button
-            onClick={() => setDropdownOpen(!dropdownOpen)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border transition-all"
-            style={{
-              backgroundColor: 'var(--bg-secondary)',
-              borderColor: dropdownOpen ? 'var(--accent)' : 'var(--border-color)',
-              color: 'var(--text-primary)',
-            }}
+            onClick={() => setIsModalOpen(true)}
+            className="widget-flat px-3 md:px-4 py-2 md:py-2.5 text-sm font-medium transition-colors flex items-center gap-2 md:gap-3 min-w-[160px] md:min-w-[200px] hover:opacity-90"
+            style={{ color: 'var(--text-primary)' }}
           >
-            <span className="font-semibold">{selectedStock}</span>
-            <span className="text-sm" style={{ color: 'var(--text-muted)' }}>{selectedName}</span>
-            <ChevronDown size={16} style={{ color: 'var(--text-muted)' }} />
+            <div className="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-bold text-white/70"
+              style={{ backgroundColor: `hsl(${selectedStock.split('').reduce((a, c) => a + c.charCodeAt(0), 0) % 360}, 50%, 40%)` }}>
+              {selectedStock.slice(0, 2)}
+            </div>
+            <div className="flex-1 text-left">
+              <div className="font-medium">{selectedName}</div>
+              <div className="text-xs text-theme-secondary">{selectedStock}</div>
+            </div>
+            <ChevronDown size={16} className="text-theme-secondary" />
           </button>
 
-          {dropdownOpen && (
-            <div
-              className="absolute top-full mt-2 left-0 w-80 rounded-xl border shadow-xl z-50 overflow-hidden"
-              style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-color)' }}
-            >
-              <div className="p-3 border-b" style={{ borderColor: 'var(--border-color)' }}>
-                <div className="relative">
-                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={e => setSearchQuery(e.target.value)}
-                    placeholder="Поиск акции..."
-                    autoFocus
-                    className="w-full pl-9 pr-8 py-2 rounded-lg text-sm border focus:outline-none"
-                    style={{
-                      backgroundColor: 'var(--bg-primary)',
-                      borderColor: 'var(--border-color)',
-                      color: 'var(--text-primary)',
-                    }}
-                  />
-                  {searchQuery && (
-                    <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }}>
-                      <X size={14} />
-                    </button>
-                  )}
-                </div>
-              </div>
-              <div className="max-h-64 overflow-y-auto">
-                {filteredStocks.map(s => (
-                  <button
-                    key={s.sec_id}
-                    onClick={() => selectStock(s.sec_id, s.name)}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-white/5"
-                    style={{ color: s.sec_id === selectedStock ? 'var(--accent)' : 'var(--text-primary)' }}
-                  >
-                    <span className="font-medium text-sm w-16">{s.sec_id}</span>
-                    <span className="text-sm truncate" style={{ color: 'var(--text-secondary)' }}>{s.name}</span>
-                  </button>
-                ))}
-                {filteredStocks.length === 0 && (
-                  <div className="px-4 py-6 text-center text-sm" style={{ color: 'var(--text-muted)' }}>Ничего не найдено</div>
-                )}
-              </div>
-            </div>
+          {isModalOpen && (
+            <InstrumentSearchModal
+              onSelect={handleSelectInstrument}
+              onClose={() => setIsModalOpen(false)}
+            />
           )}
         </div>
 
@@ -438,99 +401,153 @@ export default function SeasonalityPage() {
 
       {/* Chart */}
       <div
-        className="rounded-2xl border p-4"
+        className="rounded-2xl border p-4 relative"
         style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-color)' }}
       >
-        {loading ? (
-          <div className="flex items-center justify-center" style={{ height: chartHeight }}>
-            <div className="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
+        {/* Спиннер обновления */}
+        {loading && (bars.length > 0 || priceData) && (
+          <div className="absolute top-4 right-4 z-20 flex items-center gap-2 bg-theme-tertiary/90 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-theme">
+            <div className="w-4 h-4 border-2 border-[#C8FF2E] border-t-transparent rounded-full animate-spin" />
+            <span className="text-xs text-theme-secondary">Обновление...</span>
           </div>
-        ) : error ? (
-          <div className="flex items-center justify-center" style={{ height: chartHeight, color: 'var(--text-muted)' }}>
+        )}
+        {loading && bars.length === 0 && !priceData ? (
+          <div className="flex items-center justify-center" style={{ aspectRatio: '16/9' }}>
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-8 h-8 border-2 border-[#06b6d4] border-t-transparent rounded-full animate-spin" />
+              <span className="text-theme-secondary">Загрузка...</span>
+            </div>
+          </div>
+        ) : error && bars.length === 0 ? (
+          <div className="flex items-center justify-center" style={{ aspectRatio: '16/9', color: 'var(--text-muted)' }}>
             {error}
           </div>
         ) : chartType === 'histogram' ? (
           /* ===== HISTOGRAM ===== */
           bars.length === 0 ? (
-            <div className="flex items-center justify-center" style={{ height: chartHeight, color: 'var(--text-muted)' }}>Нет данных</div>
+            <div className="flex items-center justify-center" style={{ aspectRatio: '16/9', color: 'var(--text-muted)' }}>Нет данных</div>
           ) : (
-            <div className="relative">
-              <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className="w-full" style={{ maxHeight: '450px' }} onMouseLeave={() => setTooltip(null)}>
-                {/* Grid */}
-                {[-maxAbs, -maxAbs / 2, 0, maxAbs / 2, maxAbs].map((val, i) => (
-                  <g key={i}>
-                    <line x1={marginLeft} x2={chartWidth - marginRight} y1={scaleY(val)} y2={scaleY(val)}
-                      stroke="rgba(255,255,255,0.08)" strokeWidth={val === 0 ? 1.5 : 1} />
-                    <text x={marginLeft - 8} y={scaleY(val) + 5} textAnchor="end" fontSize={16} fontWeight={600} fill="#9CA3B8">
-                      {val === 0 ? '0' : `${val > 0 ? '+' : ''}${val.toFixed(2)}%`}
-                    </text>
-                  </g>
-                ))}
+            <div className="relative overflow-hidden pb-8 cursor-crosshair" style={{ height: 450 }}
+              onMouseMove={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const barAreaWidth = rect.width - 60;
+                const idx = Math.floor(x / (barAreaWidth / bars.length));
+                if (idx >= 0 && idx < bars.length) {
+                  setTooltip({ x: e.clientX - rect.left, y: e.clientY - rect.top, bar: bars[idx] });
+                } else {
+                  setTooltip(null);
+                }
+              }}
+              onMouseLeave={() => setTooltip(null)}>
+              {/* SVG область */}
+              <div className="absolute inset-0" style={{ right: 80 }}>
+                <svg viewBox="0 0 1000 500" preserveAspectRatio="none" width="100%" height="100%">
+                  {/* Бары — анимированные через state */}
+                  {animatedHeights.length > 0 && bars.map((bar, i) => {
+                    const W = 1000;
+                    const H = 500;
+                    const slotW = W / bars.length;
+                    const bw = slotW * (bars.length > 12 ? 0.6 : 0.5);
+                    const bx = i * slotW + (slotW - bw) / 2;
+                    const midY = H / 2;
+                    const halfH = H * 0.38;
+                    const animVal = animatedHeights[i] ?? 0;
+                    const h = Math.max(Math.abs(animVal) * halfH, H * 0.005);
+                    return (
+                      <g key={bar.key}
+                        opacity={tooltip?.bar ? (tooltip.bar.key === bar.key ? 1 : 0.35) : 1}
+                        className="transition-opacity duration-150">
+                        {animVal >= 0 ? (
+                          <rect x={bx} y={midY - h} width={bw} height={h}
+                            fill="#2EE59D" rx="3" />
+                        ) : (
+                          <rect x={bx} y={midY} width={bw} height={h}
+                            fill="#FF4D4D" rx="3" />
+                        )}
+                      </g>
+                    );
+                  })}
 
-                {/* Bars */}
-                {bars.map((bar, i) => {
-                  const x = marginLeft + i * gap + (gap - barWidth) / 2;
-                  const barH = Math.abs(bar.avg_change) / maxAbs * (plotHeight / 2);
-                  const y = bar.avg_change >= 0 ? zeroY - barH : zeroY;
-                  return (
-                    <g key={bar.key}
-                      onMouseEnter={(e) => {
-                        const rect = (e.target as SVGElement).closest('svg')?.getBoundingClientRect();
-                        if (rect) {
-                          const rawBar = rawBars.find(b => b.key === bar.key);
-                          setTooltip({ x: e.clientX - rect.left, y: e.clientY - rect.top, bar, barAdj: excludeDividends ? rawBar : undefined });
-                        }
-                      }}
-                      onMouseMove={(e) => {
-                        const rect = (e.target as SVGElement).closest('svg')?.getBoundingClientRect();
-                        if (rect) {
-                          const rawBar = rawBars.find(b => b.key === bar.key);
-                          setTooltip({ x: e.clientX - rect.left, y: e.clientY - rect.top, bar, barAdj: excludeDividends ? rawBar : undefined });
-                        }
-                      }}
-                      onMouseLeave={() => setTooltip(null)}
-                      style={{ cursor: 'pointer' }}
-                    >
-                      <rect x={x} y={y} width={barWidth} height={Math.max(barH, 1)} rx={3}
-                        fill={getBarColor(bar.avg_change)} opacity={0.9} />
-                      {barH > 20 && (
-                        <text x={x + barWidth / 2} y={y + barH / 2 + 4} textAnchor="middle"
-                          fontSize={10} fill="white" fontWeight="600">
-                          {bar.avg_change > 0 ? '+' : ''}{bar.avg_change.toFixed(3)}%
-                        </text>
-                      )}
-                    </g>
-                  );
-                })}
+                  {/* Горизонтальные линии сетки */}
+                  {[-maxAbs, -maxAbs / 2, 0, maxAbs / 2, maxAbs].map((val, i) => {
+                    const y = 250 - (val / maxAbs) * 190;
+                    return (
+                      <line key={i} x1="0" y1={y} x2="1000" y2={y}
+                        stroke={val === 0 ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.08)"} strokeWidth="1"
+                        vectorEffect="non-scaling-stroke" />
+                    );
+                  })}
 
-                {/* X labels */}
-                {bars.map((bar, i) => (
-                  <text key={bar.key} x={marginLeft + i * gap + gap / 2} y={chartHeight - 10}
-                    textAnchor="middle" fontSize={14} fill="#9CA3B8" fontWeight="600">
-                    {bar.label}
-                  </text>
-                ))}
-              </svg>
+                  {/* Вертикальный курсор */}
+                  {tooltip?.bar && (() => {
+                    const idx = bars.indexOf(tooltip.bar!);
+                    if (idx === -1) return null;
+                    const slotW = 1000 / bars.length;
+                    const cx = idx * slotW + slotW / 2;
+                    const gridTop = 250 - 190;  // верхняя линия сетки
+                    const gridBot = 250 + 190;  // нижняя линия сетки
+                    return (
+                      <line x1={cx} y1={gridTop} x2={cx} y2={gridBot}
+                        stroke="#C8FF2E" strokeWidth="1" strokeDasharray="4 3"
+                        opacity="0.5" vectorEffect="non-scaling-stroke"
+                        style={{ pointerEvents: 'none' }} />
+                    );
+                  })()}
+                </svg>
+              </div>
 
-              {/* Tooltip */}
-              {tooltip?.bar && (
-                <div className="absolute pointer-events-none px-3 py-2 rounded-lg shadow-lg text-sm z-10"
-                  style={{
-                    left: Math.min(tooltip.x + 12, chartWidth - 200), top: tooltip.y - 60,
-                    backgroundColor: 'var(--bg-primary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', minWidth: 150,
-                  }}>
-                  <div className="font-semibold mb-1">{tooltip.bar.label}</div>
-                  <div style={{ color: tooltip.bar.avg_change >= 0 ? '#22c55e' : '#ef4444' }}>
-                    Среднее: {tooltip.bar.avg_change > 0 ? '+' : ''}{tooltip.bar.avg_change.toFixed(4)}%
-                  </div>
-                  {excludeDividends && tooltip.barAdj && (
-                    <div className="mt-1 pt-1 border-t" style={{ borderColor: 'var(--border-color)', color: 'rgba(239,68,68,0.8)' }}>
-                      С гэпами: {tooltip.barAdj.avg_change > 0 ? '+' : ''}{tooltip.barAdj.avg_change.toFixed(4)}%
+              {/* Плавающая дата + тултип как на притоках */}
+              {tooltip?.bar && (() => {
+                const idx = bars.indexOf(tooltip.bar!);
+                if (idx === -1) return null;
+                const color = tooltip.bar!.avg_change >= 0 ? '#2EE59D' : '#FF4D4D';
+                const valStr = `${tooltip.bar!.avg_change > 0 ? '+' : ''}${Math.abs(tooltip.bar!.avg_change) >= 0.01 ? tooltip.bar!.avg_change.toFixed(3) : tooltip.bar!.avg_change.toFixed(4)}%`;
+                return (
+                  <>
+                    {/* Карточка */}
+                    <div className="absolute z-30 pointer-events-none"
+                      style={{
+                        left: tooltip.x > 300 ? tooltip.x - 168 : tooltip.x + 8,
+                        top: Math.min(Math.max(tooltip.y - 20, 4), 330)
+                      }}>
+                      <div className="bg-theme-tertiary/95 backdrop-blur-sm rounded-lg border border-theme shadow-xl py-1.5 px-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
+                            <span className="text-[11px] text-theme-secondary truncate">{tooltip.bar!.avg_change >= 0 ? 'Рост' : 'Падение'}</span>
+                          </div>
+                          <span className="text-xs font-semibold whitespace-nowrap" style={{ color }}>
+                            {valStr}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-theme-secondary mt-0.5">{tooltip.bar!.count} наблюдений</div>
+                      </div>
                     </div>
-                  )}
-                  <div style={{ color: 'var(--text-muted)' }}>Наблюдений: {tooltip.bar.count}</div>
-                </div>
-              )}
+                  </>
+                );
+              })()}
+
+
+              {/* Подписи Y справа */}
+              {[-maxAbs, -maxAbs / 2, 0, maxAbs / 2, maxAbs].map((val, i) => {
+                const yPct = 50 - (val / maxAbs) * 38;
+                const label = val === 0 ? '0' : `${val > 0 ? '+' : ''}${val.toFixed(2)}%`;
+                return (
+                  <div key={i} className="absolute pointer-events-none"
+                    style={{ top: `${yPct}%`, right: 4, transform: 'translateY(-50%)' }}>
+                    <span className="text-[16px] font-semibold text-[#9CA3B8]">{label}</span>
+                  </div>
+                );
+              })}
+
+              {/* X labels — фиксированные внизу */}
+              <div className="absolute bottom-0 left-0 flex justify-between text-[14px] font-semibold text-[#9CA3B8] px-2" style={{ right: 80 }}>
+                {bars.map(bar => (
+                  <span key={bar.key} className="text-center" style={{ width: `${100 / bars.length}%` }}>{bar.label}</span>
+                ))}
+              </div>
+
             </div>
           )
         ) : (
