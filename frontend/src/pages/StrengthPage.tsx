@@ -13,13 +13,14 @@ import { useAuth } from '../contexts/AuthContext';
 import { isPeriodAllowed, getDefaultPeriod } from '../config/accessControl';
 import { useRealtimeData } from '../hooks/useRealtimeData';
 
-type Period = '6m' | '1y' | '2y' | 'all';
+type Period = '6m' | '1y' | '2y' | '5y' | 'all';
 type ChartMode = 'line' | 'histogram';
 
 const PERIOD_LABELS: Record<Period, string> = {
     '6m': '6М',
     '1y': '1Г',
     '2y': '2Г',
+    '5y': '5Л',
     'all': 'Всё'
 };
 
@@ -27,6 +28,7 @@ const PERIOD_DAYS: Record<Period, number> = {
     '6m': 180,
     '1y': 365,
     '2y': 730,
+    '5y': 1825,
     'all': 7000
 };
 
@@ -55,7 +57,12 @@ export default function StrengthPage() {
     const [chartMode, setChartMode] = useState<ChartMode>('histogram');
     const [showPrice, setShowPrice] = useState(true);
     const [selectedSector, setSelectedSector] = useState('Все');
-    const [universe, setUniverse] = useState<BreadthUniverse>('all');
+    const [currency, setCurrency] = useState<'rub' | 'usd'>('rub');
+    const [universeBase, setUniverseBase] = useState<'all' | 'imoex'>('all');
+    // Итоговый universe: добавляем _usd при долларовом режиме
+    const universe: BreadthUniverse = currency === 'usd'
+        ? `${universeBase}_usd` as BreadthUniverse
+        : universeBase;
 
     const [current, setCurrent] = useState<BreadthCurrentResponse | null>(null);
     const [history, setHistory] = useState<BreadthHistoryResponse | null>(null);
@@ -298,20 +305,40 @@ export default function StrengthPage() {
                 {/* Вселенная: все акции / IMOEX */}
                 <div className="flex items-center gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
                     <button
-                        onClick={() => setUniverse('all')}
+                        onClick={() => setUniverseBase('all')}
                         className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                            universe === 'all' ? 'btn-control active' : 'text-theme-secondary hover:text-theme-primary'
+                            universeBase === 'all' ? 'btn-control active' : 'text-theme-secondary hover:text-theme-primary'
                         }`}
                     >
                         Все акции
                     </button>
                     <button
-                        onClick={() => setUniverse('imoex')}
+                        onClick={() => setUniverseBase('imoex')}
                         className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                            universe === 'imoex' ? 'btn-control active' : 'text-theme-secondary hover:text-theme-primary'
+                            universeBase === 'imoex' ? 'btn-control active' : 'text-theme-secondary hover:text-theme-primary'
                         }`}
                     >
-                        Индекс МосБиржи
+                        Индекс IMOEX
+                    </button>
+                </div>
+
+                {/* Валюта: ₽ / $ */}
+                <div className="flex items-center gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
+                    <button
+                        onClick={() => setCurrency('rub')}
+                        className={`px-3 py-1.5 text-sm font-bold rounded-lg transition-colors ${
+                            currency === 'rub' ? 'btn-control active' : 'text-theme-secondary hover:text-theme-primary'
+                        }`}
+                    >
+                        ₽
+                    </button>
+                    <button
+                        onClick={() => setCurrency('usd')}
+                        className={`px-3 py-1.5 text-sm font-bold rounded-lg transition-colors ${
+                            currency === 'usd' ? 'btn-control active' : 'text-theme-secondary hover:text-theme-primary'
+                        }`}
+                    >
+                        $
                     </button>
                 </div>
 
@@ -321,7 +348,7 @@ export default function StrengthPage() {
                     className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors border ${showPrice ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400' : 'border-theme text-theme-secondary'
                         }`}
                 >
-                    IMOEX
+                    {currency === 'usd' ? 'RTS' : 'IMOEX'}
                 </button>
 
                 {/* Статус + счётчик — справа */}
@@ -451,7 +478,7 @@ export default function StrengthPage() {
                         <div className="px-4 pt-4 pb-1 border-b border-theme relative overflow-hidden" style={{ minHeight: 334 }}>
                             <div className="flex items-center justify-center gap-2 mb-5 relative z-10">
                                 <span className="w-3 h-3 rounded-full bg-[#6366f1]" />
-                                <span className="text-sm font-semibold text-theme-primary">Индекс МосБиржи</span>
+                                <span className="text-sm font-semibold text-theme-primary">{currency === 'usd' ? 'Индекс RTS' : 'Индекс IMOEX'}</span>
                             </div>
                             <SyncedPriceChart
                                 syncedData={displaySyncedData}

@@ -85,6 +85,23 @@ INDICES = {
         "board": "SNDX",
         "start_date": date(2005, 1, 1),  # MCFTR available from 2005
     },
+    "RTSI": {
+        "name": "Индекс РТС",
+        "engine": "stock",
+        "market": "index",
+        "board": "RTSI",
+        "filter_board": True,
+        "start_date": date(1995, 9, 1),
+    },
+    "USD000UTSTOM": {
+        "name": "Доллар/Рубль (спот TOM)",
+        "engine": "currency",
+        "market": "selt",
+        "board": "CETS",
+        "filter_board": True,
+        "use_candles": True,  # history endpoint отдаёт нули, используем candles
+        "start_date": date(2003, 4, 15),
+    },
 }
 
 DEFAULT_START_DATE = date(2020, 1, 1)
@@ -140,6 +157,7 @@ log = setup_logging()
 # URL шаблоны
 BASE_URL_BOARD = "https://iss.moex.com/iss/history/engines/{engine}/markets/{market}/boards/{board}/securities/{secid}.json"
 BASE_URL_NOBOARD = "https://iss.moex.com/iss/history/engines/{engine}/markets/{market}/securities/{secid}.json"
+BASE_URL_CANDLES = "https://iss.moex.com/iss/engines/{engine}/markets/{market}/boards/{board}/securities/{secid}/candles.json"
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -179,7 +197,16 @@ async def fetch_index_chunk(
     date_to: date,
 ) -> List[dict]:
     """Получить данные индекса за период (один чанк)."""
-    if info.get("filter_board"):
+    use_candles = info.get("use_candles", False)
+
+    if use_candles:
+        url = BASE_URL_CANDLES.format(
+            engine=info["engine"],
+            market=info["market"],
+            board=info["board"],
+            secid=secid,
+        )
+    elif info.get("filter_board"):
         url = BASE_URL_BOARD.format(
             engine=info["engine"],
             market=info["market"],
@@ -195,9 +222,13 @@ async def fetch_index_chunk(
 
     params = {
         "from": date_from.strftime("%Y-%m-%d"),
-        "till": date_to.strftime("%Y-%m-%d"),
         "iss.meta": "off",
     }
+    if use_candles:
+        params["interval"] = "24"
+        params["till"] = date_to.strftime("%Y-%m-%d")
+    else:
+        params["till"] = date_to.strftime("%Y-%m-%d")
 
     try:
         async with session.get(url, params=params, headers=HEADERS, timeout=30) as response:
@@ -217,19 +248,43 @@ async def fetch_index_chunk(
                 log.error(f"❌ [{secid}] Ошибка парсинга JSON: {json_err}")
                 return []
 
-            if not isinstance(data, dict) or "history" not in data:
-                log.error(f"❌ [{secid}] Отсутствует ключ 'history' в ответе.")
-                return []
+            if use_candles:
+                # Candles endpoint: ключ "candles", колонки: open, close, high, low, value, volume, begin, end
+                if "candles" not in data:
+                    log.error(f"❌ [{secid}] Отсутствует ключ 'candles' в ответе.")
+                    return []
+                candles_data = data["candles"]
+                columns = candles_data.get("columns", [])
+                rows = candles_data.get("data", [])
+                if not rows:
+                    return []
+                # Конвертируем в формат history: TRADEDATE, OPEN, HIGH, LOW, CLOSE, VALUE
+                result = []
+                for row in rows:
+                    rec = dict(zip(columns, row))
+                    result.append({
+                        "TRADEDATE": rec["begin"][:10],  # "2025-01-03 00:00:00" → "2025-01-03"
+                        "OPEN": rec.get("open"),
+                        "HIGH": rec.get("high"),
+                        "LOW": rec.get("low"),
+                        "CLOSE": rec.get("close"),
+                        "VALUE": rec.get("value"),
+                    })
+                return result
+            else:
+                if not isinstance(data, dict) or "history" not in data:
+                    log.error(f"❌ [{secid}] Отсутствует ключ 'history' в ответе.")
+                    return []
 
-            history = data["history"]
-            columns = history.get("columns", [])
-            rows = history.get("data", [])
+                history = data["history"]
+                columns = history.get("columns", [])
+                rows = history.get("data", [])
 
-            if not rows:
-                log.debug(f"  [{secid}] Нет данных за {date_from} - {date_to}")
-                return []
+                if not rows:
+                    log.debug(f"  [{secid}] Нет данных за {date_from} - {date_to}")
+                    return []
 
-            return [dict(zip(columns, row)) for row in rows]
+                return [dict(zip(columns, row)) for row in rows]
 
     except asyncio.TimeoutError:
         log.error(f"❌ [{secid}] Таймаут соединения (30с).")

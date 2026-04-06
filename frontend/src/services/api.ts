@@ -514,7 +514,7 @@ export interface BreadthHistoryResponse {
   imoex: { date: string; close: number }[];
 }
 
-export type BreadthUniverse = 'all' | 'imoex';
+export type BreadthUniverse = 'all' | 'imoex' | 'all_usd' | 'imoex_usd';
 
 export async function getBreadthCurrent(
   emaPeriod: number = 200,

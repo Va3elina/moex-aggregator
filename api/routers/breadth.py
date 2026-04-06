@@ -250,16 +250,17 @@ async def get_current_breadth(
 async def get_breadth_history(
     ema_period: int = Query(200, ge=10, le=500, description="Период EMA"),
     days: int = Query(365, ge=30, le=9000, description="Количество дней истории"),
-    universe: str = Query("all", description="Вселенная: all или imoex"),
+    universe: str = Query("all", description="Вселенная: all, imoex, all_usd, imoex_usd"),
     user = Depends(get_current_user_optional),
 ):
     """
     Возвращает историю Market Breadth.
-    universe=all — из pre-computed таблицы breadth_history.
-    universe=imoex — вычисляется на лету для тикеров индекса.
+    universe=all/imoex — рублёвый breadth.
+    universe=all_usd/imoex_usd — долларовый breadth (цены акций / USD).
     """
-    if universe not in ("all", "imoex"):
+    if universe not in ("all", "imoex", "all_usd", "imoex_usd"):
         universe = "all"
+    is_usd = universe.endswith("_usd")
 
     # Ограничения для гостей
     enforce_guest_limits(user, days=days)
@@ -295,18 +296,19 @@ async def get_breadth_history(
         for row in rows
     ]
 
-    # ── 2. IMOEX для наложения (из index_data — данные с 1997 года) ────────
+    # ── 2. Индекс для наложения: IMOEX (₽) или RTSI ($) ────────
+    overlay_secid = "RTSI" if is_usd else "IMOEX"
     imoex_data = []
     try:
         with engine.connect() as conn:
             imoex_rows = conn.execute(text("""
                 SELECT trade_date as date, close
                 FROM index_data
-                WHERE secid = 'IMOEX'
+                WHERE secid = :secid
                   AND trade_date >= :date_from
                   AND close IS NOT NULL
                 ORDER BY trade_date
-            """), {"date_from": date_from}).fetchall()
+            """), {"secid": overlay_secid, "date_from": date_from}).fetchall()
 
         imoex_by_date = {str(row[0]): float(row[1]) for row in imoex_rows if row[1]}
         for point in history:
@@ -318,7 +320,7 @@ async def get_breadth_history(
             for row in imoex_rows if row[1]
         ]
     except Exception as e:
-        log.error(f"Error fetching IMOEX: {e}")
+        log.error(f"Error fetching {overlay_secid}: {e}")
 
     duration = time.time() - start_time
     log.info(f"DONE: /breadth/history {len(history)} points, {duration:.2f}s")

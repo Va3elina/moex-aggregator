@@ -152,6 +152,79 @@ def get_imoex_tickers() -> list[str]:
         return []
 
 
+def load_usd_rates(engine, date_from: date) -> dict[date, float]:
+    """
+    Загружает составной курс USD/RUB:
+    - До 2024-06-11: USD000UTSTOM из index_data (спот)
+    - С 2024-06-11:  USDRUBF из candles (вечный фьючерс)
+    Возвращает {date: rate}
+    """
+    SWITCH_DATE = date(2024, 6, 11)
+    rates = {}
+
+    with engine.connect() as conn:
+        # Спот до switch date
+        rows_spot = conn.execute(text("""
+            SELECT trade_date, close FROM index_data
+            WHERE secid = 'USD000UTSTOM' AND trade_date >= :date_from AND trade_date < :switch
+              AND close IS NOT NULL AND close > 0
+            ORDER BY trade_date
+        """), {"date_from": date_from, "switch": SWITCH_DATE}).fetchall()
+        for d, close in rows_spot:
+            rates[d] = float(close)
+
+        # Фьючерс с switch date
+        rows_fut = conn.execute(text("""
+            SELECT begin_time::date, close FROM candles
+            WHERE secid = 'USDRUBF' AND interval = 24
+              AND begin_time::date >= :switch
+              AND close IS NOT NULL AND close > 0
+            ORDER BY begin_time
+        """), {"switch": SWITCH_DATE}).fetchall()
+        for d, close in rows_fut:
+            rates[d] = float(close)
+
+    log.info(f"Курс USD/RUB: {len(rates)} дней (спот: {len(rows_spot)}, фьючерс: {len(rows_fut)})")
+    return rates
+
+
+def convert_to_usd(
+    ticker_data: dict[str, tuple[list, list]],
+    usd_rates: dict[date, float],
+) -> dict[str, tuple[list, list]]:
+    """
+    Конвертирует рублёвые цены в USD.
+    Пропускает дни без курса. Использует forward-fill для пропущенных дней.
+    """
+    # Forward-fill курса (выходные/праздники)
+    sorted_dates = sorted(usd_rates.keys())
+    filled_rates = {}
+    last_rate = None
+    if sorted_dates:
+        # Заполняем все даты от первой до последней
+        d = sorted_dates[0]
+        end = sorted_dates[-1]
+        while d <= end:
+            if d in usd_rates:
+                last_rate = usd_rates[d]
+            if last_rate:
+                filled_rates[d] = last_rate
+            d += timedelta(days=1)
+
+    result = {}
+    for ticker, (dates, prices) in ticker_data.items():
+        usd_dates = []
+        usd_prices = []
+        for d, p in zip(dates, prices):
+            rate = filled_rates.get(d)
+            if rate and rate > 0:
+                usd_dates.append(d)
+                usd_prices.append(p / rate)
+        if usd_dates:
+            result[ticker] = (usd_dates, usd_prices)
+    return result
+
+
 def load_candles(engine, tickers: list[str], date_from: date) -> dict[str, tuple[list, list]]:
     """
     Загружает дневные свечи одним запросом.
@@ -358,6 +431,27 @@ def main() -> None:
         upsert(engine, records_imoex)
     else:
         log.warning("Не удалось получить тикеры IMOEX — пропускаем")
+
+    # ── Вычисление для USD (все акции пересчитанные в доллары) ──
+    usd_rates = load_usd_rates(engine, date_from)
+    if usd_rates:
+        log.info("=== Вычисление breadth для ALL_USD ===")
+        all_usd_data = convert_to_usd(all_ticker_data, usd_rates)
+        counts_all_usd = compute_all(all_usd_data, EMA_PERIODS)
+        records_all_usd = build_records(counts_all_usd, "all_usd")
+        upsert(engine, records_all_usd)
+
+        if imoex_tickers:
+            log.info("=== Вычисление breadth для IMOEX_USD ===")
+            imoex_usd_data = convert_to_usd(
+                {t: all_candle_data[t] for t in imoex_tickers if t in all_candle_data},
+                usd_rates
+            )
+            counts_imoex_usd = compute_all(imoex_usd_data, EMA_PERIODS)
+            records_imoex_usd = build_records(counts_imoex_usd, "imoex_usd")
+            upsert(engine, records_imoex_usd)
+    else:
+        log.warning("Нет курса USD/RUB — пропускаем USD universes")
 
     engine.dispose()
     log.info(f"Готово за {time.time() - t0:.1f}с")
