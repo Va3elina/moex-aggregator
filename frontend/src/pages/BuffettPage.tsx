@@ -202,6 +202,7 @@ export default function BuffettPage() {
                     legendPosition="top"
                     showDownloadButton={false}
                     showNavigator={true}
+                    hideTime={true}
                 />
             ) : (
                 <SimpleChart
@@ -220,6 +221,7 @@ export default function BuffettPage() {
                     legendPosition="top"
                     showDownloadButton={false}
                     showNavigator={true}
+                    hideTime={true}
                 />
             )}
             </div>

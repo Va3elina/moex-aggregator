@@ -41,6 +41,7 @@ interface SimpleChartProps {
   showNavigator?: boolean;
   chartPadding?: { left?: number; right?: number };
   annotations?: ChartAnnotation[];
+  hideTime?: boolean;
 }
 
 // Интерполяция между двумя значениями
@@ -128,6 +129,7 @@ export default function SimpleChart({
   showNavigator = false,
   chartPadding,
   annotations,
+  hideTime = false,
 }: SimpleChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -1160,30 +1162,32 @@ export default function SimpleChart({
           );
         })()}
 
-        {/* HTML тултип даты — над SVG, не обрезается */}
-        {tooltip.visible && (() => {
-          const d = new Date(tooltip.time);
-          const dateStr = d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' });
-          const hours = d.getHours();
-          const minutes = d.getMinutes();
-          const htmlDateLabel = (hours !== 0 || minutes !== 0)
-            ? `${dateStr} ${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`
-            : dateStr;
-          return (
-            <div
-              className="absolute z-20 pointer-events-none"
-              style={{
-                left: Math.min(Math.max(tooltip.x + 20 - 60, 4), width - 128),
-                top: legendPosition === 'top' ? 38 : 8,
-              }}
-            >
-              <span className="text-[11px] text-theme-secondary bg-theme-tertiary/90 backdrop-blur-sm px-2 py-0.5 rounded border border-theme whitespace-nowrap">
-                {htmlDateLabel}
-              </span>
-            </div>
-          );
-        })()}
       </div>
+
+      {/* HTML тултип даты — над SVG, вне chartWrapRef чтобы не сдвигался */}
+      {tooltip.visible && (() => {
+        const d = new Date(tooltip.time);
+        const dateStr = d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' });
+        const hours = d.getHours();
+        const minutes = d.getMinutes();
+        const htmlDateLabel = (!hideTime && (hours !== 0 || minutes !== 0))
+          ? `${dateStr} ${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`
+          : dateStr;
+        return (
+          <div
+            className="absolute z-20 pointer-events-none"
+            style={{
+              left: tooltip.x + 20,
+              top: legendPosition === 'top' ? 38 : 8,
+              transform: 'translateX(-50%)',
+            }}
+          >
+            <span className="text-[11px] text-theme-secondary bg-theme-tertiary/90 backdrop-blur-sm px-2 py-0.5 rounded border border-theme whitespace-nowrap">
+              {htmlDateLabel}
+            </span>
+          </div>
+        );
+      })()}
 
       {/* Навигатор временного диапазона */}
       {showNavigator && (

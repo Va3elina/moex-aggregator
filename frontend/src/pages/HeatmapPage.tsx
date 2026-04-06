@@ -125,7 +125,7 @@ export default function HeatmapPage() {
   // Фильтры
   const [mapMode, setMapMode] = useState<'imoex' | 'all'>('imoex');
   const sizeBy = 'market_cap';
-  const [colorBy, setColorBy] = useState('change_1w');
+  const [colorBy, setColorBy] = useState('change_1d');
   const [groupBy, setGroupBy] = useState('sector');
 
   // Тултип
@@ -184,7 +184,7 @@ export default function HeatmapPage() {
   const getSizeValue = (stock: HeatmapStock): number => {
     const key = sizeBy as keyof HeatmapStock;
     const raw = Math.max((stock[key] as number) || 1, 1);
-    return Math.pow(raw, 0.45);
+    return Math.pow(raw, 0.65);
   };
 
   // Получение значения для цвета
@@ -264,16 +264,19 @@ export default function HeatmapPage() {
     );
 
     const stockRects: { id: string; x: number; y: number; width: number; height: number; data: HeatmapStock; sector: string }[] = [];
-    const sectorLabels: { name: string; x: number; y: number }[] = [];
+    const sectorLabels: { name: string; x: number; y: number; width: number; height: number }[] = [];
 
     sectorRects.forEach((sectorRect, idx) => {
       const sector = sectorItems[idx];
       if (!sector) return;
 
+      const headerH = 18;
       sectorLabels.push({
         name: sector.id,
-        x: sectorRect.x + 6,
-        y: sectorRect.y + 16
+        x: sectorRect.x,
+        y: sectorRect.y,
+        width: sectorRect.width,
+        height: headerH,
       });
 
       const stockItems = sector.stocks
@@ -287,9 +290,9 @@ export default function HeatmapPage() {
       const rects = squarify(
         stockItems,
         sectorRect.x + gap,
-        sectorRect.y + gap,
+        sectorRect.y + headerH,
         sectorRect.width - gap * 2,
-        sectorRect.height - gap * 2
+        sectorRect.height - headerH - gap
       );
 
       rects.forEach(rect => {
@@ -450,19 +453,30 @@ export default function HeatmapPage() {
             className="animate-in fade-in duration-500">
             {treemapData.stockRects.map((rect) => renderStock(rect, `${rect.sector}-${rect.id}`))}
 
-            {/* Названия секторов */}
-            {treemapData.sectorLabels.map((label) => (
-              <text
-                key={label.name}
-                x={label.x}
-                y={label.y}
-                fill="rgba(255,255,255,0.9)"
-                fontSize="12"
-                fontWeight="600"
-                style={{ textShadow: '0 1px 4px rgba(0,0,0,0.9), 0 0 8px rgba(0,0,0,0.8)' }}
-              >
-                {label.name}
-              </text>
+            {/* Заголовки секторов — отдельная полоска */}
+            {treemapData.sectorLabels.map((label, i) => (
+              <g key={label.name}>
+                <rect
+                  x={label.x + 3} y={label.y}
+                  width={label.width - 6} height={label.height}
+                  rx={3}
+                  fill="var(--bg-secondary)"
+                />
+                <clipPath id={`sector-clip-${i}`}>
+                  <rect x={label.x + 3} y={label.y} width={label.width - 6} height={label.height} />
+                </clipPath>
+                <text
+                  x={label.x + 9}
+                  y={label.y + label.height / 2}
+                  dominantBaseline="central"
+                  fill="rgba(255,255,255,0.7)"
+                  fontSize="11"
+                  fontWeight="500"
+                  clipPath={`url(#sector-clip-${i})`}
+                >
+                  {label.name}
+                </text>
+              </g>
             ))}
           </svg>
         ) : treemapData && treemapData.type === 'flat' ? (
@@ -473,43 +487,35 @@ export default function HeatmapPage() {
         ) : null}
       </div>
 
-      {/* Тултип */}
+      {/* Тултип — компактный */}
       {tooltip.visible && tooltip.stock && (
         <div
-          className="fixed z-50 bg-theme-secondary border border-theme rounded-lg p-3 shadow-xl pointer-events-none"
+          className="fixed z-50 bg-[#1A1F2E]/95 backdrop-blur-sm border border-white/10 rounded-lg py-1.5 px-3 shadow-xl pointer-events-none"
           style={{
-            left: Math.min(tooltip.x, window.innerWidth - 160),
-            top: tooltip.y < 200 ? tooltip.y + 30 : tooltip.y - 10,
+            left: Math.min(Math.max(tooltip.x, 140), window.innerWidth - 140),
+            top: tooltip.y < 200 ? tooltip.y + 25 : tooltip.y - 10,
             transform: tooltip.y < 200 ? 'translate(-50%, 0)' : 'translate(-50%, -100%)'
           }}
         >
-          <div className="font-bold text-white text-base">{tooltip.stock.name}</div>
-          <div className="text-slate-400 text-sm mb-2">{tooltip.stock.secId} • {tooltip.stock.sector}</div>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
-            {tooltip.stock.weight != null && (
-              <>
-                <span className="text-slate-400">Вес:</span>
-                <span className="text-white font-medium">{tooltip.stock.weight.toFixed(2)}%</span>
-              </>
-            )}
-            <span className="text-slate-400">Цена:</span>
-            <span className="text-white font-medium">{tooltip.stock.price.toFixed(2)} ₽</span>
-            <span className="text-slate-400">День:</span>
-            <span className={`font-medium ${tooltip.stock.change_1d >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-              {formatPercent(tooltip.stock.change_1d)}
-            </span>
-            <span className="text-slate-400">Неделя:</span>
-            <span className={`font-medium ${tooltip.stock.change_1w >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-              {formatPercent(tooltip.stock.change_1w)}
-            </span>
-            <span className="text-slate-400">Месяц:</span>
-            <span className={`font-medium ${tooltip.stock.change_1m >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-              {formatPercent(tooltip.stock.change_1m)}
-            </span>
-            <span className="text-slate-400">Год:</span>
-            <span className={`font-medium ${tooltip.stock.change_1y >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-              {formatPercent(tooltip.stock.change_1y)}
-            </span>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="font-bold text-white text-[13px]">{tooltip.stock.secId}</span>
+            <span className="text-[11px] text-slate-400">{tooltip.stock.name}</span>
+            <span className="text-[11px] text-white font-medium">{tooltip.stock.price.toFixed(2)} ₽</span>
+          </div>
+          <div className="flex items-center gap-3 text-[11px]">
+            {[
+              { label: 'Д', value: tooltip.stock.change_1d },
+              { label: 'Н', value: tooltip.stock.change_1w },
+              { label: 'М', value: tooltip.stock.change_1m },
+              { label: 'Г', value: tooltip.stock.change_1y },
+            ].map(({ label, value }) => (
+              <span key={label} className="flex items-center gap-1">
+                <span className="text-slate-500">{label}</span>
+                <span className={`font-medium ${value >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  {formatPercent(value)}
+                </span>
+              </span>
+            ))}
           </div>
         </div>
       )}

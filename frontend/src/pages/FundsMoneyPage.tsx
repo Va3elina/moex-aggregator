@@ -500,6 +500,7 @@ export default function FundsMoneyPage() {
                         showDownloadButton={false}
                         showNavigator={true}
                         chartPadding={{ left: 120 }}
+                        hideTime={true}
                     />
                 </div>
             ) : (
