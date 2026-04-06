@@ -22,6 +22,7 @@ const CATEGORY_FILTERS = [
 interface InstrumentSearchModalProps {
   onSelect: (sectype: string, name: string) => void;
   onClose: () => void;
+  filterType?: 'stock' | 'futures';
 }
 
 // Генерация цвета из строки
@@ -92,7 +93,7 @@ const InstrumentIcon = ({ sectype }: { sectype: string }) => {
   );
 };
 
-export default function InstrumentSearchModal({ onSelect, onClose }: InstrumentSearchModalProps) {
+export default function InstrumentSearchModal({ onSelect, onClose, filterType }: InstrumentSearchModalProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [instruments, setInstruments] = useState<Instrument[]>([]);
   const [loading, setLoading] = useState(true);
@@ -113,7 +114,8 @@ export default function InstrumentSearchModal({ onSelect, onClose }: InstrumentS
   useEffect(() => {
     async function load() {
       try {
-        const resp = await fetch('/api/instruments?type=futures');
+        const typeParam = filterType || 'futures';
+        const resp = await fetch(`/api/instruments?type=${typeParam}`);
         const data = await resp.json();
         setInstruments(data.instruments || []);
       } catch (err) {

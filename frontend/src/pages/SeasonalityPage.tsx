@@ -211,12 +211,7 @@ export default function SeasonalityPage() {
     ).join(' ');
   }, [pricePoints, scalePriceX, scalePriceY]);
 
-  const adjPricePath = useMemo(() => {
-    if (pricePoints.length === 0) return '';
-    return pricePoints.map((p, i) =>
-      `${i === 0 ? 'M' : 'L'} ${scalePriceX(i)} ${scalePriceY(p.adjusted)}`
-    ).join(' ');
-  }, [pricePoints, scalePriceX, scalePriceY]);
+  // adjPricePath removed — inline rendering in SVG
 
   // Price Y ticks
   const priceYTicks = useMemo(() => {
@@ -278,6 +273,7 @@ export default function SeasonalityPage() {
             <InstrumentSearchModal
               onSelect={handleSelectInstrument}
               onClose={() => setIsModalOpen(false)}
+              filterType="stock"
             />
           )}
         </div>
@@ -555,74 +551,87 @@ export default function SeasonalityPage() {
           pricePoints.length === 0 ? (
             <div className="flex items-center justify-center" style={{ height: chartHeight, color: 'var(--text-muted)' }}>Нет данных</div>
           ) : (
-            <div className="relative">
-              <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} className="w-full" style={{ maxHeight: '450px' }}
-                onMouseMove={(e) => {
-                  const rect = (e.target as SVGElement).closest('svg')?.getBoundingClientRect();
-                  if (!rect || pricePoints.length === 0) return;
-                  const svgX = (e.clientX - rect.left) / rect.width * chartWidth;
-                  const dataX = svgX - marginLeft;
-                  if (dataX < 0 || dataX > plotWidth) { setTooltip(null); return; }
-                  const idx = Math.round((dataX / plotWidth) * (pricePoints.length - 1));
-                  const clampedIdx = Math.max(0, Math.min(idx, pricePoints.length - 1));
-                  const p = pricePoints[clampedIdx];
-                  setTooltip({
-                    x: e.clientX - rect.left,
-                    y: e.clientY - rect.top,
-                    priceDate: p.date,
-                    priceClose: p.close,
-                    priceAdj: p.adjusted,
-                  });
-                }}
-                onMouseLeave={() => setTooltip(null)}
-              >
-                {/* Grid */}
-                {priceYTicks.map((tick, i) => (
-                  <g key={i}>
-                    <line x1={marginLeft} x2={chartWidth - marginRight} y1={tick.y} y2={tick.y}
-                      stroke="rgba(255,255,255,0.08)" strokeWidth={1} />
-                    <text x={marginLeft - 8} y={tick.y + 4} textAnchor="end" fontSize={16} fontWeight={600} fill="var(--text-muted)">
-                      {tick.value.toFixed(0)}
-                    </text>
-                  </g>
-                ))}
+            <div className="relative cursor-crosshair" style={{ height: 450 }}
+              onMouseMove={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect();
+                if (pricePoints.length === 0) return;
+                // Область графика: left=60px, right=80px от контейнера
+                const chartLeft = 60;
+                const chartRight = 80;
+                const chartAreaWidth = rect.width - chartLeft - chartRight;
+                const mouseX = e.clientX - rect.left - chartLeft;
+                if (mouseX < 0 || mouseX > chartAreaWidth) { setTooltip(null); return; }
+                const idx = Math.round((mouseX / chartAreaWidth) * (pricePoints.length - 1));
+                const clampedIdx = Math.max(0, Math.min(idx, pricePoints.length - 1));
+                const p = pricePoints[clampedIdx];
+                // Пиксельная позиция точки
+                const pixelX = chartLeft + (clampedIdx / Math.max(pricePoints.length - 1, 1)) * chartAreaWidth;
+                setTooltip({
+                  x: pixelX,
+                  y: e.clientY - rect.top,
+                  priceDate: p.date,
+                  priceClose: p.close,
+                  priceAdj: p.adjusted,
+                });
+              }}
+              onMouseLeave={() => setTooltip(null)}
+            >
+              {/* SVG график — растягивается на полную ширину */}
+              <div className="absolute" style={{ left: 60, right: 80, top: 10, bottom: 40 }}>
+                <svg viewBox={`0 0 ${plotWidth} ${plotHeight}`} preserveAspectRatio="none" width="100%" height="100%">
+                  {/* Grid */}
+                  {priceYTicks.map((tick, i) => (
+                    <line key={i} x1="0" x2={plotWidth} y1={tick.y - marginTop} y2={tick.y - marginTop}
+                      stroke="rgba(255,255,255,0.08)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+                  ))}
 
-                {/* X labels */}
+                  {/* Raw price line */}
+                  {rawPricePath && (
+                    <path d={pricePoints.map((p, i) =>
+                      `${i === 0 ? 'M' : 'L'} ${(i / Math.max(pricePoints.length - 1, 1)) * plotWidth} ${plotHeight - ((p.close - priceMinMax.min) / (priceMinMax.max - priceMinMax.min)) * plotHeight}`
+                    ).join(' ')} fill="none" stroke="#C8FF2E" strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" />
+                  )}
+
+                  {/* Adjusted price line */}
+                  {pricePoints.some(p => p.close !== p.adjusted) && (
+                    <path d={pricePoints.map((p, i) =>
+                      `${i === 0 ? 'M' : 'L'} ${(i / Math.max(pricePoints.length - 1, 1)) * plotWidth} ${plotHeight - ((p.adjusted - priceMinMax.min) / (priceMinMax.max - priceMinMax.min)) * plotHeight}`
+                    ).join(' ')} fill="none" stroke="#22c55e" strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="6,3" />
+                  )}
+
+                  {/* Hover crosshair */}
+                  {tooltip?.priceDate && (() => {
+                    const idx = pricePoints.findIndex(p => p.date === tooltip.priceDate);
+                    if (idx < 0) return null;
+                    const cx = (idx / Math.max(pricePoints.length - 1, 1)) * plotWidth;
+                    const cy = plotHeight - ((pricePoints[idx].close - priceMinMax.min) / (priceMinMax.max - priceMinMax.min)) * plotHeight;
+                    return (
+                      <>
+                        <line x1={cx} x2={cx} y1="0" y2={plotHeight}
+                          stroke="#C8FF2E" strokeWidth="1" strokeDasharray="4,3" opacity="0.5" vectorEffect="non-scaling-stroke" />
+                        <circle cx={cx} cy={cy} r="4"
+                          fill="#C8FF2E" stroke="var(--bg-secondary)" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+                      </>
+                    );
+                  })()}
+                </svg>
+              </div>
+
+              {/* Y labels — HTML */}
+              {priceYTicks.map((tick, i) => (
+                <div key={i} className="absolute pointer-events-none" style={{ right: 4, top: `${((tick.y - marginTop) / plotHeight) * 100 * (400/450) + 2}%`, transform: 'translateY(-50%)' }}>
+                  <span className="text-[16px] font-semibold text-[#9CA3B8]">{tick.value.toFixed(0)}</span>
+                </div>
+              ))}
+
+              {/* X labels — HTML */}
+              <div className="absolute bottom-0 left-[60px] flex justify-between text-[14px] font-semibold text-[#9CA3B8]" style={{ right: 80 }}>
                 {priceXTicks.map((tick, i) => (
-                  <text key={i} x={tick.x} y={chartHeight - 10} textAnchor="middle" fontSize={14} fontWeight={600} fill="#9CA3B8">
-                    {tick.label}
-                  </text>
+                  <span key={i}>{tick.label}</span>
                 ))}
+              </div>
 
-                {/* Raw price line */}
-                {rawPricePath && (
-                  <path d={rawPricePath} fill="none" stroke="#C8FF2E" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                )}
-
-                {/* Adjusted price line (if different) */}
-                {adjPricePath && adjPricePath !== rawPricePath && (
-                  <path d={adjPricePath} fill="none" stroke="#22c55e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="6,3" />
-                )}
-
-                {/* Hover crosshair */}
-                {tooltip?.priceDate && (() => {
-                  const idx = pricePoints.findIndex(p => p.date === tooltip.priceDate);
-                  if (idx < 0) return null;
-                  const cx = scalePriceX(idx);
-                  return (
-                    <>
-                      <line x1={cx} x2={cx} y1={marginTop} y2={marginTop + plotHeight}
-                        stroke="rgba(255,255,255,0.2)" strokeWidth={1} strokeDasharray="4,4" />
-                      <circle cx={cx} cy={scalePriceY(pricePoints[idx].close)} r={4}
-                        fill="#C8FF2E" stroke="var(--bg-secondary)" strokeWidth={2} />
-                      {pricePoints[idx].close !== pricePoints[idx].adjusted && (
-                        <circle cx={cx} cy={scalePriceY(pricePoints[idx].adjusted)} r={4}
-                          fill="#22c55e" stroke="var(--bg-secondary)" strokeWidth={2} />
-                      )}
-                    </>
-                  );
-                })()}
-              </svg>
+              {/* Crosshair handled in inner SVG above */}
 
               {/* Legend */}
               <div className="flex items-center gap-4 mt-2 ml-16 text-xs" style={{ color: 'var(--text-muted)' }}>
@@ -637,24 +646,33 @@ export default function SeasonalityPage() {
                 )}
               </div>
 
-              {/* Tooltip */}
-              {tooltip?.priceDate && (
-                <div className="absolute pointer-events-none px-3 py-2 rounded-lg shadow-lg text-sm z-10"
-                  style={{
-                    left: Math.min(tooltip.x + 12, chartWidth - 200), top: tooltip.y - 70,
-                    backgroundColor: 'var(--bg-primary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)', minWidth: 150,
-                  }}>
-                  <div className="font-semibold mb-1">{tooltip.priceDate}</div>
-                  <div style={{ color: '#C8FF2E' }}>
-                    Цена: {tooltip.priceClose?.toFixed(2)} ₽
-                  </div>
-                  {tooltip.priceAdj !== tooltip.priceClose && (
-                    <div style={{ color: '#22c55e' }}>
-                      Без гэпов: {tooltip.priceAdj?.toFixed(2)} ₽
+              {/* Tooltip — позиция через процент от ширины */}
+              {tooltip?.priceDate && (() => {
+                const isRight = tooltip.x > 500;
+                return (
+                  <div className="absolute pointer-events-none z-30"
+                    style={{
+                      left: isRight ? tooltip.x - 170 : tooltip.x + 12,
+                      top: Math.max(tooltip.y - 50, 4),
+                    }}>
+                    <div className="bg-theme-tertiary/95 backdrop-blur-sm rounded-lg border border-theme shadow-xl py-1.5 px-3">
+                      <div className="text-[10px] text-theme-secondary mb-1">{tooltip.priceDate}</div>
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-[#C8FF2E]" />
+                        <span className="text-[11px] text-theme-secondary">Цена</span>
+                        <span className="text-xs font-semibold text-[#C8FF2E] ml-auto">{tooltip.priceClose?.toFixed(2)} ₽</span>
+                      </div>
+                      {tooltip.priceAdj !== tooltip.priceClose && (
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="w-2 h-2 rounded-full bg-[#22c55e]" />
+                          <span className="text-[11px] text-theme-secondary">Без гэпов</span>
+                          <span className="text-xs font-semibold text-[#22c55e] ml-auto">{tooltip.priceAdj?.toFixed(2)} ₽</span>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              )}
+                  </div>
+                );
+              })()}
             </div>
           )
         )}
