@@ -153,7 +153,10 @@ def _compute_seasonality_daily(engine, secid: str, mode: str, iterations: int,
                                 ex_dates: dict[str, float]) -> list[dict]:
     """
     Вычисляет сезонность для дневных режимов (weekday, monthday, monthly).
-    Использует close-to-close returns с опциональной дивидендной корректировкой.
+
+    При exclude_dividends=True: строит мультипликативную adjusted close серию
+    (стандарт Yahoo/CRSP), затем считает returns по adjusted ценам.
+    При exclude_dividends=False: raw close-to-close returns.
     """
     source, inst_type = _resolve_source(secid)
 
@@ -205,9 +208,8 @@ def _compute_seasonality_daily(engine, secid: str, mode: str, iterations: int,
         join_cond = "EXTRACT(YEAR FROM c.begin_time)::int = ri.iter_key"
         labels = MONTH_LABELS
 
-    # Получаем все свечи за нужный период с предыдущими close через LAG
+    # Шаг 1: получаем все свечи за нужный период
     with engine.connect() as conn:
-        # Шаг 1: все свечи для этого тикера с LAG(close) по дневным
         all_candles = conn.execute(text(f"""
             WITH recent_iters AS (
                 {iteration_cte}
@@ -216,7 +218,6 @@ def _compute_seasonality_daily(engine, secid: str, mode: str, iterations: int,
                 SELECT
                     c.begin_time,
                     c.begin_time::date as trade_date,
-                    c.open,
                     c.close,
                     ({group_expr}) as grp_key
                 FROM candles c
@@ -226,50 +227,63 @@ def _compute_seasonality_daily(engine, secid: str, mode: str, iterations: int,
                   AND {type_filter}
                   AND c.open > 0
                   {extra_filter}
-            ),
-            with_prev AS (
-                SELECT
-                    trade_date,
-                    open,
-                    close,
-                    grp_key,
-                    LAG(close) OVER (ORDER BY begin_time) as prev_close
-                FROM filtered
+                ORDER BY c.begin_time
             )
-            SELECT trade_date, open, close, grp_key, prev_close
-            FROM with_prev
-            WHERE prev_close IS NOT NULL AND prev_close > 0
-            ORDER BY trade_date
+            SELECT trade_date, close, grp_key
+            FROM filtered
         """), {"secid": secid, "iterations": iterations}).fetchall()
 
     if not all_candles:
         return []
 
-    # Шаг 2: вычисляем returns с дивидендной корректировкой
+    # Шаг 2: строим массивы дат, close, grp_key
     from collections import defaultdict
-    groups = defaultdict(list)
-
+    trade_dates = []
+    closes = []
+    grp_keys = []
     for row in all_candles:
-        trade_date = row[0].isoformat() if hasattr(row[0], 'isoformat') else str(row[0])
-        open_p = float(row[1])
-        close_p = float(row[2])
-        grp_key = int(row[3])
-        prev_close = float(row[4])
+        td = row[0]
+        trade_dates.append(td)
+        closes.append(float(row[1]))
+        grp_keys.append(int(row[2]))
 
-        # Close-to-close return
-        raw_return = (close_p - prev_close) / prev_close * 100
+    # Шаг 3: мультипликативная коррекция (если есть ex_dates)
+    if ex_dates:
+        adjusted = closes.copy()
+        relevant_divs = []
+        for ex_str, div_val in ex_dates.items():
+            from datetime import date as dt
+            ex_d = dt.fromisoformat(ex_str)
+            relevant_divs.append((ex_d, div_val))
+        relevant_divs.sort()  # от старых к новым
 
-        # Дивидендная корректировка
-        if trade_date in ex_dates:
-            div_val = ex_dates[trade_date]
-            # На экс-дате: добавляем дивиденд обратно к close
-            # adjusted_return = (close + div - prev_close) / prev_close * 100
-            adjusted_return = (close_p + div_val - prev_close) / prev_close * 100
-            groups[grp_key].append(adjusted_return)
-        else:
-            groups[grp_key].append(raw_return)
+        for ex_d, div_val in relevant_divs:
+            ex_idx = None
+            for i, d in enumerate(trade_dates):
+                d_cmp = d if isinstance(d, date) else d
+                if d_cmp >= ex_d:
+                    ex_idx = i
+                    break
+            if ex_idx is not None and ex_idx > 0:
+                raw_prev_close = closes[ex_idx - 1]
+                if raw_prev_close > 0 and div_val < raw_prev_close:
+                    factor = (raw_prev_close - div_val) / raw_prev_close
+                    for j in range(ex_idx):
+                        adjusted[j] *= factor
+        prices = adjusted
+    else:
+        prices = closes
 
-    # Шаг 3: агрегация
+    # Шаг 4: вычисляем returns и группируем
+    groups = defaultdict(list)
+    for i in range(1, len(prices)):
+        prev_price = prices[i - 1]
+        if prev_price <= 0:
+            continue
+        ret = (prices[i] - prev_price) / prev_price * 100
+        groups[grp_keys[i]].append(ret)
+
+    # Шаг 5: агрегация
     bars = []
     for key in sorted(groups.keys()):
         values = groups[key]
@@ -444,30 +458,28 @@ async def get_price_chart(
     dates = [r[0] for r in rows]
     closes = [float(r[1]) for r in rows]
 
-    # Adjusted close: идём с конца, на каждой экс-дате корректируем предыдущие цены
+    # Adjusted close: мультипликативная коррекция (стандарт Yahoo/CRSP)
+    # Используем RAW prev_close для расчёта factor, не adjusted
     adjusted = closes.copy()
     if ex_dates:
-        # Собираем экс-даты в диапазоне и сортируем по убыванию
         relevant_divs = []
         for ex_str, div_val in ex_dates.items():
             ex_d = date_type.fromisoformat(ex_str)
             if date_from <= ex_d <= date_type.today():
                 relevant_divs.append((ex_d, div_val))
-        relevant_divs.sort(reverse=True)  # от новых к старым
+        relevant_divs.sort()  # от старых к новым
 
         for ex_d, div_val in relevant_divs:
-            # Находим индекс экс-даты в нашем ряде
             ex_idx = None
             for i, d in enumerate(dates):
                 if d >= ex_d:
                     ex_idx = i
                     break
             if ex_idx is not None and ex_idx > 0:
-                # Коэффициент корректировки: используем close ДО экс-даты (pre-gap)
-                close_before_ex = adjusted[ex_idx - 1]
-                if close_before_ex > 0:
-                    factor = 1 + div_val / close_before_ex
-                    # Умножаем все предыдущие цены на factor
+                # factor на основе RAW close дня перед экс-датой
+                raw_prev_close = closes[ex_idx - 1]
+                if raw_prev_close > 0 and div_val < raw_prev_close:
+                    factor = (raw_prev_close - div_val) / raw_prev_close
                     for j in range(ex_idx):
                         adjusted[j] *= factor
 
@@ -483,10 +495,19 @@ async def get_price_chart(
     duration = time.time() - start_time
     log.info(f"GET /seasonality/price {secid} {len(data)} points, {len(ex_dates)} divs, {duration:.2f}s")
 
+    # Дивиденды для отображения на графике
+    dividends_list = []
+    for ex_str, div_val in ex_dates.items():
+        ex_d = date_type.fromisoformat(ex_str)
+        if date_from <= ex_d <= date_type.today():
+            dividends_list.append({"date": ex_str, "value": round(div_val, 2)})
+    dividends_list.sort(key=lambda x: x["date"])
+
     result = {
         "secid": secid,
         "days": days,
         "ex_dates_count": len(ex_dates),
+        "dividends": dividends_list,
         "data": data,
     }
     get_or_set(cache_key, result, ttl=300)

@@ -23,6 +23,8 @@ interface InstrumentSearchModalProps {
   onSelect: (sectype: string, name: string) => void;
   onClose: () => void;
   filterType?: 'stock' | 'futures';
+  excludeType?: string;
+  onlyGroups?: string[];
 }
 
 // Генерация цвета из строки
@@ -73,6 +75,12 @@ const INSTRUMENT_ICONS: Record<string, { icon: string; bg: string; color: string
   'SF': { icon: 'СН', bg: '#1E3A5F', color: '#fff' },
   'AF': { icon: 'АФ', bg: '#0369A1', color: '#fff' },
   'SE': { icon: 'СС', bg: '#475569', color: '#fff' },
+  // Индексы
+  'IMOEX': { icon: 'МБ', bg: '#6366F1', color: '#fff' },
+  'RTSI': { icon: 'РТС', bg: '#8B5CF6', color: '#fff' },
+  'GLDRUB_TOM': { icon: 'Au₽', bg: '#D97706', color: '#fff' },
+  'RGBITR': { icon: 'ОФЗ', bg: '#0EA5E9', color: '#fff' },
+  'MCFTR': { icon: 'МП', bg: '#6366F1', color: '#fff' },
 };
 
 const InstrumentIcon = ({ sectype }: { sectype: string }) => {
@@ -93,7 +101,7 @@ const InstrumentIcon = ({ sectype }: { sectype: string }) => {
   );
 };
 
-export default function InstrumentSearchModal({ onSelect, onClose, filterType }: InstrumentSearchModalProps) {
+export default function InstrumentSearchModal({ onSelect, onClose, filterType, excludeType, onlyGroups }: InstrumentSearchModalProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [instruments, setInstruments] = useState<Instrument[]>([]);
   const [loading, setLoading] = useState(true);
@@ -129,6 +137,8 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType }:
 
   // Фильтрация по поиску и категории
   const filteredInstruments = instruments.filter(inst => {
+    if (excludeType && inst.type === excludeType) return false;
+    if (onlyGroups && !onlyGroups.includes(inst.group || '')) return false;
     const matchesSearch = !searchQuery ||
       inst.sectype.toLowerCase().includes(searchQuery.toLowerCase()) ||
       inst.name.toLowerCase().includes(searchQuery.toLowerCase());
@@ -198,6 +208,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType }:
           </div>
 
           {/* Категории */}
+          {!onlyGroups && (
           <div className="flex gap-1.5 mt-4 flex-wrap">
             {CATEGORY_FILTERS.map(cat => (
               <button
@@ -213,6 +224,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType }:
               </button>
             ))}
           </div>
+          )}
         </div>
 
         {/* Results */}

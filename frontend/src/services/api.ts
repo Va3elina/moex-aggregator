@@ -649,10 +649,16 @@ export interface PricePoint {
   adjusted: number;
 }
 
+export interface DividendPoint {
+  date: string;
+  value: number;
+}
+
 export interface PriceChartResponse {
   secid: string;
   days: number;
   ex_dates_count: number;
+  dividends: DividendPoint[];
   data: PricePoint[];
 }
 
