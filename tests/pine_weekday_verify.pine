@@ -1,0 +1,109 @@
+// ============================================================
+// PineScript: Weekday Seasonality Verification for SBER
+// Сравнение с нашими данными: таймфрейм.рф
+//
+// Применить к: MOEX:SBER, дневной ТФ
+// Метод: close-to-close return за последние 90 недель
+// ============================================================
+//@version=5
+indicator("Weekday Seasonality SBER (90w verify)", overlay=false)
+
+// Параметры
+weeks_back = input.int(90, "Недель назад", minval=10, maxval=500)
+
+// ВАЖНО: raw close без дивидендной коррекции TV
+// В TradingView: Settings → Symbol → отключить "Adjust data for dividends"
+// Или используем request.security с adjustment.none:
+[raw_close, raw_close_prev] = request.security(syminfo.tickerid, "D", [close, close[1]], adjustment=adjustment.none)
+
+// Close-to-close return (%) — без adjusted close
+daily_return = (raw_close - raw_close_prev) / raw_close_prev * 100
+
+// День недели в PineScript: dayofweek
+// 1=Sunday, 2=Monday, 3=Tuesday, 4=Wednesday, 5=Thursday, 6=Friday, 7=Saturday
+lookback = weeks_back * 5
+
+// Суммы и счётчики
+var float sum_mon = 0.0, var float sum_tue = 0.0, var float sum_wed = 0.0
+var float sum_thu = 0.0, var float sum_fri = 0.0
+var int cnt_mon = 0, var int cnt_tue = 0, var int cnt_wed = 0
+var int cnt_thu = 0, var int cnt_fri = 0
+
+if barstate.islast
+    sum_mon := 0.0, sum_tue := 0.0, sum_wed := 0.0, sum_thu := 0.0, sum_fri := 0.0
+    cnt_mon := 0, cnt_tue := 0, cnt_wed := 0, cnt_thu := 0, cnt_fri := 0
+
+    for i = 0 to lookback - 1
+        if i + 1 < bar_index
+            ret = (raw_close[i] - raw_close[i + 1]) / raw_close[i + 1] * 100
+            d = dayofweek[i]
+            if d == 2
+                sum_mon += ret, cnt_mon += 1
+            if d == 3
+                sum_tue += ret, cnt_tue += 1
+            if d == 4
+                sum_wed += ret, cnt_wed += 1
+            if d == 5
+                sum_thu += ret, cnt_thu += 1
+            if d == 6
+                sum_fri += ret, cnt_fri += 1
+
+avg_mon = cnt_mon > 0 ? sum_mon / cnt_mon : 0
+avg_tue = cnt_tue > 0 ? sum_tue / cnt_tue : 0
+avg_wed = cnt_wed > 0 ? sum_wed / cnt_wed : 0
+avg_thu = cnt_thu > 0 ? sum_thu / cnt_thu : 0
+avg_fri = cnt_fri > 0 ? sum_fri / cnt_fri : 0
+
+// ============ НАШИ ДАННЫЕ (таймфрейм.рф) ============
+// SBER Weekday (90 weeks, raw close-to-close, без дивидендной коррекции)
+our_mon = +0.0373
+our_tue = -0.0513
+our_wed = +0.1385
+our_thu = +0.0500
+our_fri = -0.0229
+
+// Таблица сравнения
+var table t = table.new(position.top_right, 4, 7, bgcolor=color.new(color.black, 70))
+
+if barstate.islast
+    table.cell(t, 0, 0, "День", text_color=color.white, text_size=size.small)
+    table.cell(t, 1, 0, "TradingView", text_color=color.yellow, text_size=size.small)
+    table.cell(t, 2, 0, "Таймфрейм.рф", text_color=color.lime, text_size=size.small)
+    table.cell(t, 3, 0, "Разница", text_color=color.aqua, text_size=size.small)
+
+    // Пн
+    table.cell(t, 0, 1, "Пн (n=" + str.tostring(cnt_mon) + ")", text_color=color.white, text_size=size.small)
+    table.cell(t, 1, 1, str.tostring(avg_mon, "#.####") + "%", text_color=color.yellow, text_size=size.small)
+    table.cell(t, 2, 1, str.tostring(our_mon, "#.####") + "%", text_color=color.lime, text_size=size.small)
+    table.cell(t, 3, 1, str.tostring(avg_mon - our_mon, "#.####"), text_color=math.abs(avg_mon - our_mon) < 0.01 ? color.lime : color.red, text_size=size.small)
+
+    // Вт
+    table.cell(t, 0, 2, "Вт (n=" + str.tostring(cnt_tue) + ")", text_color=color.white, text_size=size.small)
+    table.cell(t, 1, 2, str.tostring(avg_tue, "#.####") + "%", text_color=color.yellow, text_size=size.small)
+    table.cell(t, 2, 2, str.tostring(our_tue, "#.####") + "%", text_color=color.lime, text_size=size.small)
+    table.cell(t, 3, 2, str.tostring(avg_tue - our_tue, "#.####"), text_color=math.abs(avg_tue - our_tue) < 0.01 ? color.lime : color.red, text_size=size.small)
+
+    // Ср
+    table.cell(t, 0, 3, "Ср (n=" + str.tostring(cnt_wed) + ")", text_color=color.white, text_size=size.small)
+    table.cell(t, 1, 3, str.tostring(avg_wed, "#.####") + "%", text_color=color.yellow, text_size=size.small)
+    table.cell(t, 2, 3, str.tostring(our_wed, "#.####") + "%", text_color=color.lime, text_size=size.small)
+    table.cell(t, 3, 3, str.tostring(avg_wed - our_wed, "#.####"), text_color=math.abs(avg_wed - our_wed) < 0.01 ? color.lime : color.red, text_size=size.small)
+
+    // Чт
+    table.cell(t, 0, 4, "Чт (n=" + str.tostring(cnt_thu) + ")", text_color=color.white, text_size=size.small)
+    table.cell(t, 1, 4, str.tostring(avg_thu, "#.####") + "%", text_color=color.yellow, text_size=size.small)
+    table.cell(t, 2, 4, str.tostring(our_thu, "#.####") + "%", text_color=color.lime, text_size=size.small)
+    table.cell(t, 3, 4, str.tostring(avg_thu - our_thu, "#.####"), text_color=math.abs(avg_thu - our_thu) < 0.01 ? color.lime : color.red, text_size=size.small)
+
+    // Пт
+    table.cell(t, 0, 5, "Пт (n=" + str.tostring(cnt_fri) + ")", text_color=color.white, text_size=size.small)
+    table.cell(t, 1, 5, str.tostring(avg_fri, "#.####") + "%", text_color=color.yellow, text_size=size.small)
+    table.cell(t, 2, 5, str.tostring(our_fri, "#.####") + "%", text_color=color.lime, text_size=size.small)
+    table.cell(t, 3, 5, str.tostring(avg_fri - our_fri, "#.####"), text_color=math.abs(avg_fri - our_fri) < 0.01 ? color.lime : color.red, text_size=size.small)
+
+    // Итог
+    table.cell(t, 0, 6, "< 0.01 = OK", text_color=color.gray, text_size=size.tiny)
+
+// График
+plot(daily_return, "Daily Return %", color=daily_return >= 0 ? color.green : color.red, style=plot.style_histogram)
+hline(0, "Zero", color=color.gray)

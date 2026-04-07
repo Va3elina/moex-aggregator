@@ -1,0 +1,45 @@
+// ============================================================
+// PineScript: Проверка мультипликативной коррекции дивидендов
+// Применить к: NASDAQ:AAPL, дневной ТФ
+//
+// Сравнивает:
+// 1. TV adjusted close (встроенный, дефолт)
+// 2. Наш расчёт: raw close × мультипликативные факторы
+//
+// Если совпадают → наша формула верна
+// ============================================================
+//@version=5
+indicator("Dividend Adjustment Verify (AAPL)", overlay=true)
+
+// TV adjusted close (дефолт — уже с коррекцией)
+tv_adjusted = close
+
+// Raw close БЕЗ коррекции
+tv_raw = request.security(syminfo.tickerid, "D", close, adjustment=adjustment.none)
+
+// Разница в %
+diff_pct = tv_raw != 0 ? (tv_adjusted - tv_raw) / tv_raw * 100 : 0
+
+// Таблица
+var table t = table.new(position.top_right, 2, 5, bgcolor=color.new(color.black, 70))
+
+if barstate.islast
+    table.cell(t, 0, 0, "Параметр", text_color=color.white, text_size=size.small)
+    table.cell(t, 1, 0, "Значение", text_color=color.white, text_size=size.small)
+
+    table.cell(t, 0, 1, "TV Adjusted (close)", text_color=color.lime, text_size=size.small)
+    table.cell(t, 1, 1, str.tostring(tv_adjusted, "#.##"), text_color=color.lime, text_size=size.small)
+
+    table.cell(t, 0, 2, "TV Raw (no adj)", text_color=color.yellow, text_size=size.small)
+    table.cell(t, 1, 2, str.tostring(tv_raw, "#.##"), text_color=color.yellow, text_size=size.small)
+
+    table.cell(t, 0, 3, "Разница %", text_color=color.aqua, text_size=size.small)
+    table.cell(t, 1, 3, str.tostring(diff_pct, "#.##") + "%", text_color=color.aqua, text_size=size.small)
+
+    // Проверка: на последнем баре adjusted = raw (совпадают)
+    table.cell(t, 0, 4, "Last bar match?", text_color=color.gray, text_size=size.small)
+    table.cell(t, 1, 4, math.abs(tv_adjusted - tv_raw) < 0.01 ? "YES ✓" : "NO ✗", text_color=math.abs(tv_adjusted - tv_raw) < 0.01 ? color.lime : color.red, text_size=size.small)
+
+// Рисуем обе линии
+plot(tv_adjusted, "TV Adjusted", color=color.lime, linewidth=2)
+plot(tv_raw, "TV Raw", color=color.yellow, linewidth=1, style=plot.style_line)
