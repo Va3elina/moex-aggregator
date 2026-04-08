@@ -518,7 +518,7 @@ class OI5minUpdater:
             log.warning("Pandas не установлен, пропуск заполнения гэпов")
             return records
         except Exception as e:
-            log.error(f"Ошибка заполнения гэпов: {e}")
+            log.debug(f"Пропуск fill_gaps для {ticker}: {e}")
             return records
 
     async def update_ticker(

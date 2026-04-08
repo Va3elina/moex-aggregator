@@ -224,12 +224,11 @@ export default function ChartNavigator({
                         width={HANDLE_W} height={height * 0.7}
                         rx={3} fill="rgba(56,98,251,0.9)"
                     />
-                    <text
-                        x={leftPx} y={height / 2}
-                        textAnchor="middle" dominantBaseline="central"
-                        fill="#fff" fontSize="9" fontWeight="bold"
+                    <path
+                        d={`M${leftPx + 2} ${height / 2 - 4} L${leftPx - 3} ${height / 2} L${leftPx + 2} ${height / 2 + 4}`}
+                        fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
                         style={{ pointerEvents: 'none' }}
-                    >◀</text>
+                    />
                 </g>
 
                 {/* Правая ручка */}
@@ -242,12 +241,11 @@ export default function ChartNavigator({
                         width={HANDLE_W} height={height * 0.7}
                         rx={3} fill="rgba(56,98,251,0.9)"
                     />
-                    <text
-                        x={rightPx} y={height / 2}
-                        textAnchor="middle" dominantBaseline="central"
-                        fill="#fff" fontSize="9" fontWeight="bold"
+                    <path
+                        d={`M${rightPx - 2} ${height / 2 - 4} L${rightPx + 3} ${height / 2} L${rightPx - 2} ${height / 2 + 4}`}
+                        fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
                         style={{ pointerEvents: 'none' }}
-                    >▶</text>
+                    />
                 </g>
             </svg>
         </div>

@@ -618,7 +618,7 @@ export default function FundsMoneyPage() {
                                         const hOut = outVal < 0 ? Math.max((Math.abs(outVal) / maxScale) * halfH, minBarH) : 0;
 
                                         return (
-                                            <g key={i} opacity={opacity} className="transition-opacity duration-150">
+                                            <g key={i} opacity={opacity}>
                                                 {hIn > 0 && (
                                                     <rect x={x} y={`${midY - hIn}%`} width={w} height={`${hIn}%`}
                                                         fill="#2EE59D" rx="2" />
@@ -709,10 +709,12 @@ export default function FundsMoneyPage() {
                                                     {flowStr}
                                                 </span>
                                             </div>
-                                            <div className="flex items-center gap-1.5 mt-1">
-                                                <span className="w-2 h-2 rounded-full flex-shrink-0 bg-[#6366f1]" />
-                                                <span className="text-[11px] text-theme-secondary">Изменение</span>
-                                                <span className="text-[11px] font-semibold whitespace-nowrap ml-auto" style={{ color }}>
+                                            <div className="flex items-center justify-between gap-3 mt-0.5">
+                                                <div className="flex items-center gap-1.5 min-w-0">
+                                                    <span className="w-2 h-2 rounded-full flex-shrink-0 bg-[#6366f1]" />
+                                                    <span className="text-[11px] text-theme-secondary">Изменение</span>
+                                                </div>
+                                                <span className="text-xs font-semibold whitespace-nowrap" style={{ color }}>
                                                     {pctStr}
                                                 </span>
                                             </div>

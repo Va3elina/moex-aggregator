@@ -6,7 +6,7 @@
 === OI (Open Interest) ===
 1. OI/fetch_oi_5min_realtime.py — 5-минутные данные (Algopack, 65 тикеров)
 2. OI/aggregate_oi_hourly.py — агрегация 5м → 60м
-3. OI/fetch_oi_daily_realtime.py — дневные данные (ISS MOEX, 133 инструмента)
+3. OI/fetch_oi_daily_realtime.py — дневные данные (Algopack FUTOI, обновляется каждые 5 мин)
 
 === Candles (Свечи) ===
 4. Candles/fetch_candles_futures_realtime.py — свечи фьючерсов (Algopack)
@@ -845,6 +845,9 @@ class MainOrchestrator:
 
                         results = await self.run_5min_cycle()
                         self.last_5min_update = slot_5min
+
+                        # OI Daily — обновляем текущий день из Algopack (ON CONFLICT UPDATE)
+                        await self.run_daily_update()
 
                         # Агрегация (после 5м, если новый час и минута >= 2)
                         if results.get('oi_5min') and now.minute >= 2:
