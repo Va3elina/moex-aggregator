@@ -1,9 +1,8 @@
 -- Materialized View: карта рынка акций
 -- Обновляется каждые 5 минут через оркестратор (refresh_materialized_views)
 --
--- change_1d: real-time из 5мин свечей (open первой vs close последней сегодня)
---            fallback: (close - open) / open дневной свечи (выходные/до открытия)
--- change_1w/1m/1y: из дневных свечей (close сегодня vs close N дней назад)
+-- change_1d: real-time, close предыдущего дня vs текущий close (учитывает утренние гэпы)
+-- change_1w/1m/1y: snapshot-to-snapshot — close на дату T-7/30/365 дней назад (ближайший доступный)
 
 DROP MATERIALIZED VIEW IF EXISTS mv_heatmap_stocks;
 
@@ -18,13 +17,15 @@ latest_daily AS (
     SELECT secid, open AS daily_open, close AS price, begin_time AS last_update
     FROM ranked_daily WHERE rn = 1
 ),
-intraday_open AS (
-    SELECT DISTINCT ON (secid) secid, open
+-- Close предыдущего торгового дня (для 1D с гэпом)
+prev_day_close AS (
+    SELECT DISTINCT ON (secid) secid, close AS price
     FROM candles
-    WHERE type = 'stock' AND interval = 5
-      AND begin_time::date = CURRENT_DATE
-    ORDER BY secid, begin_time ASC
+    WHERE type = 'stock' AND interval = 24
+      AND begin_time::date < CURRENT_DATE
+    ORDER BY secid, begin_time DESC
 ),
+-- Real-time: последняя 5мин свеча сегодня
 intraday_close AS (
     SELECT DISTINCT ON (secid) secid, close
     FROM candles
@@ -32,23 +33,32 @@ intraday_close AS (
       AND begin_time::date = CURRENT_DATE
     ORDER BY secid, begin_time DESC
 ),
+-- 7D: close ближайшей свечи к дате T-7 дней (snapshot-to-snapshot)
 price_1w AS (
     SELECT DISTINCT ON (secid) secid, close AS price
     FROM candles
-    WHERE type = 'stock' AND interval = 24 AND begin_time >= CURRENT_DATE - INTERVAL '7 days'
-    ORDER BY secid, begin_time
+    WHERE type = 'stock' AND interval = 24
+      AND begin_time::date <= CURRENT_DATE - INTERVAL '5 days'
+      AND begin_time::date >= CURRENT_DATE - INTERVAL '10 days'
+    ORDER BY secid, begin_time DESC
 ),
+-- 30D: close ближайшей свечи к дате T-30 дней
 price_1m AS (
     SELECT DISTINCT ON (secid) secid, close AS price
     FROM candles
-    WHERE type = 'stock' AND interval = 24 AND begin_time >= CURRENT_DATE - INTERVAL '30 days'
-    ORDER BY secid, begin_time
+    WHERE type = 'stock' AND interval = 24
+      AND begin_time::date <= CURRENT_DATE - INTERVAL '28 days'
+      AND begin_time::date >= CURRENT_DATE - INTERVAL '35 days'
+    ORDER BY secid, begin_time DESC
 ),
+-- 1Y: close ближайшей свечи к дате T-365 дней
 price_1y AS (
     SELECT DISTINCT ON (secid) secid, close AS price
     FROM candles
-    WHERE type = 'stock' AND interval = 24 AND begin_time >= CURRENT_DATE - INTERVAL '365 days'
-    ORDER BY secid, begin_time
+    WHERE type = 'stock' AND interval = 24
+      AND begin_time::date <= CURRENT_DATE - INTERVAL '360 days'
+      AND begin_time::date >= CURRENT_DATE - INTERVAL '370 days'
+    ORDER BY secid, begin_time DESC
 ),
 stats_1d AS (
     SELECT secid, SUM(volume) AS volume, SUM(value) AS value
@@ -75,19 +85,23 @@ latest_cap AS (
 )
 SELECT i.sec_id, i.name, i.sector,
     COALESCE(ic.close, ld.price) AS price,
+    -- 1D: close сейчас vs close вчера (с учётом утреннего гэпа)
     CASE
-        WHEN io.open IS NOT NULL AND io.open > 0
-        THEN ROUND((COALESCE(ic.close, ld.price) - io.open) / io.open * 100, 2)
+        WHEN pdc.price IS NOT NULL AND pdc.price > 0
+        THEN ROUND((COALESCE(ic.close, ld.price) - pdc.price) / pdc.price * 100, 2)
         WHEN ld.daily_open > 0
         THEN ROUND((ld.price - ld.daily_open) / ld.daily_open * 100, 2)
         ELSE 0
     END AS change_1d,
+    -- 7D: snapshot-to-snapshot
     CASE WHEN p1w.price > 0
         THEN ROUND((COALESCE(ic.close, ld.price) - p1w.price) / p1w.price * 100, 2)
         ELSE 0 END AS change_1w,
+    -- 30D: snapshot-to-snapshot
     CASE WHEN p1m.price > 0
         THEN ROUND((COALESCE(ic.close, ld.price) - p1m.price) / p1m.price * 100, 2)
         ELSE 0 END AS change_1m,
+    -- 1Y: snapshot-to-snapshot
     CASE WHEN p1y.price > 0
         THEN ROUND((COALESCE(ic.close, ld.price) - p1y.price) / p1y.price * 100, 2)
         ELSE 0 END AS change_1y,
@@ -102,7 +116,7 @@ SELECT i.sec_id, i.name, i.sector,
         ELSE COALESCE(mc.market_cap, 0) END AS market_cap
 FROM instruments i
 JOIN latest_daily ld ON ld.secid = i.sec_id
-LEFT JOIN intraday_open io ON io.secid = i.sec_id
+LEFT JOIN prev_day_close pdc ON pdc.secid = i.sec_id
 LEFT JOIN intraday_close ic ON ic.secid = i.sec_id
 LEFT JOIN price_1w p1w ON p1w.secid = i.sec_id
 LEFT JOIN price_1m p1m ON p1m.secid = i.sec_id

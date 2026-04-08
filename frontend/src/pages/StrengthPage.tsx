@@ -667,7 +667,8 @@ function SyncedPriceChart({
     const containerRef = useRef<HTMLDivElement>(null);
     const [width, setWidth] = useState(0);
     const [animLinePath, setAnimLinePath] = useState('');
-    const [animAreaPath, setAnimAreaPath] = useState('');
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const [animAreaPath, setAnimAreaPath] = useState(''); void animAreaPath;
     const prevPtsRef = useRef<{ x: number; y: number }[]>([]);
     const currPtsRef = useRef<{ x: number; y: number }[]>([]); // текущая визуальная позиция
     const animRef = useRef<number | null>(null);
@@ -791,7 +792,6 @@ function SyncedPriceChart({
                             </linearGradient>
                         </defs>
 
-                        <path d={animAreaPath} fill="url(#priceGradient)" />
                         <path d={animLinePath} fill="none" stroke="#6366f1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
 
                         {crosshairX !== null && (
@@ -800,7 +800,7 @@ function SyncedPriceChart({
                         )}
                         {crosshairX !== null && hoverIndex !== null && hoverIndex < chartData.points.length && (
                             <circle cx={chartData.points[hoverIndex].x} cy={chartData.points[hoverIndex].y}
-                                r={5} fill="#6366f1" stroke="white" strokeWidth="2" />
+                                r={5} fill="#6366f1" />
                         )}
 
                         {chartData.xTicks.map((tick, i) => (
@@ -1178,7 +1178,7 @@ function SyncedBreadthChart({
                             )}
                             {crosshairX !== null && hoverIndex !== null && hoverIndex < chartData.points.length && (
                                 <circle cx={chartData.points[hoverIndex].x} cy={chartData.points[hoverIndex].y}
-                                    r={5} fill="var(--accent)" stroke="white" strokeWidth="2" />
+                                    r={5} fill="var(--accent)" />
                             )}
 
                         </g>

@@ -127,6 +127,7 @@ export default function OpenInterestPage() {
   const [clgroup, setClgroup] = useState<'FIZ' | 'YUR'>('FIZ');
   const [displayMode, setDisplayMode] = useState<DisplayMode>('positions');
   const [oiVariant, setOiVariant] = useState<OIVariant>('oi');
+  const [showExpirations, setShowExpirations] = useState(false);
   const [period, setPeriod] = useState<Period>(getDefaultPeriod('6m', isAuthenticated) as Period);
 
   // Фильтрация нерабочих дней и пре-маркета.
@@ -600,6 +601,15 @@ export default function OpenInterestPage() {
             >
               Чистая позиция
             </button>
+            <button
+              onClick={() => setShowExpirations(!showExpirations)}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors duration-200 ${showExpirations
+                ? 'bg-[#9CA3B8]/20 text-[#9CA3B8] ring-1 ring-[#9CA3B8]/50'
+                : 'bg-theme-secondary text-[#A7ADBC] hover:text-theme-primary'
+              }`}
+            >
+              Экспирации
+            </button>
           </div>
         )}
       </div>
@@ -633,24 +643,19 @@ export default function OpenInterestPage() {
         showDownloadButton={false}
         showNavigator={true}
         annotations={useMemo(() => {
+          if (!showExpirations) return undefined;
           const switches = filteredData?.contract_switches;
           if (!switches || switches.length <= 1) return undefined;
-          // Пропускаем первый (начальный контракт) — аннотируем только переключения
-          return switches.slice(1).map((sw, i): ChartAnnotation => {
-            const prevSw = switches[i]; // предыдущий switch (i, т.к. slice(1) сдвигает)
-            const prevDate = prevSw?.date
-              ? new Date(prevSw.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: '2-digit' })
-              : '';
-            const currDate = new Date(sw.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: '2-digit' });
+          return switches.slice(1).map((sw): ChartAnnotation => {
             return {
               time: sw.date,
               label: sw.to,
-              description: `Ролловер: ${sw.from} (${prevDate}) → ${sw.to} (${currDate})`,
+              description: `${sw.from} → ${sw.to}`,
               color: '#3a3f4f',
               textColor: '#9CA3B8',
             };
           });
-        }, [filteredData?.contract_switches])}
+        }, [filteredData?.contract_switches, showExpirations])}
       />
       </div>
 

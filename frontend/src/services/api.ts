@@ -227,6 +227,7 @@ export interface HeatmapResponse {
     color_by: string;
     group_by: string;
   };
+  updated_at?: string;
 }
 
 export async function getHeatmapData(

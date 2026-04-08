@@ -12,6 +12,13 @@ const COLOR_OPTIONS = [
   { value: 'change_1y', label: 'Изменение 1Г' },
 ];
 
+const SIZE_OPTIONS = [
+  { value: 'market_cap', label: 'Капитализация' },
+  { value: 'value_1d', label: 'Оборот 1Д' },
+  { value: 'value_1w', label: 'Оборот 1Н' },
+  { value: 'value_1m', label: 'Оборот 1М' },
+];
+
 const GROUP_OPTIONS = [
   { value: 'sector', label: 'По секторам' },
   { value: 'none', label: 'Без группировки' },
@@ -124,7 +131,7 @@ export default function HeatmapPage() {
 
   // Фильтры
   const [mapMode, setMapMode] = useState<'imoex' | 'all'>('imoex');
-  const sizeBy = 'market_cap';
+  const [sizeBy, setSizeBy] = useState<string>('market_cap');
   const [colorBy, setColorBy] = useState('change_1d');
   const [groupBy, setGroupBy] = useState('sector');
 
@@ -157,25 +164,29 @@ export default function HeatmapPage() {
     };
   }, []);
 
-  // Загрузка данных
+  // Загрузка данных — не зависит от colorBy/sizeBy (все метрики приходят в одном ответе)
+  const hasDataRef = useRef(false);
   const loadData = useCallback(async () => {
-    setLoading(true);
+    if (!hasDataRef.current) setLoading(true);
     try {
       const data = mapMode === 'imoex'
-        ? await getHeatmapImoex(colorBy, groupBy)
-        : await getHeatmapData(sizeBy, colorBy, groupBy);
+        ? await getHeatmapImoex('change_1d', groupBy)
+        : await getHeatmapData('market_cap', 'change_1d', groupBy);
       setSectors(data.sectors);
       setAllStocks(data.stocks);
-
-      const now = new Date();
-      setLastUpdate(now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }));
+      setLastUpdate(data.updated_at || new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }));
+      hasDataRef.current = true;
     } catch (error) {
       console.error('Error loading heatmap:', error);
     }
     setLoading(false);
-  }, [mapMode, sizeBy, colorBy, groupBy]);
+  }, [mapMode, groupBy]);
 
+  // Первая загрузка + при смене mapMode/groupBy
   useEffect(() => { loadData(); }, [loadData]);
+
+  // При смене colorBy НЕ перезагружаем данные — просто перерисовка через React
+  // (все change_1d/1w/1m/1y уже есть в allStocks)
 
   // SSE: автоматическое обновление хитмапа
   useRealtimeData(['5min', 'mv_refresh'], loadData);
@@ -336,7 +347,8 @@ export default function HeatmapPage() {
           rx={radius}
           ry={radius}
           fill={getColor(change)}
-          className="transition-all duration-150 hover:brightness-110"
+          style={{ transition: 'fill 0.6s ease, x 0.5s ease, y 0.5s ease, width 0.5s ease, height 0.5s ease' }}
+          className="hover:brightness-110"
         />
         {showTicker && (
           <text
@@ -349,7 +361,8 @@ export default function HeatmapPage() {
             fontWeight="800"
             style={{
               textShadow: '0 2px 8px rgba(0,0,0,0.8), 0 1px 3px rgba(0,0,0,0.9)',
-              letterSpacing: '-0.02em'
+              letterSpacing: '-0.02em',
+              transition: 'x 0.5s ease, y 0.5s ease, font-size 0.5s ease',
             }}
           >
             {rect.id}
@@ -412,6 +425,16 @@ export default function HeatmapPage() {
               Все акции
             </button>
           </div>
+
+          <select
+            value={sizeBy}
+            onChange={(e) => setSizeBy(e.target.value)}
+            className="bg-theme-secondary border border-theme text-theme-primary px-3 py-2 rounded-lg text-sm cursor-pointer hover:border-[var(--border-hover)] focus:border-[var(--accent)] focus:outline-none"
+          >
+            {SIZE_OPTIONS.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
 
           <select
             value={colorBy}
@@ -487,31 +510,31 @@ export default function HeatmapPage() {
         ) : null}
       </div>
 
-      {/* Тултип — компактный */}
+      {/* Тултип */}
       {tooltip.visible && tooltip.stock && (
         <div
-          className="fixed z-50 bg-[#1A1F2E]/95 backdrop-blur-sm border border-white/10 rounded-lg py-1.5 px-3 shadow-xl pointer-events-none"
+          className="fixed z-50 bg-[#1A1F2E]/95 backdrop-blur-sm border border-white/10 rounded-xl py-3 px-5 shadow-2xl pointer-events-none"
           style={{
-            left: Math.min(Math.max(tooltip.x, 140), window.innerWidth - 140),
+            left: Math.min(Math.max(tooltip.x, 180), window.innerWidth - 180),
             top: tooltip.y < 200 ? tooltip.y + 25 : tooltip.y - 10,
             transform: tooltip.y < 200 ? 'translate(-50%, 0)' : 'translate(-50%, -100%)'
           }}
         >
-          <div className="flex items-center gap-2 mb-1">
-            <span className="font-bold text-white text-[13px]">{tooltip.stock.secId}</span>
-            <span className="text-[11px] text-slate-400">{tooltip.stock.name}</span>
-            <span className="text-[11px] text-white font-medium">{tooltip.stock.price.toFixed(2)} ₽</span>
+          <div className="flex items-center gap-3 mb-2">
+            <span className="font-bold text-white text-[15px]">{tooltip.stock.secId}</span>
+            <span className="text-[13px] text-slate-400">{tooltip.stock.name}</span>
+            <span className="text-[13px] text-white font-semibold ml-auto">{tooltip.stock.price.toFixed(2)} ₽</span>
           </div>
-          <div className="flex items-center gap-3 text-[11px]">
+          <div className="flex items-center gap-4 text-[13px]">
             {[
               { label: 'Д', value: tooltip.stock.change_1d },
               { label: 'Н', value: tooltip.stock.change_1w },
               { label: 'М', value: tooltip.stock.change_1m },
               { label: 'Г', value: tooltip.stock.change_1y },
             ].map(({ label, value }) => (
-              <span key={label} className="flex items-center gap-1">
+              <span key={label} className="flex items-center gap-1.5">
                 <span className="text-slate-500">{label}</span>
-                <span className={`font-medium ${value >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                <span className={`font-semibold ${value >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                   {formatPercent(value)}
                 </span>
               </span>

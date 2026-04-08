@@ -924,14 +924,7 @@ export default function SimpleChart({
                 </defs>
               )}
 
-              {/* Область под основной линией */}
-              {animatedPaths.area && (
-                <path
-                  d={animatedPaths.area}
-                  fill="url(#primaryGradient)"
-                  clipPath={_forecastCount > 0 ? "url(#solidClip)" : undefined}
-                />
-              )}
+              {/* Область под основной линией — отключена */}
 
               {/* Основная линия (цена — сплошная до прогноза) */}
               {animatedPaths.primary && (
@@ -1189,7 +1182,20 @@ export default function SimpleChart({
         {annotations && annotations.length > 0 && (() => {
           const visibleAnnotations = annotations
             .map((ann, idx) => {
-              const dataIdx = displayData.findIndex(d => d.time.slice(0, 10) === ann.time.slice(0, 10));
+              // Сначала точное совпадение
+              let dataIdx = displayData.findIndex(d => d.time.slice(0, 10) === ann.time.slice(0, 10));
+              // Нечёткое: ближайший бар в пределах 7 дней
+              if (dataIdx === -1) {
+                const annTs = new Date(ann.time).getTime();
+                let bestDist = Infinity;
+                for (let i = 0; i < displayData.length; i++) {
+                  const dist = Math.abs(new Date(displayData[i].time).getTime() - annTs);
+                  if (dist < bestDist && dist <= 7 * 86400000) {
+                    bestDist = dist;
+                    dataIdx = i;
+                  }
+                }
+              }
               if (dataIdx === -1) return null;
               const x = padding.left + (dataIdx / Math.max(displayData.length - 1, 1)) * chartWidth;
               return { ...ann, x, origIdx: idx };
@@ -1214,8 +1220,8 @@ export default function SimpleChart({
               </div>
               {/* Тултип при hover */}
               <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block pointer-events-none">
-                <div className="bg-theme-tertiary/95 backdrop-blur-sm rounded-lg border border-theme shadow-xl py-1.5 px-2.5 whitespace-nowrap">
-                  <span className="text-[11px] font-medium text-theme-primary">{ann.description}</span>
+                <div className="bg-theme-tertiary/95 backdrop-blur-sm rounded-xl border border-theme shadow-xl py-2.5 px-4 whitespace-nowrap">
+                  <span className="text-[13px] font-semibold text-theme-primary">{ann.description}</span>
                 </div>
               </div>
             </div>
@@ -1237,6 +1243,30 @@ export default function SimpleChart({
         })()}
 
       </div>
+
+      {/* Плавающая дата аннотации — тот же стиль и позиция что обычная дата */}
+      {hoveredAnnotationIdx !== null && annotations && (() => {
+        const ann = annotations[hoveredAnnotationIdx];
+        if (!ann) return null;
+        const dataIdx = displayData.findIndex(d => d.time.slice(0, 10) === ann.time.slice(0, 10));
+        if (dataIdx === -1) return null;
+        const x = padding.left + (dataIdx / Math.max(displayData.length - 1, 1)) * chartWidth;
+        const annDate = new Date(ann.time).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' });
+        return (
+          <div
+            className="absolute z-20 pointer-events-none"
+            style={{
+              left: x + 20,
+              top: legendPosition === 'top' ? 38 : 8,
+              transform: 'translateX(-50%)',
+            }}
+          >
+            <span className="text-[11px] text-theme-secondary bg-theme-tertiary/90 backdrop-blur-sm px-2 py-0.5 rounded border border-theme whitespace-nowrap">
+              {annDate}
+            </span>
+          </div>
+        );
+      })()}
 
       {/* HTML тултип даты — над SVG, вне chartWrapRef чтобы не сдвигался */}
       {tooltip.visible && (() => {

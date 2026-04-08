@@ -116,6 +116,7 @@ export default function FundsMoneyPage() {
     const [navSortDir, setNavSortDir] = useState<'desc' | 'asc'>('desc');
     const [hoveredFlowIndex, setHoveredFlowIndex] = useState<number | null>(null);
     const [hoveredAnnotation, setHoveredAnnotation] = useState<string | null>(null); // date key
+    const [showEvents, setShowEvents] = useState(false);
     const flowTooltipRef = useRef<HTMLDivElement>(null);
     const [flowNavRange, setFlowNavRange] = useState<[number, number]>([0, 0]);
     const flowChartRef = useRef<SVGSVGElement>(null);
@@ -470,6 +471,21 @@ export default function FundsMoneyPage() {
                         ))}
                     </div>
                 )}
+
+                {/* Тоггл событий */}
+                {viewMode === 'flows' && (
+                <div className="flex items-center bg-theme-secondary rounded-xl border border-theme p-1">
+                  <button
+                    onClick={() => setShowEvents(!showEvents)}
+                    className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors duration-200 ${showEvents
+                      ? 'btn-control active'
+                      : 'text-theme-secondary hover:text-theme-primary'
+                    }`}
+                  >
+                    События
+                  </button>
+                </div>
+                )}
             </div>
 
             {/* График — общий контейнер с фоном чтобы не мигал при переключении */}
@@ -749,28 +765,40 @@ export default function FundsMoneyPage() {
                             </div>
                         </div>
 
-                        {/* Маркеры аномальных событий */}
-                        {flowsData?.flows && flowsData.flows.length > 0 && (() => {
+                        {/* Маркеры аномальных событий — зарезервированное место */}
+                        <div className="relative" style={{ height: 28, marginTop: -34 }}>
+                        {showEvents && flowsData?.flows && flowsData.flows.length > 0 && (() => {
                             const visibleFlows = flowsData.flows.slice(flowNavRange[0], flowNavRange[1] + 1);
                             const chartWidth = flowContainerRef.current ? flowContainerRef.current.getBoundingClientRect().width - 60 : 0;
                             const barWidth = chartWidth / visibleFlows.length;
 
-                            // Находим аннотации для текущей категории в видимом диапазоне
+                            // Находим аннотации — нечёткое совпадение дат (ближайший бар к дате аннотации)
                             const markers = FUND_ANNOTATIONS
                                 .filter(a => a.category === category)
                                 .map(annotation => {
-                                    const idx = visibleFlows.findIndex(f => f.period_end.slice(0, 10) === annotation.date);
-                                    if (idx === -1) return null;
+                                    const annDate = new Date(annotation.date).getTime();
+                                    // Ищем ближайший бар по дате (не строгое совпадение)
+                                    let bestIdx = -1;
+                                    let bestDist = Infinity;
+                                    for (let i = 0; i < visibleFlows.length; i++) {
+                                        const barDate = new Date(visibleFlows[i].period_end).getTime();
+                                        const dist = Math.abs(barDate - annDate);
+                                        // Допуск: до 7 дней (для недельного ТФ)
+                                        if (dist < bestDist && dist <= 7 * 86400000) {
+                                            bestDist = dist;
+                                            bestIdx = i;
+                                        }
+                                    }
+                                    if (bestIdx === -1) return null;
                                     const logo = UK_LOGOS[annotation.ukId];
                                     if (!logo) return null;
-                                    return { ...annotation, idx, logo, x: idx * barWidth + barWidth / 2 };
+                                    return { ...annotation, idx: bestIdx, logo, x: bestIdx * barWidth + barWidth / 2 };
                                 })
                                 .filter(Boolean) as (typeof FUND_ANNOTATIONS[0] & { idx: number; logo: typeof UK_LOGOS[string]; x: number })[];
 
                             if (!markers.length) return null;
 
-                            return (
-                                <div className="relative" style={{ height: 20, marginTop: -28 }}>
+                            return (<>
                                     {markers.map((m, i) => (
                                         <div
                                             key={i}
@@ -805,9 +833,9 @@ export default function FundsMoneyPage() {
                                             </div>
                                         </div>
                                     ))}
-                                </div>
-                            );
+                            </>);
                         })()}
+                        </div>
 
                         {/* Скользящее окно — минималистичный ползунок */}
                         {flowsData?.flows && flowsData.flows.length > 1 && (() => {
