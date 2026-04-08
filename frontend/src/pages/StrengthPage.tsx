@@ -58,7 +58,7 @@ export default function StrengthPage() {
     const [showPrice, setShowPrice] = useState(true);
     const [selectedSector, setSelectedSector] = useState('Все');
     const [currency, setCurrency] = useState<'rub' | 'usd'>('rub');
-    const [universeBase, setUniverseBase] = useState<'all' | 'imoex'>('all');
+    const [universeBase, setUniverseBase] = useState<'all' | 'imoex'>('imoex');
     // Итоговый universe: добавляем _usd при долларовом режиме
     const universe: BreadthUniverse = currency === 'usd'
         ? `${universeBase}_usd` as BreadthUniverse
@@ -302,16 +302,8 @@ export default function StrengthPage() {
                     </button>
                 </div>
 
-                {/* Вселенная: все акции / IMOEX */}
+                {/* Вселенная: IMOEX / все акции */}
                 <div className="flex items-center gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
-                    <button
-                        onClick={() => setUniverseBase('all')}
-                        className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                            universeBase === 'all' ? 'btn-control active' : 'text-theme-secondary hover:text-theme-primary'
-                        }`}
-                    >
-                        Все акции
-                    </button>
                     <button
                         onClick={() => setUniverseBase('imoex')}
                         className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
@@ -319,6 +311,14 @@ export default function StrengthPage() {
                         }`}
                     >
                         Индекс IMOEX
+                    </button>
+                    <button
+                        onClick={() => setUniverseBase('all')}
+                        className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                            universeBase === 'all' ? 'btn-control active' : 'text-theme-secondary hover:text-theme-primary'
+                        }`}
+                    >
+                        Все акции
                     </button>
                 </div>
 

@@ -49,7 +49,7 @@ export default function BuffettPage() {
                 const result = await getBuffettMcftrM2(period, smooth);
                 setMcftrM2Data(result);
             } else {
-                const result = await getBuffettCapM2(period, smooth);
+                const result = await getBuffettCapM2(period, smooth, timeframe);
                 setCapM2Data(result);
             }
         } catch (err: unknown) {
@@ -180,7 +180,7 @@ export default function BuffettPage() {
                             : 'text-theme-secondary hover:text-theme-primary'
                             }`}
                     >
-                        Кап / M2
+                        Капитализация / M2
                     </button>
                 </div>
 
@@ -211,8 +211,8 @@ export default function BuffettPage() {
                     })}
                 </div>
 
-                {/* Таймфрейм — только для cap-gdp */}
-                {viewMode === 'cap-gdp' && (
+                {/* Таймфрейм — для cap-gdp и cap-m2 */}
+                {(viewMode === 'cap-gdp' || viewMode === 'cap-m2') && (
                     <div className="flex items-center gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
                         {(['1d', '1w', '1m'] as const).map((tf) => (
                             <button
@@ -302,7 +302,7 @@ export default function BuffettPage() {
                     primaryColor="#C8FF2E"
                     secondaryColor="#f59e0b"
                     showSecondary={true}
-                    formatValue={(v) => v.toFixed(2)}
+                    formatValue={(v) => `${(v * 100).toFixed(0)}%`}
                     formatSecondaryValue={(v) => `${v.toFixed(1)} трлн ₽`}
                     primaryLabel="Капитализация / M2"
                     secondaryLabel="Капитализация"

@@ -279,6 +279,7 @@ async def get_buffett_mcftr_m2(
 async def get_buffett_cap_m2(
     period: PeriodType = Query("3y", description="Период"),
     smooth: bool = Query(True, description="Сглаживание EMA(12)"),
+    timeframe: str = Query("1m", description="Таймфрейм: 1d, 1w, 1m"),
     user = Depends(get_current_user_optional),
 ):
     """
@@ -313,15 +314,47 @@ async def get_buffett_cap_m2(
     if not cap_rows or not m2_rows:
         return {"data": [], "period": period}
 
-    daily_dates = [row[0] for row in cap_rows]
+    # Агрегация по таймфрейму (как в cap-gdp)
+    if timeframe == "1d":
+        raw = [(row[0], float(row[1])) for row in cap_rows]
+        if len(raw) >= 2:
+            cap_agg = []
+            for i in range(len(raw) - 1):
+                d0, v0 = raw[i]
+                d1, v1 = raw[i + 1]
+                gap = (d1 - d0).days
+                cap_agg.append((d0, v0))
+                if gap > 2:
+                    for day_offset in range(1, gap):
+                        t = day_offset / gap
+                        interp_date = d0 + timedelta(days=day_offset)
+                        interp_val = v0 + (v1 - v0) * t
+                        if interp_date.weekday() < 5:
+                            cap_agg.append((interp_date, interp_val))
+            cap_agg.append(raw[-1])
+        else:
+            cap_agg = raw
+    else:
+        period_cap: dict = {}
+        for row in cap_rows:
+            d = row[0]
+            if timeframe == "1w":
+                period_key = d.isocalendar()[:2]
+            else:
+                period_key = (d.year, d.month)
+            period_cap[period_key] = (d, float(row[1]))
+        cap_agg = sorted(period_cap.values(), key=lambda x: x[0])
+
+    if not cap_agg:
+        return {"data": [], "period": period}
+
+    agg_dates = [d for d, _ in cap_agg]
     m2_sparse = [(row[0], float(row[1])) for row in m2_rows]
-    m2_daily = _interpolate_daily(m2_sparse, daily_dates)
+    m2_interp = _interpolate_daily(m2_sparse, agg_dates)
 
     data_points = []
-    for row in cap_rows:
-        d = row[0]
-        cap = float(row[1])
-        m2 = m2_daily.get(d)
+    for d, cap in cap_agg:
+        m2 = m2_interp.get(d)
         if m2 and m2 > 0:
             ratio = cap / m2
             data_points.append({
@@ -339,6 +372,6 @@ async def get_buffett_cap_m2(
             point["ratio"] = round(smoothed[i], 4)
 
     duration = time.time() - start_time
-    log.info(f"GET /buffett/cap-m2 period={period} smooth={smooth} -> {len(data_points)} points, {duration:.2f}s")
+    log.info(f"GET /buffett/cap-m2 period={period} smooth={smooth} tf={timeframe} -> {len(data_points)} points, {duration:.2f}s")
 
     return {"data": data_points, "period": period}

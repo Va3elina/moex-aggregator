@@ -599,9 +599,10 @@ export async function getBuffettMcftrM2(
 
 export async function getBuffettCapM2(
   period: BuffettPeriod = '3y',
-  smooth: boolean = true
+  smooth: boolean = true,
+  timeframe: string = '1m'
 ): Promise<BuffettMcftrM2Response> {
-  const params = new URLSearchParams({ period, smooth: smooth.toString() });
+  const params = new URLSearchParams({ period, smooth: smooth.toString(), timeframe });
   const response = await apiFetch(`${API_BASE}/api/buffett/cap-m2?${params}`);
   if (!response.ok) throw new Error('Failed to fetch Buffett cap/m2');
   return response.json();
