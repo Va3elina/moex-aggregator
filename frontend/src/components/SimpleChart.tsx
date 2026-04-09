@@ -143,6 +143,27 @@ export default function SimpleChart({
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [hoveredAnnotationIdx, setHoveredAnnotationIdx] = useState<number | null>(null);
 
+  // CSS layout tokens — read from CSS variables for responsive adaptation
+  const cssVar = (name: string, fallback: number): number => {
+    const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return raw ? parseFloat(raw) : fallback;
+  };
+  const tokens = useMemo(() => ({
+    fontY: cssVar('--chart-font-y', 16),
+    fontX: cssVar('--chart-font-x', 14),
+    fontYWeight: cssVar('--chart-font-y-weight', 600),
+    tooltipWidth: cssVar('--tooltip-width', 200),
+    dotPrimaryR: cssVar('--dot-primary-r', 6),
+    dotSecondaryR: cssVar('--dot-secondary-r', 5),
+    linePrimaryW: cssVar('--line-primary-width', 3),
+    lineSecondaryW: cssVar('--line-secondary-width', 2.5),
+    dateTopLegendTop: cssVar('--date-top-legend-top', 38),
+    dateTopLegendBottom: cssVar('--date-top-legend-bottom', 8),
+    annSize: cssVar('--ann-size', 28),
+    annFont: cssVar('--ann-font', 11),
+    annTooltipFont: cssVar('--ann-tooltip-font', 13),
+  }), [isMobile]); // recalc on mobile change
+
   // Navigator: диапазон видимых данных (индексы в массиве data)
   const [navRange, setNavRange] = useState<[number, number]>([0, Math.max(0, data.length - 1)]);
 
@@ -259,15 +280,15 @@ export default function SimpleChart({
     }
   }, [data.length > 0]);
 
-  // Адаптивные отступы
-  const defaultPad = isMobile
-    ? { top: 16, right: 20, bottom: 40, left: 45 }
-    : {
-        top: 19,
-        right: showSecondary ? 95 : 12,
-        bottom: 50,
-        left: 100
-      };
+  // Адаптивные отступы — из CSS variables
+  const defaultPad = {
+    top: cssVar('--chart-pad-top', isMobile ? 16 : 19),
+    bottom: cssVar('--chart-pad-bottom', isMobile ? 40 : 50),
+    left: cssVar('--chart-pad-left', isMobile ? 45 : 100),
+    right: showSecondary
+      ? cssVar('--chart-pad-right-dual', isMobile ? 20 : 95)
+      : cssVar('--chart-pad-right-single', isMobile ? 20 : 12),
+  };
   const padding = {
     ...defaultPad,
     ...(chartPadding && !isMobile ? { left: chartPadding.left ?? defaultPad.left, right: chartPadding.right ?? defaultPad.right } : {}),
@@ -855,9 +876,9 @@ export default function SimpleChart({
                   y={tick.y}
                   textAnchor="end"
                   dominantBaseline="middle"
-                  fill="#9CA3B8"
-                  fontSize="16"
-                  fontWeight="600"
+                  fill="var(--axis-color, #9CA3B8)"
+                  fontSize={tokens.fontY}
+                  fontWeight={tokens.fontYWeight}
                 >
                   {formatValue(tick.value)}
                 </text>
@@ -873,8 +894,8 @@ export default function SimpleChart({
                 textAnchor="start"
                 dominantBaseline="middle"
                 fill={secondaryColor}
-                fontSize="16"
-                fontWeight="600"
+                fontSize={tokens.fontY}
+                fontWeight={tokens.fontYWeight}
                 opacity="0.9"
               >
                 {tick.value.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
@@ -901,9 +922,9 @@ export default function SimpleChart({
                     x={isFirst ? 0 : isLast ? chartWidth : tick.x}
                     y={chartHeight + 30}
                     textAnchor={isFirst ? 'start' : isLast ? 'end' : 'middle'}
-                    fill="#9CA3B8"
-                    fontSize="14"
-                    fontWeight="600"
+                    fill="var(--axis-color, #9CA3B8)"
+                    fontSize={tokens.fontX}
+                    fontWeight={tokens.fontYWeight}
                   >
                     {formatTime(tick.time)}
                   </text>
@@ -932,7 +953,7 @@ export default function SimpleChart({
                   d={animatedPaths.primary}
                   fill="none"
                   stroke={primaryColor}
-                  strokeWidth="3"
+                  strokeWidth={tokens.linePrimaryW}
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   clipPath={_forecastCount > 0 ? "url(#solidClip)" : undefined}
@@ -961,7 +982,7 @@ export default function SimpleChart({
                 return (
                   <g>
                     <path d={pPath} fill="none"
-                      stroke={primaryColor} strokeWidth="2.5"
+                      stroke={primaryColor} strokeWidth={tokens.lineSecondaryW}
                       strokeDasharray="6 4" strokeLinecap="round" opacity="0.7"
                       strokeDashoffset={pLen}
                     >
@@ -1021,7 +1042,7 @@ export default function SimpleChart({
                   d={animatedPaths.third}
                   fill="none"
                   stroke={thirdColor}
-                  strokeWidth="2.5"
+                  strokeWidth={tokens.lineSecondaryW}
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   opacity={oiOpacity}
@@ -1056,7 +1077,7 @@ export default function SimpleChart({
                   d={animatedPaths.secondary}
                   fill="none"
                   stroke={secondaryColor}
-                  strokeWidth="2.5"
+                  strokeWidth={tokens.lineSecondaryW}
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   opacity={oiOpacity}
@@ -1095,7 +1116,7 @@ export default function SimpleChart({
                 <circle
                   cx={tooltip.x - padding.left}
                   cy={tooltip.primaryY - padding.top}
-                  r="6"
+                  r={tokens.dotPrimaryR}
                   fill={primaryColor}
                   stroke="#0B0D12"
                   strokeWidth="2"
@@ -1106,7 +1127,7 @@ export default function SimpleChart({
                   <circle
                     cx={tooltip.x - padding.left}
                     cy={tooltip.secondaryY - padding.top}
-                    r="5"
+                    r={tokens.dotSecondaryR}
                     fill={secondaryColor}
                     stroke="#0B0D12"
                     strokeWidth="2"
@@ -1117,7 +1138,7 @@ export default function SimpleChart({
                   <circle
                     cx={tooltip.x - padding.left}
                     cy={tooltip.thirdY - padding.top}
-                    r="5"
+                    r={tokens.dotSecondaryR}
                     fill={thirdColor}
                     stroke="#0B0D12"
                     strokeWidth="2"
@@ -1129,7 +1150,7 @@ export default function SimpleChart({
 
           {/* Тултип: дата вверху вертикальной линии + карточка значений */}
           {tooltip.visible && (() => {
-            const cardWidth = isMobile ? 150 : 200;
+            const cardWidth = tokens.tooltipWidth;
             const isRightHalf = tooltip.x > padding.left + chartWidth / 2;
             const cardX = isRightHalf
               ? tooltip.x - cardWidth - 8
@@ -1208,20 +1229,20 @@ export default function SimpleChart({
             <div
               key={ann.origIdx}
               className="absolute -translate-x-1/2 group z-30"
-              style={{ left: ann.x, top: padding.top + chartHeight - 14 }}
+              style={{ left: ann.x, top: padding.top + chartHeight - tokens.annSize / 2 }}
               onMouseEnter={() => setHoveredAnnotationIdx(ann.origIdx)}
               onMouseLeave={() => setHoveredAnnotationIdx(null)}
             >
               <div
-                className="w-7 h-7 rounded-full flex items-center justify-center cursor-pointer transition-opacity opacity-50 hover:opacity-100"
-                style={{ backgroundColor: '#3a3f4f', color: '#9CA3B8', fontSize: 11, fontWeight: 600 }}
+                className="rounded-full flex items-center justify-center cursor-pointer transition-opacity opacity-50 hover:opacity-100"
+                style={{ width: tokens.annSize, height: tokens.annSize, backgroundColor: 'var(--ann-bg, #3a3f4f)', color: 'var(--axis-color, #9CA3B8)', fontSize: tokens.annFont, fontWeight: 600 }}
               >
                 {ann.label.slice(0, 2)}
               </div>
               {/* Тултип при hover */}
               <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block pointer-events-none">
-                <div className="bg-theme-tertiary/95 backdrop-blur-sm rounded-xl border border-theme shadow-xl py-2.5 px-4 whitespace-nowrap">
-                  <span className="text-[13px] font-semibold text-theme-primary">{ann.description}</span>
+                <div className="bg-theme-tertiary/95 backdrop-blur-sm rounded-xl border border-theme shadow-xl whitespace-nowrap" style={{ padding: 'var(--ann-tooltip-padding, 10px 16px)' }}>
+                  <span className="font-semibold text-theme-primary" style={{ fontSize: tokens.annTooltipFont }}>{ann.description}</span>
                 </div>
               </div>
             </div>
@@ -1257,7 +1278,7 @@ export default function SimpleChart({
             className="absolute z-20 pointer-events-none"
             style={{
               left: x + 20,
-              top: legendPosition === 'top' ? 38 : 8,
+              top: legendPosition === 'top' ? tokens.dateTopLegendTop : tokens.dateTopLegendBottom,
               transform: 'translateX(-50%)',
             }}
           >
@@ -1282,7 +1303,7 @@ export default function SimpleChart({
             className="absolute z-20 pointer-events-none"
             style={{
               left: tooltip.x + 20,
-              top: legendPosition === 'top' ? 38 : 8,
+              top: legendPosition === 'top' ? tokens.dateTopLegendTop : tokens.dateTopLegendBottom,
               transform: 'translateX(-50%)',
             }}
           >

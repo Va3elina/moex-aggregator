@@ -587,7 +587,7 @@ export default function FundsMoneyPage() {
                             onMouseLeave={handleFlowMouseLeave}
                         >
                             {/* Область графика: отступ справа для подписей */}
-                            <div className="absolute inset-0" style={{ right: 60 }}>
+                            <div className="absolute inset-0" style={{ right: 'var(--chart-pad-left, 60px)' }}>
                             <svg
                                 ref={flowChartRef}
                                 width="100%"
@@ -750,7 +750,7 @@ export default function FundsMoneyPage() {
 
 
                             {/* Даты оси X — равномерно по всей ширине */}
-                            <div className="absolute -bottom-6 left-0 flex justify-between text-[14px] font-semibold text-[#9CA3B8] px-2" style={{ right: 60 }}>
+                            <div className="absolute -bottom-6 left-0 flex justify-between font-semibold px-2" style={{ right: 'var(--chart-pad-left, 60px)', fontSize: 'var(--chart-font-x, 14px)', color: 'var(--axis-color, #9CA3B8)' }}>
                                 {flowsData?.flows && flowsData.flows.length > 0 && (() => {
                                     const flows = flowsData.flows.slice(flowNavRange[0], flowNavRange[1] + 1);
                                     if (!flows.length) return null;

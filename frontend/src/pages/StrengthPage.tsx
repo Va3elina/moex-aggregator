@@ -369,7 +369,7 @@ export default function StrengthPage() {
             {/* Синхронизированные графики */}
             <div
                 ref={containerRef}
-                className="bg-theme-secondary rounded-2xl border border-theme mb-6 relative cursor-crosshair min-h-[500px] overflow-hidden"
+                className="bg-theme-secondary rounded-2xl border border-theme mb-6 relative cursor-crosshair overflow-hidden" style={{ minHeight: 'var(--chart-height, 500px)' }}
                 onMouseMove={isAnimating ? undefined : handleMouseMove}
                 onMouseLeave={handleMouseLeave}
             >
@@ -822,7 +822,7 @@ function SyncedPriceChart({
                                 <text
                                     x={width - padding.right + 12}
                                     y={Math.max(padding.top + 6, Math.min(tick.y, padding.top + chartHeight - 6))}
-                                    textAnchor="start" dominantBaseline="middle" fill="var(--text-muted)" fontSize="16" fontWeight="600"
+                                    textAnchor="start" dominantBaseline="middle" fill="var(--axis-color, var(--text-muted))" fontSize="var(--chart-font-y, 16)" fontWeight="600"
                                     paintOrder="stroke" stroke="var(--bg-secondary)" strokeWidth="4" strokeLinejoin="round">
                                     {tick.value.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
                                 </text>
@@ -1187,7 +1187,7 @@ function SyncedBreadthChart({
                         {chartData.yTicks.map((tick, i) => (
                             <text key={i} x={width - padding.right + 12} y={tick.y}
                                 textAnchor="start" dominantBaseline="middle"
-                                fill={tick.color || 'var(--text-muted)'} fontSize="16" fontWeight="600"
+                                fill={tick.color || 'var(--text-muted)'} fontSize="var(--chart-font-y, 16)" fontWeight="600"
                                 paintOrder="stroke" stroke="var(--bg-secondary)" strokeWidth="4" strokeLinejoin="round">
                                 {tick.value}%
                             </text>

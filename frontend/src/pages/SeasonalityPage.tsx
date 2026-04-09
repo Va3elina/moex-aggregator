@@ -403,7 +403,7 @@ export default function SeasonalityPage() {
           bars.length === 0 ? (
             <div className="flex items-center justify-center" style={{ aspectRatio: '16/9', color: 'var(--text-muted)' }}>Нет данных</div>
           ) : (
-            <div className="relative overflow-hidden pb-8 cursor-crosshair" style={{ height: 450 }}
+            <div className="relative overflow-hidden pb-8 cursor-crosshair" style={{ height: 'var(--chart-height, 450px)' }}
               onMouseMove={(e) => {
                 const rect = e.currentTarget.getBoundingClientRect();
                 const x = e.clientX - rect.left;
@@ -512,13 +512,13 @@ export default function SeasonalityPage() {
                 return (
                   <div key={i} className="absolute pointer-events-none"
                     style={{ top: `${yPct}%`, right: 4, transform: 'translateY(-50%)' }}>
-                    <span className="text-[16px] font-semibold text-[#9CA3B8]">{label}</span>
+                    <span className="font-semibold" style={{ fontSize: 'var(--chart-font-y, 16px)', color: 'var(--axis-color, #9CA3B8)' }}>{label}</span>
                   </div>
                 );
               })}
 
               {/* X labels — фиксированные внизу */}
-              <div className="absolute bottom-0 left-0 flex justify-between text-[14px] font-semibold text-[#9CA3B8] px-2" style={{ right: 80 }}>
+              <div className="absolute bottom-0 left-0 flex justify-between font-semibold px-2" style={{ right: 'var(--chart-pad-right-dual, 80px)', fontSize: 'var(--chart-font-x, 14px)', color: 'var(--axis-color, #9CA3B8)' }}>
                 {bars.map(bar => (
                   <span key={bar.key} className="text-center" style={{ width: `${100 / bars.length}%` }}>{bar.label}</span>
                 ))}
@@ -531,7 +531,10 @@ export default function SeasonalityPage() {
           pricePoints.length === 0 ? (
             <div className="flex items-center justify-center" style={{ height: chartHeight, color: 'var(--text-muted)' }}>Нет данных</div>
           ) : (() => {
-            const PL = 60, PR = 80, PT = 10, PB = 60; // padding: left, right, top, bottom (extra for div circles)
+            // Padding из CSS tokens (с fallback)
+            const cs = getComputedStyle(document.documentElement);
+            const cssN = (n: string, fb: number) => parseFloat(cs.getPropertyValue(n)) || fb;
+            const PL = cssN('--chart-pad-left', 60), PR = cssN('--chart-pad-right-dual', 80), PT = 10, PB = 60;
             const hasAdj = pricePoints.some(p => p.close !== p.adjusted);
             const scX = (i: number) => (i / Math.max(pricePoints.length - 1, 1));
             const scY = (v: number) => 1 - (v - priceMinMax.min) / (priceMinMax.max - priceMinMax.min);
@@ -582,7 +585,7 @@ export default function SeasonalityPage() {
                 </div>
 
                 {/* Chart area */}
-                <div className="relative cursor-crosshair" style={{ height: 420 }}
+                <div className="relative cursor-crosshair" style={{ height: 'var(--chart-height, 420px)' }}
                   onMouseMove={(e) => {
                     if (divHoverRef.current) return;
                     const rect = e.currentTarget.getBoundingClientRect();
@@ -640,12 +643,12 @@ export default function SeasonalityPage() {
                   {/* Y labels */}
                   {yTicks.map((t, i) => (
                     <div key={i} className="absolute pointer-events-none" style={{ right: 4, top: `${PT + t.pct / 100 * (420 - PT - PB)}px`, transform: 'translateY(-50%)' }}>
-                      <span className="text-[14px] font-semibold text-[#9CA3B8]">{t.value.toFixed(0)}</span>
+                      <span className="font-semibold" style={{ fontSize: 'var(--chart-font-x, 14px)', color: 'var(--axis-color, #9CA3B8)' }}>{t.value.toFixed(0)}</span>
                     </div>
                   ))}
 
                   {/* X labels — below dividend circles */}
-                  <div className="absolute flex justify-between text-[13px] font-semibold text-[#9CA3B8]" style={{ left: PL, right: PR, bottom: 4 }}>
+                  <div className="absolute flex justify-between font-semibold" style={{ left: PL, right: PR, bottom: 4, fontSize: 'var(--chart-font-x, 13px)', color: 'var(--axis-color, #9CA3B8)' }}>
                     {xTicks.map((t, i) => (
                       <span key={i}>{t.label}</span>
                     ))}

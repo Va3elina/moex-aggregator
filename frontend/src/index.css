@@ -259,6 +259,111 @@
 }
 
 /* ============================================
+   LAYOUT TOKENS — Chart dimensions & spacing
+   Responsive: override in @media below
+   ============================================ */
+
+:root {
+  /* Chart heights */
+  --chart-height: 450px;
+  --chart-height-sm: 350px;
+  --chart-nav-height: 52px;
+
+  /* Chart padding (SimpleChart SVG area) */
+  --chart-pad-top: 19px;
+  --chart-pad-bottom: 50px;
+  --chart-pad-left: 100px;
+  --chart-pad-right-single: 12px;
+  --chart-pad-right-dual: 95px;
+
+  /* Axis font sizes */
+  --chart-font-y: 16px;
+  --chart-font-x: 14px;
+  --chart-font-y-weight: 600;
+
+  /* Tooltip */
+  --tooltip-font-label: 11px;
+  --tooltip-font-value: 12px;
+  --tooltip-padding: 6px 12px;
+  --tooltip-radius: 8px;
+  --tooltip-width: 200px;
+
+  /* Floating date */
+  --date-font: 11px;
+  --date-top-legend-top: 38px;
+  --date-top-legend-bottom: 8px;
+
+  /* Annotations (circles) */
+  --ann-size: 28px;
+  --ann-font: 11px;
+  --ann-tooltip-font: 13px;
+  --ann-tooltip-padding: 10px 16px;
+
+  /* Navigator */
+  --nav-handle-w: 14px;
+  --nav-margin-top: 12px;
+
+  /* Lines */
+  --line-primary-width: 3px;
+  --line-secondary-width: 2.5px;
+
+  /* Hover dots */
+  --dot-primary-r: 6;
+  --dot-secondary-r: 5;
+
+  /* Axis colors (theme-independent) */
+  --axis-color: #9CA3B8;
+  --grid-color: rgba(255, 255, 255, 0.08);
+  --crosshair-color: #C8FF2E;
+  --ann-bg: #3a3f4f;
+}
+
+/* Mobile overrides */
+@media (max-width: 767px) {
+  :root {
+    --chart-height: 300px;
+    --chart-height-sm: 280px;
+    --chart-nav-height: 40px;
+
+    --chart-pad-top: 16px;
+    --chart-pad-bottom: 40px;
+    --chart-pad-left: 45px;
+    --chart-pad-right-single: 20px;
+    --chart-pad-right-dual: 20px;
+
+    --chart-font-y: 12px;
+    --chart-font-x: 11px;
+
+    --tooltip-width: 150px;
+    --tooltip-font-label: 10px;
+    --tooltip-font-value: 11px;
+
+    --date-font: 10px;
+
+    --ann-size: 24px;
+    --ann-font: 10px;
+    --ann-tooltip-font: 12px;
+
+    --line-primary-width: 2px;
+    --line-secondary-width: 2px;
+
+    --dot-primary-r: 5;
+    --dot-secondary-r: 4;
+  }
+}
+
+/* Small tablets */
+@media (min-width: 768px) and (max-width: 1023px) {
+  :root {
+    --chart-height: 380px;
+    --chart-pad-left: 70px;
+    --chart-pad-right-dual: 70px;
+    --chart-font-y: 14px;
+    --chart-font-x: 12px;
+  }
+}
+
+/* ============================================
    GLOBAL STYLES
    ============================================ */
 
