@@ -150,7 +150,7 @@ export default function HeatmapPage() {
         const rect = containerRef.current.getBoundingClientRect();
         setContainerSize({
           width: rect.width || 1200,
-          height: Math.max(600, window.innerHeight - 180)
+          height: Math.max(window.innerWidth < 768 ? 400 : 600, window.innerHeight - (window.innerWidth < 768 ? 120 : 180))
         });
       }
     };

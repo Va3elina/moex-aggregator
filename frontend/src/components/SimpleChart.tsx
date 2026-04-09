@@ -1152,9 +1152,11 @@ export default function SimpleChart({
           {tooltip.visible && (() => {
             const cardWidth = tokens.tooltipWidth;
             const isRightHalf = tooltip.x > padding.left + chartWidth / 2;
-            const cardX = isRightHalf
+            let cardX = isRightHalf
               ? tooltip.x - cardWidth - 8
               : tooltip.x + 8;
+            // Viewport bounds: не выходим за пределы SVG области
+            cardX = Math.max(0, Math.min(cardX, chartWidth + padding.left - cardWidth));
 
             const fmtSecondary = formatSecondaryValue || formatValue;
             const fmtThird = formatThirdValue || formatValue;

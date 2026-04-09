@@ -262,7 +262,7 @@ export default function SeasonalityPage() {
         <div className="flex rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border-color)' }}>
           <button
             onClick={() => setChartType('histogram')}
-            className="flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium transition-all"
+            className="flex items-center gap-1.5 px-2 md:px-3 py-2 md:py-2.5 text-xs md:text-sm font-medium transition-all"
             style={{
               backgroundColor: chartType === 'histogram' ? 'var(--accent)' : 'var(--bg-secondary)',
               color: chartType === 'histogram' ? 'var(--bg-primary)' : 'var(--text-secondary)',
@@ -272,7 +272,7 @@ export default function SeasonalityPage() {
           </button>
           <button
             onClick={() => setChartType('price')}
-            className="flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium transition-all"
+            className="flex items-center gap-1.5 px-2 md:px-3 py-2 md:py-2.5 text-xs md:text-sm font-medium transition-all"
             style={{
               backgroundColor: chartType === 'price' ? 'var(--accent)' : 'var(--bg-secondary)',
               color: chartType === 'price' ? 'var(--bg-primary)' : 'var(--text-secondary)',
@@ -291,7 +291,7 @@ export default function SeasonalityPage() {
                 <button
                   key={m}
                   onClick={() => setMode(m)}
-                  className="px-3 py-2.5 text-sm font-medium transition-all whitespace-nowrap"
+                  className="px-2 md:px-3 py-2 md:py-2.5 text-xs md:text-sm font-medium transition-all whitespace-nowrap"
                   style={{
                     backgroundColor: m === mode ? 'var(--accent)' : 'var(--bg-secondary)',
                     color: m === mode ? 'var(--bg-primary)' : 'var(--text-secondary)',
@@ -308,7 +308,7 @@ export default function SeasonalityPage() {
                 <button
                   key={p.label}
                   onClick={() => setActivePeriod(p)}
-                  className="px-4 py-2.5 text-sm font-medium transition-all whitespace-nowrap"
+                  className="px-2 md:px-4 py-2 md:py-2.5 text-xs md:text-sm font-medium transition-all whitespace-nowrap"
                   style={{
                     backgroundColor: activePeriod.label === p.label ? 'var(--accent)' : 'var(--bg-secondary)',
                     color: activePeriod.label === p.label ? 'var(--bg-primary)' : 'var(--text-secondary)',
@@ -329,7 +329,7 @@ export default function SeasonalityPage() {
               <button
                 key={p.label}
                 onClick={() => setPriceDays(p.days)}
-                className="px-3 py-2.5 text-sm font-medium transition-all whitespace-nowrap"
+                className="px-2 md:px-3 py-2 md:py-2.5 text-xs md:text-sm font-medium transition-all whitespace-nowrap"
                 style={{
                   backgroundColor: priceDays === p.days ? 'var(--accent)' : 'var(--bg-secondary)',
                   color: priceDays === p.days ? 'var(--bg-primary)' : 'var(--text-secondary)',
@@ -519,9 +519,15 @@ export default function SeasonalityPage() {
 
               {/* X labels — фиксированные внизу */}
               <div className="absolute bottom-0 left-0 flex justify-between font-semibold px-2" style={{ right: 'var(--chart-pad-right-dual, 80px)', fontSize: 'var(--chart-font-x, 14px)', color: 'var(--axis-color, #9CA3B8)' }}>
-                {bars.map(bar => (
-                  <span key={bar.key} className="text-center" style={{ width: `${100 / bars.length}%` }}>{bar.label}</span>
-                ))}
+                {bars.map((bar, i) => {
+                  const isMob = typeof window !== 'undefined' && window.innerWidth < 768;
+                  const showLabel = !isMob || bars.length <= 7 || i % 2 === 0;
+                  return (
+                    <span key={bar.key} className="text-center" style={{ width: `${100 / bars.length}%` }}>
+                      {showLabel ? bar.label : ''}
+                    </span>
+                  );
+                })}
               </div>
 
             </div>

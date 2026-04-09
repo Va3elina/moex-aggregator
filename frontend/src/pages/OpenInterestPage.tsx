@@ -558,7 +558,7 @@ export default function OpenInterestPage() {
           <div className="flex gap-2 flex-wrap">
             <button
               onClick={() => setOiVariant('oi')}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors duration-200 ${oiVariant === 'oi'
+              className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg text-xs md:text-sm font-medium transition-colors duration-200 ${oiVariant === 'oi'
                 ? 'bg-[#FFB020]/20 text-[#FFB020] ring-1 ring-[#FFB020]/50'
                 : 'bg-theme-secondary text-[#A7ADBC] hover:text-theme-primary'
                 }`}
@@ -567,7 +567,7 @@ export default function OpenInterestPage() {
             </button>
             <button
               onClick={() => setOiVariant('long')}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors duration-200 ${oiVariant === 'long'
+              className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg text-xs md:text-sm font-medium transition-colors duration-200 ${oiVariant === 'long'
                 ? 'bg-[#2EE59D]/20 text-[#2EE59D] ring-1 ring-[#2EE59D]/50'
                 : 'bg-theme-secondary text-[#A7ADBC] hover:text-theme-primary'
                 }`}
@@ -576,7 +576,7 @@ export default function OpenInterestPage() {
             </button>
             <button
               onClick={() => setOiVariant('short')}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors duration-200 ${oiVariant === 'short'
+              className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg text-xs md:text-sm font-medium transition-colors duration-200 ${oiVariant === 'short'
                 ? 'bg-[#FF4D4D]/20 text-[#FF4D4D] ring-1 ring-[#FF4D4D]/50'
                 : 'bg-theme-secondary text-[#A7ADBC] hover:text-theme-primary'
                 }`}
@@ -585,7 +585,7 @@ export default function OpenInterestPage() {
             </button>
             <button
               onClick={() => setOiVariant('both')}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors duration-200 ${oiVariant === 'both'
+              className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg text-xs md:text-sm font-medium transition-colors duration-200 ${oiVariant === 'both'
                 ? 'bg-[#A855F7]/20 text-[#A855F7] ring-1 ring-[#A855F7]/50'
                 : 'bg-theme-secondary text-[#A7ADBC] hover:text-theme-primary'
                 }`}
@@ -594,7 +594,7 @@ export default function OpenInterestPage() {
             </button>
             <button
               onClick={() => setOiVariant('net')}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors duration-200 ${oiVariant === 'net'
+              className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg text-xs md:text-sm font-medium transition-colors duration-200 ${oiVariant === 'net'
                 ? 'bg-[#22D3EE]/20 text-[#22D3EE] ring-1 ring-[#22D3EE]/50'
                 : 'bg-theme-secondary text-[#A7ADBC] hover:text-theme-primary'
                 }`}
@@ -603,7 +603,7 @@ export default function OpenInterestPage() {
             </button>
             <button
               onClick={() => setShowExpirations(!showExpirations)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors duration-200 ${showExpirations
+              className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg text-xs md:text-sm font-medium transition-colors duration-200 ${showExpirations
                 ? 'bg-[#9CA3B8]/20 text-[#9CA3B8] ring-1 ring-[#9CA3B8]/50'
                 : 'bg-theme-secondary text-[#A7ADBC] hover:text-theme-primary'
               }`}

@@ -157,7 +157,7 @@ export default function BuffettPage() {
                 <div className="flex items-center gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
                     <button
                         onClick={() => setViewMode('cap-gdp')}
-                        className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors duration-200 ${viewMode === 'cap-gdp'
+                        className={`px-2 md:px-3 py-1 md:py-1.5 text-xs md:text-sm font-medium rounded-lg transition-colors duration-200 ${viewMode === 'cap-gdp'
                             ? 'btn-control active'
                             : 'text-theme-secondary hover:text-theme-primary'
                             }`}
@@ -166,7 +166,7 @@ export default function BuffettPage() {
                     </button>
                     <button
                         onClick={() => setViewMode('mcftr-m2')}
-                        className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors duration-200 ${viewMode === 'mcftr-m2'
+                        className={`px-2 md:px-3 py-1 md:py-1.5 text-xs md:text-sm font-medium rounded-lg transition-colors duration-200 ${viewMode === 'mcftr-m2'
                             ? 'btn-control active'
                             : 'text-theme-secondary hover:text-theme-primary'
                             }`}
@@ -175,7 +175,7 @@ export default function BuffettPage() {
                     </button>
                     <button
                         onClick={() => setViewMode('cap-m2')}
-                        className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors duration-200 ${viewMode === 'cap-m2'
+                        className={`px-2 md:px-3 py-1 md:py-1.5 text-xs md:text-sm font-medium rounded-lg transition-colors duration-200 ${viewMode === 'cap-m2'
                             ? 'btn-control active'
                             : 'text-theme-secondary hover:text-theme-primary'
                             }`}
@@ -196,7 +196,7 @@ export default function BuffettPage() {
                                     setPeriod(p);
                                 }}
                                 title={!allowed ? 'Войдите для доступа' : undefined}
-                                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors duration-200 ${
+                                className={`px-2 md:px-3 py-1 md:py-1.5 text-xs md:text-sm font-medium rounded-lg transition-colors duration-200 ${
                                     !allowed
                                         ? 'text-theme-muted cursor-not-allowed opacity-50'
                                         : period === p
@@ -218,7 +218,7 @@ export default function BuffettPage() {
                             <button
                                 key={tf}
                                 onClick={() => setTimeframe(tf)}
-                                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors duration-200 ${timeframe === tf ? 'btn-control active' : 'text-theme-secondary hover:text-theme-primary'}`}
+                                className={`px-2 md:px-3 py-1 md:py-1.5 text-xs md:text-sm font-medium rounded-lg transition-colors duration-200 ${timeframe === tf ? 'btn-control active' : 'text-theme-secondary hover:text-theme-primary'}`}
                             >
                                 {tf === '1d' ? '1Д' : tf === '1w' ? '1Н' : '1М'}
                             </button>

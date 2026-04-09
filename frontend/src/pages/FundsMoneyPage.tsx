@@ -279,9 +279,11 @@ export default function FundsMoneyPage() {
             if (flowTooltipRef.current) {
                 const hoverX = idx * barWidth + barWidth / 2;
                 const isRightHalf = hoverX > chartWidth / 2;
-                const cardLeft = isRightHalf ? hoverX - 188 : hoverX + 8;
+                const rawLeft = isRightHalf ? hoverX - 188 : hoverX + 8;
+                const cardLeft = Math.max(4, Math.min(rawLeft, chartWidth - 192));
+                const containerH = rect.height;
                 flowTooltipRef.current.style.left = `${cardLeft}px`;
-                flowTooltipRef.current.style.top = `${Math.min(Math.max(y - 20, 4), 330)}px`;
+                flowTooltipRef.current.style.top = `${Math.min(Math.max(y - 20, 4), containerH - 60)}px`;
             }
         }
     };
