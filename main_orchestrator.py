@@ -846,8 +846,11 @@ class MainOrchestrator:
                         results = await self.run_5min_cycle()
                         self.last_5min_update = slot_5min
 
-                        # OI Daily — обновляем текущий день из Algopack (ON CONFLICT UPDATE)
-                        await self.run_daily_update()
+                        # OI Daily — обновляем текущий день раз в час (не каждые 5 мин — экономим ресурсы)
+                        if results.get('oi_5min') and now.minute < 5:
+                            if slot_hour != getattr(self, '_last_oi_daily_hour', None):
+                                await self.run_daily_update()
+                                self._last_oi_daily_hour = slot_hour
 
                         # Агрегация (после 5м, если новый час и минута >= 2)
                         if results.get('oi_5min') and now.minute >= 2:
