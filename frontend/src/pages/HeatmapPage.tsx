@@ -129,6 +129,9 @@ export default function HeatmapPage() {
   const [containerSize, setContainerSize] = useState({ width: 1200, height: 700 });
   const [lastUpdate, setLastUpdate] = useState<string>('');
 
+  // Кэш prev_close для real-time пересчёта change_1d
+  const prevCloseMap = useRef<Record<string, number>>({});
+
   // Фильтры
   const [mapMode, setMapMode] = useState<'imoex' | 'all'>('imoex');
   const [sizeBy, setSizeBy] = useState<string>('market_cap');
@@ -174,6 +177,10 @@ export default function HeatmapPage() {
         : await getHeatmapData('market_cap', 'change_1d', groupBy);
       setSectors(data.sectors);
       setAllStocks(data.stocks);
+      // Кэшируем prev_close для real-time пересчёта
+      data.stocks.forEach((s: HeatmapStock) => {
+        if (s.prev_close > 0) prevCloseMap.current[s.secId] = s.prev_close;
+      });
       setLastUpdate(data.updated_at || new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }));
       hasDataRef.current = true;
     } catch (error) {
@@ -185,11 +192,28 @@ export default function HeatmapPage() {
   // Первая загрузка + при смене mapMode/groupBy
   useEffect(() => { loadData(); }, [loadData]);
 
-  // При смене colorBy НЕ перезагружаем данные — просто перерисовка через React
-  // (все change_1d/1w/1m/1y уже есть в allStocks)
+  // SSE: real-time обновление цен (lightweight, только цены)
+  useRealtimeData(['5min'], async () => {
+    try {
+      const resp = await fetch('/api/heatmap/prices');
+      if (!resp.ok) return;
+      const prices: Record<string, number> = await resp.json();
+      setAllStocks(prev => prev.map(stock => {
+        const newPrice = prices[stock.secId];
+        const prevClose = prevCloseMap.current[stock.secId];
+        if (!newPrice || !prevClose || prevClose <= 0) return stock;
+        return {
+          ...stock,
+          price: newPrice,
+          change_1d: Math.round((newPrice - prevClose) / prevClose * 10000) / 100,
+        };
+      }));
+      setLastUpdate(new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }));
+    } catch { /* ignore */ }
+  }, 1000);
 
-  // SSE: автоматическое обновление хитмапа
-  useRealtimeData(['5min', 'mv_refresh'], loadData);
+  // SSE: полный reload при обновлении MV (раз в 5 мин — для change_1w/1m/1y)
+  useRealtimeData(['mv_refresh'], loadData, 3000);
 
   // Получение значения для размера (экспонента усиливает разницу крупных/мелких)
   const getSizeValue = (stock: HeatmapStock): number => {

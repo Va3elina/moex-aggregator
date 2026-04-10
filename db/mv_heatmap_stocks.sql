@@ -85,6 +85,7 @@ latest_cap AS (
 )
 SELECT i.sec_id, i.name, i.sector,
     COALESCE(ic.close, ld.price) AS price,
+    COALESCE(pdc.price, ld.daily_open) AS prev_close,
     -- 1D: close сейчас vs close вчера (с учётом утреннего гэпа)
     CASE
         WHEN pdc.price IS NOT NULL AND pdc.price > 0

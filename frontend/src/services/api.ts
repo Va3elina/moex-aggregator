@@ -199,6 +199,7 @@ export interface HeatmapStock {
   name: string;
   sector: string;
   price: number;
+  prev_close: number;
   change_1d: number;
   change_1w: number;
   change_1m: number;
