@@ -17,12 +17,12 @@ latest_daily AS (
     SELECT secid, open AS daily_open, close AS price, begin_time AS last_update
     FROM ranked_daily WHERE rn = 1
 ),
--- Close предыдущего торгового дня (для 1D с гэпом)
+-- Prev settlement = open текущей дневной свечи (Algopack open = settlement предыдущего аукциона)
 prev_day_close AS (
-    SELECT DISTINCT ON (secid) secid, close AS price
+    SELECT DISTINCT ON (secid) secid, open AS price
     FROM candles
     WHERE type = 'stock' AND interval = 24
-      AND begin_time::date < CURRENT_DATE
+      AND begin_time::date = CURRENT_DATE
     ORDER BY secid, begin_time DESC
 ),
 -- Real-time: последняя 5мин свеча сегодня
@@ -38,8 +38,8 @@ price_1w AS (
     SELECT DISTINCT ON (secid) secid, close AS price
     FROM candles
     WHERE type = 'stock' AND interval = 24
-      AND begin_time::date <= CURRENT_DATE - INTERVAL '5 days'
-      AND begin_time::date >= CURRENT_DATE - INTERVAL '10 days'
+      AND begin_time::date <= CURRENT_DATE - INTERVAL '7 days'
+      AND begin_time::date >= CURRENT_DATE - INTERVAL '12 days'
     ORDER BY secid, begin_time DESC
 ),
 -- 30D: close ближайшей свечи к дате T-30 дней
@@ -47,8 +47,8 @@ price_1m AS (
     SELECT DISTINCT ON (secid) secid, close AS price
     FROM candles
     WHERE type = 'stock' AND interval = 24
-      AND begin_time::date <= CURRENT_DATE - INTERVAL '28 days'
-      AND begin_time::date >= CURRENT_DATE - INTERVAL '35 days'
+      AND begin_time::date <= CURRENT_DATE - INTERVAL '30 days'
+      AND begin_time::date >= CURRENT_DATE - INTERVAL '37 days'
     ORDER BY secid, begin_time DESC
 ),
 -- 1Y: close ближайшей свечи к дате T-365 дней
@@ -56,8 +56,8 @@ price_1y AS (
     SELECT DISTINCT ON (secid) secid, close AS price
     FROM candles
     WHERE type = 'stock' AND interval = 24
-      AND begin_time::date <= CURRENT_DATE - INTERVAL '360 days'
-      AND begin_time::date >= CURRENT_DATE - INTERVAL '370 days'
+      AND begin_time::date <= CURRENT_DATE - INTERVAL '365 days'
+      AND begin_time::date >= CURRENT_DATE - INTERVAL '372 days'
     ORDER BY secid, begin_time DESC
 ),
 stats_1d AS (
