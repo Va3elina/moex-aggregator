@@ -1,6 +1,10 @@
 /**
- * Подписи значений Y-оси (справа или слева от графика).
- * Позиционируется absolute внутри chart-контейнера.
+ * Подписи значений Y-оси.
+ * Позиционируется от КРАЯ ГРАФИКА (не от края контейнера),
+ * чтобы расстояние между цифрами и графиком было одинаковым
+ * независимо от длины цифр (68 vs 269 778).
+ *
+ * Референс: SimpleChart (ОИ) — x={chartWidth + 12}, textAnchor="start"
  */
 
 interface YTick {
@@ -17,14 +21,19 @@ interface ChartYAxisProps {
   format?: (value: number) => string;
   /** Цвет текста */
   color?: string;
-  /** Верхний padding в px (default 10) */
+  /** Верхний padding контейнера в px (default 10) */
   padTop?: number;
-  /** Нижний padding в px (default 50) */
+  /** Нижний padding контейнера в px (default 50) */
   padBottom?: number;
+  /** Левый padding (граница графика слева) */
+  padLeft?: number;
+  /** Правый padding (граница графика справа) */
+  padRight?: number;
 }
 
 export default function ChartYAxis({
-  ticks, side = 'right', format, color, padTop = 10, padBottom = 50,
+  ticks, side = 'right', format, color,
+  padTop = 10, padBottom = 50, padLeft = 60, padRight = 80,
 }: ChartYAxisProps) {
   const fmt = format ?? ((v: number) => v.toFixed(0));
   const clr = color ?? 'var(--axis-color, #9CA3B8)';
@@ -32,21 +41,25 @@ export default function ChartYAxis({
   return (
     <>
       {ticks.map((t, i) => {
-        // Вычисляем top в px: padTop + pct% от области графика
         const chartAreaH = `calc(100% - ${padTop + padBottom}px)`;
+        // Прижимаем к графику: 12px от края SVG-области (как SimpleChart)
+        const posStyle = side === 'right'
+          ? { right: padRight - 12, textAlign: 'left' as const }
+          : { left: padLeft - 12, textAlign: 'right' as const };
+
         return (
           <div
             key={i}
             className="absolute pointer-events-none"
             style={{
-              [side]: 4,
+              ...posStyle,
               top: `calc(${padTop}px + ${t.pct / 100} * ${chartAreaH})`,
               transform: 'translateY(-50%)',
             }}
           >
             <span
               className="font-semibold"
-              style={{ fontSize: 'var(--chart-font-y, 14px)', color: clr }}
+              style={{ fontSize: 'var(--chart-font-y, 16px)', color: clr }}
             >
               {fmt(t.value)}
             </span>

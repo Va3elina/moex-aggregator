@@ -98,7 +98,7 @@ export default function YearlySeasonalityChart({
       )}
 
       {/* Chart */}
-      <div className="relative cursor-crosshair" style={{ height: 'var(--chart-height, 420px)' }}
+      <div className="relative cursor-crosshair" style={{ aspectRatio: '2.4', minHeight: 280, maxHeight: 550 }}
         onMouseMove={(e) => {
           const rect = e.currentTarget.getBoundingClientRect();
           const x = e.clientX - rect.left;

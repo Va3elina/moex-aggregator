@@ -487,7 +487,7 @@ export default function FundsMoneyPage() {
             </div>
 
             {/* График — общий контейнер с фоном чтобы не мигал при переключении */}
-            <div className="bg-theme-secondary rounded-2xl border border-theme overflow-hidden mb-6" style={{ minHeight: 500 }}>
+            <div className="bg-theme-secondary rounded-2xl border border-theme overflow-hidden mb-6">
             {error ? (
                 <div className="flex items-center justify-center h-[450px]">
                     <div className="text-[#FF4D4D] text-center">

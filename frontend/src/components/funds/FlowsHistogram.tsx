@@ -42,7 +42,7 @@ export default function FlowsHistogram({
     onSetFlowNavRange,
 }: FlowsHistogramProps) {
     return (
-        <div className="p-6 relative" style={{ minHeight: 850 }}>
+        <div className="p-6 relative">
             {/* Спиннер загрузки — в углу если есть старые данные, в центре если первая загрузка */}
             {loading && !flowsData?.flows?.length && animatedBarsIn.length === 0 ? (
                 <div className="flex items-center justify-center" style={{ height: 450 }}>
@@ -79,18 +79,18 @@ export default function FlowsHistogram({
                         const f = visibleFlowsList[hoveredFlowIndex];
                         if (!f) return null;
                         const visibleCount = flowNavRange[1] - flowNavRange[0] + 1;
-                        const chartWidth = flowContainerRef.current ? flowContainerRef.current.getBoundingClientRect().width - 60 : 0;
-                        const barWidth = chartWidth / visibleCount;
-                        const dateX = hoveredFlowIndex * barWidth + barWidth / 2;
+                        const padRight = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--chart-pad-left')) || 60;
+                        const containerW = flowContainerRef.current?.getBoundingClientRect().width ?? 800;
+                        const chartW = containerW - padRight;
+                        const barWidth = chartW / visibleCount;
+                        const centerX = hoveredFlowIndex * barWidth + barWidth / 2;
+                        const labelW = 110; // ~ширина лейбла "13 окт. 2025 г."
+                        const clampedX = Math.max(labelW / 2, Math.min(centerX, chartW - labelW / 2));
                         const dateStr = new Date(f.period_end).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' });
                         return (
                             <div
                                 className="absolute z-30 pointer-events-none"
-                                style={{
-                                    left: dateX,
-                                    top: 0,
-                                    transform: 'translateX(-50%)',
-                                }}
+                                style={{ left: clampedX, top: 0, transform: 'translateX(-50%)' }}
                             >
                                 <span className="text-[11px] text-theme-secondary bg-theme-tertiary/90 backdrop-blur-sm px-2 py-0.5 rounded border border-theme whitespace-nowrap">
                                     {dateStr}
@@ -104,7 +104,7 @@ export default function FlowsHistogram({
                 <div
                     ref={flowContainerRef}
                     className="relative cursor-crosshair"
-                    style={{ aspectRatio: '16 / 9' }}
+                    style={{ aspectRatio: '2.4', minHeight: 280, maxHeight: 550 }}
                     onMouseMove={onMouseMove}
                     onMouseLeave={onMouseLeave}
                 >
@@ -268,7 +268,7 @@ export default function FlowsHistogram({
                                     className="absolute pointer-events-none"
                                     style={{ top: `${yPct}%`, right: 4, transform: 'translateY(-50%)' }}
                                 >
-                                    <span className="text-[16px] font-semibold" style={{ color: CHART_COLORS.muted }}>
+                                    <span className="font-semibold" style={{ fontSize: 'var(--chart-font-y, 16px)', color: CHART_COLORS.muted }}>
                                         {label}
                                     </span>
                                 </div>

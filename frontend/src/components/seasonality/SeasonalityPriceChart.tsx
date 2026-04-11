@@ -108,7 +108,7 @@ export default function SeasonalityPriceChart({
       )}
 
       {/* Chart area */}
-      <div className="relative cursor-crosshair" style={{ height: 'var(--chart-height, 420px)' }}
+      <div className="relative cursor-crosshair" style={{ aspectRatio: '2.4', minHeight: 280, maxHeight: 550 }}
         onMouseMove={(e) => {
           if (divHoverRef.current) return;
           const rect = e.currentTarget.getBoundingClientRect();
