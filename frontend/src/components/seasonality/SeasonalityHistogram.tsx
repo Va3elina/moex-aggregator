@@ -1,5 +1,6 @@
 import type { SeasonalityResponse } from '../../services/api';
-import { CHART_COLORS, GRID, CROSSHAIR, TOOLTIP } from '../../config/chartTheme';
+import { CHART_COLORS, CROSSHAIR, TOOLTIP } from '../../config/chartTheme';
+import { ChartGrid } from '../chart';
 
 interface TooltipState {
   x: number;
@@ -72,14 +73,12 @@ export default function SeasonalityHistogram({
           })}
 
           {/* Grid lines */}
-          {[-maxAbs, -maxAbs / 2, 0, maxAbs / 2, maxAbs].map((val, i) => {
-            const y = 250 - (val / maxAbs) * 190;
-            return (
-              <line key={i} x1="0" y1={y} x2="1000" y2={y}
-                stroke={val === 0 ? GRID.zero : GRID.major} strokeWidth="1"
-                vectorEffect="non-scaling-stroke" />
-            );
-          })}
+          <ChartGrid
+            yTicks={[-maxAbs, -maxAbs / 2, maxAbs / 2, maxAbs].map(val => ({
+              pct: (250 - (val / maxAbs) * 190) / 500 * 100,
+            }))}
+            zeroPct={(250 / 500) * 100}
+          />
 
           {/* Vertical cursor */}
           {tooltip?.bar && (() => {

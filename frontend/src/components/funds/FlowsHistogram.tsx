@@ -193,7 +193,14 @@ export default function FlowsHistogram({
                         {/* Вертикальная линия аномалии — только при hover на кружок */}
                         {hoveredAnnotation && flowsData?.flows && (() => {
                             const visibleFlows = flowsData.flows.slice(flowNavRange[0], flowNavRange[1] + 1);
-                            const idx = visibleFlows.findIndex(f => f.period_end.slice(0, 10) === hoveredAnnotation);
+                            // Нечёткий поиск — как для кружков (допуск 7 дней)
+                            const annDate = new Date(hoveredAnnotation).getTime();
+                            let idx = -1;
+                            let bestDist = Infinity;
+                            for (let i = 0; i < visibleFlows.length; i++) {
+                                const dist = Math.abs(new Date(visibleFlows[i].period_end).getTime() - annDate);
+                                if (dist < bestDist && dist <= 7 * 86400000) { bestDist = dist; idx = i; }
+                            }
                             if (idx === -1) return null;
                             const barW = 100 / visibleFlows.length;
                             const cx = idx * barW + barW / 2;
@@ -290,11 +297,11 @@ export default function FlowsHistogram({
                 </div>
 
                 {/* Маркеры аномальных событий — зарезервированное место */}
-                <div className="relative" style={{ height: 28, marginTop: -34 }}>
+                <div className="relative" style={{ height: 28, marginTop: -34, right: 0 }}>
+                <div style={{ position: 'absolute', left: 0, right: 'var(--chart-pad-left, 60px)', top: 0, bottom: 0 }}>
                 {showEvents && flowsData?.flows && flowsData.flows.length > 0 && (() => {
                     const visibleFlows = flowsData.flows.slice(flowNavRange[0], flowNavRange[1] + 1);
-                    const chartWidth = flowContainerRef.current ? flowContainerRef.current.getBoundingClientRect().width - 60 : 0;
-                    const barWidth = chartWidth / visibleFlows.length;
+                    const barW = 100 / visibleFlows.length; // в процентах — как пунктирная линия
 
                     // Находим аннотации — нечёткое совпадение дат (ближайший бар к дате аннотации)
                     const markers = FUND_ANNOTATIONS
@@ -316,9 +323,10 @@ export default function FlowsHistogram({
                             if (bestIdx === -1) return null;
                             const logo = UK_LOGOS[annotation.ukId];
                             if (!logo) return null;
-                            return { ...annotation, idx: bestIdx, logo, x: bestIdx * barWidth + barWidth / 2 };
+                            const xPct = bestIdx * barW + barW / 2; // % — совпадает с пунктиром
+                            return { ...annotation, idx: bestIdx, logo, xPct };
                         })
-                        .filter(Boolean) as (typeof FUND_ANNOTATIONS[0] & { idx: number; logo: typeof UK_LOGOS[string]; x: number })[];
+                        .filter(Boolean) as (typeof FUND_ANNOTATIONS[0] & { idx: number; logo: typeof UK_LOGOS[string]; xPct: number })[];
 
                     if (!markers.length) return null;
 
@@ -327,7 +335,7 @@ export default function FlowsHistogram({
                                 <div
                                     key={i}
                                     className="absolute -translate-x-1/2 group"
-                                    style={{ left: m.x }}
+                                    style={{ left: `${m.xPct}%` }}
                                     onMouseEnter={() => onSetHoveredAnnotation(m.date)}
                                     onMouseLeave={() => onSetHoveredAnnotation(null)}
                                 >
@@ -359,6 +367,7 @@ export default function FlowsHistogram({
                             ))}
                     </>);
                 })()}
+                </div>
                 </div>
 
                 {/* Скользящее окно — минималистичный ползунок */}
@@ -424,7 +433,9 @@ export default function FlowsHistogram({
                                 }}
                                 onMouseDown={(e) => handleNavMouse(e, 'left')}
                             >
-                                <span className="text-white text-[9px] font-bold pointer-events-none">◀</span>
+                                <svg width="6" height="10" viewBox="0 0 6 10" className="pointer-events-none">
+                                  <path d="M4 1 L1 5 L4 9" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
                             </div>
                             {/* Правый хэндл */}
                             <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 flex items-center justify-center cursor-ew-resize"
@@ -436,7 +447,9 @@ export default function FlowsHistogram({
                                 }}
                                 onMouseDown={(e) => handleNavMouse(e, 'right')}
                             >
-                                <span className="text-white text-[9px] font-bold pointer-events-none">▶</span>
+                                <svg width="6" height="10" viewBox="0 0 6 10" className="pointer-events-none">
+                                  <path d="M2 1 L5 5 L2 9" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
                             </div>
                         </div>
                     );

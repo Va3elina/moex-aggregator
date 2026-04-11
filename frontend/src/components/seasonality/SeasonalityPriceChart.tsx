@@ -1,7 +1,8 @@
 import { useRef, useMemo } from 'react';
 import ChartNavigator from '../ChartNavigator';
 import type { PriceChartResponse } from '../../services/api';
-import { CHART_COLORS, GRID, CROSSHAIR, DOT, TOOLTIP, PADDING, cssVar } from '../../config/chartTheme';
+import { CHART_COLORS, CROSSHAIR, PADDING, cssVar } from '../../config/chartTheme';
+import { ChartGrid, ChartCrosshair, ChartDot, ChartDateLabel, ChartTooltip, TooltipRow, ChartYAxis, ChartXAxis, ChartMarker } from '../chart';
 
 interface TooltipState {
   x: number;
@@ -100,15 +101,11 @@ export default function SeasonalityPriceChart({
       </div>
 
       {/* Floating date label */}
-      <div className="relative" style={{ height: 22 }}>
-        {tooltip?.priceDate && (
-          <div className="absolute pointer-events-none" style={{ left: tooltip.x, transform: 'translateX(-50%)' }}>
-            <span className="text-[11px] text-theme-secondary bg-theme-tertiary/90 backdrop-blur-sm px-2 py-0.5 rounded border border-theme whitespace-nowrap">
-              {tooltip.priceDate}
-            </span>
-          </div>
-        )}
-      </div>
+      {tooltip?.priceDate ? (
+        <ChartDateLabel date={tooltip.priceDate} x={tooltip.x} />
+      ) : (
+        <div style={{ height: 22 }} />
+      )}
 
       {/* Chart area */}
       <div className="relative cursor-crosshair" style={{ height: 'var(--chart-height, 420px)' }}
@@ -134,10 +131,7 @@ export default function SeasonalityPriceChart({
         <div className="absolute" style={{ left: PL, right: PR, top: PT, bottom: PB }}>
           <svg viewBox={`0 0 1000 500`} preserveAspectRatio="none" width="100%" height="100%">
             {/* Grid */}
-            {yTicks.map((t, i) => (
-              <line key={i} x1="0" x2="1000" y1={t.pct / 100 * 500} y2={t.pct / 100 * 500}
-                stroke={GRID.major} strokeWidth="1" vectorEffect="non-scaling-stroke" />
-            ))}
+            <ChartGrid yTicks={yTicks} />
             {/* Raw price */}
             <path d={pricePoints.map((p, i) =>
               `${i === 0 ? 'M' : 'L'} ${scX(i) * 1000} ${scY(p.close) * 500}`
@@ -148,7 +142,7 @@ export default function SeasonalityPriceChart({
                 `${i === 0 ? 'M' : 'L'} ${scX(i) * 1000} ${scY(p.adjusted) * 500}`
               ).join(' ')} fill="none" stroke={CHART_COLORS.adjusted} strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="6,3" />
             )}
-            {/* Crosshair */}
+            {/* Crosshair + Dot */}
             {tooltip?.priceDate && (() => {
               const idx = pricePoints.findIndex(p => p.date === tooltip.priceDate);
               if (idx < 0) return null;
@@ -156,10 +150,8 @@ export default function SeasonalityPriceChart({
               const cy = scY(pricePoints[idx].close) * 500;
               return (
                 <>
-                  <line x1={cx} x2={cx} y1="0" y2="500"
-                    stroke={CROSSHAIR.accentColor} strokeWidth="1" strokeDasharray={CROSSHAIR.accentDashArray} opacity={CROSSHAIR.accentOpacity} vectorEffect="non-scaling-stroke" />
-                  <circle cx={cx} cy={cy} r={DOT.radius}
-                    fill={CHART_COLORS.accent} stroke={DOT.strokeColor} strokeWidth={DOT.strokeWidth} vectorEffect="non-scaling-stroke" />
+                  <ChartCrosshair x={cx} color="rgba(200,255,46,0.5)" dashArray={CROSSHAIR.accentDashArray} />
+                  <ChartDot x={cx} y={cy} color={CHART_COLORS.accent} />
                 </>
               );
             })()}
@@ -167,76 +159,36 @@ export default function SeasonalityPriceChart({
         </div>
 
         {/* Y labels */}
-        {yTicks.map((t, i) => (
-          <div key={i} className="absolute pointer-events-none" style={{ right: 4, top: `${PT + t.pct / 100 * (420 - PT - PB)}px`, transform: 'translateY(-50%)' }}>
-            <span className="font-semibold" style={{ fontSize: 'var(--chart-font-x, 14px)', color: 'var(--axis-color, #9CA3B8)' }}>{t.value.toFixed(0)}</span>
-          </div>
-        ))}
+        <ChartYAxis ticks={yTicks} side="right" format={(v) => v.toFixed(0)} padTop={PT} padBottom={PB} />
 
         {/* X labels */}
-        <div className="absolute flex justify-between font-semibold" style={{ left: PL, right: PR, bottom: 4, fontSize: 'var(--chart-font-x, 13px)', color: 'var(--axis-color, #9CA3B8)' }}>
-          {xTicks.map((t, i) => (
-            <span key={i}>{t.label}</span>
+        <ChartXAxis labels={xTicks.map(t => t.label)} padLeft={PL} padRight={PR} />
+
+        {/* Dividend circles at bottom */}
+        <div className="absolute" style={{ left: PL, right: PR, bottom: PB - 14 }}>
+          {visibleDivs.map((d, i) => (
+            <ChartMarker
+              key={i}
+              label="Д"
+              xPct={d.pct}
+              guideHeight={`calc(100% - ${PB + 14}px)`}
+              onHover={() => { divHoverRef.current = true; setTooltip(null); }}
+              onLeave={() => { divHoverRef.current = false; }}
+            >
+              <div className="text-[11px] font-medium text-theme-primary">{d.value} ₽ — {d.date}</div>
+            </ChartMarker>
           ))}
         </div>
 
-        {/* Dividend circles at bottom */}
-        {visibleDivs.map((d, i) => {
-          const chartAreaH = 420 - PT - PB;
-          return (
-            <div key={i} className="absolute group" style={{
-              left: PL,
-              right: PR,
-              top: PT + chartAreaH - 14,
-            }}><div style={{ position: 'absolute', left: `${d.pct}%`, transform: 'translateX(-50%)' }}
-              onMouseEnter={() => { divHoverRef.current = true; setTooltip(null); }}
-              onMouseLeave={() => { divHoverRef.current = false; }}
-            >
-              <div className="w-7 h-7 rounded-full flex items-center justify-center opacity-50 hover:opacity-100 transition-opacity cursor-pointer"
-                style={{ backgroundColor: '#3a3f4f', color: '#9CA3B8', fontSize: 11, fontWeight: 600 }}>
-                Д
-              </div>
-              {/* Vertical dashed guide line */}
-              <div className="hidden group-hover:block absolute left-1/2 pointer-events-none" style={{
-                bottom: 28, height: chartAreaH - 28,
-                borderLeft: '1px dashed rgba(156, 163, 184, 0.4)',
-              }} />
-              {/* Tooltip above circle */}
-              <div className="hidden group-hover:block absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap z-30">
-                <div className={TOOLTIP.containerClass}>
-                  <div className="text-[11px] font-medium text-theme-primary">{d.value} ₽ — {d.date}</div>
-                </div>
-              </div>
-            </div></div>
-          );
-        })}
-
         {/* Value tooltip */}
-        {tooltip?.priceDate && (() => {
-          const isRight = tooltip.x > 500;
-          return (
-            <div className="absolute pointer-events-none z-30"
-              style={{
-                left: isRight ? tooltip.x - 150 : tooltip.x + 12,
-                top: Math.max(tooltip.y - 40, 4),
-              }}>
-              <div className={TOOLTIP.containerClass}>
-                <div className="flex items-center gap-2">
-                  <span className={TOOLTIP.dotSize} style={{ backgroundColor: CHART_COLORS.accent }} />
-                  <span className={TOOLTIP.labelClass}>Цена</span>
-                  <span className={`${TOOLTIP.valueClass} ml-auto pl-2`} style={{ color: CHART_COLORS.accent }}>{tooltip.priceClose?.toFixed(2)} ₽</span>
-                </div>
-                {tooltip.priceAdj !== tooltip.priceClose && (
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <span className={TOOLTIP.dotSize} style={{ backgroundColor: CHART_COLORS.adjusted }} />
-                    <span className={TOOLTIP.labelClass}>Без гэпов</span>
-                    <span className={`${TOOLTIP.valueClass} ml-auto pl-2`} style={{ color: CHART_COLORS.adjusted }}>{tooltip.priceAdj?.toFixed(2)} ₽</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })()}
+        {tooltip?.priceDate && (
+          <ChartTooltip x={tooltip.x} y={tooltip.y} flipAt={500}>
+            <TooltipRow color={CHART_COLORS.accent} label="Цена" value={`${tooltip.priceClose?.toFixed(2)} ₽`} />
+            {tooltip.priceAdj !== tooltip.priceClose && (
+              <TooltipRow color={CHART_COLORS.adjusted} label="Без гэпов" value={`${tooltip.priceAdj?.toFixed(2)} ₽`} />
+            )}
+          </ChartTooltip>
+        )}
       </div>
 
       {/* Navigator */}

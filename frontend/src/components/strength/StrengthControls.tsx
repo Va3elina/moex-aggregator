@@ -105,7 +105,7 @@ export default function StrengthControls({
                         universeBase === 'imoex' ? 'btn-control active' : 'text-theme-secondary hover:text-theme-primary'
                     }`}
                 >
-                    Индекс IMOEX
+                    {currency === 'usd' ? 'Индекс RTSI' : 'Индекс IMOEX'}
                 </button>
                 <button
                     onClick={() => onUniverseBaseChange('all')}

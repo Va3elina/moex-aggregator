@@ -262,10 +262,13 @@ export default function FundsMoneyPage() {
         const rect = flowContainerRef.current.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
-        const chartWidth = rect.width - 60;
+        const padRight = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--chart-pad-left')) || 60;
+        const chartWidth = rect.width - padRight;
+        // Ограничиваем x областью графика (без зоны Y-подписей справа)
+        const clampedX = Math.min(x, chartWidth - 1);
         const visibleCount = flowNavRange[1] - flowNavRange[0] + 1;
         const barWidth = chartWidth / visibleCount;
-        const idx = Math.floor(x / barWidth);
+        const idx = Math.floor(clampedX / barWidth);
         if (idx >= 0 && idx < visibleCount) {
             setHoveredFlowIndex(idx);
             // Двигаем тултип напрямую через ref (без ре-рендера)
