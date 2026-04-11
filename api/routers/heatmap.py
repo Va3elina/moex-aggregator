@@ -88,12 +88,13 @@ async def get_stocks_heatmap(
     else:
         sectors_list = [{"name": "Все акции", "stocks": stocks, "totalValue": sum(s["value_1d"] for s in stocks)}]
 
-    from datetime import datetime
+    from datetime import datetime, timezone, timedelta
+    msk = timezone(timedelta(hours=3))
     response = {
         "stocks": stocks,
         "sectors": sectors_list,
         "params": {"size_by": size_by, "color_by": color_by, "group_by": group_by},
-        "updated_at": datetime.now().strftime("%H:%M"),
+        "updated_at": datetime.now(msk).strftime("%H:%M"),
     }
     get_or_set(cache_key, response, ttl=300)  # 5 мин
     return response
@@ -226,12 +227,13 @@ async def get_imoex_heatmap(
     else:
         sectors_list = [{"name": "Индекс IMOEX", "stocks": stocks, "totalValue": sum(s["weight"] for s in stocks)}]
 
-    from datetime import datetime
+    from datetime import datetime, timezone, timedelta
+    msk = timezone(timedelta(hours=3))
     response = {
         "stocks": stocks,
         "sectors": sectors_list,
         "params": {"size_by": "weight", "color_by": color_by, "group_by": group_by},
-        "updated_at": datetime.now().strftime("%H:%M"),
+        "updated_at": datetime.now(msk).strftime("%H:%M"),
     }
     get_or_set(cache_key, response, ttl=300)
     return response

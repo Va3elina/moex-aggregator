@@ -302,6 +302,151 @@ def _compute_seasonality_daily(engine, secid: str, mode: str, iterations: int,
     return bars
 
 
+def _compute_yearly_seasonality(engine, secid: str, ex_dates: dict[str, float]) -> dict:
+    """
+    Годовая сезонность: кумулятивное изменение цены с начала года.
+
+    Ключевой принцип: выравнивание по ТОРГОВОМУ ДНЮ (1-й, 2-й, 3-й...),
+    а не по календарному дню года. Это устраняет шум от разных торговых
+    календарей (выходные, праздники, субботние сессии).
+
+    Для X-оси: маппим номер торгового дня → приблизительный месяц
+    через текущий год (так Янв-Дек расположены пропорционально).
+    """
+    from collections import defaultdict
+    from datetime import date as dt
+
+    source, inst_type = _resolve_source(secid)
+
+    with engine.connect() as conn:
+        if source == "index_data":
+            rows = conn.execute(text("""
+                SELECT trade_date, close
+                FROM index_data
+                WHERE secid = :secid AND close > 0
+                ORDER BY trade_date
+            """), {"secid": secid}).fetchall()
+        else:
+            type_filter = f"type = '{inst_type}'" if inst_type else "TRUE"
+            rows = conn.execute(text(f"""
+                SELECT begin_time::date as trade_date, close
+                FROM candles
+                WHERE secid = :secid AND interval = 24 AND {type_filter} AND close > 0
+                ORDER BY begin_time
+            """), {"secid": secid}).fetchall()
+
+    if not rows:
+        return {}
+
+    trade_dates = [r[0] for r in rows]
+    closes = [float(r[1]) for r in rows]
+
+    # Дивидендная коррекция (мультипликативная)
+    if ex_dates:
+        adjusted = closes.copy()
+        relevant_divs = sorted(
+            [(dt.fromisoformat(ex_str), dv) for ex_str, dv in ex_dates.items()]
+        )
+        for ex_d, div_val in relevant_divs:
+            ex_idx = None
+            for i, d in enumerate(trade_dates):
+                if d >= ex_d:
+                    ex_idx = i
+                    break
+            if ex_idx is not None and ex_idx > 0:
+                raw_prev = closes[ex_idx - 1]
+                if raw_prev > 0 and div_val < raw_prev:
+                    factor = (raw_prev - div_val) / raw_prev
+                    for j in range(ex_idx):
+                        adjusted[j] *= factor
+        prices = adjusted
+    else:
+        prices = closes
+
+    # Группируем по годам — список (date, price) в хронологическом порядке
+    current_year = dt.today().year
+    years_data = defaultdict(list)
+    for i, td in enumerate(trade_dates):
+        years_data[td.year].append((td, prices[i]))
+
+    # Для каждого года: нумеруем торговые дни 0, 1, 2, ... и нормализуем к 0%
+    # historical_by_td[trading_day_number] = [pct_year1, pct_year2, ...]
+    historical_by_td = defaultdict(list)
+    current_series = []
+    min_year = None
+    max_trading_days = 0
+
+    for yr in sorted(years_data.keys()):
+        points = years_data[yr]
+        if len(points) < 5:
+            continue  # Слишком мало данных за год
+        first_close = points[0][1]
+        if first_close <= 0:
+            continue
+
+        if yr == current_year:
+            for td_idx, (td, price) in enumerate(points):
+                pct = round((price - first_close) / first_close * 100, 2)
+                current_series.append({
+                    "td": td_idx,
+                    "month": td.month,
+                    "pct": pct,
+                    "date": td.isoformat(),
+                })
+        else:
+            if min_year is None:
+                min_year = yr
+            for td_idx, (td, price) in enumerate(points):
+                pct = (price - first_close) / first_close * 100
+                historical_by_td[td_idx].append(pct)
+            max_trading_days = max(max_trading_days, len(points))
+
+    # Усредняем по номеру торгового дня
+    raw_avg = []
+    for td_idx in range(max_trading_days):
+        vals = historical_by_td.get(td_idx, [])
+        if len(vals) >= 2:  # Минимум 2 года для средней
+            raw_avg.append((td_idx, sum(vals) / len(vals), len(vals)))
+
+    # Лёгкое сглаживание (окно 5 торговых дней)
+    SMOOTH = 5
+    smoothed_vals = [v[1] for v in raw_avg]
+    smoothed = []
+    for i in range(len(smoothed_vals)):
+        lo = max(0, i - SMOOTH // 2)
+        hi = min(len(smoothed_vals), i + SMOOTH // 2 + 1)
+        smoothed.append(sum(smoothed_vals[lo:hi]) / (hi - lo))
+
+    # Маппинг торгового дня → месяц (берём из текущего года, если есть)
+    # Иначе из последнего исторического года
+    ref_year = current_year if current_year in years_data else max(years_data.keys())
+    ref_points = years_data[ref_year]
+    td_to_month = {}
+    for td_idx, (td, _) in enumerate(ref_points):
+        td_to_month[td_idx] = td.month
+
+    average_series = []
+    for i, (td_idx, _, count) in enumerate(raw_avg):
+        month = td_to_month.get(td_idx, 1)
+        average_series.append({
+            "td": td_idx,
+            "month": month,
+            "avg_pct": round(smoothed[i], 2),
+            "years_count": count,
+        })
+
+    max_hist_year = current_year - 1
+    years_range = f"{min_year}-{max_hist_year}" if min_year else ""
+
+    return {
+        "average": average_series,
+        "current": current_series,
+        "years_range": years_range,
+        "current_year": current_year,
+        "max_trading_days": max_trading_days,
+    }
+
+
 @router.get("")
 async def get_seasonality(
     secid: str = Query(..., description="Тикер акции"),
@@ -510,5 +655,42 @@ async def get_price_chart(
         "dividends": dividends_list,
         "data": data,
     }
+    get_or_set(cache_key, result, ttl=300)
+    return result
+
+
+@router.get("/yearly")
+async def get_yearly_seasonality(
+    secid: str = Query(..., description="Тикер"),
+    exclude_dividends: bool = Query(False, description="Убрать дивидендные гэпы"),
+    user=Depends(get_current_user_optional),
+):
+    """
+    Годовая сезонность: среднее кумулятивное изменение цены с начала года.
+    Две серии: average (все исторические годы) и current (текущий год).
+    """
+    cache_key = f"seasonality_yearly:{secid}:nodiv{exclude_dividends}"
+    cached = get_or_set(cache_key)
+    if cached is not None:
+        return cached
+
+    engine = get_engine()
+    start_time = time.time()
+
+    source, inst_type = _resolve_source(secid)
+    ex_dates: dict[str, float] = {}
+    if exclude_dividends and inst_type == "stock":
+        ex_dates = _get_ex_dates_from_db(engine, secid)
+
+    data = _compute_yearly_seasonality(engine, secid, ex_dates)
+    if not data:
+        raise HTTPException(404, f"Нет данных для {secid}")
+
+    duration = time.time() - start_time
+    avg_len = len(data.get("average", []))
+    cur_len = len(data.get("current", []))
+    log.info(f"GET /seasonality/yearly {secid} avg={avg_len} cur={cur_len} {duration:.2f}s")
+
+    result = {"secid": secid, "exclude_dividends": exclude_dividends, **data}
     get_or_set(cache_key, result, ttl=300)
     return result

@@ -192,8 +192,16 @@ export default function HeatmapPage() {
   // Первая загрузка + при смене mapMode/groupBy
   useEffect(() => { loadData(); }, [loadData]);
 
-  // SSE: real-time обновление цен (lightweight, только цены)
-  useRealtimeData(['5min'], async () => {
+  // SSE: при обновлении MV — загружаем свежие цены (lightweight) + полный reload раз в 15 мин
+  const fullReloadCounter = useRef(0);
+  useRealtimeData(['5min', 'mv_refresh'], async () => {
+    fullReloadCounter.current += 1;
+    // Каждый 3й раз (раз в ~15 мин) — полный reload для change_1w/1m/1y
+    if (fullReloadCounter.current % 3 === 0) {
+      await loadData();
+      return;
+    }
+    // Остальное время — только цены (lightweight)
     try {
       const resp = await fetch('/api/heatmap/prices');
       if (!resp.ok) return;
@@ -208,12 +216,9 @@ export default function HeatmapPage() {
           change_1d: Math.round((newPrice - prevClose) / prevClose * 10000) / 100,
         };
       }));
-      setLastUpdate(new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }));
+      setLastUpdate(new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Moscow' }));
     } catch { /* ignore */ }
-  }, 1000);
-
-  // SSE: полный reload при обновлении MV (раз в 5 мин — для change_1w/1m/1y)
-  useRealtimeData(['mv_refresh'], loadData, 3000);
+  }, 5000);
 
   // Получение значения для размера (экспонента усиливает разницу крупных/мелких)
   const getSizeValue = (stock: HeatmapStock): number => {

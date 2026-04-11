@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AuthProvider } from './contexts/AuthContext';
+import ErrorBoundary from './components/ErrorBoundary';
 import Layout from './components/Layout';
 import OverviewPage from './pages/OverviewPage';
 import OpenInterestPage from './pages/OpenInterestPage';
@@ -20,6 +21,7 @@ export default function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
+      <ErrorBoundary>
       <BrowserRouter>
         <Routes>
           {/* Auth callback — без Layout */}
@@ -46,6 +48,7 @@ export default function App() {
           </Route>
         </Routes>
       </BrowserRouter>
+      </ErrorBoundary>
       </AuthProvider>
     </ThemeProvider>
   );

@@ -1,9 +1,11 @@
-import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
-import { ChevronDown, BarChart3, TrendingUp, CalendarDays } from 'lucide-react';
-import { getSeasonality, getSeasonalityPrice } from '../services/api';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { ChevronDown, BarChart3, TrendingUp, CalendarDays, Layers } from 'lucide-react';
+import { getSeasonality, getSeasonalityPrice, getSeasonalityYearly } from '../services/api';
 import InstrumentSearchModal from '../components/InstrumentSearchModal';
-import ChartNavigator from '../components/ChartNavigator';
-import type { SeasonalityResponse, SeasonalityMode, PriceChartResponse } from '../services/api';
+import SeasonalityHistogram from '../components/seasonality/SeasonalityHistogram';
+import SeasonalityPriceChart from '../components/seasonality/SeasonalityPriceChart';
+import YearlySeasonalityChart from '../components/seasonality/YearlySeasonalityChart';
+import type { SeasonalityResponse, SeasonalityMode, PriceChartResponse, YearlySeasonalityResponse } from '../services/api';
 // types removed — InstrumentSearchModal handles instrument loading
 
 const MODE_LABELS: Record<SeasonalityMode, string> = {
@@ -40,7 +42,8 @@ const PRICE_PERIODS = [
   { label: 'Всё', days: 9999 },
 ];
 
-type ChartType = 'histogram' | 'price';
+type ChartType = 'histogram' | 'price' | 'yearly';
+
 
 export default function SeasonalityPage() {
   // Stock selector
@@ -57,7 +60,6 @@ export default function SeasonalityPage() {
 
   // Price navigator
   const [priceNavRange, setPriceNavRange] = useState<[number, number] | null>(null);
-  const divHoverRef = useRef(false);
 
   // Animated bars (like flows)
   const [animatedHeights, setAnimatedHeights] = useState<number[]>([]);
@@ -69,6 +71,7 @@ export default function SeasonalityPage() {
   const [dataRaw, setDataRaw] = useState<SeasonalityResponse | null>(null);
   const [dataAdj, setDataAdj] = useState<SeasonalityResponse | null>(null);
   const [priceData, setPriceData] = useState<PriceChartResponse | null>(null);
+  const [yearlyData, setYearlyData] = useState<YearlySeasonalityResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -78,6 +81,7 @@ export default function SeasonalityPage() {
     bar?: SeasonalityResponse['bars'][0];
     barAdj?: SeasonalityResponse['bars'][0];
     priceDate?: string; priceClose?: number; priceAdj?: number;
+    yearlyAvgPct?: number; yearlyCurPct?: number; yearlyCurDate?: string;
   } | null>(null);
 
   const handleSelectInstrument = (sectype: string, name: string) => {
@@ -121,14 +125,26 @@ export default function SeasonalityPage() {
     }
   }, [selectedStock, priceDays]);
 
+  // Fetch yearly seasonality
+  const fetchYearly = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await getSeasonalityYearly(selectedStock, excludeDividends);
+      setYearlyData(res);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Ошибка загрузки');
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedStock, excludeDividends]);
+
   useEffect(() => {
     if (!selectedStock) return;
-    if (chartType === 'histogram') {
-      fetchSeasonality();
-    } else {
-      fetchPrice();
-    }
-  }, [chartType, fetchSeasonality, fetchPrice, selectedStock]);
+    if (chartType === 'histogram') fetchSeasonality();
+    else if (chartType === 'price') fetchPrice();
+    else fetchYearly();
+  }, [chartType, fetchSeasonality, fetchPrice, fetchYearly, selectedStock]);
 
   // Active seasonality data
   const data = excludeDividends && dataAdj ? dataAdj : dataRaw;
@@ -187,31 +203,6 @@ export default function SeasonalityPage() {
     barsAnimRef.current = requestAnimationFrame(animate);
     return () => { if (barsAnimRef.current) cancelAnimationFrame(barsAnimRef.current); };
   }, [bars, maxAbs]);
-
-  // ===== PRICE CHART CALCULATIONS =====
-  const allPricePoints = priceData?.data || [];
-  const priceDividends = priceData?.dividends || [];
-
-  // Navigator data format
-  const priceNavData = useMemo(() =>
-    allPricePoints.map(p => ({ time: p.date, value: p.close })),
-    [allPricePoints]);
-
-  // Display points (filtered by navigator)
-  const pricePoints = useMemo(() => {
-    if (!priceNavRange) return allPricePoints;
-    return allPricePoints.slice(priceNavRange[0], priceNavRange[1] + 1);
-  }, [allPricePoints, priceNavRange]);
-
-  const priceMinMax = useMemo(() => {
-    if (pricePoints.length === 0) return { min: 0, max: 1 };
-    const allVals = pricePoints.flatMap(p => [p.close, p.adjusted]);
-    const min = Math.min(...allVals);
-    const max = Math.max(...allVals);
-    const range = max - min || 1;
-    return { min: min - range * 0.05, max: max + range * 0.05 };
-  }, [pricePoints]);
-
 
   const showDivToggle = chartType === 'histogram' && mode !== 'intraday';
 
@@ -279,6 +270,16 @@ export default function SeasonalityPage() {
             }}
           >
             <TrendingUp size={14} /> Цена
+          </button>
+          <button
+            onClick={() => setChartType('yearly')}
+            className="flex items-center gap-1.5 px-2 md:px-3 py-2 md:py-2.5 text-xs md:text-sm font-medium transition-all"
+            style={{
+              backgroundColor: chartType === 'yearly' ? 'var(--accent)' : 'var(--bg-secondary)',
+              color: chartType === 'yearly' ? 'var(--bg-primary)' : 'var(--text-secondary)',
+            }}
+          >
+            <Layers size={14} /> Годовая
           </button>
         </div>
 
@@ -373,6 +374,29 @@ export default function SeasonalityPage() {
             {priceData.data.length} торговых дней • {priceData.ex_dates_count} дивидендных отсечек
           </div>
         )}
+
+        {/* Yearly-specific controls */}
+        {chartType === 'yearly' && (
+          <>
+            <button
+              onClick={() => setExcludeDividends(!excludeDividends)}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium transition-all"
+              style={{
+                backgroundColor: excludeDividends ? 'rgba(34, 197, 94, 0.15)' : 'var(--bg-secondary)',
+                borderColor: excludeDividends ? 'rgba(34, 197, 94, 0.5)' : 'var(--border-color)',
+                color: excludeDividends ? '#22c55e' : 'var(--text-secondary)',
+              }}
+            >
+              <span className={`inline-block w-3 h-3 rounded-full ${excludeDividends ? 'bg-green-500' : 'bg-gray-500'}`} />
+              Без дивидендных гэпов
+            </button>
+            {yearlyData && (
+              <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                Среднее за {yearlyData.years_range} • текущий {yearlyData.current_year} год
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       {/* Chart */}
@@ -381,13 +405,13 @@ export default function SeasonalityPage() {
         style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-color)' }}
       >
         {/* Спиннер обновления */}
-        {loading && (bars.length > 0 || priceData) && (
+        {loading && (bars.length > 0 || priceData || yearlyData) && (
           <div className="absolute top-4 right-4 z-20 flex items-center gap-2 bg-theme-tertiary/90 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-theme">
             <div className="w-4 h-4 border-2 border-[#C8FF2E] border-t-transparent rounded-full animate-spin" />
             <span className="text-xs text-theme-secondary">Обновление...</span>
           </div>
         )}
-        {loading && bars.length === 0 && !priceData ? (
+        {loading && bars.length === 0 && !priceData && !yearlyData ? (
           <div className="flex items-center justify-center" style={{ aspectRatio: '16/9' }}>
             <div className="flex flex-col items-center gap-3">
               <div className="w-8 h-8 border-2 border-[#06b6d4] border-t-transparent rounded-full animate-spin" />
@@ -399,335 +423,37 @@ export default function SeasonalityPage() {
             {error}
           </div>
         ) : chartType === 'histogram' ? (
-          /* ===== HISTOGRAM ===== */
-          bars.length === 0 ? (
-            <div className="flex items-center justify-center" style={{ aspectRatio: '16/9', color: 'var(--text-muted)' }}>Нет данных</div>
+          <SeasonalityHistogram
+            bars={bars}
+            animatedHeights={animatedHeights}
+            maxAbs={maxAbs}
+            tooltip={tooltip}
+            setTooltip={setTooltip}
+          />
+        ) : chartType === 'price' ? (
+          priceData ? (
+            <SeasonalityPriceChart
+              priceData={priceData}
+              priceNavRange={priceNavRange}
+              setPriceNavRange={setPriceNavRange}
+              tooltip={tooltip}
+              setTooltip={setTooltip}
+              chartHeight={chartHeight}
+            />
           ) : (
-            <div className="relative overflow-hidden pb-8 cursor-crosshair" style={{ height: 'var(--chart-height, 450px)' }}
-              onMouseMove={(e) => {
-                const rect = e.currentTarget.getBoundingClientRect();
-                const x = e.clientX - rect.left;
-                const barAreaWidth = rect.width - 60;
-                const idx = Math.floor(x / (barAreaWidth / bars.length));
-                if (idx >= 0 && idx < bars.length) {
-                  setTooltip({ x: e.clientX - rect.left, y: e.clientY - rect.top, bar: bars[idx] });
-                } else {
-                  setTooltip(null);
-                }
-              }}
-              onMouseLeave={() => setTooltip(null)}>
-              {/* SVG область */}
-              <div className="absolute inset-0" style={{ right: 80 }}>
-                <svg viewBox="0 0 1000 500" preserveAspectRatio="none" width="100%" height="100%">
-                  {/* Бары — анимированные через state */}
-                  {animatedHeights.length > 0 && bars.map((bar, i) => {
-                    const W = 1000;
-                    const H = 500;
-                    const slotW = W / bars.length;
-                    const bw = slotW * (bars.length > 12 ? 0.6 : 0.5);
-                    const bx = i * slotW + (slotW - bw) / 2;
-                    const midY = H / 2;
-                    const halfH = H * 0.38;
-                    const animVal = animatedHeights[i] ?? 0;
-                    const h = Math.max(Math.abs(animVal) * halfH, H * 0.005);
-                    return (
-                      <g key={bar.key}
-                        opacity={tooltip?.bar ? (tooltip.bar.key === bar.key ? 1 : 0.35) : 1}
-                        className="transition-opacity duration-150">
-                        {animVal >= 0 ? (
-                          <rect x={bx} y={midY - h} width={bw} height={h}
-                            fill="#2EE59D" rx="3" />
-                        ) : (
-                          <rect x={bx} y={midY} width={bw} height={h}
-                            fill="#FF4D4D" rx="3" />
-                        )}
-                      </g>
-                    );
-                  })}
-
-                  {/* Горизонтальные линии сетки */}
-                  {[-maxAbs, -maxAbs / 2, 0, maxAbs / 2, maxAbs].map((val, i) => {
-                    const y = 250 - (val / maxAbs) * 190;
-                    return (
-                      <line key={i} x1="0" y1={y} x2="1000" y2={y}
-                        stroke={val === 0 ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.08)"} strokeWidth="1"
-                        vectorEffect="non-scaling-stroke" />
-                    );
-                  })}
-
-                  {/* Вертикальный курсор */}
-                  {tooltip?.bar && (() => {
-                    const idx = bars.indexOf(tooltip.bar!);
-                    if (idx === -1) return null;
-                    const slotW = 1000 / bars.length;
-                    const cx = idx * slotW + slotW / 2;
-                    const gridTop = 250 - 190;  // верхняя линия сетки
-                    const gridBot = 250 + 190;  // нижняя линия сетки
-                    return (
-                      <line x1={cx} y1={gridTop} x2={cx} y2={gridBot}
-                        stroke="#C8FF2E" strokeWidth="1" strokeDasharray="4 3"
-                        opacity="0.5" vectorEffect="non-scaling-stroke"
-                        style={{ pointerEvents: 'none' }} />
-                    );
-                  })()}
-                </svg>
-              </div>
-
-              {/* Плавающая дата + тултип как на притоках */}
-              {tooltip?.bar && (() => {
-                const idx = bars.indexOf(tooltip.bar!);
-                if (idx === -1) return null;
-                const color = tooltip.bar!.avg_change >= 0 ? '#2EE59D' : '#FF4D4D';
-                const valStr = `${tooltip.bar!.avg_change > 0 ? '+' : ''}${Math.abs(tooltip.bar!.avg_change) >= 0.01 ? tooltip.bar!.avg_change.toFixed(3) : tooltip.bar!.avg_change.toFixed(4)}%`;
-                return (
-                  <>
-                    {/* Карточка */}
-                    <div className="absolute z-30 pointer-events-none"
-                      style={{
-                        left: tooltip.x > 300 ? tooltip.x - 168 : tooltip.x + 8,
-                        top: Math.min(Math.max(tooltip.y - 20, 4), 330)
-                      }}>
-                      <div className="bg-theme-tertiary/95 backdrop-blur-sm rounded-lg border border-theme shadow-xl py-1.5 px-3">
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
-                            <span className="text-[11px] text-theme-secondary truncate">{tooltip.bar!.avg_change >= 0 ? 'Рост' : 'Падение'}</span>
-                          </div>
-                          <span className="text-xs font-semibold whitespace-nowrap" style={{ color }}>
-                            {valStr}
-                          </span>
-                        </div>
-                        <div className="text-[10px] text-theme-secondary mt-0.5">{tooltip.bar!.count} наблюдений</div>
-                      </div>
-                    </div>
-                  </>
-                );
-              })()}
-
-
-              {/* Подписи Y справа */}
-              {[-maxAbs, -maxAbs / 2, 0, maxAbs / 2, maxAbs].map((val, i) => {
-                const yPct = 50 - (val / maxAbs) * 38;
-                const label = val === 0 ? '0' : `${val > 0 ? '+' : ''}${val.toFixed(2)}%`;
-                return (
-                  <div key={i} className="absolute pointer-events-none"
-                    style={{ top: `${yPct}%`, right: 4, transform: 'translateY(-50%)' }}>
-                    <span className="font-semibold" style={{ fontSize: 'var(--chart-font-y, 16px)', color: 'var(--axis-color, #9CA3B8)' }}>{label}</span>
-                  </div>
-                );
-              })}
-
-              {/* X labels — фиксированные внизу */}
-              <div className="absolute bottom-0 left-0 flex justify-between font-semibold px-2" style={{ right: 'var(--chart-pad-right-dual, 80px)', fontSize: 'var(--chart-font-x, 14px)', color: 'var(--axis-color, #9CA3B8)' }}>
-                {bars.map((bar, i) => {
-                  const isMob = typeof window !== 'undefined' && window.innerWidth < 768;
-                  const showLabel = !isMob || bars.length <= 7 || i % 2 === 0;
-                  return (
-                    <span key={bar.key} className="text-center" style={{ width: `${100 / bars.length}%` }}>
-                      {showLabel ? bar.label : ''}
-                    </span>
-                  );
-                })}
-              </div>
-
-            </div>
+            <div className="flex items-center justify-center" style={{ height: chartHeight, color: 'var(--text-muted)' }}>Нет данных</div>
           )
         ) : (
-          /* ===== PRICE CHART ===== */
-          pricePoints.length === 0 ? (
+          yearlyData ? (
+            <YearlySeasonalityChart
+              yearlyData={yearlyData}
+              tooltip={tooltip}
+              setTooltip={setTooltip}
+              chartHeight={chartHeight}
+            />
+          ) : (
             <div className="flex items-center justify-center" style={{ height: chartHeight, color: 'var(--text-muted)' }}>Нет данных</div>
-          ) : (() => {
-            // Padding из CSS tokens (с fallback)
-            const cs = getComputedStyle(document.documentElement);
-            const cssN = (n: string, fb: number) => parseFloat(cs.getPropertyValue(n)) || fb;
-            const PL = cssN('--chart-pad-left', 60), PR = cssN('--chart-pad-right-dual', 80), PT = 10, PB = 60;
-            const hasAdj = pricePoints.some(p => p.close !== p.adjusted);
-            const scX = (i: number) => (i / Math.max(pricePoints.length - 1, 1));
-            const scY = (v: number) => 1 - (v - priceMinMax.min) / (priceMinMax.max - priceMinMax.min);
-            const yTicks = Array.from({ length: 5 }, (_, i) => {
-              const val = priceMinMax.min + ((priceMinMax.max - priceMinMax.min) * i) / 4;
-              return { value: val, pct: scY(val) * 100 };
-            });
-            const xTicks = (() => {
-              const count = Math.min(7, pricePoints.length);
-              return Array.from({ length: count }, (_, i) => {
-                const idx = Math.floor((i / Math.max(count - 1, 1)) * (pricePoints.length - 1));
-                return { label: pricePoints[idx].date.slice(5), pct: scX(idx) * 100 };
-              });
-            })();
-            // Visible dividends
-            const visibleDivs = priceDividends.filter(d => {
-              return pricePoints.some(p => p.date === d.date);
-            }).map(d => {
-              const idx = pricePoints.findIndex(p => p.date === d.date);
-              return { ...d, idx, pct: scX(idx) * 100 };
-            });
-
-            return (
-              <div>
-                {/* Legend centered — circles */}
-                <div className="flex justify-center gap-5 text-sm mb-3">
-                  <span className="flex items-center gap-2">
-                    <span className="w-3 h-3 rounded-full" style={{ backgroundColor: '#C8FF2E' }} />
-                    <span className="text-theme-primary font-medium">Цена</span>
-                  </span>
-                  {hasAdj && (
-                    <span className="flex items-center gap-2">
-                      <span className="w-3 h-3 rounded-full" style={{ backgroundColor: '#22c55e' }} />
-                      <span className="text-theme-primary font-medium">Без дивидендных гэпов</span>
-                    </span>
-                  )}
-                </div>
-
-                {/* Floating date label — between legend and chart, follows cursor X */}
-                <div className="relative" style={{ height: 22 }}>
-                  {tooltip?.priceDate && (
-                    <div className="absolute pointer-events-none" style={{ left: tooltip.x, transform: 'translateX(-50%)' }}>
-                      <span className="text-[11px] text-theme-secondary bg-theme-tertiary/90 backdrop-blur-sm px-2 py-0.5 rounded border border-theme whitespace-nowrap">
-                        {tooltip.priceDate}
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Chart area */}
-                <div className="relative cursor-crosshair" style={{ height: 'var(--chart-height, 420px)' }}
-                  onMouseMove={(e) => {
-                    if (divHoverRef.current) return;
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    if (pricePoints.length === 0) return;
-                    const chartAreaW = rect.width - PL - PR;
-                    const mx = e.clientX - rect.left - PL;
-                    if (mx < 0 || mx > chartAreaW) { setTooltip(null); return; }
-                    const idx = Math.round((mx / chartAreaW) * (pricePoints.length - 1));
-                    const ci = Math.max(0, Math.min(idx, pricePoints.length - 1));
-                    const p = pricePoints[ci];
-                    setTooltip({
-                      x: PL + (ci / Math.max(pricePoints.length - 1, 1)) * chartAreaW,
-                      y: e.clientY - rect.top,
-                      priceDate: p.date, priceClose: p.close, priceAdj: p.adjusted,
-                    });
-                  }}
-                  onMouseLeave={() => { divHoverRef.current = false; setTooltip(null); }}
-                >
-                  {/* SVG */}
-                  <div className="absolute" style={{ left: PL, right: PR, top: PT, bottom: PB }}>
-                    <svg viewBox={`0 0 1000 500`} preserveAspectRatio="none" width="100%" height="100%">
-                      {/* Grid */}
-                      {yTicks.map((t, i) => (
-                        <line key={i} x1="0" x2="1000" y1={t.pct / 100 * 500} y2={t.pct / 100 * 500}
-                          stroke="rgba(255,255,255,0.08)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
-                      ))}
-                      {/* Raw price */}
-                      <path d={pricePoints.map((p, i) =>
-                        `${i === 0 ? 'M' : 'L'} ${scX(i) * 1000} ${scY(p.close) * 500}`
-                      ).join(' ')} fill="none" stroke="#C8FF2E" strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" />
-                      {/* Adjusted */}
-                      {hasAdj && (
-                        <path d={pricePoints.map((p, i) =>
-                          `${i === 0 ? 'M' : 'L'} ${scX(i) * 1000} ${scY(p.adjusted) * 500}`
-                        ).join(' ')} fill="none" stroke="#22c55e" strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="6,3" />
-                      )}
-                      {/* Crosshair */}
-                      {tooltip?.priceDate && (() => {
-                        const idx = pricePoints.findIndex(p => p.date === tooltip.priceDate);
-                        if (idx < 0) return null;
-                        const cx = scX(idx) * 1000;
-                        const cy = scY(pricePoints[idx].close) * 500;
-                        return (
-                          <>
-                            <line x1={cx} x2={cx} y1="0" y2="500"
-                              stroke="#C8FF2E" strokeWidth="1" strokeDasharray="4,3" opacity="0.5" vectorEffect="non-scaling-stroke" />
-                            <circle cx={cx} cy={cy} r="4"
-                              fill="#C8FF2E" stroke="var(--bg-secondary)" strokeWidth="2" vectorEffect="non-scaling-stroke" />
-                          </>
-                        );
-                      })()}
-                    </svg>
-                  </div>
-
-                  {/* Y labels */}
-                  {yTicks.map((t, i) => (
-                    <div key={i} className="absolute pointer-events-none" style={{ right: 4, top: `${PT + t.pct / 100 * (420 - PT - PB)}px`, transform: 'translateY(-50%)' }}>
-                      <span className="font-semibold" style={{ fontSize: 'var(--chart-font-x, 14px)', color: 'var(--axis-color, #9CA3B8)' }}>{t.value.toFixed(0)}</span>
-                    </div>
-                  ))}
-
-                  {/* X labels — below dividend circles */}
-                  <div className="absolute flex justify-between font-semibold" style={{ left: PL, right: PR, bottom: 4, fontSize: 'var(--chart-font-x, 13px)', color: 'var(--axis-color, #9CA3B8)' }}>
-                    {xTicks.map((t, i) => (
-                      <span key={i}>{t.label}</span>
-                    ))}
-                  </div>
-
-                  {/* Dividend circles at bottom */}
-                  {visibleDivs.map((d, i) => {
-                    const chartAreaH = 420 - PT - PB;
-                    return (
-                      <div key={i} className="absolute group" style={{
-                        left: PL,
-                        right: PR,
-                        top: PT + chartAreaH - 14,
-                      }}><div style={{ position: 'absolute', left: `${d.pct}%`, transform: 'translateX(-50%)' }}
-                        onMouseEnter={() => { divHoverRef.current = true; setTooltip(null); }}
-                        onMouseLeave={() => { divHoverRef.current = false; }}
-                      >
-                        <div className="w-7 h-7 rounded-full flex items-center justify-center opacity-50 hover:opacity-100 transition-opacity cursor-pointer"
-                          style={{ backgroundColor: '#3a3f4f', color: '#9CA3B8', fontSize: 11, fontWeight: 600 }}>
-                          Д
-                        </div>
-                        {/* Vertical dashed guide line */}
-                        <div className="hidden group-hover:block absolute left-1/2 pointer-events-none" style={{
-                          bottom: 28, height: chartAreaH - 28,
-                          borderLeft: '1px dashed rgba(156, 163, 184, 0.4)',
-                        }} />
-                        {/* Tooltip above circle */}
-                        <div className="hidden group-hover:block absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap z-30">
-                          <div className="bg-theme-tertiary/95 backdrop-blur-sm rounded-lg border border-theme shadow-xl py-1.5 px-3">
-                            <div className="text-[11px] font-medium text-theme-primary">{d.value} ₽ — {d.date}</div>
-                          </div>
-                        </div>
-                      </div></div>
-                    );
-                  })}
-
-                  {/* Value tooltip — near cursor */}
-                  {tooltip?.priceDate && (() => {
-                    const isRight = tooltip.x > 500;
-                    return (
-                      <div className="absolute pointer-events-none z-30"
-                        style={{
-                          left: isRight ? tooltip.x - 150 : tooltip.x + 12,
-                          top: Math.max(tooltip.y - 40, 4),
-                        }}>
-                        <div className="bg-theme-tertiary/95 backdrop-blur-sm rounded-lg border border-theme shadow-xl py-1.5 px-3">
-                          <div className="flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-[#C8FF2E]" />
-                            <span className="text-[11px] text-theme-secondary">Цена</span>
-                            <span className="text-xs font-semibold text-[#C8FF2E] ml-auto pl-2">{tooltip.priceClose?.toFixed(2)} ₽</span>
-                          </div>
-                          {tooltip.priceAdj !== tooltip.priceClose && (
-                            <div className="flex items-center gap-2 mt-0.5">
-                              <span className="w-2 h-2 rounded-full bg-[#22c55e]" />
-                              <span className="text-[11px] text-theme-secondary">Без гэпов</span>
-                              <span className="text-xs font-semibold text-[#22c55e] ml-auto pl-2">{tooltip.priceAdj?.toFixed(2)} ₽</span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-
-                {/* Navigator */}
-                <ChartNavigator
-                  data={priceNavData}
-                  onChange={(s, e) => setPriceNavRange([s, e])}
-                  color="#C8FF2E"
-                />
-              </div>
-            );
-          })()
+          )
         )}
       </div>
 
@@ -735,7 +461,9 @@ export default function SeasonalityPage() {
       <div className="mt-4 text-sm" style={{ color: 'var(--text-muted)' }}>
         {chartType === 'histogram'
           ? `Среднее дневное изменение (close-to-close) ${MODE_LABELS[mode].toLowerCase()} — ${activePeriod.label.toLowerCase()} (${activePeriod.iterations} итераций${MODE_ITER_HINT[mode]?.[activePeriod.iterations] ? ` ≈ ${MODE_ITER_HINT[mode][activePeriod.iterations]}` : ''})`
-          : `График цены ${selectedStock} — с дивидендными гэпами и без (adjusted close)`
+          : chartType === 'price'
+          ? `График цены ${selectedStock} — с дивидендными гэпами и без (adjusted close)`
+          : `Кумулятивное изменение ${selectedStock} с начала года — среднее (${yearlyData?.years_range ?? '...'}) vs ${yearlyData?.current_year ?? ''}`
         }
         {chartType === 'histogram' && excludeDividends && <span className="ml-2 text-green-500">• Дивидендные гэпы убраны</span>}
         {chartType === 'histogram' && mode === 'monthday' && <span className="ml-2">• Выходные привязаны к понедельнику</span>}

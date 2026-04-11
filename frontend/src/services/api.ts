@@ -674,3 +674,42 @@ export async function getSeasonalityPrice(
   if (!response.ok) throw new Error('Failed to fetch price chart');
   return response.json();
 }
+
+// --- Yearly seasonality ---
+
+export interface YearlySeasonalityPoint {
+  td: number;  // trading day number (0-based)
+  month: number;
+  avg_pct: number;
+  years_count: number;
+}
+
+export interface YearlyCurrentPoint {
+  td: number;
+  month: number;
+  pct: number;
+  date: string;
+}
+
+export interface YearlySeasonalityResponse {
+  secid: string;
+  exclude_dividends: boolean;
+  average: YearlySeasonalityPoint[];
+  current: YearlyCurrentPoint[];
+  years_range: string;
+  current_year: number;
+  max_trading_days: number;
+}
+
+export async function getSeasonalityYearly(
+  secid: string,
+  excludeDividends: boolean = false,
+): Promise<YearlySeasonalityResponse> {
+  const params = new URLSearchParams({
+    secid,
+    exclude_dividends: excludeDividends.toString(),
+  });
+  const response = await apiFetch(`${API_BASE}/api/seasonality/yearly?${params}`);
+  if (!response.ok) throw new Error('Failed to fetch yearly seasonality');
+  return response.json();
+}

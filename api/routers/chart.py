@@ -308,7 +308,7 @@ def get_chart_data(
                 # Блокируем возврат на prev_contract только в период cooldown
                 # Также игнорируем дни с аномально низким объёмом (<1000)
                 days_since = (day - last_switch_day).days if last_switch_day else 999
-                if day_leader == prev_contract and days_since < COOLDOWN_DAYS:
+                if day_leader == prev_contract and days_since < COOLDOWN_DAYS and old_vol > 0:
                     pass  # Слишком рано для возврата — дёрганье при экспирации
                 else:
                     contract_switches.append({

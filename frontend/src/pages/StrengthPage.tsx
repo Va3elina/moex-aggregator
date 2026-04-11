@@ -1,6 +1,5 @@
-import { memo, useEffect, useLayoutEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { TrendingUp, Activity, ArrowUp, ArrowDown, BarChart2, LineChart, Filter, Lock } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
+import { TrendingUp, Activity } from 'lucide-react';
 import ChartNavigator from '../components/ChartNavigator';
 import {
     getBreadthCurrent,
@@ -10,19 +9,16 @@ import {
     type BreadthUniverse,
 } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
-import { isPeriodAllowed, getDefaultPeriod } from '../config/accessControl';
+import { getDefaultPeriod } from '../config/accessControl';
 import { useRealtimeData } from '../hooks/useRealtimeData';
+import type { SyncedDataPoint, ChartPadding } from '../components/strength/chartUtils';
+import IndexChart from '../components/strength/IndexChart';
+import BreadthChart from '../components/strength/BreadthChart';
+import SectorDetail from '../components/strength/SectorDetail';
+import StrengthControls from '../components/strength/StrengthControls';
 
 type Period = '6m' | '1y' | '2y' | '5y' | 'all';
 type ChartMode = 'line' | 'histogram';
-
-const PERIOD_LABELS: Record<Period, string> = {
-    '6m': '6М',
-    '1y': '1Г',
-    '2y': '2Г',
-    '5y': '5Л',
-    'all': 'Всё'
-};
 
 const PERIOD_DAYS: Record<Period, number> = {
     '6m': 180,
@@ -47,11 +43,10 @@ const CLASSIFICATION_LABELS: Record<string, { label: string; color: string; bg: 
 // Константа уровня модуля — стабильная ссылка, не пересоздаётся при рендерах.
 // Это критично: SyncedPriceChart/SyncedBreadthChart используют padding в useMemo-deps,
 // пересоздание объекта каждый рендер сбрасывает chartData и прерывает морфинг-анимацию.
-const CHART_PADDING = { left: 0, right: 70, top: 10, bottom: 30 } as const;
+const CHART_PADDING: ChartPadding = { left: 0, right: 70, top: 10, bottom: 30 } as const;
 
 export default function StrengthPage() {
     const { isAuthenticated } = useAuth();
-    const navigate = useNavigate();
     const [period, setPeriod] = useState<Period>(getDefaultPeriod('1y', isAuthenticated) as Period);
     const emaPeriod = EMA_PERIOD; // Fixed EMA200
     const [chartMode, setChartMode] = useState<ChartMode>('histogram');
@@ -152,7 +147,7 @@ export default function StrengthPage() {
         return () => { if (animTimerRef.current) clearTimeout(animTimerRef.current); };
     }, [syncedData[0]?.time, syncedData.length]);
 
-    const displaySyncedData = useMemo(() => {
+    const displaySyncedData: SyncedDataPoint[] = useMemo(() => {
         if (!syncedData.length) return syncedData;
         return syncedData.slice(navRange[0], navRange[1] + 1);
     }, [syncedData, navRange]);
@@ -256,115 +251,22 @@ export default function StrengthPage() {
             </div>
 
             {/* Контролы — одна строка */}
-            <div className="flex items-center gap-4 mb-6 flex-wrap">
-                {/* Период */}
-                <div className="flex items-center gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
-                    {(Object.entries(PERIOD_LABELS) as [Period, string][]).map(([key, label]) => {
-                        const allowed = isPeriodAllowed(key, isAuthenticated);
-                        return (
-                            <button
-                                key={key}
-                                onClick={() => {
-                                    if (!allowed) { navigate('/login'); return; }
-                                    setPeriod(key);
-                                }}
-                                title={!allowed ? 'Войдите для доступа' : undefined}
-                                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                                    !allowed
-                                        ? 'text-theme-muted cursor-not-allowed opacity-50'
-                                        : period === key
-                                            ? 'btn-control active'
-                                            : 'text-theme-secondary hover:text-theme-primary'
-                                }`}
-                            >
-                                {label}
-                                {!allowed && <Lock className="inline-block ml-0.5 w-3 h-3" />}
-                            </button>
-                        );
-                    })}
-                </div>
-
-                {/* Тип графика breadth */}
-                <div className="flex items-center gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
-                    <button
-                        onClick={() => setChartMode('line')}
-                        className={`p-2 rounded-lg transition-colors ${chartMode === 'line' ? 'bg-white/10' : ''}`}
-                        title="Линия"
-                    >
-                        <LineChart size={18} className={chartMode === 'line' ? 'text-theme-accent' : 'text-theme-secondary'} />
-                    </button>
-                    <button
-                        onClick={() => setChartMode('histogram')}
-                        className={`p-2 rounded-lg transition-colors ${chartMode === 'histogram' ? 'bg-white/10' : ''}`}
-                        title="Гистограмма"
-                    >
-                        <BarChart2 size={18} className={chartMode === 'histogram' ? 'text-theme-accent' : 'text-theme-secondary'} />
-                    </button>
-                </div>
-
-                {/* Вселенная: IMOEX / все акции */}
-                <div className="flex items-center gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
-                    <button
-                        onClick={() => setUniverseBase('imoex')}
-                        className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                            universeBase === 'imoex' ? 'btn-control active' : 'text-theme-secondary hover:text-theme-primary'
-                        }`}
-                    >
-                        Индекс IMOEX
-                    </button>
-                    <button
-                        onClick={() => setUniverseBase('all')}
-                        className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                            universeBase === 'all' ? 'btn-control active' : 'text-theme-secondary hover:text-theme-primary'
-                        }`}
-                    >
-                        Все акции
-                    </button>
-                </div>
-
-                {/* Валюта: ₽ / $ */}
-                <div className="flex items-center gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
-                    <button
-                        onClick={() => setCurrency('rub')}
-                        className={`px-3 py-1.5 text-sm font-bold rounded-lg transition-colors ${
-                            currency === 'rub' ? 'btn-control active' : 'text-theme-secondary hover:text-theme-primary'
-                        }`}
-                    >
-                        ₽
-                    </button>
-                    <button
-                        onClick={() => setCurrency('usd')}
-                        className={`px-3 py-1.5 text-sm font-bold rounded-lg transition-colors ${
-                            currency === 'usd' ? 'btn-control active' : 'text-theme-secondary hover:text-theme-primary'
-                        }`}
-                    >
-                        $
-                    </button>
-                </div>
-
-                {/* Показать IMOEX */}
-                <button
-                    onClick={() => setShowPrice(!showPrice)}
-                    className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors border ${showPrice ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400' : 'border-theme text-theme-secondary'
-                        }`}
-                >
-                    {currency === 'usd' ? 'RTS' : 'IMOEX'}
-                </button>
-
-                {/* Статус + счётчик — справа */}
-                {current && (
-                    <div className="flex items-center gap-3 sm:ml-auto">
-                        <span className="text-sm text-theme-secondary">
-                            <span className="font-bold text-theme-primary">{stocksAbove}</span>/{stocksTotal} выше EMA
-                        </span>
-                        <div className={`px-3 py-1 rounded-full ${classInfo.bg}`}>
-                            <span className={`text-xs font-medium ${classInfo.color}`}>
-                                {classInfo.label}
-                            </span>
-                        </div>
-                    </div>
-                )}
-            </div>
+            <StrengthControls
+                period={period}
+                onPeriodChange={setPeriod}
+                chartMode={chartMode}
+                onChartModeChange={setChartMode}
+                universeBase={universeBase}
+                onUniverseBaseChange={setUniverseBase}
+                currency={currency}
+                onCurrencyChange={setCurrency}
+                showPrice={showPrice}
+                onShowPriceChange={setShowPrice}
+                stocksAbove={stocksAbove}
+                stocksTotal={stocksTotal}
+                classInfo={classInfo}
+                hasCurrent={!!current}
+            />
 
             {/* Синхронизированные графики */}
             <div
@@ -480,7 +382,7 @@ export default function StrengthPage() {
                                 <span className="w-3 h-3 rounded-full bg-[#6366f1]" />
                                 <span className="text-sm font-semibold text-theme-primary">{currency === 'usd' ? 'Индекс RTS' : 'Индекс IMOEX'}</span>
                             </div>
-                            <SyncedPriceChart
+                            <IndexChart
                                 syncedData={displaySyncedData}
                                 hoverIndex={hoverIndex}
                                 height={300}
@@ -497,7 +399,7 @@ export default function StrengthPage() {
                             <span className="text-sm font-semibold text-theme-primary">% акций выше EMA{emaPeriod}</span>
                         </div>
                         {displaySyncedData.length > 0 ? (
-                            <SyncedBreadthChart
+                            <BreadthChart
                                 syncedData={displaySyncedData}
                                 hoverIndex={hoverIndex}
                                 height={showPrice ? 150 : 450}
@@ -531,679 +433,15 @@ export default function StrengthPage() {
 
             {/* Таблица акций с фильтром по секторам */}
             {current?.stocks && (
-                <div className="widget p-4 md:p-6">
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
-                        <h3 className="text-lg font-semibold text-theme-primary">
-                            Детализация по акциям
-                        </h3>
-
-                        {/* Фильтр по секторам */}
-                        <div className="flex flex-wrap items-center gap-2">
-                            <Filter size={16} className="text-theme-muted" />
-                            {sectorNames
-                                .filter(sector => (sectorCounts[sector] ?? 0) > 0)
-                                .map((sector) => (
-                                    <button
-                                        key={sector}
-                                        onClick={() => setSelectedSector(sector)}
-                                        className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${selectedSector === sector
-                                            ? 'bg-white/10 text-theme-primary border border-theme'
-                                            : 'text-theme-secondary hover:text-theme-primary'
-                                            }`}
-                                    >
-                                        {sector}
-                                        {sector !== 'Все' && (
-                                            <span className="ml-1 opacity-50">({sectorCounts[sector]})</span>
-                                        )}
-                                    </button>
-                                ))}
-                        </div>
-                    </div>
-
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                            <thead>
-                                <tr className="text-theme-muted border-b border-theme">
-                                    <th className="text-left py-3 px-2">Тикер</th>
-                                    <th className="text-right py-3 px-2">Цена</th>
-                                    <th className="text-right py-3 px-2">EMA{emaPeriod}</th>
-                                    <th className="text-right py-3 px-2">Отклонение</th>
-                                    <th className="text-center py-3 px-2">Статус</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {filteredStocks.map((stock) => (
-                                    <tr key={stock.ticker} className="border-b border-theme/50 hover:bg-white/5">
-                                        <td className="py-3 px-2 font-medium text-theme-primary">
-                                            {stock.ticker}
-                                        </td>
-                                        <td className="py-3 px-2 text-right text-theme-primary">
-                                            {stock.price.toLocaleString('ru-RU', { maximumFractionDigits: 2 })}
-                                        </td>
-                                        <td className="py-3 px-2 text-right text-theme-secondary">
-                                            {stock.ema.toLocaleString('ru-RU', { maximumFractionDigits: 2 })}
-                                        </td>
-                                        <td className={`py-3 px-2 text-right font-medium ${stock.diff_percent >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                            <span className="flex items-center justify-end gap-1">
-                                                {stock.diff_percent >= 0 ? <ArrowUp size={14} /> : <ArrowDown size={14} />}
-                                                {Math.abs(stock.diff_percent).toFixed(2)}%
-                                            </span>
-                                        </td>
-                                        <td className="py-3 px-2 text-center">
-                                            <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${stock.is_above
-                                                ? 'bg-emerald-500/20 text-emerald-400'
-                                                : 'bg-red-500/20 text-red-400'
-                                                }`}>
-                                                {stock.is_above ? 'Выше' : 'Ниже'}
-                                            </span>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-
-                        {filteredStocks.length === 0 && (
-                            <div className="py-8 text-center text-theme-muted">
-                                Нет акций в выбранном секторе
-                            </div>
-                        )}
-                    </div>
-                </div>
+                <SectorDetail
+                    sectorNames={sectorNames}
+                    sectorCounts={sectorCounts}
+                    selectedSector={selectedSector}
+                    onSelectSector={setSelectedSector}
+                    filteredStocks={filteredStocks}
+                    emaPeriod={emaPeriod}
+                />
             )}
-        </div>
-    );
-}
-
-// Утилиты анимации
-const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
-
-const resamplePts = (pts: { x: number; y: number }[], len: number) => {
-    if (pts.length === 0) return [];
-    if (pts.length === len) return pts;
-    const out: { x: number; y: number }[] = [];
-    for (let i = 0; i < len; i++) {
-        const t = i / (len - 1);
-        const si = t * (pts.length - 1);
-        const lo = Math.floor(si);
-        const hi = Math.min(lo + 1, pts.length - 1);
-        const lt = si - lo;
-        out.push({ x: lerp(pts[lo].x, pts[hi].x, lt), y: lerp(pts[lo].y, pts[hi].y, lt) });
-    }
-    return out;
-};
-
-const morphPts = (from: { x: number; y: number }[], to: { x: number; y: number }[], t: number) => {
-    const n = Math.max(from.length, to.length);
-    const a = resamplePts(from, n);
-    const b = resamplePts(to, n);
-    return a.map((p, i) => ({ x: lerp(p.x, b[i].x, t), y: lerp(p.y, b[i].y, t) }));
-};
-
-const ptsToPath = (pts: { x: number; y: number }[]) =>
-    pts.length ? pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') : '';
-
-const ptsToArea = (pts: { x: number; y: number }[], bottom: number) => {
-    if (!pts.length) return '';
-    return ptsToPath(pts) + ` L ${pts[pts.length - 1].x} ${bottom} L ${pts[0].x} ${bottom} Z`;
-};
-
-// Синхронизированный график цены с морфинг-анимацией
-function SyncedPriceChart({
-    syncedData,
-    hoverIndex,
-    height,
-    padding,
-    isNavDragRef,
-}: {
-    syncedData: { time: string; breadth: number; imoex: number }[];
-    hoverIndex: number | null;
-    height: number;
-    padding: { left: number; right: number; top: number; bottom: number };
-    isNavDragRef?: { current: boolean };
-}) {
-    const svgRef = useRef<SVGSVGElement>(null);
-    const chartWrapRef = useRef<HTMLDivElement>(null);
-    const containerRef = useRef<HTMLDivElement>(null);
-    const [width, setWidth] = useState(0);
-    const [animLinePath, setAnimLinePath] = useState('');
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const [animAreaPath, setAnimAreaPath] = useState(''); void animAreaPath;
-    const prevPtsRef = useRef<{ x: number; y: number }[]>([]);
-    const currPtsRef = useRef<{ x: number; y: number }[]>([]); // текущая визуальная позиция
-    const animRef = useRef<number | null>(null);
-    const isFirstRef = useRef(true);
-    const prevWidthRef = useRef(0);
-
-    useEffect(() => {
-        const el = containerRef.current;
-        if (!el) return;
-        const ro = new ResizeObserver(entries => {
-            const w = entries[0]?.contentRect.width;
-            if (w && w > 0) setWidth(w);
-        });
-        ro.observe(el);
-        return () => ro.disconnect();
-    }, []);
-
-    const chartWidth = width - padding.left - padding.right;
-    const chartHeight = height - padding.top - padding.bottom;
-
-    const chartData = useMemo(() => {
-        if (!syncedData.length || chartWidth <= 0) return null;
-
-        const values = syncedData.map(d => d.imoex);
-        const minVal = Math.min(...values);
-        const maxVal = Math.max(...values);
-        const range = maxVal - minVal || 1;
-        const yMin = minVal - range * 0.01;
-        const yMax = maxVal + range * 0.01;
-
-        const scaleX = (i: number) => padding.left + (i / Math.max(syncedData.length - 1, 1)) * chartWidth;
-        const scaleY = (v: number) => padding.top + chartHeight - ((v - yMin) / (yMax - yMin)) * chartHeight;
-
-        const points = syncedData.map((d, i) => ({ x: scaleX(i), y: scaleY(d.imoex), value: d.imoex }));
-
-        const yTicks = Array.from({ length: 4 }, (_, i) => {
-            const v = yMin + ((yMax - yMin) * i) / 3;
-            return { value: v, y: scaleY(v) };
-        });
-
-        const xTickCount = Math.min(7, syncedData.length);
-        const xTicks = Array.from({ length: xTickCount }, (_, i) => {
-            const idx = Math.floor((i / Math.max(xTickCount - 1, 1)) * (syncedData.length - 1));
-            return { x: scaleX(idx) };
-        });
-
-        return { points, yTicks, xTicks, scaleX };
-    }, [syncedData, chartWidth, chartHeight, padding]);
-
-    // Анимация морфинга
-    useLayoutEffect(() => {
-        if (!chartData) return;
-        const target = chartData.points.map(p => ({ x: p.x, y: p.y }));
-        const bottom = padding.top + chartHeight;
-
-        if (animRef.current) cancelAnimationFrame(animRef.current);
-
-        // Resize — мгновенное обновление без анимации
-        if (prevWidthRef.current !== 0 && prevWidthRef.current !== chartWidth) {
-            prevWidthRef.current = chartWidth;
-            prevPtsRef.current = target;
-            currPtsRef.current = [];
-            setAnimLinePath(ptsToPath(target));
-            setAnimAreaPath(ptsToArea(target, bottom));
-            return;
-        }
-        prevWidthRef.current = chartWidth;
-
-        // Во время перетаскивания навигатора — мгновенное обновление без анимации
-        if (isNavDragRef?.current) {
-            prevPtsRef.current = target;
-            currPtsRef.current = [];
-            setAnimLinePath(ptsToPath(target));
-            setAnimAreaPath(ptsToArea(target, bottom));
-            return;
-        }
-
-        if (isFirstRef.current || prevPtsRef.current.length === 0) {
-            isFirstRef.current = false;
-            prevPtsRef.current = target;
-            currPtsRef.current = [];
-            setAnimLinePath(ptsToPath(target));
-            setAnimAreaPath(ptsToArea(target, bottom));
-            return;
-        }
-
-        // Стартуем с текущей визуальной позиции (если анимация была прервана)
-        const from = currPtsRef.current.length > 0 ? currPtsRef.current : prevPtsRef.current;
-        let start: number | null = null;
-        const animate = (ts: number) => {
-            if (!start) start = ts;
-            const t = easeOutCubic(Math.min((ts - start) / 600, 1));
-            const interp = morphPts(from, target, t);
-            currPtsRef.current = interp;
-            setAnimLinePath(ptsToPath(interp));
-            setAnimAreaPath(ptsToArea(interp, bottom));
-            if (t < 1) {
-                animRef.current = requestAnimationFrame(animate);
-            } else {
-                prevPtsRef.current = target;
-                currPtsRef.current = [];
-            }
-        };
-        animRef.current = requestAnimationFrame(animate);
-
-        return () => { if (animRef.current) cancelAnimationFrame(animRef.current); };
-    }, [chartData, chartHeight, padding.top]);
-
-    const crosshairX = chartData && hoverIndex !== null && hoverIndex < syncedData.length
-        ? chartData.scaleX(hoverIndex) : null;
-
-    return (
-        <div ref={containerRef}>
-            <div ref={chartWrapRef}>
-                {width > 0 && chartData && (
-                    <svg ref={svgRef} width={width} height={height} className="block" style={{ backgroundColor: 'var(--bg-secondary)', contain: 'paint' }}>
-                        <defs>
-                            <linearGradient id="priceGradient" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stopColor="#6366f1" stopOpacity="0.3" />
-                                <stop offset="100%" stopColor="#6366f1" stopOpacity="0" />
-                            </linearGradient>
-                        </defs>
-
-                        <path d={animLinePath} fill="none" stroke="#6366f1" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-
-                        {crosshairX !== null && (
-                            <line x1={crosshairX} y1={padding.top} x2={crosshairX} y2={padding.top + chartHeight}
-                                stroke="var(--text-muted)" strokeWidth="1" strokeDasharray="3,3" />
-                        )}
-                        {crosshairX !== null && hoverIndex !== null && hoverIndex < chartData.points.length && (
-                            <circle cx={chartData.points[hoverIndex].x} cy={chartData.points[hoverIndex].y}
-                                r={5} fill="#6366f1" />
-                        )}
-
-                        {chartData.xTicks.map((tick, i) => (
-                            i > 0 && i < chartData.xTicks.length - 1 ? (
-                                <line key={`vg-${i}`}
-                                    x1={tick.x} x2={tick.x}
-                                    y1={padding.top} y2={padding.top + chartHeight}
-                                    stroke="rgba(255,255,255,0.08)" strokeWidth="1"
-                                />
-                            ) : null
-                        ))}
-                        {chartData.yTicks.map((tick, i) => (
-                            <g key={i}>
-                                <line
-                                    x1={padding.left} x2={width - padding.right}
-                                    y1={tick.y} y2={tick.y}
-                                    stroke="rgba(255,255,255,0.08)" strokeWidth="1"
-                                />
-                                <text
-                                    x={width - padding.right + 12}
-                                    y={Math.max(padding.top + 6, Math.min(tick.y, padding.top + chartHeight - 6))}
-                                    textAnchor="start" dominantBaseline="middle" fill="var(--axis-color, var(--text-muted))" fontSize="var(--chart-font-y, 16)" fontWeight="600"
-                                    paintOrder="stroke" stroke="var(--bg-secondary)" strokeWidth="4" strokeLinejoin="round">
-                                    {tick.value.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
-                                </text>
-                            </g>
-                        ))}
-                    </svg>
-                )}
-            </div>
-        </div>
-    );
-}
-
-// Мемоизированные рендереры — не перерисовываются при смене hoverIndex
-
-type BarDef = { x: number; y: number; width: number; height: number; color: string };
-
-const HistogramBars = memo(({ bars }: { bars: BarDef[] }) => {
-    // Группируем бары по цвету и строим один <path> на цвет — вместо тысяч <rect>
-    const byColor = new Map<string, string[]>();
-    for (const bar of bars) {
-        if (bar.height <= 0) continue;
-        let arr = byColor.get(bar.color);
-        if (!arr) { arr = []; byColor.set(bar.color, arr); }
-        arr.push(`M${bar.x - 0.5},${bar.y + bar.height}V${bar.y}H${bar.x + bar.width + 0.5}V${bar.y + bar.height}Z`);
-    }
-    return (
-        <g shapeRendering="crispEdges">
-            {Array.from(byColor.entries()).map(([color, parts]) => (
-                <path key={color} d={parts.join('')} fill={color} />
-            ))}
-        </g>
-    );
-});
-
-const BreadthLineRenderer = memo(({ animLinePath, dataLength, breadthValues, getColor }: {
-    animLinePath: string;
-    dataLength: number;
-    breadthValues: number[];
-    getColor: (v: number) => string;
-}) => {
-    if (!animLinePath || dataLength < 2) return null;
-    const pathParts = animLinePath.match(/[\d.]+/g);
-    if (!pathParts || pathParts.length < 4) return null;
-    const aPts: { x: number; y: number }[] = [];
-    for (let i = 0; i < pathParts.length; i += 2) {
-        aPts.push({ x: parseFloat(pathParts[i]), y: parseFloat(pathParts[i + 1]) });
-    }
-    // Группируем сегменты по цвету — один <path> на цвет вместо тысяч отдельных
-    const byColor = new Map<string, string[]>();
-    for (let i = 0; i < aPts.length - 1; i++) {
-        const origIdx = (i / Math.max(aPts.length - 1, 1)) * (dataLength - 1);
-        const lo = Math.floor(origIdx);
-        const hi = Math.min(lo + 1, dataLength - 1);
-        const val = (breadthValues[lo] + breadthValues[hi]) / 2;
-        const color = getColor(val);
-        let arr = byColor.get(color);
-        if (!arr) { arr = []; byColor.set(color, arr); }
-        arr.push(`M${aPts[i].x},${aPts[i].y}L${aPts[i + 1].x},${aPts[i + 1].y}`);
-    }
-    return (
-        <>
-            {Array.from(byColor.entries()).map(([color, parts]) => (
-                <path key={color} d={parts.join('')}
-                    fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" />
-            ))}
-        </>
-    );
-});
-
-// Синхронизированный график Breadth с морфинг-анимацией
-function SyncedBreadthChart({
-    syncedData,
-    hoverIndex,
-    height,
-    mode,
-    padding,
-    isNavDragRef,
-}: {
-    syncedData: { time: string; breadth: number; imoex: number }[];
-    hoverIndex: number | null;
-    height: number;
-    mode: ChartMode;
-    padding: { left: number; right: number; top: number; bottom: number };
-    isNavDragRef?: { current: boolean };
-}) {
-    const svgRef = useRef<SVGSVGElement>(null);
-    const chartWrapRef = useRef<HTMLDivElement>(null);
-    const containerRef = useRef<HTMLDivElement>(null);
-    const [width, setWidth] = useState(0);
-
-    // Анимация для line mode
-    const [animLinePath, setAnimLinePath] = useState('');
-    const prevPtsRef = useRef<{ x: number; y: number }[]>([]);
-    const currPtsRef = useRef<{ x: number; y: number }[]>([]); // текущая визуальная позиция
-    const animRef = useRef<number | null>(null);
-    const isFirstRef = useRef(true);
-
-    // Анимация для histogram mode
-    const [animBars, setAnimBars] = useState<{ x: number; y: number; width: number; height: number; color: string }[]>([]);
-    const prevBarsRef = useRef<{ y: number; height: number }[]>([]);
-    const currBarsRef = useRef<{ y: number; height: number }[]>([]);
-    const prevWidthRef = useRef(0);
-
-    useEffect(() => {
-        const el = containerRef.current;
-        if (!el) return;
-        const ro = new ResizeObserver(entries => {
-            const w = entries[0]?.contentRect.width;
-            if (w && w > 0) setWidth(w);
-        });
-        ro.observe(el);
-        return () => ro.disconnect();
-    }, []);
-
-    const chartWidth = width - padding.left - padding.right;
-    const chartHeight = height - padding.top - padding.bottom;
-
-    const getColor = useCallback((value: number) => {
-        // Плавный градиент: яркий красный (0%) → зелёный (100%), минимум оранжевого
-        const t = Math.max(0, Math.min(value / 100, 1));
-        if (t <= 0.35) {
-            // 0..0.35 → яркий красный → тёмно-оранжевый
-            const s = t / 0.35;
-            const r = Math.round(239 - s * 30);
-            const g = Math.round(68 + s * 60);
-            const b = Math.round(68 - s * 40);
-            return `rgb(${r},${g},${b})`;
-        }
-        if (t <= 0.65) {
-            // 0.35..0.65 → быстрый переход через нейтральную зону
-            const s = (t - 0.35) / 0.3;
-            const r = Math.round(209 - s * 170);
-            const g = Math.round(128 + s * 69);
-            const b = Math.round(28 + s * 66);
-            return `rgb(${r},${g},${b})`;
-        }
-        // 0.65..1 → зелёный всё ярче
-        const s = (t - 0.65) / 0.35;
-        const r = Math.round(39 - s * 5);
-        const g = Math.round(197 + s * 3);
-        const b = Math.round(94 - s * 0);
-        return `rgb(${r},${g},${b})`;
-    }, []);
-
-    // Мемоизированный массив значений для BreadthLineRenderer — стабильная ссылка
-    const breadthValues = useMemo(() => syncedData.map(d => d.breadth), [syncedData]);
-
-    const chartData = useMemo(() => {
-        if (!syncedData.length || chartWidth <= 0) return null;
-
-        const yMin = 0;
-        const yMax = 100;
-
-        const scaleX = (i: number) => padding.left + (i / Math.max(syncedData.length - 1, 1)) * chartWidth;
-        const scaleY = (v: number) => padding.top + chartHeight - ((v - yMin) / (yMax - yMin)) * chartHeight;
-
-        const levels = [20, 40, 60, 80].map(value => ({
-            value,
-            color: 'rgba(255,255,255,0.08)',
-            dash: '0',
-            y: scaleY(value),
-        }));
-
-        const points = syncedData.map((d, i) => ({ x: scaleX(i), y: scaleY(d.breadth), value: d.breadth }));
-
-        const lineSegments: { path: string; color: string }[] = [];
-        for (let i = 0; i < points.length - 1; i++) {
-            const avgValue = (points[i].value + points[i + 1].value) / 2;
-            lineSegments.push({
-                path: `M ${points[i].x} ${points[i].y} L ${points[i + 1].x} ${points[i + 1].y}`,
-                color: getColor(avgValue)
-            });
-        }
-
-        const bottom = padding.top + chartHeight;
-        // Ширина бара = шаг между точками (sub-pixel для плотных данных — без наложений)
-        const stepPx = chartWidth / Math.max(syncedData.length - 1, 1);
-        const barWidth = Math.max(stepPx, 0.5);
-        const bars = syncedData.map((d, i) => {
-            const cx = scaleX(i);
-            const x = cx - barWidth / 2;
-            const y = scaleY(d.breadth);
-            const h = bottom - y;
-            return { x, y, width: barWidth, height: h, color: getColor(d.breadth) };
-        });
-
-        const xTickCount = Math.min(8, syncedData.length);
-        const xTicks = Array.from({ length: xTickCount }, (_, i) => {
-            const idx = Math.floor(i * (syncedData.length - 1) / Math.max(xTickCount - 1, 1));
-            return {
-                x: scaleX(idx),
-                label: new Date(syncedData[idx].time).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: '2-digit' })
-            };
-        });
-
-        const yTicks = [20, 40, 60, 80].map(v => ({
-            value: v,
-            y: scaleY(v),
-            color: 'var(--text-muted)',
-        }));
-
-        return { points, lineSegments, bars, levels, xTicks, yTicks, chartWidth, chartHeight, scaleX };
-    }, [syncedData, chartWidth, chartHeight, padding, getColor]);
-
-    // Морфинг-анимация
-    useLayoutEffect(() => {
-        if (!chartData) return;
-        if (animRef.current) cancelAnimationFrame(animRef.current);
-
-        const bottom = padding.top + chartHeight;
-
-        // Resize — мгновенное обновление без анимации
-        if (prevWidthRef.current !== 0 && prevWidthRef.current !== chartWidth) {
-            prevWidthRef.current = chartWidth;
-            const targetPts = chartData.points.map(p => ({ x: p.x, y: p.y }));
-            prevPtsRef.current = targetPts;
-            currPtsRef.current = [];
-            prevBarsRef.current = chartData.bars.map(b => ({ y: b.y, height: b.height }));
-            currBarsRef.current = [];
-            setAnimLinePath(ptsToPath(targetPts));
-            setAnimBars(chartData.bars);
-            return;
-        }
-        prevWidthRef.current = chartWidth;
-
-        // Во время перетаскивания навигатора — мгновенное обновление без анимации
-        if (isNavDragRef?.current) {
-            const targetPts = chartData.points.map(p => ({ x: p.x, y: p.y }));
-            const targetBars = chartData.bars;
-            prevPtsRef.current = targetPts;
-            currPtsRef.current = [];
-            prevBarsRef.current = targetBars.map(b => ({ y: b.y, height: b.height }));
-            currBarsRef.current = [];
-            setAnimLinePath(ptsToPath(targetPts));
-            setAnimBars(targetBars);
-            return;
-        }
-
-        if (mode === 'line' || mode === 'histogram') {
-            const targetPts = chartData.points.map(p => ({ x: p.x, y: p.y }));
-            const targetBars = chartData.bars;
-
-            if (isFirstRef.current || prevPtsRef.current.length === 0) {
-                isFirstRef.current = false;
-                prevPtsRef.current = targetPts;
-                currPtsRef.current = [];
-                prevBarsRef.current = targetBars.map(b => ({ y: b.y, height: b.height }));
-                currBarsRef.current = [];
-
-                setAnimLinePath(ptsToPath(targetPts));
-                setAnimBars(targetBars);
-                return;
-            }
-
-            // Стартуем с текущей визуальной позиции (если анимация была прервана)
-            const fromPts = currPtsRef.current.length > 0 ? currPtsRef.current : prevPtsRef.current;
-            const fromBars = currBarsRef.current.length > 0 ? currBarsRef.current : prevBarsRef.current;
-            let start: number | null = null;
-
-            const isFirstAnim = fromBars.length === 0;
-            const totalDuration = isFirstAnim ? 1200 : 600;
-            const staggerDelay = isFirstAnim ? 600 : 0;
-
-            const animate = (ts: number) => {
-                if (!start) start = ts;
-                const elapsed = ts - start;
-                const lineT = easeOutCubic(Math.min(elapsed / totalDuration, 1));
-
-                const interp = morphPts(fromPts, targetPts, lineT);
-                currPtsRef.current = interp;
-                setAnimLinePath(ptsToPath(interp));
-
-                const n = Math.max(fromBars.length, targetBars.length);
-                const morphedBars: typeof targetBars = [];
-                for (let i = 0; i < n; i++) {
-                    const barDelay = (i / Math.max(n - 1, 1)) * staggerDelay;
-                    const barElapsed = Math.max(0, elapsed - barDelay);
-                    const t = easeOutCubic(Math.min(barElapsed / (totalDuration - staggerDelay), 1));
-                    const fb = fromBars[Math.min(i, fromBars.length - 1)] || { y: bottom, height: 0 };
-                    const tb = targetBars[Math.min(i, targetBars.length - 1)];
-                    morphedBars.push({ ...tb, y: lerp(fb.y, tb.y, t), height: lerp(fb.height, tb.height, t) });
-                }
-                currBarsRef.current = morphedBars.map(b => ({ y: b.y, height: b.height }));
-                setAnimBars(morphedBars);
-
-                if (elapsed < totalDuration) {
-                    animRef.current = requestAnimationFrame(animate);
-                } else {
-                    prevPtsRef.current = targetPts;
-                    currPtsRef.current = [];
-                    prevBarsRef.current = targetBars.map(b => ({ y: b.y, height: b.height }));
-                    currBarsRef.current = [];
-                }
-            };
-            animRef.current = requestAnimationFrame(animate);
-        }
-
-        return () => { if (animRef.current) cancelAnimationFrame(animRef.current); };
-    }, [chartData, chartHeight, padding.top, mode]);
-
-    const crosshairX = chartData && hoverIndex !== null && hoverIndex < syncedData.length ? chartData.scaleX(hoverIndex) : null;
-
-    return (
-        <div ref={containerRef}>
-            <div ref={chartWrapRef}>
-                {width > 0 && chartData && (
-                    <svg ref={svgRef} width={width} height={height} className="block" style={{ backgroundColor: 'var(--bg-secondary)', contain: 'paint' }}>
-                        <defs>
-                            <linearGradient id="breadthGradient" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.3" />
-                                <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
-                            </linearGradient>
-                            {/* Клип: бары не выходят за пределы области графика */}
-                            <clipPath id="breadthChartClip">
-                                <rect x={padding.left} y={padding.top} width={chartWidth} height={chartHeight} />
-                            </clipPath>
-                        </defs>
-
-                        <g>
-                            {/* Reference levels */}
-                            {chartData.levels.map((level, i) => (
-                                <line key={i} x1={padding.left} y1={level.y} x2={width - padding.right} y2={level.y}
-                                    stroke={level.color} strokeWidth="1" strokeDasharray={level.dash} opacity="0.5" />
-                            ))}
-
-                            {/* Animated histogram bars — clipPath не даёт барам заходить на Y-метки и за левый край */}
-                            {mode === 'histogram' && (
-                                <g clipPath="url(#breadthChartClip)">
-                                    <HistogramBars bars={animBars} />
-                                    {/* Highlight активного бара — перерисовывается только при смене hoverIndex (1 элемент) */}
-                                    {hoverIndex !== null && animBars[hoverIndex] && (() => {
-                                        const bar = animBars[hoverIndex];
-                                        return <rect x={bar.x} y={bar.y} width={bar.width} height={bar.height}
-                                            fill={bar.color} opacity={1} />;
-                                    })()}
-                                </g>
-                            )}
-
-                            {/* Animated line with colored segments — в memo-компоненте, не перерисовывается при смене hoverIndex */}
-                            {mode === 'line' && (
-                                <BreadthLineRenderer
-                                    animLinePath={animLinePath}
-                                    dataLength={syncedData.length}
-                                    breadthValues={breadthValues}
-                                    getColor={getColor}
-                                />
-                            )}
-
-                            {/* Crosshair */}
-                            {crosshairX !== null && (
-                                <line x1={crosshairX} y1={padding.top} x2={crosshairX} y2={padding.top + chartData.chartHeight}
-                                    stroke="var(--text-muted)" strokeWidth="1" strokeDasharray="3,3" />
-                            )}
-                            {crosshairX !== null && hoverIndex !== null && hoverIndex < chartData.points.length && (
-                                <circle cx={chartData.points[hoverIndex].x} cy={chartData.points[hoverIndex].y}
-                                    r={5} fill="var(--accent)" />
-                            )}
-
-                        </g>
-
-                        {/* Y axis */}
-                        {chartData.yTicks.map((tick, i) => (
-                            <text key={i} x={width - padding.right + 12} y={tick.y}
-                                textAnchor="start" dominantBaseline="middle"
-                                fill={tick.color || 'var(--text-muted)'} fontSize="var(--chart-font-y, 16)" fontWeight="600"
-                                paintOrder="stroke" stroke="var(--bg-secondary)" strokeWidth="4" strokeLinejoin="round">
-                                {tick.value}%
-                            </text>
-                        ))}
-
-                        {/* X axis — первая метка прижата влево, последняя вправо */}
-                        {chartData.xTicks.map((tick, i) => (
-                            <text key={i} x={tick.x} y={padding.top + chartData.chartHeight + 18}
-                                textAnchor={i === 0 ? 'start' : i === chartData.xTicks.length - 1 ? 'end' : 'middle'}
-                                fill="var(--text-muted)" fontSize="14" fontWeight="600">
-                                {tick.label}
-                            </text>
-                        ))}
-                    </svg>
-                )}
-            </div>
         </div>
     );
 }
