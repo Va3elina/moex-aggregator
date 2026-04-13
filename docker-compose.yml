@@ -26,6 +26,19 @@ services:
     shm_size: 256mb
 
   # ═══════════════════════════════════════════════════════════════
+  # Redis (общий кеш между воркерами)
+  # ═══════════════════════════════════════════════════════════════
+  redis:
+    image: redis:7-alpine
+    restart: always
+    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # ═══════════════════════════════════════════════════════════════
   # FastAPI + Frontend (SPA)
   # ═══════════════════════════════════════════════════════════════
   api:
@@ -33,6 +46,8 @@ services:
     restart: always
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     environment:
       - DB_URL=postgresql+pg8000://${DB_USER:-postgres}:${DB_PASSWORD}@db:5432/${DB_NAME:-moex_db}
@@ -51,6 +66,7 @@ services:
       - YANDEX_CLIENT_SECRET=${YANDEX_CLIENT_SECRET:-}
       - YANDEX_REDIRECT_URI=https://xn--80aklbnczmv.xn--p1ai/auth/callback/yandex
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - REDIS_URL=redis://redis:6379/0
     expose:
       - "8000"
     healthcheck:

@@ -484,14 +484,26 @@ class StocksCandlesUpdater:
 
             records = [tuple(x) for x in df[columns].to_numpy()]
 
-            upsert_suffix = """
-                           ON CONFLICT (secid, begin_time, interval, type) DO UPDATE SET
-                               open = EXCLUDED.open, close = EXCLUDED.close,
-                               high = EXCLUDED.high, low = EXCLUDED.low,
-                               value = EXCLUDED.value, volume = EXCLUDED.volume,
-                               end_time = EXCLUDED.end_time
-                           WHERE EXCLUDED.volume > candles.volume
-                           """
+            # Для дневных свечей всегда обновляем (ISS даёт корректные финальные данные).
+            # Для интрадей — только если новый volume больше (защита от перезаписи финальных данных).
+            interval_val = int(df['interval'].iloc[0]) if not df.empty else 0
+            if interval_val == 24:
+                upsert_suffix = """
+                               ON CONFLICT (secid, begin_time, interval, type) DO UPDATE SET
+                                   open = EXCLUDED.open, close = EXCLUDED.close,
+                                   high = EXCLUDED.high, low = EXCLUDED.low,
+                                   value = EXCLUDED.value, volume = EXCLUDED.volume,
+                                   end_time = EXCLUDED.end_time
+                               """
+            else:
+                upsert_suffix = """
+                               ON CONFLICT (secid, begin_time, interval, type) DO UPDATE SET
+                                   open = EXCLUDED.open, close = EXCLUDED.close,
+                                   high = EXCLUDED.high, low = EXCLUDED.low,
+                                   value = EXCLUDED.value, volume = EXCLUDED.volume,
+                                   end_time = EXCLUDED.end_time
+                               WHERE EXCLUDED.volume > candles.volume
+                               """
             insert_query = """
                            INSERT INTO candles (secid, begin_time, interval, type, end_time,
                                                 open, close, high, low, value, volume, sec_id)
@@ -648,7 +660,11 @@ class StocksCandlesUpdater:
             session: aiohttp.ClientSession,
             stocks: List[Tuple[str, str]]
     ) -> Tuple[int, int]:
-        """Обновляет дневные свечи"""
+        """Обновляет дневные свечи.
+
+        Всегда перезагружает последние 14 дней из ISS, чтобы обновить
+        close-цены (Algopack давал неполные данные за сутки).
+        """
 
         now = get_moscow_time()
         till_date = now.strftime('%Y-%m-%d')
@@ -662,7 +678,8 @@ class StocksCandlesUpdater:
                 last_time = self.get_last_candle_time(ticker, 24)
 
                 if last_time:
-                    from_date = last_time.strftime('%Y-%m-%d')
+                    # Перезагружаем последние 14 дней для обновления close/volume
+                    from_date = (now - timedelta(days=14)).strftime('%Y-%m-%d')
                 else:
                     from_date = (now - timedelta(days=365)).strftime('%Y-%m-%d')
 
@@ -673,11 +690,7 @@ class StocksCandlesUpdater:
                 if df is None or df.empty:
                     return 0, 0
 
-                if last_time:
-                    df = df[df['begin_time'] > last_time]
-
-                if df.empty:
-                    return 0, 0
+                # Не фильтруем по last_time — разрешаем обновление существующих свечей
 
                 return await asyncio.to_thread(self.save_candles, df)
 

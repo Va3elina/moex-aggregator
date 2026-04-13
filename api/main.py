@@ -140,9 +140,39 @@ async def startup_event():
     # Запускаем NOTIFY listener для SSE
     from api.notify_listener import start_notify_listener
     _notify_task = asyncio.create_task(start_notify_listener())
+    # Прогреваем кэш в фоне
+    asyncio.create_task(_warmup_cache())
     logger.info("🚀 MOEX Analytics API запущен (SSE enabled)", extra={
         "extra_data": {"type": "startup", "version": "1.0.0"}
     })
+
+
+async def _warmup_cache():
+    """Прогрев кэша при старте — дёргает тяжёлые эндпоинты чтобы пользователи не ждали."""
+    import httpx
+    await asyncio.sleep(2)  # дать uvicorn полностью подняться
+    urls = [
+        "/api/heatmap/imoex?color_by=change_1d&group_by=sector",
+        "/api/heatmap/all?color_by=change_1d&group_by=sector",
+        "/api/funds/chart?category=money_market&period=6m",
+        "/api/funds/fear-index",
+        "/api/funds/fear-index/history?period=3m",
+        "/api/funds/catalog",
+        "/api/breadth/current?ema_period=200&universe=imoex",
+        "/api/breadth/history?ema_period=200&days=365&universe=imoex",
+        "/api/chart/SR?sectype=SR&inst_type=futures&interval=24&clgroup=FIZ&show_oi=true&period=6m",
+        "/api/buffett/cap-gdp?period=10y&smooth=false",
+    ]
+    try:
+        async with httpx.AsyncClient(base_url="http://localhost:8000", timeout=30) as client:
+            for url in urls:
+                try:
+                    await client.get(url)
+                except Exception:
+                    pass
+        logger.info(f"Cache warmup done ({len(urls)} endpoints)")
+    except Exception as e:
+        logger.warning(f"Cache warmup failed: {e}")
 
 @app.on_event("shutdown")
 async def shutdown_event():

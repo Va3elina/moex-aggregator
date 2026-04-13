@@ -1,5 +1,5 @@
 // Фрейм PWA Service Worker
-const CACHE_NAME = 'frame-v15';
+const CACHE_NAME = 'frame-v16';
 const STATIC_ASSETS = [
     '/',
     '/manifest.json',
@@ -27,66 +27,33 @@ self.addEventListener('activate', (event) => {
     self.clients.claim();
 });
 
+// Безопасное кэширование — игнорирует ошибки cache.put()
+function safeCachePut(request, response) {
+    caches.open(CACHE_NAME).then((cache) => cache.put(request, response)).catch(() => {});
+}
+
 // Fetch — стратегии кеширования
 self.addEventListener('fetch', (event) => {
     const { request } = event;
     const url = new URL(request.url);
 
-    // SSE стримы — пропускаем, нельзя кешировать бесконечные потоки
-    if (url.pathname.startsWith('/api/events/')) {
-        return; // Браузер обработает напрямую
-    }
-
-    // Auth запросы — пропускаем, браузер обработает напрямую
-    if (url.pathname.startsWith('/api/auth/')) {
+    // SSE и Auth — пропускаем
+    if (url.pathname.startsWith('/api/events/') || url.pathname.startsWith('/api/auth/')) {
         return;
     }
 
-    // API запросы — network-first (данные должны быть свежие)
+    // API — всегда сеть, без кэширования (данные обновляются каждые 5 мин)
     if (url.pathname.startsWith('/api/')) {
-        event.respondWith(
-            fetch(request)
-                .then((response) => {
-                    // Кешируем только успешные GET-запросы (не 403/401)
-                    if (request.method === 'GET' && response.ok) {
-                        const clone = response.clone();
-                        caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-                    }
-                    return response;
-                })
-                .catch(() => caches.match(request))
-        );
+        event.respondWith(fetch(request));
         return;
     }
 
-    // Статика (JS, CSS, шрифты, изображения) — network-first
-    // Vite генерирует уникальные хэши в именах, но SW cache-first мешает обновлениям
-    if (
-        url.pathname.match(/\.(js|css|woff2?|png|svg|jpg|webp|ico)$/) ||
-        url.hostname === 'fonts.googleapis.com' ||
-        url.hostname === 'fonts.gstatic.com'
-    ) {
-        event.respondWith(
-            fetch(request)
-                .then((response) => {
-                    if (response.ok) {
-                        const clone = response.clone();
-                        caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
-                    }
-                    return response;
-                })
-                .catch(() => caches.match(request))
-        );
-        return;
-    }
-
-    // HTML навигация — network-first, fallback на кеш
+    // Статика и навигация — network-first с fallback на кэш
     event.respondWith(
         fetch(request)
             .then((response) => {
                 if (response.ok) {
-                    const clone = response.clone();
-                    caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+                    safeCachePut(request, response.clone());
                 }
                 return response;
             })

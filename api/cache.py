@@ -1,6 +1,6 @@
 """
-In-memory TTL-кеш для API эндпоинтов.
-Снижает нагрузку на БД для часто запрашиваемых данных.
+Redis TTL-кеш для API эндпоинтов.
+Общий для всех uvicorn-воркеров.
 
 Использование:
     from api.cache import get_or_set
@@ -17,16 +17,28 @@ In-memory TTL-кеш для API эндпоинтов.
         get_or_set(cache_key, result, ttl=300)
         return result
 """
-import time
+import json
 import logging
+import os
+import time
 from typing import Any
+
+import redis
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_TTL = 1800  # 30 минут (кеш обновляется инкрементально при NOTIFY)
+DEFAULT_TTL = 1800  # 30 минут
 
-# Глобальное хранилище кеша: {key: (data, expire_at)}
-_cache: dict[str, tuple[Any, float]] = {}
+REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
+
+_redis: redis.Redis | None = None
+
+
+def _get_redis() -> redis.Redis:
+    global _redis
+    if _redis is None:
+        _redis = redis.from_url(REDIS_URL, decode_responses=True, socket_connect_timeout=2)
+    return _redis
 
 
 def get_or_set(key: str, value: Any = None, ttl: int = DEFAULT_TTL) -> Any | None:
@@ -35,64 +47,83 @@ def get_or_set(key: str, value: Any = None, ttl: int = DEFAULT_TTL) -> Any | Non
 
     - get_or_set("key") — получить (вернёт None если нет или истёк)
     - get_or_set("key", data, ttl=300) — сохранить на 5 минут
-
-    Args:
-        key: Ключ кеша
-        value: Значение для сохранения (None = только чтение)
-        ttl: Время жизни в секундах
     """
-    now = time.time()
-
-    if value is None:
-        # GET
-        if key in _cache:
-            data, expire_at = _cache[key]
-            if now < expire_at:
-                logger.debug(f"Cache HIT: {key}")
-                return data
-            else:
-                del _cache[key]
-        return None
-    else:
-        # SET
-        _cache[key] = (value, now + ttl)
-        logger.debug(f"Cache SET: {key} (ttl={ttl}s)")
-        return value
+    try:
+        r = _get_redis()
+        if value is None:
+            raw = r.get(key)
+            if raw is not None:
+                return json.loads(raw)
+            return None
+        else:
+            r.setex(key, ttl, json.dumps(value, default=str))
+            return value
+    except (redis.RedisError, ConnectionError) as e:
+        logger.warning(f"Redis error: {e}")
+        return None if value is None else value
 
 
 def invalidate(prefix: str | None = None):
     """Инвалидирует кеш по префиксу или весь кеш."""
-    global _cache
-    if prefix is None:
-        count = len(_cache)
-        _cache.clear()
-        logger.info(f"Cache CLEAR: {count} entries removed")
-    else:
-        keys_to_delete = [k for k in _cache if k.startswith(prefix)]
-        for k in keys_to_delete:
-            del _cache[k]
-        if keys_to_delete:
-            logger.info(f"Cache INVALIDATE '{prefix}': {len(keys_to_delete)} entries removed")
+    try:
+        r = _get_redis()
+        if prefix is None:
+            r.flushdb()
+            logger.info("Cache CLEAR: flushed")
+        else:
+            cursor = 0
+            count = 0
+            while True:
+                cursor, keys = r.scan(cursor, match=f"{prefix}*", count=200)
+                if keys:
+                    r.delete(*keys)
+                    count += len(keys)
+                if cursor == 0:
+                    break
+            if count:
+                logger.info(f"Cache INVALIDATE '{prefix}': {count} entries removed")
+    except (redis.RedisError, ConnectionError) as e:
+        logger.warning(f"Redis error on invalidate: {e}")
 
 
 def set_cache(key: str, value: Any, ttl: int = DEFAULT_TTL):
     """Явная запись в кеш. Используется cache_updater для инкрементальных обновлений."""
-    _cache[key] = (value, time.time() + ttl)
+    try:
+        r = _get_redis()
+        r.setex(key, ttl, json.dumps(value, default=str))
+    except (redis.RedisError, ConnectionError) as e:
+        logger.warning(f"Redis error on set_cache: {e}")
 
 
 def get_all_by_prefix(prefix: str) -> dict[str, Any]:
-    """Вернуть все живые записи с данным префиксом. {key: data}"""
-    now = time.time()
+    """Вернуть все записи с данным префиксом. {key: data}"""
     result = {}
-    for key, (data, expire_at) in _cache.items():
-        if key.startswith(prefix) and now < expire_at:
-            result[key] = data
+    try:
+        r = _get_redis()
+        cursor = 0
+        while True:
+            cursor, keys = r.scan(cursor, match=f"{prefix}*", count=200)
+            if keys:
+                values = r.mget(keys)
+                for k, v in zip(keys, values):
+                    if v is not None:
+                        result[k] = json.loads(v)
+            if cursor == 0:
+                break
+    except (redis.RedisError, ConnectionError) as e:
+        logger.warning(f"Redis error on get_all_by_prefix: {e}")
     return result
 
 
 def cache_stats() -> dict:
     """Статистика кеша для health endpoint."""
-    now = time.time()
-    total = len(_cache)
-    expired = sum(1 for _, (_, exp) in _cache.items() if exp <= now)
-    return {"total_entries": total, "expired": expired, "active": total - expired}
+    try:
+        r = _get_redis()
+        info = r.info("keyspace")
+        db_info = info.get("db0", {})
+        return {
+            "total_entries": db_info.get("keys", 0),
+            "backend": "redis",
+        }
+    except (redis.RedisError, ConnectionError):
+        return {"total_entries": 0, "backend": "redis", "status": "disconnected"}

@@ -1,8 +1,12 @@
 -- Materialized View: карта рынка акций
 -- Обновляется каждые 5 минут через оркестратор (refresh_materialized_views)
 --
--- change_1d: real-time, close предыдущего дня vs текущий close (учитывает утренние гэпы)
--- change_1w/1m/1y: snapshot-to-snapshot — close на дату T-7/30/365 дней назад (ближайший доступный)
+-- change_1d: текущая цена vs close последнего будня (PREVPRICE MOEX)
+-- change_1w/1m/1y: snapshot-to-snapshot по времени (NOW vs NOW-Period)
+--   Используем 5-мин свечи для точности, daily как fallback
+--
+-- ВАЖНО: дневные свечи (interval=24) должны быть из ISS API (не Algopack),
+-- иначе close-цены будут неполными на буднях.
 
 DROP MATERIALIZED VIEW IF EXISTS mv_heatmap_stocks;
 
@@ -17,12 +21,14 @@ latest_daily AS (
     SELECT secid, open AS daily_open, close AS price, begin_time AS last_update
     FROM ranked_daily WHERE rn = 1
 ),
--- Prev settlement = open текущей дневной свечи (Algopack open = settlement предыдущего аукциона)
+-- Prev close = close последнего будня (пн-пт), как PREVPRICE на MOEX
+-- На выходных ref = пятница, в понедельник ref = тоже пятница
 prev_day_close AS (
-    SELECT DISTINCT ON (secid) secid, open AS price
+    SELECT DISTINCT ON (secid) secid, close AS price
     FROM candles
     WHERE type = 'stock' AND interval = 24
-      AND begin_time::date = CURRENT_DATE
+      AND begin_time::date < CURRENT_DATE
+      AND EXTRACT(DOW FROM begin_time) BETWEEN 1 AND 5
     ORDER BY secid, begin_time DESC
 ),
 -- Real-time: последняя 5мин свеча сегодня
@@ -33,31 +39,32 @@ intraday_close AS (
       AND begin_time::date = CURRENT_DATE
     ORDER BY secid, begin_time DESC
 ),
--- 7D: close ближайшей свечи к дате T-7 дней (snapshot-to-snapshot)
+-- 7D: snapshot-to-snapshot — цена ровно 168 часов назад (тот же HH:mm)
+-- 5-мин свечи для точности, daily (begin_time=00:00) как fallback
 price_1w AS (
     SELECT DISTINCT ON (secid) secid, close AS price
     FROM candles
-    WHERE type = 'stock' AND interval = 24
-      AND begin_time::date <= CURRENT_DATE - INTERVAL '7 days'
-      AND begin_time::date >= CURRENT_DATE - INTERVAL '12 days'
+    WHERE type = 'stock'
+      AND begin_time <= NOW() - INTERVAL '7 days'
+      AND begin_time >= NOW() - INTERVAL '10 days'
     ORDER BY secid, begin_time DESC
 ),
--- 30D: close ближайшей свечи к дате T-30 дней
+-- 30D: snapshot-to-snapshot — то же время 30 дней назад
 price_1m AS (
     SELECT DISTINCT ON (secid) secid, close AS price
     FROM candles
-    WHERE type = 'stock' AND interval = 24
-      AND begin_time::date <= CURRENT_DATE - INTERVAL '30 days'
-      AND begin_time::date >= CURRENT_DATE - INTERVAL '37 days'
+    WHERE type = 'stock'
+      AND begin_time <= NOW() - INTERVAL '30 days'
+      AND begin_time >= NOW() - INTERVAL '35 days'
     ORDER BY secid, begin_time DESC
 ),
--- 1Y: close ближайшей свечи к дате T-365 дней
+-- 1Y: snapshot-to-snapshot — то же время год назад
 price_1y AS (
     SELECT DISTINCT ON (secid) secid, close AS price
     FROM candles
-    WHERE type = 'stock' AND interval = 24
-      AND begin_time::date <= CURRENT_DATE - INTERVAL '365 days'
-      AND begin_time::date >= CURRENT_DATE - INTERVAL '372 days'
+    WHERE type = 'stock'
+      AND begin_time <= NOW() - INTERVAL '365 days'
+      AND begin_time >= NOW() - INTERVAL '379 days'
     ORDER BY secid, begin_time DESC
 ),
 stats_1d AS (
@@ -86,7 +93,7 @@ latest_cap AS (
 SELECT i.sec_id, i.name, i.sector,
     COALESCE(ic.close, ld.price) AS price,
     COALESCE(pdc.price, ld.daily_open) AS prev_close,
-    -- 1D: close сейчас vs close вчера (с учётом утреннего гэпа)
+    -- 1D: текущая цена vs close последнего будня (= MOEX PREVPRICE)
     CASE
         WHEN pdc.price IS NOT NULL AND pdc.price > 0
         THEN ROUND((COALESCE(ic.close, ld.price) - pdc.price) / pdc.price * 100, 2)

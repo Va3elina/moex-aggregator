@@ -5,18 +5,16 @@ import { useRealtimeData } from '../hooks/useRealtimeData';
 import type { HeatmapStock, HeatmapSector } from '../services/api';
 
 // Опции для фильтров
-const COLOR_OPTIONS = [
-  { value: 'change_1d', label: 'Изменение 1Д' },
-  { value: 'change_1w', label: 'Изменение 1Н' },
-  { value: 'change_1m', label: 'Изменение 1М' },
-  { value: 'change_1y', label: 'Изменение 1Г' },
+const PERIOD_OPTIONS = [
+  { value: '1d', label: '1Д', color: 'change_1d', volume: 'value_1d' },
+  { value: '1w', label: '1Н', color: 'change_1w', volume: 'value_1w' },
+  { value: '1m', label: '1М', color: 'change_1m', volume: 'value_1m' },
+  { value: '1y', label: '1Г', color: 'change_1y', volume: 'value_1m' },
 ];
 
 const SIZE_OPTIONS = [
   { value: 'market_cap', label: 'Капитализация' },
-  { value: 'value_1d', label: 'Оборот 1Д' },
-  { value: 'value_1w', label: 'Оборот 1Н' },
-  { value: 'value_1m', label: 'Оборот 1М' },
+  { value: 'volume', label: 'Оборот' },
 ];
 
 const GROUP_OPTIONS = [
@@ -135,8 +133,13 @@ export default function HeatmapPage() {
   // Фильтры
   const [mapMode, setMapMode] = useState<'imoex' | 'all'>('imoex');
   const [sizeBy, setSizeBy] = useState<string>('market_cap');
-  const [colorBy, setColorBy] = useState('change_1d');
+  const [period, setPeriod] = useState('1d');
   const [groupBy, setGroupBy] = useState('sector');
+
+  // Вычисляемые значения из периода
+  const periodConfig = PERIOD_OPTIONS.find(p => p.value === period) || PERIOD_OPTIONS[0];
+  const colorBy = periodConfig.color;
+  const volumeKey = periodConfig.volume;
 
   // Тултип
   const [tooltip, setTooltip] = useState<{
@@ -222,7 +225,7 @@ export default function HeatmapPage() {
 
   // Получение значения для размера (экспонента усиливает разницу крупных/мелких)
   const getSizeValue = (stock: HeatmapStock): number => {
-    const key = sizeBy as keyof HeatmapStock;
+    const key = (sizeBy === 'volume' ? volumeKey : sizeBy) as keyof HeatmapStock;
     const raw = Math.max((stock[key] as number) || 1, 1);
     return Math.pow(raw, 0.65);
   };
@@ -376,7 +379,7 @@ export default function HeatmapPage() {
           rx={radius}
           ry={radius}
           fill={getColor(change)}
-          style={{ transition: 'fill 0.6s ease, x 0.5s ease, y 0.5s ease, width 0.5s ease, height 0.5s ease' }}
+          style={{ transition: 'fill 0.6s ease' }}
           className="hover:brightness-110"
         />
         {showTicker && (
@@ -391,7 +394,7 @@ export default function HeatmapPage() {
             style={{
               textShadow: '0 2px 8px rgba(0,0,0,0.8), 0 1px 3px rgba(0,0,0,0.9)',
               letterSpacing: '-0.02em',
-              transition: 'x 0.5s ease, y 0.5s ease, font-size 0.5s ease',
+              transition: 'font-size 0.3s ease',
             }}
           >
             {rect.id}
@@ -455,25 +458,37 @@ export default function HeatmapPage() {
             </button>
           </div>
 
-          <select
-            value={sizeBy}
-            onChange={(e) => setSizeBy(e.target.value)}
-            className="bg-theme-secondary border border-theme text-theme-primary px-3 py-2 rounded-lg text-sm cursor-pointer hover:border-[var(--border-hover)] focus:border-[var(--accent)] focus:outline-none"
-          >
+          <div className="flex rounded-lg overflow-hidden border border-theme">
             {SIZE_OPTIONS.map(opt => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
+              <button
+                key={opt.value}
+                onClick={() => setSizeBy(opt.value)}
+                className={`px-3 py-2 text-sm font-medium transition-colors ${
+                  sizeBy === opt.value
+                    ? 'bg-[var(--accent)] text-black'
+                    : 'bg-theme-secondary text-theme-primary hover:bg-theme-tertiary'
+                }`}
+              >
+                {opt.label}
+              </button>
             ))}
-          </select>
+          </div>
 
-          <select
-            value={colorBy}
-            onChange={(e) => setColorBy(e.target.value)}
-            className="bg-theme-secondary border border-theme text-theme-primary px-3 py-2 rounded-lg text-sm cursor-pointer hover:border-[var(--border-hover)] focus:border-[var(--accent)] focus:outline-none"
-          >
-            {COLOR_OPTIONS.map(opt => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
+          <div className="flex rounded-lg overflow-hidden border border-theme">
+            {PERIOD_OPTIONS.map(opt => (
+              <button
+                key={opt.value}
+                onClick={() => setPeriod(opt.value)}
+                className={`px-3 py-2 text-sm font-medium transition-colors ${
+                  period === opt.value
+                    ? 'bg-[var(--accent)] text-black'
+                    : 'bg-theme-secondary text-theme-primary hover:bg-theme-tertiary'
+                }`}
+              >
+                {opt.label}
+              </button>
             ))}
-          </select>
+          </div>
 
           <select
             value={groupBy}
@@ -538,6 +553,7 @@ export default function HeatmapPage() {
           </svg>
         ) : null}
       </div>
+
 
       {/* Тултип */}
       {tooltip.visible && tooltip.stock && (
