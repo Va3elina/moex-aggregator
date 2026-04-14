@@ -268,7 +268,7 @@ export default function FlowsHistogram({
                                     className="absolute pointer-events-none"
                                     style={{ top: `${yPct}%`, right: 4, transform: 'translateY(-50%)' }}
                                 >
-                                    <span className="font-semibold" style={{ fontSize: 'var(--chart-font-y, 16px)', color: CHART_COLORS.muted }}>
+                                    <span className="font-semibold" style={{ fontSize: 'var(--chart-font-y, 16px)', color: 'var(--axis-color, #9CA3B8)' }}>
                                         {label}
                                     </span>
                                 </div>

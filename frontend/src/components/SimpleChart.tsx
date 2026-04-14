@@ -1,6 +1,8 @@
 import { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { Download, BarChart2, TrendingUp } from 'lucide-react';
 import ChartNavigator from './ChartNavigator';
+import { easeOutCubic, morphPts, ptsToPath, ptsToArea } from '../utils/chartAnimation';
+import { cssVar, GRID, CROSSHAIR, ANIMATION, TOOLTIP } from '../config/chartTheme';
 
 interface DataPoint {
   time: string;
@@ -46,61 +48,10 @@ interface SimpleChartProps {
   horizontalLines?: { value: number; color: string; label?: string; axis?: 'primary' | 'secondary' }[];
 }
 
-// Интерполяция между двумя значениями
-const lerp = (start: number, end: number, t: number) => start + (end - start) * t;
-
-// Easing функция для плавности (ease-out cubic)
-const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
-
-// Ресемплинг массива точек до нужной длины
-const resamplePoints = (points: { x: number; y: number }[], targetLength: number) => {
-  if (points.length === 0) return [];
-  if (points.length === targetLength) return points;
-
-  const result: { x: number; y: number }[] = [];
-  for (let i = 0; i < targetLength; i++) {
-    const t = i / (targetLength - 1);
-    const sourceIndex = t * (points.length - 1);
-    const lowerIndex = Math.floor(sourceIndex);
-    const upperIndex = Math.min(lowerIndex + 1, points.length - 1);
-    const localT = sourceIndex - lowerIndex;
-
-    result.push({
-      x: lerp(points[lowerIndex].x, points[upperIndex].x, localT),
-      y: lerp(points[lowerIndex].y, points[upperIndex].y, localT),
-    });
-  }
-  return result;
-};
-
-// Интерполяция между двумя массивами точек
-const interpolatePoints = (
-  from: { x: number; y: number }[],
-  to: { x: number; y: number }[],
-  t: number
-) => {
-  const maxLen = Math.max(from.length, to.length);
-  const fromResampled = resamplePoints(from, maxLen);
-  const toResampled = resamplePoints(to, maxLen);
-
-  return fromResampled.map((p, i) => ({
-    x: lerp(p.x, toResampled[i].x, t),
-    y: lerp(p.y, toResampled[i].y, t),
-  }));
-};
-
-// Генерация SVG path из точек
-const pointsToPath = (points: { x: number; y: number }[]) => {
-  if (points.length === 0) return '';
-  return points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
-};
-
-// Генерация area path
-const pointsToAreaPath = (points: { x: number; y: number }[], chartHeight: number) => {
-  if (points.length === 0) return '';
-  const linePath = pointsToPath(points);
-  return `${linePath} L ${points[points.length - 1].x} ${chartHeight} L ${points[0].x} ${chartHeight} Z`;
-};
+// Алиасы для обратной совместимости с внутренним кодом
+const interpolatePoints = morphPts;
+const pointsToPath = ptsToPath;
+const pointsToAreaPath = ptsToArea;
 
 export default function SimpleChart({
   data,
@@ -144,10 +95,6 @@ export default function SimpleChart({
   const [hoveredAnnotationIdx, setHoveredAnnotationIdx] = useState<number | null>(null);
 
   // CSS layout tokens — read from CSS variables for responsive adaptation
-  const cssVar = (name: string, fallback: number): number => {
-    const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-    return raw ? parseFloat(raw) : fallback;
-  };
   const tokens = useMemo(() => ({
     fontY: cssVar('--chart-font-y', 16),
     fontX: cssVar('--chart-font-x', 14),
@@ -480,7 +427,7 @@ export default function SimpleChart({
     const fromThird = hasCurrentState ? currentPointsRef.current.third : prevPointsRef.current.third;
 
     let startTime: number | null = null;
-    const duration = 600; // мс
+    const duration = ANIMATION.duration;
 
     const animate = (timestamp: number) => {
       if (!startTime) startTime = timestamp;
@@ -868,7 +815,7 @@ export default function SimpleChart({
                   y1={tick.y}
                   x2={chartWidth}
                   y2={tick.y}
-                  stroke="rgba(255,255,255,0.08)"
+                  stroke={GRID.major}
                   strokeWidth="1"
                 />
                 <text
@@ -914,7 +861,7 @@ export default function SimpleChart({
                       y1={0}
                       x2={tick.x}
                       y2={chartHeight}
-                      stroke="rgba(255,255,255,0.08)"
+                      stroke={GRID.major}
                       strokeWidth="1"
                     />
                   )}
@@ -992,7 +939,7 @@ export default function SimpleChart({
                       <animate attributeName="opacity" from="0" to="0.8" dur="0.4s" begin="1.8s" fill="freeze" />
                     </circle>
                     <text x={pLast.x + 8} y={pLast.y + 4}
-                      fill={primaryColor} fontSize="12" fontWeight="700" opacity="0">
+                      fill={primaryColor} fontSize={tokens.fontX} fontWeight="700" opacity="0">
                       {pLast.value.toFixed(0)}%
                       <animate attributeName="opacity" from="0" to="0.9" dur="0.4s" begin="1.8s" fill="freeze" />
                     </text>
@@ -1107,10 +1054,10 @@ export default function SimpleChart({
                   y1={0}
                   x2={tooltip.x - padding.left}
                   y2={chartHeight}
-                  stroke="#C8FF2E"
-                  strokeWidth="1"
+                  stroke={CROSSHAIR.accentColor}
+                  strokeWidth={CROSSHAIR.strokeWidth}
                   strokeDasharray="4,4"
-                  opacity="0.5"
+                  opacity={CROSSHAIR.accentOpacity}
                 />
                 {/* Точка на основной линии */}
                 <circle
@@ -1184,14 +1131,14 @@ export default function SimpleChart({
                   width={cardWidth}
                   height={cardHeight}
                 >
-                  <div className="bg-theme-tertiary/95 backdrop-blur-sm rounded-lg border border-theme shadow-xl pointer-events-none py-1.5 px-3">
+                  <div className={`${TOOLTIP.containerClass} pointer-events-none`}>
                     {lines.map((line, i) => (
                       <div key={i} className="flex items-center justify-between gap-2 py-0.5">
                         <div className="flex items-center gap-1.5 min-w-0">
-                          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: line.color }} />
-                          <span className="text-[11px] text-theme-secondary truncate">{line.label}</span>
+                          <span className={`${TOOLTIP.dotSize} flex-shrink-0`} style={{ backgroundColor: line.color }} />
+                          <span className={`${TOOLTIP.labelClass} truncate`}>{line.label}</span>
                         </div>
-                        <span className="text-xs font-semibold text-theme-primary whitespace-nowrap">{line.value}</span>
+                        <span className={`${TOOLTIP.valueClass} text-theme-primary whitespace-nowrap`}>{line.value}</span>
                       </div>
                     ))}
                   </div>
@@ -1284,7 +1231,7 @@ export default function SimpleChart({
               transform: 'translateX(-50%)',
             }}
           >
-            <span className="text-[11px] text-theme-secondary bg-theme-tertiary/90 backdrop-blur-sm px-2 py-0.5 rounded border border-theme whitespace-nowrap">
+            <span className={`${TOOLTIP.dateClass} whitespace-nowrap`}>
               {annDate}
             </span>
           </div>
@@ -1309,7 +1256,7 @@ export default function SimpleChart({
               transform: 'translateX(-50%)',
             }}
           >
-            <span className="text-[11px] text-theme-secondary bg-theme-tertiary/90 backdrop-blur-sm px-2 py-0.5 rounded border border-theme whitespace-nowrap">
+            <span className={`${TOOLTIP.dateClass} whitespace-nowrap`}>
               {htmlDateLabel}
             </span>
           </div>

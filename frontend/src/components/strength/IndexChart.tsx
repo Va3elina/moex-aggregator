@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useState, useMemo, useRef } from 'react';
 import { easeOutCubic, morphPts, ptsToPath, ptsToArea, type SyncedDataPoint, type ChartPadding } from './chartUtils';
-import { CHART_COLORS, GRID } from '../../config/chartTheme';
+import { CHART_COLORS, GRID, CROSSHAIR } from '../../config/chartTheme';
 
 interface IndexChartProps {
     syncedData: SyncedDataPoint[];
@@ -151,7 +151,7 @@ export default function IndexChart({
 
                         {crosshairX !== null && (
                             <line x1={crosshairX} y1={padding.top} x2={crosshairX} y2={padding.top + chartHeight}
-                                stroke="var(--text-muted)" strokeWidth="1" strokeDasharray="3,3" />
+                                stroke={CROSSHAIR.color} strokeWidth={CROSSHAIR.strokeWidth} strokeDasharray={CROSSHAIR.dashArray} />
                         )}
                         {crosshairX !== null && hoverIndex !== null && hoverIndex < chartData.points.length && (
                             <circle cx={chartData.points[hoverIndex].x} cy={chartData.points[hoverIndex].y}
@@ -177,7 +177,7 @@ export default function IndexChart({
                                 <text
                                     x={width - padding.right + 12}
                                     y={Math.max(padding.top + 6, Math.min(tick.y, padding.top + chartHeight - 6))}
-                                    textAnchor="start" dominantBaseline="middle" fill="var(--axis-color, var(--text-muted))" fontSize="var(--chart-font-y, 16)" fontWeight="600"
+                                    textAnchor="start" dominantBaseline="middle" fill="var(--axis-color, #9CA3B8)" fontSize="var(--chart-font-y, 16)" fontWeight="600"
                                     paintOrder="stroke" stroke="var(--bg-secondary)" strokeWidth="4" strokeLinejoin="round">
                                     {tick.value.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
                                 </text>

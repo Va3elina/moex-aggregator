@@ -5,6 +5,7 @@ import SimpleChart from '../components/SimpleChart';
 import { getChartData, getFearIndex, getFearIndexHistory, getBreadthCurrent, getFundsSummary, getBuffettCapGdp } from '../services/api';
 import { useRealtimeData } from '../hooks/useRealtimeData';
 import type { FearIndexResponse, FearIndexHistoryResponse, BreadthCurrentResponse, FundsSummaryResponse } from '../services/api';
+import { FEAR_LABELS_RU, getFearColor } from '../config/fearConfig';
 
 // Типы
 interface HeatmapStock {
@@ -18,31 +19,6 @@ interface TelegramPost {
   title: string;
   preview: string;
   time: string;
-}
-
-// Цвета для Fear Index
-const FEAR_COLORS: Record<string, string> = {
-  'Extreme Greed': '#22c55e',
-  'Greed': '#84cc16',
-  'Neutral': '#eab308',
-  'Fear': '#f97316',
-  'Extreme Fear': '#ef4444',
-};
-
-const FEAR_LABELS_RU: Record<string, string> = {
-  'Extreme Greed': 'Экстремальная жадность',
-  'Greed': 'Жадность',
-  'Neutral': 'Нейтрально',
-  'Fear': 'Страх',
-  'Extreme Fear': 'Экстремальный страх',
-};
-
-function getFearColorByScore(score: number): string {
-  if (score < 25) return FEAR_COLORS['Extreme Greed'];
-  if (score < 45) return FEAR_COLORS['Greed'];
-  if (score < 55) return FEAR_COLORS['Neutral'];
-  if (score < 75) return FEAR_COLORS['Fear'];
-  return FEAR_COLORS['Extreme Fear'];
 }
 
 export default function OverviewPage() {
@@ -204,7 +180,7 @@ export default function OverviewPage() {
   };
 
   const fearIndex = fearData?.fear_index ?? 50;
-  const fearColor = getFearColorByScore(fearIndex);
+  const fearColor = getFearColor(fearIndex);
   const yesterdayFear = getYesterdayFear();
   const fearChange = yesterdayFear ? fearIndex - yesterdayFear : 0;
 

@@ -11,15 +11,22 @@ interface ChartCrosshairProps {
   color?: string;
   /** Паттерн пунктира */
   dashArray?: string;
+  /** Верхняя граница линии (по умолчанию 0) */
+  y1?: number;
+  /** Нижняя граница линии (по умолчанию viewBoxHeight) */
+  y2?: number;
+  /** Opacity */
+  opacity?: number;
 }
 
-export default function ChartCrosshair({ x, color, dashArray }: ChartCrosshairProps) {
+export default function ChartCrosshair({ x, color, dashArray, y1, y2, opacity }: ChartCrosshairProps) {
   return (
     <line
-      x1={x} x2={x} y1="0" y2={SVG.viewBoxHeight}
+      x1={x} x2={x} y1={y1 ?? 0} y2={y2 ?? SVG.viewBoxHeight}
       stroke={color ?? CROSSHAIR.color}
       strokeWidth={CROSSHAIR.strokeWidth}
       strokeDasharray={dashArray ?? CROSSHAIR.dashArray}
+      opacity={opacity}
       vectorEffect="non-scaling-stroke"
       style={{ pointerEvents: 'none' }}
     />

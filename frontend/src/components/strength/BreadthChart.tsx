@@ -1,6 +1,6 @@
 import { memo, useEffect, useLayoutEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { lerp, easeOutCubic, morphPts, ptsToPath, type SyncedDataPoint, type ChartPadding } from './chartUtils';
-import { GRID } from '../../config/chartTheme';
+import { GRID, CROSSHAIR } from '../../config/chartTheme';
 
 type ChartMode = 'line' | 'histogram';
 
@@ -181,7 +181,7 @@ export default function BreadthChart({
         const yTicks = [20, 40, 60, 80].map(v => ({
             value: v,
             y: scaleY(v),
-            color: 'var(--text-muted)',
+            color: 'var(--axis-color, #9CA3B8)',
         }));
 
         return { points, lineSegments, bars, levels, xTicks, yTicks, chartWidth, chartHeight, scaleX };
@@ -332,7 +332,7 @@ export default function BreadthChart({
                             {/* Crosshair */}
                             {crosshairX !== null && (
                                 <line x1={crosshairX} y1={padding.top} x2={crosshairX} y2={padding.top + chartData.chartHeight}
-                                    stroke="var(--text-muted)" strokeWidth="1" strokeDasharray="3,3" />
+                                    stroke={CROSSHAIR.color} strokeWidth={CROSSHAIR.strokeWidth} strokeDasharray={CROSSHAIR.dashArray} />
                             )}
                             {crosshairX !== null && hoverIndex !== null && hoverIndex < chartData.points.length && (
                                 <circle cx={chartData.points[hoverIndex].x} cy={chartData.points[hoverIndex].y}
@@ -345,7 +345,7 @@ export default function BreadthChart({
                         {chartData.yTicks.map((tick, i) => (
                             <text key={i} x={width - padding.right + 12} y={tick.y}
                                 textAnchor="start" dominantBaseline="middle"
-                                fill={tick.color || 'var(--text-muted)'} fontSize="var(--chart-font-y, 16)" fontWeight="600"
+                                fill={tick.color || 'var(--axis-color, #9CA3B8)'} fontSize="var(--chart-font-y, 16)" fontWeight="600"
                                 paintOrder="stroke" stroke="var(--bg-secondary)" strokeWidth="4" strokeLinejoin="round">
                                 {tick.value}%
                             </text>
@@ -355,7 +355,7 @@ export default function BreadthChart({
                         {chartData.xTicks.map((tick, i) => (
                             <text key={i} x={tick.x} y={padding.top + chartData.chartHeight + 18}
                                 textAnchor={i === 0 ? 'start' : i === chartData.xTicks.length - 1 ? 'end' : 'middle'}
-                                fill="var(--text-muted)" fontSize="14" fontWeight="600">
+                                fill="var(--axis-color, #9CA3B8)" fontSize="var(--chart-font-x, 14)" fontWeight="600">
                                 {tick.label}
                             </text>
                         ))}

@@ -7,6 +7,7 @@ import SimpleChart from '../components/SimpleChart';
 import { useAuth } from '../contexts/AuthContext';
 import { isPeriodAllowed, getDefaultPeriod } from '../config/accessControl';
 import { useRealtimeData } from '../hooks/useRealtimeData';
+import { FEAR_COLORS, FEAR_LABELS_RU, getFearColor, getFearGradient } from '../config/fearConfig';
 
 type Period = '1m' | '3m' | '6m' | '1y' | 'all';
 
@@ -17,36 +18,6 @@ const PERIODS: { key: Period; label: string }[] = [
   { key: '1y', label: '1Г' },
   { key: 'all', label: 'Всё' },
 ];
-
-// Цвета для зон страха
-const FEAR_COLORS: Record<string, string> = {
-  'Extreme Greed': '#22c55e',
-  'Greed': '#84cc16',
-  'Neutral': '#eab308',
-  'Fear': '#f97316',
-  'Extreme Fear': '#ef4444',
-};
-
-const FEAR_LABELS_RU: Record<string, string> = {
-  'Extreme Greed': 'Экстремальная жадность',
-  'Greed': 'Жадность',
-  'Neutral': 'Нейтрально',
-  'Fear': 'Страх',
-  'Extreme Fear': 'Экстремальный страх',
-};
-
-function getFearColor(score: number): string {
-  if (score < 25) return FEAR_COLORS['Extreme Greed'];
-  if (score < 45) return FEAR_COLORS['Greed'];
-  if (score < 55) return FEAR_COLORS['Neutral'];
-  if (score < 75) return FEAR_COLORS['Fear'];
-  return FEAR_COLORS['Extreme Fear'];
-}
-
-function getFearGradient(score: number): string {
-  const color = getFearColor(score);
-  return `linear-gradient(135deg, ${color}22 0%, ${color}11 100%)`;
-}
 
 export default function FearIndexPage() {
   const { isAuthenticated } = useAuth();

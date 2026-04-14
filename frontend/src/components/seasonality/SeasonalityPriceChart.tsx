@@ -150,7 +150,7 @@ export default function SeasonalityPriceChart({
               const cy = scY(pricePoints[idx].close) * 500;
               return (
                 <>
-                  <ChartCrosshair x={cx} color="rgba(200,255,46,0.5)" dashArray={CROSSHAIR.accentDashArray} />
+                  <ChartCrosshair x={cx} color={CROSSHAIR.accentColor} dashArray={CROSSHAIR.accentDashArray} opacity={CROSSHAIR.accentOpacity} />
                   <ChartDot x={cx} y={cy} color={CHART_COLORS.accent} />
                 </>
               );

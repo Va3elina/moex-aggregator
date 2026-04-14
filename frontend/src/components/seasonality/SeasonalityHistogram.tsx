@@ -1,6 +1,6 @@
 import type { SeasonalityResponse } from '../../services/api';
 import { CHART_COLORS, CROSSHAIR, TOOLTIP } from '../../config/chartTheme';
-import { ChartGrid } from '../chart';
+import { ChartGrid, ChartCrosshair } from '../chart';
 
 interface TooltipState {
   x: number;
@@ -86,13 +86,10 @@ export default function SeasonalityHistogram({
             if (idx === -1) return null;
             const slotW = 1000 / bars.length;
             const cx = idx * slotW + slotW / 2;
-            const gridTop = 250 - 190;
-            const gridBot = 250 + 190;
             return (
-              <line x1={cx} y1={gridTop} x2={cx} y2={gridBot}
-                stroke={CROSSHAIR.accentColor} strokeWidth="1" strokeDasharray={CROSSHAIR.accentDashArray}
-                opacity={CROSSHAIR.accentOpacity} vectorEffect="non-scaling-stroke"
-                style={{ pointerEvents: 'none' }} />
+              <ChartCrosshair x={cx} color={CROSSHAIR.accentColor}
+                dashArray={CROSSHAIR.accentDashArray} opacity={CROSSHAIR.accentOpacity}
+                y1={250 - 190} y2={250 + 190} />
             );
           })()}
         </svg>

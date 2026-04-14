@@ -164,7 +164,7 @@ export default function YearlySeasonalityChart({
           ticks={yTicks}
           side="right"
           format={(v) => `${v > 0 ? '+' : ''}${v.toFixed(1)}%`}
-          color="var(--text-muted)"
+          color="var(--axis-color, #9CA3B8)"
           padTop={PT}
           padBottom={PB}
         />
@@ -174,7 +174,7 @@ export default function YearlySeasonalityChart({
           labels={monthPositions.map(mp => mp.label)}
           padLeft={PL}
           padRight={PR}
-          color="var(--text-muted)"
+          color="var(--axis-color, #9CA3B8)"
         />
 
         {/* Tooltip */}
