@@ -158,40 +158,46 @@ export default function SeasonalityPage() {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const _rawBars = dataRaw?.bars; void _rawBars;
 
-  // Анимация баров (как притоки-оттоки)
+  // Анимация баров — 3 сценария:
+  // 1. Первый рендер (нет prev): easeOutCubic + 600ms stagger + 1200ms — бары «вылетают».
+  // 2. Смена периода 30↔90 (prev.length === target.length): плавный морф между
+  //    значениями, easeInOutCubic + 350ms stagger + 1000ms.
+  // 3. Смена режима intraday↔weekday↔monthday↔monthly (разное число баров):
+  //    применяем сценарий №1 — fade-in из нуля с каскадом. Это избегает
+  //    уродливого ресемплинга и бар-«перескоков» через ноль.
   const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+  const easeInOutCubic = (t: number) =>
+    t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
   useEffect(() => {
     if (!bars.length) { setAnimatedHeights([]); return; }
     if (barsAnimRef.current) cancelAnimationFrame(barsAnimRef.current);
 
     const target = bars.map(b => b.avg_change / maxAbs);
-    const isFirst = isFirstBarRender.current || prevHeightsRef.current.length === 0;
-    const from = isFirst ? new Array(target.length).fill(0) : (() => {
-      // Ресемплинг если кол-во баров изменилось
-      const prev = prevHeightsRef.current;
-      if (prev.length === target.length) return prev;
-      return target.map((_, i) => {
-        const si = (i / (target.length - 1)) * (prev.length - 1);
-        const lo = Math.floor(si);
-        const hi = Math.min(lo + 1, prev.length - 1);
-        return prev[lo] + (prev[hi] - prev[lo]) * (si - lo);
-      });
-    })();
+    const prev = prevHeightsRef.current;
+    const isFirst = isFirstBarRender.current || prev.length === 0;
+    const isSameShape = !isFirst && prev.length === target.length;
+
+    // Сценарии 1 и 3 → from = нули; сценарий 2 → from = предыдущие значения
+    const from = isSameShape ? prev : new Array(target.length).fill(0);
 
     isFirstBarRender.current = false;
-    const totalDuration = isFirst ? 1200 : 600;
-    const staggerDelay = isFirst ? 600 : 0;
+    // Морф (одинаковое число баров): мягкий easeInOutCubic
+    // Fade-in (первый рендер / смена режима): каскадный easeOutCubic
+    const totalDuration = isSameShape ? 1000 : 1200;
+    const staggerDelay = isSameShape ? 350 : 600;
+    const ease = isSameShape ? easeInOutCubic : easeOutCubic;
+    const perBarDuration = totalDuration - staggerDelay;
     let startTime: number | null = null;
 
     const animate = (ts: number) => {
       if (!startTime) startTime = ts;
       const elapsed = ts - startTime;
       const heights = target.map((v, i) => {
-        const barDelay = (i / target.length) * staggerDelay;
+        const barDelay = (i / Math.max(target.length - 1, 1)) * staggerDelay;
         const barElapsed = Math.max(0, elapsed - barDelay);
-        const t = Math.min(barElapsed / (totalDuration - staggerDelay), 1);
-        return from[i] + (v - from[i]) * easeOutCubic(t);
+        const t = Math.min(barElapsed / perBarDuration, 1);
+        return from[i] + (v - from[i]) * ease(t);
       });
       setAnimatedHeights(heights);
       if (elapsed < totalDuration) {
@@ -320,6 +326,23 @@ export default function SeasonalityPage() {
                 </button>
               ))}
             </div>
+
+            {/* Dividend toggle — на одной линии с пресетами.
+                Не показываем в intraday (там дивиденды не применимы). */}
+            {showDivToggle && (
+              <button
+                onClick={() => setExcludeDividends(!excludeDividends)}
+                className="flex items-center gap-2 px-2 md:px-4 py-2 md:py-2.5 rounded-xl border text-xs md:text-sm font-medium transition-all whitespace-nowrap"
+                style={{
+                  backgroundColor: excludeDividends ? 'rgba(34, 197, 94, 0.15)' : 'var(--bg-secondary)',
+                  borderColor: excludeDividends ? 'rgba(34, 197, 94, 0.5)' : 'var(--border-color)',
+                  color: excludeDividends ? '#22c55e' : 'var(--text-secondary)',
+                }}
+              >
+                <span className={`inline-block w-3 h-3 rounded-full ${excludeDividends ? 'bg-green-500' : 'bg-gray-500'}`} />
+                Без дивидендных гэпов
+              </button>
+            )}
           </>
         )}
 
@@ -343,24 +366,9 @@ export default function SeasonalityPage() {
         )}
       </div>
 
-      {/* Controls Row 2 */}
+      {/* Controls Row 2 — только подсказки и yearly-контролы.
+          Dividend-toggle для histogram переехал в Row 1 рядом с пресетами. */}
       <div className="flex flex-wrap items-center gap-4 mb-4">
-        {/* Dividend toggle - for histogram */}
-        {showDivToggle && (
-          <button
-            onClick={() => setExcludeDividends(!excludeDividends)}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium transition-all"
-            style={{
-              backgroundColor: excludeDividends ? 'rgba(34, 197, 94, 0.15)' : 'var(--bg-secondary)',
-              borderColor: excludeDividends ? 'rgba(34, 197, 94, 0.5)' : 'var(--border-color)',
-              color: excludeDividends ? '#22c55e' : 'var(--text-secondary)',
-            }}
-          >
-            <span className={`inline-block w-3 h-3 rounded-full ${excludeDividends ? 'bg-green-500' : 'bg-gray-500'}`} />
-            Без дивидендных гэпов
-          </button>
-        )}
-
         {/* Hint */}
         {chartType === 'histogram' && (
           <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
@@ -425,7 +433,10 @@ export default function SeasonalityPage() {
         ) : chartType === 'histogram' ? (
           <SeasonalityHistogram
             bars={bars}
-            animatedHeights={animatedHeights}
+            // Если длина animatedHeights не совпадает с bars (переходный кадр
+            // после смены режима: новые bars пришли, а rAF ещё не запустился),
+            // передаём нули, чтобы не рендерить старые значения на новых барах.
+            animatedHeights={animatedHeights.length === bars.length ? animatedHeights : new Array(bars.length).fill(0)}
             maxAbs={maxAbs}
             tooltip={tooltip}
             setTooltip={setTooltip}
