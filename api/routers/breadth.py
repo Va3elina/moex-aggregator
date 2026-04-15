@@ -48,6 +48,62 @@ async def get_imoex_tickers() -> set[str]:
         return set()
 
 
+def _load_usd_rates(engine, date_from: date) -> dict[date, float]:
+    """
+    Загружает курс USD/RUB с forward-fill (для выходных/праздников).
+    - До 2024-06-11: USD000UTSTOM из index_data (спот)
+    - С 2024-06-11: USDRUBF из candles (вечный фьючерс)
+    Возвращает {date: rate} с заполненными пропусками.
+    """
+    from datetime import date as _date
+
+    cache_key = f"usd_rates:{date_from.isoformat()}"
+    cached = get_or_set(cache_key)
+    if cached is not None:
+        return {_date.fromisoformat(k): v for k, v in cached.items()}
+
+    SWITCH_DATE = _date(2024, 6, 11)
+    raw_rates: dict[_date, float] = {}
+
+    with engine.connect() as conn:
+        rows_spot = conn.execute(text("""
+            SELECT trade_date, close FROM index_data
+            WHERE secid = 'USD000UTSTOM' AND trade_date >= :date_from AND trade_date < :switch
+              AND close IS NOT NULL AND close > 0
+            ORDER BY trade_date
+        """), {"date_from": date_from, "switch": SWITCH_DATE}).fetchall()
+        for d, close in rows_spot:
+            raw_rates[d] = float(close)
+
+        rows_fut = conn.execute(text("""
+            SELECT begin_time::date, close FROM candles
+            WHERE secid = 'USDRUBF' AND interval = 24
+              AND begin_time::date >= :switch
+              AND close IS NOT NULL AND close > 0
+            ORDER BY begin_time
+        """), {"switch": SWITCH_DATE}).fetchall()
+        for d, close in rows_fut:
+            raw_rates[d] = float(close)
+
+    # Forward-fill для выходных/праздников
+    filled: dict[_date, float] = {}
+    if raw_rates:
+        sorted_dates = sorted(raw_rates.keys())
+        d = sorted_dates[0]
+        end = sorted_dates[-1]
+        last_rate = None
+        while d <= end:
+            if d in raw_rates:
+                last_rate = raw_rates[d]
+            if last_rate is not None:
+                filled[d] = last_rate
+            d += timedelta(days=1)
+
+    # Кеш 1 час (курс меняется нечасто)
+    get_or_set(cache_key, {k.isoformat(): v for k, v in filled.items()}, ttl=3600)
+    return filled
+
+
 def get_stock_tickers() -> list[dict]:
     """Получает список тикеров акций из БД с секторами (без фьючерсов и индексов)"""
     engine = get_engine()
@@ -140,7 +196,7 @@ def _compute_breadth_for_tickers(engine, tickers: list[str], ema_period: int, da
 @router.get("/current")
 async def get_current_breadth(
     ema_period: int = Query(200, ge=10, le=500, description="Период EMA"),
-    universe: str = Query("all", description="Вселенная: all — все акции, imoex — только индекс MOEX"),
+    universe: str = Query("all", description="Вселенная: all, imoex, all_usd, imoex_usd"),
 ):
     """
     Возвращает текущее значение Market Breadth:
@@ -148,9 +204,15 @@ async def get_current_breadth(
     - count_above: количество акций выше EMA
     - count_total: всего акций
     - stocks: детали по каждой акции
+
+    universe=all/imoex → рублёвые цены и EMA.
+    universe=all_usd/imoex_usd → цены конвертируются через USDRUB (спот до
+    2024-06-11, фьючерс USDRUBF после), EMA считается на USD-ценах.
     """
-    if universe not in ("all", "imoex"):
+    if universe not in ("all", "imoex", "all_usd", "imoex_usd"):
         universe = "all"
+    is_usd = universe.endswith("_usd")
+    universe_base = universe[:-4] if is_usd else universe
 
     cache_key = f"breadth:current:{ema_period}:{universe}"
     cached = get_or_set(cache_key)
@@ -158,15 +220,22 @@ async def get_current_breadth(
         return cached
 
     start_time = time.time()
-    log.info(f"REQUEST: /breadth/current ema_period={ema_period}")
+    log.info(f"REQUEST: /breadth/current ema_period={ema_period} universe={universe}")
 
     engine = get_engine()
     stock_entries = get_stock_tickers()
 
-    # Фильтрация по вселенной
-    if universe == "imoex":
+    # Фильтрация по вселенной (all vs imoex)
+    if universe_base == "imoex":
         imoex_tickers = await get_imoex_tickers()
         stock_entries = [e for e in stock_entries if e["ticker"] in imoex_tickers]
+
+    # USD: загружаем курс на весь период прогрева EMA (тот же что у свечей).
+    # Иначе первые дни свечей будут без курса и выпадут из EMA-расчёта.
+    usd_rates: dict = {}
+    if is_usd:
+        rate_from = date.today() - timedelta(days=ema_period * 2 + 200)
+        usd_rates = _load_usd_rates(engine, rate_from)
 
     stocks_data = []
     count_above = 0
@@ -175,6 +244,11 @@ async def get_current_breadth(
         ticker = entry["ticker"]
         sector = entry["sector"]
         try:
+            # Окно прогрева EMA. Теоретически при N точках первая точка весит
+            # ~13%, но на практике акции не делают экстремальных скачков и при
+            # 2×N+100 дней точность ~0.1% (проверено эмпирически на SBER).
+            # Должно совпадать с warmup в compute_breadth_history.py.
+            warmup_limit = ema_period * 2 + 100
             query = text("""
                 SELECT begin_time::date as date, close
                 FROM candles
@@ -185,17 +259,28 @@ async def get_current_breadth(
                 LIMIT :limit
             """)
             with engine.connect() as conn:
-                result = conn.execute(query, {"ticker": ticker, "limit": ema_period + 50})
+                result = conn.execute(query, {"ticker": ticker, "limit": warmup_limit})
                 rows = result.fetchall()
 
             if len(rows) < ema_period:
                 continue
 
             rows = list(reversed(rows))
-            prices = [float(r[1]) for r in rows if r[1]]
+            raw_prices = [(r[0], float(r[1])) for r in rows if r[1]]
 
-            if len(prices) < ema_period:
+            # USD конверсия: пропускаем дни без курса
+            if is_usd:
+                prices_pairs = []
+                for d, p in raw_prices:
+                    rate = usd_rates.get(d)
+                    if rate and rate > 0:
+                        prices_pairs.append((d, p / rate))
+            else:
+                prices_pairs = raw_prices
+
+            if len(prices_pairs) < ema_period:
                 continue
+            prices = [p for _, p in prices_pairs]
 
             ema_values = calculate_ema(prices, ema_period)
             current_price = prices[-1]
@@ -208,8 +293,8 @@ async def get_current_breadth(
             stocks_data.append({
                 "ticker": ticker,
                 "sector": sector,
-                "price": round(current_price, 2),
-                "ema": round(current_ema, 2),
+                "price": round(current_price, 4 if is_usd else 2),
+                "ema": round(current_ema, 4 if is_usd else 2),
                 "is_above": is_above,
                 "diff_percent": round((current_price - current_ema) / current_ema * 100, 2)
             })

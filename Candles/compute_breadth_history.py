@@ -393,7 +393,11 @@ def main() -> None:
     imoex_tickers = get_imoex_tickers()
 
     max_period = max(EMA_PERIODS)
-    warmup = max_period + 50  # дней для «прогрева» EMA
+    # Окно прогрева EMA. Эмпирически при 2×N+100 дней точность ~0.1% от
+    # «идеала» (EMA на полной истории). Раньше было max_period+50 —
+    # в инкрементальном режиме EMA не сходилась (точность ~0.3-1%), и
+    # pre-compute каждую ночь портил «хорошие» значения из полного прогона.
+    warmup = max_period * 2 + 100
 
     if args.full:
         date_from = date(2007, 1, 1) - timedelta(days=warmup)
