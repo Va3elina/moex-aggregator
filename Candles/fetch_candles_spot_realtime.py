@@ -465,6 +465,19 @@ class StocksCandlesUpdater:
         if df.empty:
             return 0, 0
 
+        # Фильтр: отбрасываем «фантомные» свечи — строки где все OHLC пустые.
+        # ISS иногда возвращает записи для нетрговых дней (MOEX-закрытие 2022, halts).
+        # В БД они попадали как open=0/NULL и портили агрегации.
+        ohlc_cols = [c for c in ['open', 'close', 'high', 'low'] if c in df.columns]
+        if ohlc_cols:
+            mask = df[ohlc_cols].isna().all(axis=1)
+            if mask.any():
+                skipped = int(mask.sum())
+                log.info(f"  Пропущено фантомных свечей (все OHLC пустые): {skipped}")
+                df = df[~mask].copy()
+            if df.empty:
+                return 0, 0
+
         for col in ['value', 'volume', 'open', 'close', 'high', 'low']:
             if col in df.columns:
                 df[col] = df[col].fillna(0)

@@ -109,8 +109,14 @@ async def backfill_ticker(session, engine, ticker: str, name: str, start_year: i
             continue
 
         # ISS колонки: open, close, high, low, value, volume, begin, end
+        # Фильтр: пропускаем «фантомные» свечи (OHLC=NULL) — ISS иногда возвращает
+        # записи для нетрговых дней (MOEX-закрытие 2022, halts). Их не должно быть в БД.
         values = []
+        skipped_phantoms = 0
         for r in rows:
+            if r[0] is None or r[1] is None or r[2] is None or r[3] is None:
+                skipped_phantoms += 1
+                continue
             values.append({
                 'secid': ticker,
                 'sec_id': ticker,
@@ -125,6 +131,8 @@ async def backfill_ticker(session, engine, ticker: str, name: str, start_year: i
                 'interval': 24,
                 'type': 'stock',
             })
+        if skipped_phantoms:
+            log.info(f"  {ticker} {year}: пропущено фантомов {skipped_phantoms}")
 
         if values:
             with engine.connect() as conn:
