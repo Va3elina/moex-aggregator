@@ -83,25 +83,188 @@ def _get_ex_dates_from_db(engine, secid: str) -> dict[str, float]:
     return ex_dates
 
 
+def _compute_monthly_returns_index_data(
+    engine,
+    secid: str,
+    iterations: int,
+    since_year: int | None = None,
+    exclude_years: list[int] | None = None,
+) -> list[dict]:
+    """
+    Месячная сезонность через close-to-close (правильная методология).
+    Возвращает массив баров со статистикой: avg_change, std_change, count.
+    """
+    from collections import defaultdict
+
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            WITH month_ends AS (
+                SELECT DISTINCT ON (
+                    EXTRACT(YEAR FROM trade_date)::int,
+                    EXTRACT(MONTH FROM trade_date)::int
+                )
+                    EXTRACT(YEAR FROM trade_date)::int as y,
+                    EXTRACT(MONTH FROM trade_date)::int as m,
+                    close
+                FROM index_data
+                WHERE secid = :secid AND close > 0
+                ORDER BY 1, 2, trade_date DESC
+            ),
+            recent_years AS (
+                SELECT DISTINCT y FROM month_ends
+                ORDER BY y DESC LIMIT :iterations
+            ),
+            with_prev AS (
+                SELECT y, m, close, LAG(close) OVER (ORDER BY y, m) as prev_close
+                FROM month_ends
+                WHERE y IN (SELECT y FROM recent_years)
+                   OR y = (SELECT MIN(y) - 1 FROM recent_years)
+            )
+            SELECT y, m, close, prev_close FROM with_prev
+            WHERE prev_close IS NOT NULL AND prev_close > 0 AND m IS NOT NULL
+        """), {"secid": secid, "iterations": iterations}).fetchall()
+
+    exclude_set = set(exclude_years or [])
+    groups: dict[int, list[float]] = defaultdict(list)
+    for y, m, close, prev_close in rows:
+        if since_year is not None and y < since_year:
+            continue
+        if y in exclude_set:
+            continue
+        ret = (float(close) / float(prev_close) - 1) * 100
+        groups[int(m)].append(ret)
+
+    bars = []
+    for m in sorted(groups.keys()):
+        vals = groups[m]
+        mean = sum(vals) / len(vals)
+        variance = sum((v - mean) ** 2 for v in vals) / len(vals) if len(vals) > 1 else 0
+        std = variance ** 0.5
+        bars.append({
+            "label": MONTH_LABELS.get(m, str(m)),
+            "key": m,
+            "avg_change": round(mean, 4),
+            "std_change": round(std, 4),
+            "count": len(vals),
+        })
+    return bars
+
+
+def _compute_monthly_returns_candles(
+    engine,
+    secid: str,
+    inst_type: str,
+    iterations: int,
+    ex_dates: dict[str, float],
+    since_year: int | None = None,
+    exclude_years: list[int] | None = None,
+) -> list[dict]:
+    """
+    Месячная сезонность через close-to-close для акций/фьючерсов из candles.
+    При exclude_dividends=True: корректируем все исторические цены мультипликативно
+    до вычисления месячных возвратов.
+    """
+    from collections import defaultdict
+    from datetime import date as _date
+
+    type_filter = f"type = '{inst_type}'" if inst_type else "TRUE"
+
+    with engine.connect() as conn:
+        # Все дневные свечи нужны для adjusted close + month-end выборки
+        rows = conn.execute(text(f"""
+            SELECT begin_time::date as d, close
+            FROM candles
+            WHERE secid = :secid AND interval = 24 AND {type_filter} AND close > 0
+            ORDER BY begin_time
+        """), {"secid": secid}).fetchall()
+
+    if not rows:
+        return []
+
+    dates = [r[0] for r in rows]
+    closes = [float(r[1]) for r in rows]
+
+    # Дивидендная корректировка (мультипликативная, Yahoo/CRSP style)
+    if ex_dates:
+        adjusted = closes.copy()
+        for ex_str, div_val in sorted(ex_dates.items()):
+            ex_d = _date.fromisoformat(ex_str)
+            ex_idx = next((i for i, d in enumerate(dates) if d >= ex_d), None)
+            if ex_idx is not None and ex_idx > 0:
+                raw_prev = closes[ex_idx - 1]
+                if raw_prev > 0 and div_val < raw_prev:
+                    factor = (raw_prev - div_val) / raw_prev
+                    for j in range(ex_idx):
+                        adjusted[j] *= factor
+        prices = adjusted
+    else:
+        prices = closes
+
+    # Выбираем последний close каждого (year, month)
+    last_per_ym: dict[tuple[int, int], float] = {}
+    for d, p in zip(dates, prices):
+        last_per_ym[(d.year, d.month)] = p  # перезаписывается на более поздний день
+    sorted_keys = sorted(last_per_ym.keys())
+
+    # Ограничиваем последними N годами
+    recent_years = sorted(set(y for y, _ in sorted_keys), reverse=True)[:iterations]
+    earliest_year = min(recent_years) if recent_years else None
+    # Допустим один доп. год до earliest для LAG в январе
+    filtered = [(y, m) for (y, m) in sorted_keys
+                if earliest_year is None or y >= earliest_year - 1]
+
+    exclude_set = set(exclude_years or [])
+    groups: dict[int, list[float]] = defaultdict(list)
+    for i in range(1, len(filtered)):
+        (y, m) = filtered[i]
+        if y < (earliest_year or 0):
+            continue
+        if since_year is not None and y < since_year:
+            continue
+        if y in exclude_set:
+            continue
+        prev_close = last_per_ym[filtered[i - 1]]
+        close = last_per_ym[filtered[i]]
+        if prev_close > 0:
+            ret = (close / prev_close - 1) * 100
+            groups[m].append(ret)
+
+    bars = []
+    for m in sorted(groups.keys()):
+        vals = groups[m]
+        mean = sum(vals) / len(vals)
+        variance = sum((v - mean) ** 2 for v in vals) / len(vals) if len(vals) > 1 else 0
+        std = variance ** 0.5
+        bars.append({
+            "label": MONTH_LABELS.get(m, str(m)),
+            "key": m,
+            "avg_change": round(mean, 4),
+            "std_change": round(std, 4),
+            "count": len(vals),
+        })
+    return bars
+
+
 def _compute_seasonality_index_data(engine, secid: str, mode: str, iterations: int) -> list[dict]:
     """Сезонность для инструментов из index_data (IMOEX, RTSI, GLDRUB_TOM и т.д.)."""
     from collections import defaultdict
 
+    # Monthly режим → отдельная функция с close-to-close методологией
+    if mode == "monthly":
+        return _compute_monthly_returns_index_data(engine, secid, iterations)
+
+    # Оставшиеся режимы: weekday и monthday считают дневной средний
+    # возврат (корректно для «средний понедельник» и «средний 15-й день месяца»).
     if mode == "weekday":
         group_expr = "EXTRACT(ISODOW FROM trade_date)::int"
         iter_expr = "date_trunc('week', trade_date)"
         extra = "AND EXTRACT(ISODOW FROM trade_date) BETWEEN 1 AND 5"
         labels = WEEKDAY_LABELS
-    elif mode == "monthday":
+    else:  # monthday
         group_expr = "EXTRACT(DAY FROM trade_date)::int"
         iter_expr = "date_trunc('month', trade_date)"
         extra = "AND EXTRACT(ISODOW FROM trade_date) BETWEEN 1 AND 5"
         labels = None
-    else:  # monthly
-        group_expr = "EXTRACT(MONTH FROM trade_date)::int"
-        iter_expr = "EXTRACT(YEAR FROM trade_date)::int"
-        extra = "AND EXTRACT(ISODOW FROM trade_date) BETWEEN 1 AND 5"
-        labels = MONTH_LABELS
 
     with engine.connect() as conn:
         rows = conn.execute(text(f"""
@@ -150,17 +313,34 @@ def _compute_seasonality_index_data(engine, secid: str, mode: str, iterations: i
 
 
 def _compute_seasonality_daily(engine, secid: str, mode: str, iterations: int,
-                                ex_dates: dict[str, float]) -> list[dict]:
+                                ex_dates: dict[str, float],
+                                since_year: int | None = None,
+                                exclude_years: list[int] | None = None) -> list[dict]:
     """
     Вычисляет сезонность для дневных режимов (weekday, monthday, monthly).
 
     При exclude_dividends=True: строит мультипликативную adjusted close серию
     (стандарт Yahoo/CRSP), затем считает returns по adjusted ценам.
     При exclude_dividends=False: raw close-to-close returns.
+
+    Monthly режим направляется в отдельную функцию — правильная методология
+    «месячный возврат» (close конца месяца к close конца пред. месяца).
     """
     source, inst_type = _resolve_source(secid)
 
-    # Для index_data — отдельная логика
+    # Monthly → close-to-close по месяцам (для индексов и акций/фьючерсов)
+    if mode == "monthly":
+        if source == "index_data":
+            return _compute_monthly_returns_index_data(
+                engine, secid, iterations,
+                since_year=since_year, exclude_years=exclude_years,
+            )
+        return _compute_monthly_returns_candles(
+            engine, secid, inst_type, iterations, ex_dates,
+            since_year=since_year, exclude_years=exclude_years,
+        )
+
+    # Для index_data (не monthly) — отдельная логика
     if source == "index_data":
         return _compute_seasonality_index_data(engine, secid, mode, iterations)
 
@@ -180,7 +360,7 @@ def _compute_seasonality_daily(engine, secid: str, mode: str, iterations: int,
         join_cond = "date_trunc('week', c.begin_time::date) = ri.iter_key"
         labels = WEEKDAY_LABELS
 
-    elif mode == "monthday":
+    else:  # monthday — единственный оставшийся режим (monthly обработан выше)
         iteration_cte = f"""
             SELECT DISTINCT date_trunc('month', begin_time::date) AS iter_key
             FROM candles
@@ -193,20 +373,6 @@ def _compute_seasonality_daily(engine, secid: str, mode: str, iterations: int,
         extra_filter = "AND EXTRACT(ISODOW FROM c.begin_time) BETWEEN 1 AND 5"
         join_cond = "date_trunc('month', c.begin_time::date) = ri.iter_key"
         labels = None
-
-    else:  # monthly
-        iteration_cte = f"""
-            SELECT DISTINCT EXTRACT(YEAR FROM begin_time)::int AS iter_key
-            FROM candles
-            WHERE secid = :secid AND interval = 24 AND {type_filter} AND open > 0
-              AND EXTRACT(ISODOW FROM begin_time) BETWEEN 1 AND 5
-            ORDER BY iter_key DESC
-            LIMIT :iterations
-        """
-        group_expr = "EXTRACT(MONTH FROM c.begin_time)::int"
-        extra_filter = "AND EXTRACT(ISODOW FROM c.begin_time) BETWEEN 1 AND 5"
-        join_cond = "EXTRACT(YEAR FROM c.begin_time)::int = ri.iter_key"
-        labels = MONTH_LABELS
 
     # Шаг 1: получаем все свечи за нужный период
     with engine.connect() as conn:
@@ -302,7 +468,13 @@ def _compute_seasonality_daily(engine, secid: str, mode: str, iterations: int,
     return bars
 
 
-def _compute_yearly_seasonality(engine, secid: str, ex_dates: dict[str, float]) -> dict:
+def _compute_yearly_seasonality(
+    engine,
+    secid: str,
+    ex_dates: dict[str, float],
+    since_year: int | None = None,
+    exclude_years: list[int] | None = None,
+) -> dict:
     """
     Годовая сезонность: кумулятивное изменение цены с начала года.
 
@@ -369,81 +541,121 @@ def _compute_yearly_seasonality(engine, secid: str, ex_dates: dict[str, float]) 
     for i, td in enumerate(trade_dates):
         years_data[td.year].append((td, prices[i]))
 
-    # Для каждого года: нумеруем торговые дни 0, 1, 2, ... и нормализуем к 0%
-    # historical_by_td[trading_day_number] = [pct_year1, pct_year2, ...]
-    historical_by_td = defaultdict(list)
+    # Calendar-aligned averaging: каждый год ресемплим к N_BUCKETS точек
+    # (одна точка = доля года). Средняя траектория получается плавной и
+    # end-of-year значение сходится к реальному среднему годовому возврату
+    # (нет «клиффа», т.к. все годы дают по точке в каждый bucket).
+    N_BUCKETS = 252  # типичное число торговых дней в году
+
+    def _resample(values: list[float], n: int) -> list[float]:
+        if len(values) == 0:
+            return []
+        if len(values) == 1:
+            return [values[0]] * n
+        out = []
+        for i in range(n):
+            f = i / (n - 1)
+            src = f * (len(values) - 1)
+            lo = int(src)
+            hi = min(lo + 1, len(values) - 1)
+            frac = src - lo
+            out.append(values[lo] * (1 - frac) + values[hi] * frac)
+        return out
+
+    historical_buckets = [[] for _ in range(N_BUCKETS)]
     current_series = []
     min_year = None
-    max_trading_days = 0
+    exclude_set = set(exclude_years or [])
 
     for yr in sorted(years_data.keys()):
+        # Фильтры: since_year и exclude_years (не применяем к текущему году —
+        # его траектория всегда показывается отдельно)
+        if yr != current_year:
+            if since_year is not None and yr < since_year:
+                continue
+            if yr in exclude_set:
+                continue
+
         points = years_data[yr]
-        if len(points) < 5:
+        if len(points) < 10:
             continue  # Слишком мало данных за год
         first_close = points[0][1]
         if first_close <= 0:
             continue
+        pcts = [(p - first_close) / first_close * 100 for _, p in points]
 
         if yr == current_year:
-            for td_idx, (td, price) in enumerate(points):
-                pct = round((price - first_close) / first_close * 100, 2)
+            for td_idx, (td, _) in enumerate(points):
                 current_series.append({
                     "td": td_idx,
                     "month": td.month,
-                    "pct": pct,
+                    "pct": round(pcts[td_idx], 2),
                     "date": td.isoformat(),
                 })
         else:
             if min_year is None:
                 min_year = yr
-            for td_idx, (td, price) in enumerate(points):
-                pct = (price - first_close) / first_close * 100
-                historical_by_td[td_idx].append(pct)
-            max_trading_days = max(max_trading_days, len(points))
+            resampled = _resample(pcts, N_BUCKETS)
+            for i, v in enumerate(resampled):
+                historical_buckets[i].append(v)
 
-    # Усредняем по номеру торгового дня
-    raw_avg = []
-    for td_idx in range(max_trading_days):
-        vals = historical_by_td.get(td_idx, [])
-        if len(vals) >= 2:  # Минимум 2 года для средней
-            raw_avg.append((td_idx, sum(vals) / len(vals), len(vals)))
+    # Среднее + стандартное отклонение по каждому bucket'у
+    # (все годы участвуют в каждой точке — плавно)
+    MIN_YEARS = 5
+    raw_avg = []  # (bucket, avg, std, count)
+    for i in range(N_BUCKETS):
+        vals = historical_buckets[i]
+        if len(vals) >= MIN_YEARS:
+            mean = sum(vals) / len(vals)
+            variance = sum((v - mean) ** 2 for v in vals) / len(vals)
+            std = variance ** 0.5
+            raw_avg.append((i, mean, std, len(vals)))
 
-    # Лёгкое сглаживание (окно 5 торговых дней)
+    # Лёгкое сглаживание (окно 5 bucket'ов) для avg и std
     SMOOTH = 5
-    smoothed_vals = [v[1] for v in raw_avg]
-    smoothed = []
-    for i in range(len(smoothed_vals)):
-        lo = max(0, i - SMOOTH // 2)
-        hi = min(len(smoothed_vals), i + SMOOTH // 2 + 1)
-        smoothed.append(sum(smoothed_vals[lo:hi]) / (hi - lo))
+    def _smooth(series):
+        out = []
+        for i in range(len(series)):
+            lo = max(0, i - SMOOTH // 2)
+            hi = min(len(series), i + SMOOTH // 2 + 1)
+            out.append(sum(series[lo:hi]) / (hi - lo))
+        return out
+    smoothed = _smooth([v[1] for v in raw_avg])
+    smoothed_std = _smooth([v[2] for v in raw_avg])
 
-    # Маппинг торгового дня → месяц (берём из текущего года, если есть)
-    # Иначе из последнего исторического года
-    ref_year = current_year if current_year in years_data else max(years_data.keys())
-    ref_points = years_data[ref_year]
-    td_to_month = {}
-    for td_idx, (td, _) in enumerate(ref_points):
-        td_to_month[td_idx] = td.month
+    # max_trading_days теперь = число bucket'ов (для X-axis)
+    max_trading_days = N_BUCKETS
+
+    # Bucket → месяц: bucket i представляет долю i/(N-1) года.
+    # Распределяем 12 месяцев пропорционально по N_BUCKETS.
+    def _bucket_to_month(bucket_idx: int) -> int:
+        return max(1, min(12, int(bucket_idx * 12 / N_BUCKETS) + 1))
 
     average_series = []
-    for i, (td_idx, _, count) in enumerate(raw_avg):
-        month = td_to_month.get(td_idx, 1)
+    for i, (td_idx, _, _, count) in enumerate(raw_avg):
+        month = _bucket_to_month(td_idx)
         average_series.append({
             "td": td_idx,
             "month": month,
             "avg_pct": round(smoothed[i], 2),
+            "std_pct": round(smoothed_std[i], 2),
             "years_count": count,
         })
 
     max_hist_year = current_year - 1
     years_range = f"{min_year}-{max_hist_year}" if min_year else ""
 
+    # Обрезаем max_trading_days до того места, где реально есть данные avg
+    # (после MIN_YEARS-фильтра хвост отсекся). Так грей-линия заполняет всю
+    # ширину графика вплоть до декабря, а не обрывается на 80%.
+    effective_max_td = average_series[-1]["td"] + 1 if average_series else max_trading_days
+
     return {
         "average": average_series,
         "current": current_series,
         "years_range": years_range,
         "current_year": current_year,
-        "max_trading_days": max_trading_days,
+        "max_trading_days": effective_max_td,
     }
 
 
@@ -453,16 +665,26 @@ async def get_seasonality(
     mode: str = Query("weekday", description="Режим: intraday, weekday, monthday, monthly"),
     iterations: int = Query(90, ge=1, le=9999, description="Кол-во последних итераций"),
     exclude_dividends: bool = Query(False, description="Убрать дивидендные гэпы"),
+    since_year: int | None = Query(None, description="Учитывать годы ≥ since_year (для monthly)"),
+    exclude_years: str = Query("", description="Исключить года через запятую (для monthly)"),
     user=Depends(get_current_user_optional),
 ):
     if mode not in ("intraday", "weekday", "monthday", "monthly"):
         raise HTTPException(400, "mode must be one of: intraday, weekday, monthday, monthly")
 
+    # Парсинг исключённых годов
+    excl_list: list[int] = []
+    if exclude_years:
+        try:
+            excl_list = [int(y.strip()) for y in exclude_years.split(",") if y.strip()]
+        except ValueError:
+            raise HTTPException(400, "exclude_years must be comma-separated integers")
+
     # Гостевые ограничения
     if mode == "intraday":
         enforce_guest_limits(user, interval=60)
 
-    cache_key = f"seasonality:{secid}:{mode}:iter{iterations}:nodiv{exclude_dividends}"
+    cache_key = f"seasonality:{secid}:{mode}:iter{iterations}:nodiv{exclude_dividends}:sy{since_year}:ex{','.join(map(str,sorted(excl_list)))}"
     cached = get_or_set(cache_key)
     if cached is not None:
         return cached
@@ -524,7 +746,10 @@ async def get_seasonality(
             if ex_dates:
                 log.info(f"  Found {len(ex_dates)} ex-dividend dates for {secid} from DB")
 
-        bars = _compute_seasonality_daily(engine, secid, mode, iterations, ex_dates)
+        bars = _compute_seasonality_daily(
+            engine, secid, mode, iterations, ex_dates,
+            since_year=since_year, exclude_years=excl_list,
+        )
 
     if not bars:
         raise HTTPException(404, f"Нет данных для {secid} в режиме {mode}")
@@ -663,13 +888,27 @@ async def get_price_chart(
 async def get_yearly_seasonality(
     secid: str = Query(..., description="Тикер"),
     exclude_dividends: bool = Query(False, description="Убрать дивидендные гэпы"),
+    since_year: int | None = Query(None, description="Учитывать годы ≥ since_year"),
+    exclude_years: str = Query("", description="Исключить года (через запятую), напр. '2008,2014,2020,2022'"),
     user=Depends(get_current_user_optional),
 ):
     """
     Годовая сезонность: среднее кумулятивное изменение цены с начала года.
-    Две серии: average (все исторические годы) и current (текущий год).
+    Две серии: average (calendar-aligned resample) и current (текущий год).
+
+    Параметры фильтрации:
+    - since_year: брать только годы ≥ этого значения (для «с 2015 г.»)
+    - exclude_years: список годов для исключения (для «без выбросов»)
     """
-    cache_key = f"seasonality_yearly:{secid}:nodiv{exclude_dividends}"
+    # Парсинг списка исключённых годов
+    excl_list: list[int] = []
+    if exclude_years:
+        try:
+            excl_list = [int(y.strip()) for y in exclude_years.split(",") if y.strip()]
+        except ValueError:
+            raise HTTPException(400, "exclude_years must be comma-separated integers")
+
+    cache_key = f"seasonality_yearly:{secid}:nodiv{exclude_dividends}:sy{since_year}:ex{','.join(map(str,sorted(excl_list)))}"
     cached = get_or_set(cache_key)
     if cached is not None:
         return cached
@@ -682,15 +921,22 @@ async def get_yearly_seasonality(
     if exclude_dividends and inst_type == "stock":
         ex_dates = _get_ex_dates_from_db(engine, secid)
 
-    data = _compute_yearly_seasonality(engine, secid, ex_dates)
+    data = _compute_yearly_seasonality(engine, secid, ex_dates,
+                                       since_year=since_year, exclude_years=excl_list)
     if not data:
         raise HTTPException(404, f"Нет данных для {secid}")
 
     duration = time.time() - start_time
     avg_len = len(data.get("average", []))
     cur_len = len(data.get("current", []))
-    log.info(f"GET /seasonality/yearly {secid} avg={avg_len} cur={cur_len} {duration:.2f}s")
+    log.info(f"GET /seasonality/yearly {secid} sy={since_year} ex={excl_list} avg={avg_len} cur={cur_len} {duration:.2f}s")
 
-    result = {"secid": secid, "exclude_dividends": exclude_dividends, **data}
+    result = {
+        "secid": secid,
+        "exclude_dividends": exclude_dividends,
+        "since_year": since_year,
+        "excluded_years": excl_list,
+        **data,
+    }
     get_or_set(cache_key, result, ttl=300)
     return result
