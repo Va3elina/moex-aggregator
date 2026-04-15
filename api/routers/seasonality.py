@@ -245,13 +245,23 @@ def _compute_monthly_returns_candles(
     return bars
 
 
-def _compute_seasonality_index_data(engine, secid: str, mode: str, iterations: int) -> list[dict]:
+def _compute_seasonality_index_data(
+    engine,
+    secid: str,
+    mode: str,
+    iterations: int,
+    since_year: int | None = None,
+    exclude_years: list[int] | None = None,
+) -> list[dict]:
     """Сезонность для инструментов из index_data (IMOEX, RTSI, GLDRUB_TOM и т.д.)."""
     from collections import defaultdict
 
     # Monthly режим → отдельная функция с close-to-close методологией
     if mode == "monthly":
-        return _compute_monthly_returns_index_data(engine, secid, iterations)
+        return _compute_monthly_returns_index_data(
+            engine, secid, iterations,
+            since_year=since_year, exclude_years=exclude_years,
+        )
 
     # Оставшиеся режимы: weekday и monthday считают дневной средний
     # возврат (корректно для «средний понедельник» и «средний 15-й день месяца»).
@@ -294,8 +304,15 @@ def _compute_seasonality_index_data(engine, secid: str, mode: str, iterations: i
     if not rows:
         return []
 
+    # Применяем фильтры since_year / exclude_years по дате каждого возврата
+    exclude_set = set(exclude_years or [])
     groups = defaultdict(list)
     for grp_key, trade_date, close, prev_close in rows:
+        year = trade_date.year
+        if since_year is not None and year < since_year:
+            continue
+        if year in exclude_set:
+            continue
         ret = (float(close) - float(prev_close)) / float(prev_close) * 100
         groups[int(grp_key)].append(ret)
 
@@ -342,7 +359,10 @@ def _compute_seasonality_daily(engine, secid: str, mode: str, iterations: int,
 
     # Для index_data (не monthly) — отдельная логика
     if source == "index_data":
-        return _compute_seasonality_index_data(engine, secid, mode, iterations)
+        return _compute_seasonality_index_data(
+            engine, secid, mode, iterations,
+            since_year=since_year, exclude_years=exclude_years,
+        )
 
     type_filter = f"type = '{inst_type}'" if inst_type else "TRUE"
 
@@ -440,11 +460,17 @@ def _compute_seasonality_daily(engine, secid: str, mode: str, iterations: int,
     else:
         prices = closes
 
-    # Шаг 4: вычисляем returns и группируем
+    # Шаг 4: вычисляем returns и группируем (с фильтрами по годам)
+    exclude_set = set(exclude_years or [])
     groups = defaultdict(list)
     for i in range(1, len(prices)):
         prev_price = prices[i - 1]
         if prev_price <= 0:
+            continue
+        year = trade_dates[i].year
+        if since_year is not None and year < since_year:
+            continue
+        if year in exclude_set:
             continue
         ret = (prices[i] - prev_price) / prev_price * 100
         groups[grp_keys[i]].append(ret)
@@ -881,6 +907,52 @@ async def get_price_chart(
         "data": data,
     }
     get_or_set(cache_key, result, ttl=300)
+    return result
+
+
+@router.get("/available-years")
+async def get_available_years(
+    secid: str = Query(..., description="Тикер"),
+):
+    """
+    Возвращает диапазон и список доступных лет для тикера.
+    Используется фронтом для заполнения dropdown «Сравнить с годом».
+    """
+    cache_key = f"seasonality_years:{secid}"
+    cached = get_or_set(cache_key)
+    if cached is not None:
+        return cached
+
+    engine = get_engine()
+    source, inst_type = _resolve_source(secid)
+
+    with engine.connect() as conn:
+        if source == "index_data":
+            rows = conn.execute(text("""
+                SELECT DISTINCT EXTRACT(YEAR FROM trade_date)::int as y
+                FROM index_data WHERE secid = :secid AND close > 0
+                ORDER BY y
+            """), {"secid": secid}).fetchall()
+        else:
+            type_filter = f"type = '{inst_type}'" if inst_type else "TRUE"
+            rows = conn.execute(text(f"""
+                SELECT DISTINCT EXTRACT(YEAR FROM begin_time)::int as y
+                FROM candles
+                WHERE secid = :secid AND interval = 24 AND {type_filter} AND close > 0
+                ORDER BY y
+            """), {"secid": secid}).fetchall()
+
+    years = [int(r[0]) for r in rows]
+    if not years:
+        raise HTTPException(404, f"Нет данных для {secid}")
+
+    result = {
+        "secid": secid,
+        "min_year": years[0],
+        "max_year": years[-1],
+        "years": years,
+    }
+    get_or_set(cache_key, result, ttl=3600)  # годы меняются медленно — 1 час
     return result
 
 
