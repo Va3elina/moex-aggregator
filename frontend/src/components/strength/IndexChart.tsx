@@ -29,6 +29,9 @@ export default function IndexChart({
     const animRef = useRef<number | null>(null);
     const isFirstRef = useRef(true);
     const prevWidthRef = useRef(0);
+    // CSS-driven reveal на первом рендере (clip-path анимация слева направо).
+    // Match SimpleChart pattern: state триггерит class .chart-reveal на wrapper.
+    const [revealed, setRevealed] = useState(false);
 
     useEffect(() => {
         const el = containerRef.current;
@@ -107,6 +110,10 @@ export default function IndexChart({
             currPtsRef.current = [];
             setAnimLinePath(ptsToPath(target));
             setAnimAreaPath(ptsToArea(target, bottom));
+            // Запускаем CSS-reveal слева направо (как в SimpleChart).
+            // setState внутри useLayoutEffect → синхронный re-render до paint,
+            // первый видимый кадр уже с class и clip-path в стартовом состоянии.
+            if (!revealed) setRevealed(true);
             return;
         }
 
@@ -137,7 +144,7 @@ export default function IndexChart({
 
     return (
         <div ref={containerRef}>
-            <div ref={chartWrapRef}>
+            <div ref={chartWrapRef} className={revealed ? 'chart-reveal' : ''}>
                 {width > 0 && chartData && (
                     <svg ref={svgRef} width={width} height={height} className="block" style={{ backgroundColor: 'var(--bg-secondary)', contain: 'paint' }}>
                         <defs>

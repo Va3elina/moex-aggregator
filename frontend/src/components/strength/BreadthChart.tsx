@@ -85,6 +85,8 @@ export default function BreadthChart({
     const currPtsRef = useRef<{ x: number; y: number }[]>([]);
     const animRef = useRef<number | null>(null);
     const isFirstRef = useRef(true);
+    // CSS-driven reveal на первом рендере (clip-path анимация слева направо)
+    const [revealed, setRevealed] = useState(false);
 
     // Animation for histogram mode
     const [animBars, setAnimBars] = useState<BarDef[]>([]);
@@ -234,6 +236,8 @@ export default function BreadthChart({
 
                 setAnimLinePath(ptsToPath(targetPts));
                 setAnimBars(targetBars);
+                // CSS-reveal на первом рендере (как в SimpleChart/IndexChart)
+                if (!revealed) setRevealed(true);
                 return;
             }
 
@@ -286,7 +290,7 @@ export default function BreadthChart({
 
     return (
         <div ref={containerRef}>
-            <div ref={chartWrapRef}>
+            <div ref={chartWrapRef} className={revealed ? 'chart-reveal' : ''}>
                 {width > 0 && chartData && (
                     <svg ref={svgRef} width={width} height={height} className="block" style={{ backgroundColor: 'var(--bg-secondary)', contain: 'paint' }}>
                         <defs>
