@@ -48,7 +48,9 @@ const CHART_PADDING: ChartPadding = { left: 0, right: 70, top: 10, bottom: 30 } 
 export default function StrengthPage() {
     const { isAuthenticated } = useAuth();
     const [period, setPeriod] = useState<Period>(getDefaultPeriod('1y', isAuthenticated) as Period);
-    const emaPeriod = EMA_PERIOD; // Fixed EMA200
+    // EMA-период: 50 (краткосрок), 100 (среднесрок), 200 (долгосрок, по умолчанию).
+    // Все три доступны в pre-compute (breadth_history таблица).
+    const [emaPeriod, setEmaPeriod] = useState<50 | 100 | 200>(EMA_PERIOD);
     const [chartMode, setChartMode] = useState<ChartMode>('histogram');
     const [showPrice, setShowPrice] = useState(true);
     const [selectedSector, setSelectedSector] = useState('Все');
@@ -260,6 +262,8 @@ export default function StrengthPage() {
                 onUniverseBaseChange={setUniverseBase}
                 currency={currency}
                 onCurrencyChange={setCurrency}
+                emaPeriod={emaPeriod}
+                onEmaPeriodChange={setEmaPeriod}
                 showPrice={showPrice}
                 onShowPriceChange={setShowPrice}
                 stocksAbove={stocksAbove}

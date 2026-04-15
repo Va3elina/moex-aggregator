@@ -5,6 +5,7 @@ import { isPeriodAllowed } from '../../config/accessControl';
 
 type Period = '6m' | '1y' | '2y' | '5y' | 'all';
 type ChartMode = 'line' | 'histogram';
+type EmaPeriod = 50 | 100 | 200;
 
 const PERIOD_LABELS: Record<Period, string> = {
     '6m': '6М',
@@ -13,6 +14,8 @@ const PERIOD_LABELS: Record<Period, string> = {
     '5y': '5Л',
     'all': 'Всё'
 };
+
+const EMA_OPTIONS: EmaPeriod[] = [50, 100, 200];
 
 interface StrengthControlsProps {
     period: Period;
@@ -23,6 +26,8 @@ interface StrengthControlsProps {
     onUniverseBaseChange: (base: 'all' | 'imoex') => void;
     currency: 'rub' | 'usd';
     onCurrencyChange: (currency: 'rub' | 'usd') => void;
+    emaPeriod: EmaPeriod;
+    onEmaPeriodChange: (ema: EmaPeriod) => void;
     showPrice: boolean;
     onShowPriceChange: (show: boolean) => void;
     stocksAbove: number;
@@ -40,6 +45,8 @@ export default function StrengthControls({
     onUniverseBaseChange,
     currency,
     onCurrencyChange,
+    emaPeriod,
+    onEmaPeriodChange,
     showPrice,
     onShowPriceChange,
     stocksAbove,
@@ -135,6 +142,22 @@ export default function StrengthControls({
                 >
                     $
                 </button>
+            </div>
+
+            {/* EMA period selector: 50 / 100 / 200 */}
+            <div className="flex items-center gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
+                {EMA_OPTIONS.map((p) => (
+                    <button
+                        key={p}
+                        onClick={() => onEmaPeriodChange(p)}
+                        className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
+                            emaPeriod === p ? 'btn-control active' : 'text-theme-secondary hover:text-theme-primary'
+                        }`}
+                        title={`EMA ${p} дней — ${p === 50 ? 'краткосрочный' : p === 100 ? 'среднесрочный' : 'долгосрочный'} тренд`}
+                    >
+                        EMA{p}
+                    </button>
+                ))}
             </div>
 
             {/* Show IMOEX */}
