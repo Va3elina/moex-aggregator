@@ -1,6 +1,6 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { ChevronDown, BarChart3, TrendingUp, CalendarDays, Layers } from 'lucide-react';
-import { getSeasonality, getSeasonalityPrice, getSeasonalityYearly } from '../services/api';
+import { getSeasonality, getSeasonalityPrice, getSeasonalityYearly, getSeasonalityYears } from '../services/api';
 import InstrumentSearchModal from '../components/InstrumentSearchModal';
 import SeasonalityHistogram from '../components/seasonality/SeasonalityHistogram';
 import SeasonalityPriceChart from '../components/seasonality/SeasonalityPriceChart';
@@ -19,7 +19,9 @@ const MODE_ITER_HINT: Record<SeasonalityMode, Record<number, string>> = {
   intraday: { 30: '30 торговых дней', 90: '90 торговых дней' },
   weekday: { 30: '30 недель', 90: '90 недель' },
   monthday: { 30: '~2.5 года', 90: '~7.5 лет' },
-  monthly: { 30: '30 лет', 90: '90 лет' },
+  // Для monthly iterations = лет данных, но в БД только ~25 лет доступны.
+  // Поэтому «30 лет» корректно (взяли всё), а «90 лет» вводит в заблуждение.
+  monthly: { 30: 'вся доступная история', 90: 'вся доступная история' },
 };
 
 interface PeriodPreset {
@@ -57,6 +59,31 @@ export default function SeasonalityPage() {
   const [chartType, setChartType] = useState<ChartType>('histogram');
   const [excludeDividends, setExcludeDividends] = useState(false);
   const [priceDays, setPriceDays] = useState(365);
+  // Сравнительные серии для гистограммы (опциональные):
+  // - compareYear: добавляет серию «С [год] г.» (загружается полная история от этого года)
+  // - showNoOutliers: добавляет серию «Без выбросов» (исключает 2008/2014/2020/2022)
+  const [compareYear, setCompareYear] = useState<number | null>(null);
+  const [showNoOutliers, setShowNoOutliers] = useState(false);
+  // Доступные годы (для dropdown «Сравнить с»). Обновляется при смене тикера.
+  const [availableYears, setAvailableYears] = useState<number[]>([]);
+
+  // Фетч доступных лет при смене тикера (и сброс compareYear если он вышел из диапазона)
+  useEffect(() => {
+    if (!selectedStock) return;
+    let cancelled = false;
+    getSeasonalityYears(selectedStock).then((resp) => {
+      if (cancelled) return;
+      setAvailableYears(resp.years);
+      // Если выбранный год больше не доступен для этой бумаги — сбрасываем
+      if (compareYear !== null && !resp.years.includes(compareYear)) {
+        setCompareYear(null);
+      }
+    }).catch(() => {
+      if (!cancelled) setAvailableYears([]);
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedStock]);
 
   // Price navigator
   const [priceNavRange, setPriceNavRange] = useState<[number, number] | null>(null);
@@ -66,10 +93,19 @@ export default function SeasonalityPage() {
   const barsAnimRef = useRef<number | null>(null);
   const prevHeightsRef = useRef<number[]>([]);
   const isFirstBarRender = useRef(true);
+  // Request ID для отбрасывания stale-ответов при быстром переключении режимов/периодов.
+  const seasonalityReqIdRef = useRef(0);
+  // Счётчик успешных фетчей — используется как React key для histogram'а.
+  // Каждый инкремент = remount компонента = свежий цикл анимации (wave from 0).
+  const [histogramFetchId, setHistogramFetchId] = useState(0);
 
   // Data
   const [dataRaw, setDataRaw] = useState<SeasonalityResponse | null>(null);
   const [dataAdj, setDataAdj] = useState<SeasonalityResponse | null>(null);
+  // Мульти-серии [all / since 2015 / no outliers]. Применяются для
+  // monthly/weekday/monthday. intraday не использует (короткая история).
+  // Значения уже учитывают текущий excludeDividends (перефетчим при toggle).
+  const [monthlySeries, setMonthlySeries] = useState<SeasonalityResponse[] | null>(null);
   const [priceData, setPriceData] = useState<PriceChartResponse | null>(null);
   const [yearlyData, setYearlyData] = useState<YearlySeasonalityResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -90,25 +126,51 @@ export default function SeasonalityPage() {
     setIsModalOpen(false);
   };
 
-  // Fetch seasonality data
+  // Fetch seasonality data — все серии параллельно через Promise.all.
+  // Это гарантирует ОДИН re-render после загрузки всех данных (не двойной).
   const fetchSeasonality = useCallback(async () => {
+    const reqId = ++seasonalityReqIdRef.current;
     setLoading(true);
     setError(null);
     try {
-      const raw = await getSeasonality(selectedStock, mode, activePeriod.iterations, false);
-      setDataRaw(raw);
-      if (mode !== 'intraday') {
-        const adj = await getSeasonality(selectedStock, mode, activePeriod.iterations, true);
-        setDataAdj(adj);
-      } else {
-        setDataAdj(null);
+      const FULL_HISTORY_ITERS = 9999;
+      const canCompare = mode !== 'intraday';
+
+      type FetchPromise = ReturnType<typeof getSeasonality>;
+      const promises: FetchPromise[] = [
+        getSeasonality(selectedStock, mode, activePeriod.iterations, excludeDividends),
+      ];
+      if (canCompare && compareYear !== null) {
+        promises.push(getSeasonality(
+          selectedStock, mode, FULL_HISTORY_ITERS, excludeDividends,
+          { sinceYear: compareYear },
+        ));
       }
+      if (canCompare && showNoOutliers) {
+        promises.push(getSeasonality(
+          selectedStock, mode, FULL_HISTORY_ITERS, excludeDividends,
+          { excludeYears: [2008, 2014, 2020, 2022] },
+        ));
+      }
+
+      const results = await Promise.all(promises);
+      // Stale-guard: если во время await пользователь успел переключиться на
+      // другой режим/период, игнорируем этот (уже устаревший) ответ.
+      if (reqId !== seasonalityReqIdRef.current) return;
+
+      const [baseSeries, ...extras] = results;
+      setDataRaw(baseSeries);
+      setDataAdj(baseSeries);
+      setMonthlySeries(extras.length > 0 ? [baseSeries, ...extras] : null);
+      // Инкрементируем счётчик — SeasonalityHistogram получит новый key → remount → анимация
+      setHistogramFetchId(id => id + 1);
     } catch (e: unknown) {
+      if (reqId !== seasonalityReqIdRef.current) return;
       setError(e instanceof Error ? e.message : 'Ошибка загрузки');
     } finally {
-      setLoading(false);
+      if (reqId === seasonalityReqIdRef.current) setLoading(false);
     }
-  }, [selectedStock, mode, activePeriod]);
+  }, [selectedStock, mode, activePeriod, excludeDividends, compareYear, showNoOutliers]);
 
   // Fetch price data
   const fetchPrice = useCallback(async () => {
@@ -147,7 +209,10 @@ export default function SeasonalityPage() {
   }, [chartType, fetchSeasonality, fetchPrice, fetchYearly, selectedStock]);
 
   // Active seasonality data
-  const data = excludeDividends && dataAdj ? dataAdj : dataRaw;
+  // dataRaw уже содержит значения с учётом excludeDividends (перефетч при toggle),
+  // dataAdj больше не используется отдельно — старый fallback оставлен на всякий
+  const data = dataRaw;
+  void dataAdj; // eslint
 
   // Chart dimensions
   const chartHeight = 350;
@@ -157,6 +222,21 @@ export default function SeasonalityPage() {
   const maxAbs = Math.max(...bars.map(b => Math.abs(b.avg_change)), 0.01);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const _rawBars = dataRaw?.bars; void _rawBars;
+
+  // Meta для мульти-серий — подписи и цвета согласованы с fetchSeasonality порядком.
+  // Базовая серия (всегда первая) + опционально since-year + опционально no-outliers.
+  const seriesMeta = useMemo(() => {
+    const meta: { key: string; label: string; color: string }[] = [
+      { key: 'base', label: 'Все годы', color: '#94A3B8' },
+    ];
+    if (compareYear !== null) {
+      meta.push({ key: 'since', label: `С ${compareYear} г.`, color: '#60A5FA' });
+    }
+    if (showNoOutliers) {
+      meta.push({ key: 'no_outliers', label: 'Без выбросов', color: '#A78BFA' });
+    }
+    return meta;
+  }, [compareYear, showNoOutliers]);
 
   // Анимация баров — 3 сценария:
   // 1. Первый рендер (нет prev): easeOutCubic + 600ms stagger + 1200ms — бары «вылетают».
@@ -309,29 +389,33 @@ export default function SeasonalityPage() {
               ))}
             </div>
 
-            {/* Period presets */}
-            <div className="flex rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border-color)' }}>
-              {PERIOD_PRESETS.map(p => (
-                <button
-                  key={p.label}
-                  onClick={() => setActivePeriod(p)}
-                  className="px-2 md:px-4 py-2 md:py-2.5 text-xs md:text-sm font-medium transition-all whitespace-nowrap"
-                  style={{
-                    backgroundColor: activePeriod.label === p.label ? 'var(--accent)' : 'var(--bg-secondary)',
-                    color: activePeriod.label === p.label ? 'var(--bg-primary)' : 'var(--text-secondary)',
-                  }}
-                  title={p.description}
-                >
-                  {p.label} ({p.iterations})
-                </button>
-              ))}
-            </div>
+            {/* Period presets — скрываем для monthly (используется вся доступная
+                история, переключатель бесполезен). Показываем для остальных. */}
+            {mode !== 'monthly' && (
+              <div className="flex rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border-color)' }}>
+                {PERIOD_PRESETS.map(p => (
+                  <button
+                    key={p.label}
+                    onClick={() => setActivePeriod(p)}
+                    className="px-2 md:px-4 py-2 md:py-2.5 text-xs md:text-sm font-medium transition-all whitespace-nowrap"
+                    style={{
+                      backgroundColor: activePeriod.label === p.label ? 'var(--accent)' : 'var(--bg-secondary)',
+                      color: activePeriod.label === p.label ? 'var(--bg-primary)' : 'var(--text-secondary)',
+                    }}
+                    title={p.description}
+                  >
+                    {p.label} ({p.iterations})
+                  </button>
+                ))}
+              </div>
+            )}
 
             {/* Dividend toggle — на одной линии с пресетами.
                 Не показываем в intraday (там дивиденды не применимы). */}
             {showDivToggle && (
               <button
                 onClick={() => setExcludeDividends(!excludeDividends)}
+                title="Пересчитать цены с учётом реинвестирования дивидендов (Yahoo/CRSP adjusted close). Ортогонально к «Без выбросов»."
                 className="flex items-center gap-2 px-2 md:px-4 py-2 md:py-2.5 rounded-xl border text-xs md:text-sm font-medium transition-all whitespace-nowrap"
                 style={{
                   backgroundColor: excludeDividends ? 'rgba(34, 197, 94, 0.15)' : 'var(--bg-secondary)',
@@ -342,6 +426,58 @@ export default function SeasonalityPage() {
                 <span className={`inline-block w-3 h-3 rounded-full ${excludeDividends ? 'bg-green-500' : 'bg-gray-500'}`} />
                 Без дивидендных гэпов
               </button>
+            )}
+
+            {/* Toggle «Без выбросов» — показывается ПЕРЕД «Сравнить с» */}
+            {mode !== 'intraday' && (
+              <button
+                onClick={() => setShowNoOutliers(!showNoOutliers)}
+                title="Добавить сравнительную серию с исключёнными годами крупных кризисов: 2008 (финкризис), 2014 (санкции/рубль), 2020 (COVID), 2022 (мобилизация). Исключения жёстко зашиты и ортогональны к «Без дивидендных гэпов»."
+                className="flex items-center gap-2 px-2 md:px-4 py-2 md:py-2.5 rounded-xl border text-xs md:text-sm font-medium transition-all whitespace-nowrap"
+                style={{
+                  backgroundColor: showNoOutliers ? 'rgba(167, 139, 250, 0.15)' : 'var(--bg-secondary)',
+                  borderColor: showNoOutliers ? 'rgba(167, 139, 250, 0.5)' : 'var(--border-color)',
+                  color: showNoOutliers ? '#A78BFA' : 'var(--text-secondary)',
+                }}
+              >
+                <span className={`inline-block w-3 h-3 rounded-full ${showNoOutliers ? '' : 'bg-gray-500'}`}
+                  style={showNoOutliers ? { backgroundColor: '#A78BFA' } : {}} />
+                Без выбросов
+              </button>
+            )}
+
+            {/* Сравнить с — button-styled: цветной кружок + текст, overlay'енный
+                невидимым select'ом. Клик на весь контрол открывает dropdown. */}
+            {mode !== 'intraday' && availableYears.length > 1 && (
+              <div className="relative inline-block">
+                <div
+                  title={compareYear !== null
+                    ? `Сравниваем с ${compareYear}–${new Date().getFullYear()}`
+                    : 'Добавить сравнительную серию: средние значения по годам от выбранного и до сегодня'}
+                  className="flex items-center gap-2 px-2 md:px-4 py-2 md:py-2.5 rounded-xl border text-xs md:text-sm font-medium transition-all whitespace-nowrap cursor-pointer"
+                  style={{
+                    backgroundColor: compareYear !== null ? 'rgba(96, 165, 250, 0.15)' : 'var(--bg-secondary)',
+                    borderColor: compareYear !== null ? 'rgba(96, 165, 250, 0.5)' : 'var(--border-color)',
+                    color: compareYear !== null ? '#60A5FA' : 'var(--text-secondary)',
+                  }}
+                >
+                  <span className={`inline-block w-3 h-3 rounded-full ${compareYear === null ? 'bg-gray-500' : ''}`}
+                    style={compareYear !== null ? { backgroundColor: '#60A5FA' } : {}} />
+                  {compareYear !== null ? `Сравнение: с ${compareYear} г.` : 'Сравнить с годом'}
+                  <ChevronDown size={14} className="opacity-60" />
+                </div>
+                <select
+                  value={compareYear ?? ''}
+                  onChange={(e) => setCompareYear(e.target.value ? Number(e.target.value) : null)}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  aria-label="Год сравнения"
+                >
+                  <option value="">— не сравнивать —</option>
+                  {availableYears.slice(1).map(y => (
+                    <option key={y} value={y}>С {y} г.</option>
+                  ))}
+                </select>
+              </div>
             )}
           </>
         )}
@@ -432,6 +568,8 @@ export default function SeasonalityPage() {
           </div>
         ) : chartType === 'histogram' ? (
           <SeasonalityHistogram
+            // key меняется после каждого успешного fetch'а → remount → новая анимация
+            key={histogramFetchId}
             bars={bars}
             // Если длина animatedHeights не совпадает с bars (переходный кадр
             // после смены режима: новые bars пришли, а rAF ещё не запустился),
@@ -440,6 +578,9 @@ export default function SeasonalityPage() {
             maxAbs={maxAbs}
             tooltip={tooltip}
             setTooltip={setTooltip}
+            // Мульти-серии активны только если включены compareYear или noOutliers
+            monthlySeries={mode !== 'intraday' ? monthlySeries : null}
+            seriesMeta={seriesMeta}
           />
         ) : chartType === 'price' ? (
           priceData ? (

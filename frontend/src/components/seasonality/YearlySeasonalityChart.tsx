@@ -8,6 +8,8 @@ interface TooltipState {
   yearlyAvgPct?: number;
   yearlyCurPct?: number;
   yearlyCurDate?: string;
+  // td ближайшей точки — для снэпа крестовины к фактическим данным (а не к мыши)
+  yearlyTd?: number;
 }
 
 interface YearlySeasonalityChartProps {
@@ -61,6 +63,17 @@ export default function YearlySeasonalityChart({
     }
   }
 
+  // Вспомогательная функция: приблизительный месяц для заданного td
+  // (если текущий год ещё не дошёл до этого td, показываем ≈ месяц).
+  const getApproxMonth = (td: number): string => {
+    let match = monthLabels[avg[0]?.month || 1];
+    for (const p of avg) {
+      if (p.td <= td) match = monthLabels[p.month] || match;
+      else break;
+    }
+    return match;
+  };
+
   // SVG paths
   const avgPath = avg.map((p, i) =>
     `${i === 0 ? 'M' : 'L'} ${scX(p.td) * 1000} ${scY(p.avg_pct) * 500}`
@@ -101,32 +114,51 @@ export default function YearlySeasonalityChart({
       <div className="relative cursor-crosshair" style={{ aspectRatio: '2.4', minHeight: 280, maxHeight: 550 }}
         onMouseMove={(e) => {
           const rect = e.currentTarget.getBoundingClientRect();
-          const x = e.clientX - rect.left;
+          const mouseX = e.clientX - rect.left;
           const chartW = rect.width - PL - PR;
-          const frac = (x - PL) / chartW;
+          const frac = (mouseX - PL) / chartW;
           if (frac < 0 || frac > 1) { setTooltip(null); return; }
           const targetTD = Math.round(frac * maxTD);
 
-          // Find closest average point
+          // Ближайшая точка в avg (есть всегда на любом td в диапазоне)
           let closestAvg = avg[0];
           for (const p of avg) {
             if (Math.abs(p.td - targetTD) < Math.abs(closestAvg.td - targetTD)) closestAvg = p;
           }
-          // Find closest current point
-          let closestCur = cur.length > 0 ? cur[0] : null;
+          // Ближайшая точка в cur. Правило: 2026 показываем ТОЛЬКО если
+          // курсор не вышел за последнюю имеющуюся точку текущего года.
+          // Ранее был допуск ±5 td — это показывало "последнее значение 2026"
+          // даже ПРАВЕЕ конца жёлтой линии, что выглядело как экстраполяция
+          // в будущее.
+          let closestCur = null as (typeof cur[number] | null);
           if (cur.length > 0) {
-            for (const p of cur) {
-              if (Math.abs(p.td - targetTD) < Math.abs(closestCur!.td - targetTD)) closestCur = p;
+            const lastCurTd = cur[cur.length - 1].td;
+            if (targetTD <= lastCurTd) {
+              let candidate = cur[0];
+              for (const p of cur) {
+                if (Math.abs(p.td - targetTD) < Math.abs(candidate.td - targetTD)) candidate = p;
+              }
+              closestCur = candidate;
             }
-            if (closestCur && Math.abs(closestCur.td - targetTD) > 5) closestCur = null;
           }
 
+          // Снэп x-координаты крестовины к ближайшей точке данных.
+          // Это устраняет визуальный рассинхрон между положением крестовины
+          // и значениями в тултипе.
+          const snappedTD = closestAvg.td;
+          const snappedX = PL + (snappedTD / maxTD) * chartW;
+
+          // Дата для метки: реальная из cur, иначе ≈ месяц + год из контекста
+          const displayDate = closestCur?.date
+            ?? `≈ ${getApproxMonth(snappedTD)} ${yearlyData.current_year}`;
+
           setTooltip({
-            x,
+            x: snappedX,
             y: e.clientY - rect.top,
             yearlyAvgPct: closestAvg.avg_pct,
             yearlyCurPct: closestCur?.pct,
-            yearlyCurDate: closestCur?.date,
+            yearlyCurDate: displayDate,
+            yearlyTd: snappedTD,
           });
         }}
         onMouseLeave={() => setTooltip(null)}
@@ -134,10 +166,10 @@ export default function YearlySeasonalityChart({
         {/* Chart area */}
         <div className="absolute" style={{ left: PL, right: PR, top: PT, bottom: PB }}>
           <svg viewBox="0 0 1000 500" preserveAspectRatio="none" width="100%" height="100%">
-            {/* Grid + zero + month separators */}
+            {/* Grid + month separators (без zero line — обе серии стартуют
+                от 0%, нулевая линия создаёт скученность с -4.5%/+2.8%) */}
             <ChartGrid
               yTicks={yTicks}
-              zeroPct={scY(0) * 100}
               xSeparators={monthPositions.slice(1).map(mp => scX(mp.td) * 100)}
             />
             {/* Average line - grey dashed */}
@@ -150,12 +182,10 @@ export default function YearlySeasonalityChart({
                 vectorEffect="non-scaling-stroke"
                 strokeLinecap="round" strokeLinejoin="round" />
             )}
-            {/* Crosshair */}
-            {tooltip && (() => {
-              const containerW = document.querySelector('.cursor-crosshair')?.getBoundingClientRect().width ?? 800;
-              const svgX = Math.max(0, Math.min(1000, ((tooltip.x - PL) / (containerW - PL - PR)) * 1000));
-              return <ChartCrosshair x={svgX} />;
-            })()}
+            {/* Crosshair — используем уже снэпнутый td напрямую, без DOM-измерений */}
+            {tooltip?.yearlyTd !== undefined && (
+              <ChartCrosshair x={scX(tooltip.yearlyTd) * 1000} />
+            )}
           </svg>
         </div>
 

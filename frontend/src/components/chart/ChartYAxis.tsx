@@ -42,10 +42,13 @@ export default function ChartYAxis({
     <>
       {ticks.map((t, i) => {
         const chartAreaH = `calc(100% - ${padTop + padBottom}px)`;
-        // Прижимаем к графику: 12px от края SVG-области (как SimpleChart)
+        // Располагаем метку в padding-зоне ВНЕ графика:
+        // - Right Y-axis: левый край метки на 12px правее правого края графика,
+        //   ширина = padRight - 12 (заполняет padding-зону), text-align: left.
+        // - Left Y-axis: симметрично — правый край на 12px левее графика.
         const posStyle = side === 'right'
-          ? { right: padRight - 12, textAlign: 'left' as const }
-          : { left: padLeft - 12, textAlign: 'right' as const };
+          ? { right: 0, width: `${padRight - 12}px`, textAlign: 'left' as const }
+          : { left: 0, width: `${padLeft - 12}px`, textAlign: 'right' as const };
 
         return (
           <div

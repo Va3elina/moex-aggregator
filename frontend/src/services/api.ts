@@ -604,6 +604,8 @@ export interface SeasonalityBar {
   label: string;
   key: number;
   avg_change: number;
+  /** Стандартное отклонение по годам. Присутствует в monthly режиме. */
+  std_change?: number;
   count: number;
 }
 
@@ -618,11 +620,19 @@ export interface SeasonalityResponse {
 
 export type SeasonalityMode = 'intraday' | 'weekday' | 'monthday' | 'monthly';
 
+export interface SeasonalityFilters {
+  /** Учитывать годы ≥ значения (для «с 2015 г.») */
+  sinceYear?: number;
+  /** Исключить конкретные годы (для «без выбросов») */
+  excludeYears?: number[];
+}
+
 export async function getSeasonality(
   secid: string,
   mode: SeasonalityMode = 'weekday',
   iterations: number = 90,
   excludeDividends: boolean = false,
+  filters?: SeasonalityFilters,
 ): Promise<SeasonalityResponse> {
   const params = new URLSearchParams({
     secid,
@@ -630,6 +640,8 @@ export async function getSeasonality(
     iterations: iterations.toString(),
     exclude_dividends: excludeDividends.toString(),
   });
+  if (filters?.sinceYear) params.set('since_year', filters.sinceYear.toString());
+  if (filters?.excludeYears?.length) params.set('exclude_years', filters.excludeYears.join(','));
   const response = await apiFetch(`${API_BASE}/api/seasonality?${params}`);
   if (!response.ok) throw new Error('Failed to fetch seasonality');
   return response.json();
@@ -667,9 +679,11 @@ export async function getSeasonalityPrice(
 // --- Yearly seasonality ---
 
 export interface YearlySeasonalityPoint {
-  td: number;  // trading day number (0-based)
+  td: number;  // bucket index (0..251, calendar-aligned)
   month: number;
   avg_pct: number;
+  /** Стандартное отклонение по годам в этом bucket'е (для ±1σ полосы) */
+  std_pct?: number;
   years_count: number;
 }
 
@@ -683,6 +697,8 @@ export interface YearlyCurrentPoint {
 export interface YearlySeasonalityResponse {
   secid: string;
   exclude_dividends: boolean;
+  since_year?: number | null;
+  excluded_years?: number[];
   average: YearlySeasonalityPoint[];
   current: YearlyCurrentPoint[];
   years_range: string;
@@ -690,14 +706,30 @@ export interface YearlySeasonalityResponse {
   max_trading_days: number;
 }
 
+export interface AvailableYearsResponse {
+  secid: string;
+  min_year: number;
+  max_year: number;
+  years: number[];
+}
+
+export async function getSeasonalityYears(secid: string): Promise<AvailableYearsResponse> {
+  const response = await apiFetch(`${API_BASE}/api/seasonality/available-years?secid=${encodeURIComponent(secid)}`);
+  if (!response.ok) throw new Error('Failed to fetch available years');
+  return response.json();
+}
+
 export async function getSeasonalityYearly(
   secid: string,
   excludeDividends: boolean = false,
+  filters?: SeasonalityFilters,
 ): Promise<YearlySeasonalityResponse> {
   const params = new URLSearchParams({
     secid,
     exclude_dividends: excludeDividends.toString(),
   });
+  if (filters?.sinceYear) params.set('since_year', filters.sinceYear.toString());
+  if (filters?.excludeYears?.length) params.set('exclude_years', filters.excludeYears.join(','));
   const response = await apiFetch(`${API_BASE}/api/seasonality/yearly?${params}`);
   if (!response.ok) throw new Error('Failed to fetch yearly seasonality');
   return response.json();

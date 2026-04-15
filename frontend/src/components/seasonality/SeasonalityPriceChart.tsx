@@ -1,8 +1,9 @@
-import { useRef, useMemo } from 'react';
+import { useRef, useMemo, useState, useLayoutEffect } from 'react';
 import ChartNavigator from '../ChartNavigator';
 import type { PriceChartResponse } from '../../services/api';
-import { CHART_COLORS, CROSSHAIR, PADDING, cssVar } from '../../config/chartTheme';
+import { CHART_COLORS, CROSSHAIR, PADDING, cssVar, ANIMATION } from '../../config/chartTheme';
 import { ChartGrid, ChartCrosshair, ChartDot, ChartDateLabel, ChartTooltip, TooltipRow, ChartYAxis, ChartXAxis, ChartMarker } from '../chart';
+import { easeOutCubic, morphPts, ptsToPath } from '../../utils/chartAnimation';
 
 interface TooltipState {
   x: number;
@@ -30,6 +31,19 @@ export default function SeasonalityPriceChart({
   chartHeight,
 }: SeasonalityPriceChartProps) {
   const divHoverRef = useRef(false);
+
+  // Анимация путей: reveal на первом рендере, морф при смене периода,
+  // мгновенное обновление при drag'е навигатора (priceData === prev).
+  const [revealed, setRevealed] = useState(false);
+  const [animRawPath, setAnimRawPath] = useState('');
+  const [animAdjPath, setAnimAdjPath] = useState('');
+  const prevRawRef = useRef<{ x: number; y: number }[]>([]);
+  const prevAdjRef = useRef<{ x: number; y: number }[]>([]);
+  const currRawRef = useRef<{ x: number; y: number }[]>([]);
+  const currAdjRef = useRef<{ x: number; y: number }[]>([]);
+  const animRef = useRef<number | null>(null);
+  const isFirstRef = useRef(true);
+  const prevPriceDataRef = useRef(priceData);
 
   const allPricePoints = priceData.data;
   const priceDividends = priceData.dividends;
@@ -65,6 +79,74 @@ export default function SeasonalityPriceChart({
   const hasAdj = pricePoints.some(p => p.close !== p.adjusted);
   const scX = (i: number) => (i / Math.max(pricePoints.length - 1, 1));
   const scY = (v: number) => 1 - (v - priceMinMax.min) / (priceMinMax.max - priceMinMax.min);
+
+  // Таргет в координатах viewBox (0..1000, 0..500) для обоих линий.
+  const targetRaw = useMemo(
+    () => pricePoints.map((p, i) => ({ x: scX(i) * 1000, y: scY(p.close) * 500 })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pricePoints, priceMinMax]
+  );
+  const targetAdj = useMemo(
+    () => pricePoints.map((p, i) => ({ x: scX(i) * 1000, y: scY(p.adjusted) * 500 })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pricePoints, priceMinMax]
+  );
+
+  // Анимация линий — морф на ЛЮБЫЕ изменения (период, тикер, навигатор):
+  // 1) Первый рендер → CSS-reveal + instant set paths
+  // 2) Смена priceData (период / тикер) → длинный морф 700ms (заметная смена)
+  // 3) Только диапазон навигатора изменился → короткий морф 220ms (drag-friendly)
+  useLayoutEffect(() => {
+    if (!targetRaw.length) { setAnimRawPath(''); setAnimAdjPath(''); return; }
+    if (animRef.current) cancelAnimationFrame(animRef.current);
+
+    const priceDataChanged = prevPriceDataRef.current !== priceData;
+    prevPriceDataRef.current = priceData;
+
+    // Первый рендер: мгновенно + запуск CSS-reveal
+    if (isFirstRef.current || prevRawRef.current.length === 0) {
+      isFirstRef.current = false;
+      prevRawRef.current = targetRaw;
+      prevAdjRef.current = targetAdj;
+      currRawRef.current = [];
+      currAdjRef.current = [];
+      setAnimRawPath(ptsToPath(targetRaw));
+      setAnimAdjPath(ptsToPath(targetAdj));
+      if (!revealed) setRevealed(true);
+      return;
+    }
+
+    // Морф: длинная анимация для смены priceData (используем общую
+    // ANIMATION.duration как в SimpleChart / OI / Buffett — единый «ритм»
+    // через все графики проекта), короткая для drag навигатора.
+    const fromRaw = currRawRef.current.length > 0 ? currRawRef.current : prevRawRef.current;
+    const fromAdj = currAdjRef.current.length > 0 ? currAdjRef.current : prevAdjRef.current;
+    const DURATION = priceDataChanged ? ANIMATION.duration : 220;
+    let start: number | null = null;
+
+    const animate = (ts: number) => {
+      if (!start) start = ts;
+      const t = easeOutCubic(Math.min((ts - start) / DURATION, 1));
+      const interpRaw = morphPts(fromRaw, targetRaw, t);
+      const interpAdj = morphPts(fromAdj, targetAdj, t);
+      currRawRef.current = interpRaw;
+      currAdjRef.current = interpAdj;
+      setAnimRawPath(ptsToPath(interpRaw));
+      setAnimAdjPath(ptsToPath(interpAdj));
+      if (t < 1) {
+        animRef.current = requestAnimationFrame(animate);
+      } else {
+        prevRawRef.current = targetRaw;
+        prevAdjRef.current = targetAdj;
+        currRawRef.current = [];
+        currAdjRef.current = [];
+      }
+    };
+    animRef.current = requestAnimationFrame(animate);
+
+    return () => { if (animRef.current) cancelAnimationFrame(animRef.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetRaw, targetAdj, priceData]);
   const yTicks = Array.from({ length: 5 }, (_, i) => {
     const val = priceMinMax.min + ((priceMinMax.max - priceMinMax.min) * i) / 4;
     return { value: val, pct: scY(val) * 100 };
@@ -107,8 +189,8 @@ export default function SeasonalityPriceChart({
         <div style={{ height: 22 }} />
       )}
 
-      {/* Chart area */}
-      <div className="relative cursor-crosshair" style={{ aspectRatio: '2.4', minHeight: 280, maxHeight: 550 }}
+      {/* Chart area — chart-reveal класс активируется после первого рендера */}
+      <div className={`relative cursor-crosshair ${revealed ? 'chart-reveal' : ''}`} style={{ aspectRatio: '2.4', minHeight: 280, maxHeight: 550 }}
         onMouseMove={(e) => {
           if (divHoverRef.current) return;
           const rect = e.currentTarget.getBoundingClientRect();
@@ -132,15 +214,11 @@ export default function SeasonalityPriceChart({
           <svg viewBox={`0 0 1000 500`} preserveAspectRatio="none" width="100%" height="100%">
             {/* Grid */}
             <ChartGrid yTicks={yTicks} />
-            {/* Raw price */}
-            <path d={pricePoints.map((p, i) =>
-              `${i === 0 ? 'M' : 'L'} ${scX(i) * 1000} ${scY(p.close) * 500}`
-            ).join(' ')} fill="none" stroke={CHART_COLORS.accent} strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" />
-            {/* Adjusted */}
+            {/* Raw price — путь анимируется через animRawPath */}
+            <path d={animRawPath} fill="none" stroke={CHART_COLORS.accent} strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" />
+            {/* Adjusted — dashed линия */}
             {hasAdj && (
-              <path d={pricePoints.map((p, i) =>
-                `${i === 0 ? 'M' : 'L'} ${scX(i) * 1000} ${scY(p.adjusted) * 500}`
-              ).join(' ')} fill="none" stroke={CHART_COLORS.adjusted} strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="6,3" />
+              <path d={animAdjPath} fill="none" stroke={CHART_COLORS.adjusted} strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="6,3" />
             )}
             {/* Crosshair + Dot */}
             {tooltip?.priceDate && (() => {
