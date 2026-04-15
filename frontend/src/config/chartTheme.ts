@@ -100,10 +100,10 @@ export const ANIMATION = {
 // ─── Tooltip CSS-классы (Tailwind) ───
 
 export const TOOLTIP = {
-  containerClass: 'bg-theme-tertiary/95 backdrop-blur-sm rounded-lg border border-theme shadow-xl py-1.5 px-3',
+  containerClass: 'bg-theme-tertiary/95 backdrop-blur-sm rounded-lg border border-theme shadow-xl py-1.5 px-3 tabular-nums',
   labelClass: 'text-[11px] text-theme-secondary',
-  valueClass: 'text-xs font-semibold',
-  dateClass: 'text-[11px] text-theme-secondary bg-theme-tertiary/90 backdrop-blur-sm px-2 py-0.5 rounded-md border border-theme',
+  valueClass: 'text-xs font-semibold tabular-nums',
+  dateClass: 'text-[11px] text-theme-secondary bg-theme-tertiary/90 backdrop-blur-sm px-2 py-0.5 rounded-md border border-theme tabular-nums',
   dotSize: 'w-2 h-2 rounded-full',
 } as const;
 

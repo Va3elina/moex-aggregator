@@ -376,12 +376,26 @@ body {
   background-color: var(--bg-primary);
   color: var(--text-primary);
   overflow-x: hidden;
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  /* Цифры одинаковой ширины — тултипы не «дёргаются» при обновлении */
+  font-variant-numeric: tabular-nums;
+  /* Стабильный font-feature-settings для кросс-браузерности */
+  font-feature-settings: 'tnum' 1, 'cv11' 1;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* Предотвращаем чёрные вспышки при перерендере */
 #root {
   background-color: var(--bg-primary);
   min-height: 100vh;
+}
+
+/* SVG-текст (оси, метки) — моноширинные цифры для стабильной ширины лейблов
+   между браузерами (SF Pro на Mac / Segoe UI на Windows рендерят цифры по-разному) */
+svg text {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
 }
 
 /* ============================================
