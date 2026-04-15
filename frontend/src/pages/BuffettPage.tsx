@@ -3,10 +3,9 @@ import { Scale, Lock } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
     getBuffettCapGdp,
-    getBuffettMcftrM2,
     getBuffettCapM2,
     type BuffettCapGdpResponse,
-    type BuffettMcftrM2Response,
+    type BuffettRatioResponse,
     type BuffettPeriod,
 } from '../services/api';
 import SimpleChart from '../components/SimpleChart';
@@ -14,7 +13,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { isPeriodAllowed } from '../config/accessControl';
 import { useRealtimeData } from '../hooks/useRealtimeData';
 
-type ViewMode = 'cap-gdp' | 'mcftr-m2' | 'cap-m2';
+type ViewMode = 'cap-gdp' | 'cap-m2';
 
 const PERIOD_LABELS: Partial<Record<BuffettPeriod, string>> = {
     '5y': '5Л',
@@ -34,8 +33,7 @@ export default function BuffettPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [capGdpData, setCapGdpData] = useState<BuffettCapGdpResponse | null>(null);
-    const [mcftrM2Data, setMcftrM2Data] = useState<BuffettMcftrM2Response | null>(null);
-    const [capM2Data, setCapM2Data] = useState<BuffettMcftrM2Response | null>(null);
+    const [capM2Data, setCapM2Data] = useState<BuffettRatioResponse | null>(null);
 
     // Загрузка данных
     const loadData = useCallback(async () => {
@@ -45,9 +43,6 @@ export default function BuffettPage() {
             if (viewMode === 'cap-gdp') {
                 const result = await getBuffettCapGdp(period, smooth, timeframe);
                 setCapGdpData(result);
-            } else if (viewMode === 'mcftr-m2') {
-                const result = await getBuffettMcftrM2(period, smooth);
-                setMcftrM2Data(result);
             } else {
                 const result = await getBuffettCapM2(period, smooth, timeframe);
                 setCapM2Data(result);
@@ -108,21 +103,6 @@ export default function BuffettPage() {
         return { primary, secondary };
     }, [capGdpData, forecastTarget]);
 
-    // Подготовка данных для SimpleChart: MCFTR/M2
-    const mcftrM2ChartData = useMemo(() => {
-        if (!mcftrM2Data?.data?.length) return { primary: [], secondary: [] };
-        return {
-            primary: mcftrM2Data.data.map(d => ({
-                time: d.date,
-                value: d.ratio,
-            })),
-            secondary: mcftrM2Data.data.map(d => ({
-                time: d.date,
-                value: d.mcftr,
-            })),
-        };
-    }, [mcftrM2Data]);
-
     // Подготовка данных для SimpleChart: Cap/M2
     const capM2ChartData = useMemo(() => {
         if (!capM2Data?.data?.length) return { primary: [], secondary: [] };
@@ -163,15 +143,6 @@ export default function BuffettPage() {
                             }`}
                     >
                         Капитализация / ВВП
-                    </button>
-                    <button
-                        onClick={() => setViewMode('mcftr-m2')}
-                        className={`px-2 md:px-3 py-1 md:py-1.5 text-xs md:text-sm font-medium rounded-lg transition-colors duration-200 ${viewMode === 'mcftr-m2'
-                            ? 'btn-control active'
-                            : 'text-theme-secondary hover:text-theme-primary'
-                            }`}
-                    >
-                        MCFTR / M2
                     </button>
                     <button
                         onClick={() => setViewMode('cap-m2')}
@@ -275,25 +246,6 @@ export default function BuffettPage() {
                     showNavigator={true}
                     hideTime={true}
                 />
-            ) : viewMode === 'mcftr-m2' ? (
-                <SimpleChart
-                    data={mcftrM2ChartData.primary}
-                    secondaryData={mcftrM2ChartData.secondary}
-                    height={450}
-                    primaryColor="#C8FF2E"
-                    secondaryColor="#f59e0b"
-                    showSecondary={true}
-                    formatValue={(v) => v.toFixed(4)}
-                    formatSecondaryValue={(v) => v.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
-                    primaryLabel="MCFTR / M2"
-                    secondaryLabel="MCFTR"
-                    loading={loading}
-                    showValueHeader={false}
-                    legendPosition="top"
-                    showDownloadButton={false}
-                    showNavigator={true}
-                    hideTime={true}
-                />
             ) : (
                 <SimpleChart
                     data={capM2ChartData.primary}
@@ -320,19 +272,22 @@ export default function BuffettPage() {
             {/* Описание */}
             <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="bg-theme-secondary rounded-2xl p-5 border border-theme">
-                    <h3 className="font-semibold mb-2 text-[#f59e0b]">Капитализация / ВВП</h3>
+                    <h3 className="font-semibold mb-2 text-[#f59e0b]">Капитализация / ВВП — оценка vs экономика</h3>
                     <p className="text-sm text-theme-secondary leading-relaxed">
-                        Классический индикатор Баффетта: отношение рыночной капитализации к ВВП.
-                        Значения ниже 40% указывают на недооценённость рынка,
-                        40-70% — норма, выше 70% — возможная переоценка.
+                        Классический индикатор Баффетта: рыночная капитализация к ВВП.
+                        Отвечает на вопрос «дорог ли рынок относительно того, что реально производит экономика».
+                        Для России: ниже 40% — недооценка, 40–70% — норма, выше 70% — возможная переоценка.
+                        Знаменатель (ВВП) движется медленно, поэтому индикатор отражает долгосрочную картину.
                     </p>
                 </div>
                 <div className="bg-theme-secondary rounded-2xl p-5 border border-theme">
-                    <h3 className="font-semibold mb-2 text-[#f59e0b]">MCFTR / M2</h3>
+                    <h3 className="font-semibold mb-2 text-[#f59e0b]">Капитализация / M2 — оценка vs ликвидность</h3>
                     <p className="text-sm text-theme-secondary leading-relaxed">
-                        Отношение индекса полной доходности (MCFTR) к денежной массе M2.
-                        Показывает, насколько фондовый рынок растёт относительно объёма денег в экономике.
-                        Снижение может указывать на отток капитала из акций.
+                        Рыночная капитализация к денежной массе M2 (наличные + депозиты).
+                        Отвечает на другой вопрос: «сколько в стране денег относительно рынка акций».
+                        Низкие значения = денег много, но они не идут в акции (сидят в депозитах/ОФЗ).
+                        Знаменатель чувствителен к действиям ЦБ и бюджета — индикатор быстрее реагирует
+                        на монетарные условия, чем Cap/ВВП.
                     </p>
                 </div>
             </div>

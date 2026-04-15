@@ -558,16 +558,15 @@ export interface BuffettCapGdpResponse {
   period: string;
 }
 
-export interface BuffettMcftrM2Point {
+export interface BuffettRatioPoint {
   date: string;
   ratio: number;
-  mcftr: number;
   m2: number;
   cap?: number;
 }
 
-export interface BuffettMcftrM2Response {
-  data: BuffettMcftrM2Point[];
+export interface BuffettRatioResponse {
+  data: BuffettRatioPoint[];
   period: string;
 }
 
@@ -588,21 +587,11 @@ export async function getBuffettCapGdp(
   return response.json();
 }
 
-export async function getBuffettMcftrM2(
-  period: BuffettPeriod = '3y',
-  smooth: boolean = true
-): Promise<BuffettMcftrM2Response> {
-  const params = new URLSearchParams({ period, smooth: smooth.toString() });
-  const response = await apiFetch(`${API_BASE}/api/buffett/mcftr-m2?${params}`);
-  if (!response.ok) throw new Error('Failed to fetch Buffett mcftr/m2');
-  return response.json();
-}
-
 export async function getBuffettCapM2(
   period: BuffettPeriod = '3y',
   smooth: boolean = true,
   timeframe: string = '1m'
-): Promise<BuffettMcftrM2Response> {
+): Promise<BuffettRatioResponse> {
   const params = new URLSearchParams({ period, smooth: smooth.toString(), timeframe });
   const response = await apiFetch(`${API_BASE}/api/buffett/cap-m2?${params}`);
   if (!response.ok) throw new Error('Failed to fetch Buffett cap/m2');
