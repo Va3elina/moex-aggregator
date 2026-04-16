@@ -12,11 +12,10 @@ interface Instrument {
 
 const CATEGORY_FILTERS = [
   { key: 'all', label: 'Все' },
+  { key: 'Акции', label: 'Акции' },
   { key: 'Индексы', label: 'Индексы' },
   { key: 'Валюта', label: 'Валюта' },
   { key: 'Сырьё', label: 'Сырьё' },
-  { key: 'Акции', label: 'Акции' },
-  { key: 'Зарубежные активы', label: 'Другое' },
 ];
 
 interface InstrumentSearchModalProps {
@@ -78,9 +77,16 @@ const INSTRUMENT_ICONS: Record<string, { icon: string; bg: string; color: string
   // Индексы
   'IMOEX': { icon: 'МБ', bg: '#6366F1', color: '#fff' },
   'RTSI': { icon: 'РТС', bg: '#8B5CF6', color: '#fff' },
-  'GLDRUB_TOM': { icon: 'Au₽', bg: '#D97706', color: '#fff' },
-  'RGBITR': { icon: 'ОФЗ', bg: '#0EA5E9', color: '#fff' },
   'MCFTR': { icon: 'МП', bg: '#6366F1', color: '#fff' },
+  'RGBITR': { icon: 'ОФЗ', bg: '#0EA5E9', color: '#fff' },
+  'RGBI': { icon: 'ОФЗ', bg: '#0284C7', color: '#fff' },
+  'RVI': { icon: 'σ', bg: '#EF4444', color: '#fff' },
+  'RUSFAR3M': { icon: '%', bg: '#14B8A6', color: '#fff' },
+  // Валюта
+  'USD000UTSTOM': { icon: '$/₽', bg: '#2563EB', color: '#fff' },
+  'EUR_RUB__TOM': { icon: '€/₽', bg: '#1D4ED8', color: '#fff' },
+  'CNYRUB_TOM': { icon: '¥/₽', bg: '#DC2626', color: '#fff' },
+  'GLDRUB_TOM': { icon: 'Au₽', bg: '#D97706', color: '#fff' },
 };
 
 const InstrumentIcon = ({ sectype }: { sectype: string }) => {

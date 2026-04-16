@@ -230,7 +230,16 @@ export default function SeasonalityPage() {
   // + key-based remount). Старый rAF-loop удалён вместе с animatedHeights,
   // barsAnimRef, prevHeightsRef, isFirstBarRender — всё dead code.
 
-  const showDivToggle = chartType === 'histogram' && mode !== 'intraday';
+  // Инструменты без дивидендов: индексы, валюты, сырьё.
+  // Кнопка «Без дивидендных гэпов» бесполезна для них — прячем.
+  const NON_DIVIDEND_TICKERS = new Set([
+    'IMOEX', 'RTSI', 'RGBI', 'RVI', 'MCFTR', 'RGBITR', 'RUSFAR3M',
+    'GLDRUB_TOM', 'USD000UTSTOM', 'EUR_RUB__TOM', 'CNYRUB_TOM',
+    // Вечные фьючерсы
+    'USDRUBF', 'EURRUBF', 'CNYRUBF', 'IMOEXF',
+  ]);
+  const hasDividends = !NON_DIVIDEND_TICKERS.has(selectedStock);
+  const showDivToggle = chartType === 'histogram' && mode !== 'intraday' && hasDividends;
 
   return (
     <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8">
@@ -270,7 +279,6 @@ export default function SeasonalityPage() {
               onSelect={handleSelectInstrument}
               onClose={() => setIsModalOpen(false)}
               excludeType="futures"
-              onlyGroups={chartType === 'price' ? ['Акции'] : undefined}
             />
           )}
         </div>
@@ -462,6 +470,7 @@ export default function SeasonalityPage() {
         {/* Yearly-specific controls */}
         {chartType === 'yearly' && (
           <>
+            {hasDividends && (
             <button
               onClick={() => setExcludeDividends(!excludeDividends)}
               className="flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium transition-all"
@@ -474,6 +483,7 @@ export default function SeasonalityPage() {
               <span className={`inline-block w-3 h-3 rounded-full ${excludeDividends ? 'bg-green-500' : 'bg-gray-500'}`} />
               Без дивидендных гэпов
             </button>
+            )}
             {yearlyData && (
               <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                 Среднее за {yearlyData.years_range} • текущий {yearlyData.current_year} год

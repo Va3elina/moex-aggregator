@@ -719,7 +719,7 @@ export default function OpenInterestPage() {
         <InstrumentSearchModal
           onSelect={handleSelectInstrument}
           onClose={() => setIsModalOpen(false)}
-          excludeType="stock"
+          filterType="futures"
         />
       )}
     </div>
