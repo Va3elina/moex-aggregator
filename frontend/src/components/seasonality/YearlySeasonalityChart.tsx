@@ -200,7 +200,6 @@ export default function YearlySeasonalityChart({
             {/* Grid + zero line + month separators */}
             <ChartGrid
               yTicks={yTicks}
-              zeroPct={scY(0) * 100}
               xSeparators={monthPositions.slice(1).map(mp => scX(mp.td) * 100)}
             />
 
@@ -274,31 +273,25 @@ export default function YearlySeasonalityChart({
                 value={`${tooltip.yearlyCurPct > 0 ? '+' : ''}${tooltip.yearlyCurPct.toFixed(2)}%`}
               />
             )}
-            {/* Отклонение текущего года от КАЖДОЙ серии */}
-            {tooltip.yearlyCurPct !== undefined && (
-              <div className="text-[10px] text-theme-secondary mt-1 pt-1 border-t border-white/10 space-y-0.5">
-                {allMeta.map((m, s) => {
-                  const seriesAvg = allSeries[s]?.average;
-                  const pt = seriesAvg?.find(p => p.td === tooltip.yearlyTd);
-                  if (!pt) return null;
-                  const diff = tooltip.yearlyCurPct! - pt.avg_pct;
-                  const diffColor = diff >= 0 ? CHART_COLORS.positive : CHART_COLORS.negative;
-                  const sigma = pt.std_pct && pt.std_pct > 0
-                    ? (diff / pt.std_pct) : null;
+            {/* Отклонение текущего года от среднего — в процентах */}
+            {tooltip.yearlyCurPct !== undefined && tooltip.yearlyAvgPct !== undefined && (
+              <div className="text-[10px] text-theme-secondary mt-1 pt-1 border-t border-white/10">
+                {(() => {
+                  const diff = tooltip.yearlyCurPct! - tooltip.yearlyAvgPct!;
+                  const color = diff >= 0 ? CHART_COLORS.positive : CHART_COLORS.negative;
+                  // std из базовой серии
+                  const basePt = allSeries[0]?.average?.find(p => p.td === tooltip.yearlyTd);
                   return (
-                    <div key={m.key}>
-                      <span className="font-semibold" style={{ color: diffColor }}>
-                        {diff >= 0 ? '+' : ''}{diff.toFixed(1)} п.п.
+                    <>
+                      Отклонение: <span className="font-semibold" style={{ color }}>
+                        {diff >= 0 ? '+' : ''}{diff.toFixed(1)}%
                       </span>
-                      <span className="opacity-70"> от «{m.label.length > 12 ? m.label.slice(0, 10) + '…' : m.label}»</span>
-                      {sigma !== null && (
-                        <span className="ml-1 opacity-50">
-                          ({sigma >= 0 ? '+' : ''}{sigma.toFixed(1)} ст.откл.)
-                        </span>
-                      )}
-                    </div>
+                      {basePt?.std_pct ? (
+                        <span className="opacity-60 ml-1">(разброс ±{basePt.std_pct.toFixed(1)}%)</span>
+                      ) : null}
+                    </>
                   );
-                })}
+                })()}
               </div>
             )}
           </ChartTooltip>

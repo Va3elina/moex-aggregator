@@ -1,10 +1,12 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { ChevronDown, BarChart3, TrendingUp, CalendarDays, Layers } from 'lucide-react';
-import { getSeasonality, getSeasonalityPrice, getSeasonalityYearly, getSeasonalityYears } from '../services/api';
+import { getSeasonality, getSeasonalityPrice, getSeasonalityYearly, getSeasonalityYears, getSeasonalityMtd } from '../services/api';
+import type { MtdResponse } from '../services/api';
 import InstrumentSearchModal from '../components/InstrumentSearchModal';
 import SeasonalityHistogram from '../components/seasonality/SeasonalityHistogram';
 import SeasonalityPriceChart from '../components/seasonality/SeasonalityPriceChart';
 import YearlySeasonalityChart from '../components/seasonality/YearlySeasonalityChart';
+import MtdChart from '../components/seasonality/MtdChart';
 import type { SeasonalityResponse, SeasonalityMode, PriceChartResponse, YearlySeasonalityResponse } from '../services/api';
 // types removed — InstrumentSearchModal handles instrument loading
 
@@ -59,11 +61,16 @@ export default function SeasonalityPage() {
   const [chartType, setChartType] = useState<ChartType>('histogram');
   const [excludeDividends, setExcludeDividends] = useState(false);
   const [priceDays, setPriceDays] = useState(365);
-  // Сравнительные серии для гистограммы (опциональные):
-  // - compareYear: добавляет серию «С [год] г.» (загружается полная история от этого года)
+  // MTD (зум на месяц) — null = показываем весь год, число = зум на этот месяц
+  const [mtdMonth, setMtdMonth] = useState<number | null>(null);
+  const [mtdData, setMtdData] = useState<MtdResponse | null>(null);
+  // Сравнительные серии:
+  // - compareYear: добавляет серию «Среднее с [год]» (среднее от этого года до сегодня)
   // - showNoOutliers: добавляет серию «Без выбросов» (исключает 2008/2014/2020/2022)
+  // - showExactYear: добавляет серию конкретного года (одна траектория)
   const [compareYear, setCompareYear] = useState<number | null>(null);
   const [showNoOutliers, setShowNoOutliers] = useState(false);
+  const [showExactYear, setShowExactYear] = useState<number | null>(null);
   // Доступные годы (для dropdown «Сравнить с»). Обновляется при смене тикера.
   const [availableYears, setAvailableYears] = useState<number[]>([]);
 
@@ -205,6 +212,15 @@ export default function SeasonalityPage() {
         promises.push(getSeasonalityYearly(selectedStock, excludeDividends,
           { excludeYears: [2008, 2014, 2020, 2022] }));
       }
+      // Конкретный год: sinceYear=X + excludeYears=[все годы кроме X].
+      // Бэкенд возвращает средн. по 1 году = фактическая траектория этого года.
+      if (showExactYear !== null) {
+        const allYearsExceptExact = availableYears.filter(
+          y => y !== showExactYear && y < new Date().getFullYear()
+        );
+        promises.push(getSeasonalityYearly(selectedStock, excludeDividends,
+          { sinceYear: showExactYear, excludeYears: allYearsExceptExact }));
+      }
       const results = await Promise.all(promises);
       if (reqId !== yearlyReqIdRef.current) return;
       const [base, ...extras] = results;
@@ -217,7 +233,46 @@ export default function SeasonalityPage() {
     } finally {
       if (reqId === yearlyReqIdRef.current) setLoading(false);
     }
-  }, [selectedStock, excludeDividends, showNoOutliers, compareYear]);
+  }, [selectedStock, excludeDividends, showNoOutliers, compareYear, showExactYear, availableYears]);
+
+  // Fetch MTD — все серии параллельно (как yearly).
+  // Порядок: base, since?, noOutliers?, exactYear? — ДОЛЖЕН совпадать с seriesMeta!
+  const [mtdSeries, setMtdSeries] = useState<MtdResponse[] | null>(null);
+  const mtdReqIdRef = useRef(0);
+  useEffect(() => {
+    if (chartType !== 'yearly' || mtdMonth === null) {
+      setMtdData(null); setMtdSeries(null); return;
+    }
+    const reqId = ++mtdReqIdRef.current;
+    setLoading(true);
+    const promises: Promise<MtdResponse>[] = [
+      getSeasonalityMtd(selectedStock, mtdMonth, excludeDividends),
+    ];
+    if (compareYear !== null) {
+      // «Среднее с» — нет sinceYear в MTD endpoint, но можем exclude все до compareYear
+      const yearsToExclude = availableYears.filter(y => y < compareYear && y < new Date().getFullYear());
+      promises.push(getSeasonalityMtd(selectedStock, mtdMonth, excludeDividends, yearsToExclude));
+    }
+    if (showNoOutliers) {
+      promises.push(getSeasonalityMtd(selectedStock, mtdMonth, excludeDividends,
+        [2008, 2014, 2020, 2022]));
+    }
+    if (showExactYear !== null) {
+      // Конкретный год: exclude все кроме этого года
+      const allExcept = availableYears.filter(y => y !== showExactYear && y < new Date().getFullYear());
+      promises.push(getSeasonalityMtd(selectedStock, mtdMonth, excludeDividends, allExcept));
+    }
+    Promise.all(promises).then((results) => {
+      if (reqId !== mtdReqIdRef.current) return;
+      const [base, ...extras] = results;
+      setMtdData(base);
+      setMtdSeries(extras.length > 0 ? [base, ...extras] : null);
+      setLoading(false);
+    }).catch(() => {
+      if (reqId !== mtdReqIdRef.current) return;
+      setMtdData(null); setMtdSeries(null); setLoading(false);
+    });
+  }, [chartType, mtdMonth, selectedStock, excludeDividends, showNoOutliers, compareYear, showExactYear, availableYears]);
 
   useEffect(() => {
     if (!selectedStock) return;
@@ -236,20 +291,23 @@ export default function SeasonalityPage() {
   const bars = data?.bars || [];
   const maxAbs = Math.max(...bars.map(b => Math.abs(b.avg_change)), 0.01);
 
-  // Meta для мульти-серий — подписи и цвета согласованы с fetchSeasonality порядком.
-  // Базовая серия (всегда первая) + опционально since-year + опционально no-outliers.
+  // Meta для мульти-серий — подписи и цвета. Порядок ДОЛЖЕН совпадать
+  // с порядком promises в fetchSeasonality и fetchYearly.
   const seriesMeta = useMemo(() => {
     const meta: { key: string; label: string; color: string }[] = [
       { key: 'base', label: 'Все годы', color: '#94A3B8' },
     ];
     if (compareYear !== null) {
-      meta.push({ key: 'since', label: `С ${compareYear} г.`, color: '#60A5FA' });
+      meta.push({ key: 'since', label: `Среднее с ${compareYear}`, color: '#60A5FA' });
     }
     if (showNoOutliers) {
       meta.push({ key: 'no_outliers', label: 'Без выбросов', color: '#A78BFA' });
     }
+    if (showExactYear !== null) {
+      meta.push({ key: 'exact', label: `${showExactYear} год`, color: '#F97316' });
+    }
     return meta;
-  }, [compareYear, showNoOutliers]);
+  }, [compareYear, showNoOutliers, showExactYear]);
 
   // Анимация баров полностью переехала в SeasonalityHistogram (CSS transition
   // + key-based remount). Старый rAF-loop удалён вместе с animatedHeights,
@@ -557,11 +615,68 @@ export default function SeasonalityPage() {
               </div>
             )}
 
-            {yearlyData && (
-              <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                Среднее за {yearlyData.years_range} • текущий {yearlyData.current_year} год
+            {/* Показать конкретный год — отдельная траектория одного года */}
+            {availableYears.length > 1 && (
+              <div className="relative inline-block">
+                <div
+                  title={showExactYear !== null ? `Траектория ${showExactYear} года` : 'Наложить траекторию конкретного года'}
+                  className="flex items-center gap-2 px-2 md:px-4 py-2 md:py-2.5 rounded-xl border text-xs md:text-sm font-medium transition-all whitespace-nowrap cursor-pointer"
+                  style={{
+                    backgroundColor: showExactYear !== null ? 'rgba(249, 115, 22, 0.15)' : 'var(--bg-secondary)',
+                    borderColor: showExactYear !== null ? 'rgba(249, 115, 22, 0.5)' : 'var(--border-color)',
+                    color: showExactYear !== null ? '#F97316' : 'var(--text-secondary)',
+                  }}
+                >
+                  <span className={`inline-block w-3 h-3 rounded-full ${showExactYear === null ? 'bg-gray-500' : ''}`}
+                    style={showExactYear !== null ? { backgroundColor: '#F97316' } : {}} />
+                  {showExactYear !== null ? `Год: ${showExactYear}` : 'Показать год'}
+                  <ChevronDown size={14} className="opacity-60" />
+                </div>
+                <select
+                  value={showExactYear ?? ''}
+                  onChange={(e) => setShowExactYear(e.target.value ? Number(e.target.value) : null)}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                >
+                  <option value="">— не показывать —</option>
+                  {availableYears.filter(y => y < new Date().getFullYear()).map(y => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
               </div>
             )}
+
+            {/* MTD — зум на месяц */}
+            <div className="relative inline-block">
+              <div
+                className="flex items-center gap-2 px-2 md:px-4 py-2 md:py-2.5 rounded-xl border text-xs md:text-sm font-medium transition-all whitespace-nowrap cursor-pointer"
+                style={{
+                  backgroundColor: mtdMonth !== null ? 'rgba(249, 115, 22, 0.15)' : 'var(--bg-secondary)',
+                  borderColor: mtdMonth !== null ? 'rgba(249, 115, 22, 0.5)' : 'var(--border-color)',
+                  color: mtdMonth !== null ? '#F97316' : 'var(--text-secondary)',
+                }}
+              >
+                <span className={`inline-block w-3 h-3 rounded-full ${mtdMonth === null ? 'bg-gray-500' : ''}`}
+                  style={mtdMonth !== null ? { backgroundColor: '#F97316' } : {}} />
+                {mtdMonth !== null
+                  ? `MTD: ${['','Янв','Фев','Мар','Апр','Май','Июн','Июл','Авг','Сен','Окт','Ноя','Дек'][mtdMonth]}`
+                  : 'Зум на месяц'}
+                <ChevronDown size={14} className="opacity-60" />
+              </div>
+              <select
+                value={mtdMonth ?? ''}
+                onChange={(e) => setMtdMonth(e.target.value ? Number(e.target.value) : null)}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              >
+                <option value="">Весь год</option>
+                {[1,2,3,4,5,6,7,8,9,10,11,12]
+                  .filter(m => m <= new Date().getMonth() + 1) // только наступившие месяцы
+                  .map(m => (
+                  <option key={m} value={m}>{['','Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'][m]}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Убрано: «Среднее за ... • текущий ...» — дублирует описание снизу */}
           </>
         )}
       </div>
@@ -615,7 +730,17 @@ export default function SeasonalityPage() {
             <div className="flex items-center justify-center" style={{ height: chartHeight, color: 'var(--text-muted)' }}>Нет данных</div>
           )
         ) : (
-          yearlyData ? (
+          mtdMonth !== null && mtdData ? (
+            <MtdChart
+              key={`mtd-${mtdMonth}`}
+              data={mtdData}
+              seriesData={mtdSeries}
+              seriesMeta={seriesMeta}
+              tooltip={tooltip}
+              setTooltip={setTooltip}
+              chartHeight={chartHeight}
+            />
+          ) : yearlyData ? (
             <YearlySeasonalityChart
               key={yearlyFetchId}
               yearlyData={yearlyData}
