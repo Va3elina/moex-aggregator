@@ -629,9 +629,11 @@ def _compute_yearly_seasonality(
             for i, v in enumerate(resampled):
                 historical_buckets[i].append(v)
 
-    # Среднее + стандартное отклонение по каждому bucket'у
-    # (все годы участвуют в каждой точке — плавно)
-    MIN_YEARS = 5
+    # Среднее + стандартное отклонение по каждому bucket'у.
+    # MIN_YEARS=1: при фильтрах since_year может остаться 1 год — это не
+    # "среднее" статистически, но полезно для сравнения "как вёл себя 2025".
+    # С calendar-aligned resampling все годы дают точки во все bucket'ы.
+    MIN_YEARS = 1
     raw_avg = []  # (bucket, avg, std, count)
     for i in range(N_BUCKETS):
         vals = historical_buckets[i]

@@ -102,6 +102,11 @@ export default function SeasonalityPage() {
   const [monthlySeries, setMonthlySeries] = useState<SeasonalityResponse[] | null>(null);
   const [priceData, setPriceData] = useState<PriceChartResponse | null>(null);
   const [yearlyData, setYearlyData] = useState<YearlySeasonalityResponse | null>(null);
+  // Мульти-серии для годовой (all / no outliers / since year).
+  // Паттерн идентичен monthlySeries для гистограммы.
+  const [yearlySeries, setYearlySeries] = useState<YearlySeasonalityResponse[] | null>(null);
+  const yearlyReqIdRef = useRef(0);
+  const [yearlyFetchId, setYearlyFetchId] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -180,19 +185,39 @@ export default function SeasonalityPage() {
     }
   }, [selectedStock, priceDays]);
 
-  // Fetch yearly seasonality
+  // Fetch yearly seasonality — multi-series как в гистограмме.
+  // Базовая серия всегда + опционально noOutliers + compareYear.
   const fetchYearly = useCallback(async () => {
+    const reqId = ++yearlyReqIdRef.current;
     setLoading(true);
     setError(null);
     try {
-      const res = await getSeasonalityYearly(selectedStock, excludeDividends);
-      setYearlyData(res);
+      type FP = ReturnType<typeof getSeasonalityYearly>;
+      // ПОРЯДОК: base, since?, noOutliers? — ДОЛЖЕН совпадать с seriesMeta!
+      const promises: FP[] = [
+        getSeasonalityYearly(selectedStock, excludeDividends),
+      ];
+      if (compareYear !== null) {
+        promises.push(getSeasonalityYearly(selectedStock, excludeDividends,
+          { sinceYear: compareYear }));
+      }
+      if (showNoOutliers) {
+        promises.push(getSeasonalityYearly(selectedStock, excludeDividends,
+          { excludeYears: [2008, 2014, 2020, 2022] }));
+      }
+      const results = await Promise.all(promises);
+      if (reqId !== yearlyReqIdRef.current) return;
+      const [base, ...extras] = results;
+      setYearlyData(base);
+      setYearlySeries(extras.length > 0 ? [base, ...extras] : null);
+      setYearlyFetchId(id => id + 1);
     } catch (e: unknown) {
+      if (reqId !== yearlyReqIdRef.current) return;
       setError(e instanceof Error ? e.message : 'Ошибка загрузки');
     } finally {
-      setLoading(false);
+      if (reqId === yearlyReqIdRef.current) setLoading(false);
     }
-  }, [selectedStock, excludeDividends]);
+  }, [selectedStock, excludeDividends, showNoOutliers, compareYear]);
 
   useEffect(() => {
     if (!selectedStock) return;
@@ -421,7 +446,7 @@ export default function SeasonalityPage() {
                   aria-label="Год сравнения"
                 >
                   <option value="">— не сравнивать —</option>
-                  {availableYears.slice(1).map(y => (
+                  {availableYears.slice(1).filter(y => y < new Date().getFullYear()).map(y => (
                     <option key={y} value={y}>С {y} г.</option>
                   ))}
                 </select>
@@ -467,13 +492,14 @@ export default function SeasonalityPage() {
           </div>
         )}
 
-        {/* Yearly-specific controls */}
+        {/* Yearly-specific controls — те же кнопки что у histogram */}
         {chartType === 'yearly' && (
           <>
             {hasDividends && (
             <button
               onClick={() => setExcludeDividends(!excludeDividends)}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium transition-all"
+              title="Пересчитать цены с учётом реинвестирования дивидендов"
+              className="flex items-center gap-2 px-2 md:px-4 py-2 md:py-2.5 rounded-xl border text-xs md:text-sm font-medium transition-all whitespace-nowrap"
               style={{
                 backgroundColor: excludeDividends ? 'rgba(34, 197, 94, 0.15)' : 'var(--bg-secondary)',
                 borderColor: excludeDividends ? 'rgba(34, 197, 94, 0.5)' : 'var(--border-color)',
@@ -484,6 +510,53 @@ export default function SeasonalityPage() {
               Без дивидендных гэпов
             </button>
             )}
+
+            {/* Без выбросов — как в histogram */}
+            <button
+              onClick={() => setShowNoOutliers(!showNoOutliers)}
+              title="Исключить 2008, 2014, 2020, 2022"
+              className="flex items-center gap-2 px-2 md:px-4 py-2 md:py-2.5 rounded-xl border text-xs md:text-sm font-medium transition-all whitespace-nowrap"
+              style={{
+                backgroundColor: showNoOutliers ? 'rgba(167, 139, 250, 0.15)' : 'var(--bg-secondary)',
+                borderColor: showNoOutliers ? 'rgba(167, 139, 250, 0.5)' : 'var(--border-color)',
+                color: showNoOutliers ? '#A78BFA' : 'var(--text-secondary)',
+              }}
+            >
+              <span className={`inline-block w-3 h-3 rounded-full ${showNoOutliers ? '' : 'bg-gray-500'}`}
+                style={showNoOutliers ? { backgroundColor: '#A78BFA' } : {}} />
+              Без выбросов
+            </button>
+
+            {/* Сравнить с годом — как в histogram */}
+            {availableYears.length > 1 && (
+              <div className="relative inline-block">
+                <div
+                  title={compareYear !== null ? `Сравниваем с ${compareYear}–${new Date().getFullYear()}` : 'Добавить серию с заданного года'}
+                  className="flex items-center gap-2 px-2 md:px-4 py-2 md:py-2.5 rounded-xl border text-xs md:text-sm font-medium transition-all whitespace-nowrap cursor-pointer"
+                  style={{
+                    backgroundColor: compareYear !== null ? 'rgba(96, 165, 250, 0.15)' : 'var(--bg-secondary)',
+                    borderColor: compareYear !== null ? 'rgba(96, 165, 250, 0.5)' : 'var(--border-color)',
+                    color: compareYear !== null ? '#60A5FA' : 'var(--text-secondary)',
+                  }}
+                >
+                  <span className={`inline-block w-3 h-3 rounded-full ${compareYear === null ? 'bg-gray-500' : ''}`}
+                    style={compareYear !== null ? { backgroundColor: '#60A5FA' } : {}} />
+                  {compareYear !== null ? `Сравнение: с ${compareYear} г.` : 'Сравнить с годом'}
+                  <ChevronDown size={14} className="opacity-60" />
+                </div>
+                <select
+                  value={compareYear ?? ''}
+                  onChange={(e) => setCompareYear(e.target.value ? Number(e.target.value) : null)}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                >
+                  <option value="">— не сравнивать —</option>
+                  {availableYears.slice(1).filter(y => y < new Date().getFullYear()).map(y => (
+                    <option key={y} value={y}>С {y} г.</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             {yearlyData && (
               <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                 Среднее за {yearlyData.years_range} • текущий {yearlyData.current_year} год
@@ -544,7 +617,10 @@ export default function SeasonalityPage() {
         ) : (
           yearlyData ? (
             <YearlySeasonalityChart
+              key={yearlyFetchId}
               yearlyData={yearlyData}
+              seriesData={yearlySeries}
+              seriesMeta={seriesMeta}
               tooltip={tooltip}
               setTooltip={setTooltip}
               chartHeight={chartHeight}

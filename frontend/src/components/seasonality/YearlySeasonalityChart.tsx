@@ -1,3 +1,4 @@
+import { useLayoutEffect, useState } from 'react';
 import type { YearlySeasonalityResponse } from '../../services/api';
 import { CHART_COLORS, PADDING, cssVar } from '../../config/chartTheme';
 import { ChartGrid, ChartCrosshair, ChartDateLabel, ChartTooltip, TooltipRow, ChartYAxis, ChartXAxis } from '../chart';
@@ -8,12 +9,23 @@ interface TooltipState {
   yearlyAvgPct?: number;
   yearlyCurPct?: number;
   yearlyCurDate?: string;
-  // td ближайшей точки — для снэпа крестовины к фактическим данным (а не к мыши)
   yearlyTd?: number;
+  /** σ-отклонение текущего года от средней */
+  yearlySigma?: number;
+}
+
+interface SeriesMeta {
+  key: string;
+  label: string;
+  color: string;
 }
 
 interface YearlySeasonalityChartProps {
   yearlyData: YearlySeasonalityResponse;
+  /** Мульти-серии [base, ...extras]. Если null — рисуем 1 линию из yearlyData. */
+  seriesData?: YearlySeasonalityResponse[] | null;
+  /** Метки серий — цвета и лейблы. */
+  seriesMeta?: SeriesMeta[];
   tooltip: TooltipState | null;
   setTooltip: (t: TooltipState | null) => void;
   chartHeight: number;
@@ -21,22 +33,46 @@ interface YearlySeasonalityChartProps {
 
 export default function YearlySeasonalityChart({
   yearlyData,
+  seriesData,
+  seriesMeta,
   tooltip,
   setTooltip,
   chartHeight,
 }: YearlySeasonalityChartProps) {
+  // CSS-reveal на mount (key-based remount в parent)
+  const [revealed, setRevealed] = useState(false);
+  useLayoutEffect(() => {
+    if (yearlyData.average.length > 0 && !revealed) setRevealed(true);
+  }, [yearlyData.average.length, revealed]);
+
   if (!yearlyData || yearlyData.average.length === 0) {
     return (
       <div className="flex items-center justify-center" style={{ height: chartHeight, color: 'var(--text-muted)' }}>Нет данных</div>
     );
   }
 
-  const avg = yearlyData.average;
-  const cur = yearlyData.current;
-  const maxTD = yearlyData.max_trading_days || Math.max(...avg.map(a => a.td), ...cur.map(c => c.td), 250);
+  // Серии: если multi — используем seriesData, иначе single из yearlyData
+  const safeCount = seriesData && seriesMeta
+    ? Math.min(seriesData.length, seriesMeta.length)
+    : 0;
+  const isMulti = safeCount >= 2;
+  const allSeries = isMulti
+    ? seriesData!.slice(0, safeCount)
+    : [yearlyData]; // single-mode: 1 серия
+  const allMeta: SeriesMeta[] = isMulti
+    ? seriesMeta!.slice(0, safeCount)
+    : [{ key: 'base', label: `Среднее (${yearlyData.years_range})`, color: CHART_COLORS.muted }];
 
-  const allPcts = [...avg.map(a => a.avg_pct), ...cur.map(c => c.pct)];
-  const rawMin = Math.min(...allPcts);
+  const baseAvg = yearlyData.average;
+  const cur = yearlyData.current;
+  const maxTD = yearlyData.max_trading_days || 252;
+
+  // Y-scale по ВСЕМ сериям + current
+  const allPcts = [
+    ...allSeries.flatMap(s => s.average.map(a => a.avg_pct)),
+    ...cur.map(c => c.pct),
+  ];
+  const rawMin = Math.min(...allPcts, 0); // включаем 0 для zero-line
   const rawMax = Math.max(...allPcts);
   const range = rawMax - rawMin || 1;
   const yMin = rawMin - range * 0.1;
@@ -52,58 +88,64 @@ export default function YearlySeasonalityChart({
     return { value: val, pct: scY(val) * 100 };
   });
 
-  // Month tick positions
-  const monthPositions: { td: number; label: string }[] = [];
+  // Month separators (из base avg для вертикальных линий)
   const monthLabels = ['', 'Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'];
+  const monthPositions: { td: number; label: string }[] = [];
   const seenMonths = new Set<number>();
-  for (const p of avg) {
+  for (const p of baseAvg) {
     if (!seenMonths.has(p.month)) {
       seenMonths.add(p.month);
       monthPositions.push({ td: p.td, label: monthLabels[p.month] || '' });
     }
   }
 
-  // Вспомогательная функция: приблизительный месяц для заданного td
-  // (если текущий год ещё не дошёл до этого td, показываем ≈ месяц).
   const getApproxMonth = (td: number): string => {
-    let match = monthLabels[avg[0]?.month || 1];
-    for (const p of avg) {
+    let match = monthLabels[baseAvg[0]?.month || 1];
+    for (const p of baseAvg) {
       if (p.td <= td) match = monthLabels[p.month] || match;
       else break;
     }
     return match;
   };
 
-  // SVG paths
-  const avgPath = avg.map((p, i) =>
-    `${i === 0 ? 'M' : 'L'} ${scX(p.td) * 1000} ${scY(p.avg_pct) * 500}`
-  ).join(' ');
+  // SVG paths для каждой серии
+  const seriesPaths = allSeries.map(s =>
+    s.average.map((p, i) =>
+      `${i === 0 ? 'M' : 'L'} ${scX(p.td) * 1000} ${scY(p.avg_pct) * 500}`
+    ).join(' ')
+  );
 
   const curPath = cur.map((p, i) =>
     `${i === 0 ? 'M' : 'L'} ${scX(p.td) * 1000} ${scY(p.pct) * 500}`
   ).join(' ');
 
-  const PL = cssVar('--chart-pad-left', PADDING.left), PR = cssVar('--chart-pad-right-dual', PADDING.rightDual), PT = PADDING.top, PB = PADDING.bottom;
+  // X-axis: месяцы (Янв-Дек) — покрывают всю ширину графика.
+  // Реальные даты из cur покрывали бы только часть года (до текущей даты),
+  // а средняя линия идёт до декабря — получался бы пустой участок без подписей.
+  const xLabels = monthPositions.map(mp => mp.label);
+
+  const PL = cssVar('--chart-pad-left', PADDING.left);
+  const PR = cssVar('--chart-pad-right-dual', PADDING.rightDual);
+  const PT = PADDING.top;
+  const PB = PADDING.bottom;
 
   return (
-    <div>
-      {/* Legend */}
-      <div className="flex justify-center gap-5 text-sm mb-3">
-        <span className="flex items-center gap-2">
-          <span className="w-6 h-0.5 rounded" style={{ backgroundColor: CHART_COLORS.muted, display: 'inline-block' }} />
-          <span className="text-theme-secondary font-medium">
-            Среднее ({yearlyData.years_range})
+    <div className={revealed ? 'chart-reveal' : ''}>
+      {/* Legend — все серии + current */}
+      <div className="flex justify-center flex-wrap gap-4 text-sm mb-3">
+        {allMeta.map(m => (
+          <span key={m.key} className="flex items-center gap-2">
+            <span className="w-6 h-0.5 rounded" style={{ backgroundColor: m.color, display: 'inline-block' }} />
+            <span className="text-theme-secondary font-medium">{m.label}</span>
           </span>
-        </span>
+        ))}
         <span className="flex items-center gap-2">
           <span className="w-6 h-0.5 rounded" style={{ backgroundColor: CHART_COLORS.accent, display: 'inline-block' }} />
-          <span className="text-theme-primary font-medium">
-            {yearlyData.current_year}
-          </span>
+          <span className="text-theme-primary font-medium">{yearlyData.current_year}</span>
         </span>
       </div>
 
-      {/* Floating date on hover */}
+      {/* Floating date */}
       {tooltip?.yearlyCurDate ? (
         <ChartDateLabel date={tooltip.yearlyCurDate} x={tooltip.x} />
       ) : (
@@ -120,16 +162,11 @@ export default function YearlySeasonalityChart({
           if (frac < 0 || frac > 1) { setTooltip(null); return; }
           const targetTD = Math.round(frac * maxTD);
 
-          // Ближайшая точка в avg (есть всегда на любом td в диапазоне)
-          let closestAvg = avg[0];
-          for (const p of avg) {
+          let closestAvg = baseAvg[0];
+          for (const p of baseAvg) {
             if (Math.abs(p.td - targetTD) < Math.abs(closestAvg.td - targetTD)) closestAvg = p;
           }
-          // Ближайшая точка в cur. Правило: 2026 показываем ТОЛЬКО если
-          // курсор не вышел за последнюю имеющуюся точку текущего года.
-          // Ранее был допуск ±5 td — это показывало "последнее значение 2026"
-          // даже ПРАВЕЕ конца жёлтой линии, что выглядело как экстраполяция
-          // в будущее.
+
           let closestCur = null as (typeof cur[number] | null);
           if (cur.length > 0) {
             const lastCurTd = cur[cur.length - 1].td;
@@ -142,13 +179,8 @@ export default function YearlySeasonalityChart({
             }
           }
 
-          // Снэп x-координаты крестовины к ближайшей точке данных.
-          // Это устраняет визуальный рассинхрон между положением крестовины
-          // и значениями в тултипе.
           const snappedTD = closestAvg.td;
           const snappedX = PL + (snappedTD / maxTD) * chartW;
-
-          // Дата для метки: реальная из cur, иначе ≈ месяц + год из контекста
           const displayDate = closestCur?.date
             ?? `≈ ${getApproxMonth(snappedTD)} ${yearlyData.current_year}`;
 
@@ -163,33 +195,44 @@ export default function YearlySeasonalityChart({
         }}
         onMouseLeave={() => setTooltip(null)}
       >
-        {/* Chart area */}
         <div className="absolute" style={{ left: PL, right: PR, top: PT, bottom: PB }}>
           <svg viewBox="0 0 1000 500" preserveAspectRatio="none" width="100%" height="100%">
-            {/* Grid + month separators (без zero line — обе серии стартуют
-                от 0%, нулевая линия создаёт скученность с -4.5%/+2.8%) */}
+            {/* Grid + zero line + month separators */}
             <ChartGrid
               yTicks={yTicks}
+              zeroPct={scY(0) * 100}
               xSeparators={monthPositions.slice(1).map(mp => scX(mp.td) * 100)}
             />
-            {/* Average line - grey dashed */}
-            <path d={avgPath} fill="none" stroke={CHART_COLORS.muted} strokeWidth="1.5"
-              vectorEffect="non-scaling-stroke"
-              strokeLinecap="round" strokeLinejoin="round" opacity="0.8" />
-            {/* Current year line - accent solid */}
+
+            {/* Series lines — от светлой к тёмной, current поверх всех.
+                Пропускаем серии с пустым path (since_year с <2 годами). */}
+            {seriesPaths.map((path, s) => (
+              path ? (
+                <path key={allMeta[s]?.key ?? s} d={path}
+                  fill="none" stroke={allMeta[s]?.color ?? CHART_COLORS.muted}
+                  strokeWidth={s === 0 ? '1.5' : '2'}
+                  vectorEffect="non-scaling-stroke"
+                  strokeLinecap="round" strokeLinejoin="round"
+                  opacity={s === 0 ? 0.6 : 0.85}
+                />
+              ) : null
+            ))}
+
+            {/* Current year line — accent, поверх */}
             {cur.length > 0 && (
               <path d={curPath} fill="none" stroke={CHART_COLORS.accent} strokeWidth="2"
                 vectorEffect="non-scaling-stroke"
                 strokeLinecap="round" strokeLinejoin="round" />
             )}
-            {/* Crosshair — используем уже снэпнутый td напрямую, без DOM-измерений */}
+
+            {/* Crosshair */}
             {tooltip?.yearlyTd !== undefined && (
               <ChartCrosshair x={scX(tooltip.yearlyTd) * 1000} />
             )}
           </svg>
         </div>
 
-        {/* Y labels (right side) */}
+        {/* Y labels */}
         <ChartYAxis
           ticks={yTicks}
           side="right"
@@ -199,9 +242,9 @@ export default function YearlySeasonalityChart({
           padBottom={PB}
         />
 
-        {/* X labels - month names from data */}
+        {/* X labels — реальные даты из current year или месяцы */}
         <ChartXAxis
-          labels={monthPositions.map(mp => mp.label)}
+          labels={xLabels}
           padLeft={PL}
           padRight={PR}
           color="var(--axis-color, #9CA3B8)"
@@ -210,17 +253,53 @@ export default function YearlySeasonalityChart({
         {/* Tooltip */}
         {tooltip?.yearlyAvgPct !== undefined && (
           <ChartTooltip x={tooltip.x} y={tooltip.y}>
-            <TooltipRow
-              color={CHART_COLORS.muted}
-              label="Среднее"
-              value={`${tooltip.yearlyAvgPct > 0 ? '+' : ''}${tooltip.yearlyAvgPct.toFixed(2)}%`}
-            />
+            {/* Все серии */}
+            {allMeta.map((m, s) => {
+              const seriesAvg = allSeries[s]?.average;
+              const pt = seriesAvg?.find(p => p.td === tooltip.yearlyTd);
+              if (!pt) return null;
+              return (
+                <TooltipRow key={m.key}
+                  color={m.color}
+                  label={m.label.length > 20 ? m.label.slice(0, 18) + '…' : m.label}
+                  value={`${pt.avg_pct > 0 ? '+' : ''}${pt.avg_pct.toFixed(2)}%`}
+                />
+              );
+            })}
+            {/* Current year */}
             {tooltip.yearlyCurPct !== undefined && (
               <TooltipRow
                 color={CHART_COLORS.accent}
                 label={String(yearlyData.current_year)}
                 value={`${tooltip.yearlyCurPct > 0 ? '+' : ''}${tooltip.yearlyCurPct.toFixed(2)}%`}
               />
+            )}
+            {/* Отклонение текущего года от КАЖДОЙ серии */}
+            {tooltip.yearlyCurPct !== undefined && (
+              <div className="text-[10px] text-theme-secondary mt-1 pt-1 border-t border-white/10 space-y-0.5">
+                {allMeta.map((m, s) => {
+                  const seriesAvg = allSeries[s]?.average;
+                  const pt = seriesAvg?.find(p => p.td === tooltip.yearlyTd);
+                  if (!pt) return null;
+                  const diff = tooltip.yearlyCurPct! - pt.avg_pct;
+                  const diffColor = diff >= 0 ? CHART_COLORS.positive : CHART_COLORS.negative;
+                  const sigma = pt.std_pct && pt.std_pct > 0
+                    ? (diff / pt.std_pct) : null;
+                  return (
+                    <div key={m.key}>
+                      <span className="font-semibold" style={{ color: diffColor }}>
+                        {diff >= 0 ? '+' : ''}{diff.toFixed(1)} п.п.
+                      </span>
+                      <span className="opacity-70"> от «{m.label.length > 12 ? m.label.slice(0, 10) + '…' : m.label}»</span>
+                      {sigma !== null && (
+                        <span className="ml-1 opacity-50">
+                          ({sigma >= 0 ? '+' : ''}{sigma.toFixed(1)} ст.откл.)
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </ChartTooltip>
         )}
