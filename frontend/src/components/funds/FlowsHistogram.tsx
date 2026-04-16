@@ -116,12 +116,16 @@ export default function FlowsHistogram({
                         height="100%"
                         preserveAspectRatio="none"
                     >
-                        {animatedBarsIn.length > 0 && (() => {
+                        {animatedBarsIn.length > 0 && flowsData?.flows && (() => {
                             const visibleIn = animatedBarsIn.slice(flowNavRange[0], flowNavRange[1] + 1);
                             const visibleOut = animatedBarsOut.slice(flowNavRange[0], flowNavRange[1] + 1);
+                            // maxScale из ЦЕЛЕВЫХ данных (flowsData.flows), а не из
+                            // анимированных (animatedBarsIn/Out). Иначе при волне:
+                            // первые бары дорастают до 100%, потом при появлении более
+                            // крупного бара масштаб скачет и первые бары сжимаются.
+                            const visibleFlows = flowsData.flows.slice(flowNavRange[0], flowNavRange[1] + 1);
                             const maxScale = Math.max(
-                                ...visibleIn.map(v => Math.abs(v)),
-                                ...visibleOut.map(v => Math.abs(v)),
+                                ...visibleFlows.map(f => Math.abs(f.flow)),
                                 0.001
                             );
                             const barWidth = 100 / (visibleIn.length || 1);

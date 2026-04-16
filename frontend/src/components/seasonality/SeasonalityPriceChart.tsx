@@ -121,7 +121,7 @@ export default function SeasonalityPriceChart({
     // через все графики проекта), короткая для drag навигатора.
     const fromRaw = currRawRef.current.length > 0 ? currRawRef.current : prevRawRef.current;
     const fromAdj = currAdjRef.current.length > 0 ? currAdjRef.current : prevAdjRef.current;
-    const DURATION = priceDataChanged ? ANIMATION.duration : 220;
+    const DURATION = priceDataChanged ? ANIMATION.morphDuration : 220;
     let start: number | null = null;
 
     const animate = (ts: number) => {
@@ -260,7 +260,7 @@ export default function SeasonalityPriceChart({
 
         {/* Value tooltip */}
         {tooltip?.priceDate && (
-          <ChartTooltip x={tooltip.x} y={tooltip.y} flipAt={500}>
+          <ChartTooltip x={tooltip.x} y={tooltip.y}>
             <TooltipRow color={CHART_COLORS.accent} label="Цена" value={`${tooltip.priceClose?.toFixed(2)} ₽`} />
             {tooltip.priceAdj !== tooltip.priceClose && (
               <TooltipRow color={CHART_COLORS.adjusted} label="Без гэпов" value={`${tooltip.priceAdj?.toFixed(2)} ₽`} />

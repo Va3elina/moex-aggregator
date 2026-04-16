@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useState, useMemo, useRef } from 'react';
 import { easeOutCubic, morphPts, ptsToPath, ptsToArea, type SyncedDataPoint, type ChartPadding } from './chartUtils';
-import { CHART_COLORS, GRID, CROSSHAIR } from '../../config/chartTheme';
+import { CHART_COLORS, GRID, CROSSHAIR, ANIMATION } from '../../config/chartTheme';
 
 interface IndexChartProps {
     syncedData: SyncedDataPoint[];
@@ -122,7 +122,7 @@ export default function IndexChart({
         let start: number | null = null;
         const animate = (ts: number) => {
             if (!start) start = ts;
-            const t = easeOutCubic(Math.min((ts - start) / 600, 1));
+            const t = easeOutCubic(Math.min((ts - start) / ANIMATION.morphDuration, 1));
             const interp = morphPts(from, target, t);
             currPtsRef.current = interp;
             setAnimLinePath(ptsToPath(interp));

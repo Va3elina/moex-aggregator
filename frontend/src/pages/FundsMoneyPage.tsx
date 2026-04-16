@@ -51,21 +51,9 @@ const CATEGORIES: { key: FundCategory; name: string; icon: React.ElementType; in
 const INDEX_COLOR = '#C8FF2E';
 
 // Easing для анимации гистограммы
-const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+import { ANIMATION } from '../config/chartTheme';
+const easeOutCubic = ANIMATION.easing;
 
-// Ресемплинг массива значений до нужной длины (для морфинга при смене кол-ва баров)
-const resampleFlows = (vals: number[], len: number): number[] => {
-    if (len === 0) return [];
-    if (vals.length === 0) return new Array(len).fill(0);
-    if (vals.length === len) return vals;
-    return Array.from({ length: len }, (_, i) => {
-        const t = len === 1 ? 0 : i / (len - 1);
-        const si = t * (vals.length - 1);
-        const lo = Math.floor(si);
-        const hi = Math.min(lo + 1, vals.length - 1);
-        return vals[lo] + (vals[hi] - vals[lo]) * (si - lo);
-    });
-};
 
 export default function FundsMoneyPage() {
     const { isAuthenticated } = useAuth();
@@ -307,21 +295,25 @@ export default function FundsMoneyPage() {
         }
     }, [flowsData]);
 
-    // Морфинг гистограммы при смене flowsData
+    // Анимация гистограммы при смене flowsData.
+    // Всегда начинаем с нуля + каскад слева направо (волна),
+    // а не морфим из предыдущих значений — при переключении
+    // день/неделя/месяц данные полностью разные, морфинг
+    // показывал хаотичную перестановку баров.
     useEffect(() => {
         if (!flowsData?.flows?.length) return;
 
         if (barsAnimRef.current) cancelAnimationFrame(barsAnimRef.current);
 
         const targetFlows = flowsData.flows.map(f => f.flow);
-        const isFirst = isFirstBarsRender.current || prevBarsInRef.current.length === 0;
-        const fromFlows = isFirst ? new Array(targetFlows.length).fill(0) : resampleFlows(prevBarsInRef.current, targetFlows.length);
+        const fromFlows = new Array(targetFlows.length).fill(0);
 
         isFirstBarsRender.current = false;
 
-        // Каскадная анимация: бары появляются слева направо
-        const totalDuration = isFirst ? 1200 : 600;
-        const staggerDelay = isFirst ? 600 : 0;
+        // Каскадная анимация: бары появляются слева направо (волна).
+        // Параметры из единого конфига chartTheme.ANIMATION.
+        const totalDuration = ANIMATION.waveDuration;
+        const staggerDelay = ANIMATION.waveStagger;
         let startTime: number | null = null;
 
         const animate = (timestamp: number) => {

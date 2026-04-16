@@ -1,7 +1,7 @@
 import { useLayoutEffect, useState } from 'react';
 import type { SeasonalityResponse } from '../../services/api';
-import { CHART_COLORS, CROSSHAIR, TOOLTIP } from '../../config/chartTheme';
-import { ChartGrid, ChartCrosshair } from '../chart';
+import { CHART_COLORS, CROSSHAIR, TOOLTIP, ANIMATION } from '../../config/chartTheme';
+import { ChartGrid, ChartCrosshair, ChartTooltip, TooltipRow } from '../chart';
 
 interface TooltipState {
   x: number;
@@ -28,11 +28,11 @@ interface SeasonalityHistogramProps {
   seriesMeta?: SeriesMeta[];
 }
 
-// Единая длительность и easing для всех анимаций гистограммы.
-// Stagger даёт «волну» слева направо — как в FlowsHistogram (Деньги в фондах).
-const ANIM_DURATION_MS = 450;
-const STAGGER_TOTAL_MS = 500; // общее время волны слева направо
-const ANIM_EASING = 'cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+// Параметры волны из единого конфига — совпадают с FlowsHistogram.
+// Per-bar длительность = waveDuration − waveStagger.
+const ANIM_DURATION_MS = ANIMATION.waveDuration - ANIMATION.waveStagger;
+const STAGGER_TOTAL_MS = ANIMATION.waveStagger;
+const ANIM_EASING = ANIMATION.waveEasing;
 
 export default function SeasonalityHistogram({
   bars,
@@ -196,59 +196,47 @@ export default function SeasonalityHistogram({
         </svg>
       </div>
 
+      {/* Tooltip — используем ChartTooltip (автоматический flip по центру) */}
       {tooltip?.bar && (() => {
         const idx = bars.indexOf(tooltip.bar!);
         if (idx === -1) return null;
         return (
-          <div className="absolute z-30 pointer-events-none"
-            style={{
-              left: tooltip.x > 300 ? tooltip.x - 200 : tooltip.x + 8,
-              top: Math.min(Math.max(tooltip.y - 20, 4), 330)
-            }}>
-            <div className={TOOLTIP.containerClass}>
-              {isMulti ? (
-                <>
-                  <div className="text-[11px] text-theme-secondary mb-1 font-medium">{tooltip.bar!.label}</div>
-                  {safeMeta.map((style, s) => {
-                    const seriesBar = safeSeries[s]?.bars?.[idx];
-                    if (!seriesBar) return null;
-                    const val = seriesBar.avg_change;
-                    const valColor = val >= 0 ? CHART_COLORS.positive : CHART_COLORS.negative;
-                    const valStr = `${val > 0 ? '+' : ''}${val.toFixed(2)}%`;
-                    return (
-                      <div key={style.key} className="flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <span className={`${TOOLTIP.dotSize} flex-shrink-0`} style={{ backgroundColor: style.color }} />
-                          <span className={`${TOOLTIP.labelClass} truncate`}>{style.label}</span>
-                        </div>
-                        <span className={`${TOOLTIP.valueClass} whitespace-nowrap`} style={{ color: valColor }}>
-                          {valStr}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </>
-              ) : (() => {
-                const bar = tooltip.bar!;
-                const color = bar.avg_change >= 0 ? CHART_COLORS.positive : CHART_COLORS.negative;
-                const valStr = `${bar.avg_change > 0 ? '+' : ''}${Math.abs(bar.avg_change) >= 0.01 ? bar.avg_change.toFixed(3) : bar.avg_change.toFixed(4)}%`;
-                return (
-                  <>
-                    <div className="flex items-center justify-between gap-3">
+          <ChartTooltip x={tooltip.x} y={tooltip.y}>
+            {isMulti ? (
+              <>
+                <div className="text-[11px] text-theme-secondary mb-1 font-medium">{tooltip.bar!.label}</div>
+                {safeMeta.map((style, s) => {
+                  const seriesBar = safeSeries[s]?.bars?.[idx];
+                  if (!seriesBar) return null;
+                  const val = seriesBar.avg_change;
+                  const valColor = val >= 0 ? CHART_COLORS.positive : CHART_COLORS.negative;
+                  const valStr = `${val > 0 ? '+' : ''}${val.toFixed(2)}%`;
+                  // Точка = цвет серии, значение = зелёный/красный от знака
+                  return (
+                    <div key={style.key} className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-1.5 min-w-0">
-                        <span className={`${TOOLTIP.dotSize} flex-shrink-0`} style={{ backgroundColor: color }} />
-                        <span className={`${TOOLTIP.labelClass} truncate`}>{bar.avg_change >= 0 ? 'Рост' : 'Падение'}</span>
+                        <span className={`${TOOLTIP.dotSize} flex-shrink-0`} style={{ backgroundColor: style.color }} />
+                        <span className={`${TOOLTIP.labelClass} truncate`}>{style.label}</span>
                       </div>
-                      <span className={`${TOOLTIP.valueClass} whitespace-nowrap`} style={{ color }}>
+                      <span className={`${TOOLTIP.valueClass} whitespace-nowrap`} style={{ color: valColor }}>
                         {valStr}
                       </span>
                     </div>
-                    <div className="text-[10px] text-theme-secondary mt-0.5">{bar.count} наблюдений</div>
-                  </>
-                );
-              })()}
-            </div>
-          </div>
+                  );
+                })}
+              </>
+            ) : (() => {
+              const bar = tooltip.bar!;
+              const color = bar.avg_change >= 0 ? CHART_COLORS.positive : CHART_COLORS.negative;
+              const valStr = `${bar.avg_change > 0 ? '+' : ''}${Math.abs(bar.avg_change) >= 0.01 ? bar.avg_change.toFixed(3) : bar.avg_change.toFixed(4)}%`;
+              return (
+                <>
+                  <TooltipRow color={color} label={bar.avg_change >= 0 ? 'Рост' : 'Падение'} value={valStr} />
+                  <div className="text-[10px] text-theme-secondary mt-0.5">{bar.count} наблюдений</div>
+                </>
+              );
+            })()}
+          </ChartTooltip>
         );
       })()}
 

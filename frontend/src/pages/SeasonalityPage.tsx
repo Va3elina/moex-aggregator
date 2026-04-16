@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { ChevronDown, BarChart3, TrendingUp, CalendarDays, Layers } from 'lucide-react';
 import { getSeasonality, getSeasonalityPrice, getSeasonalityYearly, getSeasonalityYears } from '../services/api';
 import InstrumentSearchModal from '../components/InstrumentSearchModal';
@@ -88,11 +88,6 @@ export default function SeasonalityPage() {
   // Price navigator
   const [priceNavRange, setPriceNavRange] = useState<[number, number] | null>(null);
 
-  // Animated bars (like flows)
-  const [animatedHeights, setAnimatedHeights] = useState<number[]>([]);
-  const barsAnimRef = useRef<number | null>(null);
-  const prevHeightsRef = useRef<number[]>([]);
-  const isFirstBarRender = useRef(true);
   // Request ID для отбрасывания stale-ответов при быстром переключении режимов/периодов.
   const seasonalityReqIdRef = useRef(0);
   // Счётчик успешных фетчей — используется как React key для histogram'а.
@@ -101,7 +96,6 @@ export default function SeasonalityPage() {
 
   // Data
   const [dataRaw, setDataRaw] = useState<SeasonalityResponse | null>(null);
-  const [dataAdj, setDataAdj] = useState<SeasonalityResponse | null>(null);
   // Мульти-серии [all / since 2015 / no outliers]. Применяются для
   // monthly/weekday/monthday. intraday не использует (короткая история).
   // Значения уже учитывают текущий excludeDividends (перефетчим при toggle).
@@ -160,7 +154,6 @@ export default function SeasonalityPage() {
 
       const [baseSeries, ...extras] = results;
       setDataRaw(baseSeries);
-      setDataAdj(baseSeries);
       setMonthlySeries(extras.length > 0 ? [baseSeries, ...extras] : null);
       // Инкрементируем счётчик — SeasonalityHistogram получит новый key → remount → анимация
       setHistogramFetchId(id => id + 1);
@@ -208,11 +201,8 @@ export default function SeasonalityPage() {
     else fetchYearly();
   }, [chartType, fetchSeasonality, fetchPrice, fetchYearly, selectedStock]);
 
-  // Active seasonality data
-  // dataRaw уже содержит значения с учётом excludeDividends (перефетч при toggle),
-  // dataAdj больше не используется отдельно — старый fallback оставлен на всякий
+  // Active seasonality data (dataRaw уже с учётом excludeDividends — перефетч при toggle)
   const data = dataRaw;
-  void dataAdj; // eslint
 
   // Chart dimensions
   const chartHeight = 350;
@@ -220,8 +210,6 @@ export default function SeasonalityPage() {
   // ===== HISTOGRAM CALCULATIONS =====
   const bars = data?.bars || [];
   const maxAbs = Math.max(...bars.map(b => Math.abs(b.avg_change)), 0.01);
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const _rawBars = dataRaw?.bars; void _rawBars;
 
   // Meta для мульти-серий — подписи и цвета согласованы с fetchSeasonality порядком.
   // Базовая серия (всегда первая) + опционально since-year + опционально no-outliers.
@@ -238,57 +226,9 @@ export default function SeasonalityPage() {
     return meta;
   }, [compareYear, showNoOutliers]);
 
-  // Анимация баров — 3 сценария:
-  // 1. Первый рендер (нет prev): easeOutCubic + 600ms stagger + 1200ms — бары «вылетают».
-  // 2. Смена периода 30↔90 (prev.length === target.length): плавный морф между
-  //    значениями, easeInOutCubic + 350ms stagger + 1000ms.
-  // 3. Смена режима intraday↔weekday↔monthday↔monthly (разное число баров):
-  //    применяем сценарий №1 — fade-in из нуля с каскадом. Это избегает
-  //    уродливого ресемплинга и бар-«перескоков» через ноль.
-  const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
-  const easeInOutCubic = (t: number) =>
-    t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-
-  useEffect(() => {
-    if (!bars.length) { setAnimatedHeights([]); return; }
-    if (barsAnimRef.current) cancelAnimationFrame(barsAnimRef.current);
-
-    const target = bars.map(b => b.avg_change / maxAbs);
-    const prev = prevHeightsRef.current;
-    const isFirst = isFirstBarRender.current || prev.length === 0;
-    const isSameShape = !isFirst && prev.length === target.length;
-
-    // Сценарии 1 и 3 → from = нули; сценарий 2 → from = предыдущие значения
-    const from = isSameShape ? prev : new Array(target.length).fill(0);
-
-    isFirstBarRender.current = false;
-    // Морф (одинаковое число баров): мягкий easeInOutCubic
-    // Fade-in (первый рендер / смена режима): каскадный easeOutCubic
-    const totalDuration = isSameShape ? 1000 : 1200;
-    const staggerDelay = isSameShape ? 350 : 600;
-    const ease = isSameShape ? easeInOutCubic : easeOutCubic;
-    const perBarDuration = totalDuration - staggerDelay;
-    let startTime: number | null = null;
-
-    const animate = (ts: number) => {
-      if (!startTime) startTime = ts;
-      const elapsed = ts - startTime;
-      const heights = target.map((v, i) => {
-        const barDelay = (i / Math.max(target.length - 1, 1)) * staggerDelay;
-        const barElapsed = Math.max(0, elapsed - barDelay);
-        const t = Math.min(barElapsed / perBarDuration, 1);
-        return from[i] + (v - from[i]) * ease(t);
-      });
-      setAnimatedHeights(heights);
-      if (elapsed < totalDuration) {
-        barsAnimRef.current = requestAnimationFrame(animate);
-      } else {
-        prevHeightsRef.current = target;
-      }
-    };
-    barsAnimRef.current = requestAnimationFrame(animate);
-    return () => { if (barsAnimRef.current) cancelAnimationFrame(barsAnimRef.current); };
-  }, [bars, maxAbs]);
+  // Анимация баров полностью переехала в SeasonalityHistogram (CSS transition
+  // + key-based remount). Старый rAF-loop удалён вместе с animatedHeights,
+  // barsAnimRef, prevHeightsRef, isFirstBarRender — всё dead code.
 
   const showDivToggle = chartType === 'histogram' && mode !== 'intraday';
 
@@ -571,10 +511,6 @@ export default function SeasonalityPage() {
             // key меняется после каждого успешного fetch'а → remount → новая анимация
             key={histogramFetchId}
             bars={bars}
-            // Если длина animatedHeights не совпадает с bars (переходный кадр
-            // после смены режима: новые bars пришли, а rAF ещё не запустился),
-            // передаём нули, чтобы не рендерить старые значения на новых барах.
-            animatedHeights={animatedHeights.length === bars.length ? animatedHeights : new Array(bars.length).fill(0)}
             maxAbs={maxAbs}
             tooltip={tooltip}
             setTooltip={setTooltip}

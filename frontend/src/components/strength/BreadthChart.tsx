@@ -1,6 +1,6 @@
 import { memo, useEffect, useLayoutEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { lerp, easeOutCubic, morphPts, ptsToPath, type SyncedDataPoint, type ChartPadding } from './chartUtils';
-import { GRID, CROSSHAIR } from '../../config/chartTheme';
+import { GRID, CROSSHAIR, ANIMATION } from '../../config/chartTheme';
 
 type ChartMode = 'line' | 'histogram';
 
@@ -246,8 +246,8 @@ export default function BreadthChart({
             let start: number | null = null;
 
             const isFirstAnim = fromBars.length === 0;
-            const totalDuration = isFirstAnim ? 1200 : 600;
-            const staggerDelay = isFirstAnim ? 600 : 0;
+            const totalDuration = isFirstAnim ? ANIMATION.waveDuration : ANIMATION.morphDuration;
+            const staggerDelay = isFirstAnim ? ANIMATION.waveStagger : 0;
 
             const animate = (ts: number) => {
                 if (!start) start = ts;

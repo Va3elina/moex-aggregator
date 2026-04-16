@@ -1,7 +1,13 @@
 /**
  * Карточка-tooltip при наведении на график.
  * Позиционируется absolute внутри chart-контейнера.
+ *
+ * Автоматически определяет ширину родителя и свою собственную ширину:
+ * - В левой половине → tooltip справа от курсора
+ * - В правой половине → tooltip слева от курсора
+ * Не нужно передавать flipAt / cardWidth — всё измеряется.
  */
+import { useRef, useLayoutEffect, useState, useEffect } from 'react';
 import { TOOLTIP } from '../../config/chartTheme';
 import type { ReactNode } from 'react';
 
@@ -12,21 +18,47 @@ interface ChartTooltipProps {
   y: number;
   /** Содержимое (строки TooltipRow) */
   children: ReactNode;
-  /** Порог для переключения tooltip влево (по умолчанию 300px) */
+  /** Ручной override: порог flip'а в px (если не задан — 50% ширины родителя) */
   flipAt?: number;
 }
 
-export default function ChartTooltip({ x, y, children, flipAt = 300 }: ChartTooltipProps) {
-  const isRight = x > flipAt;
+const GAP = 12; // отступ между курсором и тултипом
+
+export default function ChartTooltip({ x, y, children, flipAt }: ChartTooltipProps) {
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [parentW, setParentW] = useState(800);
+  const [cardW, setCardW] = useState(160);
+
+  // Измеряем ширину родителя один раз (+ на resize)
+  useEffect(() => {
+    const el = wrapperRef.current?.parentElement;
+    if (!el) return;
+    const update = () => setParentW(el.clientWidth);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Измеряем ширину карточки при каждом изменении содержимого
+  useLayoutEffect(() => {
+    if (cardRef.current) setCardW(cardRef.current.offsetWidth);
+  }, [children]);
+
+  const threshold = flipAt ?? parentW / 2;
+  const isRight = x > threshold;
+
   return (
     <div
+      ref={wrapperRef}
       className="absolute pointer-events-none z-30"
       style={{
-        left: isRight ? x - 150 : x + 12,
+        left: isRight ? Math.max(4, x - cardW - GAP) : x + GAP,
         top: Math.max(y - 40, 4),
       }}
     >
-      <div className={TOOLTIP.containerClass}>
+      <div ref={cardRef} className={TOOLTIP.containerClass}>
         {children}
       </div>
     </div>

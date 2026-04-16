@@ -89,12 +89,36 @@ export const LINE = {
   lineJoin: 'round' as const,
 } as const;
 
-// ─── Анимация ───
+// ─── Анимация ─────────────────────────────────────────────────────
+// Единое место для ВСЕХ параметров анимации графиков.
+// Импортируй ANIMATION из chartTheme вместо хардкода цифр в компонентах.
 
 export const ANIMATION = {
-  duration: 600,           // мс — основная длительность морфинга
-  easing: (t: number) => 1 - Math.pow(1 - t, 3),  // easeOutCubic
-  staggerBase: 30,         // мс — задержка между барами
+  // ── Морфинг линейных графиков (SimpleChart, PriceChart, IndexChart) ──
+  /** мс — длительность перехода между двумя наборами точек */
+  morphDuration: 600,
+  /** easeOutCubic — быстрый старт, мягкий финиш */
+  easing: (t: number) => 1 - Math.pow(1 - t, 3),
+
+  // ── Волна гистограммы (SeasonalityHistogram, FlowsHistogram) ──
+  // Бары вырастают из нуля с каскадом слева направо.
+  // waveDuration — общее время от старта первого бара до финиша последнего.
+  // waveStagger — разброс задержки между первым и последним баром.
+  // Per-bar анимация = waveDuration − waveStagger.
+  /** мс — полная длительность волны */
+  waveDuration: 1500,
+  /** мс — разброс задержки между первым и последним баром */
+  waveStagger: 700,
+  /** CSS easing для transition/animation баров */
+  waveEasing: 'cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+
+  // ── CSS reveal (clip-path left-to-right sweep) ──
+  // Используется через класс .chart-reveal в index.css
+  revealDuration: 1000,
+
+  // ── Legacy (обратная совместимость) ──
+  duration: 600,
+  staggerBase: 30,
 } as const;
 
 // ─── Tooltip CSS-классы (Tailwind) ───
