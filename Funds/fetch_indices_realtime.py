@@ -93,6 +93,21 @@ INDICES = {
         "filter_board": True,
         "start_date": date(1995, 9, 1),
     },
+    "RGBI": {
+        "name": "Индекс гособлигаций ценовой",
+        "engine": "stock",
+        "market": "index",
+        "board": "SNDX",
+        "start_date": date(2002, 12, 30),
+    },
+    "RVI": {
+        "name": "Индекс волатильности RVI",
+        "engine": "stock",
+        "market": "index",
+        "board": "RTSI",
+        "filter_board": True,
+        "start_date": date(2013, 11, 18),
+    },
     "USD000UTSTOM": {
         "name": "Доллар/Рубль (спот TOM)",
         "engine": "currency",
@@ -101,6 +116,22 @@ INDICES = {
         "filter_board": True,
         "use_candles": True,  # history endpoint отдаёт нули, используем candles
         "start_date": date(2003, 4, 15),
+    },
+    "EUR_RUB__TOM": {
+        "name": "Евро/Рубль (спот TOM)",
+        "engine": "currency",
+        "market": "selt",
+        "board": "CETS",
+        "filter_board": True,
+        "start_date": date(2013, 1, 1),
+    },
+    "CNYRUB_TOM": {
+        "name": "Юань/Рубль (спот TOM)",
+        "engine": "currency",
+        "market": "selt",
+        "board": "CETS",
+        "filter_board": True,
+        "start_date": date(2022, 3, 1),
     },
 }
 

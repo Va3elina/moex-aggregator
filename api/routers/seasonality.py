@@ -33,7 +33,11 @@ log = get_logger()
 router = APIRouter(prefix="/api/seasonality", tags=["seasonality"])
 
 # Инструменты из index_data (не candles)
-INDEX_DATA_INSTRUMENTS = {"IMOEX", "RTSI", "GLDRUB_TOM", "RGBITR", "USD000UTSTOM", "MCFTR", "RUSFAR3M"}
+INDEX_DATA_INSTRUMENTS = {
+    "IMOEX", "RTSI", "GLDRUB_TOM", "RGBITR", "RGBI", "RVI",
+    "USD000UTSTOM", "EUR_RUB__TOM", "CNYRUB_TOM",
+    "MCFTR", "RUSFAR3M",
+}
 
 # Вечные фьючерсы (candles, type='futures')
 PERPETUAL_FUTURES = {"USDRUBF", "EURRUBF", "CNYRUBF", "IMOEXF"}
