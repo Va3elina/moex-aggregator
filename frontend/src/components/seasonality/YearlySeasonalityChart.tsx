@@ -1,7 +1,8 @@
-import { useLayoutEffect, useState } from 'react';
+import { useLayoutEffect, useState, useMemo } from 'react';
 import type { YearlySeasonalityResponse } from '../../services/api';
 import { CHART_COLORS, PADDING, cssVar } from '../../config/chartTheme';
 import { ChartGrid, ChartCrosshair, ChartDateLabel, ChartTooltip, TooltipRow, ChartYAxis, ChartXAxis } from '../chart';
+import ChartNavigator from '../ChartNavigator';
 
 interface TooltipState {
   x: number;
@@ -41,6 +42,9 @@ export default function YearlySeasonalityChart({
 }: YearlySeasonalityChartProps) {
   // CSS-reveal на mount (key-based remount в parent)
   const [revealed, setRevealed] = useState(false);
+  // Navigator range — [startIdx, endIdx] в координатах bucket'ов baseAvg.
+  // null = показываем весь год.
+  const [navRange, setNavRange] = useState<[number, number] | null>(null);
   useLayoutEffect(() => {
     if (yearlyData.average.length > 0 && !revealed) setRevealed(true);
   }, [yearlyData.average.length, revealed]);
@@ -65,20 +69,44 @@ export default function YearlySeasonalityChart({
 
   const baseAvg = yearlyData.average;
   const cur = yearlyData.current;
-  const maxTD = yearlyData.max_trading_days || 252;
+  const fullMaxTD = yearlyData.max_trading_days || 252;
 
-  // Y-scale по ВСЕМ сериям + current
+  // Navigator data (для миниатюры внизу) — базовая серия
+  const navData = useMemo(() =>
+    baseAvg.map(p => ({ time: String(p.td), value: p.avg_pct })),
+    [baseAvg]);
+
+  // Visible range: если навигатор активен, фильтруем по td
+  const navStart = navRange ? navRange[0] : 0;
+  const navEnd = navRange ? navRange[1] : baseAvg.length - 1;
+  const visibleTdMin = baseAvg[navStart]?.td ?? 0;
+  const visibleTdMax = baseAvg[navEnd]?.td ?? fullMaxTD;
+  void visibleTdMax; // используется в scX
+
+  // Фильтр: оставить только точки в видимом диапазоне td
+  const filterByTd = <T extends { td: number }>(arr: T[]): T[] =>
+    arr.filter(p => p.td >= visibleTdMin && p.td <= visibleTdMax);
+
+  const visAllSeries = allSeries.map(s => ({
+    ...s,
+    average: filterByTd(s.average),
+  }));
+  const visCur = filterByTd(cur);
+
+  // Y-scale по ВИДИМОЙ части
   const allPcts = [
-    ...allSeries.flatMap(s => s.average.map(a => a.avg_pct)),
-    ...cur.map(c => c.pct),
+    ...visAllSeries.flatMap(s => s.average.map(a => a.avg_pct)),
+    ...visCur.map(c => c.pct),
   ];
-  const rawMin = Math.min(...allPcts, 0); // включаем 0 для zero-line
+  if (allPcts.length === 0) allPcts.push(0);
+  const rawMin = Math.min(...allPcts);
   const rawMax = Math.max(...allPcts);
   const range = rawMax - rawMin || 1;
   const yMin = rawMin - range * 0.1;
   const yMax = rawMax + range * 0.1;
 
-  const scX = (td: number) => td / maxTD;
+  // scX нормализует td в видимый диапазон [0..1]
+  const scX = (td: number) => (td - visibleTdMin) / (visibleTdMax - visibleTdMin || 1);
   const scY = (pct: number) => 1 - (pct - yMin) / (yMax - yMin);
 
   // Y ticks
@@ -108,14 +136,14 @@ export default function YearlySeasonalityChart({
     return match;
   };
 
-  // SVG paths для каждой серии
-  const seriesPaths = allSeries.map(s =>
+  // SVG paths для каждой ВИДИМОЙ серии
+  const seriesPaths = visAllSeries.map(s =>
     s.average.map((p, i) =>
       `${i === 0 ? 'M' : 'L'} ${scX(p.td) * 1000} ${scY(p.avg_pct) * 500}`
     ).join(' ')
   );
 
-  const curPath = cur.map((p, i) =>
+  const curPath = visCur.map((p, i) =>
     `${i === 0 ? 'M' : 'L'} ${scX(p.td) * 1000} ${scY(p.pct) * 500}`
   ).join(' ');
 
@@ -160,19 +188,20 @@ export default function YearlySeasonalityChart({
           const chartW = rect.width - PL - PR;
           const frac = (mouseX - PL) / chartW;
           if (frac < 0 || frac > 1) { setTooltip(null); return; }
-          const targetTD = Math.round(frac * maxTD);
+          const targetTD = visibleTdMin + Math.round(frac * (visibleTdMax - visibleTdMin));
 
-          let closestAvg = baseAvg[0];
-          for (const p of baseAvg) {
+          const visBaseAvg = visAllSeries[0]?.average ?? [];
+          let closestAvg = visBaseAvg[0] ?? baseAvg[0];
+          for (const p of visBaseAvg) {
             if (Math.abs(p.td - targetTD) < Math.abs(closestAvg.td - targetTD)) closestAvg = p;
           }
 
           let closestCur = null as (typeof cur[number] | null);
-          if (cur.length > 0) {
-            const lastCurTd = cur[cur.length - 1].td;
+          if (visCur.length > 0) {
+            const lastCurTd = visCur[visCur.length - 1].td;
             if (targetTD <= lastCurTd) {
-              let candidate = cur[0];
-              for (const p of cur) {
+              let candidate = visCur[0];
+              for (const p of visCur) {
                 if (Math.abs(p.td - targetTD) < Math.abs(candidate.td - targetTD)) candidate = p;
               }
               closestCur = candidate;
@@ -180,7 +209,7 @@ export default function YearlySeasonalityChart({
           }
 
           const snappedTD = closestAvg.td;
-          const snappedX = PL + (snappedTD / maxTD) * chartW;
+          const snappedX = PL + scX(snappedTD) * chartW;
           const displayDate = closestCur?.date
             ?? `≈ ${getApproxMonth(snappedTD)} ${yearlyData.current_year}`;
 
@@ -254,7 +283,7 @@ export default function YearlySeasonalityChart({
           <ChartTooltip x={tooltip.x} y={tooltip.y}>
             {/* Все серии */}
             {allMeta.map((m, s) => {
-              const seriesAvg = allSeries[s]?.average;
+              const seriesAvg = visAllSeries[s]?.average;
               const pt = seriesAvg?.find(p => p.td === tooltip.yearlyTd);
               if (!pt) return null;
               return (
@@ -280,7 +309,7 @@ export default function YearlySeasonalityChart({
                   const diff = tooltip.yearlyCurPct! - tooltip.yearlyAvgPct!;
                   const color = diff >= 0 ? CHART_COLORS.positive : CHART_COLORS.negative;
                   // std из базовой серии
-                  const basePt = allSeries[0]?.average?.find(p => p.td === tooltip.yearlyTd);
+                  const basePt = visAllSeries[0]?.average?.find(p => p.td === tooltip.yearlyTd);
                   return (
                     <>
                       Отклонение: <span className="font-semibold" style={{ color }}>
@@ -297,6 +326,13 @@ export default function YearlySeasonalityChart({
           </ChartTooltip>
         )}
       </div>
+
+      {/* Navigator — скользящее окно по году */}
+      <ChartNavigator
+        data={navData}
+        onChange={(s, e) => setNavRange([s, e])}
+        color={CHART_COLORS.muted}
+      />
     </div>
   );
 }

@@ -176,8 +176,8 @@ export default function ChartNavigator({
     return (
         <div
             ref={containerRef}
-            className="relative select-none mt-3"
-            style={{ height: height + 4 }}
+            className="relative select-none mt-3 overflow-visible"
+            style={{ height: height + 4, paddingLeft: 8, paddingRight: 8 }}
         >
             <svg width="100%" height={height} className="block overflow-visible">
                 <defs>
