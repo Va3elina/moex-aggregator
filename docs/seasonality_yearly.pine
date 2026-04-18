@@ -23,9 +23,12 @@ avgColor       = input.color(color.gray,   "Цвет средней линии")
 curColor       = input.color(color.orange, "Цвет текущего года")
 
 // ── Состояние ────────────────────────────────────────────────────────────────
-// map<год, массив pct>: для каждого календарного года храним кумулятивную
-// YTD-траекторию по торговым дням (индекс = td_idx-1).
-var map<int, array<float>> yrs = map.new<int, array<float>>()
+// Pine v6 не разрешает коллекцию в шаблоне другой коллекции, поэтому
+// оборачиваем массив pct в UDT.
+type YearBucket
+    array<float> pcts
+
+var map<int, YearBucket> yrs = map.new<int, YearBucket>()
 var int   tdIdx      = 0    // порядковый номер торгового дня в текущем году
 var float firstClose = na   // close первого торгового дня текущего года
 
@@ -44,9 +47,9 @@ pct = firstClose > 0 ? (close - firstClose) / firstClose * 100.0 : na
 // Накапливаем данные в карту
 if bYear >= sinceYear and not na(pct)
     if not map.contains(yrs, bYear)
-        map.put(yrs, bYear, array.new<float>())
-    arr = map.get(yrs, bYear)
-    array.push(arr, pct)
+        map.put(yrs, bYear, YearBucket.new(array.new<float>()))
+    bucket = map.get(yrs, bYear)
+    array.push(bucket.pcts, pct)
 
 // ── Вычисление средней и текущей линий только на барах текущего года ─────────
 curYear   = year(last_bar_time)
@@ -59,9 +62,9 @@ if isCurYear
     keys = map.keys(yrs)
     for y in keys
         if y >= sinceYear and (not excludeCurrent or y != curYear)
-            a = map.get(yrs, y)
-            if array.size(a) >= tdIdx
-                s += array.get(a, tdIdx - 1)
+            bucket = map.get(yrs, y)
+            if array.size(bucket.pcts) >= tdIdx
+                s += array.get(bucket.pcts, tdIdx - 1)
                 n += 1
     avg := n > 0 ? s / n : na
 
