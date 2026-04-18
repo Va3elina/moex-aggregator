@@ -845,7 +845,7 @@ export default function SimpleChart({
                 fontWeight={tokens.fontYWeight}
                 opacity="0.9"
               >
-                {tick.value.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
+                {formatSecondaryValue ? formatSecondaryValue(tick.value) : tick.value.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
               </text>
             ))}
 

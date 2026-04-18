@@ -234,10 +234,10 @@ export default function BuffettPage() {
                     primaryColor="#C8FF2E"
                     secondaryColor="#f59e0b"
                     showSecondary={true}
-                    formatValue={(v) => `${v.toFixed(1)}%`}
-                    formatSecondaryValue={(v) => `${v.toFixed(1)} трлн ₽`}
+                    formatValue={(v) => `${v.toFixed(2)}%`}
+                    formatSecondaryValue={(v) => `${v.toFixed(2)} трлн ₽`}
                     primaryLabel="Капитализация / ВВП"
-                    secondaryLabel="Капитализация"
+                    secondaryLabel="Капитализация (трлн ₽)"
                     loading={loading}
                     forecastCount={forecastTarget !== null ? 12 : 0}
                     showValueHeader={false}
@@ -254,10 +254,10 @@ export default function BuffettPage() {
                     primaryColor="#C8FF2E"
                     secondaryColor="#f59e0b"
                     showSecondary={true}
-                    formatValue={(v) => `${(v * 100).toFixed(0)}%`}
-                    formatSecondaryValue={(v) => `${v.toFixed(1)} трлн ₽`}
+                    formatValue={(v) => `${(v * 100).toFixed(2)}%`}
+                    formatSecondaryValue={(v) => `${v.toFixed(2)} трлн ₽`}
                     primaryLabel="Капитализация / M2"
-                    secondaryLabel="Капитализация"
+                    secondaryLabel="Капитализация (трлн ₽)"
                     loading={loading}
                     showValueHeader={false}
                     legendPosition="top"
