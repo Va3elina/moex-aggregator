@@ -129,11 +129,16 @@ def _compute_monthly_returns_index_data(
         """), {"secid": secid, "iterations": iterations}).fetchall()
 
     exclude_set = set(exclude_years or [])
+    current_yr = date.today().year
     groups: dict[int, list[float]] = defaultdict(list)
     for y, m, close, prev_close in rows:
         if since_year is not None and y < since_year:
             continue
         if y in exclude_set:
+            continue
+        # Исключаем текущий (незавершённый) год — как TradingView.
+        # Иначе частичные данные (напр. Янв 2026) искажают среднее.
+        if int(y) >= current_yr:
             continue
         ret = (float(close) / float(prev_close) - 1) * 100
         groups[int(m)].append(ret)
@@ -218,6 +223,7 @@ def _compute_monthly_returns_candles(
                 if earliest_year is None or y >= earliest_year - 1]
 
     exclude_set = set(exclude_years or [])
+    current_yr = date.today().year
     groups: dict[int, list[float]] = defaultdict(list)
     for i in range(1, len(filtered)):
         (y, m) = filtered[i]
@@ -227,6 +233,8 @@ def _compute_monthly_returns_candles(
             continue
         if y in exclude_set:
             continue
+        if y >= current_yr:
+            continue  # текущий незавершённый год
         prev_close = last_per_ym[filtered[i - 1]]
         close = last_per_ym[filtered[i]]
         if prev_close > 0:
@@ -592,14 +600,22 @@ def _compute_yearly_seasonality(
             out.append(values[lo] * (1 - frac) + values[hi] * frac)
         return out
 
+    # Базовая цена для YTD: last close ПРЕДЫДУЩЕГО года (Dec-to-Dec).
+    # Это захватывает новогодние/праздничные гэпы, которые иначе теряются.
+    # Пример: IMOEX 30.12.1999 = 151.87, 05.01.2000 = 173.00 (+14% гэп).
+    # Jan1-to-Dec31 теряет этот гэп, Dec-to-Dec его включает.
+    last_close_by_year: dict[int, float] = {}
+    for yr in sorted(years_data.keys()):
+        pts = years_data[yr]
+        if pts:
+            last_close_by_year[yr] = pts[-1][1]  # последний close года
+
     historical_buckets = [[] for _ in range(N_BUCKETS)]
     current_series = []
     min_year = None
     exclude_set = set(exclude_years or [])
 
     for yr in sorted(years_data.keys()):
-        # Фильтры: since_year и exclude_years (не применяем к текущему году —
-        # его траектория всегда показывается отдельно)
         if yr != current_year:
             if since_year is not None and yr < since_year:
                 continue
@@ -608,11 +624,15 @@ def _compute_yearly_seasonality(
 
         points = years_data[yr]
         if len(points) < 10:
-            continue  # Слишком мало данных за год
-        first_close = points[0][1]
-        if first_close <= 0:
             continue
-        pcts = [(p - first_close) / first_close * 100 for _, p in points]
+
+        # База = last close предыдущего года. Если нет — first close текущего.
+        base_close = last_close_by_year.get(yr - 1, points[0][1])
+        if base_close <= 0:
+            base_close = points[0][1]
+        if base_close <= 0:
+            continue
+        pcts = [(p - base_close) / base_close * 100 for _, p in points]
 
         if yr == current_year:
             for td_idx, (td, _) in enumerate(points):
