@@ -223,11 +223,22 @@ export default function HeatmapPage() {
     } catch { /* ignore */ }
   }, 5000);
 
-  // Получение значения для размера (экспонента усиливает разницу крупных/мелких)
-  const getSizeValue = (stock: HeatmapStock): number => {
+  // Получение сырого значения для размера
+  const getRawSizeValue = (stock: HeatmapStock): number => {
     const key = (sizeBy === 'volume' ? volumeKey : sizeBy) as keyof HeatmapStock;
-    const raw = Math.max((stock[key] as number) || 1, 1);
-    return Math.pow(raw, 0.65);
+    return Math.max((stock[key] as number) || 1, 1);
+  };
+
+  // Для СЕКТОРОВ: слабая компрессия (0.85) — площади примерно пропорциональны
+  // реальной капитализации. Финсектор >> недвижка.
+  const getSectorSizeValue = (stock: HeatmapStock): number => {
+    return Math.pow(getRawSizeValue(stock), 0.85);
+  };
+
+  // Для КОМПАНИЙ внутри сектора: сильная компрессия (0.55) — чтобы мелкие
+  // тикеры не схлопывались в невидимые полоски внутри своего сектора.
+  const getSizeValue = (stock: HeatmapStock): number => {
+    return Math.pow(getRawSizeValue(stock), 0.55);
   };
 
   // Получение значения для цвета
@@ -294,10 +305,10 @@ export default function HeatmapPage() {
       return { type: 'flat' as const, rects: squarify(items, gap, gap, containerSize.width - gap * 2, containerSize.height - gap * 2) };
     }
 
-    // По секторам
+    // По секторам: площадь сектора ~ суммарная капитализация (слабая компрессия)
     const sectorItems = sectors.map(sector => ({
       id: sector.name,
-      value: sector.stocks.reduce((sum, s) => sum + getSizeValue(s), 0),
+      value: sector.stocks.reduce((sum, s) => sum + getSectorSizeValue(s), 0),
       stocks: sector.stocks
     }));
 

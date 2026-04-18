@@ -37,6 +37,7 @@ interface SimpleChartProps {
   thirdLabel?: string;
   allowHistogram?: boolean;
   histogramDisabled?: boolean;
+  defaultHistogram?: boolean;
   showValueHeader?: boolean;
   legendPosition?: 'top' | 'bottom';
   showDownloadButton?: boolean;
@@ -76,6 +77,7 @@ export default function SimpleChart({
   thirdLabel = '',
   allowHistogram = false,
   histogramDisabled = false,
+  defaultHistogram = false,
   showValueHeader = true,
   legendPosition = 'bottom',
   showDownloadButton = true,
@@ -149,7 +151,7 @@ export default function SimpleChart({
     const d1 = displayData[displayData.length - 1].time.slice(0, 10);
     return thirdData.filter(d => d.time.slice(0, 10) >= d0 && d.time.slice(0, 10) <= d1);
   }, [showNavigator, thirdData, displayData]);
-  const [chartMode, setChartMode] = useState<'line' | 'histogram'>('line');
+  const [chartMode, setChartMode] = useState<'line' | 'histogram'>(defaultHistogram ? 'histogram' : 'line');
 
   useEffect(() => {
     if (histogramDisabled && chartMode === 'histogram') {
