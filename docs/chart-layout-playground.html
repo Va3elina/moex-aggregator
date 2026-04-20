@@ -1,0 +1,813 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Chart Layout Playground — Притоки-Оттоки</title>
+<style>
+:root {
+  --bg: #0B0D12;
+  --surface: #161b22;
+  --surface-2: #1c222b;
+  --border: #30363d;
+  --text: #c9d1d9;
+  --text-dim: #8b949e;
+  --accent: #58a6ff;
+  --positive: #2EE59D;
+  --negative: #FF4D4D;
+  --flow-positive: #32d39a;
+  --flow-negative: #ff5f5f;
+  --primary: #6366f1;
+  --axis: #9CA3B8;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, 'SF Pro Text', Inter, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  height: 100vh;
+  overflow: hidden;
+}
+.app {
+  display: grid;
+  grid-template-columns: 380px 1fr;
+  height: 100vh;
+}
+.controls {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 20px;
+}
+.controls h1 {
+  margin: 0 0 4px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--accent);
+}
+.controls .subtitle {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 20px;
+}
+.group {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 10px;
+}
+.group-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 10px;
+}
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.row:last-child { margin-bottom: 0; }
+.row label {
+  font-size: 12px;
+  color: var(--text);
+  flex: 0 0 145px;
+}
+.row input[type="range"] {
+  flex: 1;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.row .val {
+  font-family: 'SF Mono', Menlo, monospace;
+  font-size: 11px;
+  color: var(--accent);
+  min-width: 46px;
+  text-align: right;
+}
+.presets {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.preset-btn {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.preset-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.preset-btn.active {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
+}
+.right {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.preview-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  overflow: auto;
+  background:
+    repeating-linear-gradient(0deg, transparent 0 20px, rgba(255,255,255,0.02) 20px 21px),
+    repeating-linear-gradient(90deg, transparent 0 20px, rgba(255,255,255,0.02) 20px 21px),
+    var(--bg);
+}
+.prompt-wrap {
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding: 14px 20px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  max-height: 180px;
+}
+.prompt-text {
+  flex: 1;
+  font-family: 'SF Mono', Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-y: auto;
+  max-height: 152px;
+  margin: 0;
+}
+.copy-btn {
+  background: var(--accent);
+  color: var(--bg);
+  border: 0;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.copy-btn:hover { opacity: 0.9; }
+.copy-btn.copied { background: var(--positive); }
+
+/* Hover highlight */
+.row:hover { background: rgba(88,166,255,0.05); border-radius: 4px; }
+.hl {
+  animation: pulse 1s ease-in-out infinite alternate;
+  outline: 2px solid #FFD166 !important;
+  outline-offset: 2px;
+  z-index: 20;
+}
+@keyframes pulse {
+  from { outline-color: #FFD166; box-shadow: 0 0 0 2px rgba(255,209,102,0.3); }
+  to { outline-color: #FF6B9D; box-shadow: 0 0 0 6px rgba(255,107,157,0.2); }
+}
+
+.chart-outer {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  position: relative;
+  width: 100%;
+  max-width: 1100px;
+  min-width: 600px;
+  padding: var(--outer-p, 20px);
+}
+.chart-legend {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  font-size: 14px;
+  line-height: 20px; /* Tailwind text-sm: line-height 1.25rem = 20px */
+  color: var(--text);
+  margin-bottom: var(--legend-mb, 8px);
+  position: relative;
+  outline: 1px dashed transparent;
+}
+.chart-legend .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; margin-right: 6px; vertical-align: middle; }
+.chart-container {
+  position: relative;
+  height: var(--chart-h, 450px);
+  outline: 1px dashed transparent;
+}
+.bar-area {
+  position: absolute;
+  top: var(--bar-top, 19px);
+  bottom: var(--bar-bottom, 50px);
+  left: var(--bar-left, 100px);
+  right: var(--bar-right, 95px);
+  outline: 1px dashed rgba(88,166,255,0.35);
+}
+.bar-area svg { width: 100%; height: 100%; display: block; }
+.bar-area .zero-line, .bar-area .grid-line {
+  stroke: rgba(255,255,255,0.06);
+  stroke-width: 1;
+}
+.bar-area .zero-line { stroke: rgba(255,255,255,0.18); }
+
+.y-axis {
+  position: absolute;
+  top: var(--bar-top, 19px);
+  bottom: var(--bar-bottom, 50px);
+  right: 0;
+  width: var(--yaxis-w, 95px);
+  pointer-events: none;
+  outline: 1px dashed rgba(46,229,157,0.35);
+}
+.y-axis span {
+  position: absolute;
+  left: var(--yaxis-left, 12px);
+  transform: translateY(-50%);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--axis);
+  white-space: nowrap;
+}
+
+.x-axis {
+  position: absolute;
+  bottom: var(--xaxis-bottom, 14px);
+  left: var(--bar-left, 100px);
+  right: var(--bar-right, 95px);
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--axis);
+  padding: 0 8px;
+  outline: 1px dashed rgba(255,204,99,0.35);
+}
+
+.date-tooltip {
+  position: absolute;
+  top: var(--date-top, 38px);
+  left: var(--date-left-pct, 48%);
+  transform: translateX(-50%);
+  background: rgba(28, 34, 43, 0.92);
+  backdrop-filter: blur(6px);
+  color: var(--text-dim);
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 11px;
+  white-space: nowrap;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.tooltip-card {
+  position: absolute;
+  top: var(--card-top, 50%);
+  left: var(--card-left-pct, 45%);
+  background: rgba(28, 34, 43, 0.92);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 11px;
+  z-index: 5;
+  pointer-events: none;
+  width: var(--card-w, 180px);
+}
+.tooltip-card .row-tt { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 2px 0; }
+.tooltip-card .row-tt .lbl { color: var(--text-dim); }
+.tooltip-card .row-tt .val-tt { color: var(--positive); font-weight: 600; font-family: 'SF Mono', Menlo, monospace; }
+.tooltip-card .row-tt .dot-sm { width: 8px; height: 8px; display: inline-block; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+
+.crosshair {
+  position: absolute;
+  top: var(--bar-top, 19px);
+  bottom: var(--bar-bottom, 50px);
+  left: var(--crosshair-left, 45%);
+  width: 0;
+  border-left: 1px dashed rgba(99,102,241,0.45);
+  z-index: 3;
+  pointer-events: none;
+}
+
+.navigator {
+  margin-top: var(--nav-mt, 0px);
+  height: var(--nav-h, 52px);
+  background: rgba(36, 42, 54, 0.5);
+  border-radius: 4px;
+  position: relative;
+  outline: 1px dashed rgba(99,102,241,0.35);
+}
+.navigator .nav-area {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(99,102,241,0.18) 0%, transparent 100%);
+  border-radius: 4px;
+}
+.navigator .handle {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 36px;
+  background: rgba(99,102,241,0.95);
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 10px;
+}
+.navigator .handle.l { left: 4px; }
+.navigator .handle.r { right: 4px; }
+
+.show-outlines .chart-legend,
+.show-outlines .chart-container,
+.show-outlines .bar-area,
+.show-outlines .y-axis,
+.show-outlines .x-axis,
+.show-outlines .navigator {
+  outline-color: var(--border) !important;
+}
+
+.hint {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: rgba(88,166,255,0.06);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="controls">
+    <h1>Chart Layout Playground</h1>
+    <div class="subtitle">Притоки-Оттоки vs СЧА / ОИ — настрой визуально</div>
+
+    <div class="presets">
+      <button class="preset-btn active" data-preset="scha">СЧА (эталон)</button>
+      <button class="preset-btn" data-preset="tight">Tight</button>
+      <button class="preset-btn" data-preset="airy">Airy</button>
+    </div>
+
+    <div class="group">
+      <div class="group-title">Внешний контейнер</div>
+      <div class="row" data-hl=".chart-outer">
+        <label>Outer padding (p-5)</label>
+        <input type="range" min="0" max="40" step="1" value="20" data-key="outer_p">
+        <span class="val" data-val="outer_p">20px</span>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-title">Легенда</div>
+      <div class="row" data-hl=".chart-legend">
+        <label>Margin-bottom</label>
+        <input type="range" min="0" max="40" step="1" value="8" data-key="legend_mb">
+        <span class="val" data-val="legend_mb">8px</span>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-title">Chart container</div>
+      <div class="row" data-hl=".chart-container">
+        <label>Height</label>
+        <input type="range" min="300" max="600" step="5" value="450" data-key="chart_h">
+        <span class="val" data-val="chart_h">450px</span>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-title">Bar area (отступы внутри chart)</div>
+      <div class="row" data-hl=".bar-area">
+        <label>Top padding</label>
+        <input type="range" min="0" max="80" step="1" value="19" data-key="bar_top">
+        <span class="val" data-val="bar_top">19px</span>
+      </div>
+      <div class="row" data-hl=".bar-area">
+        <label>Bottom padding</label>
+        <input type="range" min="0" max="100" step="1" value="50" data-key="bar_bottom">
+        <span class="val" data-val="bar_bottom">50px</span>
+      </div>
+      <div class="row" data-hl=".bar-area">
+        <label>Left padding</label>
+        <input type="range" min="0" max="160" step="1" value="100" data-key="bar_left">
+        <span class="val" data-val="bar_left">100px</span>
+      </div>
+      <div class="row" data-hl=".bar-area">
+        <label>Right padding</label>
+        <input type="range" min="0" max="160" step="1" value="95" data-key="bar_right">
+        <span class="val" data-val="bar_right">95px</span>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-title">Y-axis (цифры справа)</div>
+      <div class="row" data-hl=".y-axis">
+        <label>Width зоны</label>
+        <input type="range" min="40" max="140" step="1" value="95" data-key="yaxis_w">
+        <span class="val" data-val="yaxis_w">95px</span>
+      </div>
+      <div class="row" data-hl=".y-axis">
+        <label>Left offset (текста)</label>
+        <input type="range" min="0" max="40" step="1" value="12" data-key="yaxis_left">
+        <span class="val" data-val="yaxis_left">12px</span>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-title">X-axis (даты)</div>
+      <div class="row" data-hl=".x-axis">
+        <label>Bottom offset</label>
+        <input type="range" min="0" max="60" step="1" value="14" data-key="xaxis_bottom">
+        <span class="val" data-val="xaxis_bottom">14px</span>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-title">Date tooltip (при hover)</div>
+      <div class="row" data-hl=".date-tooltip">
+        <label>Top (от outer)</label>
+        <input type="range" min="0" max="100" step="1" value="38" data-key="date_top">
+        <span class="val" data-val="date_top">38px</span>
+      </div>
+      <div class="row" data-hl=".date-tooltip">
+        <label>Horizontal pos</label>
+        <input type="range" min="10" max="90" step="1" value="48" data-key="date_left_pct">
+        <span class="val" data-val="date_left_pct">48%</span>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-title">Tooltip card (значения)</div>
+      <div class="row" data-hl=".tooltip-card">
+        <label>Top position</label>
+        <input type="range" min="0" max="500" step="1" value="220" data-key="card_top">
+        <span class="val" data-val="card_top">220px</span>
+      </div>
+      <div class="row" data-hl=".tooltip-card">
+        <label>Horizontal pos</label>
+        <input type="range" min="5" max="85" step="1" value="45" data-key="card_left_pct">
+        <span class="val" data-val="card_left_pct">45%</span>
+      </div>
+      <div class="row" data-hl=".tooltip-card">
+        <label>Width</label>
+        <input type="range" min="120" max="280" step="2" value="180" data-key="card_w">
+        <span class="val" data-val="card_w">180px</span>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-title">Crosshair (hover линия)</div>
+      <div class="row" data-hl=".crosshair">
+        <label>Horizontal pos</label>
+        <input type="range" min="5" max="95" step="1" value="45" data-key="crosshair_left">
+        <span class="val" data-val="crosshair_left">45%</span>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-title">Навигатор снизу</div>
+      <div class="row" data-hl=".navigator">
+        <label>Height</label>
+        <input type="range" min="30" max="80" step="1" value="52" data-key="nav_h">
+        <span class="val" data-val="nav_h">52px</span>
+      </div>
+      <div class="row" data-hl=".navigator">
+        <label>Margin-top (gap)</label>
+        <input type="range" min="0" max="40" step="1" value="0" data-key="nav_mt">
+        <span class="val" data-val="nav_mt">0px</span>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-title">Визуальные помощники</div>
+      <div class="row">
+        <label>Показать границы зон</label>
+        <input type="checkbox" id="show-outlines">
+      </div>
+    </div>
+
+    <div class="hint">
+      Пунктирные рамки показывают где зоны bar-area, Y-axis, X-axis, navigator. Включи "границы зон" чтобы видеть чётче.
+    </div>
+  </div>
+
+  <div class="right">
+    <div class="preview-wrap">
+      <div id="chart" class="chart-outer">
+        <div class="chart-legend">
+          <span><span class="dot" style="background:var(--flow-positive)"></span>Приток (млрд руб)</span>
+          <span><span class="dot" style="background:var(--flow-negative)"></span>Отток (млрд руб)</span>
+        </div>
+
+        <div class="chart-container">
+          <div class="bar-area">
+            <svg viewBox="0 0 1000 500" preserveAspectRatio="none">
+              <line class="grid-line" x1="0" y1="35" x2="1000" y2="35"/>
+              <line class="grid-line" x1="0" y1="165" x2="1000" y2="165"/>
+              <line class="zero-line" x1="0" y1="250" x2="1000" y2="250"/>
+              <line class="grid-line" x1="0" y1="335" x2="1000" y2="335"/>
+              <line class="grid-line" x1="0" y1="465" x2="1000" y2="465"/>
+              <g id="bars"></g>
+            </svg>
+          </div>
+
+          <div class="y-axis">
+            <span style="top: 7%">+12.6</span>
+            <span style="top: 30%">+6.3</span>
+            <span style="top: 50%">0</span>
+            <span style="top: 70%">-6.3</span>
+            <span style="top: 93%">-12.6</span>
+          </div>
+
+          <div class="x-axis">
+            <span>22 окт. 25 г.</span>
+            <span>25 нояб. 25 г.</span>
+            <span>26 дек. 25 г.</span>
+            <span>9 февр. 26 г.</span>
+            <span>16 мар. 26 г.</span>
+            <span>16 апр. 26 г.</span>
+          </div>
+
+          <div class="crosshair"></div>
+        </div>
+
+        <!-- Date tooltip и Tooltip card — вне chart-container (как в реальном SimpleChart), позиция относительно .chart-outer -->
+        <div class="date-tooltip">15 дек. 2025 г.</div>
+
+        <div class="tooltip-card">
+          <div class="row-tt">
+            <span class="lbl"><span class="dot-sm" style="background:var(--flow-positive)"></span>Приток</span>
+            <span class="val-tt">+4.11 млрд ₽</span>
+          </div>
+          <div class="row-tt">
+            <span class="lbl"><span class="dot-sm" style="background:var(--primary)"></span>Изменение</span>
+            <span class="val-tt">+0.30%</span>
+          </div>
+        </div>
+
+        <div class="navigator">
+          <div class="nav-area"></div>
+          <div class="handle l">&lt;</div>
+          <div class="handle r">&gt;</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="prompt-wrap">
+      <pre class="prompt-text" id="prompt"></pre>
+      <button class="copy-btn" id="copy">Copy</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const DEFAULTS = {
+  outer_p: 20,
+  legend_mb: 8,
+  chart_h: 450,
+  bar_top: 19,
+  bar_bottom: 50,
+  bar_left: 100,
+  bar_right: 95,
+  yaxis_w: 95,
+  yaxis_left: 12,
+  xaxis_bottom: 14,
+  date_top: 38,
+  date_left_pct: 48,
+  card_top: 220,
+  card_left_pct: 45,
+  card_w: 180,
+  crosshair_left: 45,
+  nav_h: 52,
+  nav_mt: 0,
+};
+
+const PRESETS = {
+  scha: Object.assign({}, DEFAULTS),
+  tight: {
+    outer_p: 16, legend_mb: 4, chart_h: 380,
+    bar_top: 12, bar_bottom: 40, bar_left: 90, bar_right: 85,
+    yaxis_w: 85, yaxis_left: 10, xaxis_bottom: 10,
+    date_top: 30, date_left_pct: 48,
+    card_top: 180, card_left_pct: 45, card_w: 160,
+    crosshair_left: 45, nav_h: 44, nav_mt: 0,
+  },
+  airy: {
+    outer_p: 28, legend_mb: 16, chart_h: 500,
+    bar_top: 28, bar_bottom: 60, bar_left: 110, bar_right: 110,
+    yaxis_w: 110, yaxis_left: 16, xaxis_bottom: 20,
+    date_top: 48, date_left_pct: 48,
+    card_top: 250, card_left_pct: 45, card_w: 200,
+    crosshair_left: 45, nav_h: 60, nav_mt: 8,
+  },
+};
+
+const state = Object.assign({}, DEFAULTS);
+
+const UNITS = {
+  outer_p: 'px', legend_mb: 'px', chart_h: 'px',
+  bar_top: 'px', bar_bottom: 'px', bar_left: 'px', bar_right: 'px',
+  yaxis_w: 'px', yaxis_left: 'px', xaxis_bottom: 'px',
+  date_top: 'px', date_left_pct: '%',
+  card_top: 'px', card_left_pct: '%', card_w: 'px',
+  crosshair_left: '%', nav_h: 'px', nav_mt: 'px',
+};
+
+function genBars() {
+  const g = document.getElementById('bars');
+  while (g.firstChild) g.removeChild(g.firstChild);
+  const n = 80;
+  const bw = 1000 / n;
+  const barPad = 0.2;
+  for (let i = 0; i < n; i++) {
+    const rand = Math.random();
+    let v;
+    if (rand < 0.75) v = Math.random() * 8 + 0.5;
+    else v = -(Math.random() * 2 + 0.2);
+    const maxScale = 12.6;
+    const h = Math.abs(v) / maxScale * 215;
+    const x = i * bw + bw * barPad;
+    const w = bw * (1 - 2 * barPad);
+    const y = v > 0 ? 250 - h : 250;
+    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.setAttribute('x', x);
+    rect.setAttribute('y', y);
+    rect.setAttribute('width', w);
+    rect.setAttribute('height', Math.max(h, 1));
+    rect.setAttribute('fill', v > 0 ? '#32d39a' : '#ff5f5f');
+    rect.setAttribute('opacity', '0.9');
+    g.appendChild(rect);
+  }
+}
+
+function renderPreview() {
+  const chart = document.getElementById('chart');
+  const s = state;
+  chart.style.setProperty('--outer-p', s.outer_p + 'px');
+  chart.style.setProperty('--legend-mb', s.legend_mb + 'px');
+  chart.style.setProperty('--chart-h', s.chart_h + 'px');
+  chart.style.setProperty('--bar-top', s.bar_top + 'px');
+  chart.style.setProperty('--bar-bottom', s.bar_bottom + 'px');
+  chart.style.setProperty('--bar-left', s.bar_left + 'px');
+  chart.style.setProperty('--bar-right', s.bar_right + 'px');
+  chart.style.setProperty('--yaxis-w', s.yaxis_w + 'px');
+  chart.style.setProperty('--yaxis-left', s.yaxis_left + 'px');
+  chart.style.setProperty('--xaxis-bottom', s.xaxis_bottom + 'px');
+  chart.style.setProperty('--date-top', s.date_top + 'px');
+  chart.style.setProperty('--date-left-pct', s.date_left_pct + '%');
+  chart.style.setProperty('--card-top', s.card_top + 'px');
+  chart.style.setProperty('--card-left-pct', s.card_left_pct + '%');
+  chart.style.setProperty('--card-w', s.card_w + 'px');
+  chart.style.setProperty('--crosshair-left', s.crosshair_left + '%');
+  chart.style.setProperty('--nav-h', s.nav_h + 'px');
+  chart.style.setProperty('--nav-mt', s.nav_mt + 'px');
+}
+
+const FRIENDLY = {
+  outer_p: 'Outer padding (обёртка SimpleChart)',
+  legend_mb: 'Margin-bottom легенды',
+  chart_h: 'Высота чарт-контейнера (flowContainerRef)',
+  bar_top: 'Bar-area top padding',
+  bar_bottom: 'Bar-area bottom padding (резерв для X-дат)',
+  bar_left: 'Bar-area left padding (--chart-pad-left)',
+  bar_right: 'Bar-area right padding (--chart-pad-right-single)',
+  yaxis_w: 'Y-axis width справа',
+  yaxis_left: 'Y-axis left offset текста от края зоны',
+  xaxis_bottom: 'X-axis bottom offset',
+  date_top: 'Date tooltip top (от outer, не от чарта!)',
+  date_left_pct: 'Date tooltip позиция X (%)',
+  card_top: 'Tooltip card top',
+  card_left_pct: 'Tooltip card позиция X (%)',
+  card_w: 'Tooltip card width',
+  crosshair_left: 'Crosshair позиция X (%)',
+  nav_h: 'Navigator height',
+  nav_mt: 'Navigator margin-top (gap от чарта)',
+};
+
+function updatePrompt() {
+  const changes = [];
+  for (const k of Object.keys(DEFAULTS)) {
+    if (state[k] !== DEFAULTS[k]) changes.push([k, DEFAULTS[k], state[k]]);
+  }
+  const pr = document.getElementById('prompt');
+  if (!changes.length) {
+    pr.textContent = 'Текущая конфигурация = эталонная СЧА. Двинь слайдеры — появится промт.';
+    return;
+  }
+  const lines = ['Примени эти значения к Притоки-Оттоки (FlowsHistogram.tsx):', ''];
+  for (const c of changes) {
+    const k = c[0], def = c[1], cur = c[2];
+    lines.push('• ' + FRIENDLY[k] + ': ' + def + UNITS[k] + ' → ' + cur + UNITS[k]);
+  }
+  lines.push('');
+  lines.push('— в коде:');
+  for (const c of changes) {
+    const k = c[0], cur = c[2];
+    const hint = {
+      outer_p: 'Outer div: padding ' + cur + 'px',
+      legend_mb: 'Легенда mb: margin-bottom ' + cur + 'px',
+      chart_h: 'flowContainerRef: style height ' + cur,
+      bar_top: 'bar-container: top ' + cur,
+      bar_bottom: 'bar-container: bottom ' + cur,
+      bar_left: '--chart-pad-left или inline left ' + cur,
+      bar_right: '--chart-pad-right-single или inline right ' + cur,
+      yaxis_w: 'Y-labels width ' + cur,
+      yaxis_left: 'Y-labels left ' + cur,
+      xaxis_bottom: 'X-labels bottom ' + cur,
+      date_top: 'Date tooltip top ' + cur,
+      card_w: 'Tooltip card width ' + cur,
+      nav_h: 'Navigator height ' + cur,
+      nav_mt: 'Navigator margin-top ' + cur,
+    };
+    if (hint[k]) lines.push('• ' + hint[k]);
+  }
+  pr.textContent = lines.join('\n');
+}
+
+function updateVal(key) {
+  const valEl = document.querySelector('[data-val="' + key + '"]');
+  if (valEl) valEl.textContent = state[key] + UNITS[key];
+}
+
+function updateAll() {
+  renderPreview();
+  updatePrompt();
+  for (const k of Object.keys(DEFAULTS)) updateVal(k);
+}
+
+function setState(partial) {
+  Object.assign(state, partial);
+  for (const k of Object.keys(partial)) {
+    const input = document.querySelector('input[data-key="' + k + '"]');
+    if (input) input.value = partial[k];
+  }
+  updateAll();
+}
+
+document.querySelectorAll('input[type="range"]').forEach(function(el) {
+  el.addEventListener('input', function() {
+    const k = el.dataset.key;
+    state[k] = parseFloat(el.value);
+    updateVal(k);
+    renderPreview();
+    updatePrompt();
+  });
+});
+
+document.querySelectorAll('.preset-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    document.querySelectorAll('.preset-btn').forEach(function(b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    setState(PRESETS[btn.dataset.preset]);
+  });
+});
+
+document.getElementById('show-outlines').addEventListener('change', function(e) {
+  document.getElementById('chart').classList.toggle('show-outlines', e.target.checked);
+});
+
+// Hover highlight corresponding preview element
+document.querySelectorAll('.row[data-hl]').forEach(function(row) {
+  row.addEventListener('mouseenter', function() {
+    row.dataset.hl.split(',').forEach(function(sel) {
+      document.querySelectorAll(sel.trim()).forEach(function(el) { el.classList.add('hl'); });
+    });
+  });
+  row.addEventListener('mouseleave', function() {
+    row.dataset.hl.split(',').forEach(function(sel) {
+      document.querySelectorAll(sel.trim()).forEach(function(el) { el.classList.remove('hl'); });
+    });
+  });
+});
+
+document.getElementById('copy').addEventListener('click', function() {
+  navigator.clipboard.writeText(document.getElementById('prompt').textContent).then(function() {
+    const btn = document.getElementById('copy');
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(function() { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1500);
+  });
+});
+
+genBars();
+updateAll();
+</script>
+</body>
+</html>

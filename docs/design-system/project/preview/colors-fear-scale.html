@@ -1,0 +1,19 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../colors_and_type.css"><style>
+  html,body{margin:0;background:var(--bg-primary);color:var(--fg-primary);font-family:var(--font-sans)}
+  .wrap{padding:20px}
+  .bar{height:14px;border-radius:999px;overflow:hidden;display:flex;margin-bottom:14px}
+  .bar > div{flex:1}
+  .grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+  .box{padding:12px;border-radius:12px;text-align:center}
+  .range{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums}
+  .lbl{font-size:11px;color:var(--fg-secondary);margin-top:2px}
+</style></head><body><div class="wrap">
+  <div class="bar"><div style="background:#22C55E"></div><div style="background:#84CC16"></div><div style="background:#EAB308"></div><div style="background:#F97316"></div><div style="background:#EF4444"></div></div>
+  <div class="grid">
+    <div class="box" style="background:rgba(34,197,94,.10);border:1px solid rgba(34,197,94,.3)"><div class="range" style="color:#22C55E">0–25</div><div class="lbl">Экстр. жадность</div></div>
+    <div class="box" style="background:rgba(132,204,22,.10);border:1px solid rgba(132,204,22,.3)"><div class="range" style="color:#84CC16">25–45</div><div class="lbl">Жадность</div></div>
+    <div class="box" style="background:rgba(234,179,8,.10);border:1px solid rgba(234,179,8,.3)"><div class="range" style="color:#EAB308">45–55</div><div class="lbl">Нейтрально</div></div>
+    <div class="box" style="background:rgba(249,115,22,.10);border:1px solid rgba(249,115,22,.3)"><div class="range" style="color:#F97316">55–75</div><div class="lbl">Страх</div></div>
+    <div class="box" style="background:rgba(239,68,68,.10);border:1px solid rgba(239,68,68,.3)"><div class="range" style="color:#EF4444">75–100</div><div class="lbl">Экстр. страх</div></div>
+  </div>
+</div></body></html>

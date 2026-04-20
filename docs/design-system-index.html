@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Design System — Фрейм (bundle от Claude Design)</title>
+<style>
+body {
+  margin: 0;
+  font-family: -apple-system, 'SF Pro Text', Inter, sans-serif;
+  background: #0B0D0F;
+  color: #c9d1d9;
+  min-height: 100vh;
+  padding: 40px 20px;
+}
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+h1 {
+  margin: 0 0 8px;
+  font-size: 32px;
+  font-weight: 700;
+  color: #00E676;
+}
+.subtitle {
+  color: #8b949e;
+  font-size: 14px;
+  margin-bottom: 32px;
+}
+.section {
+  margin-bottom: 32px;
+}
+.section-title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: #00E676;
+  margin-bottom: 12px;
+}
+.section-desc {
+  font-size: 13px;
+  color: #8b949e;
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+.card {
+  background: linear-gradient(135deg, #131518, #1B1E21);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 16px;
+  padding: 16px 20px;
+  text-decoration: none;
+  color: #c9d1d9;
+  transition: all 0.2s;
+  display: block;
+}
+.card:hover {
+  border-color: rgba(0,230,118,0.3);
+  transform: translateY(-2px);
+}
+.card h3 {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #e3e6ec;
+}
+.card p {
+  margin: 0;
+  font-size: 12px;
+  color: #8b949e;
+}
+.card .emoji { font-size: 18px; margin-right: 6px; }
+.highlight {
+  background: rgba(0,230,118,0.08);
+  border-color: rgba(0,230,118,0.35);
+}
+.highlight h3 { color: #00E676; }
+.doc-link {
+  display: inline-block;
+  margin-right: 16px;
+  padding: 10px 18px;
+  background: rgba(99,102,241,0.1);
+  border: 1px solid rgba(99,102,241,0.35);
+  border-radius: 8px;
+  color: #8a8fff;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+}
+.doc-link:hover { background: rgba(99,102,241,0.2); }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>🎨 Дизайн-система «Фрейм»</h1>
+  <div class="subtitle">Bundle из Claude Design (<code>claude.ai/design</code>) — документация существующего стиля + прототипы</div>
+
+  <div class="section">
+    <div class="section-title">📄 Документация</div>
+    <div class="section-desc">Манифесты: что это за система, какие правила, для кого.</div>
+    <div>
+      <a class="doc-link" href="/design-system/README.md">README главный</a>
+      <a class="doc-link" href="/design-system/project/README.md">Brand + визуальные основы</a>
+      <a class="doc-link" href="/design-system/project/SKILL.md">SKILL.md (правила для AI)</a>
+      <a class="doc-link" href="/design-system/chats/chat1.md">Chat transcript</a>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">🖥 UI Kit прототипы</div>
+    <div class="section-desc">React-прототип 4 страниц (Overview, Fear Index, Heatmap, Strength). Кликабельный, видно как Claude Design видит унифицированный интерфейс.</div>
+    <a class="card highlight" href="/design-system/project/ui_kits/web/index.html" target="_blank">
+      <h3>→ Открыть UI Kit (Главная)</h3>
+      <p>Click-through прототип с 4 страницами</p>
+    </a>
+  </div>
+
+  <div class="section">
+    <div class="section-title">🎨 Preview карточки — Цвета</div>
+    <div class="grid">
+      <a class="card" href="/design-system/project/preview/colors-surfaces.html" target="_blank"><h3>Surfaces</h3><p>4-ступенчатая тёмная лестница</p></a>
+      <a class="card" href="/design-system/project/preview/colors-accent.html" target="_blank"><h3>Accent</h3><p>OKX Green #00E676</p></a>
+      <a class="card" href="/design-system/project/preview/colors-indicators.html" target="_blank"><h3>Indicators</h3><p>8 акцентов по индикаторам</p></a>
+      <a class="card" href="/design-system/project/preview/colors-data-semantic.html" target="_blank"><h3>Data semantic</h3><p>+positive, -negative, neutral</p></a>
+      <a class="card" href="/design-system/project/preview/colors-fear-scale.html" target="_blank"><h3>Fear scale</h3><p>5-step gradient (0→100)</p></a>
+      <a class="card" href="/design-system/project/preview/colors-heatmap.html" target="_blank"><h3>Heatmap</h3><p>Finviz-style compressed palette</p></a>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">📐 Preview карточки — Типография</div>
+    <div class="grid">
+      <a class="card" href="/design-system/project/preview/type-scale.html" target="_blank"><h3>Type scale</h3><p>Шкала размеров текста</p></a>
+      <a class="card" href="/design-system/project/preview/type-numerics.html" target="_blank"><h3>Numerics</h3><p>tabular-nums, форматы чисел</p></a>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">📏 Preview карточки — Spacing</div>
+    <div class="grid">
+      <a class="card" href="/design-system/project/preview/spacing-grid.html" target="_blank"><h3>Grid</h3><p>4px base grid, padding, gaps</p></a>
+      <a class="card" href="/design-system/project/preview/spacing-radii.html" target="_blank"><h3>Radii</h3><p>Border-radius шкала (6→16)</p></a>
+      <a class="card" href="/design-system/project/preview/spacing-shadows.html" target="_blank"><h3>Shadows</h3><p>3-tier elevation system</p></a>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">🧱 Preview карточки — Компоненты</div>
+    <div class="grid">
+      <a class="card highlight" href="/design-system/project/preview/component-widget.html" target="_blank"><h3>Widget</h3><p>Основной контейнер — 16px radius, gradient bg</p></a>
+      <a class="card" href="/design-system/project/preview/component-page-hero.html" target="_blank"><h3>Page Hero</h3><p>Icon tile + H1 + subtitle</p></a>
+      <a class="card" href="/design-system/project/preview/component-metric-hero.html" target="_blank"><h3>Metric Hero</h3><p>Большое число + pill + caption</p></a>
+      <a class="card" href="/design-system/project/preview/component-nav.html" target="_blank"><h3>Navigation</h3><p>Sticky top nav</p></a>
+      <a class="card" href="/design-system/project/preview/component-buttons.html" target="_blank"><h3>Buttons</h3><p>Стили кнопок, CTA, press state</p></a>
+      <a class="card" href="/design-system/project/preview/component-tooltip.html" target="_blank"><h3>Tooltip</h3><p>Rounded panel / callout / inline</p></a>
+      <a class="card" href="/design-system/project/preview/component-scale-bar.html" target="_blank"><h3>Scale bar</h3><p>5-сегментный индикатор страха</p></a>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">🏷 Бренд</div>
+    <div class="grid">
+      <a class="card" href="/design-system/project/preview/brand-logo.html" target="_blank"><h3>Logo</h3><p>"Фрейм" wordmark + PWA icons</p></a>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">📦 Reference код</div>
+    <div class="section-desc">Копия твоего <code>frontend/src/</code> которую Claude Design использовал как контекст. Не надо трогать — это просто reference.</div>
+  </div>
+</div>
+</body>
+</html>

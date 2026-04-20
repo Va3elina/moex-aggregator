@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Chart Layout Playground — СЧА (SimpleChart)</title>
+<style>
+:root {
+  --bg: #0B0D12;
+  --surface: #161b22;
+  --surface-2: #1c222b;
+  --border: #30363d;
+  --text: #c9d1d9;
+  --text-dim: #8b949e;
+  --accent: #58a6ff;
+  --positive: #2EE59D;
+  --primary: #6366f1;
+  --secondary: #C8FF2E;
+  --axis: #9CA3B8;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, 'SF Pro Text', Inter, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  height: 100vh;
+  overflow: hidden;
+}
+.app {
+  display: grid;
+  grid-template-columns: 380px 1fr;
+  height: 100vh;
+}
+.controls {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  padding: 20px;
+}
+.controls h1 {
+  margin: 0 0 4px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--primary);
+}
+.controls .subtitle {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 20px;
+}
+.group {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 10px;
+}
+.group-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--primary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 10px;
+}
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.row:last-child { margin-bottom: 0; }
+.row label {
+  font-size: 12px;
+  color: var(--text);
+  flex: 0 0 160px;
+}
+.row input[type="range"] {
+  flex: 1;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+.row input[type="checkbox"] {
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+.row .val {
+  font-family: 'SF Mono', Menlo, monospace;
+  font-size: 11px;
+  color: var(--primary);
+  min-width: 50px;
+  text-align: right;
+}
+.presets {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.preset-btn {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.preset-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+.preset-btn.active {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+.right {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.preview-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  overflow: auto;
+  background:
+    repeating-linear-gradient(0deg, transparent 0 20px, rgba(255,255,255,0.02) 20px 21px),
+    repeating-linear-gradient(90deg, transparent 0 20px, rgba(255,255,255,0.02) 20px 21px),
+    var(--bg);
+}
+.prompt-wrap {
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding: 14px 20px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  max-height: 180px;
+}
+.prompt-text {
+  flex: 1;
+  font-family: 'SF Mono', Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-y: auto;
+  max-height: 152px;
+  margin: 0;
+}
+.copy-btn {
+  background: var(--primary);
+  color: #fff;
+  border: 0;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.copy-btn:hover { opacity: 0.9; }
+.copy-btn.copied { background: var(--positive); }
+
+.chart-outer {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  position: relative;
+  width: 100%;
+  max-width: 1100px;
+  min-width: 600px;
+  padding: var(--outer-p, 20px);
+}
+.chart-legend {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  font-size: 14px;
+  line-height: 20px; /* Tailwind text-sm: line-height 1.25rem = 20px */
+  color: var(--text);
+  margin-bottom: var(--legend-mb, 8px);
+  position: relative;
+  outline: 1px dashed transparent;
+}
+.chart-legend .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; margin-right: 6px; vertical-align: middle; }
+.chart-container {
+  position: relative;
+  height: var(--chart-h, 450px);
+  outline: 1px dashed transparent;
+}
+.chart-svg-wrap {
+  position: absolute;
+  inset: 0;
+}
+.chart-svg-wrap svg { width: 100%; height: 100%; display: block; }
+
+.date-tooltip {
+  position: absolute;
+  top: var(--date-top, 38px);
+  left: var(--date-left-pct, 48%);
+  transform: translateX(-50%);
+  background: rgba(28, 34, 43, 0.92);
+  backdrop-filter: blur(6px);
+  color: var(--text-dim);
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 11px;
+  white-space: nowrap;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.tooltip-card {
+  position: absolute;
+  top: var(--card-top, 220px);
+  left: var(--card-left-pct, 45%);
+  background: rgba(28, 34, 43, 0.92);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 11px;
+  z-index: 5;
+  pointer-events: none;
+  width: var(--card-w, 200px);
+}
+.tooltip-card .row-tt { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 2px 0; }
+.tooltip-card .row-tt .lbl { color: var(--text-dim); font-size: 10px; }
+.tooltip-card .row-tt .val-tt { color: var(--text); font-weight: 700; font-family: 'SF Mono', Menlo, monospace; }
+.tooltip-card .row-tt .dot-sm { width: 8px; height: 8px; display: inline-block; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+
+.crosshair {
+  position: absolute;
+  top: var(--pad-top, 19px);
+  bottom: var(--pad-bottom, 50px);
+  left: var(--crosshair-left, 45%);
+  width: 0;
+  border-left: 1px dashed rgba(200,255,46,0.55);
+  z-index: 3;
+  pointer-events: none;
+}
+
+.dot-marker {
+  position: absolute;
+  top: var(--dot-top, 35%);
+  left: var(--crosshair-left, 45%);
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--primary);
+  box-shadow: 0 0 0 2px rgba(99,102,241,0.3);
+  transform: translate(-50%, -50%);
+  z-index: 4;
+  pointer-events: none;
+}
+
+.navigator {
+  margin-top: var(--nav-mt, 0px);
+  height: var(--nav-h, 52px);
+  background: rgba(36, 42, 54, 0.4);
+  border-radius: 4px;
+  position: relative;
+  outline: 1px dashed rgba(99,102,241,0.35);
+  overflow: hidden;
+}
+.navigator svg { width: 100%; height: 100%; display: block; }
+.navigator .handle {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 36px;
+  background: rgba(99,102,241,0.95);
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 10px;
+  z-index: 2;
+}
+.navigator .handle.l { left: 4px; }
+.navigator .handle.r { right: 4px; }
+
+.show-outlines .chart-legend,
+.show-outlines .chart-container,
+.show-outlines .chart-svg-wrap,
+.show-outlines .navigator {
+  outline-color: var(--border) !important;
+}
+
+.hint {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: rgba(99,102,241,0.06);
+  border-left: 3px solid var(--primary);
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+.diff-link {
+  display: block;
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: rgba(46,229,157,0.06);
+  border-left: 3px solid var(--positive);
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--positive);
+  text-decoration: none;
+}
+.diff-link:hover { opacity: 0.85; }
+
+/* Hover highlight for corresponding preview element */
+.row:hover { background: rgba(99,102,241,0.05); border-radius: 4px; }
+.hl {
+  animation: pulse 1s ease-in-out infinite alternate;
+  outline: 2px solid #FFD166 !important;
+  outline-offset: 2px;
+  z-index: 20;
+}
+@keyframes pulse {
+  from { outline-color: #FFD166; box-shadow: 0 0 0 2px rgba(255,209,102,0.3); }
+  to { outline-color: #FF6B9D; box-shadow: 0 0 0 6px rgba(255,107,157,0.2); }
+}
+
+/* Padding zone overlays */
+.pad-zone {
+  position: absolute;
+  pointer-events: none;
+  background: rgba(255,209,102,0);
+  border: 2px solid rgba(255,209,102,0);
+  transition: background 0.2s, border-color 0.2s;
+  z-index: 10;
+}
+.pad-zone.hl {
+  background: rgba(255,209,102,0.12) !important;
+  border-color: rgba(255,209,102,0.6) !important;
+  outline: none !important;
+  box-shadow: none !important;
+  animation: none !important;
+}
+.pad-zone.top { top: 0; left: 0; right: 0; height: var(--pad-top, 19px); }
+.pad-zone.bottom { bottom: 0; left: 0; right: 0; height: var(--pad-bottom, 50px); }
+.pad-zone.left { top: var(--pad-top, 19px); bottom: var(--pad-bottom, 50px); left: 0; width: var(--pad-left, 100px); }
+.pad-zone.right { top: var(--pad-top, 19px); bottom: var(--pad-bottom, 50px); right: 0; width: var(--pad-right-dual, 95px); }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="controls">
+    <h1>СЧА Layout Playground</h1>
+    <div class="subtitle">SimpleChart в режиме AUM / OI — настрой визуально</div>
+
+    <div class="presets">
+      <button class="preset-btn active" data-preset="default">Default (текущий)</button>
+      <button class="preset-btn" data-preset="dense">Dense</button>
+      <button class="preset-btn" data-preset="spacious">Spacious</button>
+    </div>
+
+    <div class="group">
+      <div class="group-title">Внешний контейнер</div>
+      <div class="row" data-hl=".chart-outer">
+        <label>Outer padding (p-5)</label>
+        <input type="range" min="0" max="40" step="1" value="20" data-key="outer_p">
+        <span class="val" data-val="outer_p">20px</span>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-title">Легенда</div>
+      <div class="row" data-hl=".chart-legend">
+        <label>Margin-bottom (mb-2)</label>
+        <input type="range" min="0" max="40" step="1" value="8" data-key="legend_mb">
+        <span class="val" data-val="legend_mb">8px</span>
+      </div>
+      <div class="row">
+        <label>Показать вторую ось</label>
+        <input type="checkbox" id="show-secondary" checked>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-title">Chart container</div>
+      <div class="row" data-hl=".chart-container">
+        <label>Height (prop)</label>
+        <input type="range" min="300" max="600" step="5" value="450" data-key="chart_h">
+        <span class="val" data-val="chart_h">450px</span>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-title">Padding внутри SVG</div>
+      <div class="row" data-hl=".pad-zone.top">
+        <label>--chart-pad-top</label>
+        <input type="range" min="0" max="60" step="1" value="19" data-key="pad_top">
+        <span class="val" data-val="pad_top">19px</span>
+      </div>
+      <div class="row" data-hl=".pad-zone.bottom">
+        <label>--chart-pad-bottom</label>
+        <input type="range" min="20" max="100" step="1" value="50" data-key="pad_bottom">
+        <span class="val" data-val="pad_bottom">50px</span>
+      </div>
+      <div class="row" data-hl=".pad-zone.left">
+        <label>--chart-pad-left</label>
+        <input type="range" min="40" max="160" step="1" value="100" data-key="pad_left">
+        <span class="val" data-val="pad_left">100px</span>
+      </div>
+      <div class="row" data-hl=".pad-zone.right">
+        <label>--chart-pad-right-dual</label>
+        <input type="range" min="40" max="160" step="1" value="95" data-key="pad_right_dual">
+        <span class="val" data-val="pad_right_dual">95px</span>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-title">X-axis метки (внутри SVG)</div>
+      <div class="row" data-hl=".pad-zone.bottom">
+        <label>Offset от bottom чарт-area</label>
+        <input type="range" min="10" max="60" step="1" value="30" data-key="xlabel_offset">
+        <span class="val" data-val="xlabel_offset">30px</span>
+      </div>
+      <div class="row" data-hl=".pad-zone.bottom">
+        <label>Font size</label>
+        <input type="range" min="10" max="18" step="1" value="14" data-key="xlabel_font">
+        <span class="val" data-val="xlabel_font">14px</span>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-title">Y-axis метки</div>
+      <div class="row" data-hl=".pad-zone.left">
+        <label>Left axis offset (x=-X)</label>
+        <input type="range" min="0" max="30" step="1" value="12" data-key="ylabel_left_off">
+        <span class="val" data-val="ylabel_left_off">12px</span>
+      </div>
+      <div class="row" data-hl=".pad-zone.right">
+        <label>Right axis offset (x=+X)</label>
+        <input type="range" min="0" max="30" step="1" value="12" data-key="ylabel_right_off">
+        <span class="val" data-val="ylabel_right_off">12px</span>
+      </div>
+      <div class="row" data-hl=".pad-zone.left,.pad-zone.right">
+        <label>Font size</label>
+        <input type="range" min="10" max="20" step="1" value="16" data-key="ylabel_font">
+        <span class="val" data-val="ylabel_font">16px</span>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-title">Date tooltip (при hover)</div>
+      <div class="row" data-hl=".date-tooltip">
+        <label>Top (от outer)</label>
+        <input type="range" min="0" max="100" step="1" value="38" data-key="date_top">
+        <span class="val" data-val="date_top">38px</span>
+      </div>
+      <div class="row" data-hl=".date-tooltip">
+        <label>Horizontal pos</label>
+        <input type="range" min="10" max="90" step="1" value="48" data-key="date_left_pct">
+        <span class="val" data-val="date_left_pct">48%</span>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-title">Tooltip card (значения)</div>
+      <div class="row" data-hl=".tooltip-card">
+        <label>Top position</label>
+        <input type="range" min="20" max="500" step="1" value="200" data-key="card_top">
+        <span class="val" data-val="card_top">200px</span>
+      </div>
+      <div class="row" data-hl=".tooltip-card">
+        <label>Horizontal pos</label>
+        <input type="range" min="5" max="85" step="1" value="50" data-key="card_left_pct">
+        <span class="val" data-val="card_left_pct">50%</span>
+      </div>
+      <div class="row" data-hl=".tooltip-card">
+        <label>Width</label>
+        <input type="range" min="140" max="280" step="2" value="200" data-key="card_w">
+        <span class="val" data-val="card_w">200px</span>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-title">Crosshair (при hover)</div>
+      <div class="row" data-hl=".crosshair">
+        <label>Horizontal pos</label>
+        <input type="range" min="5" max="95" step="1" value="45" data-key="crosshair_left">
+        <span class="val" data-val="crosshair_left">45%</span>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-title">Навигатор снизу</div>
+      <div class="row" data-hl=".navigator">
+        <label>Height</label>
+        <input type="range" min="30" max="80" step="1" value="52" data-key="nav_h">
+        <span class="val" data-val="nav_h">52px</span>
+      </div>
+      <div class="row" data-hl=".navigator">
+        <label>Margin-top (gap)</label>
+        <input type="range" min="0" max="40" step="1" value="0" data-key="nav_mt">
+        <span class="val" data-val="nav_mt">0px</span>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="group-title">Визуальные помощники</div>
+      <div class="row">
+        <label>Показать границы зон</label>
+        <input type="checkbox" id="show-outlines">
+      </div>
+    </div>
+
+    <div class="hint">
+      <strong>Особенность СЧА:</strong> оси и даты рисуются <em>внутри SVG</em> (не абсолютными div-ами как в Притоки-Оттоки). Pad.top/bottom/left/right — это отступы <strong>chartArea</strong> внутри SVG, а не внешние отступы.
+    </div>
+
+    <a class="diff-link" href="/chart-layout-playground.html">→ Открыть playground Притоки-Оттоки для сравнения</a>
+  </div>
+
+  <div class="right">
+    <div class="preview-wrap">
+      <div id="chart" class="chart-outer">
+        <div class="chart-legend">
+          <span><span class="dot" style="background:var(--primary)"></span>Суммарная СЧА (млрд руб)</span>
+          <span id="legend-secondary"><span class="dot" style="background:var(--secondary)"></span>RUSFAR3M</span>
+        </div>
+
+        <div class="chart-container">
+          <div class="chart-svg-wrap">
+            <svg id="svg" viewBox="0 0 1000 450" preserveAspectRatio="none"></svg>
+          </div>
+
+          <div class="pad-zone top" data-zone="pad_top"></div>
+          <div class="pad-zone bottom" data-zone="pad_bottom"></div>
+          <div class="pad-zone left" data-zone="pad_left"></div>
+          <div class="pad-zone right" data-zone="pad_right_dual"></div>
+
+          <div class="crosshair"></div>
+          <div class="dot-marker"></div>
+        </div>
+
+        <!-- Date tooltip и Tooltip card — вне chart-container (как в реальном SimpleChart), позиция относительно .chart-outer -->
+        <div class="date-tooltip">1 дек. 2025 г.</div>
+
+        <div class="tooltip-card">
+          <div class="row-tt">
+            <span class="lbl"><span class="dot-sm" style="background:var(--primary)"></span>Суммарная СЧА (мл...</span>
+            <span class="val-tt">1354</span>
+          </div>
+          <div class="row-tt">
+            <span class="lbl"><span class="dot-sm" style="background:var(--secondary)"></span>RUSFAR3M</span>
+            <span class="val-tt">15,95</span>
+          </div>
+        </div>
+
+        <div class="navigator">
+          <svg id="nav-svg" viewBox="0 0 1000 52" preserveAspectRatio="none"></svg>
+          <div class="handle l">&lt;</div>
+          <div class="handle r">&gt;</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="prompt-wrap">
+      <pre class="prompt-text" id="prompt"></pre>
+      <button class="copy-btn" id="copy">Copy</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const DEFAULTS = {
+  outer_p: 20,
+  legend_mb: 8,
+  chart_h: 450,
+  pad_top: 19,
+  pad_bottom: 50,
+  pad_left: 100,
+  pad_right_dual: 95,
+  xlabel_offset: 30,
+  xlabel_font: 14,
+  ylabel_left_off: 12,
+  ylabel_right_off: 12,
+  ylabel_font: 16,
+  date_top: 38,
+  date_left_pct: 48,
+  card_top: 200,
+  card_left_pct: 50,
+  card_w: 200,
+  crosshair_left: 45,
+  nav_h: 52,
+  nav_mt: 0,
+};
+
+const PRESETS = {
+  default: Object.assign({}, DEFAULTS),
+  dense: {
+    outer_p: 14, legend_mb: 4, chart_h: 380,
+    pad_top: 12, pad_bottom: 36, pad_left: 80, pad_right_dual: 80,
+    xlabel_offset: 22, xlabel_font: 12,
+    ylabel_left_off: 8, ylabel_right_off: 8, ylabel_font: 14,
+    date_top: 28, date_left_pct: 48,
+    card_top: 160, card_left_pct: 50, card_w: 180,
+    crosshair_left: 45, nav_h: 42, nav_mt: 0,
+  },
+  spacious: {
+    outer_p: 28, legend_mb: 16, chart_h: 520,
+    pad_top: 28, pad_bottom: 64, pad_left: 120, pad_right_dual: 115,
+    xlabel_offset: 40, xlabel_font: 15,
+    ylabel_left_off: 16, ylabel_right_off: 16, ylabel_font: 17,
+    date_top: 48, date_left_pct: 48,
+    card_top: 220, card_left_pct: 50, card_w: 220,
+    crosshair_left: 45, nav_h: 62, nav_mt: 8,
+  },
+};
+
+const state = Object.assign({}, DEFAULTS);
+let showSecondary = true;
+
+const UNITS = {
+  outer_p: 'px', legend_mb: 'px', chart_h: 'px',
+  pad_top: 'px', pad_bottom: 'px', pad_left: 'px', pad_right_dual: 'px',
+  xlabel_offset: 'px', xlabel_font: 'px',
+  ylabel_left_off: 'px', ylabel_right_off: 'px', ylabel_font: 'px',
+  date_top: 'px', date_left_pct: '%',
+  card_top: 'px', card_left_pct: '%', card_w: 'px',
+  crosshair_left: '%', nav_h: 'px', nav_mt: 'px',
+};
+
+function renderSvg() {
+  const svg = document.getElementById('svg');
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+  // ViewBox: width 1000, height = chart_h
+  const vbW = 1000;
+  const vbH = state.chart_h;
+  svg.setAttribute('viewBox', `0 0 ${vbW} ${vbH}`);
+
+  const padL = state.pad_left;
+  const padR = showSecondary ? state.pad_right_dual : 12;
+  const padT = state.pad_top;
+  const padB = state.pad_bottom;
+
+  const chartW = vbW - padL - padR;
+  const chartH = vbH - padT - padB;
+
+  // <defs> for gradient
+  const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+  const grad = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
+  grad.setAttribute('id', 'primGrad');
+  grad.setAttribute('x1', '0'); grad.setAttribute('y1', '0');
+  grad.setAttribute('x2', '0'); grad.setAttribute('y2', '1');
+  const stops = [['0%', '0.3'], ['50%', '0.1'], ['100%', '0']];
+  stops.forEach(function(s) {
+    const st = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+    st.setAttribute('offset', s[0]);
+    st.setAttribute('stop-color', '#6366f1');
+    st.setAttribute('stop-opacity', s[1]);
+    grad.appendChild(st);
+  });
+  defs.appendChild(grad);
+  svg.appendChild(defs);
+
+  // Grid
+  const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  g.setAttribute('transform', `translate(${padL}, ${padT})`);
+  svg.appendChild(g);
+
+  for (let i = 0; i <= 4; i++) {
+    const y = (i / 4) * chartH;
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', '0'); line.setAttribute('x2', chartW);
+    line.setAttribute('y1', y); line.setAttribute('y2', y);
+    line.setAttribute('stroke', 'rgba(255,255,255,0.06)');
+    g.appendChild(line);
+
+    // Y-axis left
+    const lblL = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    lblL.setAttribute('x', -state.ylabel_left_off);
+    lblL.setAttribute('y', y);
+    lblL.setAttribute('text-anchor', 'end');
+    lblL.setAttribute('dominant-baseline', 'middle');
+    lblL.setAttribute('fill', 'var(--axis)');
+    lblL.setAttribute('font-size', state.ylabel_font);
+    lblL.setAttribute('font-weight', '600');
+    const leftVals = ['1648', '1533', '1419', '1305', '1191'];
+    lblL.textContent = leftVals[i];
+    g.appendChild(lblL);
+
+    if (showSecondary) {
+      const lblR = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      lblR.setAttribute('x', chartW + state.ylabel_right_off);
+      lblR.setAttribute('y', y);
+      lblR.setAttribute('text-anchor', 'start');
+      lblR.setAttribute('dominant-baseline', 'middle');
+      lblR.setAttribute('fill', 'var(--secondary)');
+      lblR.setAttribute('font-size', state.ylabel_font);
+      lblR.setAttribute('font-weight', '600');
+      lblR.setAttribute('opacity', '0.9');
+      const rightVals = ['16,61', '15,99', '15,37', '14,74', '14,12'];
+      lblR.textContent = rightVals[i];
+      g.appendChild(lblR);
+    }
+  }
+
+  // X-axis labels
+  const xVals = ['21 окт. 25 г.', '18 нояб. 25 г.', '15 дек. 25 г.', '22 янв. 26 г.', '18 февр. 26 г.', '19 мар. 26 г.', '16 апр. 26 г.'];
+  xVals.forEach(function(lbl, i) {
+    const x = (i / (xVals.length - 1)) * chartW;
+    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text.setAttribute('x', x);
+    text.setAttribute('y', chartH + state.xlabel_offset);
+    text.setAttribute('text-anchor', i === 0 ? 'start' : i === xVals.length - 1 ? 'end' : 'middle');
+    text.setAttribute('fill', 'var(--axis)');
+    text.setAttribute('font-size', state.xlabel_font);
+    text.setAttribute('font-weight', '600');
+    text.textContent = lbl;
+    g.appendChild(text);
+  });
+
+  // Primary line (ascending)
+  const n = 80;
+  const points1 = [];
+  const points2 = [];
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1);
+    const x = t * chartW;
+    const v1 = 0.1 + t * 0.8 + Math.sin(i * 0.3) * 0.04;
+    const y1 = (1 - v1) * chartH;
+    points1.push([x, y1]);
+    const v2 = 0.85 - t * 0.5 + Math.cos(i * 0.2) * 0.05;
+    const y2 = (1 - v2) * chartH;
+    points2.push([x, y2]);
+  }
+
+  // Area under primary
+  const areaD = 'M 0 ' + chartH + ' ' + points1.map(p => 'L ' + p[0] + ' ' + p[1]).join(' ') + ' L ' + chartW + ' ' + chartH + ' Z';
+  const area = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  area.setAttribute('d', areaD);
+  area.setAttribute('fill', 'url(#primGrad)');
+  g.appendChild(area);
+
+  // Primary line
+  const line1 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  line1.setAttribute('d', 'M ' + points1.map(p => p[0] + ' ' + p[1]).join(' L '));
+  line1.setAttribute('stroke', '#6366f1');
+  line1.setAttribute('stroke-width', '3');
+  line1.setAttribute('fill', 'none');
+  g.appendChild(line1);
+
+  // Secondary line
+  if (showSecondary) {
+    const line2 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    line2.setAttribute('d', 'M ' + points2.map(p => p[0] + ' ' + p[1]).join(' L '));
+    line2.setAttribute('stroke', '#C8FF2E');
+    line2.setAttribute('stroke-width', '2.5');
+    line2.setAttribute('fill', 'none');
+    g.appendChild(line2);
+  }
+}
+
+function renderNav() {
+  const svg = document.getElementById('nav-svg');
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  const w = 1000, h = 52;
+  svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+
+  // Gradient
+  const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+  const grad = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
+  grad.setAttribute('id', 'navGrad');
+  grad.setAttribute('x1', '0'); grad.setAttribute('y1', '0');
+  grad.setAttribute('x2', '0'); grad.setAttribute('y2', '1');
+  [['0%', '0.4'], ['100%', '0']].forEach(function(s) {
+    const st = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+    st.setAttribute('offset', s[0]);
+    st.setAttribute('stop-color', '#6366f1');
+    st.setAttribute('stop-opacity', s[1]);
+    grad.appendChild(st);
+  });
+  defs.appendChild(grad);
+  svg.appendChild(defs);
+
+  // Mini area
+  const n = 80;
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1);
+    const x = t * w;
+    const v = 0.2 + t * 0.7 + Math.sin(i * 0.3) * 0.05;
+    const y = (1 - v) * h;
+    pts.push([x, y]);
+  }
+  const areaD = 'M 0 ' + h + ' ' + pts.map(p => 'L ' + p[0] + ' ' + p[1]).join(' ') + ' L ' + w + ' ' + h + ' Z';
+  const area = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  area.setAttribute('d', areaD);
+  area.setAttribute('fill', 'url(#navGrad)');
+  svg.appendChild(area);
+
+  const line = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  line.setAttribute('d', 'M ' + pts.map(p => p[0] + ' ' + p[1]).join(' L '));
+  line.setAttribute('stroke', '#6366f1');
+  line.setAttribute('stroke-width', '1.5');
+  line.setAttribute('fill', 'none');
+  svg.appendChild(line);
+}
+
+function renderPreview() {
+  const chart = document.getElementById('chart');
+  const s = state;
+  chart.style.setProperty('--outer-p', s.outer_p + 'px');
+  chart.style.setProperty('--legend-mb', s.legend_mb + 'px');
+  chart.style.setProperty('--chart-h', s.chart_h + 'px');
+  chart.style.setProperty('--pad-top', s.pad_top + 'px');
+  chart.style.setProperty('--pad-bottom', s.pad_bottom + 'px');
+  chart.style.setProperty('--pad-left', s.pad_left + 'px');
+  chart.style.setProperty('--pad-right-dual', (showSecondary ? s.pad_right_dual : 12) + 'px');
+  chart.style.setProperty('--date-top', s.date_top + 'px');
+  chart.style.setProperty('--date-left-pct', s.date_left_pct + '%');
+  chart.style.setProperty('--card-top', s.card_top + 'px');
+  chart.style.setProperty('--card-left-pct', s.card_left_pct + '%');
+  chart.style.setProperty('--card-w', s.card_w + 'px');
+  chart.style.setProperty('--crosshair-left', s.crosshair_left + '%');
+  chart.style.setProperty('--nav-h', s.nav_h + 'px');
+  chart.style.setProperty('--nav-mt', s.nav_mt + 'px');
+
+  // Dot marker Y position: approximate
+  chart.style.setProperty('--dot-top', '35%');
+
+  document.getElementById('legend-secondary').style.display = showSecondary ? '' : 'none';
+  renderSvg();
+  renderNav();
+}
+
+const FRIENDLY = {
+  outer_p: 'Outer padding (SimpleChart root)',
+  legend_mb: 'Margin-bottom легенды',
+  chart_h: 'Height SVG (prop height)',
+  pad_top: '--chart-pad-top',
+  pad_bottom: '--chart-pad-bottom',
+  pad_left: '--chart-pad-left',
+  pad_right_dual: '--chart-pad-right-dual',
+  xlabel_offset: 'X-labels offset (y=chartH+offset)',
+  xlabel_font: 'X-labels font-size',
+  ylabel_left_off: 'Y-labels left offset (x=-N)',
+  ylabel_right_off: 'Y-labels right offset (x=chartW+N)',
+  ylabel_font: 'Y-labels font-size',
+  date_top: 'Date tooltip top',
+  date_left_pct: 'Date tooltip позиция X',
+  card_top: 'Tooltip card top',
+  card_left_pct: 'Tooltip card позиция X',
+  card_w: 'Tooltip card width',
+  crosshair_left: 'Crosshair позиция X',
+  nav_h: 'Navigator height',
+  nav_mt: 'Navigator margin-top',
+};
+
+function updatePrompt() {
+  const changes = [];
+  for (const k of Object.keys(DEFAULTS)) {
+    if (state[k] !== DEFAULTS[k]) changes.push([k, DEFAULTS[k], state[k]]);
+  }
+  const pr = document.getElementById('prompt');
+  if (!changes.length) {
+    pr.textContent = 'Текущая конфигурация = эталонная СЧА (SimpleChart). Двинь слайдеры — появится промт.';
+    return;
+  }
+  const lines = ['Примени эти значения к СЧА (SimpleChart.tsx / index.css):', ''];
+  for (const c of changes) {
+    const k = c[0], def = c[1], cur = c[2];
+    lines.push('• ' + FRIENDLY[k] + ': ' + def + UNITS[k] + ' → ' + cur + UNITS[k]);
+  }
+  lines.push('');
+  lines.push('— где менять в коде:');
+  for (const c of changes) {
+    const k = c[0], cur = c[2];
+    const hint = {
+      outer_p: 'SimpleChart.tsx: <div className="rounded-2xl p-5..."> → p-' + Math.round(cur/4),
+      legend_mb: 'SimpleChart.tsx: <div className="mb-2 flex..."> → mb-' + Math.round(cur/4),
+      chart_h: 'height prop default = ' + cur,
+      pad_top: 'index.css: --chart-pad-top: ' + cur + 'px',
+      pad_bottom: 'index.css: --chart-pad-bottom: ' + cur + 'px',
+      pad_left: 'index.css: --chart-pad-left: ' + cur + 'px',
+      pad_right_dual: 'index.css: --chart-pad-right-dual: ' + cur + 'px',
+      xlabel_offset: 'SimpleChart.tsx: y={chartHeight + ' + cur + '}',
+      xlabel_font: '--chart-font-x: ' + cur + 'px',
+      ylabel_left_off: 'SimpleChart.tsx: x={-' + cur + '}',
+      ylabel_right_off: 'SimpleChart.tsx: x={chartWidth + ' + cur + '}',
+      ylabel_font: '--chart-font-y: ' + cur + 'px',
+      date_top: '--date-top-legend-top: ' + cur + 'px',
+      nav_h: 'ChartNavigator height={' + cur + '}',
+      nav_mt: 'SimpleChart.tsx: margin-top ' + cur + 'px перед <ChartNavigator>',
+    };
+    if (hint[k]) lines.push('• ' + hint[k]);
+  }
+  pr.textContent = lines.join('\n');
+}
+
+function updateVal(key) {
+  const valEl = document.querySelector('[data-val="' + key + '"]');
+  if (valEl) valEl.textContent = state[key] + UNITS[key];
+}
+
+function updateAll() {
+  renderPreview();
+  updatePrompt();
+  for (const k of Object.keys(DEFAULTS)) updateVal(k);
+}
+
+function setState(partial) {
+  Object.assign(state, partial);
+  for (const k of Object.keys(partial)) {
+    const input = document.querySelector('input[data-key="' + k + '"]');
+    if (input) input.value = partial[k];
+  }
+  updateAll();
+}
+
+document.querySelectorAll('input[type="range"]').forEach(function(el) {
+  el.addEventListener('input', function() {
+    const k = el.dataset.key;
+    state[k] = parseFloat(el.value);
+    updateVal(k);
+    renderPreview();
+    updatePrompt();
+  });
+});
+
+document.querySelectorAll('.preset-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    document.querySelectorAll('.preset-btn').forEach(function(b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    setState(PRESETS[btn.dataset.preset]);
+  });
+});
+
+document.getElementById('show-outlines').addEventListener('change', function(e) {
+  document.getElementById('chart').classList.toggle('show-outlines', e.target.checked);
+});
+
+document.getElementById('show-secondary').addEventListener('change', function(e) {
+  showSecondary = e.target.checked;
+  renderPreview();
+});
+
+// Hover highlight: when hovering a row, highlight corresponding preview elements
+document.querySelectorAll('.row[data-hl]').forEach(function(row) {
+  row.addEventListener('mouseenter', function() {
+    const selectors = row.dataset.hl.split(',');
+    selectors.forEach(function(sel) {
+      document.querySelectorAll(sel.trim()).forEach(function(el) { el.classList.add('hl'); });
+    });
+  });
+  row.addEventListener('mouseleave', function() {
+    const selectors = row.dataset.hl.split(',');
+    selectors.forEach(function(sel) {
+      document.querySelectorAll(sel.trim()).forEach(function(el) { el.classList.remove('hl'); });
+    });
+  });
+});
+
+document.getElementById('copy').addEventListener('click', function() {
+  navigator.clipboard.writeText(document.getElementById('prompt').textContent).then(function() {
+    const btn = document.getElementById('copy');
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(function() { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1500);
+  });
+});
+
+updateAll();
+</script>
+</body>
+</html>

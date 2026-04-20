@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
+import React, { useEffect, useLayoutEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { TrendingUp, DollarSign, Banknote, LineChart, BarChart2, Gem, Wallet, Lock } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -143,6 +143,20 @@ export default function FundsMoneyPage() {
         return visible.map(f => f.fund_id);
     }, [data?.funds, hiddenFunds]);
 
+    // Тикеры скрытых фондов (для фильтрации событий на графике)
+    const hiddenTickers = useMemo(() => {
+        if (!data?.funds || hiddenFunds.size === 0) return new Set<string>();
+        return new Set(
+            data.funds.filter(f => hiddenFunds.has(f.fund_id)).map(f => f.ticker)
+        );
+    }, [data?.funds, hiddenFunds]);
+
+    // Все тикеры в текущей категории (для определения «наших» фондов)
+    const allTickers = useMemo(() => {
+        if (!data?.funds) return new Set<string>();
+        return new Set(data.funds.map(f => f.ticker));
+    }, [data?.funds]);
+
     // Загрузка данных притоков/оттоков
     useEffect(() => {
         if (viewMode !== 'flows') return;
@@ -215,8 +229,15 @@ export default function FundsMoneyPage() {
         }));
     }, [data]);
 
-    // Форматирование значений
-    const formatNav = (value: number) => `${value.toFixed(0)}`;
+    // Форматирование значений СЧА:
+    // Золото и акции — 2 знака после точки (сотые млрд = десятки млн)
+    // Остальные (облигации, денежный рынок) — без дробной части (крупные суммы)
+    const formatNav = (value: number) => {
+        if (category === 'gold' || category === 'stocks') {
+            return value.toFixed(2);
+        }
+        return value.toFixed(0);
+    };
 
 
     const toggleFundVisibility = (fundId: number) => {
@@ -250,21 +271,22 @@ export default function FundsMoneyPage() {
         const rect = flowContainerRef.current.getBoundingClientRect();
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
-        const padRight = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--chart-pad-left')) || 60;
-        const chartWidth = rect.width - padRight;
-        // Ограничиваем x областью графика (без зоны Y-подписей справа)
-        const clampedX = Math.min(x, chartWidth - 1);
+        const cs = getComputedStyle(document.documentElement);
+        const padLeft = parseFloat(cs.getPropertyValue('--chart-pad-left')) || 100;
+        const padRight = parseFloat(cs.getPropertyValue('--chart-pad-right-single')) || 95;
+        const chartWidth = rect.width - padLeft - padRight;
+        const xInChart = x - padLeft;
+        if (xInChart < 0 || xInChart > chartWidth) return;
         const visibleCount = flowNavRange[1] - flowNavRange[0] + 1;
         const barWidth = chartWidth / visibleCount;
-        const idx = Math.floor(clampedX / barWidth);
+        const idx = Math.floor(xInChart / barWidth);
         if (idx >= 0 && idx < visibleCount) {
             setHoveredFlowIndex(idx);
-            // Двигаем тултип напрямую через ref (без ре-рендера)
             if (flowTooltipRef.current) {
-                const hoverX = idx * barWidth + barWidth / 2;
-                const isRightHalf = hoverX > chartWidth / 2;
+                const hoverX = padLeft + idx * barWidth + barWidth / 2;
+                const isRightHalf = hoverX > rect.width / 2;
                 const rawLeft = isRightHalf ? hoverX - 188 : hoverX + 8;
-                const cardLeft = Math.max(4, Math.min(rawLeft, chartWidth - 192));
+                const cardLeft = Math.max(4, Math.min(rawLeft, rect.width - 192));
                 const containerH = rect.height;
                 flowTooltipRef.current.style.left = `${cardLeft}px`;
                 flowTooltipRef.current.style.top = `${Math.min(Math.max(y - 20, 4), containerH - 60)}px`;
@@ -288,8 +310,10 @@ export default function FundsMoneyPage() {
         }
     }, [viewMode]);
 
-    // Сброс навигатора при смене данных
-    useEffect(() => {
+    // Сброс навигатора при смене данных — useLayoutEffect (а не useEffect) чтобы
+    // обновление срабатывало ДО первого paint'a после прихода данных, иначе rect
+    // селект-окна моментально мелькает с width=0 → full width.
+    useLayoutEffect(() => {
         if (flowsData?.flows?.length) {
             setFlowNavRange([0, flowsData.flows.length - 1]);
         }
@@ -498,7 +522,7 @@ export default function FundsMoneyPage() {
                         showSecondary={true}
                         formatValue={formatNav}
                         formatSecondaryValue={(v) => v.toLocaleString('ru-RU', { maximumFractionDigits: 2 })}
-                        primaryLabel="Суммарная СЧА"
+                        primaryLabel="Суммарная СЧА (млрд руб)"
                         secondaryLabel={currentCategory?.index || 'Индекс'}
                         loading={loading}
                         showValueHeader={false}
@@ -518,6 +542,8 @@ export default function FundsMoneyPage() {
                         hoveredFlowIndex={hoveredFlowIndex}
                         hoveredAnnotation={hoveredAnnotation}
                         showEvents={showEvents}
+                        hiddenTickers={hiddenTickers}
+                        allTickers={allTickers}
                         category={category}
                         loading={loading}
                         flowContainerRef={flowContainerRef}

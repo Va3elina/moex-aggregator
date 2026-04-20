@@ -1,0 +1,1107 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Фрейм — Архитектура проекта</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1117;
+    --bg-2: #161b22;
+    --bg-3: #21262d;
+    --border: #30363d;
+    --text: #c9d1d9;
+    --text-2: #8b949e;
+    --accent: #58a6ff;
+    --accent-2: #f0883e;
+    --green: #3fb950;
+    --red: #f85149;
+    --purple: #bc8cff;
+    --yellow: #e3b341;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, 'SF Pro Text', 'Inter', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.55;
+  }
+  .layout { display: flex; min-height: 100vh; }
+  nav.sidebar {
+    width: 260px;
+    background: var(--bg-2);
+    border-right: 1px solid var(--border);
+    padding: 24px 0;
+    position: fixed;
+    top: 0; bottom: 0; left: 0;
+    overflow-y: auto;
+  }
+  .brand {
+    padding: 0 24px 24px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 16px;
+  }
+  .brand h1 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--accent);
+  }
+  .brand p {
+    margin: 4px 0 0;
+    font-size: 12px;
+    color: var(--text-2);
+  }
+  .nav-item {
+    display: block;
+    padding: 10px 24px;
+    color: var(--text);
+    text-decoration: none;
+    cursor: pointer;
+    border-left: 3px solid transparent;
+    font-size: 14px;
+    transition: all 0.15s;
+  }
+  .nav-item:hover { background: var(--bg-3); }
+  .nav-item.active {
+    background: var(--bg-3);
+    border-left-color: var(--accent);
+    color: var(--accent);
+  }
+  .nav-item .icon { margin-right: 10px; font-family: monospace; }
+  main {
+    flex: 1;
+    margin-left: 260px;
+    padding: 32px 48px;
+    max-width: calc(100vw - 260px);
+  }
+  section { display: none; }
+  section.active { display: block; }
+  h2 {
+    margin: 0 0 8px;
+    font-size: 28px;
+    font-weight: 600;
+  }
+  .subtitle {
+    color: var(--text-2);
+    margin-bottom: 24px;
+    font-size: 14px;
+  }
+  .diagram-wrap {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 24px;
+    margin: 16px 0;
+    overflow-x: auto;
+  }
+  .mermaid { text-align: center; }
+  .info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 12px;
+    margin: 16px 0;
+  }
+  .card {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px 16px;
+  }
+  .card h4 {
+    margin: 0 0 6px;
+    font-size: 14px;
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .card p { margin: 0; font-size: 13px; color: var(--text-2); }
+  .card code {
+    font-size: 12px;
+    color: var(--accent-2);
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    font-size: 13px;
+  }
+  th, td {
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  th {
+    background: var(--bg-3);
+    color: var(--accent);
+    font-weight: 600;
+  }
+  tr:last-child td { border-bottom: none; }
+  td code {
+    background: var(--bg-3);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 12px;
+    color: var(--accent-2);
+  }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 500;
+    margin-right: 4px;
+  }
+  .badge-green { background: rgba(63,185,80,0.15); color: var(--green); }
+  .badge-red { background: rgba(248,81,73,0.15); color: var(--red); }
+  .badge-yellow { background: rgba(227,179,65,0.15); color: var(--yellow); }
+  .badge-blue { background: rgba(88,166,255,0.15); color: var(--accent); }
+  .badge-purple { background: rgba(188,140,255,0.15); color: var(--purple); }
+  pre {
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px;
+    overflow-x: auto;
+    font-size: 12px;
+    color: var(--text);
+  }
+  h3 {
+    margin-top: 32px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+    font-size: 18px;
+    font-weight: 600;
+  }
+  .warn {
+    background: rgba(227,179,65,0.08);
+    border-left: 3px solid var(--yellow);
+    padding: 10px 14px;
+    margin: 12px 0;
+    font-size: 13px;
+    border-radius: 0 4px 4px 0;
+  }
+  .warn strong { color: var(--yellow); }
+  .footer {
+    margin-top: 48px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    color: var(--text-2);
+    font-size: 12px;
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <div class="brand">
+      <h1>Фрейм</h1>
+      <p>таймфрейм.рф — Архитектура</p>
+    </div>
+    <a class="nav-item active" data-section="overview"><span class="icon">▸</span>Обзор</a>
+    <a class="nav-item" data-section="infra"><span class="icon">▸</span>Инфраструктура</a>
+    <a class="nav-item" data-section="dataflow"><span class="icon">▸</span>Поток данных</a>
+    <a class="nav-item" data-section="sources"><span class="icon">▸</span>Источники</a>
+    <a class="nav-item" data-section="database"><span class="icon">▸</span>База данных</a>
+    <a class="nav-item" data-section="indicators"><span class="icon">▸</span>8 индикаторов</a>
+    <a class="nav-item" data-section="api"><span class="icon">▸</span>API эндпоинты</a>
+    <a class="nav-item" data-section="deploy"><span class="icon">▸</span>Деплой</a>
+    <a class="nav-item" data-section="tree"><span class="icon">▸</span>Структура кода</a>
+  </nav>
+
+  <main>
+    <!-- ══════════════════════════════════════════════════════════ -->
+    <section id="overview" class="active">
+      <h2>Обзор</h2>
+      <p class="subtitle">Аналитическая платформа Московской биржи. 8 индикаторов, 2M+ строк данных.</p>
+
+      <div class="info-grid">
+        <div class="card">
+          <h4>Домен</h4>
+          <p>таймфрейм.рф (xn--80aklbnczmv.xn--p1ai)</p>
+        </div>
+        <div class="card">
+          <h4>Сервер</h4>
+          <p>Timeweb Cloud · Ubuntu · <code>103.88.243.232</code> · 4GB RAM</p>
+        </div>
+        <div class="card">
+          <h4>Стек</h4>
+          <p>FastAPI · React/Vite/TS · PostgreSQL 17 · Redis 7 · Docker</p>
+        </div>
+        <div class="card">
+          <h4>Контейнеры</h4>
+          <p>6 штук: api · db · redis · orchestrator · nginx · tg-bot</p>
+        </div>
+        <div class="card">
+          <h4>Индикаторы</h4>
+          <p>Карта · OI · Фонды · Сила · Баффетт · Сезонность · Страх · Каталог</p>
+        </div>
+        <div class="card">
+          <h4>Данные</h4>
+          <p>285K свечей · 95+ акций с 2007 · IMOEX с 1997 · 1475 дивидендов</p>
+        </div>
+      </div>
+
+      <h3>Мгновенная сводка</h3>
+      <div class="diagram-wrap">
+        <pre class="mermaid">
+graph LR
+  U["Пользователь<br/>браузер"] -->|HTTPS| N[nginx]
+  N --> A[FastAPI]
+  A --> D[(PostgreSQL)]
+  A --> R[(Redis)]
+  O["Orchestrator<br/>cron jobs"] --> D
+  EXT["ISS / Algopack<br/>ЦБ / Росстат / WB"] -.-> O
+  A -->|serves SPA| U
+
+  style U fill:#21262d,stroke:#58a6ff,color:#c9d1d9
+  style N fill:#21262d,stroke:#3fb950,color:#c9d1d9
+  style A fill:#21262d,stroke:#58a6ff,color:#c9d1d9
+  style D fill:#21262d,stroke:#bc8cff,color:#c9d1d9
+  style R fill:#21262d,stroke:#f85149,color:#c9d1d9
+  style O fill:#21262d,stroke:#e3b341,color:#c9d1d9
+  style EXT fill:#0d1117,stroke:#8b949e,color:#8b949e
+        </pre>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════════════ -->
+    <section id="infra">
+      <h2>Инфраструктура</h2>
+      <p class="subtitle">Всё крутится в Docker на одной VPS. 6 контейнеров связаны через docker network.</p>
+
+      <div class="diagram-wrap">
+        <pre class="mermaid">
+graph TB
+  subgraph CLIENT["Пользователь"]
+    BR[Браузер]
+  end
+
+  subgraph SERVER["VPS Timeweb 103.88.243.232 4GB"]
+    subgraph NET["docker network frame_default"]
+      NG["frame-nginx-1<br/>443 80<br/>SSL Let's Encrypt<br/>reverse proxy"]
+
+      API["frame-api-1<br/>8000<br/>FastAPI + SPA<br/>/app/frontend/dist/"]
+
+      DB[("frame-db-1<br/>PostgreSQL 17<br/>shared_buffers 128MB<br/>volume postgres_data")]
+
+      RD[("frame-redis-1<br/>Redis 7<br/>maxmemory 256mb<br/>allkeys-lru")]
+
+      ORC["frame-orchestrator-1<br/>cron jobs<br/>main_orchestrator.py"]
+
+      TG["frame-tg-bot-1<br/>tg_bot.py<br/>admin notifications"]
+    end
+  end
+
+  subgraph EXT["Внешние источники"]
+    ISS[ISS MOEX]
+    ALG[Algopack]
+    CBR[ЦБ РФ]
+    WB[World Bank]
+    SML[SmartLab]
+    RST[Росстат]
+  end
+
+  BR -->|"HTTPS"| NG
+  NG -->|"/api/*"| API
+  NG -->|"SPA static"| API
+  API --> DB
+  API --> RD
+  ORC --> DB
+  ORC --> RD
+  TG --> DB
+
+  ORC -.->|"daily 19:30 MSK"| ISS
+  ORC -.->|"JWT"| ALG
+  ORC -.->|"M2 monthly"| CBR
+  ORC -.->|"GDP annual"| WB
+  ORC -.->|"market_cap"| SML
+  ORC -.->|"manual import"| RST
+
+  classDef ct fill:#21262d,stroke:#58a6ff,color:#c9d1d9
+  classDef db fill:#21262d,stroke:#bc8cff,color:#c9d1d9
+  classDef ext fill:#0d1117,stroke:#8b949e,color:#8b949e
+
+  class NG,API,ORC,TG ct
+  class DB,RD db
+  class ISS,ALG,CBR,WB,SML,RST ext
+        </pre>
+      </div>
+
+      <h3>Контейнеры</h3>
+      <table>
+        <tr><th>Контейнер</th><th>Образ</th><th>Порт</th><th>Назначение</th></tr>
+        <tr><td><code>frame-nginx-1</code></td><td>nginx:alpine</td><td>80, 443</td><td>SSL, reverse proxy, статика</td></tr>
+        <tr><td><code>frame-api-1</code></td><td>python:3.11 (builds from Dockerfile)</td><td>8000 (internal)</td><td>FastAPI + SPA статика</td></tr>
+        <tr><td><code>frame-db-1</code></td><td>postgres:17-alpine</td><td>5432 (127.0.0.1)</td><td>Основная БД</td></tr>
+        <tr><td><code>frame-redis-1</code></td><td>redis:7-alpine</td><td>internal</td><td>Кэш между воркерами</td></tr>
+        <tr><td><code>frame-orchestrator-1</code></td><td>python:3.11</td><td>—</td><td>Сбор данных по расписанию</td></tr>
+        <tr><td><code>frame-tg-bot-1</code></td><td>python:3.11</td><td>—</td><td>Telegram админ-бот</td></tr>
+      </table>
+
+      <div class="warn">
+        <strong>⚠ 4GB RAM</strong> — жёсткое ограничение. Фронтенд НЕ собирать на сервере (OOM). Сборка только локально, деплой — <code>scp dist.tar.gz</code> + <code>docker cp</code>.
+      </div>
+
+      <h3>Безопасность</h3>
+      <div class="info-grid">
+        <div class="card">
+          <h4>SSH</h4>
+          <p>Ключ-only (PasswordAuthentication no). iptables whitelist по IP Вадима. fail2ban активен.</p>
+        </div>
+        <div class="card">
+          <h4>TLS</h4>
+          <p>Let's Encrypt, auto-renew. HSTS включён.</p>
+        </div>
+        <div class="card">
+          <h4>PostgreSQL</h4>
+          <p>Bind <code>127.0.0.1:5432</code>, не наружу. Внутри docker network доступен по <code>db:5432</code>.</p>
+        </div>
+        <div class="card">
+          <h4>Auth</h4>
+          <p>JWT + refresh_tokens в БД. OAuth: Google, VK, Yandex.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════════════ -->
+    <section id="dataflow">
+      <h2>Поток данных</h2>
+      <p class="subtitle">От внешних API через scripts в БД, затем через routers и кеш на фронт.</p>
+
+      <div class="diagram-wrap">
+        <pre class="mermaid">
+graph LR
+  subgraph SRC["1. Источники"]
+    direction TB
+    S1[ISS MOEX]
+    S2[Algopack]
+    S3[ЦБ РФ]
+    S4[World Bank]
+    S5[SmartLab]
+    S6[Росстат]
+  end
+
+  subgraph FETCH["2. Сбор orchestrator"]
+    direction TB
+    F1["Candles/<br/>fetch_candles"]
+    F2["OI/<br/>fetch_oi"]
+    F3["Macro/<br/>fetch_macro_realtime<br/>fetch_market_cap"]
+    F4["Funds/<br/>fetch_funds<br/>fetch_indices"]
+  end
+
+  subgraph DB["3. PostgreSQL"]
+    direction TB
+    T1[candles]
+    T2[index_data]
+    T3[macro_data]
+    T4[open_interest]
+    T5[fund_data]
+    T6[breadth_history]
+    T7[dividends]
+    T8[instruments]
+  end
+
+  subgraph CACHE["4. Redis"]
+    RD["TTL 5-60 min<br/>warmup at start"]
+  end
+
+  subgraph API["5. FastAPI routers"]
+    direction TB
+    R1[heatmap]
+    R2[open_interest]
+    R3[funds]
+    R4[breadth]
+    R5[buffett]
+    R6[seasonality]
+    R7[chart fear]
+    R8[candles instruments]
+  end
+
+  subgraph FE["6. React SPA"]
+    direction TB
+    P1[HeatmapPage]
+    P2[OpenInterestPage]
+    P3[FundsMoneyPage]
+    P4[StrengthPage]
+    P5[BuffettPage]
+    P6[SeasonalityPage]
+    P7[FearIndexPage]
+    P8[FundsCatalogPage]
+  end
+
+  S1 --> F1
+  S2 --> F1
+  S2 --> F2
+  S3 --> F3
+  S4 --> F3
+  S5 --> F3
+  S6 -.manual.-> F3
+  S2 --> F4
+
+  F1 --> T1
+  F1 --> T2
+  F1 --> T7
+  F1 --> T6
+  F2 --> T4
+  F3 --> T3
+  F4 --> T5
+
+  T1 --> R1
+  T1 --> R6
+  T1 --> R8
+  T2 --> R6
+  T2 --> R5
+  T3 --> R5
+  T4 --> R2
+  T5 --> R3
+  T6 --> R4
+  T7 --> R6
+  T8 --> R1
+
+  R1 --> RD
+  R2 --> RD
+  R3 --> RD
+  R4 --> RD
+  R5 --> RD
+  R6 --> RD
+  RD --> FE
+
+  R1 --> P1
+  R2 --> P2
+  R3 --> P3
+  R3 --> P8
+  R4 --> P4
+  R5 --> P5
+  R6 --> P6
+  R7 --> P7
+
+  classDef src fill:#0d1117,stroke:#8b949e,color:#8b949e
+  classDef fetch fill:#21262d,stroke:#e3b341,color:#c9d1d9
+  classDef db fill:#21262d,stroke:#bc8cff,color:#c9d1d9
+  classDef api fill:#21262d,stroke:#58a6ff,color:#c9d1d9
+  classDef fe fill:#21262d,stroke:#3fb950,color:#c9d1d9
+  classDef cache fill:#21262d,stroke:#f85149,color:#c9d1d9
+
+  class S1,S2,S3,S4,S5,S6 src
+  class F1,F2,F3,F4 fetch
+  class T1,T2,T3,T4,T5,T6,T7,T8 db
+  class R1,R2,R3,R4,R5,R6,R7,R8 api
+  class P1,P2,P3,P4,P5,P6,P7,P8 fe
+  class RD cache
+        </pre>
+      </div>
+
+      <h3>Расписание orchestrator</h3>
+      <table>
+        <tr><th>Скрипт</th><th>Частота</th><th>Что делает</th></tr>
+        <tr><td><code>fetch_candles_spot_realtime.py</code></td><td>19:30 MSK</td><td>Дневные свечи акций ISS</td></tr>
+        <tr><td><code>fetch_candles_futures_realtime.py</code></td><td>19:30 MSK</td><td>Дневные свечи фьючерсов</td></tr>
+        <tr><td><code>fetch_oi_5min_realtime.py</code></td><td>каждые 5 мин</td><td>5-мин OI от Algopack</td></tr>
+        <tr><td><code>fetch_oi_daily_realtime.py</code></td><td>daily</td><td>Дневной OI</td></tr>
+        <tr><td><code>fetch_market_cap.py</code></td><td>daily</td><td>Парсит SmartLab → MARKET_CAP_TOTAL</td></tr>
+        <tr><td><code>fetch_macro_realtime.py</code></td><td>daily</td><td>M2 с ЦБ (обновляется помесячно)</td></tr>
+        <tr><td><code>fetch_funds_realtime.py</code></td><td>daily</td><td>СЧА фондов (Cbonds)</td></tr>
+        <tr><td><code>fetch_indices_realtime.py</code></td><td>daily</td><td>Валюты, сырьё</td></tr>
+        <tr><td><code>compute_breadth_history.py</code></td><td>on-demand</td><td>Пересчёт breadth EMA</td></tr>
+        <tr><td>GDP квартальный</td><td><span class="badge badge-yellow">ручной</span></td><td><code>--import-gdp FILE</code> из Росстата</td></tr>
+      </table>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════════════ -->
+    <section id="sources">
+      <h2>Источники данных</h2>
+      <p class="subtitle">Внешние API и сайты, откуда тянется всё содержимое платформы.</p>
+
+      <h3><span class="badge badge-green">используется</span> ISS MOEX</h3>
+      <div class="card">
+        <p><strong>URL:</strong> <code>https://iss.moex.com/iss/</code> · публичный, без ключей</p>
+        <p><strong>Что:</strong> дневные свечи, индексы, веса IMOEX, 5-мин свечи. ~1000 req/час rate limit.</p>
+        <p><strong>Скрипты:</strong> <code>Candles/fetch_candles_*_realtime.py</code></p>
+        <p><strong>Таблицы:</strong> <code>candles</code>, <code>index_data</code>, <code>instruments</code>, <code>dividends</code></p>
+      </div>
+
+      <h3><span class="badge badge-green">используется</span> Algopack (apim.moex.com)</h3>
+      <div class="card">
+        <p><strong>URL:</strong> <code>https://apim.moex.com/</code> · JWT в <code>ALGOPACK_API_KEY</code></p>
+        <p><strong>Что:</strong> 5-минутные свечи, OI фьючерсов</p>
+        <p><strong>Скрипты:</strong> <code>OI/fetch_oi_5min_realtime.py</code></p>
+        <p><strong>Таблицы:</strong> <code>open_interest</code>, <code>candles</code> (5min)</p>
+      </div>
+
+      <h3><span class="badge badge-green">используется</span> ЦБ РФ</h3>
+      <div class="card">
+        <p><strong>URL:</strong> <code>cbr.ru/vfs/statistics/credit_statistics/monetary_agg.xlsx</code></p>
+        <p><strong>Что:</strong> M2, CPI/ИПЦ · XLSX (openpyxl)</p>
+        <p><strong>Гитча:</strong> <span class="badge badge-red">User-Agent обязателен</span> иначе блочат. Строка 14 = M2.</p>
+        <p><strong>Скрипт:</strong> <code>Macro/fetch_macro_realtime.py</code></p>
+      </div>
+
+      <h3><span class="badge badge-green">используется</span> SmartLab (парсинг)</h3>
+      <div class="card">
+        <p><strong>Что:</strong> полная капитализация рынка (MARKET_CAP_TOTAL) через HTML scraping</p>
+        <p><strong>Скрипт:</strong> <code>Macro/fetch_market_cap.py</code></p>
+      </div>
+
+      <h3><span class="badge badge-green">используется</span> World Bank</h3>
+      <div class="card">
+        <p><strong>URL:</strong> <code>api.worldbank.org/v2/country/RUS/indicator/{CODE}?format=json</code></p>
+        <p><strong>Что:</strong> годовой GDP, GFCF (в рублях, делить на 1e9 для млрд)</p>
+      </div>
+
+      <h3><span class="badge badge-yellow">ручной импорт</span> Росстат</h3>
+      <div class="card">
+        <p><strong>URL:</strong> <code>rosstat.gov.ru/storage/mediabank/</code></p>
+        <p><strong>Что:</strong> квартальный ВВП, дефляторы, инвестиции. XLSX (нет API).</p>
+        <div class="warn" style="margin-top:8px">
+          <strong>Гитчи:</strong> SSL не всегда валидный (отключать verify). Сноски в ячейках (<code>"20222)3)"</code> → regex <code>\d{4}</code>). Проверять <code>'IV' in period</code> <strong>до</strong> <code>'I' in period</code>, иначе всё станет Q1.
+        </div>
+      </div>
+
+      <h3><span class="badge badge-yellow">проверено</span> ЕАЭС, FRED</h3>
+      <div class="card">
+        <p><strong>ЕАЭС:</strong> квартальные инвестиции ЕАЭС стран. XLS (нужен <code>xlrd</code>, не openpyxl). Данные "нарастающим итогом" — пересчитывать.</p>
+        <p><strong>FRED:</strong> SEASONALLY ADJUSTED — несовместимо с сырыми росстатовскими рядами для growth rate.</p>
+      </div>
+
+      <h3><span class="badge badge-red">отклонено</span> Cbonds, ЕМИСС, TradingEconomics</h3>
+      <div class="card">
+        <p>Cbonds — платная авторизация. ЕМИСС — капча. TradingEconomics / Investing / Seasonax — только как проверочный референс для верификации методологии.</p>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════════════ -->
+    <section id="database">
+      <h2>База данных</h2>
+      <p class="subtitle">PostgreSQL 17. Ключевые таблицы и их связи.</p>
+
+      <div class="diagram-wrap">
+        <pre class="mermaid">
+erDiagram
+  instruments ||--o{ candles : "sec_id = secid"
+  instruments ||--o{ stock_market_cap : "sec_id"
+  instruments ||--o{ dividends : "sec_id = secid"
+  macro ||--o{ macro_data : "indicator (text)"
+  funds ||--o{ fund_data : "fund_id"
+  funds ||--o{ fund_holdings : "fund_id"
+
+  instruments {
+    varchar sec_id PK
+    varchar name
+    varchar type "stock futures index currency"
+    varchar sector
+    numeric daily_volume
+  }
+
+  candles {
+    varchar secid
+    timestamp begin_time
+    timestamp end_time
+    numeric open
+    numeric high
+    numeric low
+    numeric close
+    numeric value
+    numeric volume
+    integer interval "1 10 60 24 min"
+    varchar type "stock or futures"
+  }
+
+  index_data {
+    varchar secid
+    date trade_date
+    numeric open
+    numeric high
+    numeric low
+    numeric close
+    numeric value
+    numeric capitalization
+  }
+
+  macro {
+    int id PK
+    varchar indicator UK
+    varchar name
+    varchar frequency
+    varchar source
+    date start_date
+  }
+
+  macro_data {
+    varchar indicator
+    date period_date
+    numeric value
+    varchar source
+  }
+
+  dividends {
+    varchar secid
+    date ex_date
+    numeric value
+  }
+
+  breadth_history {
+    date date
+    int ema_period "50 100 200"
+    varchar universe "all or imoex"
+    varchar currency "rub or usd"
+    numeric pct_above
+  }
+
+  funds {
+    int fund_id PK
+    varchar ticker
+    varchar name
+    varchar category "stocks bonds gold money"
+    varchar uk_id
+  }
+
+  fund_data {
+    int fund_id
+    date date
+    numeric nav
+  }
+
+  open_interest {
+    varchar secid
+    timestamp begin_time
+    numeric oi
+  }
+
+  stock_market_cap {
+    varchar sec_id
+    date date
+    numeric market_cap
+  }
+
+  users {
+    int id PK
+    varchar email UK
+    varchar oauth_provider
+  }
+
+  refresh_tokens {
+    int user_id
+    varchar token
+    timestamp expires_at
+  }
+        </pre>
+      </div>
+
+      <div class="warn">
+        <strong>⚠ Имена колонок, которые постоянно путаются:</strong><br>
+        • <code>index_data.close</code> (НЕ <code>close_price</code>), <code>index_data.trade_date</code> (НЕ <code>date</code>)<br>
+        • <code>candles.begin_time</code> (НЕ <code>trade_date</code>)<br>
+        • <code>macro_data.indicator</code> — text, НЕТ FK к <code>macro.id</code>
+      </div>
+
+      <h3>Объёмы</h3>
+      <table>
+        <tr><th>Таблица</th><th>Строк</th><th>Период</th></tr>
+        <tr><td><code>candles</code></td><td>~285K дневных</td><td>с 2007, 95+ акций</td></tr>
+        <tr><td><code>index_data</code></td><td>десятки тыс.</td><td>IMOEX с 1997, RTSI с 1995</td></tr>
+        <tr><td><code>dividends</code></td><td>1475</td><td>81 тикер</td></tr>
+        <tr><td><code>breadth_history</code></td><td>12 × тыс.</td><td>3 EMA × 2 universes × 2 currencies</td></tr>
+        <tr><td><code>macro_data · GDP_QUARTERLY</code></td><td>123</td><td>с 1995 quarterly</td></tr>
+        <tr><td><code>macro_data · M2_MONTHLY</code></td><td>399</td><td>с 1993 monthly</td></tr>
+        <tr><td><code>macro_data · MARKET_CAP_TOTAL</code></td><td>7211</td><td>с 1997 daily</td></tr>
+      </table>
+
+      <h3>Materialized View</h3>
+      <div class="card">
+        <p><code>mv_heatmap_stocks</code> — <code>db/mv_heatmap_stocks.sql</code> — предрассчитанный снапшот для treemap. REFRESH по расписанию.</p>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════════════ -->
+    <section id="indicators">
+      <h2>8 индикаторов</h2>
+      <p class="subtitle">Каждый = backend router + frontend page + данные в БД + регистрация в App.tsx/Layout.tsx.</p>
+
+      <div class="diagram-wrap">
+        <pre class="mermaid">
+graph LR
+  subgraph PAGES["Frontend pages"]
+    direction TB
+    HP[HeatmapPage]
+    OI[OpenInterestPage]
+    FM[FundsMoneyPage]
+    FC[FundsCatalogPage]
+    ST[StrengthPage]
+    BF[BuffettPage]
+    SE[SeasonalityPage]
+    FE[FearIndexPage]
+  end
+
+  subgraph ROUTERS["API routers"]
+    direction TB
+    RH[heatmap.py]
+    RO[open_interest.py]
+    RF[funds.py]
+    RB[breadth.py]
+    RBF[buffett.py]
+    RS[seasonality.py]
+    RC["chart.py<br/>(fear)"]
+  end
+
+  subgraph DATA["БД"]
+    direction TB
+    DC[candles]
+    DI[index_data]
+    DM[macro_data]
+    DO[open_interest]
+    DFD[fund_data]
+    DBH[breadth_history]
+    DD[dividends]
+    DIN[instruments]
+    DMV[mv_heatmap_stocks]
+  end
+
+  HP --> RH --> DMV
+  RH --> DIN
+  RH --> DC
+
+  OI --> RO --> DO
+  RO --> DC
+
+  FM --> RF --> DFD
+  FC --> RF
+
+  ST --> RB --> DBH
+
+  BF --> RBF --> DM
+
+  SE --> RS --> DC
+  RS --> DI
+  RS --> DD
+
+  FE --> RC --> DI
+
+  classDef page fill:#21262d,stroke:#3fb950,color:#c9d1d9
+  classDef router fill:#21262d,stroke:#58a6ff,color:#c9d1d9
+  classDef data fill:#21262d,stroke:#bc8cff,color:#c9d1d9
+
+  class HP,OI,FM,FC,ST,BF,SE,FE page
+  class RH,RO,RF,RB,RBF,RS,RC router
+  class DC,DI,DM,DO,DFD,DBH,DD,DIN,DMV data
+        </pre>
+      </div>
+
+      <table>
+        <tr><th>№</th><th>Индикатор</th><th>Router</th><th>Page</th><th>Ключевые данные</th></tr>
+        <tr><td>1</td><td><strong>Карта рынка</strong></td><td><code>heatmap.py</code></td><td><code>HeatmapPage.tsx</code></td><td>mv_heatmap_stocks, candles, market_cap</td></tr>
+        <tr><td>2</td><td><strong>Открытый интерес</strong></td><td><code>open_interest.py</code></td><td><code>OpenInterestPage.tsx</code></td><td>open_interest (ролловер фьючей)</td></tr>
+        <tr><td>3</td><td><strong>Деньги в фондах</strong></td><td><code>funds.py</code></td><td><code>FundsMoneyPage.tsx</code></td><td>funds + fund_data (Cbonds)</td></tr>
+        <tr><td>4</td><td><strong>Сила рынка</strong></td><td><code>breadth.py</code></td><td><code>StrengthPage.tsx</code></td><td>breadth_history (12 комбо)</td></tr>
+        <tr><td>5</td><td><strong>Индикатор Баффетта</strong></td><td><code>buffett.py</code></td><td><code>BuffettPage.tsx</code></td><td>GDP_QUARTERLY + M2_MONTHLY + MARKET_CAP_TOTAL</td></tr>
+        <tr><td>6</td><td><strong>Сезонность</strong></td><td><code>seasonality.py</code></td><td><code>SeasonalityPage.tsx</code></td><td>candles, index_data, dividends (Dec-to-Dec)</td></tr>
+        <tr><td>7</td><td><strong>Индекс страха</strong></td><td><code>chart.py</code> (секция)</td><td><code>FearIndexPage.tsx</code></td><td>RVI + momentum + volume</td></tr>
+        <tr><td>8</td><td><strong>Каталог фондов</strong></td><td><code>funds.py</code></td><td><code>FundsCatalogPage.tsx</code></td><td>funds (donut по категориям)</td></tr>
+      </table>
+
+      <h3>Общие компоненты</h3>
+      <div class="info-grid">
+        <div class="card">
+          <h4>SimpleChart</h4>
+          <p><code>~800 строк</code>. Dual Y-axis, histogram, navigator, horizontal lines. Используют: Buffett, Strength, Seasonality, FundsMoney.</p>
+        </div>
+        <div class="card">
+          <h4>ChartNavigator</h4>
+          <p>Range slider для длинных таймсерий.</p>
+        </div>
+        <div class="card">
+          <h4>chart/ кирпичики</h4>
+          <p>ChartGrid, Crosshair, Dot, Tooltip, DateLabel, YAxis, XAxis, Marker.</p>
+        </div>
+        <div class="card">
+          <h4>chartTheme.ts</h4>
+          <p>Анимации: waveDuration 1500ms, waveStagger 700ms, morphDuration 600ms.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════════════ -->
+    <section id="api">
+      <h2>API эндпоинты</h2>
+      <p class="subtitle">FastAPI routers в <code>api/routers/</code>. Все через префикс <code>/api</code>.</p>
+
+      <h3>Авторизация</h3>
+      <table>
+        <tr><th>Router</th><th>Путь</th><th>Назначение</th></tr>
+        <tr><td><code>auth.py</code></td><td><code>/api/auth/*</code></td><td>Login/refresh/logout, JWT</td></tr>
+        <tr><td><code>oauth.py</code></td><td><code>/api/oauth/*</code></td><td>Google, VK, Yandex OAuth</td></tr>
+      </table>
+
+      <h3>Индикаторы</h3>
+      <table>
+        <tr><th>Router</th><th>Префикс</th><th>Основные эндпоинты</th></tr>
+        <tr><td><code>heatmap.py</code></td><td><code>/api/heatmap</code></td><td>GET / — treemap снапшот</td></tr>
+        <tr><td><code>open_interest.py</code></td><td><code>/api/oi</code></td><td>GET history, GET total</td></tr>
+        <tr><td><code>funds.py</code></td><td><code>/api/funds</code></td><td>GET money/flows, GET catalog, GET /{fund_id}</td></tr>
+        <tr><td><code>breadth.py</code></td><td><code>/api/breadth</code></td><td>GET history (ema/universe/currency)</td></tr>
+        <tr><td><code>buffett.py</code></td><td><code>/api/buffett</code></td><td>GET cap_gdp, GET cap_m2 (periods, timeframes)</td></tr>
+        <tr><td><code>seasonality.py</code></td><td><code>/api/seasonality</code></td><td>GET monthly/yearly/weekday/hour/price/mtd</td></tr>
+        <tr><td><code>chart.py</code></td><td><code>/api/chart</code></td><td>GET fear_index + универсальные графики</td></tr>
+      </table>
+
+      <h3>Инфраструктура</h3>
+      <table>
+        <tr><th>Router</th><th>Путь</th><th>Назначение</th></tr>
+        <tr><td><code>candles.py</code></td><td><code>/api/candles</code></td><td>Универсальный доступ к свечам</td></tr>
+        <tr><td><code>instruments.py</code></td><td><code>/api/instruments</code></td><td>Список + поиск инструментов</td></tr>
+        <tr><td><code>events.py</code></td><td><code>/api/events</code></td><td>События на графиках</td></tr>
+        <tr><td><code>stats.py</code></td><td><code>/api/stats</code></td><td>Статистика использования</td></tr>
+      </table>
+
+      <h3>Middleware</h3>
+      <div class="card">
+        <p><code>api/middleware.py</code> — CORS, JWT валидация, логирование. <code>api/cache.py</code> — Redis-обёртка с декораторами. <code>api/cache_updater.py</code> — warmup при старте. <code>api/sse.py</code> — Server-Sent Events для real-time обновлений.</p>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════════════ -->
+    <section id="deploy">
+      <h2>Деплой</h2>
+      <p class="subtitle">Сборка локально (из-за 4GB RAM), загрузка на прод через scp + docker cp.</p>
+
+      <div class="diagram-wrap">
+        <pre class="mermaid">
+graph TB
+  subgraph LOCAL["Локально macOS"]
+    direction TB
+    EDIT[Правка кода]
+    BUILD["npm run build<br/>только для frontend"]
+    TAR["tar -czf dist.tar.gz"]
+    SCP["scp dist.tar.gz"]
+  end
+
+  subgraph SRV["Прод 103.88.243.232"]
+    direction TB
+    REC[Приём файла]
+    CP["docker cp<br/>в /app/frontend/dist/<br/>или /app/api/"]
+    RST["docker restart<br/>только backend"]
+    VER[7-step health check]
+  end
+
+  EDIT --> BUILD
+  BUILD --> TAR
+  TAR --> SCP
+  SCP --> REC
+  REC --> CP
+  CP --> RST
+  RST --> VER
+
+  classDef local fill:#21262d,stroke:#3fb950,color:#c9d1d9
+  classDef srv fill:#21262d,stroke:#e3b341,color:#c9d1d9
+
+  class EDIT,BUILD,TAR,SCP local
+  class REC,CP,RST,VER srv
+        </pre>
+      </div>
+
+      <h3>Frontend деплой</h3>
+      <pre># 1. Бампнуть CACHE_NAME в frontend/public/sw.js
+# 2. Собрать локально
+cd frontend && npm run build
+
+# 3. Упаковать и загрузить
+tar -czf /tmp/dist.tar.gz -C frontend/dist .
+scp /tmp/dist.tar.gz root@103.88.243.232:/tmp/
+
+# 4. На сервере — распаковать в контейнер
+ssh root@103.88.243.232 '\
+  cd /tmp && mkdir -p dist_new && tar -xzf dist.tar.gz -C dist_new && \
+  docker cp dist_new/. frame-api-1:/app/frontend/dist/ && \
+  rm -rf dist_new dist.tar.gz'</pre>
+
+      <div class="warn">
+        <strong>⚠ Путь внутри контейнера:</strong> <code>/app/frontend/dist/</code>, НЕ <code>/app/static/</code>.<br>
+        <strong>⚠ Service Worker:</strong> каждый фронт-деплой — бампай <code>CACHE_NAME</code> в <code>frontend/public/sw.js</code>, иначе юзеры будут видеть кеш.
+      </div>
+
+      <h3>Backend деплой</h3>
+      <pre># Один файл
+scp api/routers/buffett.py root@103.88.243.232:/tmp/
+ssh root@103.88.243.232 '\
+  docker cp /tmp/buffett.py frame-api-1:/app/api/routers/buffett.py && \
+  docker restart frame-api-1'
+
+# Проверка
+ssh root@103.88.243.232 'docker logs frame-api-1 --tail 50'</pre>
+
+      <h3>Что помогает автоматизировать</h3>
+      <div class="info-grid">
+        <div class="card">
+          <h4>Skills</h4>
+          <p><code>moex-deploy-frontend</code> — автоматизирует всё выше + bump sw.js.<br/><code>moex-deploy-backend</code> — scp + restart + tail логов.</p>
+        </div>
+        <div class="card">
+          <h4>Agents</h4>
+          <p><code>moex-deploy-verifier</code> — 7-step health check: /health, каждый API endpoint, SW version, JSON vs SPA fallback.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════════════════════════════════════════════════ -->
+    <section id="tree">
+      <h2>Структура кода</h2>
+      <p class="subtitle">Ключевые папки и что за что отвечает.</p>
+
+      <pre>MOEX/
+├── api/                         ← FastAPI backend
+│   ├── main.py                  ← точка входа, регистрация routers
+│   ├── database.py              ← SQLAlchemy engine (sync + async)
+│   ├── cache.py                 ← Redis-обёртка
+│   ├── cache_updater.py         ← warmup при старте
+│   ├── middleware.py            ← CORS, JWT, логирование
+│   ├── sse.py                   ← Server-Sent Events
+│   ├── notify_listener.py       ← LISTEN/NOTIFY postgres
+│   ├── models/                  ← SQLAlchemy модели
+│   ├── schemas/                 ← Pydantic схемы
+│   ├── security/                ← JWT, OAuth logic
+│   └── routers/                 ← все API эндпоинты (13 файлов)
+│       ├── auth.py, oauth.py    ← авторизация
+│       ├── heatmap.py           ← карта рынка
+│       ├── open_interest.py     ← OI
+│       ├── funds.py             ← деньги + каталог
+│       ├── breadth.py           ← сила рынка
+│       ├── buffett.py           ← Баффетт
+│       ├── seasonality.py       ← сезонность (самый большой)
+│       ├── chart.py             ← fear index + универсальный
+│       ├── candles.py           ← свечи
+│       ├── instruments.py       ← инструменты + поиск
+│       ├── events.py            ← события
+│       └── stats.py             ← статистика
+│
+├── frontend/                    ← React + Vite SPA
+│   ├── public/
+│   │   └── sw.js                ← Service Worker (бампать CACHE_NAME!)
+│   └── src/
+│       ├── App.tsx              ← роутинг (регистрировать новые страницы)
+│       ├── pages/               ← 12+ страниц (1 = 1 индикатор)
+│       ├── components/
+│       │   ├── Layout.tsx       ← шапка + меню навигации
+│       │   ├── SimpleChart.tsx  ← общий график (~800 строк)
+│       │   ├── ChartNavigator.tsx
+│       │   ├── ErrorBoundary.tsx
+│       │   ├── InstrumentSearchModal.tsx
+│       │   ├── chart/           ← кирпичики (Grid, Tooltip, Axis, ...)
+│       │   ├── funds/           ← FlowsHistogram, FundsTable, FundCardModal
+│       │   ├── seasonality/     ← компоненты сезонности
+│       │   └── strength/        ← компоненты силы рынка
+│       ├── services/
+│       │   └── api.ts           ← API-клиент + типы (регистрировать!)
+│       └── config/
+│           ├── chartTheme.ts    ← цвета, анимации
+│           ├── fundAnnotations.ts  ← события на графике фондов
+│           └── fundConfig.ts
+│
+├── Candles/                     ← сбор дневных/5-мин свечей
+│   ├── fetch_candles_spot_realtime.py
+│   ├── fetch_candles_futures_realtime.py
+│   ├── fetch_dividends.py
+│   ├── backfill_daily_history.py
+│   ├── backfill_dividends_dohod.py
+│   └── compute_breadth_history.py   ← пересчёт breadth
+│
+├── OI/                          ← Open Interest (Algopack)
+│   ├── fetch_oi_5min_realtime.py
+│   ├── fetch_oi_daily_realtime.py
+│   └── aggregate_oi_hourly.py
+│
+├── Funds/                       ← фонды (Cbonds)
+│   ├── fetch_funds_realtime.py
+│   ├── fetch_indices_realtime.py
+│   ├── backfill_history.py
+│   └── CBONDS_MIGRATION.md
+│
+├── Macro/                       ← макро данные
+│   ├── fetch_macro_realtime.py  ← M2, GDP ручной импорт
+│   └── fetch_market_cap.py      ← парсинг SmartLab
+│
+├── db/
+│   ├── init_db.py               ← создание схемы
+│   ├── models.py                ← SQLAlchemy модели (копия из api/)
+│   ├── add_oauth_fields.py      ← миграция
+│   └── mv_heatmap_stocks.sql    ← materialized view
+│
+├── scripts/                     ← вспомогательные
+│   └── tv_seasonality_check.pine  ← Pine Script для верификации TV
+│
+├── tests/                       ← pytest
+│
+├── nginx/                       ← конфиг nginx
+├── docs/                        ← эта схема + TECHNICAL.md
+├── backups/                     ← скрипты бэкапа
+├── logs/
+│
+├── main_orchestrator.py         ← центр всех cron jobs
+├── moex_calendar.py             ← даты торгов MOEX
+├── tg_bot.py                    ← Telegram админ-бот
+├── docker-compose.yml           ← 6 сервисов
+├── Dockerfile                   ← build для api + orchestrator + tg-bot
+├── requirements.txt
+├── backup_db.sh                 ← daily cron для бэкапа БД
+├── .env                         ← dev secrets (не коммитить)
+├── .env.production              ← prod secrets (не коммитить)
+├── TECHNICAL.md                 ← технические заметки
+├── DEPLOY_NOTES.md              ← заметки по деплою
+│
+└── .claude/                     ← Claude Code расширения
+    ├── skills/                  ← 7 скиллов
+    │   ├── moex-deploy-frontend/
+    │   ├── moex-deploy-backend/
+    │   ├── moex-db-query/
+    │   ├── moex-git-workflow/
+    │   ├── moex-new-indicator-scaffold/
+    │   ├── moex-simplechart-usage/
+    │   └── moex-methodology-verify/
+    ├── agents/                  ← 3 агента
+    │   ├── moex-deploy-verifier.md
+    │   ├── moex-methodology-auditor.md
+    │   └── moex-indicator-explorer.md
+    └── settings.local.json</pre>
+
+      <div class="footer">
+        <p>Сгенерировано автоматически на основе кода и memory-файлов Claude Code. Обновлять при серьёзных изменениях архитектуры.</p>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'dark',
+    themeVariables: {
+      background: '#0d1117',
+      primaryColor: '#21262d',
+      primaryTextColor: '#c9d1d9',
+      primaryBorderColor: '#30363d',
+      lineColor: '#8b949e',
+      secondaryColor: '#161b22',
+      tertiaryColor: '#21262d',
+      fontSize: '13px'
+    },
+    flowchart: { htmlLabels: true, curve: 'basis' }
+  });
+
+  const items = document.querySelectorAll('.nav-item');
+  const sections = document.querySelectorAll('section');
+  items.forEach(item => {
+    item.addEventListener('click', () => {
+      const target = item.dataset.section;
+      items.forEach(i => i.classList.remove('active'));
+      sections.forEach(s => s.classList.remove('active'));
+      item.classList.add('active');
+      document.getElementById(target).classList.add('active');
+      window.scrollTo(0, 0);
+    });
+  });
+</script>
+</body>
+</html>

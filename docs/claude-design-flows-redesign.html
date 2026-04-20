@@ -1,0 +1,594 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Фрейм — Деньги в фондах · Притоки-Оттоки (redesign)</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="colors_and_type.css">
+<style>
+  :root{
+    --chart-pad-left: 100px;      /* v1 default — matches NAV chart */
+    --chart-pad-right-dual: 95px; /* v1 default */
+    --chart-pad-top: 19px;
+    --chart-pad-bottom: 50px;
+    --chart-h: 450px;
+    --chart-font-y: 16px;
+    --chart-font-x: 14px;
+    --axis-color: #9CA3B8;
+    --crosshair-color: #C8FF2E;
+    --nav-color: #6366f1;
+    --pos: #22C55E;
+    --neg: #EF4444;
+    --zero-line: rgba(255,255,255,.18);
+    --grid: rgba(255,255,255,.06);
+    --date-top-legend-top: 38px;
+  }
+  html,body{margin:0;background:var(--bg-primary);color:var(--fg-primary);font-family:var(--font-sans)}
+  *{box-sizing:border-box}
+  body{padding:32px 0;font-variant-numeric:tabular-nums}
+
+  .page{max-width:1280px;margin:0 auto;padding:0 24px}
+  .page-hero{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:20px;gap:16px;flex-wrap:wrap}
+  h1{font-size:28px;font-weight:700;margin:0;letter-spacing:-.02em}
+  .sub{font-size:13px;color:var(--fg-secondary);margin-top:4px}
+
+  /* Tabs — category / mode */
+  .tabs{display:inline-flex;background:var(--bg-secondary);border:1px solid var(--border);border-radius:12px;padding:3px;gap:2px}
+  .tabs button{all:unset;cursor:pointer;padding:8px 16px;font-size:13px;font-weight:500;border-radius:9px;color:var(--fg-secondary);transition:all .2s}
+  .tabs button.act{color:var(--fg-inverse);background:var(--accent)}
+  .seg{display:inline-flex;background:var(--bg-primary);border:1px solid var(--border);border-radius:10px;padding:3px;gap:2px}
+  .seg button{all:unset;cursor:pointer;padding:6px 12px;font-size:12px;font-weight:500;border-radius:7px;color:var(--fg-secondary)}
+  .seg button.act{color:var(--fg-inverse);background:var(--accent)}
+
+  /* Card — УСИЛИЛ: явная граница + более выраженная тень */
+  .card{background:var(--bg-widget);border:1px solid rgba(255,255,255,0.18);border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,0.55), 0 1px 0 rgba(255,255,255,0.04) inset;overflow:hidden}
+
+  /* Анимации */
+  @keyframes chart-reveal {
+    from { clip-path: inset(0 100% 0 0); }
+    to   { clip-path: inset(0 0 0 0); }
+  }
+  .chart-area svg { animation: chart-reveal 1000ms cubic-bezier(0.25, 0.46, 0.45, 0.94); }
+
+  @keyframes bar-in {
+    from { transform: scaleY(0); opacity: 0; }
+    to   { transform: scaleY(1); opacity: 1; }
+  }
+
+  @keyframes navigator-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .navigator svg { animation: navigator-in 600ms ease-out 300ms both; }
+
+  .card-head{padding:18px 24px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);gap:16px;flex-wrap:wrap}
+  .card-head .title{font-size:16px;font-weight:600}
+  .card-head .mode{display:flex;gap:8px;align-items:center}
+
+  /* Chart block */
+  .chart-wrap{padding:24px}
+  .legend{display:flex;align-items:center;justify-content:center;gap:20px;font-size:13px}
+  .legend .dot{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:6px;vertical-align:-1px}
+  .legend .item{display:inline-flex;align-items:center;color:var(--fg-primary);font-weight:500}
+
+  /* Date pill — absolute, anchored to the chart-wrap root, 38px from top */
+  .date-pill{position:absolute;top:var(--date-top-legend-top);transform:translateX(-50%);z-index:3;pointer-events:none}
+  .date-pill span{font-size:11px;color:var(--fg-secondary);background:rgba(26,31,46,.9);backdrop-filter:blur(4px);padding:3px 8px;border-radius:6px;border:1px solid var(--border);white-space:nowrap;font-variant-numeric:tabular-nums}
+
+  /* Tooltip card */
+  .tt{position:absolute;z-index:4;pointer-events:none;background:rgba(26,31,46,.95);backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.10);border-radius:10px;padding:8px 10px;box-shadow:0 8px 32px rgba(0,0,0,.5);min-width:192px}
+  .tt .row{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:12px}
+  .tt .row + .row{margin-top:3px}
+  .tt .lbl{display:inline-flex;align-items:center;gap:6px;color:var(--fg-secondary)}
+  .tt .dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex-shrink:0}
+  .tt .val{font-weight:600;font-variant-numeric:tabular-nums}
+
+  /* Chart container */
+  .chart-root{position:relative}
+  .chart-area{
+    position:relative;
+    height:var(--chart-h);
+  }
+
+  /* Annotation circles row */
+  .ann-row{position:relative;height:28px;margin-top:-34px}
+  .ann-row-inner{position:absolute;top:0;bottom:0}
+  .ann{position:absolute;transform:translateX(-50%);cursor:pointer}
+  .ann .c{width:28px;height:28px;border-radius:50%;background:#3a3f4f;color:#9CA3B8;font-size:11px;font-weight:600;display:flex;align-items:center;justify-content:center;opacity:.5;transition:opacity .2s}
+  .ann:hover .c{opacity:1}
+
+  /* Navigator — match ChartNavigator: 52px, padding 8px, mini-path area gradient */
+  .navigator{padding:0 8px;margin-top:12px}
+  .navigator svg{display:block;overflow:visible}
+
+  /* Meta row */
+  .meta{display:flex;justify-content:space-between;padding:14px 24px 20px;font-size:12px;color:var(--fg-muted);border-top:1px solid var(--border)}
+
+  /* Tweak panel — hidden by default, visible when body has data-tweaks="on" */
+  #tweaks{position:fixed;right:18px;bottom:18px;background:var(--bg-widget);border:1px solid var(--border);border-radius:14px;padding:14px 16px;box-shadow:var(--shadow-lg);width:260px;font-size:12px;z-index:100;display:none}
+  body[data-tweaks="on"] #tweaks{display:block}
+  #tweaks h4{margin:0 0 10px;font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--fg-muted);font-weight:600}
+  #tweaks label{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;color:var(--fg-secondary);gap:12px}
+  #tweaks .group{display:inline-flex;background:var(--bg-primary);border:1px solid var(--border);border-radius:8px;padding:2px}
+  #tweaks .group button{all:unset;padding:4px 10px;border-radius:6px;cursor:pointer;color:var(--fg-secondary);font-weight:500}
+  #tweaks .group button.act{background:var(--accent);color:var(--fg-inverse)}
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+
+<div id="root"></div>
+<div id="tweaks"></div>
+
+<script type="text/babel">
+const { useState, useMemo, useEffect, useRef, useLayoutEffect } = React;
+
+// ───────────────────────────────────────────────
+// Persistent tweak defaults
+// ───────────────────────────────────────────────
+const TWEAK_DEFAULS = /*EDITMODE-BEGIN*/{
+  "variant": "v1",
+  "showTooltip": false,
+  "showDatePill": true,
+  "hoverIndex": 38,
+  "showEvents": false
+}/*EDITMODE-END*/;
+
+// ───────────────────────────────────────────────
+// Deterministic fake flows — ~80 weekly bars, 75/25 pos/neg
+// ───────────────────────────────────────────────
+function genFlows() {
+  let seed = 0x5EED;
+  const rand = () => { seed = (seed * 9301 + 49297) % 233280; return seed / 233280; };
+  const start = new Date('2024-06-03');
+  const N = 82;
+  const out = [];
+  for (let i = 0; i < N; i++) {
+    const d = new Date(start); d.setDate(start.getDate() + i * 7);
+    const positive = rand() > 0.25;
+    const mag = positive ? 0.5 + rand() * 9.5 : -(0.2 + rand() * 2.8);
+    // inject two extreme weeks so the histogram shows rhythm
+    const flow = i === 28 ? 11.8 : i === 61 ? -3.4 : mag;
+    const flow_pct = flow / (650 + i * 4) * 100; // plausible %
+    out.push({
+      period_end: d.toISOString().slice(0, 10),
+      flow: +flow.toFixed(3),
+      flow_pct: +flow_pct.toFixed(3),
+    });
+  }
+  return out;
+}
+
+// Annotation circles — letters for UK events
+const ANNOTATIONS = [
+  { date: '2024-11-25', letter: 'С', type: 'Слияние',    description: 'Слияние двух фондов УК СБЕР — перераспределение активов' },
+  { date: '2025-03-10', letter: 'Т', type: 'Ликвидация', description: 'Ликвидация фонда Т-Капитал · выплаты пайщикам' },
+  { date: '2025-09-15', letter: 'А', type: 'Реорганизация', description: 'Реорганизация БПИФ Альфа — смена бенчмарка' },
+];
+
+const FLOWS = genFlows();
+
+// ───────────────────────────────────────────────
+// Navigator — 1:1 with ChartNavigator.tsx (52px, area gradient)
+// ───────────────────────────────────────────────
+function Navigator({ data, selFrac, onChange, color = 'var(--nav-color)', height = 52 }) {
+  const ref = useRef(null);
+  const [width, setWidth] = useState(0);
+  const gid = useRef('ng-' + Math.random().toString(36).slice(2, 6)).current;
+  const color_ = color === 'var(--nav-color)' ? getComputedStyle(document.documentElement).getPropertyValue('--nav-color').trim() || '#6366f1' : color;
+
+  useLayoutEffect(() => { if (ref.current) setWidth(ref.current.clientWidth); }, []);
+  useEffect(() => {
+    if (!ref.current) return;
+    const ro = new ResizeObserver(e => { const w = e[0].contentRect.width; if (w > 0) setWidth(w); });
+    ro.observe(ref.current); return () => ro.disconnect();
+  }, []);
+
+  const mini = useMemo(() => {
+    if (!data.length || width <= 0) return null;
+    const vals = data.map(d => d.value);
+    const minV = Math.min(...vals), maxV = Math.max(...vals);
+    const range = maxV - minV || 1;
+    const pt = 5, pb = 5; const hh = height - pt - pb;
+    const pts = data.map((d, i) => ({ x: (i / Math.max(data.length - 1, 1)) * width, y: pt + hh - ((d.value - minV) / range) * hh }));
+    const line = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
+    const area = `${line} L ${pts[pts.length - 1].x.toFixed(1)} ${height} L 0 ${height} Z`;
+    return { line, area };
+  }, [data, width, height]);
+
+  const leftPx = selFrac[0] * width;
+  const rightPx = selFrac[1] * width;
+  const HANDLE_W = 14;
+
+  const startDrag = (e, type) => {
+    e.preventDefault(); e.stopPropagation();
+    if (width === 0) return;
+    const startX = e.clientX;
+    const startF = [selFrac[0], selFrac[1]];
+    const onMove = (me) => {
+      const df = (me.clientX - startX) / width;
+      const [s, en] = startF; const ws = en - s; const MIN = 0.01;
+      if (type === 'left')       onChange([Math.max(0, Math.min(s + df, en - MIN)), en]);
+      else if (type === 'right') onChange([s, Math.min(1, Math.max(en + df, s + MIN))]);
+      else {
+        const ns = Math.max(0, Math.min(s + df, 1 - ws));
+        onChange([ns, ns + ws]);
+      }
+    };
+    const onUp = () => { window.removeEventListener('mousemove', onMove, true); window.removeEventListener('mouseup', onUp); };
+    window.addEventListener('mousemove', onMove, true); window.addEventListener('mouseup', onUp);
+  };
+
+  return (
+    <div ref={ref} className="navigator" style={{ position: 'relative' }}>
+      <svg width="100%" height={height}>
+        <defs>
+          <linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%"   stopColor={color_} stopOpacity="0.35" />
+            <stop offset="100%" stopColor={color_} stopOpacity="0.03" />
+          </linearGradient>
+        </defs>
+        {mini && (<>
+          <path d={mini.area} fill={`url(#${gid})`} />
+          <path d={mini.line} fill="none" stroke={color_} strokeWidth="1" opacity="0.5" />
+        </>)}
+        <rect x={0} y={0} width={Math.max(0, leftPx)} height={height} fill="rgba(0,0,0,0.5)" pointerEvents="none" />
+        <rect x={rightPx} y={0} width={Math.max(0, width - rightPx)} height={height} fill="rgba(0,0,0,0.5)" pointerEvents="none" />
+        <rect x={leftPx} y={0} width={Math.max(0, rightPx - leftPx)} height={height}
+          fill="rgba(56,98,251,0.08)" stroke="rgba(56,98,251,0.45)" strokeWidth="1"
+          style={{ cursor: 'grab' }} onMouseDown={e => startDrag(e, 'window')} />
+        <g style={{ cursor: 'ew-resize' }} onMouseDown={e => startDrag(e, 'left')}>
+          <rect x={leftPx - HANDLE_W / 2} y={height * 0.15} width={HANDLE_W} height={height * 0.7} rx={3} fill="rgba(56,98,251,0.9)" />
+          <path d={`M${leftPx + 2} ${height / 2 - 4} L${leftPx - 3} ${height / 2} L${leftPx + 2} ${height / 2 + 4}`} fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" pointerEvents="none" />
+        </g>
+        <g style={{ cursor: 'ew-resize' }} onMouseDown={e => startDrag(e, 'right')}>
+          <rect x={rightPx - HANDLE_W / 2} y={height * 0.15} width={HANDLE_W} height={height * 0.7} rx={3} fill="rgba(56,98,251,0.9)" />
+          <path d={`M${rightPx - 2} ${height / 2 - 4} L${rightPx + 3} ${height / 2} L${rightPx - 2} ${height / 2 + 4}`} fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" pointerEvents="none" />
+        </g>
+      </svg>
+    </div>
+  );
+}
+
+// ───────────────────────────────────────────────
+// Chart — SVG-rendered axes + bars (v1 vs v2 via CSS var)
+// ───────────────────────────────────────────────
+function FlowsChart({ flows, hoveredIdx, setHoveredIdx, showEvents, showTooltip, showDatePill, variant }) {
+  const rootRef = useRef(null);
+  const [size, setSize] = useState({ w: 1192, h: 450 });
+
+  useLayoutEffect(() => {
+    if (!rootRef.current) return;
+    const measure = () => {
+      const r = rootRef.current.getBoundingClientRect();
+      setSize({ w: Math.round(r.width), h: Math.round(r.height) });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(rootRef.current);
+    return () => ro.disconnect();
+  }, []);
+
+  // v1: asymmetric 100 / 95 ;   v2: symmetric 95 / 95
+  const padL = variant === 'v2' ? 95 : 100;
+  const padR = 95;
+  const padT = 19;
+  const padB = 50;
+
+  const W = size.w, H = size.h;
+  const cw = Math.max(10, W - padL - padR);
+  const ch = Math.max(10, H - padT - padB);
+
+  const maxAbs = Math.max(...flows.map(f => Math.abs(f.flow)), 0.001);
+  const midY = padT + ch / 2;
+  const halfH = ch / 2 * 0.94;  // 6% gutter top/bottom
+
+  const barPitch = cw / flows.length;
+  const barW = barPitch * 0.70;
+
+  const yTicks = [maxAbs, maxAbs / 2, 0, -maxAbs / 2, -maxAbs];
+
+  // X-tick positions (6 labels)
+  const tickCount = Math.min(6, flows.length);
+  const xTicks = Array.from({ length: tickCount }, (_, i) => {
+    const idx = Math.round(i * (flows.length - 1) / Math.max(tickCount - 1, 1));
+    return { idx, f: flows[idx] };
+  });
+
+  const fmtTickLabel = (v) => v === 0 ? '0' : `${v > 0 ? '+' : ''}${Math.abs(v) >= 0.1 ? v.toFixed(1) : v.toFixed(2)}`;
+  const fmtXDate = (iso) => {
+    const d = new Date(iso); const yy = String(d.getFullYear()).slice(-2);
+    const m = d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+    return `${m} ${yy}`;
+  };
+  const fmtDateLong = (iso) => new Date(iso).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' });
+
+  // Hovered bar position
+  const hovX = hoveredIdx != null ? padL + hoveredIdx * barPitch + barPitch / 2 : null;
+  const hovFlow = hoveredIdx != null ? flows[hoveredIdx] : null;
+  const hovColor = hovFlow && hovFlow.flow >= 0 ? 'var(--pos)' : 'var(--neg)';
+
+  // Tooltip card — position next to crosshair, above midline
+  const tooltipLeft = hovX != null ? Math.min(Math.max(hovX + 14, padL + 8), padL + cw - 200) : 0;
+  const tooltipTop = hoveredIdx != null && hovFlow
+    ? (hovFlow.flow >= 0 ? padT + 8 : midY + 8)
+    : padT + 8;
+
+  // Date pill — anchored to root container (NOT chart-area)
+  // legend is ~24px tall + mb-2; card-head is 18+16+1 = 35px. We want it at 38px from chart-wrap top
+  const dateX = hovX ?? 0;
+
+  return (
+    <div className="chart-root" ref={rootRef} style={{ position: 'relative' }}>
+      {/* Date pill — между легендой и чартом (отрицательный top выводит над chart-root) */}
+      {showDatePill && hoveredIdx != null && hovFlow && (
+        <div className="date-pill" style={{ left: dateX, top: '-18px' }}>
+          <span>{fmtDateLong(hovFlow.period_end)}</span>
+        </div>
+      )}
+
+      {/* Chart area */}
+      <div className="chart-area"
+           onMouseMove={e => {
+             const r = e.currentTarget.getBoundingClientRect();
+             const x = e.clientX - r.left;
+             const i = Math.floor((x - padL) / barPitch);
+             if (i >= 0 && i < flows.length) setHoveredIdx(i);
+           }}
+           onMouseLeave={() => setHoveredIdx(null)}
+      >
+        <svg width={W} height={H} style={{ display: 'block' }}>
+          {/* Grid */}
+          {yTicks.map((v, i) => {
+            const y = midY - (v / maxAbs) * halfH;
+            return <line key={i} x1={padL} x2={padL + cw} y1={y} y2={y}
+                         stroke={v === 0 ? 'var(--zero-line)' : 'var(--grid)'} strokeWidth="1" />;
+          })}
+
+          {/* Bars */}
+          {flows.map((f, i) => {
+            const cx = padL + i * barPitch + barPitch / 2;
+            const x = cx - barW / 2;
+            const isHov = hoveredIdx === i;
+            const op = hoveredIdx == null ? 1 : (isHov ? 1 : 0.35);
+            if (f.flow >= 0) {
+              const hh = Math.max((f.flow / maxAbs) * halfH, 1.2);
+              return <rect key={i} x={x} y={midY - hh} width={barW} height={hh} rx="2"
+                           fill="var(--pos)" opacity={op} />;
+            } else {
+              const hh = Math.max((Math.abs(f.flow) / maxAbs) * halfH, 1.2);
+              return <rect key={i} x={x} y={midY} width={barW} height={hh} rx="2"
+                           fill="var(--neg)" opacity={op} />;
+            }
+          })}
+
+          {/* Crosshair */}
+          {hovX != null && (
+            <line x1={hovX} x2={hovX} y1={padT} y2={padT + ch}
+                  stroke="var(--crosshair-color)" strokeWidth="1" strokeDasharray="4 4" opacity="0.85" pointerEvents="none" />
+          )}
+
+          {/* Y labels (right side) */}
+          {yTicks.map((v, i) => {
+            const y = midY - (v / maxAbs) * halfH;
+            return <text key={i} x={padL + cw + 12} y={y + 5}
+                         fontSize="var(--chart-font-y)" fontWeight="600" fill="var(--axis-color)"
+                         style={{ fontVariantNumeric: 'tabular-nums' }}>{fmtTickLabel(v)}</text>;
+          })}
+
+          {/* X labels (bottom) */}
+          {xTicks.map((t, i) => {
+            const cx = padL + t.idx * barPitch + barPitch / 2;
+            const anchor = i === 0 ? 'start' : i === xTicks.length - 1 ? 'end' : 'middle';
+            const x = i === 0 ? padL : i === xTicks.length - 1 ? padL + cw : cx;
+            return <text key={i} x={x} y={padT + ch + 30}
+                         fontSize="var(--chart-font-x)" fontWeight="600" fill="var(--axis-color)"
+                         textAnchor={anchor} style={{ fontVariantNumeric: 'tabular-nums' }}>
+              {fmtXDate(t.f.period_end)}
+            </text>;
+          })}
+        </svg>
+
+        {/* Tooltip card */}
+        {showTooltip && hoveredIdx != null && hovFlow && (
+          <div className="tt" style={{ left: tooltipLeft, top: tooltipTop }}>
+            <div className="row">
+              <span className="lbl"><span className="dot" style={{ background: hovColor }}></span>{hovFlow.flow >= 0 ? 'Приток' : 'Отток'}</span>
+              <span className="val" style={{ color: hovColor }}>
+                {`${hovFlow.flow > 0 ? '+' : ''}${Math.abs(hovFlow.flow) >= 0.01 ? hovFlow.flow.toFixed(2) : hovFlow.flow.toFixed(3)} млрд ₽`}
+              </span>
+            </div>
+            <div className="row">
+              <span className="lbl"><span className="dot" style={{ background: 'var(--crosshair-color)' }}></span>Изменение</span>
+              <span className="val" style={{ color: hovColor }}>
+                {`${hovFlow.flow_pct > 0 ? '+' : ''}${hovFlow.flow_pct.toFixed(2)}%`}
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Annotations row — uses same pad as chart */}
+      <div className="ann-row">
+        <div className="ann-row-inner" style={{ left: padL, right: padR }}>
+          {showEvents && ANNOTATIONS.map((a, i) => {
+            const annT = new Date(a.date).getTime();
+            let bestI = -1, bestD = Infinity;
+            for (let k = 0; k < flows.length; k++) {
+              const d = Math.abs(new Date(flows[k].period_end).getTime() - annT);
+              if (d < bestD && d <= 7 * 86400000) { bestD = d; bestI = k; }
+            }
+            if (bestI === -1) return null;
+            const xPct = (bestI + 0.5) / flows.length * 100;
+            return (
+              <div key={i} className="ann" style={{ left: `${xPct}%`, top: 0 }}
+                   title={`${a.type} · ${fmtDateLong(a.date)}\n${a.description}`}>
+                <div className="c">{a.letter}</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ───────────────────────────────────────────────
+// Page shell
+// ───────────────────────────────────────────────
+function App() {
+  const saved = { ...TWEAK_DEFAULS, ...JSON.parse(localStorage.getItem('funds_flows_v') || '{}') };
+  const [variant,     setVariant]     = useState(saved.variant);
+  const [showTooltip, setShowTooltip] = useState(saved.showTooltip);
+  const [showDatePill, setShowDatePill] = useState(saved.showDatePill);
+  const [showEvents,  setShowEvents]  = useState(saved.showEvents);
+  const [hoveredIdx,  setHoveredIdx]  = useState(saved.hoverIndex ?? 52);
+  const [navRange,    setNavRange]    = useState([0, 1]);
+
+  useEffect(() => {
+    localStorage.setItem('funds_flows_v', JSON.stringify({ variant, showTooltip, showDatePill, showEvents, hoverIndex: hoveredIdx }));
+  }, [variant, showTooltip, showDatePill, showEvents, hoveredIdx]);
+
+  const [category, setCategory] = useState('bonds');
+  const [mode, setMode] = useState('flows');
+
+  // Visible slice for chart
+  const N = FLOWS.length;
+  const s = Math.round(navRange[0] * (N - 1));
+  const e = Math.round(navRange[1] * (N - 1));
+  const visible = FLOWS.slice(s, e + 1);
+
+  // Navigator mini-path data — cumulative flow, like NAV
+  const navData = useMemo(() => {
+    let acc = 0;
+    return FLOWS.map(f => { acc += f.flow; return { time: f.period_end, value: acc }; });
+  }, []);
+
+  return (
+    <div className="page">
+      <div className="page-hero">
+        <div>
+          <h1>Деньги в фондах</h1>
+          <div className="sub">Потоки в российские БПИФ · еженедельно · УК СБЕР, Т-Капитал, Альфа и др.</div>
+        </div>
+        <div className="tabs" role="tablist">
+          {[['shares','Акции'], ['bonds','Облигации'], ['money','Денежный рынок']].map(([id, lbl]) =>
+            <button key={id} className={category === id ? 'act' : ''} onClick={() => setCategory(id)}>{lbl}</button>
+          )}
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-head">
+          <div className="title">{mode === 'flows' ? 'Притоки-Оттоки' : 'СЧА'} · Облигации</div>
+          <div className="mode">
+            <div className="seg">
+              <button className={mode === 'nav' ? 'act' : ''} onClick={() => setMode('nav')}>СЧА</button>
+              <button className={mode === 'flows' ? 'act' : ''} onClick={() => setMode('flows')}>Притоки-Оттоки</button>
+            </div>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--fg-secondary)', marginLeft: 10 }}>
+              <input type="checkbox" checked={showEvents} onChange={e => setShowEvents(e.target.checked)} />
+              События
+            </label>
+          </div>
+        </div>
+
+        <div className="chart-wrap" style={{ position: 'relative' }}>
+          <div className="legend">
+            <span className="item"><span className="dot" style={{ background: 'var(--pos)' }}></span>Приток</span>
+            <span className="item"><span className="dot" style={{ background: 'var(--neg)' }}></span>Отток</span>
+          </div>
+
+          <div style={{ position: 'relative', marginTop: 36 }}>
+            <FlowsChart
+              flows={visible}
+              hoveredIdx={Math.min(hoveredIdx, visible.length - 1)}
+              setHoveredIdx={setHoveredIdx}
+              showEvents={showEvents}
+              showTooltip={showTooltip}
+              showDatePill={showDatePill}
+              variant={variant}
+            />
+          </div>
+
+          <Navigator data={navData} selFrac={navRange} onChange={setNavRange} />
+        </div>
+
+        <div className="meta">
+          <span>Всего периодов: <b style={{ color: 'var(--fg-primary)' }}>{N}</b></span>
+          <span>Показано: <b style={{ color: 'var(--fg-primary)' }}>{visible.length}</b></span>
+          <span>Вариант: <b style={{ color: 'var(--accent)' }}>{variant.toUpperCase()}</b> · padding {variant === 'v1' ? '100 / 95 (NAV-parity)' : '95 / 95 (симметричный)'}</span>
+        </div>
+      </div>
+
+      <p style={{ maxWidth: 820, color: 'var(--fg-secondary)', fontSize: 13, lineHeight: 1.55, marginTop: 24 }}>
+        <b style={{ color: 'var(--fg-primary)' }}>Что изменилось:</b> оси + метки теперь рисуются внутри SVG
+        (не абсолютными div-ами), поэтому x- и y-подписи точно совпадают с чарт-зоной.
+        Дата-тултип закреплён к корневому контейнеру на <code style={{ color: 'var(--accent)' }}>top: 38px</code>,
+        между легендой и чартом — не прыгает. Навигатор снизу — тот же <code style={{ color: 'var(--accent)' }}>ChartNavigator</code>,
+        что и на вкладке «СЧА»: 52px, внутри — мини-копия графика с area-gradient. Отступы чарта
+        (100 / 95 / 19 / 50) соответствуют задокументированным CSS-переменным.
+        Переключите <b style={{ color: 'var(--accent)' }}>Вариант</b> в панели Tweaks справа, чтобы сравнить v1 и v2.
+      </p>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+
+// ───────────────────────────────────────────────
+// Tweaks panel
+// ───────────────────────────────────────────────
+function mountTweaks() {
+  const el = document.getElementById('tweaks');
+  const render = () => {
+    const saved = { ...TWEAK_DEFAULS, ...JSON.parse(localStorage.getItem('funds_flows_v') || '{}') };
+    el.innerHTML = `
+      <h4>Tweaks</h4>
+      <label>Вариант
+        <div class="group">
+          <button data-v="v1" class="${saved.variant === 'v1' ? 'act' : ''}">v1 · 100/95</button>
+          <button data-v="v2" class="${saved.variant === 'v2' ? 'act' : ''}">v2 · 95/95</button>
+        </div>
+      </label>
+      <label>Tooltip<input type="checkbox" data-k="showTooltip" ${saved.showTooltip ? 'checked' : ''}></label>
+      <label>Дата-пилл<input type="checkbox" data-k="showDatePill" ${saved.showDatePill ? 'checked' : ''}></label>
+      <label>События<input type="checkbox" data-k="showEvents" ${saved.showEvents ? 'checked' : ''}></label>
+      <label>Hover (0–${FLOWS.length - 1})<input type="range" min="0" max="${FLOWS.length - 1}" value="${saved.hoverIndex ?? 52}" data-k="hoverIndex" style="flex:1"></label>
+    `;
+    el.querySelectorAll('button[data-v]').forEach(b => b.onclick = () => update({ variant: b.dataset.v }));
+    el.querySelectorAll('input[data-k]').forEach(inp => {
+      inp.oninput = () => {
+        const k = inp.dataset.k;
+        const v = inp.type === 'checkbox' ? inp.checked : +inp.value;
+        update({ [k]: v });
+      };
+    });
+  };
+  const update = (patch) => {
+    const cur = { ...TWEAK_DEFAULS, ...JSON.parse(localStorage.getItem('funds_flows_v') || '{}') };
+    const next = { ...cur, ...patch };
+    localStorage.setItem('funds_flows_v', JSON.stringify(next));
+    // easiest: re-render react by triggering storage event
+    window.dispatchEvent(new Event('storage'));
+    window.parent.postMessage({ type: '__edit_mode_set_keys', edits: patch }, '*');
+    render();
+    // force re-render — simplest is full reload
+    location.reload();
+  };
+  render();
+}
+// Host-edit-mode plumbing
+window.addEventListener('message', (e) => {
+  if (!e.data) return;
+  if (e.data.type === '__activate_edit_mode')   document.body.setAttribute('data-tweaks', 'on');
+  if (e.data.type === '__deactivate_edit_mode') document.body.removeAttribute('data-tweaks');
+});
+mountTweaks();
+window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+</script>
+
+</body>
+</html>

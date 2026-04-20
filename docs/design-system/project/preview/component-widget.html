@@ -1,0 +1,23 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../colors_and_type.css"><style>
+  html,body{margin:0;background:var(--bg-primary);color:var(--fg-primary);font-family:var(--font-sans)}
+  .wrap{padding:20px;display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .w{background:var(--bg-widget);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow-md);padding:20px;transition:.3s}
+  .w.hover{border-color:rgba(0,230,118,.3);background:var(--bg-widget-hover)}
+  .head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+  .title{font-size:18px;font-weight:600}
+  .sub{font-size:11px;color:var(--fg-muted)}
+  .arrow{color:var(--fg-secondary);font-size:16px}
+  .body{font-size:52px;font-weight:700;color:var(--accent);letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .foot{border-top:1px solid var(--border);margin-top:16px;padding-top:10px;font-size:12px;color:var(--fg-secondary);text-align:center}
+</style></head><body><div class="wrap">
+  <div class="w">
+    <div class="head"><div><div class="title">Индекс страха</div><div class="sub">default</div></div><span class="arrow">→</span></div>
+    <div class="body">48</div>
+    <div class="foot">Открыть</div>
+  </div>
+  <div class="w hover">
+    <div class="head"><div><div class="title">Индекс страха</div><div class="sub" style="color:var(--accent)">hover</div></div><span class="arrow" style="color:var(--accent)">→</span></div>
+    <div class="body">48</div>
+    <div class="foot">Открыть</div>
+  </div>
+</div></body></html>

@@ -1,0 +1,15 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../colors_and_type.css"><style>
+  html,body{margin:0;background:var(--bg-primary);color:var(--fg-primary);font-family:var(--font-sans)}
+  .wrap{padding:24px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;align-items:center}
+  .cell{background:var(--bg-secondary);border:1px solid var(--border);border-radius:12px;padding:18px;display:flex;align-items:center;justify-content:center;gap:10px;height:80px}
+  .mark{font-size:28px;font-weight:700;color:var(--accent);letter-spacing:-.01em}
+  .beta{font-size:11px;color:var(--fg-secondary);background:var(--border);padding:2px 8px;border-radius:999px}
+  .icon{width:48px;height:48px;border-radius:12px;background:linear-gradient(135deg,#13151f,#0B0D12);display:flex;align-items:center;justify-content:center}
+  .icon span{background:linear-gradient(135deg,#6366f1,#9D4DFF);-webkit-background-clip:text;background-clip:text;color:transparent;font-size:30px;font-weight:700}
+  .cap{font-size:11px;color:var(--fg-muted);text-align:center;margin-top:6px;font-family:var(--font-mono)}
+  .col{display:flex;flex-direction:column;gap:6px}
+</style></head><body><div class="wrap">
+  <div class="col"><div class="cell"><span class="mark">Фрейм</span></div><div class="cap">Wordmark · Inter 700 · --accent</div></div>
+  <div class="col"><div class="cell"><span class="mark">Фрейм</span><span class="beta">Beta</span></div><div class="cap">Wordmark + Beta pill</div></div>
+  <div class="col"><div class="cell"><div class="icon"><span>Ф</span></div></div><div class="cap">PWA icon · assets/icon-512.svg</div></div>
+</div></body></html>

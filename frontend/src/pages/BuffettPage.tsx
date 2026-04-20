@@ -236,6 +236,7 @@ export default function BuffettPage() {
                     showSecondary={true}
                     formatValue={(v) => `${v.toFixed(2)}%`}
                     formatSecondaryValue={(v) => `${v.toFixed(2)} трлн ₽`}
+                    formatSecondaryAxis={(v) => v.toFixed(2)}
                     primaryLabel="Капитализация / ВВП"
                     secondaryLabel="Капитализация (трлн ₽)"
                     loading={loading}
@@ -256,6 +257,7 @@ export default function BuffettPage() {
                     showSecondary={true}
                     formatValue={(v) => `${(v * 100).toFixed(2)}%`}
                     formatSecondaryValue={(v) => `${v.toFixed(2)} трлн ₽`}
+                    formatSecondaryAxis={(v) => v.toFixed(2)}
                     primaryLabel="Капитализация / M2"
                     secondaryLabel="Капитализация (трлн ₽)"
                     loading={loading}

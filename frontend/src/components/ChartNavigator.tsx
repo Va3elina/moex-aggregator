@@ -15,6 +15,12 @@ interface ChartNavigatorProps {
 const HANDLE_W = 14;
 const MIN_WIN_FRAC = 0.01; // минимум 1% данных в окне
 
+// Последняя измеренная ширина — кэшируется между маунтами.
+// При переключении viewMode (AUM ↔ Flows) ChartNavigator перемонтируется, и без кэша
+// стартует с width=0 что вызывает видимое «дёргание» правого края при появлении.
+// С кэшем второй+ маунт получает сразу правильное значение → нет glitch'а.
+let lastKnownWidth = 0;
+
 export default function ChartNavigator({
     data,
     onChange,
@@ -22,7 +28,7 @@ export default function ChartNavigator({
     height = 52,
 }: ChartNavigatorProps) {
     const containerRef = useRef<HTMLDivElement>(null);
-    const [width, setWidth] = useState(0);
+    const [width, setWidth] = useState(lastKnownWidth);
     const [selFrac, setSelFrac] = useState<[number, number]>([0, 1]);
 
     // true только во время реального перетаскивания пользователем
@@ -36,7 +42,10 @@ export default function ChartNavigator({
     useLayoutEffect(() => {
         if (containerRef.current) {
             const w = containerRef.current.clientWidth;
-            if (w > 0) setWidth(w);
+            if (w > 0) {
+                setWidth(w);
+                lastKnownWidth = w;  // кэшируем для последующих маунтов
+            }
         }
     }, []);
 
@@ -46,7 +55,10 @@ export default function ChartNavigator({
         if (!el) return;
         const ro = new ResizeObserver(entries => {
             const w = entries[0].contentRect.width;
-            if (w > 0) setWidth(w);
+            if (w > 0) {
+                setWidth(w);
+                lastKnownWidth = w;  // обновляем кэш
+            }
         });
         ro.observe(el);
         return () => ro.disconnect();
@@ -72,9 +84,13 @@ export default function ChartNavigator({
         onChangeRef.current(s, e, isDraggingRef.current);
     }, [selFrac, data.length, width]);
 
-    // Мини-график всех данных
+    // Мини-график всех данных — использует фикс. ширину viewBox=1000.
+    // SVG рендерится с viewBox + preserveAspectRatio="none" → браузер сам растягивает
+    // path до реальной ширины контейнера, без зависимости от измеренной JS-ширины.
+    // Это убирает glitch "удлинения" мини-графика при монтировании.
+    const VB_WIDTH = 1000;
     const miniPath = useMemo(() => {
-        if (!data.length || width <= 0) return null;
+        if (!data.length) return null;  // width больше не нужен — используем viewBox
         const vals = data.map(d => d.value);
         const minV = Math.min(...vals);
         const maxV = Math.max(...vals);
@@ -83,14 +99,14 @@ export default function ChartNavigator({
         const h = height - pt - pb;
 
         const pts = data.map((d, i) => ({
-            x: (i / Math.max(data.length - 1, 1)) * width,
+            x: (i / Math.max(data.length - 1, 1)) * VB_WIDTH,
             y: pt + h - ((d.value - minV) / range) * h,
         }));
 
         const line = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
         const area = `${line} L ${pts[pts.length - 1].x.toFixed(1)} ${height} L 0 ${height} Z`;
         return { line, area };
-    }, [data, width, height]);
+    }, [data, height]);
 
     // Перетаскивание
     const startDrag = useCallback((
@@ -170,8 +186,7 @@ export default function ChartNavigator({
         window.addEventListener('touchend', onEnd);
     }, [selFrac, width]);
 
-    const leftPx = selFrac[0] * width;
-    const rightPx = selFrac[1] * width;
+    // width больше не нужен для рендера (viewBox + CSS %), оставлен для drag калькуляций
 
     return (
         <div
@@ -179,75 +194,85 @@ export default function ChartNavigator({
             className="relative select-none mt-3 overflow-visible"
             style={{ height: height + 4, paddingLeft: 8, paddingRight: 8 }}
         >
-            <svg width="100%" height={height} className="block overflow-visible">
+            {/* SVG для мини-графика — viewBox с фикс. шириной 1000, preserveAspectRatio="none"
+                позволяет браузеру растянуть path до реальной ширины БЕЗ зависимости от JS-width.
+                Мини-график появляется сразу в правильных пропорциях, не «удлиняется» при монтировании. */}
+            <svg
+                viewBox={`0 0 ${VB_WIDTH} ${height}`}
+                preserveAspectRatio="none"
+                className="block overflow-visible"
+                style={{ position: 'absolute', top: 0, left: 8, right: 8, width: 'calc(100% - 16px)', height: height }}
+            >
                 <defs>
                     <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stopColor={color} stopOpacity="0.35" />
                         <stop offset="100%" stopColor={color} stopOpacity="0.03" />
                     </linearGradient>
                 </defs>
-
-                {/* Мини-график */}
                 {miniPath && (
                     <>
                         <path d={miniPath.area} fill={`url(#${gradId})`} />
-                        <path d={miniPath.line} fill="none" stroke={color} strokeWidth="1" opacity="0.5" />
+                        <path d={miniPath.line} fill="none" stroke={color} strokeWidth="1" opacity="0.5" vectorEffect="non-scaling-stroke" />
                     </>
                 )}
+            </svg>
 
-                {/* Маски невыбранных областей */}
-                <rect x={0} y={0} width={Math.max(0, leftPx)} height={height}
-                    fill="rgba(0,0,0,0.5)" style={{ pointerEvents: 'none' }} />
-                <rect x={rightPx} y={0} width={Math.max(0, width - rightPx)} height={height}
-                    fill="rgba(0,0,0,0.5)" style={{ pointerEvents: 'none' }} />
-
+            {/* Selection и handles как HTML div с CSS %, не зависят от JS-width.
+                Это устраняет glitch "расширения правого края" при монтировании — CSS % резолвится браузером сразу. */}
+            <div className="absolute" style={{ top: 0, left: 8, right: 8, bottom: 4, pointerEvents: 'none' }}>
+                {/* Левая маска (затемнение невыбранной левой области) */}
+                <div className="absolute top-0 bottom-0 left-0" style={{ width: `${selFrac[0] * 100}%`, background: 'rgba(0,0,0,0.5)' }} />
+                {/* Правая маска */}
+                <div className="absolute top-0 bottom-0 right-0" style={{ width: `${(1 - selFrac[1]) * 100}%`, background: 'rgba(0,0,0,0.5)' }} />
                 {/* Выбранное окно */}
-                <rect
-                    x={leftPx} y={0}
-                    width={Math.max(0, rightPx - leftPx)}
-                    height={height}
-                    fill="rgba(56,98,251,0.08)"
-                    stroke="rgba(56,98,251,0.45)"
-                    strokeWidth="1"
-                    style={{ cursor: 'grab' }}
+                <div className="absolute top-0 bottom-0"
+                    style={{
+                        left: `${selFrac[0] * 100}%`,
+                        width: `${(selFrac[1] - selFrac[0]) * 100}%`,
+                        background: 'rgba(56,98,251,0.08)',
+                        borderTop: '1px solid rgba(56,98,251,0.45)',
+                        borderBottom: '1px solid rgba(56,98,251,0.45)',
+                        cursor: 'grab',
+                        pointerEvents: 'auto',
+                    }}
                     onMouseDown={e => startDrag(e, 'window')}
                     onTouchStart={e => startTouchDrag(e, 'window')}
                 />
-
                 {/* Левая ручка */}
-                <g style={{ cursor: 'ew-resize' }}
+                <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 flex items-center justify-center"
+                    style={{
+                        left: `${selFrac[0] * 100}%`,
+                        width: HANDLE_W, height: height * 0.7,
+                        background: 'rgba(56,98,251,0.9)',
+                        borderRadius: 3,
+                        cursor: 'ew-resize',
+                        pointerEvents: 'auto',
+                    }}
                     onMouseDown={e => startDrag(e, 'left')}
                     onTouchStart={e => startTouchDrag(e, 'left')}
                 >
-                    <rect
-                        x={leftPx - HANDLE_W / 2} y={height * 0.15}
-                        width={HANDLE_W} height={height * 0.7}
-                        rx={3} fill="rgba(56,98,251,0.9)"
-                    />
-                    <path
-                        d={`M${leftPx + 2} ${height / 2 - 4} L${leftPx - 3} ${height / 2} L${leftPx + 2} ${height / 2 + 4}`}
-                        fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-                        style={{ pointerEvents: 'none' }}
-                    />
-                </g>
-
+                    <svg width="6" height="10" viewBox="0 0 6 10" style={{ pointerEvents: 'none' }}>
+                        <path d="M4 1 L1 5 L4 9" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                </div>
                 {/* Правая ручка */}
-                <g style={{ cursor: 'ew-resize' }}
+                <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 flex items-center justify-center"
+                    style={{
+                        left: `${selFrac[1] * 100}%`,
+                        width: HANDLE_W, height: height * 0.7,
+                        background: 'rgba(56,98,251,0.9)',
+                        borderRadius: 3,
+                        cursor: 'ew-resize',
+                        pointerEvents: 'auto',
+                    }}
                     onMouseDown={e => startDrag(e, 'right')}
                     onTouchStart={e => startTouchDrag(e, 'right')}
                 >
-                    <rect
-                        x={rightPx - HANDLE_W / 2} y={height * 0.15}
-                        width={HANDLE_W} height={height * 0.7}
-                        rx={3} fill="rgba(56,98,251,0.9)"
-                    />
-                    <path
-                        d={`M${rightPx - 2} ${height / 2 - 4} L${rightPx + 3} ${height / 2} L${rightPx - 2} ${height / 2 + 4}`}
-                        fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-                        style={{ pointerEvents: 'none' }}
-                    />
-                </g>
-            </svg>
+                    <svg width="6" height="10" viewBox="0 0 6 10" style={{ pointerEvents: 'none' }}>
+                        <path d="M2 1 L5 5 L2 9" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                </div>
+            </div>
         </div>
     );
 }

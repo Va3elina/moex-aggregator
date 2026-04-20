@@ -75,3 +75,9 @@ backtest_*.png
 pinescript_strategy.pine
 STRATEGY_PARAMS.md
 compare_stocks.py
+
+# Локальные артефакты разработки (v105 session)
+.dev-pids/
+cbonds_capture.flow
+scripts/
+*.pdf

@@ -29,6 +29,7 @@ interface SimpleChartProps {
   showThird?: boolean;
   formatValue?: (value: number) => string;
   formatSecondaryValue?: (value: number) => string;
+  formatSecondaryAxis?: (value: number) => string;
   formatThirdValue?: (value: number) => string;
   formatTime?: (time: string) => string;
   loading?: boolean;
@@ -66,6 +67,7 @@ export default function SimpleChart({
   showThird = false,
   formatValue = (v) => v.toLocaleString('ru-RU'),
   formatSecondaryValue,
+  formatSecondaryAxis,
   formatThirdValue,
   formatTime = (t) => {
     const date = new Date(t);
@@ -763,7 +765,7 @@ export default function SimpleChart({
 
       {/* Легенда — вверху, по центру */}
       {legendPosition === 'top' && (
-        <div className="mb-2 flex justify-center">{legendBlock}</div>
+        <div className="flex justify-center" style={{ marginBottom: 'var(--chart-legend-mb, 16px)' }}>{legendBlock}</div>
       )}
 
       {/* Заголовок с текущим значением */}
@@ -847,7 +849,7 @@ export default function SimpleChart({
                 fontWeight={tokens.fontYWeight}
                 opacity="0.9"
               >
-                {formatSecondaryValue ? formatSecondaryValue(tick.value) : tick.value.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
+                {formatSecondaryAxis ? formatSecondaryAxis(tick.value) : formatSecondaryValue ? formatSecondaryValue(tick.value) : tick.value.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
               </text>
             ))}
 

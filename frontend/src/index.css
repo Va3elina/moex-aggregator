@@ -273,8 +273,21 @@
   --chart-pad-top: 19px;
   --chart-pad-bottom: 50px;
   --chart-pad-left: 100px;
-  --chart-pad-right-single: 12px;
+  --chart-pad-right-single: 95px;
   --chart-pad-right-dual: 95px;
+
+  /* Legend-to-chart gap (внешний отступ между легендой и верхом чарт-контейнера) */
+  --chart-legend-mb: 16px;
+
+  /* Annotation row (кружочки событий под графиком — FlowsHistogram) */
+  --chart-annotation-height: 28px;
+  --chart-annotation-offset: -34px;  /* негативный margin-top чтобы наложить на чарт-низ */
+
+  /* Navigator margin-top (gap между чартом и навигатором — 12px = эквивалент mt-3 в ChartNavigator СЧА) */
+  --chart-nav-mt: 12px;
+
+  /* X-labels bottom offset (20px = такой же gap как в SVG-native X-labels СЧА) */
+  --chart-xlabel-bottom: 20px;
 
   /* Axis font sizes */
   --chart-font-y: 16px;
@@ -331,6 +344,13 @@
     --chart-pad-right-single: 20px;
     --chart-pad-right-dual: 20px;
 
+    --chart-legend-mb: 10px;
+
+    --chart-annotation-height: 22px;
+    --chart-annotation-offset: -28px;
+
+    --chart-nav-mt: 9px;
+
     --chart-font-y: 12px;
     --chart-font-x: 11px;
 
@@ -357,6 +377,7 @@
   :root {
     --chart-height: 380px;
     --chart-pad-left: 70px;
+    --chart-pad-right-single: 70px;
     --chart-pad-right-dual: 70px;
     --chart-font-y: 14px;
     --chart-font-x: 12px;

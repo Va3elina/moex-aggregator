@@ -1,0 +1,20 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../colors_and_type.css"><style>
+  html,body{margin:0;background:var(--bg-primary);color:var(--fg-primary);font-family:var(--font-sans)}
+  .wrap{padding:22px;display:flex;flex-direction:column;gap:14px}
+  .bar{height:12px;border-radius:999px;overflow:hidden;display:flex;position:relative}
+  .bar > div{flex:1}
+  .mark{position:absolute;top:-5px;width:3px;height:22px;background:#fff;border-radius:2px;box-shadow:0 0 0 2px var(--bg-primary)}
+  .row{display:flex;justify-content:space-between;font-size:12px;color:var(--fg-secondary);margin-top:4px}
+  .lbl{font-size:11px;color:var(--fg-muted);text-transform:uppercase;letter-spacing:.05em}
+</style></head><body><div class="wrap">
+  <div>
+    <div class="lbl">Fear scale · 62</div>
+    <div class="bar" style="margin-top:8px"><div style="background:#22c55e"></div><div style="background:#84cc16"></div><div style="background:#eab308"></div><div style="background:#f97316"></div><div style="background:#ef4444"></div><div class="mark" style="left:62%"></div></div>
+    <div class="row"><span>Жадность</span><span>Страх</span></div>
+  </div>
+  <div>
+    <div class="lbl">Breadth · 68%</div>
+    <div class="bar" style="margin-top:8px;background:var(--bg-tertiary)"><div style="flex:0 0 68%;background:linear-gradient(90deg,#22c55e,#4ade80)"></div><div style="background:transparent"></div></div>
+    <div class="row"><span>Перепроданность</span><span>Перекупленность</span></div>
+  </div>
+</div></body></html>
