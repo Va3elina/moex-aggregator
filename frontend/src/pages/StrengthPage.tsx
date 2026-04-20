@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useRef, useCallback } from 'react';
+import { useEffect, useLayoutEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { TrendingUp, Activity } from 'lucide-react';
 import ChartNavigator from '../components/ChartNavigator';
 import {
@@ -40,10 +40,13 @@ const CLASSIFICATION_LABELS: Record<string, { label: string; color: string; bg: 
 // Секторы строятся динамически из ответа API (поле sector)
 
 
-// Константа уровня модуля — стабильная ссылка, не пересоздаётся при рендерах.
-// Это критично: SyncedPriceChart/SyncedBreadthChart используют padding в useMemo-deps,
-// пересоздание объекта каждый рендер сбрасывает chartData и прерывает морфинг-анимацию.
-const CHART_PADDING: ChartPadding = { left: 0, right: 70, top: 10, bottom: 30 } as const;
+// Дефолтные значения — используются на первом рендере до useLayoutEffect.
+// Должны совпадать с --strength-pad-* в index.css :root (desktop breakpoint).
+// Главное правило: ссылка на padding должна быть стабильной между рендерами —
+// IndexChart/BreadthChart используют padding в useMemo-deps, пересоздание объекта
+// сбрасывает chartData и прерывает морфинг-анимацию.
+const DEFAULT_PADDING: ChartPadding = { left: 70, right: 70, top: 10, bottom: 30 };
+const DEFAULT_HEIGHTS = { top: 300, bottomDual: 150, bottomSolo: 450 };
 
 export default function StrengthPage() {
     const { isAuthenticated } = useAuth();
@@ -73,6 +76,43 @@ export default function StrengthPage() {
     const containerRef = useRef<HTMLDivElement>(null);
     const mouseMoveRaf = useRef<number | null>(null);
     const isNavDragRef = useRef(false);
+
+    // Читаем размеры из CSS-токенов один раз на маунт + на resize при смене breakpoint.
+    // setState с equality-check: новая ссылка создаётся ТОЛЬКО при реальном изменении
+    // значений → morph-анимация в IndexChart/BreadthChart не сбрасывается.
+    const [padding, setPadding] = useState<ChartPadding>(DEFAULT_PADDING);
+    const [heights, setHeights] = useState(DEFAULT_HEIGHTS);
+    useLayoutEffect(() => {
+        const readTokens = () => {
+            const cs = getComputedStyle(document.documentElement);
+            const num = (name: string, fb: number) =>
+                parseFloat(cs.getPropertyValue(name)) || fb;
+            const nextPad: ChartPadding = {
+                left: num('--strength-pad-left', DEFAULT_PADDING.left),
+                right: num('--strength-pad-right', DEFAULT_PADDING.right),
+                top: num('--strength-pad-top', DEFAULT_PADDING.top),
+                bottom: num('--strength-pad-bottom', DEFAULT_PADDING.bottom),
+            };
+            const nextH = {
+                top: num('--strength-chart-top-height', DEFAULT_HEIGHTS.top),
+                bottomDual: num('--strength-chart-bottom-height', DEFAULT_HEIGHTS.bottomDual),
+                bottomSolo: num('--strength-chart-solo-height', DEFAULT_HEIGHTS.bottomSolo),
+            };
+            setPadding(prev =>
+                prev.left === nextPad.left && prev.right === nextPad.right &&
+                prev.top === nextPad.top && prev.bottom === nextPad.bottom
+                    ? prev : nextPad
+            );
+            setHeights(prev =>
+                prev.top === nextH.top && prev.bottomDual === nextH.bottomDual &&
+                prev.bottomSolo === nextH.bottomSolo
+                    ? prev : nextH
+            );
+        };
+        readTokens();
+        window.addEventListener('resize', readTokens);
+        return () => window.removeEventListener('resize', readTokens);
+    }, []);
 
     const loadData = useCallback(async () => {
         // Показываем loading только при первой загрузке (нет данных)
@@ -131,9 +171,12 @@ export default function StrengthPage() {
         return full;
     }, [breadthData, imoexData]);
 
-    // Навигатор временного диапазона
+    // Навигатор временного диапазона.
+    // useLayoutEffect (не useEffect) чтобы успеть обновить range ДО первого paint —
+    // иначе первый кадр рендерится с [0,0] и ChartData пустой (видимый "flash").
+    // Та же pitfall что исправлена в FundsMoneyPage при рефакторинге FlowsHistogram.
     const [navRange, setNavRange] = useState<[number, number]>([0, 0]);
-    useEffect(() => {
+    useLayoutEffect(() => {
         setNavRange([0, Math.max(0, syncedData.length - 1)]);
     }, [syncedData.length, syncedData[0]?.time]);
 
@@ -196,9 +239,6 @@ export default function StrengthPage() {
     const classInfo = current?.classification
         ? CLASSIFICATION_LABELS[current.classification]
         : CLASSIFICATION_LABELS.neutral;
-
-    // Общие размеры графиков
-    const padding = CHART_PADDING;
 
     const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
         if (!containerRef.current || !displaySyncedData.length) return;
@@ -281,14 +321,14 @@ export default function StrengthPage() {
             >
                 {/* Полный loading / error на месте графика */}
                 {loading && !current ? (
-                    <div className="flex items-center justify-center h-[400px]">
+                    <div className="flex items-center justify-center" style={{ height: 'var(--chart-height, 450px)' }}>
                         <div className="flex flex-col items-center gap-3">
                             <div className="w-8 h-8 border-2 border-[#8b5cf6] border-t-transparent rounded-full animate-spin" />
                             <span className="text-theme-secondary">Загрузка...</span>
                         </div>
                     </div>
                 ) : error && !current ? (
-                    <div className="flex items-center justify-center h-[400px]">
+                    <div className="flex items-center justify-center" style={{ height: 'var(--chart-height, 450px)' }}>
                         <div className="text-center">
                             <Activity className="w-12 h-12 text-red-400 mx-auto mb-3" />
                             <p className="text-red-400">{error}</p>
@@ -331,12 +371,13 @@ export default function StrengthPage() {
 
                         return (
                             <>
-                                {/* Дата — закреплена наверху, привязана к вертикальной линии */}
+                                {/* Дата — закреплена наверху, привязана к вертикальной линии.
+                                    top использует общий токен --date-top-legend-top (38px), как в SimpleChart. */}
                                 <div
                                     className="absolute z-20 pointer-events-none"
                                     style={{
                                         left: Math.min(Math.max(hoverX - 60, 4), rect.width - 128),
-                                        top: 38,
+                                        top: 'var(--date-top-legend-top, 38px)',
                                     }}
                                 >
                                     <span className="text-[11px] text-theme-secondary bg-theme-tertiary/90 backdrop-blur-sm px-2 py-0.5 rounded border border-theme whitespace-nowrap">
@@ -379,9 +420,11 @@ export default function StrengthPage() {
                         );
                     })()}
 
-                    {/* График IMOEX (верхний) */}
+                    {/* График IMOEX (верхний).
+                        minHeight = height SVG + высота блока заголовка (mb-5=20 + text-sm=14) ≈ 34px. */}
                     {showPrice && (
-                        <div className="px-4 pt-4 pb-1 border-b border-theme relative overflow-hidden" style={{ minHeight: 334 }}>
+                        <div className="px-4 pt-4 pb-1 border-b border-theme relative overflow-hidden"
+                             style={{ minHeight: heights.top + 34 }}>
                             <div className="flex items-center justify-center gap-2 mb-5 relative z-10">
                                 <span className="w-3 h-3 rounded-full bg-[#6366f1]" />
                                 <span className="text-sm font-semibold text-theme-primary">{currency === 'usd' ? 'Индекс RTS' : 'Индекс IMOEX'}</span>
@@ -389,15 +432,17 @@ export default function StrengthPage() {
                             <IndexChart
                                 syncedData={displaySyncedData}
                                 hoverIndex={hoverIndex}
-                                height={300}
+                                height={heights.top}
                                 padding={padding}
                                 isNavDragRef={isNavDragRef}
                             />
                         </div>
                     )}
 
-                    {/* График Breadth (нижний) — расширяется когда IMOEX скрыт */}
-                    <div className="px-4 pt-2 pb-1 relative overflow-hidden" style={{ minHeight: showPrice ? 174 : 474 }}>
+                    {/* График Breadth (нижний) — расширяется когда IMOEX скрыт.
+                        minHeight = height SVG + высота блока заголовка (mb-2=8 + text-sm=14 + margin) ≈ 24px. */}
+                    <div className="px-4 pt-2 pb-1 relative overflow-hidden"
+                         style={{ minHeight: (showPrice ? heights.bottomDual : heights.bottomSolo) + 24 }}>
                         <div className="flex items-center justify-center gap-2 mb-2 relative z-10">
                             <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: 'var(--accent)' }} />
                             <span className="text-sm font-semibold text-theme-primary">% акций выше EMA{emaPeriod}</span>
@@ -406,7 +451,7 @@ export default function StrengthPage() {
                             <BreadthChart
                                 syncedData={displaySyncedData}
                                 hoverIndex={hoverIndex}
-                                height={showPrice ? 150 : 450}
+                                height={showPrice ? heights.bottomDual : heights.bottomSolo}
                                 mode={chartMode}
                                 padding={padding}
                                 isNavDragRef={isNavDragRef}

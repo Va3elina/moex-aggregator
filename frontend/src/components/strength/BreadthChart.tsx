@@ -249,6 +249,29 @@ export default function BreadthChart({
             const totalDuration = isFirstAnim ? ANIMATION.waveDuration : ANIMATION.morphDuration;
             const staggerDelay = isFirstAnim ? ANIMATION.waveStagger : 0;
 
+            // Ресемплим старые bars до длины новых — устраняет рывок при смене
+            // количества bars (например период 6m→1y: 180→365). Без ресемпла все
+            // "лишние" бары (i > fromBars.length-1) стартовали бы из позиции
+            // одного и того же последнего старого бара → визуально "выпадали из одной точки".
+            // Теперь каждый новый бар стартует с интерполированного значения между
+            // двумя соседними старыми барами (тот же приём что resamplePts для линий).
+            const resampleBarHeights = (bars: { y: number; height: number }[], len: number) => {
+                if (bars.length === 0 || bars.length === len) return bars;
+                const out: { y: number; height: number }[] = [];
+                for (let i = 0; i < len; i++) {
+                    const srcT = i / Math.max(len - 1, 1) * (bars.length - 1);
+                    const lo = Math.floor(srcT);
+                    const hi = Math.min(lo + 1, bars.length - 1);
+                    const lt = srcT - lo;
+                    out.push({
+                        y: lerp(bars[lo].y, bars[hi].y, lt),
+                        height: lerp(bars[lo].height, bars[hi].height, lt),
+                    });
+                }
+                return out;
+            };
+            const fromBarsResampled = resampleBarHeights(fromBars, targetBars.length);
+
             const animate = (ts: number) => {
                 if (!start) start = ts;
                 const elapsed = ts - start;
@@ -258,14 +281,14 @@ export default function BreadthChart({
                 currPtsRef.current = interp;
                 setAnimLinePath(ptsToPath(interp));
 
-                const n = Math.max(fromBars.length, targetBars.length);
+                const n = targetBars.length;
                 const morphedBars: typeof targetBars = [];
                 for (let i = 0; i < n; i++) {
                     const barDelay = (i / Math.max(n - 1, 1)) * staggerDelay;
                     const barElapsed = Math.max(0, elapsed - barDelay);
                     const t = easeOutCubic(Math.min(barElapsed / (totalDuration - staggerDelay), 1));
-                    const fb = fromBars[Math.min(i, fromBars.length - 1)] || { y: bottom, height: 0 };
-                    const tb = targetBars[Math.min(i, targetBars.length - 1)];
+                    const fb = fromBarsResampled[i] || { y: bottom, height: 0 };
+                    const tb = targetBars[i];
                     morphedBars.push({ ...tb, y: lerp(fb.y, tb.y, t), height: lerp(fb.height, tb.height, t) });
                 }
                 currBarsRef.current = morphedBars.map(b => ({ y: b.y, height: b.height }));

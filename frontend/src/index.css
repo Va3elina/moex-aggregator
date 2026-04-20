@@ -329,6 +329,18 @@
   --grid-color: rgba(255, 255, 255, 0.08);
   --crosshair-color: #C8FF2E;
   --ann-bg: #3a3f4f;
+
+  /* --- Strength (Сила рынка) ---
+     Архитектурно другая: Y-ось рисуется СПРАВА от графика (не слева как в SimpleChart).
+     Поэтому свой набор токенов. Слева — симметричное пустое пространство (=right),
+     справа — место под Y-цифры. По просьбе пользователя. */
+  --strength-pad-left: 70px;
+  --strength-pad-right: 70px;
+  --strength-pad-top: 10px;
+  --strength-pad-bottom: 30px;
+  --strength-chart-top-height: 300px;      /* IMOEX (верхний) */
+  --strength-chart-bottom-height: 150px;   /* Breadth когда IMOEX показан */
+  --strength-chart-solo-height: 450px;     /* Breadth когда IMOEX скрыт */
 }
 
 /* Mobile overrides */
@@ -369,6 +381,15 @@
 
     --dot-primary-r: 5;
     --dot-secondary-r: 4;
+
+    /* Strength — mobile */
+    --strength-pad-left: 45px;
+    --strength-pad-right: 45px;
+    --strength-pad-top: 8px;
+    --strength-pad-bottom: 24px;
+    --strength-chart-top-height: 220px;
+    --strength-chart-bottom-height: 120px;
+    --strength-chart-solo-height: 340px;
   }
 }
 
@@ -381,6 +402,13 @@
     --chart-pad-right-dual: 70px;
     --chart-font-y: 14px;
     --chart-font-x: 12px;
+
+    /* Strength — tablet */
+    --strength-pad-left: 55px;
+    --strength-pad-right: 55px;
+    --strength-chart-top-height: 280px;
+    --strength-chart-bottom-height: 140px;
+    --strength-chart-solo-height: 420px;
   }
 }
 
