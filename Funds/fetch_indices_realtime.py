@@ -131,7 +131,9 @@ INDICES = {
         "market": "selt",
         "board": "CETS",
         "filter_board": True,
-        "start_date": date(2022, 3, 1),
+        # ISS отдаёт непрерывную историю CNYRUB_TOM с 15.04.2013 — достаточно
+        # для годовой сезонности. До 2022 объёмы малые, но close-и валидны.
+        "start_date": date(2013, 4, 15),
     },
 }
 
