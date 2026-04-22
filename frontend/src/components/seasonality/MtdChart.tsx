@@ -90,11 +90,12 @@ export default function MtdChart({ data, seriesData, seriesMeta, tooltip, setToo
   for (let i = 1; i <= maxTD; i++) xSteps.push(i);
 
   // MTD не имеет Y-подписей слева — минимальный отступ для первой X-метки.
-  // Справа — стандартный для Y-подписей.
-  const PL = 20;
+  // Справа — стандартный для Y-подписей. PT/PB унифицированы с остальными charts
+  // через --chart-pad-top/bottom (было: хардкод из JS-константы → drift с CSS).
+  const PL = cssVar('--mtd-pad-left', 20);
   const PR = cssVar('--chart-pad-right-single', PADDING.rightSingle);
-  const PT = PADDING.top;
-  const PB = PADDING.bottom; // X-подписи выносим ЗА контейнер графика
+  const PT = cssVar('--chart-pad-top', PADDING.top);
+  const PB = cssVar('--chart-pad-bottom', PADDING.bottom); // X-подписи выносим ЗА контейнер графика
 
   // Все уникальные td для snap'а
   const allTds = [...new Set([
@@ -147,9 +148,13 @@ export default function MtdChart({ data, seriesData, seriesMeta, tooltip, setToo
         )}
       </div>
 
-      <div style={{ height: 22 }} />
+      <div style={{ height: 'var(--chart-date-placeholder-height, 22px)' }} />
 
-      <div className="relative cursor-crosshair" style={{ aspectRatio: '2.4', minHeight: 280, maxHeight: 550 }}
+      <div className="relative cursor-crosshair" style={{
+          aspectRatio: 'var(--seasonality-aspect-ratio, 2.4)',
+          minHeight: 'var(--seasonality-min-height, 280px)',
+          maxHeight: 'var(--seasonality-max-height, 550px)',
+        }}
         onMouseMove={handleMouseMove}
         onMouseLeave={() => setTooltip(null)}
       >
@@ -227,7 +232,13 @@ export default function MtdChart({ data, seriesData, seriesMeta, tooltip, setToo
       </div>
 
       {/* X labels — СНАРУЖИ контейнера графика, чтобы не обрезались */}
-      <div className="relative font-semibold" style={{ height: 24, marginLeft: PL, marginRight: PR, fontSize: 'var(--chart-font-x, 14px)', color: 'var(--axis-color, #9CA3B8)' }}>
+      <div className="relative font-semibold" style={{
+          height: 'var(--chart-xlabel-row-height, 24px)',
+          marginLeft: PL,
+          marginRight: PR,
+          fontSize: 'var(--chart-font-x, 14px)',
+          color: 'var(--axis-color, #9CA3B8)',
+        }}>
         {xSteps.map(td => (
           <span key={td} style={{
             position: 'absolute',

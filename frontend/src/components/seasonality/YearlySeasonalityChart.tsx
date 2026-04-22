@@ -152,10 +152,12 @@ export default function YearlySeasonalityChart({
   // а средняя линия идёт до декабря — получался бы пустой участок без подписей.
   const xLabels = monthPositions.map(mp => mp.label);
 
+  // Унифицировано с SimpleChart/FlowsHistogram: PT/PB теперь тоже читаются из CSS-vars,
+  // а не из JS-константы PADDING. Это устраняет drift (PADDING.top=10 vs --chart-pad-top=19px).
   const PL = cssVar('--chart-pad-left', PADDING.left);
   const PR = cssVar('--chart-pad-right-single', PADDING.rightSingle);
-  const PT = PADDING.top;
-  const PB = PADDING.bottom;
+  const PT = cssVar('--chart-pad-top', PADDING.top);
+  const PB = cssVar('--chart-pad-bottom', PADDING.bottom);
 
   return (
     <div className={revealed ? 'chart-reveal' : ''}>
@@ -177,11 +179,15 @@ export default function YearlySeasonalityChart({
       {tooltip?.yearlyCurDate ? (
         <ChartDateLabel date={tooltip.yearlyCurDate} x={tooltip.x} />
       ) : (
-        <div style={{ height: 22 }} />
+        <div style={{ height: 'var(--chart-date-placeholder-height, 22px)' }} />
       )}
 
       {/* Chart */}
-      <div className="relative cursor-crosshair" style={{ aspectRatio: '2.4', minHeight: 280, maxHeight: 550 }}
+      <div className="relative cursor-crosshair" style={{
+          aspectRatio: 'var(--seasonality-aspect-ratio, 2.4)',
+          minHeight: 'var(--seasonality-min-height, 280px)',
+          maxHeight: 'var(--seasonality-max-height, 550px)',
+        }}
         onMouseMove={(e) => {
           const rect = e.currentTarget.getBoundingClientRect();
           const mouseX = e.clientX - rect.left;

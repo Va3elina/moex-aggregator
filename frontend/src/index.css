@@ -341,6 +341,35 @@
   --strength-chart-top-height: 300px;      /* IMOEX (верхний) */
   --strength-chart-bottom-height: 150px;   /* Breadth когда IMOEX показан */
   --strength-chart-solo-height: 450px;     /* Breadth когда IMOEX скрыт */
+
+  /* --- Seasonality (Сезонность) ---
+     Responsive height через aspectRatio: высота = ширина / ratio, с кламп [min, max].
+     Внешний контейнер растягивается — bars автоматически подстраиваются под число.
+     Yearly/MTD — линейные графики (PT/PB наследуют --chart-pad-top/bottom).
+     Histogram — отдельный inner-padding: top=под легенду, bottom=под X-labels
+     (они абсолютно позиционируются, не рисуются SVG-native как в SimpleChart). */
+  --seasonality-aspect-ratio: 2.4;
+  --seasonality-min-height: 280px;          /* Yearly + MTD */
+  --seasonality-max-height: 550px;
+  --seasonality-hist-min-height: 240px;     /* Histogram меньше — нет date row */
+  --seasonality-hist-max-height: 500px;     /* При card-width 1111px и aspect 2.4 желаемая
+                                               высота = 463px. maxHeight 450 clamp'ил её
+                                               и браузер компенсировал ужатием ширины
+                                               на 31px → «пустота справа». 500 снимает
+                                               ограничение и даёт chart'у всю ширину card. */
+  --seasonality-hist-pad-top: 28px;         /* место под легенду */
+  --seasonality-hist-pad-bottom: 24px;      /* место под X-labels */
+  --seasonality-hist-pad-x: 70px;           /* симметрично слева и справа.
+                                               Меньше --chart-pad-right-single (95px) потому что
+                                               Y-labels у гистограммы короткие ("+0.17%"),
+                                               а не длинные как у SimpleChart ("68.33 трлн ₽"). */
+
+  /* MTD — узкий левый pad (нет Y-labels слева, они справа) */
+  --mtd-pad-left: 20px;
+
+  /* Общие для charts с date-label и внешним X-axis */
+  --chart-date-placeholder-height: 22px;    /* placeholder когда tooltip не активен */
+  --chart-xlabel-row-height: 24px;          /* строка с X-подписями под графиком */
 }
 
 /* Mobile overrides */
@@ -390,6 +419,17 @@
     --strength-chart-top-height: 220px;
     --strength-chart-bottom-height: 120px;
     --strength-chart-solo-height: 340px;
+
+    /* Seasonality — mobile */
+    --seasonality-min-height: 200px;
+    --seasonality-max-height: 340px;
+    --seasonality-hist-min-height: 180px;
+    --seasonality-hist-max-height: 300px;
+    --seasonality-hist-pad-top: 22px;
+    --seasonality-hist-pad-bottom: 20px;
+    --seasonality-hist-pad-x: 38px;     /* mobile — короче числа → меньший pad */
+    --chart-date-placeholder-height: 18px;
+    --chart-xlabel-row-height: 20px;
   }
 }
 
@@ -409,6 +449,13 @@
     --strength-chart-top-height: 280px;
     --strength-chart-bottom-height: 140px;
     --strength-chart-solo-height: 420px;
+
+    /* Seasonality — tablet */
+    --seasonality-min-height: 240px;
+    --seasonality-max-height: 420px;
+    --seasonality-hist-min-height: 200px;
+    --seasonality-hist-max-height: 360px;
+    --seasonality-hist-pad-x: 55px;
   }
 }
 

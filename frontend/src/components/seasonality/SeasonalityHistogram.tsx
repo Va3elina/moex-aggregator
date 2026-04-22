@@ -1,4 +1,4 @@
-import { useLayoutEffect, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import type { SeasonalityResponse } from '../../services/api';
 import { CHART_COLORS, CROSSHAIR, TOOLTIP, ANIMATION } from '../../config/chartTheme';
 import { ChartGrid, ChartCrosshair, ChartTooltip, TooltipRow } from '../chart';
@@ -60,6 +60,22 @@ export default function SeasonalityHistogram({
     }
   }, [bars.length, grown]);
 
+  // Кэш горизонтального padding для onMouseMove — читаем CSS-токен один раз
+  // на маунт и при resize, а не на каждое движение мыши (getComputedStyle
+  // внутри hot-path триггерит style recalculation в браузере).
+  const padXRef = useRef(70);
+  useLayoutEffect(() => {
+    const read = () => {
+      const v = parseFloat(
+        getComputedStyle(document.documentElement).getPropertyValue('--seasonality-hist-pad-x')
+      );
+      if (!Number.isNaN(v) && v > 0) padXRef.current = v;
+    };
+    read();
+    window.addEventListener('resize', read);
+    return () => window.removeEventListener('resize', read);
+  }, []);
+
   if (bars.length === 0) {
     return (
       <div className="flex items-center justify-center" style={{ aspectRatio: '16/9', color: 'var(--text-muted)' }}>Нет данных</div>
@@ -88,11 +104,15 @@ export default function SeasonalityHistogram({
   const halfH = H * 0.38;
 
   return (
-    <div className={`relative overflow-hidden pb-2 cursor-crosshair ${revealed ? 'chart-reveal' : ''}`} style={{ aspectRatio: '2.4', minHeight: 240, maxHeight: 450 }}
+    <div className={`relative overflow-hidden pb-2 cursor-crosshair ${revealed ? 'chart-reveal' : ''}`} style={{
+        aspectRatio: 'var(--seasonality-aspect-ratio, 2.4)',
+        minHeight: 'var(--seasonality-hist-min-height, 240px)',
+        maxHeight: 'var(--seasonality-hist-max-height, 450px)',
+      }}
       onMouseMove={(e) => {
         const rect = e.currentTarget.getBoundingClientRect();
         const x = e.clientX - rect.left;
-        const PAD = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--chart-pad-right-single')) || 95;
+        const PAD = padXRef.current;
         const barAreaWidth = rect.width - 2 * PAD;
         const xInBars = x - PAD;
         if (xInBars < 0 || xInBars > barAreaWidth) { setTooltip(null); return; }
@@ -117,7 +137,12 @@ export default function SeasonalityHistogram({
         ))}
       </div>
 
-      <div className="absolute" style={{ top: 28, bottom: 24, left: 'var(--chart-pad-right-single, 95px)', right: 'var(--chart-pad-right-single, 95px)' }}>
+      <div className="absolute" style={{
+        top: 'var(--seasonality-hist-pad-top, 28px)',
+        bottom: 'var(--seasonality-hist-pad-bottom, 24px)',
+        left: 'var(--seasonality-hist-pad-x, 70px)',
+        right: 'var(--seasonality-hist-pad-x, 70px)',
+      }}>
         <svg viewBox="0 0 1000 500" preserveAspectRatio="none" width="100%" height="100%">
           {/* Единый путь: волна слева направо через transition-delay = (i / n) * stagger.
               Каждый бар стартует с задержкой пропорциональной позиции → эффект «волны». */}
@@ -242,21 +267,36 @@ export default function SeasonalityHistogram({
       })()}
 
       {/* Y labels — синхронно с bar-area по высоте */}
-      <div className="absolute pointer-events-none" style={{ top: 28, bottom: 24, right: 0, width: 'var(--chart-pad-right-single, 95px)' }}>
+      <div className="absolute pointer-events-none" style={{
+        top: 'var(--seasonality-hist-pad-top, 28px)',
+        bottom: 'var(--seasonality-hist-pad-bottom, 24px)',
+        right: 0,
+        width: 'var(--seasonality-hist-pad-x, 70px)',
+      }}>
         {[-effectiveMaxAbs, -effectiveMaxAbs / 2, 0, effectiveMaxAbs / 2, effectiveMaxAbs].map((val, i) => {
           const yPct = 50 - (val / effectiveMaxAbs) * 38;
           const label = val === 0 ? '0' : `${val > 0 ? '+' : ''}${val.toFixed(2)}%`;
           return (
             <div key={i} className="absolute"
-              style={{ top: `${yPct}%`, left: 12, transform: 'translateY(-50%)' }}>
-              <span className="font-semibold" style={{ fontSize: 'var(--chart-font-y, 16px)', color: 'var(--axis-color, #9CA3B8)' }}>{label}</span>
+              style={{ top: `${yPct}%`, right: 12, transform: 'translateY(-50%)' }}>
+              {/* background + padding создают "halo" цветом фона карточки —
+                  перекрывает горизонтальную grid-линию в зоне, где text заходит на
+                  bar-area (~2px на desktop). Стандартный приём для axis labels,
+                  аналог `paint-order: stroke fill` в SVG (Strength/SimpleChart). */}
+              <span className="font-semibold" style={{
+                  fontSize: 'var(--chart-font-y, 16px)',
+                  color: 'var(--axis-color, #9CA3B8)',
+                  backgroundColor: 'var(--bg-secondary)',
+                  padding: '1px 4px',
+                  borderRadius: 2,
+              }}>{label}</span>
             </div>
           );
         })}
       </div>
 
       {/* X labels */}
-      <div className="absolute bottom-0 flex justify-between font-semibold px-2" style={{ left: 'var(--chart-pad-right-single, 95px)', right: 'var(--chart-pad-right-single, 95px)', fontSize: 'var(--chart-font-x, 14px)', color: 'var(--axis-color, #9CA3B8)' }}>
+      <div className="absolute bottom-0 flex justify-between font-semibold px-2" style={{ left: 'var(--seasonality-hist-pad-x, 70px)', right: 'var(--seasonality-hist-pad-x, 70px)', fontSize: 'var(--chart-font-x, 14px)', color: 'var(--axis-color, #9CA3B8)' }}>
         {bars.map((bar, i) => {
           const isMob = typeof window !== 'undefined' && window.innerWidth < 768;
           const showLabel = !isMob || bars.length <= 7 || i % 2 === 0;
