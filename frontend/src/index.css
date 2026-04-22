@@ -364,9 +364,6 @@
                                                Y-labels у гистограммы короткие ("+0.17%"),
                                                а не длинные как у SimpleChart ("68.33 трлн ₽"). */
 
-  /* MTD — узкий левый pad (нет Y-labels слева, они справа) */
-  --mtd-pad-left: 20px;
-
   /* Общие для charts с date-label и внешним X-axis */
   --chart-date-placeholder-height: 22px;    /* placeholder когда tooltip не активен */
   --chart-xlabel-row-height: 24px;          /* строка с X-подписями под графиком */

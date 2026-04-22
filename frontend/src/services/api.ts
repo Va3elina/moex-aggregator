@@ -719,46 +719,8 @@ export async function getSeasonalityYears(secid: string): Promise<AvailableYears
   return response.json();
 }
 
-// --- MTD (Month-To-Date) ---
-
-export interface MtdPoint {
-  td: number;
-  avg_pct: number;
-  std_pct: number;
-  count: number;
-}
-
-export interface MtdCurrentPoint {
-  td: number;
-  pct: number;
-  date: string;
-}
-
-export interface MtdResponse {
-  secid: string;
-  month: number;
-  max_td: number;
-  current_year: number;
-  average: MtdPoint[];
-  current: MtdCurrentPoint[];
-}
-
-export async function getSeasonalityMtd(
-  secid: string,
-  month?: number,
-  excludeDividends: boolean = false,
-  excludeYears?: number[],
-): Promise<MtdResponse> {
-  const params = new URLSearchParams({
-    secid,
-    exclude_dividends: excludeDividends.toString(),
-  });
-  if (month) params.set('month', month.toString());
-  if (excludeYears?.length) params.set('exclude_years', excludeYears.join(','));
-  const response = await apiFetch(`${API_BASE}/api/seasonality/mtd?${params}`);
-  if (!response.ok) throw new Error('Failed to fetch MTD');
-  return response.json();
-}
+// MTD (Month-To-Date / "Зум на месяц") endpoint и types удалены —
+// режим убран из UI Сезонности. Если потребуется вернуть, см. git history.
 
 export async function getSeasonalityYearly(
   secid: string,

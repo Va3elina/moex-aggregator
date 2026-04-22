@@ -55,17 +55,18 @@ export default function YearlySeasonalityChart({
     );
   }
 
-  // Серии: если multi — используем seriesData, иначе single из yearlyData
+  // Серии: если передан seriesData — используем весь массив (в т.ч. если там 1 серия).
+  // Если нет — фолбэк на одиночную серию из yearlyData (для обратной совместимости,
+  // но в новом UI seriesData всегда есть хотя бы с одним элементом).
   const safeCount = seriesData && seriesMeta
     ? Math.min(seriesData.length, seriesMeta.length)
     : 0;
-  const isMulti = safeCount >= 2;
-  const allSeries = isMulti
+  const allSeries = safeCount > 0
     ? seriesData!.slice(0, safeCount)
-    : [yearlyData]; // single-mode: 1 серия
-  const allMeta: SeriesMeta[] = isMulti
+    : [yearlyData]; // fallback: берём yearlyData как единственную серию
+  const allMeta: SeriesMeta[] = safeCount > 0
     ? seriesMeta!.slice(0, safeCount)
-    : [{ key: 'base', label: `Среднее (${yearlyData.years_range})`, color: CHART_COLORS.muted }];
+    : [{ key: 'base', label: `Период с ${yearlyData.years_range?.split('-')[0] ?? ''}`, color: CHART_COLORS.muted }];
 
   const baseAvg = yearlyData.average;
   const cur = yearlyData.current;
@@ -238,16 +239,17 @@ export default function YearlySeasonalityChart({
               xSeparators={monthPositions.slice(1).map(mp => scX(mp.td) * 100)}
             />
 
-            {/* Series lines — от светлой к тёмной, current поверх всех.
-                Пропускаем серии с пустым path (since_year с <2 годами). */}
+            {/* Series lines — все равноправны (одна толщина/opacity).
+                Раньше 0-я была "среднее за все годы" и рисовалась приглушённой;
+                теперь все серии — явно выбранные "Период с YYYY", все равнозначные. */}
             {seriesPaths.map((path, s) => (
               path ? (
                 <path key={allMeta[s]?.key ?? s} d={path}
                   fill="none" stroke={allMeta[s]?.color ?? CHART_COLORS.muted}
-                  strokeWidth={s === 0 ? '1.5' : '2'}
+                  strokeWidth="2"
                   vectorEffect="non-scaling-stroke"
                   strokeLinecap="round" strokeLinejoin="round"
-                  opacity={s === 0 ? 0.6 : 0.85}
+                  opacity={0.85}
                 />
               ) : null
             ))}

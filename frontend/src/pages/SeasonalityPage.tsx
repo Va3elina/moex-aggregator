@@ -1,14 +1,12 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { ChevronDown, BarChart3, TrendingUp, CalendarDays, Layers } from 'lucide-react';
-import { getSeasonality, getSeasonalityPrice, getSeasonalityYearly, getSeasonalityYears, getSeasonalityMtd } from '../services/api';
-import type { MtdResponse } from '../services/api';
+import { ChevronDown, BarChart3, TrendingUp, CalendarDays, Layers, X, Plus } from 'lucide-react';
+import { getSeasonality, getSeasonalityPrice, getSeasonalityYearly, getSeasonalityYears } from '../services/api';
 import InstrumentSearchModal from '../components/InstrumentSearchModal';
 import SeasonalityHistogram from '../components/seasonality/SeasonalityHistogram';
 import SeasonalityPriceChart from '../components/seasonality/SeasonalityPriceChart';
 import YearlySeasonalityChart from '../components/seasonality/YearlySeasonalityChart';
-import MtdChart from '../components/seasonality/MtdChart';
 import type { SeasonalityResponse, SeasonalityMode, PriceChartResponse, YearlySeasonalityResponse } from '../services/api';
-// types removed — InstrumentSearchModal handles instrument loading
+import { FUND_PALETTE } from '../config/chartTheme';
 
 const MODE_LABELS: Record<SeasonalityMode, string> = {
   intraday: 'Внутри дня',
@@ -16,26 +14,6 @@ const MODE_LABELS: Record<SeasonalityMode, string> = {
   monthday: 'Внутри месяца',
   monthly: 'По месяцам',
 };
-
-const MODE_ITER_HINT: Record<SeasonalityMode, Record<number, string>> = {
-  intraday: { 30: '30 торговых дней', 90: '90 торговых дней' },
-  weekday: { 30: '30 недель', 90: '90 недель' },
-  monthday: { 30: '~2.5 года', 90: '~7.5 лет' },
-  // Для monthly iterations = лет данных, но в БД только ~25 лет доступны.
-  // Поэтому «30 лет» корректно (взяли всё), а «90 лет» вводит в заблуждение.
-  monthly: { 30: 'вся доступная история', 90: 'вся доступная история' },
-};
-
-interface PeriodPreset {
-  label: string;
-  iterations: number;
-  description: string;
-}
-
-const PERIOD_PRESETS: PeriodPreset[] = [
-  { label: 'Актуальный', iterations: 30, description: 'Последние 30 итераций — текущий рыночный контекст' },
-  { label: 'Базисный', iterations: 90, description: 'Последние 90 итераций — фундаментальная устойчивость' },
-];
 
 const PRICE_PERIODS = [
   { label: '3М', days: 90 },
@@ -48,6 +26,14 @@ const PRICE_PERIODS = [
 
 type ChartType = 'histogram' | 'price' | 'yearly';
 
+// Всегда запрашиваем полную историю — логика "Актуальный/Базисный" (30/90 итераций)
+// убрана по просьбе пользователя. Бэкенд принимает iterations до 9999.
+const FULL_HISTORY_ITERS = 9999;
+
+// Цвета для спец-серий (noOutliers, exactYear). Серии "Период с" используют FUND_PALETTE.
+const COLOR_NO_OUTLIERS = '#A78BFA';
+const COLOR_EXACT_YEAR = '#F97316';
+
 
 export default function SeasonalityPage() {
   // Stock selector
@@ -57,60 +43,68 @@ export default function SeasonalityPage() {
 
   // Mode & params
   const [mode, setMode] = useState<SeasonalityMode>('weekday');
-  const [activePeriod, setActivePeriod] = useState<PeriodPreset>(PERIOD_PRESETS[1]);
   const [chartType, setChartType] = useState<ChartType>('histogram');
   const [excludeDividends, setExcludeDividends] = useState(false);
   const [priceDays, setPriceDays] = useState(365);
-  // MTD (зум на месяц) — null = показываем весь год, число = зум на этот месяц
-  const [mtdMonth, setMtdMonth] = useState<number | null>(null);
-  const [mtdData, setMtdData] = useState<MtdResponse | null>(null);
-  // Сравнительные серии:
-  // - compareYear: добавляет серию «Среднее с [год]» (среднее от этого года до сегодня)
-  // - showNoOutliers: добавляет серию «Без выбросов» (исключает 2008/2014/2020/2022)
-  // - showExactYear: добавляет серию конкретного года (одна траектория)
-  const [compareYear, setCompareYear] = useState<number | null>(null);
+
+  // Серии:
+  // - compareYears: массив годов для серий "Период с YYYY". По умолчанию [min_year] — это и есть
+  //   аналог старой "средней за все годы", только теперь одна из равноправных серий.
+  //   Пользователь может добавить ещё годов через "+" или убрать через ×.
+  // - showNoOutliers: отдельная серия "Без выбросов" (исключает 2008/2014/2020/2022).
+  // - showExactYear: траектория конкретного года (одна линия).
+  const [compareYears, setCompareYears] = useState<number[]>([]);
   const [showNoOutliers, setShowNoOutliers] = useState(false);
   const [showExactYear, setShowExactYear] = useState<number | null>(null);
-  // Доступные годы (для dropdown «Сравнить с»). Обновляется при смене тикера.
+  // Доступные годы (для dropdown). Обновляется при смене тикера.
   const [availableYears, setAvailableYears] = useState<number[]>([]);
 
-  // Фетч доступных лет при смене тикера (и сброс compareYear если он вышел из диапазона)
+  // Фетч доступных лет при смене тикера.
+  // При смене актива полностью СБРАСЫВАЕМ compareYears и showExactYear:
+  // - compareYears → [min_year нового актива] (наибольший доступный период)
+  // - showExactYear → null
+  // Сохранение выбора "от прошлого актива" сбивает с толку — у каждого инструмента
+  // своя история данных, начало периодов разное. Пользователь ожидает чистый старт.
   useEffect(() => {
     if (!selectedStock) return;
     let cancelled = false;
     getSeasonalityYears(selectedStock).then((resp) => {
       if (cancelled) return;
       setAvailableYears(resp.years);
-      // Если выбранный год больше не доступен для этой бумаги — сбрасываем
-      if (compareYear !== null && !resp.years.includes(compareYear)) {
-        setCompareYear(null);
+      // Всегда ставим compareYears = [min_year] нового актива
+      if (resp.years.length > 0) {
+        setCompareYears([resp.years[0]]);
+      } else {
+        setCompareYears([]);
       }
+      // showExactYear всегда сбрасываем при смене актива
+      setShowExactYear(null);
     }).catch(() => {
-      if (!cancelled) setAvailableYears([]);
+      if (!cancelled) {
+        setAvailableYears([]);
+        setCompareYears([]);
+        setShowExactYear(null);
+      }
     });
     return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedStock]);
 
   // Price navigator
   const [priceNavRange, setPriceNavRange] = useState<[number, number] | null>(null);
 
-  // Request ID для отбрасывания stale-ответов при быстром переключении режимов/периодов.
+  // Request ID для отбрасывания stale-ответов при быстром переключении
   const seasonalityReqIdRef = useRef(0);
-  // Счётчик успешных фетчей — используется как React key для histogram'а.
-  // Каждый инкремент = remount компонента = свежий цикл анимации (wave from 0).
+  // Счётчик успешных фетчей — React key для histogram'а (remount = новая анимация волны)
   const [histogramFetchId, setHistogramFetchId] = useState(0);
 
   // Data
   const [dataRaw, setDataRaw] = useState<SeasonalityResponse | null>(null);
-  // Мульти-серии [all / since 2015 / no outliers]. Применяются для
-  // monthly/weekday/monthday. intraday не использует (короткая история).
-  // Значения уже учитывают текущий excludeDividends (перефетчим при toggle).
+  // Мульти-серии: первая = первая compareYear, остальные — доп. серии (noOutliers, exactYear).
+  // Если серий нет или одна — null (single-bar mode в histogram).
   const [monthlySeries, setMonthlySeries] = useState<SeasonalityResponse[] | null>(null);
   const [priceData, setPriceData] = useState<PriceChartResponse | null>(null);
   const [yearlyData, setYearlyData] = useState<YearlySeasonalityResponse | null>(null);
-  // Мульти-серии для годовой (all / no outliers / since year).
-  // Паттерн идентичен monthlySeries для гистограммы.
+  // Мульти-серии для годовой — тот же паттерн, что monthlySeries.
   const [yearlySeries, setYearlySeries] = useState<YearlySeasonalityResponse[] | null>(null);
   const yearlyReqIdRef = useRef(0);
   const [yearlyFetchId, setYearlyFetchId] = useState(0);
@@ -132,42 +126,58 @@ export default function SeasonalityPage() {
     setIsModalOpen(false);
   };
 
-  // Fetch seasonality data — все серии параллельно через Promise.all.
-  // Это гарантирует ОДИН re-render после загрузки всех данных (не двойной).
+  // Fetch seasonality (histogram) — все серии параллельно.
+  // Порядок промисов = порядок compareYears, затем noOutliers, затем exactYear.
+  // Должен совпадать с seriesMeta.
   const fetchSeasonality = useCallback(async () => {
     const reqId = ++seasonalityReqIdRef.current;
     setLoading(true);
     setError(null);
     try {
-      const FULL_HISTORY_ITERS = 9999;
-      const canCompare = mode !== 'intraday';
+      type FP = ReturnType<typeof getSeasonality>;
+      const promises: FP[] = [];
 
-      type FetchPromise = ReturnType<typeof getSeasonality>;
-      const promises: FetchPromise[] = [
-        getSeasonality(selectedStock, mode, activePeriod.iterations, excludeDividends),
-      ];
-      if (canCompare && compareYear !== null) {
+      // Серии "Период с YYYY"
+      compareYears.forEach(yr => {
         promises.push(getSeasonality(
           selectedStock, mode, FULL_HISTORY_ITERS, excludeDividends,
-          { sinceYear: compareYear },
+          { sinceYear: yr },
         ));
-      }
-      if (canCompare && showNoOutliers) {
+      });
+      // "Без выбросов"
+      if (showNoOutliers) {
         promises.push(getSeasonality(
           selectedStock, mode, FULL_HISTORY_ITERS, excludeDividends,
           { excludeYears: [2008, 2014, 2020, 2022] },
         ));
       }
+      // "Показать год" (exact)
+      if (showExactYear !== null) {
+        const currentYear = new Date().getFullYear();
+        const allYearsExceptExact = availableYears.filter(
+          y => y !== showExactYear && y < currentYear
+        );
+        promises.push(getSeasonality(
+          selectedStock, mode, FULL_HISTORY_ITERS, excludeDividends,
+          { sinceYear: showExactYear, excludeYears: allYearsExceptExact },
+        ));
+      }
+
+      if (promises.length === 0) {
+        // Ни одной серии не выбрано — empty state
+        setDataRaw(null);
+        setMonthlySeries(null);
+        setHistogramFetchId(id => id + 1);
+        return;
+      }
 
       const results = await Promise.all(promises);
-      // Stale-guard: если во время await пользователь успел переключиться на
-      // другой режим/период, игнорируем этот (уже устаревший) ответ.
+      // Stale-guard
       if (reqId !== seasonalityReqIdRef.current) return;
 
-      const [baseSeries, ...extras] = results;
-      setDataRaw(baseSeries);
-      setMonthlySeries(extras.length > 0 ? [baseSeries, ...extras] : null);
-      // Инкрементируем счётчик — SeasonalityHistogram получит новый key → remount → анимация
+      // Первая серия — база для maxAbs и single-bar отображения (если серия одна).
+      setDataRaw(results[0]);
+      setMonthlySeries(results.length > 1 ? results : null);
       setHistogramFetchId(id => id + 1);
     } catch (e: unknown) {
       if (reqId !== seasonalityReqIdRef.current) return;
@@ -175,7 +185,7 @@ export default function SeasonalityPage() {
     } finally {
       if (reqId === seasonalityReqIdRef.current) setLoading(false);
     }
-  }, [selectedStock, mode, activePeriod, excludeDividends, compareYear, showNoOutliers]);
+  }, [selectedStock, mode, excludeDividends, compareYears, showNoOutliers, showExactYear, availableYears]);
 
   // Fetch price data
   const fetchPrice = useCallback(async () => {
@@ -192,40 +202,47 @@ export default function SeasonalityPage() {
     }
   }, [selectedStock, priceDays]);
 
-  // Fetch yearly seasonality — multi-series как в гистограмме.
-  // Базовая серия всегда + опционально noOutliers + compareYear.
+  // Fetch yearly seasonality — тот же паттерн что histogram.
+  // Порядок: compareYears[], noOutliers?, exactYear? — должен совпадать с seriesMeta.
   const fetchYearly = useCallback(async () => {
     const reqId = ++yearlyReqIdRef.current;
     setLoading(true);
     setError(null);
     try {
       type FP = ReturnType<typeof getSeasonalityYearly>;
-      // ПОРЯДОК: base, since?, noOutliers? — ДОЛЖЕН совпадать с seriesMeta!
-      const promises: FP[] = [
-        getSeasonalityYearly(selectedStock, excludeDividends),
-      ];
-      if (compareYear !== null) {
+      const promises: FP[] = [];
+
+      compareYears.forEach(yr => {
         promises.push(getSeasonalityYearly(selectedStock, excludeDividends,
-          { sinceYear: compareYear }));
-      }
+          { sinceYear: yr }));
+      });
       if (showNoOutliers) {
         promises.push(getSeasonalityYearly(selectedStock, excludeDividends,
           { excludeYears: [2008, 2014, 2020, 2022] }));
       }
-      // Конкретный год: sinceYear=X + excludeYears=[все годы кроме X].
-      // Бэкенд возвращает средн. по 1 году = фактическая траектория этого года.
       if (showExactYear !== null) {
+        const currentYear = new Date().getFullYear();
         const allYearsExceptExact = availableYears.filter(
-          y => y !== showExactYear && y < new Date().getFullYear()
+          y => y !== showExactYear && y < currentYear
         );
         promises.push(getSeasonalityYearly(selectedStock, excludeDividends,
           { sinceYear: showExactYear, excludeYears: allYearsExceptExact }));
       }
+
+      if (promises.length === 0) {
+        // Хотя бы одну серию надо загрузить, чтобы получить current_year + years_range.
+        // В этом случае берём с sinceYear=min_year (де-факто "все годы"), но не показываем.
+        // Проще — empty state.
+        setYearlyData(null);
+        setYearlySeries(null);
+        setYearlyFetchId(id => id + 1);
+        return;
+      }
+
       const results = await Promise.all(promises);
       if (reqId !== yearlyReqIdRef.current) return;
-      const [base, ...extras] = results;
-      setYearlyData(base);
-      setYearlySeries(extras.length > 0 ? [base, ...extras] : null);
+      setYearlyData(results[0]);
+      setYearlySeries(results.length > 1 ? results : null);
       setYearlyFetchId(id => id + 1);
     } catch (e: unknown) {
       if (reqId !== yearlyReqIdRef.current) return;
@@ -233,46 +250,7 @@ export default function SeasonalityPage() {
     } finally {
       if (reqId === yearlyReqIdRef.current) setLoading(false);
     }
-  }, [selectedStock, excludeDividends, showNoOutliers, compareYear, showExactYear, availableYears]);
-
-  // Fetch MTD — все серии параллельно (как yearly).
-  // Порядок: base, since?, noOutliers?, exactYear? — ДОЛЖЕН совпадать с seriesMeta!
-  const [mtdSeries, setMtdSeries] = useState<MtdResponse[] | null>(null);
-  const mtdReqIdRef = useRef(0);
-  useEffect(() => {
-    if (chartType !== 'yearly' || mtdMonth === null) {
-      setMtdData(null); setMtdSeries(null); return;
-    }
-    const reqId = ++mtdReqIdRef.current;
-    setLoading(true);
-    const promises: Promise<MtdResponse>[] = [
-      getSeasonalityMtd(selectedStock, mtdMonth, excludeDividends),
-    ];
-    if (compareYear !== null) {
-      // «Среднее с» — нет sinceYear в MTD endpoint, но можем exclude все до compareYear
-      const yearsToExclude = availableYears.filter(y => y < compareYear && y < new Date().getFullYear());
-      promises.push(getSeasonalityMtd(selectedStock, mtdMonth, excludeDividends, yearsToExclude));
-    }
-    if (showNoOutliers) {
-      promises.push(getSeasonalityMtd(selectedStock, mtdMonth, excludeDividends,
-        [2008, 2014, 2020, 2022]));
-    }
-    if (showExactYear !== null) {
-      // Конкретный год: exclude все кроме этого года
-      const allExcept = availableYears.filter(y => y !== showExactYear && y < new Date().getFullYear());
-      promises.push(getSeasonalityMtd(selectedStock, mtdMonth, excludeDividends, allExcept));
-    }
-    Promise.all(promises).then((results) => {
-      if (reqId !== mtdReqIdRef.current) return;
-      const [base, ...extras] = results;
-      setMtdData(base);
-      setMtdSeries(extras.length > 0 ? [base, ...extras] : null);
-      setLoading(false);
-    }).catch(() => {
-      if (reqId !== mtdReqIdRef.current) return;
-      setMtdData(null); setMtdSeries(null); setLoading(false);
-    });
-  }, [chartType, mtdMonth, selectedStock, excludeDividends, showNoOutliers, compareYear, showExactYear, availableYears]);
+  }, [selectedStock, excludeDividends, compareYears, showNoOutliers, showExactYear, availableYears]);
 
   useEffect(() => {
     if (!selectedStock) return;
@@ -281,7 +259,6 @@ export default function SeasonalityPage() {
     else fetchYearly();
   }, [chartType, fetchSeasonality, fetchPrice, fetchYearly, selectedStock]);
 
-  // Active seasonality data (dataRaw уже с учётом excludeDividends — перефетч при toggle)
   const data = dataRaw;
 
   // Chart dimensions
@@ -294,24 +271,22 @@ export default function SeasonalityPage() {
   // Meta для мульти-серий — подписи и цвета. Порядок ДОЛЖЕН совпадать
   // с порядком promises в fetchSeasonality и fetchYearly.
   const seriesMeta = useMemo(() => {
-    const meta: { key: string; label: string; color: string }[] = [
-      { key: 'base', label: 'Все годы', color: '#94A3B8' },
-    ];
-    if (compareYear !== null) {
-      meta.push({ key: 'since', label: `Среднее с ${compareYear}`, color: '#60A5FA' });
-    }
+    const meta: { key: string; label: string; color: string }[] = [];
+    compareYears.forEach((yr, idx) => {
+      meta.push({
+        key: `since-${yr}`,
+        label: `С ${yr} г.`,
+        color: FUND_PALETTE[idx % FUND_PALETTE.length],
+      });
+    });
     if (showNoOutliers) {
-      meta.push({ key: 'no_outliers', label: 'Без выбросов', color: '#A78BFA' });
+      meta.push({ key: 'no_outliers', label: 'Без выбросов', color: COLOR_NO_OUTLIERS });
     }
     if (showExactYear !== null) {
-      meta.push({ key: 'exact', label: `${showExactYear} год`, color: '#F97316' });
+      meta.push({ key: 'exact', label: `${showExactYear} год`, color: COLOR_EXACT_YEAR });
     }
     return meta;
-  }, [compareYear, showNoOutliers, showExactYear]);
-
-  // Анимация баров полностью переехала в SeasonalityHistogram (CSS transition
-  // + key-based remount). Старый rAF-loop удалён вместе с animatedHeights,
-  // barsAnimRef, prevHeightsRef, isFirstBarRender — всё dead code.
+  }, [compareYears, showNoOutliers, showExactYear]);
 
   // Инструменты без дивидендов: индексы, валюты, сырьё.
   // Кнопка «Без дивидендных гэпов» бесполезна для них — прячем.
@@ -322,7 +297,81 @@ export default function SeasonalityPage() {
     'USDRUBF', 'EURRUBF', 'CNYRUBF', 'IMOEXF',
   ]);
   const hasDividends = !NON_DIVIDEND_TICKERS.has(selectedStock);
-  const showDivToggle = chartType === 'histogram' && mode !== 'intraday' && hasDividends;
+  const showDivToggle = (chartType === 'histogram' || chartType === 'yearly') && hasDividends;
+
+  // Годы, которые ещё можно добавить как compareYear (не в списке + не текущий)
+  const currentYearNum = new Date().getFullYear();
+  const addableYears = availableYears.filter(
+    y => !compareYears.includes(y) && y < currentYearNum
+  );
+
+  // Рендерер блока "Период с N / + / ×" — используется в histogram и yearly row2
+  const renderCompareYearsControls = () => {
+    if (availableYears.length === 0) return null;
+    return (
+      <>
+        {compareYears.map((yr, idx) => {
+          const color = FUND_PALETTE[idx % FUND_PALETTE.length];
+          return (
+            <div
+              key={yr}
+              className="flex items-center gap-2 px-2 md:px-3 py-2 md:py-2.5 rounded-xl border text-xs md:text-sm font-medium whitespace-nowrap"
+              style={{
+                backgroundColor: `${color}26`, // ~15% opacity
+                borderColor: `${color}80`,
+                color: color,
+              }}
+              title={`Серия "Период с ${yr} г." — средние значения по годам от ${yr} до сегодня`}
+            >
+              <span className="inline-block w-3 h-3 rounded-full" style={{ backgroundColor: color }} />
+              Период с {yr}
+              <button
+                onClick={() => setCompareYears(compareYears.filter(y => y !== yr))}
+                className="ml-1 opacity-60 hover:opacity-100 transition-opacity"
+                title="Убрать"
+                aria-label={`Убрать серию с ${yr} г.`}
+              >
+                <X size={14} />
+              </button>
+            </div>
+          );
+        })}
+        {addableYears.length > 0 && (
+          <div className="relative inline-block">
+            <div
+              className="flex items-center gap-1.5 px-2 md:px-3 py-2 md:py-2.5 rounded-xl border text-xs md:text-sm font-medium transition-all whitespace-nowrap cursor-pointer hover:opacity-80"
+              style={{
+                backgroundColor: 'var(--bg-secondary)',
+                borderColor: 'var(--border-color)',
+                color: 'var(--text-secondary)',
+              }}
+              title="Добавить ещё одну серию 'Период с' для сравнения"
+            >
+              <Plus size={14} />
+              Период с
+              <ChevronDown size={14} className="opacity-60" />
+            </div>
+            <select
+              value=""
+              onChange={(e) => {
+                const yr = Number(e.target.value);
+                if (yr && !compareYears.includes(yr)) {
+                  setCompareYears([...compareYears, yr].sort((a, b) => a - b));
+                }
+              }}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              aria-label="Добавить период"
+            >
+              <option value="">— выберите год —</option>
+              {addableYears.map(y => (
+                <option key={y} value={y}>С {y} г.</option>
+              ))}
+            </select>
+          </div>
+        )}
+      </>
+    );
+  };
 
   return (
     <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8">
@@ -400,117 +449,23 @@ export default function SeasonalityPage() {
           </button>
         </div>
 
-        {/* Seasonality-specific controls */}
+        {/* Histogram-specific: mode tabs */}
         {chartType === 'histogram' && (
-          <>
-            {/* Mode tabs */}
-            <div className="flex rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border-color)' }}>
-              {(Object.keys(MODE_LABELS) as SeasonalityMode[]).map(m => (
-                <button
-                  key={m}
-                  onClick={() => setMode(m)}
-                  className="px-2 md:px-3 py-2 md:py-2.5 text-xs md:text-sm font-medium transition-all whitespace-nowrap"
-                  style={{
-                    backgroundColor: m === mode ? 'var(--accent)' : 'var(--bg-secondary)',
-                    color: m === mode ? 'var(--bg-primary)' : 'var(--text-secondary)',
-                  }}
-                >
-                  {MODE_LABELS[m]}
-                </button>
-              ))}
-            </div>
-
-            {/* Period presets — скрываем для monthly (используется вся доступная
-                история, переключатель бесполезен). Показываем для остальных. */}
-            {mode !== 'monthly' && (
-              <div className="flex rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border-color)' }}>
-                {PERIOD_PRESETS.map(p => (
-                  <button
-                    key={p.label}
-                    onClick={() => setActivePeriod(p)}
-                    className="px-2 md:px-4 py-2 md:py-2.5 text-xs md:text-sm font-medium transition-all whitespace-nowrap"
-                    style={{
-                      backgroundColor: activePeriod.label === p.label ? 'var(--accent)' : 'var(--bg-secondary)',
-                      color: activePeriod.label === p.label ? 'var(--bg-primary)' : 'var(--text-secondary)',
-                    }}
-                    title={p.description}
-                  >
-                    {p.label} ({p.iterations})
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* Dividend toggle — на одной линии с пресетами.
-                Не показываем в intraday (там дивиденды не применимы). */}
-            {showDivToggle && (
+          <div className="flex rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border-color)' }}>
+            {(Object.keys(MODE_LABELS) as SeasonalityMode[]).map(m => (
               <button
-                onClick={() => setExcludeDividends(!excludeDividends)}
-                title="Пересчитать цены с учётом реинвестирования дивидендов (Yahoo/CRSP adjusted close). Ортогонально к «Без выбросов»."
-                className="flex items-center gap-2 px-2 md:px-4 py-2 md:py-2.5 rounded-xl border text-xs md:text-sm font-medium transition-all whitespace-nowrap"
+                key={m}
+                onClick={() => setMode(m)}
+                className="px-2 md:px-3 py-2 md:py-2.5 text-xs md:text-sm font-medium transition-all whitespace-nowrap"
                 style={{
-                  backgroundColor: excludeDividends ? 'rgba(34, 197, 94, 0.15)' : 'var(--bg-secondary)',
-                  borderColor: excludeDividends ? 'rgba(34, 197, 94, 0.5)' : 'var(--border-color)',
-                  color: excludeDividends ? '#22c55e' : 'var(--text-secondary)',
+                  backgroundColor: m === mode ? 'var(--accent)' : 'var(--bg-secondary)',
+                  color: m === mode ? 'var(--bg-primary)' : 'var(--text-secondary)',
                 }}
               >
-                <span className={`inline-block w-3 h-3 rounded-full ${excludeDividends ? 'bg-green-500' : 'bg-gray-500'}`} />
-                Без дивидендных гэпов
+                {MODE_LABELS[m]}
               </button>
-            )}
-
-            {/* Toggle «Без выбросов» — показывается ПЕРЕД «Сравнить с» */}
-            {mode !== 'intraday' && (
-              <button
-                onClick={() => setShowNoOutliers(!showNoOutliers)}
-                title="Добавить сравнительную серию с исключёнными годами крупных кризисов: 2008 (финкризис), 2014 (санкции/рубль), 2020 (COVID), 2022 (мобилизация). Исключения жёстко зашиты и ортогональны к «Без дивидендных гэпов»."
-                className="flex items-center gap-2 px-2 md:px-4 py-2 md:py-2.5 rounded-xl border text-xs md:text-sm font-medium transition-all whitespace-nowrap"
-                style={{
-                  backgroundColor: showNoOutliers ? 'rgba(167, 139, 250, 0.15)' : 'var(--bg-secondary)',
-                  borderColor: showNoOutliers ? 'rgba(167, 139, 250, 0.5)' : 'var(--border-color)',
-                  color: showNoOutliers ? '#A78BFA' : 'var(--text-secondary)',
-                }}
-              >
-                <span className={`inline-block w-3 h-3 rounded-full ${showNoOutliers ? '' : 'bg-gray-500'}`}
-                  style={showNoOutliers ? { backgroundColor: '#A78BFA' } : {}} />
-                Без выбросов
-              </button>
-            )}
-
-            {/* Сравнить с — button-styled: цветной кружок + текст, overlay'енный
-                невидимым select'ом. Клик на весь контрол открывает dropdown. */}
-            {mode !== 'intraday' && availableYears.length > 1 && (
-              <div className="relative inline-block">
-                <div
-                  title={compareYear !== null
-                    ? `Сравниваем с ${compareYear}–${new Date().getFullYear()}`
-                    : 'Добавить сравнительную серию: средние значения по годам от выбранного и до сегодня'}
-                  className="flex items-center gap-2 px-2 md:px-4 py-2 md:py-2.5 rounded-xl border text-xs md:text-sm font-medium transition-all whitespace-nowrap cursor-pointer"
-                  style={{
-                    backgroundColor: compareYear !== null ? 'rgba(96, 165, 250, 0.15)' : 'var(--bg-secondary)',
-                    borderColor: compareYear !== null ? 'rgba(96, 165, 250, 0.5)' : 'var(--border-color)',
-                    color: compareYear !== null ? '#60A5FA' : 'var(--text-secondary)',
-                  }}
-                >
-                  <span className={`inline-block w-3 h-3 rounded-full ${compareYear === null ? 'bg-gray-500' : ''}`}
-                    style={compareYear !== null ? { backgroundColor: '#60A5FA' } : {}} />
-                  {compareYear !== null ? `Сравнение: с ${compareYear} г.` : 'Сравнить с годом'}
-                  <ChevronDown size={14} className="opacity-60" />
-                </div>
-                <select
-                  value={compareYear ?? ''}
-                  onChange={(e) => setCompareYear(e.target.value ? Number(e.target.value) : null)}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                  aria-label="Год сравнения"
-                >
-                  <option value="">— не сравнивать —</option>
-                  {availableYears.slice(1).filter(y => y < new Date().getFullYear()).map(y => (
-                    <option key={y} value={y}>С {y} г.</option>
-                  ))}
-                </select>
-              </div>
-            )}
-          </>
+            ))}
+          </div>
         )}
 
         {/* Price-specific controls */}
@@ -533,90 +488,59 @@ export default function SeasonalityPage() {
         )}
       </div>
 
-      {/* Controls Row 2 — только подсказки и yearly-контролы.
-          Dividend-toggle для histogram переехал в Row 1 рядом с пресетами. */}
-      <div className="flex flex-wrap items-center gap-4 mb-4">
-        {/* Hint */}
-        {chartType === 'histogram' && (
-          <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            {activePeriod.iterations} итераций
-            {MODE_ITER_HINT[mode]?.[activePeriod.iterations] && ` ≈ ${MODE_ITER_HINT[mode][activePeriod.iterations]}`}
-          </div>
-        )}
-
+      {/* Controls Row 2 — общие для histogram и yearly:
+          "Без дивгэпов", "Без выбросов", compareYears pills + "+", "Показать год" (yearly only).
+          Теперь работают и в intraday (для intraday див-гэпы = исключение ex-div дней целиком).
+          Для price — отдельная строка с информацией */}
+      <div className="flex flex-wrap items-center gap-2 md:gap-4 mb-4">
         {chartType === 'price' && priceData && (
           <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
             {priceData.data.length} торговых дней • {priceData.ex_dates_count} дивидендных отсечек
           </div>
         )}
 
-        {/* Yearly-specific controls — те же кнопки что у histogram */}
-        {chartType === 'yearly' && (
+        {(chartType === 'histogram' || chartType === 'yearly') && (
           <>
-            {hasDividends && (
-            <button
-              onClick={() => setExcludeDividends(!excludeDividends)}
-              title="Пересчитать цены с учётом реинвестирования дивидендов"
-              className="flex items-center gap-2 px-2 md:px-4 py-2 md:py-2.5 rounded-xl border text-xs md:text-sm font-medium transition-all whitespace-nowrap"
-              style={{
-                backgroundColor: excludeDividends ? 'rgba(34, 197, 94, 0.15)' : 'var(--bg-secondary)',
-                borderColor: excludeDividends ? 'rgba(34, 197, 94, 0.5)' : 'var(--border-color)',
-                color: excludeDividends ? '#22c55e' : 'var(--text-secondary)',
-              }}
-            >
-              <span className={`inline-block w-3 h-3 rounded-full ${excludeDividends ? 'bg-green-500' : 'bg-gray-500'}`} />
-              Без дивидендных гэпов
-            </button>
+            {/* Без дивидендных гэпов */}
+            {showDivToggle && (
+              <button
+                onClick={() => setExcludeDividends(!excludeDividends)}
+                title={mode === 'intraday' && chartType === 'histogram'
+                  ? 'Исключить торговые дни, являющиеся экс-дивидендными (в день отсечки intraday-return искажён сдвигом open)'
+                  : 'Пересчитать цены с учётом реинвестирования дивидендов (Yahoo/CRSP adjusted close)'}
+                className="flex items-center gap-2 px-2 md:px-4 py-2 md:py-2.5 rounded-xl border text-xs md:text-sm font-medium transition-all whitespace-nowrap"
+                style={{
+                  backgroundColor: excludeDividends ? 'rgba(34, 197, 94, 0.15)' : 'var(--bg-secondary)',
+                  borderColor: excludeDividends ? 'rgba(34, 197, 94, 0.5)' : 'var(--border-color)',
+                  color: excludeDividends ? '#22c55e' : 'var(--text-secondary)',
+                }}
+              >
+                <span className={`inline-block w-3 h-3 rounded-full ${excludeDividends ? 'bg-green-500' : 'bg-gray-500'}`} />
+                Без дивидендных гэпов
+              </button>
             )}
 
-            {/* Без выбросов — как в histogram */}
+            {/* Без выбросов */}
             <button
               onClick={() => setShowNoOutliers(!showNoOutliers)}
-              title="Исключить 2008, 2014, 2020, 2022"
+              title="Добавить серию с исключёнными годами крупных кризисов: 2008, 2014, 2020, 2022"
               className="flex items-center gap-2 px-2 md:px-4 py-2 md:py-2.5 rounded-xl border text-xs md:text-sm font-medium transition-all whitespace-nowrap"
               style={{
                 backgroundColor: showNoOutliers ? 'rgba(167, 139, 250, 0.15)' : 'var(--bg-secondary)',
                 borderColor: showNoOutliers ? 'rgba(167, 139, 250, 0.5)' : 'var(--border-color)',
-                color: showNoOutliers ? '#A78BFA' : 'var(--text-secondary)',
+                color: showNoOutliers ? COLOR_NO_OUTLIERS : 'var(--text-secondary)',
               }}
             >
               <span className={`inline-block w-3 h-3 rounded-full ${showNoOutliers ? '' : 'bg-gray-500'}`}
-                style={showNoOutliers ? { backgroundColor: '#A78BFA' } : {}} />
+                style={showNoOutliers ? { backgroundColor: COLOR_NO_OUTLIERS } : {}} />
               Без выбросов
             </button>
 
-            {/* Сравнить с годом — как в histogram */}
-            {availableYears.length > 1 && (
-              <div className="relative inline-block">
-                <div
-                  title={compareYear !== null ? `Сравниваем с ${compareYear}–${new Date().getFullYear()}` : 'Добавить серию с заданного года'}
-                  className="flex items-center gap-2 px-2 md:px-4 py-2 md:py-2.5 rounded-xl border text-xs md:text-sm font-medium transition-all whitespace-nowrap cursor-pointer"
-                  style={{
-                    backgroundColor: compareYear !== null ? 'rgba(96, 165, 250, 0.15)' : 'var(--bg-secondary)',
-                    borderColor: compareYear !== null ? 'rgba(96, 165, 250, 0.5)' : 'var(--border-color)',
-                    color: compareYear !== null ? '#60A5FA' : 'var(--text-secondary)',
-                  }}
-                >
-                  <span className={`inline-block w-3 h-3 rounded-full ${compareYear === null ? 'bg-gray-500' : ''}`}
-                    style={compareYear !== null ? { backgroundColor: '#60A5FA' } : {}} />
-                  {compareYear !== null ? `Сравнение: с ${compareYear} г.` : 'Сравнить с годом'}
-                  <ChevronDown size={14} className="opacity-60" />
-                </div>
-                <select
-                  value={compareYear ?? ''}
-                  onChange={(e) => setCompareYear(e.target.value ? Number(e.target.value) : null)}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                >
-                  <option value="">— не сравнивать —</option>
-                  {availableYears.slice(1).filter(y => y < new Date().getFullYear()).map(y => (
-                    <option key={y} value={y}>С {y} г.</option>
-                  ))}
-                </select>
-              </div>
-            )}
+            {/* Период с — множественные pills + кнопка "+" */}
+            {renderCompareYearsControls()}
 
-            {/* Показать конкретный год — отдельная траектория одного года */}
-            {availableYears.length > 1 && (
+            {/* "Показать год" — только yearly */}
+            {chartType === 'yearly' && availableYears.length > 1 && (
               <div className="relative inline-block">
                 <div
                   title={showExactYear !== null ? `Траектория ${showExactYear} года` : 'Наложить траекторию конкретного года'}
@@ -624,11 +548,11 @@ export default function SeasonalityPage() {
                   style={{
                     backgroundColor: showExactYear !== null ? 'rgba(249, 115, 22, 0.15)' : 'var(--bg-secondary)',
                     borderColor: showExactYear !== null ? 'rgba(249, 115, 22, 0.5)' : 'var(--border-color)',
-                    color: showExactYear !== null ? '#F97316' : 'var(--text-secondary)',
+                    color: showExactYear !== null ? COLOR_EXACT_YEAR : 'var(--text-secondary)',
                   }}
                 >
                   <span className={`inline-block w-3 h-3 rounded-full ${showExactYear === null ? 'bg-gray-500' : ''}`}
-                    style={showExactYear !== null ? { backgroundColor: '#F97316' } : {}} />
+                    style={showExactYear !== null ? { backgroundColor: COLOR_EXACT_YEAR } : {}} />
                   {showExactYear !== null ? `Год: ${showExactYear}` : 'Показать год'}
                   <ChevronDown size={14} className="opacity-60" />
                 </div>
@@ -638,45 +562,12 @@ export default function SeasonalityPage() {
                   className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                 >
                   <option value="">— не показывать —</option>
-                  {availableYears.filter(y => y < new Date().getFullYear()).map(y => (
+                  {availableYears.filter(y => y < currentYearNum).map(y => (
                     <option key={y} value={y}>{y}</option>
                   ))}
                 </select>
               </div>
             )}
-
-            {/* MTD — зум на месяц */}
-            <div className="relative inline-block">
-              <div
-                className="flex items-center gap-2 px-2 md:px-4 py-2 md:py-2.5 rounded-xl border text-xs md:text-sm font-medium transition-all whitespace-nowrap cursor-pointer"
-                style={{
-                  backgroundColor: mtdMonth !== null ? 'rgba(249, 115, 22, 0.15)' : 'var(--bg-secondary)',
-                  borderColor: mtdMonth !== null ? 'rgba(249, 115, 22, 0.5)' : 'var(--border-color)',
-                  color: mtdMonth !== null ? '#F97316' : 'var(--text-secondary)',
-                }}
-              >
-                <span className={`inline-block w-3 h-3 rounded-full ${mtdMonth === null ? 'bg-gray-500' : ''}`}
-                  style={mtdMonth !== null ? { backgroundColor: '#F97316' } : {}} />
-                {mtdMonth !== null
-                  ? `MTD: ${['','Янв','Фев','Мар','Апр','Май','Июн','Июл','Авг','Сен','Окт','Ноя','Дек'][mtdMonth]}`
-                  : 'Зум на месяц'}
-                <ChevronDown size={14} className="opacity-60" />
-              </div>
-              <select
-                value={mtdMonth ?? ''}
-                onChange={(e) => setMtdMonth(e.target.value ? Number(e.target.value) : null)}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-              >
-                <option value="">Весь год</option>
-                {[1,2,3,4,5,6,7,8,9,10,11,12]
-                  .filter(m => m <= new Date().getMonth() + 1) // только наступившие месяцы
-                  .map(m => (
-                  <option key={m} value={m}>{['','Январь','Февраль','Март','Апрель','Май','Июнь','Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'][m]}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Убрано: «Среднее за ... • текущий ...» — дублирует описание снизу */}
           </>
         )}
       </div>
@@ -705,17 +596,21 @@ export default function SeasonalityPage() {
             {error}
           </div>
         ) : chartType === 'histogram' ? (
-          <SeasonalityHistogram
-            // key меняется после каждого успешного fetch'а → remount → новая анимация
-            key={histogramFetchId}
-            bars={bars}
-            maxAbs={maxAbs}
-            tooltip={tooltip}
-            setTooltip={setTooltip}
-            // Мульти-серии активны только если включены compareYear или noOutliers
-            monthlySeries={mode !== 'intraday' ? monthlySeries : null}
-            seriesMeta={seriesMeta}
-          />
+          bars.length === 0 && compareYears.length === 0 ? (
+            <div className="flex items-center justify-center text-center px-4" style={{ aspectRatio: '16/9', color: 'var(--text-muted)' }}>
+              Выберите хотя бы один "Период с" в меню выше
+            </div>
+          ) : (
+            <SeasonalityHistogram
+              key={histogramFetchId}
+              bars={bars}
+              maxAbs={maxAbs}
+              tooltip={tooltip}
+              setTooltip={setTooltip}
+              monthlySeries={monthlySeries}
+              seriesMeta={seriesMeta}
+            />
+          )
         ) : chartType === 'price' ? (
           priceData ? (
             <SeasonalityPriceChart
@@ -729,42 +624,36 @@ export default function SeasonalityPage() {
           ) : (
             <div className="flex items-center justify-center" style={{ height: chartHeight, color: 'var(--text-muted)' }}>Нет данных</div>
           )
+        ) : yearlyData ? (
+          <YearlySeasonalityChart
+            key={yearlyFetchId}
+            yearlyData={yearlyData}
+            seriesData={yearlySeries}
+            seriesMeta={seriesMeta}
+            tooltip={tooltip}
+            setTooltip={setTooltip}
+            chartHeight={chartHeight}
+          />
         ) : (
-          mtdMonth !== null && mtdData ? (
-            <MtdChart
-              key={`mtd-${mtdMonth}`}
-              data={mtdData}
-              seriesData={mtdSeries}
-              seriesMeta={seriesMeta}
-              tooltip={tooltip}
-              setTooltip={setTooltip}
-              chartHeight={chartHeight}
-            />
-          ) : yearlyData ? (
-            <YearlySeasonalityChart
-              key={yearlyFetchId}
-              yearlyData={yearlyData}
-              seriesData={yearlySeries}
-              seriesMeta={seriesMeta}
-              tooltip={tooltip}
-              setTooltip={setTooltip}
-              chartHeight={chartHeight}
-            />
-          ) : (
-            <div className="flex items-center justify-center" style={{ height: chartHeight, color: 'var(--text-muted)' }}>Нет данных</div>
-          )
+          <div className="flex items-center justify-center text-center px-4" style={{ height: chartHeight, color: 'var(--text-muted)' }}>
+            {compareYears.length === 0 ? 'Выберите хотя бы один "Период с" в меню выше' : 'Нет данных'}
+          </div>
         )}
       </div>
 
       {/* Description */}
       <div className="mt-4 text-sm" style={{ color: 'var(--text-muted)' }}>
         {chartType === 'histogram'
-          ? `Среднее дневное изменение (close-to-close) ${MODE_LABELS[mode].toLowerCase()} — ${activePeriod.label.toLowerCase()} (${activePeriod.iterations} итераций${MODE_ITER_HINT[mode]?.[activePeriod.iterations] ? ` ≈ ${MODE_ITER_HINT[mode][activePeriod.iterations]}` : ''})`
+          ? `Среднее изменение (${mode === 'intraday' ? 'open-to-close per hour' : 'close-to-close'}) ${MODE_LABELS[mode].toLowerCase()}`
           : chartType === 'price'
           ? `График цены ${selectedStock} — с дивидендными гэпами и без (adjusted close)`
-          : `Кумулятивное изменение ${selectedStock} с начала года — среднее (${yearlyData?.years_range ?? '...'}) vs ${yearlyData?.current_year ?? ''}`
+          : `Кумулятивное изменение ${selectedStock} с начала года • ${yearlyData?.current_year ?? ''}`
         }
-        {chartType === 'histogram' && excludeDividends && <span className="ml-2 text-green-500">• Дивидендные гэпы убраны</span>}
+        {(chartType === 'histogram' || chartType === 'yearly') && excludeDividends && (
+          <span className="ml-2 text-green-500">
+            • {mode === 'intraday' && chartType === 'histogram' ? 'Экс-дивидендные дни исключены' : 'Дивидендные гэпы убраны'}
+          </span>
+        )}
         {chartType === 'histogram' && mode === 'monthday' && <span className="ml-2">• Выходные привязаны к понедельнику</span>}
       </div>
     </div>

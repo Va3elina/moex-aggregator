@@ -746,13 +746,50 @@ async def get_seasonality(
         if source == "index_data":
             raise HTTPException(status_code=404, detail=f"Нет интрадей данных для {secid}")
 
+        # Дивиденды для intraday: исключаем торговые дни, которые являются экс-дивидендными
+        # (в день экс-дивиденда утренний open уже сдвинут вниз → intraday return искажён).
+        # Отличается от дневных режимов где дивиденды корректируются мультипликативно.
+        _, src_type = _resolve_source(secid)
+        ex_dates_set: set[str] = set()
+        if exclude_dividends and src_type == "stock":
+            ex_dates_map = _get_ex_dates_from_db(engine, secid)
+            ex_dates_set = set(ex_dates_map.keys())  # ISO 'YYYY-MM-DD'
+            if ex_dates_set:
+                log.info(f"  Intraday: excluding {len(ex_dates_set)} ex-dividend days for {secid}")
+
         intra_type_filter = f"type = '{inst_type}'" if inst_type else "TRUE"
-        # Intraday: open-to-close per hour, дивиденды не влияют
+
+        # Строим динамические WHERE условия для recent_days и c (SQL):
+        # - since_year/exclude_years: фильтр по году trade_date
+        # - ex_dates_set: фильтр по конкретным датам
+        params: dict = {"secid": secid, "iterations": iterations}
+        recent_year_where = ""
+        candle_year_where = ""
+        if since_year is not None:
+            recent_year_where += " AND EXTRACT(YEAR FROM begin_time)::int >= :since_year"
+            candle_year_where += " AND EXTRACT(YEAR FROM c.begin_time)::int >= :since_year"
+            params["since_year"] = since_year
+        if excl_list:
+            # Inline int list — безопасно (int cast уже прошёл)
+            excl_csv = ",".join(str(int(y)) for y in excl_list)
+            recent_year_where += f" AND EXTRACT(YEAR FROM begin_time)::int NOT IN ({excl_csv})"
+            candle_year_where += f" AND EXTRACT(YEAR FROM c.begin_time)::int NOT IN ({excl_csv})"
+
+        ex_date_where = ""
+        if ex_dates_set:
+            # Параметр-массив через ARRAY::date[], безопасно
+            params["ex_dates_arr"] = list(ex_dates_set)
+            ex_date_where = " AND c.begin_time::date != ALL(:ex_dates_arr ::date[])"
+            # Также в recent_days — чтобы исключить эти дни из "последних N"
+            recent_year_where += " AND begin_time::date != ALL(:ex_dates_arr ::date[])"
+
+        # Intraday: open-to-close per hour
         query = text(f"""
             WITH recent_days AS (
                 SELECT DISTINCT begin_time::date AS trade_date
                 FROM candles
                 WHERE secid = :secid AND interval = 60 AND {intra_type_filter} AND open > 0
+                {recent_year_where}
                 ORDER BY trade_date DESC
                 LIMIT :iterations
             )
@@ -767,11 +804,13 @@ async def get_seasonality(
               AND {intra_type_filter}
               AND EXTRACT(HOUR FROM c.begin_time) BETWEEN 10 AND 18
               AND c.open > 0
+              {candle_year_where}
+              {ex_date_where}
             GROUP BY EXTRACT(HOUR FROM c.begin_time)
             ORDER BY key
         """)
         with engine.connect() as conn:
-            rows = conn.execute(query, {"secid": secid, "iterations": iterations}).fetchall()
+            rows = conn.execute(query, params).fetchall()
 
         bars = []
         for row in rows:
@@ -1033,148 +1072,8 @@ async def get_yearly_seasonality(
     return result
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-#  MTD — Month-To-Date: зум на один месяц (торговый день 0..~21)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def _compute_mtd(engine, secid: str, month: int,
-                 ex_dates: dict[str, float],
-                 exclude_years: list[int] | None = None) -> dict:
-    """
-    Для заданного месяца: средняя кумулятивная доходность по торговым дням
-    внутри месяца (0, 1, 2, ..., ~21), ± std.
-    """
-    from collections import defaultdict
-    from datetime import date as dt
-
-    source, inst_type = _resolve_source(secid)
-    current_year = dt.today().year
-
-    with engine.connect() as conn:
-        if source == "index_data":
-            rows = conn.execute(text("""
-                SELECT trade_date, close FROM index_data
-                WHERE secid = :secid AND close > 0
-                ORDER BY trade_date
-            """), {"secid": secid}).fetchall()
-        else:
-            type_filter = f"type = '{inst_type}'" if inst_type else "TRUE"
-            rows = conn.execute(text(f"""
-                SELECT begin_time::date as trade_date, close FROM candles
-                WHERE secid = :secid AND interval = 24 AND {type_filter} AND close > 0
-                ORDER BY begin_time
-            """), {"secid": secid}).fetchall()
-
-    if not rows:
-        return {}
-
-    trade_dates = [r[0] for r in rows]
-    closes = [float(r[1]) for r in rows]
-
-    # Дивидендная коррекция
-    if ex_dates:
-        adjusted = closes.copy()
-        for ex_str, div_val in sorted(ex_dates.items()):
-            ex_d = dt.fromisoformat(ex_str)
-            ex_idx = next((i for i, d in enumerate(trade_dates) if d >= ex_d), None)
-            if ex_idx is not None and ex_idx > 0:
-                raw_prev = closes[ex_idx - 1]
-                if raw_prev > 0 and div_val < raw_prev:
-                    factor = (raw_prev - div_val) / raw_prev
-                    for j in range(ex_idx):
-                        adjusted[j] *= factor
-        prices = adjusted
-    else:
-        prices = closes
-
-    exclude_set = set(exclude_years or [])
-    year_month_data = defaultdict(list)
-    for i, td in enumerate(trade_dates):
-        if td.month == month:
-            year_month_data[td.year].append((td, prices[i]))
-
-    historical_by_td = defaultdict(list)
-    current_series = []
-    max_td = 0
-
-    for yr in sorted(year_month_data.keys()):
-        points = year_month_data[yr]
-        if len(points) < 2:
-            continue
-        first_close = points[0][1]
-        if first_close <= 0:
-            continue
-        pcts = [(p - first_close) / first_close * 100 for _, p in points]
-
-        if yr == current_year:
-            for td_idx, (td, _) in enumerate(points):
-                current_series.append({
-                    "td": td_idx, "pct": round(pcts[td_idx], 2), "date": td.isoformat(),
-                })
-            max_td = max(max_td, len(points))  # current тоже учитываем
-        elif yr not in exclude_set:
-            for td_idx, pct in enumerate(pcts):
-                historical_by_td[td_idx].append(pct)
-            max_td = max(max_td, len(points))
-
-    average_series = []
-    for td_idx in range(max_td):
-        vals = historical_by_td.get(td_idx, [])
-        if not vals:
-            continue
-        mean = sum(vals) / len(vals)
-        variance = sum((v - mean) ** 2 for v in vals) / len(vals) if len(vals) > 1 else 0
-        std = variance ** 0.5
-        average_series.append({
-            "td": td_idx, "avg_pct": round(mean, 2),
-            "std_pct": round(std, 2), "count": len(vals),
-        })
-
-    return {
-        "average": average_series, "current": current_series,
-        "max_td": max_td, "current_year": current_year, "month": month,
-    }
-
-
-@router.get("/mtd")
-async def get_mtd_seasonality(
-    secid: str = Query(..., description="Тикер"),
-    month: int = Query(None, ge=1, le=12, description="Месяц (1-12). Default=текущий."),
-    exclude_dividends: bool = Query(False, description="Убрать дивидендные гэпы"),
-    exclude_years: str = Query("", description="Исключить года (через запятую)"),
-    user=Depends(get_current_user_optional),
-):
-    """MTD сезонность: кумулятивная доходность внутри месяца по торговым дням."""
-    from datetime import date as dt
-    if month is None:
-        month = dt.today().month
-
-    excl_list = []
-    if exclude_years:
-        try:
-            excl_list = [int(y.strip()) for y in exclude_years.split(",") if y.strip()]
-        except ValueError:
-            raise HTTPException(400, "exclude_years must be comma-separated integers")
-
-    cache_key = f"seasonality_mtd:{secid}:{month}:nodiv{exclude_dividends}:ex{','.join(map(str,sorted(excl_list)))}"
-    cached = get_or_set(cache_key)
-    if cached is not None:
-        return cached
-
-    engine = get_engine()
-    start_time = time.time()
-    source, inst_type = _resolve_source(secid)
-    ex_dates = {}
-    if exclude_dividends and inst_type == "stock":
-        ex_dates = _get_ex_dates_from_db(engine, secid)
-
-    data = _compute_mtd(engine, secid, month, ex_dates, exclude_years=excl_list)
-    if not data:
-        raise HTTPException(404, f"Нет данных для {secid}")
-
-    duration = time.time() - start_time
-    log.info(f"GET /seasonality/mtd {secid} month={month} {duration:.2f}s")
-
-    result = {"secid": secid, "exclude_dividends": exclude_dividends, "excluded_years": excl_list, **data}
-    get_or_set(cache_key, result, ttl=300)
-    return result
+# MTD (Month-To-Date) endpoint и _compute_mtd удалены — режим "Зум на месяц"
+# убран из UI. История:
+# - Были в коммитах до 7dbd24c
+# - Логика: кумулятивная доходность внутри одного месяца по торговым дням
+# - Если понадобится вернуть — см. git history `api/routers/seasonality.py`
