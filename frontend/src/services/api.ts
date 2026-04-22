@@ -114,6 +114,20 @@ export async function getInstruments(
   return data;
 }
 
+/**
+ * Получить один инструмент по sec_id (для резолва имени по тикеру
+ * когда он пришёл из URL-параметра, например `?instrument=IMOEXF`).
+ */
+export async function getInstrument(secId: string): Promise<Instrument | null> {
+  try {
+    const response = await fetch(`${API_BASE}/api/instruments/${encodeURIComponent(secId)}`);
+    if (!response.ok) return null;
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
 export async function getGroups(): Promise<{ groups: string[] }> {
   const response = await fetch(`${API_BASE}/api/instruments/groups`);
   if (!response.ok) throw new Error('Failed to fetch groups');

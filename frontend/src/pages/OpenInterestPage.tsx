@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { ChevronDown, BarChart3, Lock } from 'lucide-react';
-import { getChartData } from '../services/api';
+import { getChartData, getInstrument } from '../services/api';
 import type { ChartResponse } from '../types';
 import type { ChartAnnotation } from '../components/SimpleChart';
 import SimpleChart from '../components/SimpleChart';
@@ -109,11 +109,40 @@ export default function OpenInterestPage() {
   const navigate = useNavigate();
 
   // Инструмент
+  // ВАЖНО: sec_id может прийти из URL-параметра (например `?instrument=IMOEXF`),
+  // а instrumentName инициализируется дефолтом 'Сбербанк'. Поэтому ниже стоит
+  // useEffect который при первом рендере (или при любом расхождении ticker/name)
+  // резолвит имя через /api/instruments/{sec_id} — иначе был баг
+  // "Сбербанк [IMOEXF]" в UI-кнопке.
   const [selectedInstrument, setSelectedInstrument] = useState(
     searchParams.get('instrument') || 'SR'
   );
-  const [instrumentName, setInstrumentName] = useState('Сбербанк');
+  const [instrumentName, setInstrumentName] = useState(
+    searchParams.get('instrument') ? '' : 'Сбербанк'  // пустое имя если пришло из URL — будет резолвлено
+  );
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // Синхронизация имени инструмента с тикером.
+  // Срабатывает когда selectedInstrument меняется без вызова handleSelectInstrument:
+  //   - при первой загрузке страницы если в URL передан ?instrument=XXX
+  //   - при ручном редактировании URL
+  // Если имя пусто → резолвим через API. handleSelectInstrument ставит имя сам,
+  // так что этот useEffect ничего не ломает при выборе из модалки.
+  useEffect(() => {
+    if (instrumentName && instrumentName.length > 0) return;
+    let cancelled = false;
+    getInstrument(selectedInstrument).then((inst) => {
+      if (cancelled) return;
+      if (inst?.name) {
+        setInstrumentName(inst.name);
+      } else {
+        // API не ответил — fallback на сам тикер, чтобы хоть что-то показать
+        setInstrumentName(selectedInstrument);
+      }
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedInstrument]);
 
   // Данные графика
   const [loading, setLoading] = useState(true);
