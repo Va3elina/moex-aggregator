@@ -87,8 +87,8 @@ export default function LoginPage() {
             // Сохраняем токены через AuthContext
             await auth.login({ access_token: data.access_token, refresh_token: data.refresh_token });
             navigate('/');
-        } catch (err: any) {
-            setError(err.message || 'Произошла ошибка');
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Произошла ошибка');
         } finally {
             setLoading(false);
         }

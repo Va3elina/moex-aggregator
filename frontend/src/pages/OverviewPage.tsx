@@ -116,20 +116,20 @@ export default function OverviewPage() {
       try {
         const result = await getChartData('SR', 'SR', 'futures', 24, 'FIZ', true, '1m');
 
-        // Цена
-        const chartData = result.candles.map((c: any) => ({
+        // Цена — типы выводятся из result.candles: Candle[]
+        const chartData = result.candles.map((c) => ({
           time: c.time,
           value: c.close,
         }));
 
-        // Покупки (pos_long)
-        const buys = result.open_interest?.map((oi: any) => ({
+        // Покупки (pos_long) — типы из result.open_interest: OpenInterest[]
+        const buys = result.open_interest?.map((oi) => ({
           time: oi.time,
           value: oi.pos_long || 0,
         })) || [];
 
         // Продажи (abs(pos_short))
-        const sells = result.open_interest?.map((oi: any) => ({
+        const sells = result.open_interest?.map((oi) => ({
           time: oi.time,
           value: Math.abs(oi.pos_short || 0),
         })) || [];

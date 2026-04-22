@@ -73,8 +73,8 @@ export default function ProfilePage() {
       setCurrentPassword('');
       setNewPassword('');
       setPwMsg({ type: 'ok', text: 'Пароль успешно изменён' });
-    } catch (err: any) {
-      setPwMsg({ type: 'err', text: err.message });
+    } catch (err) {
+      setPwMsg({ type: 'err', text: err instanceof Error ? err.message : 'Ошибка' });
     } finally {
       setPwLoading(false);
     }
