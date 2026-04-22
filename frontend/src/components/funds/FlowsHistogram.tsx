@@ -151,7 +151,10 @@ export default function FlowsHistogram({
                                 );
                             });
                         })()}
-                        {/* Вертикальный курсор */}
+                        {/* Вертикальный курсор — bounded верхней/нижней grid-линией.
+                            Grid-линии рассчитаны как yPct = 50 ± 47 (см. блок Горизонтальные
+                            линии сетки выше). Crosshair должна совпадать с этим диапазоном,
+                            а не идти от 0% до 100% (иначе выпирает на 3% с каждого края). */}
                         {hoveredFlowIndex !== null && flowsData?.flows && (() => {
                             const visibleCount = flowNavRange[1] - flowNavRange[0] + 1;
                             const barWidth = 100 / visibleCount;
@@ -159,9 +162,9 @@ export default function FlowsHistogram({
                             return (
                                 <line
                                     x1={`${cx}%`}
-                                    y1="0"
+                                    y1="3%"
                                     x2={`${cx}%`}
-                                    y2="100%"
+                                    y2="97%"
                                     stroke={CROSSHAIR.accentColor}
                                     strokeWidth="1"
                                     strokeDasharray={CROSSHAIR.accentDashArray}
@@ -186,7 +189,7 @@ export default function FlowsHistogram({
                             const cx = idx * barW + barW / 2;
                             return (
                                 <line
-                                    x1={`${cx}%`} y1="0" x2={`${cx}%`} y2="100%"
+                                    x1={`${cx}%`} y1="3%" x2={`${cx}%`} y2="97%"
                                     stroke={CHART_COLORS.muted} strokeWidth="1" strokeDasharray="3 4"
                                     opacity="0.4" style={{ pointerEvents: 'none' }}
                                 />
