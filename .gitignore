@@ -15,6 +15,7 @@ frontend/dist/
 # Секреты и логи
 .env
 .env.*
+!.env.example
 logs/
 
 # Деплой-заметки с паролями

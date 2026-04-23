@@ -22,6 +22,7 @@ from api.routers import (
     breadth_router,
     buffett_router,
     seasonality_router,
+    billing_router,
 )
 from api.routers import stats
 from api.routers import auth  # ← НОВОЕ: Аутентификация
@@ -201,6 +202,7 @@ app.include_router(funds_router)
 app.include_router(breadth_router)
 app.include_router(buffett_router)
 app.include_router(seasonality_router)
+app.include_router(billing_router)  # ← /api/billing/* (подписки через ЮKassa)
 app.include_router(auth.router, prefix="/api")  # ← НОВОЕ: /api/auth/*
 app.include_router(oauth.router, prefix="/api")  # ← OAuth: /api/auth/oauth/*
 app.include_router(events.router)  # ← SSE: /api/events/*

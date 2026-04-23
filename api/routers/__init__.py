@@ -10,6 +10,7 @@ from api.routers.funds import router as funds_router
 from api.routers.breadth import router as breadth_router
 from api.routers.buffett import router as buffett_router
 from api.routers.seasonality import router as seasonality_router
+from api.routers.billing import router as billing_router
 
 __all__ = [
     "instruments_router",
@@ -21,4 +22,5 @@ __all__ = [
     "breadth_router",
     "buffett_router",
     "seasonality_router",
+    "billing_router",
 ]

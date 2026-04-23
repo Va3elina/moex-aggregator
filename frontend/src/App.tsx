@@ -16,6 +16,9 @@ import FundsCatalogPage from './pages/FundsCatalogPage';
 import LoginPage from './pages/LoginPage';
 import AuthCallback from './pages/AuthCallback';
 import ProfilePage from './pages/ProfilePage';
+import PricingPage from './pages/PricingPage';
+import BillingSuccessPage from './pages/BillingSuccessPage';
+import BillingStubPage from './pages/BillingStubPage';
 
 export default function App() {
   return (
@@ -45,6 +48,10 @@ export default function App() {
             <Route path="/strength" element={<StrengthPage />} />
             <Route path="/seasonality" element={<SeasonalityPage />} />
             <Route path="/profile" element={<ProfilePage />} />
+            {/* Billing */}
+            <Route path="/pricing" element={<PricingPage />} />
+            <Route path="/billing/success" element={<BillingSuccessPage />} />
+            <Route path="/billing/stub" element={<BillingStubPage />} />
           </Route>
         </Routes>
       </BrowserRouter>
