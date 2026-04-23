@@ -539,8 +539,10 @@ export default function SeasonalityPage() {
             {/* Период с — множественные pills + кнопка "+" */}
             {renderCompareYearsControls()}
 
-            {/* "Показать год" — только yearly */}
-            {chartType === 'yearly' && availableYears.length > 1 && (
+            {/* "Показать год" — в обоих режимах (histogram и yearly).
+                Для histogram добавляет отдельную серию баров по этому году,
+                для yearly — отдельную линию траектории этого года. */}
+            {availableYears.length > 1 && (
               <div className="relative inline-block">
                 <div
                   title={showExactYear !== null ? `Траектория ${showExactYear} года` : 'Наложить траекторию конкретного года'}
