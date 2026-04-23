@@ -22,13 +22,14 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from api.billing import service as billing_service
+from api.billing import invites as invite_service
 from api.billing.factory import get_payment_provider
 from api.billing.plans import get_plan, list_public_plans, tiers_grouped
 from api.billing.tiers import user_tier
 from api.database import get_db
 from api.models.subscription import Subscription
 from api.models.user import User
-from api.routers.auth import get_current_user
+from api.routers.auth import get_current_user, require_admin
 
 log = logging.getLogger(__name__)
 
@@ -262,3 +263,105 @@ async def stub_simulate(body: StubSimulateRequest, db: Session = Depends(get_db)
     if not sub:
         raise HTTPException(404, f"No subscription for payment_id={body.payment_id}")
     return {"ok": True, "subscription_id": sub.id, "status": sub.status}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  7. REDEEM — user применяет invite-токен
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class RedeemRequest(BaseModel):
+    token: str
+
+
+@router.post("/redeem")
+async def redeem_invite(
+    body: RedeemRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Применяет invite-токен для текущего user'а.
+    Активирует подписку с указанным в invite tier'ом и duration_days.
+    Идемпотентна: повторный redeem того же токена тем же user'ом вернёт
+    уже созданную подписку.
+    """
+    try:
+        sub = invite_service.redeem_invite(db, user, body.token.strip())
+    except invite_service.RedeemError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        log.error("redeem_invite failed: %s", e, exc_info=True)
+        raise HTTPException(500, "Не удалось применить ссылку")
+
+    return {
+        "ok": True,
+        "tier": sub.tier,
+        "subscription_id": sub.id,
+        "expires_at": sub.expires_at.isoformat() if sub.expires_at else None,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  8. ADMIN — /api/billing/admin/invites (CRUD для invite-токенов)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class CreateInvitesRequest(BaseModel):
+    tier: str                  # 'basic' / 'pro' / 'premium'
+    duration_days: int         # срок подписки после применения
+    count: int = 1             # сколько токенов создать
+    expires_in_days: int = 30  # когда истекает сам токен (если не использован)
+    max_uses_per_token: int = 1  # сколько раз можно применить один токен
+    note: str | None = None
+
+
+@router.post("/admin/invites")
+async def admin_create_invites(
+    body: CreateInvitesRequest,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Создаёт N invite-токенов. Только admin'у."""
+    try:
+        invites = invite_service.create_invites(
+            db=db,
+            admin=admin,
+            tier=body.tier,
+            duration_days=body.duration_days,
+            count=body.count,
+            expires_in_days=body.expires_in_days,
+            max_uses_per_token=body.max_uses_per_token,
+            note=body.note,
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+    return {
+        "tokens": [inv.token for inv in invites],
+        "count": len(invites),
+        "tier": body.tier,
+        "duration_days": body.duration_days,
+        "expires_in_days": body.expires_in_days,
+    }
+
+
+@router.get("/admin/invites")
+async def admin_list_invites(
+    only_active: bool = False,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Список всех invite-токенов."""
+    return {"invites": invite_service.list_invites(db, admin, only_active=only_active)}
+
+
+@router.delete("/admin/invites/{token}")
+async def admin_revoke_invite(
+    token: str,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Отозвать токен."""
+    ok = invite_service.revoke_invite(db, admin, token)
+    if not ok:
+        raise HTTPException(404, "Токен не найден")
+    return {"ok": True}

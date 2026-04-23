@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import {
   LogOut, Lock, Mail, Calendar, Shield, Crown,
   Check, X as XIcon, Eye, EyeOff, Sparkles,
 } from 'lucide-react';
+import AdminBillingInvites from '../components/AdminBillingInvites';
 
 const ROLE_LABELS: Record<string, string> = {
   user: 'Пользователь',
@@ -185,19 +186,21 @@ export default function ProfilePage() {
           ))}
         </div>
 
-        <button
-          disabled
-          className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium transition-all opacity-50 cursor-not-allowed"
+        <Link
+          to="/pricing"
+          className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium transition-opacity hover:opacity-90"
           style={{
             backgroundColor: 'var(--accent-pink)',
             color: '#fff',
           }}
-          title="Скоро"
         >
           <Sparkles size={16} />
-          Перейти на Plus — скоро
-        </button>
+          Перейти к тарифам
+        </Link>
       </div>
+
+      {/* ============ Секция 2.5: Admin — invite-ссылки (только для admin'ов) ============ */}
+      {user.role === 'admin' && <AdminBillingInvites />}
 
       {/* ============ Секция 3: Безопасность ============ */}
       <div className="rounded-2xl border p-6" style={cardStyle}>

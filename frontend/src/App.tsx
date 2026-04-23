@@ -19,6 +19,7 @@ import ProfilePage from './pages/ProfilePage';
 import PricingPage from './pages/PricingPage';
 import BillingSuccessPage from './pages/BillingSuccessPage';
 import BillingStubPage from './pages/BillingStubPage';
+import BillingRedeemPage from './pages/BillingRedeemPage';
 
 export default function App() {
   return (
@@ -52,6 +53,7 @@ export default function App() {
             <Route path="/pricing" element={<PricingPage />} />
             <Route path="/billing/success" element={<BillingSuccessPage />} />
             <Route path="/billing/stub" element={<BillingStubPage />} />
+            <Route path="/billing/redeem" element={<BillingRedeemPage />} />
           </Route>
         </Routes>
       </BrowserRouter>
