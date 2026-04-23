@@ -15,8 +15,8 @@ const ROLE_LABELS: Record<string, string> = {
 
 const ROLE_COLORS: Record<string, { bg: string; text: string }> = {
   user: { bg: 'color-mix(in srgb, var(--accent) 15%, transparent)', text: 'var(--accent)' },
-  pro: { bg: 'color-mix(in srgb, #FFB020 15%, transparent)', text: '#FFB020' },
-  admin: { bg: 'color-mix(in srgb, #ef4444 15%, transparent)', text: '#ef4444' },
+  pro: { bg: 'color-mix(in srgb, var(--warning) 15%, transparent)', text: 'var(--warning)' },
+  admin: { bg: 'color-mix(in srgb, var(--danger) 15%, transparent)', text: 'var(--danger)' },
 };
 
 function formatDate(dateStr: string): string {
@@ -153,7 +153,7 @@ export default function ProfilePage() {
             className="px-3 py-1 text-xs font-medium rounded-full"
             style={{
               backgroundColor: 'color-mix(in srgb, #2EE59D 15%, transparent)',
-              color: '#2EE59D',
+              color: 'var(--accent)',
             }}
           >
             Бесплатный план
@@ -264,7 +264,7 @@ export default function ProfilePage() {
                     backgroundColor: pwMsg.type === 'ok'
                       ? 'color-mix(in srgb, var(--accent) 15%, transparent)'
                       : 'color-mix(in srgb, #ef4444 15%, transparent)',
-                    color: pwMsg.type === 'ok' ? 'var(--accent)' : '#ef4444',
+                    color: pwMsg.type === 'ok' ? 'var(--accent)' : 'var(--danger)',
                   }}
                 >
                   {pwMsg.text}
@@ -336,8 +336,8 @@ export default function ProfilePage() {
         onClick={handleLogout}
         className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border text-sm font-medium transition-all hover:opacity-80"
         style={{
-          borderColor: '#ef4444',
-          color: '#ef4444',
+          borderColor: 'var(--danger)',
+          color: 'var(--danger)',
           backgroundColor: 'color-mix(in srgb, #ef4444 10%, transparent)',
         }}
       >

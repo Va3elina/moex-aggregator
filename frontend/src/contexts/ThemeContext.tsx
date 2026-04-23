@@ -1,13 +1,13 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 
-// Список доступных тем
+// Список доступных тем — сейчас только 2:
+//   okx  — основная, safe default
+//   pro  — экспериментальная "де-AI'нутая" (IBM Plex + flat widgets + OKX green).
+// Остальные темы (dark, binance, ocean, sunset, light, quant, editorial, swiss)
+// остаются в index.css как dead code — не удалили, чтобы проще включить обратно.
 export const THEMES = [
     { id: 'okx', name: 'OKX Green', icon: '🌿' },
-    { id: 'dark', name: 'Neon Lime', icon: '🌙' },
-    { id: 'binance', name: 'Binance Gold', icon: '💛' },
-    { id: 'ocean', name: 'Ocean Blue', icon: '🌊' },
-    { id: 'sunset', name: 'Sunset Orange', icon: '🌅' },
-    { id: 'light', name: 'Light Mode', icon: '☀️' },
+    { id: 'pro', name: 'Pro (тест)', icon: '⚡' },
 ] as const;
 
 export type ThemeId = typeof THEMES[number]['id'];

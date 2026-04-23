@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { TrendingUp, TrendingDown, AlertTriangle, Gauge, DollarSign, BarChart3, Lock } from 'lucide-react';
+import PageHeader from '../components/PageHeader';
 import { useNavigate } from 'react-router-dom';
 import { getFearIndex, getFearIndexHistory } from '../services/api';
 import type { FearIndexResponse, FearIndexHistoryResponse, FearIndexPeriod } from '../services/api';
@@ -100,16 +101,11 @@ export default function FearIndexPage() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8">
-      {/* Заголовок */}
-      <div className="flex items-center gap-3 mb-6">
-        <div className="p-3 bg-gradient-to-br from-[#f97316] to-[#ef4444] rounded-xl">
-          <Gauge className="w-6 h-6 text-white" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold text-theme-primary">Индекс страха</h1>
-          <p className="text-theme-secondary text-sm">Настроения инвесторов по потокам в фонды</p>
-        </div>
-      </div>
+      <PageHeader
+        icon={Gauge}
+        title="Индекс страха"
+        subtitle="Настроения инвесторов по потокам в фонды"
+      />
 
       {/* Виджет текущего значения */}
       <div

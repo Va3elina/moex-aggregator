@@ -162,8 +162,14 @@ export default function YearlySeasonalityChart({
 
   return (
     <div className={revealed ? 'chart-reveal' : ''}>
-      {/* Legend — все серии + current */}
-      <div className="flex justify-center flex-wrap gap-4 text-sm mb-3">
+      {/* Legend — все серии + current.
+          Размер шрифта И margin-bottom через CSS vars — переопределяются на wrapper
+          в test-dashboard'е для компактного режима (мельче шрифт + меньше отступ). */}
+      <div className="flex justify-center flex-wrap gap-4"
+        style={{
+          fontSize: 'var(--seasonality-legend-font-size, 14px)',
+          marginBottom: 'var(--seasonality-legend-mb, 12px)',
+        }}>
         {allMeta.map(m => (
           <span key={m.key} className="flex items-center gap-2">
             <span className="w-6 h-0.5 rounded" style={{ backgroundColor: m.color, display: 'inline-block' }} />

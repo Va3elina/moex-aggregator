@@ -66,7 +66,7 @@ export default function BillingStubPage() {
             onClick={() => simulate('succeeded')}
             disabled={loading !== null}
             className="flex-1 py-2.5 rounded-xl font-medium disabled:opacity-50"
-            style={{ backgroundColor: '#22c55e', color: 'white' }}
+            style={{ backgroundColor: 'var(--success)', color: 'var(--text-inverse)' }}
           >
             {loading === 'succeed' ? 'Обработка...' : '✓ Симулировать успех'}
           </button>

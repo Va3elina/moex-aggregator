@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Grid3X3 } from 'lucide-react';
+import PageHeader from '../components/PageHeader';
 import { getHeatmapData, getHeatmapImoex } from '../services/api';
 import { useRealtimeData } from '../hooks/useRealtimeData';
 import type { HeatmapStock, HeatmapSector } from '../services/api';
@@ -435,15 +436,11 @@ export default function HeatmapPage() {
     <div className="max-w-full mx-auto px-2 md:px-4 py-3 md:py-4">
       {/* Заголовок и фильтры */}
       <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
-        <div className="flex items-center gap-3">
-          <div className="p-3 bg-gradient-to-br from-[#22c55e] to-[#14b8a6] rounded-xl">
-            <Grid3X3 className="w-6 h-6 text-white" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-theme-primary">Карта рынка</h1>
-            <p className="text-theme-secondary text-sm">Обновлено в {lastUpdate || '--:--'}</p>
-          </div>
-        </div>
+        <PageHeader
+          icon={Grid3X3}
+          title="Карта рынка"
+          subtitle={`Обновлено в ${lastUpdate || '--:--'}`}
+        />
 
         <div className="flex flex-wrap gap-2">
           <div className="flex rounded-lg overflow-hidden border border-theme">

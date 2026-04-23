@@ -1,584 +1,817 @@
-import { useState, useEffect, useCallback } from 'react';
+/**
+ * OverviewPage — главная для АВТОРИЗОВАННЫХ пользователей.
+ *
+ * Pulse-стиль аналогично LandingPage, но:
+ *  - Персонализированное приветствие с именем user'а
+ *  - Нет "Войти / Тарифы" CTA (уже залогинен)
+ *  - Секция "Ваш тариф" вместо продающего
+ *  - Быстрый доступ к 8 индикаторам
+ *
+ * Незалогиненные видят LandingPage (routing conditional в App.tsx).
+ */
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, ExternalLink, Activity, TrendingUp, TrendingDown, LayoutGrid, MessageCircle, BarChart3, Compass, Gauge, DollarSign } from 'lucide-react';
-import SimpleChart from '../components/SimpleChart';
-import { getChartData, getFearIndex, getFearIndexHistory, getBreadthCurrent, getFundsSummary, getBuffettCapGdp } from '../services/api';
-import { useRealtimeData } from '../hooks/useRealtimeData';
-import type { FearIndexResponse, FearIndexHistoryResponse, BreadthCurrentResponse, FundsSummaryResponse } from '../services/api';
-import { FEAR_LABELS_RU, getFearColor } from '../config/fearConfig';
+import {
+  ArrowRight,
+  Gauge,
+  Activity,
+  Scale,
+  Grid3X3,
+  BarChart3,
+  Wallet,
+  LayoutGrid,
+  CalendarDays,
+  User,
+  TrendingUp,
+  TrendingDown,
+} from 'lucide-react';
+import {
+  getFearIndex,
+  getBreadthCurrent,
+  getBuffettCapGdp,
+  getHeatmapData,
+  getFundsSummary,
+  getSeasonalityPrice,
+} from '../services/api';
+import type { HeatmapStock, FundsSummaryResponse } from '../services/api';
+import { useAuth } from '../contexts/AuthContext';
 
-// Типы
-interface HeatmapStock {
-  secId: string;
-  name: string;
-  change_1m: number;
-}
+const INDICATORS = [
+  { path: '/heatmap', title: 'Карта рынка', desc: 'Акции MOEX по секторам, размер = капитализация', icon: Grid3X3 },
+  { path: '/oi', title: 'Открытый интерес', desc: 'Позиции участников по фьючерсам Мосбиржи', icon: BarChart3 },
+  { path: '/funds-money', title: 'Деньги в фондах', desc: 'Динамика СЧА и притоки-оттоки фондов', icon: Wallet },
+  { path: '/funds-catalog', title: 'Состав фондов', desc: 'Портфели фондов акций и облигаций', icon: LayoutGrid },
+  { path: '/strength', title: 'Сила рынка', desc: '% акций выше EMA 50/100/200', icon: Activity },
+  { path: '/buffett', title: 'Индикатор Баффетта', desc: 'Капитализация / ВВП + Cap / M2', icon: Scale },
+  { path: '/seasonality', title: 'Сезонность', desc: 'Среднее изменение цены по периодам', icon: CalendarDays },
+  { path: '/fear', title: 'Индекс страха', desc: 'Настроения инвесторов по 4 метрикам', icon: Gauge },
+];
 
-interface TelegramPost {
-  id: number;
-  title: string;
-  preview: string;
-  time: string;
+const ROLE_LABELS: Record<string, string> = {
+  free: 'Free',
+  basic: 'Basic',
+  pro: 'Pro',
+  premium: 'Premium',
+  admin: 'Admin',
+  user: 'Free',
+};
+
+/** Тикеры для quote-tiles сверху страницы. Label = отображаемое имя. */
+const QUOTE_TICKERS: { secid: string; label: string }[] = [
+  { secid: 'IMOEX',        label: 'IMOEX' },
+  { secid: 'RTSI',         label: 'RTSI' },
+  { secid: 'USD000UTSTOM', label: 'USD/₽' },
+  { secid: 'CNYRUB_TOM',   label: 'CNY/₽' },
+  { secid: 'GLDRUB_TOM',   label: 'Золото' },
+];
+
+/** Параллельно фетчит closes за последние 30 дней для каждого тикера.
+    Возвращает { IMOEX: {label, closes}, USD000UTSTOM: {...}, ... }. */
+async function fetchQuotes(): Promise<Record<string, { label: string; closes: number[] }>> {
+  const results = await Promise.allSettled(
+    QUOTE_TICKERS.map(t =>
+      getSeasonalityPrice(t.secid, 30).then(r => ({
+        secid: t.secid,
+        label: t.label,
+        closes: r.data.map(d => d.close),
+      })),
+    ),
+  );
+  const out: Record<string, { label: string; closes: number[] }> = {};
+  results.forEach(r => {
+    if (r.status === 'fulfilled' && r.value.closes.length > 0) {
+      out[r.value.secid] = { label: r.value.label, closes: r.value.closes };
+    }
+  });
+  return out;
 }
 
 export default function OverviewPage() {
-  // Fear Index state
-  const [fearData, setFearData] = useState<FearIndexResponse | null>(null);
-  const [fearHistory, setFearHistory] = useState<FearIndexHistoryResponse | null>(null);
-  const [fearLoading, setFearLoading] = useState(true);
+  const { user } = useAuth();
 
-  const [heatmapData, setHeatmapData] = useState<HeatmapStock[]>([]);
-  const [heatmapLoading, setHeatmapLoading] = useState(true);
-
-  // OI данные
-  const [oiLoading, setOiLoading] = useState(true);
-  const [oiChartData, setOiChartData] = useState<{ time: string; value: number }[]>([]);
-  const [oiBuys, setOiBuys] = useState<{ time: string; value: number }[]>([]);
-  const [oiSells, setOiSells] = useState<{ time: string; value: number }[]>([]);
-
-  // Сила рынка
-  const [breadthData, setBreadthData] = useState<BreadthCurrentResponse | null>(null);
-  const [breadthLoading, setBreadthLoading] = useState(true);
-
-  // Фонды
+  const [fear, setFear] = useState<number | null>(null);
+  const [strength, setStrength] = useState<number | null>(null);
+  const [buffett, setBuffett] = useState<number | null>(null);
+  const [gainers, setGainers] = useState<HeatmapStock[]>([]);
+  const [losers, setLosers] = useState<HeatmapStock[]>([]);
+  const [topVolume, setTopVolume] = useState<HeatmapStock[]>([]);
+  const [sectors, setSectors] = useState<{ name: string; change: number; count: number }[]>([]);
   const [fundsSummary, setFundsSummary] = useState<FundsSummaryResponse | null>(null);
-  const [fundsLoading, setFundsLoading] = useState(true);
+  // Index / currency tiles (IMOEX, RTSI, USD, CNY, GLD).
+  // Храним массив [{secid, label, closes[30]}] → рендерим sparkline + last/prev.
+  const [quotes, setQuotes] = useState<Record<string, { label: string; closes: number[] }>>({});
+  const [lastUpdate, setLastUpdate] = useState<string>('');
 
-  // Баффетт
-  const [buffettRatio, setBuffettRatio] = useState<number | null>(null);
-  const [buffettLoading, setBuffettLoading] = useState(true);
-
-  // Telegram посты (mock)
-  const [telegramPosts] = useState<TelegramPost[]>([
-    {
-      id: 1,
-      title: 'Анализ решения ЦБ по ставке',
-      preview: 'Разбор влияния на рынок после решения Центробанка. Ключевые наблюдения по ликвидности...',
-      time: '2 часа назад'
-    },
-    {
-      id: 2,
-      title: 'Нефтегазовый сектор: обзор недели',
-      preview: 'Значительные движения в энергетических акциях на фоне глобальных колебаний цен...',
-      time: '5 часов назад'
-    },
-    {
-      id: 3,
-      title: 'Технологический сектор: смена настроений',
-      preview: 'Растущий оптимизм в IT-секторе. YNDX лидирует по объёмам...',
-      time: '1 день назад'
-    }
-  ]);
-
-  // Загрузка Fear Index
-  const loadFearIndex = useCallback(async () => {
-    try {
-      const [current, history] = await Promise.all([
-        getFearIndex(),
-        getFearIndexHistory('1m')
-      ]);
-      setFearData(current);
-      setFearHistory(history);
-    } catch (err) {
-      console.error('Ошибка загрузки Fear Index:', err);
-    } finally {
-      setFearLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { loadFearIndex(); }, [loadFearIndex]);
-
-  // Загрузка heatmap (за месяц — более стабильные данные)
-  const loadHeatmap = useCallback(async () => {
-    try {
-      const resp = await fetch('/api/heatmap/stocks?size_by=value_1m&color_by=change_1m&group_by=none');
-      const data = await resp.json();
-      const stocks = (data.stocks || []).slice(0, 12);
-      setHeatmapData(stocks);
-    } catch (err) {
-      console.error('Ошибка загрузки heatmap:', err);
-    } finally {
-      setHeatmapLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { loadHeatmap(); }, [loadHeatmap]);
-
-  // SSE: автоматическое обновление
-  useRealtimeData(['5min', 'mv_refresh', 'funds'], useCallback(() => {
-    loadFearIndex();
-    loadHeatmap();
-  }, [loadFearIndex, loadHeatmap]));
-
-  // Загрузка OI для превью (Сбербанк, 1 месяц) — как на странице OI
   useEffect(() => {
-    async function loadOI() {
-      try {
-        const result = await getChartData('SR', 'SR', 'futures', 24, 'FIZ', true, '1m');
+    Promise.allSettled([
+      getFearIndex().then(r => setFear(r.fear_index)),
+      getBreadthCurrent(50, 'imoex').then(r => setStrength(r.percent_above)),
+      getBuffettCapGdp('1y').then(r => {
+        const last = r.data[r.data.length - 1];
+        if (last) setBuffett(last.buffett);
+      }),
+      getHeatmapData().then(r => {
+        // Топ-5 gainers и losers по change_1d.
+        const withChange = r.stocks.filter(s => Number.isFinite(s.change_1d));
+        const sorted = [...withChange].sort((a, b) => b.change_1d - a.change_1d);
+        setGainers(sorted.slice(0, 5));
+        setLosers(sorted.slice(-5).reverse());
 
-        // Цена — типы выводятся из result.candles: Candle[]
-        const chartData = result.candles.map((c) => ({
-          time: c.time,
-          value: c.close,
+        // Топ-5 по объёму (value_1d = торговый оборот в рублях).
+        const byVolume = [...r.stocks]
+          .filter(s => Number.isFinite(s.value_1d) && s.value_1d > 0)
+          .sort((a, b) => b.value_1d - a.value_1d);
+        setTopVolume(byVolume.slice(0, 5));
+
+        // Equal-weighted average по секторам.
+        const sectorMap = new Map<string, number[]>();
+        withChange.forEach(s => {
+          if (!s.sector) return;
+          if (!sectorMap.has(s.sector)) sectorMap.set(s.sector, []);
+          sectorMap.get(s.sector)!.push(s.change_1d);
+        });
+        const secArr = Array.from(sectorMap.entries()).map(([name, changes]) => ({
+          name,
+          change: changes.reduce((a, b) => a + b, 0) / changes.length,
+          count: changes.length,
         }));
-
-        // Покупки (pos_long) — типы из result.open_interest: OpenInterest[]
-        const buys = result.open_interest?.map((oi) => ({
-          time: oi.time,
-          value: oi.pos_long || 0,
-        })) || [];
-
-        // Продажи (abs(pos_short))
-        const sells = result.open_interest?.map((oi) => ({
-          time: oi.time,
-          value: Math.abs(oi.pos_short || 0),
-        })) || [];
-
-        setOiChartData(chartData);
-        setOiBuys(buys);
-        setOiSells(sells);
-      } catch (err) {
-        console.error('Ошибка загрузки OI:', err);
-      } finally {
-        setOiLoading(false);
-      }
-    }
-    loadOI();
+        secArr.sort((a, b) => b.change - a.change);
+        setSectors(secArr);
+      }),
+      getFundsSummary().then(setFundsSummary),
+      // Quotes для tiles (IMOEX + RTSI + валюты + золото).
+      // Параллельные fetch'и через seasonality/price (30 дней = достаточно для sparkline).
+      fetchQuotes().then(setQuotes),
+    ]).then(() => {
+      setLastUpdate(
+        new Date().toLocaleTimeString('ru-RU', {
+          hour: '2-digit',
+          minute: '2-digit',
+          timeZone: 'Europe/Moscow',
+        })
+      );
+    });
   }, []);
 
-  // Загрузка Сила рынка
-  useEffect(() => {
-    getBreadthCurrent(200)
-      .then(data => setBreadthData(data))
-      .catch(err => console.error('Ошибка загрузки breadth:', err))
-      .finally(() => setBreadthLoading(false));
-  }, []);
+  // Приоритет: display_name → email local part → "пользователь"
+  const displayName = user?.display_name
+    || user?.email?.split('@')[0]
+    || 'пользователь';
 
-  // Загрузка Фонды
-  useEffect(() => {
-    getFundsSummary()
-      .then(data => setFundsSummary(data))
-      .catch(err => console.error('Ошибка загрузки фондов:', err))
-      .finally(() => setFundsLoading(false));
-  }, []);
-
-  // Загрузка Баффетт
-  useEffect(() => {
-    getBuffettCapGdp('1y', true)
-      .then(data => {
-        const last = data.data?.[data.data.length - 1];
-        if (last) setBuffettRatio(last.buffett);
-      })
-      .catch(err => console.error('Ошибка загрузки Баффетт:', err))
-      .finally(() => setBuffettLoading(false));
-  }, []);
-
-  // Расчёт изменений Fear Index
-  const getYesterdayFear = () => {
-    if (!fearHistory?.history?.length || fearHistory.history.length < 2) return null;
-    return fearHistory.history[fearHistory.history.length - 2]?.fear_index;
-  };
-
-  const fearIndex = fearData?.fear_index ?? 50;
-  const fearColor = getFearColor(fearIndex);
-  const yesterdayFear = getYesterdayFear();
-  const fearChange = yesterdayFear ? fearIndex - yesterdayFear : 0;
-
-  // Цвет для heatmap (для месячных данных — шире диапазон)
-  const getHeatmapColor = (change: number) => {
-    if (change >= 10) return 'bg-[#16A34A]';
-    if (change >= 5) return 'bg-[#22C55E]';
-    if (change >= 2) return 'bg-[#4ADE80]';
-    if (change >= 0) return 'bg-[#86EFAC]';
-    if (change >= -2) return 'bg-[#FCA5A5]';
-    if (change >= -5) return 'bg-[#F87171]';
-    if (change >= -10) return 'bg-[#EF4444]';
-    return 'bg-[#DC2626]';
-  };
+  const roleLabel = user?.role ? ROLE_LABELS[user.role] || user.role : 'Free';
 
   return (
-    <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8">
-      {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
-        <div className="p-3 bg-gradient-to-br from-[#C8FF2E] to-[#22c55e] rounded-xl">
-          <Compass className="w-6 h-6 text-black" />
-        </div>
+    <div className="max-w-7xl mx-auto px-4 md:px-6 py-8 md:py-10">
+
+      {/* ═══ QUOTE TILES — IMOEX / RTSI / USD / CNY / Gold ═══
+          Live-цифры сверху страницы. Sparkline показывает движение за 30 дней. */}
+      {Object.keys(quotes).length > 0 && (
+        <section className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2 md:gap-3 mb-8">
+          {QUOTE_TICKERS.map(t => {
+            const q = quotes[t.secid];
+            if (!q || q.closes.length < 2) return null;
+            return <QuoteTile key={t.secid} label={q.label} closes={q.closes} />;
+          })}
+        </section>
+      )}
+
+      {/* ═══ GREETING HERO ═══ */}
+      <section className="flex flex-wrap items-start justify-between gap-4 mb-8 md:mb-10">
         <div>
-          <h1 className="text-2xl font-bold text-theme-primary">Обзор рынка</h1>
-          <p className="text-theme-secondary text-sm">Аналитика и индикаторы в реальном времени</p>
-        </div>
-      </div>
-
-      {/* Widgets Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-
-        {/* Fear Index Widget — УЛУЧШЕННЫЙ */}
-        <Link
-          to="/fear"
-          className="widget p-6 hover:border-[#C8FF2E]/30 transition-all group flex flex-col"
-        >
-          {/* Header */}
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <Activity size={20} style={{ color: fearColor }} />
-              <h2 className="text-xl font-semibold text-theme-primary">Индекс страха</h2>
-            </div>
-            <ArrowRight size={18} className="text-theme-secondary group-hover:text-[#C8FF2E] transition-colors" />
-          </div>
-
-          {/* Main Value */}
-          <div className="flex-1 flex flex-col items-center justify-center py-8">
-            {fearLoading ? (
-              <div className="w-10 h-10 border-2 border-[#C8FF2E] border-t-transparent rounded-full animate-spin" />
-            ) : (
-              <>
-                {/* Большое число */}
-                <div
-                  className="text-8xl font-bold mb-4 transition-all duration-500"
-                  style={{ color: fearColor }}
-                >
-                  {fearIndex.toFixed(0)}
-                </div>
-
-                {/* Метка */}
-                <div
-                  className="text-base font-medium px-4 py-2 rounded-full mb-4"
-                  style={{
-                    backgroundColor: `${fearColor}22`,
-                    color: fearColor,
-                    border: `1px solid ${fearColor}44`
-                  }}
-                >
-                  {fearData?.classification ? FEAR_LABELS_RU[fearData.classification] || fearData.classification : '—'}
-                </div>
-
-                {/* Изменение */}
-                <div className="flex items-center gap-2 text-base">
-                  {fearChange > 0 ? (
-                    <TrendingUp size={18} className="text-[#ef4444]" />
-                  ) : fearChange < 0 ? (
-                    <TrendingDown size={18} className="text-[#22c55e]" />
-                  ) : null}
-                  <span className={fearChange > 0 ? 'text-[#ef4444]' : fearChange < 0 ? 'text-[#22c55e]' : 'text-theme-secondary'}>
-                    {fearChange > 0 ? '+' : ''}{fearChange.toFixed(1)} за день
-                  </span>
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* Scale */}
-          <div className="mt-auto">
-            <div className="h-3 rounded-full overflow-hidden flex">
-              <div className="flex-1 bg-[#22c55e]" />
-              <div className="flex-1 bg-[#84cc16]" />
-              <div className="flex-1 bg-[#eab308]" />
-              <div className="flex-1 bg-[#f97316]" />
-              <div className="flex-1 bg-[#ef4444]" />
-            </div>
-            <div className="flex justify-between mt-2 text-sm text-theme-secondary">
-              <span>Жадность</span>
-              <span>Страх</span>
-            </div>
-            {/* Indicator */}
-            <div className="relative h-0">
-              <div
-                className="absolute -top-5 w-1 h-4 bg-white rounded-full transition-all duration-500"
-                style={{ left: `${fearIndex}%`, transform: 'translateX(-50%)' }}
-              />
-            </div>
-          </div>
-        </Link>
-
-        {/* Market Heatmap Widget */}
-        <Link
-          to="/heatmap"
-          className="widget p-6 hover:border-[#C8FF2E]/30 transition-all group flex flex-col"
-        >
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <LayoutGrid size={20} className="text-[#C8FF2E]" />
-              <div>
-                <h2 className="text-xl font-semibold text-theme-primary">Карта рынка</h2>
-                <span className="text-xs text-theme-secondary">За месяц</span>
-              </div>
-            </div>
-            <ArrowRight size={18} className="text-theme-secondary group-hover:text-[#C8FF2E] transition-colors" />
-          </div>
-
-          {/* Mini Heatmap */}
-          <div className="flex-1 flex items-center">
-            {heatmapLoading ? (
-              <div className="w-full flex items-center justify-center py-8">
-                <div className="w-8 h-8 border-2 border-[#C8FF2E] border-t-transparent rounded-full animate-spin" />
-              </div>
-            ) : (
-              <div className="grid grid-cols-4 gap-2 w-full">
-                {heatmapData.map((stock) => (
-                  <div
-                    key={stock.secId}
-                    className={`${getHeatmapColor(stock.change_1m)} rounded-lg p-2 text-center aspect-square flex flex-col items-center justify-center shadow-lg`}
-                  >
-                    <div className="text-white text-sm font-bold drop-shadow-md">{stock.secId}</div>
-                    <div className="text-white text-xs font-semibold drop-shadow-md">
-                      {stock.change_1m >= 0 ? '+' : ''}{stock.change_1m?.toFixed(1)}%
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="mt-4 pt-4 border-t border-white/10 text-center">
-            <span className="text-theme-secondary text-sm">Открыть</span>
-          </div>
-        </Link>
-
-        {/* Telegram Widget */}
-        <div className="widget p-6 flex flex-col">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <MessageCircle size={20} className="text-[#3B82F6]" />
-              <h2 className="text-xl font-semibold text-theme-primary">Новости из Telegram</h2>
-            </div>
-            <a
-              href="https://t.me/Thor_INV"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-theme-secondary hover:text-[#C8FF2E] transition-colors"
-            >
-              <ExternalLink size={18} />
-            </a>
-          </div>
-
-          {/* Posts */}
-          <div className="space-y-4 flex-1">
-            {telegramPosts.map((post) => (
-              <div key={post.id}>
-                <h3 className="text-theme-primary font-medium text-sm mb-1">
-                  {post.title}
-                </h3>
-                <p className="text-theme-secondary text-xs line-clamp-2 mb-1">
-                  {post.preview}
-                </p>
-                <span className="text-theme-muted text-xs">{post.time}</span>
-              </div>
-            ))}
-          </div>
-
-          <a
-            href="https://t.me/Thor_INV"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="mt-4 pt-4 border-t border-white/10 flex items-center justify-center gap-2 text-theme-secondary text-sm hover:text-[#C8FF2E] transition-colors"
+          <p
+            className="text-xs uppercase mb-1"
+            style={{ color: 'var(--text-muted)', letterSpacing: '0.12em', fontWeight: 600 }}
           >
-            Открыть канал <ExternalLink size={14} />
-          </a>
+            Обзор рынка
+          </p>
+          <h1
+            className="text-3xl md:text-4xl font-bold"
+            style={{ color: 'var(--text-primary)', letterSpacing: '-0.02em', lineHeight: 1.15 }}
+          >
+            Добро пожаловать,{' '}
+            <span style={{ color: 'var(--accent)' }}>{displayName}</span>
+          </h1>
+          <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
+            {lastUpdate ? <>обновлено в <span style={{ color: 'var(--text-primary)' }}>{lastUpdate}</span> МСК</> : 'загрузка...'}
+          </p>
         </div>
-      </div>
 
-      {/* Вторая строка виджетов — Сила рынка, Фонды, Баффетт */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-        {/* Сила рынка */}
+        {/* Тариф-бейдж */}
         <Link
-          to="/strength"
-          className="widget p-6 hover:border-[#C8FF2E]/30 transition-all group flex flex-col"
+          to="/profile"
+          className="flex items-center gap-2 px-3 py-2 border transition-all hover:opacity-90"
+          style={{
+            backgroundColor: 'var(--bg-secondary)',
+            borderColor: 'var(--border-color)',
+            borderRadius: 'var(--radius-md, 8px)',
+          }}
         >
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <TrendingUp size={20} className="text-[#8b5cf6]" />
-              <h2 className="text-xl font-semibold text-theme-primary">Сила рынка</h2>
-            </div>
-            <ArrowRight size={18} className="text-theme-secondary group-hover:text-[#C8FF2E] transition-colors" />
+          <User size={16} style={{ color: 'var(--text-secondary)' }} />
+          <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>Тариф:</span>
+          <span
+            className="text-xs font-semibold"
+            style={{
+              color: roleLabel === 'Admin' ? 'var(--danger)' :
+                    roleLabel === 'Pro' || roleLabel === 'Premium' ? 'var(--warning)' :
+                    'var(--accent)'
+            }}
+          >
+            {roleLabel}
+          </span>
+        </Link>
+      </section>
+
+      {/* ═══ 3 KEY METRICS ═══ */}
+      <section className="grid grid-cols-3 gap-3 md:gap-4 mb-10 md:mb-12">
+        <MetricCard
+          label="Индекс страха"
+          value={fear}
+          unit="/ 100"
+          color="amber"
+          description={fearClassification(fear)}
+        />
+        <MetricCard
+          label="Сила рынка"
+          value={strength}
+          unit="%"
+          color={strength !== null && strength > 50 ? 'green' : 'red'}
+          description={strength !== null ? `${strength.toFixed(0)}% акций > EMA50` : ''}
+        />
+        <MetricCard
+          label="Баффетт"
+          value={buffett}
+          unit="%"
+          color="amber"
+          description="Cap / GDP"
+        />
+      </section>
+
+      {/* ═══ TOP MOVERS (Gainers / Losers) ═══
+          Рыночный pulse: кто больше всего вырос/упал за день.
+          Фетчатся из /api/heatmap/stocks и сортируются по change_1d. */}
+      {(gainers.length > 0 || losers.length > 0) && (
+        <section className="mb-10 md:mb-12">
+          <div className="flex items-center gap-3 mb-5 md:mb-6">
+            <p
+              className="text-xs uppercase"
+              style={{ color: 'var(--text-muted)', letterSpacing: '0.12em', fontWeight: 600 }}
+            >
+              Движение дня
+            </p>
+            <div className="h-px flex-1" style={{ backgroundColor: 'var(--border-color)' }} />
+            <Link
+              to="/heatmap"
+              className="text-xs flex items-center gap-1 transition-opacity hover:opacity-80"
+              style={{ color: 'var(--text-secondary)' }}
+            >
+              Карта рынка
+              <ArrowRight size={12} />
+            </Link>
           </div>
 
-          <div className="flex-1 flex flex-col items-center justify-center py-6">
-            {breadthLoading ? (
-              <div className="w-10 h-10 border-2 border-[#8b5cf6] border-t-transparent rounded-full animate-spin" />
-            ) : breadthData ? (
-              <>
-                <div className="text-7xl font-bold mb-3" style={{
-                  color: breadthData.percent_above >= 70 ? '#22c55e'
-                    : breadthData.percent_above >= 50 ? '#4ade80'
-                    : breadthData.percent_above >= 30 ? '#fbbf24'
-                    : '#ef4444'
-                }}>
-                  {breadthData.percent_above.toFixed(0)}%
-                </div>
-                <div className="text-theme-secondary text-sm mb-3">акций выше EMA200</div>
-                <div className="flex items-center gap-4 text-sm">
-                  <span className="text-green-400 font-medium">{breadthData.count_above} выше</span>
-                  <span className="text-red-400 font-medium">{breadthData.count_total - breadthData.count_above} ниже</span>
-                </div>
-              </>
-            ) : (
-              <span className="text-theme-muted">Нет данных</span>
-            )}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
+            <MoversList title="Лидеры роста" stocks={gainers} direction="up" />
+            <MoversList title="Лидеры падения" stocks={losers} direction="down" />
+          </div>
+        </section>
+      )}
+
+      {/* ═══ SECTOR PERFORMANCE ═══
+          Секторы отсортированы по средней дневной динамике.
+          Горизонтальные бары визуализируют magnitude — как в Bloomberg. */}
+      {sectors.length > 0 && (
+        <section className="mb-10 md:mb-12">
+          <div className="flex items-center gap-3 mb-5 md:mb-6">
+            <p
+              className="text-xs uppercase"
+              style={{ color: 'var(--text-muted)', letterSpacing: '0.12em', fontWeight: 600 }}
+            >
+              Сектора дня
+            </p>
+            <div className="h-px flex-1" style={{ backgroundColor: 'var(--border-color)' }} />
+            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+              {sectors.length} секторов
+            </span>
           </div>
 
-          {breadthData && (
-            <div className="mt-auto">
-              <div className="h-2 rounded-full overflow-hidden bg-theme-tertiary">
+          <SectorBars sectors={sectors} />
+        </section>
+      )}
+
+      {/* ═══ TOP VOLUME + FUNDS ═══
+          Двухколоночный блок: лидеры оборота + категории фондов.
+          Grid-cols-1 на мобиле / 2 на desktop. */}
+      <section className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4 mb-10 md:mb-12">
+        {topVolume.length > 0 && <VolumeList stocks={topVolume} />}
+        {fundsSummary && <FundsCategories summary={fundsSummary} />}
+      </section>
+
+      {/* ═══ INDICATOR GRID ═══ */}
+      <section>
+        <div className="flex items-center gap-3 mb-5 md:mb-6">
+          <p
+            className="text-xs uppercase"
+            style={{ color: 'var(--text-muted)', letterSpacing: '0.12em', fontWeight: 600 }}
+          >
+            Все индикаторы
+          </p>
+          <div className="h-px flex-1" style={{ backgroundColor: 'var(--border-color)' }} />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4">
+          {INDICATORS.map(ind => (
+            <Link
+              key={ind.path}
+              to={ind.path}
+              className="group block p-4 md:p-5 border transition-all"
+              style={{
+                backgroundColor: 'var(--bg-secondary)',
+                borderColor: 'var(--border-color)',
+                borderRadius: 'var(--radius-lg, 12px)',
+              }}
+              onMouseEnter={e => (e.currentTarget.style.borderColor = 'color-mix(in srgb, var(--accent) 40%, transparent)')}
+              onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border-color)')}
+            >
+              <div className="flex items-start gap-3 mb-2">
                 <div
-                  className="h-full rounded-full transition-all duration-500"
+                  className="flex items-center justify-center flex-shrink-0"
                   style={{
-                    width: `${breadthData.percent_above}%`,
-                    background: breadthData.percent_above >= 70 ? 'linear-gradient(90deg, #22c55e, #4ade80)'
-                      : breadthData.percent_above >= 50 ? 'linear-gradient(90deg, #4ade80, #86efac)'
-                      : breadthData.percent_above >= 30 ? 'linear-gradient(90deg, #fbbf24, #fcd34d)'
-                      : 'linear-gradient(90deg, #ef4444, #f87171)'
+                    width: 36,
+                    height: 36,
+                    borderRadius: 'var(--radius-md, 8px)',
+                    background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
+                    color: 'var(--accent)',
                   }}
+                >
+                  <ind.icon size={18} strokeWidth={1.8} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3
+                    className="font-semibold text-sm md:text-base truncate"
+                    style={{ color: 'var(--text-primary)', letterSpacing: '-0.01em' }}
+                  >
+                    {ind.title}
+                  </h3>
+                </div>
+                <ArrowRight
+                  size={16}
+                  className="opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 mt-1"
+                  style={{ color: 'var(--accent)' }}
                 />
               </div>
-              <div className="flex justify-between mt-2 text-xs text-theme-muted">
-                <span>Перепроданность</span>
-                <span>Перекупленность</span>
-              </div>
-            </div>
-          )}
-        </Link>
-
-        {/* Фонды */}
-        <Link
-          to="/funds-money"
-          className="widget p-6 hover:border-[#C8FF2E]/30 transition-all group flex flex-col"
-        >
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <DollarSign size={20} className="text-[#2EE59D]" />
-              <h2 className="text-xl font-semibold text-theme-primary">Фонды</h2>
-            </div>
-            <ArrowRight size={18} className="text-theme-secondary group-hover:text-[#C8FF2E] transition-colors" />
-          </div>
-
-          <div className="flex-1">
-            {fundsLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <div className="w-8 h-8 border-2 border-[#2EE59D] border-t-transparent rounded-full animate-spin" />
-              </div>
-            ) : fundsSummary?.categories ? (
-              <div className="space-y-3">
-                {fundsSummary.categories.map((cat) => (
-                  <div key={cat.name} className="flex items-center justify-between p-3 rounded-lg bg-theme-tertiary/50">
-                    <div>
-                      <div className="text-theme-primary text-sm font-medium">{cat.name}</div>
-                      <div className="text-theme-muted text-xs">{cat.funds_count} фондов</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-theme-primary text-sm font-semibold">
-                        {(cat.total_nav / 1e9).toFixed(0)} млрд ₽
-                      </div>
-                      <div className={`text-xs font-medium ${cat.change_pct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                        {cat.change_pct >= 0 ? '+' : ''}{cat.change_pct.toFixed(2)}%
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <span className="text-theme-muted">Нет данных</span>
-            )}
-          </div>
-
-          <div className="mt-4 pt-4 border-t border-white/10 text-center">
-            <span className="text-theme-secondary text-sm">Открыть</span>
-          </div>
-        </Link>
-
-        {/* Индикатор Баффетта */}
-        <Link
-          to="/buffett"
-          className="widget p-6 hover:border-[#C8FF2E]/30 transition-all group flex flex-col"
-        >
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <Gauge size={20} className="text-[#f59e0b]" />
-              <h2 className="text-xl font-semibold text-theme-primary">Индикатор Баффетта</h2>
-            </div>
-            <ArrowRight size={18} className="text-theme-secondary group-hover:text-[#C8FF2E] transition-colors" />
-          </div>
-
-          <div className="flex-1 flex flex-col items-center justify-center py-6">
-            {buffettLoading ? (
-              <div className="w-10 h-10 border-2 border-[#f59e0b] border-t-transparent rounded-full animate-spin" />
-            ) : buffettRatio !== null ? (
-              <>
-                <div className="text-7xl font-bold mb-3" style={{
-                  color: buffettRatio > 100 ? '#ef4444'
-                    : buffettRatio > 75 ? '#f59e0b'
-                    : '#22c55e'
-                }}>
-                  {buffettRatio.toFixed(0)}%
-                </div>
-                <div className="text-theme-secondary text-sm mb-3">Капитализация / ВВП</div>
-                <div className="px-4 py-2 rounded-full text-xs font-medium" style={{
-                  backgroundColor: buffettRatio > 100 ? '#ef444422' : buffettRatio > 75 ? '#f59e0b22' : '#22c55e22',
-                  color: buffettRatio > 100 ? '#ef4444' : buffettRatio > 75 ? '#f59e0b' : '#22c55e',
-                  border: `1px solid ${buffettRatio > 100 ? '#ef444444' : buffettRatio > 75 ? '#f59e0b44' : '#22c55e44'}`
-                }}>
-                  {buffettRatio > 100 ? 'Рынок переоценён'
-                    : buffettRatio > 75 ? 'Справедливая оценка'
-                    : 'Рынок недооценён'}
-                </div>
-              </>
-            ) : (
-              <span className="text-theme-muted">Нет данных</span>
-            )}
-          </div>
-
-          <div className="mt-auto">
-            <div className="flex items-center gap-2 text-xs text-theme-muted">
-              <div className="flex-1 h-2 rounded-full overflow-hidden flex">
-                <div className="flex-1 bg-[#22c55e]" />
-                <div className="flex-1 bg-[#f59e0b]" />
-                <div className="flex-1 bg-[#ef4444]" />
-              </div>
-            </div>
-            <div className="flex justify-between mt-2 text-xs text-theme-muted">
-              <span>Недооценён</span>
-              <span>Переоценён</span>
-            </div>
-          </div>
-        </Link>
-      </div>
-
-      {/* Open Interest Preview */}
-      <div className="widget p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <BarChart3 size={24} className="text-[#6366f1]" />
-            <div>
-              <h2 className="text-xl font-semibold text-theme-primary">Открытый интерес</h2>
-              <p className="text-sm text-theme-secondary">Сбербанк (SR) • Физлица • 1 месяц</p>
-            </div>
-          </div>
-          <Link
-            to="/oi"
-            className="flex items-center gap-2 text-theme-accent hover:text-[#9DCC24] transition-colors text-sm font-medium"
-          >
-            Полный график <ArrowRight size={16} />
-          </Link>
+              <p className="text-xs md:text-sm" style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                {ind.desc}
+              </p>
+            </Link>
+          ))}
         </div>
+      </section>
+    </div>
+  );
+}
 
-        {/* OI Chart Preview — Покупки + Продажи как на странице OI */}
-        <SimpleChart
-          data={oiChartData}
-          secondaryData={oiBuys}
-          thirdData={oiSells}
-          showSecondary={true}
-          showThird={true}
-          primaryColor="#6366f1"
-          secondaryColor="#2EE59D"
-          thirdColor="#FF4D4D"
-          height={350}
-          loading={oiLoading}
-          formatValue={(v) => v.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
-          primaryLabel="Цена"
-          secondaryLabel="Покупки"
-          thirdLabel="Продажи"
-          showNavigator={true}
-        />
+// ═══════════════════════════════════════════════════════════
+// SUBCOMPONENTS (идентичны Landing — можно позже extract'нуть)
+// ═══════════════════════════════════════════════════════════
+
+interface MetricCardProps {
+  label: string;
+  value: number | null;
+  unit: string;
+  color: 'green' | 'amber' | 'red';
+  description?: string;
+  decimals?: number;
+}
+
+function MetricCard({ label, value, unit, color, description, decimals = 1 }: MetricCardProps) {
+  const colorVar = color === 'amber' ? 'var(--warning)' : color === 'red' ? 'var(--danger)' : 'var(--accent)';
+  return (
+    <div
+      className="p-4 md:p-5 border"
+      style={{
+        backgroundColor: 'var(--bg-secondary)',
+        borderColor: 'var(--border-color)',
+        borderRadius: 'var(--radius-lg, 12px)',
+      }}
+    >
+      <p
+        className="text-[10px] md:text-xs uppercase mb-2"
+        style={{ color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 600 }}
+      >
+        {label}
+      </p>
+      <div className="flex items-baseline gap-1 mb-1">
+        <span
+          className="text-2xl md:text-4xl font-bold"
+          style={{
+            color: colorVar,
+            fontFamily: "'IBM Plex Mono', 'SF Mono', monospace",
+            fontVariantNumeric: 'tabular-nums',
+            letterSpacing: '-0.02em',
+          }}
+        >
+          {value !== null ? value.toFixed(decimals) : '—'}
+        </span>
+        <span className="text-xs md:text-sm" style={{ color: 'var(--text-muted)' }}>
+          {unit}
+        </span>
+      </div>
+      {description && (
+        <p className="text-[10px] md:text-xs truncate" style={{ color: 'var(--text-secondary)' }}>
+          {description}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Quote tile — компактная плитка с тикером, ценой, % изменением и sparkline.
+    Sparkline = inline SVG path за ~30 дней, без осей (просто силуэт).
+    Цвет линии зелёный если close[last] > close[first], красный если меньше. */
+function QuoteTile({ label, closes }: { label: string; closes: number[] }) {
+  const last = closes[closes.length - 1];
+  const prev = closes[closes.length - 2];
+  const first = closes[0];
+  const changeDay = prev ? ((last - prev) / prev) * 100 : 0;
+  const changePeriod = first ? ((last - first) / first) * 100 : 0;
+  const isUp = changePeriod >= 0;
+  const color = isUp ? 'var(--success)' : 'var(--danger)';
+
+  // Sparkline SVG path — нормализация closes в [0,1], y-flip (SVG y=0 наверху).
+  const min = Math.min(...closes);
+  const max = Math.max(...closes);
+  const range = max - min || 1;
+  const w = 100, h = 24;
+  const path = closes
+    .map((c, i) => {
+      const x = (i / (closes.length - 1)) * w;
+      const y = h - ((c - min) / range) * h;
+      return (i === 0 ? 'M' : 'L') + x.toFixed(1) + ',' + y.toFixed(1);
+    })
+    .join(' ');
+
+  // Формат цены: IMOEX/RTSI без декималов, валюты 2, gold 0
+  const priceFmt = last >= 1000 ? last.toLocaleString('ru-RU', { maximumFractionDigits: 0 }) :
+                   last.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  return (
+    <div
+      className="p-3 border relative overflow-hidden"
+      style={{
+        backgroundColor: 'var(--bg-secondary)',
+        borderColor: 'var(--border-color)',
+        borderRadius: 'var(--radius-md, 8px)',
+      }}
+    >
+      <div className="flex items-center justify-between mb-1">
+        <span
+          className="text-[10px] uppercase"
+          style={{ color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 600 }}
+        >
+          {label}
+        </span>
+        <span
+          className="text-[11px] font-semibold"
+          style={{
+            color,
+            fontFamily: "'IBM Plex Mono', monospace",
+            fontVariantNumeric: 'tabular-nums',
+          }}
+        >
+          {changeDay > 0 ? '+' : ''}{changeDay.toFixed(2)}%
+        </span>
+      </div>
+      <div
+        className="text-lg md:text-xl font-bold mb-1"
+        style={{
+          color: 'var(--text-primary)',
+          fontFamily: "'IBM Plex Mono', monospace",
+          fontVariantNumeric: 'tabular-nums',
+          letterSpacing: '-0.02em',
+        }}
+      >
+        {priceFmt}
+      </div>
+      {/* Sparkline */}
+      <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" width="100%" height="18" className="opacity-80">
+        <path d={path} fill="none" stroke={color} strokeWidth="1.5" />
+      </svg>
+    </div>
+  );
+}
+
+/** Топ-5 по обороту дня (value_1d в рублях).
+    Формат value: "12,3 млрд ₽" / "450 млн ₽". */
+function VolumeList({ stocks }: { stocks: HeatmapStock[] }) {
+  return (
+    <div
+      className="p-4 border"
+      style={{
+        backgroundColor: 'var(--bg-secondary)',
+        borderColor: 'var(--border-color)',
+        borderRadius: 'var(--radius-lg, 12px)',
+      }}
+    >
+      <div className="flex items-center gap-2 mb-3">
+        <span
+          className="text-xs uppercase"
+          style={{ color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 600 }}
+        >
+          Топ обороту дня
+        </span>
+      </div>
+      <div className="space-y-1.5">
+        {stocks.map(s => (
+          <Link
+            key={s.secId}
+            to="/heatmap"
+            className="flex items-center justify-between py-1.5 px-2 -mx-2 transition-colors hover:bg-white/[0.03]"
+            style={{ borderRadius: 'var(--radius-sm, 4px)' }}
+            title={`${s.name} · оборот ${formatMoney(s.value_1d)}`}
+          >
+            <div className="flex items-baseline gap-2 min-w-0 flex-1">
+              <span
+                className="text-sm font-semibold"
+                style={{
+                  color: 'var(--text-primary)',
+                  fontFamily: "'IBM Plex Mono', monospace",
+                }}
+              >
+                {s.secId}
+              </span>
+              <span className="text-xs truncate" style={{ color: 'var(--text-secondary)' }}>
+                {s.name}
+              </span>
+            </div>
+            <span
+              className="text-sm flex-shrink-0 ml-2"
+              style={{
+                color: 'var(--text-primary)',
+                fontFamily: "'IBM Plex Mono', monospace",
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {formatMoney(s.value_1d)}
+            </span>
+          </Link>
+        ))}
       </div>
     </div>
   );
+}
+
+/** Сводка по категориям фондов (money_market / stocks / bonds / gold).
+    4 строки с NAV + % change за день.*/
+function FundsCategories({ summary }: { summary: FundsSummaryResponse }) {
+  return (
+    <div
+      className="p-4 border"
+      style={{
+        backgroundColor: 'var(--bg-secondary)',
+        borderColor: 'var(--border-color)',
+        borderRadius: 'var(--radius-lg, 12px)',
+      }}
+    >
+      <div className="flex items-center gap-2 mb-3">
+        <span
+          className="text-xs uppercase"
+          style={{ color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 600 }}
+        >
+          Фонды по категориям
+        </span>
+      </div>
+      <div className="space-y-1.5">
+        {summary.categories.map(c => {
+          const change = c.change_pct;
+          const isUp = change >= 0;
+          const color = isUp ? 'var(--success)' : 'var(--danger)';
+          return (
+            <Link
+              key={c.category}
+              to="/funds-money"
+              className="flex items-center justify-between py-1.5 px-2 -mx-2 transition-colors hover:bg-white/[0.03]"
+              style={{ borderRadius: 'var(--radius-sm, 4px)' }}
+              title={`${c.funds_count} фондов · индекс ${c.index}`}
+            >
+              <div className="flex items-baseline gap-2 min-w-0 flex-1">
+                <span
+                  className="text-sm font-semibold"
+                  style={{ color: 'var(--text-primary)' }}
+                >
+                  {c.name}
+                </span>
+                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                  {c.funds_count}
+                </span>
+              </div>
+              <div className="flex items-baseline gap-3 flex-shrink-0 ml-2">
+                <span
+                  className="text-xs"
+                  style={{
+                    color: 'var(--text-secondary)',
+                    fontFamily: "'IBM Plex Mono', monospace",
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {c.total_nav_formatted}
+                </span>
+                <span
+                  className="text-sm font-semibold w-14 text-right"
+                  style={{
+                    color,
+                    fontFamily: "'IBM Plex Mono', monospace",
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {isUp ? '+' : ''}{change.toFixed(2)}%
+                </span>
+              </div>
+            </Link>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/** Помощник: отформатировать деньги в виде "12,3 млрд ₽" / "450 млн ₽". */
+function formatMoney(value: number): string {
+  if (value >= 1e9) return `${(value / 1e9).toFixed(1)} млрд ₽`;
+  if (value >= 1e6) return `${(value / 1e6).toFixed(0)} млн ₽`;
+  if (value >= 1e3) return `${(value / 1e3).toFixed(0)} тыс ₽`;
+  return `${value.toFixed(0)} ₽`;
+}
+
+/** Сектора дня — горизонтальные bar'ы, каждый сектор = строка.
+    Бар растёт от центра (0) направо для роста, налево для падения.
+    Ширина бара пропорциональна |change| относительно максимального abs change. */
+function SectorBars({ sectors }: { sectors: { name: string; change: number; count: number }[] }) {
+  // Диапазон для нормализации — max |change| среди всех секторов.
+  // Добавляем 0.5% отступ чтобы бары не упирались в края.
+  const maxAbs = Math.max(...sectors.map(s => Math.abs(s.change)), 0.5);
+
+  return (
+    <div
+      className="p-4 border"
+      style={{
+        backgroundColor: 'var(--bg-secondary)',
+        borderColor: 'var(--border-color)',
+        borderRadius: 'var(--radius-lg, 12px)',
+      }}
+    >
+      <div className="space-y-2">
+        {sectors.map(s => {
+          const isUp = s.change >= 0;
+          const barWidth = `${(Math.abs(s.change) / maxAbs) * 48}%`; // 48% — каждая половина
+          const color = isUp ? 'var(--success)' : 'var(--danger)';
+          return (
+            <div key={s.name} className="flex items-center gap-3">
+              {/* Sector name — fixed width на desktop, чтобы бары выровнялись */}
+              <div
+                className="flex-shrink-0 text-xs md:text-sm truncate"
+                style={{ color: 'var(--text-primary)', width: 'min(140px, 35%)', fontWeight: 500 }}
+                title={`${s.name} · ${s.count} бумаг`}
+              >
+                {s.name}
+              </div>
+
+              {/* Bar track — 50/50 split с центральной линией */}
+              <div className="flex-1 relative h-5 flex">
+                {/* Left half (negative side) */}
+                <div className="flex-1 flex justify-end relative">
+                  {!isUp && (
+                    <div
+                      className="h-full"
+                      style={{
+                        width: barWidth,
+                        background: color,
+                        opacity: 0.85,
+                        borderRadius: '2px 0 0 2px',
+                      }}
+                    />
+                  )}
+                </div>
+                {/* Center divider — 1px линия */}
+                <div
+                  className="w-px flex-shrink-0"
+                  style={{ backgroundColor: 'var(--border-color)' }}
+                />
+                {/* Right half (positive side) */}
+                <div className="flex-1 flex justify-start relative">
+                  {isUp && (
+                    <div
+                      className="h-full"
+                      style={{
+                        width: barWidth,
+                        background: color,
+                        opacity: 0.85,
+                        borderRadius: '0 2px 2px 0',
+                      }}
+                    />
+                  )}
+                </div>
+              </div>
+
+              {/* Change % — right-aligned, tabular */}
+              <div
+                className="flex-shrink-0 text-right text-xs md:text-sm font-semibold"
+                style={{
+                  color,
+                  fontFamily: "'IBM Plex Mono', monospace",
+                  fontVariantNumeric: 'tabular-nums',
+                  width: 60,
+                }}
+              >
+                {isUp ? '+' : ''}{s.change.toFixed(2)}%
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/** Список лидеров роста/падения — 5 акций в столбик, clickable.
+    Каждая строка: тикер, название, изменение в % (tabular nums). */
+function MoversList({
+  title,
+  stocks,
+  direction,
+}: {
+  title: string;
+  stocks: HeatmapStock[];
+  direction: 'up' | 'down';
+}) {
+  const accentColor = direction === 'up' ? 'var(--success)' : 'var(--danger)';
+  const Icon = direction === 'up' ? TrendingUp : TrendingDown;
+
+  return (
+    <div
+      className="p-4 border"
+      style={{
+        backgroundColor: 'var(--bg-secondary)',
+        borderColor: 'var(--border-color)',
+        borderRadius: 'var(--radius-lg, 12px)',
+      }}
+    >
+      <div className="flex items-center gap-2 mb-3">
+        <Icon size={14} style={{ color: accentColor }} />
+        <span
+          className="text-xs uppercase"
+          style={{ color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 600 }}
+        >
+          {title}
+        </span>
+      </div>
+      <div className="space-y-1.5">
+        {stocks.map(s => (
+          <Link
+            key={s.secId}
+            to="/heatmap"
+            className="flex items-center justify-between py-1.5 px-2 -mx-2 transition-colors hover:bg-white/[0.03]"
+            style={{ borderRadius: 'var(--radius-sm, 4px)' }}
+            title={`${s.name} · перейти на карту рынка`}
+          >
+            <div className="flex items-baseline gap-2 min-w-0 flex-1">
+              <span
+                className="text-sm font-semibold"
+                style={{
+                  color: 'var(--text-primary)',
+                  fontFamily: "'IBM Plex Mono', monospace",
+                }}
+              >
+                {s.secId}
+              </span>
+              <span
+                className="text-xs truncate"
+                style={{ color: 'var(--text-secondary)' }}
+              >
+                {s.name}
+              </span>
+            </div>
+            <span
+              className="text-sm font-semibold flex-shrink-0 ml-2"
+              style={{
+                color: accentColor,
+                fontFamily: "'IBM Plex Mono', monospace",
+                fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {s.change_1d > 0 ? '+' : ''}{s.change_1d.toFixed(2)}%
+            </span>
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function fearClassification(fear: number | null): string {
+  if (fear === null) return '';
+  if (fear <= 20) return 'крайний страх';
+  if (fear <= 40) return 'страх';
+  if (fear <= 60) return 'нейтрально';
+  if (fear <= 80) return 'жадность';
+  return 'крайняя жадность';
 }

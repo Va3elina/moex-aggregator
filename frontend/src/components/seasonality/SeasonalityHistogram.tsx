@@ -26,6 +26,8 @@ interface SeasonalityHistogramProps {
   monthlySeries?: SeasonalityResponse[] | null;
   /** Метаданные серий для мульти-режима (label + color). */
   seriesMeta?: SeriesMeta[];
+  /** Компактный режим (test-dashboard): прореживание X-меток даже на desktop. */
+  compact?: boolean;
 }
 
 // Параметры волны из единого конфига — совпадают с FlowsHistogram.
@@ -41,6 +43,7 @@ export default function SeasonalityHistogram({
   setTooltip,
   monthlySeries,
   seriesMeta,
+  compact = false,
 }: SeasonalityHistogramProps) {
   // reveal — CSS clip-path слева направо на первом рендере
   const [revealed, setRevealed] = useState(false);
@@ -299,7 +302,19 @@ export default function SeasonalityHistogram({
       <div className="absolute bottom-0 flex justify-between font-semibold px-2" style={{ left: 'var(--seasonality-hist-pad-x, 70px)', right: 'var(--seasonality-hist-pad-x, 70px)', fontSize: 'var(--chart-font-x, 14px)', color: 'var(--axis-color, #9CA3B8)' }}>
         {bars.map((bar, i) => {
           const isMob = typeof window !== 'undefined' && window.innerWidth < 768;
-          const showLabel = !isMob || bars.length <= 7 || i % 2 === 0;
+          const needsThinning = compact || isMob;
+          // Smart thinning:
+          //   ≤7 баров — всегда все подписи
+          //   8-20 — каждая 2-я (i%2)
+          //   21+ (monthday = 31) — каждая 3-я (i%3) + первая/последняя
+          let showLabel = true;
+          if (needsThinning && bars.length > 7) {
+            if (bars.length <= 20) {
+              showLabel = i % 2 === 0;
+            } else {
+              showLabel = i % 3 === 0 || i === bars.length - 1;
+            }
+          }
           return (
             <span key={bar.key} className="text-center" style={{ width: `${100 / bars.length}%` }}>
               {showLabel ? bar.label : ''}

@@ -1,6 +1,7 @@
 import React, { useEffect, useLayoutEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { TrendingUp, DollarSign, Banknote, LineChart, BarChart2, Gem, Wallet, Lock } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import PageHeader from '../components/PageHeader';
 import {
     getFundsChartData,
     getFundsFlows,
@@ -374,16 +375,11 @@ export default function FundsMoneyPage() {
 
     return (
         <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8 text-theme-primary min-h-screen">
-            {/* Заголовок */}
-            <div className="flex items-center gap-3 mb-6">
-                <div className="p-3 bg-gradient-to-br from-[#6366f1] to-[#9D4DFF] rounded-xl">
-                    <Wallet className="w-6 h-6 text-white" />
-                </div>
-                <div>
-                    <h1 className="text-2xl font-bold text-theme-primary">Деньги в фондах</h1>
-                    <p className="text-theme-secondary text-sm">Динамика СЧА фондов и индексов</p>
-                </div>
-            </div>
+            <PageHeader
+                icon={Wallet}
+                title="Деньги в фондах"
+                subtitle="Динамика СЧА фондов и индексов"
+            />
 
             {/* Вкладки категорий */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-6">

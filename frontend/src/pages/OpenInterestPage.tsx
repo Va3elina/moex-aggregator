@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { ChevronDown, BarChart3, Lock } from 'lucide-react';
+import PageHeader from '../components/PageHeader';
 import { getChartData, getInstrument } from '../services/api';
 import type { ChartResponse } from '../types';
 import type { ChartAnnotation } from '../components/SimpleChart';
@@ -417,16 +418,11 @@ export default function OpenInterestPage() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8">
-      {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
-        <div className="p-3 bg-gradient-to-br from-[#3b82f6] to-[#6366f1] rounded-xl">
-          <BarChart3 className="w-6 h-6 text-white" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold text-theme-primary">Открытый интерес</h1>
-          <p className="text-theme-secondary text-sm">Анализ позиций участников по фьючерсам MOEX</p>
-        </div>
-      </div>
+      <PageHeader
+        icon={BarChart3}
+        title="Открытый интерес"
+        subtitle="Анализ позиций участников по фьючерсам MOEX"
+      />
 
       {/* Контролы */}
       <div className="widget p-3 md:p-4 mb-4 md:mb-6">

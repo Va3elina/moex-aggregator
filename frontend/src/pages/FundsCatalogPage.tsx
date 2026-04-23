@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { LayoutGrid } from 'lucide-react';
+import PageHeader from '../components/PageHeader';
 import { getFundsCatalog, getFundHoldings, type CatalogFund, type FundHoldingsResponse } from '../services/api';
 import { UK_LOGOS, CATEGORY_LABELS, DONUT_COLORS } from '../config/fundConfig';
 
@@ -118,16 +119,11 @@ export default function FundsCatalogPage() {
 
     return (
         <div className="max-w-7xl mx-auto px-4 py-6 min-h-screen">
-            {/* Header */}
-            <div className="flex items-center gap-3 mb-6">
-                <div className="w-12 h-12 bg-gradient-to-br from-[#6366f1] to-[#8B5CF6] rounded-xl flex items-center justify-center">
-                    <LayoutGrid size={24} className="text-white" />
-                </div>
-                <div>
-                    <h1 className="text-2xl font-bold">Состав фондов</h1>
-                    <p className="text-theme-secondary text-sm">Структура портфелей фондов акций и облигаций</p>
-                </div>
-            </div>
+            <PageHeader
+                icon={LayoutGrid}
+                title="Состав фондов"
+                subtitle="Структура портфелей фондов акций и облигаций"
+            />
 
             {/* Filters */}
             <div className="flex flex-wrap items-center gap-3 mb-6">

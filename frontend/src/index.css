@@ -258,12 +258,297 @@
   --shadow-glow: 0 0 20px rgba(99, 102, 241, 0.15);
 }
 
+/* === PRO THEME — De-AI'd дизайн, OKX blue + green ===
+   TradingView/Bloomberg-inspired: без gradient-фонов, без glow,
+   IBM Plex типографика, tabular numbers, уменьшенные radius.
+   ПРИМЕНЯЕТСЯ ТОЛЬКО при [data-theme="pro"] — безопасный откат через switcher. */
+[data-theme="pro"] {
+  /* Палитра "OKX синий + зелёный" */
+  --bg-primary: #0B0E11;            /* OKX-near чёрный */
+  --bg-secondary: #16181C;          /* flat, не gradient */
+  --bg-tertiary: #1C1F24;
+  --bg-elevated: #24272D;
+  --bg-widget: #16181C;             /* ПЛОСКО, не gradient */
+  --bg-widget-hover: #1C1F24;       /* простой чуть-светлее */
+  --glass-bg: rgba(11, 14, 17, 0.9);
+
+  --text-primary: #EAECEF;          /* почти-белый, slightly cool */
+  --text-secondary: #848E9C;        /* OKX-grey */
+  --text-muted: #5E6673;
+  --text-inverse: #0B0E11;
+
+  --border-color: rgba(255, 255, 255, 0.06);
+  --border-hover: rgba(0, 230, 118, 0.4);
+  --border-active: rgba(0, 230, 118, 0.7);
+
+  /* ПАЛИТРА A: Green + Amber + Red + Greys (3 accent-цвета total).
+     - Green  (#00E676): success, up, default brand/accent
+     - Amber  (#F7931A): warning, highlight, Pro-tier, secondary brand
+     - Red    (#EA3943): danger, down, error
+     - Все остальные old vars маппятся на эти три + серый — без новых оттенков. */
+  --accent:           #00E676;        /* Primary — green */
+  --accent-secondary: #F7931A;        /* Secondary — amber (новая роль!) */
+  --accent-orange:    #F7931A;        /* alias для amber (legacy uses) */
+  --accent-pink:      #F7931A;        /* legacy vars маппятся на amber */
+  --accent-cyan:      #848E9C;        /* legacy → нейтральный grey */
+
+  --success: #00E676;
+  --warning: #F7931A;
+  --danger:  #EA3943;
+  --info:    #848E9C;                 /* info → grey, не "ещё один цвет" */
+
+  --chart-line-1: #00E676;            /* green */
+  --chart-line-2: #F7931A;            /* amber */
+  --chart-line-3: #EA3943;            /* red — только при необходимости 3-й линии */
+  --chart-area: rgba(0, 230, 118, 0.08);
+  --chart-grid: rgba(255, 255, 255, 0.04);
+
+  /* Без glow — плоские shadow */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.6);
+  --shadow-glow: none;              /* ПЛОСКО */
+}
+
+/* ============================================
+   PRO THEME — структурные override'ы
+   Применяются только при [data-theme="pro"].
+   ============================================ */
+
+/* Шрифтовая система — TradingView-подобная.
+   TV использует системный stack с Trebuchet MS как web-font fallback.
+   Trebuchet MS — системный шрифт на Mac/Windows (зрительно чуть "приземлённее"
+   чем Inter/Roboto, что и даёт тот узнаваемый TV-вайб). */
+[data-theme="pro"] body,
+[data-theme="pro"] {
+  font-family: -apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif;
+}
+
+/* Все числа — моно + табуляр (т.н. "table figures").
+   Критично для финансовых интерфейсов: числа не "прыгают" при обновлении,
+   колонки выровнены. Классический TradingView/Bloomberg приём. */
+[data-theme="pro"] .tabular-nums,
+[data-theme="pro"] .numeric,
+[data-theme="pro"] [class*="font-mono"],
+[data-theme="pro"] input[type="number"],
+[data-theme="pro"] .chart-value,
+[data-theme="pro"] .price,
+[data-theme="pro"] .money {
+  font-family: 'IBM Plex Mono', 'SF Mono', 'Menlo', monospace;
+  font-feature-settings: 'tnum' 1, 'zero' 1;
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+
+/* Widget — плоский, без gradient, тонкий border, меньший radius.
+   Главный killer AI-look'а: gradient + glow уходят, остаётся чистый прямоугольник. */
+[data-theme="pro"] .widget {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: none;
+}
+[data-theme="pro"] .widget:hover {
+  background: var(--bg-tertiary);
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: none;
+}
+
+/* Убиваем rounded-2xl / rounded-xl везде где Tailwind — унифицируем на 6px.
+   Исключение — rounded-full (кружки, pills) оставляем. */
+[data-theme="pro"] [class*="rounded-2xl"]:not([class*="rounded-full"]),
+[data-theme="pro"] [class*="rounded-xl"]:not([class*="rounded-full"]) {
+  border-radius: 6px !important;
+}
+
+/* Gradient-header иконки — мигрировали на <PageHeader> компонент.
+   Этот workaround CSS больше не нужен (JSX очищен), оставляем пустой комментарий
+   как anchor для дальнейших селекторов если понадобятся. */
+
+/* Убираем оставшиеся gradient на widget-элементах — плоское поверх всего.
+   widget-flat уже плоский, добавляем ему unified radius. */
+[data-theme="pro"] .widget-flat {
+  background-color: var(--bg-secondary);
+  border-radius: 6px;
+}
+
+/* Typography scale: чуть жестче, меньше line-height для числовых мест */
+[data-theme="pro"] h1 { font-weight: 600; letter-spacing: -0.02em; }
+[data-theme="pro"] h2,
+[data-theme="pro"] h3 { font-weight: 600; letter-spacing: -0.01em; }
+
+/* === QUANT TERMINAL THEME — Bloomberg/Finviz vibe ===
+   Холодный синё-черный фон, моно-типографика в нумерах,
+   agressive accent #C8FF2E. Ориентирован на data-density. */
+[data-theme="quant"] {
+  --bg-primary: #0A0E14;            /* deep navy-black */
+  --bg-secondary: #12171E;
+  --bg-tertiary: #1A2029;
+  --bg-elevated: #232B36;
+  --bg-widget: linear-gradient(135deg, #12171E 0%, #1A2029 100%);
+  --bg-widget-hover: linear-gradient(135deg, #161C25 0%, #1F2733 100%);
+  --glass-bg: rgba(10, 14, 20, 0.85);
+
+  --text-primary: #E8EEF5;          /* cool white */
+  --text-secondary: #7A8896;
+  --text-muted: #4B5563;
+  --text-inverse: #0A0E14;
+
+  --border-color: rgba(150, 175, 200, 0.08);
+  --border-hover: rgba(200, 255, 46, 0.4);
+  --border-active: rgba(200, 255, 46, 0.6);
+
+  --accent: #C8FF2E;
+  --accent-secondary: #8EBA0A;
+  --accent-orange: #FF9100;
+  --accent-pink: #FF4081;
+  --accent-cyan: #00BCD4;
+
+  --success: #2EE59D;
+  --warning: #FFB300;
+  --danger: #FF4D4D;
+  --info: #4DA3FF;
+
+  --chart-line-1: #C8FF2E;
+  --chart-line-2: #4DA3FF;
+  --chart-line-3: #FF9100;
+  --chart-area: rgba(200, 255, 46, 0.08);
+  --chart-grid: rgba(255, 255, 255, 0.04);
+
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 24px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.6);
+  --shadow-glow: 0 0 24px rgba(200, 255, 46, 0.2);
+}
+
+/* === EDITORIAL DARK THEME — FT/Stratechery vibe ===
+   Тёплый чёрный с magenta-оттенком, serif-типографика для
+   заголовков, более "читательский" контекст. */
+[data-theme="editorial"] {
+  --bg-primary: #0F0B0D;            /* warm black, magenta hint */
+  --bg-secondary: #1A1518;
+  --bg-tertiary: #251E22;
+  --bg-elevated: #302A2D;
+  --bg-widget: linear-gradient(135deg, #1A1518 0%, #251E22 100%);
+  --bg-widget-hover: linear-gradient(135deg, #1F1A1D 0%, #2A2326 100%);
+  --glass-bg: rgba(15, 11, 13, 0.85);
+
+  --text-primary: #F5EFE8;          /* warm cream */
+  --text-secondary: #A89FA3;
+  --text-muted: #6E6467;
+  --text-inverse: #0F0B0D;
+
+  --border-color: rgba(250, 230, 215, 0.08);
+  --border-hover: rgba(200, 255, 46, 0.35);
+  --border-active: rgba(200, 255, 46, 0.55);
+
+  --accent: #C8FF2E;
+  --accent-secondary: #FF9F5B;      /* warm coral, editorial accent */
+  --accent-orange: #FF9F5B;
+  --accent-pink: #F43F5E;
+  --accent-cyan: #5FADD9;
+
+  --success: #2EE59D;
+  --warning: #FFB020;
+  --danger: #FF4D4D;
+  --info: #5FADD9;
+
+  --chart-line-1: #C8FF2E;
+  --chart-line-2: #FF9F5B;
+  --chart-line-3: #F43F5E;
+  --chart-area: rgba(200, 255, 46, 0.08);
+  --chart-grid: rgba(255, 230, 215, 0.04);
+
+  --shadow-sm: 0 2px 8px rgba(26, 14, 15, 0.4);
+  --shadow-md: 0 4px 24px rgba(26, 14, 15, 0.5);
+  --shadow-lg: 0 8px 32px rgba(26, 14, 15, 0.6);
+  --shadow-glow: 0 0 24px rgba(200, 255, 46, 0.18);
+}
+
+/* === SWISS MINIMAL THEME — Linear/Mercury vibe ===
+   Нейтральный gray-black, минимум цвета, макс. пространства.
+   Accent #C8FF2E точечно — только интерактив и highlight. */
+[data-theme="swiss"] {
+  --bg-primary: #0F0F10;            /* pure-neutral black */
+  --bg-secondary: #18181B;          /* zinc-900 */
+  --bg-tertiary: #27272A;           /* zinc-800 */
+  --bg-elevated: #3F3F46;           /* zinc-700 */
+  --bg-widget: #18181B;             /* flat, не gradient */
+  --bg-widget-hover: #1F1F22;
+  --glass-bg: rgba(15, 15, 16, 0.88);
+
+  --text-primary: #FAFAFA;          /* neutral white */
+  --text-secondary: #A1A1AA;        /* zinc-400 */
+  --text-muted: #71717A;            /* zinc-500 */
+  --text-inverse: #0F0F10;
+
+  --border-color: rgba(255, 255, 255, 0.06);
+  --border-hover: rgba(200, 255, 46, 0.4);
+  --border-active: rgba(200, 255, 46, 0.7);
+
+  --accent: #C8FF2E;
+  --accent-secondary: #A3D900;
+  --accent-orange: #F97316;
+  --accent-pink: #EC4899;
+  --accent-cyan: #06B6D4;
+
+  --success: #2EE59D;
+  --warning: #EAB308;
+  --danger: #FF4D4D;
+  --info: #3B82F6;
+
+  --chart-line-1: #C8FF2E;
+  --chart-line-2: #06B6D4;
+  --chart-line-3: #F97316;
+  --chart-area: rgba(200, 255, 46, 0.06);
+  --chart-grid: rgba(255, 255, 255, 0.04);
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);   /* flat, минимум shadow */
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.5);
+  --shadow-glow: 0 0 16px rgba(200, 255, 46, 0.15);
+}
+
 /* ============================================
    LAYOUT TOKENS — Chart dimensions & spacing
    Responsive: override in @media below
    ============================================ */
 
 :root {
+  /* Border radius scale — единая система.
+     Для old Tailwind-классов rounded-xl/2xl есть override в Pro-теме.
+     Новые компоненты должны использовать только эти токены. */
+  --radius-sm: 4px;      /* pills, small badges */
+  --radius-md: 8px;      /* inputs, small cards */
+  --radius-lg: 12px;     /* widgets, modals */
+  --radius-xl: 16px;     /* hero-cards (редко) */
+
+  /* Typography scale — UI-тексты (НЕ для чисел, там свои токены).
+     Использование:
+        style={{ fontSize: 'var(--text-body)' }}
+     или через classname в новых компонентах. */
+  --text-h1-size: 28px;     /* hero title */
+  --text-h1-weight: 700;
+  --text-h2-size: 22px;     /* section title */
+  --text-h2-weight: 600;
+  --text-h3-size: 18px;     /* card title */
+  --text-h3-weight: 600;
+  --text-body-size: 14px;   /* основной body-текст */
+  --text-body-weight: 400;
+  --text-meta-size: 12px;   /* meta / caption */
+  --text-meta-weight: 400;
+  --text-eyebrow-size: 10px;
+  --text-eyebrow-weight: 600;
+  --text-eyebrow-tracking: 0.12em;
+
+  /* Spacing scale — для компонентов (не заменяет Tailwind).
+     Шаг = 4px × n. */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+
   /* Chart heights */
   --chart-height: 450px;
   --chart-height-sm: 350px;

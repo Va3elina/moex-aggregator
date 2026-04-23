@@ -43,7 +43,9 @@ export default function ChartDateLabel({ date, x, containerWidth }: ChartDateLab
   const clampedX = Math.max(half, Math.min(x, maxX - half));
 
   return (
-    <div ref={wrapperRef} className="relative" style={{ height: 22 }}>
+    // Высота синхронизирована с placeholder'ом через ту же CSS var — без
+    // этого при появлении tooltip'а контейнер прыгал бы на 22-Xpx (CLS).
+    <div ref={wrapperRef} className="relative" style={{ height: 'var(--chart-date-placeholder-height, 22px)' }}>
       <div
         className="absolute pointer-events-none"
         style={{ left: clampedX, transform: 'translateX(-50%)', top: 0 }}

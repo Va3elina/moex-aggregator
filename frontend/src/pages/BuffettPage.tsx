@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { Scale, Lock } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import PageHeader from '../components/PageHeader';
 import {
     getBuffettCapGdp,
     getBuffettCapM2,
@@ -120,16 +121,11 @@ export default function BuffettPage() {
 
     return (
         <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8 text-theme-primary min-h-screen">
-            {/* Заголовок */}
-            <div className="flex items-center gap-3 mb-6">
-                <div className="p-3 bg-gradient-to-br from-[#f59e0b] to-[#ef4444] rounded-xl">
-                    <Scale className="w-6 h-6 text-white" />
-                </div>
-                <div>
-                    <h1 className="text-2xl font-bold text-theme-primary">Индикатор Баффетта</h1>
-                    <p className="text-theme-secondary text-sm">Оценка рынка относительно экономики</p>
-                </div>
-            </div>
+            <PageHeader
+                icon={Scale}
+                title="Индикатор Баффетта"
+                subtitle="Оценка рынка относительно экономики"
+            />
 
             {/* Контролы */}
             <div className="flex items-center gap-4 mb-6 flex-wrap">

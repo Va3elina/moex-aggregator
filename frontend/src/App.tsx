@@ -1,11 +1,11 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider } from './contexts/ThemeContext';
-import { AuthProvider } from './contexts/AuthContext';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 import ErrorBoundary from './components/ErrorBoundary';
 import Layout from './components/Layout';
 import OverviewPage from './pages/OverviewPage';
+import LandingPage from './pages/LandingPage';
 import OpenInterestPage from './pages/OpenInterestPage';
-import TotalOIPage from './pages/TotalOIPage';
 import HeatmapPage from './pages/HeatmapPage';
 import FearIndexPage from './pages/FearIndexPage';
 import FundsMoneyPage from './pages/FundsMoneyPage';
@@ -20,6 +20,14 @@ import PricingPage from './pages/PricingPage';
 import BillingSuccessPage from './pages/BillingSuccessPage';
 import BillingStubPage from './pages/BillingStubPage';
 import BillingRedeemPage from './pages/BillingRedeemPage';
+
+/** "/" conditional: auth → Overview, guest → Landing.
+    Loading state → Overview как fallback (быстрее, avoids flash). */
+function HomeRoute() {
+  const { isAuthenticated, loading } = useAuth();
+  if (loading) return null;
+  return isAuthenticated ? <OverviewPage /> : <LandingPage />;
+}
 
 export default function App() {
   return (
@@ -37,9 +45,8 @@ export default function App() {
           {/* Основное приложение */}
           <Route element={<Layout />}>
             <Route path="/login" element={<LoginPage />} />
-            <Route path="/" element={<OverviewPage />} />
+            <Route path="/" element={<HomeRoute />} />
             <Route path="/oi" element={<OpenInterestPage />} />
-            <Route path="/oi-total" element={<TotalOIPage />} />
             <Route path="/heatmap" element={<HeatmapPage />} />
             <Route path="/fear" element={<FearIndexPage />} />
             <Route path="/funds" element={<Navigate to="/funds-money" replace />} />

@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { TrendingUp, Activity } from 'lucide-react';
+import { Activity } from 'lucide-react';
 import ChartNavigator from '../components/ChartNavigator';
+import PageHeader from '../components/PageHeader';
 import {
     getBreadthCurrent,
     getBreadthHistory,
@@ -279,18 +280,11 @@ export default function StrengthPage() {
 
     return (
         <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8 min-h-screen">
-            {/* Заголовок */}
-            <div className="flex items-center gap-3 mb-6">
-                <div className="p-3 bg-gradient-to-br from-[#8b5cf6] to-[#ec4899] rounded-xl">
-                    <TrendingUp className="w-6 h-6 text-white" />
-                </div>
-                <div>
-                    <h1 className="text-2xl font-bold text-theme-primary">Сила рынка</h1>
-                    <p className="text-theme-secondary text-sm">
-                        % {universe === 'imoex' ? 'акций индекса MOEX' : 'акций'} выше EMA{emaPeriod}
-                    </p>
-                </div>
-            </div>
+            <PageHeader
+                icon={Activity}
+                title="Сила рынка"
+                subtitle={`% ${universe === 'imoex' ? 'акций индекса MOEX' : 'акций'} выше EMA${emaPeriod}`}
+            />
 
             {/* Контролы — одна строка */}
             <StrengthControls

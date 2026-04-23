@@ -1,10 +1,12 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { ChevronDown, BarChart3, TrendingUp, CalendarDays, Layers, X, Plus } from 'lucide-react';
+import { ChevronDown, BarChart3, TrendingUp, CalendarDays, Layers, LayoutDashboard, X, Plus } from 'lucide-react';
+import PageHeader from '../components/PageHeader';
 import { getSeasonality, getSeasonalityPrice, getSeasonalityYearly, getSeasonalityYears } from '../services/api';
 import InstrumentSearchModal from '../components/InstrumentSearchModal';
 import SeasonalityHistogram from '../components/seasonality/SeasonalityHistogram';
 import SeasonalityPriceChart from '../components/seasonality/SeasonalityPriceChart';
 import YearlySeasonalityChart from '../components/seasonality/YearlySeasonalityChart';
+import TestDashboard from '../components/seasonality/TestDashboard';
 import type { SeasonalityResponse, SeasonalityMode, PriceChartResponse, YearlySeasonalityResponse } from '../services/api';
 import { FUND_PALETTE } from '../config/chartTheme';
 
@@ -24,7 +26,10 @@ const PRICE_PERIODS = [
   { label: 'Всё', days: 9999 },
 ];
 
-type ChartType = 'histogram' | 'price' | 'yearly';
+type ChartType = 'histogram' | 'price' | 'yearly' | 'test';
+
+// Для Test-режима: все 4 гистограммы одновременно (Seasonax-style dashboard)
+const TEST_MODES: SeasonalityMode[] = ['intraday', 'weekday', 'monthday', 'monthly'];
 
 // Всегда запрашиваем полную историю — логика "Актуальный/Базисный" (30/90 итераций)
 // убрана по просьбе пользователя. Бэкенд принимает iterations до 9999.
@@ -110,6 +115,25 @@ export default function SeasonalityPage() {
   const [yearlyFetchId, setYearlyFetchId] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Test-режим: yearly сверху + 4 гистограммы 2×2. Общие фильтры,
+  // каждая гистограмма имеет свой tooltip (чтобы hover в одной не мигал другие).
+  const [testHistData, setTestHistData] = useState<Record<SeasonalityMode, SeasonalityResponse | null>>({
+    intraday: null, weekday: null, monthday: null, monthly: null,
+  });
+  const [testHistSeries, setTestHistSeries] = useState<Record<SeasonalityMode, SeasonalityResponse[] | null>>({
+    intraday: null, weekday: null, monthday: null, monthly: null,
+  });
+  const [testHistTooltips, setTestHistTooltips] = useState<Record<SeasonalityMode, { x: number; y: number; bar?: SeasonalityResponse['bars'][0] } | null>>({
+    intraday: null, weekday: null, monthday: null, monthly: null,
+  });
+  const testReqIdRef = useRef(0);
+  // Per-chart fetch IDs — для независимой анимации при прогрессивной загрузке.
+  // Yearly приходит первым, histograms — по очереди. Бампается только у того
+  // чарта, данные которого только что обновились. Остальные чарты не ре-mount'ятся.
+  const [testChartFetchIds, setTestChartFetchIds] = useState({
+    yearly: 0, intraday: 0, weekday: 0, monthday: 0, monthly: 0,
+  });
 
   // Tooltip
   const [tooltip, setTooltip] = useState<{
@@ -252,12 +276,102 @@ export default function SeasonalityPage() {
     }
   }, [selectedStock, excludeDividends, compareYears, showNoOutliers, showExactYear, availableYears]);
 
+  // Fetch для Test-режима — ПРОГРЕССИВНЫЙ:
+  //   1) Yearly (пришёл первым → пользователь видит топ-чарт ~300ms)
+  //   2) intraday → weekday → monthday → monthly (по очереди, по мере готовности)
+  // Это снижает peak-concurrency на API с 15 до ~3 одновременных запросов
+  // (серии одного mode'а) — thread-pool API не забивается. Плюс UX: каждый
+  // чарт появляется independently, не ждём пока все загрузятся.
+  const fetchTest = useCallback(async () => {
+    const reqId = ++testReqIdRef.current;
+    setLoading(true);
+    setError(null);
+    try {
+      // Helper: собрать все promises для одного "набора" (yearly или один mode).
+      const buildModePromises = (mode: SeasonalityMode) => {
+        const arr: ReturnType<typeof getSeasonality>[] = [];
+        compareYears.forEach(yr => {
+          arr.push(getSeasonality(selectedStock, mode, FULL_HISTORY_ITERS, excludeDividends, { sinceYear: yr }));
+        });
+        if (showNoOutliers) {
+          arr.push(getSeasonality(selectedStock, mode, FULL_HISTORY_ITERS, excludeDividends,
+            { excludeYears: [2008, 2014, 2020, 2022] }));
+        }
+        if (showExactYear !== null) {
+          const currentYear = new Date().getFullYear();
+          const allYearsExceptExact = availableYears.filter(y => y !== showExactYear && y < currentYear);
+          arr.push(getSeasonality(selectedStock, mode, FULL_HISTORY_ITERS, excludeDividends,
+            { sinceYear: showExactYear, excludeYears: allYearsExceptExact }));
+        }
+        return arr;
+      };
+
+      const buildYearlyPromises = () => {
+        const arr: ReturnType<typeof getSeasonalityYearly>[] = [];
+        compareYears.forEach(yr => {
+          arr.push(getSeasonalityYearly(selectedStock, excludeDividends, { sinceYear: yr }));
+        });
+        if (showNoOutliers) {
+          arr.push(getSeasonalityYearly(selectedStock, excludeDividends,
+            { excludeYears: [2008, 2014, 2020, 2022] }));
+        }
+        if (showExactYear !== null) {
+          const currentYear = new Date().getFullYear();
+          const allYearsExceptExact = availableYears.filter(y => y !== showExactYear && y < currentYear);
+          arr.push(getSeasonalityYearly(selectedStock, excludeDividends,
+            { sinceYear: showExactYear, excludeYears: allYearsExceptExact }));
+        }
+        return arr;
+      };
+
+      // Пустое состояние — ни одного "Период с"
+      if (compareYears.length === 0) {
+        setYearlyData(null);
+        setYearlySeries(null);
+        setTestHistData({ intraday: null, weekday: null, monthday: null, monthly: null });
+        setTestHistSeries({ intraday: null, weekday: null, monthday: null, monthly: null });
+        return;
+      }
+
+      // 1) YEARLY — первым (top of page, наибольший визуальный impact)
+      const yearlyPromises = buildYearlyPromises();
+      const yRes = await Promise.all(yearlyPromises);
+      if (reqId !== testReqIdRef.current) return;
+      setYearlyData(yRes[0]);
+      setYearlySeries(yRes.length > 1 ? yRes : null);
+      setTestChartFetchIds(prev => ({ ...prev, yearly: prev.yearly + 1 }));
+
+      // 2) HISTOGRAMS — по очереди, каждый mode сам по себе (3 req макс за раз)
+      for (const m of TEST_MODES) {
+        const modePromises = buildModePromises(m);
+        const res = await Promise.all(modePromises);
+        if (reqId !== testReqIdRef.current) return;
+        setTestHistData(prev => ({ ...prev, [m]: res[0] ?? null }));
+        setTestHistSeries(prev => ({ ...prev, [m]: res.length > 1 ? res : null }));
+        setTestChartFetchIds(prev => ({ ...prev, [m]: prev[m] + 1 }));
+      }
+    } catch (e: unknown) {
+      if (reqId !== testReqIdRef.current) return;
+      setError(e instanceof Error ? e.message : 'Ошибка загрузки');
+    } finally {
+      if (reqId === testReqIdRef.current) setLoading(false);
+    }
+  }, [selectedStock, excludeDividends, compareYears, showNoOutliers, showExactYear, availableYears]);
+
   useEffect(() => {
     if (!selectedStock) return;
-    if (chartType === 'histogram') fetchSeasonality();
-    else if (chartType === 'price') fetchPrice();
-    else fetchYearly();
-  }, [chartType, fetchSeasonality, fetchPrice, fetchYearly, selectedStock]);
+    if (chartType === 'histogram') { fetchSeasonality(); return; }
+    if (chartType === 'price') { fetchPrice(); return; }
+    if (chartType === 'yearly') { fetchYearly(); return; }
+    // Test-режим: дебаунс 350ms. Test стреляет 5-15 параллельными запросами
+    // (yearly + 4 histogram modes × серии). Без дебаунса быстрые клики по
+    // фильтрам (compareYears, noOutliers, excludeDividends) кладут thread
+    // pool на API — наблюдали 60-сек slow requests и unhealthy state.
+    if (chartType === 'test') {
+      const t = setTimeout(() => fetchTest(), 350);
+      return () => clearTimeout(t);
+    }
+  }, [chartType, fetchSeasonality, fetchPrice, fetchYearly, fetchTest, selectedStock]);
 
   const data = dataRaw;
 
@@ -297,12 +411,78 @@ export default function SeasonalityPage() {
     'USDRUBF', 'EURRUBF', 'CNYRUBF', 'IMOEXF',
   ]);
   const hasDividends = !NON_DIVIDEND_TICKERS.has(selectedStock);
-  const showDivToggle = (chartType === 'histogram' || chartType === 'yearly') && hasDividends;
+  const showDivToggle = (chartType === 'histogram' || chartType === 'yearly' || chartType === 'test') && hasDividends;
 
   // Годы, которые ещё можно добавить как compareYear (не в списке + не текущий)
   const currentYearNum = new Date().getFullYear();
   const addableYears = availableYears.filter(
     y => !compareYears.includes(y) && y < currentYearNum
+  );
+
+  // Блок фильтров (Без дивгэпов / Без выбросов / Период с / Показать год) —
+  // вынесен в callback, чтобы можно было рендерить и на главной row2, и внутри
+  // test-модалки. Дублирования 0, вся логика тут.
+  const renderFilters = (): React.ReactNode => (
+    <>
+      {showDivToggle && (
+        <button
+          onClick={() => setExcludeDividends(!excludeDividends)}
+          title="Пересчитать цены с учётом реинвестирования дивидендов + исключение ex-div дней в intraday"
+          className="flex items-center gap-2 px-2 md:px-4 py-2 md:py-2.5 rounded-xl border text-xs md:text-sm font-medium transition-all whitespace-nowrap"
+          style={{
+            backgroundColor: excludeDividends ? 'color-mix(in srgb, var(--success) 15%, transparent)' : 'var(--bg-secondary)',
+            borderColor: excludeDividends ? 'color-mix(in srgb, var(--success) 50%, transparent)' : 'var(--border-color)',
+            color: excludeDividends ? 'var(--success)' : 'var(--text-secondary)',
+          }}
+        >
+          <span className={`inline-block w-3 h-3 rounded-full ${excludeDividends ? 'bg-green-500' : 'bg-gray-500'}`} />
+          Без дивидендных гэпов
+        </button>
+      )}
+      <button
+        onClick={() => setShowNoOutliers(!showNoOutliers)}
+        title="Исключить годы крупных кризисов: 2008, 2014, 2020, 2022"
+        className="flex items-center gap-2 px-2 md:px-4 py-2 md:py-2.5 rounded-xl border text-xs md:text-sm font-medium transition-all whitespace-nowrap"
+        style={{
+          backgroundColor: showNoOutliers ? 'rgba(167, 139, 250, 0.15)' : 'var(--bg-secondary)',
+          borderColor: showNoOutliers ? 'rgba(167, 139, 250, 0.5)' : 'var(--border-color)',
+          color: showNoOutliers ? COLOR_NO_OUTLIERS : 'var(--text-secondary)',
+        }}
+      >
+        <span className={`inline-block w-3 h-3 rounded-full ${showNoOutliers ? '' : 'bg-gray-500'}`}
+          style={showNoOutliers ? { backgroundColor: COLOR_NO_OUTLIERS } : {}} />
+        Без выбросов
+      </button>
+      {renderCompareYearsControls()}
+      {availableYears.length > 1 && (
+        <div className="relative inline-block">
+          <div
+            title={showExactYear !== null ? `Траектория ${showExactYear} года` : 'Наложить траекторию конкретного года'}
+            className="flex items-center gap-2 px-2 md:px-4 py-2 md:py-2.5 rounded-xl border text-xs md:text-sm font-medium transition-all whitespace-nowrap cursor-pointer"
+            style={{
+              backgroundColor: showExactYear !== null ? 'rgba(249, 115, 22, 0.15)' : 'var(--bg-secondary)',
+              borderColor: showExactYear !== null ? 'rgba(249, 115, 22, 0.5)' : 'var(--border-color)',
+              color: showExactYear !== null ? COLOR_EXACT_YEAR : 'var(--text-secondary)',
+            }}
+          >
+            <span className={`inline-block w-3 h-3 rounded-full ${showExactYear === null ? 'bg-gray-500' : ''}`}
+              style={showExactYear !== null ? { backgroundColor: COLOR_EXACT_YEAR } : {}} />
+            {showExactYear !== null ? `Год: ${showExactYear}` : 'Показать год'}
+            <ChevronDown size={14} className="opacity-60" />
+          </div>
+          <select
+            value={showExactYear ?? ''}
+            onChange={(e) => setShowExactYear(e.target.value ? Number(e.target.value) : null)}
+            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+          >
+            <option value="">— не показывать —</option>
+            {availableYears.filter(y => y < currentYearNum).map(y => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
+        </div>
+      )}
+    </>
   );
 
   // Рендерер блока "Период с N / + / ×" — используется в histogram и yearly row2
@@ -380,18 +560,19 @@ export default function SeasonalityPage() {
     );
   };
 
+  // В test-режиме используем увеличенную ширину, чтобы вместить 2×2 grid
+  // гистограмм и широкую yearly-линию. Остальные режимы сохраняют свои 1280px.
+  const containerClass = chartType === 'test'
+    ? 'max-w-[1800px] mx-auto px-4 md:px-6 py-6 md:py-8'
+    : 'max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8';
+
   return (
-    <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8">
-      {/* Заголовок */}
-      <div className="flex items-center gap-3 mb-6">
-        <div className="p-3 bg-gradient-to-br from-[#06b6d4] to-[#3b82f6] rounded-xl">
-          <CalendarDays className="w-6 h-6 text-white" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold text-theme-primary">Сезонность</h1>
-          <p className="text-theme-secondary text-sm">Среднее изменение цены по временным периодам</p>
-        </div>
-      </div>
+    <div className={containerClass}>
+      <PageHeader
+        icon={CalendarDays}
+        title="Сезонность"
+        subtitle="Среднее изменение цены по временным периодам"
+      />
 
       {/* Controls Row 1 */}
       <div className="flex flex-wrap items-start gap-4 mb-4">
@@ -454,6 +635,18 @@ export default function SeasonalityPage() {
           >
             <Layers size={14} /> Годовая
           </button>
+          <button
+            onClick={() => setChartType('test')}
+            className="flex items-center gap-1.5 px-2 md:px-3 py-2 md:py-2.5 text-xs md:text-sm font-medium transition-all border-l"
+            style={{
+              backgroundColor: chartType === 'test' ? 'var(--accent)' : 'var(--bg-secondary)',
+              color: chartType === 'test' ? 'var(--bg-primary)' : 'var(--text-secondary)',
+              borderLeftColor: 'var(--border-color)',
+            }}
+            title="Экспериментальный режим — Seasonax-style dashboard (годовая + 4 гистограммы)"
+          >
+            <LayoutDashboard size={14} /> Тест
+          </button>
         </div>
 
         {/* Histogram-specific: mode tabs */}
@@ -506,82 +699,34 @@ export default function SeasonalityPage() {
           </div>
         )}
 
-        {(chartType === 'histogram' || chartType === 'yearly') && (
-          <>
-            {/* Без дивидендных гэпов */}
-            {showDivToggle && (
-              <button
-                onClick={() => setExcludeDividends(!excludeDividends)}
-                title={mode === 'intraday' && chartType === 'histogram'
-                  ? 'Исключить торговые дни, являющиеся экс-дивидендными (в день отсечки intraday-return искажён сдвигом open)'
-                  : 'Пересчитать цены с учётом реинвестирования дивидендов (Yahoo/CRSP adjusted close)'}
-                className="flex items-center gap-2 px-2 md:px-4 py-2 md:py-2.5 rounded-xl border text-xs md:text-sm font-medium transition-all whitespace-nowrap"
-                style={{
-                  backgroundColor: excludeDividends ? 'rgba(34, 197, 94, 0.15)' : 'var(--bg-secondary)',
-                  borderColor: excludeDividends ? 'rgba(34, 197, 94, 0.5)' : 'var(--border-color)',
-                  color: excludeDividends ? '#22c55e' : 'var(--text-secondary)',
-                }}
-              >
-                <span className={`inline-block w-3 h-3 rounded-full ${excludeDividends ? 'bg-green-500' : 'bg-gray-500'}`} />
-                Без дивидендных гэпов
-              </button>
-            )}
-
-            {/* Без выбросов */}
-            <button
-              onClick={() => setShowNoOutliers(!showNoOutliers)}
-              title="Добавить серию с исключёнными годами крупных кризисов: 2008, 2014, 2020, 2022"
-              className="flex items-center gap-2 px-2 md:px-4 py-2 md:py-2.5 rounded-xl border text-xs md:text-sm font-medium transition-all whitespace-nowrap"
-              style={{
-                backgroundColor: showNoOutliers ? 'rgba(167, 139, 250, 0.15)' : 'var(--bg-secondary)',
-                borderColor: showNoOutliers ? 'rgba(167, 139, 250, 0.5)' : 'var(--border-color)',
-                color: showNoOutliers ? COLOR_NO_OUTLIERS : 'var(--text-secondary)',
-              }}
-            >
-              <span className={`inline-block w-3 h-3 rounded-full ${showNoOutliers ? '' : 'bg-gray-500'}`}
-                style={showNoOutliers ? { backgroundColor: COLOR_NO_OUTLIERS } : {}} />
-              Без выбросов
-            </button>
-
-            {/* Период с — множественные pills + кнопка "+" */}
-            {renderCompareYearsControls()}
-
-            {/* "Показать год" — в обоих режимах (histogram и yearly).
-                Для histogram добавляет отдельную серию баров по этому году,
-                для yearly — отдельную линию траектории этого года. */}
-            {availableYears.length > 1 && (
-              <div className="relative inline-block">
-                <div
-                  title={showExactYear !== null ? `Траектория ${showExactYear} года` : 'Наложить траекторию конкретного года'}
-                  className="flex items-center gap-2 px-2 md:px-4 py-2 md:py-2.5 rounded-xl border text-xs md:text-sm font-medium transition-all whitespace-nowrap cursor-pointer"
-                  style={{
-                    backgroundColor: showExactYear !== null ? 'rgba(249, 115, 22, 0.15)' : 'var(--bg-secondary)',
-                    borderColor: showExactYear !== null ? 'rgba(249, 115, 22, 0.5)' : 'var(--border-color)',
-                    color: showExactYear !== null ? COLOR_EXACT_YEAR : 'var(--text-secondary)',
-                  }}
-                >
-                  <span className={`inline-block w-3 h-3 rounded-full ${showExactYear === null ? 'bg-gray-500' : ''}`}
-                    style={showExactYear !== null ? { backgroundColor: COLOR_EXACT_YEAR } : {}} />
-                  {showExactYear !== null ? `Год: ${showExactYear}` : 'Показать год'}
-                  <ChevronDown size={14} className="opacity-60" />
-                </div>
-                <select
-                  value={showExactYear ?? ''}
-                  onChange={(e) => setShowExactYear(e.target.value ? Number(e.target.value) : null)}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                >
-                  <option value="">— не показывать —</option>
-                  {availableYears.filter(y => y < currentYearNum).map(y => (
-                    <option key={y} value={y}>{y}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-          </>
-        )}
+        {(chartType === 'histogram' || chartType === 'yearly' || chartType === 'test') && renderFilters()}
       </div>
 
-      {/* Chart */}
+      {/* TEST MODE — Seasonax-style dashboard (yearly + 2×2 histograms) */}
+      {chartType === 'test' && (
+        <TestDashboard
+          compareYears={compareYears}
+          selectedStock={selectedStock}
+          selectedName={selectedName}
+          onSelectInstrument={handleSelectInstrument}
+          renderFilters={renderFilters}
+          yearlyData={yearlyData}
+          yearlySeries={yearlySeries}
+          seriesMeta={seriesMeta}
+          testHistData={testHistData}
+          testHistSeries={testHistSeries}
+          testHistTooltips={testHistTooltips}
+          setTestHistTooltips={setTestHistTooltips}
+          chartTooltip={tooltip}
+          setChartTooltip={setTooltip}
+          testChartFetchIds={testChartFetchIds}
+          loading={loading}
+          error={error}
+        />
+      )}
+
+      {/* Existing Chart block — hidden in test mode */}
+      {chartType !== 'test' && (
       <div
         className="rounded-2xl border p-4 relative"
         style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-color)' }}
@@ -649,6 +794,7 @@ export default function SeasonalityPage() {
           </div>
         )}
       </div>
+      )}
 
       {/* Description */}
       <div className="mt-4 text-sm" style={{ color: 'var(--text-muted)' }}>
@@ -656,9 +802,11 @@ export default function SeasonalityPage() {
           ? `Среднее изменение (${mode === 'intraday' ? 'open-to-close per hour' : 'close-to-close'}) ${MODE_LABELS[mode].toLowerCase()}`
           : chartType === 'price'
           ? `График цены ${selectedStock} — с дивидендными гэпами и без (adjusted close)`
+          : chartType === 'test'
+          ? `Экспериментальный режим: годовая траектория + 4 среза сезонности одновременно`
           : `Кумулятивное изменение ${selectedStock} с начала года • ${yearlyData?.current_year ?? ''}`
         }
-        {(chartType === 'histogram' || chartType === 'yearly') && excludeDividends && (
+        {(chartType === 'histogram' || chartType === 'yearly' || chartType === 'test') && excludeDividends && (
           <span className="ml-2 text-green-500">
             • {mode === 'intraday' && chartType === 'histogram' ? 'Экс-дивидендные дни исключены' : 'Дивидендные гэпы убраны'}
           </span>

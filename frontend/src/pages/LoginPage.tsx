@@ -215,9 +215,9 @@ export default function LoginPage() {
                 {error && (
                     <div className="mb-4 p-3 rounded-xl text-sm"
                         style={{
-                            backgroundColor: 'color-mix(in srgb, #ef4444 15%, transparent)',
-                            color: '#ef4444',
-                            border: '1px solid color-mix(in srgb, #ef4444 30%, transparent)',
+                            backgroundColor: 'color-mix(in srgb, var(--danger) 15%, transparent)',
+                            color: 'var(--danger)',
+                            border: '1px solid color-mix(in srgb, var(--danger) 30%, transparent)',
                         }}
                     >
                         {error}
