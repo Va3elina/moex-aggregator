@@ -312,6 +312,9 @@ export default function SeasonalityPage() {
       <>
         {compareYears.map((yr, idx) => {
           const color = FUND_PALETTE[idx % FUND_PALETTE.length];
+          // Нельзя убрать последний оставшийся период — иначе получим empty state.
+          // При единственном периоде прячем × и меняем tooltip.
+          const isOnly = compareYears.length === 1;
           return (
             <div
               key={yr}
@@ -321,18 +324,22 @@ export default function SeasonalityPage() {
                 borderColor: `${color}80`,
                 color: color,
               }}
-              title={`Серия "Период с ${yr} г." — средние значения по годам от ${yr} до сегодня`}
+              title={isOnly
+                ? `Период с ${yr} г. — единственный активный период, его нельзя отключить. Сначала добавьте ещё один период через «+».`
+                : `Серия "Период с ${yr} г." — средние значения по годам от ${yr} до сегодня`}
             >
               <span className="inline-block w-3 h-3 rounded-full" style={{ backgroundColor: color }} />
               Период с {yr}
-              <button
-                onClick={() => setCompareYears(compareYears.filter(y => y !== yr))}
-                className="ml-1 opacity-60 hover:opacity-100 transition-opacity"
-                title="Убрать"
-                aria-label={`Убрать серию с ${yr} г.`}
-              >
-                <X size={14} />
-              </button>
+              {!isOnly && (
+                <button
+                  onClick={() => setCompareYears(compareYears.filter(y => y !== yr))}
+                  className="ml-1 opacity-60 hover:opacity-100 transition-opacity"
+                  title="Убрать"
+                  aria-label={`Убрать серию с ${yr} г.`}
+                >
+                  <X size={14} />
+                </button>
+              )}
             </div>
           );
         })}
