@@ -169,19 +169,21 @@ export default function StrengthControls({
                 {currency === 'usd' ? 'RTS' : 'IMOEX'}
             </button>
 
-            {/* Status + counter */}
-            {hasCurrent && (
-                <div className="flex items-center gap-3 sm:ml-auto">
-                    <span className="text-sm text-theme-secondary">
-                        <span className="font-bold text-theme-primary">{stocksAbove}</span>/{stocksTotal} выше EMA
+            {/* Status + counter.
+                visibility: hidden пока нет данных — чтобы место было зарезервировано
+                и главный контейнер НЕ сдвигался вниз когда данные прилетят.
+                Раньше было {hasCurrent && (...)} → DOM-нода отсутствовала
+                → flex-row короче → появление вытесняло график вниз (CLS-баг). */}
+            <div className="flex items-center gap-3 sm:ml-auto" style={{ visibility: hasCurrent ? 'visible' : 'hidden' }}>
+                <span className="text-sm text-theme-secondary">
+                    <span className="font-bold text-theme-primary">{stocksAbove}</span>/{stocksTotal} выше EMA
+                </span>
+                <div className={`px-3 py-1 rounded-full ${classInfo.bg}`}>
+                    <span className={`text-xs font-medium ${classInfo.color}`}>
+                        {classInfo.label}
                     </span>
-                    <div className={`px-3 py-1 rounded-full ${classInfo.bg}`}>
-                        <span className={`text-xs font-medium ${classInfo.color}`}>
-                            {classInfo.label}
-                        </span>
-                    </div>
                 </div>
-            )}
+            </div>
         </div>
     );
 }
