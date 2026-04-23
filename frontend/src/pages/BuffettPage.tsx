@@ -130,7 +130,7 @@ export default function BuffettPage() {
             {/* Контролы */}
             <div className="flex items-center gap-4 mb-6 flex-wrap">
                 {/* Переключатель режимов */}
-                <div className="flex items-center gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
+                <div className="btn-group-scroll gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
                     <button
                         onClick={() => setViewMode('cap-gdp')}
                         className={`px-2 md:px-3 py-1 md:py-1.5 text-xs md:text-sm font-medium rounded-lg transition-colors duration-200 ${viewMode === 'cap-gdp'
@@ -152,7 +152,7 @@ export default function BuffettPage() {
                 </div>
 
                 {/* Периоды */}
-                <div className="flex items-center gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
+                <div className="btn-group-scroll gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
                     {(Object.keys(PERIOD_LABELS) as BuffettPeriod[]).map((p) => {
                         const allowed = isPeriodAllowed(p, isAuthenticated);
                         return (
@@ -180,7 +180,7 @@ export default function BuffettPage() {
 
                 {/* Таймфрейм — для cap-gdp и cap-m2 */}
                 {(viewMode === 'cap-gdp' || viewMode === 'cap-m2') && (
-                    <div className="flex items-center gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
+                    <div className="btn-group-scroll gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
                         {(['1d', '1w', '1m'] as const).map((tf) => (
                             <button
                                 key={tf}

@@ -160,6 +160,50 @@ export default function YearlySeasonalityChart({
   const PT = cssVar('--chart-pad-top', PADDING.top);
   const PB = cssVar('--chart-pad-bottom', PADDING.bottom);
 
+  // Unified pointer handler — вызывается и от mouse, и от touch.
+  // Извлекает clientX/Y → тот же код для обоих событий. Без этого на mobile
+  // пользователь не мог пальцем "водить" по чарту, только тыкать.
+  const handlePointerMove = (clientX: number, clientY: number, el: HTMLElement) => {
+    const rect = el.getBoundingClientRect();
+    const mouseX = clientX - rect.left;
+    const chartW = rect.width - PL - PR;
+    const frac = (mouseX - PL) / chartW;
+    if (frac < 0 || frac > 1) { setTooltip(null); return; }
+    const targetTD = visibleTdMin + Math.round(frac * (visibleTdMax - visibleTdMin));
+
+    const visBaseAvg = visAllSeries[0]?.average ?? [];
+    let closestAvg = visBaseAvg[0] ?? baseAvg[0];
+    for (const p of visBaseAvg) {
+      if (Math.abs(p.td - targetTD) < Math.abs(closestAvg.td - targetTD)) closestAvg = p;
+    }
+
+    let closestCur = null as (typeof cur[number] | null);
+    if (visCur.length > 0) {
+      const lastCurTd = visCur[visCur.length - 1].td;
+      if (targetTD <= lastCurTd) {
+        let candidate = visCur[0];
+        for (const p of visCur) {
+          if (Math.abs(p.td - targetTD) < Math.abs(candidate.td - targetTD)) candidate = p;
+        }
+        closestCur = candidate;
+      }
+    }
+
+    const snappedTD = closestAvg.td;
+    const snappedX = PL + scX(snappedTD) * chartW;
+    const displayDate = closestCur?.date
+      ?? `≈ ${getApproxMonth(snappedTD)} ${yearlyData.current_year}`;
+
+    setTooltip({
+      x: snappedX,
+      y: clientY - rect.top,
+      yearlyAvgPct: closestAvg.avg_pct,
+      yearlyCurPct: closestCur?.pct,
+      yearlyCurDate: displayDate,
+      yearlyTd: snappedTD,
+    });
+  };
+
   return (
     <div className={revealed ? 'chart-reveal' : ''}>
       {/* Legend — все серии + current.
@@ -190,52 +234,25 @@ export default function YearlySeasonalityChart({
       )}
 
       {/* Chart */}
-      <div className="relative cursor-crosshair" style={{
+      <div
+        className="relative cursor-crosshair"
+        style={{
           aspectRatio: 'var(--seasonality-aspect-ratio, 2.4)',
           minHeight: 'var(--seasonality-min-height, 280px)',
           maxHeight: 'var(--seasonality-max-height, 550px)',
+          // touchAction: none — отключает браузерные жесты (scroll/zoom) при
+          // водении пальцем по чарту. Критично для mobile UX.
+          touchAction: 'none',
         }}
-        onMouseMove={(e) => {
-          const rect = e.currentTarget.getBoundingClientRect();
-          const mouseX = e.clientX - rect.left;
-          const chartW = rect.width - PL - PR;
-          const frac = (mouseX - PL) / chartW;
-          if (frac < 0 || frac > 1) { setTooltip(null); return; }
-          const targetTD = visibleTdMin + Math.round(frac * (visibleTdMax - visibleTdMin));
-
-          const visBaseAvg = visAllSeries[0]?.average ?? [];
-          let closestAvg = visBaseAvg[0] ?? baseAvg[0];
-          for (const p of visBaseAvg) {
-            if (Math.abs(p.td - targetTD) < Math.abs(closestAvg.td - targetTD)) closestAvg = p;
-          }
-
-          let closestCur = null as (typeof cur[number] | null);
-          if (visCur.length > 0) {
-            const lastCurTd = visCur[visCur.length - 1].td;
-            if (targetTD <= lastCurTd) {
-              let candidate = visCur[0];
-              for (const p of visCur) {
-                if (Math.abs(p.td - targetTD) < Math.abs(candidate.td - targetTD)) candidate = p;
-              }
-              closestCur = candidate;
-            }
-          }
-
-          const snappedTD = closestAvg.td;
-          const snappedX = PL + scX(snappedTD) * chartW;
-          const displayDate = closestCur?.date
-            ?? `≈ ${getApproxMonth(snappedTD)} ${yearlyData.current_year}`;
-
-          setTooltip({
-            x: snappedX,
-            y: e.clientY - rect.top,
-            yearlyAvgPct: closestAvg.avg_pct,
-            yearlyCurPct: closestCur?.pct,
-            yearlyCurDate: displayDate,
-            yearlyTd: snappedTD,
-          });
-        }}
+        onMouseMove={(e) => handlePointerMove(e.clientX, e.clientY, e.currentTarget)}
         onMouseLeave={() => setTooltip(null)}
+        onTouchStart={(e) => {
+          if (e.touches[0]) handlePointerMove(e.touches[0].clientX, e.touches[0].clientY, e.currentTarget);
+        }}
+        onTouchMove={(e) => {
+          if (e.touches[0]) handlePointerMove(e.touches[0].clientX, e.touches[0].clientY, e.currentTarget);
+        }}
+        onTouchEnd={() => setTooltip(null)}
       >
         <div className="absolute" style={{ left: PL, right: PR, top: PT, bottom: PB }}>
           <svg viewBox="0 0 1000 500" preserveAspectRatio="none" width="100%" height="100%">

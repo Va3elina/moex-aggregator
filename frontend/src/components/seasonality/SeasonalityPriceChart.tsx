@@ -189,8 +189,11 @@ export default function SeasonalityPriceChart({
         <div style={{ height: 22 }} />
       )}
 
-      {/* Chart area — chart-reveal класс активируется после первого рендера */}
-      <div className={`relative cursor-crosshair ${revealed ? 'chart-reveal' : ''}`} style={{ aspectRatio: '2.4', minHeight: 280, maxHeight: 550 }}
+      {/* Chart area — chart-reveal класс активируется после первого рендера.
+          touchAction: none + onTouch* handlers → поддержка водения пальцем на mobile. */}
+      <div
+        className={`relative cursor-crosshair ${revealed ? 'chart-reveal' : ''}`}
+        style={{ aspectRatio: '2.4', minHeight: 280, maxHeight: 550, touchAction: 'none' }}
         onMouseMove={(e) => {
           if (divHoverRef.current) return;
           const rect = e.currentTarget.getBoundingClientRect();
@@ -208,6 +211,41 @@ export default function SeasonalityPriceChart({
           });
         }}
         onMouseLeave={() => { divHoverRef.current = false; setTooltip(null); }}
+        onTouchStart={(e) => {
+          if (!e.touches[0] || divHoverRef.current) return;
+          const t = e.touches[0];
+          const rect = e.currentTarget.getBoundingClientRect();
+          if (pricePoints.length === 0) return;
+          const chartAreaW = rect.width - PL - PR;
+          const mx = t.clientX - rect.left - PL;
+          if (mx < 0 || mx > chartAreaW) return;
+          const idx = Math.round((mx / chartAreaW) * (pricePoints.length - 1));
+          const ci = Math.max(0, Math.min(idx, pricePoints.length - 1));
+          const p = pricePoints[ci];
+          setTooltip({
+            x: PL + (ci / Math.max(pricePoints.length - 1, 1)) * chartAreaW,
+            y: t.clientY - rect.top,
+            priceDate: p.date, priceClose: p.close, priceAdj: p.adjusted,
+          });
+        }}
+        onTouchMove={(e) => {
+          if (!e.touches[0] || divHoverRef.current) return;
+          const t = e.touches[0];
+          const rect = e.currentTarget.getBoundingClientRect();
+          if (pricePoints.length === 0) return;
+          const chartAreaW = rect.width - PL - PR;
+          const mx = t.clientX - rect.left - PL;
+          if (mx < 0 || mx > chartAreaW) return;
+          const idx = Math.round((mx / chartAreaW) * (pricePoints.length - 1));
+          const ci = Math.max(0, Math.min(idx, pricePoints.length - 1));
+          const p = pricePoints[ci];
+          setTooltip({
+            x: PL + (ci / Math.max(pricePoints.length - 1, 1)) * chartAreaW,
+            y: t.clientY - rect.top,
+            priceDate: p.date, priceClose: p.close, priceAdj: p.adjusted,
+          });
+        }}
+        onTouchEnd={() => { divHoverRef.current = false; setTooltip(null); }}
       >
         {/* SVG */}
         <div className="absolute" style={{ left: PL, right: PR, top: PT, bottom: PB }}>

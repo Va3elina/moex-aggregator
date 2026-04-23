@@ -9,7 +9,7 @@
  *
  * Незалогиненные видят LandingPage (routing conditional в App.tsx).
  */
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowRight,
@@ -34,6 +34,9 @@ import {
   getSeasonalityPrice,
 } from '../services/api';
 import type { HeatmapStock, FundsSummaryResponse } from '../services/api';
+import { useRealtimeData } from '../hooks/useRealtimeData';
+import Card from '../components/Card';
+import Num from '../components/Num';
 import { useAuth } from '../contexts/AuthContext';
 
 const INDICATORS = [
@@ -102,14 +105,13 @@ export default function OverviewPage() {
   const [quotes, setQuotes] = useState<Record<string, { label: string; closes: number[] }>>({});
   const [lastUpdate, setLastUpdate] = useState<string>('');
 
-  useEffect(() => {
-    Promise.allSettled([
+  /** ГОРЯЧИЕ данные — обновляются каждые 5 минут (SSE '5min' push).
+   *   Fear / Strength / Heatmap / Funds.
+   *   Buffett и Quotes — в loadDaily (обновляются раз в день, не надо пересчитывать). */
+  const loadHotData = useCallback(async () => {
+    await Promise.allSettled([
       getFearIndex().then(r => setFear(r.fear_index)),
       getBreadthCurrent(50, 'imoex').then(r => setStrength(r.percent_above)),
-      getBuffettCapGdp('1y').then(r => {
-        const last = r.data[r.data.length - 1];
-        if (last) setBuffett(last.buffett);
-      }),
       getHeatmapData().then(r => {
         // Топ-5 gainers и losers по change_1d.
         const withChange = r.stocks.filter(s => Number.isFinite(s.change_1d));
@@ -139,19 +141,54 @@ export default function OverviewPage() {
         setSectors(secArr);
       }),
       getFundsSummary().then(setFundsSummary),
-      // Quotes для tiles (IMOEX + RTSI + валюты + золото).
-      // Параллельные fetch'и через seasonality/price (30 дней = достаточно для sparkline).
-      fetchQuotes().then(setQuotes),
-    ]).then(() => {
-      setLastUpdate(
-        new Date().toLocaleTimeString('ru-RU', {
-          hour: '2-digit',
-          minute: '2-digit',
-          timeZone: 'Europe/Moscow',
-        })
-      );
-    });
+    ]);
+    setLastUpdate(
+      new Date().toLocaleTimeString('ru-RU', {
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZone: 'Europe/Moscow',
+      })
+    );
   }, []);
+
+  /** HEAVY/DAILY данные — Buffett (годовые) и Quotes (5 × 30-дневных историй).
+   *   Эти данные меняются раз в сутки → рефетчить каждые 5 минут = перегруз API.
+   *   Загружаем 1 раз на mount + при visibilitychange (если вкладка не была активна >1 час). */
+  const loadDailyData = useCallback(async () => {
+    await Promise.allSettled([
+      getBuffettCapGdp('1y').then(r => {
+        const last = r.data[r.data.length - 1];
+        if (last) setBuffett(last.buffett);
+      }),
+      fetchQuotes().then(setQuotes),
+    ]);
+  }, []);
+
+  // 1. Initial load на mount — и горячие, и ежедневные
+  useEffect(() => {
+    loadHotData();
+    loadDailyData();
+  }, [loadHotData, loadDailyData]);
+
+  // 2. SSE realtime — только горячие (5-мин) метрики.
+  //    Quotes/Buffett не трогаем — они daily, рефетч раз в 5 мин = DB pool exhaustion.
+  useRealtimeData(['5min', 'mv_refresh'], loadHotData);
+
+  // 3. Visibilitychange — возвращение на вкладку рефетчит горячие.
+  //    Daily рефетчим только если был >1ч отсутствия (порог hysteresis).
+  const lastDailyFetchRef = useRef<number>(Date.now());
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState !== 'visible') return;
+      loadHotData();
+      if (Date.now() - lastDailyFetchRef.current > 3600_000) {
+        loadDailyData();
+        lastDailyFetchRef.current = Date.now();
+      }
+    };
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, [loadHotData, loadDailyData]);
 
   // Приоритет: display_name → email local part → "пользователь"
   const displayName = user?.display_name
@@ -175,41 +212,46 @@ export default function OverviewPage() {
         </section>
       )}
 
-      {/* ═══ GREETING HERO ═══ */}
-      <section className="flex flex-wrap items-start justify-between gap-4 mb-8 md:mb-10">
-        <div>
-          <p
-            className="text-xs uppercase mb-1"
-            style={{ color: 'var(--text-muted)', letterSpacing: '0.12em', fontWeight: 600 }}
-          >
-            Обзор рынка
-          </p>
+      {/* ═══ GREETING — одна строка, компактно ═══ */}
+      <section className="flex flex-wrap items-center justify-between gap-3 mb-6 md:mb-8">
+        {/* Левая часть: имя + timestamp + pulse */}
+        <div className="flex items-center gap-3 flex-wrap">
           <h1
-            className="text-3xl md:text-4xl font-bold"
-            style={{ color: 'var(--text-primary)', letterSpacing: '-0.02em', lineHeight: 1.15 }}
+            className="text-xl md:text-2xl font-semibold"
+            style={{ color: 'var(--text-primary)', letterSpacing: '-0.01em', lineHeight: 1.2 }}
           >
-            Добро пожаловать,{' '}
-            <span style={{ color: 'var(--accent)' }}>{displayName}</span>
+            Привет, <span style={{ color: 'var(--accent)' }}>{displayName}</span>
           </h1>
-          <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
-            {lastUpdate ? <>обновлено в <span style={{ color: 'var(--text-primary)' }}>{lastUpdate}</span> МСК</> : 'загрузка...'}
-          </p>
+          {lastUpdate && (
+            <span className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--text-muted)' }}>
+              <span
+                className="inline-block"
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: '50%',
+                  backgroundColor: 'var(--success)',
+                  animation: 'frame-pulse 2s ease-in-out infinite',
+                }}
+                title="Данные обновляются автоматически"
+              />
+              live · {lastUpdate}
+            </span>
+          )}
         </div>
 
-        {/* Тариф-бейдж */}
+        {/* Правая часть: тариф-pill (легкий, без border) */}
         <Link
           to="/profile"
-          className="flex items-center gap-2 px-3 py-2 border transition-all hover:opacity-90"
+          className="flex items-center gap-2 px-2.5 py-1.5 transition-opacity hover:opacity-80"
           style={{
-            backgroundColor: 'var(--bg-secondary)',
-            borderColor: 'var(--border-color)',
-            borderRadius: 'var(--radius-md, 8px)',
+            backgroundColor: 'color-mix(in srgb, var(--bg-secondary) 80%, transparent)',
+            borderRadius: 'var(--radius-sm, 4px)',
           }}
         >
-          <User size={16} style={{ color: 'var(--text-secondary)' }} />
-          <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>Тариф:</span>
+          <User size={12} style={{ color: 'var(--text-muted)' }} />
           <span
-            className="text-xs font-semibold"
+            className="text-[11px] font-medium"
             style={{
               color: roleLabel === 'Admin' ? 'var(--danger)' :
                     roleLabel === 'Pro' || roleLabel === 'Premium' ? 'var(--warning)' :
@@ -386,14 +428,7 @@ interface MetricCardProps {
 function MetricCard({ label, value, unit, color, description, decimals = 1 }: MetricCardProps) {
   const colorVar = color === 'amber' ? 'var(--warning)' : color === 'red' ? 'var(--danger)' : 'var(--accent)';
   return (
-    <div
-      className="p-4 md:p-5 border"
-      style={{
-        backgroundColor: 'var(--bg-secondary)',
-        borderColor: 'var(--border-color)',
-        borderRadius: 'var(--radius-lg, 12px)',
-      }}
-    >
+    <Card padding="md" className="md:p-5">
       <p
         className="text-[10px] md:text-xs uppercase mb-2"
         style={{ color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 600 }}
@@ -401,17 +436,16 @@ function MetricCard({ label, value, unit, color, description, decimals = 1 }: Me
         {label}
       </p>
       <div className="flex items-baseline gap-1 mb-1">
-        <span
-          className="text-2xl md:text-4xl font-bold"
+        <Num
+          value={value}
+          decimals={decimals}
+          bold
+          color={colorVar}
           style={{
-            color: colorVar,
-            fontFamily: "'IBM Plex Mono', 'SF Mono', monospace",
-            fontVariantNumeric: 'tabular-nums',
-            letterSpacing: '-0.02em',
+            fontSize: 'clamp(1.875rem, 4vw, 3rem)',  // 30px → 48px responsive
+            letterSpacing: '-0.03em',
           }}
-        >
-          {value !== null ? value.toFixed(decimals) : '—'}
-        </span>
+        />
         <span className="text-xs md:text-sm" style={{ color: 'var(--text-muted)' }}>
           {unit}
         </span>
@@ -421,7 +455,7 @@ function MetricCard({ label, value, unit, color, description, decimals = 1 }: Me
           {description}
         </p>
       )}
-    </div>
+    </Card>
   );
 }
 
@@ -434,14 +468,17 @@ function QuoteTile({ label, closes }: { label: string; closes: number[] }) {
   const first = closes[0];
   const changeDay = prev ? ((last - prev) / prev) * 100 : 0;
   const changePeriod = first ? ((last - first) / first) * 100 : 0;
-  const isUp = changePeriod >= 0;
-  const color = isUp ? 'var(--success)' : 'var(--danger)';
 
-  // Sparkline SVG path — нормализация closes в [0,1], y-flip (SVG y=0 наверху).
+  // Day-change и period-change имеют РАЗНЫЕ направления — это фича:
+  // текст дневного изменения красится по дневному знаку, sparkline — по 30-дневному.
+  // Так user видит одновременно "сегодня" + "тренд".
+  const dayColor = changeDay >= 0 ? 'var(--success)' : 'var(--danger)';
+  const periodColor = changePeriod >= 0 ? 'var(--success)' : 'var(--danger)';
+
   const min = Math.min(...closes);
   const max = Math.max(...closes);
   const range = max - min || 1;
-  const w = 100, h = 24;
+  const w = 100, h = 20;
   const path = closes
     .map((c, i) => {
       const x = (i / (closes.length - 1)) * w;
@@ -450,51 +487,55 @@ function QuoteTile({ label, closes }: { label: string; closes: number[] }) {
     })
     .join(' ');
 
-  // Формат цены: IMOEX/RTSI без декималов, валюты 2, gold 0
-  const priceFmt = last >= 1000 ? last.toLocaleString('ru-RU', { maximumFractionDigits: 0 }) :
-                   last.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  // Компактный формат: без пробелов в малых числах
+  const priceFmt = last >= 1000
+    ? last.toLocaleString('ru-RU', { maximumFractionDigits: 0 })
+    : last.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   return (
     <div
-      className="p-3 border relative overflow-hidden"
+      className="px-3 py-2 border flex items-center gap-3"
       style={{
         backgroundColor: 'var(--bg-secondary)',
         borderColor: 'var(--border-color)',
         borderRadius: 'var(--radius-md, 8px)',
       }}
     >
-      <div className="flex items-center justify-between mb-1">
-        <span
-          className="text-[10px] uppercase"
-          style={{ color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 600 }}
-        >
-          {label}
-        </span>
-        <span
-          className="text-[11px] font-semibold"
+      {/* Label + price inline — компактно */}
+      <div className="flex-1 min-w-0">
+        <div className="flex items-baseline gap-2">
+          <span
+            className="text-[10px] uppercase flex-shrink-0"
+            style={{ color: 'var(--text-muted)', letterSpacing: '0.08em', fontWeight: 600 }}
+          >
+            {label}
+          </span>
+          <span
+            className="text-xs font-semibold"
+            style={{
+              color: dayColor,
+              fontFamily: "'IBM Plex Mono', monospace",
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            {changeDay > 0 ? '+' : ''}{changeDay.toFixed(2)}%
+          </span>
+        </div>
+        <div
+          className="text-base font-semibold leading-tight"
           style={{
-            color,
+            color: 'var(--text-primary)',
             fontFamily: "'IBM Plex Mono', monospace",
             fontVariantNumeric: 'tabular-nums',
+            letterSpacing: '-0.02em',
           }}
         >
-          {changeDay > 0 ? '+' : ''}{changeDay.toFixed(2)}%
-        </span>
+          {priceFmt}
+        </div>
       </div>
-      <div
-        className="text-lg md:text-xl font-bold mb-1"
-        style={{
-          color: 'var(--text-primary)',
-          fontFamily: "'IBM Plex Mono', monospace",
-          fontVariantNumeric: 'tabular-nums',
-          letterSpacing: '-0.02em',
-        }}
-      >
-        {priceFmt}
-      </div>
-      {/* Sparkline */}
-      <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" width="100%" height="18" className="opacity-80">
-        <path d={path} fill="none" stroke={color} strokeWidth="1.5" />
+      {/* Sparkline — inline справа, тонкий */}
+      <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" width="60" height="28" className="opacity-70 flex-shrink-0">
+        <path d={path} fill="none" stroke={periodColor} strokeWidth="1.5" />
       </svg>
     </div>
   );
@@ -504,14 +545,7 @@ function QuoteTile({ label, closes }: { label: string; closes: number[] }) {
     Формат value: "12,3 млрд ₽" / "450 млн ₽". */
 function VolumeList({ stocks }: { stocks: HeatmapStock[] }) {
   return (
-    <div
-      className="p-4 border"
-      style={{
-        backgroundColor: 'var(--bg-secondary)',
-        borderColor: 'var(--border-color)',
-        borderRadius: 'var(--radius-lg, 12px)',
-      }}
-    >
+    <Card padding="md">
       <div className="flex items-center gap-2 mb-3">
         <span
           className="text-xs uppercase"
@@ -556,7 +590,7 @@ function VolumeList({ stocks }: { stocks: HeatmapStock[] }) {
           </Link>
         ))}
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -564,14 +598,7 @@ function VolumeList({ stocks }: { stocks: HeatmapStock[] }) {
     4 строки с NAV + % change за день.*/
 function FundsCategories({ summary }: { summary: FundsSummaryResponse }) {
   return (
-    <div
-      className="p-4 border"
-      style={{
-        backgroundColor: 'var(--bg-secondary)',
-        borderColor: 'var(--border-color)',
-        borderRadius: 'var(--radius-lg, 12px)',
-      }}
-    >
+    <Card padding="md">
       <div className="flex items-center gap-2 mb-3">
         <span
           className="text-xs uppercase"
@@ -630,7 +657,7 @@ function FundsCategories({ summary }: { summary: FundsSummaryResponse }) {
           );
         })}
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -651,14 +678,7 @@ function SectorBars({ sectors }: { sectors: { name: string; change: number; coun
   const maxAbs = Math.max(...sectors.map(s => Math.abs(s.change)), 0.5);
 
   return (
-    <div
-      className="p-4 border"
-      style={{
-        backgroundColor: 'var(--bg-secondary)',
-        borderColor: 'var(--border-color)',
-        borderRadius: 'var(--radius-lg, 12px)',
-      }}
-    >
+    <Card padding="md">
       <div className="space-y-2">
         {sectors.map(s => {
           const isUp = s.change >= 0;
@@ -728,7 +748,7 @@ function SectorBars({ sectors }: { sectors: { name: string; change: number; coun
           );
         })}
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -747,14 +767,7 @@ function MoversList({
   const Icon = direction === 'up' ? TrendingUp : TrendingDown;
 
   return (
-    <div
-      className="p-4 border"
-      style={{
-        backgroundColor: 'var(--bg-secondary)',
-        borderColor: 'var(--border-color)',
-        borderRadius: 'var(--radius-lg, 12px)',
-      }}
-    >
+    <Card padding="md">
       <div className="flex items-center gap-2 mb-3">
         <Icon size={14} style={{ color: accentColor }} />
         <span
@@ -803,7 +816,7 @@ function MoversList({
           </Link>
         ))}
       </div>
-    </div>
+    </Card>
   );
 }
 

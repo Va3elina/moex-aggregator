@@ -80,9 +80,26 @@ export default function FlowsHistogram({
                 <div
                     ref={flowContainerRef}
                     className="relative cursor-crosshair chart-reveal"
-                    style={{ height: 'var(--chart-height, 450px)', display: 'flow-root' }}
+                    style={{
+                        height: 'var(--chart-height, 450px)',
+                        display: 'flow-root',
+                        touchAction: 'none', // mobile: водение пальцем по чарту не скроллит страницу
+                    }}
                     onMouseMove={onMouseMove}
                     onMouseLeave={onMouseLeave}
+                    onTouchStart={(e) => {
+                        if (!e.touches[0]) return;
+                        // Синтезируем mouse-like event: clientX/Y + currentTarget — всё что нужно
+                        // от event'а в этом handler'е (см. FundsMoneyPage).
+                        const t = e.touches[0];
+                        onMouseMove({ clientX: t.clientX, clientY: t.clientY, currentTarget: e.currentTarget } as React.MouseEvent<HTMLDivElement>);
+                    }}
+                    onTouchMove={(e) => {
+                        if (!e.touches[0]) return;
+                        const t = e.touches[0];
+                        onMouseMove({ clientX: t.clientX, clientY: t.clientY, currentTarget: e.currentTarget } as React.MouseEvent<HTMLDivElement>);
+                    }}
+                    onTouchEnd={onMouseLeave}
                 >
                     {/* Область графика — все отступы из CSS-переменных (унифицировано с SimpleChart) */}
                     <div className="absolute" style={{ top: 'var(--chart-pad-top, 19px)', bottom: 'var(--chart-pad-bottom, 50px)', left: 'var(--chart-pad-left, 100px)', right: 'var(--chart-pad-right-single, 95px)' }}>

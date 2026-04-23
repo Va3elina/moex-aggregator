@@ -106,29 +106,45 @@ export default function SeasonalityHistogram({
   const midY = H / 2;
   const halfH = H * 0.38;
 
+  // Unified pointer handler — mouse + touch одинаково.
+  const handlePointerMove = (clientX: number, clientY: number, el: HTMLElement) => {
+    const rect = el.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const PAD = padXRef.current;
+    const barAreaWidth = rect.width - 2 * PAD;
+    const xInBars = x - PAD;
+    if (xInBars < 0 || xInBars > barAreaWidth) { setTooltip(null); return; }
+    const slotW_px = barAreaWidth / bars.length;
+    const idx = Math.floor(xInBars / slotW_px);
+    if (idx >= 0 && idx < bars.length) {
+      const slotCenterPx = PAD + idx * slotW_px + slotW_px / 2;
+      setTooltip({ x: slotCenterPx, y: clientY - rect.top, bar: bars[idx] });
+    } else {
+      setTooltip(null);
+    }
+  };
+
   return (
-    <div className={`relative overflow-hidden pb-2 cursor-crosshair ${revealed ? 'chart-reveal' : ''}`} style={{
+    <div
+      className={`relative overflow-hidden pb-2 cursor-crosshair ${revealed ? 'chart-reveal' : ''}`}
+      style={{
         aspectRatio: 'var(--seasonality-aspect-ratio, 2.4)',
         minHeight: 'var(--seasonality-hist-min-height, 240px)',
         maxHeight: 'var(--seasonality-hist-max-height, 450px)',
+        // touchAction: none — нужно для mobile чтобы водение пальцем по чарту
+        // не триггерило scroll страницы.
+        touchAction: 'none',
       }}
-      onMouseMove={(e) => {
-        const rect = e.currentTarget.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const PAD = padXRef.current;
-        const barAreaWidth = rect.width - 2 * PAD;
-        const xInBars = x - PAD;
-        if (xInBars < 0 || xInBars > barAreaWidth) { setTooltip(null); return; }
-        const slotW_px = barAreaWidth / bars.length;
-        const idx = Math.floor(xInBars / slotW_px);
-        if (idx >= 0 && idx < bars.length) {
-          const slotCenterPx = PAD + idx * slotW_px + slotW_px / 2;
-          setTooltip({ x: slotCenterPx, y: e.clientY - rect.top, bar: bars[idx] });
-        } else {
-          setTooltip(null);
-        }
+      onMouseMove={(e) => handlePointerMove(e.clientX, e.clientY, e.currentTarget)}
+      onMouseLeave={() => setTooltip(null)}
+      onTouchStart={(e) => {
+        if (e.touches[0]) handlePointerMove(e.touches[0].clientX, e.touches[0].clientY, e.currentTarget);
       }}
-      onMouseLeave={() => setTooltip(null)}>
+      onTouchMove={(e) => {
+        if (e.touches[0]) handlePointerMove(e.touches[0].clientX, e.touches[0].clientY, e.currentTarget);
+      }}
+      onTouchEnd={() => setTooltip(null)}
+    >
       {/* Легенда — всегда занимает 28px (visibility:hidden в single), чтобы не «прыгало» */}
       <div className="absolute top-1 left-1/2 -translate-x-1/2 z-20 flex gap-4 text-xs pointer-events-none"
            style={{ visibility: isMulti ? 'visible' : 'hidden' }}>
@@ -281,7 +297,13 @@ export default function SeasonalityHistogram({
           const label = val === 0 ? '0' : `${val > 0 ? '+' : ''}${val.toFixed(2)}%`;
           return (
             <div key={i} className="absolute"
-              style={{ top: `${yPct}%`, right: 12, transform: 'translateY(-50%)' }}>
+              style={{
+                top: `${yPct}%`,
+                // right 4px mobile / 12px desktop — больше зазор на desktop для эстетики,
+                // меньше на mobile чтобы label'у "+0.02%" хватало места
+                right: 'var(--seasonality-ylabel-right, 12px)',
+                transform: 'translateY(-50%)',
+              }}>
               {/* background + padding создают "halo" цветом фона карточки —
                   перекрывает горизонтальную grid-линию в зоне, где text заходит на
                   bar-area (~2px на desktop). Стандартный приём для axis labels,

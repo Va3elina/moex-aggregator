@@ -457,7 +457,7 @@ export default function OpenInterestPage() {
 
           {/* FIZ/YUR переключатель */}
           {displayMode !== 'price' && (
-            <div className="flex items-center bg-theme-secondary rounded-xl border border-theme p-1">
+            <div className="btn-group-scroll bg-theme-secondary rounded-xl border border-theme p-1">
               <button
                 onClick={() => setClgroup('FIZ')}
                 className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors duration-200 ${clgroup === 'FIZ'
@@ -512,7 +512,7 @@ export default function OpenInterestPage() {
         </div>
 
         {/* Период */}
-        <div className="flex items-center gap-1 mb-4 bg-theme-secondary rounded-xl border border-theme p-1 w-fit">
+        <div className="btn-group-scroll gap-1 mb-4 bg-theme-secondary rounded-xl border border-theme p-1">
           {(Object.keys(PERIOD_LABELS) as Period[]).map((p) => {
             const available = isPeriodAvailable(p);
             const allowed = isPeriodAllowed(p, isAuthenticated);

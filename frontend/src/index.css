@@ -14,7 +14,7 @@
   --bg-elevated: #232629;
   --bg-widget: linear-gradient(135deg, #131518 0%, #1B1E21 100%);
   --bg-widget-hover: linear-gradient(135deg, #181B1E 0%, #202326 100%);
-  --glass-bg: rgba(11, 13, 15, 0.85);
+  --glass-bg: rgba(11, 13, 15, 0.6);
 
   --text-primary: #F5F5F5;
   --text-secondary: #8E9297;
@@ -270,7 +270,7 @@
   --bg-elevated: #24272D;
   --bg-widget: #16181C;             /* ПЛОСКО, не gradient */
   --bg-widget-hover: #1C1F24;       /* простой чуть-светлее */
-  --glass-bg: rgba(11, 14, 17, 0.9);
+  --glass-bg: rgba(11, 14, 17, 0.6);
 
   --text-primary: #EAECEF;          /* почти-белый, slightly cool */
   --text-secondary: #848E9C;        /* OKX-grey */
@@ -663,9 +663,9 @@
 
     --chart-pad-top: 16px;
     --chart-pad-bottom: 40px;
-    --chart-pad-left: 45px;
-    --chart-pad-right-single: 20px;
-    --chart-pad-right-dual: 20px;
+    --chart-pad-left: 58px;     /* было 45 — не хватало для "+1.68%" / "3287" */
+    --chart-pad-right-single: 36px;  /* было 20 — нужно для "+/-" labels */
+    --chart-pad-right-dual: 48px;    /* было 20 — и ещё больше для 2-осей */
 
     --chart-legend-mb: 10px;
 
@@ -674,8 +674,8 @@
 
     --chart-nav-mt: 9px;
 
-    --chart-font-y: 12px;
-    --chart-font-x: 11px;
+    --chart-font-y: 10px;   /* было 12 — меньше, чтобы влезало в pad */
+    --chart-font-x: 10px;   /* было 11 — меньше, чтобы даты не наезжали */
 
     --tooltip-width: 150px;
     --tooltip-font-label: 10px;
@@ -709,7 +709,8 @@
     --seasonality-hist-max-height: 300px;
     --seasonality-hist-pad-top: 22px;
     --seasonality-hist-pad-bottom: 20px;
-    --seasonality-hist-pad-x: 38px;     /* mobile — короче числа → меньший pad */
+    --seasonality-hist-pad-x: 52px;     /* mobile — было 38, обрезало "+0.02%" */
+    --seasonality-ylabel-right: 4px;    /* mobile: ближе к краю, больше места на label */
     --chart-date-placeholder-height: 18px;
     --chart-xlabel-row-height: 20px;
   }
@@ -753,7 +754,10 @@ html {
 body {
   background-color: var(--bg-primary);
   color: var(--text-primary);
-  overflow-x: hidden;
+  /* overflow-x: clip вместо hidden — clip не создаёт scroll-container,
+     значит не ломает position: sticky у descendants (как nav-шапка).
+     Hidden же неявно создавал scroll-context, поэтому шапка не "следовала". */
+  overflow-x: clip;
   font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   /* Цифры одинаковой ширины — тултипы не «дёргаются» при обновлении */
   font-variant-numeric: tabular-nums;
@@ -794,6 +798,27 @@ svg text {
   border: 1px solid var(--border-color);
   border-radius: 0.75rem;
   transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+
+/* Button group — горизонтальный контейнер для таб-переключателей
+   (периоды времени, таймфреймы, фильтры УК и т.д.).
+   Ключевая фича: auto-scroll при overflow на mobile — без этого
+   кнопки "уходят за край" и их невозможно достать.
+   Скроллбар скрыт через scrollbar-width: none / -webkit-scrollbar. */
+.btn-group-scroll {
+  display: flex;
+  align-items: center;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;          /* Firefox */
+  max-width: 100%;
+}
+.btn-group-scroll::-webkit-scrollbar {
+  display: none;                  /* Chrome/Safari/Edge */
+}
+.btn-group-scroll > * {
+  flex-shrink: 0;                 /* дети не сжимаются → лучше читаются */
+  white-space: nowrap;            /* "Т-Капитал" одной строкой, не 2 */
 }
 
 
@@ -1043,6 +1068,14 @@ a.btn-accent:active {
 
 .chart-reveal {
   animation: chart-reveal 1s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+}
+
+/* Live-точка "данные обновляются" — расширяющийся ring effect каждые 2с.
+   Используется в OverviewPage рядом с timestamp. */
+@keyframes frame-pulse {
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--success) 50%, transparent); }
+  70%  { box-shadow: 0 0 0 6px color-mix(in srgb, var(--success) 0%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--success) 0%, transparent); }
 }
 
 /* Stack layout on mobile */

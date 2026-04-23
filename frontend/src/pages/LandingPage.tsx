@@ -24,6 +24,8 @@ import {
   getBreadthCurrent,
   getBuffettCapGdp,
 } from '../services/api';
+import Card from '../components/Card';
+import Num from '../components/Num';
 
 /** Список всех индикаторов с коротким описанием для "card grid" внизу. */
 const INDICATORS = [
@@ -247,14 +249,7 @@ interface MetricCardProps {
 function MetricCard({ label, value, unit, color, description, decimals = 1 }: MetricCardProps) {
   const colorVar = color === 'amber' ? 'var(--warning)' : color === 'red' ? 'var(--danger)' : 'var(--accent)';
   return (
-    <div
-      className="p-4 md:p-5 border"
-      style={{
-        backgroundColor: 'var(--bg-secondary)',
-        borderColor: 'var(--border-color)',
-        borderRadius: 'var(--radius-lg)',
-      }}
-    >
+    <Card padding="md" className="md:p-5">
       <p
         className="text-[10px] md:text-xs uppercase mb-2"
         style={{ color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 600 }}
@@ -262,17 +257,16 @@ function MetricCard({ label, value, unit, color, description, decimals = 1 }: Me
         {label}
       </p>
       <div className="flex items-baseline gap-1 mb-1">
-        <span
-          className="text-2xl md:text-4xl font-bold"
+        <Num
+          value={value}
+          decimals={decimals}
+          bold
+          color={colorVar}
           style={{
-            color: colorVar,
-            fontFamily: "'IBM Plex Mono', 'SF Mono', monospace",
-            fontVariantNumeric: 'tabular-nums',
+            fontSize: 'clamp(1.5rem, 3.5vw, 2.25rem)',  // 24px → 36px responsive
             letterSpacing: '-0.02em',
           }}
-        >
-          {value !== null ? value.toFixed(decimals) : '—'}
-        </span>
+        />
         <span className="text-xs md:text-sm" style={{ color: 'var(--text-muted)' }}>
           {unit}
         </span>
@@ -282,7 +276,7 @@ function MetricCard({ label, value, unit, color, description, decimals = 1 }: Me
           {description}
         </p>
       )}
-    </div>
+    </Card>
   );
 }
 

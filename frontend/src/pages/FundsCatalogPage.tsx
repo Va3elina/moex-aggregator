@@ -127,7 +127,7 @@ export default function FundsCatalogPage() {
 
             {/* Filters */}
             <div className="flex flex-wrap items-center gap-3 mb-6">
-                <div className="flex items-center gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
+                <div className="btn-group-scroll gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
                     <button
                         onClick={() => setCategoryFilter('all')}
                         className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${categoryFilter === 'all' ? 'btn-control active' : 'text-theme-secondary hover:text-theme-primary'}`}
@@ -141,7 +141,7 @@ export default function FundsCatalogPage() {
                     ))}
                 </div>
 
-                <div className="flex items-center gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
+                <div className="btn-group-scroll gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
                     <button
                         onClick={() => setUkFilter('all')}
                         className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${ukFilter === 'all' ? 'btn-control active' : 'text-theme-secondary hover:text-theme-primary'}`}

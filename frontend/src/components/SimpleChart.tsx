@@ -71,7 +71,12 @@ export default function SimpleChart({
   formatThirdValue,
   formatTime = (t) => {
     const date = new Date(t);
-    return date.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short', year: '2-digit' });
+    // Mobile: "29.04.26" — короче, не налезает
+    // Desktop: "29 апр. 26 г." — читаемее, места хватает
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+    return isMobile
+      ? date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' })
+      : date.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short', year: '2-digit' });
   },
   loading = false,
   primaryLabel = 'Цена',
@@ -339,8 +344,14 @@ export default function SimpleChart({
       })
       : [];
 
-    // X ticks
-    const xTickCount = Math.min(7, displayData.length);
+    // X ticks — адаптивно:
+    //   mobile (< 640px): 4 тика (иначе даты налезают)
+    //   tablet (< 1024px): 5 тиков
+    //   desktop: 7 тиков
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+    const isTablet = typeof window !== 'undefined' && window.innerWidth < 1024;
+    const maxTicks = isMobile ? 4 : isTablet ? 5 : 7;
+    const xTickCount = Math.min(maxTicks, displayData.length);
     const xTicks = Array.from({ length: xTickCount }, (_, i) => {
       const index = Math.floor((i / Math.max(xTickCount - 1, 1)) * (displayData.length - 1));
       return { time: displayData[index].time, x: scaleX(index, displayData.length) };

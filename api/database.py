@@ -14,9 +14,11 @@ load_dotenv(env_path)
 # URL подключения к базе данных
 DATABASE_URL = os.getenv("DB_URL")
 
-# Создаём движок SQLAlchemy с настройками пула
-# Render Free PostgreSQL: лимит 5 connections
-# Определяем параметры подключения в зависимости от драйвера
+# Создаём движок SQLAlchemy с настройками пула.
+# Наш self-hosted PostgreSQL: max_connections=100.
+# Pool=15 base + 15 overflow → 30 concurrent connections max.
+# Этого хватает на multi-user dashboard с 9+ concurrent API-запросами.
+# (Раньше было 3+2=5 с времён Render Free — теперь узкое место).
 _connect_args = {}
 if DATABASE_URL and "pg8000" in DATABASE_URL:
     # pg8000 пытается использовать SSL по умолчанию —
@@ -26,10 +28,11 @@ if DATABASE_URL and "pg8000" in DATABASE_URL:
 engine = create_engine(
     DATABASE_URL,
     echo=False,
-    pool_size=3,          # Базовый размер пула
-    max_overflow=2,       # Дополнительные соединения при нагрузке (итого макс. 5)
+    pool_size=15,         # Базовый размер пула (было 3)
+    max_overflow=15,      # Доп. соединения под нагрузкой (итого макс. 30, было 5)
     pool_pre_ping=True,   # Проверка живости соединения перед использованием
     pool_recycle=300,     # Пересоздавать соединения каждые 5 минут
+    pool_timeout=10,      # Быстрее fail при pool exhaustion (10с вместо 30с default)
     connect_args=_connect_args,
 )
 

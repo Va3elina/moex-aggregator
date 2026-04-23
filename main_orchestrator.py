@@ -143,6 +143,12 @@ MATERIALIZED_VIEWS = {
 DAILY_UPDATE_HOUR = 19
 DAILY_UPDATE_MINUTE = 10
 
+# Ранний прогон ТОЛЬКО для funds — Cbonds публикует NAV с ~11-14 МСК,
+# 14:30 ловит большинство УК. Поздний 19:10 догоняет опоздавших.
+# UPSERT на (fund_id, trade_date) → безопасный повторный прогон.
+FUNDS_EARLY_UPDATE_HOUR = 14
+FUNDS_EARLY_UPDATE_MINUTE = 30
+
 # Буферы (секунды после закрытия интервала)
 BUFFER_5MIN = 10  # После закрытия 5-минутки
 BUFFER_HOUR = 120  # 2 минуты после часа для агрегации
@@ -365,6 +371,7 @@ class MainOrchestrator:
         self.last_5min_update = None
         self.last_hourly_aggregate = None
         self.last_daily_update = None
+        self.last_funds_early_update = None  # ранний funds-only прогон в 14:30
         self.last_weekend_catchup = None
 
         self.stats = {
@@ -768,6 +775,7 @@ class MainOrchestrator:
         log.info(f"  Расписание:")
         log.info(f"    5м цикл: XX:00:{BUFFER_5MIN:02d}, XX:05:{BUFFER_5MIN:02d}...")
         log.info(f"    Агрегация: XX:02:00")
+        log.info(f"    Funds early: {FUNDS_EARLY_UPDATE_HOUR:02d}:{FUNDS_EARLY_UPDATE_MINUTE:02d}")
         log.info(f"    Daily: {DAILY_UPDATE_HOUR:02d}:{DAILY_UPDATE_MINUTE:02d}")
         log.info(f"  Календарь MOEX: {'✓ загружен' if CALENDAR_AVAILABLE else '✗ не найден'}")
         if CALENDAR_AVAILABLE:
@@ -865,7 +873,17 @@ class MainOrchestrator:
                 else:
                     log.debug(f"Вне торгов: {reason}")
 
-                # === Дневное обновление (в 00:10, только в торговые дни) ===
+                # === Ранний funds-only прогон (14:30 МСК) ===
+                # Cbonds публикует большинство NAV к 14 часам — ловим раньше
+                # чем основной daily в 19:10, чтобы user видел свежие потоки сразу.
+                if (slot_day != self.last_funds_early_update and
+                        now.hour == FUNDS_EARLY_UPDATE_HOUR and
+                        now.minute >= FUNDS_EARLY_UPDATE_MINUTE):
+                    log.info(f"⏰ [{now:%H:%M:%S} МСК] Ранний funds update...")
+                    await self.run_funds_update()
+                    self.last_funds_early_update = slot_day
+
+                # === Дневное обновление (в 19:10, только в торговые дни) ===
                 if (slot_day != self.last_daily_update and
                         now.hour == DAILY_UPDATE_HOUR and
                         now.minute >= DAILY_UPDATE_MINUTE):

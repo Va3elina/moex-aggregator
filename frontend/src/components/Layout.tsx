@@ -25,11 +25,20 @@ export default function Layout() {
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: 'var(--bg-primary)' }}>
-      {/* Sticky Header с glass эффектом */}
-      <nav className="sticky top-0 z-50 backdrop-blur-xl border-b" style={{
-        backgroundColor: 'var(--glass-bg)',
-        borderColor: 'var(--border-color)'
-      }}>
+      {/* Sticky Header с glass эффектом.
+          backdrop-filter: blur(28px) saturate(180%) → "ликвидное стекло" (Apple-style).
+          Saturate усиливает цвета фона за glass-слоем → контент читаемо просвечивает.
+          Subtle shadow даёт "подвешенность" над контентом при скролле. */}
+      <nav
+        className="sticky top-0 z-50 border-b"
+        style={{
+          backgroundColor: 'var(--glass-bg)',
+          borderColor: 'var(--border-color)',
+          backdropFilter: 'blur(28px) saturate(180%)',
+          WebkitBackdropFilter: 'blur(28px) saturate(180%)',
+          boxShadow: '0 1px 0 0 rgba(255,255,255,0.03), 0 8px 32px -12px rgba(0,0,0,0.4)',
+        }}
+      >
         <div className="mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-14 md:h-16">
             {/* Логотип */}
