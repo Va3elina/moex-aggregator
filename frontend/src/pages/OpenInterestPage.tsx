@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { ChevronDown, BarChart3, Lock } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
+import { METHODOLOGY } from '../data/methodology';
 import { getChartData, getInstrument } from '../services/api';
 import type { ChartResponse } from '../types';
 import type { ChartAnnotation } from '../components/SimpleChart';
@@ -422,6 +423,8 @@ export default function OpenInterestPage() {
         icon={BarChart3}
         title="Открытый интерес"
         subtitle="Анализ позиций участников по фьючерсам MOEX"
+        help={METHODOLOGY.oi}
+        helpLink="/methodology/oi"
       />
 
       {/* Контролы — без widget-wrapper, консистентно с остальными страницами
@@ -701,23 +704,23 @@ export default function OpenInterestPage() {
             <span className="w-4 h-0.5 mt-2 rounded-full flex-shrink-0" style={{ backgroundColor: COLORS.amber }} />
             <div>
               <span className="font-medium" style={{ color: COLORS.amber }}>Открытый интерес</span>
-              <span className="text-theme-secondary"> — сумма лонг и шорт позиций (Long + |Short|)</span>
+              <span className="text-theme-secondary"> — сумма позиций на покупку и на продажу</span>
             </div>
           </div>
 
           <div className="flex items-start gap-3">
             <span className="w-4 h-0.5 mt-2 rounded-full flex-shrink-0" style={{ backgroundColor: COLORS.emerald }} />
             <div>
-              <span className="font-medium" style={{ color: COLORS.emerald }}>Покупки (Long)</span>
-              <span className="text-theme-secondary"> — объём лонг позиций / количество покупателей</span>
+              <span className="font-medium" style={{ color: COLORS.emerald }}>Покупки</span>
+              <span className="text-theme-secondary"> — объём позиций на рост / количество покупателей</span>
             </div>
           </div>
 
           <div className="flex items-start gap-3">
             <span className="w-4 h-0.5 mt-2 rounded-full flex-shrink-0" style={{ backgroundColor: COLORS.rose }} />
             <div>
-              <span className="font-medium" style={{ color: COLORS.rose }}>Продажи (Short)</span>
-              <span className="text-theme-secondary"> — объём шорт позиций / количество продавцов</span>
+              <span className="font-medium" style={{ color: COLORS.rose }}>Продажи</span>
+              <span className="text-theme-secondary"> — объём позиций на падение / количество продавцов</span>
             </div>
           </div>
 
@@ -725,7 +728,7 @@ export default function OpenInterestPage() {
             <span className="w-4 h-0.5 mt-2 rounded-full flex-shrink-0" style={{ backgroundColor: COLORS.cyan }} />
             <div>
               <span className="font-medium" style={{ color: COLORS.cyan }}>Чистая позиция</span>
-              <span className="text-theme-secondary"> — разница между лонг и шорт (Long + Short). Положительное = перевес покупателей</span>
+              <span className="text-theme-secondary"> — разница между покупками и продажами</span>
             </div>
           </div>
 
@@ -734,7 +737,7 @@ export default function OpenInterestPage() {
             <div className="text-theme-secondary">
               <span className="font-medium text-theme-primary">Режимы:</span>{' '}
               <span style={{ color: COLORS.primary }}>Позиции</span> — объём в контрактах,{' '}
-              <span style={{ color: COLORS.primary }}>Участники</span> — количество трейдеров
+              <span style={{ color: COLORS.primary }}>Участники</span> — количество участников торгов
             </div>
           </div>
         </div>

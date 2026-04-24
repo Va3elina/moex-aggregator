@@ -15,6 +15,8 @@
  *   <PageHeader icon={Zap} eyebrow="ИНДИКАТОР" title="Сила рынка" />
  */
 import type { LucideIcon } from 'lucide-react';
+import HelpTooltip from './HelpTooltip';
+import type { MethodologyEntry } from '../data/methodology';
 
 interface PageHeaderProps {
   /** Иконка-идентификатор индикатора (Lucide) */
@@ -27,6 +29,11 @@ interface PageHeaderProps {
   subtitle?: string;
   /** Доп. элементы справа (бейджи, кнопки, ссылки) */
   rightSlot?: React.ReactNode;
+  /** Методология индикатора — показывает знак "?" рядом с заголовком. */
+  help?: MethodologyEntry;
+  /** Ссылка на отдельную страницу методологии. Если указана — "?" ведёт
+   *  на эту страницу. Иначе — показывает popover с текстом help. */
+  helpLink?: string;
 }
 
 export default function PageHeader({
@@ -35,6 +42,8 @@ export default function PageHeader({
   title,
   subtitle,
   rightSlot,
+  help,
+  helpLink,
 }: PageHeaderProps) {
   return (
     <div className="flex items-start gap-3 mb-6">
@@ -72,9 +81,14 @@ export default function PageHeader({
             color: 'var(--text-primary)',
             letterSpacing: '-0.01em',
             lineHeight: 1.2,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            flexWrap: 'wrap',
           }}
         >
-          {title}
+          <span>{title}</span>
+          {(help || helpLink) && <HelpTooltip entry={help} linkTo={helpLink} />}
         </h1>
         {subtitle && (
           <p

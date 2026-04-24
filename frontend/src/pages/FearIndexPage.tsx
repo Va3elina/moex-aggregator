@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { TrendingUp, TrendingDown, AlertTriangle, Gauge, DollarSign, BarChart3, Lock } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
+import { METHODOLOGY } from '../data/methodology';
 import { useNavigate } from 'react-router-dom';
 import { getFearIndex, getFearIndexHistory } from '../services/api';
 import type { FearIndexResponse, FearIndexHistoryResponse, FearIndexPeriod } from '../services/api';
@@ -105,6 +106,7 @@ export default function FearIndexPage() {
         icon={Gauge}
         title="Индекс страха"
         subtitle="Настроения инвесторов по потокам в фонды"
+        help={METHODOLOGY.fear}
       />
 
       {/* Виджет текущего значения */}

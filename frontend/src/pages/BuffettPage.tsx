@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import { Scale, Lock } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
+import { METHODOLOGY } from '../data/methodology';
 import {
     getBuffettCapGdp,
     getBuffettCapM2,
@@ -125,6 +126,8 @@ export default function BuffettPage() {
                 icon={Scale}
                 title="Индикатор Баффетта"
                 subtitle="Оценка рынка относительно экономики"
+                help={METHODOLOGY.buffett}
+                helpLink="/methodology/buffett"
             />
 
             {/* Контролы */}

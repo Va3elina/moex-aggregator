@@ -20,6 +20,13 @@ import PricingPage from './pages/PricingPage';
 import BillingSuccessPage from './pages/BillingSuccessPage';
 import BillingStubPage from './pages/BillingStubPage';
 import BillingRedeemPage from './pages/BillingRedeemPage';
+import OIMethodologyPage from './pages/methodology/OIMethodologyPage';
+import HeatmapMethodologyPage from './pages/methodology/HeatmapMethodologyPage';
+import FundsMoneyMethodologyPage from './pages/methodology/FundsMoneyMethodologyPage';
+import FundsCatalogMethodologyPage from './pages/methodology/FundsCatalogMethodologyPage';
+import BuffettMethodologyPage from './pages/methodology/BuffettMethodologyPage';
+import StrengthMethodologyPage from './pages/methodology/StrengthMethodologyPage';
+import SeasonalityMethodologyPage from './pages/methodology/SeasonalityMethodologyPage';
 
 /** "/" conditional: auth → Overview, guest → Landing.
     Loading state → Overview как fallback (быстрее, avoids flash). */
@@ -55,6 +62,14 @@ export default function App() {
             <Route path="/buffett" element={<BuffettPage />} />
             <Route path="/strength" element={<StrengthPage />} />
             <Route path="/seasonality" element={<SeasonalityPage />} />
+            {/* Методология индикаторов */}
+            <Route path="/methodology/oi" element={<OIMethodologyPage />} />
+            <Route path="/methodology/heatmap" element={<HeatmapMethodologyPage />} />
+            <Route path="/methodology/funds-money" element={<FundsMoneyMethodologyPage />} />
+            <Route path="/methodology/funds-catalog" element={<FundsCatalogMethodologyPage />} />
+            <Route path="/methodology/buffett" element={<BuffettMethodologyPage />} />
+            <Route path="/methodology/strength" element={<StrengthMethodologyPage />} />
+            <Route path="/methodology/seasonality" element={<SeasonalityMethodologyPage />} />
             <Route path="/profile" element={<ProfilePage />} />
             {/* Billing */}
             <Route path="/pricing" element={<PricingPage />} />

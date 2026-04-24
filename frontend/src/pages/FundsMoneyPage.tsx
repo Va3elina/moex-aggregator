@@ -2,6 +2,7 @@ import React, { useEffect, useLayoutEffect, useState, useMemo, useRef, useCallba
 import { TrendingUp, DollarSign, Banknote, LineChart, BarChart2, Gem, Wallet, Lock } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
+import { METHODOLOGY } from '../data/methodology';
 import {
     getFundsChartData,
     getFundsFlows,
@@ -379,6 +380,8 @@ export default function FundsMoneyPage() {
                 icon={Wallet}
                 title="Деньги в фондах"
                 subtitle="Динамика СЧА фондов и индексов"
+                help={METHODOLOGY.fundsMoney}
+                helpLink="/methodology/funds-money"
             />
 
             {/* Вкладки категорий */}

@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { LayoutGrid } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
+import { METHODOLOGY } from '../data/methodology';
 import { getFundsCatalog, getFundHoldings, type CatalogFund, type FundHoldingsResponse } from '../services/api';
 import { UK_LOGOS, CATEGORY_LABELS, DONUT_COLORS } from '../config/fundConfig';
 
@@ -123,6 +124,8 @@ export default function FundsCatalogPage() {
                 icon={LayoutGrid}
                 title="Состав фондов"
                 subtitle="Структура портфелей фондов акций и облигаций"
+                help={METHODOLOGY.fundsCatalog}
+                helpLink="/methodology/funds-catalog"
             />
 
             {/* Filters */}

@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useState, useMemo, useRef, useCallback } fr
 import { Activity } from 'lucide-react';
 import ChartNavigator from '../components/ChartNavigator';
 import PageHeader from '../components/PageHeader';
+import { METHODOLOGY } from '../data/methodology';
 import {
     getBreadthCurrent,
     getBreadthHistory,
@@ -284,6 +285,8 @@ export default function StrengthPage() {
                 icon={Activity}
                 title="Сила рынка"
                 subtitle={`% ${universe === 'imoex' ? 'акций индекса MOEX' : 'акций'} выше EMA${emaPeriod}`}
+                help={METHODOLOGY.strength}
+                helpLink="/methodology/strength"
             />
 
             {/* Контролы — одна строка */}
