@@ -1,27 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Grid3X3 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
+import { METHODOLOGY } from '../data/methodology';
 import { getHeatmapData, getHeatmapImoex } from '../services/api';
 import { useRealtimeData } from '../hooks/useRealtimeData';
 import type { HeatmapStock, HeatmapSector } from '../services/api';
-
-// Set тикеров, у которых ЕСТЬ SVG-лого в /public/logos/<ticker>.svg
-// По мере добавления файлов — расширяем этот список.
-// Для отсутствующих — fallback circle + 2-letter initials (см. renderStock ниже).
-// TODO(logos): добавить SBER, GAZP, LKOH, ROSN, NVTK, ...
-const AVAILABLE_LOGOS = new Set<string>([
-  // (пусто пока — fallback покажется для всех)
-]);
-
-/** Deterministic hash-to-HSL-hue. Одинаковый тикер → одинаковый цвет fallback'а. */
-function tickerHue(ticker: string): number {
-  let hash = 0;
-  for (let i = 0; i < ticker.length; i++) {
-    hash = (hash << 5) - hash + ticker.charCodeAt(i);
-    hash |= 0;
-  }
-  return Math.abs(hash) % 360;
-}
 
 // Опции для фильтров
 const PERIOD_OPTIONS = [
@@ -383,17 +366,8 @@ export default function HeatmapPage() {
     const fonts = getFontSize(rect.width, rect.height);
     const showTicker = rect.width > 18 && rect.height > 14;
     const showPercent = rect.width > 30 && rect.height > 25;
-    // Логотип — только на средних/больших плитках, чтобы не захламлять маленькие
-    const showLogo = rect.width > 70 && rect.height > 50;
     const gap = 2;
     const radius = 6;
-
-    // Logo size: ~22% от min(width,height), но не больше 32px (чтобы не доминировал)
-    const logoSize = Math.min(32, Math.min(rect.width, rect.height) * 0.22);
-    const logoUrl = `/logos/${rect.id}.svg`;
-    // Top-left badge: padding 8px от угла плитки
-    const logoX = rect.x + 8;
-    const logoY = rect.y + 8;
 
     return (
       <g
@@ -421,44 +395,6 @@ export default function HeatmapPage() {
           style={{ transition: 'fill 0.6s ease' }}
           className="hover:brightness-110"
         />
-        {/* Logo: SVG-image с fallback через JS `onError` (onError на SVG-image
-            не всегда работает, поэтому используем стратегию "есть/нет" через
-            Set AVAILABLE_LOGOS. Пока Set пустой — fallback (circle + initials).
-            При добавлении новых SVG в /public/logos/ они автоматически появятся
-            после обновления AVAILABLE_LOGOS). */}
-        {showLogo && (AVAILABLE_LOGOS.has(rect.id) ? (
-          <image
-            href={logoUrl}
-            x={logoX}
-            y={logoY}
-            width={logoSize}
-            height={logoSize}
-            preserveAspectRatio="xMidYMid meet"
-            style={{ pointerEvents: 'none' }}
-          />
-        ) : (
-          // Fallback: coloured circle + 2-letter initials
-          <g style={{ pointerEvents: 'none', opacity: 0.85 }}>
-            <circle
-              cx={logoX + logoSize / 2}
-              cy={logoY + logoSize / 2}
-              r={logoSize / 2}
-              fill={`hsl(${tickerHue(rect.id)}, 55%, 35%)`}
-            />
-            <text
-              x={logoX + logoSize / 2}
-              y={logoY + logoSize / 2}
-              textAnchor="middle"
-              dominantBaseline="central"
-              fill="rgba(255,255,255,0.95)"
-              fontSize={logoSize * 0.42}
-              fontWeight="700"
-              fontFamily="'IBM Plex Mono', monospace"
-            >
-              {rect.id.slice(0, 2)}
-            </text>
-          </g>
-        ))}
         {showTicker && (
           <text
             x={rect.x + rect.width / 2}
@@ -505,6 +441,8 @@ export default function HeatmapPage() {
           icon={Grid3X3}
           title="Карта рынка"
           subtitle={`Обновлено в ${lastUpdate || '--:--'}`}
+          help={METHODOLOGY.heatmap}
+          helpLink="/methodology/heatmap"
         />
 
         <div className="flex flex-wrap gap-2">
