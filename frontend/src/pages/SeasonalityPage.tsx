@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { ChevronDown, BarChart3, TrendingUp, CalendarDays, Layers, LayoutDashboard, X, Plus } from 'lucide-react';
+import { ChevronDown, BarChart3, CalendarDays, Layers, X, Plus } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
+import { METHODOLOGY } from '../data/methodology';
 import { getSeasonality, getSeasonalityPrice, getSeasonalityYearly, getSeasonalityYears } from '../services/api';
 import InstrumentSearchModal from '../components/InstrumentSearchModal';
 import SeasonalityHistogram from '../components/seasonality/SeasonalityHistogram';
@@ -572,6 +573,8 @@ export default function SeasonalityPage() {
         icon={CalendarDays}
         title="Сезонность"
         subtitle="Среднее изменение цены по временным периодам"
+        help={METHODOLOGY.seasonality}
+        helpLink="/methodology/seasonality"
       />
 
       {/* Controls Row 1 */}
@@ -603,7 +606,9 @@ export default function SeasonalityPage() {
           )}
         </div>
 
-        {/* Chart type toggle — pill-group паттерн (rounded active-highlight) */}
+        {/* Chart type toggle — pill-group паттерн (rounded active-highlight).
+            Режимы «Цена» и «Тест» убраны из UI — внутренняя логика для них
+            оставлена на случай возврата. */}
         <div className="btn-group-scroll gap-1 p-1 rounded-xl border"
           style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-color)' }}>
           <button
@@ -617,16 +622,6 @@ export default function SeasonalityPage() {
             <BarChart3 size={14} /> Сезонность
           </button>
           <button
-            onClick={() => setChartType('price')}
-            className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 md:py-2 text-xs md:text-sm font-medium rounded-lg transition-all"
-            style={{
-              backgroundColor: chartType === 'price' ? 'var(--accent)' : 'transparent',
-              color: chartType === 'price' ? 'var(--bg-primary)' : 'var(--text-secondary)',
-            }}
-          >
-            <TrendingUp size={14} /> Цена
-          </button>
-          <button
             onClick={() => setChartType('yearly')}
             className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 md:py-2 text-xs md:text-sm font-medium rounded-lg transition-all"
             style={{
@@ -635,17 +630,6 @@ export default function SeasonalityPage() {
             }}
           >
             <Layers size={14} /> Годовая
-          </button>
-          <button
-            onClick={() => setChartType('test')}
-            className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 md:py-2 text-xs md:text-sm font-medium rounded-lg transition-all"
-            style={{
-              backgroundColor: chartType === 'test' ? 'var(--accent)' : 'transparent',
-              color: chartType === 'test' ? 'var(--bg-primary)' : 'var(--text-secondary)',
-            }}
-            title="Экспериментальный режим — Seasonax-style dashboard (годовая + 4 гистограммы)"
-          >
-            <LayoutDashboard size={14} /> Тест
           </button>
         </div>
 

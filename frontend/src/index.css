@@ -644,10 +644,10 @@
                                                ограничение и даёт chart'у всю ширину card. */
   --seasonality-hist-pad-top: 28px;         /* место под легенду */
   --seasonality-hist-pad-bottom: 24px;      /* место под X-labels */
-  --seasonality-hist-pad-x: 70px;           /* симметрично слева и справа.
-                                               Меньше --chart-pad-right-single (95px) потому что
-                                               Y-labels у гистограммы короткие ("+0.17%"),
-                                               а не длинные как у SimpleChart ("68.33 трлн ₽"). */
+  --seasonality-hist-pad-x: 95px;           /* симметрично слева и справа — совпадает
+                                               с --chart-pad-right-single (95px) в SimpleChart
+                                               и FlowsHistogram, чтобы Y-labels ("+0.29%" и т.п.)
+                                               не заезжали на зону столбцов. */
 
   /* Общие для charts с date-label и внешним X-axis */
   --chart-date-placeholder-height: 22px;    /* placeholder когда tooltip не активен */
