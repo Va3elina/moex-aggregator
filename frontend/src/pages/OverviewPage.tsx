@@ -37,6 +37,7 @@ import type { HeatmapStock, FundsSummaryResponse } from '../services/api';
 import { useRealtimeData } from '../hooks/useRealtimeData';
 import Card from '../components/Card';
 import Num from '../components/Num';
+import Skeleton from '../components/Skeleton';
 import { useAuth } from '../contexts/AuthContext';
 
 const INDICATORS = [
@@ -201,16 +202,17 @@ export default function OverviewPage() {
     <div className="max-w-7xl mx-auto px-4 md:px-6 py-8 md:py-10">
 
       {/* ═══ QUOTE TILES — IMOEX / RTSI / USD / CNY / Gold ═══
-          Live-цифры сверху страницы. Sparkline показывает движение за 30 дней. */}
-      {Object.keys(quotes).length > 0 && (
-        <section className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2 md:gap-3 mb-8">
-          {QUOTE_TICKERS.map(t => {
-            const q = quotes[t.secid];
-            if (!q || q.closes.length < 2) return null;
-            return <QuoteTile key={t.secid} label={q.label} closes={q.closes} />;
-          })}
-        </section>
-      )}
+          Live-цифры сверху страницы. Sparkline показывает движение за 30 дней.
+          Всегда рендерим 5 slot'ов: skeleton если data нет → реальный tile при load. */}
+      <section className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2 md:gap-3 mb-8">
+        {QUOTE_TICKERS.map(t => {
+          const q = quotes[t.secid];
+          const hasData = q && q.closes.length >= 2;
+          return hasData
+            ? <QuoteTile key={t.secid} label={q.label} closes={q.closes} />
+            : <Skeleton key={t.secid} height={68} rounded="md" />;
+        })}
+      </section>
 
       {/* ═══ GREETING — одна строка, компактно ═══ */}
       <section className="flex flex-wrap items-center justify-between gap-3 mb-6 md:mb-8">
@@ -289,63 +291,67 @@ export default function OverviewPage() {
       </section>
 
       {/* ═══ TOP MOVERS (Gainers / Losers) ═══
-          Рыночный pulse: кто больше всего вырос/упал за день.
-          Фетчатся из /api/heatmap/stocks и сортируются по change_1d. */}
-      {(gainers.length > 0 || losers.length > 0) && (
-        <section className="mb-10 md:mb-12">
-          <div className="flex items-center gap-3 mb-5 md:mb-6">
-            <p
-              className="text-xs uppercase"
-              style={{ color: 'var(--text-muted)', letterSpacing: '0.12em', fontWeight: 600 }}
-            >
-              Движение дня
-            </p>
-            <div className="h-px flex-1" style={{ backgroundColor: 'var(--border-color)' }} />
-            <Link
-              to="/heatmap"
-              className="text-xs flex items-center gap-1 transition-opacity hover:opacity-80"
-              style={{ color: 'var(--text-secondary)' }}
-            >
-              Карта рынка
-              <ArrowRight size={12} />
-            </Link>
-          </div>
+          Секция всегда рендерится: skeleton если data грузится → MoversList при load.
+          Это фиксит layout-shift: container размера не меняется. */}
+      <section className="mb-10 md:mb-12">
+        <div className="flex items-center gap-3 mb-5 md:mb-6">
+          <p
+            className="text-xs uppercase"
+            style={{ color: 'var(--text-muted)', letterSpacing: '0.12em', fontWeight: 600 }}
+          >
+            Движение дня
+          </p>
+          <div className="h-px flex-1" style={{ backgroundColor: 'var(--border-color)' }} />
+          <Link
+            to="/heatmap"
+            className="text-xs flex items-center gap-1 transition-opacity hover:opacity-80"
+            style={{ color: 'var(--text-secondary)' }}
+          >
+            Карта рынка
+            <ArrowRight size={12} />
+          </Link>
+        </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
-            <MoversList title="Лидеры роста" stocks={gainers} direction="up" />
-            <MoversList title="Лидеры падения" stocks={losers} direction="down" />
-          </div>
-        </section>
-      )}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
+          {gainers.length > 0
+            ? <MoversList title="Лидеры роста" stocks={gainers} direction="up" />
+            : <Skeleton height={240} rounded="lg" />}
+          {losers.length > 0
+            ? <MoversList title="Лидеры падения" stocks={losers} direction="down" />
+            : <Skeleton height={240} rounded="lg" />}
+        </div>
+      </section>
 
-      {/* ═══ SECTOR PERFORMANCE ═══
-          Секторы отсортированы по средней дневной динамике.
-          Горизонтальные бары визуализируют magnitude — как в Bloomberg. */}
-      {sectors.length > 0 && (
-        <section className="mb-10 md:mb-12">
-          <div className="flex items-center gap-3 mb-5 md:mb-6">
-            <p
-              className="text-xs uppercase"
-              style={{ color: 'var(--text-muted)', letterSpacing: '0.12em', fontWeight: 600 }}
-            >
-              Сектора дня
-            </p>
-            <div className="h-px flex-1" style={{ backgroundColor: 'var(--border-color)' }} />
+      {/* ═══ SECTOR PERFORMANCE ═══ */}
+      <section className="mb-10 md:mb-12">
+        <div className="flex items-center gap-3 mb-5 md:mb-6">
+          <p
+            className="text-xs uppercase"
+            style={{ color: 'var(--text-muted)', letterSpacing: '0.12em', fontWeight: 600 }}
+          >
+            Сектора дня
+          </p>
+          <div className="h-px flex-1" style={{ backgroundColor: 'var(--border-color)' }} />
+          {sectors.length > 0 && (
             <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
               {sectors.length} секторов
             </span>
-          </div>
+          )}
+        </div>
 
-          <SectorBars sectors={sectors} />
-        </section>
-      )}
+        {sectors.length > 0
+          ? <SectorBars sectors={sectors} />
+          : <Skeleton height={320} rounded="lg" />}
+      </section>
 
-      {/* ═══ TOP VOLUME + FUNDS ═══
-          Двухколоночный блок: лидеры оборота + категории фондов.
-          Grid-cols-1 на мобиле / 2 на desktop. */}
+      {/* ═══ TOP VOLUME + FUNDS ═══ */}
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4 mb-10 md:mb-12">
-        {topVolume.length > 0 && <VolumeList stocks={topVolume} />}
-        {fundsSummary && <FundsCategories summary={fundsSummary} />}
+        {topVolume.length > 0
+          ? <VolumeList stocks={topVolume} />
+          : <Skeleton height={240} rounded="lg" />}
+        {fundsSummary
+          ? <FundsCategories summary={fundsSummary} />
+          : <Skeleton height={240} rounded="lg" />}
       </section>
 
       {/* ═══ INDICATOR GRID ═══ */}

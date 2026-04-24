@@ -408,7 +408,7 @@ export default function FundsMoneyPage() {
 
             {/* Периоды */}
             <div className="flex items-center gap-4 mb-6 flex-wrap">
-                <div className="flex items-center gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
+                <div className="btn-group-scroll gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
                     {(Object.keys(PERIOD_LABELS) as Period[]).filter(p => AUM_PERIODS.includes(p)).map((p) => {
                         const available = isFlowPeriodAvailable(p);
                         const allowed = isPeriodAllowed(p, isAuthenticated);
@@ -439,7 +439,7 @@ export default function FundsMoneyPage() {
                 </div>
 
                 {/* Режим: СЧА / Притоки-оттоки */}
-                <div className="flex items-center gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
+                <div className="btn-group-scroll gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
                     <button
                         onClick={() => { setViewMode('aum'); if (!AUM_PERIODS.includes(period)) setPeriod('6m'); }}
                         title="СЧА (объём активов)"
@@ -466,7 +466,7 @@ export default function FundsMoneyPage() {
 
                 {/* Таймфрейм для flows */}
                 {viewMode === 'flows' && (
-                    <div className="flex items-center gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
+                    <div className="btn-group-scroll gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
                         {(['1d', '1w', '1m'] as FlowTimeframe[]).map((tf) => (
                             <button
                                 key={tf}
@@ -484,7 +484,7 @@ export default function FundsMoneyPage() {
 
                 {/* Тоггл событий */}
                 {viewMode === 'flows' && (
-                <div className="flex items-center bg-theme-secondary rounded-xl border border-theme p-1">
+                <div className="btn-group-scroll bg-theme-secondary rounded-xl border border-theme p-1">
                   <button
                     onClick={() => setShowEvents(!showEvents)}
                     className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors duration-200 ${showEvents

@@ -381,8 +381,9 @@ function ExpandedChartModal({
             <ChevronDown size={14} className="text-theme-secondary" />
           </button>
 
-          {/* Tabs: yearly + 4 histogram modes */}
-          <div className="flex rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border-color)' }}>
+          {/* Tabs: yearly + 4 histogram modes — pill-group */}
+          <div className="btn-group-scroll gap-1 p-1 rounded-xl border"
+            style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-color)' }}>
             <ModalTab active={view === 'yearly'} onClick={() => setView('yearly')}>Годовая</ModalTab>
             {TEST_MODES.map(m => (
               <ModalTab key={m} active={view === m} onClick={() => setView(m)}>
@@ -461,9 +462,9 @@ function ModalTab({ active, onClick, children }: { active: boolean; onClick: () 
   return (
     <button
       onClick={onClick}
-      className="px-3 py-2 text-xs md:text-sm font-medium transition-all whitespace-nowrap"
+      className="px-3 py-1.5 text-xs md:text-sm font-medium rounded-lg transition-all whitespace-nowrap"
       style={{
-        backgroundColor: active ? 'var(--accent)' : 'var(--bg-secondary)',
+        backgroundColor: active ? 'var(--accent)' : 'transparent',
         color: active ? 'var(--bg-primary)' : 'var(--text-secondary)',
       }}
     >

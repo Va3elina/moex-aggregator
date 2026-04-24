@@ -5,6 +5,24 @@ import { getHeatmapData, getHeatmapImoex } from '../services/api';
 import { useRealtimeData } from '../hooks/useRealtimeData';
 import type { HeatmapStock, HeatmapSector } from '../services/api';
 
+// Set тикеров, у которых ЕСТЬ SVG-лого в /public/logos/<ticker>.svg
+// По мере добавления файлов — расширяем этот список.
+// Для отсутствующих — fallback circle + 2-letter initials (см. renderStock ниже).
+// TODO(logos): добавить SBER, GAZP, LKOH, ROSN, NVTK, ...
+const AVAILABLE_LOGOS = new Set<string>([
+  // (пусто пока — fallback покажется для всех)
+]);
+
+/** Deterministic hash-to-HSL-hue. Одинаковый тикер → одинаковый цвет fallback'а. */
+function tickerHue(ticker: string): number {
+  let hash = 0;
+  for (let i = 0; i < ticker.length; i++) {
+    hash = (hash << 5) - hash + ticker.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash) % 360;
+}
+
 // Опции для фильтров
 const PERIOD_OPTIONS = [
   { value: '1d', label: '1Д', color: 'change_1d', volume: 'value_1d' },
@@ -365,8 +383,17 @@ export default function HeatmapPage() {
     const fonts = getFontSize(rect.width, rect.height);
     const showTicker = rect.width > 18 && rect.height > 14;
     const showPercent = rect.width > 30 && rect.height > 25;
+    // Логотип — только на средних/больших плитках, чтобы не захламлять маленькие
+    const showLogo = rect.width > 70 && rect.height > 50;
     const gap = 2;
     const radius = 6;
+
+    // Logo size: ~22% от min(width,height), но не больше 32px (чтобы не доминировал)
+    const logoSize = Math.min(32, Math.min(rect.width, rect.height) * 0.22);
+    const logoUrl = `/logos/${rect.id}.svg`;
+    // Top-left badge: padding 8px от угла плитки
+    const logoX = rect.x + 8;
+    const logoY = rect.y + 8;
 
     return (
       <g
@@ -394,6 +421,44 @@ export default function HeatmapPage() {
           style={{ transition: 'fill 0.6s ease' }}
           className="hover:brightness-110"
         />
+        {/* Logo: SVG-image с fallback через JS `onError` (onError на SVG-image
+            не всегда работает, поэтому используем стратегию "есть/нет" через
+            Set AVAILABLE_LOGOS. Пока Set пустой — fallback (circle + initials).
+            При добавлении новых SVG в /public/logos/ они автоматически появятся
+            после обновления AVAILABLE_LOGOS). */}
+        {showLogo && (AVAILABLE_LOGOS.has(rect.id) ? (
+          <image
+            href={logoUrl}
+            x={logoX}
+            y={logoY}
+            width={logoSize}
+            height={logoSize}
+            preserveAspectRatio="xMidYMid meet"
+            style={{ pointerEvents: 'none' }}
+          />
+        ) : (
+          // Fallback: coloured circle + 2-letter initials
+          <g style={{ pointerEvents: 'none', opacity: 0.85 }}>
+            <circle
+              cx={logoX + logoSize / 2}
+              cy={logoY + logoSize / 2}
+              r={logoSize / 2}
+              fill={`hsl(${tickerHue(rect.id)}, 55%, 35%)`}
+            />
+            <text
+              x={logoX + logoSize / 2}
+              y={logoY + logoSize / 2}
+              textAnchor="middle"
+              dominantBaseline="central"
+              fill="rgba(255,255,255,0.95)"
+              fontSize={logoSize * 0.42}
+              fontWeight="700"
+              fontFamily="'IBM Plex Mono', monospace"
+            >
+              {rect.id.slice(0, 2)}
+            </text>
+          </g>
+        ))}
         {showTicker && (
           <text
             x={rect.x + rect.width / 2}
@@ -443,38 +508,40 @@ export default function HeatmapPage() {
         />
 
         <div className="flex flex-wrap gap-2">
-          <div className="flex rounded-lg overflow-hidden border border-theme">
+          {/* Pill-group паттерн: outer контейнер с bg + padding, inner buttons
+              с rounded-lg каждая → активная подсветка скругляется. */}
+          <div className="btn-group-scroll gap-1 p-1 rounded-lg bg-theme-secondary border border-theme">
             <button
               onClick={() => setMapMode('imoex')}
-              className={`px-3 py-2 text-sm font-medium transition-colors ${
+              className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
                 mapMode === 'imoex'
                   ? 'bg-[var(--accent)] text-black'
-                  : 'bg-theme-secondary text-theme-primary hover:bg-theme-tertiary'
+                  : 'text-theme-primary hover:bg-theme-tertiary'
               }`}
             >
               Индекс IMOEX
             </button>
             <button
               onClick={() => setMapMode('all')}
-              className={`px-3 py-2 text-sm font-medium transition-colors ${
+              className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
                 mapMode === 'all'
                   ? 'bg-[var(--accent)] text-black'
-                  : 'bg-theme-secondary text-theme-primary hover:bg-theme-tertiary'
+                  : 'text-theme-primary hover:bg-theme-tertiary'
               }`}
             >
               Все акции
             </button>
           </div>
 
-          <div className="flex rounded-lg overflow-hidden border border-theme">
+          <div className="btn-group-scroll gap-1 p-1 rounded-lg bg-theme-secondary border border-theme">
             {SIZE_OPTIONS.map(opt => (
               <button
                 key={opt.value}
                 onClick={() => setSizeBy(opt.value)}
-                className={`px-3 py-2 text-sm font-medium transition-colors ${
+                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
                   sizeBy === opt.value
                     ? 'bg-[var(--accent)] text-black'
-                    : 'bg-theme-secondary text-theme-primary hover:bg-theme-tertiary'
+                    : 'text-theme-primary hover:bg-theme-tertiary'
                 }`}
               >
                 {opt.label}
@@ -482,15 +549,15 @@ export default function HeatmapPage() {
             ))}
           </div>
 
-          <div className="flex rounded-lg overflow-hidden border border-theme">
+          <div className="btn-group-scroll gap-1 p-1 rounded-lg bg-theme-secondary border border-theme">
             {PERIOD_OPTIONS.map(opt => (
               <button
                 key={opt.value}
                 onClick={() => setPeriod(opt.value)}
-                className={`px-3 py-2 text-sm font-medium transition-colors ${
+                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
                   period === opt.value
                     ? 'bg-[var(--accent)] text-black'
-                    : 'bg-theme-secondary text-theme-primary hover:bg-theme-tertiary'
+                    : 'text-theme-primary hover:bg-theme-tertiary'
                 }`}
               >
                 {opt.label}

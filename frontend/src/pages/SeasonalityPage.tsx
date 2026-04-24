@@ -603,13 +603,14 @@ export default function SeasonalityPage() {
           )}
         </div>
 
-        {/* Chart type toggle */}
-        <div className="flex rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border-color)' }}>
+        {/* Chart type toggle — pill-group паттерн (rounded active-highlight) */}
+        <div className="btn-group-scroll gap-1 p-1 rounded-xl border"
+          style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-color)' }}>
           <button
             onClick={() => setChartType('histogram')}
-            className="flex items-center gap-1.5 px-2 md:px-3 py-2 md:py-2.5 text-xs md:text-sm font-medium transition-all"
+            className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 md:py-2 text-xs md:text-sm font-medium rounded-lg transition-all"
             style={{
-              backgroundColor: chartType === 'histogram' ? 'var(--accent)' : 'var(--bg-secondary)',
+              backgroundColor: chartType === 'histogram' ? 'var(--accent)' : 'transparent',
               color: chartType === 'histogram' ? 'var(--bg-primary)' : 'var(--text-secondary)',
             }}
           >
@@ -617,9 +618,9 @@ export default function SeasonalityPage() {
           </button>
           <button
             onClick={() => setChartType('price')}
-            className="flex items-center gap-1.5 px-2 md:px-3 py-2 md:py-2.5 text-xs md:text-sm font-medium transition-all"
+            className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 md:py-2 text-xs md:text-sm font-medium rounded-lg transition-all"
             style={{
-              backgroundColor: chartType === 'price' ? 'var(--accent)' : 'var(--bg-secondary)',
+              backgroundColor: chartType === 'price' ? 'var(--accent)' : 'transparent',
               color: chartType === 'price' ? 'var(--bg-primary)' : 'var(--text-secondary)',
             }}
           >
@@ -627,9 +628,9 @@ export default function SeasonalityPage() {
           </button>
           <button
             onClick={() => setChartType('yearly')}
-            className="flex items-center gap-1.5 px-2 md:px-3 py-2 md:py-2.5 text-xs md:text-sm font-medium transition-all"
+            className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 md:py-2 text-xs md:text-sm font-medium rounded-lg transition-all"
             style={{
-              backgroundColor: chartType === 'yearly' ? 'var(--accent)' : 'var(--bg-secondary)',
+              backgroundColor: chartType === 'yearly' ? 'var(--accent)' : 'transparent',
               color: chartType === 'yearly' ? 'var(--bg-primary)' : 'var(--text-secondary)',
             }}
           >
@@ -637,11 +638,10 @@ export default function SeasonalityPage() {
           </button>
           <button
             onClick={() => setChartType('test')}
-            className="flex items-center gap-1.5 px-2 md:px-3 py-2 md:py-2.5 text-xs md:text-sm font-medium transition-all border-l"
+            className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 md:py-2 text-xs md:text-sm font-medium rounded-lg transition-all"
             style={{
-              backgroundColor: chartType === 'test' ? 'var(--accent)' : 'var(--bg-secondary)',
+              backgroundColor: chartType === 'test' ? 'var(--accent)' : 'transparent',
               color: chartType === 'test' ? 'var(--bg-primary)' : 'var(--text-secondary)',
-              borderLeftColor: 'var(--border-color)',
             }}
             title="Экспериментальный режим — Seasonax-style dashboard (годовая + 4 гистограммы)"
           >
@@ -649,16 +649,17 @@ export default function SeasonalityPage() {
           </button>
         </div>
 
-        {/* Histogram-specific: mode tabs */}
+        {/* Histogram-specific: mode tabs — pill-group */}
         {chartType === 'histogram' && (
-          <div className="flex rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border-color)' }}>
+          <div className="btn-group-scroll gap-1 p-1 rounded-xl border"
+            style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-color)' }}>
             {(Object.keys(MODE_LABELS) as SeasonalityMode[]).map(m => (
               <button
                 key={m}
                 onClick={() => setMode(m)}
-                className="px-2 md:px-3 py-2 md:py-2.5 text-xs md:text-sm font-medium transition-all whitespace-nowrap"
+                className="px-2 md:px-3 py-1.5 md:py-2 text-xs md:text-sm font-medium rounded-lg transition-all whitespace-nowrap"
                 style={{
-                  backgroundColor: m === mode ? 'var(--accent)' : 'var(--bg-secondary)',
+                  backgroundColor: m === mode ? 'var(--accent)' : 'transparent',
                   color: m === mode ? 'var(--bg-primary)' : 'var(--text-secondary)',
                 }}
               >
@@ -668,16 +669,17 @@ export default function SeasonalityPage() {
           </div>
         )}
 
-        {/* Price-specific controls */}
+        {/* Price-specific controls — pill-group */}
         {chartType === 'price' && (
-          <div className="flex rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border-color)' }}>
+          <div className="btn-group-scroll gap-1 p-1 rounded-xl border"
+            style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-color)' }}>
             {PRICE_PERIODS.map(p => (
               <button
                 key={p.label}
                 onClick={() => setPriceDays(p.days)}
-                className="px-2 md:px-3 py-2 md:py-2.5 text-xs md:text-sm font-medium transition-all whitespace-nowrap"
+                className="px-2 md:px-3 py-1.5 md:py-2 text-xs md:text-sm font-medium rounded-lg transition-all whitespace-nowrap"
                 style={{
-                  backgroundColor: priceDays === p.days ? 'var(--accent)' : 'var(--bg-secondary)',
+                  backgroundColor: priceDays === p.days ? 'var(--accent)' : 'transparent',
                   color: priceDays === p.days ? 'var(--bg-primary)' : 'var(--text-secondary)',
                 }}
               >

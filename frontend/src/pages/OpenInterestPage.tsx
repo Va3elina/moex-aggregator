@@ -424,8 +424,9 @@ export default function OpenInterestPage() {
         subtitle="Анализ позиций участников по фьючерсам MOEX"
       />
 
-      {/* Контролы */}
-      <div className="widget p-3 md:p-4 mb-4 md:mb-6">
+      {/* Контролы — без widget-wrapper, консистентно с остальными страницами
+          (Buffett, Sezonality, Heatmap — controls прямо на page bg) */}
+      <div className="mb-4 md:mb-6">
         <div className="flex flex-wrap items-center gap-2 md:gap-3 mb-3 md:mb-4">
           {/* Селектор инструмента — открывает модалку */}
           <button
@@ -480,7 +481,7 @@ export default function OpenInterestPage() {
           )}
 
           {/* Таймфрейм */}
-          <div className="flex items-center bg-theme-secondary rounded-xl border border-theme p-1">
+          <div className="btn-group-scroll bg-theme-secondary rounded-xl border border-theme p-1">
             {[5, 60, 24].map((int) => {
               const available = displayMode === 'price' || hasInterval(int);
               const allowed = isIntervalAllowed(int, isAuthenticated);

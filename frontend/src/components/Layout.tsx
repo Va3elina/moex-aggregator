@@ -4,6 +4,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useSSE } from '../hooks/useSSE';
 import { Menu, X, LogIn } from 'lucide-react';
+import Logo from './Logo';
 
 const NAV_ITEMS: { path: string; label: string; disabled?: boolean }[] = [
   { path: '/fear', label: 'Индекс страха' },
@@ -43,6 +44,7 @@ export default function Layout() {
           <div className="flex items-center justify-between h-14 md:h-16">
             {/* Логотип */}
             <NavLink to="/" className="flex items-center gap-2">
+              <Logo size={28} />
               <span className="text-lg md:text-xl font-bold" style={{ color: 'var(--accent)' }}>Фрейм</span>
               <span className="px-2 py-0.5 text-xs font-medium rounded-full hidden sm:inline" style={{
                 color: 'var(--text-secondary)',

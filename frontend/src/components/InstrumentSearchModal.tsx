@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Search, X, Star } from 'lucide-react';
+import TickerLogo from './TickerLogo';
 
 interface Instrument {
   sec_id: string;
@@ -26,20 +27,6 @@ interface InstrumentSearchModalProps {
   onlyGroups?: string[];
 }
 
-// Генерация цвета из строки
-const stringToColor = (str: string) => {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = str.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const colors = [
-    '#2EE59D', '#4DA3FF', '#9D4DFF', '#FF4D4D', '#FFB020',
-    '#00D9FF', '#FF6B9D', '#FCD34D', '#14B8A6', '#F97316',
-    '#06B6D4', '#3B82F6', '#F59E0B', '#8B5CF6', '#EC4899',
-    '#84CC16', '#6366F1', '#A855F7', '#22C55E', '#EF4444'
-  ];
-  return colors[Math.abs(hash) % colors.length];
-};
 
 const INSTRUMENT_ICONS: Record<string, { icon: string; bg: string; color: string }> = {
   'Si': { icon: '$/₽', bg: '#2563EB', color: '#fff' },
@@ -99,12 +86,8 @@ const InstrumentIcon = ({ sectype }: { sectype: string }) => {
       </div>
     );
   }
-  return (
-    <div className="w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-bold text-white/70"
-      style={{ backgroundColor: stringToColor(sectype) }}>
-      {sectype.slice(0, 2)}
-    </div>
-  );
+  // Для обычных акций — TickerLogo компонент с SVG + fallback
+  return <TickerLogo ticker={sectype} size={28} rounded="full" />;
 };
 
 export default function InstrumentSearchModal({ onSelect, onClose, filterType, excludeType, onlyGroups }: InstrumentSearchModalProps) {

@@ -60,7 +60,7 @@ export default function StrengthControls({
     return (
         <div className="flex items-center gap-4 mb-6 flex-wrap">
             {/* Period */}
-            <div className="flex items-center gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
+            <div className="btn-group-scroll gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
                 {(Object.entries(PERIOD_LABELS) as [Period, string][]).map(([key, label]) => {
                     const allowed = isPeriodAllowed(key, isAuthenticated);
                     return (
@@ -87,7 +87,7 @@ export default function StrengthControls({
             </div>
 
             {/* Chart type breadth */}
-            <div className="flex items-center gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
+            <div className="btn-group-scroll gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
                 <button
                     onClick={() => onChartModeChange('line')}
                     className={`p-2 rounded-lg transition-colors ${chartMode === 'line' ? 'bg-white/10' : ''}`}
@@ -105,7 +105,7 @@ export default function StrengthControls({
             </div>
 
             {/* Universe: IMOEX / all stocks */}
-            <div className="flex items-center gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
+            <div className="btn-group-scroll gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
                 <button
                     onClick={() => onUniverseBaseChange('imoex')}
                     className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
@@ -125,7 +125,7 @@ export default function StrengthControls({
             </div>
 
             {/* Currency */}
-            <div className="flex items-center gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
+            <div className="btn-group-scroll gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
                 <button
                     onClick={() => onCurrencyChange('rub')}
                     className={`px-3 py-1.5 text-sm font-bold rounded-lg transition-colors ${
@@ -145,7 +145,7 @@ export default function StrengthControls({
             </div>
 
             {/* EMA period selector: 50 / 100 / 200 */}
-            <div className="flex items-center gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
+            <div className="btn-group-scroll gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
                 {EMA_OPTIONS.map((p) => (
                     <button
                         key={p}

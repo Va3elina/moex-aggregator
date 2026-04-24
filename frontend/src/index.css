@@ -804,13 +804,17 @@ svg text {
    (периоды времени, таймфреймы, фильтры УК и т.д.).
    Ключевая фича: auto-scroll при overflow на mobile — без этого
    кнопки "уходят за край" и их невозможно достать.
-   Скроллбар скрыт через scrollbar-width: none / -webkit-scrollbar. */
+   Скроллбар скрыт через scrollbar-width: none / -webkit-scrollbar.
+   width: fit-content → занимает ровно столько места сколько контент,
+   не растягивается на 100% parent-ширины (как обычный block-flex).
+   max-width: 100% → при overflow на mobile упрётся в parent и заскроллит. */
 .btn-group-scroll {
   display: flex;
   align-items: center;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;          /* Firefox */
+  width: fit-content;
   max-width: 100%;
 }
 .btn-group-scroll::-webkit-scrollbar {
@@ -1076,6 +1080,56 @@ a.btn-accent:active {
   0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--success) 50%, transparent); }
   70%  { box-shadow: 0 0 0 6px color-mix(in srgb, var(--success) 0%, transparent); }
   100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--success) 0%, transparent); }
+}
+
+/* Skeleton loader — breathing pulse для placeholder'ов.
+   Используется в <Skeleton /> компоненте когда данные ещё не загружены.
+   Opacity от 0.5 до 1 → визуально "дышащий" прямоугольник = "грузится". */
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.5; }
+}
+
+/* NoiseToSignal — fullscreen cinematic loop для hero (10 сек).
+   Метафора: рыночный шум → чёткий сигнал.
+
+   Phase 1 [0-20%]  — линии рисуются с краёв viewport'а (draw-in)
+   Phase 2 [20-40%] — все линии видны, формируют хаос в центре
+   Phase 3 [40-55%] — начинается fade-out шумных линий
+   Phase 4 [55-95%] — линии почти исчезли, финальный reset
+
+   var(--line-peak-opacity) — individual opacity на каждой линии
+   (0.4-0.8) чтобы они были разной "плотности". */
+@keyframes noise-line {
+  0%   { stroke-dashoffset: 200; opacity: 0; }
+  15%  { stroke-dashoffset: 0;   opacity: var(--line-peak-opacity, 0.6); }
+  40%  { stroke-dashoffset: 0;   opacity: var(--line-peak-opacity, 0.6); }
+  50%  { opacity: calc(var(--line-peak-opacity, 0.6) * 0.4); }
+  60%  { opacity: 0; }
+  100% { opacity: 0; }
+}
+
+/* Signal ghost — показывает профиль (весь путь виден целиком, dim).
+   2 быстрых блика → fade out в момент когда real-линия начинает расти. */
+@keyframes signal-ghost {
+  0%, 40%   { opacity: 0; }
+  42%       { opacity: 0.35; }  /* dim blink 1 — preview profile */
+  44%       { opacity: 0; }
+  46%       { opacity: 0.35; }  /* dim blink 2 */
+  48%       { opacity: 0; }
+  50%       { opacity: 0.3; }   /* dim baseline */
+  55%       { opacity: 0; }     /* ghost fades когда real начинает расти */
+  100%      { opacity: 0; }
+}
+
+/* Signal grow — real линия, РАСТЁТ через stroke-dashoffset.
+   Появляется bright с первого кадра, быстро растёт (0.7s). */
+@keyframes signal-grow {
+  0%, 52%   { opacity: 0;  stroke-dashoffset: 100; }
+  54%       { opacity: 1;  stroke-dashoffset: 100; }  /* появляется */
+  62%       { opacity: 1;  stroke-dashoffset: 0; }    /* grown! 8% = 0.8s */
+  90%       { opacity: 1;  stroke-dashoffset: 0; }    /* hold */
+  100%      { opacity: 0;  stroke-dashoffset: 0; }    /* fade loop */
 }
 
 /* Stack layout on mobile */

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">
+  <rect x="2.5" y="2.5" width="35" height="35" rx="6" fill="none" stroke="#00E676" stroke-width="3"/>
+  <text x="20" y="29" text-anchor="middle" font-size="26" font-weight="800"
+        font-family="-apple-system, BlinkMacSystemFont, 'IBM Plex Sans', sans-serif"
+        fill="#00E676" letter-spacing="-1">Ф</text>
+</svg>
