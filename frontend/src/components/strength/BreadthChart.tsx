@@ -313,7 +313,7 @@ export default function BreadthChart({
 
     return (
         <div ref={containerRef}>
-            <div ref={chartWrapRef} className={revealed ? 'chart-reveal' : ''}>
+            <div ref={chartWrapRef} className={`relative ${revealed ? 'chart-reveal' : ''}`}>
                 {width > 0 && chartData && (
                     <svg ref={svgRef} width={width} height={height} className="block" style={{ backgroundColor: 'var(--bg-secondary)', contain: 'paint' }}>
                         <defs>

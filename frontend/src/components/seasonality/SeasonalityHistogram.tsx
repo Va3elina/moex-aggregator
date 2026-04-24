@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import type { SeasonalityResponse } from '../../services/api';
 import { CHART_COLORS, CROSSHAIR, TOOLTIP, ANIMATION } from '../../config/chartTheme';
 import { ChartGrid, ChartCrosshair, ChartTooltip, TooltipRow } from '../chart';
+import ChartWatermark from '../ChartWatermark';
 
 interface TooltipState {
   x: number;
@@ -344,6 +345,10 @@ export default function SeasonalityHistogram({
           );
         })}
       </div>
+
+      {/* Watermark — на уровне main wrapper (не внутри chart-area),
+          чтобы позиционировался одинаково с YearlySeasonalityChart. */}
+      <ChartWatermark />
     </div>
   );
 }

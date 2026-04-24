@@ -4,6 +4,7 @@ import type { PriceChartResponse } from '../../services/api';
 import { CHART_COLORS, CROSSHAIR, PADDING, cssVar, ANIMATION } from '../../config/chartTheme';
 import { ChartGrid, ChartCrosshair, ChartDot, ChartDateLabel, ChartTooltip, TooltipRow, ChartYAxis, ChartXAxis, ChartMarker } from '../chart';
 import { easeOutCubic, morphPts, ptsToPath } from '../../utils/chartAnimation';
+import ChartWatermark from '../ChartWatermark';
 
 interface TooltipState {
   x: number;
@@ -272,6 +273,7 @@ export default function SeasonalityPriceChart({
               );
             })()}
           </svg>
+          <ChartWatermark />
         </div>
 
         {/* Y labels */}

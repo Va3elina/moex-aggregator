@@ -3,6 +3,7 @@ import { UK_LOGOS } from '../../config/fundConfig';
 import { FUND_ANNOTATIONS } from '../../config/fundAnnotations';
 import type { FundsFlowsResponse, FundCategory } from '../../services/api';
 import { CHART_COLORS, GRID, CROSSHAIR, TOOLTIP } from '../../config/chartTheme';
+import ChartWatermark from '../ChartWatermark';
 
 interface FlowsHistogramProps {
     flowsData: FundsFlowsResponse | null;
@@ -214,6 +215,11 @@ export default function FlowsHistogram({
                         })()}
                     </svg>
                     </div>
+
+                    {/* Watermark — sibling inner chart-area, в flowContainerRef.
+                        Высота flowContainerRef = var(--chart-height) — как у SimpleChart,
+                        значит 14%/10% дадут ту же визуальную позицию. */}
+                    <ChartWatermark />
 
                     {/* Тултип-карточка со значением — позиция через ref */}
                     {hoveredFlowIndex !== null && flowsData?.flows && (() => {

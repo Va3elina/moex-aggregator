@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useState, useMemo, useRef } from 'react';
 import { easeOutCubic, morphPts, ptsToPath, ptsToArea, type SyncedDataPoint, type ChartPadding } from './chartUtils';
 import { CHART_COLORS, GRID, CROSSHAIR, ANIMATION } from '../../config/chartTheme';
+import ChartWatermark from '../ChartWatermark';
 
 interface IndexChartProps {
     syncedData: SyncedDataPoint[];
@@ -144,7 +145,7 @@ export default function IndexChart({
 
     return (
         <div ref={containerRef}>
-            <div ref={chartWrapRef} className={revealed ? 'chart-reveal' : ''}>
+            <div ref={chartWrapRef} className={`relative ${revealed ? 'chart-reveal' : ''}`}>
                 {width > 0 && chartData && (
                     <svg ref={svgRef} width={width} height={height} className="block" style={{ backgroundColor: 'var(--bg-secondary)', contain: 'paint' }}>
                         <defs>
@@ -192,6 +193,7 @@ export default function IndexChart({
                         ))}
                     </svg>
                 )}
+                <ChartWatermark />
             </div>
         </div>
     );

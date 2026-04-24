@@ -1,6 +1,7 @@
 import { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { Download, BarChart2, TrendingUp } from 'lucide-react';
 import ChartNavigator from './ChartNavigator';
+import ChartWatermark from './ChartWatermark';
 import { easeOutCubic, morphPts, ptsToPath, ptsToArea } from '../utils/chartAnimation';
 import { cssVar, GRID, CROSSHAIR, ANIMATION, TOOLTIP } from '../config/chartTheme';
 
@@ -1162,6 +1163,12 @@ export default function SimpleChart({
             );
           })()}
         </svg>
+
+        {/* Водяной знак Фрейма — ПРЯМО на графике, правый нижний угол.
+            Лежит внутри chartWrapRef (который relative), т.е. позиционирован
+            относительно SVG-области. pointer-events:none — не мешает
+            crosshair'у и tooltip'ам. */}
+        <ChartWatermark />
 
         {/* Аннотации контрактов — кружки под графиком */}
         {annotations && annotations.length > 0 && (() => {

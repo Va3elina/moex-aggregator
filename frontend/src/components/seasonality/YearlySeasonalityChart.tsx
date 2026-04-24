@@ -3,6 +3,7 @@ import type { YearlySeasonalityResponse } from '../../services/api';
 import { CHART_COLORS, PADDING, cssVar } from '../../config/chartTheme';
 import { ChartGrid, ChartCrosshair, ChartDateLabel, ChartTooltip, TooltipRow, ChartYAxis, ChartXAxis } from '../chart';
 import ChartNavigator from '../ChartNavigator';
+import ChartWatermark from '../ChartWatermark';
 
 interface TooltipState {
   x: number;
@@ -356,6 +357,7 @@ export default function YearlySeasonalityChart({
             )}
           </ChartTooltip>
         )}
+        <ChartWatermark />
       </div>
 
       {/* Navigator — скользящее окно по году */}
