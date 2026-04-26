@@ -256,7 +256,14 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
-        if path in ["/health", "/favicon.ico"] or path.startswith("/assets"):
+        # Статика: /assets, /logos, favicon — не считаем в rate limit.
+        # Модалка выбора актива может параллельно запросить ~100 лого-файлов,
+        # которые съедают весь лимит 100 req/min и ломают API.
+        if (
+            path in ["/health", "/favicon.ico"]
+            or path.startswith("/assets")
+            or path.startswith("/logos")
+        ):
             return await call_next(request)
 
         client_ip = self._get_client_ip(request)
