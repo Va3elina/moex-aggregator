@@ -1,5 +1,5 @@
 // Фрейм PWA Service Worker
-const CACHE_NAME = 'frame-v183';
+const CACHE_NAME = 'frame-v208';
 const STATIC_ASSETS = [
     '/',
     '/manifest.json',
@@ -45,6 +45,22 @@ self.addEventListener('fetch', (event) => {
     // API — всегда сеть, без кэширования (данные обновляются каждые 5 мин)
     if (url.pathname.startsWith('/api/')) {
         event.respondWith(fetch(request));
+        return;
+    }
+
+    // Логотипы тикеров — cache-first. Почти статика, не меняется месяцами.
+    // Модалка выбора актива рендерит ~100 <img> сразу → без кэша 100 запросов
+    // в сеть за секунду → rate limit. После первого захода всё из SW cache.
+    if (url.pathname.startsWith('/logos/')) {
+        event.respondWith(
+            caches.match(request).then((cached) => {
+                if (cached) return cached;
+                return fetch(request).then((response) => {
+                    if (response.ok) safeCachePut(request, response.clone());
+                    return response;
+                }).catch(() => cached); // если сеть упала — вернём что было
+            })
+        );
         return;
     }
 
