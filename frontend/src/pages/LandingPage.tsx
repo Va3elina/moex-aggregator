@@ -4,6 +4,14 @@
  * Показывается на "/" когда нет auth'а. Задача: за 5 секунд понять что такое
  * Фрейм, увидеть pulse рынка, перейти в логин или тариф.
  *
+ * Структура (после реструктуры):
+ *   1. HERO — Tagline + Monte Carlo анимация + CTA
+ *   2. 3 ТЕМАТИЧЕСКИХ ГРУППЫ ИНДИКАТОРОВ:
+ *        — «Что чувствуют участники» (Индекс страха, Сила рынка, Баффетт)
+ *        — «Куда идут реальные деньги» (ОИ, Деньги в фондах, Состав фондов)
+ *        — «Закономерности и текущая картина» (Сезонность, Карта рынка)
+ *   3. FINAL CTA — «Начни разбираться в рынке»
+ *
  * Залогиненные users видят OverviewPage (dashboard). Роутер делает conditional.
  */
 import { Link } from 'react-router-dom';
@@ -12,14 +20,117 @@ import {
   Grid3X3,
   Wallet,
   CalendarDays,
+  TrendingUp,
+  BarChart3,
+  Activity,
+  PieChart,
+  ArrowRight,
   Layers,
   Database,
   Clock,
   Zap,
 } from 'lucide-react';
-import FeatureCarousel from '../components/landing/FeatureCarousel';
+import type { ReactNode } from 'react';
 import NoiseToSignal from '../components/landing/NoiseToSignal';
-import { SeasonalityPreview, FundsFlowPreview, FearPreview, HeatmapPreview } from '../components/landing/previews';
+import IndicatorGroup, { type Indicator } from '../components/landing/IndicatorGroup';
+import {
+  SeasonalityPreview,
+  FundsFlowPreview,
+  FearPreview,
+  HeatmapPreview,
+} from '../components/landing/previews';
+
+// ═══════════════════════════════════════════════════════════
+// 8 ИНДИКАТОРОВ → 3 ТЕМАТИЧЕСКИХ ГРУППЫ
+// ═══════════════════════════════════════════════════════════
+
+const ICON_SIZE = 20;
+const CTA_ICON_SIZE = 14;
+
+// Хелпер: добавляет videoUrl + posterUrl по name (видео в /videos/<name>.{webm,mp4})
+const v = (name: string) => ({
+  videoUrl: `/videos/${name}.webm`,
+  posterUrl: `/videos/${name}-poster.jpg`,
+});
+
+// Группа 1: Что чувствуют участники
+const SENTIMENT_INDICATORS: Indicator[] = [
+  {
+    title: 'Индекс страха',
+    desc: 'Композитный индекс по 4 метрикам: волатильность, breadth, ликвидность, momentum. Когда все жадны — осторожно.',
+    icon: <Gauge size={ICON_SIZE} strokeWidth={2} />,
+    ctaIcon: <ArrowRight size={CTA_ICON_SIZE} />,
+    href: '/fear',
+    illustration: <FearPreview />,  // оставляем SVG-fallback (видео не делаем)
+  },
+  {
+    title: 'Сила рынка',
+    desc: 'IMOEX + breadth по 90 акциям. Виден ли рост на широком фронте или только на нескольких тяжеловесах.',
+    icon: <Activity size={ICON_SIZE} strokeWidth={2} />,
+    ctaIcon: <ArrowRight size={CTA_ICON_SIZE} />,
+    href: '/strength',
+    ...v('strength'),
+  },
+  {
+    title: 'Индикатор Баффетта',
+    desc: 'Капитализация рынка к ВВП и М2. Классическая макро-метрика переоценки/недооценки рынка.',
+    icon: <TrendingUp size={ICON_SIZE} strokeWidth={2} />,
+    ctaIcon: <ArrowRight size={CTA_ICON_SIZE} />,
+    href: '/buffett',
+    ...v('buffett'),
+  },
+];
+
+// Группа 2: Куда идут реальные деньги
+const MONEY_FLOW_INDICATORS: Indicator[] = [
+  {
+    title: 'Открытый интерес',
+    desc: 'Позиции участников по фьючерсам с 2007 года. Разбивка физики/юрики/нерезиденты — где деньги на самом деле.',
+    icon: <BarChart3 size={ICON_SIZE} strokeWidth={2} />,
+    ctaIcon: <ArrowRight size={CTA_ICON_SIZE} />,
+    href: '/oi',
+    ...v('oi'),
+  },
+  {
+    title: 'Деньги в фондах',
+    desc: '36 российских ETF: СЧА, притоки-оттоки по категориям. Куда идут большие деньги — туда идёт рынок.',
+    icon: <Wallet size={ICON_SIZE} strokeWidth={2} />,
+    ctaIcon: <ArrowRight size={CTA_ICON_SIZE} />,
+    href: '/funds-money',
+    ...v('funds-money'),
+    illustration: <FundsFlowPreview />,
+  },
+  {
+    title: 'Состав фондов',
+    desc: 'Какие акции внутри каждого ETF и в какой пропорции. Реальные позиции фондов — без оценок и рейтингов.',
+    icon: <PieChart size={ICON_SIZE} strokeWidth={2} />,
+    ctaIcon: <ArrowRight size={CTA_ICON_SIZE} />,
+    href: '/funds-catalog',
+    ...v('funds-catalog'),
+  },
+];
+
+// Группа 3: Закономерности и текущая картина
+const PATTERNS_INDICATORS: Indicator[] = [
+  {
+    title: 'Сезонность',
+    desc: 'Средняя динамика по дням, месяцам, годам. Паттерны с 1997 года — на одном экране. Сравнивайте любые периоды.',
+    icon: <CalendarDays size={ICON_SIZE} strokeWidth={2} />,
+    ctaIcon: <ArrowRight size={CTA_ICON_SIZE} />,
+    href: '/seasonality',
+    ...v('seasonality'),
+    illustration: <SeasonalityPreview />,
+  },
+  {
+    title: 'Карта рынка',
+    desc: 'Все акции MOEX на одном экране. Размер — капитализация, цвет — дневная динамика. За взгляд видите кто двигает рынок.',
+    icon: <Grid3X3 size={ICON_SIZE} strokeWidth={2} />,
+    ctaIcon: <ArrowRight size={CTA_ICON_SIZE} />,
+    href: '/heatmap',
+    ...v('heatmap'),
+    illustration: <HeatmapPreview />,
+  },
+];
 
 export default function LandingPage() {
   return (
@@ -99,131 +210,108 @@ export default function LandingPage() {
       {/* Wrapper для остального контента с обычным layout-padding */}
       <div className="max-w-7xl mx-auto px-4 md:px-6 py-14 md:py-20">
 
-      {/* ═══ "CHARTS THAT MOVE MARKETS"-style section — TV-inspired ═══
-          Большой hero-заголовок + 4 small feature-points (как у TV "Up to 16
-          charts per screen" grid) → затем основной interactive Carousel. */}
-      <section className="mb-14 md:mb-20">
-        <div className="text-center mb-10 md:mb-14 max-w-3xl mx-auto">
+        {/* ═══ INTRO TO INDICATORS — заголовок-переход + 4 ключевых факта ═══
+            (Эхо TradingView "Up to 16 charts per screen" grid). */}
+        <section className="mb-14 md:mb-20">
+          <div className="text-center mb-10 md:mb-14 max-w-3xl mx-auto">
+            <h2
+              className="text-3xl md:text-5xl font-bold mb-4"
+              style={{ color: 'var(--text-primary)', letterSpacing: '-0.03em', lineHeight: 1.05 }}
+            >
+              Индикаторы, которые<br className="hidden md:inline"/> меняют решения
+            </h2>
+            <p className="text-sm md:text-lg" style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+              8 инструментов, разбитые на три группы. От настроения участников
+              до структуры реальных денежных потоков и исторических паттернов.
+            </p>
+          </div>
+
+          {/* 4 small feature points — числовые «доказательства» */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 md:gap-8 max-w-5xl mx-auto">
+            <SmallFeature
+              icon={<Layers size={28} strokeWidth={1.5} />}
+              title="8 индикаторов"
+              desc="От просмотра цены до композитных метрик и сезонности"
+            />
+            <SmallFeature
+              icon={<Database size={28} strokeWidth={1.5} />}
+              title="95+ акций MOEX"
+              desc="Все ключевые бумаги + фьючерсы + индексы + валюты"
+            />
+            <SmallFeature
+              icon={<Clock size={28} strokeWidth={1.5} />}
+              title="С 1997 года"
+              desc="27 лет исторических данных, включая кризисы 2008/14/20/22"
+            />
+            <SmallFeature
+              icon={<Zap size={28} strokeWidth={1.5} />}
+              title="Live-обновление"
+              desc="Данные обновляются каждые 5 минут в торговое время"
+            />
+          </div>
+        </section>
+
+        {/* ═══ ГРУППА 1: Настроение рынка ═══ */}
+        <IndicatorGroup
+          title="Что чувствуют участники"
+          subtitle="Композитные индексы и метрики настроения. Жадность, страх, переоценка — численно."
+          indicators={SENTIMENT_INDICATORS}
+        />
+
+        {/* ═══ ГРУППА 2: Деньги участников ═══ */}
+        <IndicatorGroup
+          title="Куда идут реальные деньги"
+          subtitle="Позиции на фьючерсах, потоки в ETF, структура портфелей фондов. Большие деньги двигают рынок — следите за ними."
+          indicators={MONEY_FLOW_INDICATORS}
+        />
+
+        {/* ═══ ГРУППА 3: Паттерны и текущая картина ═══ */}
+        <IndicatorGroup
+          title="Закономерности и текущая картина"
+          subtitle="Что повторяется год от года, и что на рынке прямо сейчас. Один взгляд — и всё видно."
+          indicators={PATTERNS_INDICATORS}
+        />
+
+        {/* ═══ FINAL CTA ═══
+            Второй шанс конверсии после того как user прокрутил всю landing.
+            Текст фокусирует на "no risk to try" — бесплатный базовый доступ. */}
+        <section className="text-center pt-6 md:pt-10">
           <h2
-            className="text-3xl md:text-5xl font-bold mb-4"
-            style={{ color: 'var(--text-primary)', letterSpacing: '-0.03em', lineHeight: 1.05 }}
+            className="text-2xl md:text-4xl font-bold mb-3"
+            style={{ color: 'var(--text-primary)', letterSpacing: '-0.02em', lineHeight: 1.1 }}
           >
-            Индикаторы, которые<br className="hidden md:inline"/> меняют решения
+            Начни разбираться в рынке
           </h2>
-          <p className="text-sm md:text-lg" style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-            Хотите просто посмотреть цену или разобрать структуру фонда по активам —
-            всё уже готово.
+          <p className="mb-7 text-sm md:text-base max-w-xl mx-auto" style={{ color: 'var(--text-secondary)' }}>
+            Бесплатный доступ к базовым индикаторам — без оплаты и без карты.
+            Подписка Pro или Premium — когда и если понадобятся продвинутые фичи.
           </p>
-        </div>
-
-        {/* 4 small feature points — эхо TV's "Up to 16 charts per screen" grid */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-6 md:gap-8 mb-10 md:mb-14 max-w-5xl mx-auto">
-          <SmallFeature
-            icon={<Layers size={28} strokeWidth={1.5} />}
-            title="8 индикаторов"
-            desc="От просмотра цены до композитных метрик и сезонности"
-          />
-          <SmallFeature
-            icon={<Database size={28} strokeWidth={1.5} />}
-            title="95+ акций MOEX"
-            desc="Все ключевые бумаги + фьючерсы + индексы + валюты"
-          />
-          <SmallFeature
-            icon={<Clock size={28} strokeWidth={1.5} />}
-            title="С 1997 года"
-            desc="27 лет исторических данных, включая кризисы 2008/14/20/22"
-          />
-          <SmallFeature
-            icon={<Zap size={28} strokeWidth={1.5} />}
-            title="Live-обновление"
-            desc="Данные обновляются каждые 5 минут в торговое время"
-          />
-        </div>
-
-        {/* Interactive carousel — демонстрация каждого индикатора */}
-        <FeatureCarousel />
-      </section>
-
-      {/* ═══ 4 BIG FEATURE CARDS (2×2 grid) ═══
-          Эхо TV's "Technical analysis, done right" / "Bar Replay" / etc.
-          Каждая card — hero-title + desc + button + illustration. */}
-      <section className="mb-14 md:mb-20">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-5">
-          <BigFeatureCard
-            title="Сезонность за 30 секунд"
-            desc="Средняя динамика по дням, месяцам, годам. Паттерны с 1997 года — на одном экране. Сравнивайте любые периоды и находите закономерности."
-            ctaLabel="Открыть сезонность"
-            ctaIcon={<CalendarDays size={14} />}
-            to="/seasonality"
-            illustration={<SeasonalityPreview />}
-          />
-          <BigFeatureCard
-            title="Куда идут деньги"
-            desc="36 российских ETF: СЧА, притоки-оттоки по категориям, реальный состав фондов. Видите куда идут большие деньги — туда идёт рынок."
-            ctaLabel="Открыть фонды"
-            ctaIcon={<Wallet size={14} />}
-            to="/funds-money"
-            illustration={<FundsFlowPreview />}
-          />
-          <BigFeatureCard
-            title="Страх и жадность рынка"
-            desc="Композитный индекс по 4 метрикам: волатильность, breadth, ликвидность, momentum. Когда все жадны — осторожно. Когда все в страхе — искать возможности."
-            ctaLabel="Открыть индекс страха"
-            ctaIcon={<Gauge size={14} />}
-            to="/fear"
-            illustration={<FearPreview />}
-          />
-          <BigFeatureCard
-            title="Весь рынок за секунду"
-            desc="Все акции MOEX на одном экране. Размер — капитализация, цвет — дневная динамика. За взгляд видите кто двигает рынок и где фокус."
-            ctaLabel="Открыть карту"
-            ctaIcon={<Grid3X3 size={14} />}
-            to="/heatmap"
-            illustration={<HeatmapPreview />}
-          />
-        </div>
-      </section>
-
-      {/* ═══ FINAL CTA ═══
-          Второй шанс конверсии после того как user прокрутил всю landing.
-          Текст фокусирует на "no risk to try" — бесплатный базовый доступ. */}
-      <section className="text-center">
-        <h2
-          className="text-2xl md:text-4xl font-bold mb-3"
-          style={{ color: 'var(--text-primary)', letterSpacing: '-0.02em', lineHeight: 1.1 }}
-        >
-          Начни разбираться в рынке
-        </h2>
-        <p className="mb-7 text-sm md:text-base max-w-xl mx-auto" style={{ color: 'var(--text-secondary)' }}>
-          Бесплатный доступ к базовым индикаторам — без оплаты и без карты.
-          Подписка Pro или Premium — когда и если понадобятся продвинутые фичи.
-        </p>
-        <div className="flex flex-wrap items-center justify-center gap-3">
-          <Link
-            to="/login"
-            className="px-6 py-3 font-semibold transition-opacity hover:opacity-90"
-            style={{
-              backgroundColor: 'var(--accent)',
-              color: 'var(--text-inverse)',
-              borderRadius: 'var(--radius-md)',
-            }}
-          >
-            Попробовать бесплатно
-          </Link>
-          <Link
-            to="/pricing"
-            className="px-6 py-3 font-semibold transition-colors border"
-            style={{
-              color: 'var(--text-primary)',
-              borderColor: 'var(--border-color)',
-              borderRadius: 'var(--radius-md)',
-              backgroundColor: 'transparent',
-            }}
-          >
-            Тарифы
-          </Link>
-        </div>
-      </section>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <Link
+              to="/login"
+              className="px-6 py-3 font-semibold transition-opacity hover:opacity-90"
+              style={{
+                backgroundColor: 'var(--accent)',
+                color: 'var(--text-inverse)',
+                borderRadius: 'var(--radius-md)',
+              }}
+            >
+              Попробовать бесплатно
+            </Link>
+            <Link
+              to="/pricing"
+              className="px-6 py-3 font-semibold transition-colors border"
+              style={{
+                color: 'var(--text-primary)',
+                borderColor: 'var(--border-color)',
+                borderRadius: 'var(--radius-md)',
+                backgroundColor: 'transparent',
+              }}
+            >
+              Тарифы
+            </Link>
+          </div>
+        </section>
       </div>
     </div>
   );
@@ -233,79 +321,9 @@ export default function LandingPage() {
 // SUBCOMPONENTS
 // ═══════════════════════════════════════════════════════════
 
-/** Big Feature Card — большая карточка с заголовком, описанием, CTA и illustration.
-    Pattern из TV features page (2×2 grid sections).
-    Illustration внизу — наш SVG-preview индикатора, акцент на функциональность. */
-function BigFeatureCard({
-  title,
-  desc,
-  ctaLabel,
-  ctaIcon,
-  to,
-  illustration,
-}: {
-  title: string;
-  desc: string;
-  ctaLabel: string;
-  ctaIcon: React.ReactNode;
-  to: string;
-  illustration: React.ReactNode;
-}) {
-  return (
-    <div
-      className="rounded-2xl border p-6 md:p-8 flex flex-col"
-      style={{
-        backgroundColor: 'var(--bg-secondary)',
-        borderColor: 'var(--border-color)',
-      }}
-    >
-      <h3
-        className="text-2xl md:text-3xl font-bold mb-3"
-        style={{ color: 'var(--text-primary)', letterSpacing: '-0.02em', lineHeight: 1.15 }}
-      >
-        {title}
-      </h3>
-      <p
-        className="text-sm md:text-base mb-5 flex-shrink-0"
-        style={{ color: 'var(--text-secondary)', lineHeight: 1.55 }}
-      >
-        {desc}
-      </p>
-
-      {/* CTA — pill-style button */}
-      <Link
-        to={to}
-        className="inline-flex items-center gap-2 px-4 py-2 mb-5 text-sm font-semibold w-fit transition-all"
-        style={{
-          backgroundColor: 'var(--bg-tertiary)',
-          color: 'var(--text-primary)',
-          borderRadius: 'var(--radius-md)',
-          border: '1px solid var(--border-color)',
-        }}
-        onMouseEnter={e => (e.currentTarget.style.borderColor = 'color-mix(in srgb, var(--accent) 40%, transparent)')}
-        onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border-color)')}
-      >
-        {ctaLabel} {ctaIcon}
-      </Link>
-
-      {/* Illustration — SVG preview */}
-      <div
-        className="rounded-xl overflow-hidden border mt-auto"
-        style={{
-          backgroundColor: 'var(--bg-primary)',
-          borderColor: 'var(--border-color)',
-          aspectRatio: '16 / 10',
-        }}
-      >
-        {illustration}
-      </div>
-    </div>
-  );
-}
-
 /** Small feature point — иконка + title + описание.
     Pattern из TV features page (icon row под большим хиро-заголовком). */
-function SmallFeature({ icon, title, desc }: { icon: React.ReactNode; title: string; desc: string }) {
+function SmallFeature({ icon, title, desc }: { icon: ReactNode; title: string; desc: string }) {
   return (
     <div className="text-center md:text-left">
       <div className="flex md:justify-start justify-center mb-3" style={{ color: 'var(--accent)' }}>
@@ -321,4 +339,3 @@ function SmallFeature({ icon, title, desc }: { icon: React.ReactNode; title: str
     </div>
   );
 }
-

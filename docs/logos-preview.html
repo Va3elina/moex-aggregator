@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Фрейм — обзор логотипов тикеров MOEX</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, sans-serif;
+    background: #0B0D0F;
+    color: #E8E8EA;
+    padding: 24px;
+    min-height: 100vh;
+  }
+  h1 { font-size: 28px; margin-bottom: 8px; letter-spacing: -0.02em; }
+  .subtitle { color: #9CA0A5; margin-bottom: 24px; font-size: 14px; }
+  .controls { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; }
+  .controls button {
+    background: transparent; color: #9CA0A5; border: 1px solid rgba(255,255,255,0.1);
+    padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px;
+    font-family: inherit;
+  }
+  .controls button.active {
+    background: rgba(0,230,118,0.12); color: #00E676; border-color: rgba(0,230,118,0.5);
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 10px;
+  }
+  .card {
+    background: #131519; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px;
+    padding: 14px 10px;
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    transition: border-color 0.15s; position: relative;
+  }
+  .card:hover { border-color: rgba(0,230,118,0.4); }
+  .card[data-status="svg"]      { border-left: 3px solid #00E676; }
+  .card[data-status="png"]      { border-left: 3px solid #4DA3FF; }
+  .card[data-status="fallback"] { border-left: 3px solid #FF4D4D; }
+  .logo-wrap {
+    width: 56px; height: 56px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 8px; overflow: hidden; background: rgba(255,255,255,0.03);
+    position: relative;
+  }
+  .logo-wrap img { max-width: 56px; max-height: 56px; object-fit: contain; }
+  .fallback-circle {
+    width: 56px; height: 56px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 20px;
+    color: rgba(255,255,255,0.92); letter-spacing: -0.02em;
+  }
+  .ticker { font-family: 'IBM Plex Mono', monospace; font-weight: 700; font-size: 13px; color: #E8E8EA; }
+  .name { font-size: 11px; color: #9CA0A5; text-align: center; min-height: 26px; line-height: 1.25; }
+  .format-badge {
+    position: absolute; top: 6px; right: 6px;
+    font-size: 9px; padding: 2px 5px; border-radius: 3px;
+    font-family: 'IBM Plex Mono', monospace; font-weight: 700; letter-spacing: 0.05em;
+  }
+  .format-badge.svg { background: rgba(0,230,118,0.15); color: #00E676; }
+  .format-badge.png { background: rgba(77,163,255,0.15); color: #4DA3FF; }
+  .format-badge.fallback { background: rgba(255,77,77,0.15); color: #FF4D4D; }
+  .stats { display: flex; gap: 20px; margin-bottom: 18px; font-size: 13px; color: #9CA0A5; }
+  .stats b { color: #E8E8EA; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<h1>Логотипы тикеров MOEX</h1>
+<p class="subtitle">Превью всех 99 акций. Зелёная кайма — SVG (вектор). Синяя — PNG. Красная — нет файла, будет fallback circle.</p>
+
+<div class="stats" id="stats">Загрузка…</div>
+
+<div class="controls">
+  <button class="active" data-filter="all">Все</button>
+  <button data-filter="svg">Только SVG</button>
+  <button data-filter="png">Только PNG</button>
+  <button data-filter="fallback">Нет лого</button>
+</div>
+
+<div class="grid" id="grid"></div>
+
+<script>
+const TICKERS = [
+  ['AFKS','Система'],['AFLT','Аэрофлот'],['AKRN','Акрон'],['ALRS','Алроса'],
+  ['APTK','Аптеки36и6'],['ASTR','ГруппаАстра'],['AVAN','Авангард'],['BANE','Башнефть'],
+  ['BELU','НоваБев'],['BSPB','БСП'],['BTBR','В2В-РТС'],['CBOM','МКБ'],
+  ['CHMF','Северсталь'],['CNRU','ЦИАН'],['DOMRF','Дом.РФ'],['ELMT','Элемент'],
+  ['ENPG','ЭН+'],['FEES','Россети'],['FESH','ДВМП'],['FIAI','ФАБРИКА ПО'],
+  ['FIXR','ФиксПрайс'],['FLOT','Совкомфлот'],['GAZP','Газпром'],['GCHE','Черкизово'],
+  ['GEMC','ЕМС'],['GMKN','ГМКНорНик'],['HEAD','Хэдхантер'],['HYDR','РусГидро'],
+  ['IRAO','ИнтерРАО'],['IRKT','Яковлев'],['JNOS','СлавнфтЯНОС'],['KAZT','КуйбышевАзот'],
+  ['KMAZ','КАМАЗ'],['KZOS','Казаньоргсинт'],['LEAS','Европлан'],['LENT','Лента'],
+  ['LKOH','Лукойл'],['LSNG','РоссетиЛенэн'],['LSRG','ЛСР'],['MAGN','ММК'],
+  ['MBNK','МТСБанк'],['MDMG','MDMG'],['MFGS','СлавнфтМНГЗ'],['MGNT','Магнит'],
+  ['MGTS','МГТС'],['MOEX','МосБиржа'],['MRKK','РоссетиСК'],['MRKP','РоссетиЦП'],
+  ['MRKS','РоссетиСибирь'],['MRKU','РоссетиУрал'],['MSNG','МосЭнерго'],['MSRS','РоссетиМР'],
+  ['MTSS','МТС'],['NKNC','НКНХ'],['NLMK','НЛМК'],['NMTP','НМТП'],
+  ['NVTK','Новатэк'],['OGKB','ОГК-2'],['OZON','Озон'],['OZPH','ОзонФарма'],
+  ['PHOR','ФосАгро'],['PIKK','ПИК'],['PLZL','Полюс'],['POSI','Позитив'],
+  ['PRMD','Промомед'],['RAGR','Русагро'],['RASP','Распадская'],['RENI','Ренессанс'],
+  ['RGSS','Росгосстрах'],['ROSN','Роснефть'],['RTKM','Ростел'],['RUAL','Русал'],
+  ['SBER','Сбербанк'],['SBERP','Сбербанк п'],['SELG','Селигдар'],['SFIN','SFI'],
+  ['SIBN','Газпромнефть'],['SMLT','Самолёт'],['SNGS','Сургнфгз'],['SNGSP','Сургнфгз п'],
+  ['SVCB','Совкомбанк'],['T','Т-Техно'],['TATN','Татнефть'],['TATNP','Татнефть п'],
+  ['TNSE','ТНСэнерго'],['TRMK','ТМК'],['TRNFP','Транснф п'],['UGLD','ЮГК'],
+  ['UNAC','ОАК'],['UPRO','Юнипро'],['USBN','Уралсиб'],['UTAR','ЮТэйр'],
+  ['UWGN','ОВК'],['VJGZ','Варьеганнфтгз'],['VKCO','ВК'],['VSMO','ВСМПО-АВИСМА'],
+  ['VTBR','ВТБ'],['X5','X5'],['YDEX','Яндекс']
+];
+
+const LOGO_BASE = '../frontend/public/logos';
+
+function hue(ticker) {
+  let h = 0;
+  for (let i = 0; i < ticker.length; i++) h = ((h << 5) - h + ticker.charCodeAt(i)) | 0;
+  return Math.abs(h) % 360;
+}
+
+function el(tag, attrs, ...children) {
+  const e = document.createElement(tag);
+  if (attrs) {
+    for (const [k, v] of Object.entries(attrs)) {
+      if (k === 'class') e.className = v;
+      else if (k === 'style') Object.assign(e.style, v);
+      else e.setAttribute(k, v);
+    }
+  }
+  for (const c of children) {
+    if (c == null) continue;
+    e.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+  }
+  return e;
+}
+
+function makeFallback(ticker) {
+  return el('div', {
+    class: 'fallback-circle',
+    style: { background: 'hsl(' + hue(ticker) + ',55%,35%)' },
+  }, ticker.slice(0, 2));
+}
+
+function makeBadge(status) {
+  return el('span', { class: 'format-badge ' + status }, status.toUpperCase());
+}
+
+// Счётчики статусов — обновляем по мере загрузки <img>.
+let svgCnt = 0, pngCnt = 0, fbCnt = 0;
+function updateStats() {
+  const stats = document.getElementById('stats');
+  while (stats.firstChild) stats.removeChild(stats.firstChild);
+  const append = (label, val, color) => {
+    const span = el('span', null, label + ': ');
+    const b = el('b', null, String(val));
+    if (color) b.style.color = color;
+    span.appendChild(b);
+    stats.appendChild(span);
+  };
+  append('Всего', TICKERS.length);
+  append('SVG', svgCnt, '#00E676');
+  append('PNG', pngCnt, '#4DA3FF');
+  append('Fallback', fbCnt, '#FF4D4D');
+}
+
+// Card строится сразу с SVG-попыткой. При onerror переключаемся на PNG,
+// при onerror на PNG — на fallback circle. Каждый раз пересчитываем
+// атрибут data-status и бейдж, плюс обновляем счётчики.
+function makeCard(ticker, name) {
+  const card = el('div', { class: 'card', 'data-ticker': ticker, 'data-status': 'svg' });
+  const badge = makeBadge('svg');
+  const wrap = el('div', { class: 'logo-wrap' });
+  const img = el('img', { src: LOGO_BASE + '/' + ticker + '.svg', alt: ticker });
+  wrap.appendChild(img);
+  card.appendChild(badge);
+  card.appendChild(wrap);
+  card.appendChild(el('span', { class: 'ticker' }, ticker));
+  card.appendChild(el('span', { class: 'name' }, name));
+
+  img.addEventListener('load', () => {
+    const st = card.dataset.status;
+    if (st === 'svg') svgCnt++;
+    else if (st === 'png') pngCnt++;
+    updateStats();
+  });
+  img.addEventListener('error', () => {
+    const st = card.dataset.status;
+    if (st === 'svg') {
+      // пробуем PNG
+      card.dataset.status = 'png';
+      badge.className = 'format-badge png';
+      badge.textContent = 'PNG';
+      img.src = LOGO_BASE + '/' + ticker + '.png';
+    } else if (st === 'png') {
+      // fallback circle
+      card.dataset.status = 'fallback';
+      badge.className = 'format-badge fallback';
+      badge.textContent = 'FALLBACK';
+      wrap.removeChild(img);
+      card.insertBefore(makeFallback(ticker), wrap);
+      card.removeChild(wrap);
+      fbCnt++;
+      updateStats();
+    }
+  });
+
+  return card;
+}
+
+function render() {
+  const grid = document.getElementById('grid');
+  for (const [ticker, name] of TICKERS) {
+    grid.appendChild(makeCard(ticker, name));
+  }
+}
+
+document.querySelectorAll('.controls button').forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll('.controls button').forEach(b => b.classList.toggle('active', b === btn));
+    const f = btn.dataset.filter;
+    document.querySelectorAll('.card').forEach(c => {
+      c.style.display = (f === 'all' || c.dataset.status === f) ? '' : 'none';
+    });
+  };
+});
+
+render();
+updateStats();
+</script>
+</body>
+</html>
