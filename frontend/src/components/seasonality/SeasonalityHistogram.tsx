@@ -132,6 +132,12 @@ export default function SeasonalityHistogram({
         aspectRatio: 'var(--seasonality-aspect-ratio, 2.4)',
         minHeight: 'var(--seasonality-hist-min-height, 240px)',
         maxHeight: 'var(--seasonality-hist-max-height, 450px)',
+        // КРИТИЧНО: max-width: 100% защищает от расширения за parent.
+        // aspect-ratio + min-height по CSS-спеке IGNORE родительские
+        // constraints — на mobile (375px viewport) chart раздувался
+        // до 432px (=180×2.4) и выезжал за card на 122px вправо.
+        // С max-width: 100% chart shrinks по ширине, height clamps к min-height.
+        maxWidth: '100%',
         // touchAction: none — нужно для mobile чтобы водение пальцем по чарту
         // не триггерило scroll страницы.
         touchAction: 'none',
@@ -240,6 +246,13 @@ export default function SeasonalityHistogram({
             );
           })()}
         </svg>
+        {/* Watermark — внутри bar-area div (он absolute → containing block для absolute потомков).
+            Gridlines/bars идут от 12% до 88% высоты SVG (halfH=H*0.38, запас 12% по краям).
+            Позиция:
+              left = 20px от левого края bar-area (== 20px после Y-axis labels)
+              bottom = 12% от высоты bar-area (доходит до нижней gridline) + 5px зазор
+            Чисто CSS, адаптивно к любому размеру (aspectRatio + media query). */}
+        <ChartWatermark left={20} bottom="calc(12% + 5px)" />
       </div>
 
       {/* Tooltip — используем ChartTooltip (автоматический flip по центру) */}
@@ -346,9 +359,8 @@ export default function SeasonalityHistogram({
         })}
       </div>
 
-      {/* Watermark — на уровне main wrapper (не внутри chart-area),
-          чтобы позиционировался одинаково с YearlySeasonalityChart. */}
-      <ChartWatermark />
+      {/* Watermark перенесён внутрь bar-area div выше (для точной привязки
+          к gridlines на 12-88% SVG). Здесь больше не рендерим. */}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useState, useMemo, useRef } from 'react';
 import { easeOutCubic, morphPts, ptsToPath, ptsToArea, type SyncedDataPoint, type ChartPadding } from './chartUtils';
 import { CHART_COLORS, GRID, CROSSHAIR, ANIMATION } from '../../config/chartTheme';
+import { useIsMobile } from '../../hooks/useIsMobile';
 import ChartWatermark from '../ChartWatermark';
 
 interface IndexChartProps {
@@ -22,6 +23,8 @@ export default function IndexChart({
     const chartWrapRef = useRef<HTMLDivElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const [width, setWidth] = useState(0);
+    // Меньше vertical gridlines на мобиле — синхронно с BreadthChart X-labels
+    const isMobile = useIsMobile();
     const [animLinePath, setAnimLinePath] = useState('');
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const [animAreaPath, setAnimAreaPath] = useState(''); void animAreaPath;
@@ -68,14 +71,14 @@ export default function IndexChart({
             return { value: v, y: scaleY(v) };
         });
 
-        const xTickCount = Math.min(7, syncedData.length);
+        const xTickCount = Math.min(isMobile ? 4 : 7, syncedData.length);
         const xTicks = Array.from({ length: xTickCount }, (_, i) => {
             const idx = Math.floor((i / Math.max(xTickCount - 1, 1)) * (syncedData.length - 1));
             return { x: scaleX(idx) };
         });
 
         return { points, yTicks, xTicks, scaleX };
-    }, [syncedData, chartWidth, chartHeight, padding]);
+    }, [syncedData, chartWidth, chartHeight, padding, isMobile]);
 
     // Morph animation
     useLayoutEffect(() => {
@@ -193,7 +196,12 @@ export default function IndexChart({
                         ))}
                     </svg>
                 )}
-                <ChartWatermark />
+                {/* Watermark — привязан к data area, как в SimpleChart.
+                    Gridlines IndexChart как у SimpleChart: нижняя на padding.bottom
+                    от низа SVG → bottom=padding.bottom+5 даёт 5px зазор.
+                    padding обновляется в StrengthPage через resize listener,
+                    значит watermark адаптивен к mobile/tablet/desktop. */}
+                <ChartWatermark left={padding.left + 20} bottom={padding.bottom + 5} />
             </div>
         </div>
     );

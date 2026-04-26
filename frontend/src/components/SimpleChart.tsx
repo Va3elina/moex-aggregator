@@ -848,8 +848,9 @@ export default function SimpleChart({
               </g>
             ))}
 
-            {/* Правая ось Y (OI) — скрыта на мобиле */}
-            {!isMobile && showSecondary && targetCalc.secYTicks && targetCalc.secYTicks.map((tick, i) => (
+            {/* Правая ось Y (secondary). На мобиле раньше скрывалась из-за маленького
+                --chart-pad-right-dual (48px), но с увеличением до 68px labels помещаются. */}
+            {showSecondary && targetCalc.secYTicks && targetCalc.secYTicks.map((tick, i) => (
               <text
                 key={`sec-${i}`}
                 x={chartWidth + 12}
@@ -1164,11 +1165,18 @@ export default function SimpleChart({
           })()}
         </svg>
 
-        {/* Водяной знак Фрейма — ПРЯМО на графике, правый нижний угол.
+        {/* Водяной знак Фрейма — ПРЯМО на графике, левый нижний угол.
             Лежит внутри chartWrapRef (который relative), т.е. позиционирован
             относительно SVG-области. pointer-events:none — не мешает
-            crosshair'у и tooltip'ам. */}
-        <ChartWatermark />
+            crosshair'у и tooltip'ам.
+
+            Позиция привязана к data area, не к wrapper:
+              left  = padding.left + 20   → 20px ВНУТРИ data area от левого края
+              bottom = padding.bottom + 5 → 5px над x-axis
+            Это даёт ОДИНАКОВОЕ визуальное положение на OI page (dual axis,
+            padding.right=95) и на Funds Money page (single axis, padding.right=12),
+            независимо от ширины wrapper'а или количества Y-осей. */}
+        <ChartWatermark left={padding.left + 20} bottom={padding.bottom + 5} />
 
         {/* Аннотации контрактов — кружки под графиком */}
         {annotations && annotations.length > 0 && (() => {

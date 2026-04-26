@@ -194,7 +194,7 @@ export default function SeasonalityPriceChart({
           touchAction: none + onTouch* handlers → поддержка водения пальцем на mobile. */}
       <div
         className={`relative cursor-crosshair ${revealed ? 'chart-reveal' : ''}`}
-        style={{ aspectRatio: '2.4', minHeight: 280, maxHeight: 550, touchAction: 'none' }}
+        style={{ aspectRatio: '2.4', minHeight: 280, maxHeight: 550, maxWidth: '100%', touchAction: 'none' }}
         onMouseMove={(e) => {
           if (divHoverRef.current) return;
           const rect = e.currentTarget.getBoundingClientRect();
@@ -273,11 +273,19 @@ export default function SeasonalityPriceChart({
               );
             })()}
           </svg>
-          <ChartWatermark />
+          {/* Watermark — привязан к data area.
+              Gridlines от 0% до 100% SVG, нижняя на низ data area.
+              PB=60 хардкод (не --chart-pad-bottom!) → bottom=65.
+              Left адаптивно через CSS-вар. */}
+          <ChartWatermark
+            left="calc(var(--chart-pad-left, 100px) + 20px)"
+            bottom={65}
+          />
         </div>
 
         {/* Y labels */}
-        <ChartYAxis ticks={yTicks} side="right" format={(v) => v.toFixed(0)} padTop={PT} padBottom={PB} />
+        {/* padRight=PR — иначе на mobile labels overlap data area (см. YearlySeasonalityChart) */}
+        <ChartYAxis ticks={yTicks} side="right" format={(v) => v.toFixed(0)} padTop={PT} padBottom={PB} padRight={PR} />
 
         {/* X labels */}
         <ChartXAxis labels={xTicks.map(t => t.label)} padLeft={PL} padRight={PR} />

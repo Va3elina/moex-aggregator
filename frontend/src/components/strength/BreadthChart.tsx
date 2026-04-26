@@ -1,6 +1,7 @@
 import { memo, useEffect, useLayoutEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { lerp, easeOutCubic, morphPts, ptsToPath, type SyncedDataPoint, type ChartPadding } from './chartUtils';
 import { GRID, CROSSHAIR, ANIMATION } from '../../config/chartTheme';
+import { useIsMobile } from '../../hooks/useIsMobile';
 
 type ChartMode = 'line' | 'histogram';
 
@@ -76,6 +77,8 @@ export default function BreadthChart({
 }: BreadthChartProps) {
     const svgRef = useRef<SVGSVGElement>(null);
     const chartWrapRef = useRef<HTMLDivElement>(null);
+    // На мобиле X-tick'ов меньше — иначе формат "29 окт. 25 г." накладывается
+    const isMobile = useIsMobile();
     const containerRef = useRef<HTMLDivElement>(null);
     const [width, setWidth] = useState(0);
 
@@ -171,7 +174,7 @@ export default function BreadthChart({
             return { x, y, width: barWidth, height: h, color: getColor(d.breadth) };
         });
 
-        const xTickCount = Math.min(8, syncedData.length);
+        const xTickCount = Math.min(isMobile ? 4 : 8, syncedData.length);
         const xTicks = Array.from({ length: xTickCount }, (_, i) => {
             const idx = Math.floor(i * (syncedData.length - 1) / Math.max(xTickCount - 1, 1));
             return {
@@ -187,7 +190,7 @@ export default function BreadthChart({
         }));
 
         return { points, lineSegments, bars, levels, xTicks, yTicks, chartWidth, chartHeight, scaleX };
-    }, [syncedData, chartWidth, chartHeight, padding, getColor]);
+    }, [syncedData, chartWidth, chartHeight, padding, getColor, isMobile]);
 
     // Morph animation
     useLayoutEffect(() => {

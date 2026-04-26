@@ -241,6 +241,10 @@ export default function YearlySeasonalityChart({
           aspectRatio: 'var(--seasonality-aspect-ratio, 2.4)',
           minHeight: 'var(--seasonality-min-height, 280px)',
           maxHeight: 'var(--seasonality-max-height, 550px)',
+          // max-width: 100% — защита от aspect-ratio + min-height расширения
+          // за parent на узких viewport'ах. Без этого chart выезжает за card
+          // на mobile (детально см. SeasonalityHistogram.tsx).
+          maxWidth: '100%',
           // touchAction: none — отключает браузерные жесты (scroll/zoom) при
           // водении пальцем по чарту. Критично для mobile UX.
           touchAction: 'none',
@@ -292,7 +296,9 @@ export default function YearlySeasonalityChart({
           </svg>
         </div>
 
-        {/* Y labels */}
+        {/* Y labels — padRight=PR обязателен, иначе ChartYAxis использует
+            default 80, и на mobile (PR=56) labels overlap data area на 12px
+            («правая ось вошла в график»). */}
         <ChartYAxis
           ticks={yTicks}
           side="right"
@@ -300,6 +306,7 @@ export default function YearlySeasonalityChart({
           color="var(--axis-color, #9CA3B8)"
           padTop={PT}
           padBottom={PB}
+          padRight={PR}
         />
 
         {/* X labels — реальные даты из current year или месяцы */}
@@ -357,7 +364,14 @@ export default function YearlySeasonalityChart({
             )}
           </ChartTooltip>
         )}
-        <ChartWatermark />
+        {/* Watermark — привязан к data area через CSS calc().
+            Gridlines идут от 0% до 100% SVG (yTicks от yMin до yMax),
+            нижняя на padding.bottom от низа → bottom = pad-bottom + 5px зазор.
+            Адаптивно к media query через CSS-вары. */}
+        <ChartWatermark
+          left="calc(var(--chart-pad-left, 100px) + 20px)"
+          bottom="calc(var(--chart-pad-bottom, 50px) + 5px)"
+        />
       </div>
 
       {/* Navigator — скользящее окно по году */}

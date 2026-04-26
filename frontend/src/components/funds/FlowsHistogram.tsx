@@ -3,6 +3,7 @@ import { UK_LOGOS } from '../../config/fundConfig';
 import { FUND_ANNOTATIONS } from '../../config/fundAnnotations';
 import type { FundsFlowsResponse, FundCategory } from '../../services/api';
 import { CHART_COLORS, GRID, CROSSHAIR, TOOLTIP } from '../../config/chartTheme';
+import { useIsMobile } from '../../hooks/useIsMobile';
 import ChartWatermark from '../ChartWatermark';
 
 interface FlowsHistogramProps {
@@ -46,6 +47,9 @@ export default function FlowsHistogram({
     onSetHoveredAnnotation,
     onSetFlowNavRange,
 }: FlowsHistogramProps) {
+    // На мобиле уменьшаем количество X-tick'ов чтобы даты не накладывались
+    // (формат "29 окт. 25 г." ≈ 70px на 10px шрифте → 6 шт. = 420px > 343px viewport).
+    const isMobile = useIsMobile();
     return (
         <div className="rounded-2xl p-5 bg-theme-secondary border border-theme relative">
             {/* Спиннер загрузки — в углу если есть старые данные, в центре если первая загрузка */}
@@ -217,9 +221,26 @@ export default function FlowsHistogram({
                     </div>
 
                     {/* Watermark — sibling inner chart-area, в flowContainerRef.
-                        Высота flowContainerRef = var(--chart-height) — как у SimpleChart,
-                        значит 14%/10% дадут ту же визуальную позицию. */}
-                    <ChartWatermark />
+                        Привязан к нижней gridline + 5px зазор (как у SimpleChart).
+                        FlowsHistogram отличается: gridlines идут от 3% до 97%
+                        высоты SVG (запас 3% по краям), а не 0%-100%. Поэтому
+                        нижняя gridline = padding.bottom + 3% * SVG_h от низа.
+
+                        Формула bottom:
+                          padding.bottom              ← x-axis area
+                        + 0.03 * SVG_h                ← gap до gridline (3% запас)
+                        + 5px                         ← зазор как у СЧА
+                        где SVG_h = chart-height - chart-pad-top - chart-pad-bottom
+
+                        Desktop: 50 + 0.03*(450-19-50) + 5 ≈ 66px
+                        Tablet:  50 + 0.03*(380-19-50) + 5 ≈ 64px
+                        Mobile:  40 + 0.03*(300-16-40) + 5 ≈ 52px
+
+                        left: padding.left + 20px (как SimpleChart). */}
+                    <ChartWatermark
+                        left="calc(var(--chart-pad-left, 100px) + 20px)"
+                        bottom="calc(var(--chart-pad-bottom, 50px) + 0.03 * (var(--chart-height, 450px) - var(--chart-pad-top, 19px) - var(--chart-pad-bottom, 50px)) + 5px)"
+                    />
 
                     {/* Тултип-карточка со значением — позиция через ref */}
                     {hoveredFlowIndex !== null && flowsData?.flows && (() => {
@@ -291,7 +312,7 @@ export default function FlowsHistogram({
                         {flowsData?.flows && flowsData.flows.length > 0 && (() => {
                             const flows = flowsData.flows.slice(flowNavRange[0], flowNavRange[1] + 1);
                             if (!flows.length) return null;
-                            const tickCount = Math.min(6, flows.length);
+                            const tickCount = Math.min(isMobile ? 4 : 6, flows.length);
                             return Array.from({ length: tickCount }, (_, i) => {
                                 const idx = Math.min(Math.round(i * (flows.length - 1) / Math.max(tickCount - 1, 1)), flows.length - 1);
                                 if (!flows[idx]) return null;

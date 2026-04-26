@@ -664,8 +664,8 @@
     --chart-pad-top: 16px;
     --chart-pad-bottom: 40px;
     --chart-pad-left: 58px;     /* было 45 — не хватало для "+1.68%" / "3287" */
-    --chart-pad-right-single: 36px;  /* было 20 — нужно для "+/-" labels */
-    --chart-pad-right-dual: 48px;    /* было 20 — и ещё больше для 2-осей */
+    --chart-pad-right-single: 56px;  /* было 36 — labels "+12.0", "1234" не помещались */
+    --chart-pad-right-dual: 68px;    /* было 48 — для OI значений типа "273K" / "168 917" */
 
     --chart-legend-mb: 10px;
 
@@ -703,15 +703,25 @@
     --strength-chart-solo-height: 340px;
 
     /* Seasonality — mobile */
-    --seasonality-min-height: 200px;
-    --seasonality-max-height: 340px;
-    --seasonality-hist-min-height: 180px;
-    --seasonality-hist-max-height: 300px;
+    /* Сезонность mobile — aspect-ratio 2.4 не подходит для узких viewport
+       (293×122 = слишком плоский). Делаем 1.5 (почти 3:2) + поднимаем
+       min-height чтобы area data была сопоставима с OI/SimpleChart на mobile
+       (там data area ~185×294 = 54K px² при wrapper 311×350).
+
+       Yearly: 197×294 = 58K (как OI), wrapper 350px.
+       Histogram: 207×238 = 49K (тоже близко), wrapper 280px. */
+    --seasonality-aspect-ratio: 1.5;
+    --seasonality-min-height: 350px;
+    --seasonality-max-height: 450px;
+    --seasonality-hist-min-height: 280px;
+    --seasonality-hist-max-height: 380px;
     --seasonality-hist-pad-top: 22px;
     --seasonality-hist-pad-bottom: 20px;
     --seasonality-hist-pad-x: 52px;     /* mobile — было 38, обрезало "+0.02%" */
     --seasonality-ylabel-right: 4px;    /* mobile: ближе к краю, больше места на label */
-    --chart-date-placeholder-height: 18px;
+    --seasonality-legend-mb: 4px;       /* mobile: компактный отступ legend → chart */
+    --seasonality-legend-font-size: 12px; /* mobile: меньше шрифт легенды */
+    --chart-date-placeholder-height: 12px;  /* mobile: меньше placeholder для floating date */
     --chart-xlabel-row-height: 20px;
   }
 }
