@@ -2,6 +2,8 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { ChevronDown, BarChart3, Lock } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
+import InstrumentIcon from '../components/InstrumentIcon';
+import { usePrefetchLogos } from '../hooks/usePrefetchLogos';
 import { METHODOLOGY } from '../data/methodology';
 import { getChartData, getInstrument } from '../services/api';
 import type { ChartResponse } from '../types';
@@ -29,56 +31,9 @@ const PERIOD_LABELS: Record<Period, string> = {
   'all': ALL_PERIOD_LABELS['all'],
 };
 
-// Иконки инструментов
-const INSTRUMENT_ICONS: Record<string, { icon: string; bg: string; color: string }> = {
-  // Валютные пары
-  'Si': { icon: '$/₽', bg: '#2563EB', color: '#fff' },
-  'Eu': { icon: '€/₽', bg: '#1D4ED8', color: '#fff' },
-  'CR': { icon: '¥/₽', bg: '#DC2626', color: '#fff' },
-  'CNYRUBF': { icon: '¥/₽', bg: '#DC2626', color: '#fff' },
-  'ED': { icon: '€/$', bg: '#7C3AED', color: '#fff' },
-  'USDRUBF': { icon: '$/₽', bg: '#2563EB', color: '#fff' },
-  'EURRUBF': { icon: '€/₽', bg: '#1D4ED8', color: '#fff' },
-  // Нефть и газ
-  'BR': { icon: '🛢', bg: '#92400E', color: '#fff' },
-  'BM': { icon: '🛢', bg: '#92400E', color: '#fff' },
-  'NG': { icon: '🔥', bg: '#EA580C', color: '#fff' },
-  'GZ': { icon: 'ГП', bg: '#0EA5E9', color: '#fff' },
-  // Металлы
-  'GD': { icon: 'Au', bg: '#D97706', color: '#fff' },
-  'GL': { icon: 'Au', bg: '#D97706', color: '#fff' },
-  'GLDRUBF': { icon: 'Au', bg: '#D97706', color: '#fff' },
-  'SV': { icon: 'Ag', bg: '#6B7280', color: '#fff' },
-  'PT': { icon: 'Pt', bg: '#9CA3AF', color: '#000' },
-  'PD': { icon: 'Pd', bg: '#A3A3A3', color: '#000' },
-  'AL': { icon: '💎', bg: '#2DD4BF', color: '#000' },
-  'CE': { icon: 'Cu', bg: '#B45309', color: '#fff' },
-  'NM': { icon: 'Ni', bg: '#525252', color: '#fff' },
-  // Индексы
-  'RI': { icon: 'РТС', bg: '#6366F1', color: '#fff' },
-  'MX': { icon: 'МБ', bg: '#6366F1', color: '#fff' },
-  'MM': { icon: 'МБм', bg: '#6366F1', color: '#fff' },
-  // Акции
-  'SR': { icon: 'Сб', bg: '#21A038', color: '#fff' },
-  'GK': { icon: 'ЛК', bg: '#E11D48', color: '#fff' },
-  'YD': { icon: 'Я', bg: '#FC3F1D', color: '#fff' },
-  'TT': { icon: 'Т', bg: '#FFDD2D', color: '#000' },
-  'VB': { icon: 'ВТБ', bg: '#009FDF', color: '#fff' },
-  'NK': { icon: 'НН', bg: '#F59E0B', color: '#000' },
-  'RN': { icon: 'РН', bg: '#FFD700', color: '#000' },
-  'LK': { icon: 'ЛК', bg: '#E11D48', color: '#fff' },
-  'TN': { icon: 'ТН', bg: '#16A34A', color: '#fff' },
-  'NA': { icon: 'НВ', bg: '#0284C7', color: '#fff' },
-  'SF': { icon: 'СН', bg: '#1E3A5F', color: '#fff' },
-  'NR': { icon: 'НР', bg: '#7C3AED', color: '#fff' },
-  'SE': { icon: 'СС', bg: '#475569', color: '#fff' },
-  'AF': { icon: 'АФ', bg: '#0369A1', color: '#fff' },
-  'IB': { icon: 'ИБ', bg: '#1E40AF', color: '#fff' },
-};
-
-const getInstrumentIcon = (sectype: string) => {
-  return INSTRUMENT_ICONS[sectype] || null;
-};
+// Локальный INSTRUMENT_ICONS удалён — используется shared
+// `<InstrumentIcon sectype={...} />` из components/InstrumentIcon.tsx
+// (он сам разруливает фьючерсы → акции → лого, валюты → custom badge).
 
 // Цветовая палитра
 const COLORS = {
@@ -90,25 +45,14 @@ const COLORS = {
   lime:    CHART_COLORS.lime,
 };
 
-// Генерация цвета из строки
-const stringToColor = (str: string) => {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    hash = str.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const colors = [
-    '#2EE59D', '#4DA3FF', '#9D4DFF', '#FF4D4D', '#FFB020',
-    '#00D9FF', '#FF6B9D', '#FCD34D', '#14B8A6', '#F97316',
-    '#06B6D4', '#3B82F6', '#F59E0B', '#8B5CF6', '#EC4899',
-    '#84CC16', '#6366F1', '#A855F7', '#22C55E', '#EF4444'
-  ];
-  return colors[Math.abs(hash) % colors.length];
-};
-
 export default function OpenInterestPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
+
+  // Фоновая предзагрузка лого один раз — модалка выбора актива потом
+  // открывается мгновенно из SW cache, без 100 запросов.
+  usePrefetchLogos();
 
   // Инструмент
   // ВАЖНО: sec_id может прийти из URL-параметра (например `?instrument=IMOEXF`),
@@ -437,21 +381,7 @@ export default function OpenInterestPage() {
             className="widget-flat px-3 md:px-4 py-2 md:py-2.5 text-sm font-medium transition-colors flex items-center gap-2 md:gap-3 min-w-[160px] md:min-w-[200px] hover:opacity-90"
             style={{ color: 'var(--text-primary)' }}
           >
-            {(() => {
-              const icon = getInstrumentIcon(selectedInstrument);
-              if (icon) {
-                return (
-                  <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 font-black text-[10px]"
-                    style={{ backgroundColor: icon.bg, color: icon.color }}>
-                    {icon.icon}
-                  </div>
-                );
-              }
-              return (
-                <div className="w-8 h-8 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: stringToColor(selectedInstrument) }} />
-              );
-            })()}
+            <InstrumentIcon sectype={selectedInstrument} size={28} rounded="full" eager />
             <div className="flex-1 text-left">
               <div className="font-medium">{instrumentName}</div>
               <div className="text-xs text-theme-secondary">{selectedInstrument}</div>

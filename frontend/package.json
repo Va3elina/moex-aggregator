@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "python3 ../scripts/build-sprite.py",
     "build": "tsc -b && vite build",
+    "postbuild": "bash -c 'find dist/logos -type f \\( -name \"*.png\" ! -name \"sprite.png\" \\) -delete && find dist/logos -type f \\( -name \"*.svg\" -o -name \"*.webp\" \\) -delete; ls dist/logos | head'",
     "lint": "eslint .",
     "preview": "vite preview"
   },

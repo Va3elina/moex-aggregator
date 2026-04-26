@@ -1,6 +1,8 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { ChevronDown, BarChart3, CalendarDays, Layers, X, Plus } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
+import InstrumentIcon from '../components/InstrumentIcon';
+import { usePrefetchLogos } from '../hooks/usePrefetchLogos';
 import { METHODOLOGY } from '../data/methodology';
 import { getSeasonality, getSeasonalityPrice, getSeasonalityYearly, getSeasonalityYears } from '../services/api';
 import InstrumentSearchModal from '../components/InstrumentSearchModal';
@@ -42,6 +44,10 @@ const COLOR_EXACT_YEAR = '#F97316';
 
 
 export default function SeasonalityPage() {
+  // Фоновая предзагрузка лого один раз — модалка выбора актива потом
+  // открывается мгновенно из SW cache, без 100 запросов.
+  usePrefetchLogos();
+
   // Stock selector
   const [selectedStock, setSelectedStock] = useState<string>('SBER');
   const [selectedName, setSelectedName] = useState<string>('Сбербанк');
@@ -586,10 +592,7 @@ export default function SeasonalityPage() {
             className="widget-flat px-3 md:px-4 py-2 md:py-2.5 text-sm font-medium transition-colors flex items-center gap-2 md:gap-3 min-w-[160px] md:min-w-[200px] hover:opacity-90"
             style={{ color: 'var(--text-primary)' }}
           >
-            <div className="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-bold text-white/70"
-              style={{ backgroundColor: `hsl(${selectedStock.split('').reduce((a, c) => a + c.charCodeAt(0), 0) % 360}, 50%, 40%)` }}>
-              {selectedStock.slice(0, 2)}
-            </div>
+            <InstrumentIcon sectype={selectedStock} size={28} rounded="full" eager />
             <div className="flex-1 text-left">
               <div className="font-medium">{selectedName}</div>
               <div className="text-xs text-theme-secondary">{selectedStock}</div>

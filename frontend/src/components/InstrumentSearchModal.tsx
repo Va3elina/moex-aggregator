@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Search, X, Star } from 'lucide-react';
-import TickerLogo from './TickerLogo';
+import InstrumentIcon from './InstrumentIcon';
 
 interface Instrument {
   sec_id: string;
@@ -28,67 +28,8 @@ interface InstrumentSearchModalProps {
 }
 
 
-const INSTRUMENT_ICONS: Record<string, { icon: string; bg: string; color: string }> = {
-  'Si': { icon: '$/₽', bg: '#2563EB', color: '#fff' },
-  'Eu': { icon: '€/₽', bg: '#1D4ED8', color: '#fff' },
-  'CR': { icon: '¥/₽', bg: '#DC2626', color: '#fff' },
-  'CNYRUBF': { icon: '¥/₽', bg: '#DC2626', color: '#fff' },
-  'ED': { icon: '€/$', bg: '#7C3AED', color: '#fff' },
-  'USDRUBF': { icon: '$/₽', bg: '#2563EB', color: '#fff' },
-  'EURRUBF': { icon: '€/₽', bg: '#1D4ED8', color: '#fff' },
-  'BR': { icon: '🛢', bg: '#92400E', color: '#fff' },
-  'BM': { icon: '🛢', bg: '#92400E', color: '#fff' },
-  'NG': { icon: '🔥', bg: '#EA580C', color: '#fff' },
-  'GZ': { icon: 'ГП', bg: '#0EA5E9', color: '#fff' },
-  'GD': { icon: 'Au', bg: '#D97706', color: '#fff' },
-  'GL': { icon: 'Au', bg: '#D97706', color: '#fff' },
-  'SV': { icon: 'Ag', bg: '#6B7280', color: '#fff' },
-  'PT': { icon: 'Pt', bg: '#9CA3AF', color: '#000' },
-  'PD': { icon: 'Pd', bg: '#A3A3A3', color: '#000' },
-  'AL': { icon: '💎', bg: '#2DD4BF', color: '#000' },
-  'CE': { icon: 'Cu', bg: '#B45309', color: '#fff' },
-  'RI': { icon: 'РТС', bg: '#6366F1', color: '#fff' },
-  'MX': { icon: 'МБ', bg: '#6366F1', color: '#fff' },
-  'SR': { icon: 'Сб', bg: '#21A038', color: '#fff' },
-  'GK': { icon: 'ЛК', bg: '#E11D48', color: '#fff' },
-  'YD': { icon: 'Я', bg: '#FC3F1D', color: '#fff' },
-  'TT': { icon: 'Т', bg: '#FFDD2D', color: '#000' },
-  'VB': { icon: 'ВТБ', bg: '#009FDF', color: '#fff' },
-  'NK': { icon: 'НН', bg: '#F59E0B', color: '#000' },
-  'RN': { icon: 'РН', bg: '#FFD700', color: '#000' },
-  'TN': { icon: 'ТН', bg: '#16A34A', color: '#fff' },
-  'NA': { icon: 'НВ', bg: '#0284C7', color: '#fff' },
-  'SF': { icon: 'СН', bg: '#1E3A5F', color: '#fff' },
-  'AF': { icon: 'АФ', bg: '#0369A1', color: '#fff' },
-  'SE': { icon: 'СС', bg: '#475569', color: '#fff' },
-  // Индексы
-  'IMOEX': { icon: 'МБ', bg: '#6366F1', color: '#fff' },
-  'RTSI': { icon: 'РТС', bg: '#8B5CF6', color: '#fff' },
-  'MCFTR': { icon: 'МП', bg: '#6366F1', color: '#fff' },
-  'RGBITR': { icon: 'ОФЗ', bg: '#0EA5E9', color: '#fff' },
-  'RGBI': { icon: 'ОФЗ', bg: '#0284C7', color: '#fff' },
-  'RVI': { icon: 'σ', bg: '#EF4444', color: '#fff' },
-  'RUSFAR3M': { icon: '%', bg: '#14B8A6', color: '#fff' },
-  // Валюта
-  'USD000UTSTOM': { icon: '$/₽', bg: '#2563EB', color: '#fff' },
-  'EUR_RUB__TOM': { icon: '€/₽', bg: '#1D4ED8', color: '#fff' },
-  'CNYRUB_TOM': { icon: '¥/₽', bg: '#DC2626', color: '#fff' },
-  'GLDRUB_TOM': { icon: 'Au₽', bg: '#D97706', color: '#fff' },
-};
-
-const InstrumentIcon = ({ sectype }: { sectype: string }) => {
-  const icon = INSTRUMENT_ICONS[sectype];
-  if (icon) {
-    return (
-      <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-bold text-[10px]"
-        style={{ backgroundColor: icon.bg, color: icon.color }}>
-        {icon.icon}
-      </div>
-    );
-  }
-  // Для обычных акций — TickerLogo компонент с SVG + fallback
-  return <TickerLogo ticker={sectype} size={28} rounded="full" />;
-};
+// InstrumentIcon + INSTRUMENT_ICONS + FUT_TO_STOCK перенесены в
+// отдельный модуль ./InstrumentIcon.tsx, общий для всех страниц.
 
 export default function InstrumentSearchModal({ onSelect, onClose, filterType, excludeType, onlyGroups }: InstrumentSearchModalProps) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -170,7 +111,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
       />
 
       {/* Modal — glassmorphism */}
-      <div className="relative w-full max-w-lg bg-white/[0.08] backdrop-blur-xl rounded-2xl border border-white/15 shadow-2xl max-h-[70vh] overflow-hidden" style={{ boxShadow: '0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1)' }}>
+      <div className="relative w-full max-w-xl bg-white/[0.08] backdrop-blur-xl rounded-2xl border border-white/15 shadow-2xl max-h-[78vh] overflow-hidden" style={{ boxShadow: '0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1)' }}>
         {/* Header */}
         <div className="px-6 pt-6 pb-4">
           <div className="flex items-center justify-between mb-6">
@@ -196,14 +137,14 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
             />
           </div>
 
-          {/* Категории */}
+          {/* Категории — крупнее для удобства касания на mobile + читаемости */}
           {!onlyGroups && (
-          <div className="flex gap-1.5 mt-4 flex-wrap">
+          <div className="flex gap-2 mt-5 flex-wrap">
             {CATEGORY_FILTERS.map(cat => (
               <button
                 key={cat.key}
                 onClick={() => setCategoryFilter(cat.key)}
-                className={`px-3 py-1 text-[12px] font-medium rounded-full transition-colors ${
+                className={`px-4 py-2 text-sm font-semibold rounded-full transition-colors ${
                   categoryFilter === cat.key
                     ? 'bg-[#C8FF2E] text-[#0B0D12]'
                     : 'bg-white/[0.06] text-[#A7ADBC] hover:bg-white/10 hover:text-[#F4F6FA]'
@@ -217,7 +158,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
         </div>
 
         {/* Results */}
-        <div className="overflow-y-auto max-h-[calc(70vh-220px)] px-6 pb-6 styled-scrollbar">
+        <div className="overflow-y-auto max-h-[calc(78vh-220px)] px-6 pb-6 styled-scrollbar">
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <div className="w-8 h-8 border-2 border-[#C8FF2E] border-t-transparent rounded-full animate-spin" />
@@ -235,16 +176,16 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
                       <div
                         key={inst.sectype}
                         onClick={() => onSelect(inst.sectype, inst.name)}
-                        className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 transition-colors cursor-pointer"
+                        className="flex items-center gap-3.5 px-3 py-2.5 rounded-lg hover:bg-white/5 transition-colors cursor-pointer"
                       >
-                        <InstrumentIcon sectype={inst.sectype} />
-                        <span className="font-bold text-[13px] text-[#F4F6FA] flex-shrink-0 mr-2">{inst.sectype}</span>
-                        <span className="text-[12px] text-[#7A8194] truncate flex-1">{inst.name}</span>
+                        <InstrumentIcon sectype={inst.sectype} size={36} />
+                        <span className="font-bold text-[15px] text-[#F4F6FA] flex-shrink-0 mr-1.5">{inst.sectype}</span>
+                        <span className="text-[13px] text-[#7A8194] truncate flex-1">{inst.name}</span>
                         <button
                           onClick={(e) => toggleFavorite(inst.sectype, e)}
-                          className="p-1.5 text-[#FFB020]"
+                          className="p-2 text-[#FFB020]"
                         >
-                          <Star size={16} fill="#FFB020" />
+                          <Star size={20} fill="#FFB020" />
                         </button>
                       </div>
                     ))}
@@ -268,16 +209,16 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
                     <div
                       key={inst.sectype}
                       onClick={() => onSelect(inst.sectype, inst.name)}
-                      className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-white/5 transition-colors cursor-pointer"
+                      className="flex items-center gap-3.5 px-3 py-2.5 rounded-lg hover:bg-white/5 transition-colors cursor-pointer"
                     >
-                      <InstrumentIcon sectype={inst.sectype} />
-                      <span className="font-bold text-[13px] text-[#F4F6FA] flex-shrink-0 mr-2">{inst.sectype}</span>
-                      <span className="text-[12px] text-[#7A8194] truncate flex-1">{inst.name}</span>
+                      <InstrumentIcon sectype={inst.sectype} size={36} />
+                      <span className="font-bold text-[15px] text-[#F4F6FA] flex-shrink-0 mr-1.5">{inst.sectype}</span>
+                      <span className="text-[13px] text-[#7A8194] truncate flex-1">{inst.name}</span>
                       <button
                         onClick={(e) => toggleFavorite(inst.sectype, e)}
-                        className="p-1.5 text-[#5E6576] hover:text-[#FFB020] transition-colors"
+                        className="p-2 text-[#5E6576] hover:text-[#FFB020] transition-colors"
                       >
-                        <Star size={16} />
+                        <Star size={20} />
                       </button>
                     </div>
                   ))}
