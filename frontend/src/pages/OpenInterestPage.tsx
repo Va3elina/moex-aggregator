@@ -10,8 +10,9 @@ import type { ChartResponse } from '../types';
 import type { ChartAnnotation } from '../components/SimpleChart';
 import SimpleChart from '../components/SimpleChart';
 import InstrumentSearchModal from '../components/InstrumentSearchModal';
-import { PERIOD_LABELS as ALL_PERIOD_LABELS, INTERVAL_LABELS, CHART_COLORS } from '../config/chartConfig';
+import { PERIOD_LABELS as ALL_PERIOD_LABELS, INTERVAL_LABELS } from '../config/chartConfig';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../contexts/ThemeContext';
 import { isIntervalAllowed, isPeriodAllowed, getDefaultPeriod } from '../config/accessControl';
 import { useRealtimeData } from '../hooks/useRealtimeData';
 
@@ -35,20 +36,24 @@ const PERIOD_LABELS: Record<Period, string> = {
 // `<InstrumentIcon sectype={...} />` из components/InstrumentIcon.tsx
 // (он сам разруливает фьючерсы → акции → лого, валюты → custom badge).
 
-// Цветовая палитра
+// Цветовая палитра — все цвета через CSS-переменные чтобы автоматически
+// адаптироваться к теме (в editorial-light → muted blue/orange, в OKX dark
+// → яркие неоновые). См. --chart-line-1 / --oi-* в index.css.
 const COLORS = {
-  primary: CHART_COLORS.primary,
-  emerald: CHART_COLORS.emerald,
-  rose:    CHART_COLORS.rose,
-  amber:   CHART_COLORS.amber,
-  cyan:    CHART_COLORS.cyan,
-  lime:    CHART_COLORS.lime,
+  primary: 'var(--chart-line-1)',     // Цена инструмента (Сбербанк) — blue в editorial, indigo в OKX
+  amber:   'var(--oi-amber)',          // ОИ — оранжевый чип
+  emerald: 'var(--oi-green)',          // Покупки/Long — зелёный чип
+  rose:    'var(--oi-red)',            // Продажи/Short — красный чип
+  cyan:    'var(--oi-cyan)',           // Чистая позиция — циан чип
+  lime:    'var(--oi-amber)',          // legacy alias
 };
 
 export default function OpenInterestPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { isAuthenticated } = useAuth();
+  const { theme } = useTheme();
   const navigate = useNavigate();
+  const isEditorial = theme.startsWith('editorial');
 
   // Фоновая предзагрузка лого один раз — модалка выбора актива потом
   // открывается мгновенно из SW cache, без 100 запросов.
@@ -371,6 +376,12 @@ export default function OpenInterestPage() {
         helpLink="/methodology/oi"
       />
 
+      {/* Editorial frame — обнимает controls + chart в один контейнер с
+          1.5px outline + hard-shadow 5×5×0 (как в design handoff page.jsx).
+          В non-editorial темах класс не имеет стилей — структура остаётся
+          плоской, как раньше. */}
+      <div className="editorial-frame">
+
       {/* Контролы — без widget-wrapper, консистентно с остальными страницами
           (Buffett, Sezonality, Heatmap — controls прямо на page bg) */}
       <div className="mb-4 md:mb-6">
@@ -396,7 +407,7 @@ export default function OpenInterestPage() {
                 onClick={() => setClgroup('FIZ')}
                 className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors duration-200 ${clgroup === 'FIZ'
                   ? 'btn-control active'
-                  : 'text-[#A7ADBC] hover:text-theme-primary'
+                  : 'text-theme-secondary hover:text-theme-primary'
                   }`}
               >
                 Физлица
@@ -405,7 +416,7 @@ export default function OpenInterestPage() {
                 onClick={() => setClgroup('YUR')}
                 className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors duration-200 ${clgroup === 'YUR'
                   ? 'btn-control active'
-                  : 'text-[#A7ADBC] hover:text-theme-primary'
+                  : 'text-theme-secondary hover:text-theme-primary'
                   }`}
               >
                 Юрлица
@@ -433,7 +444,7 @@ export default function OpenInterestPage() {
                       : interval === int
                         ? 'btn-control active'
                         : available
-                          ? 'text-[#A7ADBC] hover:text-theme-primary'
+                          ? 'text-theme-secondary hover:text-theme-primary'
                           : 'text-theme-muted cursor-not-allowed'
                   }`}
                 >
@@ -470,7 +481,7 @@ export default function OpenInterestPage() {
                     : period === p
                       ? 'btn-control active'
                       : available
-                        ? 'text-[#A7ADBC] hover:text-theme-primary'
+                        ? 'text-theme-secondary hover:text-theme-primary'
                         : 'text-theme-muted cursor-not-allowed'
                 }`}
               >
@@ -481,107 +492,129 @@ export default function OpenInterestPage() {
           })}
         </div>
 
-        {/* Режим отображения */}
+        {/* Режим отображения. Active state использует --accent (theme-aware)
+            вместо hardcoded #6366f1 — иначе в editorial-pumpkin темах
+            активная кнопка светилась бы старым indigo, а не текущим accent'ом. */}
         <div className="flex gap-2 mb-4 flex-wrap">
-          <button
-            onClick={() => setDisplayMode('price')}
-            className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors duration-200 ${displayMode === 'price'
-              ? 'bg-[#6366f1] text-white'
-              : 'bg-theme-secondary text-[#A7ADBC] hover:text-theme-primary border border-theme'
-              }`}
-          >
-            Только цена
-          </button>
-          <button
-            onClick={() => { setDisplayMode('positions'); setOiVariant('oi'); }}
-            className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors duration-200 ${displayMode === 'positions'
-              ? 'bg-[#6366f1] text-white'
-              : 'bg-theme-secondary text-[#A7ADBC] hover:text-theme-primary border border-theme'
-              }`}
-          >
-            Позиции
-          </button>
-          <button
-            onClick={() => { setDisplayMode('participants'); setOiVariant('oi'); }}
-            className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors duration-200 ${displayMode === 'participants'
-              ? 'bg-[#6366f1] text-white'
-              : 'bg-theme-secondary text-[#A7ADBC] hover:text-theme-primary border border-theme'
-              }`}
-          >
-            Участники
-          </button>
+          {([
+            { key: 'price', label: 'Только цена', click: () => setDisplayMode('price') },
+            { key: 'positions', label: 'Позиции', click: () => { setDisplayMode('positions'); setOiVariant('oi'); } },
+            { key: 'participants', label: 'Участники', click: () => { setDisplayMode('participants'); setOiVariant('oi'); } },
+          ] as const).map((m) => {
+            const active = displayMode === m.key;
+            // В editorial mode-кнопки — единый chip-style как period chip'ы:
+            // outline pill для inactive (2px black border + secondary text), filled
+            // pill с hard-shadow для active. В non-editorial — старая Tailwind-разметка.
+            const editorialActiveStyle: React.CSSProperties = {
+              backgroundColor: 'var(--accent)',
+              color: 'var(--text-inverse)',
+              border: '2px solid var(--text-primary)',
+              borderRadius: 999,
+              boxShadow: 'var(--shadow-hard-chip)',
+            };
+            const editorialInactiveStyle: React.CSSProperties = {
+              backgroundColor: 'var(--bg-secondary)',
+              color: 'var(--text-primary)',
+              border: '2px solid var(--text-primary)',
+              borderRadius: 999,
+            };
+            return (
+              <button
+                key={m.key}
+                onClick={m.click}
+                className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors duration-200 ${
+                  isEditorial ? '' : (active ? '' : 'bg-theme-secondary text-theme-secondary hover:text-theme-primary border border-theme')
+                }`}
+                style={
+                  isEditorial
+                    ? (active ? editorialActiveStyle : editorialInactiveStyle)
+                    : (active
+                        ? { backgroundColor: 'var(--accent)', color: 'var(--text-inverse)' }
+                        : undefined)
+                }
+              >
+                {m.label}
+              </button>
+            );
+          })}
         </div>
 
-        {/* Варианты OI */}
+        {/* Варианты OI — нижний ряд кнопок.
+            Каждый вариант имеет свой цвет (амбер=OI, зелёный=покупки, красный=продажи,
+            фиолетовый=обе, циан=чистая, серый=экспирации). Цвета — theme-aware
+            CSS-переменные --oi-* (неон в dark, муть в editorial), не hardcoded. */}
         {displayMode !== 'price' && (
           <div className="flex gap-2 flex-wrap">
-            <button
-              onClick={() => setOiVariant('oi')}
-              className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg text-xs md:text-sm font-medium transition-colors duration-200 ${oiVariant === 'oi'
-                ? 'bg-[#FFB020]/20 text-[#FFB020] ring-1 ring-[#FFB020]/50'
-                : 'bg-theme-secondary text-[#A7ADBC] hover:text-theme-primary'
-                }`}
-            >
-              Открытый интерес
-            </button>
-            <button
-              onClick={() => setOiVariant('long')}
-              className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg text-xs md:text-sm font-medium transition-colors duration-200 ${oiVariant === 'long'
-                ? 'bg-[#2EE59D]/20 text-[#2EE59D] ring-1 ring-[#2EE59D]/50'
-                : 'bg-theme-secondary text-[#A7ADBC] hover:text-theme-primary'
-                }`}
-            >
-              {displayMode === 'positions' ? 'Покупки' : 'Покупатели'}
-            </button>
-            <button
-              onClick={() => setOiVariant('short')}
-              className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg text-xs md:text-sm font-medium transition-colors duration-200 ${oiVariant === 'short'
-                ? 'bg-[#FF4D4D]/20 text-[#FF4D4D] ring-1 ring-[#FF4D4D]/50'
-                : 'bg-theme-secondary text-[#A7ADBC] hover:text-theme-primary'
-                }`}
-            >
-              {displayMode === 'positions' ? 'Продажи' : 'Продавцы'}
-            </button>
-            <button
-              onClick={() => setOiVariant('both')}
-              className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg text-xs md:text-sm font-medium transition-colors duration-200 ${oiVariant === 'both'
-                ? 'bg-[#A855F7]/20 text-[#A855F7] ring-1 ring-[#A855F7]/50'
-                : 'bg-theme-secondary text-[#A7ADBC] hover:text-theme-primary'
-                }`}
-            >
-              {displayMode === 'positions' ? 'Покупки + Продажи' : 'Покупатели + Продавцы'}
-            </button>
-            <button
-              onClick={() => setOiVariant('net')}
-              className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg text-xs md:text-sm font-medium transition-colors duration-200 ${oiVariant === 'net'
-                ? 'bg-[#22D3EE]/20 text-[#22D3EE] ring-1 ring-[#22D3EE]/50'
-                : 'bg-theme-secondary text-[#A7ADBC] hover:text-theme-primary'
-                }`}
-            >
-              Чистая позиция
-            </button>
-            <button
-              onClick={() => setShowExpirations(!showExpirations)}
-              className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg text-xs md:text-sm font-medium transition-colors duration-200 ${showExpirations
-                ? 'bg-[#9CA3B8]/20 text-[#9CA3B8] ring-1 ring-[#9CA3B8]/50'
-                : 'bg-theme-secondary text-[#A7ADBC] hover:text-theme-primary'
-              }`}
-            >
-              Экспирации
-            </button>
+            {([
+              { key: 'oi',           cssVar: '--oi-amber',  label: 'Открытый интерес',
+                isActive: () => oiVariant === 'oi',           click: () => setOiVariant('oi') },
+              { key: 'long',         cssVar: '--oi-green',  label: displayMode === 'positions' ? 'Покупки' : 'Покупатели',
+                isActive: () => oiVariant === 'long',         click: () => setOiVariant('long') },
+              { key: 'short',        cssVar: '--oi-red',    label: displayMode === 'positions' ? 'Продажи' : 'Продавцы',
+                isActive: () => oiVariant === 'short',        click: () => setOiVariant('short') },
+              { key: 'both',         cssVar: '--oi-purple', label: displayMode === 'positions' ? 'Покупки + Продажи' : 'Покупатели + Продавцы',
+                isActive: () => oiVariant === 'both',         click: () => setOiVariant('both') },
+              { key: 'net',          cssVar: '--oi-cyan',   label: 'Чистая позиция',
+                isActive: () => oiVariant === 'net',          click: () => setOiVariant('net') },
+              { key: 'expirations',  cssVar: '--oi-gray',   label: 'Экспирации',
+                isActive: () => showExpirations,              click: () => setShowExpirations(!showExpirations) },
+            ] as const).map((v) => {
+              const active = v.isActive();
+              // В editorial — solid pill: заливка цветом, белый текст, 1.5px border, hard shadow.
+              // В dark/okx — старая полупрозрачная заливка с цветным ring.
+              const activeStyle: React.CSSProperties = isEditorial
+                ? {
+                    backgroundColor: `var(${v.cssVar})`,
+                    color: 'var(--text-inverse)',
+                    border: '2px solid var(--text-primary)',
+                    borderRadius: 999,
+                    boxShadow: 'var(--shadow-hard-chip)',
+                    fontWeight: 700,
+                  }
+                : {
+                    backgroundColor: `color-mix(in srgb, var(${v.cssVar}) 20%, transparent)`,
+                    color: `var(${v.cssVar})`,
+                    boxShadow: `inset 0 0 0 1px color-mix(in srgb, var(${v.cssVar}) 50%, transparent)`,
+                  };
+              // В editorial inactive — outline pill (как на референсе все 6 chip'ов одинаковой формы);
+              // в dark/okx — старый transparent fill.
+              const inactiveStyle: React.CSSProperties | undefined = isEditorial
+                ? {
+                    backgroundColor: 'var(--bg-secondary)',
+                    color: 'var(--text-primary)',
+                    border: '2px solid var(--text-primary)',
+                    borderRadius: 999,
+                    fontWeight: 700,
+                  }
+                : undefined;
+              return (
+                <button
+                  key={v.key}
+                  onClick={v.click}
+                  className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg text-xs md:text-sm font-medium transition-colors duration-200 ${
+                    active || isEditorial ? '' : 'bg-theme-secondary text-theme-secondary hover:text-theme-primary'
+                  }`}
+                  style={active ? activeStyle : inactiveStyle}
+                >
+                  {v.label}
+                </button>
+              );
+            })}
           </div>
         )}
       </div>
 
       {/* Ошибка */}
       {error && (
-        <div className="bg-[#FF4D4D]/10 border border-[#FF4D4D]/30 rounded-xl p-4 mb-6">
-          <p className="text-[#FF4D4D]">{error}</p>
+        <div className="rounded-xl p-4 mb-6" style={{ backgroundColor: 'color-mix(in srgb, var(--danger) 10%, transparent)', border: '1px solid color-mix(in srgb, var(--danger) 30%, transparent)' }}>
+          <p className="text-theme-danger">{error}</p>
         </div>
       )}
 
-      {/* График */}
-      <div className="bg-theme-secondary rounded-2xl border border-theme overflow-hidden">
+      {/* График — внутренний фон совпадает с фоном страницы (бумага в editorial-light,
+          тёмный в editorial-dark/okx), чтобы chart не выделялся «панелью» внутри
+          editorial-frame'а. На референсах chart inner = page bg. */}
+      <div className="bg-theme-primary rounded-2xl border border-theme overflow-hidden">
       <SimpleChart
         data={chartData}
         secondaryData={oiData}
@@ -591,7 +624,7 @@ export default function OpenInterestPage() {
         primaryColor={COLORS.primary}
         secondaryColor={colors.secondary}
         thirdColor={colors.third}
-        height={500}
+        height={600}
         loading={loading}
         formatValue={(v) => v.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
         primaryLabel={instrumentName || selectedInstrument}
@@ -618,8 +651,12 @@ export default function OpenInterestPage() {
       />
       </div>
 
-      {/* Легенда */}
-      <div className="mt-6 bg-theme-secondary border border-theme rounded-2xl p-5">
+      </div>{/* /editorial-frame */}
+
+      {/* Легенда — оформлена как editorial card (frame с hard shadow в editorial,
+          обычная widget панель в OKX/dark). Inner bg = secondary чтобы выделяться
+          на page-bg, в editorial CSS override применит outline + hard shadow. */}
+      <div className="mt-6 bg-theme-secondary border border-theme rounded-2xl p-5 widget">
         <div className="space-y-3 text-sm">
           {/* Линии графика */}
           <div className="flex items-start gap-3">

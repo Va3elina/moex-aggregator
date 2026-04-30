@@ -737,7 +737,7 @@ export default function SimpleChart({
   );
 
   return (
-    <div className="rounded-2xl p-5 bg-theme-secondary border border-theme relative">
+    <div className="rounded-2xl p-5 bg-theme-primary border border-theme relative">
       {/* Кнопка переключения линия/гистограмма */}
       {allowHistogram && (
         <button
@@ -804,7 +804,7 @@ export default function SimpleChart({
           width={width}
           height={effectiveHeight}
           className="cursor-crosshair select-none"
-          style={{ touchAction: 'none', backgroundColor: 'var(--bg-secondary)' }}
+          style={{ touchAction: 'none', backgroundColor: 'var(--bg-primary)' }}
           onMouseMove={handleMouseMove}
           onMouseLeave={handleMouseLeave}
           onTouchStart={handleTouchStart}

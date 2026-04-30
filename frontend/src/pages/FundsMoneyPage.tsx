@@ -394,7 +394,7 @@ export default function FundsMoneyPage() {
                             key={cat.key}
                             onClick={() => setCategory(cat.key)}
                             className={`flex items-center gap-2 px-3 py-3 rounded-xl font-medium transition-colors duration-200 min-w-0 ${isActive
-                                ? 'bg-[#6366f1] text-white shadow-lg shadow-[#6366f1]/25'
+                                ? 'btn-control active'
                                 : 'bg-theme-secondary text-theme-secondary hover:text-theme-primary border border-theme'
                                 }`}
                         >
@@ -505,7 +505,7 @@ export default function FundsMoneyPage() {
             <div className="bg-theme-secondary rounded-2xl border border-theme overflow-hidden mb-6">
             {error ? (
                 <div className="flex items-center justify-center h-[450px]">
-                    <div className="text-[#FF4D4D] text-center">
+                    <div className="text-theme-danger text-center">
                         <p className="text-lg font-medium">{error}</p>
                         <p className="text-sm text-theme-secondary mt-2">Попробуйте обновить страницу</p>
                     </div>

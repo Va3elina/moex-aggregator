@@ -48,18 +48,8 @@ export default function PageHeader({
   return (
     <div className="flex items-start gap-3 mb-6">
       {Icon && (
-        <div
-          className="flex items-center justify-center flex-shrink-0"
-          style={{
-            width: 40,
-            height: 40,
-            borderRadius: 'var(--radius-md, 8px)',
-            // subtle accent-tinted background (12% opacity of accent)
-            background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
-            color: 'var(--accent)',
-          }}
-        >
-          <Icon size={20} strokeWidth={1.8} />
+        <div className="page-header-icon flex items-center justify-center flex-shrink-0">
+          <Icon size={22} strokeWidth={2} />
         </div>
       )}
       <div className="flex-1 min-w-0">
@@ -76,7 +66,7 @@ export default function PageHeader({
           </p>
         )}
         <h1
-          className="text-2xl font-bold"
+          className="page-header-title text-2xl font-bold"
           style={{
             color: 'var(--text-primary)',
             letterSpacing: '-0.01em',

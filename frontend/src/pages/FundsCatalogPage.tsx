@@ -167,7 +167,7 @@ export default function FundsCatalogPage() {
 
             {loading && (
                 <div className="flex justify-center py-20">
-                    <div className="w-8 h-8 border-2 border-[#6366f1] border-t-transparent rounded-full animate-spin" />
+                    <div className="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
                 </div>
             )}
 
@@ -181,7 +181,8 @@ export default function FundsCatalogPage() {
                         return (
                             <div
                                 key={fund.fund_id}
-                                className={`bg-theme-secondary rounded-2xl border transition-all cursor-pointer hover:border-[#6366f1]/50 ${isExpanded ? 'border-[#6366f1] ring-1 ring-[#6366f1]/20' : 'border-theme'}`}
+                                className={`bg-theme-secondary rounded-2xl border transition-all cursor-pointer ${isExpanded ? 'border-theme-accent ring-1' : 'border-theme hover:border-theme-accent'}`}
+                                style={isExpanded ? { boxShadow: '0 0 0 1px color-mix(in srgb, var(--accent) 20%, transparent)' } : undefined}
                                 onClick={() => handleExpandFund(fund.fund_id)}
                             >
                                 {/* Header */}

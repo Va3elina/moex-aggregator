@@ -524,7 +524,7 @@ export default function HeatmapPage() {
         {loading ? (
           <div className="absolute inset-0 flex items-center justify-center text-slate-400">
             <div className="flex flex-col items-center gap-3">
-              <div className="animate-spin w-8 h-8 border-2 border-[#C8FF2E] border-t-transparent rounded-full" />
+              <div className="animate-spin w-8 h-8 border-2 border-t-transparent rounded-full" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
               <span className="text-sm text-theme-secondary">Загрузка карты...</span>
             </div>
           </div>
@@ -571,17 +571,18 @@ export default function HeatmapPage() {
       {/* Тултип */}
       {tooltip.visible && tooltip.stock && (
         <div
-          className="fixed z-50 bg-[#1A1F2E]/95 backdrop-blur-sm border border-white/10 rounded-xl py-3 px-5 shadow-2xl pointer-events-none"
+          className="fixed z-50 backdrop-blur-sm border border-theme rounded-xl py-3 px-5 shadow-2xl pointer-events-none"
           style={{
             left: Math.min(Math.max(tooltip.x, 180), window.innerWidth - 180),
             top: tooltip.y < 200 ? tooltip.y + 25 : tooltip.y - 10,
-            transform: tooltip.y < 200 ? 'translate(-50%, 0)' : 'translate(-50%, -100%)'
+            transform: tooltip.y < 200 ? 'translate(-50%, 0)' : 'translate(-50%, -100%)',
+            backgroundColor: 'color-mix(in srgb, var(--bg-elevated) 95%, transparent)',
           }}
         >
           <div className="flex items-center gap-3 mb-2">
-            <span className="font-bold text-white text-[15px]">{tooltip.stock.secId}</span>
-            <span className="text-[13px] text-slate-400">{tooltip.stock.name}</span>
-            <span className="text-[13px] text-white font-semibold ml-auto">{tooltip.stock.price.toFixed(2)} ₽</span>
+            <span className="font-bold text-theme-primary text-[15px]">{tooltip.stock.secId}</span>
+            <span className="text-[13px] text-theme-secondary">{tooltip.stock.name}</span>
+            <span className="text-[13px] text-theme-primary font-semibold ml-auto">{tooltip.stock.price.toFixed(2)} ₽</span>
           </div>
           <div className="flex items-center gap-4 text-[13px]">
             {[
@@ -591,8 +592,8 @@ export default function HeatmapPage() {
               { label: 'Г', value: tooltip.stock.change_1y },
             ].map(({ label, value }) => (
               <span key={label} className="flex items-center gap-1.5">
-                <span className="text-slate-500">{label}</span>
-                <span className={`font-semibold ${value >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                <span className="text-theme-muted">{label}</span>
+                <span className={`font-semibold ${value >= 0 ? 'text-theme-success' : 'text-theme-danger'}`}>
                   {formatPercent(value)}
                 </span>
               </span>

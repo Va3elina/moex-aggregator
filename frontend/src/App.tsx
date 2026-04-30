@@ -27,6 +27,7 @@ import FundsCatalogMethodologyPage from './pages/methodology/FundsCatalogMethodo
 import BuffettMethodologyPage from './pages/methodology/BuffettMethodologyPage';
 import StrengthMethodologyPage from './pages/methodology/StrengthMethodologyPage';
 import SeasonalityMethodologyPage from './pages/methodology/SeasonalityMethodologyPage';
+import StylePreviewPage from './pages/StylePreviewPage';
 
 /** "/" conditional: auth → Overview, guest → Landing.
     Loading state → Overview как fallback (быстрее, avoids flash). */
@@ -48,6 +49,9 @@ export default function App() {
           <Route path="/auth/callback/vk" element={<AuthCallback />} />
           <Route path="/auth/callback/yandex" element={<AuthCallback />} />
           <Route path="/auth/callback/telegram" element={<AuthCallback />} />
+
+          {/* Style preview — standalone без Layout, для оценки нового дизайна */}
+          <Route path="/style-preview" element={<StylePreviewPage />} />
 
           {/* Основное приложение */}
           <Route element={<Layout />}>

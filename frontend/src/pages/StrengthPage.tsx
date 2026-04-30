@@ -320,7 +320,7 @@ export default function StrengthPage() {
                 {loading && !current ? (
                     <div className="flex items-center justify-center" style={{ height: 'var(--chart-height, 450px)' }}>
                         <div className="flex flex-col items-center gap-3">
-                            <div className="w-8 h-8 border-2 border-[#8b5cf6] border-t-transparent rounded-full animate-spin" />
+                            <div className="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
                             <span className="text-theme-secondary">Загрузка...</span>
                         </div>
                     </div>
@@ -335,7 +335,7 @@ export default function StrengthPage() {
                     {/* Индикатор обновления данных */}
                     {loading && syncedData.length > 0 && (
                         <div className="absolute top-3 right-4 z-20 flex items-center gap-2 bg-theme-tertiary/90 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-theme">
-                            <div className="w-4 h-4 border-2 border-[#C8FF2E] border-t-transparent rounded-full animate-spin" />
+                            <div className="w-4 h-4 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
                             <span className="text-xs text-theme-secondary">Обновление...</span>
                         </div>
                     )}
@@ -394,7 +394,7 @@ export default function StrengthPage() {
                                         {showPrice && (
                                             <div className="flex items-center justify-between gap-3 py-0.5">
                                                 <div className="flex items-center gap-1.5">
-                                                    <span className="w-2 h-2 rounded-full flex-shrink-0 bg-[#6366f1]" />
+                                                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: 'var(--accent)' }} />
                                                     <span className="text-[11px] text-theme-secondary">IMOEX</span>
                                                 </div>
                                                 <span className="text-xs font-semibold text-theme-primary whitespace-nowrap">
@@ -423,7 +423,7 @@ export default function StrengthPage() {
                         <div className="px-4 pt-4 pb-1 border-b border-theme relative overflow-hidden"
                              style={{ minHeight: heights.top + 34 }}>
                             <div className="flex items-center justify-center gap-2 mb-5 relative z-10">
-                                <span className="w-3 h-3 rounded-full bg-[#6366f1]" />
+                                <span className="w-3 h-3 rounded-full" style={{ backgroundColor: 'var(--accent)' }} />
                                 <span className="text-sm font-semibold text-theme-primary">{currency === 'usd' ? 'Индекс RTS' : 'Индекс IMOEX'}</span>
                             </div>
                             <IndexChart

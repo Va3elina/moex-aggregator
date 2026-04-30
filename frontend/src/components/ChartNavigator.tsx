@@ -220,30 +220,29 @@ export default function ChartNavigator({
             {/* Selection и handles как HTML div с CSS %, не зависят от JS-width.
                 Это устраняет glitch "расширения правого края" при монтировании — CSS % резолвится браузером сразу. */}
             <div className="absolute" style={{ top: 0, left: 8, right: 8, bottom: 4, pointerEvents: 'none' }}>
-                {/* Левая маска (затемнение невыбранной левой области) */}
-                <div className="absolute top-0 bottom-0 left-0" style={{ width: `${selFrac[0] * 100}%`, background: 'rgba(0,0,0,0.5)' }} />
-                {/* Правая маска */}
-                <div className="absolute top-0 bottom-0 right-0" style={{ width: `${(1 - selFrac[1]) * 100}%`, background: 'rgba(0,0,0,0.5)' }} />
-                {/* Выбранное окно */}
+                {/* Маски невыбранной области — theme-aware через --nav-mask */}
+                <div className="absolute top-0 bottom-0 left-0" style={{ width: `${selFrac[0] * 100}%`, background: 'var(--nav-mask, rgba(0,0,0,0.5))' }} />
+                <div className="absolute top-0 bottom-0 right-0" style={{ width: `${(1 - selFrac[1]) * 100}%`, background: 'var(--nav-mask, rgba(0,0,0,0.5))' }} />
+                {/* Выбранное окно — accent цвет с прозрачностью + accent border */}
                 <div className="absolute top-0 bottom-0"
                     style={{
                         left: `${selFrac[0] * 100}%`,
                         width: `${(selFrac[1] - selFrac[0]) * 100}%`,
-                        background: 'rgba(56,98,251,0.08)',
-                        borderTop: '1px solid rgba(56,98,251,0.45)',
-                        borderBottom: '1px solid rgba(56,98,251,0.45)',
+                        background: 'color-mix(in srgb, var(--accent) 8%, transparent)',
+                        borderTop: '1px solid color-mix(in srgb, var(--accent) 50%, transparent)',
+                        borderBottom: '1px solid color-mix(in srgb, var(--accent) 50%, transparent)',
                         cursor: 'grab',
                         pointerEvents: 'auto',
                     }}
                     onMouseDown={e => startDrag(e, 'window')}
                     onTouchStart={e => startTouchDrag(e, 'window')}
                 />
-                {/* Левая ручка */}
+                {/* Левая ручка — accent цвет */}
                 <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 flex items-center justify-center"
                     style={{
                         left: `${selFrac[0] * 100}%`,
                         width: HANDLE_W, height: height * 0.7,
-                        background: 'rgba(56,98,251,0.9)',
+                        background: 'var(--accent)',
                         borderRadius: 3,
                         cursor: 'ew-resize',
                         pointerEvents: 'auto',
@@ -252,7 +251,7 @@ export default function ChartNavigator({
                     onTouchStart={e => startTouchDrag(e, 'left')}
                 >
                     <svg width="6" height="10" viewBox="0 0 6 10" style={{ pointerEvents: 'none' }}>
-                        <path d="M4 1 L1 5 L4 9" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                        <path d="M4 1 L1 5 L4 9" fill="none" stroke="var(--text-inverse)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                 </div>
                 {/* Правая ручка */}
@@ -260,7 +259,7 @@ export default function ChartNavigator({
                     style={{
                         left: `${selFrac[1] * 100}%`,
                         width: HANDLE_W, height: height * 0.7,
-                        background: 'rgba(56,98,251,0.9)',
+                        background: 'var(--accent)',
                         borderRadius: 3,
                         cursor: 'ew-resize',
                         pointerEvents: 'auto',
@@ -269,7 +268,7 @@ export default function ChartNavigator({
                     onTouchStart={e => startTouchDrag(e, 'right')}
                 >
                     <svg width="6" height="10" viewBox="0 0 6 10" style={{ pointerEvents: 'none' }}>
-                        <path d="M2 1 L5 5 L2 9" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                        <path d="M2 1 L5 5 L2 9" fill="none" stroke="var(--text-inverse)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
                 </div>
             </div>

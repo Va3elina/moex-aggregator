@@ -256,13 +256,16 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
-        # Статика: /assets, /logos, favicon — не считаем в rate limit.
-        # Модалка выбора актива может параллельно запросить ~100 лого-файлов,
-        # которые съедают весь лимит 100 req/min и ломают API.
+        # Статика: /assets, /logos, /videos, /showcase, favicon — не считаем в rate limit.
+        # Модалка выбора актива может параллельно запросить ~100 лого-файлов;
+        # HLS-стрим тянет десятки .ts сегментов на каждое видео карточки.
+        # Без exclude'а они съедают лимит 100 req/min и ломают API.
         if (
             path in ["/health", "/favicon.ico"]
             or path.startswith("/assets")
             or path.startswith("/logos")
+            or path.startswith("/videos")
+            or path.startswith("/showcase")
         ):
             return await call_next(request)
 

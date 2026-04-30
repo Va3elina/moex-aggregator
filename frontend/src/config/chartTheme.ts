@@ -42,22 +42,25 @@ export const FUND_PALETTE = [
 ] as const;
 
 // ─── Grid и фон ───
+// Используем CSS-переменные чтобы grid был theme-aware: тёмный на светлой
+// бумажной теме, светлый на dark/okx. Значения --chart-grid / --chart-grid-*
+// определены в index.css для каждой темы.
 
 export const GRID = {
-  minor: 'rgba(255,255,255,0.06)',      // Обычные горизонтальные линии
-  major: 'rgba(255,255,255,0.08)',      // Чуть заметнее (SimpleChart)
-  zero: 'rgba(255,255,255,0.15)',       // Нулевая линия
-  separator: 'rgba(255,255,255,0.06)', // Вертикальные разделители (месяцы)
+  minor: 'var(--chart-grid)',                            // Обычные горизонтальные линии
+  major: 'var(--chart-grid-major, var(--chart-grid))',   // Чуть заметнее (SimpleChart)
+  zero: 'var(--chart-grid-zero, var(--text-muted))',     // Нулевая линия
+  separator: 'var(--chart-grid)',                         // Вертикальные разделители (месяцы)
 } as const;
 
 // ─── Crosshair ───
 
 export const CROSSHAIR = {
-  color: 'rgba(255,255,255,0.3)',
+  color: 'var(--chart-crosshair, var(--text-muted))',
   strokeWidth: 1,
   dashArray: '4,4',
   // Акцентный crosshair (для графиков с цветовым акцентом)
-  accentColor: '#C8FF2E',
+  accentColor: 'var(--accent)',
   accentDashArray: '4,3',
   accentOpacity: 0.5,
 } as const;

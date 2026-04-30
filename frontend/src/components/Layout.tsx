@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { useTheme } from '../contexts/ThemeContext';
+import { useTheme, ACCENTS } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useSSE } from '../hooks/useSSE';
 import { Menu, X, LogIn } from 'lucide-react';
 import Logo from './Logo';
+import FrameLogo from './FrameLogo';
 
 const NAV_ITEMS: { path: string; label: string; disabled?: boolean }[] = [
   { path: '/fear', label: 'Индекс страха' },
@@ -18,38 +19,71 @@ const NAV_ITEMS: { path: string; label: string; disabled?: boolean }[] = [
 ];
 
 export default function Layout() {
-  const { cycleTheme, themeName, themeIcon } = useTheme();
+  const { cycleTheme, themeName, themeIcon, theme, accent, setAccent } = useTheme();
   const { user, isAuthenticated } = useAuth();
   const { connected } = useSSE();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const isEditorial = theme.startsWith('editorial');
+
+  // Accent cycler — только в editorial. Бежит default → pumpkin → default.
+  const cycleAccent = () => {
+    const order = ['default', 'pumpkin'] as const;
+    const idx = order.indexOf(accent as typeof order[number]);
+    const next = order[(idx + 1) % order.length] || 'default';
+    setAccent(next);
+  };
+  const accentSwatch = ACCENTS.find((a) => a.id === accent)?.swatch || 'transparent';
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: 'var(--bg-primary)' }}>
-      {/* Sticky Header с glass эффектом.
-          backdrop-filter: blur(28px) saturate(180%) → "ликвидное стекло" (Apple-style).
-          Saturate усиливает цвета фона за glass-слоем → контент читаемо просвечивает.
-          Subtle shadow даёт "подвешенность" над контентом при скролле. */}
+      {/* Sticky Header.
+          В non-editorial темах — glass-эффект через --header-blur (backdrop-filter
+          blur 28px + saturate 180%). В editorial — solid bg + 1.5px solid border-bottom,
+          без blur, без shadow. Все значения через CSS-переменные, так что компонент
+          theme-aware без ветвления JSX. */}
       <nav
-        className="sticky top-0 z-50 border-b"
+        className="sticky top-0 z-50"
         style={{
-          backgroundColor: 'var(--glass-bg)',
-          borderColor: 'var(--border-color)',
-          backdropFilter: 'blur(28px) saturate(180%)',
-          WebkitBackdropFilter: 'blur(28px) saturate(180%)',
-          boxShadow: '0 1px 0 0 rgba(255,255,255,0.03), 0 8px 32px -12px rgba(0,0,0,0.4)',
+          backgroundColor: 'var(--header-bg)',
+          backdropFilter: 'var(--header-blur)',
+          WebkitBackdropFilter: 'var(--header-blur)',
+          boxShadow: 'var(--header-shadow)',
+          borderBottom: 'var(--header-border-bottom)',
         }}
       >
         <div className="mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-14 md:h-16">
             {/* Логотип */}
             <NavLink to="/" className="flex items-center gap-2">
-              <Logo size={28} />
-              <span className="text-lg md:text-xl font-bold" style={{ color: 'var(--accent)' }}>Фрейм</span>
-              <span className="px-2 py-0.5 text-xs font-medium rounded-full hidden sm:inline" style={{
-                color: 'var(--text-secondary)',
-                backgroundColor: 'var(--border-color)'
-              }}>
+              {isEditorial ? (
+                <FrameLogo size={22} color="var(--accent)" />
+              ) : (
+                <>
+                  <Logo size={28} />
+                  <span className="text-lg md:text-xl font-bold" style={{ color: 'var(--accent)' }}>Фрейм</span>
+                </>
+              )}
+              <span
+                className={
+                  isEditorial
+                    ? 'px-2 py-0.5 text-[10px] font-bold tracking-wider hidden sm:inline'
+                    : 'px-2 py-0.5 text-xs font-medium rounded-full hidden sm:inline'
+                }
+                style={
+                  isEditorial
+                    ? {
+                        color: 'var(--text-primary)',
+                        border: '1.5px solid var(--text-primary)',
+                        borderRadius: '4px',
+                        textTransform: 'uppercase',
+                      }
+                    : {
+                        color: 'var(--text-secondary)',
+                        backgroundColor: 'var(--border-color)',
+                      }
+                }
+              >
                 Beta
               </span>
               <span
@@ -65,41 +99,115 @@ export default function Layout() {
                   key={item.path}
                   to={item.disabled ? '#' : item.path}
                   onClick={(e) => item.disabled && e.preventDefault()}
-                  className={({ isActive }) => `
-                    px-3 xl:px-4 py-2 rounded-xl text-sm font-medium
-                    whitespace-nowrap transition-all border
-                    ${item.disabled
-                      ? 'cursor-not-allowed border-transparent'
-                      : isActive
-                        ? ''
-                        : 'border-transparent'
-                    }
-                  `}
-                  style={({ isActive }) => ({
-                    color: item.disabled
-                      ? 'var(--text-muted)'
-                      : isActive
-                        ? 'var(--accent)'
-                        : 'var(--text-secondary)',
-                    backgroundColor: isActive ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : undefined,
-                    borderColor: isActive ? 'color-mix(in srgb, var(--accent) 30%, transparent)' : undefined,
-                  })}
+                  className={({ isActive }) =>
+                    isEditorial
+                      ? `relative px-3 xl:px-4 py-2 text-sm whitespace-nowrap transition-all
+                         ${item.disabled ? 'cursor-not-allowed' : ''}
+                         ${isActive ? 'font-bold' : 'font-medium'}`
+                      : `px-3 xl:px-4 py-2 rounded-xl text-sm font-medium
+                         whitespace-nowrap transition-all border
+                         ${item.disabled
+                           ? 'cursor-not-allowed border-transparent'
+                           : isActive
+                             ? ''
+                             : 'border-transparent'
+                         }`
+                  }
+                  style={({ isActive }) =>
+                    isEditorial
+                      ? {
+                          color: item.disabled
+                            ? 'var(--text-muted)'
+                            : isActive
+                              ? 'var(--text-primary)'
+                              : 'var(--text-secondary)',
+                        }
+                      : {
+                          color: item.disabled
+                            ? 'var(--text-muted)'
+                            : isActive
+                              ? 'var(--accent)'
+                              : 'var(--text-secondary)',
+                          backgroundColor: isActive ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : undefined,
+                          borderColor: isActive ? 'color-mix(in srgb, var(--accent) 30%, transparent)' : undefined,
+                        }
+                  }
                 >
-                  {item.label}
+                  {({ isActive }) => (
+                    <>
+                      {item.label}
+                      {/* Editorial active stripe — 3px accent-линия под текстом */}
+                      {isEditorial && isActive && (
+                        <span
+                          aria-hidden
+                          style={{
+                            position: 'absolute',
+                            left: 12,
+                            right: 12,
+                            bottom: 4,
+                            height: 3,
+                            background: 'var(--accent)',
+                            borderRadius: 2,
+                          }}
+                        />
+                      )}
+                    </>
+                  )}
                 </NavLink>
               ))}
             </div>
 
             {/* Right side */}
             <div className="flex items-center gap-2 md:gap-3">
+              {/* Accent picker — только в editorial (другие темы имеют свой нативный accent) */}
+              {isEditorial && (
+                <button
+                  onClick={cycleAccent}
+                  className="flex items-center gap-1.5 px-2 md:px-3 py-2 transition-all hover:opacity-80"
+                  style={{
+                    color: 'var(--text-secondary)',
+                    border: '1.5px solid var(--text-primary)',
+                    borderRadius: 999,
+                    backgroundColor: 'transparent',
+                  }}
+                  title={`Accent: ${accent}. Нажми для смены`}
+                >
+                  <span
+                    style={{
+                      width: 12,
+                      height: 12,
+                      borderRadius: '50%',
+                      background: accent === 'default' ? 'var(--accent)' : accentSwatch,
+                      border: '1px solid var(--text-primary)',
+                      display: 'inline-block',
+                    }}
+                  />
+                  <span className="text-xs font-semibold hidden md:inline">
+                    {accent === 'default' ? 'Theme' : accent}
+                  </span>
+                </button>
+              )}
+
               {/* Theme Toggle */}
               <button
                 onClick={cycleTheme}
-                className="flex items-center gap-1 md:gap-2 px-2 md:px-3 py-2 rounded-lg transition-all hover:bg-white/10"
-                style={{
-                  color: 'var(--text-secondary)',
-                  borderColor: 'var(--border-color)'
-                }}
+                className={
+                  isEditorial
+                    ? 'flex items-center gap-1 md:gap-2 px-2 md:px-3 py-2 transition-all hover:opacity-80'
+                    : 'flex items-center gap-1 md:gap-2 px-2 md:px-3 py-2 rounded-lg transition-all hover:bg-white/10'
+                }
+                style={
+                  isEditorial
+                    ? {
+                        color: 'var(--text-secondary)',
+                        border: '1.5px solid var(--text-primary)',
+                        borderRadius: 999,
+                      }
+                    : {
+                        color: 'var(--text-secondary)',
+                        borderColor: 'var(--border-color)',
+                      }
+                }
                 title={`Тема: ${themeName}. Нажми для смены`}
               >
                 <span className="text-base md:text-lg">{themeIcon}</span>
@@ -129,10 +237,25 @@ export default function Layout() {
                 </button>
               )}
 
-              {/* Plus версия - скрыта на мобильных */}
+              {/* Plus версия - скрыта на мобильных.
+                  В editorial — pill с accent + hard-shadow. */}
               <button
-                className="hidden sm:block px-3 md:px-4 py-2 text-white text-sm font-medium rounded-xl transition-colors"
-                style={{ backgroundColor: 'var(--accent-pink)' }}
+                className={
+                  isEditorial
+                    ? 'hidden sm:block px-4 py-2 text-sm font-bold transition-all hover:translate-x-[-1px] hover:translate-y-[-1px]'
+                    : 'hidden sm:block px-3 md:px-4 py-2 text-white text-sm font-medium rounded-xl transition-colors'
+                }
+                style={
+                  isEditorial
+                    ? {
+                        backgroundColor: 'var(--accent)',
+                        color: 'var(--text-inverse)',
+                        border: '1.5px solid var(--text-primary)',
+                        borderRadius: 999,
+                        boxShadow: 'var(--shadow-hard-chip)',
+                      }
+                    : { backgroundColor: 'var(--accent-pink)' }
+                }
               >
                 Plus
               </button>

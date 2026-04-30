@@ -4,9 +4,15 @@ MOEX Analytics API
 """
 
 import asyncio
+import mimetypes
 import os
 from pathlib import Path
 from fastapi import FastAPI
+
+# HLS mime types — Python mimetypes по умолчанию не знает .m3u8/.ts (в обоих
+# случаях не video). Регистрируем явно, иначе Safari не понимает HLS playlist.
+mimetypes.add_type("application/vnd.apple.mpegurl", ".m3u8")
+mimetypes.add_type("video/mp2t", ".ts")
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles

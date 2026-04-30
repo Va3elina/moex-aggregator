@@ -14,6 +14,7 @@
   "dependencies": {
     "@tailwindcss/vite": "^4.1.17",
     "axios": "^1.13.2",
+    "hls.js": "^1.6.16",
     "lightweight-charts": "^5.0.9",
     "lucide-react": "^0.562.0",
     "react": "^19.2.0",

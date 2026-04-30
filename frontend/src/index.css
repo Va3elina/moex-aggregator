@@ -46,6 +46,26 @@
   --shadow-md: 0 4px 24px rgba(0, 0, 0, 0.4);
   --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
   --shadow-glow: 0 0 24px rgba(0, 230, 118, 0.25);
+
+  /* === Editorial-aware tokens ===
+     Все compatible темы определяют эти переменные. В editorial-темах они
+     перезаписываются на solid borders + hard offset shadows. Layout / cards
+     читают их через var() и не знают конкретной темы. */
+  --header-bg: var(--glass-bg);
+  --header-blur: blur(28px) saturate(180%);
+  --header-shadow: 0 1px 0 0 rgba(255,255,255,0.03), 0 8px 32px -12px rgba(0,0,0,0.4);
+  --header-border-bottom: 1px solid var(--border-color);
+
+  --shadow-hard: var(--shadow-md);          /* fallback в soft shadow */
+  --shadow-hard-chip: var(--shadow-sm);
+  --card-radius: 16px;
+  --card-border-width: 1px;
+  --card-border-color: var(--border-color);
+  --card-shadow: var(--shadow-md);
+
+  --font-display: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-body: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'IBM Plex Mono', 'SF Mono', Menlo, monospace;
 }
 
 /* === NEON LIME THEME (Original Dark) === */
@@ -250,7 +270,10 @@
   --chart-line-2: #10B981;
   --chart-line-3: #F97316;
   --chart-area: rgba(99, 102, 241, 0.15);
-  --chart-grid: rgba(0, 0, 0, 0.05);
+  --chart-grid: rgba(0, 0, 0, 0.10);
+  --chart-grid-major: rgba(0, 0, 0, 0.14);
+  --chart-grid-zero: rgba(0, 0, 0, 0.35);
+  --chart-crosshair: rgba(0, 0, 0, 0.4);
 
   --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.05);
   --shadow-md: 0 2px 12px rgba(0, 0, 0, 0.08);
@@ -423,45 +446,379 @@
 /* === EDITORIAL DARK THEME — FT/Stratechery vibe ===
    Тёплый чёрный с magenta-оттенком, serif-типографика для
    заголовков, более "читательский" контекст. */
-[data-theme="editorial"] {
-  --bg-primary: #0F0B0D;            /* warm black, magenta hint */
-  --bg-secondary: #1A1518;
-  --bg-tertiary: #251E22;
-  --bg-elevated: #302A2D;
-  --bg-widget: linear-gradient(135deg, #1A1518 0%, #251E22 100%);
-  --bg-widget-hover: linear-gradient(135deg, #1F1A1D 0%, #2A2326 100%);
-  --glass-bg: rgba(15, 11, 13, 0.85);
+/* ============================================
+   EDITORIAL THEMES — Brutalist newspaper / WSJ-like.
+   Источник: design_handoff_frame_redesign/page.jsx → OI_THEMES.
 
-  --text-primary: #F5EFE8;          /* warm cream */
-  --text-secondary: #A89FA3;
-  --text-muted: #6E6467;
-  --text-inverse: #0F0B0D;
+   Ключевые признаки:
+     - 1.5px solid borders на всём (не glass, не subtle alpha)
+     - Hard offset shadows (4px 4px 0 currentColor) без blur
+     - Square radii (0/12), pill (999) только для chips
+     - Archivo 800 для заголовков, Inter для UI, JetBrains Mono для чисел
+     - Accent — отдельная dimension (data-accent), по умолчанию Pumpkin
+   ============================================ */
 
-  --border-color: rgba(250, 230, 215, 0.08);
-  --border-hover: rgba(200, 255, 46, 0.35);
-  --border-active: rgba(200, 255, 46, 0.55);
+[data-theme="editorial-light"] {
+  --bg-primary: #F4F1EA;            /* тёплая бумага */
+  --bg-secondary: #FFFFFF;          /* panel */
+  --bg-tertiary: #F7F4ED;           /* panel-inner */
+  --bg-elevated: #FFFFFF;
+  --bg-widget: #FFFFFF;
+  --bg-widget-hover: #FBF8F1;
+  --glass-bg: #FFFFFF;
 
-  --accent: #C8FF2E;
-  --accent-secondary: #FF9F5B;      /* warm coral, editorial accent */
-  --accent-orange: #FF9F5B;
-  --accent-pink: #F43F5E;
-  --accent-cyan: #5FADD9;
+  --text-primary: #0A0A0A;
+  --text-secondary: #6B6B6B;
+  --text-muted: #9A9A9A;
+  --text-inverse: #FFFFFF;
 
-  --success: #2EE59D;
-  --warning: #FFB020;
-  --danger: #FF4D4D;
-  --info: #5FADD9;
+  --border-color: #0A0A0A;          /* solid black border, не alpha */
+  --border-hover: #0A0A0A;
+  --border-active: #0A0A0A;
 
-  --chart-line-1: #C8FF2E;
-  --chart-line-2: #FF9F5B;
-  --chart-line-3: #F43F5E;
-  --chart-area: rgba(200, 255, 46, 0.08);
-  --chart-grid: rgba(255, 230, 215, 0.04);
+  /* Accent дефолт — Pumpkin. Переопределяется через [data-accent="..."]. */
+  --accent: #FF5C2B;
+  --accent-secondary: #5B5BD6;
+  --accent-orange: #FF5C2B;
+  --accent-pink: #5B5BD6;
+  --accent-cyan: #2B6CB0;
 
-  --shadow-sm: 0 2px 8px rgba(26, 14, 15, 0.4);
-  --shadow-md: 0 4px 24px rgba(26, 14, 15, 0.5);
-  --shadow-lg: 0 8px 32px rgba(26, 14, 15, 0.6);
-  --shadow-glow: 0 0 24px rgba(200, 255, 46, 0.18);
+  --success: #0A6B3B;
+  --warning: #B5301A;
+  --danger:  #B5301A;
+  --info:    #2B6CB0;
+
+  --chart-line-1: #2B6CB0;          /* muted blue (price) */
+  --chart-line-2: #E07A1F;          /* muted orange (OI) */
+  --chart-line-3: #0A6B3B;
+  --chart-area: rgba(10, 10, 10, 0.05);
+  --chart-grid: rgba(10, 10, 10, 0.18);
+  --chart-grid-major: rgba(10, 10, 10, 0.22);
+  --chart-grid-zero: rgba(10, 10, 10, 0.45);
+  --chart-crosshair: rgba(10, 10, 10, 0.45);
+
+  /* Hard offset shadows — основная фишка editorial */
+  --shadow-sm: 2px 2px 0 #0A0A0A;
+  --shadow-md: 4px 4px 0 #0A0A0A;
+  --shadow-lg: 6px 6px 0 #0A0A0A;
+  --shadow-glow: none;
+
+  /* Editorial-токены — переопределяют defaults из okx */
+  --header-bg: #FFFFFF;
+  --header-blur: none;
+  --header-shadow: none;
+  --header-border-bottom: 1.5px solid #0A0A0A;
+
+  --shadow-hard: 4px 4px 0 #0A0A0A;
+  --shadow-hard-chip: 3px 3px 0 #0A0A0A;
+  --card-radius: 12px;
+  --card-border-width: 1.5px;
+  --card-border-color: #0A0A0A;
+  --card-shadow: var(--shadow-hard);
+
+  --font-display: 'Archivo', 'Inter', system-ui, sans-serif;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'IBM Plex Mono', monospace;
+}
+
+[data-theme="editorial-dark"] {
+  --bg-primary: #0E0E10;            /* тёплый чёрный */
+  --bg-secondary: #17171A;
+  --bg-tertiary: #101012;
+  --bg-elevated: #1E1E22;
+  --bg-widget: #17171A;
+  --bg-widget-hover: #1B1B1F;
+  --glass-bg: #17171A;
+
+  --text-primary: #F5F1E8;          /* warm cream */
+  --text-secondary: #9A9A9A;
+  --text-muted: #6B6B6B;
+  --text-inverse: #0A0A0A;
+
+  --border-color: #F5F1E8;
+  --border-hover: #F5F1E8;
+  --border-active: #F5F1E8;
+
+  --accent: #FF5C2B;
+  --accent-secondary: #5B5BD6;
+  --accent-orange: #FF5C2B;
+  --accent-pink: #5B5BD6;
+  --accent-cyan: #5DA3E9;
+
+  --success: #5BD49C;
+  --warning: #F2A24A;
+  --danger:  #FF7A5C;
+  --info:    #5DA3E9;
+
+  --chart-line-1: #5DA3E9;          /* muted blue (price) */
+  --chart-line-2: #F2A24A;          /* muted orange (OI) */
+  --chart-line-3: #5BD49C;
+  --chart-area: rgba(245, 241, 232, 0.06);
+  --chart-grid: rgba(245, 241, 232, 0.14);
+  --chart-grid-major: rgba(245, 241, 232, 0.18);
+  --chart-grid-zero: rgba(245, 241, 232, 0.45);
+  --chart-crosshair: rgba(245, 241, 232, 0.5);
+
+  /* Hard offset shadows — на тёмном фоне используем cream/text-primary
+     вместо чёрного, иначе тень тонет в фоне и не видна. Это даёт тот же
+     editorial press-эффект что и в editorial-light, только инвертированный. */
+  --shadow-sm: 2px 2px 0 #F5F1E8;
+  --shadow-md: 4px 4px 0 #F5F1E8;
+  --shadow-lg: 6px 6px 0 #F5F1E8;
+  --shadow-glow: none;
+
+  --header-bg: #0E0E10;
+  --header-blur: none;
+  --header-shadow: none;
+  --header-border-bottom: 1.5px solid #F5F1E8;
+
+  --shadow-hard: 4px 4px 0 #F5F1E8;
+  --shadow-hard-chip: 3px 3px 0 #F5F1E8;
+  --card-radius: 12px;
+  --card-border-width: 1.5px;
+  --card-border-color: #F5F1E8;
+  --card-shadow: var(--shadow-hard);
+
+  --font-display: 'Archivo', 'Inter', system-ui, sans-serif;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'IBM Plex Mono', monospace;
+}
+
+/* ============================================
+   ACCENT DIMENSION — независимое от темы.
+   data-accent="..." переопределяет --accent.
+   Имеет смысл с editorial-* темами, но работает поверх любой.
+   ============================================ */
+
+[data-accent="pumpkin"] {
+  --accent: #FF5C2B;
+}
+
+/* ============================================
+   EDITORIAL OVERRIDES — стилизация существующих CSS-классов
+   когда тема editorial-*. Применяется ко всем editorial-вариантам.
+   ============================================ */
+
+/* Базовая типографика */
+[data-theme^="editorial"] body,
+[data-theme^="editorial"] {
+  font-family: var(--font-body);
+}
+
+/* Заголовки страницы — Archivo 800 в editorial.
+   !important нужен потому что Tailwind v4 utility-классы (`text-2xl`, `font-bold`)
+   живут в @layer utilities и имеют высокий приоритет даже при equal specificity.
+
+   Hardcode 'Archivo' вместо var(--font-display) — гарантирует что fallback
+   на Inter не сработает молча если Archivo не загрузилась с CDN. Если шрифт
+   не успел загрузиться — будет system serif/sans-serif (видно сразу). */
+[data-theme^="editorial"] h1.page-header-title {
+  font-family: 'Archivo', 'Inter', system-ui, sans-serif !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.03em !important;
+  font-size: 48px !important;
+  line-height: 1.0 !important;
+}
+@media (min-width: 1024px) {
+  [data-theme^="editorial"] h1.page-header-title {
+    font-size: 56px !important;
+  }
+}
+@media (max-width: 600px) {
+  [data-theme^="editorial"] h1.page-header-title {
+    font-size: 36px !important;
+  }
+}
+
+/* Числа в моно-шрифте */
+[data-theme^="editorial"] .tabular-nums,
+[data-theme^="editorial"] .numeric,
+[data-theme^="editorial"] [class*="font-mono"] {
+  font-family: var(--font-mono);
+  font-feature-settings: 'tnum' 1, 'zero' 1;
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+
+/* Cards / widgets — outline + hard shadow вместо glass.
+   Tailwind rounded-2xl/xl на этих элементах перезаписываются на 12px. */
+[data-theme^="editorial"] .widget,
+[data-theme^="editorial"] .widget-flat {
+  background: var(--bg-secondary);
+  border: var(--card-border-width) solid var(--card-border-color);
+  border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow);
+}
+
+/* PageHeader icon — base style (subtle accent tint в обычных темах).
+   В editorial переопределяется на bold filled pill с hard shadow. */
+.page-header-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md, 10px);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+}
+
+/* Editorial: иконка раздела — solid filled square с outline и hard-shadow,
+   как все остальные editorial primitives (chip, frame, asset selector). */
+[data-theme^="editorial"] .page-header-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
+  background: var(--accent);
+  color: var(--text-inverse);
+  border: 2px solid var(--text-primary);
+  box-shadow: var(--shadow-hard-chip);
+}
+
+/* Navigator mask — theme-aware: в editorial-light маска тёмная (dim бумаги),
+   в editorial-dark маска светлая (dim cream'а). */
+[data-theme="editorial-light"] {
+  --nav-mask: rgba(10, 10, 10, 0.18);
+}
+[data-theme="editorial-dark"] {
+  --nav-mask: rgba(245, 241, 232, 0.10);
+}
+
+/* Asset selector — кнопка выбора инструмента (Сбербанк / SBER / chevron).
+   В editorial — outlined pill с hard shadow, чтобы соответствовать chip-системе. */
+[data-theme^="editorial"] button.widget-flat {
+  border: var(--card-border-width) solid var(--card-border-color) !important;
+  border-radius: 999px !important;
+  background: var(--bg-secondary) !important;
+  box-shadow: var(--shadow-hard-chip) !important;
+  font-weight: 700 !important;
+  transition: transform 0.15s ease, box-shadow 0.15s ease !important;
+}
+[data-theme^="editorial"] button.widget-flat:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--card-border-color) !important;
+}
+[data-theme^="editorial"] button.widget-flat:active {
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0 var(--card-border-color) !important;
+}
+
+/* Pills / chips / btn-control — pill-форма с hard shadow когда active */
+[data-theme^="editorial"] .btn-control {
+  border: 2px solid var(--text-primary);
+  border-radius: 999px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-weight: 700;
+}
+[data-theme^="editorial"] .btn-control.active {
+  background: var(--accent);
+  color: var(--text-inverse);
+  border-color: var(--text-primary);
+  box-shadow: var(--shadow-hard-chip);
+}
+
+/* Tailwind rounded-2xl/xl → 12px в editorial (как в pro theme) */
+[data-theme^="editorial"] [class*="rounded-2xl"]:not([class*="rounded-full"]),
+[data-theme^="editorial"] [class*="rounded-xl"]:not([class*="rounded-full"]) {
+  border-radius: var(--card-radius) !important;
+}
+
+/* Border-color override — Tailwind border-theme в editorial = solid 1.5px */
+[data-theme^="editorial"] .border-theme {
+  border-width: 1.5px;
+  border-color: var(--text-primary);
+}
+
+/* === Editorial chip-style для segmented controls ===
+   В существующих страницах контролы сгруппированы в .btn-group-scroll
+   (один общий контейнер с border, дети без своих границ). В editorial
+   референсе наоборот — каждый чип независимая pill с 1.5px outline.
+
+   Override: контейнер становится прозрачным, дети получают свои border'ы. */
+[data-theme^="editorial"] .btn-group-scroll {
+  background: transparent !important;
+  border: none !important;
+  /* padding 4px вокруг — обеспечивает место для box-shadow дочерних chip'ов
+     (3-4px вниз/вправо), иначе overflow-x: auto обрезает тени крайних
+     элементов справа и слева. */
+  padding: 4px !important;
+  gap: 10px !important;
+  /* В editorial chip'ы независимые pill'и — нужен wrap, не horizontal scroll. */
+  flex-wrap: wrap !important;
+  overflow: visible !important;
+  /* width:fit-content из base правил → убираем чтобы padding 4px не съедал
+     первую кнопку при flex-wrap. */
+  width: 100% !important;
+  max-width: 100% !important;
+}
+[data-theme^="editorial"] .btn-group-scroll > button {
+  /* Border 2px — minimum stable thickness на high-DPI экранах, иначе 1.5px
+     subpixel-round'ится до 1px и выглядит легче чем на референсе. */
+  border: 2px solid var(--text-primary) !important;
+  border-radius: 999px !important;
+  background: var(--bg-secondary) !important;
+  color: var(--text-primary) !important;
+  padding: 8px 16px !important;
+  font-weight: 700 !important;
+  white-space: nowrap;
+}
+[data-theme^="editorial"] .btn-group-scroll > button:disabled {
+  color: var(--text-muted) !important;
+  background: transparent !important;
+}
+[data-theme^="editorial"] .btn-group-scroll > button.btn-control.active {
+  background: var(--accent) !important;
+  color: var(--text-inverse) !important;
+  border-color: var(--text-primary) !important;
+  box-shadow: var(--shadow-hard-chip) !important;
+}
+
+/* === Editorial frame ===
+   Один общий контейнер на controls + chart (как в page.jsx handoff).
+   Класс прикладывается всегда; в non-editorial нет правил → стилей нет. */
+[data-theme^="editorial"] .editorial-frame {
+  background: var(--bg-secondary);
+  border: 1.5px solid var(--text-primary);
+  border-radius: 16px;
+  box-shadow: 5px 5px 0 var(--card-border-color);
+  /* Right & bottom — увеличены чтобы offset-shadow крайних кнопок (chip'ов и
+     widget-flat-кнопок) не упирался в стенки frame'а. */
+  padding: 20px 26px 26px 20px;
+}
+@media (max-width: 600px) {
+  [data-theme^="editorial"] .editorial-frame {
+    padding: 14px 18px 18px 14px;
+    box-shadow: 3px 3px 0 var(--card-border-color);
+  }
+}
+
+/* === OI variant palette ===
+   Шесть вариантов в нижнем ряду OI-кнопок имели hardcoded неон (#FFB020,
+   #2EE59D, ...). В editorial — приглушённая «статная» палитра без неона,
+   используя те же chart-line токены что и линии графика для консистентности.
+
+   Используется как `style={{ backgroundColor: 'var(--oi-amber)', ... }}`. */
+:root,
+[data-theme="okx"] {
+  --oi-amber:  #FFB020;
+  --oi-green:  #2EE59D;
+  --oi-red:    #FF4D4D;
+  --oi-purple: #A855F7;
+  --oi-cyan:   #22D3EE;
+  --oi-gray:   #9CA3B8;
+}
+[data-theme="editorial-light"] {
+  --oi-amber:  #E07A1F;
+  --oi-green:  #0A6B3B;
+  --oi-red:    #B5301A;
+  --oi-purple: #5B5BD6;
+  --oi-cyan:   #2B6CB0;
+  --oi-gray:   #6B6B6B;
+}
+[data-theme="editorial-dark"] {
+  --oi-amber:  #F2A24A;
+  --oi-green:  #5BD49C;
+  --oi-red:    #FF7A5C;
+  --oi-purple: #9B6FFF;
+  --oi-cyan:   #5DA3E9;
+  --oi-gray:   #A8A8B0;
 }
 
 /* === SWISS MINIMAL THEME — Linear/Mercury vibe ===
@@ -1140,6 +1497,13 @@ a.btn-accent:active {
   62%       { opacity: 1;  stroke-dashoffset: 0; }    /* grown! 8% = 0.8s */
   90%       { opacity: 1;  stroke-dashoffset: 0; }    /* hold */
   100%      { opacity: 0;  stroke-dashoffset: 0; }    /* fade loop */
+}
+
+/* MarketPulse: candlestick chart прокручивается справа-налево seamless.
+   Группа состоит из 2 копий candles, translateX(-half) даёт без-швовый loop. */
+@keyframes market-scroll {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
 }
 
 /* Stack layout on mobile */

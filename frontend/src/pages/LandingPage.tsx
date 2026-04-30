@@ -31,14 +31,10 @@ import {
   Zap,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
-import NoiseToSignal from '../components/landing/NoiseToSignal';
+import MarketPulse from '../components/landing/MarketPulse';
 import IndicatorGroup, { type Indicator } from '../components/landing/IndicatorGroup';
-import {
-  SeasonalityPreview,
-  FundsFlowPreview,
-  FearPreview,
-  HeatmapPreview,
-} from '../components/landing/previews';
+import MultiChartShowcase from '../components/landing/MultiChartShowcase';
+import { FearPreview } from '../components/landing/previews';
 
 // ═══════════════════════════════════════════════════════════
 // 8 ИНДИКАТОРОВ → 3 ТЕМАТИЧЕСКИХ ГРУППЫ
@@ -98,7 +94,6 @@ const MONEY_FLOW_INDICATORS: Indicator[] = [
     ctaIcon: <ArrowRight size={CTA_ICON_SIZE} />,
     href: '/funds-money',
     ...v('funds-money'),
-    illustration: <FundsFlowPreview />,
   },
   {
     title: 'Состав фондов',
@@ -119,7 +114,6 @@ const PATTERNS_INDICATORS: Indicator[] = [
     ctaIcon: <ArrowRight size={CTA_ICON_SIZE} />,
     href: '/seasonality',
     ...v('seasonality'),
-    illustration: <SeasonalityPreview />,
   },
   {
     title: 'Карта рынка',
@@ -128,7 +122,6 @@ const PATTERNS_INDICATORS: Indicator[] = [
     ctaIcon: <ArrowRight size={CTA_ICON_SIZE} />,
     href: '/heatmap',
     ...v('heatmap'),
-    illustration: <HeatmapPreview />,
   },
 ];
 
@@ -142,8 +135,8 @@ export default function LandingPage() {
           min-h-screen гарантирует что секция займёт весь viewport,
           следующая секция появится только при scroll. */}
       <section className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden px-4 md:px-6">
-        {/* Анимация фоном — заполняет секцию целиком */}
-        <NoiseToSignal />
+        {/* Анимация фоном — scrolling candlestick chart */}
+        <MarketPulse />
 
         {/* Контентный overlay поверх анимации */}
         <div className="relative z-10 text-center max-w-3xl mx-auto">
@@ -210,44 +203,58 @@ export default function LandingPage() {
       {/* Wrapper для остального контента с обычным layout-padding */}
       <div className="max-w-7xl mx-auto px-4 md:px-6 py-14 md:py-20">
 
-        {/* ═══ INTRO TO INDICATORS — заголовок-переход + 4 ключевых факта ═══
-            (Эхо TradingView "Up to 16 charts per screen" grid). */}
-        <section className="mb-14 md:mb-20">
-          <div className="text-center mb-10 md:mb-14 max-w-3xl mx-auto">
-            <h2
-              className="text-3xl md:text-5xl font-bold mb-4"
-              style={{ color: 'var(--text-primary)', letterSpacing: '-0.03em', lineHeight: 1.05 }}
-            >
-              Индикаторы, которые<br className="hidden md:inline"/> меняют решения
-            </h2>
-            <p className="text-sm md:text-lg" style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-              8 инструментов, разбитые на три группы. От настроения участников
-              до структуры реальных денежных потоков и исторических паттернов.
-            </p>
-          </div>
+        {/* ═══ INTRO TO INDICATORS — заголовок + 4 факта на scattered-фоне ═══
+            Section full-bleed: выходит за max-w-7xl до краёв viewport через
+            margin trick. Scattered scattered-фон занимает всю ширину экрана. */}
+        <section
+          className="mb-14 md:mb-20 relative overflow-hidden py-12 md:py-20"
+          style={{
+            marginLeft: 'calc(50% - 50vw)',
+            marginRight: 'calc(50% - 50vw)',
+            width: '100vw',
+          }}
+        >
+          {/* Декоративный scattered фон из 12 разбросанных скриншотов */}
+          <MultiChartShowcase />
 
-          {/* 4 small feature points — числовые «доказательства» */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 md:gap-8 max-w-5xl mx-auto">
-            <SmallFeature
-              icon={<Layers size={28} strokeWidth={1.5} />}
-              title="8 индикаторов"
-              desc="От просмотра цены до композитных метрик и сезонности"
-            />
-            <SmallFeature
-              icon={<Database size={28} strokeWidth={1.5} />}
-              title="95+ акций MOEX"
-              desc="Все ключевые бумаги + фьючерсы + индексы + валюты"
-            />
-            <SmallFeature
-              icon={<Clock size={28} strokeWidth={1.5} />}
-              title="С 1997 года"
-              desc="27 лет исторических данных, включая кризисы 2008/14/20/22"
-            />
-            <SmallFeature
-              icon={<Zap size={28} strokeWidth={1.5} />}
-              title="Live-обновление"
-              desc="Данные обновляются каждые 5 минут в торговое время"
-            />
+          {/* Контент поверх фона */}
+          <div className="relative" style={{ zIndex: 30 }}>
+            <div className="text-center mb-10 md:mb-14 max-w-3xl mx-auto">
+              <h2
+                className="text-3xl md:text-5xl font-bold mb-4"
+                style={{ color: 'var(--text-primary)', letterSpacing: '-0.03em', lineHeight: 1.05 }}
+              >
+                Индикаторы, которые<br className="hidden md:inline"/> меняют решения
+              </h2>
+              <p className="text-sm md:text-lg" style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                8 инструментов, разбитые на три группы. От настроения участников
+                до структуры реальных денежных потоков и исторических паттернов.
+              </p>
+            </div>
+
+            {/* 4 small feature points — числовые «доказательства» */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 md:gap-8 max-w-5xl mx-auto">
+              <SmallFeature
+                icon={<Layers size={28} strokeWidth={1.5} />}
+                title="8 индикаторов"
+                desc="От просмотра цены до композитных метрик и сезонности"
+              />
+              <SmallFeature
+                icon={<Database size={28} strokeWidth={1.5} />}
+                title="95+ акций MOEX"
+                desc="Все ключевые бумаги + фьючерсы + индексы + валюты"
+              />
+              <SmallFeature
+                icon={<Clock size={28} strokeWidth={1.5} />}
+                title="С 1997 года"
+                desc="27 лет исторических данных, включая кризисы 2008/14/20/22"
+              />
+              <SmallFeature
+                icon={<Zap size={28} strokeWidth={1.5} />}
+                title="Live-обновление"
+                desc="Данные обновляются каждые 5 минут в торговое время"
+              />
+            </div>
           </div>
         </section>
 

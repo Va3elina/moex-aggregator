@@ -723,14 +723,14 @@ export default function SeasonalityPage() {
         {/* Спиннер обновления */}
         {loading && (bars.length > 0 || priceData || yearlyData) && (
           <div className="absolute top-4 right-4 z-20 flex items-center gap-2 bg-theme-tertiary/90 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-theme">
-            <div className="w-4 h-4 border-2 border-[#C8FF2E] border-t-transparent rounded-full animate-spin" />
+            <div className="w-4 h-4 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
             <span className="text-xs text-theme-secondary">Обновление...</span>
           </div>
         )}
         {loading && bars.length === 0 && !priceData && !yearlyData ? (
           <div className="flex items-center justify-center" style={{ aspectRatio: '16/9' }}>
             <div className="flex flex-col items-center gap-3">
-              <div className="w-8 h-8 border-2 border-[#06b6d4] border-t-transparent rounded-full animate-spin" />
+              <div className="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
               <span className="text-theme-secondary">Загрузка...</span>
             </div>
           </div>

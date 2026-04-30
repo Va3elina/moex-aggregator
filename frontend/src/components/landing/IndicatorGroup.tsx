@@ -12,6 +12,7 @@
  */
 import { Link } from 'react-router-dom';
 import type { ReactNode } from 'react';
+import HlsVideo from '../HlsVideo';
 
 export interface Indicator {
   /** Название индикатора (короткое, для заголовка карточки) */
@@ -109,7 +110,7 @@ function IndicatorCard({ indicator }: { indicator: Indicator }) {
         style={{
           backgroundColor: 'var(--bg-primary)',
           borderColor: 'var(--border-color)',
-          aspectRatio: '16 / 10',
+          aspectRatio: '1280 / 900',
         }}
       >
         <MediaArea videoUrl={videoUrl} posterUrl={posterUrl} illustration={illustration} />
@@ -159,24 +160,29 @@ function IndicatorCard({ indicator }: { indicator: Indicator }) {
   );
 }
 
-/** Media area — video (если есть) или SVG fallback. Вынесено для читаемости. */
+/**
+ * Media area — HLS video (streaming) или SVG fallback.
+ *
+ * HLS даёт мгновенный старт: первый сегмент ~200-400 KB подгружается за 1-2с,
+ * остальные сегменты тянутся параллельно во время воспроизведения. Browser
+ * HTTP/2 multiplexing работает эффективнее на коротких .ts чем на 7 длинных
+ * video downloads → нет 15-секундной очереди при загрузке лендинга.
+ *
+ * URL convention: videoUrl=`/videos/<name>.webm` → HLS=`/videos/<name>/index.m3u8`,
+ * mp4 fallback=`/videos/<name>.mp4`.
+ */
 function MediaArea({
   videoUrl, posterUrl, illustration,
 }: { videoUrl?: string; posterUrl?: string; illustration?: ReactNode }) {
   if (videoUrl) {
+    const baseName = videoUrl.replace(/\.webm$/, '').replace(/^\/videos\//, '');
     return (
-      <video
-        autoPlay
-        loop
-        muted
-        playsInline
+      <HlsVideo
+        hlsSrc={`/videos/${baseName}/index.m3u8`}
+        mp4Src={videoUrl.replace(/\.webm$/, '.mp4')}
         poster={posterUrl}
-        preload="metadata"
         className="w-full h-full object-cover"
-      >
-        <source src={videoUrl.replace(/\.webm$/, '.webm')} type="video/webm" />
-        <source src={videoUrl.replace(/\.webm$/, '.mp4')} type="video/mp4" />
-      </video>
+      />
     );
   }
   if (illustration) return <>{illustration}</>;

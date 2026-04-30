@@ -10,6 +10,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { isPeriodAllowed, getDefaultPeriod } from '../config/accessControl';
 import { useRealtimeData } from '../hooks/useRealtimeData';
 import { FEAR_COLORS, FEAR_LABELS_RU, getFearColor, getFearGradient } from '../config/fearConfig';
+import { EditorialChip, EditorialFrame, useEditorial } from '../components/editorial';
 
 type Period = '1m' | '3m' | '6m' | '1y' | 'all';
 
@@ -23,6 +24,7 @@ const PERIODS: { key: Period; label: string }[] = [
 
 export default function FearIndexPage() {
   const { isAuthenticated } = useAuth();
+  const { isEditorial } = useEditorial();
   const navigate = useNavigate();
   const [period, setPeriod] = useState<Period>(getDefaultPeriod('3m', isAuthenticated) as Period);
   const [loading, setLoading] = useState(true);
@@ -145,7 +147,7 @@ export default function FearIndexPage() {
             <div className="flex items-center justify-between">
               <span className="text-theme-secondary text-sm">Rotation Ratio</span>
               <div className="flex items-center gap-2">
-                <div className="w-24 h-2 bg-[#0B0D12] rounded-full overflow-hidden">
+                <div className="w-24 h-2 bg-theme-primary rounded-full overflow-hidden">
                   <div
                     className="h-full rounded-full transition-all duration-500"
                     style={{
@@ -163,7 +165,7 @@ export default function FearIndexPage() {
             <div className="flex items-center justify-between">
               <span className="text-theme-secondary text-sm">Приток в MM</span>
               <div className="flex items-center gap-2">
-                <div className="w-24 h-2 bg-[#0B0D12] rounded-full overflow-hidden">
+                <div className="w-24 h-2 bg-theme-primary rounded-full overflow-hidden">
                   <div
                     className="h-full rounded-full transition-all duration-500"
                     style={{
@@ -181,7 +183,7 @@ export default function FearIndexPage() {
             <div className="flex items-center justify-between">
               <span className="text-theme-secondary text-sm">Отток из акций</span>
               <div className="flex items-center gap-2">
-                <div className="w-24 h-2 bg-[#0B0D12] rounded-full overflow-hidden">
+                <div className="w-24 h-2 bg-theme-primary rounded-full overflow-hidden">
                   <div
                     className="h-full rounded-full transition-all duration-500"
                     style={{
@@ -199,7 +201,7 @@ export default function FearIndexPage() {
             <div className="flex items-center justify-between">
               <span className="text-theme-secondary text-sm">Velocity</span>
               <div className="flex items-center gap-2">
-                <div className="w-24 h-2 bg-[#0B0D12] rounded-full overflow-hidden">
+                <div className="w-24 h-2 bg-theme-primary rounded-full overflow-hidden">
                   <div
                     className="h-full rounded-full transition-all duration-500"
                     style={{
@@ -219,9 +221,9 @@ export default function FearIndexPage() {
           <div className="space-y-3">
             <h3 className="text-theme-secondary text-sm font-medium mb-3">Сырые данные</h3>
 
-            <div className="flex items-center justify-between p-2 bg-[#0B0D12]/50 rounded-lg">
+            <div className="flex items-center justify-between p-2 rounded-lg" style={{ backgroundColor: 'color-mix(in srgb, var(--bg-primary) 50%, transparent)' }}>
               <div className="flex items-center gap-2">
-                <BarChart3 size={16} className="text-[#6366f1]" />
+                <BarChart3 size={16} className="text-theme-accent" />
                 <span className="text-theme-secondary text-sm">MM / Акции</span>
               </div>
               <span className="text-theme-primary font-medium">
@@ -229,9 +231,9 @@ export default function FearIndexPage() {
               </span>
             </div>
 
-            <div className="flex items-center justify-between p-2 bg-[#0B0D12]/50 rounded-lg">
+            <div className="flex items-center justify-between p-2 rounded-lg" style={{ backgroundColor: 'color-mix(in srgb, var(--bg-primary) 50%, transparent)' }}>
               <div className="flex items-center gap-2">
-                <DollarSign size={16} className="text-[#22c55e]" />
+                <DollarSign size={16} className="text-theme-success" />
                 <span className="text-theme-secondary text-sm">СЧА MM</span>
               </div>
               <span className="text-theme-primary font-medium">
@@ -239,9 +241,9 @@ export default function FearIndexPage() {
               </span>
             </div>
 
-            <div className="flex items-center justify-between p-2 bg-[#0B0D12]/50 rounded-lg">
+            <div className="flex items-center justify-between p-2 rounded-lg" style={{ backgroundColor: 'color-mix(in srgb, var(--bg-primary) 50%, transparent)' }}>
               <div className="flex items-center gap-2">
-                <TrendingUp size={16} className="text-[#f97316]" />
+                <TrendingUp size={16} className="text-theme-warning" />
                 <span className="text-theme-secondary text-sm">СЧА Акции</span>
               </div>
               <span className="text-theme-primary font-medium">
@@ -249,15 +251,15 @@ export default function FearIndexPage() {
               </span>
             </div>
 
-            <div className="flex items-center justify-between p-2 bg-[#0B0D12]/50 rounded-lg">
+            <div className="flex items-center justify-between p-2 rounded-lg" style={{ backgroundColor: 'color-mix(in srgb, var(--bg-primary) 50%, transparent)' }}>
               <div className="flex items-center gap-2">
                 {(current?.raw_values?.mm_flow_pct || 0) >= 0
-                  ? <TrendingUp size={16} className="text-[#22c55e]" />
-                  : <TrendingDown size={16} className="text-[#ef4444]" />
+                  ? <TrendingUp size={16} className="text-theme-success" />
+                  : <TrendingDown size={16} className="text-theme-danger" />
                 }
                 <span className="text-theme-secondary text-sm">Приток MM (5д)</span>
               </div>
-              <span className={`font-medium ${(current?.raw_values?.mm_flow_pct || 0) >= 0 ? 'text-[#22c55e]' : 'text-[#ef4444]'}`}>
+              <span className={`font-medium ${(current?.raw_values?.mm_flow_pct || 0) >= 0 ? 'text-theme-success' : 'text-theme-danger'}`}>
                 {current?.raw_values?.mm_flow_pct?.toFixed(2) || '—'}%
               </span>
             </div>
@@ -266,52 +268,47 @@ export default function FearIndexPage() {
       </div>
 
       {/* Панель периодов */}
-      <div className="widget p-4 mb-6">
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="text-theme-muted text-sm">Период:</span>
-          <div className="flex items-center bg-[#0B0D12] rounded-xl border border-white/10 p-1">
+      <EditorialFrame padding="sm" className="mb-6">
+        <div className="flex flex-wrap items-center gap-2 md:gap-3">
+          <span className="text-theme-muted text-sm pl-1">Период:</span>
+          <div className={isEditorial ? 'flex flex-wrap items-center gap-2' : 'flex items-center bg-theme-primary rounded-xl border border-theme p-1'}>
             {PERIODS.map(p => {
               const allowed = isPeriodAllowed(p.key, isAuthenticated);
               return (
-                <button
+                <EditorialChip
                   key={p.key}
+                  active={period === p.key}
+                  disabled={!allowed}
+                  title={!allowed ? 'Войдите для доступа' : undefined}
                   onClick={() => {
                     if (!allowed) { navigate('/login'); return; }
                     setPeriod(p.key);
                   }}
-                  title={!allowed ? 'Войдите для доступа' : undefined}
-                  className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors duration-200 ${
-                    !allowed
-                      ? 'text-theme-muted cursor-not-allowed opacity-50'
-                      : period === p.key
-                        ? 'btn-control active'
-                        : 'text-theme-secondary hover:text-theme-primary'
-                  }`}
                 >
                   {p.label}
-                  {!allowed && <Lock className="inline-block ml-0.5 w-3 h-3" />}
-                </button>
+                  {!allowed && <Lock className="inline-block ml-1 w-3 h-3" />}
+                </EditorialChip>
               );
             })}
           </div>
 
           <div className="flex-1" />
 
-          <div className="text-sm text-theme-muted">
+          <div className="text-sm text-theme-muted pr-1">
             {history?.count || 0} торговых дней
           </div>
         </div>
-      </div>
+      </EditorialFrame>
 
       {/* График */}
-      <div className="widget p-5">
+      <EditorialFrame padding="md">
         {chartData ? (
           <SimpleChart
             data={chartData.primaryData}
             secondaryData={chartData.secondaryData}
             height={400}
-            primaryColor="#6366f1"
-            secondaryColor="#C8FF2E"
+            primaryColor="var(--accent)"
+            secondaryColor="var(--accent-secondary)"
             showSecondary={true}
             formatValue={(v) => v.toFixed(1)}
             formatSecondaryValue={(v) => `×${(v / 10).toFixed(2)}`}
@@ -326,10 +323,10 @@ export default function FearIndexPage() {
             Нет данных для отображения
           </div>
         )}
-      </div>
+      </EditorialFrame>
 
       {/* Легенда */}
-      <div className="mt-6 widget p-5">
+      <EditorialFrame padding="md" className="mt-6">
         <h3 className="text-theme-primary font-medium mb-4">Шкала Fear Index</h3>
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
           {Object.entries(FEAR_COLORS).map(([classification, color]) => (
@@ -354,34 +351,34 @@ export default function FearIndexPage() {
             </div>
           ))}
         </div>
-      </div>
+      </EditorialFrame>
 
       {/* Описание методологии */}
-      <div className="mt-6 widget p-5">
+      <EditorialFrame padding="md" className="mt-6">
         <h3 className="text-theme-primary font-medium mb-3">Методология</h3>
         <p className="text-theme-secondary text-sm mb-4">
           Fund Fear Index измеряет уровень страха/жадности инвесторов на основе потоков денег в фонды.
           Когда инвесторы боятся — они выводят деньги из акций и перекладывают в денежный рынок.
         </p>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-          <div className="p-3 bg-[#0B0D12] rounded-lg">
-            <div className="text-[#6366f1] font-medium">Rotation Ratio (35%)</div>
+          <div className="p-3 bg-theme-primary rounded-lg">
+            <div className="text-theme-accent font-medium">Rotation Ratio (35%)</div>
             <div className="text-theme-muted">СЧА денежный рынок / СЧА акции</div>
           </div>
-          <div className="p-3 bg-[#0B0D12] rounded-lg">
-            <div className="text-[#22c55e] font-medium">MM Flow (25%)</div>
+          <div className="p-3 bg-theme-primary rounded-lg">
+            <div className="text-theme-success font-medium">MM Flow (25%)</div>
             <div className="text-theme-muted">Скорость притока в денежный рынок</div>
           </div>
-          <div className="p-3 bg-[#0B0D12] rounded-lg">
-            <div className="text-[#f97316] font-medium">Stocks Flow (25%)</div>
+          <div className="p-3 bg-theme-primary rounded-lg">
+            <div className="text-theme-warning font-medium">Stocks Flow (25%)</div>
             <div className="text-theme-muted">Скорость оттока из акций</div>
           </div>
-          <div className="p-3 bg-[#0B0D12] rounded-lg">
-            <div className="text-[#eab308] font-medium">Velocity (15%)</div>
+          <div className="p-3 bg-theme-primary rounded-lg">
+            <div className="font-medium" style={{ color: '#eab308' }}>Velocity (15%)</div>
             <div className="text-theme-muted">Скорость изменений</div>
           </div>
         </div>
-      </div>
+      </EditorialFrame>
     </div>
   );
 }

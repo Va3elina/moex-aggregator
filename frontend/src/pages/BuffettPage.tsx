@@ -203,7 +203,7 @@ export default function BuffettPage() {
                         <select
                             value={forecastTarget ?? ''}
                             onChange={(e) => setForecastTarget(e.target.value ? Number(e.target.value) : null)}
-                            className="bg-theme-secondary border border-theme rounded-lg px-3 py-1.5 text-sm text-theme-primary focus:outline-none focus:border-[#C8FF2E]"
+                            className="bg-theme-secondary border border-theme rounded-lg px-3 py-1.5 text-sm text-theme-primary focus:outline-none focus:border-theme-accent"
                         >
                             <option value="">Выкл</option>
                             {[10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110].map(v => (
@@ -218,7 +218,7 @@ export default function BuffettPage() {
             {/* График */}
             {error ? (
                 <div className="flex items-center justify-center h-[450px] bg-theme-secondary rounded-2xl border border-theme">
-                    <div className="text-[#FF4D4D] text-center">
+                    <div className="text-theme-danger text-center">
                         <p className="text-lg font-medium">{error}</p>
                         <p className="text-sm text-theme-secondary mt-2">Попробуйте обновить страницу</p>
                     </div>
@@ -230,8 +230,8 @@ export default function BuffettPage() {
                     data={capGdpChartData.primary}
                     secondaryData={capGdpChartData.secondary}
                     height={450}
-                    primaryColor="#C8FF2E"
-                    secondaryColor="#f59e0b"
+                    primaryColor="var(--accent)"
+                    secondaryColor="var(--accent-secondary)"
                     showSecondary={true}
                     formatValue={(v) => `${v.toFixed(2)}%`}
                     formatSecondaryValue={(v) => `${v.toFixed(2)} трлн ₽`}
@@ -251,8 +251,8 @@ export default function BuffettPage() {
                     data={capM2ChartData.primary}
                     secondaryData={capM2ChartData.secondary}
                     height={450}
-                    primaryColor="#C8FF2E"
-                    secondaryColor="#f59e0b"
+                    primaryColor="var(--accent)"
+                    secondaryColor="var(--accent-secondary)"
                     showSecondary={true}
                     formatValue={(v) => `${(v * 100).toFixed(2)}%`}
                     formatSecondaryValue={(v) => `${v.toFixed(2)} трлн ₽`}
@@ -273,7 +273,7 @@ export default function BuffettPage() {
             {/* Описание */}
             <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="bg-theme-secondary rounded-2xl p-5 border border-theme">
-                    <h3 className="font-semibold mb-2 text-[#f59e0b]">Капитализация / ВВП — оценка vs экономика</h3>
+                    <h3 className="font-semibold mb-2 text-theme-warning">Капитализация / ВВП — оценка vs экономика</h3>
                     <p className="text-sm text-theme-secondary leading-relaxed">
                         Классический индикатор Баффетта: рыночная капитализация к ВВП.
                         Отвечает на вопрос «дорог ли рынок относительно того, что реально производит экономика».
@@ -282,7 +282,7 @@ export default function BuffettPage() {
                     </p>
                 </div>
                 <div className="bg-theme-secondary rounded-2xl p-5 border border-theme">
-                    <h3 className="font-semibold mb-2 text-[#f59e0b]">Капитализация / M2 — оценка vs ликвидность</h3>
+                    <h3 className="font-semibold mb-2 text-theme-warning">Капитализация / M2 — оценка vs ликвидность</h3>
                     <p className="text-sm text-theme-secondary leading-relaxed">
                         Рыночная капитализация к денежной массе M2 (наличные + депозиты).
                         Отвечает на другой вопрос: «сколько в стране денег относительно рынка акций».

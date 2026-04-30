@@ -19,6 +19,8 @@
  */
 import { useEffect, useState } from 'react';
 import Logo from './Logo';
+import FrameLogo from './FrameLogo';
+import { useTheme } from '../contexts/ThemeContext';
 
 interface ChartWatermarkProps {
   opacity?: number;
@@ -38,6 +40,9 @@ export default function ChartWatermark({
   left = '10%',
   showText = true,
 }: ChartWatermarkProps) {
+  const { theme } = useTheme();
+  const isEditorial = theme.startsWith('editorial');
+
   // Адаптивный размер. Listener resize даёт мгновенный rerender при повороте
   // или открытии devtools (изменение viewport).
   const [isMobile, setIsMobile] = useState(
@@ -51,6 +56,31 @@ export default function ChartWatermark({
 
   const effSize = isMobile ? mobileSize : size;
 
+  // В editorial — FRAME-лого (брекеты + wordmark "FRAME"), 1в1 как в шапке.
+  // Тёмная тень убирается на light-фонах (она для контраста с цветными
+  // гистограммами на dark-теме, но на бумажном #F4F1EA выглядит как UI-артефакт).
+  if (isEditorial) {
+    return (
+      <div
+        aria-hidden="true"
+        style={{
+          position: 'absolute',
+          bottom,
+          left,
+          pointerEvents: 'none',
+          opacity: opacity * 0.9,
+          zIndex: 1,
+          color: 'var(--text-primary)',
+          display: 'flex',
+          alignItems: 'center',
+        }}
+      >
+        <FrameLogo size={effSize} color="currentColor" showWordmark={showText} weight={700} />
+      </div>
+    );
+  }
+
+  // Non-editorial — текущая реализация (Logo + "Фрейм" + drop-shadow для контраста).
   return (
     <div
       aria-hidden="true"
@@ -65,7 +95,6 @@ export default function ChartWatermark({
         display: 'flex',
         alignItems: 'center',
         gap: Math.round(effSize * 0.25),
-        // Тёмный drop-shadow → кайма вокруг watermark на любом фоне.
         filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.75))',
       }}
     >
@@ -79,10 +108,6 @@ export default function ChartWatermark({
             lineHeight: 1,
             color: 'currentColor',
             fontFamily: "'IBM Plex Sans', system-ui, -apple-system, sans-serif",
-            // Text-shadow для текста — drop-shadow на родителе обрамляет и
-            // эмблему и надпись как единое целое, но textShadow добавляет
-            // ещё внутренний контур текста → лучше читается на цветном
-            // столбике гистограммы.
             textShadow: '0 0 3px rgba(0,0,0,0.85), 0 1px 2px rgba(0,0,0,0.65)',
           }}
         >
