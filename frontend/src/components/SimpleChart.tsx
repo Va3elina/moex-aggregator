@@ -72,12 +72,11 @@ export default function SimpleChart({
   formatThirdValue,
   formatTime = (t) => {
     const date = new Date(t);
-    // Mobile: "29.04.26" — короче, не налезает
-    // Desktop: "29 апр. 26 г." — читаемее, места хватает
-    const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
-    return isMobile
-      ? date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' })
-      : date.toLocaleDateString('ru-RU', { day: '2-digit', month: 'short', year: '2-digit' });
+    // Numeric DD.MM.YY везде — фиксированная ширина 8 символов.
+    // С переменной шириной (нояб./февр./июн.) метки "дёргались" при drag
+    // navigator: длина текста менялась вместе со средней датой → визуальный
+    // shift даже при стабильной X-позиции тика.
+    return date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
   },
   loading = false,
   primaryLabel = 'Цена',
@@ -353,9 +352,15 @@ export default function SimpleChart({
     const isTablet = typeof window !== 'undefined' && window.innerWidth < 1024;
     const maxTicks = isMobile ? 4 : isTablet ? 5 : 7;
     const xTickCount = Math.min(maxTicks, displayData.length);
+    // Equal-spaced positions: x = (i/(N-1)) * chartWidth.
+    // Дата подбирается ближайшая к этой позиции. Так ticks стабильны при
+    // drag navigator (даже если displayData.length меняется на ±1) — двигается
+    // только сама дата, позиция метки и gridline остаётся фиксированной.
     const xTicks = Array.from({ length: xTickCount }, (_, i) => {
-      const index = Math.floor((i / Math.max(xTickCount - 1, 1)) * (displayData.length - 1));
-      return { time: displayData[index].time, x: scaleX(index, displayData.length) };
+      const xRatio = i / Math.max(xTickCount - 1, 1);
+      const x = xRatio * chartWidth;
+      const index = Math.round(xRatio * (displayData.length - 1));
+      return { time: displayData[index].time, x };
     });
 
     return { points, secondaryPoints, thirdPoints, yTicks, secYTicks, xTicks };
@@ -866,7 +871,11 @@ export default function SimpleChart({
               </text>
             ))}
 
-            {/* Вертикальные линии сетки + X метки */}
+            {/* Вертикальные линии сетки + X метки.
+                first/last anchor 'start'/'end' чтобы крайние даты не наезжали
+                на Y-оси. Безопасно при фикс-ширине формата DD.MM.YY — текст
+                одной длины, поэтому visual gap между крайней и средней меткой
+                стабилен (не "дёргается"). */}
             {targetCalc.xTicks.map((tick, i) => {
               const isFirst = i === 0;
               const isLast = i === targetCalc.xTicks.length - 1;
@@ -883,7 +892,7 @@ export default function SimpleChart({
                     />
                   )}
                   <text
-                    x={isFirst ? 0 : isLast ? chartWidth : tick.x}
+                    x={tick.x}
                     y={chartHeight + 30}
                     textAnchor={isFirst ? 'start' : isLast ? 'end' : 'middle'}
                     fill="var(--axis-color, #9CA3B8)"
@@ -1049,21 +1058,23 @@ export default function SimpleChart({
                 />
               )}
 
-              {/* Затемнение области после курсора */}
+              {/* Затемнение области после курсора — theme-aware,
+                  лёгкое (~10%) чтобы не делать тёмный прямоугольник на бумаге */}
               {tooltip.visible && (
                 <rect
                   x={tooltip.x - padding.left}
                   y={0}
                   width={Math.max(0, chartWidth - (tooltip.x - padding.left))}
                   height={chartHeight}
-                  fill="#0B0D12"
-                  opacity="0.5"
+                  fill="var(--text-primary)"
+                  opacity="0.08"
                   className="transition-opacity duration-150"
                 />
               )}
             </g>
 
-            {/* Вертикальная линия и точки курсора */}
+            {/* Вертикальная линия и точки курсора — theme-aware
+                (text-primary хорошо виден на любом фоне, не сливается с линиями) */}
             {tooltip.visible && (
               <>
                 <line
@@ -1071,10 +1082,10 @@ export default function SimpleChart({
                   y1={0}
                   x2={tooltip.x - padding.left}
                   y2={chartHeight}
-                  stroke={CROSSHAIR.accentColor}
+                  stroke="var(--text-primary)"
                   strokeWidth={CROSSHAIR.strokeWidth}
                   strokeDasharray="4,4"
-                  opacity={CROSSHAIR.accentOpacity}
+                  opacity="0.55"
                 />
                 {/* Точка на основной линии */}
                 <circle

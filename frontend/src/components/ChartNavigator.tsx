@@ -191,7 +191,7 @@ export default function ChartNavigator({
     return (
         <div
             ref={containerRef}
-            className="relative select-none mt-3 overflow-visible"
+            className="chart-navigator relative select-none mt-3 overflow-visible"
             style={{ height: height + 4, paddingLeft: 8, paddingRight: 8 }}
         >
             {/* SVG для мини-графика — viewBox с фикс. шириной 1000, preserveAspectRatio="none"
@@ -200,7 +200,7 @@ export default function ChartNavigator({
             <svg
                 viewBox={`0 0 ${VB_WIDTH} ${height}`}
                 preserveAspectRatio="none"
-                className="block overflow-visible"
+                className="nav-mini-svg block overflow-visible"
                 style={{ position: 'absolute', top: 0, left: 8, right: 8, width: 'calc(100% - 16px)', height: height }}
             >
                 <defs>
@@ -211,20 +211,20 @@ export default function ChartNavigator({
                 </defs>
                 {miniPath && (
                     <>
-                        <path d={miniPath.area} fill={`url(#${gradId})`} />
-                        <path d={miniPath.line} fill="none" stroke={color} strokeWidth="1" opacity="0.5" vectorEffect="non-scaling-stroke" />
+                        <path className="nav-mini-area" d={miniPath.area} fill={`url(#${gradId})`} />
+                        <path className="nav-mini-line" d={miniPath.line} fill="none" stroke={color} strokeWidth="1" opacity="0.5" vectorEffect="non-scaling-stroke" />
                     </>
                 )}
             </svg>
 
             {/* Selection и handles как HTML div с CSS %, не зависят от JS-width.
                 Это устраняет glitch "расширения правого края" при монтировании — CSS % резолвится браузером сразу. */}
-            <div className="absolute" style={{ top: 0, left: 8, right: 8, bottom: 4, pointerEvents: 'none' }}>
+            <div className="nav-inner absolute" style={{ top: 0, left: 8, right: 8, bottom: 4, pointerEvents: 'none' }}>
                 {/* Маски невыбранной области — theme-aware через --nav-mask */}
                 <div className="absolute top-0 bottom-0 left-0" style={{ width: `${selFrac[0] * 100}%`, background: 'var(--nav-mask, rgba(0,0,0,0.5))' }} />
                 <div className="absolute top-0 bottom-0 right-0" style={{ width: `${(1 - selFrac[1]) * 100}%`, background: 'var(--nav-mask, rgba(0,0,0,0.5))' }} />
                 {/* Выбранное окно — accent цвет с прозрачностью + accent border */}
-                <div className="absolute top-0 bottom-0"
+                <div className="nav-selection absolute top-0 bottom-0"
                     style={{
                         left: `${selFrac[0] * 100}%`,
                         width: `${(selFrac[1] - selFrac[0]) * 100}%`,
@@ -237,11 +237,18 @@ export default function ChartNavigator({
                     onMouseDown={e => startDrag(e, 'window')}
                     onTouchStart={e => startTouchDrag(e, 'window')}
                 />
-                {/* Левая ручка — accent цвет */}
-                <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 flex items-center justify-center"
+                {/* Левая ручка — accent цвет.
+                    Adaptive translateX(-${selFrac[0]*100}%) держит handle всегда
+                    внутри контейнера: 0% → translateX(0), 100% → translateX(-100%).
+                    Это нужно для editorial overflow:hidden — иначе handle
+                    подрезался бы у краёв.
+                    top: 0, bottom: 0 → handle на всю высоту parent (inset-container). */}
+                <div className="nav-handle nav-handle-left absolute flex items-center justify-center"
                     style={{
                         left: `${selFrac[0] * 100}%`,
-                        width: HANDLE_W, height: height * 0.7,
+                        top: 0, bottom: 0,
+                        transform: `translateX(-${selFrac[0] * 100}%)`,
+                        width: HANDLE_W,
                         background: 'var(--accent)',
                         borderRadius: 3,
                         cursor: 'ew-resize',
@@ -255,10 +262,12 @@ export default function ChartNavigator({
                     </svg>
                 </div>
                 {/* Правая ручка */}
-                <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 flex items-center justify-center"
+                <div className="nav-handle nav-handle-right absolute flex items-center justify-center"
                     style={{
                         left: `${selFrac[1] * 100}%`,
-                        width: HANDLE_W, height: height * 0.7,
+                        top: 0, bottom: 0,
+                        transform: `translateX(-${selFrac[1] * 100}%)`,
+                        width: HANDLE_W,
                         background: 'var(--accent)',
                         borderRadius: 3,
                         cursor: 'ew-resize',

@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { ChevronDown, BarChart3, Lock } from 'lucide-react';
+import { ChevronDown, BarChart3 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import InstrumentIcon from '../components/InstrumentIcon';
 import { usePrefetchLogos } from '../hooks/usePrefetchLogos';
@@ -10,6 +10,7 @@ import type { ChartResponse } from '../types';
 import type { ChartAnnotation } from '../components/SimpleChart';
 import SimpleChart from '../components/SimpleChart';
 import InstrumentSearchModal from '../components/InstrumentSearchModal';
+import Dropdown, { type DropdownOption } from '../components/Dropdown';
 import { PERIOD_LABELS as ALL_PERIOD_LABELS, INTERVAL_LABELS } from '../config/chartConfig';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -51,9 +52,8 @@ const COLORS = {
 export default function OpenInterestPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { isAuthenticated } = useAuth();
-  const { theme } = useTheme();
+  const { theme: _theme } = useTheme();
   const navigate = useNavigate();
-  const isEditorial = theme.startsWith('editorial');
 
   // Фоновая предзагрузка лого один раз — модалка выбора актива потом
   // открывается мгновенно из SW cache, без 100 запросов.
@@ -104,9 +104,9 @@ export default function OpenInterestPage() {
 
   // Настройки
   const [interval, setIntervalValue] = useState(24);
-  const [clgroup, setClgroup] = useState<'FIZ' | 'YUR'>('FIZ');
+  const [clgroup, setClgroup] = useState<'FIZ' | 'YUR'>('YUR');
   const [displayMode, setDisplayMode] = useState<DisplayMode>('positions');
-  const [oiVariant, setOiVariant] = useState<OIVariant>('oi');
+  const [oiVariant, setOiVariant] = useState<OIVariant>('net');
   const [showExpirations, setShowExpirations] = useState(false);
   const [period, setPeriod] = useState<Period>(getDefaultPeriod('6m', isAuthenticated) as Period);
 
@@ -382,10 +382,12 @@ export default function OpenInterestPage() {
           плоской, как раньше. */}
       <div className="editorial-frame">
 
-      {/* Контролы — без widget-wrapper, консистентно с остальными страницами
-          (Buffett, Sezonality, Heatmap — controls прямо на page bg) */}
+      {/* Контролы — все режимы через Dropdown'ы для экономии места.
+          Asset + FIZ/YUR + Interval + Period + DisplayMode + OI variant + Экспирации
+          в одну строку (на узких экранах wraps). Стиль editorial pill через
+          Dropdown компонент. */}
       <div className="mb-4 md:mb-6">
-        <div className="flex flex-wrap items-center gap-2 md:gap-3 mb-3 md:mb-4">
+        <div className="flex flex-wrap items-center gap-2 md:gap-3">
           {/* Селектор инструмента — открывает модалку */}
           <button
             onClick={() => setIsModalOpen(true)}
@@ -400,208 +402,106 @@ export default function OpenInterestPage() {
             <ChevronDown size={16} className="text-theme-secondary" />
           </button>
 
-          {/* FIZ/YUR переключатель */}
+          {/* FIZ/YUR — только если displayMode !== price */}
           {displayMode !== 'price' && (
-            <div className="btn-group-scroll bg-theme-secondary rounded-xl border border-theme p-1">
-              <button
-                onClick={() => setClgroup('FIZ')}
-                className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors duration-200 ${clgroup === 'FIZ'
-                  ? 'btn-control active'
-                  : 'text-theme-secondary hover:text-theme-primary'
-                  }`}
-              >
-                Физлица
-              </button>
-              <button
-                onClick={() => setClgroup('YUR')}
-                className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors duration-200 ${clgroup === 'YUR'
-                  ? 'btn-control active'
-                  : 'text-theme-secondary hover:text-theme-primary'
-                  }`}
-              >
-                Юрлица
-              </button>
-            </div>
+            <Dropdown<'FIZ' | 'YUR'>
+              options={[
+                { key: 'FIZ', label: 'Физлица' },
+                { key: 'YUR', label: 'Юрлица' },
+              ]}
+              value={clgroup}
+              onChange={setClgroup}
+            />
           )}
 
           {/* Таймфрейм */}
-          <div className="btn-group-scroll bg-theme-secondary rounded-xl border border-theme p-1">
-            {[5, 60, 24].map((int) => {
+          <Dropdown<string>
+            options={[5, 60, 24].map((int): DropdownOption<string> => {
               const available = displayMode === 'price' || hasInterval(int);
               const allowed = isIntervalAllowed(int, isAuthenticated);
-              return (
-                <button
-                  key={int}
-                  onClick={() => {
-                    if (!allowed) { navigate('/login'); return; }
-                    if (available) handleIntervalChange(int);
-                  }}
-                  disabled={!available && allowed}
-                  title={!allowed ? 'Войдите для доступа' : undefined}
-                  className={`px-3 py-2 text-sm font-medium rounded-lg transition-colors duration-200 relative ${
-                    !allowed
-                      ? 'text-theme-muted cursor-not-allowed opacity-50'
-                      : interval === int
-                        ? 'btn-control active'
-                        : available
-                          ? 'text-theme-secondary hover:text-theme-primary'
-                          : 'text-theme-muted cursor-not-allowed'
-                  }`}
-                >
-                  {INTERVAL_LABELS[int]}
-                  {!allowed && <Lock className="inline-block ml-0.5 w-3 h-3" />}
-                </button>
-              );
+              return {
+                key: String(int),
+                label: INTERVAL_LABELS[int as keyof typeof INTERVAL_LABELS],
+                locked: !allowed || !available,
+              };
             })}
-          </div>
-        </div>
+            value={String(interval)}
+            onChange={(k) => {
+              const int = Number(k);
+              const allowed = isIntervalAllowed(int, isAuthenticated);
+              if (!allowed) { navigate('/login'); return; }
+              const available = displayMode === 'price' || hasInterval(int);
+              if (available) handleIntervalChange(int);
+            }}
+          />
 
-        {/* Период */}
-        <div className="btn-group-scroll gap-1 mb-4 bg-theme-secondary rounded-xl border border-theme p-1">
-          {(Object.keys(PERIOD_LABELS) as Period[]).map((p) => {
-            const available = isPeriodAvailable(p);
-            const allowed = isPeriodAllowed(p, isAuthenticated);
-            return (
-              <button
-                key={p}
-                onClick={() => {
-                  if (!allowed) { navigate('/login'); return; }
-                  if (!available) return;
-                  if (p === '1d' && interval === 24) {
-                    // 1Д период на дневном ТФ не имеет смысла — переключаем ТФ на 1ч
-                    setIntervalValue(60);
-                  }
-                  setPeriod(p);
-                }}
-                disabled={!available && allowed}
-                title={!allowed ? 'Войдите для доступа' : undefined}
-                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors duration-200 ${
-                  !allowed
-                    ? 'text-theme-muted cursor-not-allowed opacity-50'
-                    : period === p
-                      ? 'btn-control active'
-                      : available
-                        ? 'text-theme-secondary hover:text-theme-primary'
-                        : 'text-theme-muted cursor-not-allowed'
-                }`}
-              >
-                {PERIOD_LABELS[p]}
-                {!allowed && <Lock className="inline-block ml-0.5 w-3 h-3" />}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Режим отображения. Active state использует --accent (theme-aware)
-            вместо hardcoded #6366f1 — иначе в editorial-pumpkin темах
-            активная кнопка светилась бы старым indigo, а не текущим accent'ом. */}
-        <div className="flex gap-2 mb-4 flex-wrap">
-          {([
-            { key: 'price', label: 'Только цена', click: () => setDisplayMode('price') },
-            { key: 'positions', label: 'Позиции', click: () => { setDisplayMode('positions'); setOiVariant('oi'); } },
-            { key: 'participants', label: 'Участники', click: () => { setDisplayMode('participants'); setOiVariant('oi'); } },
-          ] as const).map((m) => {
-            const active = displayMode === m.key;
-            // В editorial mode-кнопки — единый chip-style как period chip'ы:
-            // outline pill для inactive (2px black border + secondary text), filled
-            // pill с hard-shadow для active. В non-editorial — старая Tailwind-разметка.
-            const editorialActiveStyle: React.CSSProperties = {
-              backgroundColor: 'var(--accent)',
-              color: 'var(--text-inverse)',
-              border: '2px solid var(--text-primary)',
-              borderRadius: 999,
-              boxShadow: 'var(--shadow-hard-chip)',
-            };
-            const editorialInactiveStyle: React.CSSProperties = {
-              backgroundColor: 'var(--bg-secondary)',
-              color: 'var(--text-primary)',
-              border: '2px solid var(--text-primary)',
-              borderRadius: 999,
-            };
-            return (
-              <button
-                key={m.key}
-                onClick={m.click}
-                className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors duration-200 ${
-                  isEditorial ? '' : (active ? '' : 'bg-theme-secondary text-theme-secondary hover:text-theme-primary border border-theme')
-                }`}
-                style={
-                  isEditorial
-                    ? (active ? editorialActiveStyle : editorialInactiveStyle)
-                    : (active
-                        ? { backgroundColor: 'var(--accent)', color: 'var(--text-inverse)' }
-                        : undefined)
-                }
-              >
-                {m.label}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Варианты OI — нижний ряд кнопок.
-            Каждый вариант имеет свой цвет (амбер=OI, зелёный=покупки, красный=продажи,
-            фиолетовый=обе, циан=чистая, серый=экспирации). Цвета — theme-aware
-            CSS-переменные --oi-* (неон в dark, муть в editorial), не hardcoded. */}
-        {displayMode !== 'price' && (
-          <div className="flex gap-2 flex-wrap">
-            {([
-              { key: 'oi',           cssVar: '--oi-amber',  label: 'Открытый интерес',
-                isActive: () => oiVariant === 'oi',           click: () => setOiVariant('oi') },
-              { key: 'long',         cssVar: '--oi-green',  label: displayMode === 'positions' ? 'Покупки' : 'Покупатели',
-                isActive: () => oiVariant === 'long',         click: () => setOiVariant('long') },
-              { key: 'short',        cssVar: '--oi-red',    label: displayMode === 'positions' ? 'Продажи' : 'Продавцы',
-                isActive: () => oiVariant === 'short',        click: () => setOiVariant('short') },
-              { key: 'both',         cssVar: '--oi-purple', label: displayMode === 'positions' ? 'Покупки + Продажи' : 'Покупатели + Продавцы',
-                isActive: () => oiVariant === 'both',         click: () => setOiVariant('both') },
-              { key: 'net',          cssVar: '--oi-cyan',   label: 'Чистая позиция',
-                isActive: () => oiVariant === 'net',          click: () => setOiVariant('net') },
-              { key: 'expirations',  cssVar: '--oi-gray',   label: 'Экспирации',
-                isActive: () => showExpirations,              click: () => setShowExpirations(!showExpirations) },
-            ] as const).map((v) => {
-              const active = v.isActive();
-              // В editorial — solid pill: заливка цветом, белый текст, 1.5px border, hard shadow.
-              // В dark/okx — старая полупрозрачная заливка с цветным ring.
-              const activeStyle: React.CSSProperties = isEditorial
-                ? {
-                    backgroundColor: `var(${v.cssVar})`,
-                    color: 'var(--text-inverse)',
-                    border: '2px solid var(--text-primary)',
-                    borderRadius: 999,
-                    boxShadow: 'var(--shadow-hard-chip)',
-                    fontWeight: 700,
-                  }
-                : {
-                    backgroundColor: `color-mix(in srgb, var(${v.cssVar}) 20%, transparent)`,
-                    color: `var(${v.cssVar})`,
-                    boxShadow: `inset 0 0 0 1px color-mix(in srgb, var(${v.cssVar}) 50%, transparent)`,
-                  };
-              // В editorial inactive — outline pill (как на референсе все 6 chip'ов одинаковой формы);
-              // в dark/okx — старый transparent fill.
-              const inactiveStyle: React.CSSProperties | undefined = isEditorial
-                ? {
-                    backgroundColor: 'var(--bg-secondary)',
-                    color: 'var(--text-primary)',
-                    border: '2px solid var(--text-primary)',
-                    borderRadius: 999,
-                    fontWeight: 700,
-                  }
-                : undefined;
-              return (
-                <button
-                  key={v.key}
-                  onClick={v.click}
-                  className={`px-2 md:px-3 py-1 md:py-1.5 rounded-lg text-xs md:text-sm font-medium transition-colors duration-200 ${
-                    active || isEditorial ? '' : 'bg-theme-secondary text-theme-secondary hover:text-theme-primary'
-                  }`}
-                  style={active ? activeStyle : inactiveStyle}
-                >
-                  {v.label}
-                </button>
-              );
+          {/* Период */}
+          <Dropdown<Period>
+            options={(Object.keys(PERIOD_LABELS) as Period[]).map((p): DropdownOption<Period> => {
+              const available = isPeriodAvailable(p);
+              const allowed = isPeriodAllowed(p, isAuthenticated);
+              return {
+                key: p,
+                label: PERIOD_LABELS[p],
+                locked: !allowed || !available,
+              };
             })}
-          </div>
-        )}
+            value={period}
+            onChange={(p) => {
+              const allowed = isPeriodAllowed(p, isAuthenticated);
+              if (!allowed) { navigate('/login'); return; }
+              const available = isPeriodAvailable(p);
+              if (!available) return;
+              if (p === '1d' && interval === 24) setIntervalValue(60);
+              setPeriod(p);
+            }}
+          />
+
+          {/* Режим отображения */}
+          <Dropdown<DisplayMode>
+            options={[
+              { key: 'price', label: 'Только цена' },
+              { key: 'positions', label: 'Позиции' },
+              { key: 'participants', label: 'Участники' },
+            ]}
+            value={displayMode}
+            onChange={(m) => {
+              setDisplayMode(m);
+              if (m !== 'price') setOiVariant('oi');
+            }}
+          />
+
+          {/* Варианты OI — каждый с цветной полоской слева */}
+          {displayMode !== 'price' && (
+            <Dropdown<OIVariant>
+              options={[
+                { key: 'oi',    label: 'Открытый интерес',                                                     color: 'var(--oi-amber)' },
+                { key: 'long',  label: displayMode === 'positions' ? 'Покупки' : 'Покупатели',                 color: 'var(--oi-green)' },
+                { key: 'short', label: displayMode === 'positions' ? 'Продажи' : 'Продавцы',                   color: 'var(--oi-red)' },
+                { key: 'both',  label: displayMode === 'positions' ? 'Покупки + Продажи' : 'Покупатели + Продавцы', color: 'var(--oi-purple)' },
+                { key: 'net',   label: 'Чистая позиция',                                                       color: 'var(--oi-cyan)' },
+              ]}
+              value={oiVariant}
+              onChange={setOiVariant}
+            />
+          )}
+
+          {/* Экспирации — отдельный toggle (boolean state, не входит в OI variants) */}
+          {displayMode !== 'price' && (
+            <button
+              onClick={() => setShowExpirations(!showExpirations)}
+              className="editorial-press px-4 py-2 text-sm font-semibold rounded-full"
+              style={{
+                backgroundColor: showExpirations ? 'var(--accent)' : 'var(--bg-secondary)',
+                color: showExpirations ? 'var(--text-inverse)' : 'var(--text-primary)',
+                border: '2px solid var(--text-primary)',
+                boxShadow: showExpirations ? 'var(--shadow-hard-chip)' : undefined,
+              }}
+            >
+              Экспирации
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Ошибка */}
@@ -611,10 +511,9 @@ export default function OpenInterestPage() {
         </div>
       )}
 
-      {/* График — внутренний фон совпадает с фоном страницы (бумага в editorial-light,
-          тёмный в editorial-dark/okx), чтобы chart не выделялся «панелью» внутри
-          editorial-frame'а. На референсах chart inner = page bg. */}
-      <div className="bg-theme-primary rounded-2xl border border-theme overflow-hidden">
+      {/* График — фон и border заданы внутри SimpleChart (bg-theme-primary,
+          border + hard shadow в editorial). Обёртка убрана чтобы не было
+          двойной рамки. */}
       <SimpleChart
         data={chartData}
         secondaryData={oiData}
@@ -649,7 +548,6 @@ export default function OpenInterestPage() {
           });
         }, [filteredData?.contract_switches, showExpirations])}
       />
-      </div>
 
       </div>{/* /editorial-frame */}
 

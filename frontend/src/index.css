@@ -512,7 +512,7 @@
   --shadow-hard: 4px 4px 0 #0A0A0A;
   --shadow-hard-chip: 3px 3px 0 #0A0A0A;
   --card-radius: 12px;
-  --card-border-width: 1.5px;
+  --card-border-width: 2px;
   --card-border-color: #0A0A0A;
   --card-shadow: var(--shadow-hard);
 
@@ -575,7 +575,7 @@
   --shadow-hard: 4px 4px 0 #F5F1E8;
   --shadow-hard-chip: 3px 3px 0 #F5F1E8;
   --card-radius: 12px;
-  --card-border-width: 1.5px;
+  --card-border-width: 2px;
   --card-border-color: #F5F1E8;
   --card-shadow: var(--shadow-hard);
 
@@ -605,19 +605,32 @@
   font-family: var(--font-body);
 }
 
-/* Заголовки страницы — Archivo 800 в editorial.
-   !important нужен потому что Tailwind v4 utility-классы (`text-2xl`, `font-bold`)
-   живут в @layer utilities и имеют высокий приоритет даже при equal specificity.
-
-   Hardcode 'Archivo' вместо var(--font-display) — гарантирует что fallback
-   на Inter не сработает молча если Archivo не загрузилась с CDN. Если шрифт
-   не успел загрузиться — будет system serif/sans-serif (видно сразу). */
-[data-theme^="editorial"] h1.page-header-title {
+/* Заголовки — Archivo 800 в editorial (handoff token).
+   Применяется ко всем h1/h2/h3 в editorial темах, не только page-header-title.
+   !important нужен потому что Tailwind v4 utility-классы живут в @layer utilities
+   и имеют высокий приоритет даже при equal specificity. */
+[data-theme^="editorial"] h1,
+[data-theme^="editorial"] h2,
+[data-theme^="editorial"] h3 {
   font-family: 'Archivo', 'Inter', system-ui, sans-serif !important;
   font-weight: 800 !important;
+  letter-spacing: -0.02em !important;
+}
+[data-theme^="editorial"] h1.page-header-title {
   letter-spacing: -0.03em !important;
   font-size: 48px !important;
   line-height: 1.0 !important;
+}
+/* Усиление body-текста: Tailwind font-medium (500) → 600,
+   font-semibold (600) → 700. Контраст черноты заметно вырастает. */
+[data-theme^="editorial"] .font-medium {
+  font-weight: 600 !important;
+}
+[data-theme^="editorial"] .font-semibold {
+  font-weight: 700 !important;
+}
+[data-theme^="editorial"] .font-bold {
+  font-weight: 800 !important;
 }
 @media (min-width: 1024px) {
   [data-theme^="editorial"] h1.page-header-title {
@@ -628,6 +641,11 @@
   [data-theme^="editorial"] h1.page-header-title {
     font-size: 36px !important;
   }
+}
+
+/* Толщина линий разделителей — match border-theme (2px в editorial) */
+[data-theme^="editorial"] hr {
+  border-top: 2px solid var(--text-primary) !important;
 }
 
 /* Числа в моно-шрифте */
@@ -680,6 +698,134 @@
   --nav-mask: rgba(245, 241, 232, 0.10);
 }
 
+/* === Editorial Press Effect — универсальный hover/active ===
+   Press-эффект: на hover кнопка сдвигается на (-1px,-1px) и получает hard
+   shadow 4×4×0; на active — обратно (+1px,+1px) с уменьшенной тенью 1×1×0.
+   Создаёт ощущение "живых" нажатий, как в дизайн-handoff page.jsx.
+
+   Применяется автоматически к селекторам ниже + любому элементу с классом
+   `.editorial-press`. На OKX/dark темы не влияет — там обычные hover'ы. */
+[data-theme^="editorial"] .editorial-press,
+[data-theme^="editorial"] .frame-dropdown-trigger,
+[data-theme^="editorial"] .frame-dropdown-item,
+[data-theme^="editorial"] .instrument-modal-chip,
+[data-theme^="editorial"] button.widget-flat,
+[data-theme^="editorial"] .btn-control {
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background-color 0.12s ease !important;
+}
+[data-theme^="editorial"] .editorial-press:hover:not(:disabled),
+[data-theme^="editorial"] .frame-dropdown-trigger:hover:not(:disabled),
+[data-theme^="editorial"] .instrument-modal-chip:hover:not(:disabled),
+[data-theme^="editorial"] button.widget-flat:hover:not(:disabled),
+[data-theme^="editorial"] .btn-control:hover:not(:disabled) {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--text-primary) !important;
+}
+[data-theme^="editorial"] .editorial-press:active:not(:disabled),
+[data-theme^="editorial"] .frame-dropdown-trigger:active:not(:disabled),
+[data-theme^="editorial"] .instrument-modal-chip:active:not(:disabled),
+[data-theme^="editorial"] button.widget-flat:active:not(:disabled),
+[data-theme^="editorial"] .btn-control:active:not(:disabled) {
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0 var(--text-primary) !important;
+}
+
+/* Dropdown items: inactive получает accent-tinted hover, active (с border)
+   получает полноценный press-эффект — match триггеру и chip'ам. */
+[data-theme^="editorial"] .frame-dropdown-item:hover:not(:disabled) {
+  background-color: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+[data-theme^="editorial"] .frame-dropdown-item[data-active="true"]:hover:not(:disabled) {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 var(--text-primary) !important;
+  background-color: var(--accent);
+}
+[data-theme^="editorial"] .frame-dropdown-item[data-active="true"]:active:not(:disabled) {
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0 var(--text-primary) !important;
+}
+
+/* === Instrument Search Modal — hover states ===
+   Item hover: лёгкая accent-tinted подсветка. Close button hover: выделение.
+   Divider между items — тонкая линия (1px text-primary 10%) для визуального
+   разделения активов в списке. */
+.instrument-list .instrument-item {
+  border-radius: 0;
+}
+.instrument-list .instrument-item + .instrument-item {
+  border-top: 1px solid color-mix(in srgb, var(--text-primary) 12%, transparent);
+}
+.instrument-item:hover {
+  background-color: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.instrument-modal-close:hover {
+  background-color: color-mix(in srgb, var(--text-primary) 8%, transparent);
+  color: var(--text-primary);
+}
+.instrument-modal-search:focus {
+  border-color: var(--accent) !important;
+}
+[data-theme^="editorial"] .instrument-modal-chip {
+  font-weight: 700 !important;
+}
+
+/* === Chart Navigator — editorial style ===
+   Референс (из design handoff chart.jsx): 2px solid border контейнер с
+   overflow:hidden (углы скругляются естественно), серая горка-силуэт без линии,
+   accent handles ~24px на всю высоту с inner-only border (right для left handle,
+   left для right handle). Handle имеет border-radius на внешних углах чтобы
+   accent заполнял скруглённый угол контейнера полностью.
+   На OKX/dark темы не влияет — там оригинальный gradient-стиль. */
+[data-theme^="editorial"] .chart-navigator {
+  border: 2px solid var(--text-primary);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  overflow: hidden;
+}
+/* SVG mini-chart: убираем left/right 8px inset — в editorial chart занимает всю ширину */
+[data-theme^="editorial"] .chart-navigator .nav-mini-svg {
+  left: 0 !important;
+  right: 0 !important;
+  width: 100% !important;
+}
+/* Inner positioning div (handles + masks): убираем 8px L/R и 4px bottom inset */
+[data-theme^="editorial"] .chart-navigator .nav-inner {
+  left: 0 !important;
+  right: 0 !important;
+  top: 0 !important;
+  bottom: 0 !important;
+}
+[data-theme^="editorial"] .chart-navigator path.nav-mini-area {
+  fill: color-mix(in srgb, var(--text-primary) 22%, transparent) !important;
+}
+[data-theme^="editorial"] .chart-navigator path.nav-mini-line {
+  display: none;
+}
+[data-theme^="editorial"] .chart-navigator .nav-selection {
+  background: transparent !important;
+  border-top: none !important;
+  border-bottom: none !important;
+}
+/* Handles: ~24px на всю высоту, inner border 2px match outer.
+   Border-radius только на ВНЕШНИХ углах (match parent radius) — accent
+   заполняет скруглённый угол; внутренние углы прямые (стыкуются с inner border). */
+[data-theme^="editorial"] .chart-navigator .nav-handle {
+  height: 100% !important;
+  width: 24px !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+[data-theme^="editorial"] .chart-navigator .nav-handle-left {
+  border-right: 2px solid var(--text-primary) !important;
+  border-radius: 6px 0 0 6px !important;
+}
+[data-theme^="editorial"] .chart-navigator .nav-handle-right {
+  border-left: 2px solid var(--text-primary) !important;
+  border-radius: 0 6px 6px 0 !important;
+}
+
 /* Asset selector — кнопка выбора инструмента (Сбербанк / SBER / chevron).
    В editorial — outlined pill с hard shadow, чтобы соответствовать chip-системе. */
 [data-theme^="editorial"] button.widget-flat {
@@ -720,11 +866,19 @@
   border-radius: var(--card-radius) !important;
 }
 
-/* Border-color override — Tailwind border-theme в editorial = solid 1.5px */
+/* Border-color override — в editorial border-theme = solid 2px var(--text-primary).
+   Ширина задаётся ТОЛЬКО для side, который реально объявлен Tailwind-классом
+   (`.border` для всех 4-х, `.border-t`/`.border-b`/`.border-l`/`.border-r` для одного).
+   Иначе универсальный `border-width: 2px` shorthand рисовал рамку у всех сторон,
+   даже если в JSX был только border-top — приводил к "коробке" вокруг divider'ов. */
 [data-theme^="editorial"] .border-theme {
-  border-width: 1.5px;
   border-color: var(--text-primary);
 }
+[data-theme^="editorial"] .border-theme.border { border-width: 2px; }
+[data-theme^="editorial"] .border-theme.border-t { border-top-width: 2px; }
+[data-theme^="editorial"] .border-theme.border-b { border-bottom-width: 2px; }
+[data-theme^="editorial"] .border-theme.border-l { border-left-width: 2px; }
+[data-theme^="editorial"] .border-theme.border-r { border-right-width: 2px; }
 
 /* === Editorial chip-style для segmented controls ===
    В существующих страницах контролы сгруппированы в .btn-group-scroll
@@ -805,19 +959,19 @@
   --oi-gray:   #9CA3B8;
 }
 [data-theme="editorial-light"] {
-  --oi-amber:  #E07A1F;
-  --oi-green:  #0A6B3B;
-  --oi-red:    #B5301A;
+  --oi-amber:  #E07A1F;             /* OI */
+  --oi-green:  #0A6B3B;             /* Покупки */
+  --oi-red:    #B91C5C;             /* Продажи — deep magenta */
   --oi-purple: #5B5BD6;
-  --oi-cyan:   #2B6CB0;
+  --oi-cyan:   #FF5C2B;             /* Чистая позиция — фирменный pumpkin */
   --oi-gray:   #6B6B6B;
 }
 [data-theme="editorial-dark"] {
-  --oi-amber:  #F2A24A;
-  --oi-green:  #5BD49C;
-  --oi-red:    #FF7A5C;
+  --oi-amber:  #F2A24A;             /* OI */
+  --oi-green:  #5BD49C;             /* Покупки */
+  --oi-red:    #B91C5C;             /* Продажи — deep magenta */
   --oi-purple: #9B6FFF;
-  --oi-cyan:   #5DA3E9;
+  --oi-cyan:   #FF5C2B;             /* Чистая позиция — фирменный pumpkin */
   --oi-gray:   #A8A8B0;
 }
 
@@ -958,9 +1112,9 @@
   --nav-handle-w: 14px;
   --nav-margin-top: 12px;
 
-  /* Lines */
-  --line-primary-width: 3px;
-  --line-secondary-width: 2.5px;
+  /* Lines (повышена толщина на 10%) */
+  --line-primary-width: 3.3px;
+  --line-secondary-width: 2.75px;
 
   /* Hover dots */
   --dot-primary-r: 6;
@@ -1044,8 +1198,8 @@
     --ann-font: 10px;
     --ann-tooltip-font: 12px;
 
-    --line-primary-width: 2px;
-    --line-secondary-width: 2px;
+    --line-primary-width: 2.2px;
+    --line-secondary-width: 2.2px;
 
     --dot-primary-r: 5;
     --dot-secondary-r: 4;

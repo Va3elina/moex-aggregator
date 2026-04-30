@@ -102,57 +102,108 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
     }
   };
 
+  // Один render для items — переиспользуется в favorites и regular списках.
+  const renderItem = (inst: Instrument) => {
+    const isFavorite = favorites.includes(inst.sectype);
+    return (
+      <div
+        key={inst.sectype}
+        onClick={() => onSelect(inst.sectype, inst.name)}
+        className="instrument-item flex items-center gap-3.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors"
+        style={{ color: 'var(--text-primary)' }}
+      >
+        <InstrumentIcon sectype={inst.sectype} size={36} />
+        <span className="font-bold text-[15px] flex-shrink-0 mr-1.5">{inst.sectype}</span>
+        <span className="text-[13px] truncate flex-1" style={{ color: 'var(--text-secondary)' }}>{inst.name}</span>
+        <button
+          onClick={(e) => toggleFavorite(inst.sectype, e)}
+          className="p-2 transition-colors"
+          style={{ color: isFavorite ? 'var(--accent)' : 'var(--text-muted)' }}
+          aria-label={isFavorite ? 'Убрать из избранных' : 'Добавить в избранные'}
+        >
+          <Star size={20} fill={isFavorite ? 'currentColor' : 'transparent'} />
+        </button>
+      </div>
+    );
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-20">
+    <div className="instrument-modal-root fixed inset-0 z-50 flex items-start justify-center p-4 pt-20">
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+        className="absolute inset-0"
+        style={{ backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(6px)' }}
         onClick={onClose}
       />
 
-      {/* Modal — glassmorphism */}
-      <div className="relative w-full max-w-xl bg-white/[0.08] backdrop-blur-xl rounded-2xl border border-white/15 shadow-2xl max-h-[78vh] overflow-hidden" style={{ boxShadow: '0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.1)' }}>
+      {/* Modal — editorial pill в светлой / glass в dark, через CSS-overrides.
+          Базово: bg-secondary + 2px border + hard shadow. */}
+      <div
+        className="instrument-modal relative w-full max-w-xl rounded-2xl max-h-[78vh] overflow-hidden"
+        style={{
+          backgroundColor: 'var(--bg-secondary)',
+          border: '2px solid var(--text-primary)',
+          boxShadow: 'var(--shadow-hard-chip, 6px 6px 0 var(--text-primary))',
+          color: 'var(--text-primary)',
+        }}
+      >
         {/* Header */}
         <div className="px-6 pt-6 pb-4">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold text-[#F4F6FA]">Выбор актива</h2>
+            <h2 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>Выбор актива</h2>
             <button
               onClick={onClose}
-              className="p-2 text-[#A7ADBC] hover:text-[#F4F6FA] hover:bg-white/5 rounded-lg transition-colors"
+              className="instrument-modal-close p-2 rounded-lg transition-colors"
+              style={{ color: 'var(--text-secondary)' }}
+              aria-label="Закрыть"
             >
               <X size={24} />
             </button>
           </div>
 
-          {/* Search */}
+          {/* Search — outline 2px text-primary в editorial / accent в dark */}
           <div className="relative">
-            <Search size={20} className="absolute left-4 top-1/2 -translate-y-1/2 text-[#A7ADBC]" />
+            <Search
+              size={20}
+              className="absolute left-4 top-1/2 -translate-y-1/2"
+              style={{ color: 'var(--text-secondary)' }}
+            />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Поиск актива"
-              className="w-full pl-12 pr-4 py-4 bg-transparent text-[#F4F6FA] text-base rounded-xl border border-[#C8FF2E] focus:outline-none transition-colors placeholder:text-[#A7ADBC]/50"
+              className="instrument-modal-search w-full pl-12 pr-4 py-4 text-base rounded-xl focus:outline-none transition-colors"
+              style={{
+                backgroundColor: 'var(--bg-primary)',
+                color: 'var(--text-primary)',
+                border: '2px solid var(--text-primary)',
+              }}
               autoFocus
             />
           </div>
 
-          {/* Категории — крупнее для удобства касания на mobile + читаемости */}
+          {/* Категории — chip pills */}
           {!onlyGroups && (
           <div className="flex gap-2 mt-5 flex-wrap">
-            {CATEGORY_FILTERS.map(cat => (
-              <button
-                key={cat.key}
-                onClick={() => setCategoryFilter(cat.key)}
-                className={`px-4 py-2 text-sm font-semibold rounded-full transition-colors ${
-                  categoryFilter === cat.key
-                    ? 'bg-[#C8FF2E] text-[#0B0D12]'
-                    : 'bg-white/[0.06] text-[#A7ADBC] hover:bg-white/10 hover:text-[#F4F6FA]'
-                }`}
-              >
-                {cat.label}
-              </button>
-            ))}
+            {CATEGORY_FILTERS.map(cat => {
+              const active = categoryFilter === cat.key;
+              return (
+                <button
+                  key={cat.key}
+                  onClick={() => setCategoryFilter(cat.key)}
+                  className="instrument-modal-chip px-4 py-2 text-sm font-semibold rounded-full transition-colors"
+                  style={{
+                    backgroundColor: active ? 'var(--accent)' : 'var(--bg-secondary)',
+                    color: active ? 'var(--text-inverse)' : 'var(--text-primary)',
+                    border: '2px solid var(--text-primary)',
+                    boxShadow: active ? 'var(--shadow-hard-chip, 3px 3px 0 var(--text-primary))' : undefined,
+                  }}
+                >
+                  {cat.label}
+                </button>
+              );
+            })}
           </div>
           )}
         </div>
@@ -161,67 +212,44 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
         <div className="overflow-y-auto max-h-[calc(78vh-220px)] px-6 pb-6 styled-scrollbar">
           {loading ? (
             <div className="flex items-center justify-center py-12">
-              <div className="w-8 h-8 border-2 border-[#C8FF2E] border-t-transparent rounded-full animate-spin" />
+              <div
+                className="w-8 h-8 border-2 rounded-full animate-spin"
+                style={{
+                  borderColor: 'var(--accent)',
+                  borderTopColor: 'transparent',
+                }}
+              />
             </div>
           ) : (
             <>
               {/* Favorites */}
               {favoriteInstruments.length > 0 && searchQuery === '' && (
                 <div className="mb-6">
-                  <h3 className="text-xs font-semibold text-[#A7ADBC] uppercase tracking-wider mb-4">
+                  <h3
+                    className="text-xs font-semibold uppercase tracking-wider mb-4"
+                    style={{ color: 'var(--text-secondary)' }}
+                  >
                     Избранные
                   </h3>
-                  <div className="space-y-0.5">
-                    {favoriteInstruments.map((inst) => (
-                      <div
-                        key={inst.sectype}
-                        onClick={() => onSelect(inst.sectype, inst.name)}
-                        className="flex items-center gap-3.5 px-3 py-2.5 rounded-lg hover:bg-white/5 transition-colors cursor-pointer"
-                      >
-                        <InstrumentIcon sectype={inst.sectype} size={36} />
-                        <span className="font-bold text-[15px] text-[#F4F6FA] flex-shrink-0 mr-1.5">{inst.sectype}</span>
-                        <span className="text-[13px] text-[#7A8194] truncate flex-1">{inst.name}</span>
-                        <button
-                          onClick={(e) => toggleFavorite(inst.sectype, e)}
-                          className="p-2 text-[#FFB020]"
-                        >
-                          <Star size={20} fill="#FFB020" />
-                        </button>
-                      </div>
-                    ))}
+                  <div className="instrument-list">
+                    {favoriteInstruments.map(renderItem)}
                   </div>
                 </div>
               )}
 
               {/* Divider */}
               {searchQuery === '' && favoriteInstruments.length > 0 && regularInstruments.length > 0 && (
-                <div className="h-px bg-white/10 mb-6" />
+                <div className="h-px mb-6" style={{ backgroundColor: 'var(--text-primary)', opacity: 0.15 }} />
               )}
 
               {/* Regular */}
               {regularInstruments.length === 0 && favoriteInstruments.length === 0 ? (
-                <div className="py-12 text-center text-[#A7ADBC]">
+                <div className="py-12 text-center" style={{ color: 'var(--text-secondary)' }}>
                   Ничего не найдено
                 </div>
               ) : (
-                <div className="space-y-0.5">
-                  {regularInstruments.map((inst) => (
-                    <div
-                      key={inst.sectype}
-                      onClick={() => onSelect(inst.sectype, inst.name)}
-                      className="flex items-center gap-3.5 px-3 py-2.5 rounded-lg hover:bg-white/5 transition-colors cursor-pointer"
-                    >
-                      <InstrumentIcon sectype={inst.sectype} size={36} />
-                      <span className="font-bold text-[15px] text-[#F4F6FA] flex-shrink-0 mr-1.5">{inst.sectype}</span>
-                      <span className="text-[13px] text-[#7A8194] truncate flex-1">{inst.name}</span>
-                      <button
-                        onClick={(e) => toggleFavorite(inst.sectype, e)}
-                        className="p-2 text-[#5E6576] hover:text-[#FFB020] transition-colors"
-                      >
-                        <Star size={20} />
-                      </button>
-                    </div>
-                  ))}
+                <div className="instrument-list">
+                  {regularInstruments.map(renderItem)}
                 </div>
               )}
             </>

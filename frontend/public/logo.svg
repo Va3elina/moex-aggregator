@@ -1,6 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">
-  <rect x="2.5" y="2.5" width="35" height="35" rx="6" fill="none" stroke="#00E676" stroke-width="3"/>
-  <text x="20" y="29" text-anchor="middle" font-size="26" font-weight="800"
-        font-family="-apple-system, BlinkMacSystemFont, 'IBM Plex Sans', sans-serif"
-        fill="#00E676" letter-spacing="-1">Ф</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <style>
+    path { fill: #FF5C2B; }
+  </style>
+  <path d="M3 3 H13 V8 H8 V13 H3 Z"/>
+  <path d="M29 3 H19 V8 H24 V13 H29 Z"/>
+  <path d="M3 29 H13 V24 H8 V19 H3 Z"/>
+  <path d="M29 29 H19 V24 H24 V19 H29 Z"/>
 </svg>

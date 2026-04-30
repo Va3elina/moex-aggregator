@@ -1,11 +1,11 @@
 {
-    "name": "Фрейм — Аналитика MOEX",
-    "short_name": "Фрейм",
+    "name": "FRAME — Аналитика MOEX",
+    "short_name": "FRAME",
     "description": "Открытый интерес, карта рынка, индекс страха и другие индикаторы Московской биржи",
     "start_url": "/",
     "display": "standalone",
-    "background_color": "#0f1117",
-    "theme_color": "#0f1117",
+    "background_color": "#F4F1EA",
+    "theme_color": "#F4F1EA",
     "orientation": "any",
     "icons": [
         {
