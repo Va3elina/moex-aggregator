@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Проверка логотипов — Фрейм</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, 'Segoe UI', system-ui, sans-serif;
+    background: #0B0D12;
+    color: #F4F6FA;
+    padding: 24px;
+    min-height: 100vh;
+  }
+  h1 { margin: 0 0 8px; font-size: 22px; font-weight: 700; }
+  .sub { color: #7A8194; font-size: 13px; margin-bottom: 16px; }
+  .toolbar {
+    position: sticky; top: 0; z-index: 50;
+    background: rgba(11,13,18,0.85); backdrop-filter: blur(8px);
+    padding: 12px 0; margin: -24px -24px 16px; padding-left: 24px; padding-right: 24px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    display: flex; gap: 12px; align-items: center; flex-wrap: wrap;
+  }
+  .toolbar input[type=text] {
+    padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(255,255,255,0.04); color: #F4F6FA; font-size: 14px; min-width: 220px;
+  }
+  .toolbar button {
+    padding: 8px 14px; border-radius: 8px; border: 0; cursor: pointer;
+    font-weight: 600; font-size: 13px;
+  }
+  .btn-primary { background: #C8FF2E; color: #0B0D12; }
+  .btn-primary:hover { background: #b6eb1f; }
+  .btn-secondary { background: rgba(255,255,255,0.08); color: #F4F6FA; }
+  .btn-secondary:hover { background: rgba(255,255,255,0.14); }
+  .stats { color: #A7ADBC; font-size: 13px; margin-left: auto; }
+  .stats b { color: #C8FF2E; }
+  .group { margin-bottom: 32px; }
+  .group h2 {
+    font-size: 15px; text-transform: uppercase; letter-spacing: 0.05em;
+    color: #A7ADBC; font-weight: 700; margin: 24px 0 12px;
+  }
+  .group-sub {
+    font-size: 13px; color: #7A8194; margin: 16px 0 8px;
+  }
+  .grid {
+    display: grid; gap: 8px;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  }
+  .card {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px;
+    padding: 10px;
+    display: flex; align-items: center; gap: 10px;
+    transition: all 0.15s;
+  }
+  .card.dirty {
+    background: rgba(200,255,46,0.08);
+    border-color: rgba(200,255,46,0.4);
+  }
+  .card.no-logo {
+    background: rgba(255,160,32,0.06);
+    border-color: rgba(255,160,32,0.25);
+  }
+  .logo-btn {
+    width: 48px; height: 48px; flex-shrink: 0; border-radius: 50%;
+    overflow: hidden; cursor: pointer; padding: 0;
+    border: 2px solid rgba(255,255,255,0.1);
+    transition: border-color 0.15s;
+    background: #1a1d24;
+    display: flex; align-items: center; justify-content: center;
+    position: relative;
+  }
+  .logo-btn:hover { border-color: #C8FF2E; }
+  .logo-btn img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .logo-placeholder {
+    width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; color: rgba(255,255,255,0.6);
+    text-align: center; line-height: 1;
+  }
+  .info { min-width: 0; flex: 1; }
+  .ticker { font-weight: 700; font-size: 14px; color: #F4F6FA; }
+  .name { font-size: 12px; color: #A7ADBC; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .meta { font-size: 11px; color: #7A8194; margin-top: 2px; font-family: ui-monospace, monospace; }
+  .meta .arrow { color: #C8FF2E; }
+  .clear-btn {
+    background: transparent; border: 0; color: #7A8194; cursor: pointer;
+    font-size: 18px; padding: 0 4px;
+  }
+  .clear-btn:hover { color: #ff6b6b; }
+
+  /* Modal */
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+    display: none; align-items: flex-start; justify-content: center;
+    z-index: 100; padding: 40px 20px;
+    overflow-y: auto;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal {
+    background: #14171f;
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 16px; padding: 20px; width: 100%; max-width: 720px;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+  }
+  .modal h3 { margin: 0 0 4px; font-size: 16px; }
+  .modal-sub { color: #A7ADBC; font-size: 12px; margin-bottom: 16px; }
+  .modal input {
+    width: 100%; padding: 10px 14px; border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.04);
+    color: #F4F6FA; font-size: 14px; margin-bottom: 14px;
+  }
+  .logo-grid {
+    display: grid; gap: 8px;
+    grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+    max-height: 60vh; overflow-y: auto;
+    padding: 4px;
+  }
+  .logo-cell {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    padding: 8px 4px; border-radius: 8px; cursor: pointer;
+    border: 1px solid transparent;
+    transition: all 0.1s;
+  }
+  .logo-cell:hover { background: rgba(200,255,46,0.08); border-color: rgba(200,255,46,0.4); }
+  .logo-cell.current { background: rgba(200,255,46,0.15); border-color: #C8FF2E; }
+  .logo-cell img { width: 44px; height: 44px; border-radius: 50%; object-fit: contain; background: #1a1d24; }
+  .logo-cell span { font-size: 10px; color: #A7ADBC; font-family: ui-monospace, monospace; text-align: center; }
+  .modal-actions { display: flex; gap: 8px; margin-top: 14px; }
+  .modal-actions button { flex: 1; padding: 10px; border-radius: 8px; border: 0; cursor: pointer; font-weight: 600; font-size: 13px; }
+
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: #A7ADBC; margin-bottom: 12px; }
+  .legend span::before {
+    content: ''; display: inline-block; width: 10px; height: 10px;
+    border-radius: 50%; margin-right: 6px; vertical-align: middle;
+  }
+  .legend .l-ok::before { background: rgba(255,255,255,0.2); }
+  .legend .l-changed::before { background: #C8FF2E; }
+  .legend .l-noLogo::before { background: #FFA020; }
+
+  @media (max-width: 600px) {
+    body { padding: 12px; }
+    .toolbar { margin: -12px -12px 12px; padding: 12px; }
+    .grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="toolbar">
+  <input type="text" id="search" placeholder="Поиск по тикеру или названию…" />
+  <button class="btn-secondary" id="filter-changed">Только изменённые</button>
+  <button class="btn-secondary" id="reset-btn">Сбросить</button>
+  <button class="btn-primary" id="download-btn">⬇ Скачать JSON</button>
+  <span class="stats" id="stats"></span>
+</div>
+
+<h1>Проверка логотипов активов</h1>
+<p class="sub">
+  Кликни по логотипу слева — откроется список всех доступных лого.
+  Выбери правильный или нажми «Без логотипа» если этому тикеру лого не нужно.
+  Затем нажми «Скачать JSON» — файл с правками отправь Вадиму.
+</p>
+
+<div class="legend">
+  <span class="l-ok">не изменено</span>
+  <span class="l-changed">изменено тобой</span>
+  <span class="l-noLogo">помечено как «без лого»</span>
+</div>
+
+<div id="content">
+  <p style="color:#A7ADBC">Загрузка списка активов…</p>
+</div>
+
+<!-- Logo picker modal -->
+<div class="modal-backdrop" id="modal">
+  <div class="modal">
+    <h3 id="modal-title">Выбор логотипа</h3>
+    <div class="modal-sub" id="modal-sub"></div>
+    <input type="text" id="modal-search" placeholder="Поиск лого по имени файла…" />
+    <div class="logo-grid" id="modal-grid"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" id="modal-no-logo">Без логотипа</button>
+      <button class="btn-secondary" id="modal-cancel">Отмена</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ============================================================================
+//  Текущие маппинги — копия из frontend/src/components/InstrumentIcon.tsx
+//  Если эти таблицы меняются на проде, надо обновить и здесь.
+// ============================================================================
+
+const FUT_BASE_TO_LOGO = {
+  AF: 'AFLT', AK: 'AFKS', AL: 'ALRS', AS: 'ASTR',
+  BN: 'BANE', BS: 'BSPB',
+  CH: 'CHMF', CM: 'CBOM', FE: 'FESH', FL: 'FLOT',
+  GK: 'GMKN', GZ: 'GAZP', HD: 'HEAD', HY: 'HYDR',
+  IR: 'IRAO', KM: 'KMAZ', LE: 'LEAS', LK: 'LKOH',
+  MC: 'MTLR', ME: 'MOEX', MG: 'MAGN', MN: 'MGNT', MT: 'MTSS',
+  MV: 'MVID', NB: 'BELU', NM: 'NLMK', NV: 'NVTK', PH: 'PHOR',
+  PI: 'PIKK', PS: 'POSI', PX: 'PLZL',
+  RA: 'RASP', RD: 'RENI', RL: 'RUAL', RN: 'ROSN',
+  RT: 'RTKM', S0: 'SOFL', SC: 'SVCB', SE: 'SPBE',
+  SG: 'SNGSP', SH: 'SFIN', SN: 'SNGS', SO: 'SIBN', SP: 'SBERP',
+  SR: 'SBER', SS: 'SMLT', SZ: 'SGZH',
+  TB: 'T', TN: 'TRNFP', TP: 'TATNP', TT: 'TATN',
+  UN: 'UPRO', VB: 'VTBR', VK: 'VKCO', WU: 'WUSH',
+  X5: 'X5', YD: 'YDEX',
+  SBERF: 'SBER', GAZPF: 'GAZP',
+  BR: 'BRENT', BM: 'BRENT',
+  GD: 'GOLD', GL: 'GOLD', GLDRUBF: 'GOLD',
+  SV: 'SILVER', PT: 'PLATINUM', PD: 'PALLADIUM',
+  NG: 'GAS', NR: 'GAS', FF: 'GAS',
+  W4: 'WHEAT',
+  Si: 'USD', USDRUBF: 'USD', UC: 'USD',
+  Eu: 'EUR', EURRUBF: 'EUR', ED: 'EUR', EG: 'EUR',
+  CR: 'CNY', CNYRUBF: 'CNY',
+  JP: 'JPY', GU: 'GBP',
+  MX: 'MOEX_IDX', MM: 'MOEX_IDX', MY: 'MOEX_IDX',
+  IP: 'MOEX_IDX', IMOEXF: 'MOEX_IDX',
+  RI: 'RTS_IDX', RM: 'RTS_IDX',
+  USD000UTSTOM: 'USD',
+  EUR_RUB__TOM: 'EUR',
+  CNYRUB_TOM: 'CNY',
+  GLDRUB_TOM: 'GOLD',
+  IMOEX: 'MOEX_IDX',
+  RTSI: 'RTS_IDX',
+  MCFTR: 'MOEX_IDX',
+  RGBI: 'BONDS', RGBITR: 'BONDS', RB: 'BONDS',
+  AE: 'AED', AU: 'AUD', CA: 'CAD', CF: 'CHF',
+  HK: 'HKD', KZ: 'KZT', TR: 'TRY', EC: 'EUR_CAD',
+  AN: 'ALUMINUM', CE: 'COPPER', NC: 'NICKEL', ZC: 'ZINC',
+  KC: 'COFFEE', CC: 'COCOA', OJ: 'ORANGE', SA: 'SUGAR',
+};
+
+const NO_LOGO_BASES = new Set([
+  'CS','FN','HO','MA','OG','VI','FS','RVI','RUSFAR3M',
+]);
+
+function extractBase(sectype) {
+  if (sectype.length > 4 && sectype.endsWith('F')) return sectype;
+  if (sectype.length === 3) return sectype.slice(0, 2);
+  return sectype;
+}
+
+function currentLogoFor(sectype) {
+  const base = extractBase(sectype);
+  if (FUT_BASE_TO_LOGO[base]) return FUT_BASE_TO_LOGO[base];
+  if (FUT_BASE_TO_LOGO[sectype]) return FUT_BASE_TO_LOGO[sectype];
+  if (NO_LOGO_BASES.has(base) || NO_LOGO_BASES.has(sectype)) return null;
+  return sectype;
+}
+
+// ============================================================================
+//  Helpers
+// ============================================================================
+
+function esc(str) {
+  if (str == null) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// ============================================================================
+//  State
+// ============================================================================
+
+let availableLogos = [];
+let futuresBases = [];
+let stocks = [];
+let overrides = {};
+let activeKey = null;
+let filterChangedOnly = false;
+
+// ============================================================================
+//  Boot
+// ============================================================================
+
+async function boot() {
+  try {
+    const manifestResp = await fetch('/logos/sprite-manifest.json');
+    const manifest = await manifestResp.json();
+    availableLogos = Object.keys(manifest.logos).sort();
+
+    const [allResp, futResp] = await Promise.all([
+      fetch('/api/instruments'),
+      fetch('/api/instruments?type=futures'),
+    ]);
+    const allData = await allResp.json();
+    const futData = await futResp.json();
+
+    const baseMap = new Map();
+    for (const inst of futData.instruments) {
+      const base = extractBase(inst.sectype);
+      const prev = baseMap.get(base);
+      if (!prev || (inst.daily_volume || 0) > (prev.daily_volume || 0)) {
+        baseMap.set(base, { ...inst, base });
+      }
+    }
+    futuresBases = Array.from(baseMap.values())
+      .map(i => ({
+        base: i.base,
+        sectype: i.sectype,
+        name: i.name,
+        group: i.group || '—',
+        currentLogo: currentLogoFor(i.sectype),
+      }))
+      .sort((a, b) => a.base.localeCompare(b.base));
+
+    stocks = allData.instruments
+      .filter(i => i.type !== 'futures')
+      .map(i => ({
+        sectype: i.sectype,
+        name: i.name,
+        group: i.group || '—',
+        currentLogo: currentLogoFor(i.sectype),
+      }))
+      .reduce((acc, i) => {
+        if (!acc.find(x => x.sectype === i.sectype)) acc.push(i);
+        return acc;
+      }, [])
+      .sort((a, b) => a.sectype.localeCompare(b.sectype));
+
+    const saved = localStorage.getItem('logos-checker-overrides');
+    if (saved) {
+      try { overrides = JSON.parse(saved); } catch (e) { overrides = {}; }
+    }
+
+    render();
+    setupHandlers();
+  } catch (e) {
+    const c = document.getElementById('content');
+    c.textContent = '';
+    const p = document.createElement('p');
+    p.style.color = '#ff6b6b';
+    p.textContent = 'Ошибка загрузки: ' + e.message;
+    c.appendChild(p);
+  }
+}
+
+// ============================================================================
+//  Render — собираем DOM через createElement (не innerHTML с динамикой)
+// ============================================================================
+
+function getEffective(key, original) {
+  return overrides[key] ? overrides[key].logo : original;
+}
+
+function isDirty(key, original) {
+  if (!(key in overrides)) return false;
+  return overrides[key].logo !== original;
+}
+
+function buildCard(key, label, name, group, original, effective, dirty) {
+  const card = document.createElement('div');
+  card.className = effective === null ? 'card no-logo' : (dirty ? 'card dirty' : 'card');
+  card.dataset.key = key;
+
+  // Logo button
+  const btn = document.createElement('button');
+  btn.className = 'logo-btn';
+  btn.dataset.pick = key;
+  btn.dataset.original = original || '';
+  if (effective) {
+    const img = document.createElement('img');
+    img.src = '/logos/' + encodeURIComponent(effective) + '.png';
+    img.alt = effective;
+    const placeholder = document.createElement('div');
+    placeholder.className = 'logo-placeholder';
+    placeholder.style.display = 'none';
+    placeholder.textContent = '404 ' + effective;
+    img.addEventListener('error', () => {
+      img.style.display = 'none';
+      placeholder.style.display = 'flex';
+    });
+    btn.appendChild(img);
+    btn.appendChild(placeholder);
+  } else {
+    const placeholder = document.createElement('div');
+    placeholder.className = 'logo-placeholder';
+    placeholder.textContent = 'нет лого';
+    btn.appendChild(placeholder);
+  }
+  card.appendChild(btn);
+
+  // Info
+  const info = document.createElement('div');
+  info.className = 'info';
+  const tickerEl = document.createElement('div');
+  tickerEl.className = 'ticker';
+  tickerEl.textContent = label;
+  const nameEl = document.createElement('div');
+  nameEl.className = 'name';
+  nameEl.title = name;
+  nameEl.textContent = name;
+  const metaEl = document.createElement('div');
+  metaEl.className = 'meta';
+  if (dirty) {
+    metaEl.appendChild(document.createTextNode((original || '∅') + ' '));
+    const arrow = document.createElement('span');
+    arrow.className = 'arrow';
+    arrow.textContent = '→';
+    metaEl.appendChild(arrow);
+    metaEl.appendChild(document.createTextNode(' ' + (effective || '∅')));
+  } else {
+    metaEl.appendChild(document.createTextNode(original || '∅'));
+  }
+  const groupSpan = document.createElement('span');
+  groupSpan.style.color = '#525968';
+  groupSpan.textContent = ' · ' + group;
+  metaEl.appendChild(groupSpan);
+  info.appendChild(tickerEl);
+  info.appendChild(nameEl);
+  info.appendChild(metaEl);
+  card.appendChild(info);
+
+  // Clear button (only if dirty)
+  if (dirty) {
+    const clearBtn = document.createElement('button');
+    clearBtn.className = 'clear-btn';
+    clearBtn.dataset.clear = key;
+    clearBtn.title = 'Сбросить';
+    clearBtn.textContent = '↺';
+    card.appendChild(clearBtn);
+  }
+
+  return card;
+}
+
+function render() {
+  const search = document.getElementById('search').value.trim().toLowerCase();
+  const matchesSearch = item => !search || item.sectype.toLowerCase().includes(search) ||
+    (item.base && item.base.toLowerCase().includes(search)) ||
+    item.name.toLowerCase().includes(search);
+
+  const content = document.getElementById('content');
+  content.textContent = '';
+
+  // Фьючерсы
+  const futGroup = document.createElement('div');
+  futGroup.className = 'group';
+  const futH2 = document.createElement('h2');
+  futH2.textContent = 'Фьючерсы — страница /oi (' + futuresBases.length + ' баз)';
+  futGroup.appendChild(futH2);
+
+  const futGrid = document.createElement('div');
+  futGrid.className = 'grid';
+  let futShown = 0;
+  for (const item of futuresBases) {
+    if (!matchesSearch(item)) continue;
+    const key = 'futures:' + item.base;
+    const effective = getEffective(key, item.currentLogo);
+    const dirty = isDirty(key, item.currentLogo);
+    if (filterChangedOnly && !dirty) continue;
+    futGrid.appendChild(buildCard(key, item.base, item.name, item.group, item.currentLogo, effective, dirty));
+    futShown++;
+  }
+  if (futShown === 0) {
+    const empty = document.createElement('p');
+    empty.style.color = '#7A8194';
+    empty.textContent = 'Нет совпадений';
+    futGroup.appendChild(empty);
+  } else {
+    futGroup.appendChild(futGrid);
+  }
+  content.appendChild(futGroup);
+
+  // Спот, сгруппированные по category
+  const stockGroup = document.createElement('div');
+  stockGroup.className = 'group';
+  const stockH2 = document.createElement('h2');
+  stockH2.textContent = 'Спот — страница /seasonality (' + stocks.length + ' активов)';
+  stockGroup.appendChild(stockH2);
+
+  const groupsByCategory = new Map();
+  for (const item of stocks) {
+    if (!matchesSearch(item)) continue;
+    const key = 'stock:' + item.sectype;
+    const effective = getEffective(key, item.currentLogo);
+    const dirty = isDirty(key, item.currentLogo);
+    if (filterChangedOnly && !dirty) continue;
+    if (!groupsByCategory.has(item.group)) groupsByCategory.set(item.group, []);
+    groupsByCategory.get(item.group).push({ key, item, effective, dirty });
+  }
+
+  if (groupsByCategory.size === 0) {
+    const empty = document.createElement('p');
+    empty.style.color = '#7A8194';
+    empty.textContent = 'Нет совпадений';
+    stockGroup.appendChild(empty);
+  } else {
+    for (const [groupName, items] of groupsByCategory.entries()) {
+      const h3 = document.createElement('h3');
+      h3.className = 'group-sub';
+      h3.textContent = groupName + ' (' + items.length + ')';
+      stockGroup.appendChild(h3);
+      const grid = document.createElement('div');
+      grid.className = 'grid';
+      for (const { key, item, effective, dirty } of items) {
+        grid.appendChild(buildCard(key, item.sectype, item.name, item.group, item.currentLogo, effective, dirty));
+      }
+      stockGroup.appendChild(grid);
+    }
+  }
+  content.appendChild(stockGroup);
+
+  updateStats();
+}
+
+function updateStats() {
+  let dirty = 0;
+  for (const k of Object.keys(overrides)) {
+    const [type, id] = k.split(':');
+    const item = type === 'futures'
+      ? futuresBases.find(x => x.base === id)
+      : stocks.find(x => x.sectype === id);
+    if (item && overrides[k].logo !== item.currentLogo) dirty++;
+  }
+  const stats = document.getElementById('stats');
+  stats.textContent = '';
+  stats.appendChild(document.createTextNode('Всего: ' + (futuresBases.length + stocks.length) + ' · Изменено: '));
+  const b = document.createElement('b');
+  b.textContent = String(dirty);
+  stats.appendChild(b);
+}
+
+// ============================================================================
+//  Picker modal
+// ============================================================================
+
+function openPicker(key, original) {
+  activeKey = key;
+  const [type, id] = key.split(':');
+  const item = type === 'futures'
+    ? futuresBases.find(x => x.base === id)
+    : stocks.find(x => x.sectype === id);
+  document.getElementById('modal-title').textContent = 'Выбор лого: ' + id;
+  document.getElementById('modal-sub').textContent = item.name + ' · текущее: ' + (original || '«нет лого»');
+  document.getElementById('modal-search').value = '';
+  renderPickerGrid('', original);
+  document.getElementById('modal').classList.add('open');
+  setTimeout(() => document.getElementById('modal-search').focus(), 50);
+}
+
+function renderPickerGrid(filter, original) {
+  const f = filter.trim().toLowerCase();
+  const grid = document.getElementById('modal-grid');
+  grid.textContent = '';
+  const filtered = availableLogos.filter(l => !f || l.toLowerCase().includes(f));
+  if (filtered.length === 0) {
+    const empty = document.createElement('p');
+    empty.style.color = '#7A8194';
+    empty.style.padding = '20px';
+    empty.textContent = 'Ничего не найдено';
+    grid.appendChild(empty);
+    return;
+  }
+  for (const l of filtered) {
+    const cell = document.createElement('div');
+    cell.className = 'logo-cell' + (l === original ? ' current' : '');
+    cell.dataset.logo = l;
+    const img = document.createElement('img');
+    img.src = '/logos/' + encodeURIComponent(l) + '.png';
+    img.alt = l;
+    const span = document.createElement('span');
+    span.textContent = l;
+    cell.appendChild(img);
+    cell.appendChild(span);
+    grid.appendChild(cell);
+  }
+}
+
+function pickLogo(logo) {
+  if (!activeKey) return;
+  const [type, id] = activeKey.split(':');
+  const item = type === 'futures'
+    ? futuresBases.find(x => x.base === id)
+    : stocks.find(x => x.sectype === id);
+  if (logo === item.currentLogo) {
+    delete overrides[activeKey];
+  } else {
+    overrides[activeKey] = { logo };
+  }
+  saveAndRender();
+  closePicker();
+}
+
+function closePicker() {
+  document.getElementById('modal').classList.remove('open');
+  activeKey = null;
+}
+
+function saveAndRender() {
+  localStorage.setItem('logos-checker-overrides', JSON.stringify(overrides));
+  render();
+}
+
+// ============================================================================
+//  Download
+// ============================================================================
+
+function buildOutput() {
+  const futChanges = {};
+  const stockChanges = {};
+
+  for (const [key, val] of Object.entries(overrides)) {
+    const [type, id] = key.split(':');
+    if (type === 'futures') {
+      const item = futuresBases.find(x => x.base === id);
+      if (!item || val.logo === item.currentLogo) continue;
+      futChanges[id] = {
+        sectype_example: item.sectype,
+        name: item.name,
+        group: item.group,
+        current_logo: item.currentLogo,
+        correct_logo: val.logo,
+      };
+    } else {
+      const item = stocks.find(x => x.sectype === id);
+      if (!item || val.logo === item.currentLogo) continue;
+      stockChanges[id] = {
+        name: item.name,
+        group: item.group,
+        current_logo: item.currentLogo,
+        correct_logo: val.logo,
+      };
+    }
+  }
+
+  return {
+    generated_at: new Date().toISOString(),
+    reviewer_note: 'Правки логотипов от коллеги. Применить к FUT_BASE_TO_LOGO в InstrumentIcon.tsx и проверить акции.',
+    futures_corrections: futChanges,
+    stock_corrections: stockChanges,
+    summary: {
+      total_futures_bases: futuresBases.length,
+      total_stocks: stocks.length,
+      changed_futures: Object.keys(futChanges).length,
+      changed_stocks: Object.keys(stockChanges).length,
+    },
+  };
+}
+
+function downloadJSON() {
+  const out = buildOutput();
+  if (out.summary.changed_futures + out.summary.changed_stocks === 0) {
+    if (!confirm('Ты не пометил ни одного изменения. Всё равно скачать пустой файл?')) return;
+  }
+  const blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const stamp = new Date().toISOString().slice(0, 10);
+  a.download = 'frame-logo-corrections-' + stamp + '.json';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ============================================================================
+//  Handlers
+// ============================================================================
+
+function setupHandlers() {
+  document.getElementById('search').addEventListener('input', () => render());
+
+  document.getElementById('filter-changed').addEventListener('click', e => {
+    filterChangedOnly = !filterChangedOnly;
+    e.target.classList.toggle('btn-primary', filterChangedOnly);
+    e.target.classList.toggle('btn-secondary', !filterChangedOnly);
+    render();
+  });
+
+  document.getElementById('reset-btn').addEventListener('click', () => {
+    if (Object.keys(overrides).length === 0) return;
+    if (!confirm('Сбросить ВСЕ изменения?')) return;
+    overrides = {};
+    saveAndRender();
+  });
+
+  document.getElementById('download-btn').addEventListener('click', downloadJSON);
+
+  document.getElementById('content').addEventListener('click', e => {
+    const pickBtn = e.target.closest('[data-pick]');
+    if (pickBtn) {
+      openPicker(pickBtn.dataset.pick, pickBtn.dataset.original || null);
+      return;
+    }
+    const clearBtn = e.target.closest('[data-clear]');
+    if (clearBtn) {
+      delete overrides[clearBtn.dataset.clear];
+      saveAndRender();
+    }
+  });
+
+  document.getElementById('modal-search').addEventListener('input', e => {
+    let original = null;
+    if (activeKey) {
+      const [type, id] = activeKey.split(':');
+      const item = type === 'futures'
+        ? futuresBases.find(x => x.base === id)
+        : stocks.find(x => x.sectype === id);
+      original = item?.currentLogo;
+    }
+    renderPickerGrid(e.target.value, original);
+  });
+
+  document.getElementById('modal-grid').addEventListener('click', e => {
+    const cell = e.target.closest('[data-logo]');
+    if (cell) pickLogo(cell.dataset.logo);
+  });
+
+  document.getElementById('modal-no-logo').addEventListener('click', () => pickLogo(null));
+  document.getElementById('modal-cancel').addEventListener('click', closePicker);
+
+  document.getElementById('modal').addEventListener('click', e => {
+    if (e.target.id === 'modal') closePicker();
+  });
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closePicker();
+  });
+}
+
+boot();
+</script>
+</body>
+</html>
