@@ -367,7 +367,7 @@ export default function OpenInterestPage() {
   const labels = getLabels();
 
   return (
-    <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8">
+    <div className="max-w-[1408px] mx-auto px-4 md:px-6 py-6 md:py-8">
       <PageHeader
         icon={BarChart3}
         title="Открытый интерес"
@@ -523,7 +523,7 @@ export default function OpenInterestPage() {
         primaryColor={COLORS.primary}
         secondaryColor={colors.secondary}
         thirdColor={colors.third}
-        height={600}
+        height={660}
         loading={loading}
         formatValue={(v) => v.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
         primaryLabel={instrumentName || selectedInstrument}
