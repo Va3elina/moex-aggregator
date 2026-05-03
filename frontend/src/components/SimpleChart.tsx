@@ -4,6 +4,8 @@ import ChartNavigator from './ChartNavigator';
 import ChartWatermark from './ChartWatermark';
 import { easeOutCubic, morphPts, ptsToPath, ptsToArea } from '../utils/chartAnimation';
 import { cssVar, GRID, CROSSHAIR, ANIMATION, TOOLTIP } from '../config/chartTheme';
+import { fluid } from '../config/fluidScale';
+import { computeChartTopLineY, getDatePillStyle } from './chart/datePillLayout';
 
 interface DataPoint {
   time: string;
@@ -61,9 +63,9 @@ export default function SimpleChart({
   secondaryData,
   thirdData,
   height = 450,
-  primaryColor = '#6366f1',
-  secondaryColor = '#f59e0b',
-  thirdColor = '#f43f5e',
+  primaryColor = 'var(--accent)',
+  secondaryColor = 'var(--funds-flow-positive)',
+  thirdColor = 'var(--funds-flow-negative)',
   showSecondary = false,
   showThird = false,
   formatValue = (v) => v.toLocaleString('ru-RU'),
@@ -101,12 +103,16 @@ export default function SimpleChart({
   const chartWrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(800);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [vw, setVw] = useState(typeof window !== 'undefined' ? window.innerWidth : 1920);
   const [hoveredAnnotationIdx, setHoveredAnnotationIdx] = useState<number | null>(null);
 
-  // CSS layout tokens — read from CSS variables for responsive adaptation
+  // Все размеры — из единой fluid scale (config/fluidScale.ts + index.css :root).
+  // SVG требует JS-числа (clamp в строке через cssVar не работает — parseFloat → NaN).
   const tokens = useMemo(() => ({
-    fontY: cssVar('--chart-font-y', 16),
-    fontX: cssVar('--chart-font-x', 14),
+    // Y-axis labels (числа слева/справа): на mobile fs-2xs, выше fs-sm
+    fontY: fluid.fs2xs(vw),
+    // X-axis labels (даты под графиком)
+    fontX: fluid.fs2xs(vw),
     fontYWeight: cssVar('--chart-font-y-weight', 600),
     tooltipWidth: cssVar('--tooltip-width', 200),
     dotPrimaryR: cssVar('--dot-primary-r', 6),
@@ -115,10 +121,16 @@ export default function SimpleChart({
     lineSecondaryW: cssVar('--line-secondary-width', 2.5),
     dateTopLegendTop: cssVar('--date-top-legend-top', 38),
     dateTopLegendBottom: cssVar('--date-top-legend-bottom', 8),
-    annSize: cssVar('--ann-size', 28),
-    annFont: cssVar('--ann-font', 11),
-    annTooltipFont: cssVar('--ann-tooltip-font', 13),
-  }), [isMobile]); // recalc on mobile change
+    // Annotation chips над графиком (звёздочки/цифры событий)
+    annSize: fluid.icoSm(vw),
+    annFont: fluid.fs2xs(vw),
+    annTooltipFont: fluid.fsXs(vw),
+    // Зазор между текстом Y-оси и chart area
+    axisGap: fluid.sp2(vw),
+    // Tooltip card sizing — fluid от viewport
+    tooltipCardWidth: vw < 768 ? Math.max(110, vw * 0.42) : 200,
+    tooltipLineHeight: vw < 768 ? Math.round(fluid.fsXs(vw) * 1.7) : 26,
+  }), [vw]);
 
   // Navigator: диапазон видимых данных (индексы в массиве data)
   const [navRange, setNavRange] = useState<[number, number]>([0, Math.max(0, data.length - 1)]);
@@ -222,6 +234,7 @@ export default function SimpleChart({
         setWidth(containerRef.current.clientWidth);
       }
       setIsMobile(window.innerWidth < 768);
+      setVw(window.innerWidth);
     };
     updateWidth();
     window.addEventListener('resize', updateWidth);
@@ -236,15 +249,33 @@ export default function SimpleChart({
     }
   }, [data.length > 0]);
 
-  // Адаптивные отступы — из CSS variables
-  const defaultPad = {
-    top: cssVar('--chart-pad-top', isMobile ? 16 : 19),
-    bottom: cssVar('--chart-pad-bottom', isMobile ? 40 : 50),
-    left: cssVar('--chart-pad-left', isMobile ? 45 : 100),
-    right: showSecondary
-      ? cssVar('--chart-pad-right-dual', isMobile ? 20 : 95)
-      : cssVar('--chart-pad-right-single', isMobile ? 20 : 12),
-  };
+  // Адаптивные отступы. Padding-left/right считается под МАКСИМАЛЬНУЮ ширину
+  // Y-axis label, чтобы 6-знач числа (тысячи/миллионы) влезали без клиппинга.
+  // На desktop падаем в CSS vars (там точные значения для конкретных breakpoints).
+  const defaultPad = (() => {
+    if (isMobile) {
+      // ~7.5 chars worth of digits @ fluid font width.
+      // Запас: при 6 знаках (например "159 543") и font 11px нужно ~40px.
+      const charW = tokens.fontY * 0.62; // approximate digit width
+      const labelMax = charW * 7 + tokens.axisGap * 2;
+      return {
+        top: fluid.sp4(vw),
+        bottom: fluid.sp6(vw) + 16,  // место под X-axis даты
+        left: Math.max(40, labelMax),
+        right: showSecondary
+          ? Math.max(44, labelMax + 4)
+          : Math.max(36, labelMax - 4),
+      };
+    }
+    return {
+      top: cssVar('--chart-pad-top', 19),
+      bottom: cssVar('--chart-pad-bottom', 50),
+      left: cssVar('--chart-pad-left', 100),
+      right: showSecondary
+        ? cssVar('--chart-pad-right-dual', 95)
+        : cssVar('--chart-pad-right-single', 12),
+    };
+  })();
   const padding = {
     ...defaultPad,
     ...(chartPadding && !isMobile ? { left: chartPadding.left ?? defaultPad.left, right: chartPadding.right ?? defaultPad.right } : {}),
@@ -344,13 +375,17 @@ export default function SimpleChart({
       })
       : [];
 
-    // X ticks — адаптивно:
-    //   mobile (< 640px): 4 тика (иначе даты налезают)
-    //   tablet (< 1024px): 5 тиков
-    //   desktop: 7 тиков
-    const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
-    const isTablet = typeof window !== 'undefined' && window.innerWidth < 1024;
-    const maxTicks = isMobile ? 4 : isTablet ? 5 : 7;
+    // X ticks — адаптивно по реальной ширине chart area (без padding'ов осей),
+    // чтобы даты не налезали. На 320px viewport chartWidth ≈ 240px → 3 тика.
+    //   < 200px chartWidth: 3 тика
+    //   < 320px:           4 тика
+    //   < 520px:           5 тиков
+    //   иначе:             7 тиков
+    const maxTicks =
+      chartWidth < 200 ? 3 :
+      chartWidth < 320 ? 4 :
+      chartWidth < 520 ? 5 :
+      7;
     const xTickCount = Math.min(maxTicks, displayData.length);
     // Equal-spaced positions: x = (i/(N-1)) * chartWidth.
     // Дата подбирается ближайшая к этой позиции. Так ticks стабильны при
@@ -693,13 +728,22 @@ export default function SimpleChart({
     }, 1500);
   };
 
+  // Зарезервированная высота loading/empty state'а должна МАТЧИТЬ финальный layout —
+  // иначе CLS jump когда данные приедут. Loaded version: p-5 (40) + legend (~36 если top)
+  // + svg (effectiveHeight) + navigator (~64 если показан). Зарезервируем эту сумму.
+  const placeholderHeight =
+    effectiveHeight
+    + 40 // p-5 top + bottom
+    + (legendPosition === 'top' ? 36 : 0) // legend block
+    + (showNavigator ? 64 : 0); // navigator + nav-mt
+
   // Показываем полный лоадер только если нет данных вообще
   if (data.length === 0 && loading) {
     return (
-      <div ref={containerRef} className="rounded-2xl flex items-center justify-center bg-theme-secondary" style={{ height: effectiveHeight }}>
-        <div className="flex items-center gap-3 text-theme-secondary">
-          <div className="w-6 h-6 border-2 border-[#C8FF2E] border-t-transparent rounded-full animate-spin" />
-          <span className="text-lg">Загрузка...</span>
+      <div ref={containerRef} className="rounded-2xl flex items-center justify-center bg-theme-primary border border-theme" style={{ height: placeholderHeight }}>
+        <div className="flex items-center text-theme-secondary" style={{ gap: 'var(--sp-3)' }}>
+          <div className="w-6 h-6 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
+          <span style={{ fontSize: 'var(--fs-base)' }}>Загрузка...</span>
         </div>
       </div>
     );
@@ -707,7 +751,7 @@ export default function SimpleChart({
 
   if (data.length === 0 && !loading) {
     return (
-      <div ref={containerRef} className="rounded-2xl flex items-center justify-center bg-theme-secondary" style={{ height: effectiveHeight }}>
+      <div ref={containerRef} className="rounded-2xl flex items-center justify-center bg-theme-primary border border-theme" style={{ height: placeholderHeight }}>
         <p className="text-theme-secondary text-lg">Нет данных для отображения</p>
       </div>
     );
@@ -719,22 +763,23 @@ export default function SimpleChart({
   const changePercent = firstValue !== 0 ? (change / firstValue) * 100 : 0;
   const isPositive = change >= 0;
 
-  // Блок легенды — переиспользуем в двух местах
+  // Блок легенды — все размеры через CSS vars из fluid scale.
+  // CSS-context: var(--fs-sm) сам резолвит clamp() на любом viewport.
   const legendBlock = (
-    <div className="flex gap-5 text-sm flex-wrap">
-      <span className="flex items-center gap-2">
-        <span className="w-3 h-3 rounded-full" style={{ backgroundColor: primaryColor }} />
+    <div className="flex flex-wrap items-center" style={{ gap: 'var(--sp-4)', fontSize: 'var(--fs-sm)' }}>
+      <span className="flex items-center" style={{ gap: 'var(--sp-2)' }}>
+        <span className="rounded-full flex-shrink-0" style={{ width: 'var(--ico-xs)', height: 'var(--ico-xs)', backgroundColor: primaryColor }} />
         <span className="text-theme-primary font-medium">{primaryLabel}</span>
       </span>
       {showSecondary && (
-        <span className="flex items-center gap-2">
-          <span className="w-3 h-3 rounded-full" style={{ backgroundColor: secondaryColor }} />
+        <span className="flex items-center" style={{ gap: 'var(--sp-2)' }}>
+          <span className="rounded-full flex-shrink-0" style={{ width: 'var(--ico-xs)', height: 'var(--ico-xs)', backgroundColor: secondaryColor }} />
           <span className="text-theme-primary font-medium">{secondaryLabel}</span>
         </span>
       )}
       {showThird && (
-        <span className="flex items-center gap-2">
-          <span className="w-3 h-3 rounded-full" style={{ backgroundColor: thirdColor }} />
+        <span className="flex items-center" style={{ gap: 'var(--sp-2)' }}>
+          <span className="rounded-full flex-shrink-0" style={{ width: 'var(--ico-xs)', height: 'var(--ico-xs)', backgroundColor: thirdColor }} />
           <span className="text-theme-primary font-medium">{thirdLabel}</span>
         </span>
       )}
@@ -743,37 +788,44 @@ export default function SimpleChart({
 
   return (
     <div className="rounded-2xl p-5 bg-theme-primary border border-theme relative">
-      {/* Кнопка переключения линия/гистограмма */}
+      {/* Кнопка переключения линия/гистограмма — editorial-style */}
       {allowHistogram && (
         <button
           onClick={() => !histogramDisabled && setChartMode(m => m === 'line' ? 'histogram' : 'line')}
           disabled={histogramDisabled}
-          className={`absolute top-4 ${showDownloadButton ? 'right-14' : 'right-4'} z-10 flex items-center justify-center w-9 h-9 bg-theme-tertiary/90 backdrop-blur-sm rounded-lg border border-theme transition-all duration-150 ease-out ${histogramDisabled
-            ? 'text-theme-muted/40 cursor-not-allowed opacity-40'
-            : 'text-theme-secondary hover:text-[#C8FF2E] hover:border-[#C8FF2E]/30 hover:scale-110 active:scale-95 active:bg-[#0B0D12]'
-            }`}
+          className={`editorial-press absolute top-4 ${showDownloadButton ? 'right-14' : 'right-4'} z-10 flex items-center justify-center w-9 h-9 rounded-lg ${histogramDisabled ? 'cursor-not-allowed opacity-40' : ''}`}
+          style={{
+            background: 'var(--bg-primary)',
+            border: '1.5px solid var(--text-primary)',
+            color: histogramDisabled ? 'var(--text-muted)' : 'var(--text-primary)',
+          }}
           title={histogramDisabled ? 'Гистограмма недоступна в этом режиме' : chartMode === 'line' ? 'Переключить на гистограмму' : 'Переключить на линию'}
         >
           {chartMode === 'line' ? <BarChart2 size={18} /> : <TrendingUp size={18} />}
         </button>
       )}
 
-      {/* Кнопка скачивания */}
+      {/* Кнопка скачивания — editorial-style */}
       {showDownloadButton && (
         <button
           onClick={downloadChart}
-          className="absolute top-4 right-4 z-10 flex items-center justify-center w-9 h-9 bg-theme-tertiary/90 backdrop-blur-sm rounded-lg border border-theme text-theme-secondary hover:text-[#C8FF2E] hover:border-[#C8FF2E]/30 hover:scale-110 active:scale-95 active:bg-[#0B0D12] transition-all duration-150 ease-out"
+          className="editorial-press absolute top-4 right-4 z-10 flex items-center justify-center w-9 h-9 rounded-lg"
+          style={{
+            background: 'var(--bg-primary)',
+            border: '1.5px solid var(--text-primary)',
+            color: 'var(--text-primary)',
+          }}
           title="Скачать график как PNG"
         >
           <Download size={18} />
         </button>
       )}
 
-      {/* Маленький индикатор загрузки поверх графика */}
+      {/* Маленький индикатор загрузки поверх графика — paper-style без glass */}
       {loading && (
-        <div className={`absolute top-4 ${allowHistogram && showDownloadButton ? 'right-[6.5rem]' : allowHistogram || showDownloadButton ? 'right-16' : 'right-4'} z-10 flex items-center gap-2 bg-theme-tertiary/90 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-theme`}>
-          <div className="w-4 h-4 border-2 border-[#C8FF2E] border-t-transparent rounded-full animate-spin" />
-          <span className="text-xs text-theme-secondary">Обновление...</span>
+        <div className={`absolute top-4 ${allowHistogram && showDownloadButton ? 'right-[6.5rem]' : allowHistogram || showDownloadButton ? 'right-16' : 'right-4'} z-10 flex items-center rounded-lg border border-theme shadow-md`} style={{ background: 'var(--bg-primary)', padding: 'var(--sp-2) var(--sp-3)', gap: 'var(--sp-2)' }}>
+          <div className="w-4 h-4 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
+          <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-xs)' }}>Обновление...</span>
         </div>
       )}
 
@@ -808,6 +860,7 @@ export default function SimpleChart({
           ref={svgRef}
           width={width}
           height={effectiveHeight}
+          overflow="visible"
           className="cursor-crosshair select-none"
           style={{ touchAction: 'none', backgroundColor: 'var(--bg-primary)' }}
           onMouseMove={handleMouseMove}
@@ -840,7 +893,7 @@ export default function SimpleChart({
                   strokeWidth="1"
                 />
                 <text
-                  x={-12}
+                  x={-tokens.axisGap}
                   y={tick.y}
                   textAnchor="end"
                   dominantBaseline="middle"
@@ -858,7 +911,7 @@ export default function SimpleChart({
             {showSecondary && targetCalc.secYTicks && targetCalc.secYTicks.map((tick, i) => (
               <text
                 key={`sec-${i}`}
-                x={chartWidth + 12}
+                x={chartWidth + tokens.axisGap}
                 y={tick.y}
                 textAnchor="start"
                 dominantBaseline="middle"
@@ -891,10 +944,13 @@ export default function SimpleChart({
                       strokeWidth="1"
                     />
                   )}
+                  {/* Все ticks с anchor='middle' для визуально равномерных интервалов.
+                      Крайние тексты могут чуть выходить за chart area, но SVG
+                      overflow=visible + wrapper padding это позволяет. */}
                   <text
                     x={tick.x}
                     y={chartHeight + 30}
-                    textAnchor={isFirst ? 'start' : isLast ? 'end' : 'middle'}
+                    textAnchor="middle"
                     fill="var(--axis-color, #9CA3B8)"
                     fontSize={tokens.fontX}
                     fontWeight={tokens.fontYWeight}
@@ -1125,7 +1181,7 @@ export default function SimpleChart({
 
           {/* Тултип: дата вверху вертикальной линии + карточка значений */}
           {tooltip.visible && (() => {
-            const cardWidth = tokens.tooltipWidth;
+            const cardWidth = tokens.tooltipCardWidth;
             const isRightHalf = tooltip.x > padding.left + chartWidth / 2;
             let cardX = isRightHalf
               ? tooltip.x - cardWidth - 8
@@ -1146,7 +1202,8 @@ export default function SimpleChart({
               lines.push({ color: thirdColor, label: thirdLabel, value: fmtThird(tooltip.thirdValue) });
             }
 
-            const cardHeight = 8 + lines.length * 26 + 8;
+            // Padding 8px сверху/снизу + lineHeight per row, fluid от vw
+            const cardHeight = 16 + lines.length * tokens.tooltipLineHeight;
 
             return (
               <>
@@ -1159,14 +1216,14 @@ export default function SimpleChart({
                   width={cardWidth}
                   height={cardHeight}
                 >
-                  <div className={`${TOOLTIP.containerClass} pointer-events-none`}>
+                  <div className={`${TOOLTIP.containerClass} pointer-events-none`} style={TOOLTIP.containerStyle}>
                     {lines.map((line, i) => (
-                      <div key={i} className="flex items-center justify-between gap-2 py-0.5">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <span className={`${TOOLTIP.dotSize} flex-shrink-0`} style={{ backgroundColor: line.color }} />
-                          <span className={`${TOOLTIP.labelClass} truncate`}>{line.label}</span>
+                      <div key={i} className="flex items-center justify-between py-0.5" style={{ gap: 'var(--sp-2)' }}>
+                        <div className="flex items-center min-w-0" style={{ gap: 'var(--sp-1)' }}>
+                          <span className={TOOLTIP.dotClass} style={{ ...TOOLTIP.dotStyle, backgroundColor: line.color }} />
+                          <span className={`${TOOLTIP.labelClass} truncate`} style={TOOLTIP.labelStyle}>{line.label}</span>
                         </div>
-                        <span className={`${TOOLTIP.valueClass} text-theme-primary whitespace-nowrap`}>{line.value}</span>
+                        <span className={`${TOOLTIP.valueClass} text-theme-primary whitespace-nowrap`} style={TOOLTIP.valueStyle}>{line.value}</span>
                       </div>
                     ))}
                   </div>
@@ -1231,7 +1288,7 @@ export default function SimpleChart({
               </div>
               {/* Тултип при hover */}
               <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block pointer-events-none">
-                <div className="bg-theme-tertiary/95 backdrop-blur-sm rounded-xl border border-theme shadow-xl whitespace-nowrap" style={{ padding: 'var(--ann-tooltip-padding, 10px 16px)' }}>
+                <div className="rounded-xl border border-theme shadow-md whitespace-nowrap" style={{ background: 'var(--bg-primary)', padding: 'var(--sp-3) var(--sp-4)' }}>
                   <span className="font-semibold text-theme-primary" style={{ fontSize: tokens.annTooltipFont }}>{ann.description}</span>
                 </div>
               </div>
@@ -1255,32 +1312,33 @@ export default function SimpleChart({
 
       </div>
 
-      {/* Плавающая дата аннотации — тот же стиль и позиция что обычная дата */}
+      {/* Плавающая дата аннотации — единая логика через computeChartTopLineY/getDatePillStyle */}
       {hoveredAnnotationIdx !== null && annotations && (() => {
         const ann = annotations[hoveredAnnotationIdx];
         if (!ann) return null;
+        const wrap = chartWrapRef.current;
+        if (!wrap) return null;
         const dataIdx = displayData.findIndex(d => d.time.slice(0, 10) === ann.time.slice(0, 10));
         if (dataIdx === -1) return null;
         const x = padding.left + (dataIdx / Math.max(displayData.length - 1, 1)) * chartWidth;
         const annDate = new Date(ann.time).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' });
+        const topLineY = computeChartTopLineY({ wrapper: wrap, paddingTop: padding.top });
         return (
           <div
             className="absolute z-20 pointer-events-none"
-            style={{
-              left: x + 20,
-              top: legendPosition === 'top' ? tokens.dateTopLegendTop : tokens.dateTopLegendBottom,
-              transform: 'translateX(-50%)',
-            }}
+            style={getDatePillStyle(wrap.offsetLeft + x, topLineY)}
           >
-            <span className={`${TOOLTIP.dateClass} whitespace-nowrap`}>
+            <span className={`${TOOLTIP.dateClass} whitespace-nowrap`} style={TOOLTIP.dateStyle}>
               {annDate}
             </span>
           </div>
         );
       })()}
 
-      {/* HTML тултип даты — над SVG, вне chartWrapRef чтобы не сдвигался */}
+      {/* HTML тултип даты — единая логика */}
       {tooltip.visible && (() => {
+        const wrap = chartWrapRef.current;
+        if (!wrap) return null;
         const d = new Date(tooltip.time);
         const dateStr = d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' });
         const hours = d.getHours();
@@ -1288,16 +1346,13 @@ export default function SimpleChart({
         const htmlDateLabel = (!hideTime && (hours !== 0 || minutes !== 0))
           ? `${dateStr} ${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`
           : dateStr;
+        const topLineY = computeChartTopLineY({ wrapper: wrap, paddingTop: padding.top });
         return (
           <div
             className="absolute z-20 pointer-events-none"
-            style={{
-              left: tooltip.x + 20,
-              top: legendPosition === 'top' ? tokens.dateTopLegendTop : tokens.dateTopLegendBottom,
-              transform: 'translateX(-50%)',
-            }}
+            style={getDatePillStyle(wrap.offsetLeft + tooltip.x, topLineY)}
           >
-            <span className={`${TOOLTIP.dateClass} whitespace-nowrap`}>
+            <span className={`${TOOLTIP.dateClass} whitespace-nowrap`} style={TOOLTIP.dateStyle}>
               {htmlDateLabel}
             </span>
           </div>

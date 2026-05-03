@@ -10,6 +10,9 @@ interface ChartNavigatorProps {
     onChange: (startIdx: number, endIdx: number, isDrag: boolean) => void;
     color?: string;
     height?: number;
+    /** Показывать мини-line preview данных внутри. Default true.
+        Для гистограмм (FlowsHistogram) ставим false — line plot не подходит. */
+    showPreview?: boolean;
 }
 
 const HANDLE_W = 14;
@@ -24,8 +27,9 @@ let lastKnownWidth = 0;
 export default function ChartNavigator({
     data,
     onChange,
-    color = '#6366f1',
+    color = 'var(--accent)',
     height = 52,
+    showPreview = true,
 }: ChartNavigatorProps) {
     const containerRef = useRef<HTMLDivElement>(null);
     const [width, setWidth] = useState(lastKnownWidth);
@@ -209,7 +213,7 @@ export default function ChartNavigator({
                         <stop offset="100%" stopColor={color} stopOpacity="0.03" />
                     </linearGradient>
                 </defs>
-                {miniPath && (
+                {showPreview && miniPath && (
                     <>
                         <path className="nav-mini-area" d={miniPath.area} fill={`url(#${gradId})`} />
                         <path className="nav-mini-line" d={miniPath.line} fill="none" stroke={color} strokeWidth="1" opacity="0.5" vectorEffect="non-scaling-stroke" />

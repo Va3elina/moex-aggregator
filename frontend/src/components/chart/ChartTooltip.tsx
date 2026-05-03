@@ -58,7 +58,7 @@ export default function ChartTooltip({ x, y, children, flipAt }: ChartTooltipPro
         top: Math.max(y - 40, 4),
       }}
     >
-      <div ref={cardRef} className={TOOLTIP.containerClass}>
+      <div ref={cardRef} className={TOOLTIP.containerClass} style={TOOLTIP.containerStyle}>
         {children}
       </div>
     </div>
@@ -76,10 +76,10 @@ interface TooltipRowProps {
 
 export function TooltipRow({ color, label, value, valueClass }: TooltipRowProps) {
   return (
-    <div className="flex items-center gap-2">
-      <span className={TOOLTIP.dotSize} style={{ backgroundColor: color }} />
-      <span className={TOOLTIP.labelClass}>{label}</span>
-      <span className={`${TOOLTIP.valueClass} ml-auto pl-2 ${valueClass ?? ''}`} style={{ color }}>
+    <div className="flex items-center" style={{ gap: 'var(--sp-2)' }}>
+      <span className={TOOLTIP.dotClass} style={{ ...TOOLTIP.dotStyle, backgroundColor: color }} />
+      <span className={TOOLTIP.labelClass} style={TOOLTIP.labelStyle}>{label}</span>
+      <span className={`${TOOLTIP.valueClass} ml-auto pl-2 ${valueClass ?? ''}`} style={{ ...TOOLTIP.valueStyle, color }}>
         {value}
       </span>
     </div>
