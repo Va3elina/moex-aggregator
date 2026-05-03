@@ -89,12 +89,15 @@ export default function Dropdown<T extends string>({
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="frame-dropdown-trigger flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-full"
+        className="frame-dropdown-trigger flex items-center font-semibold rounded-full"
         style={{
           backgroundColor: 'var(--bg-secondary)',
           color: 'var(--text-primary)',
           border: '2px solid var(--text-primary)',
           minWidth: minWidth,
+          fontSize: 'var(--fs-sm)',
+          padding: 'var(--sp-2) var(--sp-4)',
+          gap: 'var(--sp-2)',
           transition: 'transform 0.15s ease, box-shadow 0.15s ease',
         }}
       >

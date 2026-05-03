@@ -1,17 +1,13 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 
-// Список доступных тем:
-//   okx              — основная dark, safe default
-//   pro              — экспериментальная "де-AI'нутая"
-//   editorial-light  — editorial newspaper, тёплая бумага
-//   editorial-dark   — editorial newspaper, тёплый чёрный
-// Остальные темы (dark, binance, ocean, sunset, light, quant, swiss)
-// остаются в index.css как dead code — не удалили на случай возврата.
+// Список доступных тем (UI):
+//   editorial-light  — editorial newspaper, тёплая бумага (солнце)
+//   editorial-dark   — editorial newspaper, тёплый чёрный (луна)
+// Скрыты но не удалены (на случай возврата): okx, pro.
+// Остальные (dark, binance, ocean, sunset, light, quant, swiss) — dead code в index.css.
 export const THEMES = [
-    { id: 'okx',              name: 'OKX Green',       icon: '🌿' },
-    { id: 'pro',              name: 'Pro (тест)',      icon: '⚡' },
-    { id: 'editorial-light',  name: 'Editorial Light', icon: '📰' },
-    { id: 'editorial-dark',   name: 'Editorial Dark',  icon: '🖤' },
+    { id: 'editorial-light',  name: 'Light', icon: 'sun'  },
+    { id: 'editorial-dark',   name: 'Dark',  icon: 'moon' },
 ] as const;
 
 export type ThemeId = typeof THEMES[number]['id'];
@@ -42,12 +38,15 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 export function ThemeProvider({ children }: { children: ReactNode }) {
     const [theme, setThemeState] = useState<ThemeId>(() => {
         const saved = localStorage.getItem('theme') as ThemeId;
-        return THEMES.some(t => t.id === saved) ? saved : 'okx';
+        return THEMES.some(t => t.id === saved) ? saved : 'editorial-dark';
     });
 
+    // Accent зафиксирован на pumpkin (рыжий — фирменный цвет Фрейма).
+    // Picker убран из UI; ACCENTS API оставлен для обратной совместимости (StylePreviewPage).
     const [accent, setAccentState] = useState<AccentId>(() => {
         const saved = localStorage.getItem('accent') as AccentId;
-        return ACCENTS.some(a => a.id === saved) ? saved : 'default';
+        if (ACCENTS.some(a => a.id === saved)) return saved;
+        return 'pumpkin';
     });
 
     const currentTheme = THEMES.find(t => t.id === theme) || THEMES[0];

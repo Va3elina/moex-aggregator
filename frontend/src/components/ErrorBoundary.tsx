@@ -2,6 +2,10 @@ import { Component, type ReactNode } from 'react';
 
 interface Props {
   children: ReactNode;
+  /** При смене этого ключа ErrorBoundary сбросится в чистое состояние.
+      Передавай location.pathname → на каждой смене URL boundary само-восстановится,
+      даже если предыдущая страница вылетела с ошибкой. */
+  resetKey?: string;
 }
 
 interface State {
@@ -21,6 +25,16 @@ export default class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
     console.error('ErrorBoundary caught:', error, info.componentStack);
+  }
+
+  componentDidUpdate(prevProps: Props) {
+    // Сбрасываем error state когда меняется resetKey (обычно — pathname).
+    // Без этого: страница вылетает → ErrorBoundary показывает fallback навсегда,
+    // даже если пользователь кликает другие nav-ссылки. URL меняется, но boundary
+    // продолжает отрисовывать "Что-то пошло не так".
+    if (this.state.hasError && prevProps.resetKey !== this.props.resetKey) {
+      this.setState({ hasError: false, error: null });
+    }
   }
 
   render() {

@@ -1,4 +1,5 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -37,12 +38,34 @@ function HomeRoute() {
   return isAuthenticated ? <OverviewPage /> : <LandingPage />;
 }
 
+/** ErrorBoundary с автосбросом на смене URL.
+    Если страница падает — навигация на другой роут восстановит boundary
+    автоматически. Без этого hasError=true залипает навсегда. */
+function RouterErrorBoundary({ children }: { children: React.ReactNode }) {
+  const location = useLocation();
+  return <ErrorBoundary resetKey={location.pathname}>{children}</ErrorBoundary>;
+}
+
+/** Auto scroll-to-top на смене pathname.
+    React Router 6 не делает этого автоматически. Без скролла:
+    - пользователь видит низ предыдущей страницы наложенный на новую
+    - useFitToViewport получает отрицательный anchor.top → растягивает chart
+    - вообще теряется ощущение «новая страница» */
+function ScrollToTop() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
+  return null;
+}
+
 export default function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-      <ErrorBoundary>
       <BrowserRouter>
+      <ScrollToTop />
+      <RouterErrorBoundary>
         <Routes>
           {/* Auth callback — без Layout */}
           <Route path="/auth/callback/google" element={<AuthCallback />} />
@@ -82,8 +105,8 @@ export default function App() {
             <Route path="/billing/redeem" element={<BillingRedeemPage />} />
           </Route>
         </Routes>
+      </RouterErrorBoundary>
       </BrowserRouter>
-      </ErrorBoundary>
       </AuthProvider>
     </ThemeProvider>
   );

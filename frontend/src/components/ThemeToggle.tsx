@@ -1,0 +1,69 @@
+import { useTheme } from '../contexts/ThemeContext';
+
+export default function ThemeToggle() {
+  const { theme, setTheme } = useTheme();
+  const isDark = theme === 'editorial-dark';
+
+  const toggle = () => setTheme(isDark ? 'editorial-light' : 'editorial-dark');
+
+  return (
+    <button
+      onClick={toggle}
+      aria-label={isDark ? 'Светлая тема' : 'Тёмная тема'}
+      title={isDark ? 'Светлая тема' : 'Тёмная тема'}
+      className="editorial-press relative grid place-items-center w-8 h-8 lg:w-9 lg:h-9 xl:w-10 xl:h-10 overflow-hidden"
+      style={{
+        color: 'var(--text-primary)',
+        border: '1.5px solid var(--text-primary)',
+        borderRadius: 999,
+        backgroundColor: 'transparent',
+      }}
+    >
+      {/* Sun — видна в light. Лучи разлетаются + центр пульсирует. */}
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="absolute transition-all duration-500 ease-out"
+        style={{
+          width: 'clamp(14px, 1vw + 0.5rem, 22px)',
+          height: 'clamp(14px, 1vw + 0.5rem, 22px)',
+          opacity: isDark ? 0 : 1,
+          transform: isDark ? 'rotate(-90deg) scale(0.4)' : 'rotate(0) scale(1)',
+        }}
+      >
+        <circle cx="12" cy="12" r="4" fill="var(--accent)" stroke="var(--accent)" />
+        <path d="M12 2v2" />
+        <path d="M12 20v2" />
+        <path d="M4.93 4.93l1.41 1.41" />
+        <path d="M17.66 17.66l1.41 1.41" />
+        <path d="M2 12h2" />
+        <path d="M20 12h2" />
+        <path d="M4.93 19.07l1.41-1.41" />
+        <path d="M17.66 6.34l1.41-1.41" />
+      </svg>
+
+      {/* Moon — видна в dark. Acccent-fill, плавно влетает. */}
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="absolute transition-all duration-500 ease-out"
+        style={{
+          width: 'clamp(14px, 1vw + 0.5rem, 22px)',
+          height: 'clamp(14px, 1vw + 0.5rem, 22px)',
+          opacity: isDark ? 1 : 0,
+          transform: isDark ? 'rotate(0) scale(1)' : 'rotate(90deg) scale(0.4)',
+        }}
+      >
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" fill="var(--accent)" stroke="var(--accent)" />
+      </svg>
+    </button>
+  );
+}

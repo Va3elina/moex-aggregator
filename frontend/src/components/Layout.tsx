@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { useTheme, ACCENTS } from '../contexts/ThemeContext';
+import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useSSE } from '../hooks/useSSE';
 import { Menu, X, LogIn } from 'lucide-react';
 import Logo from './Logo';
 import FrameLogo from './FrameLogo';
+import ThemeToggle from './ThemeToggle';
 
 const NAV_ITEMS: { path: string; label: string; disabled?: boolean }[] = [
   { path: '/fear', label: 'Индекс страха' },
@@ -19,21 +20,12 @@ const NAV_ITEMS: { path: string; label: string; disabled?: boolean }[] = [
 ];
 
 export default function Layout() {
-  const { cycleTheme, themeName, themeIcon, theme, accent, setAccent } = useTheme();
+  const { theme } = useTheme();
   const { user, isAuthenticated } = useAuth();
   const { connected } = useSSE();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const isEditorial = theme.startsWith('editorial');
-
-  // Accent cycler — только в editorial. Бежит default → pumpkin → default.
-  const cycleAccent = () => {
-    const order = ['default', 'pumpkin'] as const;
-    const idx = order.indexOf(accent as typeof order[number]);
-    const next = order[(idx + 1) % order.length] || 'default';
-    setAccent(next);
-  };
-  const accentSwatch = ACCENTS.find((a) => a.id === accent)?.swatch || 'transparent';
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: 'var(--bg-primary)' }}>
@@ -61,14 +53,14 @@ export default function Layout() {
               ) : (
                 <>
                   <Logo size={28} />
-                  <span className="text-lg md:text-xl font-bold" style={{ color: 'var(--accent)' }}>Фрейм</span>
+                  <span className="hidden xl:inline text-lg md:text-xl font-bold" style={{ color: 'var(--accent)' }}>Фрейм</span>
                 </>
               )}
               <span
                 className={
                   isEditorial
-                    ? 'px-2 py-0.5 text-[10px] font-bold tracking-wider hidden sm:inline'
-                    : 'px-2 py-0.5 text-xs font-medium rounded-full hidden sm:inline'
+                    ? 'px-2 py-0.5 text-[10px] font-bold tracking-wider hidden 2xl:inline'
+                    : 'px-2 py-0.5 text-xs font-medium rounded-full hidden 2xl:inline'
                 }
                 style={
                   isEditorial
@@ -88,12 +80,12 @@ export default function Layout() {
               </span>
               <span
                 title={connected ? 'Live: данные обновляются автоматически' : 'Нет соединения с сервером'}
-                className={`w-2 h-2 rounded-full hidden sm:inline-block mr-2 ${connected ? 'bg-emerald-400' : 'bg-gray-500'}`}
+                className={`w-2 h-2 rounded-full hidden 2xl:inline-block mr-2 ${connected ? 'bg-emerald-400' : 'bg-gray-500'}`}
               />
             </NavLink>
 
             {/* Desktop Навигация */}
-            <div className="hidden lg:flex items-center gap-1">
+            <div className="hidden lg:flex items-center gap-0.5 xl:gap-1 min-w-0">
               {NAV_ITEMS.map((item) => (
                 <NavLink
                   key={item.path}
@@ -101,10 +93,10 @@ export default function Layout() {
                   onClick={(e) => item.disabled && e.preventDefault()}
                   className={({ isActive }) =>
                     isEditorial
-                      ? `relative px-3 xl:px-4 py-2 text-sm whitespace-nowrap transition-all
+                      ? `relative px-1 lg:px-2 2xl:px-3 py-2 whitespace-nowrap transition-all
                          ${item.disabled ? 'cursor-not-allowed' : ''}
                          ${isActive ? 'font-bold' : 'font-medium'}`
-                      : `px-3 xl:px-4 py-2 rounded-xl text-sm font-medium
+                      : `px-1 lg:px-2 2xl:px-3 py-2 rounded-xl font-medium
                          whitespace-nowrap transition-all border
                          ${item.disabled
                            ? 'cursor-not-allowed border-transparent'
@@ -116,6 +108,8 @@ export default function Layout() {
                   style={({ isActive }) =>
                     isEditorial
                       ? {
+                          fontSize: 'clamp(9px, 0.45vw + 0.3rem, 14px)',
+                          letterSpacing: '-0.02em',
                           color: item.disabled
                             ? 'var(--text-muted)'
                             : isActive
@@ -123,6 +117,8 @@ export default function Layout() {
                               : 'var(--text-secondary)',
                         }
                       : {
+                          fontSize: 'clamp(9px, 0.45vw + 0.3rem, 14px)',
+                          letterSpacing: '-0.02em',
                           color: item.disabled
                             ? 'var(--text-muted)'
                             : isActive
@@ -158,70 +154,16 @@ export default function Layout() {
             </div>
 
             {/* Right side */}
-            <div className="flex items-center gap-2 md:gap-3">
-              {/* Accent picker — только в editorial (другие темы имеют свой нативный accent) */}
-              {isEditorial && (
-                <button
-                  onClick={cycleAccent}
-                  className="flex items-center gap-1.5 px-2 md:px-3 py-2 transition-all hover:opacity-80"
-                  style={{
-                    color: 'var(--text-secondary)',
-                    border: '1.5px solid var(--text-primary)',
-                    borderRadius: 999,
-                    backgroundColor: 'transparent',
-                  }}
-                  title={`Accent: ${accent}. Нажми для смены`}
-                >
-                  <span
-                    style={{
-                      width: 12,
-                      height: 12,
-                      borderRadius: '50%',
-                      background: accent === 'default' ? 'var(--accent)' : accentSwatch,
-                      border: '1px solid var(--text-primary)',
-                      display: 'inline-block',
-                    }}
-                  />
-                  <span className="text-xs font-semibold hidden md:inline">
-                    {accent === 'default' ? 'Theme' : accent}
-                  </span>
-                </button>
-              )}
-
-              {/* Theme Toggle */}
-              <button
-                onClick={cycleTheme}
-                className={
-                  isEditorial
-                    ? 'flex items-center gap-1 md:gap-2 px-2 md:px-3 py-2 transition-all hover:opacity-80'
-                    : 'flex items-center gap-1 md:gap-2 px-2 md:px-3 py-2 rounded-lg transition-all hover:bg-white/10'
-                }
-                style={
-                  isEditorial
-                    ? {
-                        color: 'var(--text-secondary)',
-                        border: '1.5px solid var(--text-primary)',
-                        borderRadius: 999,
-                      }
-                    : {
-                        color: 'var(--text-secondary)',
-                        borderColor: 'var(--border-color)',
-                      }
-                }
-                title={`Тема: ${themeName}. Нажми для смены`}
-              >
-                <span className="text-base md:text-lg">{themeIcon}</span>
-                <span className="text-xs font-medium hidden md:inline" style={{ color: 'var(--text-muted)' }}>
-                  {themeName}
-                </span>
-              </button>
+            <div className="flex items-center gap-1 lg:gap-1.5 xl:gap-3">
+              {/* Theme Toggle (sun/moon, animated) */}
+              <ThemeToggle />
 
               {/* Auth button */}
               {isAuthenticated ? (
                 <button
                   onClick={() => navigate('/profile')}
-                  className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-opacity hover:opacity-80"
-                  style={{ backgroundColor: 'var(--accent)', color: 'var(--bg-primary)' }}
+                  className="editorial-press w-7 h-7 xl:w-8 xl:h-8 rounded-full flex items-center justify-center text-xs xl:text-sm font-bold"
+                  style={{ backgroundColor: 'var(--accent)', color: 'var(--bg-primary)', border: '1.5px solid var(--text-primary)' }}
                   title="Личный кабинет"
                 >
                   {(user?.email || '?')[0].toUpperCase()}
@@ -229,11 +171,11 @@ export default function Layout() {
               ) : (
                 <button
                   onClick={() => navigate('/login')}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium transition-all hover:bg-white/10"
+                  className="flex items-center gap-1.5 px-1.5 py-1.5 xl:px-3 xl:py-2 rounded-xl text-xs xl:text-sm font-medium transition-all hover:bg-white/10"
                   style={{ color: 'var(--text-secondary)' }}
                 >
                   <LogIn size={16} />
-                  <span className="hidden md:inline">Войти</span>
+                  <span className="hidden xl:inline">Войти</span>
                 </button>
               )}
 
@@ -242,8 +184,8 @@ export default function Layout() {
               <button
                 className={
                   isEditorial
-                    ? 'hidden sm:block px-4 py-2 text-sm font-bold transition-all hover:translate-x-[-1px] hover:translate-y-[-1px]'
-                    : 'hidden sm:block px-3 md:px-4 py-2 text-white text-sm font-medium rounded-xl transition-colors'
+                    ? 'editorial-press hidden xl:block px-4 py-2 text-sm font-bold'
+                    : 'hidden xl:block px-3 md:px-4 py-2 text-white text-sm font-medium rounded-xl transition-colors'
                 }
                 style={
                   isEditorial
@@ -252,7 +194,6 @@ export default function Layout() {
                         color: 'var(--text-inverse)',
                         border: '1.5px solid var(--text-primary)',
                         borderRadius: 999,
-                        boxShadow: 'var(--shadow-hard-chip)',
                       }
                     : { backgroundColor: 'var(--accent-pink)' }
                 }

@@ -46,7 +46,7 @@ export default function PageHeader({
   helpLink,
 }: PageHeaderProps) {
   return (
-    <div className="flex items-start gap-3 mb-6">
+    <div className="flex items-start mb-6" style={{ gap: 'var(--sp-3)' }}>
       {Icon && (
         <div className="page-header-icon flex items-center justify-center flex-shrink-0">
           <Icon size={22} strokeWidth={2} />
@@ -55,18 +55,19 @@ export default function PageHeader({
       <div className="flex-1 min-w-0">
         {eyebrow && (
           <p
-            className="text-[10px] uppercase mb-0.5"
+            className="uppercase mb-0.5"
             style={{
               color: 'var(--text-muted)',
               letterSpacing: '0.1em',
               fontWeight: 600,
+              fontSize: 'var(--fs-2xs)',
             }}
           >
             {eyebrow}
           </p>
         )}
         <h1
-          className="page-header-title text-2xl font-bold"
+          className="page-header-title font-bold"
           style={{
             color: 'var(--text-primary)',
             letterSpacing: '-0.01em',
@@ -75,6 +76,7 @@ export default function PageHeader({
             alignItems: 'center',
             gap: 4,
             flexWrap: 'wrap',
+            fontSize: 'var(--fs-3xl)',
           }}
         >
           <span>{title}</span>
@@ -82,8 +84,8 @@ export default function PageHeader({
         </h1>
         {subtitle && (
           <p
-            className="text-sm mt-1"
-            style={{ color: 'var(--text-secondary)' }}
+            className="mt-1"
+            style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)' }}
           >
             {subtitle}
           </p>
