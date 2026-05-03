@@ -263,7 +263,7 @@ export default function SeasonalityHistogram({
           <ChartTooltip x={tooltip.x} y={tooltip.y}>
             {isMulti ? (
               <>
-                <div className="text-[11px] text-theme-secondary mb-1 font-medium">{tooltip.bar!.label}</div>
+                <div className="text-xs text-theme-secondary mb-1 font-medium">{tooltip.bar!.label}</div>
                 {safeMeta.map((style, s) => {
                   const seriesBar = safeSeries[s]?.bars?.[idx];
                   if (!seriesBar) return null;
@@ -291,7 +291,7 @@ export default function SeasonalityHistogram({
               return (
                 <>
                   <TooltipRow color={color} label={bar.avg_change >= 0 ? 'Рост' : 'Падение'} value={valStr} />
-                  <div className="text-[10px] text-theme-secondary mt-0.5">{bar.count} наблюдений</div>
+                  <div className="text-2xs text-theme-secondary mt-0.5">{bar.count} наблюдений</div>
                 </>
               );
             })()}
@@ -325,7 +325,7 @@ export default function SeasonalityHistogram({
               <span className="font-semibold" style={{
                   fontSize: 'var(--chart-font-y, 16px)',
                   color: 'var(--axis-color, #9CA3B8)',
-                  backgroundColor: 'var(--bg-secondary)',
+                  backgroundColor: 'var(--bg-primary)',
                   padding: '1px 4px',
                   borderRadius: 2,
               }}>{label}</span>

@@ -150,7 +150,7 @@ export default function IndexChart({
         <div ref={containerRef}>
             <div ref={chartWrapRef} className={`relative ${revealed ? 'chart-reveal' : ''}`}>
                 {width > 0 && chartData && (
-                    <svg ref={svgRef} width={width} height={height} className="block" style={{ backgroundColor: 'var(--bg-secondary)', contain: 'paint' }}>
+                    <svg ref={svgRef} width={width} height={height} className="block" style={{ backgroundColor: 'var(--bg-primary)', contain: 'paint' }}>
                         <defs>
                             <linearGradient id="priceGradient" x1="0" y1="0" x2="0" y2="1">
                                 <stop offset="0%" stopColor={CHART_COLORS.primary} stopOpacity="0.3" />
@@ -189,7 +189,7 @@ export default function IndexChart({
                                     x={width - padding.right + 12}
                                     y={Math.max(padding.top + 6, Math.min(tick.y, padding.top + chartHeight - 6))}
                                     textAnchor="start" dominantBaseline="middle" fill="var(--axis-color, #9CA3B8)" fontSize="var(--chart-font-y, 16)" fontWeight="600"
-                                    paintOrder="stroke" stroke="var(--bg-secondary)" strokeWidth="4" strokeLinejoin="round">
+                                    paintOrder="stroke" stroke="var(--bg-primary)" strokeWidth="4" strokeLinejoin="round">
                                     {tick.value.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
                                 </text>
                             </g>

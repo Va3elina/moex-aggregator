@@ -56,18 +56,18 @@ export default function YearlySeasonalityChart({
     );
   }
 
-  // Серии: если передан seriesData — используем весь массив (в т.ч. если там 1 серия).
-  // Если нет — фолбэк на одиночную серию из yearlyData (для обратной совместимости,
-  // но в новом UI seriesData всегда есть хотя бы с одним элементом).
-  const safeCount = seriesData && seriesMeta
-    ? Math.min(seriesData.length, seriesMeta.length)
-    : 0;
-  const allSeries = safeCount > 0
-    ? seriesData!.slice(0, safeCount)
-    : [yearlyData]; // fallback: берём yearlyData как единственную серию
-  const allMeta: SeriesMeta[] = safeCount > 0
-    ? seriesMeta!.slice(0, safeCount)
+  // Когда выбран ОДИН период без extras, seriesData не передаётся (SeasonalityPage
+  // оптимизирует — не делает лишний промис). seriesMeta при этом ВСЕГДА содержит
+  // 1 entry с цветом. Используем meta когда есть, series fallback'ится на yearlyData.
+  // Это убирает баг "линия серая когда выбран только один период" — теперь цвет
+  // берётся из seriesMeta[0] (обычно forest green / accent).
+  const series = seriesData && seriesData.length > 0 ? seriesData : [yearlyData];
+  const meta: SeriesMeta[] = seriesMeta && seriesMeta.length > 0
+    ? seriesMeta
     : [{ key: 'base', label: `Период с ${yearlyData.years_range?.split('-')[0] ?? ''}`, color: CHART_COLORS.muted }];
+  const safeCount = Math.min(series.length, meta.length);
+  const allSeries = series.slice(0, safeCount);
+  const allMeta: SeriesMeta[] = meta.slice(0, safeCount);
 
   const baseAvg = yearlyData.average;
   const cur = yearlyData.current;
@@ -227,12 +227,10 @@ export default function YearlySeasonalityChart({
         </span>
       </div>
 
-      {/* Floating date */}
-      {tooltip?.yearlyCurDate ? (
-        <ChartDateLabel date={tooltip.yearlyCurDate} x={tooltip.x} />
-      ) : (
-        <div style={{ height: 'var(--chart-date-placeholder-height, 22px)' }} />
-      )}
+      {/* Floating date — absolute positioning ВНУТРИ chart-container'а через
+          relative wrapper. Pill bottom приземляется на 4px выше верхней
+          горизонтальной линии графика (которая находится на y=PT внутри SVG).
+          Match pattern SimpleChart/FlowsHistogram. NO flow-space → no CLS на hover. */}
 
       {/* Chart */}
       <div
@@ -259,6 +257,13 @@ export default function YearlySeasonalityChart({
         }}
         onTouchEnd={() => setTooltip(null)}
       >
+        {/* Date pill — absolute over chart, bottom 5px above top grid line (y=PT).
+            Pill height ~22px → wrapper top = PT - 5 - 22 = PT - 27. */}
+        {tooltip?.yearlyCurDate && (
+          <div className="absolute pointer-events-none" style={{ top: PT - 27, left: 0, right: 0, zIndex: 5 }}>
+            <ChartDateLabel date={tooltip.yearlyCurDate} x={tooltip.x} />
+          </div>
+        )}
         <div className="absolute" style={{ left: PL, right: PR, top: PT, bottom: PB }}>
           <svg viewBox="0 0 1000 500" preserveAspectRatio="none" width="100%" height="100%">
             {/* Grid + zero line + month separators */}
@@ -343,7 +348,7 @@ export default function YearlySeasonalityChart({
             )}
             {/* Отклонение текущего года от среднего — в процентах */}
             {tooltip.yearlyCurPct !== undefined && tooltip.yearlyAvgPct !== undefined && (
-              <div className="text-[10px] text-theme-secondary mt-1 pt-1 border-t border-white/10">
+              <div className="text-2xs text-theme-secondary mt-1 pt-1 border-t border-theme">
                 {(() => {
                   const diff = tooltip.yearlyCurPct! - tooltip.yearlyAvgPct!;
                   const color = diff >= 0 ? CHART_COLORS.positive : CHART_COLORS.negative;

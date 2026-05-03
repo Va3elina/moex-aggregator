@@ -301,7 +301,7 @@ export default function SeasonalityPriceChart({
               onHover={() => { divHoverRef.current = true; setTooltip(null); }}
               onLeave={() => { divHoverRef.current = false; }}
             >
-              <div className="text-[11px] font-medium text-theme-primary">{d.value} ₽ — {d.date}</div>
+              <div className="text-xs font-medium text-theme-primary">{d.value} ₽ — {d.date}</div>
             </ChartMarker>
           ))}
         </div>

@@ -1,7 +1,7 @@
-import { LineChart, BarChart2, Lock } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { isPeriodAllowed } from '../../config/accessControl';
+import Dropdown, { type DropdownOption } from '../Dropdown';
 
 type Period = '6m' | '1y' | '2y' | '5y' | 'all';
 type ChartMode = 'line' | 'histogram';
@@ -12,7 +12,7 @@ const PERIOD_LABELS: Record<Period, string> = {
     '1y': '1Г',
     '2y': '2Г',
     '5y': '5Л',
-    'all': 'Всё'
+    'all': 'Всё',
 };
 
 const EMA_OPTIONS: EmaPeriod[] = [50, 100, 200];
@@ -58,128 +58,86 @@ export default function StrengthControls({
     const navigate = useNavigate();
 
     return (
-        <div className="flex items-center gap-4 mb-6 flex-wrap">
+        <div className="flex items-center flex-wrap mb-4 md:mb-6" style={{ gap: 'var(--sp-2)' }}>
             {/* Period */}
-            <div className="btn-group-scroll gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
-                {(Object.entries(PERIOD_LABELS) as [Period, string][]).map(([key, label]) => {
-                    const allowed = isPeriodAllowed(key, isAuthenticated);
-                    return (
-                        <button
-                            key={key}
-                            onClick={() => {
-                                if (!allowed) { navigate('/login'); return; }
-                                onPeriodChange(key);
-                            }}
-                            title={!allowed ? 'Войдите для доступа' : undefined}
-                            className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                                !allowed
-                                    ? 'text-theme-muted cursor-not-allowed opacity-50'
-                                    : period === key
-                                        ? 'btn-control active'
-                                        : 'text-theme-secondary hover:text-theme-primary'
-                            }`}
-                        >
-                            {label}
-                            {!allowed && <Lock className="inline-block ml-0.5 w-3 h-3" />}
-                        </button>
-                    );
-                })}
-            </div>
+            <Dropdown<Period>
+                options={(Object.keys(PERIOD_LABELS) as Period[]).map((p): DropdownOption<Period> => ({
+                    key: p,
+                    label: PERIOD_LABELS[p],
+                    locked: !isPeriodAllowed(p, isAuthenticated),
+                }))}
+                value={period}
+                onChange={(p) => {
+                    if (!isPeriodAllowed(p, isAuthenticated)) { navigate('/login'); return; }
+                    onPeriodChange(p);
+                }}
+            />
 
-            {/* Chart type breadth */}
-            <div className="btn-group-scroll gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
-                <button
-                    onClick={() => onChartModeChange('line')}
-                    className={`p-2 rounded-lg transition-colors ${chartMode === 'line' ? 'bg-white/10' : ''}`}
-                    title="Линия"
-                >
-                    <LineChart size={18} className={chartMode === 'line' ? 'text-theme-accent' : 'text-theme-secondary'} />
-                </button>
-                <button
-                    onClick={() => onChartModeChange('histogram')}
-                    className={`p-2 rounded-lg transition-colors ${chartMode === 'histogram' ? 'bg-white/10' : ''}`}
-                    title="Гистограмма"
-                >
-                    <BarChart2 size={18} className={chartMode === 'histogram' ? 'text-theme-accent' : 'text-theme-secondary'} />
-                </button>
-            </div>
+            {/* Chart mode (line / histogram) */}
+            <Dropdown<ChartMode>
+                options={[
+                    { key: 'line', label: 'Линия' },
+                    { key: 'histogram', label: 'Гистограмма' },
+                ]}
+                value={chartMode}
+                onChange={onChartModeChange}
+            />
 
             {/* Universe: IMOEX / all stocks */}
-            <div className="btn-group-scroll gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
-                <button
-                    onClick={() => onUniverseBaseChange('imoex')}
-                    className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                        universeBase === 'imoex' ? 'btn-control active' : 'text-theme-secondary hover:text-theme-primary'
-                    }`}
-                >
-                    {currency === 'usd' ? 'Индекс RTSI' : 'Индекс IMOEX'}
-                </button>
-                <button
-                    onClick={() => onUniverseBaseChange('all')}
-                    className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                        universeBase === 'all' ? 'btn-control active' : 'text-theme-secondary hover:text-theme-primary'
-                    }`}
-                >
-                    Все акции
-                </button>
-            </div>
+            <Dropdown<'imoex' | 'all'>
+                options={[
+                    { key: 'imoex', label: currency === 'usd' ? 'Индекс RTSI' : 'Индекс IMOEX' },
+                    { key: 'all', label: 'Все акции' },
+                ]}
+                value={universeBase}
+                onChange={onUniverseBaseChange}
+            />
 
             {/* Currency */}
-            <div className="btn-group-scroll gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
-                <button
-                    onClick={() => onCurrencyChange('rub')}
-                    className={`px-3 py-1.5 text-sm font-bold rounded-lg transition-colors ${
-                        currency === 'rub' ? 'btn-control active' : 'text-theme-secondary hover:text-theme-primary'
-                    }`}
-                >
-                    ₽
-                </button>
-                <button
-                    onClick={() => onCurrencyChange('usd')}
-                    className={`px-3 py-1.5 text-sm font-bold rounded-lg transition-colors ${
-                        currency === 'usd' ? 'btn-control active' : 'text-theme-secondary hover:text-theme-primary'
-                    }`}
-                >
-                    $
-                </button>
-            </div>
+            <Dropdown<'rub' | 'usd'>
+                options={[
+                    { key: 'rub', label: '₽ Рубль' },
+                    { key: 'usd', label: '$ Доллар' },
+                ]}
+                value={currency}
+                onChange={onCurrencyChange}
+            />
 
-            {/* EMA period selector: 50 / 100 / 200 */}
-            <div className="btn-group-scroll gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
-                {EMA_OPTIONS.map((p) => (
-                    <button
-                        key={p}
-                        onClick={() => onEmaPeriodChange(p)}
-                        className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                            emaPeriod === p ? 'btn-control active' : 'text-theme-secondary hover:text-theme-primary'
-                        }`}
-                        title={`EMA ${p} дней — ${p === 50 ? 'краткосрочный' : p === 100 ? 'среднесрочный' : 'долгосрочный'} тренд`}
-                    >
-                        EMA{p}
-                    </button>
-                ))}
-            </div>
+            {/* EMA period */}
+            <Dropdown<string>
+                options={EMA_OPTIONS.map((p): DropdownOption<string> => ({
+                    key: String(p),
+                    label: `EMA${p}`,
+                }))}
+                value={String(emaPeriod)}
+                onChange={(k) => onEmaPeriodChange(Number(k) as EmaPeriod)}
+            />
 
-            {/* Show IMOEX */}
+            {/* Show price toggle — editorial-press chip */}
             <button
                 onClick={() => onShowPriceChange(!showPrice)}
-                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors border ${showPrice ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400' : 'border-theme text-theme-secondary'
-                    }`}
+                className="editorial-press font-semibold rounded-full"
+                style={{
+                    backgroundColor: showPrice ? 'var(--accent)' : 'var(--bg-secondary)',
+                    color: showPrice ? 'var(--text-inverse)' : 'var(--text-primary)',
+                    border: '2px solid var(--text-primary)',
+                    boxShadow: showPrice ? 'var(--shadow-hard-chip)' : undefined,
+                    fontSize: 'var(--fs-sm)',
+                    padding: 'var(--sp-2) var(--sp-4)',
+                }}
             >
                 {currency === 'usd' ? 'RTS' : 'IMOEX'}
             </button>
 
             {/* Status + counter.
                 visibility: hidden пока нет данных — чтобы место было зарезервировано
-                и главный контейнер НЕ сдвигался вниз когда данные прилетят.
-                Раньше было {hasCurrent && (...)} → DOM-нода отсутствовала
-                → flex-row короче → появление вытесняло график вниз (CLS-баг). */}
-            <div className="flex items-center gap-3 sm:ml-auto" style={{ visibility: hasCurrent ? 'visible' : 'hidden' }}>
-                <span className="text-sm text-theme-secondary">
+                и главный контейнер НЕ сдвигался вниз когда данные прилетят. */}
+            <div className="flex items-center sm:ml-auto" style={{ gap: 'var(--sp-3)', visibility: hasCurrent ? 'visible' : 'hidden' }}>
+                <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-sm)' }}>
                     <span className="font-bold text-theme-primary">{stocksAbove}</span>/{stocksTotal} выше EMA
                 </span>
-                <div className={`px-3 py-1 rounded-full ${classInfo.bg}`}>
-                    <span className={`text-xs font-medium ${classInfo.color}`}>
+                <div className="rounded-full" style={{ padding: 'calc(var(--sp-1)) var(--sp-3)', background: classInfo.bg }}>
+                    <span className="font-medium" style={{ fontSize: 'var(--fs-2xs)', color: classInfo.color }}>
                         {classInfo.label}
                     </span>
                 </div>

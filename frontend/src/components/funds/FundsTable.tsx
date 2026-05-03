@@ -33,18 +33,18 @@ export default function FundsTable({
     onOpenFundCard,
 }: FundsTableProps) {
     return (
-        <div className="mt-6 bg-theme-secondary rounded-2xl border border-theme overflow-hidden">
-            <div className="p-4 border-b border-theme flex items-center justify-between">
-                <h3 className="font-semibold">Фонды категории</h3>
-                <div className="flex items-center gap-2">
-                    <span className="text-theme-secondary text-sm">Суммарная СЧА выбранных:</span>
-                    <span className="text-[#2EE59D] font-mono font-bold">
+        <div className="mt-6 rounded-2xl overflow-hidden editorial-frame" style={{ background: 'var(--bg-secondary)', padding: 0 }}>
+            <div className="border-b border-theme flex items-center justify-between" style={{ padding: 'var(--sp-3) var(--sp-4)' }}>
+                <h3 className="font-semibold" style={{ fontSize: 'var(--fs-base)' }}>Фонды категории</h3>
+                <div className="flex items-center" style={{ gap: 'var(--sp-2)' }}>
+                    <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-sm)' }}>Суммарная СЧА выбранных:</span>
+                    <span className="font-mono font-bold" style={{ color: 'var(--funds-flow-positive)', fontSize: 'var(--fs-sm)' }}>
                         {aggregatedData.totalCurrentNav.toFixed(2)} млрд ₽
                     </span>
                 </div>
             </div>
             <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+                <table className="w-full" style={{ fontSize: 'var(--fs-sm)' }}>
                     <thead>
                         <tr className="text-theme-secondary text-left">
                             <th className="px-4 py-3 font-medium w-10"></th>
@@ -113,7 +113,8 @@ export default function FundsTable({
                                 return (
                                     <React.Fragment key={subcat || '__none__'}>
                                         {subcat && (
-                                            <tr className="bg-white/[0.04] border-t-2 border-white/10">
+                                            <tr className="border-t-2 border-theme"
+                                                style={{ background: 'color-mix(in srgb, var(--text-primary) 4%, transparent)' }}>
                                                 <td className="px-4 py-3">
                                                     <div
                                                         className="flex items-center justify-center w-8 h-8 rounded-lg hover:bg-white/5 cursor-pointer transition-colors"
@@ -124,7 +125,8 @@ export default function FundsTable({
                                                             checked={!allHidden}
                                                             ref={el => { if (el) el.indeterminate = someHidden && !allHidden; }}
                                                             onChange={() => {}}
-                                                            className="w-4 h-4 rounded border-white/20 bg-white/5 text-[#6366f1] focus:ring-[#6366f1] focus:ring-offset-[#121523] cursor-pointer"
+                                                            className="w-4 h-4 rounded border-theme cursor-pointer"
+                                                            style={{ accentColor: 'var(--accent)' }}
                                                         />
                                                     </div>
                                                 </td>
@@ -158,7 +160,8 @@ export default function FundsTable({
                                                                 type="checkbox"
                                                                 checked={!isHidden}
                                                                 onChange={() => {}}
-                                                                className="w-4 h-4 rounded border-white/20 bg-white/5 text-[#6366f1] focus:ring-[#6366f1] focus:ring-offset-[#121523] cursor-pointer"
+                                                                className="w-4 h-4 rounded border-theme cursor-pointer"
+                                                            style={{ accentColor: 'var(--accent)' }}
                                                             />
                                                         </div>
                                                     </td>
