@@ -7,24 +7,33 @@
  * Правило: если значение используется в 2+ компонентах — оно должно быть здесь.
  */
 
-// ─── Цвета линий (уникальные для каждого графика, но из единой палитры) ───
-
+// ─── Цвета линий — theme-aware через CSS-переменные ───
+//
+// Все строки `var(--name)` нативно резолвятся браузером в SVG attributes:
+// stroke, fill, stopColor — поэтому JS просто передаёт строку.
+//
+// Палитра завязана на editorial theme:
+// - accent (рыжий pumpkin) — основная линия
+// - funds-flow-positive/negative (forest green / clay) — гистограммные бары
+// - text-muted — оси, средние линии
+//
+// Меняешь theme → меняются цвета на ВСЕХ графиках одновременно. Никаких хардкодов.
 export const CHART_COLORS = {
   // Основные линии
-  primary: '#6366f1',      // Индиго — IndexChart (IMOEX), SimpleChart primary
-  accent: '#C8FF2E',       // Лайм — цена в SeasonalityPrice, текущий год в Yearly
-  secondary: '#f59e0b',    // Оранжевый — SimpleChart secondary, Buffett
-  tertiary: '#f43f5e',     // Розовый — SimpleChart третья линия
+  primary: 'var(--accent)',                       // Pumpkin — IndexChart (IMOEX), SimpleChart primary
+  accent: 'var(--accent)',                        // Pumpkin — цена в SeasonalityPrice, текущий год в Yearly
+  secondary: 'var(--funds-flow-positive)',        // Forest green — secondary lines (Buffett, СЧА index)
+  tertiary: 'var(--funds-flow-negative)',         // Clay red — третья линия
 
-  // Позитив / негатив (гистограммы, хитмап)
-  positive: '#2EE59D',
-  negative: '#FF4D4D',
+  // Позитив / негатив — theme-aware (forest/clay в editorial, brighter в dark)
+  positive: 'var(--funds-flow-positive)',
+  negative: 'var(--funds-flow-negative)',
 
   // Вспомогательные
-  muted: '#9CA3B8',        // Оси, вторичный текст, средняя линия Yearly
-  adjusted: '#22c55e',     // Adjusted price (без дивидендов)
+  muted: 'var(--text-muted)',                     // Оси, средние линии, baseline
+  adjusted: 'var(--funds-flow-positive)',         // Adjusted price (без гэпов) — match секондару
 
-  // Индекс страха (зоны)
+  // Индекс страха (zones) — отдельная палитра, NOT to be unified (5 семантических уровней)
   fear: {
     extremeGreed: '#22c55e',
     greed: '#84cc16',
@@ -34,11 +43,20 @@ export const CHART_COLORS = {
   },
 } as const;
 
-// ─── Цвета фондов (палитра для множественных линий) ───
-
+// ─── Палитра для множественных линий (compareYears на Сезонности, fund cards) ───
+// Editorial-friendly: deep desaturated цвета, не неон. Подходит к paper bg.
+// Первый цвет (используется когда выбран ОДНА серия) — тёмный indigo.
 export const FUND_PALETTE = [
-  '#2EE59D', '#4DA3FF', '#9D4DFF', '#FF4D4D', '#FFB020',
-  '#00D9FF', '#FF6B9D', '#FCD34D', '#14B8A6', '#F97316',
+  '#3B4F7A', // deep indigo
+  '#7A4332', // brick brown
+  '#3F6B47', // forest dark
+  '#6B4F8A', // muted purple
+  '#8A5C3F', // warm clay
+  '#2D5F6E', // deep teal
+  '#7A3F5C', // rosewood
+  '#5C5F2D', // olive
+  '#3F5C6B', // slate blue
+  '#6B5C2D', // dark gold
 ] as const;
 
 // ─── Grid и фон ───
@@ -126,11 +144,29 @@ export const ANIMATION = {
 
 // ─── Tooltip CSS-классы (Tailwind) ───
 
+// Tooltip — paper-style (без glass). Все размеры через fluid scale (--fs-*, --sp-*).
+// Inline-style используется чтобы CSS var действительно резолвились (Tailwind arbitrary
+// с var() работают, но clamp resolved корректно только в native CSS контексте).
 export const TOOLTIP = {
-  containerClass: 'bg-theme-tertiary/95 backdrop-blur-sm rounded-lg border border-theme shadow-xl py-1.5 px-3 tabular-nums',
-  labelClass: 'text-[11px] text-theme-secondary',
-  valueClass: 'text-xs font-semibold tabular-nums',
-  dateClass: 'text-[11px] text-theme-secondary bg-theme-tertiary/90 backdrop-blur-sm px-2 py-0.5 rounded-md border border-theme tabular-nums',
+  containerClass: 'rounded-lg border border-theme shadow-md tabular-nums',
+  containerStyle: {
+    background: 'var(--bg-primary)',  // paper — match chart bg, без backdrop-blur
+    padding: 'var(--sp-2) var(--sp-3)',
+    fontSize: 'var(--fs-xs)',
+  },
+  labelClass: 'text-theme-secondary',
+  labelStyle: { fontSize: 'var(--fs-2xs)' },
+  valueClass: 'font-semibold tabular-nums',
+  valueStyle: { fontSize: 'var(--fs-xs)' },
+  dateClass: 'text-theme-secondary border border-theme rounded-md tabular-nums',
+  dateStyle: {
+    background: 'var(--bg-primary)',  // paper
+    padding: 'calc(var(--sp-1)) var(--sp-2)',
+    fontSize: 'var(--fs-2xs)',
+  },
+  dotClass: 'rounded-full flex-shrink-0',
+  dotStyle: { width: 'var(--sp-2)', height: 'var(--sp-2)' },
+  /** @deprecated Use `dotClass` + `dotStyle`. Kept for backward compat. */
   dotSize: 'w-2 h-2 rounded-full',
 } as const;
 

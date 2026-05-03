@@ -1,6 +1,78 @@
 @import "tailwindcss";
 
 /* ============================================
+   FLUID DESIGN TOKENS — Single source of truth
+   ============================================
+   Type/spacing/icon scale через CSS clamp().
+   Браузер сам решает clamp() при использовании var(--fs-X) в font-size,
+   padding, gap и т.п. — всё адаптируется автоматически.
+
+   Для SVG <text fontSize={...}> и других JS-вычислений:
+   import { fluid } from '@/config/fluidScale' и вызвать fluid.fsSm(vw).
+
+   Правило: НИКАКИХ inline clamp() в компонентах. Только var(--fs-X).
+   Новые индикаторы — просто используют эти токены и работают на 320–2560px.
+
+   Расчёт clamp:
+     clamp(MIN, vw_factor*1vw + base_rem, MAX)
+   где base_rem = базовый размер (растёт пропорционально root font),
+       vw_factor = добавка от viewport (плавный рост).
+
+   Точки контроля (vw=320 → vw=1920):
+     fs-sm:  11.0 → 13.6 → cap at 14   (button text, body labels)
+     fs-base:13.5 → 15.7 → cap at 16   (default body)
+     fs-3xl: 30.7 → 67.2 → cap at 56   (h1 page title)
+*/
+:root {
+  /* TYPE SCALE */
+  --fs-2xs: clamp(8px,  0.4vw + 0.4rem,  11px);  /* axis ticks, captions */
+  --fs-xs:  clamp(10px, 0.5vw + 0.45rem, 12.5px); /* small labels, secondary */
+  --fs-sm:  clamp(11px, 0.5vw + 0.55rem, 14px);   /* button text, body labels */
+  --fs-base:clamp(13px, 0.55vw + 0.65rem, 16px);  /* default body */
+  --fs-lg:  clamp(14px, 0.6vw + 0.75rem, 18px);   /* subtitles, h4 */
+  --fs-xl:  clamp(18px, 1vw + 0.9rem, 22px);      /* h3 */
+  --fs-2xl: clamp(20px, 1.5vw + 1rem, 28px);      /* h2 */
+  --fs-3xl: clamp(28px, 2.5vw + 1.2rem, 56px);    /* h1 page title */
+
+  /* SPACING SCALE */
+  --sp-1: clamp(2px,  0.4vw, 4px);
+  --sp-2: clamp(4px,  0.8vw, 8px);
+  --sp-3: clamp(6px,  1.2vw, 12px);
+  --sp-4: clamp(10px, 1.6vw, 16px);
+  --sp-5: clamp(14px, 2vw,   20px);
+  --sp-6: clamp(18px, 2.5vw, 24px);
+
+  /* ICON SCALE */
+  --ico-xs: clamp(12px, 1.2vw + 0.4rem, 18px);
+  --ico-sm: clamp(14px, 1.4vw + 0.5rem, 22px);
+  --ico-md: clamp(18px, 1.6vw + 0.6rem, 26px);
+  --ico-lg: clamp(24px, 2vw + 0.8rem, 36px);
+}
+
+/* ============================================
+   GLOBAL FLUID TEXT — Tailwind utilities → fluid scale
+   ============================================
+   Каждый text-xs/sm/base/lg/xl/2xl/3xl автоматически адаптируется под viewport
+   через clamp(). Браузер резолвит. От 320px до 2560px все размеры плавно
+   меняются — никаких хардкодов, ни на одной странице.
+
+   Применяется ПОСЛЕ Tailwind utilities благодаря порядку @import + cascade.
+   !important нужен потому что Tailwind utility классы живут в @layer utilities
+   с одинаковой специфичностью.
+
+   Если в редком случае нужен ФИКСИРОВАННЫЙ размер — использовать arbitrary
+   Tailwind: text-[14px] или inline style. */
+.text-2xs   { font-size: var(--fs-2xs)   !important; }
+.text-xs    { font-size: var(--fs-xs)    !important; }
+.text-sm    { font-size: var(--fs-sm)    !important; }
+.text-base  { font-size: var(--fs-base)  !important; }
+.text-lg    { font-size: var(--fs-lg)    !important; }
+.text-xl    { font-size: var(--fs-xl)    !important; }
+.text-2xl   { font-size: var(--fs-2xl)   !important; }
+.text-3xl   { font-size: var(--fs-3xl)   !important; }
+.text-4xl   { font-size: var(--fs-3xl)   !important; }
+
+/* ============================================
    THEME SYSTEM - All colors in one place
    Change these variables to restyle entire app
    ============================================ */
@@ -8,6 +80,9 @@
 /* === OKX GREEN THEME (Default) === */
 :root,
 [data-theme="okx"] {
+  /* Funds flow colors — fallback для не-editorial тем (вернутся к ярким) */
+  --funds-flow-positive: #2EE59D;
+  --funds-flow-negative: #FF4D4D;
   --bg-primary: #0B0D0F;
   --bg-secondary: #131518;
   --bg-tertiary: #1B1E21;
@@ -459,6 +534,10 @@
    ============================================ */
 
 [data-theme="editorial-light"] {
+  /* Funds flow colors — приглушённый forest green / clay orange (см. funds-money-page фото).
+     Подходит к paper-фону и earth-tone палитре heatmap. */
+  --funds-flow-positive: #4A9268;
+  --funds-flow-negative: #C46847;
   --bg-primary: #F4F1EA;            /* тёплая бумага */
   --bg-secondary: #FFFFFF;          /* panel */
   --bg-tertiary: #F7F4ED;           /* panel-inner */
@@ -522,6 +601,9 @@
 }
 
 [data-theme="editorial-dark"] {
+  /* Funds flow colors — на тёмной теме чуть ярче, но всё равно земляные */
+  --funds-flow-positive: #5BB37D;
+  --funds-flow-negative: #D5694A;
   --bg-primary: #0E0E10;            /* тёплый чёрный */
   --bg-secondary: #17171A;
   --bg-tertiary: #101012;
@@ -618,7 +700,7 @@
 }
 [data-theme^="editorial"] h1.page-header-title {
   letter-spacing: -0.03em !important;
-  font-size: 48px !important;
+  font-size: var(--fs-3xl) !important;
   line-height: 1.0 !important;
 }
 /* Усиление body-текста: Tailwind font-medium (500) → 600,
@@ -632,16 +714,7 @@
 [data-theme^="editorial"] .font-bold {
   font-weight: 800 !important;
 }
-@media (min-width: 1024px) {
-  [data-theme^="editorial"] h1.page-header-title {
-    font-size: 56px !important;
-  }
-}
-@media (max-width: 600px) {
-  [data-theme^="editorial"] h1.page-header-title {
-    font-size: 36px !important;
-  }
-}
+/* Старые media-queries удалены — --fs-3xl сам адаптируется (28→56px по vw). */
 
 /* Толщина линий разделителей — match border-theme (2px в editorial) */
 [data-theme^="editorial"] hr {
@@ -730,14 +803,23 @@
   box-shadow: 1px 1px 0 var(--text-primary) !important;
 }
 
-/* Dropdown items: inactive получает accent-tinted hover, active (с border)
-   получает полноценный press-эффект — match триггеру и chip'ам. */
-[data-theme^="editorial"] .frame-dropdown-item:hover:not(:disabled) {
-  background-color: color-mix(in srgb, var(--accent) 12%, transparent);
+/* Dropdown items: press-эффект на ВСЕХ опциях (translate + 4×4 hard shadow)
+   плюс accent-tinted bg на inactive, accent fill на active.
+   Match триггеру и chip-системе — единый paradigm для всех editorial-кнопок. */
+[data-theme^="editorial"] .frame-dropdown-item:not(:disabled) {
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background-color 0.12s ease, border-color 0.12s ease !important;
 }
-[data-theme^="editorial"] .frame-dropdown-item[data-active="true"]:hover:not(:disabled) {
+[data-theme^="editorial"] .frame-dropdown-item:hover:not(:disabled) {
   transform: translate(-1px, -1px);
   box-shadow: 4px 4px 0 var(--text-primary) !important;
+  background-color: color-mix(in srgb, var(--accent) 18%, transparent);
+  border-color: var(--text-primary) !important;
+}
+[data-theme^="editorial"] .frame-dropdown-item:active:not(:disabled) {
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0 var(--text-primary) !important;
+}
+[data-theme^="editorial"] .frame-dropdown-item[data-active="true"]:hover:not(:disabled) {
   background-color: var(--accent);
 }
 [data-theme^="editorial"] .frame-dropdown-item[data-active="true"]:active:not(:disabled) {
@@ -827,12 +909,13 @@
 }
 
 /* Asset selector — кнопка выбора инструмента (Сбербанк / SBER / chevron).
-   В editorial — outlined pill с hard shadow, чтобы соответствовать chip-системе. */
+   В editorial — outlined pill, БЕЗ shadow в покое.
+   Press-эффект (translate + 4×4 shadow) появляется только при hover. */
 [data-theme^="editorial"] button.widget-flat {
   border: var(--card-border-width) solid var(--card-border-color) !important;
   border-radius: 999px !important;
   background: var(--bg-secondary) !important;
-  box-shadow: var(--shadow-hard-chip) !important;
+  box-shadow: none !important;
   font-weight: 700 !important;
   transition: transform 0.15s ease, box-shadow 0.15s ease !important;
 }
@@ -932,13 +1015,13 @@
   border: 1.5px solid var(--text-primary);
   border-radius: 16px;
   box-shadow: 5px 5px 0 var(--card-border-color);
-  /* Right & bottom — увеличены чтобы offset-shadow крайних кнопок (chip'ов и
-     widget-flat-кнопок) не упирался в стенки frame'а. */
-  padding: 20px 26px 26px 20px;
+  /* Symmetric padding для визуального центрирования chart внутри.
+     Hover-тени кнопок (4×4) могут чуть-чуть выходить за правый край —
+     это ОК, .editorial-frame позволяет overflow visible. */
+  padding: clamp(12px, 3vw, 22px);
 }
 @media (max-width: 600px) {
   [data-theme^="editorial"] .editorial-frame {
-    padding: 14px 18px 18px 14px;
     box-shadow: 3px 3px 0 var(--card-border-color);
   }
 }
@@ -1086,8 +1169,11 @@
   --chart-xlabel-bottom: 20px;
 
   /* Axis font sizes */
-  --chart-font-y: 16px;
-  --chart-font-x: 14px;
+  /* Fluid размеры labels осей — match с --fs-2xs (как в OI/SimpleChart).
+     Браузер резолвит clamp() автоматически в SVG fontSize attribute и CSS
+     font-size. Используются Strength/Seasonality/ChartYAxis. */
+  --chart-font-y: var(--fs-2xs);
+  --chart-font-x: var(--fs-2xs);
   --chart-font-y-weight: 600;
 
   /* Tooltip */
@@ -1172,11 +1258,13 @@
     --chart-height-sm: 280px;
     --chart-nav-height: 40px;
 
-    --chart-pad-top: 16px;
-    --chart-pad-bottom: 40px;
-    --chart-pad-left: 58px;     /* было 45 — не хватало для "+1.68%" / "3287" */
-    --chart-pad-right-single: 56px;  /* было 36 — labels "+12.0", "1234" не помещались */
-    --chart-pad-right-dual: 68px;    /* было 48 — для OI значений типа "273K" / "168 917" */
+    /* Fluid mobile chart — ВСЁ через clamp(min, vw-based, max).
+       Цель: на 320px компактно, на 600px ~ как на tablet, без хардкода. */
+    --chart-pad-top: clamp(10px, 3vw, 16px);
+    --chart-pad-bottom: clamp(28px, 8vw, 40px);
+    --chart-pad-left: clamp(34px, 11vw, 58px);
+    --chart-pad-right-single: clamp(32px, 10vw, 56px);
+    --chart-pad-right-dual: clamp(40px, 12vw, 68px);
 
     --chart-legend-mb: 10px;
 
@@ -1185,18 +1273,18 @@
 
     --chart-nav-mt: 9px;
 
-    --chart-font-y: 10px;   /* было 12 — меньше, чтобы влезало в pad */
-    --chart-font-x: 10px;   /* было 11 — меньше, чтобы даты не наезжали */
+    --chart-font-y: clamp(8px, 2.4vw, 11px);
+    --chart-font-x: clamp(8px, 2.4vw, 11px);
 
     --tooltip-width: 150px;
     --tooltip-font-label: 10px;
     --tooltip-font-value: 11px;
 
-    --date-font: 10px;
+    --date-font: clamp(8px, 2.4vw, 11px);
 
-    --ann-size: 24px;
-    --ann-font: 10px;
-    --ann-tooltip-font: 12px;
+    --ann-size: clamp(16px, 5vw, 24px);
+    --ann-font: clamp(7px, 2vw, 10px);
+    --ann-tooltip-font: clamp(10px, 2.8vw, 12px);
 
     --line-primary-width: 2.2px;
     --line-secondary-width: 2.2px;
