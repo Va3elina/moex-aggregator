@@ -1,5 +1,5 @@
-import { useEffect, useState, useMemo, useCallback } from 'react';
-import { Scale, Lock } from 'lucide-react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { Scale } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import { METHODOLOGY } from '../data/methodology';
@@ -11,9 +11,11 @@ import {
     type BuffettPeriod,
 } from '../services/api';
 import SimpleChart from '../components/SimpleChart';
+import Dropdown, { type DropdownOption } from '../components/Dropdown';
 import { useAuth } from '../contexts/AuthContext';
 import { isPeriodAllowed } from '../config/accessControl';
 import { useRealtimeData } from '../hooks/useRealtimeData';
+import { useFitToViewport } from '../hooks/useFitToViewport';
 
 type ViewMode = 'cap-gdp' | 'cap-m2';
 
@@ -36,6 +38,14 @@ export default function BuffettPage() {
     const [error, setError] = useState<string | null>(null);
     const [capGdpData, setCapGdpData] = useState<BuffettCapGdpResponse | null>(null);
     const [capM2Data, setCapM2Data] = useState<BuffettRatioResponse | null>(null);
+
+    // Динамическая высота графика — chartAnchorRef как в OI/Funds-Money
+    const chartAnchorRef = useRef<HTMLDivElement>(null);
+    const chartHeight = useFitToViewport(chartAnchorRef, {
+        min: 360,
+        max: 720,
+        bottomBuffer: 96,
+    });
 
     // Загрузка данных
     const loadData = useCallback(async () => {
@@ -121,7 +131,7 @@ export default function BuffettPage() {
     }, [capM2Data]);
 
     return (
-        <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8 text-theme-primary min-h-screen">
+        <div className="max-w-[1408px] mx-auto px-4 md:px-6 py-6 md:py-8 text-theme-primary min-h-screen">
             <PageHeader
                 icon={Scale}
                 title="Индикатор Баффетта"
@@ -130,106 +140,80 @@ export default function BuffettPage() {
                 helpLink="/methodology/buffett"
             />
 
+            {/* Editorial frame — обнимает controls + chart в один контейнер */}
+            <div className="editorial-frame">
+
             {/* Контролы */}
-            <div className="flex items-center gap-4 mb-6 flex-wrap">
+            <div className="flex flex-wrap mb-4 md:mb-6" style={{ gap: 'var(--sp-2)' }}>
                 {/* Переключатель режимов */}
-                <div className="btn-group-scroll gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
-                    <button
-                        onClick={() => setViewMode('cap-gdp')}
-                        className={`px-2 md:px-3 py-1 md:py-1.5 text-xs md:text-sm font-medium rounded-lg transition-colors duration-200 ${viewMode === 'cap-gdp'
-                            ? 'btn-control active'
-                            : 'text-theme-secondary hover:text-theme-primary'
-                            }`}
-                    >
-                        Капитализация / ВВП
-                    </button>
-                    <button
-                        onClick={() => setViewMode('cap-m2')}
-                        className={`px-2 md:px-3 py-1 md:py-1.5 text-xs md:text-sm font-medium rounded-lg transition-colors duration-200 ${viewMode === 'cap-m2'
-                            ? 'btn-control active'
-                            : 'text-theme-secondary hover:text-theme-primary'
-                            }`}
-                    >
-                        Капитализация / M2
-                    </button>
-                </div>
+                <Dropdown<ViewMode>
+                    options={[
+                        { key: 'cap-gdp', label: 'Капитализация / ВВП' },
+                        { key: 'cap-m2',  label: 'Капитализация / M2' },
+                    ]}
+                    value={viewMode}
+                    onChange={setViewMode}
+                />
 
                 {/* Периоды */}
-                <div className="btn-group-scroll gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
-                    {(Object.keys(PERIOD_LABELS) as BuffettPeriod[]).map((p) => {
+                <Dropdown<BuffettPeriod>
+                    options={(Object.keys(PERIOD_LABELS) as BuffettPeriod[]).map((p): DropdownOption<BuffettPeriod> => ({
+                        key: p,
+                        label: PERIOD_LABELS[p] ?? p,
+                        locked: !isPeriodAllowed(p, isAuthenticated),
+                    }))}
+                    value={period}
+                    onChange={(p) => {
                         const allowed = isPeriodAllowed(p, isAuthenticated);
-                        return (
-                            <button
-                                key={p}
-                                onClick={() => {
-                                    if (!allowed) { navigate('/login'); return; }
-                                    setPeriod(p);
-                                }}
-                                title={!allowed ? 'Войдите для доступа' : undefined}
-                                className={`px-2 md:px-3 py-1 md:py-1.5 text-xs md:text-sm font-medium rounded-lg transition-colors duration-200 ${
-                                    !allowed
-                                        ? 'text-theme-muted cursor-not-allowed opacity-50'
-                                        : period === p
-                                            ? 'btn-control active'
-                                            : 'text-theme-secondary hover:text-theme-primary'
-                                }`}
-                            >
-                                {PERIOD_LABELS[p]}
-                                {!allowed && <Lock className="inline-block ml-0.5 w-3 h-3" />}
-                            </button>
-                        );
-                    })}
-                </div>
+                        if (!allowed) { navigate('/login'); return; }
+                        setPeriod(p);
+                    }}
+                />
 
                 {/* Таймфрейм — для cap-gdp и cap-m2 */}
                 {(viewMode === 'cap-gdp' || viewMode === 'cap-m2') && (
-                    <div className="btn-group-scroll gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
-                        {(['1d', '1w', '1m'] as const).map((tf) => (
-                            <button
-                                key={tf}
-                                onClick={() => setTimeframe(tf)}
-                                className={`px-2 md:px-3 py-1 md:py-1.5 text-xs md:text-sm font-medium rounded-lg transition-colors duration-200 ${timeframe === tf ? 'btn-control active' : 'text-theme-secondary hover:text-theme-primary'}`}
-                            >
-                                {tf === '1d' ? '1Д' : tf === '1w' ? '1Н' : '1М'}
-                            </button>
-                        ))}
-                    </div>
+                    <Dropdown<'1d' | '1w' | '1m'>
+                        options={[
+                            { key: '1d', label: '1Д' },
+                            { key: '1w', label: '1Н' },
+                            { key: '1m', label: '1М' },
+                        ]}
+                        value={timeframe}
+                        onChange={setTimeframe}
+                    />
                 )}
 
                 {/* Прогноз — только для cap-gdp */}
                 {viewMode === 'cap-gdp' && (
-                    <div className="flex items-center gap-2">
-                        <span className="text-sm text-theme-secondary">Прогноз:</span>
-                        <select
-                            value={forecastTarget ?? ''}
-                            onChange={(e) => setForecastTarget(e.target.value ? Number(e.target.value) : null)}
-                            className="bg-theme-secondary border border-theme rounded-lg px-3 py-1.5 text-sm text-theme-primary focus:outline-none focus:border-theme-accent"
-                        >
-                            <option value="">Выкл</option>
-                            {[10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110].map(v => (
-                                <option key={v} value={v}>{v}%</option>
-                            ))}
-                        </select>
-                    </div>
+                    <Dropdown<string>
+                        options={[
+                            { key: '', label: 'Прогноз: выкл' },
+                            ...[10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110].map((v): DropdownOption<string> => ({
+                                key: String(v),
+                                label: `Прогноз: ${v}%`,
+                            })),
+                        ]}
+                        value={forecastTarget !== null ? String(forecastTarget) : ''}
+                        onChange={(k) => setForecastTarget(k ? Number(k) : null)}
+                    />
                 )}
 
             </div>
 
             {/* График */}
             {error ? (
-                <div className="flex items-center justify-center h-[450px] bg-theme-secondary rounded-2xl border border-theme">
+                <div className="flex items-center justify-center h-[450px]">
                     <div className="text-theme-danger text-center">
                         <p className="text-lg font-medium">{error}</p>
                         <p className="text-sm text-theme-secondary mt-2">Попробуйте обновить страницу</p>
                     </div>
                 </div>
-            ) : (
-            <div className="bg-theme-secondary rounded-2xl border border-theme overflow-hidden" style={{ minHeight: 500 }}>
-            {viewMode === 'cap-gdp' ? (
+            ) : viewMode === 'cap-gdp' ? (
+                <div ref={chartAnchorRef}>
                 <SimpleChart
                     data={capGdpChartData.primary}
                     secondaryData={capGdpChartData.secondary}
-                    height={450}
+                    height={chartHeight}
                     primaryColor="var(--accent)"
                     secondaryColor="var(--accent-secondary)"
                     showSecondary={true}
@@ -246,11 +230,13 @@ export default function BuffettPage() {
                     showNavigator={true}
                     hideTime={true}
                 />
+                </div>
             ) : (
+                <div ref={chartAnchorRef}>
                 <SimpleChart
                     data={capM2ChartData.primary}
                     secondaryData={capM2ChartData.secondary}
-                    height={450}
+                    height={chartHeight}
                     primaryColor="var(--accent)"
                     secondaryColor="var(--accent-secondary)"
                     showSecondary={true}
@@ -266,9 +252,10 @@ export default function BuffettPage() {
                     showNavigator={true}
                     hideTime={true}
                 />
+                </div>
             )}
-            </div>
-            )}
+
+            </div>{/* /editorial-frame */}
 
             {/* Описание */}
             <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">

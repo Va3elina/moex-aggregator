@@ -1,7 +1,8 @@
 import React, { useEffect, useLayoutEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { TrendingUp, DollarSign, Banknote, LineChart, BarChart2, Gem, Wallet, Lock } from 'lucide-react';
+import { TrendingUp, DollarSign, Banknote, Gem, Wallet } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
+import Dropdown, { type DropdownOption } from '../components/Dropdown';
 import { METHODOLOGY } from '../data/methodology';
 import {
     getFundsChartData,
@@ -19,6 +20,7 @@ import SimpleChart from '../components/SimpleChart';
 import { useAuth } from '../contexts/AuthContext';
 import { isPeriodAllowed, getDefaultPeriod } from '../config/accessControl';
 import { useRealtimeData } from '../hooks/useRealtimeData';
+import { useFitToViewport } from '../hooks/useFitToViewport';
 import FundCardModal from '../components/funds/FundCardModal';
 import FundsTable from '../components/funds/FundsTable';
 import FlowsHistogram from '../components/funds/FlowsHistogram';
@@ -50,7 +52,10 @@ const CATEGORIES: { key: FundCategory; name: string; icon: React.ElementType; in
     { key: 'gold', name: 'Золото', icon: Gem, index: 'GLDRUB_TOM' },
 ];
 
-const INDEX_COLOR = '#C8FF2E';
+// Цвета СЧА графика — theme-aware. Primary (СЧА) = accent (рыжий), secondary
+// (индекс) = forest-green из funds-flow палитры — единый visual-язык с flows.
+const INDEX_COLOR = 'var(--funds-flow-positive)';
+const NAV_COLOR   = 'var(--accent)';
 
 // Easing для анимации гистограммы
 import { ANIMATION } from '../config/chartTheme';
@@ -62,8 +67,17 @@ export default function FundsMoneyPage() {
     const navigate = useNavigate();
     const [category, setCategory] = useState<FundCategory>('money_market');
     const [period, setPeriod] = useState<Period>(getDefaultPeriod('6m', isAuthenticated) as Period);
-    const [viewMode, setViewMode] = useState<ViewMode>('aum');
+    // Default режим — Притоки-Оттоки (более информативно для нового пользователя)
+    const [viewMode, setViewMode] = useState<ViewMode>('flows');
     const [flowTimeframe, setFlowTimeframeRaw] = useState<FlowTimeframe>('1d');
+
+    // Динамическая высота графика — chartAnchorRef как в OI page
+    const chartAnchorRef = useRef<HTMLDivElement>(null);
+    const chartHeight = useFitToViewport(chartAnchorRef, {
+        min: 360,
+        max: 720,
+        bottomBuffer: 96,
+    });
 
     // Ограничения периодов для flow таймфреймов (как на ОИ)
     const FLOW_MIN_PERIODS: Record<FlowTimeframe, Period[]> = {
@@ -375,7 +389,7 @@ export default function FundsMoneyPage() {
     const currentCategory = CATEGORIES.find(c => c.key === category);
 
     return (
-        <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8 text-theme-primary min-h-screen">
+        <div className="max-w-[1408px] mx-auto px-4 md:px-6 py-6 md:py-8 text-theme-primary min-h-screen">
             <PageHeader
                 icon={Wallet}
                 title="Деньги в фондах"
@@ -384,8 +398,12 @@ export default function FundsMoneyPage() {
                 helpLink="/methodology/funds-money"
             />
 
-            {/* Вкладки категорий */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-6">
+            {/* Editorial frame — обнимает категории + controls + chart в один контейнер.
+                Категории получают editorial-press effect (translate + 4×4 hard shadow). */}
+            <div className="editorial-frame">
+
+            {/* Вкладки категорий — pill-стиль с press-effect, fluid font/padding */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 mb-4 md:mb-6" style={{ gap: 'var(--sp-2)' }}>
                 {CATEGORIES.map(cat => {
                     const Icon = cat.icon;
                     const isActive = category === cat.key;
@@ -393,15 +411,27 @@ export default function FundsMoneyPage() {
                         <button
                             key={cat.key}
                             onClick={() => setCategory(cat.key)}
-                            className={`flex items-center gap-2 px-3 py-3 rounded-xl font-medium transition-colors duration-200 min-w-0 ${isActive
-                                ? 'btn-control active'
-                                : 'bg-theme-secondary text-theme-secondary hover:text-theme-primary border border-theme'
-                                }`}
+                            className="editorial-press flex items-center font-semibold rounded-full min-w-0"
+                            style={{
+                                gap: 'var(--sp-2)',
+                                padding: 'var(--sp-2) var(--sp-3)',
+                                fontSize: 'var(--fs-sm)',
+                                backgroundColor: isActive ? 'var(--accent)' : 'var(--bg-secondary)',
+                                color: isActive ? 'var(--text-inverse)' : 'var(--text-primary)',
+                                border: '2px solid var(--text-primary)',
+                                boxShadow: isActive ? 'var(--shadow-hard-chip)' : undefined,
+                            }}
                         >
-                            <Icon className="w-5 h-5 shrink-0" />
-                            <span className="truncate text-sm">{cat.name}</span>
-                            <span className={`text-xs px-1.5 py-0.5 rounded-full shrink-0 ${isActive ? 'bg-white/20' : 'bg-white/5'
-                                }`}>
+                            <Icon className="shrink-0" style={{ width: 'var(--ico-sm)', height: 'var(--ico-sm)' }} />
+                            <span className="truncate flex-1 text-left">{cat.name}</span>
+                            <span
+                                className="rounded-full shrink-0"
+                                style={{
+                                    fontSize: 'var(--fs-2xs)',
+                                    padding: 'calc(var(--sp-1)) var(--sp-2)',
+                                    background: isActive ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.05)',
+                                }}
+                            >
                                 {cat.index}
                             </span>
                         </button>
@@ -409,100 +439,70 @@ export default function FundsMoneyPage() {
                 })}
             </div>
 
-            {/* Периоды */}
-            <div className="flex items-center gap-4 mb-6 flex-wrap">
-                <div className="btn-group-scroll gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
-                    {(Object.keys(PERIOD_LABELS) as Period[]).filter(p => AUM_PERIODS.includes(p)).map((p) => {
-                        const available = isFlowPeriodAvailable(p);
+            {/* Контролы */}
+            <div className="flex flex-wrap mb-4 md:mb-6" style={{ gap: 'var(--sp-2)' }}>
+                <Dropdown<Period>
+                    options={(Object.keys(PERIOD_LABELS) as Period[])
+                        .filter(p => AUM_PERIODS.includes(p))
+                        .map((p): DropdownOption<Period> => ({
+                            key: p,
+                            label: PERIOD_LABELS[p],
+                            locked: !isPeriodAllowed(p, isAuthenticated) || !isFlowPeriodAvailable(p),
+                        }))}
+                    value={period}
+                    onChange={(p) => {
                         const allowed = isPeriodAllowed(p, isAuthenticated);
-                        return (
-                            <button
-                                key={p}
-                                onClick={() => {
-                                    if (!allowed) { navigate('/login'); return; }
-                                    if (available) setPeriod(p);
-                                }}
-                                disabled={!available && allowed}
-                                title={!allowed ? 'Войдите для доступа' : !available ? 'Недоступно для этого таймфрейма' : undefined}
-                                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors duration-200 ${
-                                    !allowed
-                                        ? 'text-theme-muted cursor-not-allowed opacity-50'
-                                        : period === p
-                                            ? 'btn-control active'
-                                            : available
-                                                ? 'text-theme-secondary hover:text-theme-primary'
-                                                : 'text-theme-muted cursor-not-allowed'
-                                }`}
-                            >
-                                {PERIOD_LABELS[p]}
-                                {!allowed && <Lock className="inline-block ml-0.5 w-3 h-3" />}
-                            </button>
-                        );
-                    })}
-                </div>
+                        if (!allowed) { navigate('/login'); return; }
+                        if (isFlowPeriodAvailable(p)) setPeriod(p);
+                    }}
+                />
 
                 {/* Режим: СЧА / Притоки-оттоки */}
-                <div className="btn-group-scroll gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
-                    <button
-                        onClick={() => { setViewMode('aum'); if (!AUM_PERIODS.includes(period)) setPeriod('6m'); }}
-                        title="СЧА (объём активов)"
-                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors duration-200 ${viewMode === 'aum'
-                            ? 'btn-control active'
-                            : 'text-theme-secondary hover:text-theme-primary'
-                            }`}
-                    >
-                        <LineChart size={16} />
-                        <span className="text-sm font-medium">СЧА</span>
-                    </button>
-                    <button
-                        onClick={() => setViewMode('flows')}
-                        title="Притоки и оттоки"
-                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg transition-colors duration-200 ${viewMode === 'flows'
-                            ? 'btn-control active'
-                            : 'text-theme-secondary hover:text-theme-primary'
-                            }`}
-                    >
-                        <BarChart2 size={16} />
-                        <span className="text-sm font-medium">Притоки-Оттоки</span>
-                    </button>
-                </div>
+                <Dropdown<ViewMode>
+                    options={[
+                        { key: 'aum',   label: 'СЧА' },
+                        { key: 'flows', label: 'Притоки-Оттоки' },
+                    ]}
+                    value={viewMode}
+                    onChange={(m) => {
+                        setViewMode(m);
+                        if (m === 'aum' && !AUM_PERIODS.includes(period)) setPeriod('6m');
+                    }}
+                />
 
                 {/* Таймфрейм для flows */}
                 {viewMode === 'flows' && (
-                    <div className="btn-group-scroll gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
-                        {(['1d', '1w', '1m'] as FlowTimeframe[]).map((tf) => (
-                            <button
-                                key={tf}
-                                onClick={() => setFlowTimeframe(tf)}
-                                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors duration-200 ${flowTimeframe === tf
-                                    ? 'btn-control active'
-                                    : 'text-theme-secondary hover:text-theme-primary'
-                                    }`}
-                            >
-                                {tf === '1d' ? 'День' : tf === '1w' ? 'Неделя' : 'Месяц'}
-                            </button>
-                        ))}
-                    </div>
+                    <Dropdown<FlowTimeframe>
+                        options={[
+                            { key: '1d', label: 'День' },
+                            { key: '1w', label: 'Неделя' },
+                            { key: '1m', label: 'Месяц' },
+                        ]}
+                        value={flowTimeframe}
+                        onChange={setFlowTimeframe}
+                    />
                 )}
 
                 {/* Тоггл событий */}
                 {viewMode === 'flows' && (
-                <div className="btn-group-scroll bg-theme-secondary rounded-xl border border-theme p-1">
-                  <button
-                    onClick={() => setShowEvents(!showEvents)}
-                    className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors duration-200 ${showEvents
-                      ? 'btn-control active'
-                      : 'text-theme-secondary hover:text-theme-primary'
-                    }`}
-                  >
-                    События
-                  </button>
-                </div>
+                    <button
+                        onClick={() => setShowEvents(!showEvents)}
+                        className="editorial-press font-semibold rounded-full"
+                        style={{
+                            backgroundColor: showEvents ? 'var(--accent)' : 'var(--bg-secondary)',
+                            color: showEvents ? 'var(--text-inverse)' : 'var(--text-primary)',
+                            border: '2px solid var(--text-primary)',
+                            boxShadow: showEvents ? 'var(--shadow-hard-chip)' : undefined,
+                            fontSize: 'var(--fs-sm)',
+                            padding: 'var(--sp-2) var(--sp-4)',
+                        }}
+                    >
+                        События
+                    </button>
                 )}
             </div>
 
-            {/* График — общий контейнер с фоном чтобы не мигал при переключении */}
-            <div className="bg-theme-secondary rounded-2xl border border-theme overflow-hidden mb-6">
+            {/* График */}
             {error ? (
                 <div className="flex items-center justify-center h-[450px]">
                     <div className="text-theme-danger text-center">
@@ -511,12 +511,12 @@ export default function FundsMoneyPage() {
                     </div>
                 </div>
             ) : viewMode === 'aum' ? (
-                <div>
+                <div ref={chartAnchorRef}>
                     <SimpleChart
                         data={aggregatedData.chartData}
                         secondaryData={indexData}
-                        height={450}
-                        primaryColor="#6366f1"
+                        height={chartHeight}
+                        primaryColor={NAV_COLOR}
                         secondaryColor={INDEX_COLOR}
                         showSecondary={true}
                         formatValue={formatNav}
@@ -533,6 +533,7 @@ export default function FundsMoneyPage() {
                     />
                 </div>
             ) : (
+            <div ref={chartAnchorRef} style={{ ['--chart-height' as string]: `${chartHeight}px` }}>
             <FlowsHistogram
                         flowsData={flowsData}
                         animatedBarsIn={animatedBarsIn}
@@ -553,8 +554,10 @@ export default function FundsMoneyPage() {
                         onSetHoveredAnnotation={setHoveredAnnotation}
                         onSetFlowNavRange={setFlowNavRange}
                     />
-            )}
             </div>
+            )}
+
+            </div>{/* /editorial-frame */}
 
             {/* Таблица фондов */}
             <FundsTable

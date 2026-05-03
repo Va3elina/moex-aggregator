@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { TrendingUp, TrendingDown, AlertTriangle, Gauge, DollarSign, BarChart3, Lock } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { METHODOLOGY } from '../data/methodology';
@@ -9,6 +9,7 @@ import SimpleChart from '../components/SimpleChart';
 import { useAuth } from '../contexts/AuthContext';
 import { isPeriodAllowed, getDefaultPeriod } from '../config/accessControl';
 import { useRealtimeData } from '../hooks/useRealtimeData';
+import { useFitToViewport } from '../hooks/useFitToViewport';
 import { FEAR_COLORS, FEAR_LABELS_RU, getFearColor, getFearGradient } from '../config/fearConfig';
 import { EditorialChip, EditorialFrame, useEditorial } from '../components/editorial';
 
@@ -31,6 +32,14 @@ export default function FearIndexPage() {
   const [error, setError] = useState<string | null>(null);
   const [current, setCurrent] = useState<FearIndexResponse | null>(null);
   const [history, setHistory] = useState<FearIndexHistoryResponse | null>(null);
+
+  // Динамическая высота графика (как в OI/Buffett/Funds-Money)
+  const chartAnchorRef = useRef<HTMLDivElement>(null);
+  const chartHeight = useFitToViewport(chartAnchorRef, {
+    min: 360,
+    max: 720,
+    bottomBuffer: 96,
+  });
 
   // Загрузка данных
   const loadData = useCallback(async () => {
@@ -82,7 +91,7 @@ export default function FearIndexPage() {
 
   if (isInitialLoading) {
     return (
-      <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8">
+      <div className="max-w-[1408px] mx-auto px-4 md:px-6 py-6 md:py-8">
         <div className="animate-pulse">
           <div className="h-8 bg-white/5 rounded w-64 mb-6" />
           <div className="h-96 bg-white/5 rounded-2xl" />
@@ -93,7 +102,7 @@ export default function FearIndexPage() {
 
   if (error) {
     return (
-      <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8">
+      <div className="max-w-[1408px] mx-auto px-4 md:px-6 py-6 md:py-8">
         <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-6 text-center">
           <AlertTriangle className="w-12 h-12 text-red-400 mx-auto mb-3" />
           <p className="text-red-400">{error}</p>
@@ -103,7 +112,7 @@ export default function FearIndexPage() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8">
+    <div className="max-w-[1408px] mx-auto px-4 md:px-6 py-6 md:py-8">
       <PageHeader
         icon={Gauge}
         title="Индекс страха"
@@ -267,63 +276,66 @@ export default function FearIndexPage() {
         </div>
       </div>
 
+      {/* Editorial frame — обнимает controls + chart в один контейнер */}
+      <div className="editorial-frame">
+
       {/* Панель периодов */}
-      <EditorialFrame padding="sm" className="mb-6">
-        <div className="flex flex-wrap items-center gap-2 md:gap-3">
-          <span className="text-theme-muted text-sm pl-1">Период:</span>
-          <div className={isEditorial ? 'flex flex-wrap items-center gap-2' : 'flex items-center bg-theme-primary rounded-xl border border-theme p-1'}>
-            {PERIODS.map(p => {
-              const allowed = isPeriodAllowed(p.key, isAuthenticated);
-              return (
-                <EditorialChip
-                  key={p.key}
-                  active={period === p.key}
-                  disabled={!allowed}
-                  title={!allowed ? 'Войдите для доступа' : undefined}
-                  onClick={() => {
-                    if (!allowed) { navigate('/login'); return; }
-                    setPeriod(p.key);
-                  }}
-                >
-                  {p.label}
-                  {!allowed && <Lock className="inline-block ml-1 w-3 h-3" />}
-                </EditorialChip>
-              );
-            })}
-          </div>
-
-          <div className="flex-1" />
-
-          <div className="text-sm text-theme-muted pr-1">
-            {history?.count || 0} торговых дней
-          </div>
+      <div className="flex flex-wrap items-center mb-4 md:mb-6" style={{ gap: 'var(--sp-2)' }}>
+        <span className="text-theme-muted pl-1" style={{ fontSize: 'var(--fs-sm)' }}>Период:</span>
+        <div className={isEditorial ? 'flex flex-wrap items-center gap-2' : 'flex items-center bg-theme-primary rounded-xl border border-theme p-1'}>
+          {PERIODS.map(p => {
+            const allowed = isPeriodAllowed(p.key, isAuthenticated);
+            return (
+              <EditorialChip
+                key={p.key}
+                active={period === p.key}
+                disabled={!allowed}
+                title={!allowed ? 'Войдите для доступа' : undefined}
+                onClick={() => {
+                  if (!allowed) { navigate('/login'); return; }
+                  setPeriod(p.key);
+                }}
+              >
+                {p.label}
+                {!allowed && <Lock className="inline-block ml-1 w-3 h-3" />}
+              </EditorialChip>
+            );
+          })}
         </div>
-      </EditorialFrame>
+
+        <div className="flex-1" />
+
+        <div className="text-theme-muted pr-1" style={{ fontSize: 'var(--fs-sm)' }}>
+          {history?.count || 0} торговых дней
+        </div>
+      </div>
 
       {/* График */}
-      <EditorialFrame padding="md">
-        {chartData ? (
-          <SimpleChart
-            data={chartData.primaryData}
-            secondaryData={chartData.secondaryData}
-            height={400}
-            primaryColor="var(--accent)"
-            secondaryColor="var(--accent-secondary)"
-            showSecondary={true}
-            formatValue={(v) => v.toFixed(1)}
-            formatSecondaryValue={(v) => `×${(v / 10).toFixed(2)}`}
-            primaryLabel="Fear Index"
-            secondaryLabel="Rotation Ratio"
-            loading={loading}
-            allowHistogram={true}
-            showNavigator={true}
-          />
-        ) : (
-          <div className="h-96 flex items-center justify-center text-theme-muted">
-            Нет данных для отображения
-          </div>
-        )}
-      </EditorialFrame>
+      {chartData ? (
+        <div ref={chartAnchorRef}>
+        <SimpleChart
+          data={chartData.primaryData}
+          secondaryData={chartData.secondaryData}
+          height={chartHeight}
+          primaryColor="var(--accent)"
+          secondaryColor="var(--accent-secondary)"
+          showSecondary={true}
+          formatValue={(v) => v.toFixed(1)}
+          formatSecondaryValue={(v) => `×${(v / 10).toFixed(2)}`}
+          primaryLabel="Fear Index"
+          secondaryLabel="Rotation Ratio"
+          loading={loading}
+          allowHistogram={true}
+          showNavigator={true}
+        />
+        </div>
+      ) : (
+        <div className="h-96 flex items-center justify-center text-theme-muted">
+          Нет данных для отображения
+        </div>
+      )}
+
+      </div>{/* /editorial-frame */}
 
       {/* Легенда */}
       <EditorialFrame padding="md" className="mt-6">

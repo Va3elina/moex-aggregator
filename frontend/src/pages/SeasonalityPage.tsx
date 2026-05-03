@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { ChevronDown, BarChart3, CalendarDays, Layers, X, Plus } from 'lucide-react';
+import { ChevronDown, CalendarDays, X } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import InstrumentIcon from '../components/InstrumentIcon';
+import Dropdown, { type DropdownOption } from '../components/Dropdown';
 import { usePrefetchLogos } from '../hooks/usePrefetchLogos';
 import { METHODOLOGY } from '../data/methodology';
 import { getSeasonality, getSeasonalityPrice, getSeasonalityYearly, getSeasonalityYears } from '../services/api';
@@ -38,9 +39,11 @@ const TEST_MODES: SeasonalityMode[] = ['intraday', 'weekday', 'monthday', 'month
 // убрана по просьбе пользователя. Бэкенд принимает iterations до 9999.
 const FULL_HISTORY_ITERS = 9999;
 
-// Цвета для спец-серий (noOutliers, exactYear). Серии "Период с" используют FUND_PALETTE.
-const COLOR_NO_OUTLIERS = '#A78BFA';
-const COLOR_EXACT_YEAR = '#F97316';
+// Цвета для спец-серий — theme-aware через CSS vars.
+// "Без выбросов" — forest green (secondary line), "Exact year" — accent (pumpkin).
+// FUND_PALETTE используется для серий "Период с" (множественные годы).
+const COLOR_NO_OUTLIERS = 'var(--funds-flow-positive)';
+const COLOR_EXACT_YEAR = 'var(--accent)';
 
 
 export default function SeasonalityPage() {
@@ -435,59 +438,52 @@ export default function SeasonalityPage() {
         <button
           onClick={() => setExcludeDividends(!excludeDividends)}
           title="Пересчитать цены с учётом реинвестирования дивидендов + исключение ex-div дней в intraday"
-          className="flex items-center gap-2 px-2 md:px-4 py-2 md:py-2.5 rounded-xl border text-xs md:text-sm font-medium transition-all whitespace-nowrap"
+          className="editorial-press flex items-center font-semibold rounded-full whitespace-nowrap"
           style={{
-            backgroundColor: excludeDividends ? 'color-mix(in srgb, var(--success) 15%, transparent)' : 'var(--bg-secondary)',
-            borderColor: excludeDividends ? 'color-mix(in srgb, var(--success) 50%, transparent)' : 'var(--border-color)',
-            color: excludeDividends ? 'var(--success)' : 'var(--text-secondary)',
+            backgroundColor: excludeDividends ? 'var(--accent)' : 'var(--bg-secondary)',
+            color: excludeDividends ? 'var(--text-inverse)' : 'var(--text-primary)',
+            border: '1.5px solid var(--text-primary)',
+            boxShadow: excludeDividends ? 'var(--shadow-hard-chip)' : undefined,
+            fontSize: 'var(--fs-sm)',
+            padding: 'var(--sp-2) var(--sp-3)',
+            gap: 'var(--sp-2)',
           }}
         >
-          <span className={`inline-block w-3 h-3 rounded-full ${excludeDividends ? 'bg-green-500' : 'bg-gray-500'}`} />
+          <span className="inline-block rounded-full" style={{ width: 'var(--ico-xs)', height: 'var(--ico-xs)', backgroundColor: excludeDividends ? 'var(--funds-flow-positive)' : 'var(--text-muted)' }} />
           Без дивидендных гэпов
         </button>
       )}
       <button
         onClick={() => setShowNoOutliers(!showNoOutliers)}
         title="Исключить годы крупных кризисов: 2008, 2014, 2020, 2022"
-        className="flex items-center gap-2 px-2 md:px-4 py-2 md:py-2.5 rounded-xl border text-xs md:text-sm font-medium transition-all whitespace-nowrap"
+        className="editorial-press flex items-center font-semibold rounded-full whitespace-nowrap"
         style={{
-          backgroundColor: showNoOutliers ? 'rgba(167, 139, 250, 0.15)' : 'var(--bg-secondary)',
-          borderColor: showNoOutliers ? 'rgba(167, 139, 250, 0.5)' : 'var(--border-color)',
-          color: showNoOutliers ? COLOR_NO_OUTLIERS : 'var(--text-secondary)',
+          backgroundColor: showNoOutliers ? 'var(--accent)' : 'var(--bg-secondary)',
+          color: showNoOutliers ? 'var(--text-inverse)' : 'var(--text-primary)',
+          border: '1.5px solid var(--text-primary)',
+          boxShadow: showNoOutliers ? 'var(--shadow-hard-chip)' : undefined,
+          fontSize: 'var(--fs-sm)',
+          padding: 'var(--sp-2) var(--sp-3)',
+          gap: 'var(--sp-2)',
         }}
       >
-        <span className={`inline-block w-3 h-3 rounded-full ${showNoOutliers ? '' : 'bg-gray-500'}`}
-          style={showNoOutliers ? { backgroundColor: COLOR_NO_OUTLIERS } : {}} />
+        <span className="inline-block rounded-full" style={{ width: 'var(--ico-xs)', height: 'var(--ico-xs)', backgroundColor: showNoOutliers ? COLOR_NO_OUTLIERS : 'var(--text-muted)' }} />
         Без выбросов
       </button>
       {renderCompareYearsControls()}
       {availableYears.length > 1 && (
-        <div className="relative inline-block">
-          <div
-            title={showExactYear !== null ? `Траектория ${showExactYear} года` : 'Наложить траекторию конкретного года'}
-            className="flex items-center gap-2 px-2 md:px-4 py-2 md:py-2.5 rounded-xl border text-xs md:text-sm font-medium transition-all whitespace-nowrap cursor-pointer"
-            style={{
-              backgroundColor: showExactYear !== null ? 'rgba(249, 115, 22, 0.15)' : 'var(--bg-secondary)',
-              borderColor: showExactYear !== null ? 'rgba(249, 115, 22, 0.5)' : 'var(--border-color)',
-              color: showExactYear !== null ? COLOR_EXACT_YEAR : 'var(--text-secondary)',
-            }}
-          >
-            <span className={`inline-block w-3 h-3 rounded-full ${showExactYear === null ? 'bg-gray-500' : ''}`}
-              style={showExactYear !== null ? { backgroundColor: COLOR_EXACT_YEAR } : {}} />
-            {showExactYear !== null ? `Год: ${showExactYear}` : 'Показать год'}
-            <ChevronDown size={14} className="opacity-60" />
-          </div>
-          <select
-            value={showExactYear ?? ''}
-            onChange={(e) => setShowExactYear(e.target.value ? Number(e.target.value) : null)}
-            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-          >
-            <option value="">— не показывать —</option>
-            {availableYears.filter(y => y < currentYearNum).map(y => (
-              <option key={y} value={y}>{y}</option>
-            ))}
-          </select>
-        </div>
+        <Dropdown<string>
+          options={[
+            { key: '', label: 'Показать год' },
+            ...availableYears.filter(y => y < currentYearNum).map((y): DropdownOption<string> => ({
+              key: String(y),
+              label: String(y),
+              color: COLOR_EXACT_YEAR,
+            })),
+          ]}
+          value={showExactYear !== null ? String(showExactYear) : ''}
+          onChange={(k) => setShowExactYear(k ? Number(k) : null)}
+        />
       )}
     </>
   );
@@ -499,28 +495,32 @@ export default function SeasonalityPage() {
       <>
         {compareYears.map((yr, idx) => {
           const color = FUND_PALETTE[idx % FUND_PALETTE.length];
-          // Нельзя убрать последний оставшийся период — иначе получим empty state.
-          // При единственном периоде прячем × и меняем tooltip.
           const isOnly = compareYears.length === 1;
+          // Editorial chip: paper bg + theme-primary outline + theme-primary text.
+          // Цветная точка слева indicates series — единственный остаток FUND_PALETTE color
+          // (нужен для синхронизации с линией на графике).
           return (
             <div
               key={yr}
-              className="flex items-center gap-2 px-2 md:px-3 py-2 md:py-2.5 rounded-xl border text-xs md:text-sm font-medium whitespace-nowrap"
+              className="editorial-press flex items-center font-semibold rounded-full whitespace-nowrap"
               style={{
-                backgroundColor: `${color}26`, // ~15% opacity
-                borderColor: `${color}80`,
-                color: color,
+                background: 'var(--bg-secondary)',
+                color: 'var(--text-primary)',
+                border: '1.5px solid var(--text-primary)',
+                fontSize: 'var(--fs-sm)',
+                padding: 'var(--sp-2) var(--sp-3)',
+                gap: 'var(--sp-2)',
               }}
               title={isOnly
                 ? `Период с ${yr} г. — единственный активный период, его нельзя отключить. Сначала добавьте ещё один период через «+».`
                 : `Серия "Период с ${yr} г." — средние значения по годам от ${yr} до сегодня`}
             >
-              <span className="inline-block w-3 h-3 rounded-full" style={{ backgroundColor: color }} />
+              <span className="inline-block rounded-full" style={{ width: 'var(--ico-xs)', height: 'var(--ico-xs)', backgroundColor: color }} />
               Период с {yr}
               {!isOnly && (
                 <button
                   onClick={() => setCompareYears(compareYears.filter(y => y !== yr))}
-                  className="ml-1 opacity-60 hover:opacity-100 transition-opacity"
+                  className="opacity-60 hover:opacity-100 transition-opacity"
                   title="Убрать"
                   aria-label={`Убрать серию с ${yr} г.`}
                 >
@@ -531,37 +531,22 @@ export default function SeasonalityPage() {
           );
         })}
         {addableYears.length > 0 && (
-          <div className="relative inline-block">
-            <div
-              className="flex items-center gap-1.5 px-2 md:px-3 py-2 md:py-2.5 rounded-xl border text-xs md:text-sm font-medium transition-all whitespace-nowrap cursor-pointer hover:opacity-80"
-              style={{
-                backgroundColor: 'var(--bg-secondary)',
-                borderColor: 'var(--border-color)',
-                color: 'var(--text-secondary)',
-              }}
-              title="Добавить ещё одну серию 'Период с' для сравнения"
-            >
-              <Plus size={14} />
-              Период с
-              <ChevronDown size={14} className="opacity-60" />
-            </div>
-            <select
-              value=""
-              onChange={(e) => {
-                const yr = Number(e.target.value);
-                if (yr && !compareYears.includes(yr)) {
-                  setCompareYears([...compareYears, yr].sort((a, b) => a - b));
-                }
-              }}
-              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-              aria-label="Добавить период"
-            >
-              <option value="">— выберите год —</option>
-              {addableYears.map(y => (
-                <option key={y} value={y}>С {y} г.</option>
-              ))}
-            </select>
-          </div>
+          <Dropdown<string>
+            options={[
+              { key: '', label: '+ Период с' },
+              ...addableYears.map((y): DropdownOption<string> => ({
+                key: String(y),
+                label: `С ${y} г.`,
+              })),
+            ]}
+            value=""
+            onChange={(k) => {
+              const yr = Number(k);
+              if (yr && !compareYears.includes(yr)) {
+                setCompareYears([...compareYears, yr].sort((a, b) => a - b));
+              }
+            }}
+          />
         )}
       </>
     );
@@ -583,21 +568,30 @@ export default function SeasonalityPage() {
         helpLink="/methodology/seasonality"
       />
 
+      {/* Editorial frame — обнимает controls + chart в один контейнер */}
+      <div className="editorial-frame">
+
       {/* Controls Row 1 */}
-      <div className="flex flex-wrap items-start gap-4 mb-4">
-        {/* Stock selector */}
+      <div className="flex flex-wrap items-center mb-4" style={{ gap: 'var(--sp-2)' }}>
+        {/* Stock selector — остаётся widget-flat (icon + multiline label) */}
         <div className="relative">
           <button
             onClick={() => setIsModalOpen(true)}
-            className="widget-flat px-3 md:px-4 py-2 md:py-2.5 text-sm font-medium transition-colors flex items-center gap-2 md:gap-3 min-w-[160px] md:min-w-[200px] hover:opacity-90"
-            style={{ color: 'var(--text-primary)' }}
+            className="widget-flat font-medium transition-colors flex items-center hover:opacity-90"
+            style={{
+              color: 'var(--text-primary)',
+              fontSize: 'var(--fs-sm)',
+              padding: 'var(--sp-2) var(--sp-4)',
+              gap: 'var(--sp-3)',
+              minWidth: 'clamp(160px, 30vw, 200px)',
+            }}
           >
             <InstrumentIcon sectype={selectedStock} size={28} rounded="full" eager />
             <div className="flex-1 text-left">
               <div className="font-medium">{selectedName}</div>
-              <div className="text-xs text-theme-secondary">{selectedStock}</div>
+              <div className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)' }}>{selectedStock}</div>
             </div>
-            <ChevronDown size={16} className="text-theme-secondary" />
+            <ChevronDown size={14} className="text-theme-secondary" />
           </button>
 
           {isModalOpen && (
@@ -609,71 +603,38 @@ export default function SeasonalityPage() {
           )}
         </div>
 
-        {/* Chart type toggle — pill-group паттерн (rounded active-highlight).
-            Режимы «Цена» и «Тест» убраны из UI — внутренняя логика для них
-            оставлена на случай возврата. */}
-        <div className="btn-group-scroll gap-1 p-1 rounded-xl border"
-          style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-color)' }}>
-          <button
-            onClick={() => setChartType('histogram')}
-            className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 md:py-2 text-xs md:text-sm font-medium rounded-lg transition-all"
-            style={{
-              backgroundColor: chartType === 'histogram' ? 'var(--accent)' : 'transparent',
-              color: chartType === 'histogram' ? 'var(--bg-primary)' : 'var(--text-secondary)',
-            }}
-          >
-            <BarChart3 size={14} /> Сезонность
-          </button>
-          <button
-            onClick={() => setChartType('yearly')}
-            className="flex items-center gap-1.5 px-2 md:px-3 py-1.5 md:py-2 text-xs md:text-sm font-medium rounded-lg transition-all"
-            style={{
-              backgroundColor: chartType === 'yearly' ? 'var(--accent)' : 'transparent',
-              color: chartType === 'yearly' ? 'var(--bg-primary)' : 'var(--text-secondary)',
-            }}
-          >
-            <Layers size={14} /> Годовая
-          </button>
-        </div>
+        {/* Chart type toggle */}
+        <Dropdown<ChartType>
+          options={[
+            { key: 'histogram', label: 'Сезонность' },
+            { key: 'yearly',    label: 'Годовая' },
+          ]}
+          value={chartType === 'price' || chartType === 'test' ? 'histogram' : chartType}
+          onChange={setChartType}
+        />
 
-        {/* Histogram-specific: mode tabs — pill-group */}
+        {/* Histogram-specific: mode */}
         {chartType === 'histogram' && (
-          <div className="btn-group-scroll gap-1 p-1 rounded-xl border"
-            style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-color)' }}>
-            {(Object.keys(MODE_LABELS) as SeasonalityMode[]).map(m => (
-              <button
-                key={m}
-                onClick={() => setMode(m)}
-                className="px-2 md:px-3 py-1.5 md:py-2 text-xs md:text-sm font-medium rounded-lg transition-all whitespace-nowrap"
-                style={{
-                  backgroundColor: m === mode ? 'var(--accent)' : 'transparent',
-                  color: m === mode ? 'var(--bg-primary)' : 'var(--text-secondary)',
-                }}
-              >
-                {MODE_LABELS[m]}
-              </button>
-            ))}
-          </div>
+          <Dropdown<SeasonalityMode>
+            options={(Object.keys(MODE_LABELS) as SeasonalityMode[]).map((m): DropdownOption<SeasonalityMode> => ({
+              key: m,
+              label: MODE_LABELS[m],
+            }))}
+            value={mode}
+            onChange={setMode}
+          />
         )}
 
-        {/* Price-specific controls — pill-group */}
+        {/* Price-specific period */}
         {chartType === 'price' && (
-          <div className="btn-group-scroll gap-1 p-1 rounded-xl border"
-            style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-color)' }}>
-            {PRICE_PERIODS.map(p => (
-              <button
-                key={p.label}
-                onClick={() => setPriceDays(p.days)}
-                className="px-2 md:px-3 py-1.5 md:py-2 text-xs md:text-sm font-medium rounded-lg transition-all whitespace-nowrap"
-                style={{
-                  backgroundColor: priceDays === p.days ? 'var(--accent)' : 'transparent',
-                  color: priceDays === p.days ? 'var(--bg-primary)' : 'var(--text-secondary)',
-                }}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
+          <Dropdown<string>
+            options={PRICE_PERIODS.map((p): DropdownOption<string> => ({
+              key: String(p.days),
+              label: p.label,
+            }))}
+            value={String(priceDays)}
+            onChange={(k) => setPriceDays(Number(k))}
+          />
         )}
       </div>
 
@@ -714,17 +675,25 @@ export default function SeasonalityPage() {
         />
       )}
 
-      {/* Existing Chart block — hidden in test mode */}
+      {/* Existing Chart block — hidden in test mode.
+          Paper-card как в OI/Buffett/SimpleChart wrapper: rounded-2xl + p-5
+          + bg-theme-primary + 1.5px outline. Visually отделяет график от
+          editorial-frame controls сверху. */}
       {chartType !== 'test' && (
-      <div
-        className="rounded-2xl border p-4 relative"
-        style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-color)' }}
-      >
-        {/* Спиннер обновления */}
+      <div className="relative rounded-2xl bg-theme-primary p-5" style={{ border: '1.5px solid var(--text-primary)' }}>
+        {/* Спиннер обновления — paper-style без glass */}
         {loading && (bars.length > 0 || priceData || yearlyData) && (
-          <div className="absolute top-4 right-4 z-20 flex items-center gap-2 bg-theme-tertiary/90 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-theme">
+          <div
+            className="absolute top-4 right-4 z-20 flex items-center rounded-lg border border-theme shadow-md"
+            style={{
+              background: 'var(--bg-primary)',
+              padding: 'var(--sp-2) var(--sp-3)',
+              gap: 'var(--sp-2)',
+              fontSize: 'var(--fs-xs)',
+            }}
+          >
             <div className="w-4 h-4 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
-            <span className="text-xs text-theme-secondary">Обновление...</span>
+            <span className="text-theme-secondary">Обновление...</span>
           </div>
         )}
         {loading && bars.length === 0 && !priceData && !yearlyData ? (
@@ -784,6 +753,8 @@ export default function SeasonalityPage() {
         )}
       </div>
       )}
+
+      </div>{/* /editorial-frame */}
 
       {/* Description */}
       <div className="mt-4 text-sm" style={{ color: 'var(--text-muted)' }}>

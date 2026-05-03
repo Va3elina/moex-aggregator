@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { ChevronDown, BarChart3 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
@@ -16,6 +16,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { isIntervalAllowed, isPeriodAllowed, getDefaultPeriod } from '../config/accessControl';
 import { useRealtimeData } from '../hooks/useRealtimeData';
+import { useFitToViewport } from '../hooks/useFitToViewport';
 
 type DisplayMode = 'price' | 'positions' | 'participants';
 type OIVariant = 'oi' | 'long' | 'short' | 'both' | 'net';
@@ -58,6 +59,22 @@ export default function OpenInterestPage() {
   // Фоновая предзагрузка лого один раз — модалка выбора актива потом
   // открывается мгновенно из SW cache, без 100 запросов.
   usePrefetchLogos();
+
+  // Адаптивная высота графика. Anchor-ref на wrapper самого графика —
+  // хук вычитает позицию anchor.top от window.innerHeight, плюс buffer на
+  // range-slider внутри SimpleChart и нижний padding страницы.
+  // Без хардкода: всё что добавляется/убирается выше графика учтётся
+  // автоматически (margins, error плашки, multi-row controls и т.д.),
+  // потому что хук смотрит на реальную позицию anchor в DOM.
+  const headerRef = useRef<HTMLDivElement>(null);
+  const controlsRef = useRef<HTMLDivElement>(null);
+  const chartAnchorRef = useRef<HTMLDivElement>(null);
+  const chartHeight = useFitToViewport(chartAnchorRef, {
+    min: 360,
+    max: 720,
+    bottomBuffer: 96, // range slider в SimpleChart (~48) + page py-bottom (~32) + safety margin
+    watchRefs: [headerRef, controlsRef],
+  });
 
   // Инструмент
   // ВАЖНО: sec_id может прийти из URL-параметра (например `?instrument=IMOEXF`),
@@ -368,13 +385,15 @@ export default function OpenInterestPage() {
 
   return (
     <div className="max-w-[1408px] mx-auto px-4 md:px-6 py-6 md:py-8">
-      <PageHeader
-        icon={BarChart3}
-        title="Открытый интерес"
-        subtitle="Анализ позиций участников по фьючерсам MOEX"
-        help={METHODOLOGY.oi}
-        helpLink="/methodology/oi"
-      />
+      <div ref={headerRef}>
+        <PageHeader
+          icon={BarChart3}
+          title="Открытый интерес"
+          subtitle="Анализ позиций участников по фьючерсам MOEX"
+          help={METHODOLOGY.oi}
+          helpLink="/methodology/oi"
+        />
+      </div>
 
       {/* Editorial frame — обнимает controls + chart в один контейнер с
           1.5px outline + hard-shadow 5×5×0 (как в design handoff page.jsx).
@@ -386,20 +405,26 @@ export default function OpenInterestPage() {
           Asset + FIZ/YUR + Interval + Period + DisplayMode + OI variant + Экспирации
           в одну строку (на узких экранах wraps). Стиль editorial pill через
           Dropdown компонент. */}
-      <div className="mb-4 md:mb-6">
+      <div ref={controlsRef} className="mb-4 md:mb-6">
         <div className="flex flex-wrap items-center gap-2 md:gap-3">
           {/* Селектор инструмента — открывает модалку */}
           <button
             onClick={() => setIsModalOpen(true)}
-            className="widget-flat px-3 md:px-4 py-2 md:py-2.5 text-sm font-medium transition-colors flex items-center gap-2 md:gap-3 min-w-[160px] md:min-w-[200px] hover:opacity-90"
-            style={{ color: 'var(--text-primary)' }}
+            className="widget-flat font-medium transition-colors flex items-center hover:opacity-90"
+            style={{
+              color: 'var(--text-primary)',
+              fontSize: 'var(--fs-sm)',
+              padding: 'var(--sp-2) var(--sp-4)',
+              gap: 'var(--sp-3)',
+              minWidth: 'clamp(140px, 30vw, 200px)',
+            }}
           >
-            <InstrumentIcon sectype={selectedInstrument} size={28} rounded="full" eager />
+            <InstrumentIcon sectype={selectedInstrument} size={24} rounded="full" eager />
             <div className="flex-1 text-left">
               <div className="font-medium">{instrumentName}</div>
-              <div className="text-xs text-theme-secondary">{selectedInstrument}</div>
+              <div className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)' }}>{selectedInstrument}</div>
             </div>
-            <ChevronDown size={16} className="text-theme-secondary" />
+            <ChevronDown size={14} className="text-theme-secondary" />
           </button>
 
           {/* FIZ/YUR — только если displayMode !== price */}
@@ -490,12 +515,14 @@ export default function OpenInterestPage() {
           {displayMode !== 'price' && (
             <button
               onClick={() => setShowExpirations(!showExpirations)}
-              className="editorial-press px-4 py-2 text-sm font-semibold rounded-full"
+              className="editorial-press font-semibold rounded-full"
               style={{
                 backgroundColor: showExpirations ? 'var(--accent)' : 'var(--bg-secondary)',
                 color: showExpirations ? 'var(--text-inverse)' : 'var(--text-primary)',
                 border: '2px solid var(--text-primary)',
                 boxShadow: showExpirations ? 'var(--shadow-hard-chip)' : undefined,
+                fontSize: 'var(--fs-sm)',
+                padding: 'var(--sp-2) var(--sp-4)',
               }}
             >
               Экспирации
@@ -513,7 +540,9 @@ export default function OpenInterestPage() {
 
       {/* График — фон и border заданы внутри SimpleChart (bg-theme-primary,
           border + hard shadow в editorial). Обёртка убрана чтобы не было
-          двойной рамки. */}
+          двойной рамки. chartAnchorRef нужен хуку useFitToViewport для
+          расчёта высоты графика «остаток до низа viewport». */}
+      <div ref={chartAnchorRef}>
       <SimpleChart
         data={chartData}
         secondaryData={oiData}
@@ -523,7 +552,7 @@ export default function OpenInterestPage() {
         primaryColor={COLORS.primary}
         secondaryColor={colors.secondary}
         thirdColor={colors.third}
-        height={660}
+        height={chartHeight}
         loading={loading}
         formatValue={(v) => v.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
         primaryLabel={instrumentName || selectedInstrument}
@@ -548,16 +577,17 @@ export default function OpenInterestPage() {
           });
         }, [filteredData?.contract_switches, showExpirations])}
       />
+      </div>{/* /chartAnchorRef */}
 
       </div>{/* /editorial-frame */}
 
       {/* Легенда — оформлена как editorial card (frame с hard shadow в editorial,
           обычная widget панель в OKX/dark). Inner bg = secondary чтобы выделяться
           на page-bg, в editorial CSS override применит outline + hard shadow. */}
-      <div className="mt-6 bg-theme-secondary border border-theme rounded-2xl p-5 widget">
-        <div className="space-y-3 text-sm">
+      <div className="mt-6 bg-theme-secondary border border-theme rounded-2xl widget" style={{ padding: 'var(--sp-5)' }}>
+        <div style={{ fontSize: 'var(--fs-sm)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
           {/* Линии графика */}
-          <div className="flex items-start gap-3">
+          <div className="flex items-start" style={{ gap: 'var(--sp-3)' }}>
             <span className="w-4 h-0.5 mt-2 rounded-full flex-shrink-0" style={{ backgroundColor: COLORS.primary }} />
             <div>
               <span className="font-medium" style={{ color: COLORS.primary }}>График цены</span>
@@ -565,7 +595,7 @@ export default function OpenInterestPage() {
             </div>
           </div>
 
-          <div className="flex items-start gap-3">
+          <div className="flex items-start" style={{ gap: 'var(--sp-3)' }}>
             <span className="w-4 h-0.5 mt-2 rounded-full flex-shrink-0" style={{ backgroundColor: COLORS.amber }} />
             <div>
               <span className="font-medium" style={{ color: COLORS.amber }}>Открытый интерес</span>
@@ -573,7 +603,7 @@ export default function OpenInterestPage() {
             </div>
           </div>
 
-          <div className="flex items-start gap-3">
+          <div className="flex items-start" style={{ gap: 'var(--sp-3)' }}>
             <span className="w-4 h-0.5 mt-2 rounded-full flex-shrink-0" style={{ backgroundColor: COLORS.emerald }} />
             <div>
               <span className="font-medium" style={{ color: COLORS.emerald }}>Покупки</span>
@@ -581,7 +611,7 @@ export default function OpenInterestPage() {
             </div>
           </div>
 
-          <div className="flex items-start gap-3">
+          <div className="flex items-start" style={{ gap: 'var(--sp-3)' }}>
             <span className="w-4 h-0.5 mt-2 rounded-full flex-shrink-0" style={{ backgroundColor: COLORS.rose }} />
             <div>
               <span className="font-medium" style={{ color: COLORS.rose }}>Продажи</span>
@@ -589,7 +619,7 @@ export default function OpenInterestPage() {
             </div>
           </div>
 
-          <div className="flex items-start gap-3">
+          <div className="flex items-start" style={{ gap: 'var(--sp-3)' }}>
             <span className="w-4 h-0.5 mt-2 rounded-full flex-shrink-0" style={{ backgroundColor: COLORS.cyan }} />
             <div>
               <span className="font-medium" style={{ color: COLORS.cyan }}>Чистая позиция</span>

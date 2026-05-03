@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { LayoutGrid } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
+import Dropdown, { type DropdownOption } from '../components/Dropdown';
 import { METHODOLOGY } from '../data/methodology';
 import { getFundsCatalog, getFundHoldings, type CatalogFund, type FundHoldingsResponse } from '../services/api';
 import { UK_LOGOS, CATEGORY_LABELS, DONUT_COLORS } from '../config/fundConfig';
@@ -119,7 +120,7 @@ export default function FundsCatalogPage() {
     };
 
     return (
-        <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8 min-h-screen">
+        <div className="max-w-[1408px] mx-auto px-4 md:px-6 py-6 md:py-8 min-h-screen">
             <PageHeader
                 icon={LayoutGrid}
                 title="Состав фондов"
@@ -128,45 +129,41 @@ export default function FundsCatalogPage() {
                 helpLink="/methodology/funds-catalog"
             />
 
-            {/* Filters */}
-            <div className="flex flex-wrap items-center gap-3 mb-6">
-                <div className="btn-group-scroll gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
-                    <button
-                        onClick={() => setCategoryFilter('all')}
-                        className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${categoryFilter === 'all' ? 'btn-control active' : 'text-theme-secondary hover:text-theme-primary'}`}
-                    >Все</button>
-                    {Object.entries(CATEGORY_LABELS).filter(([key]) => key !== 'gold' && key !== 'money_market').map(([key, label]) => (
-                        <button
-                            key={key}
-                            onClick={() => setCategoryFilter(key)}
-                            className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${categoryFilter === key ? 'btn-control active' : 'text-theme-secondary hover:text-theme-primary'}`}
-                        >{label}</button>
-                    ))}
-                </div>
+            {/* Editorial frame — обнимает controls + grid в один контейнер */}
+            <div className="editorial-frame">
 
-                <div className="btn-group-scroll gap-1 bg-theme-secondary rounded-xl border border-theme p-1">
-                    <button
-                        onClick={() => setUkFilter('all')}
-                        className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors ${ukFilter === 'all' ? 'btn-control active' : 'text-theme-secondary hover:text-theme-primary'}`}
-                    >Все УК</button>
-                    {ukIds.map(id => {
-                        const uk = UK_LOGOS[id];
-                        return uk ? (
-                            <button
-                                key={id}
-                                onClick={() => setUkFilter(id)}
-                                className={`px-3 py-1.5 text-sm font-medium rounded-lg transition-colors flex items-center gap-1.5 ${ukFilter === id ? 'btn-control active' : 'text-theme-secondary hover:text-theme-primary'}`}
-                            >
-                                <div className="w-4 h-4 rounded text-[8px] font-black flex items-center justify-center" style={{ backgroundColor: uk.bg, color: uk.color }}>{uk.letter}</div>
-                                {uk.name}
-                            </button>
-                        ) : null;
-                    })}
-                </div>
+            {/* Filters */}
+            <div className="flex flex-wrap mb-4 md:mb-6" style={{ gap: 'var(--sp-2)' }}>
+                <Dropdown<string>
+                    options={[
+                        { key: 'all', label: 'Все категории' },
+                        ...Object.entries(CATEGORY_LABELS)
+                            .filter(([key]) => key !== 'gold' && key !== 'money_market')
+                            .map(([key, label]): DropdownOption<string> => ({ key, label })),
+                    ]}
+                    value={categoryFilter}
+                    onChange={setCategoryFilter}
+                />
+
+                <Dropdown<string>
+                    options={[
+                        { key: 'all', label: 'Все УК' },
+                        ...ukIds
+                            .filter(id => UK_LOGOS[id])
+                            .map((id): DropdownOption<string> => ({
+                                key: id,
+                                label: UK_LOGOS[id].name,
+                            })),
+                    ]}
+                    value={ukFilter}
+                    onChange={setUkFilter}
+                />
             </div>
 
             {loading && (
-                <div className="flex justify-center py-20">
+                /* Reserved height ≈ типичная высота loaded-grid → нет CLS jump'а
+                   когда карточки фондов появятся. min-h-[70vh] держит место. */
+                <div className="flex justify-center items-center min-h-[70vh]">
                     <div className="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
                 </div>
             )}
@@ -231,6 +228,8 @@ export default function FundsCatalogPage() {
                     })}
                 </div>
             )}
+
+            </div>{/* /editorial-frame */}
         </div>
     );
 }

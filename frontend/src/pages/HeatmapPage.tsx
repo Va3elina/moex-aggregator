@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Grid3X3 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
+import Dropdown, { type DropdownOption } from '../components/Dropdown';
 import { METHODOLOGY } from '../data/methodology';
 import { getHeatmapData, getHeatmapImoex } from '../services/api';
 import { useRealtimeData } from '../hooks/useRealtimeData';
@@ -249,24 +250,28 @@ export default function HeatmapPage() {
     return (stock[key] as number) || 0;
   };
 
-  // Цвета в стиле Finviz: тёмный центр → насыщенный (но не неоновый) на краях
+  // Earth-tone палитра (как в референсе): brick red ↔ forest green, без неона.
+  // Тёмный центр (#2a2a2a) → насыщенный землистый цвет на максимуме.
+  // Целевые точки:
+  //   negative max: #7a3528 (deep brick / clay)
+  //   positive max: #2d6b3f (deep forest green)
   const getColor = (change: number): string => {
     const maxChange = colorBy === 'change_1y' ? 20 : colorBy === 'change_1m' ? 5 : colorBy === 'change_1w' ? 2 : 0.8;
     const abs = Math.abs(change);
     const t = Math.min(abs / maxChange, 1); // 0..1
 
     if (change > 0) {
-      // #2a2a2a → #245528 → #2d8c2d → #30a830 (Finviz green)
-      const r = Math.round(42 - t * 18);          // 42 → 24
-      const g = Math.round(42 + t * (168 - 42));   // 42 → 168
-      const b = Math.round(42 - t * 18);           // 42 → 24
+      // #2a2a2a → #2d6b3f (forest green)
+      const r = Math.round(42 + t * (45 - 42));    // 42 → 45
+      const g = Math.round(42 + t * (107 - 42));   // 42 → 107
+      const b = Math.round(42 + t * (63 - 42));    // 42 → 63
       return `rgb(${r},${g},${b})`;
     }
     if (change < 0) {
-      // #2a2a2a → #6b2828 → #b82020 → #dc2626 (Finviz red)
-      const r = Math.round(42 + t * (220 - 42));   // 42 → 220
-      const g = Math.round(42 - t * 4);            // 42 → 38
-      const b = Math.round(42 - t * 4);            // 42 → 38
+      // #2a2a2a → #7a3528 (brick / clay)
+      const r = Math.round(42 + t * (122 - 42));   // 42 → 122
+      const g = Math.round(42 + t * (53 - 42));    // 42 → 53
+      const b = Math.round(42 + t * (40 - 42));    // 42 → 40
       return `rgb(${r},${g},${b})`;
     }
     return '#2a2a2a';
@@ -435,84 +440,46 @@ export default function HeatmapPage() {
 
   return (
     <div className="max-w-full mx-auto px-2 md:px-4 py-3 md:py-4">
-      {/* Заголовок и фильтры */}
-      <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
-        <PageHeader
-          icon={Grid3X3}
-          title="Карта рынка"
-          subtitle={`Обновлено в ${lastUpdate || '--:--'}`}
-          help={METHODOLOGY.heatmap}
-          helpLink="/methodology/heatmap"
+      <PageHeader
+        icon={Grid3X3}
+        title="Карта рынка"
+        subtitle={`Обновлено в ${lastUpdate || '--:--'}`}
+        help={METHODOLOGY.heatmap}
+        helpLink="/methodology/heatmap"
+      />
+
+      {/* Editorial frame — обнимает controls + treemap в один контейнер с
+          1.5px outline + hard-shadow (как на OI page). */}
+      <div className="editorial-frame">
+
+      {/* Контролы — Dropdown'ы. Editorial-press effect автоматически. */}
+      <div className="flex flex-wrap mb-4 md:mb-6" style={{ gap: 'var(--sp-2)' }}>
+        <Dropdown<'imoex' | 'all'>
+          options={[
+            { key: 'imoex', label: 'Индекс IMOEX' },
+            { key: 'all',   label: 'Все акции' },
+          ]}
+          value={mapMode}
+          onChange={setMapMode}
         />
 
-        <div className="flex flex-wrap gap-2">
-          {/* Pill-group паттерн: outer контейнер с bg + padding, inner buttons
-              с rounded-lg каждая → активная подсветка скругляется. */}
-          <div className="btn-group-scroll gap-1 p-1 rounded-lg bg-theme-secondary border border-theme">
-            <button
-              onClick={() => setMapMode('imoex')}
-              className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                mapMode === 'imoex'
-                  ? 'bg-[var(--accent)] text-black'
-                  : 'text-theme-primary hover:bg-theme-tertiary'
-              }`}
-            >
-              Индекс IMOEX
-            </button>
-            <button
-              onClick={() => setMapMode('all')}
-              className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                mapMode === 'all'
-                  ? 'bg-[var(--accent)] text-black'
-                  : 'text-theme-primary hover:bg-theme-tertiary'
-              }`}
-            >
-              Все акции
-            </button>
-          </div>
+        <Dropdown<string>
+          options={SIZE_OPTIONS.map((o): DropdownOption<string> => ({ key: o.value, label: o.label }))}
+          value={sizeBy}
+          onChange={setSizeBy}
+        />
 
-          <div className="btn-group-scroll gap-1 p-1 rounded-lg bg-theme-secondary border border-theme">
-            {SIZE_OPTIONS.map(opt => (
-              <button
-                key={opt.value}
-                onClick={() => setSizeBy(opt.value)}
-                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                  sizeBy === opt.value
-                    ? 'bg-[var(--accent)] text-black'
-                    : 'text-theme-primary hover:bg-theme-tertiary'
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
+        <Dropdown<string>
+          options={PERIOD_OPTIONS.map((o): DropdownOption<string> => ({ key: o.value, label: o.label }))}
+          value={period}
+          onChange={setPeriod}
+        />
 
-          <div className="btn-group-scroll gap-1 p-1 rounded-lg bg-theme-secondary border border-theme">
-            {PERIOD_OPTIONS.map(opt => (
-              <button
-                key={opt.value}
-                onClick={() => setPeriod(opt.value)}
-                className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                  period === opt.value
-                    ? 'bg-[var(--accent)] text-black'
-                    : 'text-theme-primary hover:bg-theme-tertiary'
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-
-          <select
-            value={groupBy}
-            onChange={(e) => setGroupBy(e.target.value)}
-            className="bg-theme-secondary border border-theme text-theme-primary px-3 py-2 rounded-lg text-sm cursor-pointer hover:border-[var(--border-hover)] focus:border-[var(--accent)] focus:outline-none"
-          >
-            {GROUP_OPTIONS.map(opt => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
-        </div>
+        <Dropdown<string>
+          options={GROUP_OPTIONS.map((o): DropdownOption<string> => ({ key: o.value, label: o.label }))}
+          value={groupBy}
+          onChange={setGroupBy}
+        />
       </div>
 
       {/* Карта */}
@@ -549,9 +516,10 @@ export default function HeatmapPage() {
                   x={label.x + 9}
                   y={label.y + label.height / 2}
                   dominantBaseline="central"
-                  fill="rgba(255,255,255,0.7)"
+                  fill="var(--text-primary)"
+                  opacity={0.85}
                   fontSize="11"
-                  fontWeight="500"
+                  fontWeight="600"
                   clipPath={`url(#sector-clip-${i})`}
                 >
                   {label.name}
@@ -567,16 +535,20 @@ export default function HeatmapPage() {
         ) : null}
       </div>
 
+      </div>{/* /editorial-frame */}
 
-      {/* Тултип */}
+
+      {/* Тултип — paper-style без glass, в цвет фона графика. */}
       {tooltip.visible && tooltip.stock && (
         <div
-          className="fixed z-50 backdrop-blur-sm border border-theme rounded-xl py-3 px-5 shadow-2xl pointer-events-none"
+          className="fixed z-50 border border-theme rounded-xl shadow-md pointer-events-none"
           style={{
             left: Math.min(Math.max(tooltip.x, 180), window.innerWidth - 180),
             top: tooltip.y < 200 ? tooltip.y + 25 : tooltip.y - 10,
             transform: tooltip.y < 200 ? 'translate(-50%, 0)' : 'translate(-50%, -100%)',
-            backgroundColor: 'color-mix(in srgb, var(--bg-elevated) 95%, transparent)',
+            backgroundColor: 'var(--bg-primary)',
+            padding: 'var(--sp-3) var(--sp-5)',
+            fontSize: 'var(--fs-xs)',
           }}
         >
           <div className="flex items-center gap-3 mb-2">

@@ -18,6 +18,7 @@ import IndexChart from '../components/strength/IndexChart';
 import BreadthChart from '../components/strength/BreadthChart';
 import SectorDetail from '../components/strength/SectorDetail';
 import StrengthControls from '../components/strength/StrengthControls';
+import { computeChartTopLineY, getDatePillStyle } from '../components/chart/datePillLayout';
 
 type Period = '6m' | '1y' | '2y' | '5y' | 'all';
 type ChartMode = 'line' | 'histogram';
@@ -32,11 +33,13 @@ const PERIOD_DAYS: Record<Period, number> = {
 
 const EMA_PERIOD = 200; // Fixed EMA period
 
+// Theme-aware (color = CSS var, bg = inline style через color-mix).
+// classInfo.color и .bg теперь не классы а CSS-значения — используются inline.
 const CLASSIFICATION_LABELS: Record<string, { label: string; color: string; bg: string }> = {
-    overbought: { label: 'Перекупленность', color: 'text-emerald-400', bg: 'bg-emerald-500/20' },
-    bullish: { label: 'Бычий тренд', color: 'text-emerald-300', bg: 'bg-emerald-500/10' },
-    neutral: { label: 'Нейтрально', color: 'text-amber-400', bg: 'bg-amber-500/20' },
-    oversold: { label: 'Перепроданность', color: 'text-red-400', bg: 'bg-red-500/20' },
+    overbought: { label: 'Перекупленность', color: 'var(--funds-flow-positive)', bg: 'color-mix(in srgb, var(--funds-flow-positive) 18%, transparent)' },
+    bullish:    { label: 'Бычий тренд',     color: 'var(--funds-flow-positive)', bg: 'color-mix(in srgb, var(--funds-flow-positive) 12%, transparent)' },
+    neutral:    { label: 'Нейтрально',       color: 'var(--text-muted)',          bg: 'color-mix(in srgb, var(--text-muted) 18%, transparent)' },
+    oversold:   { label: 'Перепроданность',  color: 'var(--funds-flow-negative)', bg: 'color-mix(in srgb, var(--funds-flow-negative) 18%, transparent)' },
 };
 
 // Секторы строятся динамически из ответа API (поле sector)
@@ -117,8 +120,10 @@ export default function StrengthPage() {
     }, []);
 
     const loadData = useCallback(async () => {
-        // Показываем loading только при первой загрузке (нет данных)
-        if (!current && !history) setLoading(true);
+        // ВСЕГДА выставляем loading=true при старте fetch'а — даёт визуальный
+        // индикатор «Обновление...» при смене периода/EMA/валюты. Full-loader
+        // (loading && !current) не сработает потому что данные ещё не сброшены.
+        setLoading(true);
         setError(null);
         try {
             const [currentData, historyData] = await Promise.all([
@@ -280,7 +285,7 @@ export default function StrengthPage() {
     const stocksTotal = current?.stocks?.length ?? current?.count_total ?? 0;
 
     return (
-        <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8 min-h-screen">
+        <div className="max-w-[1408px] mx-auto px-4 md:px-6 py-6 md:py-8 min-h-screen">
             <PageHeader
                 icon={Activity}
                 title="Сила рынка"
@@ -288,6 +293,9 @@ export default function StrengthPage() {
                 help={METHODOLOGY.strength}
                 helpLink="/methodology/strength"
             />
+
+            {/* Editorial frame — обнимает controls + chart в один контейнер */}
+            <div className="editorial-frame">
 
             {/* Контролы — одна строка */}
             <StrengthControls
@@ -309,34 +317,46 @@ export default function StrengthPage() {
                 hasCurrent={!!current}
             />
 
-            {/* Синхронизированные графики */}
+            {/* Синхронизированные графики — оба в одном paper-контейнере, 1.5px outline */}
             <div
                 ref={containerRef}
-                className="bg-theme-secondary rounded-2xl border border-theme mb-6 relative cursor-crosshair overflow-hidden" style={{ minHeight: 'var(--chart-height, 500px)' }}
+                className="relative cursor-crosshair overflow-hidden rounded-2xl bg-theme-primary"
+                style={{
+                    minHeight: 'var(--chart-height, 500px)',
+                    border: '1.5px solid var(--text-primary)',
+                }}
                 onMouseMove={isAnimating ? undefined : handleMouseMove}
                 onMouseLeave={handleMouseLeave}
             >
                 {/* Полный loading / error на месте графика */}
                 {loading && !current ? (
-                    <div className="flex items-center justify-center" style={{ height: 'var(--chart-height, 450px)' }}>
+                    <div className="flex items-center justify-center" style={{ height: (showPrice ? heights.top + 34 : 0) + (showPrice ? heights.bottomDual : heights.bottomSolo) + 24 + 68 }}>
                         <div className="flex flex-col items-center gap-3">
                             <div className="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
                             <span className="text-theme-secondary">Загрузка...</span>
                         </div>
                     </div>
                 ) : error && !current ? (
-                    <div className="flex items-center justify-center" style={{ height: 'var(--chart-height, 450px)' }}>
+                    <div className="flex items-center justify-center" style={{ height: (showPrice ? heights.top + 34 : 0) + (showPrice ? heights.bottomDual : heights.bottomSolo) + 24 + 68 }}>
                         <div className="text-center">
                             <Activity className="w-12 h-12 text-red-400 mx-auto mb-3" />
                             <p className="text-red-400">{error}</p>
                         </div>
                     </div>
                 ) : (<>
-                    {/* Индикатор обновления данных */}
+                    {/* Индикатор обновления данных — paper-style без glass */}
                     {loading && syncedData.length > 0 && (
-                        <div className="absolute top-3 right-4 z-20 flex items-center gap-2 bg-theme-tertiary/90 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-theme">
+                        <div
+                            className="absolute top-3 right-4 z-20 flex items-center rounded-lg border border-theme shadow-md"
+                            style={{
+                                background: 'var(--bg-primary)',
+                                padding: 'var(--sp-2) var(--sp-3)',
+                                gap: 'var(--sp-2)',
+                                fontSize: 'var(--fs-xs)',
+                            }}
+                        >
                             <div className="w-4 h-4 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
-                            <span className="text-xs text-theme-secondary">Обновление...</span>
+                            <span className="text-theme-secondary">Обновление...</span>
                         </div>
                     )}
 
@@ -368,19 +388,37 @@ export default function StrengthPage() {
 
                         return (
                             <>
-                                {/* Дата — закреплена наверху, привязана к вертикальной линии.
-                                    top использует общий токен --date-top-legend-top (38px), как в SimpleChart. */}
+                                {/* Дата — по середине вертикальной пунктирной линии.
+                                    Линия идёт через два chart-wrapper'а (top + bottom), не считая навигатора.
+                                    Считаем по minHeight каждого wrapper'а:
+                                      top wrapper:    heights.top + 34
+                                      bottom wrapper: (showPrice ? bottomDual : bottomSolo) + 24
+                                    Middle = (top + bottom) / 2 от верха containerRef. */}
+                                {(() => {
+                                    // Единая логика date-pill через computeChartTopLineY.
+                                    // Helper находит первый .chart-reveal внутри containerRef и считает y верхней линии.
+                                    const topLineY = computeChartTopLineY({
+                                        container: containerRef.current,
+                                        paddingTop: padding.top,
+                                    });
+                                    return (
                                 <div
                                     className="absolute z-20 pointer-events-none"
-                                    style={{
-                                        left: Math.min(Math.max(hoverX - 60, 4), rect.width - 128),
-                                        top: 'var(--date-top-legend-top, 38px)',
-                                    }}
+                                    style={getDatePillStyle(hoverX, topLineY)}
                                 >
-                                    <span className="text-[11px] text-theme-secondary bg-theme-tertiary/90 backdrop-blur-sm px-2 py-0.5 rounded border border-theme whitespace-nowrap">
+                                    <span
+                                        className="text-theme-secondary rounded border border-theme whitespace-nowrap shadow-sm"
+                                        style={{
+                                            background: 'var(--bg-primary)',
+                                            padding: '2px var(--sp-2)',
+                                            fontSize: 'var(--fs-2xs)',
+                                        }}
+                                    >
                                         {dateStr}
                                     </span>
                                 </div>
+                                    );
+                                })()}
 
                                 {/* Карточка значений — следует за курсором */}
                                 <div
@@ -390,7 +428,14 @@ export default function StrengthPage() {
                                         top: clampedCardTop,
                                     }}
                                 >
-                                    <div className="bg-theme-tertiary/95 backdrop-blur-sm rounded-lg border border-theme shadow-xl py-1.5 px-3">
+                                    <div
+                                        className="rounded-lg border border-theme shadow-md"
+                                        style={{
+                                            background: 'var(--bg-primary)',
+                                            padding: 'var(--sp-2) var(--sp-3)',
+                                            fontSize: 'var(--fs-xs)',
+                                        }}
+                                    >
                                         {showPrice && (
                                             <div className="flex items-center justify-between gap-3 py-0.5">
                                                 <div className="flex items-center gap-1.5">
@@ -422,9 +467,9 @@ export default function StrengthPage() {
                     {showPrice && (
                         <div className="px-4 pt-4 pb-1 border-b border-theme relative overflow-hidden"
                              style={{ minHeight: heights.top + 34 }}>
-                            <div className="flex items-center justify-center gap-2 mb-5 relative z-10">
-                                <span className="w-3 h-3 rounded-full" style={{ backgroundColor: 'var(--accent)' }} />
-                                <span className="text-sm font-semibold text-theme-primary">{currency === 'usd' ? 'Индекс RTS' : 'Индекс IMOEX'}</span>
+                            <div className="flex items-center justify-center mb-5 relative z-10" style={{ gap: 'var(--sp-2)' }}>
+                                <span className="rounded-full" style={{ width: 'var(--ico-xs)', height: 'var(--ico-xs)', backgroundColor: 'var(--accent)' }} />
+                                <span className="font-semibold text-theme-primary" style={{ fontSize: 'var(--fs-sm)' }}>{currency === 'usd' ? 'Индекс RTS' : 'Индекс IMOEX'}</span>
                             </div>
                             <IndexChart
                                 syncedData={displaySyncedData}
@@ -440,9 +485,9 @@ export default function StrengthPage() {
                         minHeight = height SVG + высота блока заголовка (mb-2=8 + text-sm=14 + margin) ≈ 24px. */}
                     <div className="px-4 pt-2 pb-1 relative overflow-hidden"
                          style={{ minHeight: (showPrice ? heights.bottomDual : heights.bottomSolo) + 24 }}>
-                        <div className="flex items-center justify-center gap-2 mb-2 relative z-10">
-                            <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: 'var(--accent)' }} />
-                            <span className="text-sm font-semibold text-theme-primary">% акций выше EMA{emaPeriod}</span>
+                        <div className="flex items-center justify-center mb-2 relative z-10" style={{ gap: 'var(--sp-2)' }}>
+                            <span className="rounded-full" style={{ width: 'var(--ico-xs)', height: 'var(--ico-xs)', backgroundColor: 'var(--accent)' }} />
+                            <span className="font-semibold text-theme-primary" style={{ fontSize: 'var(--fs-sm)' }}>% акций выше EMA{emaPeriod}</span>
                         </div>
                         {displaySyncedData.length > 0 ? (
                             <BreadthChart
@@ -470,12 +515,14 @@ export default function StrengthPage() {
                             <ChartNavigator
                                 data={navigatorData}
                                 onChange={(s, e, isDrag) => { isNavDragRef.current = isDrag; setNavRange([s, e]); }}
-                                color="#8b5cf6"
+                                color="var(--accent)"
                             />
                         </div>
                     )}
                 </>)}
             </div>
+
+            </div>{/* /editorial-frame */}
 
             {/* Таблица акций с фильтром по секторам */}
             {current?.stocks && (
