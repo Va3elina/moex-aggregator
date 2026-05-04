@@ -440,7 +440,7 @@ export default function StrengthPage() {
                                             <div className="flex items-center justify-between gap-3 py-0.5">
                                                 <div className="flex items-center gap-1.5">
                                                     <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: 'var(--accent)' }} />
-                                                    <span className="text-[11px] text-theme-secondary">IMOEX</span>
+                                                    <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)' }}>IMOEX</span>
                                                 </div>
                                                 <span className="text-xs font-semibold text-theme-primary whitespace-nowrap">
                                                     {hoverData.imoex.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
@@ -450,7 +450,7 @@ export default function StrengthPage() {
                                         <div className="flex items-center justify-between gap-3 py-0.5">
                                             <div className="flex items-center gap-1.5">
                                                 <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: breadthColor }} />
-                                                <span className="text-[11px] text-theme-secondary">% выше EMA</span>
+                                                <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)' }}>% выше EMA</span>
                                             </div>
                                             <span className="text-xs font-semibold text-theme-primary whitespace-nowrap">
                                                 {hoverData.breadth.toFixed(1)}%
@@ -463,9 +463,10 @@ export default function StrengthPage() {
                     })()}
 
                     {/* График IMOEX (верхний).
-                        minHeight = height SVG + высота блока заголовка (mb-5=20 + text-sm=14) ≈ 34px. */}
+                        minHeight = height SVG + высота блока заголовка (mb-5=20 + text-sm=14) ≈ 34px.
+                        Mobile: px-1 (4px) вместо px-4 (16px) — освобождаем 24px для графика. */}
                     {showPrice && (
-                        <div className="px-4 pt-4 pb-1 border-b border-theme relative overflow-hidden"
+                        <div className="px-1 md:px-4 pt-4 pb-1 border-b border-theme relative overflow-hidden"
                              style={{ minHeight: heights.top + 34 }}>
                             <div className="flex items-center justify-center mb-5 relative z-10" style={{ gap: 'var(--sp-2)' }}>
                                 <span className="rounded-full" style={{ width: 'var(--ico-xs)', height: 'var(--ico-xs)', backgroundColor: 'var(--accent)' }} />
@@ -482,8 +483,9 @@ export default function StrengthPage() {
                     )}
 
                     {/* График Breadth (нижний) — расширяется когда IMOEX скрыт.
-                        minHeight = height SVG + высота блока заголовка (mb-2=8 + text-sm=14 + margin) ≈ 24px. */}
-                    <div className="px-4 pt-2 pb-1 relative overflow-hidden"
+                        minHeight = height SVG + высота блока заголовка (mb-2=8 + text-sm=14 + margin) ≈ 24px.
+                        Mobile: px-1 (4px) — стрейчим график влево. */}
+                    <div className="px-1 md:px-4 pt-2 pb-1 relative overflow-hidden"
                          style={{ minHeight: (showPrice ? heights.bottomDual : heights.bottomSolo) + 24 }}>
                         <div className="flex items-center justify-center mb-2 relative z-10" style={{ gap: 'var(--sp-2)' }}>
                             <span className="rounded-full" style={{ width: 'var(--ico-xs)', height: 'var(--ico-xs)', backgroundColor: 'var(--accent)' }} />

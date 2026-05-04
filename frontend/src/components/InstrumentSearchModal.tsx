@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Search, X, Star } from 'lucide-react';
 import InstrumentIcon from './InstrumentIcon';
 
@@ -42,6 +42,16 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
     const saved = localStorage.getItem('favoriteInstruments');
     return saved ? JSON.parse(saved) : ['SR', 'GZ', 'MX'];
   });
+
+  // Autofocus — только на desktop (mouse), чтобы на мобиле сразу не вылетала
+  // клавиатура и пользователь мог сначала просмотреть категории/избранные.
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const isTouch = window.matchMedia('(hover: none)').matches;
+    if (!isTouch && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, []);
 
   // Сохранение избранных
   useEffect(() => {
@@ -112,9 +122,9 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
         className="instrument-item flex items-center gap-3.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors"
         style={{ color: 'var(--text-primary)' }}
       >
-        <InstrumentIcon sectype={inst.sectype} size={36} />
-        <span className="font-bold text-[15px] flex-shrink-0 mr-1.5">{inst.sectype}</span>
-        <span className="text-[13px] truncate flex-1" style={{ color: 'var(--text-secondary)' }}>{inst.name}</span>
+        <InstrumentIcon sectype={inst.sectype} size={32} />
+        <span className="font-bold flex-shrink-0 mr-1.5" style={{ fontSize: 'var(--fs-sm)' }}>{inst.sectype}</span>
+        <span className="truncate flex-1" style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-xs)' }}>{inst.name}</span>
         <button
           onClick={(e) => toggleFavorite(inst.sectype, e)}
           className="p-2 transition-colors"
@@ -129,10 +139,10 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
 
   return (
     <div className="instrument-modal-root fixed inset-0 z-50 flex items-start justify-center p-4 pt-20">
-      {/* Backdrop */}
+      {/* Backdrop — solid dim без backdrop-blur (editorial: no glass effects). */}
       <div
         className="absolute inset-0"
-        style={{ backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(6px)' }}
+        style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
         onClick={onClose}
       />
 
@@ -169,6 +179,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
               style={{ color: 'var(--text-secondary)' }}
             />
             <input
+              ref={inputRef}
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -179,7 +190,6 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
                 color: 'var(--text-primary)',
                 border: '2px solid var(--text-primary)',
               }}
-              autoFocus
             />
           </div>
 

@@ -33,6 +33,7 @@
   --fs-xl:  clamp(18px, 1vw + 0.9rem, 22px);      /* h3 */
   --fs-2xl: clamp(20px, 1.5vw + 1rem, 28px);      /* h2 */
   --fs-3xl: clamp(28px, 2.5vw + 1.2rem, 56px);    /* h1 page title */
+  --fs-display: clamp(44px, 5vw + 1.6rem, 88px);  /* hero numbers (fear index, big metrics) */
 
   /* SPACING SCALE */
   --sp-1: clamp(2px,  0.4vw, 4px);
@@ -41,6 +42,11 @@
   --sp-4: clamp(10px, 1.6vw, 16px);
   --sp-5: clamp(14px, 2vw,   20px);
   --sp-6: clamp(18px, 2.5vw, 24px);
+
+  /* TOUCH TARGET — WCAG AAA min 44px для интерактивных элементов на мобиле.
+     Используется для min-width/min-height на иконках-кнопках в навигации,
+     где визуальный размер меньше тапаемой области. */
+  --sp-touch: 44px;
 
   /* ICON SCALE */
   --ico-xs: clamp(12px, 1.2vw + 0.4rem, 18px);
@@ -741,20 +747,30 @@
 }
 
 /* PageHeader icon — base style (subtle accent tint в обычных темах).
-   В editorial переопределяется на bold filled pill с hard shadow. */
+   Fluid scale: ~36px на mobile (375vw), ~44px на desktop. */
 .page-header-icon {
-  width: 44px;
-  height: 44px;
+  width: clamp(36px, 2.5vw + 1.5rem, 44px);
+  height: clamp(36px, 2.5vw + 1.5rem, 44px);
   border-radius: var(--radius-md, 10px);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   color: var(--accent);
 }
 
+/* SVG внутри page-header-icon занимает 55% контейнера — иконка скейлится
+   автоматически вместе с контейнером (clamp 40-52px → svg ~22-28px).
+   Это убирает фикс size={22} на JSX-уровне. */
+.page-header-icon svg {
+  width: 55%;
+  height: 55%;
+}
+
 /* Editorial: иконка раздела — solid filled square с outline и hard-shadow,
-   как все остальные editorial primitives (chip, frame, asset selector). */
+   как все остальные editorial primitives (chip, frame, asset selector).
+   Fluid scale: ~40px на mobile, ~52px на desktop — пропорционально h1
+   которая тоже clamp'ится через --fs-3xl (28px → 56px). */
 [data-theme^="editorial"] .page-header-icon {
-  width: 52px;
-  height: 52px;
+  width: clamp(40px, 3vw + 1.6rem, 52px);
+  height: clamp(40px, 3vw + 1.6rem, 52px);
   border-radius: 12px;
   background: var(--accent);
   color: var(--text-inverse);
@@ -1246,6 +1262,11 @@
                                                и FlowsHistogram, чтобы Y-labels ("+0.29%" и т.п.)
                                                не заезжали на зону столбцов. */
 
+  /* Seasonality-specific chart padding (Yearly/Price) — desktop default.
+     На mobile перебивается на 12px/32px чтобы дать +30% ширины для data-area. */
+  --seasonality-chart-pad-left: 60px;
+  --seasonality-chart-pad-right: 70px;
+
   /* Общие для charts с date-label и внешним X-axis */
   --chart-date-placeholder-height: 22px;    /* placeholder когда tooltip не активен */
   --chart-xlabel-row-height: 24px;          /* строка с X-подписями под графиком */
@@ -1301,25 +1322,28 @@
     --strength-chart-bottom-height: 120px;
     --strength-chart-solo-height: 340px;
 
-    /* Seasonality — mobile */
-    /* Сезонность mobile — aspect-ratio 2.4 не подходит для узких viewport
-       (293×122 = слишком плоский). Делаем 1.5 (почти 3:2) + поднимаем
-       min-height чтобы area data была сопоставима с OI/SimpleChart на mobile
-       (там data area ~185×294 = 54K px² при wrapper 311×350).
-
-       Yearly: 197×294 = 58K (как OI), wrapper 350px.
-       Histogram: 207×238 = 49K (тоже близко), wrapper 280px. */
+    /* Seasonality — mobile.
+       Сделали ВЫШЕ чем flows histogram чтобы у seasonality charts было
+       побольше data-area: у seasonality больше chrome (legend сверху +
+       chart + navigator снизу), при равной высоте с flows график выглядит
+       приплюснутым. 380-440 для yearly даёт визуально такую же data-area
+       как у flows на 300px, плюс +40-60px на chrome. */
     --seasonality-aspect-ratio: 1.5;
-    --seasonality-min-height: 350px;
-    --seasonality-max-height: 450px;
-    --seasonality-hist-min-height: 280px;
-    --seasonality-hist-max-height: 380px;
+    --seasonality-min-height: 380px;          /* было 300 — поднимаем (chrome eats height) */
+    --seasonality-max-height: 460px;          /* было 380 */
+    --seasonality-hist-min-height: 320px;     /* было 260 — больше data-area */
+    --seasonality-hist-max-height: 400px;     /* было 320 */
+    /* Seasonality-specific chart padding — компактнее обычных --chart-pad-*
+       чтобы yearly chart на 375px viewport был на 30%+ шире. Y-labels
+       поместятся в 32px (хватает на "+25.0%" при clamp font 8-11px). */
+    --seasonality-chart-pad-left: 12px;
+    --seasonality-chart-pad-right: 32px;
     --seasonality-hist-pad-top: 22px;
     --seasonality-hist-pad-bottom: 20px;
     --seasonality-hist-pad-x: 52px;     /* mobile — было 38, обрезало "+0.02%" */
     --seasonality-ylabel-right: 4px;    /* mobile: ближе к краю, больше места на label */
     --seasonality-legend-mb: 4px;       /* mobile: компактный отступ legend → chart */
-    --seasonality-legend-font-size: 12px; /* mobile: меньше шрифт легенды */
+    --seasonality-legend-font-size: var(--fs-xs); /* fluid 10-12.5px (было фикс 12px) */
     --chart-date-placeholder-height: 12px;  /* mobile: меньше placeholder для floating date */
     --chart-xlabel-row-height: 20px;
   }

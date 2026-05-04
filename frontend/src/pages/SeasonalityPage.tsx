@@ -555,8 +555,8 @@ export default function SeasonalityPage() {
   // В test-режиме используем увеличенную ширину, чтобы вместить 2×2 grid
   // гистограмм и широкую yearly-линию. Остальные режимы сохраняют свои 1280px.
   const containerClass = chartType === 'test'
-    ? 'max-w-[1800px] mx-auto px-4 md:px-6 py-6 md:py-8'
-    : 'max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-8';
+    ? 'max-w-[1800px] mx-auto px-2 md:px-6 py-6 md:py-8'
+    : 'max-w-7xl mx-auto px-2 md:px-6 py-6 md:py-8';
 
   return (
     <div className={containerClass}>
@@ -680,7 +680,7 @@ export default function SeasonalityPage() {
           + bg-theme-primary + 1.5px outline. Visually отделяет график от
           editorial-frame controls сверху. */}
       {chartType !== 'test' && (
-      <div className="relative rounded-2xl bg-theme-primary p-5" style={{ border: '1.5px solid var(--text-primary)' }}>
+      <div className="relative rounded-2xl bg-theme-primary p-2 md:p-5" style={{ border: '1.5px solid var(--text-primary)' }}>
         {/* Спиннер обновления — paper-style без glass */}
         {loading && (bars.length > 0 || priceData || yearlyData) && (
           <div

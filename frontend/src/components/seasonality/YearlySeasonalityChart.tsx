@@ -4,6 +4,7 @@ import { CHART_COLORS, PADDING, cssVar } from '../../config/chartTheme';
 import { ChartGrid, ChartCrosshair, ChartDateLabel, ChartTooltip, TooltipRow, ChartYAxis, ChartXAxis } from '../chart';
 import ChartNavigator from '../ChartNavigator';
 import ChartWatermark from '../ChartWatermark';
+import { useIsMobile } from '../../hooks/useIsMobile';
 
 interface TooltipState {
   x: number;
@@ -41,6 +42,9 @@ export default function YearlySeasonalityChart({
   setTooltip,
   chartHeight,
 }: YearlySeasonalityChartProps) {
+  // На мобиле выводим квартальные подписи (Янв/Апр/Июл/Окт = 4 шт)
+  // вместо 12 — иначе они накладываются на 311px viewport.
+  const isMobile = useIsMobile();
   // CSS-reveal на mount (key-based remount в parent)
   const [revealed, setRevealed] = useState(false);
   // Navigator range — [startIdx, endIdx] в координатах bucket'ов baseAvg.
@@ -152,12 +156,20 @@ export default function YearlySeasonalityChart({
   // X-axis: месяцы (Янв-Дек) — покрывают всю ширину графика.
   // Реальные даты из cur покрывали бы только часть года (до текущей даты),
   // а средняя линия идёт до декабря — получался бы пустой участок без подписей.
-  const xLabels = monthPositions.map(mp => mp.label);
+  // На мобиле прореживаем — каждый 3-й месяц (квартально), чтобы 12 подписей
+  // не накладывались на 311px viewport. Между подписями ставим '' (пустую
+  // строку) — позиционирование тиков сохраняется, только текст скрыт.
+  const xLabels = monthPositions.map((mp, idx) => {
+    if (isMobile && idx % 3 !== 0) return '';
+    return mp.label;
+  });
 
-  // Унифицировано с SimpleChart/FlowsHistogram: PT/PB теперь тоже читаются из CSS-vars,
-  // а не из JS-константы PADDING. Это устраняет drift (PADDING.top=10 vs --chart-pad-top=19px).
-  const PL = cssVar('--chart-pad-left', PADDING.left);
-  const PR = cssVar('--chart-pad-right-single', PADDING.rightSingle);
+  // PL/PR — seasonality-specific (12px/32px на mobile, 60/70 на desktop)
+  // вместо общих --chart-pad-* (34/38 mobile, 100/95 desktop). Это даёт
+  // yearly chart на mobile +30% ширины data-area. Y-labels помещаются
+  // в 32px при компактном fluid font (8-11px).
+  const PL = cssVar('--seasonality-chart-pad-left', PADDING.left);
+  const PR = cssVar('--seasonality-chart-pad-right', PADDING.rightSingle);
   const PT = cssVar('--chart-pad-top', PADDING.top);
   const PB = cssVar('--chart-pad-bottom', PADDING.bottom);
 

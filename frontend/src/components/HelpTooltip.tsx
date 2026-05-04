@@ -95,13 +95,13 @@ export default function HelpTooltip({ entry, title, content, size = 16, linkTo }
         left: 0,
         zIndex: 60,
         width: 'min(360px, calc(100vw - 32px))',
-        padding: '14px 16px',
+        padding: 'var(--sp-4) var(--sp-5)',
         borderRadius: 'var(--radius-md, 8px)',
         backgroundColor: 'var(--bg-secondary)',
         border: '1px solid var(--border-color)',
-        boxShadow: '0 10px 40px -10px rgba(0,0,0,0.5), 0 4px 12px rgba(0,0,0,0.3)',
+        boxShadow: 'var(--shadow-hard, 0 10px 40px -10px rgba(0,0,0,0.5), 0 4px 12px rgba(0,0,0,0.3))',
         color: 'var(--text-secondary)',
-        fontSize: 13,
+        fontSize: 'var(--fs-xs)',
         lineHeight: 1.5,
         cursor: 'default',
       }}
@@ -130,8 +130,8 @@ export default function HelpTooltip({ entry, title, content, size = 16, linkTo }
           style={{
             color: 'var(--text-primary)',
             fontWeight: 600,
-            fontSize: 13,
-            marginBottom: 8,
+            fontSize: 'var(--fs-xs)',
+            marginBottom: 'var(--sp-2)',
             paddingRight: isMobile ? 24 : 0,
           }}
         >
@@ -149,7 +149,7 @@ export default function HelpTooltip({ entry, title, content, size = 16, linkTo }
             gap: 4,
             marginTop: 6,
             color: 'var(--accent)',
-            fontSize: 12,
+            fontSize: 'var(--fs-2xs)',
             fontWeight: 600,
             textDecoration: 'none',
           }}

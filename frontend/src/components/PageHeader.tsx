@@ -49,7 +49,11 @@ export default function PageHeader({
     <div className="flex items-start mb-6" style={{ gap: 'var(--sp-3)' }}>
       {Icon && (
         <div className="page-header-icon flex items-center justify-center flex-shrink-0">
-          <Icon size={22} strokeWidth={2} />
+          {/* Иконка масштабируется внутри контейнера через CSS (width/height: 50%
+              в .page-header-icon svg). size= на Lucide задаёт viewBox, но CSS
+              перебивает фактический рендер-размер — это гарантирует пропорцию
+              между контейнером и иконкой во всех breakpoints. */}
+          <Icon strokeWidth={2} aria-hidden />
         </div>
       )}
       <div className="flex-1 min-w-0">

@@ -16,6 +16,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { isPeriodAllowed } from '../config/accessControl';
 import { useRealtimeData } from '../hooks/useRealtimeData';
 import { useFitToViewport } from '../hooks/useFitToViewport';
+import { useIsMobile } from '../hooks/useIsMobile';
 
 type ViewMode = 'cap-gdp' | 'cap-m2';
 
@@ -29,6 +30,7 @@ const PERIOD_LABELS: Partial<Record<BuffettPeriod, string>> = {
 export default function BuffettPage() {
     const { isAuthenticated } = useAuth();
     const navigate = useNavigate();
+    const isMobile = useIsMobile();
     const [viewMode, setViewMode] = useState<ViewMode>('cap-gdp');
     const [period, setPeriod] = useState<BuffettPeriod>('10y');
     const smooth = false;
@@ -202,7 +204,7 @@ export default function BuffettPage() {
 
             {/* График */}
             {error ? (
-                <div className="flex items-center justify-center h-[450px]">
+                <div className="flex items-center justify-center" style={{ height: chartHeight }}>
                     <div className="text-theme-danger text-center">
                         <p className="text-lg font-medium">{error}</p>
                         <p className="text-sm text-theme-secondary mt-2">Попробуйте обновить страницу</p>
@@ -220,8 +222,8 @@ export default function BuffettPage() {
                     formatValue={(v) => `${v.toFixed(2)}%`}
                     formatSecondaryValue={(v) => `${v.toFixed(2)} трлн ₽`}
                     formatSecondaryAxis={(v) => v.toFixed(2)}
-                    primaryLabel="Капитализация / ВВП"
-                    secondaryLabel="Капитализация (трлн ₽)"
+                    primaryLabel={isMobile ? 'Кап / ВВП' : 'Капитализация / ВВП'}
+                    secondaryLabel={isMobile ? 'Кап. (₽)' : 'Капитализация (трлн ₽)'}
                     loading={loading}
                     forecastCount={forecastTarget !== null ? 12 : 0}
                     showValueHeader={false}
@@ -243,8 +245,8 @@ export default function BuffettPage() {
                     formatValue={(v) => `${(v * 100).toFixed(2)}%`}
                     formatSecondaryValue={(v) => `${v.toFixed(2)} трлн ₽`}
                     formatSecondaryAxis={(v) => v.toFixed(2)}
-                    primaryLabel="Капитализация / M2"
-                    secondaryLabel="Капитализация (трлн ₽)"
+                    primaryLabel={isMobile ? 'Кап / M2' : 'Капитализация / M2'}
+                    secondaryLabel={isMobile ? 'Кап. (₽)' : 'Капитализация (трлн ₽)'}
                     loading={loading}
                     showValueHeader={false}
                     legendPosition="top"

@@ -129,8 +129,8 @@ export default function FearIndexPage() {
           {/* Главный индикатор */}
           <div className="flex flex-col items-center justify-center">
             <div
-              className="text-7xl font-bold mb-2"
-              style={{ color: fearColor }}
+              className="font-bold mb-2"
+              style={{ color: fearColor, fontSize: 'var(--fs-display)' }}
             >
               {current?.fear_index?.toFixed(0) || '—'}
             </div>

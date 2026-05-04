@@ -76,11 +76,12 @@ export default function Dropdown<T extends string>({
     <div ref={wrapRef} className={`frame-dropdown relative inline-block ${className}`}>
       {label && (
         <p
-          className="text-[10px] uppercase mb-1"
+          className="uppercase mb-1"
           style={{
             color: 'var(--text-muted)',
             letterSpacing: '0.1em',
             fontWeight: 600,
+            fontSize: 'var(--fs-2xs)',
           }}
         >
           {label}

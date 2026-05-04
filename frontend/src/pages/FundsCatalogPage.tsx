@@ -192,7 +192,7 @@ export default function FundsCatalogPage() {
                                     )}
                                     <div className="min-w-0 flex-1">
                                         <div className="font-bold text-sm">{fund.ticker}</div>
-                                        <div className="text-[11px] text-theme-secondary truncate">{fund.name}</div>
+                                        <div className="text-theme-secondary truncate" style={{ fontSize: 'var(--fs-2xs)' }}>{fund.name}</div>
                                     </div>
                                     <div className="text-right flex-shrink-0">
                                         <div className="text-sm font-mono font-bold">{formatNav(fund.last_nav)}</div>

@@ -2,10 +2,11 @@ import React, { useMemo } from 'react';
 import { UK_LOGOS } from '../../config/fundConfig';
 import { FUND_ANNOTATIONS } from '../../config/fundAnnotations';
 import type { FundsFlowsResponse, FundCategory } from '../../services/api';
-import { CHART_COLORS, GRID, CROSSHAIR, TOOLTIP } from '../../config/chartTheme';
+import { CHART_COLORS, GRID, CROSSHAIR } from '../../config/chartTheme';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import ChartWatermark from '../ChartWatermark';
 import ChartNavigator from '../ChartNavigator';
+import { ChartTooltip, TooltipRow } from '../chart';
 import { computeChartTopLineY, getDatePillStyle } from '../chart/datePillLayout';
 
 interface FlowsHistogramProps {
@@ -22,7 +23,8 @@ interface FlowsHistogramProps {
     loading: boolean;
     flowContainerRef: React.RefObject<HTMLDivElement | null>;
     flowChartRef: React.RefObject<SVGSVGElement | null>;
-    flowTooltipRef: React.RefObject<HTMLDivElement | null>;
+    /** Pos через state — рендерится атомарно с tooltip'ом через ChartTooltip. */
+    flowTooltipPos: { x: number; y: number } | null;
     onMouseMove: (e: React.MouseEvent<HTMLDivElement>) => void;
     onMouseLeave: () => void;
     onSetHoveredAnnotation: (date: string | null) => void;
@@ -43,7 +45,7 @@ export default function FlowsHistogram({
     loading,
     flowContainerRef,
     flowChartRef,
-    flowTooltipRef,
+    flowTooltipPos,
     onMouseMove,
     onMouseLeave,
     onSetHoveredAnnotation,
@@ -254,8 +256,12 @@ export default function FlowsHistogram({
                         bottom="calc(var(--chart-pad-bottom, 50px) + 0.03 * (var(--chart-height, 450px) - var(--chart-pad-top, 19px) - var(--chart-pad-bottom, 50px)) + 5px)"
                     />
 
-                    {/* Тултип-карточка со значением — позиция через ref */}
-                    {hoveredFlowIndex !== null && flowsData?.flows && (() => {
+                    {/* Тултип через shared ChartTooltip — тот же компонент что в
+                        Seasonality. Auto-flip через измерение parentW + cardW
+                        (ResizeObserver), позиционирование через style — атомарно
+                        с React render. Никаких DOM-мутаций, никаких offsetWidth
+                        в hot-path → следует за пальцем 1-в-1. */}
+                    {hoveredFlowIndex !== null && flowsData?.flows && flowTooltipPos && (() => {
                         const visibleFlowsList = flowsData.flows.slice(flowNavRange[0], flowNavRange[1] + 1);
                         const f = visibleFlowsList[hoveredFlowIndex];
                         if (!f) return null;
@@ -263,31 +269,10 @@ export default function FlowsHistogram({
                         const pctStr = `${f.flow_pct > 0 ? '+' : ''}${f.flow_pct.toFixed(2)}%`;
                         const color = f.flow >= 0 ? 'var(--funds-flow-positive)' : 'var(--funds-flow-negative)';
                         return (
-                            <div
-                                ref={flowTooltipRef}
-                                className="absolute z-30 pointer-events-none"
-                            >
-                                <div className={`${TOOLTIP.containerClass} pointer-events-none`} style={TOOLTIP.containerStyle}>
-                                    <div className="flex items-center justify-between" style={{ gap: 'var(--sp-2)' }}>
-                                        <div className="flex items-center min-w-0" style={{ gap: 'var(--sp-1)' }}>
-                                            <span className={TOOLTIP.dotClass} style={{ ...TOOLTIP.dotStyle, backgroundColor: color }} />
-                                            <span className={`${TOOLTIP.labelClass} truncate`} style={TOOLTIP.labelStyle}>{f.flow >= 0 ? 'Приток' : 'Отток'}</span>
-                                        </div>
-                                        <span className={`${TOOLTIP.valueClass} whitespace-nowrap`} style={{ ...TOOLTIP.valueStyle, color }}>
-                                            {flowStr}
-                                        </span>
-                                    </div>
-                                    <div className="flex items-center justify-between mt-0.5" style={{ gap: 'var(--sp-2)' }}>
-                                        <div className="flex items-center min-w-0" style={{ gap: 'var(--sp-1)' }}>
-                                            <span className={TOOLTIP.dotClass} style={{ ...TOOLTIP.dotStyle, backgroundColor: CHART_COLORS.primary }} />
-                                            <span className={TOOLTIP.labelClass} style={TOOLTIP.labelStyle}>Изменение</span>
-                                        </div>
-                                        <span className={`${TOOLTIP.valueClass} whitespace-nowrap`} style={{ ...TOOLTIP.valueStyle, color }}>
-                                            {pctStr}
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
+                            <ChartTooltip x={flowTooltipPos.x} y={flowTooltipPos.y}>
+                                <TooltipRow color={color} label={f.flow >= 0 ? 'Приток' : 'Отток'} value={flowStr} />
+                                <TooltipRow color={CHART_COLORS.primary} label="Изменение" value={pctStr} valueClass={`${f.flow >= 0 ? '' : ''}`} />
+                            </ChartTooltip>
                         );
                     })()}
 
@@ -319,18 +304,19 @@ export default function FlowsHistogram({
                         );
                     })()}
 
-                    {/* Даты оси X — равномерно по всей ширине */}
+                    {/* Даты оси X — формат DD.MM.YY (как в SimpleChart/OI), без
+                        месячного слова. На мобиле 3 тика чтобы не накладывались. */}
                     <div className="absolute flex justify-between font-semibold px-2" style={{ bottom: 'var(--chart-xlabel-bottom, 20px)', left: 'var(--chart-pad-left, 100px)', right: 'var(--chart-pad-right-single, 95px)', fontSize: 'var(--chart-font-x, 14px)', color: 'var(--axis-color, #9CA3B8)' }}>
                         {flowsData?.flows && flowsData.flows.length > 0 && (() => {
                             const flows = flowsData.flows.slice(flowNavRange[0], flowNavRange[1] + 1);
                             if (!flows.length) return null;
-                            const tickCount = Math.min(isMobile ? 4 : 6, flows.length);
+                            const tickCount = Math.min(isMobile ? 3 : 6, flows.length);
                             return Array.from({ length: tickCount }, (_, i) => {
                                 const idx = Math.min(Math.round(i * (flows.length - 1) / Math.max(tickCount - 1, 1)), flows.length - 1);
                                 if (!flows[idx]) return null;
                                 const date = new Date(flows[idx].period_end);
                                 return (
-                                    <span key={i}>{date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: '2-digit' })}</span>
+                                    <span key={i}>{date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' })}</span>
                                 );
                             });
                         })()}
@@ -440,23 +426,23 @@ export default function FlowsHistogram({
                 const f = visibleFlowsList[hoveredFlowIndex];
                 if (!f) return null;
                 const cont = flowContainerRef.current;
-                if (!cont) return null;
+                const svg = flowChartRef.current;
+                if (!cont || !svg) return null;
                 const visibleCount = flowNavRange[1] - flowNavRange[0] + 1;
-                const cs = getComputedStyle(document.documentElement);
-                const padLeft = parseFloat(cs.getPropertyValue('--chart-pad-left')) || 100;
-                const padRight = parseFloat(cs.getPropertyValue('--chart-pad-right-single')) || 95;
-                const padTop = parseFloat(cs.getPropertyValue('--chart-pad-top')) || 19;
-                const padBottom = parseFloat(cs.getPropertyValue('--chart-pad-bottom')) || 50;
-                const containerW = cont.getBoundingClientRect().width;
+                // Реальная геометрия SVG — не parseFloat clamp() из CSS-vars
+                // (см. handleFlowMouseMove fix). chart-pad-top/bottom тоже через
+                // svg.getBoundingClientRect для согласованности.
+                const containerRect = cont.getBoundingClientRect();
+                const svgRect = svg.getBoundingClientRect();
+                const padTop = svgRect.top - containerRect.top;
                 const containerH = cont.clientHeight;
-                const chartW = containerW - padLeft - padRight;
-                const chartAreaH = containerH - padTop - padBottom;
+                const chartW = svgRect.width;
+                const chartAreaH = svgRect.height;
                 const barWidth = chartW / visibleCount;
+                void containerH; // not needed with new approach
 
                 // Единая логика date-pill через computeChartTopLineY.
-                // gridOffsetFrac=0.03 потому что в FlowsHistogram top horizontal line
-                // рендерится на yPct=50-47=3% от chart-area-height (см. grid-tick logic).
-                const centerX = cont.offsetLeft + padLeft + hoveredFlowIndex * barWidth + barWidth / 2;
+                const centerX = cont.offsetLeft + (svgRect.left - containerRect.left) + hoveredFlowIndex * barWidth + barWidth / 2;
                 // computeChartTopLineY возвращает в outer-coords (т.к. wrapper.offsetTop
                 // уже относительно outer'а). Не добавляем cont.offsetTop отдельно.
                 const topLineY = computeChartTopLineY({

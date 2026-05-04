@@ -152,23 +152,45 @@ export default function HeatmapPage() {
     stock: HeatmapStock | null;
   }>({ visible: false, x: 0, y: 0, stock: null });
 
-  // Измерение контейнера
+  // Измерение контейнера.
+  //
+  // Bug history: раньше слушали `window.resize`, который на мобиле срабатывает
+  // при сворачивании/разворачивании toolbar браузера на скролле — это меняло
+  // window.innerHeight и пересчитывало layout, плитки прыгали при скролле.
+  //
+  // Fix: слушаем только реальные изменения размера контейнера через
+  // ResizeObserver (он не срабатывает на mobile chrome resize, только на
+  // настоящие layout-changes) + orientationchange для поворотов телефона.
+  // Высота пересчитывается ТОЛЬКО при смене ширины (orientation/breakpoint),
+  // на скролле остаётся стабильной.
   useEffect(() => {
+    const node = containerRef.current;
+    if (!node) return;
+
     const updateSize = () => {
-      if (containerRef.current) {
-        const rect = containerRef.current.getBoundingClientRect();
-        setContainerSize({
-          width: rect.width || 1200,
-          height: Math.max(window.innerWidth < 768 ? 400 : 600, window.innerHeight - (window.innerWidth < 768 ? 120 : 180))
-        });
-      }
+      if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const newWidth = rect.width || 1200;
+      setContainerSize(prev => {
+        const widthChanged = Math.abs(newWidth - prev.width) > 1;
+        const newHeight = widthChanged
+          ? Math.max(
+              window.innerWidth < 768 ? 400 : 600,
+              window.innerHeight - (window.innerWidth < 768 ? 120 : 180)
+            )
+          : prev.height;
+        return { width: newWidth, height: newHeight };
+      });
     };
 
     updateSize();
     const timer = setTimeout(updateSize, 100);
-    window.addEventListener('resize', updateSize);
+    const ro = new ResizeObserver(updateSize);
+    ro.observe(node);
+    window.addEventListener('orientationchange', updateSize);
     return () => {
-      window.removeEventListener('resize', updateSize);
+      ro.disconnect();
+      window.removeEventListener('orientationchange', updateSize);
       clearTimeout(timer);
     };
   }, []);
@@ -282,19 +304,41 @@ export default function HeatmapPage() {
     return `${value.toFixed(2).replace('.', ',')}%`;
   };
 
-  // Размер шрифта — максимально адаптивный под размер блока
-  const getFontSize = (width: number, height: number): { ticker: number; percent: number } => {
-    // Тикер занимает ~60% ширины блока (учитывая что обычно 4-5 символов)
-    const tickerByWidth = Math.floor(width / 4.5);
-    // Тикер не больше 40% высоты блока
+  // Размер шрифта — адаптивный под размер блока И реальную длину тикера.
+  //
+  // 0.7 — консервативный ratio "char-width / font-size" для bold sans-serif
+  // с padding на kerning/hinting/Cyrillic-глифы. Раньше было 0.62 — оценка
+  // "впритык", и из-за реального межбуквенного интервала текст вылезал на
+  // 5-10% шире, после чего clipPath обрезал крайние символы. С 0.7 шрифт
+  // изначально подбирается с ~10% margin → текст всегда вписывается в плитку
+  // без обрезки.
+  //
+  // Дополнительный safety cap: `min(width, height) * 0.42` — на узких
+  // высоких плитках большая высота не даёт огромный шрифт который не
+  // влезает в ширину.
+  const getFontSize = (width: number, height: number, ticker: string): { ticker: number; percent: number } => {
+    const charRatio = 0.7;
+    const horizontalPad = 10;
+    const tickerLen = Math.max(ticker.length, 3);
+    const tickerByWidth = Math.floor((width - horizontalPad) / (tickerLen * charRatio));
     const tickerByHeight = Math.floor(height * 0.35);
-    // Берём минимум, но не меньше 10 и не больше 48
-    const ticker = Math.min(Math.max(Math.min(tickerByWidth, tickerByHeight), 10), 48);
+    const tickerByMinDim = Math.floor(Math.min(width, height) * 0.42);
+    const tickerSize = Math.min(
+      Math.max(Math.min(tickerByWidth, tickerByHeight, tickerByMinDim), 9),
+      48
+    );
+    const percent = Math.floor(tickerSize * 0.7);
+    return { ticker: tickerSize, percent };
+  };
 
-    // Процент — примерно 70% от тикера
-    const percent = Math.floor(ticker * 0.7);
-
-    return { ticker, percent };
+  // Truncate text to fit width (approx char-width = fontSize * 0.55 для regular weight).
+  // Возвращает текст с многоточием если не помещается.
+  const fitText = (text: string, maxWidth: number, fontSize: number): string => {
+    const charWidth = fontSize * 0.55;
+    const maxChars = Math.floor(maxWidth / charWidth);
+    if (maxChars >= text.length) return text;
+    if (maxChars <= 1) return text.slice(0, 1);
+    return text.slice(0, maxChars - 1) + '…';
   };
 
   // Построение treemap
@@ -327,11 +371,20 @@ export default function HeatmapPage() {
     const stockRects: { id: string; x: number; y: number; width: number; height: number; data: HeatmapStock; sector: string }[] = [];
     const sectorLabels: { name: string; x: number; y: number; width: number; height: number }[] = [];
 
+    // Header height — компактнее на мобиле (15px) и шире на десктопе (18px),
+    // чтобы маленьким секторам оставалось место для самих плиток.
+    const headerH = containerSize.width < 600 ? 15 : 18;
+    const minTileArea = 20; // если меньше — не показываем пустой header
+
     sectorRects.forEach((sectorRect, idx) => {
       const sector = sectorItems[idx];
       if (!sector) return;
 
-      const headerH = 18;
+      const tileAreaH = sectorRect.height - headerH - gap;
+      // Если в секторе вообще не помещаются плитки — пропускаем header,
+      // чтобы не было "обрезанное название сектора и пусто под ним".
+      if (tileAreaH < minTileArea) return;
+
       sectorLabels.push({
         name: sector.id,
         x: sectorRect.x,
@@ -353,7 +406,7 @@ export default function HeatmapPage() {
         sectorRect.x + gap,
         sectorRect.y + headerH,
         sectorRect.width - gap * 2,
-        sectorRect.height - headerH - gap
+        tileAreaH
       );
 
       rects.forEach(rect => {
@@ -368,11 +421,35 @@ export default function HeatmapPage() {
 
   const renderStock = (rect: { id: string; x: number; y: number; width: number; height: number; data: HeatmapStock }, key: string) => {
     const change = getColorValue(rect.data);
-    const fonts = getFontSize(rect.width, rect.height);
+    const fonts = getFontSize(rect.width, rect.height, rect.id);
     const showTicker = rect.width > 18 && rect.height > 14;
     const showPercent = rect.width > 30 && rect.height > 25;
+    // textLength применяем ТОЛЬКО при overflow — иначе короткие тикеры (SBER)
+    // растягиваются на всю ширину блока. Estimate: char-width ≈ fontSize * 0.58
+    // для bold sans-serif. Если расчётная ширина > доступной — компрессим.
+    const tickerMaxWidth = Math.max(0, rect.width - 10);
+    const percentMaxWidth = Math.max(0, rect.width - 8);
+    // Estimate использует 0.7 — консервативная оценка реального char-width
+    // (с учётом kerning/hinting). Триггерим компрессию на 90% от maxWidth
+    // вместо 100% — даёт margin на edge-cases когда реальный рендер чуть
+    // шире оценки.
+    const tickerEstWidth = rect.id.length * fonts.ticker * 0.7;
+    const percentEstWidth = formatPercent(change).length * fonts.percent * 0.6;
+    const tickerNeedsCompress = tickerEstWidth >= tickerMaxWidth * 0.9;
+    const percentNeedsCompress = percentEstWidth >= percentMaxWidth * 0.9;
     const gap = 2;
     const radius = 6;
+
+    // ClipPath — hard-cap geometry, чтобы текст физически не вылезал за rect
+    // независимо от того угадал ли getFontSize верный размер. Это страховка
+    // на случай если ratio оценки немного ошибается (Cyrillic, custom fonts,
+    // letter-spacing edge cases). ID составной чтобы не пересекался между
+    // секторами (key уже включает sector-prefix).
+    const clipId = `tile-${key}`;
+    const clipX = rect.x + gap / 2;
+    const clipY = rect.y + gap / 2;
+    const clipW = Math.max(0, rect.width - gap);
+    const clipH = Math.max(0, rect.height - gap);
 
     return (
       <g
@@ -389,11 +466,16 @@ export default function HeatmapPage() {
         }}
         onMouseLeave={() => setTooltip(prev => ({ ...prev, visible: false }))}
       >
+        <defs>
+          <clipPath id={clipId}>
+            <rect x={clipX} y={clipY} width={clipW} height={clipH} rx={radius} ry={radius} />
+          </clipPath>
+        </defs>
         <rect
-          x={rect.x + gap / 2}
-          y={rect.y + gap / 2}
-          width={Math.max(0, rect.width - gap)}
-          height={Math.max(0, rect.height - gap)}
+          x={clipX}
+          y={clipY}
+          width={clipW}
+          height={clipH}
           rx={radius}
           ry={radius}
           fill={getColor(change)}
@@ -409,6 +491,8 @@ export default function HeatmapPage() {
             fill="white"
             fontSize={fonts.ticker}
             fontWeight="800"
+            clipPath={`url(#${clipId})`}
+            {...(tickerNeedsCompress ? { textLength: tickerMaxWidth, lengthAdjust: 'spacingAndGlyphs' as const } : {})}
             style={{
               textShadow: '0 2px 8px rgba(0,0,0,0.8), 0 1px 3px rgba(0,0,0,0.9)',
               letterSpacing: '-0.02em',
@@ -427,6 +511,8 @@ export default function HeatmapPage() {
             fill="white"
             fontSize={fonts.percent}
             fontWeight="700"
+            clipPath={`url(#${clipId})`}
+            {...(percentNeedsCompress ? { textLength: percentMaxWidth, lengthAdjust: 'spacingAndGlyphs' as const } : {})}
             style={{
               textShadow: '0 2px 6px rgba(0,0,0,0.8), 0 1px 2px rgba(0,0,0,0.9)'
             }}
@@ -500,32 +586,36 @@ export default function HeatmapPage() {
             className="animate-in fade-in duration-500">
             {treemapData.stockRects.map((rect) => renderStock(rect, `${rect.sector}-${rect.id}`))}
 
-            {/* Заголовки секторов — отдельная полоска */}
-            {treemapData.sectorLabels.map((label, i) => (
-              <g key={label.name}>
-                <rect
-                  x={label.x + 3} y={label.y}
-                  width={label.width - 6} height={label.height}
-                  rx={3}
-                  fill="var(--bg-secondary)"
-                />
-                <clipPath id={`sector-clip-${i}`}>
-                  <rect x={label.x + 3} y={label.y} width={label.width - 6} height={label.height} />
-                </clipPath>
-                <text
-                  x={label.x + 9}
-                  y={label.y + label.height / 2}
-                  dominantBaseline="central"
-                  fill="var(--text-primary)"
-                  opacity={0.85}
-                  fontSize="11"
-                  fontWeight="600"
-                  clipPath={`url(#sector-clip-${i})`}
-                >
-                  {label.name}
-                </text>
-              </g>
-            ))}
+            {/* Заголовки секторов — отдельная полоска.
+                Шрифт адаптивный (10-12px) + truncate с ellipsis если не лезет. */}
+            {treemapData.sectorLabels.map((label) => {
+              // FontSize: ограничен высотой полоски (height - 4) и не больше 12.
+              const labelFs = Math.min(12, Math.max(9, label.height - 4));
+              const padX = 9;
+              const availableW = label.width - padX * 2;
+              const displayName = fitText(label.name, availableW, labelFs);
+              return (
+                <g key={label.name}>
+                  <rect
+                    x={label.x + 3} y={label.y}
+                    width={label.width - 6} height={label.height}
+                    rx={3}
+                    fill="var(--bg-secondary)"
+                  />
+                  <text
+                    x={label.x + padX}
+                    y={label.y + label.height / 2}
+                    dominantBaseline="central"
+                    fill="var(--text-primary)"
+                    opacity={0.85}
+                    fontSize={labelFs}
+                    fontWeight="600"
+                  >
+                    {displayName}
+                  </text>
+                </g>
+              );
+            })}
           </svg>
         ) : treemapData && treemapData.type === 'flat' ? (
           <svg width={containerSize.width} height={containerSize.height}
@@ -552,11 +642,11 @@ export default function HeatmapPage() {
           }}
         >
           <div className="flex items-center gap-3 mb-2">
-            <span className="font-bold text-theme-primary text-[15px]">{tooltip.stock.secId}</span>
-            <span className="text-[13px] text-theme-secondary">{tooltip.stock.name}</span>
-            <span className="text-[13px] text-theme-primary font-semibold ml-auto">{tooltip.stock.price.toFixed(2)} ₽</span>
+            <span className="font-bold text-theme-primary" style={{ fontSize: 'var(--fs-sm)' }}>{tooltip.stock.secId}</span>
+            <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-xs)' }}>{tooltip.stock.name}</span>
+            <span className="text-theme-primary font-semibold ml-auto" style={{ fontSize: 'var(--fs-xs)' }}>{tooltip.stock.price.toFixed(2)} ₽</span>
           </div>
-          <div className="flex items-center gap-4 text-[13px]">
+          <div className="flex items-center gap-4" style={{ fontSize: 'var(--fs-xs)' }}>
             {[
               { label: 'Д', value: tooltip.stock.change_1d },
               { label: 'Н', value: tooltip.stock.change_1w },

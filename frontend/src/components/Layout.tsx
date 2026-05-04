@@ -59,18 +59,20 @@ export default function Layout() {
               <span
                 className={
                   isEditorial
-                    ? 'px-2 py-0.5 text-[10px] font-bold tracking-wider hidden 2xl:inline'
-                    : 'px-2 py-0.5 text-xs font-medium rounded-full hidden 2xl:inline'
+                    ? 'px-2 py-0.5 font-bold tracking-wider hidden 2xl:inline'
+                    : 'px-2 py-0.5 font-medium rounded-full hidden 2xl:inline'
                 }
                 style={
                   isEditorial
                     ? {
+                        fontSize: 'var(--fs-2xs)',
                         color: 'var(--text-primary)',
                         border: '1.5px solid var(--text-primary)',
                         borderRadius: '4px',
                         textTransform: 'uppercase',
                       }
                     : {
+                        fontSize: 'var(--fs-2xs)',
                         color: 'var(--text-secondary)',
                         backgroundColor: 'var(--border-color)',
                       }
@@ -158,23 +160,31 @@ export default function Layout() {
               {/* Theme Toggle (sun/moon, animated) */}
               <ThemeToggle />
 
-              {/* Auth button */}
+              {/* Auth button — 40×40 на mobile, 32×32 на xl (компактный desktop). */}
               {isAuthenticated ? (
                 <button
                   onClick={() => navigate('/profile')}
-                  className="editorial-press w-7 h-7 xl:w-8 xl:h-8 rounded-full flex items-center justify-center text-xs xl:text-sm font-bold"
-                  style={{ backgroundColor: 'var(--accent)', color: 'var(--bg-primary)', border: '1.5px solid var(--text-primary)' }}
+                  className="editorial-press grid place-items-center w-10 h-10 xl:w-8 xl:h-8 rounded-full text-xs xl:text-sm font-bold"
+                  style={{
+                    backgroundColor: 'var(--accent)',
+                    color: 'var(--bg-primary)',
+                    border: '1.5px solid var(--text-primary)',
+                  }}
                   title="Личный кабинет"
+                  aria-label="Личный кабинет"
                 >
                   {(user?.email || '?')[0].toUpperCase()}
                 </button>
               ) : (
                 <button
                   onClick={() => navigate('/login')}
-                  className="flex items-center gap-1.5 px-1.5 py-1.5 xl:px-3 xl:py-2 rounded-xl text-xs xl:text-sm font-medium transition-all hover:bg-white/10"
-                  style={{ color: 'var(--text-secondary)' }}
+                  className="grid place-items-center w-10 h-10 xl:w-auto xl:h-auto xl:flex xl:items-center xl:gap-1.5 xl:px-3 xl:py-2 rounded-xl text-xs xl:text-sm font-medium transition-opacity hover:opacity-70"
+                  style={{
+                    color: 'var(--text-secondary)',
+                  }}
+                  aria-label="Войти"
                 >
-                  <LogIn size={16} />
+                  <LogIn size={18} />
                   <span className="hidden xl:inline">Войти</span>
                 </button>
               )}
@@ -201,24 +211,33 @@ export default function Layout() {
                 Plus
               </button>
 
-              {/* Mobile Menu Button */}
+              {/* Mobile Menu Button.
+                  40×40 — компактно и в размер ThemeToggle/Login. Иконка 22px
+                  для визуального баланса (8+22+8 = 38, +2 от border = 40). */}
               <button
                 onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-                className="lg:hidden p-2 rounded-lg transition-all hover:bg-white/10"
+                className="lg:hidden grid place-items-center w-10 h-10 rounded-lg transition-opacity hover:opacity-70"
                 style={{ color: 'var(--text-secondary)' }}
+                aria-label={mobileMenuOpen ? 'Закрыть меню' : 'Открыть меню'}
+                aria-expanded={mobileMenuOpen}
+                aria-controls="mobile-nav-drawer"
               >
-                {mobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+                {mobileMenuOpen ? <X size={22} /> : <Menu size={22} />}
               </button>
             </div>
           </div>
         </div>
 
-        {/* Mobile Menu Dropdown */}
+        {/* Mobile Menu Dropdown.
+            Bg = --bg-primary (paper-консистентный с основным фоном страницы),
+            а не --bg-secondary, чтобы в editorial-light (warm cream) не появлялась
+            белая панель которая выбивается из палитры. */}
         {mobileMenuOpen && (
           <div
+            id="mobile-nav-drawer"
             className="lg:hidden border-t"
             style={{
-              backgroundColor: 'var(--bg-secondary)',
+              backgroundColor: 'var(--bg-primary)',
               borderColor: 'var(--border-color)'
             }}
           >
@@ -283,10 +302,23 @@ export default function Layout() {
                 </button>
               )}
 
-              {/* Plus версия в мобильном меню */}
+              {/* Plus версия в мобильном меню.
+                  В editorial — accent (pumpkin) + hard-shadow press; в legacy — accent-pink. */}
               <button
-                className="w-full mt-3 px-4 py-3 text-white text-sm font-medium rounded-xl transition-colors"
-                style={{ backgroundColor: 'var(--accent-pink)' }}
+                className={
+                  isEditorial
+                    ? 'editorial-press w-full mt-3 px-4 py-3 text-sm font-bold rounded-xl'
+                    : 'w-full mt-3 px-4 py-3 text-white text-sm font-medium rounded-xl transition-colors'
+                }
+                style={
+                  isEditorial
+                    ? {
+                        backgroundColor: 'var(--accent)',
+                        color: 'var(--text-inverse)',
+                        border: '1.5px solid var(--text-primary)',
+                      }
+                    : { backgroundColor: 'var(--accent-pink)' }
+                }
               >
                 Plus версия
               </button>

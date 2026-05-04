@@ -763,10 +763,13 @@ export default function SimpleChart({
   const changePercent = firstValue !== 0 ? (change / firstValue) * 100 : 0;
   const isPositive = change >= 0;
 
-  // Блок легенды — все размеры через CSS vars из fluid scale.
-  // CSS-context: var(--fs-sm) сам резолвит clamp() на любом viewport.
+  // Блок легенды — fluid scale АГРЕССИВНЕЕ обычного --fs-sm/--sp-4.
+  // На Buffett страницах метки длинные ("Капитализация / ВВП" + "Капитализация
+  // (трлн ₽)"), и при стандартном font 11-14px они разваливаются на 2 строки
+  // на 375px viewport. Поэтому свой clamp с floor 9px (вместо 11) и более
+  // агрессивный gap-clamp (6px на mobile вместо 10).
   const legendBlock = (
-    <div className="flex flex-wrap items-center" style={{ gap: 'var(--sp-4)', fontSize: 'var(--fs-sm)' }}>
+    <div className="flex flex-wrap items-center" style={{ gap: 'clamp(6px, 1vw, 16px)', fontSize: 'clamp(9px, 0.4vw + 0.5rem, 14px)' }}>
       <span className="flex items-center" style={{ gap: 'var(--sp-2)' }}>
         <span className="rounded-full flex-shrink-0" style={{ width: 'var(--ico-xs)', height: 'var(--ico-xs)', backgroundColor: primaryColor }} />
         <span className="text-theme-primary font-medium">{primaryLabel}</span>
@@ -793,7 +796,7 @@ export default function SimpleChart({
         <button
           onClick={() => !histogramDisabled && setChartMode(m => m === 'line' ? 'histogram' : 'line')}
           disabled={histogramDisabled}
-          className={`editorial-press absolute top-4 ${showDownloadButton ? 'right-14' : 'right-4'} z-10 flex items-center justify-center w-9 h-9 rounded-lg ${histogramDisabled ? 'cursor-not-allowed opacity-40' : ''}`}
+          className={`editorial-press absolute top-4 ${showDownloadButton ? 'right-[4.5rem]' : 'right-4'} z-10 flex items-center justify-center w-11 h-11 rounded-lg ${histogramDisabled ? 'cursor-not-allowed opacity-40' : ''}`}
           style={{
             background: 'var(--bg-primary)',
             border: '1.5px solid var(--text-primary)',
@@ -809,7 +812,7 @@ export default function SimpleChart({
       {showDownloadButton && (
         <button
           onClick={downloadChart}
-          className="editorial-press absolute top-4 right-4 z-10 flex items-center justify-center w-9 h-9 rounded-lg"
+          className="editorial-press absolute top-4 right-4 z-10 flex items-center justify-center w-11 h-11 rounded-lg"
           style={{
             background: 'var(--bg-primary)',
             border: '1.5px solid var(--text-primary)',
@@ -823,7 +826,7 @@ export default function SimpleChart({
 
       {/* Маленький индикатор загрузки поверх графика — paper-style без glass */}
       {loading && (
-        <div className={`absolute top-4 ${allowHistogram && showDownloadButton ? 'right-[6.5rem]' : allowHistogram || showDownloadButton ? 'right-16' : 'right-4'} z-10 flex items-center rounded-lg border border-theme shadow-md`} style={{ background: 'var(--bg-primary)', padding: 'var(--sp-2) var(--sp-3)', gap: 'var(--sp-2)' }}>
+        <div className={`absolute top-4 ${allowHistogram && showDownloadButton ? 'right-[8rem]' : allowHistogram || showDownloadButton ? 'right-[5rem]' : 'right-4'} z-10 flex items-center rounded-lg border border-theme shadow-md`} style={{ background: 'var(--bg-primary)', padding: 'var(--sp-2) var(--sp-3)', gap: 'var(--sp-2)' }}>
           <div className="w-4 h-4 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
           <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-xs)' }}>Обновление...</span>
         </div>

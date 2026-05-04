@@ -151,13 +151,13 @@ export const TOOLTIP = {
   containerClass: 'rounded-lg border border-theme shadow-md tabular-nums',
   containerStyle: {
     background: 'var(--bg-primary)',  // paper — match chart bg, без backdrop-blur
-    padding: 'var(--sp-2) var(--sp-3)',
-    fontSize: 'var(--fs-xs)',
+    padding: 'var(--sp-1) var(--sp-2)',  // компактно: 2-4px / 4-8px clamp
+    fontSize: 'var(--fs-2xs)',  // 8-11px — fluid, было --fs-xs (10-12.5px)
   },
   labelClass: 'text-theme-secondary',
   labelStyle: { fontSize: 'var(--fs-2xs)' },
   valueClass: 'font-semibold tabular-nums',
-  valueStyle: { fontSize: 'var(--fs-xs)' },
+  valueStyle: { fontSize: 'var(--fs-2xs)' },  // унифицировано с labelStyle для компактности
   dateClass: 'text-theme-secondary border border-theme rounded-md tabular-nums',
   dateStyle: {
     background: 'var(--bg-primary)',  // paper

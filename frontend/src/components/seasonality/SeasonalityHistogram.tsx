@@ -342,13 +342,16 @@ export default function SeasonalityHistogram({
           // Smart thinning:
           //   ≤7 баров — всегда все подписи
           //   8-20 — каждая 2-я (i%2)
-          //   21+ (monthday = 31) — каждая 3-я (i%3) + первая/последняя
+          //   21+ (monthday = 31) — каждая 5-я (1, 6, 11, 16, 21, 26, 31) +
+          //   последняя. Раньше было %3 → 11 подписей выглядели "не подряд
+          //   и часто" (1,4,7,10... необычные шаги). %5 даёт 7 чистых подписей
+          //   с круглым шагом — визуально приятнее.
           let showLabel = true;
           if (needsThinning && bars.length > 7) {
             if (bars.length <= 20) {
               showLabel = i % 2 === 0;
             } else {
-              showLabel = i % 3 === 0 || i === bars.length - 1;
+              showLabel = i % 5 === 0 || i === bars.length - 1;
             }
           }
           return (

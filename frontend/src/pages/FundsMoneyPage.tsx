@@ -112,9 +112,12 @@ export default function FundsMoneyPage() {
     const [collapsedSubcats, setCollapsedSubcats] = useState<Set<string>>(new Set());
     const [navSortDir, setNavSortDir] = useState<'desc' | 'asc'>('desc');
     const [hoveredFlowIndex, setHoveredFlowIndex] = useState<number | null>(null);
+    // Tooltip position через STATE а не DOM-мутацию — иначе после React re-render
+    // позиция сбрасывается до следующего mousemove → визуальный "коэффициент".
+    // Паттерн как в SeasonalityHistogram (handlePointerMove → setTooltip({x,y})).
+    const [flowTooltipPos, setFlowTooltipPos] = useState<{ x: number; y: number } | null>(null);
     const [hoveredAnnotation, setHoveredAnnotation] = useState<string | null>(null); // date key
     const [showEvents, setShowEvents] = useState(false);
-    const flowTooltipRef = useRef<HTMLDivElement>(null);
     const [flowNavRange, setFlowNavRange] = useState<[number, number]>([0, 0]);
     const flowChartRef = useRef<SVGSVGElement>(null);
     const flowContainerRef = useRef<HTMLDivElement>(null);
@@ -283,35 +286,33 @@ export default function FundsMoneyPage() {
     };
 
     const handleFlowMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-        if (!flowsData?.flows?.length || !flowContainerRef.current) return;
-        const rect = flowContainerRef.current.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
-        const cs = getComputedStyle(document.documentElement);
-        const padLeft = parseFloat(cs.getPropertyValue('--chart-pad-left')) || 100;
-        const padRight = parseFloat(cs.getPropertyValue('--chart-pad-right-single')) || 95;
-        const chartWidth = rect.width - padLeft - padRight;
-        const xInChart = x - padLeft;
-        if (xInChart < 0 || xInChart > chartWidth) return;
+        if (!flowsData?.flows?.length || !flowContainerRef.current || !flowChartRef.current) return;
+        // ВАЖНО: измеряем РЕАЛЬНУЮ геометрию через SVG-элемент, а не через
+        // parseFloat(getComputedStyle(--chart-pad-left)). На mobile чарт-pad
+        // задан через clamp() — getPropertyValue вернёт сырую строку
+        // "clamp(34px, 11vw, 58px)", parseFloat = NaN → fallback 100. Реальный
+        // pad на mobile ~41px → mismatch создаёт "коэффициент 2x" между
+        // движением пальца и cursor'ом. SVG getBoundingClientRect даёт точные
+        // computed pixels.
+        const containerRect = flowContainerRef.current.getBoundingClientRect();
+        const svgRect = flowChartRef.current.getBoundingClientRect();
+        const xInChart = e.clientX - svgRect.left;
+        if (xInChart < 0 || xInChart > svgRect.width) return;
         const visibleCount = flowNavRange[1] - flowNavRange[0] + 1;
-        const barWidth = chartWidth / visibleCount;
+        const barWidth = svgRect.width / visibleCount;
         const idx = Math.floor(xInChart / barWidth);
         if (idx >= 0 && idx < visibleCount) {
             setHoveredFlowIndex(idx);
-            if (flowTooltipRef.current) {
-                const hoverX = padLeft + idx * barWidth + barWidth / 2;
-                const isRightHalf = hoverX > rect.width / 2;
-                const rawLeft = isRightHalf ? hoverX - 188 : hoverX + 8;
-                const cardLeft = Math.max(4, Math.min(rawLeft, rect.width - 192));
-                const containerH = rect.height;
-                flowTooltipRef.current.style.left = `${cardLeft}px`;
-                flowTooltipRef.current.style.top = `${Math.min(Math.max(y - 20, 4), containerH - 60)}px`;
-            }
+            // x в координатах outer-container'а: offset до SVG + позиция в SVG
+            const slotCenterInContainer = (svgRect.left - containerRect.left) + idx * barWidth + barWidth / 2;
+            const y = e.clientY - containerRect.top;
+            setFlowTooltipPos({ x: slotCenterInContainer, y });
         }
     };
 
     const handleFlowMouseLeave = useCallback(() => {
         setHoveredFlowIndex(null);
+        setFlowTooltipPos(null);
     }, []);
 
     // Сброс анимации при выходе из режима flows — следующее появление будет fade-in из нуля
@@ -504,7 +505,7 @@ export default function FundsMoneyPage() {
 
             {/* График */}
             {error ? (
-                <div className="flex items-center justify-center h-[450px]">
+                <div className="flex items-center justify-center" style={{ height: chartHeight }}>
                     <div className="text-theme-danger text-center">
                         <p className="text-lg font-medium">{error}</p>
                         <p className="text-sm text-theme-secondary mt-2">Попробуйте обновить страницу</p>
@@ -548,7 +549,7 @@ export default function FundsMoneyPage() {
                         loading={loading}
                         flowContainerRef={flowContainerRef}
                         flowChartRef={flowChartRef}
-                        flowTooltipRef={flowTooltipRef}
+                        flowTooltipPos={flowTooltipPos}
                         onMouseMove={handleFlowMouseMove}
                         onMouseLeave={handleFlowMouseLeave}
                         onSetHoveredAnnotation={setHoveredAnnotation}
