@@ -42,9 +42,20 @@ INDEX_DATA_INSTRUMENTS = {
 # Вечные фьючерсы (candles, type='futures')
 PERPETUAL_FUTURES = {"USDRUBF", "EURRUBF", "CNYRUBF", "IMOEXF"}
 
+# Индексы, для которых в candles лежат часовые свечи (type='index').
+# Дневная история по-прежнему берётся из index_data — там длиннее (с 1997).
+# Часовые бары IMOEX по ISS доступны только с 2011-11-17.
+INDICES_WITH_INTRADAY = {"IMOEX"}
 
-def _resolve_source(secid: str) -> tuple[str, str]:
-    """Определяет источник данных: ('index_data'|'candles', type_filter)"""
+
+def _resolve_source(secid: str, mode: str = "daily") -> tuple[str, str]:
+    """Определяет источник данных: ('index_data'|'candles', type_filter).
+
+    Для mode='intraday' и индексов из INDICES_WITH_INTRADAY возвращаем
+    candles+'index' — дневная ветка по-прежнему ходит в index_data.
+    """
+    if mode == "intraday" and secid in INDICES_WITH_INTRADAY:
+        return "candles", "index"
     if secid in INDEX_DATA_INSTRUMENTS:
         return "index_data", ""
     if secid in PERPETUAL_FUTURES:
@@ -739,10 +750,11 @@ async def get_seasonality(
 
     engine = get_engine()
 
-    source, inst_type = _resolve_source(secid)
+    source, inst_type = _resolve_source(secid, mode)
 
     if mode == "intraday":
-        # Intraday: index_data не поддерживает
+        # Intraday: index_data не поддерживает (только дневные точки).
+        # Для индексов с часовыми свечами _resolve_source вернёт candles+'index'.
         if source == "index_data":
             raise HTTPException(status_code=404, detail=f"Нет интрадей данных для {secid}")
 

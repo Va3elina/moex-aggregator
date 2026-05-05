@@ -118,6 +118,7 @@ SCRIPTS = {
     'funds_daily': BASE_DIR / 'Funds' / 'fetch_funds_realtime.py',
     # Indices скрипты
     'indices_daily': BASE_DIR / 'Funds' / 'fetch_indices_realtime.py',
+    'index_candles_hourly': BASE_DIR / 'Funds' / 'fetch_index_candles_hourly.py',
     # Macro скрипты (M2, GDP)
     'macro_daily': BASE_DIR / 'Macro' / 'fetch_macro_realtime.py',
     # Market Cap (полная капитализация рынка)
@@ -162,6 +163,7 @@ TIMEOUTS = {
     'candles_spot': 300,  # 5 минут
     'funds_daily': 600,  # 10 минут
     'indices_daily': 300,  # 5 минут
+    'index_candles_hourly': 600,  # 10 минут (бэкфилл с 2011 — ~25k свечей)
     'macro_daily': 120,  # 2 минуты
     'market_cap_daily': 120,  # 2 минуты
     'breadth_daily': 600,  # 10 минут (полный пересчёт ~2 мин)
@@ -395,6 +397,8 @@ class MainOrchestrator:
             # Indices
             'indices_daily_runs': 0,
             'indices_daily_success': 0,
+            'index_candles_hourly_runs': 0,
+            'index_candles_hourly_success': 0,
             # Macro
             'macro_daily_runs': 0,
             'macro_daily_success': 0,
@@ -598,6 +602,22 @@ class MainOrchestrator:
 
         return success
 
+    async def run_index_candles_hourly_update(self) -> bool:
+        """Часовые свечи индексов (для intraday-сезонности IMOEX)."""
+        log.info("  📊 Index Candles Hourly...")
+        self.stats['index_candles_hourly_runs'] += 1
+
+        success, msg, dur = await run_script('index_candles_hourly', ['--once'])
+
+        if success:
+            self.stats['index_candles_hourly_success'] += 1
+            log.info(f"    ✓ Index Candles Hourly ({dur:.1f}с)")
+        else:
+            self.stats['errors'] += 1
+            log.error(f"    ✗ Index Candles Hourly: {msg}")
+
+        return success
+
     async def run_macro_update(self) -> bool:
         """Запускает обновление макроданных (M2 с ЦБ)"""
         log.info("  📊 Macro Daily (M2)...")
@@ -688,6 +708,7 @@ class MainOrchestrator:
             self.run_daily_update,
             self.run_funds_update,
             self.run_indices_update,
+            self.run_index_candles_hourly_update,
             self.run_macro_update,
             self.run_market_cap_update,
             self.run_breadth_update,
@@ -740,6 +761,8 @@ class MainOrchestrator:
         log.info(f"    Spot: {self.stats['candles_spot_success']}/{self.stats['candles_spot_runs']}")
         log.info("  --- Funds ---")
         log.info(f"    Daily: {self.stats['funds_daily_success']}/{self.stats['funds_daily_runs']}")
+        log.info("  --- Index Candles (intraday) ---")
+        log.info(f"    Hourly: {self.stats['index_candles_hourly_success']}/{self.stats['index_candles_hourly_runs']}")
         log.info("  --- Macro ---")
         log.info(f"    Daily: {self.stats['macro_daily_success']}/{self.stats['macro_daily_runs']}")
         log.info("  --- Market Cap ---")
@@ -807,6 +830,7 @@ class MainOrchestrator:
             await self.run_daily_update()
             await self.run_funds_update()
             await self.run_indices_update()
+            await self.run_index_candles_hourly_update()
             await self.run_macro_update()
             await self.run_market_cap_update()
             await self.run_breadth_update()
@@ -870,6 +894,12 @@ class MainOrchestrator:
                             if slot_hour != self.last_hourly_aggregate:
                                 await self.run_hourly_aggregate()
                                 self.last_hourly_aggregate = slot_hour
+
+                        # Часовые свечи индексов (для intraday-сезонности).
+                        # Раз в час, когда новая часовая свеча уже закрылась.
+                        if now.minute >= 2 and slot_hour != getattr(self, '_last_index_candles_hour', None):
+                            await self.run_index_candles_hourly_update()
+                            self._last_index_candles_hour = slot_hour
                 else:
                     log.debug(f"Вне торгов: {reason}")
 
@@ -891,6 +921,7 @@ class MainOrchestrator:
                     await self.run_daily_update()
                     await self.run_funds_update()
                     await self.run_indices_update()
+                    await self.run_index_candles_hourly_update()
                     await self.run_macro_update()
                     await self.run_market_cap_update()
                     await self.run_breadth_update()
