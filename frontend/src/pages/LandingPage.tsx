@@ -31,7 +31,7 @@ import {
   Zap,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
-import MarketPulse from '../components/landing/MarketPulse';
+import ThermalLinesHero from '../components/landing/ThermalLinesHero';
 import IndicatorGroup, { type Indicator } from '../components/landing/IndicatorGroup';
 import MultiChartShowcase from '../components/landing/MultiChartShowcase';
 import { FearPreview } from '../components/landing/previews';
@@ -129,83 +129,70 @@ export default function LandingPage() {
   return (
     <div>
 
-      {/* ═══ HERO — full viewport (100vh) ═══
-          Tagline + CTAs + анимация "шум → сигнал" фоном на весь экран.
-          Layout: анимация absolute (z-0), текст поверх (z-10).
-          min-h-screen гарантирует что секция займёт весь viewport,
-          следующая секция появится только при scroll. */}
-      <section className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden px-4 md:px-6">
-        {/* Анимация фоном — scrolling candlestick chart */}
-        <MarketPulse />
-
-        {/* Контентный overlay поверх анимации */}
-        <div className="relative z-10 text-center max-w-3xl mx-auto">
-          <h1
-            className="text-4xl md:text-7xl font-bold mb-6 md:mb-8"
-            style={{
-              color: 'var(--text-primary)',
-              letterSpacing: '-0.035em',
-              lineHeight: 0.95,
-              // Лёгкий text-shadow для читаемости над анимацией
-              textShadow: '0 2px 40px rgba(0,0,0,0.5)',
-            }}
-          >
-            Посмотри. Подумай. Решай.
-          </h1>
-          <p
-            className="text-base md:text-xl max-w-2xl mx-auto mb-8 md:mb-10"
-            style={{
-              color: 'var(--text-secondary)',
-              lineHeight: 1.55,
-              textShadow: '0 1px 20px rgba(0,0,0,0.6)',
-            }}
-          >
-            Лучшие инвестиционные решения начинаются с качественных данных.
-            Российский рынок, индикаторы и аналитика — в одном дашборде.
-          </p>
-          <div className="flex flex-wrap items-center justify-center gap-3">
-            <Link
-              to="/login"
-              className="px-6 py-3 font-semibold transition-opacity hover:opacity-90"
+      {/* ═══ HERO — full viewport с Dune-style thermal lines анимацией ═══
+          Фон секции — var(--accent), поверх 3 анимированные "тепловые ленты"
+          с переливом цвета сверху-вниз. Анимация в ThermalLinesHero компоненте.
+          Текст белый поверх accent — консистентно в обеих editorial темах. */}
+      <ThermalLinesHero height="100vh">
+        <div className="h-full flex flex-col items-center justify-center text-center px-4 md:px-6">
+          <div className="max-w-3xl mx-auto">
+            <h1
+              className="text-4xl md:text-7xl font-bold mb-6 md:mb-8"
               style={{
-                backgroundColor: 'var(--accent)',
-                color: 'var(--text-inverse)',
-                borderRadius: 'var(--radius-md)',
+                color: '#FFFFFF',
+                letterSpacing: '-0.035em',
+                lineHeight: 0.95,
+                textShadow: '0 2px 24px rgba(0,0,0,0.3)',
               }}
             >
-              Попробовать бесплатно
-            </Link>
-            <Link
-              to="/pricing"
-              className="px-6 py-3 font-semibold transition-colors border"
+              Посмотри. Подумай. Решай.
+            </h1>
+            <p
+              className="text-base md:text-xl max-w-2xl mx-auto mb-8 md:mb-10"
               style={{
-                color: 'var(--text-primary)',
-                borderColor: 'var(--border-color)',
-                borderRadius: 'var(--radius-md)',
-                // Полупрозрачный фон — чтобы кнопка читалась над анимацией
-                backgroundColor: 'color-mix(in srgb, var(--bg-primary) 50%, transparent)',
-                backdropFilter: 'blur(4px)',
+                color: 'rgba(255,255,255,0.85)',
+                lineHeight: 1.55,
+                textShadow: '0 1px 20px rgba(0,0,0,0.4)',
               }}
             >
-              Тарифы
-            </Link>
+              Лучшие инвестиционные решения начинаются с качественных данных.
+              Российский рынок, индикаторы и аналитика — в одном дашборде.
+            </p>
+            {/* Hero buttons — кастомные классы hero-btn-* с ИНВЕРТИРОВАННОЙ
+                тенью: чёрная кнопка → кремовая тень (light theme), кремовая
+                кнопка → чёрная тень (dark theme). Shadow всегда контрастен с
+                цветом кнопки и хорошо видим на оранжевом accent-фоне. */}
+            <div className="flex flex-wrap items-center justify-center gap-4">
+              <Link to="/login" className="hero-btn-primary">
+                Попробовать бесплатно
+                <span style={{ fontSize: 18, lineHeight: 1 }}>→</span>
+              </Link>
+              <Link to="/pricing" className="hero-btn-ghost">
+                Тарифы
+              </Link>
+            </div>
+            <p
+              className="mt-12 md:mt-16"
+              style={{
+                color: 'rgba(255,255,255,0.7)',
+                fontSize: '11px',
+                letterSpacing: '0.32em',
+                fontWeight: 700,
+                textTransform: 'uppercase',
+              }}
+            >
+              Прокрутите вниз ↓
+            </p>
           </div>
-          {/* Маленький hint что ниже есть контент */}
-          <p
-            className="mt-12 md:mt-16 text-xs"
-            style={{ color: 'var(--text-muted)', letterSpacing: '0.15em', fontWeight: 500 }}
-          >
-            ПРОКРУТИТЕ ВНИЗ ↓
-          </p>
         </div>
-      </section>
+      </ThermalLinesHero>
 
       {/* Wrapper для остального контента с обычным layout-padding */}
       <div className="max-w-7xl mx-auto px-4 md:px-6 py-14 md:py-20">
 
-        {/* ═══ INTRO TO INDICATORS — заголовок + 4 факта на scattered-фоне ═══
-            Section full-bleed: выходит за max-w-7xl до краёв viewport через
-            margin trick. Scattered scattered-фон занимает всю ширину экрана. */}
+        {/* ═══ INTRO TO INDICATORS — editorial-стиль ═══
+            Eyebrow → BIG H2 (Archivo bold, italic accent) → подзаголовок →
+            4 KPI с вертикальными dividers (как Manifesto strip в handoff). */}
         <section
           className="mb-14 md:mb-20 relative overflow-hidden py-12 md:py-20"
           style={{
@@ -214,46 +201,83 @@ export default function LandingPage() {
             width: '100vw',
           }}
         >
-          {/* Декоративный scattered фон из 12 разбросанных скриншотов */}
+          {/* Декоративный scattered фон со скриншотами в editorial-frame'ах */}
           <MultiChartShowcase />
 
-          {/* Контент поверх фона */}
-          <div className="relative" style={{ zIndex: 30 }}>
-            <div className="text-center mb-10 md:mb-14 max-w-3xl mx-auto">
-              <h2
-                className="text-3xl md:text-5xl font-bold mb-4"
-                style={{ color: 'var(--text-primary)', letterSpacing: '-0.03em', lineHeight: 1.05 }}
-              >
-                Индикаторы, которые<br className="hidden md:inline"/> меняют решения
-              </h2>
-              <p className="text-sm md:text-lg" style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                8 инструментов, разбитые на три группы. От настроения участников
-                до структуры реальных денежных потоков и исторических паттернов.
-              </p>
-            </div>
+          {/* Контент поверх фона. Editorial-frame backdrop-card даёт чистый
+              paper-фон под текстом — "лист бумаги поверх стопки скриншотов".
+              Без него текст конкурирует со scattered-photos и плохо читается
+              в обеих темах. */}
+          <div className="relative max-w-7xl mx-auto px-4 md:px-6" style={{ zIndex: 30 }}>
+            <div
+              className="editorial-frame max-w-5xl mx-auto"
+              style={{
+                padding: 'clamp(32px, 5vw, 64px) clamp(20px, 4vw, 48px)',
+              }}
+            >
+              <div className="text-center mb-8 md:mb-12 max-w-3xl mx-auto">
+                <p
+                  className="mb-4 uppercase"
+                  style={{
+                    color: 'var(--accent)',
+                    fontSize: 'var(--fs-2xs)',
+                    letterSpacing: '0.32em',
+                    fontWeight: 700,
+                  }}
+                >
+                  ИНДИКАТОРЫ ФРЕЙМ
+                </p>
+                <h2
+                  className="font-bold mb-4"
+                  style={{
+                    color: 'var(--text-primary)',
+                    fontSize: 'clamp(28px, 4.5vw + 0.5rem, 64px)',
+                    letterSpacing: '-0.04em',
+                    lineHeight: 0.95,
+                  }}
+                >
+                  Данные, которые<br className="hidden md:inline"/>
+                  <span style={{ fontStyle: 'italic', marginRight: '0.18em' }}>меняют</span>
+                  решения
+                </h2>
+                <p
+                  className="md:text-lg max-w-2xl mx-auto"
+                  style={{ color: 'var(--text-secondary)', lineHeight: 1.55, fontSize: 'var(--fs-sm)' }}
+                >
+                  8 инструментов, разбитые на три группы. От настроения участников
+                  до структуры реальных денежных потоков и исторических паттернов.
+                </p>
+              </div>
 
-            {/* 4 small feature points — числовые «доказательства» */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 md:gap-8 max-w-5xl mx-auto">
-              <SmallFeature
-                icon={<Layers size={28} strokeWidth={1.5} />}
-                title="8 индикаторов"
-                desc="От просмотра цены до композитных метрик и сезонности"
-              />
-              <SmallFeature
-                icon={<Database size={28} strokeWidth={1.5} />}
-                title="95+ акций MOEX"
-                desc="Все ключевые бумаги + фьючерсы + индексы + валюты"
-              />
-              <SmallFeature
-                icon={<Clock size={28} strokeWidth={1.5} />}
-                title="С 1997 года"
-                desc="27 лет исторических данных, включая кризисы 2008/14/20/22"
-              />
-              <SmallFeature
-                icon={<Zap size={28} strokeWidth={1.5} />}
-                title="Live-обновление"
-                desc="Данные обновляются каждые 5 минут в торговое время"
-              />
+              {/* 4 KPI с вертикальными dividers между блоками на md+ */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-y-8 md:gap-y-0">
+                <SmallFeature
+                  icon={<Layers size={28} strokeWidth={1.5} />}
+                  title="8 индикаторов"
+                  desc="От просмотра цены до композитных метрик и сезонности"
+                />
+                <div className="md:border-l" style={{ borderColor: 'var(--border-color)' }}>
+                  <SmallFeature
+                    icon={<Database size={28} strokeWidth={1.5} />}
+                    title="95+ акций MOEX"
+                    desc="Все ключевые бумаги + фьючерсы + индексы + валюты"
+                  />
+                </div>
+                <div className="md:border-l" style={{ borderColor: 'var(--border-color)' }}>
+                  <SmallFeature
+                    icon={<Clock size={28} strokeWidth={1.5} />}
+                    title="С 1997 года"
+                    desc="27 лет исторических данных, включая кризисы 2008/14/20/22"
+                  />
+                </div>
+                <div className="md:border-l" style={{ borderColor: 'var(--border-color)' }}>
+                  <SmallFeature
+                    icon={<Zap size={28} strokeWidth={1.5} />}
+                    title="Live-обновление"
+                    desc="Данные обновляются каждые 5 минут в торговое время"
+                  />
+                </div>
+              </div>
             </div>
           </div>
         </section>
@@ -279,40 +303,80 @@ export default function LandingPage() {
           indicators={PATTERNS_INDICATORS}
         />
 
-        {/* ═══ FINAL CTA ═══
-            Второй шанс конверсии после того как user прокрутил всю landing.
-            Текст фокусирует на "no risk to try" — бесплатный базовый доступ. */}
-        <section className="text-center pt-6 md:pt-10">
-          <h2
-            className="text-2xl md:text-4xl font-bold mb-3"
-            style={{ color: 'var(--text-primary)', letterSpacing: '-0.02em', lineHeight: 1.1 }}
+        {/* ═══ FINAL CTA — editorial-frame card ═══
+            Карточка на accent-фоне с inverse кнопками — финальный
+            призыв в стиле "Final CTA + Footer" из handoff. */}
+        <section
+          className="editorial-frame text-center"
+          style={{
+            backgroundColor: 'var(--accent)',
+            borderColor: 'var(--text-primary)',
+            padding: 'clamp(40px, 6vw, 80px) clamp(20px, 4vw, 60px)',
+            marginTop: 'clamp(24px, 4vw, 48px)',
+          }}
+        >
+          <p
+            className="mb-5 uppercase"
+            style={{
+              color: 'var(--text-inverse)',
+              fontSize: 'var(--fs-2xs)',
+              letterSpacing: '0.32em',
+              fontWeight: 700,
+              opacity: 0.8,
+            }}
           >
-            Начни разбираться в рынке
+            FRAME · ОТКРЫТЫЙ ДОСТУП
+          </p>
+          <h2
+            className="font-bold mb-4 mx-auto"
+            style={{
+              color: 'var(--text-inverse)',
+              fontSize: 'clamp(28px, 5vw + 0.5rem, 72px)',
+              letterSpacing: '-0.04em',
+              lineHeight: 0.95,
+              maxWidth: '14ch',
+            }}
+          >
+            Начни разбираться<br/>
+            <span style={{ fontStyle: 'italic' }}>в рынке</span>
           </h2>
-          <p className="mb-7 text-sm md:text-base max-w-xl mx-auto" style={{ color: 'var(--text-secondary)' }}>
+          <p
+            className="mb-8 max-w-xl mx-auto"
+            style={{
+              color: 'var(--text-inverse)',
+              opacity: 0.85,
+              fontSize: 'var(--fs-sm)',
+              lineHeight: 1.55,
+            }}
+          >
             Бесплатный доступ к базовым индикаторам — без оплаты и без карты.
             Подписка Pro или Premium — когда и если понадобятся продвинутые фичи.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3">
             <Link
               to="/login"
-              className="px-6 py-3 font-semibold transition-opacity hover:opacity-90"
+              className="editorial-press px-7 py-4 font-bold uppercase"
               style={{
-                backgroundColor: 'var(--accent)',
+                backgroundColor: 'var(--text-primary)',
                 color: 'var(--text-inverse)',
-                borderRadius: 'var(--radius-md)',
+                border: '1.5px solid var(--text-primary)',
+                fontSize: 'var(--fs-sm)',
+                letterSpacing: '0.16em',
+                textDecoration: 'none',
               }}
             >
-              Попробовать бесплатно
+              Попробовать бесплатно →
             </Link>
             <Link
               to="/pricing"
-              className="px-6 py-3 font-semibold transition-colors border"
+              className="editorial-press px-7 py-4 font-bold uppercase"
               style={{
-                color: 'var(--text-primary)',
-                borderColor: 'var(--border-color)',
-                borderRadius: 'var(--radius-md)',
                 backgroundColor: 'transparent',
+                color: 'var(--text-inverse)',
+                border: '1.5px solid var(--text-inverse)',
+                fontSize: 'var(--fs-sm)',
+                letterSpacing: '0.16em',
+                textDecoration: 'none',
               }}
             >
               Тарифы
@@ -328,19 +392,33 @@ export default function LandingPage() {
 // SUBCOMPONENTS
 // ═══════════════════════════════════════════════════════════
 
-/** Small feature point — иконка + title + описание.
-    Pattern из TV features page (icon row под большим хиро-заголовком). */
+/** SmallFeature — editorial KPI block: иконка + большой title + описание.
+    Pattern: accent eyebrow icon → BIG title (Archivo bold) → desc.
+    На desktop вертикальные dividers между блоками (border-l). */
 function SmallFeature({ icon, title, desc }: { icon: ReactNode; title: string; desc: string }) {
   return (
-    <div className="text-center md:text-left">
-      <div className="flex md:justify-start justify-center mb-3" style={{ color: 'var(--accent)' }}>
+    <div className="text-center md:text-left md:px-5">
+      <div className="flex md:justify-start justify-center mb-4" style={{ color: 'var(--accent)' }}>
         {icon}
       </div>
-      <h3 className="font-semibold text-base md:text-lg mb-1.5"
-        style={{ color: 'var(--text-primary)', letterSpacing: '-0.01em' }}>
+      <h3
+        className="font-bold mb-2"
+        style={{
+          color: 'var(--text-primary)',
+          fontSize: 'clamp(20px, 1.4vw + 0.8rem, 28px)',
+          letterSpacing: '-0.025em',
+          lineHeight: 1.05,
+        }}
+      >
         {title}
       </h3>
-      <p className="text-xs md:text-sm" style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+      <p
+        style={{
+          color: 'var(--text-secondary)',
+          fontSize: 'var(--fs-xs)',
+          lineHeight: 1.55,
+        }}
+      >
         {desc}
       </p>
     </div>

@@ -47,30 +47,40 @@ interface GroupProps {
 export default function IndicatorGroup({ title, subtitle, indicators }: GroupProps) {
   return (
     <section className="mb-14 md:mb-20">
-      {/* Header группы */}
+      {/* Header группы — editorial: eyebrow uppercase + большой H2 Archivo + подзаголовок. */}
       <div className="mb-8 md:mb-10 max-w-3xl">
+        <p
+          className="mb-3 uppercase"
+          style={{
+            color: 'var(--accent)',
+            fontSize: 'var(--fs-2xs)',
+            letterSpacing: '0.32em',
+            fontWeight: 700,
+          }}
+        >
+          ГРУППА ИНДИКАТОРОВ
+        </p>
         <h2
-          className="text-2xl md:text-4xl font-bold mb-3"
+          className="font-bold mb-3"
           style={{
             color: 'var(--text-primary)',
-            letterSpacing: '-0.02em',
-            lineHeight: 1.1,
+            fontSize: 'clamp(28px, 4vw + 0.5rem, 56px)',
+            letterSpacing: '-0.035em',
+            lineHeight: 0.95,
           }}
         >
           {title}
         </h2>
         <p
           className="text-sm md:text-base"
-          style={{ color: 'var(--text-secondary)', lineHeight: 1.55 }}
+          style={{ color: 'var(--text-secondary)', lineHeight: 1.55, maxWidth: '60ch' }}
         >
           {subtitle}
         </p>
       </div>
 
-      {/* Карточки в стек — каждая на всю ширину контейнера, внутри
-          горизонтальный split video|text на lg+. Это даёт максимум места
-          под видео (~770×480px на десктопе) при компактном scroll. */}
-      <div className="flex flex-col gap-4 md:gap-5">
+      {/* Карточки в стек — каждая editorial-frame с 1.5px outline + hard-shadow. */}
+      <div className="flex flex-col gap-5 md:gap-6">
         {indicators.map(ind => (
           <IndicatorCard key={ind.href} indicator={ind} />
         ))}
@@ -93,24 +103,20 @@ function IndicatorCard({ indicator }: { indicator: Indicator }) {
   return (
     <Link
       to={href}
-      className="group rounded-2xl border p-5 md:p-6 flex flex-col lg:flex-row gap-5 lg:gap-7 transition-all hover:scale-[1.005] active:scale-[0.995]"
+      className="group editorial-frame editorial-press flex flex-col lg:flex-row gap-5 lg:gap-7"
       style={{
-        backgroundColor: 'var(--bg-secondary)',
-        borderColor: 'var(--border-color)',
         textDecoration: 'none',
       }}
-      onMouseEnter={e => (e.currentTarget.style.borderColor = 'color-mix(in srgb, var(--accent) 30%, var(--border-color))')}
-      onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border-color)')}
     >
-      {/* Media: video (preferred) или SVG illustration.
-          lg+: занимает основную часть ширины (flex-1 + max-width).
-          mobile: full width сверху. */}
+      {/* Media: editorial-style frame — 1.5px outline + paper-bg внутри.
+          Aspect 1280/800 = 16:10. Match'ит размер видео записанных через
+          record-indicator.mjs (viewport 1280×800). */}
       <div
-        className="rounded-xl overflow-hidden border w-full lg:flex-1 lg:max-w-[820px]"
+        className="overflow-hidden w-full lg:flex-1 lg:max-w-[820px]"
         style={{
           backgroundColor: 'var(--bg-primary)',
-          borderColor: 'var(--border-color)',
-          aspectRatio: '1280 / 900',
+          border: '1.5px solid var(--text-primary)',
+          aspectRatio: '16 / 10',
         }}
       >
         <MediaArea videoUrl={videoUrl} posterUrl={posterUrl} illustration={illustration} />
@@ -118,22 +124,31 @@ function IndicatorCard({ indicator }: { indicator: Indicator }) {
 
       {/* Text column — на lg выровнен по центру высоты video. */}
       <div className="flex flex-col lg:justify-center min-w-0 lg:flex-shrink-0 lg:w-[320px]">
-        {/* Header: icon + title в одну строку */}
+        {/* Header: icon + title в одну строку. Иконка — editorial chip
+            (accent fill + ink outline + hard-shadow), как PageHeader.icon. */}
         <div className="flex items-center gap-3 mb-3">
           <div
-            className="flex-shrink-0 flex items-center justify-center rounded-lg"
+            className="flex-shrink-0 flex items-center justify-center"
             style={{
-              width: 40,
-              height: 40,
-              color: 'var(--accent)',
-              backgroundColor: 'color-mix(in srgb, var(--accent) 12%, transparent)',
+              width: 'clamp(36px, 2.5vw + 1.5rem, 44px)',
+              height: 'clamp(36px, 2.5vw + 1.5rem, 44px)',
+              color: 'var(--text-inverse)',
+              backgroundColor: 'var(--accent)',
+              border: '1.5px solid var(--text-primary)',
+              borderRadius: 8,
+              boxShadow: 'var(--shadow-hard-chip)',
             }}
           >
             {icon}
           </div>
           <h3
-            className="text-xl md:text-2xl font-bold"
-            style={{ color: 'var(--text-primary)', letterSpacing: '-0.01em', lineHeight: 1.15 }}
+            className="font-bold"
+            style={{
+              color: 'var(--text-primary)',
+              fontSize: 'clamp(20px, 1.5vw + 0.8rem, 28px)',
+              letterSpacing: '-0.025em',
+              lineHeight: 1.15,
+            }}
           >
             {title}
           </h3>
@@ -147,10 +162,14 @@ function IndicatorCard({ indicator }: { indicator: Indicator }) {
           {desc}
         </p>
 
-        {/* CTA — pseudo-button */}
+        {/* CTA — uppercase в editorial-стиле */}
         <span
-          className="inline-flex items-center gap-2 text-sm font-semibold transition-opacity group-hover:opacity-100 opacity-90"
-          style={{ color: 'var(--accent)' }}
+          className="inline-flex items-center gap-2 font-bold uppercase transition-opacity group-hover:opacity-100 opacity-80"
+          style={{
+            color: 'var(--accent)',
+            fontSize: 'var(--fs-2xs)',
+            letterSpacing: '0.16em',
+          }}
         >
           {ctaLabel}
           {ctaIcon && <span className="inline-flex">{ctaIcon}</span>}

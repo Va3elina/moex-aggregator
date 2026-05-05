@@ -30,22 +30,19 @@ interface ScatteredTile {
   w: number;
 }
 
-// 12 тайлов разбросаны по секции — некоторые дублируются для плотности
+// 8 тайлов разбросаны по секции — без дубликатов, более крупно и видимо.
+// В editorial-стиле: 1.5px ink outline + hard-shadow вместо мягкой тени.
+// Меньше rotation, больше opacity (0.6-0.8) для нормальной видимости.
 const SCATTERED: ScatteredTile[] = [
-  { src: '/showcase/heatmap.jpg',           x: -2,  y: -8,  rot: -7, scale: 1.0, blur: 1.5, op: 0.35, z: 4, w: 28 },
-  { src: '/showcase/oi.jpg',                x: 24,  y: -5,  rot:  5, scale: 1.0, blur: 1.0, op: 0.40, z: 7, w: 26 },
-  { src: '/showcase/seasonality-week.jpg',  x: 50,  y: -10, rot: -3, scale: 0.9, blur: 2.0, op: 0.30, z: 3, w: 26 },
-  { src: '/showcase/buffett.jpg',           x: 73,  y: -6,  rot:  8, scale: 1.0, blur: 1.5, op: 0.40, z: 6, w: 28 },
+  { src: '/showcase/heatmap.jpg',           x: -3,  y: -6,  rot: -5, scale: 1.0, blur: 0, op: 0.65, z: 4, w: 30 },
+  { src: '/showcase/oi.jpg',                x: 26,  y: -4,  rot:  4, scale: 1.0, blur: 0, op: 0.70, z: 7, w: 28 },
+  { src: '/showcase/seasonality-week.jpg',  x: 52,  y: -8,  rot: -2, scale: 0.95, blur: 0, op: 0.60, z: 3, w: 28 },
+  { src: '/showcase/buffett.jpg',           x: 75,  y: -4,  rot:  6, scale: 1.0, blur: 0, op: 0.70, z: 6, w: 30 },
 
-  { src: '/showcase/funds-money-flows.jpg', x: -5,  y: 28,  rot:  4, scale: 0.95, blur: 1.5, op: 0.32, z: 2, w: 25 },
-  { src: '/showcase/strength.jpg',          x: 18,  y: 30,  rot: -6, scale: 1.05, blur: 1.0, op: 0.42, z: 8, w: 27 },
-  { src: '/showcase/seasonality-month.jpg', x: 45,  y: 32,  rot:  6, scale: 1.0, blur: 1.5, op: 0.36, z: 5, w: 26 },
-  { src: '/showcase/funds-money-aum.jpg',   x: 70,  y: 30,  rot: -4, scale: 1.0, blur: 1.0, op: 0.38, z: 6, w: 28 },
-
-  { src: '/showcase/oi.jpg',                x: -3,  y: 62,  rot:  6, scale: 0.95, blur: 2.5, op: 0.28, z: 1, w: 24 },
-  { src: '/showcase/buffett.jpg',           x: 22,  y: 65,  rot: -3, scale: 1.0, blur: 1.5, op: 0.35, z: 4, w: 26 },
-  { src: '/showcase/heatmap.jpg',           x: 50,  y: 68,  rot:  5, scale: 1.0, blur: 2.0, op: 0.32, z: 3, w: 27 },
-  { src: '/showcase/strength.jpg',          x: 75,  y: 60,  rot: -7, scale: 1.05, blur: 1.5, op: 0.38, z: 7, w: 26 },
+  { src: '/showcase/funds-money-flows.jpg', x: -5,  y: 50,  rot:  3, scale: 0.95, blur: 0, op: 0.62, z: 2, w: 27 },
+  { src: '/showcase/strength.jpg',          x: 22,  y: 55,  rot: -4, scale: 1.0, blur: 0, op: 0.72, z: 8, w: 29 },
+  { src: '/showcase/seasonality-month.jpg', x: 50,  y: 52,  rot:  4, scale: 1.0, blur: 0, op: 0.65, z: 5, w: 28 },
+  { src: '/showcase/funds-money-aum.jpg',   x: 75,  y: 56,  rot: -3, scale: 1.0, blur: 0, op: 0.68, z: 6, w: 30 },
 ];
 
 export default function MultiChartShowcase() {
@@ -58,7 +55,7 @@ export default function MultiChartShowcase() {
       {SCATTERED.map((t, i) => (
         <div
           key={i}
-          className="absolute rounded-xl border overflow-hidden"
+          className="absolute overflow-hidden"
           style={{
             left: `${t.x}%`,
             top: `${t.y}%`,
@@ -66,12 +63,14 @@ export default function MultiChartShowcase() {
             aspectRatio: '1280 / 950',
             transform: `rotate(${t.rot}deg) scale(${t.scale})`,
             transformOrigin: 'center center',
-            filter: `blur(${t.blur}px)`,
+            filter: t.blur > 0 ? `blur(${t.blur}px)` : 'none',
             opacity: t.op,
             zIndex: t.z,
-            backgroundColor: 'var(--bg-secondary)',
-            borderColor: 'var(--border-color)',
-            boxShadow: '0 20px 60px rgba(0,0,0,0.4)',
+            backgroundColor: 'var(--bg-primary)',
+            // Editorial: 1.5px ink outline + 4px hard-shadow (как .editorial-frame)
+            border: '1.5px solid var(--text-primary)',
+            boxShadow: '4px 4px 0 var(--text-primary)',
+            borderRadius: 8,
           }}
         >
           <img
@@ -83,16 +82,17 @@ export default function MultiChartShowcase() {
         </div>
       ))}
 
-      {/* Edge fades по 4 сторонам — растворяет scattered-карточки в фоне */}
+      {/* Edge fades по 4 сторонам — растворяет scattered-карточки в фоне.
+          Мягкая paper-fade чтобы не было резкой границы. */}
       <div
-        className="absolute top-0 left-0 right-0 h-24 md:h-32"
+        className="absolute top-0 left-0 right-0 h-24 md:h-40"
         style={{
           background: 'linear-gradient(to bottom, var(--bg-primary) 0%, transparent 100%)',
           zIndex: 20,
         }}
       />
       <div
-        className="absolute bottom-0 left-0 right-0 h-24 md:h-32"
+        className="absolute bottom-0 left-0 right-0 h-24 md:h-40"
         style={{
           background: 'linear-gradient(to top, var(--bg-primary) 0%, transparent 100%)',
           zIndex: 20,

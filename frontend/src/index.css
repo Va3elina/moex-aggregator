@@ -567,6 +567,12 @@
   --accent-orange: #FF5C2B;
   --accent-pink: #5B5BD6;
   --accent-cyan: #2B6CB0;
+  /* Variants of accent для Hero thermal-lines анимации.
+     core: hue+40° (warm yellow-amber) для центра ленты;
+     dark: lightness-35% (deep brick) для краёв ленты.
+     Подобраны под Pumpkin #FF5C2B = HSL(14, 100%, 58%). */
+  --accent-core: hsl(54, 95%, 65%);
+  --accent-dark: hsl(14, 100%, 23%);
 
   --success: #0A6B3B;
   --warning: #B5301A;
@@ -632,6 +638,8 @@
   --accent-orange: #FF5C2B;
   --accent-pink: #5B5BD6;
   --accent-cyan: #5DA3E9;
+  --accent-core: hsl(54, 95%, 65%);
+  --accent-dark: hsl(14, 100%, 23%);
 
   --success: #5BD49C;
   --warning: #F2A24A;
@@ -785,6 +793,46 @@
 }
 [data-theme="editorial-dark"] {
   --nav-mask: rgba(245, 241, 232, 0.10);
+}
+
+/* === Hero buttons — тень появляется ТОЛЬКО на hover ===
+   Идея handoff: кнопки чистые в спокойном состоянии, hard-shadow появляется
+   при hover как visual feedback. Shadow color ИНВЕРТИРОВАН — bg-primary
+   контрастен с цветом кнопки в обеих editorial темах. */
+.hero-btn-primary,
+.hero-btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 28px;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  text-decoration: none;
+  cursor: pointer;
+  border: 1.5px solid var(--text-primary);
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  box-shadow: 0 0 0 transparent;  /* Default: no shadow */
+}
+.hero-btn-primary {
+  background: var(--text-primary);
+  color: var(--bg-primary);
+}
+.hero-btn-ghost {
+  background: transparent;
+  color: var(--text-primary);
+}
+.hero-btn-primary:hover,
+.hero-btn-ghost:hover {
+  transform: translate(-3px, -3px);
+  box-shadow: 6px 6px 0 var(--bg-primary);
+}
+.hero-btn-primary:active,
+.hero-btn-ghost:active {
+  transform: translate(1px, 1px);
+  box-shadow: 2px 2px 0 var(--bg-primary);
 }
 
 /* === Editorial Press Effect — универсальный hover/active ===
