@@ -138,6 +138,12 @@ export default function SeasonalityHistogram({
         // до 432px (=180×2.4) и выезжал за card на 122px вправо.
         // С max-width: 100% chart shrinks по ширине, height clamps к min-height.
         maxWidth: '100%',
+        // margin auto центрирует block-элемент когда aspect-ratio + maxHeight
+        // ограничивают ширину меньше parent (на широких desktop'ах: при
+        // maxHeight≈500 ширина ≈1200, а контейнер ≈1274 — без auto-margin
+        // график прижимался к левому краю).
+        marginLeft: 'auto',
+        marginRight: 'auto',
         // touchAction: none — нужно для mobile чтобы водение пальцем по чарту
         // не триггерило scroll страницы.
         touchAction: 'none',

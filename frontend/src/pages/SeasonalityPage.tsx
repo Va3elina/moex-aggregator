@@ -552,11 +552,11 @@ export default function SeasonalityPage() {
     );
   };
 
-  // В test-режиме используем увеличенную ширину, чтобы вместить 2×2 grid
-  // гистограмм и широкую yearly-линию. Остальные режимы сохраняют свои 1280px.
+  // Стандартная editorial-ширина 1408px (как Strength/Buffett/etc).
+  // В test-режиме расширяем до 1800px чтобы вместить 2×2 grid гистограмм.
   const containerClass = chartType === 'test'
-    ? 'max-w-[1800px] mx-auto px-2 md:px-6 py-6 md:py-8'
-    : 'max-w-7xl mx-auto px-2 md:px-6 py-6 md:py-8';
+    ? 'max-w-[1800px] mx-auto px-4 md:px-6 py-6 md:py-8'
+    : 'max-w-[1408px] mx-auto px-4 md:px-6 py-6 md:py-8';
 
   return (
     <div className={containerClass}>
