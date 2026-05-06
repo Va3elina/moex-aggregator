@@ -147,7 +147,11 @@ class AlgopackOIFetcher:
             'requests': 0,
             'success': 0,
             'errors': 0,
-            'empty': 0
+            'empty': 0,
+            # Отдельный счётчик для 401 — сигнализирует о проблеме с API-ключом
+            # (expired/revoked). main() читает его и завершается с exit-1, чтобы
+            # orchestrator увидел реальную ошибку, а не silent ✓ при 0 inserted.
+            'auth_failures': 0,
         }
 
     def get_stats(self) -> dict:
@@ -230,6 +234,7 @@ class AlgopackOIFetcher:
                     if resp.status == 401:
                         log.error(f"[{ticker}] Ошибка авторизации (401)")
                         self.stats['errors'] += 1
+                        self.stats['auth_failures'] += 1
                         return None
 
                     if resp.status == 404:
@@ -803,6 +808,20 @@ async def main():
             async with aiohttp.ClientSession(connector=connector) as session:
                 att, ins = await updater.update_all(session)
                 log.info(f"✓ Загружено: {att}, сохранено: +{ins}")
+
+            # Hard fail на 401: если хоть один запрос вернул unauthorized,
+            # значит API-ключ Algopack expired/revoked. Без этого блока скрипт
+            # завершается с exit-0, orchestrator видит "✓ OI 5м (6.7с)" и
+            # silent failure длится дни (так и было: 2 дня без OI данных,
+            # пока коллега не заметил визуально). С exit-1 orchestrator
+            # залогирует "✗ OI 5м: ..." и проблему видно сразу.
+            auth_fails = updater.fetcher.stats.get('auth_failures', 0)
+            if auth_fails > 0:
+                log.critical(
+                    f"❌ Algopack 401 Unauthorized — API-ключ expired/revoked "
+                    f"({auth_fails} запросов). Обнови ALGOPACK_API_KEY и перезапусти orchestrator."
+                )
+                sys.exit(1)
         else:
             # Режим daemon
             await updater.run_forever()
