@@ -201,7 +201,7 @@ export default function IndexChart({
                     от низа SVG → bottom=padding.bottom+5 даёт 5px зазор.
                     padding обновляется в StrengthPage через resize listener,
                     значит watermark адаптивен к mobile/tablet/desktop. */}
-                <ChartWatermark left={padding.left + 20} bottom={padding.bottom + 5} />
+                <ChartWatermark left={padding.left + 5} bottom={padding.bottom + 5} />
             </div>
         </div>
     );

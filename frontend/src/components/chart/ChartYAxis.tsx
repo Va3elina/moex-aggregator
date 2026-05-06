@@ -43,12 +43,15 @@ export default function ChartYAxis({
       {ticks.map((t, i) => {
         const chartAreaH = `calc(100% - ${padTop + padBottom}px)`;
         // Располагаем метку в padding-зоне ВНЕ графика:
-        // - Right Y-axis: левый край метки на 12px правее правого края графика,
-        //   ширина = padRight - 12 (заполняет padding-зону), text-align: left.
-        // - Left Y-axis: симметрично — правый край на 12px левее графика.
+        // - Right Y-axis: левый край метки на 4px правее правого края графика,
+        //   ширина = padRight - 4 (заполняет padding-зону), text-align: left.
+        // - Left Y-axis: симметрично — правый край на 4px левее графика.
+        // Раньше gap=12px → на mobile (padRight=32) колонка = 20px, метка
+        // "+25%" (~28px на 9-11px font) обрезалась за правый край card.
+        // С gap=4px колонка = 28-91px (mobile-desktop) — метки влезают.
         const posStyle = side === 'right'
-          ? { right: 0, width: `${padRight - 12}px`, textAlign: 'left' as const }
-          : { left: 0, width: `${padLeft - 12}px`, textAlign: 'right' as const };
+          ? { right: 0, width: `${padRight - 4}px`, textAlign: 'left' as const }
+          : { left: 0, width: `${padLeft - 4}px`, textAlign: 'right' as const };
 
         return (
           <div

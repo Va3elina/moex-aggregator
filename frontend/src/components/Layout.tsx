@@ -254,22 +254,29 @@ export default function Layout() {
                     }
                   }}
                   className={({ isActive }) => `
-                    block px-4 py-3 rounded-xl text-sm font-medium transition-all
-                    ${item.disabled
-                      ? 'cursor-not-allowed'
-                      : isActive
-                        ? 'border'
-                        : ''
-                    }
+                    block px-4 py-3 rounded-xl text-sm
+                    ${item.disabled ? 'cursor-not-allowed' : 'editorial-press'}
+                    ${isActive ? 'font-bold' : 'font-medium'}
                   `}
                   style={({ isActive }) => ({
+                    // Theme-aware editorial palette: orange accent removed.
+                    // Active = inverted (text-primary bg, paper text) — высокий
+                    // contrast без рыжего highlight'а. Inactive = paper bg с
+                    // outline + editorial-press hover-shadow (см. index.css).
+                    // Работает на light и dark editorial — переменные адаптируются.
                     color: item.disabled
                       ? 'var(--text-muted)'
                       : isActive
-                        ? 'var(--accent)'
+                        ? 'var(--bg-primary)'
                         : 'var(--text-secondary)',
-                    backgroundColor: isActive ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : undefined,
-                    borderColor: isActive ? 'color-mix(in srgb, var(--accent) 30%, transparent)' : undefined,
+                    backgroundColor: item.disabled
+                      ? undefined
+                      : isActive
+                        ? 'var(--text-primary)'
+                        : 'var(--bg-primary)',
+                    border: !item.disabled
+                      ? '1.5px solid var(--text-primary)'
+                      : undefined,
                   })}
                 >
                   {item.label}
@@ -280,12 +287,16 @@ export default function Layout() {
               {isAuthenticated ? (
                 <button
                   onClick={() => { navigate('/profile'); setMobileMenuOpen(false); }}
-                  className="w-full mt-3 flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all"
-                  style={{ color: 'var(--text-secondary)', backgroundColor: 'color-mix(in srgb, var(--accent) 10%, transparent)' }}
+                  className="editorial-press w-full mt-3 flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium"
+                  style={{
+                    color: 'var(--text-primary)',
+                    backgroundColor: 'var(--bg-primary)',
+                    border: '1.5px solid var(--text-primary)',
+                  }}
                 >
                   <div
                     className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold"
-                    style={{ backgroundColor: 'var(--accent)', color: 'var(--bg-primary)' }}
+                    style={{ backgroundColor: 'var(--text-primary)', color: 'var(--bg-primary)' }}
                   >
                     {(user?.email || '?')[0].toUpperCase()}
                   </div>
@@ -294,8 +305,12 @@ export default function Layout() {
               ) : (
                 <button
                   onClick={() => { navigate('/login'); setMobileMenuOpen(false); }}
-                  className="w-full mt-3 flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-medium transition-all"
-                  style={{ color: 'var(--accent)', backgroundColor: 'color-mix(in srgb, var(--accent) 10%, transparent)' }}
+                  className="editorial-press w-full mt-3 flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-medium"
+                  style={{
+                    color: 'var(--text-primary)',
+                    backgroundColor: 'var(--bg-primary)',
+                    border: '1.5px solid var(--text-primary)',
+                  }}
                 >
                   <LogIn size={16} />
                   Войти

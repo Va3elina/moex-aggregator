@@ -250,9 +250,9 @@ export default function FlowsHistogram({
                         Tablet:  50 + 0.03*(380-19-50) + 5 ≈ 64px
                         Mobile:  40 + 0.03*(300-16-40) + 5 ≈ 52px
 
-                        left: padding.left + 20px (как SimpleChart). */}
+                        left: padding.left + 5px (симметрично с bottom-gap). */}
                     <ChartWatermark
-                        left="calc(var(--chart-pad-left, 100px) + 20px)"
+                        left="calc(var(--chart-pad-left, 100px) + 5px)"
                         bottom="calc(var(--chart-pad-bottom, 50px) + 0.03 * (var(--chart-height, 450px) - var(--chart-pad-top, 19px) - var(--chart-pad-bottom, 50px)) + 5px)"
                     />
 

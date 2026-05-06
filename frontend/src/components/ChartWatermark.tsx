@@ -17,15 +17,22 @@
  * столбиках гистограмм — обрамляет watermark тёмной каймой и делает
  * его читаемым на любом background.
  */
-import { useEffect, useState } from 'react';
 import Logo from './Logo';
 import FrameLogo from './FrameLogo';
 import { useTheme } from '../contexts/ThemeContext';
+import { useViewportWidth } from '../config/fluidScale';
 
 interface ChartWatermarkProps {
   opacity?: number;
+  /** Максимальный размер глифа (на широком экране). По умолчанию 28. */
   size?: number;
-  /** Размер на мобиле (<768px). По умолчанию 18 (вместо desktop 28). */
+  /** Минимальный размер глифа (на mobile). По умолчанию 18. */
+  minSize?: number;
+  /**
+   * @deprecated Используется minSize. Оставлено для backwards compat.
+   * Раньше: discrete jump 28→18 на 768px breakpoint.
+   * Сейчас: плавный fluid scale между minSize и size.
+   */
   mobileSize?: number;
   bottom?: number | string;
   left?: number | string;
@@ -35,7 +42,8 @@ interface ChartWatermarkProps {
 export default function ChartWatermark({
   opacity = 0.55,
   size = 28,
-  mobileSize = 18,
+  minSize = 18,
+  mobileSize,
   bottom = '14%',
   left = '10%',
   showText = true,
@@ -43,18 +51,16 @@ export default function ChartWatermark({
   const { theme } = useTheme();
   const isEditorial = theme.startsWith('editorial');
 
-  // Адаптивный размер. Listener resize даёт мгновенный rerender при повороте
-  // или открытии devtools (изменение viewport).
-  const [isMobile, setIsMobile] = useState(
-    typeof window !== 'undefined' && window.innerWidth < 768,
+  // Fluid size: линейная интерполяция между minSize (на 375vw) и size (на 1440vw).
+  // Заменяет discrete jump 28→18 на 768px breakpoint — теперь watermark плавно
+  // меняет размер при resize окна, что важно при PWA orientation change или
+  // при открытии devtools панели.
+  // useViewportWidth re-renderит компонент при resize.
+  const vw = useViewportWidth();
+  const lo = mobileSize ?? minSize; // backwards compat: mobileSize wins если задан
+  const effSize = Math.round(
+    Math.max(lo, Math.min(size, lo + ((vw - 375) * (size - lo)) / (1440 - 375))),
   );
-  useEffect(() => {
-    const handler = () => setIsMobile(window.innerWidth < 768);
-    window.addEventListener('resize', handler);
-    return () => window.removeEventListener('resize', handler);
-  }, []);
-
-  const effSize = isMobile ? mobileSize : size;
 
   // В editorial — FRAME-лого (брекеты + wordmark "FRAME"), 1в1 как в шапке.
   // Тёмная тень убирается на light-фонах (она для контраста с цветными

@@ -258,7 +258,7 @@ export default function SeasonalityHistogram({
               left = 20px от левого края bar-area (== 20px после Y-axis labels)
               bottom = 12% от высоты bar-area (доходит до нижней gridline) + 5px зазор
             Чисто CSS, адаптивно к любому размеру (aspectRatio + media query). */}
-        <ChartWatermark left={20} bottom="calc(12% + 5px)" />
+        <ChartWatermark left={5} bottom="calc(12% + 5px)" />
       </div>
 
       {/* Tooltip — используем ChartTooltip (автоматический flip по центру) */}

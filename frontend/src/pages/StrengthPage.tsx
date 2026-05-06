@@ -247,12 +247,12 @@ export default function StrengthPage() {
         ? CLASSIFICATION_LABELS[current.classification]
         : CLASSIFICATION_LABELS.neutral;
 
-    const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    // Extracted pointer handler — общая логика для mouse + touch.
+    // Раньше вся логика была inline в handleMouseMove → touch не работал.
+    // Теперь mouse и touch handlers вызывают этот общий путь с координатами.
+    const updateHover = useCallback((clientX: number, clientY: number) => {
         if (!containerRef.current || !displaySyncedData.length) return;
         if (mouseMoveRaf.current !== null) return; // throttle до одного RAF
-
-        const clientX = e.clientX;
-        const clientY = e.clientY;
 
         mouseMoveRaf.current = requestAnimationFrame(() => {
             mouseMoveRaf.current = null;
@@ -269,6 +269,22 @@ export default function StrengthPage() {
             }
         });
     }, [displaySyncedData.length, padding.left, padding.right]);
+
+    const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+        updateHover(e.clientX, e.clientY);
+    }, [updateHover]);
+
+    const handleTouchStart = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
+        if (e.touches[0]) updateHover(e.touches[0].clientX, e.touches[0].clientY);
+    }, [updateHover]);
+
+    const handleTouchMove = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
+        if (e.touches[0]) updateHover(e.touches[0].clientX, e.touches[0].clientY);
+    }, [updateHover]);
+
+    const handleTouchEnd = useCallback(() => {
+        setHoverIndex(null);
+    }, []);
 
     const handleMouseLeave = useCallback(() => {
         if (mouseMoveRaf.current !== null) {
@@ -324,9 +340,16 @@ export default function StrengthPage() {
                 style={{
                     minHeight: 'var(--chart-height, 500px)',
                     border: '1.5px solid var(--text-primary)',
+                    // touchAction: none — отключает scroll/zoom при tap-and-drag по
+                    // chart, иначе мобильный браузер ловит touch как scroll-gesture
+                    // и crosshair не follows finger.
+                    touchAction: 'none',
                 }}
                 onMouseMove={isAnimating ? undefined : handleMouseMove}
                 onMouseLeave={handleMouseLeave}
+                onTouchStart={isAnimating ? undefined : handleTouchStart}
+                onTouchMove={isAnimating ? undefined : handleTouchMove}
+                onTouchEnd={handleTouchEnd}
             >
                 {/* Полный loading / error на месте графика */}
                 {loading && !current ? (
@@ -367,7 +390,12 @@ export default function StrengthPage() {
                         const chartWidth = rect.width - 2 * px4 - padding.left - padding.right;
                         const hoverX = px4 + padding.left + (hoverIndex / Math.max(displaySyncedData.length - 1, 1)) * chartWidth;
                         const isRightHalf = hoverX > px4 + padding.left + chartWidth / 2;
-                        const cardLeft = isRightHalf ? hoverX - 190 - 12 : hoverX + 12;
+                        // Mobile: компактнее (140 vs 190) — иначе на 375vw tooltip
+                        // занимает 50%+ ширины и накрывает данные. Window check
+                        // вместо useIsMobile чтобы не usable вне React-context.
+                        const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+                        const cardWidth = isMobile ? 140 : 190;
+                        const cardLeft = isRightHalf ? hoverX - cardWidth - 12 : hoverX + 12;
 
                         const dateStr = new Date(hoverData.time).toLocaleDateString('ru-RU', {
                             day: 'numeric', month: 'short', year: 'numeric'

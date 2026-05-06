@@ -278,7 +278,7 @@ export default function SeasonalityPriceChart({
               PB=60 хардкод (не --chart-pad-bottom!) → bottom=65.
               Left адаптивно через CSS-вар. */}
           <ChartWatermark
-            left="calc(var(--chart-pad-left, 100px) + 20px)"
+            left="calc(var(--chart-pad-left, 100px) + 5px)"
             bottom={65}
           />
         </div>

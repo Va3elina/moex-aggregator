@@ -1,7 +1,7 @@
 import { useLayoutEffect, useState, useMemo } from 'react';
 import type { YearlySeasonalityResponse } from '../../services/api';
 import { CHART_COLORS, PADDING, cssVar } from '../../config/chartTheme';
-import { ChartGrid, ChartCrosshair, ChartDateLabel, ChartTooltip, TooltipRow, ChartYAxis, ChartXAxis } from '../chart';
+import { ChartGrid, ChartCrosshair, ChartDateLabel, ChartTooltip, TooltipRow, ChartYAxis } from '../chart';
 import ChartNavigator from '../ChartNavigator';
 import ChartWatermark from '../ChartWatermark';
 import { useIsMobile } from '../../hooks/useIsMobile';
@@ -153,16 +153,17 @@ export default function YearlySeasonalityChart({
     `${i === 0 ? 'M' : 'L'} ${scX(p.td) * 1000} ${scY(p.pct) * 500}`
   ).join(' ');
 
-  // X-axis: месяцы (Янв-Дек) — покрывают всю ширину графика.
-  // Реальные даты из cur покрывали бы только часть года (до текущей даты),
-  // а средняя линия идёт до декабря — получался бы пустой участок без подписей.
-  // На мобиле прореживаем — каждый 3-й месяц (квартально), чтобы 12 подписей
-  // не накладывались на 311px viewport. Между подписями ставим '' (пустую
-  // строку) — позиционирование тиков сохраняется, только текст скрыт.
-  const xLabels = monthPositions.map((mp, idx) => {
-    if (isMobile && idx % 3 !== 0) return '';
-    return mp.label;
-  });
+  // X-axis: месяцы (Янв-Дек) — каждая подпись позиционируется absolute по
+  // реальной X-координате месяца через scX(td). Раньше использовался
+  // ChartXAxis с flex justify-between, который распределял 12 items равномерно
+  // (0%, 9%, 18%, ..., 100%) — а реальные позиции месяцев в chart-area идут
+  // 0%, 8.3%, 16.7%, ..., 91.7% (по trading-day). На широком экране разница
+  // незаметна, на mobile при выводе квартальных меток (idx 0,3,6,9) "Окт"
+  // оказывался на 82% labels-area вместо реальных 75% chart-data — отсюда
+  // визуальный сдвиг. Теперь label положение точно совпадает с месяцем в данных.
+  const visibleMonthLabels = monthPositions
+    .map((mp, idx) => ({ ...mp, idx }))
+    .filter(mp => !isMobile || mp.idx % 3 === 0);
 
   // PL/PR — seasonality-specific (12px/32px на mobile, 60/70 на desktop)
   // вместо общих --chart-pad-* (34/38 mobile, 100/95 desktop). Это даёт
@@ -315,24 +316,59 @@ export default function YearlySeasonalityChart({
 
         {/* Y labels — padRight=PR обязателен, иначе ChartYAxis использует
             default 80, и на mobile (PR=56) labels overlap data area на 12px
-            («правая ось вошла в график»). */}
+            («правая ось вошла в график»).
+
+            Format: для |v|≥10 убираем десятичную часть ("+25%" вместо "+25.0%"),
+            иначе toFixed(1) ("+8.1%"). Это держит длину label'а ≤ 5 символов и
+            на mobile (PR=32px, fluid font 8-11px) метки гарантированно влезают.
+            Раньше "+25.0%" обрезался до "+25." при сильных годах. */}
         <ChartYAxis
           ticks={yTicks}
           side="right"
-          format={(v) => `${v > 0 ? '+' : ''}${v.toFixed(1)}%`}
+          format={(v) => {
+            const sign = v > 0 ? '+' : '';
+            const digits = Math.abs(v) >= 10 ? 0 : 1;
+            return `${sign}${v.toFixed(digits)}%`;
+          }}
           color="var(--axis-color, #9CA3B8)"
           padTop={PT}
           padBottom={PB}
           padRight={PR}
         />
 
-        {/* X labels — реальные даты из current year или месяцы */}
-        <ChartXAxis
-          labels={xLabels}
-          padLeft={PL}
-          padRight={PR}
-          color="var(--axis-color, #9CA3B8)"
-        />
+        {/* X labels — каждая подпись на точной X-позиции своего месяца через
+            scX(td). Бывший <ChartXAxis> с flex justify-between давал визуальный
+            сдвиг подписей относительно chart data (см. visibleMonthLabels comment).
+            bottom=10 (вместо 4) поднимает подписи ближе к chart-data — раньше
+            был большой gap между нижней gridline и подписями на mobile. */}
+        {visibleMonthLabels.map((mp, i) => {
+          // Mobile (4 квартальных label'а): equal distribution across chart-area
+          // (0%, 33%, 67%, 100%). Labels репрезентируют КВАРТАЛЫ, не конкретные
+          // дни — поэтому visual balance важнее точного scX(td) alignment'а.
+          // С scX'ом Окт оставался на 75% и справа была пустая ⅓.
+          //
+          // Desktop (12 monthly): остаётся scX(td) — там labels репрезентируют
+          // КОНКРЕТНЫЕ месячные точки данных, alignment важен.
+          const xPct = isMobile && visibleMonthLabels.length > 1
+            ? (i / (visibleMonthLabels.length - 1)) * 100
+            : scX(mp.td) * 100;
+          return (
+            <div
+              key={mp.idx}
+              className="absolute font-semibold pointer-events-none"
+              style={{
+                left: `calc(${PL}px + ${xPct / 100} * (100% - ${PL}px - ${PR}px))`,
+                bottom: 22,
+                transform: 'translateX(-50%)',
+                fontSize: 'var(--chart-font-x, 13px)',
+                color: 'var(--axis-color, #9CA3B8)',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {mp.label}
+            </div>
+          );
+        })}
 
         {/* Tooltip */}
         {tooltip?.yearlyAvgPct !== undefined && (
@@ -382,12 +418,14 @@ export default function YearlySeasonalityChart({
           </ChartTooltip>
         )}
         {/* Watermark — привязан к data area через CSS calc().
-            Gridlines идут от 0% до 100% SVG (yTicks от yMin до yMax),
-            нижняя на padding.bottom от низа → bottom = pad-bottom + 5px зазор.
-            Адаптивно к media query через CSS-вары. */}
+            Yearly использует ОТДЕЛЬНЫЙ --seasonality-chart-pad-left
+            (60px desktop / 12px mobile) вместо общего --chart-pad-left
+            (100/34-58px). Раньше watermark ссылался на чужой var и
+            "висел отдельно" от левой Y-оси: на mobile ушёл на 29px правее
+            data-area. Теперь var совпадает с PL который рендерит SVG. */}
         <ChartWatermark
-          left="calc(var(--chart-pad-left, 100px) + 20px)"
-          bottom="calc(var(--chart-pad-bottom, 50px) + 5px)"
+          left="calc(var(--seasonality-chart-pad-left, 60px) + 5px)"
+          bottom="calc(var(--chart-pad-bottom, 50px) + 22px)"
         />
       </div>
 

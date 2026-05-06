@@ -153,16 +153,23 @@ export const TOOLTIP = {
     background: 'var(--bg-primary)',  // paper — match chart bg, без backdrop-blur
     padding: 'var(--sp-1) var(--sp-2)',  // компактно: 2-4px / 4-8px clamp
     fontSize: 'var(--fs-2xs)',  // 8-11px — fluid, было --fs-xs (10-12.5px)
+    // whiteSpace: nowrap — критично для multi-row tooltip'ов в narrow viewport.
+    // Без него на mobile (375px) при tooltip y правом крае chart карточка с
+    // содержимым "С 2007 г. +13.01%" разъезжается на 2 строки. nowrap на
+    // контейнере + индивидуальные nowrap'ы на label/value/date гарантируют
+    // что текст всегда в одну строку независимо от позиции курсора.
+    whiteSpace: 'nowrap' as const,
   },
-  labelClass: 'text-theme-secondary',
+  labelClass: 'text-theme-secondary whitespace-nowrap',
   labelStyle: { fontSize: 'var(--fs-2xs)' },
-  valueClass: 'font-semibold tabular-nums',
+  valueClass: 'font-semibold tabular-nums whitespace-nowrap',
   valueStyle: { fontSize: 'var(--fs-2xs)' },  // унифицировано с labelStyle для компактности
-  dateClass: 'text-theme-secondary border border-theme rounded-md tabular-nums',
+  dateClass: 'text-theme-secondary border border-theme rounded-md tabular-nums whitespace-nowrap',
   dateStyle: {
     background: 'var(--bg-primary)',  // paper
     padding: 'calc(var(--sp-1)) var(--sp-2)',
     fontSize: 'var(--fs-2xs)',
+    whiteSpace: 'nowrap' as const,
   },
   dotClass: 'rounded-full flex-shrink-0',
   dotStyle: { width: 'var(--sp-2)', height: 'var(--sp-2)' },

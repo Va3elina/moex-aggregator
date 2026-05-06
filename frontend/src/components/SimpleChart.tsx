@@ -127,9 +127,12 @@ export default function SimpleChart({
     annTooltipFont: fluid.fsXs(vw),
     // Зазор между текстом Y-оси и chart area
     axisGap: fluid.sp2(vw),
-    // Tooltip card sizing — fluid от viewport
-    tooltipCardWidth: vw < 768 ? Math.max(110, vw * 0.42) : 200,
-    tooltipLineHeight: vw < 768 ? Math.round(fluid.fsXs(vw) * 1.7) : 26,
+    // Tooltip card sizing — fluid от viewport.
+    // Раньше mobile: 0.42*vw + lineHeight*1.7 → на 375vw ~157×52px. Это
+    // занимало 42% ширины и блокировало просмотр данных. Уменьшено до 0.36*vw
+    // и 1.5× line-height — ~135×45px, более компактный tooltip на mobile.
+    tooltipCardWidth: vw < 768 ? Math.max(100, vw * 0.36) : 200,
+    tooltipLineHeight: vw < 768 ? Math.round(fluid.fsXs(vw) * 1.5) : 26,
   }), [vw]);
 
   // Navigator: диапазон видимых данных (индексы в массиве data)
@@ -1242,12 +1245,15 @@ export default function SimpleChart({
             crosshair'у и tooltip'ам.
 
             Позиция привязана к data area, не к wrapper:
-              left  = padding.left + 20   → 20px ВНУТРИ data area от левого края
+              left  = padding.left + 5   → 5px ВНУТРИ data area от левого края
               bottom = padding.bottom + 5 → 5px над x-axis
-            Это даёт ОДИНАКОВОЕ визуальное положение на OI page (dual axis,
+            Симметричный gap (5px и слева, и снизу) — visually выглядит как
+            одинаковый отступ от левой Y-оси и от нижней X-линии. Раньше было
+            +20 слева и +5 снизу — visually прижато к низу, отстранено от левого
+            края. Это даёт ОДИНАКОВОЕ визуальное положение на OI page (dual axis,
             padding.right=95) и на Funds Money page (single axis, padding.right=12),
             независимо от ширины wrapper'а или количества Y-осей. */}
-        <ChartWatermark left={padding.left + 20} bottom={padding.bottom + 5} />
+        <ChartWatermark left={padding.left + 5} bottom={padding.bottom + 5} />
 
         {/* Аннотации контрактов — кружки под графиком */}
         {annotations && annotations.length > 0 && (() => {
