@@ -709,17 +709,20 @@ export default function SimpleChart({
     setTooltip((prev) => ({ ...prev, visible: false }));
   };
 
-  // Touch events — для мобильных
+  // Touch events — для мобильных.
+  // preventDefault убран: React 17+ привязывает touch listeners как passive
+  // → preventDefault() = no-op + console warning ("Unable to preventDefault
+  // inside passive event listener invocation"). Скролл предотвращается через
+  // CSS `touch-action: none` на SVG (см. style ниже) — это нативный механизм,
+  // работает быстрее и без warnings.
   const handleTouchStart = (e: React.TouchEvent<SVGSVGElement>) => {
     if (e.touches.length === 1) {
-      e.preventDefault(); // Предотвращаем скролл
       updateTooltipAtX(e.touches[0].clientX, e.currentTarget);
     }
   };
 
   const handleTouchMove = (e: React.TouchEvent<SVGSVGElement>) => {
     if (e.touches.length === 1) {
-      e.preventDefault();
       updateTooltipAtX(e.touches[0].clientX, e.currentTarget);
     }
   };

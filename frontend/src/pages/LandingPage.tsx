@@ -230,14 +230,20 @@ export default function LandingPage() {
                 <h2
                   className="font-bold mb-4"
                   style={{
+                    // Mobile: уменьшен min до 22px (был 28) и line-height расширен
+                    // до 1.1 (был 0.95) — с tight'ом 0.95 descenders "меняют"
+                    // и "решения" пересекались на 375vw. Desktop сохраняет
+                    // dramatic editorial tight kerning через clamp max=64px.
                     color: 'var(--text-primary)',
-                    fontSize: 'clamp(28px, 4.5vw + 0.5rem, 64px)',
-                    letterSpacing: '-0.04em',
-                    lineHeight: 0.95,
+                    fontSize: 'clamp(22px, 4.5vw + 0.5rem, 64px)',
+                    letterSpacing: '-0.03em',
+                    lineHeight: 1.05,
                   }}
                 >
                   Данные, которые<br className="hidden md:inline"/>
-                  <span style={{ fontStyle: 'italic', marginRight: '0.18em' }}>меняют</span>
+                  {' '}
+                  <span style={{ fontStyle: 'italic', marginLeft: '0.1em', marginRight: '0.18em' }}>меняют</span>
+                  {' '}
                   решения
                 </h2>
                 <p
