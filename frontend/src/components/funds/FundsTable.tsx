@@ -178,7 +178,7 @@ export default function FundsTable({
                                                                     );
                                                                 }
                                                                 return (
-                                                                    <div className="w-3 h-3 rounded-full flex-shrink-0"
+                                                                    <div className="legend-dot"
                                                                         style={{ backgroundColor: FUND_COLORS[colorIdx % FUND_COLORS.length] }} />
                                                                 );
                                                             })()}

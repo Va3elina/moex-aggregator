@@ -64,7 +64,7 @@ export default function ChartYAxis({
             }}
           >
             <span
-              className="font-semibold"
+              className="font-bold"
               style={{ fontSize: 'var(--chart-font-y, 16px)', color: clr }}
             >
               {fmt(t.value)}

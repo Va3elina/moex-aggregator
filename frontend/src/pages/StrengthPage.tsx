@@ -390,11 +390,12 @@ export default function StrengthPage() {
                         const chartWidth = rect.width - 2 * px4 - padding.left - padding.right;
                         const hoverX = px4 + padding.left + (hoverIndex / Math.max(displaySyncedData.length - 1, 1)) * chartWidth;
                         const isRightHalf = hoverX > px4 + padding.left + chartWidth / 2;
-                        // Mobile: компактнее (140 vs 190) — иначе на 375vw tooltip
-                        // занимает 50%+ ширины и накрывает данные. Window check
-                        // вместо useIsMobile чтобы не usable вне React-context.
-                        const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
-                        const cardWidth = isMobile ? 140 : 190;
+                        // Fluid tooltip card width: 37% от viewport, clamped в [140, 190].
+                        // На 375vw → 140 (clamped to floor), 768vw → 142, 1280vw → 190.
+                        // Раньше был binary jump 140↔190 на 768px breakpoint без
+                        // интерполяции — discrete UX hop при resize окна.
+                        const vw = typeof window !== 'undefined' ? window.innerWidth : 1280;
+                        const cardWidth = Math.max(140, Math.min(190, Math.round(vw * 0.37)));
                         const cardLeft = isRightHalf ? hoverX - cardWidth - 12 : hoverX + 12;
 
                         const dateStr = new Date(hoverData.time).toLocaleDateString('ru-RU', {
@@ -467,7 +468,7 @@ export default function StrengthPage() {
                                         {showPrice && (
                                             <div className="flex items-center justify-between gap-3 py-0.5">
                                                 <div className="flex items-center gap-1.5">
-                                                    <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: 'var(--accent)' }} />
+                                                    <span className="legend-dot" style={{ backgroundColor: 'var(--accent)' }} />
                                                     <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)' }}>IMOEX</span>
                                                 </div>
                                                 <span className="text-xs font-semibold text-theme-primary whitespace-nowrap">
@@ -477,7 +478,7 @@ export default function StrengthPage() {
                                         )}
                                         <div className="flex items-center justify-between gap-3 py-0.5">
                                             <div className="flex items-center gap-1.5">
-                                                <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: breadthColor }} />
+                                                <span className="legend-dot" style={{ backgroundColor: breadthColor }} />
                                                 <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)' }}>% выше EMA</span>
                                             </div>
                                             <span className="text-xs font-semibold text-theme-primary whitespace-nowrap">
@@ -497,8 +498,8 @@ export default function StrengthPage() {
                         <div className="px-1 md:px-4 pt-4 pb-1 border-b border-theme relative overflow-hidden"
                              style={{ minHeight: heights.top + 34 }}>
                             <div className="flex items-center justify-center mb-5 relative z-10" style={{ gap: 'var(--sp-2)' }}>
-                                <span className="rounded-full" style={{ width: 'var(--ico-xs)', height: 'var(--ico-xs)', backgroundColor: 'var(--accent)' }} />
-                                <span className="font-semibold text-theme-primary" style={{ fontSize: 'var(--fs-sm)' }}>{currency === 'usd' ? 'Индекс RTS' : 'Индекс IMOEX'}</span>
+                                <span className="legend-dot" style={{ backgroundColor: 'var(--accent)' }} />
+                                <span className="font-semibold text-theme-primary" style={{ fontSize: 'var(--fs-base)' }}>{currency === 'usd' ? 'Индекс RTS' : 'Индекс IMOEX'}</span>
                             </div>
                             <IndexChart
                                 syncedData={displaySyncedData}
@@ -516,7 +517,7 @@ export default function StrengthPage() {
                     <div className="px-1 md:px-4 pt-2 pb-1 relative overflow-hidden"
                          style={{ minHeight: (showPrice ? heights.bottomDual : heights.bottomSolo) + 24 }}>
                         <div className="flex items-center justify-center mb-2 relative z-10" style={{ gap: 'var(--sp-2)' }}>
-                            <span className="rounded-full" style={{ width: 'var(--ico-xs)', height: 'var(--ico-xs)', backgroundColor: 'var(--accent)' }} />
+                            <span className="legend-dot" style={{ backgroundColor: 'var(--accent)' }} />
                             <span className="font-semibold text-theme-primary" style={{ fontSize: 'var(--fs-sm)' }}>% акций выше EMA{emaPeriod}</span>
                         </div>
                         {displaySyncedData.length > 0 ? (

@@ -588,7 +588,7 @@ export default function OpenInterestPage() {
         <div style={{ fontSize: 'var(--fs-sm)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
           {/* Линии графика */}
           <div className="flex items-start" style={{ gap: 'var(--sp-3)' }}>
-            <span className="w-4 h-0.5 mt-2 rounded-full flex-shrink-0" style={{ backgroundColor: COLORS.primary }} />
+            <span className="legend-dot mt-1.5" style={{ backgroundColor: COLORS.primary }} />
             <div>
               <span className="font-medium" style={{ color: COLORS.primary }}>График цены</span>
               <span className="text-theme-secondary"> — стоимость фьючерса на срочном рынке</span>
@@ -596,7 +596,7 @@ export default function OpenInterestPage() {
           </div>
 
           <div className="flex items-start" style={{ gap: 'var(--sp-3)' }}>
-            <span className="w-4 h-0.5 mt-2 rounded-full flex-shrink-0" style={{ backgroundColor: COLORS.amber }} />
+            <span className="legend-dot mt-1.5" style={{ backgroundColor: COLORS.amber }} />
             <div>
               <span className="font-medium" style={{ color: COLORS.amber }}>Открытый интерес</span>
               <span className="text-theme-secondary"> — сумма позиций на покупку и на продажу</span>
@@ -604,7 +604,7 @@ export default function OpenInterestPage() {
           </div>
 
           <div className="flex items-start" style={{ gap: 'var(--sp-3)' }}>
-            <span className="w-4 h-0.5 mt-2 rounded-full flex-shrink-0" style={{ backgroundColor: COLORS.emerald }} />
+            <span className="legend-dot mt-1.5" style={{ backgroundColor: COLORS.emerald }} />
             <div>
               <span className="font-medium" style={{ color: COLORS.emerald }}>Покупки</span>
               <span className="text-theme-secondary"> — объём позиций на рост / количество покупателей</span>
@@ -612,7 +612,7 @@ export default function OpenInterestPage() {
           </div>
 
           <div className="flex items-start" style={{ gap: 'var(--sp-3)' }}>
-            <span className="w-4 h-0.5 mt-2 rounded-full flex-shrink-0" style={{ backgroundColor: COLORS.rose }} />
+            <span className="legend-dot mt-1.5" style={{ backgroundColor: COLORS.rose }} />
             <div>
               <span className="font-medium" style={{ color: COLORS.rose }}>Продажи</span>
               <span className="text-theme-secondary"> — объём позиций на падение / количество продавцов</span>
@@ -620,7 +620,7 @@ export default function OpenInterestPage() {
           </div>
 
           <div className="flex items-start" style={{ gap: 'var(--sp-3)' }}>
-            <span className="w-4 h-0.5 mt-2 rounded-full flex-shrink-0" style={{ backgroundColor: COLORS.cyan }} />
+            <span className="legend-dot mt-1.5" style={{ backgroundColor: COLORS.cyan }} />
             <div>
               <span className="font-medium" style={{ color: COLORS.cyan }}>Чистая позиция</span>
               <span className="text-theme-secondary"> — разница между покупками и продажами</span>

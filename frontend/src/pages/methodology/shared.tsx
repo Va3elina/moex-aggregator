@@ -134,7 +134,7 @@ export function LineBlock({
   return (
     <div className="flex items-start gap-3">
       <span
-        className="w-4 h-0.5 mt-2.5 rounded-full flex-shrink-0"
+        className="legend-dot mt-1.5"
         style={{ backgroundColor: color }}
       />
       <div>

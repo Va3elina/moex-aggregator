@@ -53,6 +53,23 @@
   --ico-sm: clamp(14px, 1.4vw + 0.5rem, 22px);
   --ico-md: clamp(18px, 1.6vw + 0.6rem, 26px);
   --ico-lg: clamp(24px, 2vw + 0.8rem, 36px);
+
+  /* Legend dot — единый размер для kружков-меток в легендах chart'ов.
+     Раньше в коде было 4-5 разных размеров (w-2/w-3/w-4) и 3 формы
+     (rounded-full/rounded-sm/horizontal-line). Теперь все легенды на
+     любых страницах используют var(--legend-dot) → consistent UX.
+     Размер: 10-14px fluid между mobile и desktop. */
+  --legend-dot: clamp(10px, 0.4vw + 0.5rem, 14px);
+}
+
+/* Унифицированный класс для legend-меток на всех графиках.
+   Использовать вместо ad-hoc `w-3 h-3 rounded-full`. */
+.legend-dot {
+  width: var(--legend-dot);
+  height: var(--legend-dot);
+  border-radius: 9999px;
+  flex-shrink: 0;
+  display: inline-block;
 }
 
 /* ============================================
@@ -803,10 +820,13 @@
 .hero-btn-ghost {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 16px 28px;
+  /* Fluid scale 320..1920px: gap 6→10px, padding 12-24px / 18-36px,
+     font-size 12→16px. Раньше hardcoded 16px/28px/15px — на mobile
+     кнопка занимала 80%+ ширины hero-section, на 4K выглядела мелко. */
+  gap: clamp(6px, 0.6vw, 10px);
+  padding: clamp(12px, 1.5vw, 18px) clamp(18px, 2.5vw, 32px);
   font-family: inherit;
-  font-size: 15px;
+  font-size: clamp(12px, 0.5vw + 0.6rem, 16px);
   font-weight: 700;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -1238,7 +1258,7 @@
      font-size. Используются Strength/Seasonality/ChartYAxis. */
   --chart-font-y: var(--fs-2xs);
   --chart-font-x: var(--fs-2xs);
-  --chart-font-y-weight: 600;
+  --chart-font-y-weight: 700;
 
   /* Tooltip */
   --tooltip-font-label: 11px;
@@ -1270,8 +1290,10 @@
   --dot-primary-r: 6;
   --dot-secondary-r: 5;
 
-  /* Axis colors (theme-independent) */
-  --axis-color: #9CA3B8;
+  /* Axis colors — theme-aware, max contrast (var(--text-primary) — same color
+     как legend и body text). Раньше был --text-secondary (gray) — менее
+     контрастный. Сейчас black на light theme / cream на dark theme. */
+  --axis-color: var(--text-primary);
   --grid-color: rgba(255, 255, 255, 0.08);
   --crosshair-color: #C8FF2E;
   --ann-bg: #3a3f4f;
@@ -1303,8 +1325,11 @@
                                                и браузер компенсировал ужатием ширины
                                                на 31px → «пустота справа». 500 снимает
                                                ограничение и даёт chart'у всю ширину card. */
-  --seasonality-hist-pad-top: 28px;         /* место под легенду */
-  --seasonality-hist-pad-bottom: 24px;      /* место под X-labels */
+  /* Fluid между mobile (22/40) и desktop (28/50). Bottom расширен чтобы
+     X-labels могли иметь visible gap от bottom gridline (как в FlowsHistogram).
+     Раньше pad-bottom 18-24 + bottom-0 → labels прижаты к edge card. */
+  --seasonality-hist-pad-top: clamp(20px, 4vw, 28px);
+  --seasonality-hist-pad-bottom: clamp(36px, 5vw, 50px);
   --seasonality-hist-pad-x: 95px;           /* симметрично слева и справа — совпадает
                                                с --chart-pad-right-single (95px) в SimpleChart
                                                и FlowsHistogram, чтобы Y-labels ("+0.29%" и т.п.)
@@ -1386,12 +1411,11 @@
        поместятся в 32px (хватает на "+25.0%" при clamp font 8-11px). */
     --seasonality-chart-pad-left: 12px;
     --seasonality-chart-pad-right: 32px;
-    --seasonality-hist-pad-top: 22px;
-    --seasonality-hist-pad-bottom: 20px;
+    /* hist-pad-top/bottom теперь fluid clamp в :root — mobile override не нужен */
     --seasonality-hist-pad-x: 52px;     /* mobile — было 38, обрезало "+0.02%" */
     --seasonality-ylabel-right: 4px;    /* mobile: ближе к краю, больше места на label */
     --seasonality-legend-mb: 4px;       /* mobile: компактный отступ legend → chart */
-    --seasonality-legend-font-size: var(--fs-xs); /* fluid 10-12.5px (было фикс 12px) */
+    --seasonality-legend-font-size: var(--fs-sm); /* fluid 11-14px (был fs-xs 10-12.5px) — bump +1 size */
     --chart-date-placeholder-height: 12px;  /* mobile: меньше placeholder для floating date */
     --chart-xlabel-row-height: 20px;
   }

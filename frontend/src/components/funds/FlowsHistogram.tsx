@@ -84,14 +84,14 @@ export default function FlowsHistogram({
             {/* Гистограмма притоков/оттоков */}
             <div>
                 {/* Легенда */}
-                <div className="flex items-center justify-center gap-5 text-sm" style={{ marginBottom: 'var(--chart-legend-mb, 16px)' }}>
+                <div className="flex items-center justify-center gap-5" style={{ marginBottom: 'var(--chart-legend-mb, 16px)', fontSize: 'var(--fs-base)' }}>
                     <span className="flex items-center gap-2">
-                        <span className="w-3 h-3 rounded-full" style={{ backgroundColor: 'var(--funds-flow-positive)' }} />
-                        <span className="text-theme-primary font-medium">Приток (млрд руб)</span>
+                        <span className="legend-dot" style={{ backgroundColor: 'var(--funds-flow-positive)' }} />
+                        <span className="text-theme-primary font-semibold">Приток (млрд руб)</span>
                     </span>
                     <span className="flex items-center gap-2">
-                        <span className="w-3 h-3 rounded-full" style={{ backgroundColor: 'var(--funds-flow-negative)' }} />
-                        <span className="text-theme-primary font-medium">Отток (млрд руб)</span>
+                        <span className="legend-dot" style={{ backgroundColor: 'var(--funds-flow-negative)' }} />
+                        <span className="text-theme-primary font-semibold">Отток (млрд руб)</span>
                     </span>
                 </div>
 
@@ -385,14 +385,14 @@ export default function FlowsHistogram({
                                     <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-50 pointer-events-none">
                                         <div className="rounded-lg border border-theme shadow-md whitespace-nowrap max-w-[320px]" style={{ background: 'var(--bg-primary)', padding: 'var(--sp-2) var(--sp-3)' }}>
                                             <div className="flex items-center gap-2 mb-0.5">
-                                                <span className="text-[10px] font-medium" style={{ color: CHART_COLORS.muted }}>
+                                                <span className="font-medium" style={{ color: CHART_COLORS.muted, fontSize: 'var(--fs-2xs)' }}>
                                                     {m.type === 'merger' ? 'Слияние' : m.type === 'liquidation' ? 'Ликвидация' : 'Реорганизация'}
                                                 </span>
-                                                <span className="text-[10px] text-theme-secondary">
+                                                <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)' }}>
                                                     {new Date(m.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' })}
                                                 </span>
                                             </div>
-                                            <p className="text-[11px] text-theme-primary whitespace-normal leading-tight">
+                                            <p className="text-theme-primary whitespace-normal leading-tight" style={{ fontSize: 'var(--fs-xs)' }}>
                                                 {m.description}
                                             </p>
                                         </div>

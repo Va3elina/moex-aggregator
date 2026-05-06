@@ -105,7 +105,11 @@ export default function SeasonalityHistogram({
 
   const W = 1000, H = 500;
   const midY = H / 2;
-  const halfH = H * 0.38;
+  // halfH = H*0.47 — match FlowsHistogram (там halfH=47%, midY=50%).
+  // 3% inset сверху и снизу: gridlines от 3% до 97% SVG.
+  // Раньше было H*0.38 (12% inset) — gap до X-labels был ~33px (vs Flows 16px).
+  // Сейчас H*0.47 (3% inset) — gap matches Flows.
+  const halfH = H * 0.47;
 
   // Unified pointer handler — mouse + touch одинаково.
   const handlePointerMove = (clientX: number, clientY: number, el: HTMLElement) => {
@@ -158,15 +162,29 @@ export default function SeasonalityHistogram({
       }}
       onTouchEnd={() => setTooltip(null)}
     >
-      {/* Легенда — всегда занимает 28px (visibility:hidden в single), чтобы не «прыгало» */}
-      <div className="absolute top-1 left-1/2 -translate-x-1/2 z-20 flex gap-4 text-xs pointer-events-none"
-           style={{ visibility: isMulti ? 'visible' : 'hidden' }}>
-        {safeMeta.map(s => (
-          <span key={s.key} className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: s.color }} />
-            <span className="text-theme-secondary font-medium">{s.label}</span>
-          </span>
-        ))}
+      {/* Легенда — всегда занимает 28px чтобы layout не «прыгал» при переходе
+          single↔multi mode. В single-bar mode показываем семантику цвета
+          (Рост/Падение зелёный/красный), в multi показываем серии. */}
+      <div className="absolute top-1 left-1/2 -translate-x-1/2 z-20 flex gap-4 pointer-events-none" style={{ fontSize: 'var(--fs-base)' }}>
+        {isMulti
+          ? safeMeta.map(s => (
+              <span key={s.key} className="flex items-center gap-1.5">
+                <span className="legend-dot" style={{ backgroundColor: s.color }} />
+                <span className="text-theme-primary font-semibold">{s.label}</span>
+              </span>
+            ))
+          : (
+            <>
+              <span className="flex items-center gap-1.5">
+                <span className="legend-dot" style={{ backgroundColor: CHART_COLORS.positive }} />
+                <span className="text-theme-primary font-semibold">Рост</span>
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="legend-dot" style={{ backgroundColor: CHART_COLORS.negative }} />
+                <span className="text-theme-primary font-semibold">Падение</span>
+              </span>
+            </>
+          )}
       </div>
 
       <div className="absolute" style={{
@@ -235,9 +253,11 @@ export default function SeasonalityHistogram({
 
           <ChartGrid
             yTicks={[-effectiveMaxAbs, -effectiveMaxAbs / 2, effectiveMaxAbs / 2, effectiveMaxAbs].map(val => ({
-              pct: (250 - (val / effectiveMaxAbs) * 190) / 500 * 100,
+              // pct формула обновлена: 190 → halfH (250). Gridlines теперь на 0%, 25%, 50%, 75%, 100%
+              // SVG height вместо 12%, 31%, 50%, 69%, 88%.
+              pct: (midY - (val / effectiveMaxAbs) * halfH) / H * 100,
             }))}
-            zeroPct={(250 / 500) * 100}
+            zeroPct={(midY / H) * 100}
           />
 
           {tooltip?.bar && (() => {
@@ -245,10 +265,11 @@ export default function SeasonalityHistogram({
             if (idx === -1) return null;
             const slotW = 1000 / bars.length;
             const cx = idx * slotW + slotW / 2;
+            // y1/y2 = 0..H (full SVG height) — раньше 60..440 с 12% inset
             return (
               <ChartCrosshair x={cx} color={CROSSHAIR.accentColor}
                 dashArray={CROSSHAIR.accentDashArray} opacity={CROSSHAIR.accentOpacity}
-                y1={250 - 190} y2={250 + 190} />
+                y1={midY - halfH} y2={midY + halfH} />
             );
           })()}
         </svg>
@@ -258,7 +279,10 @@ export default function SeasonalityHistogram({
               left = 20px от левого края bar-area (== 20px после Y-axis labels)
               bottom = 12% от высоты bar-area (доходит до нижней gridline) + 5px зазор
             Чисто CSS, адаптивно к любому размеру (aspectRatio + media query). */}
-        <ChartWatermark left={5} bottom="calc(12% + 5px)" />
+        {/* bottom=calc(3%+5px): 3% — внутренний inset gridlines (halfH=0.47*H,
+            match Flows), 5px — зазор над bottom gridline. Watermark сидит над
+            нижней gridline на 5px, как и было задумано в editorial-стиле. */}
+        <ChartWatermark left={5} bottom="calc(3% + 5px)" />
       </div>
 
       {/* Tooltip — используем ChartTooltip (автоматический flip по центру) */}
@@ -313,7 +337,9 @@ export default function SeasonalityHistogram({
         width: 'var(--seasonality-hist-pad-x, 70px)',
       }}>
         {[-effectiveMaxAbs, -effectiveMaxAbs / 2, 0, effectiveMaxAbs / 2, effectiveMaxAbs].map((val, i) => {
-          const yPct = 50 - (val / effectiveMaxAbs) * 38;
+          // 38 → 50 (halfH/H * 100): Y-labels теперь на 0%, 25%, 50%, 75%, 100% SVG.
+          // Раньше формула давала 12%, 31%, 50%, 69%, 88% — соответствовало старым gridlines.
+          const yPct = 50 - (val / effectiveMaxAbs) * 50;
           const label = val === 0 ? '0' : `${val > 0 ? '+' : ''}${val.toFixed(2)}%`;
           return (
             <div key={i} className="absolute"
@@ -328,7 +354,7 @@ export default function SeasonalityHistogram({
                   перекрывает горизонтальную grid-линию в зоне, где text заходит на
                   bar-area (~2px на desktop). Стандартный приём для axis labels,
                   аналог `paint-order: stroke fill` в SVG (Strength/SimpleChart). */}
-              <span className="font-semibold" style={{
+              <span className="font-bold" style={{
                   fontSize: 'var(--chart-font-y, 16px)',
                   color: 'var(--axis-color, #9CA3B8)',
                   backgroundColor: 'var(--bg-primary)',
@@ -340,8 +366,10 @@ export default function SeasonalityHistogram({
         })}
       </div>
 
-      {/* X labels */}
-      <div className="absolute bottom-0 flex justify-between font-semibold px-2" style={{ left: 'var(--seasonality-hist-pad-x, 70px)', right: 'var(--seasonality-hist-pad-x, 70px)', fontSize: 'var(--chart-font-x, 14px)', color: 'var(--axis-color, #9CA3B8)' }}>
+      {/* X labels — bottom: var(--chart-xlabel-bottom) (20px) — same offset как
+          в FlowsHistogram, чтобы distance от labels до bottom gridline был
+          одинаковый между sezon и flows charts. */}
+      <div className="absolute flex justify-between font-bold px-2" style={{ bottom: 'var(--chart-xlabel-bottom, 20px)', left: 'var(--seasonality-hist-pad-x, 70px)', right: 'var(--seasonality-hist-pad-x, 70px)', fontSize: 'var(--chart-font-x, 14px)', color: 'var(--axis-color, #9CA3B8)' }}>
         {bars.map((bar, i) => {
           const isMob = typeof window !== 'undefined' && window.innerWidth < 768;
           const needsThinning = compact || isMob;

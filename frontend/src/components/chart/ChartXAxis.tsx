@@ -17,7 +17,7 @@ interface ChartXAxisProps {
 export default function ChartXAxis({ labels, padLeft = 60, padRight = 80, color }: ChartXAxisProps) {
   return (
     <div
-      className="absolute flex justify-between font-semibold"
+      className="absolute flex justify-between font-bold"
       style={{
         left: padLeft,
         right: padRight,

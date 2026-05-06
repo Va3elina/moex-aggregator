@@ -214,7 +214,7 @@ export default function FundsCatalogPage() {
                                             <div className={`space-y-1 ${isExpanded ? 'max-h-72 overflow-y-auto pr-1' : ''}`}>
                                                 {list.map((h, i) => (
                                                     <div key={i} className="flex items-center gap-2 text-xs">
-                                                        <div className="w-2 h-2 rounded-sm flex-shrink-0" style={{ backgroundColor: DONUT_COLORS[i % DONUT_COLORS.length] }} />
+                                                        <div className="legend-dot" style={{ backgroundColor: DONUT_COLORS[i % DONUT_COLORS.length] }} />
                                                         <span className="truncate flex-1 text-theme-secondary">{h.name}</span>
                                                         <span className="font-mono flex-shrink-0">{(h.weight * 100).toFixed(1)}%</span>
                                                     </div>

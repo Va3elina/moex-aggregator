@@ -202,6 +202,37 @@ export default function IndexChart({
                     padding обновляется в StrengthPage через resize listener,
                     значит watermark адаптивен к mobile/tablet/desktop. */}
                 <ChartWatermark left={padding.left + 5} bottom={padding.bottom + 5} />
+
+                {/* Current value label — TradingView-style на правой оси.
+                    Pill с цветом primary line, на y координате последней точки.
+                    Виден всегда (включая при hover). */}
+                {chartData && chartData.points.length > 0 && (() => {
+                    const last = chartData.points[chartData.points.length - 1];
+                    return (
+                        <div
+                            className="absolute pointer-events-none"
+                            style={{
+                                // padding x=3, label-text-LEFT = axis-text-LEFT (line 189).
+                                left: width - padding.right + 12 - 3,
+                                top: last.y,
+                                transform: 'translateY(-50%)',
+                                background: 'var(--bg-primary)',
+                                border: `1.5px solid ${CHART_COLORS.primary}`,
+                                borderRadius: 4,
+                                padding: '2px 3px',
+                                fontSize: 'var(--chart-font-y, 16px)',
+                                fontWeight: 700,
+                                color: 'var(--text-primary)',
+                                whiteSpace: 'nowrap',
+                                zIndex: 2,
+                                lineHeight: 1.2,
+                                fontVariantNumeric: 'tabular-nums',
+                            }}
+                        >
+                            {last.value.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
+                        </div>
+                    );
+                })()}
             </div>
         </div>
     );

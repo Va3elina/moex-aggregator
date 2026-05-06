@@ -253,8 +253,9 @@ export default function OverviewPage() {
         >
           <User size={12} style={{ color: 'var(--text-muted)' }} />
           <span
-            className="text-[11px] font-medium"
+            className="font-medium"
             style={{
+              fontSize: 'var(--fs-2xs)',
               color: roleLabel === 'Admin' ? 'var(--danger)' :
                     roleLabel === 'Pro' || roleLabel === 'Premium' ? 'var(--warning)' :
                     'var(--accent)'
@@ -436,8 +437,8 @@ function MetricCard({ label, value, unit, color, description, decimals = 1 }: Me
   return (
     <Card padding="md" className="md:p-5">
       <p
-        className="text-[10px] md:text-xs uppercase mb-2"
-        style={{ color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 600 }}
+        className="uppercase mb-2"
+        style={{ color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 600, fontSize: 'var(--fs-2xs)' }}
       >
         {label}
       </p>
@@ -457,7 +458,7 @@ function MetricCard({ label, value, unit, color, description, decimals = 1 }: Me
         </span>
       </div>
       {description && (
-        <p className="text-[10px] md:text-xs truncate" style={{ color: 'var(--text-secondary)' }}>
+        <p className="truncate" style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-2xs)' }}>
           {description}
         </p>
       )}
@@ -511,8 +512,8 @@ function QuoteTile({ label, closes }: { label: string; closes: number[] }) {
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-2">
           <span
-            className="text-[10px] uppercase flex-shrink-0"
-            style={{ color: 'var(--text-muted)', letterSpacing: '0.08em', fontWeight: 600 }}
+            className="uppercase flex-shrink-0"
+            style={{ color: 'var(--text-muted)', letterSpacing: '0.08em', fontWeight: 600, fontSize: 'var(--fs-2xs)' }}
           >
             {label}
           </span>

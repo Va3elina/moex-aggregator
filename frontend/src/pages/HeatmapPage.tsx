@@ -628,34 +628,43 @@ export default function HeatmapPage() {
       </div>{/* /editorial-frame */}
 
 
-      {/* Тултип — paper-style без glass, в цвет фона графика. */}
+      {/* Тултип — paper-style без glass, в цвет фона графика.
+          Mobile-aware: max-width clamp + smaller padding/fonts + truncate
+          на длинном stock.name (раньше hardcoded 180px clamp + var(--sp-5)
+          padding раздували tooltip до 50%+ ширины 375vw экрана). */}
       {tooltip.visible && tooltip.stock && (
         <div
           className="fixed z-50 border border-theme rounded-xl shadow-md pointer-events-none"
           style={{
-            left: Math.min(Math.max(tooltip.x, 180), window.innerWidth - 180),
+            // Clamp 90px вместо 180 — tooltip может ближе подходить к краям
+            // на mobile где viewport узкий.
+            left: Math.min(Math.max(tooltip.x, 90), window.innerWidth - 90),
             top: tooltip.y < 200 ? tooltip.y + 25 : tooltip.y - 10,
             transform: tooltip.y < 200 ? 'translate(-50%, 0)' : 'translate(-50%, -100%)',
             backgroundColor: 'var(--bg-primary)',
-            padding: 'var(--sp-3) var(--sp-5)',
-            fontSize: 'var(--fs-xs)',
+            // Padding fluid sp-2/sp-3 (4-8px / 6-12px) вместо sp-3/sp-5 — экономит
+            // ~20px ширины на mobile.
+            padding: 'var(--sp-2) var(--sp-3)',
+            fontSize: 'var(--fs-2xs)',
+            // max-width: не шире viewport - 32px gap, потолок 360px на desktop.
+            maxWidth: 'min(calc(100vw - 32px), 360px)',
           }}
         >
-          <div className="flex items-center gap-3 mb-2">
-            <span className="font-bold text-theme-primary" style={{ fontSize: 'var(--fs-sm)' }}>{tooltip.stock.secId}</span>
-            <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-xs)' }}>{tooltip.stock.name}</span>
-            <span className="text-theme-primary font-semibold ml-auto" style={{ fontSize: 'var(--fs-xs)' }}>{tooltip.stock.price.toFixed(2)} ₽</span>
+          <div className="flex items-center mb-1" style={{ gap: 'var(--sp-2)' }}>
+            <span className="font-bold text-theme-primary whitespace-nowrap" style={{ fontSize: 'var(--fs-xs)' }}>{tooltip.stock.secId}</span>
+            <span className="text-theme-secondary truncate min-w-0" style={{ fontSize: 'var(--fs-2xs)' }}>{tooltip.stock.name}</span>
+            <span className="text-theme-primary font-semibold ml-auto whitespace-nowrap flex-shrink-0" style={{ fontSize: 'var(--fs-2xs)' }}>{tooltip.stock.price.toFixed(2)} ₽</span>
           </div>
-          <div className="flex items-center gap-4" style={{ fontSize: 'var(--fs-xs)' }}>
+          <div className="flex items-center" style={{ fontSize: 'var(--fs-2xs)', gap: 'var(--sp-3)' }}>
             {[
               { label: 'Д', value: tooltip.stock.change_1d },
               { label: 'Н', value: tooltip.stock.change_1w },
               { label: 'М', value: tooltip.stock.change_1m },
               { label: 'Г', value: tooltip.stock.change_1y },
             ].map(({ label, value }) => (
-              <span key={label} className="flex items-center gap-1.5">
+              <span key={label} className="flex items-center" style={{ gap: 'var(--sp-1)' }}>
                 <span className="text-theme-muted">{label}</span>
-                <span className={`font-semibold ${value >= 0 ? 'text-theme-success' : 'text-theme-danger'}`}>
+                <span className={`font-semibold whitespace-nowrap ${value >= 0 ? 'text-theme-success' : 'text-theme-danger'}`}>
                   {formatPercent(value)}
                 </span>
               </span>

@@ -175,7 +175,7 @@ export default function LandingPage() {
               className="mt-12 md:mt-16"
               style={{
                 color: 'rgba(255,255,255,0.7)',
-                fontSize: '11px',
+                fontSize: 'var(--fs-2xs)',
                 letterSpacing: '0.32em',
                 fontWeight: 700,
                 textTransform: 'uppercase',

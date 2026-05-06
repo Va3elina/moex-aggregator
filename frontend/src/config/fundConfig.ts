@@ -16,8 +16,21 @@ export const CATEGORY_LABELS: Record<string, string> = {
     'gold': 'Золото',
 };
 
+// Editorial-friendly палитра — deep desaturated tones, не неон.
+// Подходит к paper bg на editorial-light + dark. Mirror FUND_PALETTE из
+// chartTheme.ts (там тот же набор для chart-series). Раньше тут был неоновый
+// набор #6366f1/#2EE59D/etc — anti-pattern editorial design system.
 export const DONUT_COLORS = [
-    '#6366f1', '#2EE59D', '#4DA3FF', '#FF4D4D', '#FFB020',
-    '#00D9FF', '#9D4DFF', '#FF6B9D', '#FCD34D', '#14B8A6',
-    '#F97316', '#818CF8',
+    '#3B4F7A', // deep indigo
+    '#7A4332', // brick brown
+    '#3F6B47', // forest dark
+    '#6B4F8A', // muted purple
+    '#8A5C3F', // warm clay
+    '#2D5F6E', // deep teal
+    '#7A3F5C', // rosewood
+    '#5C5F2D', // olive
+    '#3F5C6B', // slate blue
+    '#6B5C2D', // dark gold
+    '#7A5C3F', // bronze
+    '#4F6B5C', // sage
 ];

@@ -220,23 +220,20 @@ export default function YearlySeasonalityChart({
 
   return (
     <div className={revealed ? 'chart-reveal' : ''}>
-      {/* Legend — все серии + current.
-          Размер шрифта И margin-bottom через CSS vars — переопределяются на wrapper
-          в test-dashboard'е для компактного режима (мельче шрифт + меньше отступ). */}
       <div className="flex justify-center flex-wrap gap-4"
         style={{
-          fontSize: 'var(--seasonality-legend-font-size, 14px)',
+          fontSize: 'var(--seasonality-legend-font-size, var(--fs-base))',
           marginBottom: 'var(--seasonality-legend-mb, 12px)',
         }}>
         {allMeta.map(m => (
           <span key={m.key} className="flex items-center gap-2">
-            <span className="w-6 h-0.5 rounded" style={{ backgroundColor: m.color, display: 'inline-block' }} />
-            <span className="text-theme-secondary font-medium">{m.label}</span>
+            <span className="legend-dot" style={{ backgroundColor: m.color }} />
+            <span className="text-theme-primary font-semibold">{m.label}</span>
           </span>
         ))}
         <span className="flex items-center gap-2">
-          <span className="w-6 h-0.5 rounded" style={{ backgroundColor: CHART_COLORS.accent, display: 'inline-block' }} />
-          <span className="text-theme-primary font-medium">{yearlyData.current_year}</span>
+          <span className="legend-dot" style={{ backgroundColor: CHART_COLORS.accent }} />
+          <span className="text-theme-primary font-semibold">{yearlyData.current_year}</span>
         </span>
       </div>
 
@@ -312,6 +309,42 @@ export default function YearlySeasonalityChart({
               <ChartCrosshair x={scX(tooltip.yearlyTd) * 1000} />
             )}
           </svg>
+
+          {/* Current value label — TradingView-style на y-координате последней
+              точки текущего года. Виден всегда (даже при hover). */}
+          {visCur.length > 0 && (() => {
+            const last = visCur[visCur.length - 1];
+            const yPct = scY(last.pct) * 100;
+            // Match Y-axis format: для |v|≥10 toFixed(0), иначе toFixed(1) + %
+            const sign = last.pct > 0 ? '+' : '';
+            const digits = Math.abs(last.pct) >= 10 ? 0 : 1;
+            const value = `${sign}${last.pct.toFixed(digits)}%`;
+            return (
+              <div
+                className="absolute pointer-events-none"
+                style={{
+                  top: `${yPct}%`,
+                  // padding x=3, label-text-LEFT = axis-text-LEFT
+                  // (= bar-area-right + 4 = chart-area-right + 4).
+                  left: 'calc(100% + 1px)',
+                  transform: 'translateY(-50%)',
+                  background: 'var(--bg-primary)',
+                  border: `1.5px solid ${CHART_COLORS.accent}`,
+                  borderRadius: 4,
+                  padding: '2px 3px',
+                  fontSize: 'var(--chart-font-y, 16px)',
+                  fontWeight: 700,
+                  color: 'var(--text-primary)',
+                  whiteSpace: 'nowrap',
+                  zIndex: 2,
+                  lineHeight: 1.2,
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+              >
+                {value}
+              </div>
+            );
+          })()}
         </div>
 
         {/* Y labels — padRight=PR обязателен, иначе ChartYAxis использует
@@ -355,7 +388,7 @@ export default function YearlySeasonalityChart({
           return (
             <div
               key={mp.idx}
-              className="absolute font-semibold pointer-events-none"
+              className="absolute font-bold pointer-events-none"
               style={{
                 left: `calc(${PL}px + ${xPct / 100} * (100% - ${PL}px - ${PR}px))`,
                 bottom: 22,
@@ -427,6 +460,8 @@ export default function YearlySeasonalityChart({
           left="calc(var(--seasonality-chart-pad-left, 60px) + 5px)"
           bottom="calc(var(--chart-pad-bottom, 50px) + 22px)"
         />
+
+        {/* Asset name перенесён в legend row выше (на одном уровне с легендой). */}
       </div>
 
       {/* Navigator — скользящее окно по году */}

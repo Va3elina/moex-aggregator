@@ -128,11 +128,12 @@ export default function SimpleChart({
     // Зазор между текстом Y-оси и chart area
     axisGap: fluid.sp2(vw),
     // Tooltip card sizing — fluid от viewport.
-    // Раньше mobile: 0.42*vw + lineHeight*1.7 → на 375vw ~157×52px. Это
-    // занимало 42% ширины и блокировало просмотр данных. Уменьшено до 0.36*vw
-    // и 1.5× line-height — ~135×45px, более компактный tooltip на mobile.
+    // Mobile (vw<768): 0.36*vw width + lineHeight 1.5×fsXs — компактный.
+    // Desktop: cap width 200, lineHeight = 1.5×fsXs (fluid тоже, не fixed 26).
+    // Раньше desktop'у hardcode 26px — не скейлилось между 1024px и 2560px,
+    // что выглядело static на широких мониторах.
     tooltipCardWidth: vw < 768 ? Math.max(100, vw * 0.36) : 200,
-    tooltipLineHeight: vw < 768 ? Math.round(fluid.fsXs(vw) * 1.5) : 26,
+    tooltipLineHeight: Math.round(fluid.fsXs(vw) * (vw < 768 ? 1.5 : 1.7)),
   }), [vw]);
 
   // Navigator: диапазон видимых данных (индексы в массиве data)
@@ -775,21 +776,23 @@ export default function SimpleChart({
   // на 375px viewport. Поэтому свой clamp с floor 9px (вместо 11) и более
   // агрессивный gap-clamp (6px на mobile вместо 10).
   const legendBlock = (
-    <div className="flex flex-wrap items-center" style={{ gap: 'clamp(6px, 1vw, 16px)', fontSize: 'clamp(9px, 0.4vw + 0.5rem, 14px)' }}>
+    // Legend font: var(--fs-base) (13-16px fluid) — раньше был clamp(9, ..., 14)
+    // (≈--fs-2xs), что выглядело мелко. Bumped +1-2 sizes по запросу.
+    <div className="flex flex-wrap items-center" style={{ gap: 'clamp(6px, 1vw, 16px)', fontSize: 'var(--fs-base)' }}>
       <span className="flex items-center" style={{ gap: 'var(--sp-2)' }}>
-        <span className="rounded-full flex-shrink-0" style={{ width: 'var(--ico-xs)', height: 'var(--ico-xs)', backgroundColor: primaryColor }} />
-        <span className="text-theme-primary font-medium">{primaryLabel}</span>
+        <span className="legend-dot" style={{ backgroundColor: primaryColor }} />
+        <span className="text-theme-primary font-semibold">{primaryLabel}</span>
       </span>
       {showSecondary && (
         <span className="flex items-center" style={{ gap: 'var(--sp-2)' }}>
-          <span className="rounded-full flex-shrink-0" style={{ width: 'var(--ico-xs)', height: 'var(--ico-xs)', backgroundColor: secondaryColor }} />
-          <span className="text-theme-primary font-medium">{secondaryLabel}</span>
+          <span className="legend-dot" style={{ backgroundColor: secondaryColor }} />
+          <span className="text-theme-primary font-semibold">{secondaryLabel}</span>
         </span>
       )}
       {showThird && (
         <span className="flex items-center" style={{ gap: 'var(--sp-2)' }}>
-          <span className="rounded-full flex-shrink-0" style={{ width: 'var(--ico-xs)', height: 'var(--ico-xs)', backgroundColor: thirdColor }} />
-          <span className="text-theme-primary font-medium">{thirdLabel}</span>
+          <span className="legend-dot" style={{ backgroundColor: thirdColor }} />
+          <span className="text-theme-primary font-semibold">{thirdLabel}</span>
         </span>
       )}
     </div>
@@ -1242,6 +1245,84 @@ export default function SimpleChart({
           })()}
         </svg>
 
+        {/* Current value labels — TradingView-style на правой оси chart-area.
+            Маленькие pill'ы с цветом line, позиционированные на y координате
+            последней точки серии. Видны ВСЕГДА (включая при hover). */}
+        {targetCalc.points.length > 0 && (() => {
+          // Strip "trailing units" — % / трлн ₽ / млрд ₽ / млн ₽ / ₽. Label
+          // содержит ТОЛЬКО число, как просил user. Border = visual identifier.
+          const stripUnits = (s: string) =>
+            s.replace(/\s*(%|трлн ₽|млрд ₽|млн ₽|тыс ₽|₽)\s*$/g, '').trim();
+          // Pad-with-figure-space если value positive чтобы DIGITS aligned с
+          // axis digits (когда axis имеет mix negative/positive ticks).
+          //   = FIGURE SPACE (Unicode) — ширина digit в tabular-nums.
+          const padSign = (s: string, value: number) =>
+            value >= 0 && !s.startsWith('-') && !s.startsWith('+') ? ` ${s}` : s;
+
+          // Common style — fontSize match Y-axis numbers, distinguished by border.
+          // padding x=3 (вместо 6) → меньше bleed box'а левее axis-text-LEFT.
+          const baseStyle = {
+            position: 'absolute' as const,
+            transform: 'translateY(-50%)',
+            pointerEvents: 'none' as const,
+            background: 'var(--bg-primary)',
+            borderRadius: 4,
+            padding: '2px 3px',
+            fontSize: 'var(--chart-font-y, 16px)',
+            fontWeight: 700,
+            color: 'var(--text-primary)',
+            whiteSpace: 'nowrap' as const,
+            zIndex: 2,
+            lineHeight: 1.2,
+            fontVariantNumeric: 'tabular-nums',
+          };
+          // label-text-LEFT (= label-LEFT + padding 3) совпадает с axis-text-LEFT.
+          const rightSideX = { left: padding.left + chartWidth + tokens.axisGap - 3 };
+
+          type LabelEntry = { color: string; y: number; value: string; key: string };
+          const labels: LabelEntry[] = [];
+          const lastP = targetCalc.points[targetCalc.points.length - 1];
+          labels.push({
+            color: primaryColor,
+            y: padding.top + lastP.y,
+            value: padSign(stripUnits(formatValue(lastP.value)), lastP.value),
+            key: 'primary',
+          });
+          if (showSecondary && targetCalc.secondaryPoints.length > 0) {
+            const lastS = targetCalc.secondaryPoints[targetCalc.secondaryPoints.length - 1];
+            const fmt = formatSecondaryAxis || formatSecondaryValue || formatValue;
+            labels.push({
+              color: secondaryColor,
+              y: padding.top + lastS.y,
+              value: padSign(stripUnits(fmt(lastS.value)), lastS.value),
+              key: 'secondary',
+            });
+          }
+          if (showThird && targetCalc.thirdPoints.length > 0) {
+            const lastT = targetCalc.thirdPoints[targetCalc.thirdPoints.length - 1];
+            const fmt = formatSecondaryAxis || formatThirdValue || formatValue;
+            labels.push({
+              color: thirdColor,
+              y: padding.top + lastT.y,
+              value: padSign(stripUnits(fmt(lastT.value)), lastT.value),
+              key: 'third',
+            });
+          }
+          return labels.map(l => (
+            <div
+              key={l.key}
+              style={{
+                ...baseStyle,
+                ...rightSideX,
+                top: l.y,
+                border: `1.5px solid ${l.color}`,
+              }}
+            >
+              {l.value}
+            </div>
+          ));
+        })()}
+
         {/* Водяной знак Фрейма — ПРЯМО на графике, левый нижний угол.
             Лежит внутри chartWrapRef (который relative), т.е. позиционирован
             относительно SVG-области. pointer-events:none — не мешает
@@ -1257,6 +1338,10 @@ export default function SimpleChart({
             padding.right=95) и на Funds Money page (single axis, padding.right=12),
             независимо от ширины wrapper'а или количества Y-осей. */}
         <ChartWatermark left={padding.left + 5} bottom={padding.bottom + 5} />
+
+        {/* Asset name перенесён в legendBlock row — выше chartWrapRef'а в DOM,
+            на одном уровне с legend строкой. Раньше был absolute здесь, сидел
+            под верхней gridline вместо legend-level. */}
 
         {/* Аннотации контрактов — кружки под графиком */}
         {annotations && annotations.length > 0 && (() => {
