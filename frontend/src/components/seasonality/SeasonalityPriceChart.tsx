@@ -171,14 +171,14 @@ export default function SeasonalityPriceChart({
     <div>
       {/* Legend centered */}
       <div className="flex justify-center gap-5 mb-3" style={{ fontSize: 'var(--fs-base)' }}>
-        <span className="flex items-center gap-2">
+        <span className="flex items-center" style={{ gap: 8 }}>
           <span className="legend-dot" style={{ backgroundColor: CHART_COLORS.accent }} />
-          <span className="text-theme-primary font-semibold">Цена</span>
+          <span className="text-theme-primary font-semibold leading-none">Цена</span>
         </span>
         {hasAdj && (
-          <span className="flex items-center gap-2">
+          <span className="flex items-center" style={{ gap: 8 }}>
             <span className="legend-dot" style={{ backgroundColor: CHART_COLORS.adjusted }} />
-            <span className="text-theme-primary font-semibold">Без дивидендных гэпов</span>
+            <span className="text-theme-primary font-semibold leading-none">Без дивидендных гэпов</span>
           </span>
         )}
       </div>

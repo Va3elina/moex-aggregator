@@ -497,9 +497,9 @@ export default function StrengthPage() {
                     {showPrice && (
                         <div className="px-1 md:px-4 pt-4 pb-1 border-b border-theme relative overflow-hidden"
                              style={{ minHeight: heights.top + 34 }}>
-                            <div className="flex items-center justify-center mb-5 relative z-10" style={{ gap: 'var(--sp-2)' }}>
+                            <div className="flex items-center justify-center mb-5 relative z-10" style={{ gap: 8 }}>
                                 <span className="legend-dot" style={{ backgroundColor: 'var(--accent)' }} />
-                                <span className="font-semibold text-theme-primary" style={{ fontSize: 'var(--fs-base)' }}>{currency === 'usd' ? 'Индекс RTS' : 'Индекс IMOEX'}</span>
+                                <span className="font-semibold text-theme-primary leading-none" style={{ fontSize: 'var(--fs-base)' }}>{currency === 'usd' ? 'Индекс RTS' : 'Индекс IMOEX'}</span>
                             </div>
                             <IndexChart
                                 syncedData={displaySyncedData}
@@ -516,9 +516,9 @@ export default function StrengthPage() {
                         Mobile: px-1 (4px) — стрейчим график влево. */}
                     <div className="px-1 md:px-4 pt-2 pb-1 relative overflow-hidden"
                          style={{ minHeight: (showPrice ? heights.bottomDual : heights.bottomSolo) + 24 }}>
-                        <div className="flex items-center justify-center mb-2 relative z-10" style={{ gap: 'var(--sp-2)' }}>
+                        <div className="flex items-center justify-center mb-2 relative z-10" style={{ gap: 8 }}>
                             <span className="legend-dot" style={{ backgroundColor: 'var(--accent)' }} />
-                            <span className="font-semibold text-theme-primary" style={{ fontSize: 'var(--fs-sm)' }}>% акций выше EMA{emaPeriod}</span>
+                            <span className="font-semibold text-theme-primary leading-none" style={{ fontSize: 'var(--fs-sm)' }}>% акций выше EMA{emaPeriod}</span>
                         </div>
                         {displaySyncedData.length > 0 ? (
                             <BreadthChart

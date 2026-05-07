@@ -1,0 +1,387 @@
+/**
+ * ExportModal — оркестратор state machine для capture → preview → annotate → download.
+ *
+ * State transitions (Phase 3):
+ *   [capturing] → [preview] | [error]
+ *   [preview] → [annotating] | [downloading] | close
+ *   [annotating] → [downloading] | close (drawings будут потеряны при close)
+ *   [downloading] → [preview] (после успешного download — user может скачать снова)
+ *   [error] → close
+ *
+ * Lifecycle:
+ *   - Mount → start capture
+ *   - Unmount → abort in-flight capture, dispose fabric canvas (через AnnotationCanvas cleanup)
+ *   - ESC / click outside / × → onClose() (с confirm если есть annotations)
+ *
+ * Portal-rendered в document.body чтобы избежать z-index issues с charts.
+ *
+ * Annotation flow:
+ *   - Linear path для MVP: preview → annotating → download. "Назад к preview"
+ *     не поддерживается (drawings терялись бы при unmount fabric).
+ *   - Phase 4 добавит back-navigation с preserve drawings (display:none toggle).
+ */
+
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { X, Download, Loader2, AlertCircle, Pencil } from 'lucide-react';
+import type { ExportModalState } from './types';
+import { captureChart } from './captureChart';
+import { composeFramedCanvas } from './composeFramedCanvas';
+import { downloadCanvas } from './downloadCanvas';
+import ChartPreview from './ChartPreview';
+import AnnotationCanvas, {
+    type AnnotationCanvasHandle,
+    type AnnotationTool,
+} from './AnnotationCanvas';
+import AnnotationToolbar, { COLOR_PRESETS, STROKE_PRESETS } from './AnnotationToolbar';
+
+interface Props {
+    targetElement: HTMLElement;
+    filename: string;
+    onClose: () => void;
+}
+
+export default function ExportModal({ targetElement, filename, onClose }: Props) {
+    const [state, setState] = useState<ExportModalState>({ phase: 'capturing' });
+    const abortRef = useRef<AbortController | null>(null);
+
+    // Annotation state — изолировано от phase, чтобы tool/color не сбрасывались
+    // при downloading → preview transitions.
+    const [tool, setTool] = useState<AnnotationTool>('pen');
+    const [color, setColor] = useState<string>(COLOR_PRESETS[0].value);
+    const [strokeWidth, setStrokeWidth] = useState<number>(STROKE_PRESETS[1].value);
+    const annotationRef = useRef<AnnotationCanvasHandle>(null);
+    // Force-update toolbar disabled-state когда меняется history (undo/redo/clear).
+    // Не используем object count прямо — fabric meняет его внутренне, реагируем
+    // через onHistoryChange callback который бампает counter.
+    const [historyTick, setHistoryTick] = useState(0);
+    const onHistoryChange = () => setHistoryTick((t) => t + 1);
+
+    // Mount: start capture
+    useEffect(() => {
+        const ac = new AbortController();
+        abortRef.current = ac;
+
+        (async () => {
+            try {
+                const raw = await captureChart(targetElement, ac.signal);
+
+                const computed = getComputedStyle(document.documentElement);
+                const bgColor = computed.getPropertyValue('--bg-primary').trim() || '#0E0E10';
+
+                const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+                const framed = composeFramedCanvas(raw, {
+                    background: bgColor,
+                    dpr,
+                });
+
+                if (ac.signal.aborted) return;
+                setState({ phase: 'preview', canvas: framed });
+            } catch (err) {
+                if (ac.signal.aborted) return;
+                const msg = err instanceof Error ? err.message : 'Не удалось снять график';
+                setState({ phase: 'error', message: msg });
+            }
+        })();
+
+        return () => {
+            ac.abort();
+        };
+    }, [targetElement]);
+
+    // ESC to close. Если есть annotations — confirm (защита от случайного потерь).
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') tryClose();
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [state, historyTick]);
+
+    /** Close с confirm если в annotating и есть drawings */
+    const tryClose = () => {
+        if (state.phase === 'annotating') {
+            const count = annotationRef.current?.getObjectsCount() ?? 0;
+            if (count > 0) {
+                if (!window.confirm('Закрыть окно? Разметка будет потеряна.')) return;
+            }
+        }
+        onClose();
+    };
+
+    /** Скачать без разметки (из preview) */
+    const handleDownloadPreview = async () => {
+        if (state.phase !== 'preview') return;
+        const canvasToDownload = state.canvas;
+        setState({ phase: 'downloading' });
+        try {
+            await downloadCanvas(canvasToDownload, filename, 'png');
+            setState({ phase: 'preview', canvas: canvasToDownload });
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : 'Не удалось скачать файл';
+            setState({ phase: 'error', message: msg });
+        }
+    };
+
+    /** Скачать с разметкой (из annotating) — composite через fabric */
+    const handleDownloadAnnotated = async () => {
+        if (state.phase !== 'annotating') return;
+        const composite = annotationRef.current?.exportToCanvas();
+        if (!composite) {
+            setState({ phase: 'error', message: 'Не удалось собрать разметку' });
+            return;
+        }
+        const original = state.canvas;
+        setState({ phase: 'downloading' });
+        try {
+            await downloadCanvas(composite, `${filename}-annotated`, 'png');
+            // После download возвращаемся в annotating чтобы user мог редактировать
+            // дальше (не сбрасывая drawings). К сожалению annotating требует canvas
+            // в state — берём из original.
+            setState({ phase: 'annotating', canvas: original });
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : 'Не удалось скачать файл';
+            setState({ phase: 'error', message: msg });
+        }
+    };
+
+    const handleStartAnnotation = () => {
+        if (state.phase !== 'preview') return;
+        setState({ phase: 'annotating', canvas: state.canvas });
+    };
+
+    const handleClear = () => {
+        const count = annotationRef.current?.getObjectsCount() ?? 0;
+        if (count === 0) return;
+        if (!window.confirm('Удалить всю разметку?')) return;
+        annotationRef.current?.clear();
+    };
+
+    const objectsCount = annotationRef.current?.getObjectsCount() ?? 0;
+    const redoCount = annotationRef.current?.getRedoCount() ?? 0;
+    // historyTick — dependency для re-render toolbar disabled-state. Используется
+    // imperatively (objectsCount/redoCount читаются в render), поэтому ESLint не
+    // видит её — оставляем явный void чтобы линтер не выпилил.
+    void historyTick;
+
+    return createPortal(
+        <div
+            className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+            style={{ backgroundColor: 'rgba(0, 0, 0, 0.65)' }}
+            onClick={tryClose}
+            role="dialog"
+            aria-modal="true"
+        >
+            <div
+                className="rounded-2xl shadow-md flex flex-col"
+                style={{
+                    backgroundColor: 'var(--bg-primary)',
+                    border: '1.5px solid var(--text-primary)',
+                    boxShadow: '4px 4px 0 var(--text-primary)',
+                    width: 'min(1100px, 100%)',
+                    height: 'min(720px, 100%)',
+                    maxHeight: '90vh',
+                }}
+                onClick={(e) => e.stopPropagation()}
+            >
+                {/* Header */}
+                <div
+                    className="flex items-center justify-between px-5 py-3"
+                    style={{ borderBottom: '1px solid var(--border-color)' }}
+                >
+                    <h2
+                        className="font-bold"
+                        style={{
+                            fontSize: 'var(--fs-lg)',
+                            color: 'var(--text-primary)',
+                            letterSpacing: '-0.01em',
+                        }}
+                    >
+                        {state.phase === 'annotating' ? 'Разметка графика' : 'Экспорт графика'}
+                    </h2>
+                    <button
+                        onClick={tryClose}
+                        className="editorial-press p-2 rounded-lg"
+                        style={{
+                            backgroundColor: 'var(--bg-primary)',
+                            border: '1.5px solid var(--text-primary)',
+                            color: 'var(--text-primary)',
+                        }}
+                        aria-label="Закрыть"
+                    >
+                        <X size={18} />
+                    </button>
+                </div>
+
+                {/* Annotation toolbar — show only in annotating phase */}
+                {state.phase === 'annotating' && (
+                    <div
+                        style={{
+                            borderBottom: '1px solid var(--border-color)',
+                            backgroundColor: 'var(--bg-secondary)',
+                        }}
+                    >
+                        <AnnotationToolbar
+                            tool={tool}
+                            color={color}
+                            strokeWidth={strokeWidth}
+                            canUndo={objectsCount > 0}
+                            canRedo={redoCount > 0}
+                            canClear={objectsCount > 0}
+                            onToolChange={setTool}
+                            onColorChange={setColor}
+                            onStrokeWidthChange={setStrokeWidth}
+                            onUndo={() => annotationRef.current?.undo()}
+                            onRedo={() => annotationRef.current?.redo()}
+                            onClear={handleClear}
+                        />
+                    </div>
+                )}
+
+                {/* Body — phase-dependent */}
+                <div className="flex-1 flex flex-col p-5 min-h-0" style={{ gap: 'var(--sp-3)' }}>
+                    {state.phase === 'capturing' && (
+                        <div className="flex-1 flex flex-col items-center justify-center gap-3">
+                            <Loader2
+                                className="animate-spin"
+                                size={36}
+                                style={{ color: 'var(--accent)' }}
+                            />
+                            <span
+                                className="text-theme-secondary"
+                                style={{ fontSize: 'var(--fs-sm)' }}
+                            >
+                                Снимаем график…
+                            </span>
+                        </div>
+                    )}
+
+                    {state.phase === 'preview' && <ChartPreview canvas={state.canvas} />}
+
+                    {state.phase === 'annotating' && (
+                        <AnnotationCanvas
+                            ref={annotationRef}
+                            background={state.canvas}
+                            tool={tool}
+                            color={color}
+                            strokeWidth={strokeWidth}
+                            onHistoryChange={onHistoryChange}
+                        />
+                    )}
+
+                    {state.phase === 'downloading' && (
+                        <div className="flex-1 flex flex-col items-center justify-center gap-3">
+                            <Loader2
+                                className="animate-spin"
+                                size={36}
+                                style={{ color: 'var(--accent)' }}
+                            />
+                            <span
+                                className="text-theme-secondary"
+                                style={{ fontSize: 'var(--fs-sm)' }}
+                            >
+                                Скачиваем…
+                            </span>
+                        </div>
+                    )}
+
+                    {state.phase === 'error' && (
+                        <div className="flex-1 flex flex-col items-center justify-center gap-3">
+                            <AlertCircle size={36} style={{ color: 'var(--funds-flow-negative)' }} />
+                            <span
+                                className="text-theme-primary font-semibold"
+                                style={{ fontSize: 'var(--fs-base)' }}
+                            >
+                                Ошибка
+                            </span>
+                            <span
+                                className="text-theme-secondary text-center max-w-md"
+                                style={{ fontSize: 'var(--fs-sm)' }}
+                            >
+                                {state.message}
+                            </span>
+                        </div>
+                    )}
+                </div>
+
+                {/* Footer — toolbar (phase-dependent) */}
+                <div
+                    className="flex items-center justify-end px-5 py-3"
+                    style={{ borderTop: '1px solid var(--border-color)', gap: 'var(--sp-2)' }}
+                >
+                    <button
+                        onClick={tryClose}
+                        className="editorial-press rounded-lg px-4 py-2 font-semibold"
+                        style={{
+                            backgroundColor: 'var(--bg-primary)',
+                            border: '1.5px solid var(--text-primary)',
+                            color: 'var(--text-primary)',
+                            fontSize: 'var(--fs-sm)',
+                        }}
+                    >
+                        Отмена
+                    </button>
+
+                    {/* "Рисовать" — только в preview */}
+                    {state.phase === 'preview' && (
+                        <button
+                            onClick={handleStartAnnotation}
+                            className="editorial-press rounded-lg px-4 py-2 font-semibold flex items-center gap-2"
+                            style={{
+                                backgroundColor: 'var(--bg-primary)',
+                                border: '1.5px solid var(--text-primary)',
+                                color: 'var(--text-primary)',
+                                fontSize: 'var(--fs-sm)',
+                            }}
+                        >
+                            <Pencil size={16} />
+                            Рисовать
+                        </button>
+                    )}
+
+                    {/* "Скачать" — preview/annotating, разные handlers */}
+                    {(state.phase === 'preview' || state.phase === 'annotating') && (
+                        <button
+                            onClick={
+                                state.phase === 'annotating'
+                                    ? handleDownloadAnnotated
+                                    : handleDownloadPreview
+                            }
+                            className="editorial-press rounded-lg px-4 py-2 font-semibold flex items-center gap-2"
+                            style={{
+                                backgroundColor: 'var(--accent)',
+                                border: '1.5px solid var(--text-primary)',
+                                color: '#FFFFFF',
+                                fontSize: 'var(--fs-sm)',
+                            }}
+                        >
+                            <Download size={16} />
+                            {state.phase === 'annotating' ? 'Скачать с разметкой' : 'Скачать'}
+                        </button>
+                    )}
+
+                    {/* downloading/error/capturing — disabled placeholder для visual consistency */}
+                    {(state.phase === 'downloading' ||
+                        state.phase === 'error' ||
+                        state.phase === 'capturing') && (
+                        <button
+                            disabled
+                            className="rounded-lg px-4 py-2 font-semibold flex items-center gap-2 opacity-50 cursor-not-allowed"
+                            style={{
+                                backgroundColor: 'var(--accent)',
+                                border: '1.5px solid var(--text-primary)',
+                                color: '#FFFFFF',
+                                fontSize: 'var(--fs-sm)',
+                            }}
+                        >
+                            <Download size={16} />
+                            Скачать
+                        </button>
+                    )}
+                </div>
+            </div>
+        </div>,
+        document.body,
+    );
+}

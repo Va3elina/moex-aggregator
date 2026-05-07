@@ -62,15 +62,38 @@
   --legend-dot: clamp(10px, 0.4vw + 0.5rem, 14px);
 }
 
-/* Унифицированный класс для legend-меток на всех графиках.
-   Использовать вместо ad-hoc `w-3 h-3 rounded-full`. */
+/* Унифицированный класс для legend-меток на всех графиках. */
 .legend-dot {
   width: var(--legend-dot);
   height: var(--legend-dot);
   border-radius: 9999px;
   flex-shrink: 0;
-  display: inline-block;
+  display: block;
 }
+
+/* Класс для text внутри legend item — компенсирует font baseline-shift
+   относительно dot center в flex `items-center` rows.
+   Inter font: line-box-center НЕ совпадает с cap-visual-center из-за
+   тяжёлого descender area; в результате caps оказываются ниже line-box
+   center на 2-4px → визуально текст ниже dot.
+   Решение: padding-bottom раздувает text-item box ВНИЗ. Flex items-center
+   центрирует augmented box → caps смещаются вверх внутри box на padding/2.
+   Это layout-based shift (vs transform), который html2canvas корректно
+   рендерит в snapshot — раньше translateY игнорировался при export. */
+.legend-text {
+  display: inline-block;
+  /* Inter font: cap-visual-center лежит на ~0.06em ВЫШЕ line-box-center
+     из-за asymmetric ascent/descent metrics. Без компенсации text caps
+     визуально приподняты над dot center в flex items-center.
+     Padding-top раздувает text-box ВВЕРХ → flex центрирует augmented box
+     → caps смещаются ВНИЗ внутри box на padding/2.
+     0.13em ≈ 2px при font-size 14 → ~1px shift, точно компенсирующий
+     Inter cap-offset. Layout-based (vs transform) — html2canvas рендерит
+     корректно. */
+  padding-top: 0.13em;
+  line-height: 1;
+}
+
 
 /* ============================================
    GLOBAL FLUID TEXT — Tailwind utilities → fluid scale

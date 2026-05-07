@@ -776,23 +776,21 @@ export default function SimpleChart({
   // на 375px viewport. Поэтому свой clamp с floor 9px (вместо 11) и более
   // агрессивный gap-clamp (6px на mobile вместо 10).
   const legendBlock = (
-    // Legend font: var(--fs-base) (13-16px fluid) — раньше был clamp(9, ..., 14)
-    // (≈--fs-2xs), что выглядело мелко. Bumped +1-2 sizes по запросу.
     <div className="flex flex-wrap items-center" style={{ gap: 'clamp(6px, 1vw, 16px)', fontSize: 'var(--fs-base)' }}>
-      <span className="flex items-center" style={{ gap: 'var(--sp-2)' }}>
+      <span className="flex items-center" style={{ gap: 6 }}>
         <span className="legend-dot" style={{ backgroundColor: primaryColor }} />
-        <span className="text-theme-primary font-semibold">{primaryLabel}</span>
+        <span className="legend-text text-theme-primary font-semibold leading-none">{primaryLabel}</span>
       </span>
       {showSecondary && (
-        <span className="flex items-center" style={{ gap: 'var(--sp-2)' }}>
+        <span className="flex items-center" style={{ gap: 6 }}>
           <span className="legend-dot" style={{ backgroundColor: secondaryColor }} />
-          <span className="text-theme-primary font-semibold">{secondaryLabel}</span>
+          <span className="legend-text text-theme-primary font-semibold leading-none">{secondaryLabel}</span>
         </span>
       )}
       {showThird && (
-        <span className="flex items-center" style={{ gap: 'var(--sp-2)' }}>
+        <span className="flex items-center" style={{ gap: 6 }}>
           <span className="legend-dot" style={{ backgroundColor: thirdColor }} />
-          <span className="text-theme-primary font-semibold">{thirdLabel}</span>
+          <span className="legend-text text-theme-primary font-semibold leading-none">{thirdLabel}</span>
         </span>
       )}
     </div>
@@ -1456,13 +1454,18 @@ export default function SimpleChart({
         );
       })()}
 
-      {/* Навигатор временного диапазона */}
+      {/* Навигатор временного диапазона.
+          data-export-ignore: ChartCaptureButton использует html2canvas с
+          ignoreElements который скипает elements с этим атрибутом → navigator
+          не попадёт в snapshot, в export'е остаётся только chart. */}
       {showNavigator && (
-        <ChartNavigator
-          data={data}
-          onChange={(s, e, isDrag) => { navDragRef.current = isDrag; setNavRange([s, e]); }}
-          color={primaryColor}
-        />
+        <div data-export-ignore="true">
+          <ChartNavigator
+            data={data}
+            onChange={(s, e, isDrag) => { navDragRef.current = isDrag; setNavRange([s, e]); }}
+            color={primaryColor}
+          />
+        </div>
       )}
 
       {/* Легенда — внизу */}

@@ -9,6 +9,7 @@ import { getChartData, getInstrument } from '../services/api';
 import type { ChartResponse } from '../types';
 import type { ChartAnnotation } from '../components/SimpleChart';
 import SimpleChart from '../components/SimpleChart';
+import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import InstrumentSearchModal from '../components/InstrumentSearchModal';
 import Dropdown, { type DropdownOption } from '../components/Dropdown';
 import { PERIOD_LABELS as ALL_PERIOD_LABELS, INTERVAL_LABELS } from '../config/chartConfig';
@@ -399,7 +400,12 @@ export default function OpenInterestPage() {
           1.5px outline + hard-shadow 5×5×0 (как в design handoff page.jsx).
           В non-editorial темах класс не имеет стилей — структура остаётся
           плоской, как раньше. */}
-      <div className="editorial-frame">
+      <div className="editorial-frame relative">
+      <ChartCaptureButton
+        getTargetElement={() => chartAnchorRef.current}
+        filename={`frame-oi-${selectedInstrument.toLowerCase()}-${interval}`}
+        className="absolute top-3 right-3 z-10"
+      />
 
       {/* Контролы — все режимы через Dropdown'ы для экономии места.
           Asset + FIZ/YUR + Interval + Period + DisplayMode + OI variant + Экспирации

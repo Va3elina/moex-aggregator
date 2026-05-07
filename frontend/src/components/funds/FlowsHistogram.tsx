@@ -85,13 +85,13 @@ export default function FlowsHistogram({
             <div>
                 {/* Легенда */}
                 <div className="flex items-center justify-center gap-5" style={{ marginBottom: 'var(--chart-legend-mb, 16px)', fontSize: 'var(--fs-base)' }}>
-                    <span className="flex items-center gap-2">
+                    <span className="flex items-center" style={{ gap: 8 }}>
                         <span className="legend-dot" style={{ backgroundColor: 'var(--funds-flow-positive)' }} />
-                        <span className="text-theme-primary font-semibold">Приток (млрд руб)</span>
+                        <span className="text-theme-primary font-semibold leading-none">Приток (млрд руб)</span>
                     </span>
-                    <span className="flex items-center gap-2">
+                    <span className="flex items-center" style={{ gap: 8 }}>
                         <span className="legend-dot" style={{ backgroundColor: 'var(--funds-flow-negative)' }} />
-                        <span className="text-theme-primary font-semibold">Отток (млрд руб)</span>
+                        <span className="text-theme-primary font-semibold leading-none">Отток (млрд руб)</span>
                     </span>
                 </div>
 

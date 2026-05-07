@@ -226,14 +226,14 @@ export default function YearlySeasonalityChart({
           marginBottom: 'var(--seasonality-legend-mb, 12px)',
         }}>
         {allMeta.map(m => (
-          <span key={m.key} className="flex items-center gap-2">
+          <span key={m.key} className="flex items-center" style={{ gap: 8 }}>
             <span className="legend-dot" style={{ backgroundColor: m.color }} />
-            <span className="text-theme-primary font-semibold">{m.label}</span>
+            <span className="text-theme-primary font-semibold leading-none">{m.label}</span>
           </span>
         ))}
-        <span className="flex items-center gap-2">
+        <span className="flex items-center" style={{ gap: 8 }}>
           <span className="legend-dot" style={{ backgroundColor: CHART_COLORS.accent }} />
-          <span className="text-theme-primary font-semibold">{yearlyData.current_year}</span>
+          <span className="text-theme-primary font-semibold leading-none">{yearlyData.current_year}</span>
         </span>
       </div>
 

@@ -34,49 +34,71 @@ export default function FrameLogo({
   weight = 800,
   className = '',
 }: FrameLogoProps) {
-  const glyph = (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 32 32"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      style={{ flexShrink: 0 }}
-      aria-label="Frame"
-    >
-      <path d="M3 3 H13 V8 H8 V13 H3 Z" fill={color} />
-      <path d="M29 3 H19 V8 H24 V13 H29 Z" fill={color} />
-      <path d="M3 29 H13 V24 H8 V19 H3 Z" fill={color} />
-      <path d="M29 29 H19 V24 H24 V19 H29 Z" fill={color} />
-    </svg>
-  );
-
+  // Single-SVG approach: glyph + text в одном SVG с явным y-positioning.
+  // Раньше HTML inline-flex/inline-block — alignment зависел от font metrics
+  // (cap-height, x-height, baseline-shift), которые отличаются между live
+  // browser и html2canvas рендером. SVG baseline через `dominant-baseline`
+  // и явное y= даёт идеальный alignment в обоих контекстах.
   if (!showWordmark) {
-    return <span className={className}>{glyph}</span>;
+    return (
+      <span className={className} style={{ display: 'inline-block', verticalAlign: 'middle' }}>
+        <svg
+          width={size}
+          height={size}
+          viewBox="0 0 32 32"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+          aria-label="Frame"
+        >
+          <path d="M3 3 H13 V8 H8 V13 H3 Z" fill={color} />
+          <path d="M29 3 H19 V8 H24 V13 H29 Z" fill={color} />
+          <path d="M3 29 H13 V24 H8 V19 H3 Z" fill={color} />
+          <path d="M29 29 H19 V24 H24 V19 H29 Z" fill={color} />
+        </svg>
+      </span>
+    );
   }
 
+  // Wordmark version — single SVG с glyph (32×32 viewBox unit) + text.
+  // Text width oценочно ~85px при fontSize 30 (5 chars × ~17px wide × 0.95).
+  // Total SVG viewBox 32 + 11 (gap) + 95 (text) = 138 units.
+  // Aligning text baseline to y=24 (75% of glyph height) даёт visual center
+  // совпадающий с glyph center.
+  const gap = 11;
+  const textWidth = 95;
+  const totalWidth = 32 + gap + textWidth;
+  const renderHeight = size;
+  const renderWidth = (totalWidth / 32) * size;
+
   return (
-    <span
-      className={className}
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: size * 0.32,
-      }}
-    >
-      {glyph}
-      <span
-        style={{
-          fontFamily: "'Archivo', 'Inter', system-ui, sans-serif",
-          fontWeight: weight,
-          fontSize: size * 0.95,
-          letterSpacing: '-0.02em',
-          color,
-          lineHeight: 1,
-        }}
+    <span className={className} style={{ display: 'inline-block', verticalAlign: 'middle' }}>
+      <svg
+        width={renderWidth}
+        height={renderHeight}
+        viewBox={`0 0 ${totalWidth} 32`}
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        aria-label="Frame"
       >
-        FRAME
-      </span>
+        {/* Glyph corner brackets */}
+        <path d="M3 3 H13 V8 H8 V13 H3 Z" fill={color} />
+        <path d="M29 3 H19 V8 H24 V13 H29 Z" fill={color} />
+        <path d="M3 29 H13 V24 H8 V19 H3 Z" fill={color} />
+        <path d="M29 29 H19 V24 H24 V19 H29 Z" fill={color} />
+        {/* Wordmark — y=22 = baseline alignment с visual center glyph (16) */}
+        <text
+          x={32 + gap}
+          y={22.5}
+          fontFamily="'Archivo', 'Inter', system-ui, sans-serif"
+          fontWeight={weight}
+          fontSize={26}
+          letterSpacing={-0.5}
+          fill={color}
+          dominantBaseline="alphabetic"
+        >
+          FRAME
+        </text>
+      </svg>
     </span>
   );
 }

@@ -165,23 +165,26 @@ export default function SeasonalityHistogram({
       {/* Легенда — всегда занимает 28px чтобы layout не «прыгал» при переходе
           single↔multi mode. В single-bar mode показываем семантику цвета
           (Рост/Падение зелёный/красный), в multi показываем серии. */}
+      {/* Legend items rendered как inline-block с vertical-align middle —
+          без flex/align-items на items, чтобы избежать flex baseline-shift
+          бага. legend-dot уже имеет vertical-align:middle через CSS. */}
       <div className="absolute top-1 left-1/2 -translate-x-1/2 z-20 flex gap-4 pointer-events-none" style={{ fontSize: 'var(--fs-base)' }}>
         {isMulti
           ? safeMeta.map(s => (
-              <span key={s.key} className="flex items-center gap-1.5">
+              <span key={s.key} className="flex items-center" style={{ gap: 6 }}>
                 <span className="legend-dot" style={{ backgroundColor: s.color }} />
-                <span className="text-theme-primary font-semibold">{s.label}</span>
+                <span className="text-theme-primary font-semibold leading-none">{s.label}</span>
               </span>
             ))
           : (
             <>
-              <span className="flex items-center gap-1.5">
+              <span className="flex items-center" style={{ gap: 6 }}>
                 <span className="legend-dot" style={{ backgroundColor: CHART_COLORS.positive }} />
-                <span className="text-theme-primary font-semibold">Рост</span>
+                <span className="text-theme-primary font-semibold leading-none">Рост</span>
               </span>
-              <span className="flex items-center gap-1.5">
+              <span className="flex items-center" style={{ gap: 6 }}>
                 <span className="legend-dot" style={{ backgroundColor: CHART_COLORS.negative }} />
-                <span className="text-theme-primary font-semibold">Падение</span>
+                <span className="text-theme-primary font-semibold leading-none">Падение</span>
               </span>
             </>
           )}
