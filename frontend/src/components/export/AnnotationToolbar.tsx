@@ -1,15 +1,14 @@
 /**
  * AnnotationToolbar — UI для аннотации:
- *   ✏️ Pen toggle (active state) | 🎨 5 color swatches | stroke width 3 sizes
- *   | ↶ Undo | ↷ Redo | 🗑 Clear
+ *   Pen | Line | Arrow | Rectangle | Circle | colors | stroke | Undo | Redo | Clear
  *
  * Editorial-style: paper bg + 1.5px outline + accent для active states.
  * Mobile: flex-wraps по ширине, swatches и stroke-buttons остаются compact.
  *
- * Phase 4 будет: + Line / Arrow / Circle / Rectangle / Text + custom color.
+ * Phase 5 (planned): + Text + custom color picker + stroke slider.
  */
 
-import { Pencil, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
+import { MousePointer2, Pencil, Minus, MoveUpRight, Square, Circle as CircleIcon, Type, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
 import type { AnnotationTool } from './AnnotationCanvas';
 
 /** 5 preset colors — editorial palette. Theme-aware через CSS vars где возможно. */
@@ -75,23 +74,79 @@ export default function AnnotationToolbar({
             className="flex flex-wrap items-center"
             style={{ gap: 'var(--sp-2)', padding: 'var(--sp-2) var(--sp-3)' }}
         >
-            {/* Pen toggle */}
-            <button
-                onClick={() => onToolChange('pen')}
-                className="editorial-press rounded-lg p-2 inline-flex items-center justify-center"
-                style={tool === 'pen' ? activeButtonStyle : buttonStyle}
-                aria-label="Карандаш"
-                title="Карандаш"
-            >
-                <Pencil size={16} />
-            </button>
+            {/* Tool group: Select, Pen, Line, Arrow, Rectangle, Circle, Text */}
+            <div className="flex items-center" style={{ gap: 'var(--sp-1)' }}>
+                <button
+                    onClick={() => onToolChange('select')}
+                    className="editorial-press rounded-lg p-3 inline-flex items-center justify-center"
+                    style={tool === 'select' ? activeButtonStyle : buttonStyle}
+                    aria-label="Выделение"
+                    title="Выделение / перемещение / Delete для удаления"
+                >
+                    <MousePointer2 size={20} />
+                </button>
+                <button
+                    onClick={() => onToolChange('pen')}
+                    className="editorial-press rounded-lg p-3 inline-flex items-center justify-center"
+                    style={tool === 'pen' ? activeButtonStyle : buttonStyle}
+                    aria-label="Карандаш"
+                    title="Карандаш"
+                >
+                    <Pencil size={20} />
+                </button>
+                <button
+                    onClick={() => onToolChange('line')}
+                    className="editorial-press rounded-lg p-3 inline-flex items-center justify-center"
+                    style={tool === 'line' ? activeButtonStyle : buttonStyle}
+                    aria-label="Линия"
+                    title="Линия"
+                >
+                    <Minus size={20} />
+                </button>
+                <button
+                    onClick={() => onToolChange('arrow')}
+                    className="editorial-press rounded-lg p-3 inline-flex items-center justify-center"
+                    style={tool === 'arrow' ? activeButtonStyle : buttonStyle}
+                    aria-label="Стрелка"
+                    title="Стрелка"
+                >
+                    <MoveUpRight size={20} />
+                </button>
+                <button
+                    onClick={() => onToolChange('rectangle')}
+                    className="editorial-press rounded-lg p-3 inline-flex items-center justify-center"
+                    style={tool === 'rectangle' ? activeButtonStyle : buttonStyle}
+                    aria-label="Прямоугольник"
+                    title="Прямоугольник"
+                >
+                    <Square size={20} />
+                </button>
+                <button
+                    onClick={() => onToolChange('circle')}
+                    className="editorial-press rounded-lg p-3 inline-flex items-center justify-center"
+                    style={tool === 'circle' ? activeButtonStyle : buttonStyle}
+                    aria-label="Эллипс"
+                    title="Эллипс"
+                >
+                    <CircleIcon size={20} />
+                </button>
+                <button
+                    onClick={() => onToolChange('text')}
+                    className="editorial-press rounded-lg p-3 inline-flex items-center justify-center"
+                    style={tool === 'text' ? activeButtonStyle : buttonStyle}
+                    aria-label="Текст"
+                    title="Текст"
+                >
+                    <Type size={20} />
+                </button>
+            </div>
 
             {/* Color swatches */}
             <div
                 className="flex items-center"
                 style={{
                     gap: 'var(--sp-1)',
-                    padding: '4px 6px',
+                    padding: '6px 8px',
                     borderRadius: 8,
                     border: '1.5px solid var(--text-primary)',
                     backgroundColor: 'var(--bg-primary)',
@@ -105,8 +160,8 @@ export default function AnnotationToolbar({
                             onClick={() => onColorChange(preset.value)}
                             className="editorial-press rounded-full"
                             style={{
-                                width: 22,
-                                height: 22,
+                                width: 28,
+                                height: 28,
                                 backgroundColor: preset.value,
                                 border: isActive
                                     ? '2px solid var(--text-primary)'
@@ -127,7 +182,7 @@ export default function AnnotationToolbar({
                 className="flex items-center"
                 style={{
                     gap: 'var(--sp-1)',
-                    padding: '4px 6px',
+                    padding: '6px 8px',
                     borderRadius: 8,
                     border: '1.5px solid var(--text-primary)',
                     backgroundColor: 'var(--bg-primary)',
@@ -141,8 +196,8 @@ export default function AnnotationToolbar({
                             onClick={() => onStrokeWidthChange(preset.value)}
                             className="editorial-press inline-flex items-center justify-center rounded"
                             style={{
-                                width: 26,
-                                height: 22,
+                                width: 36,
+                                height: 30,
                                 backgroundColor: isActive ? 'var(--accent)' : 'transparent',
                                 border: '1px solid var(--text-primary)',
                             }}
@@ -152,7 +207,7 @@ export default function AnnotationToolbar({
                             <span
                                 style={{
                                     display: 'block',
-                                    width: 14,
+                                    width: 20,
                                     height: preset.value,
                                     backgroundColor: isActive ? '#FFFFFF' : 'var(--text-primary)',
                                     borderRadius: preset.value / 2,
@@ -171,32 +226,32 @@ export default function AnnotationToolbar({
             <button
                 onClick={onUndo}
                 disabled={!canUndo}
-                className="editorial-press rounded-lg p-2 inline-flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
+                className="editorial-press rounded-lg p-3 inline-flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
                 style={buttonStyle}
                 aria-label="Отменить"
                 title="Отменить (последнее действие)"
             >
-                <RotateCcw size={16} />
+                <RotateCcw size={20} />
             </button>
             <button
                 onClick={onRedo}
                 disabled={!canRedo}
-                className="editorial-press rounded-lg p-2 inline-flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
+                className="editorial-press rounded-lg p-3 inline-flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
                 style={buttonStyle}
                 aria-label="Вернуть"
                 title="Вернуть"
             >
-                <RotateCw size={16} />
+                <RotateCw size={20} />
             </button>
             <button
                 onClick={onClear}
                 disabled={!canClear}
-                className="editorial-press rounded-lg p-2 inline-flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
+                className="editorial-press rounded-lg p-3 inline-flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
                 style={buttonStyle}
                 aria-label="Очистить всю разметку"
                 title="Очистить всю разметку"
             >
-                <Trash2 size={16} />
+                <Trash2 size={20} />
             </button>
         </div>
     );

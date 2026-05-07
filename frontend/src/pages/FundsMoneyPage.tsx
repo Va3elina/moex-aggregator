@@ -24,6 +24,7 @@ import { useFitToViewport } from '../hooks/useFitToViewport';
 import FundCardModal from '../components/funds/FundCardModal';
 import FundsTable from '../components/funds/FundsTable';
 import FlowsHistogram from '../components/funds/FlowsHistogram';
+import ChartCaptureButton from '../components/export/ChartCaptureButton';
 
 // Режимы отображения
 type ViewMode = 'aum' | 'flows';
@@ -501,6 +502,23 @@ export default function FundsMoneyPage() {
                         События
                     </button>
                 )}
+
+                {/* Camera button — на одном уровне с dropdowns/buttons,
+                    выровнен по правому краю через ml-auto. */}
+                <ChartCaptureButton
+                    getTargetElement={() => chartAnchorRef.current}
+                    filename={`frame-funds-${category}-${viewMode}-${period}`}
+                    metadata={{
+                        title: 'Деньги в фондах',
+                        asset: currentCategory?.name ?? category,
+                        details: [
+                            viewMode === 'aum' ? 'СЧА' : 'Притоки-Оттоки',
+                            PERIOD_LABELS[period] ?? period,
+                            viewMode === 'flows' ? (flowTimeframe === '1d' ? 'День' : flowTimeframe === '1w' ? 'Неделя' : 'Месяц') : null,
+                        ].filter(Boolean) as string[],
+                    }}
+                    className="ml-auto"
+                />
             </div>
 
             {/* График */}

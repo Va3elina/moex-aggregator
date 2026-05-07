@@ -400,17 +400,12 @@ export default function OpenInterestPage() {
           1.5px outline + hard-shadow 5×5×0 (как в design handoff page.jsx).
           В non-editorial темах класс не имеет стилей — структура остаётся
           плоской, как раньше. */}
-      <div className="editorial-frame relative">
-      <ChartCaptureButton
-        getTargetElement={() => chartAnchorRef.current}
-        filename={`frame-oi-${selectedInstrument.toLowerCase()}-${interval}`}
-        className="absolute top-3 right-3 z-10"
-      />
+      <div className="editorial-frame">
 
       {/* Контролы — все режимы через Dropdown'ы для экономии места.
           Asset + FIZ/YUR + Interval + Period + DisplayMode + OI variant + Экспирации
           в одну строку (на узких экранах wraps). Стиль editorial pill через
-          Dropdown компонент. */}
+          Dropdown компонент. Camera button — в конце строки через ml-auto. */}
       <div ref={controlsRef} className="mb-4 md:mb-6">
         <div className="flex flex-wrap items-center gap-2 md:gap-3">
           {/* Селектор инструмента — открывает модалку */}
@@ -534,6 +529,24 @@ export default function OpenInterestPage() {
               Экспирации
             </button>
           )}
+
+          {/* Camera button inline, прижат к правому краю */}
+          <ChartCaptureButton
+            getTargetElement={() => chartAnchorRef.current}
+            filename={`frame-oi-${selectedInstrument.toLowerCase()}-${interval}`}
+            metadata={{
+              title: 'Открытый интерес',
+              asset: instrumentName || selectedInstrument,
+              ticker: selectedInstrument,
+              details: [
+                INTERVAL_LABELS[interval as keyof typeof INTERVAL_LABELS] || `${interval}ч`,
+                PERIOD_LABELS[period],
+                clgroup === 'FIZ' ? 'Физлица' : 'Юрлица',
+                displayMode === 'price' ? 'Только цена' : displayMode === 'positions' ? 'Позиции' : 'Участники',
+              ].filter(Boolean),
+            }}
+            className="ml-auto"
+          />
         </div>
       </div>
 

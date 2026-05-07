@@ -24,7 +24,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Download, Loader2, AlertCircle, Pencil } from 'lucide-react';
-import type { ExportModalState } from './types';
+import type { ExportModalState, ExportMetadata } from './types';
 import { captureChart } from './captureChart';
 import { composeFramedCanvas } from './composeFramedCanvas';
 import { downloadCanvas } from './downloadCanvas';
@@ -38,17 +38,22 @@ import AnnotationToolbar, { COLOR_PRESETS, STROKE_PRESETS } from './AnnotationTo
 interface Props {
     targetElement: HTMLElement;
     filename: string;
+    metadata?: ExportMetadata;
     onClose: () => void;
 }
 
-export default function ExportModal({ targetElement, filename, onClose }: Props) {
+export default function ExportModal({ targetElement, filename, metadata, onClose }: Props) {
     const [state, setState] = useState<ExportModalState>({ phase: 'capturing' });
     const abortRef = useRef<AbortController | null>(null);
 
     // Annotation state — изолировано от phase, чтобы tool/color не сбрасывались
     // при downloading → preview transitions.
     const [tool, setTool] = useState<AnnotationTool>('pen');
-    const [color, setColor] = useState<string>(COLOR_PRESETS[0].value);
+    // Default red — наиболее universal annotation color (visible на любой palette).
+    // accent (orange) был первым но user попросил red default.
+    const [color, setColor] = useState<string>(
+        COLOR_PRESETS.find(p => p.key === 'red')?.value ?? COLOR_PRESETS[0].value,
+    );
     const [strokeWidth, setStrokeWidth] = useState<number>(STROKE_PRESETS[1].value);
     const annotationRef = useRef<AnnotationCanvasHandle>(null);
     // Force-update toolbar disabled-state когда меняется history (undo/redo/clear).
@@ -66,13 +71,26 @@ export default function ExportModal({ targetElement, filename, onClose }: Props)
             try {
                 const raw = await captureChart(targetElement, ac.signal);
 
+                // Wait for fonts so canvas2D drawText использует Inter
+                // (а не fallback) — header/footer text должен match chart.
+                if (typeof document !== 'undefined' && 'fonts' in document) {
+                    await document.fonts.ready;
+                }
+
                 const computed = getComputedStyle(document.documentElement);
                 const bgColor = computed.getPropertyValue('--bg-primary').trim() || '#0E0E10';
+                const textColor = computed.getPropertyValue('--text-primary').trim() || '#0A0A0A';
+                const textSecondary = computed.getPropertyValue('--text-secondary').trim() || '#6B6B6B';
+                const accent = computed.getPropertyValue('--accent').trim() || '#FF5C2B';
 
                 const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
                 const framed = composeFramedCanvas(raw, {
                     background: bgColor,
+                    textColor,
+                    textSecondaryColor: textSecondary,
+                    accentColor: accent,
                     dpr,
+                    metadata,
                 });
 
                 if (ac.signal.aborted) return;
@@ -179,9 +197,9 @@ export default function ExportModal({ targetElement, filename, onClose }: Props)
                     backgroundColor: 'var(--bg-primary)',
                     border: '1.5px solid var(--text-primary)',
                     boxShadow: '4px 4px 0 var(--text-primary)',
-                    width: 'min(1100px, 100%)',
-                    height: 'min(720px, 100%)',
-                    maxHeight: '90vh',
+                    width: 'min(1400px, 100%)',
+                    height: 'min(880px, 100%)',
+                    maxHeight: '94vh',
                 }}
                 onClick={(e) => e.stopPropagation()}
             >

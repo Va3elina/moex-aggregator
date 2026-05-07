@@ -3,6 +3,7 @@ import ChartNavigator from '../ChartNavigator';
 import type { PriceChartResponse } from '../../services/api';
 import { CHART_COLORS, CROSSHAIR, PADDING, cssVar, ANIMATION } from '../../config/chartTheme';
 import { ChartGrid, ChartCrosshair, ChartDot, ChartDateLabel, ChartTooltip, TooltipRow, ChartYAxis, ChartXAxis, ChartMarker } from '../chart';
+import ChartLegend from '../chart/ChartLegend';
 import { easeOutCubic, morphPts, ptsToPath } from '../../utils/chartAnimation';
 import ChartWatermark from '../ChartWatermark';
 
@@ -169,18 +170,17 @@ export default function SeasonalityPriceChart({
 
   return (
     <div>
-      {/* Legend centered */}
-      <div className="flex justify-center gap-5 mb-3" style={{ fontSize: 'var(--fs-base)' }}>
-        <span className="flex items-center" style={{ gap: 8 }}>
-          <span className="legend-dot" style={{ backgroundColor: CHART_COLORS.accent }} />
-          <span className="text-theme-primary font-semibold leading-none">Цена</span>
-        </span>
-        {hasAdj && (
-          <span className="flex items-center" style={{ gap: 8 }}>
-            <span className="legend-dot" style={{ backgroundColor: CHART_COLORS.adjusted }} />
-            <span className="text-theme-primary font-semibold leading-none">Без дивидендных гэпов</span>
-          </span>
-        )}
+      {/* Legend centered — SVG-based через <ChartLegend> для pixel-perfect alignment */}
+      <div className="mb-3">
+        <ChartLegend
+          items={[
+            { color: CHART_COLORS.accent, label: 'Цена' },
+            ...(hasAdj ? [{ color: CHART_COLORS.adjusted, label: 'Без дивидендных гэпов' }] : []),
+          ]}
+          fontWeight={600}
+          gap={20}
+          style={{ color: 'var(--text-primary)' }}
+        />
       </div>
 
       {/* Floating date label */}
@@ -319,12 +319,14 @@ export default function SeasonalityPriceChart({
         )}
       </div>
 
-      {/* Navigator */}
-      <ChartNavigator
-        data={priceNavData}
-        onChange={(s, e) => setPriceNavRange([s, e])}
-        color={CHART_COLORS.accent}
-      />
+      {/* Navigator — скрыт в html2canvas snapshot через data-export-ignore */}
+      <div data-export-ignore="true">
+        <ChartNavigator
+          data={priceNavData}
+          onChange={(s, e) => setPriceNavRange([s, e])}
+          color={CHART_COLORS.accent}
+        />
+      </div>
     </div>
   );
 }

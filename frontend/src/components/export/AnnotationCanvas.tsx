@@ -23,7 +23,23 @@ import { Loader2 } from 'lucide-react';
 import { useFabric } from './useFabric';
 import type { Canvas as FabricCanvas, FabricObject } from 'fabric';
 
-export type AnnotationTool = 'pen' | 'select';
+export type AnnotationTool = 'select' | 'pen' | 'line' | 'arrow' | 'rectangle' | 'circle' | 'text';
+
+/**
+ * Resolve CSS var строку в реальный hex/rgb. Canvas2D не парсит var(...) в
+ * strokeStyle/fillStyle — нужно явно вычислить computed style. Если value
+ * не CSS var, возвращается как есть.
+ */
+function resolveColor(value: string): string {
+    if (!value || !value.startsWith('var(')) return value;
+    const match = value.match(/var\((--[^,)]+)/);
+    if (!match) return value;
+    const varName = match[1].trim();
+    if (typeof window === 'undefined') return value;
+    const computed = getComputedStyle(document.documentElement)
+        .getPropertyValue(varName).trim();
+    return computed || value;
+}
 
 export interface AnnotationCanvasHandle {
     undo: () => void;
@@ -50,6 +66,15 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
         const fabricRef = useRef<FabricCanvas | null>(null);
         const redoStackRef = useRef<FabricObject[]>([]);
         const fabric = useFabric();
+        // Refs для текущих tool/color/strokeWidth — handlers shape drawing
+        // читают через них (вместо closure), чтобы handlers attach один раз
+        // и реагировали на изменения без re-attach.
+        const toolRef = useRef(tool);
+        const colorRef = useRef(color);
+        const strokeWidthRef = useRef(strokeWidth);
+        useEffect(() => { toolRef.current = tool; }, [tool]);
+        useEffect(() => { colorRef.current = color; }, [color]);
+        useEffect(() => { strokeWidthRef.current = strokeWidth; }, [strokeWidth]);
 
         // Init fabric.Canvas один раз при загрузке fabric и DOM-ready.
         // Strict-mode guard: ref проверяется перед созданием — повторный mount
@@ -72,7 +97,7 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
             // Init brush — sane defaults, потом обновляются через отдельный effect
             const brush = new fabric.PencilBrush(fc);
             brush.width = strokeWidth;
-            brush.color = color;
+            brush.color = resolveColor(color);
             fc.freeDrawingBrush = brush;
 
             // Set background — async (FabricImage.fromURL → Promise)
@@ -92,8 +117,160 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
                 onHistoryChange?.();
             });
 
+            // Shape drawing handlers (line / arrow / rectangle / circle).
+            // Активны только когда toolRef.current ≠ 'pen'. PencilBrush сама
+            // обрабатывает pen mode, поэтому handlers просто early-return.
+            // Refs дают handlers всегда актуальный tool/color/width без re-attach.
+            let startPoint: { x: number; y: number } | null = null;
+            let activeShape: FabricObject | null = null;
+
+            // Helper: построить arrow path "M x1 y1 L x2 y2 + V-shape at end"
+            const arrowPath = (x1: number, y1: number, x2: number, y2: number): string => {
+                const dx = x2 - x1;
+                const dy = y2 - y1;
+                const len = Math.sqrt(dx * dx + dy * dy);
+                if (len < 1) return `M ${x1} ${y1} L ${x2} ${y2}`;
+                const headLen = Math.max(10, Math.min(20, len * 0.25));
+                const angle = Math.atan2(dy, dx);
+                const a1 = angle - Math.PI / 6; // 30°
+                const a2 = angle + Math.PI / 6;
+                const hx1 = x2 - headLen * Math.cos(a1);
+                const hy1 = y2 - headLen * Math.sin(a1);
+                const hx2 = x2 - headLen * Math.cos(a2);
+                const hy2 = y2 - headLen * Math.sin(a2);
+                return `M ${x1} ${y1} L ${x2} ${y2} M ${hx1} ${hy1} L ${x2} ${y2} L ${hx2} ${hy2}`;
+            };
+
+            fc.on('mouse:down', (opt) => {
+                if (toolRef.current === 'pen') return; // pen handled by PencilBrush
+                if (toolRef.current === 'select') return; // select mode: fabric handles object selection
+                // Если кликнули на существующий object — fabric обработает selection,
+                // не создаём новый shape (избегаем конфликта).
+                if (opt.target) return;
+                const fcLocal = fabricRef.current;
+                if (!fcLocal) return;
+
+                // Text tool: при клике добавляем редактируемый IText в точке клика.
+                if (toolRef.current === 'text') {
+                    // Если уже есть active object в edit mode — не создавать новый
+                    // (даём пользователю кликать внутри существующего текста).
+                    const activeObj = fcLocal.getActiveObject();
+                    if (activeObj && activeObj.type === 'i-text') return;
+                    const p = fcLocal.getViewportPoint(opt.e);
+                    const fontSize = Math.max(14, strokeWidthRef.current * 6);
+                    const text = new fabric.IText('Текст', {
+                        left: p.x,
+                        top: p.y - fontSize / 2,
+                        fill: resolveColor(colorRef.current),
+                        fontSize,
+                        fontFamily: 'Inter, "Helvetica Neue", Helvetica, Arial, sans-serif',
+                        fontWeight: 600,
+                        editable: true,
+                    });
+                    fcLocal.add(text);
+                    fcLocal.setActiveObject(text);
+                    text.enterEditing();
+                    text.selectAll();
+                    redoStackRef.current = [];
+                    onHistoryChange?.();
+                    return;
+                }
+
+                const p = fcLocal.getViewportPoint(opt.e);
+                startPoint = { x: p.x, y: p.y };
+                const c = resolveColor(colorRef.current);
+                const w = strokeWidthRef.current;
+                const common = {
+                    stroke: c,
+                    strokeWidth: w,
+                    fill: 'transparent',
+                    selectable: false,
+                    evented: false,
+                    strokeUniform: true,
+                };
+                if (toolRef.current === 'line') {
+                    activeShape = new fabric.Line([p.x, p.y, p.x, p.y], { ...common, strokeLineCap: 'round' });
+                } else if (toolRef.current === 'arrow') {
+                    activeShape = new fabric.Path(arrowPath(p.x, p.y, p.x, p.y), { ...common, strokeLineCap: 'round', strokeLineJoin: 'round' });
+                } else if (toolRef.current === 'rectangle') {
+                    activeShape = new fabric.Rect({ ...common, left: p.x, top: p.y, width: 0, height: 0, rx: 2, ry: 2 });
+                } else if (toolRef.current === 'circle') {
+                    activeShape = new fabric.Ellipse({ ...common, left: p.x, top: p.y, rx: 0, ry: 0 });
+                }
+                if (activeShape) fcLocal.add(activeShape);
+            });
+
+            fc.on('mouse:move', (opt) => {
+                if (!startPoint || !activeShape) return;
+                const fcLocal = fabricRef.current;
+                if (!fcLocal) return;
+                const p = fcLocal.getViewportPoint(opt.e);
+                if (toolRef.current === 'line') {
+                    (activeShape as InstanceType<typeof fabric.Line>).set({ x2: p.x, y2: p.y });
+                } else if (toolRef.current === 'arrow') {
+                    fcLocal.remove(activeShape);
+                    const c = resolveColor(colorRef.current);
+                    const w = strokeWidthRef.current;
+                    activeShape = new fabric.Path(arrowPath(startPoint.x, startPoint.y, p.x, p.y), {
+                        stroke: c, strokeWidth: w, fill: 'transparent',
+                        selectable: false, evented: false, strokeUniform: true,
+                        strokeLineCap: 'round', strokeLineJoin: 'round',
+                    });
+                    fcLocal.add(activeShape);
+                } else if (toolRef.current === 'rectangle') {
+                    activeShape.set({
+                        left: Math.min(startPoint.x, p.x),
+                        top: Math.min(startPoint.y, p.y),
+                        width: Math.abs(p.x - startPoint.x),
+                        height: Math.abs(p.y - startPoint.y),
+                    });
+                } else if (toolRef.current === 'circle') {
+                    const rx = Math.abs(p.x - startPoint.x) / 2;
+                    const ry = Math.abs(p.y - startPoint.y) / 2;
+                    activeShape.set({
+                        left: Math.min(startPoint.x, p.x),
+                        top: Math.min(startPoint.y, p.y),
+                        rx, ry,
+                    });
+                }
+                activeShape.setCoords();
+                fcLocal.requestRenderAll();
+            });
+
+            fc.on('mouse:up', () => {
+                if (activeShape) {
+                    // После рисования делаем shape manipulable (drag/resize/rotate)
+                    activeShape.set({ selectable: true, evented: true });
+                    activeShape.setCoords();
+                    redoStackRef.current = [];
+                    onHistoryChange?.();
+                }
+                startPoint = null;
+                activeShape = null;
+            });
+
+            // Keyboard handler: Delete/Backspace удаляет active object.
+            // Не активен когда IText в editing mode (там Backspace удаляет символы).
+            const onKeyDown = (e: KeyboardEvent) => {
+                const fcLocal = fabricRef.current;
+                if (!fcLocal) return;
+                if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+                const active = fcLocal.getActiveObject();
+                if (!active) return;
+                // Если это IText в editing mode — не вмешиваемся
+                if (active.type === 'i-text' && (active as InstanceType<typeof fabric.IText>).isEditing) return;
+                fcLocal.remove(active);
+                fcLocal.discardActiveObject();
+                fcLocal.requestRenderAll();
+                redoStackRef.current = [];
+                onHistoryChange?.();
+                e.preventDefault();
+            };
+            window.addEventListener('keydown', onKeyDown);
+
             return () => {
                 cancelled = true;
+                window.removeEventListener('keydown', onKeyDown);
                 fabricRef.current?.dispose();
                 fabricRef.current = null;
             };
@@ -105,10 +282,18 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
         useEffect(() => {
             const fc = fabricRef.current;
             if (!fc) return;
+            // Pen использует PencilBrush (isDrawingMode). Shape tools используют
+            // mouse:down/move/up handlers (через toolRef.current).
             fc.isDrawingMode = tool === 'pen';
+            // Marquee selection (drag-rect для multi-select) — только в select mode.
+            // В drawing modes отключаем чтобы drag по canvas не создавал selection-rect.
+            fc.selection = tool === 'select';
+            // Cursor подсказывает: в select — стрелка, в drawing — крест.
+            fc.defaultCursor = tool === 'select' ? 'default' : 'crosshair';
+            fc.hoverCursor = tool === 'select' ? 'move' : 'crosshair';
             const brush = fc.freeDrawingBrush;
             if (brush) {
-                brush.color = color;
+                brush.color = resolveColor(color);
                 brush.width = strokeWidth;
             }
         }, [tool, color, strokeWidth]);

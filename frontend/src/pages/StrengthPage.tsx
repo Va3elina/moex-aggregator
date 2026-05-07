@@ -16,6 +16,8 @@ import { useRealtimeData } from '../hooks/useRealtimeData';
 import type { SyncedDataPoint, ChartPadding } from '../components/strength/chartUtils';
 import IndexChart from '../components/strength/IndexChart';
 import BreadthChart from '../components/strength/BreadthChart';
+import ChartLegend from '../components/chart/ChartLegend';
+import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import SectorDetail from '../components/strength/SectorDetail';
 import StrengthControls from '../components/strength/StrengthControls';
 import { computeChartTopLineY, getDatePillStyle } from '../components/chart/datePillLayout';
@@ -313,7 +315,8 @@ export default function StrengthPage() {
             {/* Editorial frame — обнимает controls + chart в один контейнер */}
             <div className="editorial-frame">
 
-            {/* Контролы — одна строка */}
+            {/* Контролы — одна строка. Camera button передаётся как trailingSlot
+                чтобы стоять inline с classification chip (не накладываться). */}
             <StrengthControls
                 period={period}
                 onPeriodChange={setPeriod}
@@ -331,6 +334,25 @@ export default function StrengthPage() {
                 stocksTotal={stocksTotal}
                 classInfo={classInfo}
                 hasCurrent={!!current}
+                trailingSlot={
+                    <ChartCaptureButton
+                        getTargetElement={() => containerRef.current}
+                        filename={`frame-strength-${universe}-ema${emaPeriod}-${period}`}
+                        metadata={{
+                            title: 'Сила рынка',
+                            asset: universe.includes('imoex') ? 'IMOEX' : 'Все акции',
+                            details: [
+                                `EMA${emaPeriod}`,
+                                period === '6m' ? '6 месяцев' :
+                                period === '1y' ? '1 год' :
+                                period === '2y' ? '2 года' :
+                                period === '5y' ? '5 лет' : 'Всё',
+                                currency === 'usd' ? 'USD' : 'RUB',
+                                chartMode === 'histogram' ? 'Гистограмма' : 'Линия',
+                            ].filter(Boolean),
+                        }}
+                    />
+                }
             />
 
             {/* Синхронизированные графики — оба в одном paper-контейнере, 1.5px outline */}
@@ -497,9 +519,12 @@ export default function StrengthPage() {
                     {showPrice && (
                         <div className="px-1 md:px-4 pt-4 pb-1 border-b border-theme relative overflow-hidden"
                              style={{ minHeight: heights.top + 34 }}>
-                            <div className="flex items-center justify-center mb-5 relative z-10" style={{ gap: 8 }}>
-                                <span className="legend-dot" style={{ backgroundColor: 'var(--accent)' }} />
-                                <span className="font-semibold text-theme-primary leading-none" style={{ fontSize: 'var(--fs-base)' }}>{currency === 'usd' ? 'Индекс RTS' : 'Индекс IMOEX'}</span>
+                            <div className="flex items-center justify-center mb-5 relative z-10">
+                                <ChartLegend
+                                    items={[{ color: 'var(--accent)', label: currency === 'usd' ? 'Индекс RTS' : 'Индекс IMOEX' }]}
+                                    fontWeight={600}
+                                    style={{ color: 'var(--text-primary)' }}
+                                />
                             </div>
                             <IndexChart
                                 syncedData={displaySyncedData}
@@ -516,9 +541,12 @@ export default function StrengthPage() {
                         Mobile: px-1 (4px) — стрейчим график влево. */}
                     <div className="px-1 md:px-4 pt-2 pb-1 relative overflow-hidden"
                          style={{ minHeight: (showPrice ? heights.bottomDual : heights.bottomSolo) + 24 }}>
-                        <div className="flex items-center justify-center mb-2 relative z-10" style={{ gap: 8 }}>
-                            <span className="legend-dot" style={{ backgroundColor: 'var(--accent)' }} />
-                            <span className="font-semibold text-theme-primary leading-none" style={{ fontSize: 'var(--fs-sm)' }}>% акций выше EMA{emaPeriod}</span>
+                        <div className="flex items-center justify-center mb-2 relative z-10">
+                            <ChartLegend
+                                items={[{ color: 'var(--accent)', label: `% акций выше EMA${emaPeriod}` }]}
+                                fontWeight={600}
+                                style={{ color: 'var(--text-primary)' }}
+                            />
                         </div>
                         {displaySyncedData.length > 0 ? (
                             <BreadthChart
@@ -539,6 +567,7 @@ export default function StrengthPage() {
                     {/* Навигатор временного диапазона */}
                     {syncedData.length > 0 && (
                         <div
+                            data-export-ignore="true"
                             className="px-4 pb-3"
                             onMouseMove={e => e.stopPropagation()}
                             onMouseEnter={() => setHoverIndex(null)}

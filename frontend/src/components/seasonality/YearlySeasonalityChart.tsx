@@ -2,6 +2,7 @@ import { useLayoutEffect, useState, useMemo } from 'react';
 import type { YearlySeasonalityResponse } from '../../services/api';
 import { CHART_COLORS, PADDING, cssVar } from '../../config/chartTheme';
 import { ChartGrid, ChartCrosshair, ChartDateLabel, ChartTooltip, TooltipRow, ChartYAxis } from '../chart';
+import ChartLegend from '../chart/ChartLegend';
 import ChartNavigator from '../ChartNavigator';
 import ChartWatermark from '../ChartWatermark';
 import { useIsMobile } from '../../hooks/useIsMobile';
@@ -220,21 +221,16 @@ export default function YearlySeasonalityChart({
 
   return (
     <div className={revealed ? 'chart-reveal' : ''}>
-      <div className="flex justify-center flex-wrap gap-4"
-        style={{
-          fontSize: 'var(--seasonality-legend-font-size, var(--fs-base))',
-          marginBottom: 'var(--seasonality-legend-mb, 12px)',
-        }}>
-        {allMeta.map(m => (
-          <span key={m.key} className="flex items-center" style={{ gap: 8 }}>
-            <span className="legend-dot" style={{ backgroundColor: m.color }} />
-            <span className="text-theme-primary font-semibold leading-none">{m.label}</span>
-          </span>
-        ))}
-        <span className="flex items-center" style={{ gap: 8 }}>
-          <span className="legend-dot" style={{ backgroundColor: CHART_COLORS.accent }} />
-          <span className="text-theme-primary font-semibold leading-none">{yearlyData.current_year}</span>
-        </span>
+      <div style={{ marginBottom: 'var(--seasonality-legend-mb, 12px)' }}>
+        <ChartLegend
+          items={[
+            ...allMeta.map(m => ({ color: m.color, label: m.label })),
+            { color: CHART_COLORS.accent, label: String(yearlyData.current_year) },
+          ]}
+          fontWeight={600}
+          gap={16}
+          style={{ color: 'var(--text-primary)' }}
+        />
       </div>
 
       {/* Floating date — absolute positioning ВНУТРИ chart-container'а через
@@ -324,17 +320,17 @@ export default function YearlySeasonalityChart({
                 className="absolute pointer-events-none"
                 style={{
                   top: `${yPct}%`,
-                  // padding x=3, label-text-LEFT = axis-text-LEFT
-                  // (= bar-area-right + 4 = chart-area-right + 4).
+                  // Filled pill — color bg + white text (match SimpleChart/Strength
+                  // current-value pills). Раньше был outlined (bg-primary + 1.5px
+                  // accent border) — недостаточно контрастно по просьбе user'а.
                   left: 'calc(100% + 1px)',
                   transform: 'translateY(-50%)',
-                  background: 'var(--bg-primary)',
-                  border: `1.5px solid ${CHART_COLORS.accent}`,
+                  background: CHART_COLORS.accent,
                   borderRadius: 4,
-                  padding: '2px 3px',
+                  padding: '2px 5px',
                   fontSize: 'var(--chart-font-y, 16px)',
                   fontWeight: 700,
-                  color: 'var(--text-primary)',
+                  color: '#FFFFFF',
                   whiteSpace: 'nowrap',
                   zIndex: 2,
                   lineHeight: 1.2,
@@ -458,18 +454,20 @@ export default function YearlySeasonalityChart({
             data-area. Теперь var совпадает с PL который рендерит SVG. */}
         <ChartWatermark
           left="calc(var(--seasonality-chart-pad-left, 60px) + 5px)"
-          bottom="calc(var(--chart-pad-bottom, 50px) + 22px)"
+          bottom="calc(var(--chart-pad-bottom, 50px) + 5px)"
         />
 
         {/* Asset name перенесён в legend row выше (на одном уровне с легендой). */}
       </div>
 
-      {/* Navigator — скользящее окно по году */}
-      <ChartNavigator
-        data={navData}
-        onChange={(s, e) => setNavRange([s, e])}
-        color={CHART_COLORS.muted}
-      />
+      {/* Navigator — скользящее окно по году. Скрыт в html2canvas snapshot. */}
+      <div data-export-ignore="true">
+        <ChartNavigator
+          data={navData}
+          onChange={(s, e) => setNavRange([s, e])}
+          color={CHART_COLORS.muted}
+        />
+      </div>
     </div>
   );
 }

@@ -34,6 +34,9 @@ interface StrengthControlsProps {
     stocksTotal: number;
     classInfo: { label: string; color: string; bg: string };
     hasCurrent: boolean;
+    /** Trailing slot — rendered после classification chip (ml-auto group).
+     *  Используется для ChartCaptureButton чтобы он был на одной строке. */
+    trailingSlot?: React.ReactNode;
 }
 
 export default function StrengthControls({
@@ -53,6 +56,7 @@ export default function StrengthControls({
     stocksTotal,
     classInfo,
     hasCurrent,
+    trailingSlot,
 }: StrengthControlsProps) {
     const { isAuthenticated } = useAuth();
     const navigate = useNavigate();
@@ -142,6 +146,7 @@ export default function StrengthControls({
                     </span>
                 </div>
             </div>
+            {trailingSlot}
         </div>
     );
 }

@@ -14,6 +14,7 @@
 
 import { useState, lazy, Suspense } from 'react';
 import { Camera } from 'lucide-react';
+import type { ExportMetadata } from './types';
 
 // Lazy-import — modal + html2canvas chunk выделяется отдельно
 const ExportModal = lazy(() => import('./ExportModal'));
@@ -23,6 +24,8 @@ interface Props {
     getTargetElement: () => HTMLElement | null;
     /** Имя файла без extension */
     filename: string;
+    /** Метаданные для header в экспортированном изображении (title/asset/period) */
+    metadata?: ExportMetadata;
     /** Дополнительные классы кнопки */
     className?: string;
 }
@@ -30,6 +33,7 @@ interface Props {
 export default function ChartCaptureButton({
     getTargetElement,
     filename,
+    metadata,
     className = '',
 }: Props) {
     const [open, setOpen] = useState(false);
@@ -56,22 +60,25 @@ export default function ChartCaptureButton({
                 type="button"
                 onClick={handleClick}
                 data-export-ignore="true"
-                className={`editorial-press rounded-lg p-2 inline-flex items-center justify-center ${className}`}
+                className={`editorial-press rounded-full inline-flex items-center justify-center ${className}`}
                 style={{
-                    backgroundColor: 'var(--bg-primary)',
-                    border: '1.5px solid var(--text-primary)',
+                    backgroundColor: 'var(--bg-secondary)',
+                    border: '2px solid var(--text-primary)',
                     color: 'var(--text-primary)',
+                    width: 44,
+                    height: 44,
                 }}
                 aria-label="Скачать график"
                 title="Скачать график"
             >
-                <Camera size={16} />
+                <Camera size={22} />
             </button>
             {open && target && (
                 <Suspense fallback={null}>
                     <ExportModal
                         targetElement={target}
                         filename={filename}
+                        metadata={metadata}
                         onClose={handleClose}
                     />
                 </Suspense>

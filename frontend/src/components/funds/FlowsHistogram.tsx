@@ -5,6 +5,7 @@ import type { FundsFlowsResponse, FundCategory } from '../../services/api';
 import { CHART_COLORS, GRID, CROSSHAIR } from '../../config/chartTheme';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import ChartWatermark from '../ChartWatermark';
+import ChartLegend from '../chart/ChartLegend';
 import ChartNavigator from '../ChartNavigator';
 import { ChartTooltip, TooltipRow } from '../chart';
 import { computeChartTopLineY, getDatePillStyle } from '../chart/datePillLayout';
@@ -83,16 +84,17 @@ export default function FlowsHistogram({
             )}
             {/* Гистограмма притоков/оттоков */}
             <div>
-                {/* Легенда */}
-                <div className="flex items-center justify-center gap-5" style={{ marginBottom: 'var(--chart-legend-mb, 16px)', fontSize: 'var(--fs-base)' }}>
-                    <span className="flex items-center" style={{ gap: 8 }}>
-                        <span className="legend-dot" style={{ backgroundColor: 'var(--funds-flow-positive)' }} />
-                        <span className="text-theme-primary font-semibold leading-none">Приток (млрд руб)</span>
-                    </span>
-                    <span className="flex items-center" style={{ gap: 8 }}>
-                        <span className="legend-dot" style={{ backgroundColor: 'var(--funds-flow-negative)' }} />
-                        <span className="text-theme-primary font-semibold leading-none">Отток (млрд руб)</span>
-                    </span>
+                {/* Легенда — SVG-based для pixel-perfect dot↔text alignment */}
+                <div style={{ marginBottom: 'var(--chart-legend-mb, 16px)' }}>
+                    <ChartLegend
+                        items={[
+                            { color: 'var(--funds-flow-positive)', label: 'Приток (млрд руб)' },
+                            { color: 'var(--funds-flow-negative)', label: 'Отток (млрд руб)' },
+                        ]}
+                        fontWeight={600}
+                        gap={20}
+                        style={{ color: 'var(--text-primary)' }}
+                    />
                 </div>
 
                 {/* График с тултипом */}
@@ -144,6 +146,10 @@ export default function FlowsHistogram({
                             const midY = 50;
                             const halfH = 47;
                             const minBarH = 1.2;
+                            // Outline только когда баров мало — иначе stroke
+                            // съедает interior color (тонкий бар = 80% black)
+                            // и SVG лагает от сотен stroked rect'ов.
+                            const showOutline = visibleIn.length <= 50;
 
                             return visibleIn.map((inVal, i) => {
                                 const outVal = visibleOut[i] ?? 0;
@@ -159,11 +165,15 @@ export default function FlowsHistogram({
                                     <g key={i} opacity={opacity}>
                                         {hIn > 0 && (
                                             <rect x={x} y={`${midY - hIn}%`} width={w} height={`${hIn}%`}
-                                                fill={'var(--funds-flow-positive)'} rx="2" />
+                                                fill={'var(--funds-flow-positive)'}
+                                                {...(showOutline ? { stroke: 'var(--bar-outline)', strokeWidth: 1 } : {})}
+                                                rx="2" />
                                         )}
                                         {hOut > 0 && (
                                             <rect x={x} y={`${midY}%`} width={w} height={`${hOut}%`}
-                                                fill={'var(--funds-flow-negative)'} rx="2" />
+                                                fill={'var(--funds-flow-negative)'}
+                                                {...(showOutline ? { stroke: 'var(--bar-outline)', strokeWidth: 1 } : {})}
+                                                rx="2" />
                                         )}
                                     </g>
                                 );
@@ -406,14 +416,17 @@ export default function FlowsHistogram({
                 </div>
 
                 {/* Navigator — ОДИН и тот же ChartNavigator что в СЧА/OI/всех SimpleChart.
-                    showPreview=false — у нас гистограмма, line preview не подходит. */}
+                    showPreview=false — у нас гистограмма, line preview не подходит.
+                    Скрыт в html2canvas snapshot через data-export-ignore. */}
                 {navigatorData.length > 1 && (
-                    <ChartNavigator
-                        data={navigatorData}
-                        color="var(--accent)"
-                        showPreview={false}
-                        onChange={(s, e) => onSetFlowNavRange([s, e])}
-                    />
+                    <div data-export-ignore="true">
+                        <ChartNavigator
+                            data={navigatorData}
+                            color="var(--accent)"
+                            showPreview={false}
+                            onChange={(s, e) => onSetFlowNavRange([s, e])}
+                        />
+                    </div>
                 )}
             </div>
             </>)}

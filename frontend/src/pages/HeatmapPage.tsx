@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Grid3X3 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import Dropdown, { type DropdownOption } from '../components/Dropdown';
+import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import { METHODOLOGY } from '../data/methodology';
 import { getHeatmapData, getHeatmapImoex } from '../services/api';
 import { useRealtimeData } from '../hooks/useRealtimeData';
@@ -479,7 +480,6 @@ export default function HeatmapPage() {
           rx={radius}
           ry={radius}
           fill={getColor(change)}
-          style={{ transition: 'fill 0.6s ease' }}
           className="hover:brightness-110"
         />
         {showTicker && (
@@ -538,8 +538,8 @@ export default function HeatmapPage() {
           1.5px outline + hard-shadow (как на OI page). */}
       <div className="editorial-frame">
 
-      {/* Контролы — Dropdown'ы. Editorial-press effect автоматически. */}
-      <div className="flex flex-wrap mb-4 md:mb-6" style={{ gap: 'var(--sp-2)' }}>
+      {/* Контролы — Dropdown'ы. Camera button — в конце через ml-auto. */}
+      <div className="flex flex-wrap mb-4 md:mb-6 items-center" style={{ gap: 'var(--sp-2)' }}>
         <Dropdown<'imoex' | 'all'>
           options={[
             { key: 'imoex', label: 'Индекс IMOEX' },
@@ -566,6 +566,22 @@ export default function HeatmapPage() {
           value={groupBy}
           onChange={setGroupBy}
         />
+
+        {/* Camera button inline, прижат к правому краю */}
+        <ChartCaptureButton
+          getTargetElement={() => containerRef.current}
+          filename={`frame-heatmap-${mapMode}-${period}-${groupBy}`}
+          metadata={{
+            title: 'Карта рынка',
+            asset: mapMode === 'imoex' ? 'Индекс IMOEX' : 'Все акции',
+            details: [
+              SIZE_OPTIONS.find(o => o.value === sizeBy)?.label ?? sizeBy,
+              PERIOD_OPTIONS.find(o => o.value === period)?.label ?? period,
+              GROUP_OPTIONS.find(o => o.value === groupBy)?.label ?? groupBy,
+            ].filter(Boolean),
+          }}
+          className="ml-auto"
+        />
       </div>
 
       {/* Карта */}
@@ -582,8 +598,7 @@ export default function HeatmapPage() {
             </div>
           </div>
         ) : treemapData && treemapData.type === 'grouped' ? (
-          <svg width={containerSize.width} height={containerSize.height}
-            className="animate-in fade-in duration-500">
+          <svg width={containerSize.width} height={containerSize.height}>
             {treemapData.stockRects.map((rect) => renderStock(rect, `${rect.sector}-${rect.id}`))}
 
             {/* Заголовки секторов — отдельная полоска.
@@ -618,8 +633,7 @@ export default function HeatmapPage() {
             })}
           </svg>
         ) : treemapData && treemapData.type === 'flat' ? (
-          <svg width={containerSize.width} height={containerSize.height}
-            className="animate-in fade-in duration-500">
+          <svg width={containerSize.width} height={containerSize.height}>
             {treemapData.rects.map((rect) => renderStock(rect, rect.id))}
           </svg>
         ) : null}

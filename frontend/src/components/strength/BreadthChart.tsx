@@ -2,6 +2,9 @@ import { memo, useEffect, useLayoutEffect, useState, useMemo, useRef, useCallbac
 import { lerp, easeOutCubic, morphPts, ptsToPath, type SyncedDataPoint, type ChartPadding } from './chartUtils';
 import { GRID, CROSSHAIR, ANIMATION } from '../../config/chartTheme';
 import { useIsMobile } from '../../hooks/useIsMobile';
+import { useViewportWidth } from '../../hooks/useViewportWidth';
+import { axisFontSize, xAxisTickCount } from '../chart/chartTypography';
+import { measureText } from '../chart/measureText';
 
 type ChartMode = 'line' | 'histogram';
 
@@ -79,6 +82,8 @@ export default function BreadthChart({
     const chartWrapRef = useRef<HTMLDivElement>(null);
     // На мобиле X-tick'ов меньше — иначе формат "29 окт. 25 г." накладывается
     const isMobile = useIsMobile();
+    const vw = useViewportWidth();
+    const axisFs = axisFontSize(vw);
     const containerRef = useRef<HTMLDivElement>(null);
     const [width, setWidth] = useState(0);
 
@@ -174,7 +179,9 @@ export default function BreadthChart({
             return { x, y, width: barWidth, height: h, color: getColor(d.breadth) };
         });
 
-        const xTickCount = Math.min(isMobile ? 4 : 8, syncedData.length);
+        // Adaptive count — chartWidth/labelWidth, формула в chartTypography.
+        // Auto-corrects под текущий axis font size (6 breakpoints).
+        const xTickCount = Math.min(xAxisTickCount(chartWidth, axisFs), syncedData.length);
         const xTicks = Array.from({ length: xTickCount }, (_, i) => {
             const idx = Math.floor(i * (syncedData.length - 1) / Math.max(xTickCount - 1, 1));
             return {
@@ -190,7 +197,7 @@ export default function BreadthChart({
         }));
 
         return { points, lineSegments, bars, levels, xTicks, yTicks, chartWidth, chartHeight, scaleX };
-    }, [syncedData, chartWidth, chartHeight, padding, getColor, isMobile]);
+    }, [syncedData, chartWidth, chartHeight, padding, getColor, isMobile, axisFs]);
 
     // Morph animation
     useLayoutEffect(() => {
@@ -389,6 +396,53 @@ export default function BreadthChart({
                                 {tick.label}
                             </text>
                         ))}
+
+                        {/* Current value pill — TV-style filled + dashed connector
+                            от последней точки до pill. Цвет = breadth color
+                            (зелёный/красный по %). Pixel-perfect alignment через SVG. */}
+                        {(() => {
+                            const lastIdx = chartData.points.length - 1;
+                            if (lastIdx < 0) return null;
+                            const lastP = chartData.points[lastIdx];
+                            const lastBreadth = syncedData[lastIdx]?.breadth ?? 0;
+                            const value = `${lastBreadth.toFixed(1)}%`;
+                            const color = getColor(lastBreadth);
+                            const fontY = axisFs;
+                            const fontWeight = 700;
+                            const padX = 5;
+                            const padY = 2;
+                            const pillH = fontY + padY * 2;
+                            const textW = measureText(value, fontY, fontWeight);
+                            const pillW = Math.ceil(textW) + padX * 2 + 1;
+                            // Pill aligned с axis tick text (textAnchor=start at chartEnd+12)
+                            const textX = width - padding.right + 12;
+                            const pillLeft = textX - padX;
+                            return (
+                                <g pointerEvents="none">
+                                    <rect
+                                        x={pillLeft}
+                                        y={lastP.y - pillH / 2}
+                                        width={pillW}
+                                        height={pillH}
+                                        rx={4} ry={4}
+                                        fill={color}
+                                        fillOpacity={1}
+                                    />
+                                    <text
+                                        x={textX}
+                                        y={lastP.y}
+                                        textAnchor="start"
+                                        dominantBaseline="central"
+                                        fill="#FFFFFF"
+                                        fontSize={fontY}
+                                        fontWeight={fontWeight}
+                                        style={{ fontVariantNumeric: 'tabular-nums' }}
+                                    >
+                                        {value}
+                                    </text>
+                                </g>
+                            );
+                        })()}
                     </svg>
                 )}
             </div>

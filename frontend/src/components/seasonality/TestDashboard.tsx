@@ -152,8 +152,8 @@ export default function TestDashboard({
           ['--seasonality-aspect-ratio' as string]: '5.5',
           ['--seasonality-min-height' as string]: '240px',
           ['--seasonality-max-height' as string]: '320px',
-          ['--chart-font-y' as string]: 'clamp(9px, 0.8cqi, 13px)',
-          ['--chart-font-x' as string]: 'clamp(9px, 0.75cqi, 12px)',
+          ['--chart-font-y' as string]: 'clamp(12px, 1.04cqi, 17px)',
+          ['--chart-font-x' as string]: 'clamp(12px, 0.98cqi, 16px)',
           // Title/legend/placeholder ужимаем до минимума — чарту больше места.
           // date-placeholder держим дефолтным 22px (ChartDateLabel тоже 22px)
           // — иначе при hover'е контейнер прыгал бы вверх-вниз (CLS).
@@ -211,8 +211,8 @@ export default function TestDashboard({
                 ['--seasonality-hist-min-height' as string]: '240px',
                 ['--seasonality-hist-max-height' as string]: '320px',
                 ['--seasonality-aspect-ratio' as string]: '1.5',
-                ['--chart-font-y' as string]: 'clamp(9px, 2.4cqi, 13px)',
-                ['--chart-font-x' as string]: 'clamp(8px, 2cqi, 11px)',
+                ['--chart-font-y' as string]: 'clamp(12px, 3.1cqi, 17px)',
+                ['--chart-font-x' as string]: 'clamp(10px, 2.6cqi, 14px)',
               } as React.CSSProperties}
             >
               <ExpandButton onClick={() => setModalView(m)} />
@@ -352,8 +352,8 @@ function ExpandedChartModal({
           maxHeight: '900px',
           containerType: 'inline-size',
           // Динамические шрифты от ширины модалки (1440-1600px).
-          ['--chart-font-y' as string]: 'clamp(11px, 0.9cqi, 16px)',
-          ['--chart-font-x' as string]: 'clamp(10px, 0.85cqi, 14px)',
+          ['--chart-font-y' as string]: 'clamp(14px, 1.17cqi, 21px)',
+          ['--chart-font-x' as string]: 'clamp(13px, 1.1cqi, 18px)',
           ['--seasonality-legend-font-size' as string]: 'clamp(11px, 0.9cqi, 14px)',
           ['--seasonality-legend-mb' as string]: '8px',
           ['--chart-date-placeholder-height' as string]: '22px',

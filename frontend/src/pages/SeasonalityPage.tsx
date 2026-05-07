@@ -11,6 +11,7 @@ import SeasonalityHistogram from '../components/seasonality/SeasonalityHistogram
 import SeasonalityPriceChart from '../components/seasonality/SeasonalityPriceChart';
 import YearlySeasonalityChart from '../components/seasonality/YearlySeasonalityChart';
 import TestDashboard from '../components/seasonality/TestDashboard';
+import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import type { SeasonalityResponse, SeasonalityMode, PriceChartResponse, YearlySeasonalityResponse } from '../services/api';
 import { FUND_PALETTE } from '../config/chartTheme';
 
@@ -109,6 +110,8 @@ export default function SeasonalityPage() {
 
   // Request ID для отбрасывания stale-ответов при быстром переключении
   const seasonalityReqIdRef = useRef(0);
+  // Ref на chart card для capture (передаётся ChartCaptureButton)
+  const chartCardRef = useRef<HTMLDivElement>(null);
   // Счётчик успешных фетчей — React key для histogram'а (remount = новая анимация волны)
   const [histogramFetchId, setHistogramFetchId] = useState(0);
 
@@ -571,7 +574,7 @@ export default function SeasonalityPage() {
       {/* Editorial frame — обнимает controls + chart в один контейнер */}
       <div className="editorial-frame">
 
-      {/* Controls Row 1 */}
+      {/* Controls Row 1 — Camera в конце через ml-auto. */}
       <div className="flex flex-wrap items-center mb-4" style={{ gap: 'var(--sp-2)' }}>
         {/* Stock selector — остаётся widget-flat (icon + multiline label) */}
         <div className="relative">
@@ -636,6 +639,27 @@ export default function SeasonalityPage() {
             onChange={(k) => setPriceDays(Number(k))}
           />
         )}
+
+        {/* Camera button inline, прижат к правому краю. Скрыт в test mode. */}
+        {chartType !== 'test' && (
+          <ChartCaptureButton
+            getTargetElement={() => chartCardRef.current}
+            filename={`frame-seasonality-${selectedStock.toLowerCase()}-${chartType}-${mode}`}
+            metadata={{
+              title: 'Сезонность',
+              asset: selectedName,
+              ticker: selectedStock,
+              details: [
+                chartType === 'histogram' ? MODE_LABELS[mode] :
+                chartType === 'price' ? `${priceDays === 9999 ? 'Всё' : priceDays + ' дн'}` :
+                chartType === 'yearly' ? 'Годовая' : '',
+                excludeDividends ? 'Без дивгэпов' : null,
+                showNoOutliers ? 'Без выбросов' : null,
+              ].filter(Boolean) as string[],
+            }}
+            className="ml-auto"
+          />
+        )}
       </div>
 
       {/* Controls Row 2 — общие для histogram и yearly:
@@ -680,7 +704,7 @@ export default function SeasonalityPage() {
           + bg-theme-primary + 1.5px outline. Visually отделяет график от
           editorial-frame controls сверху. */}
       {chartType !== 'test' && (
-      <div className="relative rounded-2xl bg-theme-primary p-2 md:p-5" style={{ border: '1.5px solid var(--text-primary)' }}>
+      <div ref={chartCardRef} className="relative rounded-2xl bg-theme-primary p-2 md:p-5" style={{ border: '1.5px solid var(--text-primary)' }}>
         {/* Спиннер обновления — paper-style без glass */}
         {loading && (bars.length > 0 || priceData || yearlyData) && (
           <div

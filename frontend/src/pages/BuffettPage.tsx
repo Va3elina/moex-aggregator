@@ -11,6 +11,7 @@ import {
     type BuffettPeriod,
 } from '../services/api';
 import SimpleChart from '../components/SimpleChart';
+import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import Dropdown, { type DropdownOption } from '../components/Dropdown';
 import { useAuth } from '../contexts/AuthContext';
 import { isPeriodAllowed } from '../config/accessControl';
@@ -145,8 +146,8 @@ export default function BuffettPage() {
             {/* Editorial frame — обнимает controls + chart в один контейнер */}
             <div className="editorial-frame">
 
-            {/* Контролы */}
-            <div className="flex flex-wrap mb-4 md:mb-6" style={{ gap: 'var(--sp-2)' }}>
+            {/* Контролы. Camera button — в конце строки через ml-auto. */}
+            <div className="flex flex-wrap mb-4 md:mb-6 items-center" style={{ gap: 'var(--sp-2)' }}>
                 {/* Переключатель режимов */}
                 <Dropdown<ViewMode>
                     options={[
@@ -199,6 +200,21 @@ export default function BuffettPage() {
                         onChange={(k) => setForecastTarget(k ? Number(k) : null)}
                     />
                 )}
+
+                {/* Camera button inline, прижат к правому краю */}
+                <ChartCaptureButton
+                    getTargetElement={() => chartAnchorRef.current}
+                    filename={`frame-buffett-${viewMode}-${period}-${timeframe}`}
+                    metadata={{
+                        title: 'Индикатор Баффетта',
+                        asset: viewMode === 'cap-gdp' ? 'Капитализация / ВВП' : 'Капитализация / M2',
+                        details: [
+                            PERIOD_LABELS[period] ?? period,
+                            timeframe === '1d' ? '1 день' : timeframe === '1w' ? '1 неделя' : '1 месяц',
+                        ].filter(Boolean),
+                    }}
+                    className="ml-auto"
+                />
 
             </div>
 

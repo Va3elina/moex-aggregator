@@ -2,6 +2,9 @@ import { useEffect, useLayoutEffect, useState, useMemo, useRef } from 'react';
 import { easeOutCubic, morphPts, ptsToPath, ptsToArea, type SyncedDataPoint, type ChartPadding } from './chartUtils';
 import { CHART_COLORS, GRID, CROSSHAIR, ANIMATION } from '../../config/chartTheme';
 import { useIsMobile } from '../../hooks/useIsMobile';
+import { useViewportWidth } from '../../hooks/useViewportWidth';
+import { axisFontSize, xAxisTickCount } from '../chart/chartTypography';
+import { measureText } from '../chart/measureText';
 import ChartWatermark from '../ChartWatermark';
 
 interface IndexChartProps {
@@ -25,6 +28,8 @@ export default function IndexChart({
     const [width, setWidth] = useState(0);
     // Меньше vertical gridlines на мобиле — синхронно с BreadthChart X-labels
     const isMobile = useIsMobile();
+    const vw = useViewportWidth();
+    const axisFs = axisFontSize(vw);
     const [animLinePath, setAnimLinePath] = useState('');
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const [animAreaPath, setAnimAreaPath] = useState(''); void animAreaPath;
@@ -71,14 +76,15 @@ export default function IndexChart({
             return { value: v, y: scaleY(v) };
         });
 
-        const xTickCount = Math.min(isMobile ? 4 : 7, syncedData.length);
+        // Adaptive — синхронизирован с BreadthChart через ту же формулу
+        const xTickCount = Math.min(xAxisTickCount(chartWidth, axisFs), syncedData.length);
         const xTicks = Array.from({ length: xTickCount }, (_, i) => {
             const idx = Math.floor((i / Math.max(xTickCount - 1, 1)) * (syncedData.length - 1));
             return { x: scaleX(idx) };
         });
 
         return { points, yTicks, xTicks, scaleX };
-    }, [syncedData, chartWidth, chartHeight, padding, isMobile]);
+    }, [syncedData, chartWidth, chartHeight, padding, isMobile, axisFs]);
 
     // Morph animation
     useLayoutEffect(() => {
@@ -194,6 +200,49 @@ export default function IndexChart({
                                 </text>
                             </g>
                         ))}
+
+                        {/* Current value pill — TV-style filled label на правой оси.
+                            + dashed connector от последней точки до pill. */}
+                        {(() => {
+                            const lastP = chartData.points[chartData.points.length - 1];
+                            if (!lastP) return null;
+                            const value = lastP.value.toLocaleString('ru-RU', { maximumFractionDigits: 0 });
+                            const fontY = axisFs;
+                            const fontWeight = 700;
+                            const padX = 5;
+                            const padY = 2;
+                            const pillH = fontY + padY * 2;
+                            const textW = measureText(value, fontY, fontWeight);
+                            const pillW = Math.ceil(textW) + padX * 2 + 1;
+                            // Pill aligned с axis tick text (textAnchor=start at chartEnd+12)
+                            const textX = width - padding.right + 12;
+                            const pillLeft = textX - padX;
+                            return (
+                                <g pointerEvents="none">
+                                    <rect
+                                        x={pillLeft}
+                                        y={lastP.y - pillH / 2}
+                                        width={pillW}
+                                        height={pillH}
+                                        rx={4} ry={4}
+                                        fill="#FF5C2B"
+                                        style={{ fill: '#FF5C2B' }}
+                                    />
+                                    <text
+                                        x={textX}
+                                        y={lastP.y}
+                                        textAnchor="start"
+                                        dominantBaseline="central"
+                                        fill="#FFFFFF"
+                                        fontSize={fontY}
+                                        fontWeight={fontWeight}
+                                        style={{ fontVariantNumeric: 'tabular-nums' }}
+                                    >
+                                        {value}
+                                    </text>
+                                </g>
+                            );
+                        })()}
                     </svg>
                 )}
                 {/* Watermark — привязан к data area, как в SimpleChart.
@@ -203,36 +252,9 @@ export default function IndexChart({
                     значит watermark адаптивен к mobile/tablet/desktop. */}
                 <ChartWatermark left={padding.left + 5} bottom={padding.bottom + 5} />
 
-                {/* Current value label — TradingView-style на правой оси.
-                    Pill с цветом primary line, на y координате последней точки.
-                    Виден всегда (включая при hover). */}
-                {chartData && chartData.points.length > 0 && (() => {
-                    const last = chartData.points[chartData.points.length - 1];
-                    return (
-                        <div
-                            className="absolute pointer-events-none"
-                            style={{
-                                // padding x=3, label-text-LEFT = axis-text-LEFT (line 189).
-                                left: width - padding.right + 12 - 3,
-                                top: last.y,
-                                transform: 'translateY(-50%)',
-                                background: 'var(--bg-primary)',
-                                border: `1.5px solid ${CHART_COLORS.primary}`,
-                                borderRadius: 4,
-                                padding: '2px 3px',
-                                fontSize: 'var(--chart-font-y, 16px)',
-                                fontWeight: 700,
-                                color: 'var(--text-primary)',
-                                whiteSpace: 'nowrap',
-                                zIndex: 2,
-                                lineHeight: 1.2,
-                                fontVariantNumeric: 'tabular-nums',
-                            }}
-                        >
-                            {last.value.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
-                        </div>
-                    );
-                })()}
+                {/* Legacy HTML pill убран — новый SVG pill рисуется внутри
+                    chart svg (см. "Current value pill" блок выше). HTML версия
+                    с bg=bg-primary + border перекрывала SVG версию белым. */}
             </div>
         </div>
     );

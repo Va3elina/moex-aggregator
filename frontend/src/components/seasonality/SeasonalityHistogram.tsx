@@ -2,7 +2,10 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import type { SeasonalityResponse } from '../../services/api';
 import { CHART_COLORS, CROSSHAIR, TOOLTIP, ANIMATION } from '../../config/chartTheme';
 import { ChartGrid, ChartCrosshair, ChartTooltip, TooltipRow } from '../chart';
+import ChartLegend from '../chart/ChartLegend';
 import ChartWatermark from '../ChartWatermark';
+import { useViewportWidth } from '../../hooks/useViewportWidth';
+import { axisFontSize, xAxisTickCount } from '../chart/chartTypography';
 
 interface TooltipState {
   x: number;
@@ -44,8 +47,11 @@ export default function SeasonalityHistogram({
   setTooltip,
   monthlySeries,
   seriesMeta,
-  compact = false,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  compact: _compact = false,
 }: SeasonalityHistogramProps) {
+  const vw = useViewportWidth();
+  const axisFs = axisFontSize(vw);
   // reveal — CSS clip-path слева направо на первом рендере
   const [revealed, setRevealed] = useState(false);
   useLayoutEffect(() => {
@@ -162,32 +168,21 @@ export default function SeasonalityHistogram({
       }}
       onTouchEnd={() => setTooltip(null)}
     >
-      {/* Легенда — всегда занимает 28px чтобы layout не «прыгал» при переходе
-          single↔multi mode. В single-bar mode показываем семантику цвета
-          (Рост/Падение зелёный/красный), в multi показываем серии. */}
-      {/* Legend items rendered как inline-block с vertical-align middle —
-          без flex/align-items на items, чтобы избежать flex baseline-shift
-          бага. legend-dot уже имеет vertical-align:middle через CSS. */}
-      <div className="absolute top-1 left-1/2 -translate-x-1/2 z-20 flex gap-4 pointer-events-none" style={{ fontSize: 'var(--fs-base)' }}>
-        {isMulti
-          ? safeMeta.map(s => (
-              <span key={s.key} className="flex items-center" style={{ gap: 6 }}>
-                <span className="legend-dot" style={{ backgroundColor: s.color }} />
-                <span className="text-theme-primary font-semibold leading-none">{s.label}</span>
-              </span>
-            ))
-          : (
-            <>
-              <span className="flex items-center" style={{ gap: 6 }}>
-                <span className="legend-dot" style={{ backgroundColor: CHART_COLORS.positive }} />
-                <span className="text-theme-primary font-semibold leading-none">Рост</span>
-              </span>
-              <span className="flex items-center" style={{ gap: 6 }}>
-                <span className="legend-dot" style={{ backgroundColor: CHART_COLORS.negative }} />
-                <span className="text-theme-primary font-semibold leading-none">Падение</span>
-              </span>
-            </>
-          )}
+      {/* Легенда — SVG-based через <ChartLegend>. dominant-baseline=central
+          даёт pixel-perfect центрирование dot↔text без CSS hacks. */}
+      <div className="absolute top-1 left-1/2 -translate-x-1/2 z-20 pointer-events-none">
+        <ChartLegend
+          items={isMulti
+            ? safeMeta.map(s => ({ color: s.color, label: s.label }))
+            : [
+                { color: CHART_COLORS.positive, label: 'Рост' },
+                { color: CHART_COLORS.negative, label: 'Падение' },
+              ]
+          }
+          fontWeight={600}
+          gap={16}
+          style={{ color: 'var(--text-primary)' }}
+        />
       </div>
 
       <div className="absolute" style={{
@@ -198,8 +193,11 @@ export default function SeasonalityHistogram({
       }}>
         <svg viewBox="0 0 1000 500" preserveAspectRatio="none" width="100%" height="100%">
           {/* Единый путь: волна слева направо через transition-delay = (i / n) * stagger.
-              Каждый бар стартует с задержкой пропорциональной позиции → эффект «волны». */}
+              Каждый бар стартует с задержкой пропорциональной позиции → эффект «волны».
+              Outline видим только когда баров мало — иначе stroke съедает interior
+              color (бар выглядит чёрным на mobile / monthday-31). */}
           {bars.map((bar, i) => {
+            const showBarOutline = bars.length <= 20;
             const slotW = W / bars.length;
             const slotPadding = slotW * 0.1;
             const groupW = slotW - slotPadding * 2;
@@ -229,6 +227,7 @@ export default function SeasonalityHistogram({
                         x={bx + 1} y={y}
                         width={subBarW - 2} height={h}
                         fill={style.color} rx="2"
+                        {...(showBarOutline ? { stroke: 'var(--bar-outline)', strokeWidth: 1 } : {})}
                         style={transitionStyle}
                       />
                     );
@@ -246,6 +245,7 @@ export default function SeasonalityHistogram({
                       x={bx} y={y}
                       width={subBarW} height={h}
                       fill={color} rx="3"
+                      {...(showBarOutline ? { stroke: 'var(--bar-outline)', strokeWidth: 1 } : {})}
                       style={transitionStyle}
                     />
                   );
@@ -296,7 +296,9 @@ export default function SeasonalityHistogram({
           <ChartTooltip x={tooltip.x} y={tooltip.y}>
             {isMulti ? (
               <>
-                <div className="text-xs text-theme-secondary mb-1 font-medium">{tooltip.bar!.label}</div>
+                {/* Label header — bigger/bolder для лучшей читаемости. Особенно
+                    важно в monthday/monthly modes где X-axis labels прорежены. */}
+                <div className="text-sm text-theme-primary mb-1 font-bold">{tooltip.bar!.label}</div>
                 {safeMeta.map((style, s) => {
                   const seriesBar = safeSeries[s]?.bars?.[idx];
                   if (!seriesBar) return null;
@@ -323,6 +325,9 @@ export default function SeasonalityHistogram({
               const valStr = `${bar.avg_change > 0 ? '+' : ''}${Math.abs(bar.avg_change) >= 0.01 ? bar.avg_change.toFixed(3) : bar.avg_change.toFixed(4)}%`;
               return (
                 <>
+                  {/* Label header (день/месяц/час) — prominent даже когда X-axis
+                      label прорежены adaptive thinning'ом. */}
+                  <div className="text-sm text-theme-primary mb-1 font-bold">{bar.label}</div>
                   <TooltipRow color={color} label={bar.avg_change >= 0 ? 'Рост' : 'Падение'} value={valStr} />
                   <div className="text-2xs text-theme-secondary mt-0.5">{bar.count} наблюдений</div>
                 </>
@@ -370,27 +375,21 @@ export default function SeasonalityHistogram({
       </div>
 
       {/* X labels — bottom: var(--chart-xlabel-bottom) (20px) — same offset как
-          в FlowsHistogram, чтобы distance от labels до bottom gridline был
-          одинаковый между sezon и flows charts. */}
+          в FlowsHistogram. Adaptive thinning по chart width и font size:
+          считаем сколько labels влезает = chartWidth / labelWidth. step = ceil(N/fitting).
+          Mobile + desktop работают по одной формуле. */}
       <div className="absolute flex justify-between font-bold px-2" style={{ bottom: 'var(--chart-xlabel-bottom, 20px)', left: 'var(--seasonality-hist-pad-x, 70px)', right: 'var(--seasonality-hist-pad-x, 70px)', fontSize: 'var(--chart-font-x, 14px)', color: 'var(--axis-color, #9CA3B8)' }}>
         {bars.map((bar, i) => {
-          const isMob = typeof window !== 'undefined' && window.innerWidth < 768;
-          const needsThinning = compact || isMob;
-          // Smart thinning:
-          //   ≤7 баров — всегда все подписи
-          //   8-20 — каждая 2-я (i%2)
-          //   21+ (monthday = 31) — каждая 5-я (1, 6, 11, 16, 21, 26, 31) +
-          //   последняя. Раньше было %3 → 11 подписей выглядели "не подряд
-          //   и часто" (1,4,7,10... необычные шаги). %5 даёт 7 чистых подписей
-          //   с круглым шагом — визуально приятнее.
-          let showLabel = true;
-          if (needsThinning && bars.length > 7) {
-            if (bars.length <= 20) {
-              showLabel = i % 2 === 0;
-            } else {
-              showLabel = i % 5 === 0 || i === bars.length - 1;
-            }
-          }
+          // Adaptive thinning: barAreaWidth ≈ vw × 0.85 - 200 (rough estimate
+          // — page padding + seasonality-hist-pad-x). Сколько labels влезает =
+          // chartWidth/labelWidth (короткие "31" или "янв" → ~4 chars).
+          const estBarArea = Math.max(200, vw * 0.85 - 200);
+          const fittingCount = xAxisTickCount(estBarArea, axisFs, 4);
+          const step = Math.max(1, Math.ceil(bars.length / fittingCount));
+          // Раньше был "|| i === bars.length - 1" force-last-bar — но при
+          // step=2 на 12 месяцах это давало Nov(10) AND Dec(11) рядом
+          // (overlap). Теперь только step-aligned, без force.
+          const showLabel = step === 1 || i % step === 0;
           return (
             <span key={bar.key} className="text-center" style={{ width: `${100 / bars.length}%` }}>
               {showLabel ? bar.label : ''}

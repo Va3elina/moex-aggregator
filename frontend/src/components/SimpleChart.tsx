@@ -6,6 +6,9 @@ import { easeOutCubic, morphPts, ptsToPath, ptsToArea } from '../utils/chartAnim
 import { cssVar, GRID, CROSSHAIR, ANIMATION, TOOLTIP } from '../config/chartTheme';
 import { fluid } from '../config/fluidScale';
 import { computeChartTopLineY, getDatePillStyle } from './chart/datePillLayout';
+import ChartLegend, { type ChartLegendItem } from './chart/ChartLegend';
+import { measureText } from './chart/measureText';
+import { axisFontSize } from './chart/chartTypography';
 
 interface DataPoint {
   time: string;
@@ -109,10 +112,12 @@ export default function SimpleChart({
   // Все размеры — из единой fluid scale (config/fluidScale.ts + index.css :root).
   // SVG требует JS-числа (clamp в строке через cssVar не работает — parseFloat → NaN).
   const tokens = useMemo(() => ({
-    // Y-axis labels (числа слева/справа): на mobile fs-2xs, выше fs-sm
-    fontY: fluid.fs2xs(vw),
-    // X-axis labels (даты под графиком)
-    fontX: fluid.fs2xs(vw),
+    // Y-axis labels (числа слева/справа). Discrete per breakpoint —
+    // см. chartTypography.ts: 320=9, 375=10, 425=11, 768=13, 1024=15, 1440=17.
+    // Match'ит CSS var --chart-font-y media queries.
+    fontY: axisFontSize(vw),
+    // X-axis labels (даты под графиком) — тот же размер
+    fontX: axisFontSize(vw),
     fontYWeight: cssVar('--chart-font-y-weight', 600),
     tooltipWidth: cssVar('--tooltip-width', 200),
     dotPrimaryR: cssVar('--dot-primary-r', 6),
@@ -381,15 +386,14 @@ export default function SimpleChart({
 
     // X ticks — адаптивно по реальной ширине chart area (без padding'ов осей),
     // чтобы даты не налезали. На 320px viewport chartWidth ≈ 240px → 3 тика.
-    //   < 200px chartWidth: 3 тика
-    //   < 320px:           4 тика
-    //   < 520px:           5 тиков
-    //   иначе:             7 тиков
-    const maxTicks =
-      chartWidth < 200 ? 3 :
-      chartWidth < 320 ? 4 :
-      chartWidth < 520 ? 5 :
-      7;
+    //   maxTicks = chartWidth / labelMinWidth, где labelMinWidth — оценка ширины
+    //   одной даты на основе текущего fontX. Раньше были hardcoded breakpoints
+    //   (rough 200/320/520 → 3/4/5/7 ticks), но при desktop x2 шрифте labels
+    //   накладывались друг на друга. Динамическая формула: при больше шрифте —
+    //   меньше ticks автоматически.
+    //   "31 окт 2025" ~ 12 chars × charW (= fontX * 0.62) → ~labelW.
+    const labelMinW = tokens.fontX * 0.62 * 12;
+    const maxTicks = Math.max(3, Math.min(7, Math.floor(chartWidth / labelMinW)));
     const xTickCount = Math.min(maxTicks, displayData.length);
     // Equal-spaced positions: x = (i/(N-1)) * chartWidth.
     // Дата подбирается ближайшая к этой позиции. Так ticks стабильны при
@@ -775,25 +779,25 @@ export default function SimpleChart({
   // (трлн ₽)"), и при стандартном font 11-14px они разваливаются на 2 строки
   // на 375px viewport. Поэтому свой clamp с floor 9px (вместо 11) и более
   // агрессивный gap-clamp (6px на mobile вместо 10).
+  // SVG-based legend: <circle> + <text dominantBaseline="middle"> рендерится
+  // pixel-perfect одинаково в browser и html2canvas. Никаких CSS hacks с
+  // padding/transform — только spec-compliant SVG geometry.
+  const legendItems: ChartLegendItem[] = [
+    { color: primaryColor, label: primaryLabel || '' },
+    ...(showSecondary && secondaryLabel ? [{ color: secondaryColor, label: secondaryLabel }] : []),
+    ...(showThird && thirdLabel ? [{ color: thirdColor, label: thirdLabel }] : []),
+  ];
+  // Legend size: discrete per breakpoint — handled internally by ChartLegend
+  // через chartTypography. SimpleChart не передаёт fontSize/dotSize prop'ы,
+  // полагается на responsive defaults.
   const legendBlock = (
-    <div className="flex flex-wrap items-center" style={{ gap: 'clamp(6px, 1vw, 16px)', fontSize: 'var(--fs-base)' }}>
-      <span className="flex items-center" style={{ gap: 6 }}>
-        <span className="legend-dot" style={{ backgroundColor: primaryColor }} />
-        <span className="legend-text text-theme-primary font-semibold leading-none">{primaryLabel}</span>
-      </span>
-      {showSecondary && (
-        <span className="flex items-center" style={{ gap: 6 }}>
-          <span className="legend-dot" style={{ backgroundColor: secondaryColor }} />
-          <span className="legend-text text-theme-primary font-semibold leading-none">{secondaryLabel}</span>
-        </span>
-      )}
-      {showThird && (
-        <span className="flex items-center" style={{ gap: 6 }}>
-          <span className="legend-dot" style={{ backgroundColor: thirdColor }} />
-          <span className="legend-text text-theme-primary font-semibold leading-none">{thirdLabel}</span>
-        </span>
-      )}
-    </div>
+    <ChartLegend
+      items={legendItems}
+      fontWeight={600}
+      itemGap={6}
+      gap="clamp(6px, 1vw, 16px)"
+      style={{ color: 'var(--text-primary)' }}
+    />
   );
 
   return (
@@ -1241,49 +1245,30 @@ export default function SimpleChart({
               </>
             );
           })()}
-        </svg>
 
-        {/* Current value labels — TradingView-style на правой оси chart-area.
-            Маленькие pill'ы с цветом line, позиционированные на y координате
-            последней точки серии. Видны ВСЕГДА (включая при hover). */}
-        {targetCalc.points.length > 0 && (() => {
-          // Strip "trailing units" — % / трлн ₽ / млрд ₽ / млн ₽ / ₽. Label
-          // содержит ТОЛЬКО число, как просил user. Border = visual identifier.
+          {/* Current value labels — TradingView-style на правой оси chart-area.
+              SVG-based (rect pill + text dominantBaseline=middle) живёт в той же
+              coordinate system что и axis labels — pixel-perfect между browser
+              и html2canvas snapshot. Видны ВСЕГДА (включая при hover).
+              Раньше были HTML divs с position:absolute + transform:translateY(-50%)
+              — html2canvas игнорировал transform → text сидел не по центру pill'а. */}
+          {targetCalc.points.length > 0 && (() => {
+          // Strip большие units (трлн/млрд/млн/тыс/₽). % оставляем —
+          // axis labels показывают "60%" с процентом, pill должен совпадать.
           const stripUnits = (s: string) =>
-            s.replace(/\s*(%|трлн ₽|млрд ₽|млн ₽|тыс ₽|₽)\s*$/g, '').trim();
-          // Pad-with-figure-space если value positive чтобы DIGITS aligned с
-          // axis digits (когда axis имеет mix negative/positive ticks).
-          //   = FIGURE SPACE (Unicode) — ширина digit в tabular-nums.
-          const padSign = (s: string, value: number) =>
-            value >= 0 && !s.startsWith('-') && !s.startsWith('+') ? ` ${s}` : s;
+            s.replace(/\s*(трлн ₽|млрд ₽|млн ₽|тыс ₽|₽)\s*$/g, '').trim();
+          // padSign убран — раньше добавлял FIGURE SPACE к positive чтобы
+          // align digit columns между +/- pills, но это сдвигало pill text-LEFT
+          // правее axis tick text. Без него pill вровень с осью.
 
-          // Common style — fontSize match Y-axis numbers, distinguished by border.
-          // padding x=3 (вместо 6) → меньше bleed box'а левее axis-text-LEFT.
-          const baseStyle = {
-            position: 'absolute' as const,
-            transform: 'translateY(-50%)',
-            pointerEvents: 'none' as const,
-            background: 'var(--bg-primary)',
-            borderRadius: 4,
-            padding: '2px 3px',
-            fontSize: 'var(--chart-font-y, 16px)',
-            fontWeight: 700,
-            color: 'var(--text-primary)',
-            whiteSpace: 'nowrap' as const,
-            zIndex: 2,
-            lineHeight: 1.2,
-            fontVariantNumeric: 'tabular-nums',
-          };
-          // label-text-LEFT (= label-LEFT + padding 3) совпадает с axis-text-LEFT.
-          const rightSideX = { left: padding.left + chartWidth + tokens.axisGap - 3 };
-
-          type LabelEntry = { color: string; y: number; value: string; key: string };
+          type LabelEntry = { color: string; x: number; y: number; value: string; key: string };
           const labels: LabelEntry[] = [];
           const lastP = targetCalc.points[targetCalc.points.length - 1];
           labels.push({
             color: primaryColor,
+            x: padding.left + lastP.x,
             y: padding.top + lastP.y,
-            value: padSign(stripUnits(formatValue(lastP.value)), lastP.value),
+            value: stripUnits(formatValue(lastP.value)),
             key: 'primary',
           });
           if (showSecondary && targetCalc.secondaryPoints.length > 0) {
@@ -1291,8 +1276,9 @@ export default function SimpleChart({
             const fmt = formatSecondaryAxis || formatSecondaryValue || formatValue;
             labels.push({
               color: secondaryColor,
+              x: padding.left + lastS.x,
               y: padding.top + lastS.y,
-              value: padSign(stripUnits(fmt(lastS.value)), lastS.value),
+              value: stripUnits(fmt(lastS.value)),
               key: 'secondary',
             });
           }
@@ -1301,25 +1287,79 @@ export default function SimpleChart({
             const fmt = formatSecondaryAxis || formatThirdValue || formatValue;
             labels.push({
               color: thirdColor,
+              x: padding.left + lastT.x,
               y: padding.top + lastT.y,
-              value: padSign(stripUnits(fmt(lastT.value)), lastT.value),
+              value: stripUnits(fmt(lastT.value)),
               key: 'third',
             });
           }
-          return labels.map(l => (
-            <div
-              key={l.key}
-              style={{
-                ...baseStyle,
-                ...rightSideX,
-                top: l.y,
-                border: `1.5px solid ${l.color}`,
-              }}
-            >
-              {l.value}
-            </div>
-          ));
+          // SVG geometry. Каждая pill размещается у СВОЕЙ оси:
+          //   primary (главная серия) → ЛЕВАЯ ось → pill справа от axis text
+          //                              text textAnchor="end", прижата к axis
+          //   secondary/third          → ПРАВАЯ ось → pill слева от axis text
+          //                              textAnchor="start", прижата к axis
+          // Pill height = fontY + 2*padY. Pill width = textW + 2*padX.
+          const fontY = tokens.fontY;
+          const fontWeight = 700;
+          const padX = 5;
+          const padY = 2;
+          const pillH = fontY + padY * 2;
+          // Pill positioning — pixel-aligned с axis tick text (anchor совпадает).
+          // Dash виден через ВЕСЬ chart (от opposite edge до pill) — длина не
+          // зависит от позиции pill, видно всегда.
+          const leftAxisTextRight = padding.left - tokens.axisGap;
+          const rightAxisTextLeft = padding.left + chartWidth + tokens.axisGap;
+
+          return labels.map((l) => {
+            const textW = measureText(l.value, fontY, fontWeight);
+            const pillW = Math.ceil(textW) + padX * 2 + 1; // +1 sub-pixel safety
+
+            const isLeftSide = l.key === 'primary';
+            // Pill rect и text-X для каждой стороны — text aligned с axis tick text.
+            let pillLeft: number;
+            let textX: number;
+            let textAnchor: 'start' | 'end';
+            if (isLeftSide) {
+              // text-RIGHT совпадает с leftAxisTextRight (axis tick text-RIGHT)
+              const pillRight = leftAxisTextRight + padX;
+              pillLeft = pillRight - pillW;
+              textX = leftAxisTextRight;
+              textAnchor = 'end';
+            } else {
+              // text-LEFT совпадает с rightAxisTextLeft (axis tick text-LEFT)
+              pillLeft = rightAxisTextLeft - padX;
+              textX = rightAxisTextLeft;
+              textAnchor = 'start';
+            }
+
+            return (
+              <g key={l.key} pointerEvents="none">
+                <rect
+                  x={pillLeft}
+                  y={l.y - pillH / 2}
+                  width={pillW}
+                  height={pillH}
+                  rx={4}
+                  ry={4}
+                  fill={l.color}
+                />
+                <text
+                  x={textX}
+                  y={l.y}
+                  textAnchor={textAnchor}
+                  dominantBaseline="central"
+                  fill="#FFFFFF"
+                  fontSize={fontY}
+                  fontWeight={fontWeight}
+                  style={{ fontVariantNumeric: 'tabular-nums' }}
+                >
+                  {l.value}
+                </text>
+              </g>
+            );
+          });
         })()}
+        </svg>
 
         {/* Водяной знак Фрейма — ПРЯМО на графике, левый нижний угол.
             Лежит внутри chartWrapRef (который relative), т.е. позиционирован

@@ -1255,12 +1255,14 @@
   --chart-height-sm: 350px;
   --chart-nav-height: 52px;
 
-  /* Chart padding (SimpleChart SVG area) */
+  /* Chart padding (SimpleChart SVG area).
+     Right-dual бампнут 95→120 потому что pill на правой оси с 17px font
+     ("-149 960" = ~82px) обрезался на ~6px. */
   --chart-pad-top: 19px;
   --chart-pad-bottom: 50px;
   --chart-pad-left: 100px;
   --chart-pad-right-single: 95px;
-  --chart-pad-right-dual: 95px;
+  --chart-pad-right-dual: 120px;
 
   /* Legend-to-chart gap (внешний отступ между легендой и верхом чарт-контейнера) */
   --chart-legend-mb: 16px;
@@ -1275,12 +1277,12 @@
   /* X-labels bottom offset (20px = такой же gap как в SVG-native X-labels СЧА) */
   --chart-xlabel-bottom: 20px;
 
-  /* Axis font sizes */
-  /* Fluid размеры labels осей — match с --fs-2xs (как в OI/SimpleChart).
-     Браузер резолвит clamp() автоматически в SVG fontSize attribute и CSS
-     font-size. Используются Strength/Seasonality/ChartYAxis. */
-  --chart-font-y: var(--fs-2xs);
-  --chart-font-x: var(--fs-2xs);
+  /* Axis font sizes — discrete per breakpoint (mirror в chartTypography.ts).
+     :root = wide desktop (>=1440). Меньшие размеры через max-width media
+     queries в конце файла (Chart axis responsive scale section).
+     Используются Strength/Seasonality/ChartYAxis. */
+  --chart-font-y: 17px;
+  --chart-font-x: 17px;
   --chart-font-y-weight: 700;
 
   /* Tooltip */
@@ -1313,13 +1315,20 @@
   --dot-primary-r: 6;
   --dot-secondary-r: 5;
 
-  /* Axis colors — theme-aware, max contrast (var(--text-primary) — same color
-     как legend и body text). Раньше был --text-secondary (gray) — менее
-     контрастный. Сейчас black на light theme / cream на dark theme. */
-  --axis-color: var(--text-primary);
+  /* Axis colors — dark gray (не такой контрастный как text-primary) чтобы
+     числа осей и даты не "забирали внимание", оставаясь читаемыми.
+     Использует --text-secondary который уже определён как mid-gray в обеих
+     темах. Legend остаётся text-primary (полный контраст). */
+  --axis-color: var(--text-secondary);
   --grid-color: rgba(255, 255, 255, 0.08);
   --crosshair-color: #C8FF2E;
   --ann-bg: #3a3f4f;
+
+  /* Histogram bar outline — тонкая темная обводка для bars (Breadth, Flows,
+     Sezon Histogram). Match референс-фото от user'а. Theme-aware: darker
+     на light theme, чёрный на dark theme (text-primary в обоих случаях). */
+  --bar-outline: var(--text-primary);
+  --bar-outline-width: 1px;
 
   /* --- Strength (Сила рынка) ---
      Архитектурно другая: Y-ось рисуется СПРАВА от графика (не слева как в SimpleChart).
@@ -1390,8 +1399,7 @@
 
     --chart-nav-mt: 9px;
 
-    --chart-font-y: clamp(8px, 2.4vw, 11px);
-    --chart-font-x: clamp(8px, 2.4vw, 11px);
+    /* --chart-font-y/x теперь discrete через media-query stack в конце файла */
 
     --tooltip-width: 150px;
     --tooltip-font-label: 10px;
@@ -1448,11 +1456,10 @@
 @media (min-width: 768px) and (max-width: 1023px) {
   :root {
     --chart-height: 380px;
-    --chart-pad-left: 70px;
-    --chart-pad-right-single: 70px;
-    --chart-pad-right-dual: 70px;
-    --chart-font-y: 14px;
-    --chart-font-x: 12px;
+    --chart-pad-left: 95px;
+    --chart-pad-right-single: 90px;
+    --chart-pad-right-dual: 110px;
+    /* Font наследуется от default :root (clamp 10-13) — не оверрайдим */
 
     /* Strength — tablet */
     --strength-pad-left: 55px;
@@ -1876,5 +1883,46 @@ a.btn-accent:active {
 @media (min-width: 768px) {
   .mobile-stack {
     grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* ============================================
+   Chart axis responsive scale
+   ============================================
+   Discrete font sizes per design-system breakpoint. Каждый шаг -2px.
+   Mirror в `frontend/src/components/chart/chartTypography.ts` (single
+   source of truth для CSS И React-компонентов с useViewportWidth).
+
+   Cascade: max-width media queries в порядке убывания. Меньшее значение
+   max-width = более специфичный override = wins. Default :root = 17px
+   для viewport ≥1440. */
+@media (max-width: 1439px) {
+  :root {
+    --chart-font-y: 15px;
+    --chart-font-x: 15px;
+  }
+}
+@media (max-width: 1023px) {
+  :root {
+    --chart-font-y: 13px;
+    --chart-font-x: 13px;
+  }
+}
+@media (max-width: 767px) {
+  :root {
+    --chart-font-y: 11px;
+    --chart-font-x: 11px;
+  }
+}
+@media (max-width: 424px) {
+  :root {
+    --chart-font-y: 10px;
+    --chart-font-x: 10px;
+  }
+}
+@media (max-width: 374px) {
+  :root {
+    --chart-font-y: 9px;
+    --chart-font-x: 9px;
   }
 }
