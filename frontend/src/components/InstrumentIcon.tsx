@@ -19,7 +19,6 @@ export const INSTRUMENT_ICONS: Record<string, { icon: string; bg: string; color:
   MA: { icon: 'ИМ', bg: '#7C2D12', color: '#fff' },
   OG: { icon: 'ИНГ', bg: '#92400E', color: '#fff' },
   VI: { icon: 'σ', bg: '#EF4444', color: '#fff' },
-  FS: { icon: 'ФСК', bg: '#10B981', color: '#fff' },
   // Spot инструменты валюты — теперь через FUT_BASE_TO_LOGO (USD/EUR/CNY/GOLD).
   // RGBI/RGBITR — через FUT_BASE_TO_LOGO (BONDS-герб).
   // Здесь только то для чего нет лого в стикерпаке:
@@ -30,35 +29,57 @@ export const INSTRUMENT_ICONS: Record<string, { icon: string; bg: string; color:
 // База фьючерса → имя лого-файла без расширения.
 // Mapping проверен по реальной таблице instruments в БД (312 контрактов → 70 баз).
 // См. agent run от 2026-04-26.
+//
+// Корректировки коллеги (frame-logo-corrections-2026-04-29.json) применены:
+// 28 futures-баз получили правильные raw_NNN-логотипы из стикерпака.
+// raw_NNN.png — оригинальные логотипы компаний из дизайнерского стикерпака.
 export const FUT_BASE_TO_LOGO: Record<string, string> = {
   // Акции (квартальные)
-  AF: 'AFLT', AK: 'AFKS', AL: 'ALRS', AS: 'ASTR',
-  BN: 'BANE',  // Башнефть
-  BS: 'BSPB',  // Банк СПб
-  CH: 'CHMF', CM: 'CBOM', FE: 'FESH', FL: 'FLOT',
-  GK: 'GMKN', GZ: 'GAZP', HD: 'HEAD', HY: 'HYDR',
-  IR: 'IRAO', KM: 'KMAZ', LE: 'LEAS', LK: 'LKOH',
-  MC: 'MTLR',  // Мечел
-  ME: 'MOEX', MG: 'MAGN', MN: 'MGNT', MT: 'MTSS',
-  MV: 'MVID',  // М.Видео
-  NB: 'BELU', NM: 'NLMK', NV: 'NVTK', PH: 'PHOR',
+  AF: 'AFLT',
+  AK: 'raw_069', // АФК Система (corrected 2026-04-29)
+  AL: 'raw_063', // АЛРОСА (corrected)
+  AS: 'raw_012', // Астра (corrected)
+  BN: 'raw_009', // Башнефть (corrected)
+  BS: 'raw_028', // Банк СПб (corrected)
+  CH: 'raw_059', // Северсталь (corrected)
+  CM: 'CBOM', FE: 'FESH', FL: 'FLOT',
+  FS: 'raw_123', // ФСК Россети (corrected — раньше был text-badge)
+  GK: 'raw_062', // Норильский никель (corrected)
+  GZ: 'GAZP', HD: 'HEAD',
+  HY: 'raw_117', // РусГидро (corrected)
+  IR: 'IRAO',
+  IS: 'raw_087', // Артген (corrected)
+  KM: 'KMAZ',
+  LE: 'raw_094', // Европлан (corrected)
+  LK: 'LKOH',
+  MC: 'raw_071', // Мечел (corrected)
+  ME: 'MOEX', MG: 'MAGN',
+  MN: 'raw_042', // Магнит (corrected)
+  MT: 'MTSS',
+  MV: 'raw_093', // М.Видео (corrected)
+  NB: 'raw_082', // Белуга Групп (corrected)
+  NM: 'NLMK', NV: 'NVTK',
+  PH: 'raw_076', // ФосАгро (corrected)
   PI: 'PIKK', PS: 'POSI', PX: 'PLZL',
-  RA: 'RASP',  // Распадская
-  RD: 'RENI',
-  RL: 'RUAL', RN: 'ROSN',
-  RT: 'RTKM',  // Ростелеком
-  S0: 'SOFL',  // Софтлайн
+  RA: 'raw_072', // Распадская (corrected)
+  RD: 'raw_037', // Ренессанс Страхование (corrected)
+  RL: 'raw_064', // Русал (corrected)
+  RN: 'ROSN',
+  RT: 'raw_034', // Ростелеком (corrected)
+  RU: 'raw_066', // РуссНефть (corrected)
+  S0: 'raw_070', // Софтлайн (corrected)
   SC: 'SVCB',
-  SE: 'SPBE',  // СПБ Биржа (ранее ошибочно SELG)
+  SE: 'raw_035', // СПБ Биржа (corrected)
   SG: 'SNGSP',
   SH: 'SFIN', SN: 'SNGS', SO: 'SIBN', SP: 'SBERP',
   SR: 'SBER', SS: 'SMLT',
-  SZ: 'SGZH',  // Сегежа
-  TB: 'T',    TN: 'TRNFP',
+  SZ: 'raw_068', // Сегежа (corrected)
+  TB: 'T',
+  TN: 'raw_010', // Транснефть (corrected)
   TP: 'TATNP',TT: 'TATN', UN: 'UPRO',
-  VB: 'VTBR',  // ВТБ
+  VB: 'raw_027', // ВТБ (corrected)
   VK: 'VKCO',
-  WU: 'WUSH',  // Whoosh
+  WU: 'raw_067', // Whoosh (corrected)
   X5: 'X5',   YD: 'YDEX',
   // Перпетуалы
   SBERF: 'SBER', GAZPF: 'GAZP',
@@ -69,7 +90,7 @@ export const FUT_BASE_TO_LOGO: Record<string, string> = {
   PT: 'PLATINUM',
   PD: 'PALLADIUM',
   NG: 'GAS', NR: 'GAS', FF: 'GAS',
-  W4: 'WHEAT',
+  W4: 'raw_174', // Пшеница (corrected — раньше был WHEAT generic icon)
   // Валюты
   Si: 'USD',   USDRUBF: 'USD', UC: 'USD',
   Eu: 'EUR',   EURRUBF: 'EUR', ED: 'EUR', EG: 'EUR',
@@ -114,6 +135,65 @@ export const FUT_BASE_TO_LOGO: Record<string, string> = {
 };
 
 /**
+ * STOCK_LOGO_OVERRIDE — корректировки для конкретных тикеров акций.
+ * Применяется ДО FUT_BASE_TO_LOGO (приоритет full ticker над futures base).
+ *
+ * Источник: frame-logo-corrections-2026-04-29.json (правки коллеги).
+ *
+ * Содержит:
+ *  - 41 stock с raw_NNN-логотипами из дизайнерского стикерпака
+ *  - 1 reuse существующего логотипа (AFKS → HYDR)
+ *  - 2 тикера выпали из коррекций (SELG, RGSS) — без override, fallback на дефолт
+ *
+ * Логика fallback:
+ *   sectype в STOCK_LOGO_OVERRIDE → используем override
+ *   Иначе → existing FUT_BASE_TO_LOGO / direct sectype
+ */
+export const STOCK_LOGO_OVERRIDE: Record<string, string> = {
+  AFKS: 'HYDR',     // Система — reuse HYDR logo per JSON
+  ALRS: 'raw_063',  // Алроса
+  ASTR: 'raw_012',  // Группа Астра
+  BANE: 'raw_009',  // Башнефть
+  BSPB: 'raw_028',  // БСП
+  CHMF: 'raw_059',  // Северсталь
+  BELU: 'raw_082',  // НоваБев
+  ELMT: 'raw_020',  // Элемент
+  FEES: 'raw_123',  // Россети
+  GEMC: 'raw_090',  // ЕМС
+  JNOS: 'raw_149',  // Славнефть-ЯНОС
+  KAZT: 'raw_078',  // КуйбышевАзот
+  KZOS: 'raw_080',  // Казаньоргсинт
+  LEAS: 'raw_094',  // Европлан
+  LSNG: 'raw_123',  // Россети Ленэнерго
+  MGNT: 'raw_042',  // Магнит
+  MFGS: 'raw_149',  // Славнефть-МНГЗ
+  MRKK: 'raw_123',  // Россети СК
+  MRKP: 'raw_123',  // Россети ЦП
+  MRKU: 'raw_123',  // Россети Урал
+  MRKS: 'raw_123',  // Россети Сибирь
+  MSNG: 'raw_005',  // МосЭнерго
+  MSRS: 'raw_123',  // Россети МР
+  NKNC: 'raw_079',  // НКНХ
+  OGKB: 'raw_005',  // ОГК-2
+  OZPH: 'raw_086',  // ОзонФарма
+  PHOR: 'raw_076',  // ФосАгро
+  PLZL: 'raw_054',  // Полюс
+  RAGR: 'raw_073',  // Русагро
+  RENI: 'raw_037',  // Ренессанс
+  RASP: 'raw_072',  // Распадская
+  RTKM: 'raw_034',  // Ростелеком
+  RUAL: 'raw_064',  // Русал
+  TNSE: 'raw_130',  // ТНС-Энерго
+  UGLD: 'raw_058',  // ЮГК
+  USBN: 'raw_143',  // Уралсиб
+  UWGN: 'raw_103',  // ОВК
+  VTBR: 'raw_027',  // ВТБ
+  VSMO: 'raw_108',  // ВСМПО-АВИСМА
+  VJGZ: 'raw_004',  // Варьеганнефтегаз
+  TRNFP: 'raw_010', // Транснефть п
+};
+
+/**
  * Извлекает «базу» из sectype:
  * - Perpetual: SBERF, USDRUBF, IMOEXF — оставляем целиком (мапятся как есть)
  * - Квартальный (3 буквы): SRH → SR, GZM → GZ, BRZ → BR
@@ -136,6 +216,12 @@ interface Props {
 }
 
 export default function InstrumentIcon({ sectype, size = 28, rounded = 'full', eager = false }: Props) {
+  // 0. Stock override — приоритет full ticker над FUT base mapping.
+  //    Источник: frame-logo-corrections-2026-04-29.json (правки коллеги).
+  if (sectype in STOCK_LOGO_OVERRIDE) {
+    return <TickerLogo ticker={STOCK_LOGO_OVERRIDE[sectype]} size={size} rounded={rounded} eager={eager} />;
+  }
+
   // 1. Маппинг через base → лого-файл
   const base = extractBase(sectype);
   const logoTicker = FUT_BASE_TO_LOGO[base] || FUT_BASE_TO_LOGO[sectype];
