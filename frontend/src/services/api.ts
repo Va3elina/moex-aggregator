@@ -932,3 +932,100 @@ export async function getABAssignment(name: string): Promise<AssignResponse> {
   if (!response.ok) throw new Error('Failed to fetch assignment');
   return response.json();
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Admin: Users panel
+// ═══════════════════════════════════════════════════════════════════
+
+export interface AdminUser {
+  id: number;
+  email: string;
+  display_name: string | null;
+  username: string | null;
+  role: string;
+  is_active: boolean;
+  is_verified: boolean;
+  created_at: string | null;
+  last_login_at: string | null;
+  oauth_provider: string | null;
+  avatar_url: string | null;
+  plan: string | null;
+  sessions_count: number;
+  events_count: number;
+  last_active_ts: string | null;
+}
+
+export async function listAdminUsers(opts: {
+  days?: number;
+  sort?: string;
+  search?: string;
+}): Promise<{ period_days: number; users: AdminUser[] }> {
+  const params = new URLSearchParams();
+  if (opts.days !== undefined) params.set('days', String(opts.days));
+  if (opts.sort) params.set('sort', opts.sort);
+  if (opts.search) params.set('search', opts.search);
+  const response = await apiFetch(`${API_BASE}/api/analytics/users?${params}`);
+  if (!response.ok) {
+    if (response.status === 403) throw new Error('Доступ только для администратора');
+    throw new Error('Failed to fetch users');
+  }
+  return response.json();
+}
+
+export interface UserSubscription {
+  id: number;
+  tier: string;
+  period: string;
+  plan_id: string;
+  amount: number;
+  currency: string;
+  status: string;
+  started_at: string | null;
+  expires_at: string | null;
+  cancelled_at: string | null;
+  created_at: string | null;
+}
+
+export interface UserTimelineEvent {
+  event_type: string;
+  event_path: string | null;
+  payload: Record<string, unknown> | null;
+  server_ts: string;
+  country: string | null;
+  device: string | null;
+  session_id: string;
+}
+
+export interface UserDetailResponse {
+  user: AdminUser & {
+    last_login_ip?: string | null;
+    oauth_id?: string | null;
+    updated_at?: string | null;
+  };
+  subscriptions: UserSubscription[];
+  summary: {
+    period_days: number;
+    events: number;
+    sessions: number;
+    first_active_ts: string | null;
+    last_active_ts: string | null;
+    avg_session_sec: number;
+    total_time_sec: number;
+  };
+  timeline: UserTimelineEvent[];
+  top_pages: { path: string; views: number }[];
+  top_instruments: { secid: string; selects: number }[];
+  top_exports: { indicator: string; count: number }[];
+  devices: { device: string; sessions: number }[];
+  countries: { country: string; sessions: number }[];
+}
+
+export async function getAdminUserDetail(userId: number, days: number = 30): Promise<UserDetailResponse> {
+  const response = await apiFetch(`${API_BASE}/api/analytics/users/${userId}?days=${days}`);
+  if (!response.ok) {
+    if (response.status === 404) throw new Error('Пользователь не найден');
+    if (response.status === 403) throw new Error('Доступ только для администратора');
+    throw new Error('Failed to fetch user detail');
+  }
+  return response.json();
+}

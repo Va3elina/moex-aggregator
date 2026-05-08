@@ -731,3 +731,269 @@ async def assign_variant(
         pass  # fire-and-forget — не блокируем отдачу
 
     return {"experiment": name, "variant": variant, "label": label, "active": True}
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# USERS — admin user inspection panel
+# ════════════════════════════════════════════════════════════════════════════
+#
+# GET /users        — list всех зарегистрированных + aggregated stats
+# GET /users/{id}   — detail одного user'а: profile + activity timeline + tops
+#
+# Privacy: данные включают email и активность — только role=admin.
+
+@router.get("/users")
+async def list_users(
+    days: int = Query(30, ge=1, le=365, description="За сколько дней считать stats"),
+    sort: str = Query("last_active", description="last_active / events / sessions / created"),
+    search: str = Query("", description="Поиск по email или display_name"),
+    user=Depends(require_admin),
+):
+    """List всех users с aggregated stats за последние N дней.
+
+    Возвращает: id, email, display_name, role, created_at, last_login_at,
+    is_active, oauth_provider, plan (active subscription tier),
+    sessions_count, events_count, last_active_ts (из analytics_events),
+    countries (последние 3 уникальных).
+    """
+    engine = get_engine()
+    cutoff = datetime.utcnow() - timedelta(days=days)
+    search_clean = (search or "").strip()
+
+    # Order by mapping
+    order_clauses = {
+        "last_active": "last_active_ts DESC NULLS LAST",
+        "events": "events_count DESC",
+        "sessions": "sessions_count DESC",
+        "created": "u.created_at DESC",
+    }
+    order_by = order_clauses.get(sort, order_clauses["last_active"])
+
+    where_search = ""
+    params: dict[str, Any] = {"cutoff": cutoff}
+    if search_clean:
+        where_search = " AND (u.email ILIKE :q OR u.display_name ILIKE :q OR u.username ILIKE :q)"
+        params["q"] = f"%{search_clean}%"
+
+    with engine.connect() as conn:
+        rows = conn.execute(text(f"""
+            SELECT
+                u.id, u.email, u.display_name, u.username, u.role,
+                u.is_active, u.is_verified, u.created_at, u.last_login_at,
+                u.oauth_provider, u.avatar_url,
+                (SELECT s.tier FROM subscriptions s
+                  WHERE s.user_id = u.id AND s.status = 'active'
+                  ORDER BY s.created_at DESC LIMIT 1) AS plan,
+                (SELECT COUNT(DISTINCT ae.session_id) FROM analytics_events ae
+                  WHERE ae.user_id = u.id AND ae.server_ts >= :cutoff) AS sessions_count,
+                (SELECT COUNT(*) FROM analytics_events ae
+                  WHERE ae.user_id = u.id AND ae.server_ts >= :cutoff) AS events_count,
+                (SELECT MAX(ae.server_ts) FROM analytics_events ae
+                  WHERE ae.user_id = u.id) AS last_active_ts
+            FROM users u
+            WHERE 1=1 {where_search}
+            ORDER BY {order_by}
+            LIMIT 200
+        """), params).fetchall()
+
+    return {
+        "period_days": days,
+        "users": [
+            {
+                "id": int(r[0]),
+                "email": r[1],
+                "display_name": r[2],
+                "username": r[3],
+                "role": r[4],
+                "is_active": bool(r[5]),
+                "is_verified": bool(r[6]),
+                "created_at": r[7].isoformat() if r[7] else None,
+                "last_login_at": r[8].isoformat() if r[8] else None,
+                "oauth_provider": r[9],
+                "avatar_url": r[10],
+                "plan": r[11],
+                "sessions_count": int(r[12]) if r[12] else 0,
+                "events_count": int(r[13]) if r[13] else 0,
+                "last_active_ts": r[14].isoformat() if r[14] else None,
+            }
+            for r in rows
+        ],
+    }
+
+
+@router.get("/users/{user_id}")
+async def user_detail(
+    user_id: int,
+    days: int = Query(30, ge=1, le=180),
+    user=Depends(require_admin),
+):
+    """Детальный профиль одного user'а:
+       - basic info + subscriptions
+       - summary metrics (sessions/events/avg_session/total_time)
+       - activity timeline (последние 100 events)
+       - top pages / instruments / exports
+       - device + country distribution
+    """
+    engine = get_engine()
+    cutoff = datetime.utcnow() - timedelta(days=days)
+
+    with engine.connect() as conn:
+        # Basic profile
+        prof = conn.execute(text("""
+            SELECT id, email, display_name, username, role, is_active, is_verified,
+                   created_at, updated_at, last_login_at, last_login_ip,
+                   oauth_provider, oauth_id, avatar_url
+            FROM users WHERE id = :id
+        """), {"id": user_id}).fetchone()
+        if not prof:
+            raise HTTPException(404, "Пользователь не найден")
+
+        # All subscriptions (история)
+        subs = conn.execute(text("""
+            SELECT id, tier, period, plan_id, amount, currency, status,
+                   started_at, expires_at, cancelled_at, created_at
+            FROM subscriptions
+            WHERE user_id = :id
+            ORDER BY created_at DESC
+        """), {"id": user_id}).fetchall()
+
+        # Summary metrics
+        summary = conn.execute(text("""
+            SELECT
+                COUNT(*) AS events,
+                COUNT(DISTINCT session_id) AS sessions,
+                MIN(server_ts) AS first_active,
+                MAX(server_ts) AS last_active
+            FROM analytics_events
+            WHERE user_id = :id AND server_ts >= :cutoff
+        """), {"id": user_id, "cutoff": cutoff}).fetchone()
+
+        avg_session = conn.execute(text("""
+            WITH sess AS (
+                SELECT session_id,
+                       EXTRACT(EPOCH FROM (MAX(client_ts) - MIN(client_ts)))::int AS dur
+                FROM analytics_events
+                WHERE user_id = :id AND server_ts >= :cutoff
+                GROUP BY session_id
+                HAVING EXTRACT(EPOCH FROM (MAX(client_ts) - MIN(client_ts))) > 0
+            )
+            SELECT COALESCE(AVG(dur), 0)::int, COALESCE(SUM(dur), 0)::int FROM sess
+        """), {"id": user_id, "cutoff": cutoff}).fetchone()
+
+        # Activity timeline (последние 100 events)
+        timeline = conn.execute(text("""
+            SELECT event_type, event_path, payload, server_ts, ip_country, device, session_id
+            FROM analytics_events
+            WHERE user_id = :id AND server_ts >= :cutoff
+            ORDER BY server_ts DESC
+            LIMIT 100
+        """), {"id": user_id, "cutoff": cutoff}).fetchall()
+
+        # Top pages
+        top_pages = conn.execute(text("""
+            SELECT event_path, COUNT(*) AS views
+            FROM analytics_events
+            WHERE user_id = :id AND server_ts >= :cutoff
+              AND event_type = 'pageview' AND event_path IS NOT NULL
+            GROUP BY event_path
+            ORDER BY views DESC
+            LIMIT 10
+        """), {"id": user_id, "cutoff": cutoff}).fetchall()
+
+        # Top instruments selected
+        top_instruments = conn.execute(text("""
+            SELECT payload->>'secid' AS secid, COUNT(*) AS selects
+            FROM analytics_events
+            WHERE user_id = :id AND server_ts >= :cutoff
+              AND event_type = 'instrument_select'
+              AND payload->>'secid' IS NOT NULL
+            GROUP BY payload->>'secid'
+            ORDER BY selects DESC
+            LIMIT 10
+        """), {"id": user_id, "cutoff": cutoff}).fetchall()
+
+        # Top exports
+        top_exports = conn.execute(text("""
+            SELECT payload->>'indicator' AS indicator, COUNT(*) AS count
+            FROM analytics_events
+            WHERE user_id = :id AND server_ts >= :cutoff
+              AND event_type = 'chart_export'
+              AND payload->>'indicator' IS NOT NULL
+            GROUP BY payload->>'indicator'
+            ORDER BY count DESC
+            LIMIT 10
+        """), {"id": user_id, "cutoff": cutoff}).fetchall()
+
+        # Devices
+        devices = conn.execute(text("""
+            SELECT device, COUNT(DISTINCT session_id) AS sessions
+            FROM analytics_events
+            WHERE user_id = :id AND server_ts >= :cutoff AND device IS NOT NULL
+            GROUP BY device
+            ORDER BY sessions DESC
+        """), {"id": user_id, "cutoff": cutoff}).fetchall()
+
+        # Countries
+        countries = conn.execute(text("""
+            SELECT ip_country, COUNT(DISTINCT session_id) AS sessions
+            FROM analytics_events
+            WHERE user_id = :id AND server_ts >= :cutoff AND ip_country IS NOT NULL
+            GROUP BY ip_country
+            ORDER BY sessions DESC
+        """), {"id": user_id, "cutoff": cutoff}).fetchall()
+
+    return {
+        "user": {
+            "id": int(prof[0]),
+            "email": prof[1],
+            "display_name": prof[2],
+            "username": prof[3],
+            "role": prof[4],
+            "is_active": bool(prof[5]),
+            "is_verified": bool(prof[6]),
+            "created_at": prof[7].isoformat() if prof[7] else None,
+            "updated_at": prof[8].isoformat() if prof[8] else None,
+            "last_login_at": prof[9].isoformat() if prof[9] else None,
+            "last_login_ip": prof[10],  # admin видит — это для security audit
+            "oauth_provider": prof[11],
+            "oauth_id": prof[12],
+            "avatar_url": prof[13],
+        },
+        "subscriptions": [
+            {
+                "id": int(s[0]),
+                "tier": s[1], "period": s[2], "plan_id": s[3],
+                "amount": float(s[4]) if s[4] is not None else 0,
+                "currency": s[5], "status": s[6],
+                "started_at": s[7].isoformat() if s[7] else None,
+                "expires_at": s[8].isoformat() if s[8] else None,
+                "cancelled_at": s[9].isoformat() if s[9] else None,
+                "created_at": s[10].isoformat() if s[10] else None,
+            } for s in subs
+        ],
+        "summary": {
+            "period_days": days,
+            "events": int(summary[0]) if summary else 0,
+            "sessions": int(summary[1]) if summary else 0,
+            "first_active_ts": summary[2].isoformat() if summary and summary[2] else None,
+            "last_active_ts": summary[3].isoformat() if summary and summary[3] else None,
+            "avg_session_sec": int(avg_session[0]) if avg_session and avg_session[0] else 0,
+            "total_time_sec": int(avg_session[1]) if avg_session and avg_session[1] else 0,
+        },
+        "timeline": [
+            {
+                "event_type": t[0],
+                "event_path": t[1],
+                "payload": t[2],
+                "server_ts": t[3].isoformat(),
+                "country": t[4],
+                "device": t[5],
+                "session_id": t[6],
+            } for t in timeline
+        ],
+        "top_pages": [{"path": r[0], "views": int(r[1])} for r in top_pages],
+        "top_instruments": [{"secid": r[0], "selects": int(r[1])} for r in top_instruments],
+        "top_exports": [{"indicator": r[0], "count": int(r[1])} for r in top_exports],
+        "devices": [{"device": r[0], "sessions": int(r[1])} for r in devices],
+        "countries": [{"country": r[0], "sessions": int(r[1])} for r in countries],
+    }

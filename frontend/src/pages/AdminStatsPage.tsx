@@ -17,8 +17,8 @@
  *  6. A/B experiments — list + create form
  */
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { BarChart3, TrendingUp, TrendingDown, Activity, Users, Clock, MousePointerClick, Zap, Trash2, Plus } from 'lucide-react';
+import { useNavigate, Link } from 'react-router-dom';
+import { BarChart3, TrendingUp, TrendingDown, Activity, Users, Clock, MousePointerClick, Zap, Trash2, Plus, Search, ChevronRight } from 'lucide-react';
 import Card from '../components/Card';
 import Skeleton from '../components/Skeleton';
 import Dropdown from '../components/Dropdown';
@@ -31,6 +31,7 @@ import {
   listABExperiments,
   createABExperiment,
   deleteABExperiment,
+  listAdminUsers,
 } from '../services/api';
 import type {
   AnalyticsStats,
@@ -38,6 +39,7 @@ import type {
   CohortResponse,
   RealtimeResponse,
   ABExperiment,
+  AdminUser,
 } from '../services/api';
 
 export default function AdminStatsPage() {
@@ -305,6 +307,11 @@ export default function AdminStatsPage() {
           emptyText="Нет переключений режима"
         />
       </div>
+
+      {/* Users — кликабельная таблица для drill-down на /admin/users/:id */}
+      <Section title="Пользователи">
+        <UsersBlock days={days} />
+      </Section>
 
       {/* Funnel */}
       <Section title="Воронка конверсии">
@@ -1066,4 +1073,243 @@ function ABInput({ label, value, onChange, placeholder }: {
       />
     </div>
   );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// USERS BLOCK — drill-down таблица пользователей
+// ════════════════════════════════════════════════════════════════════════════
+
+function UsersBlock({ days }: { days: number }) {
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [sort, setSort] = useState('last_active');
+
+  // Debounced search — fetch'аем не на каждое нажатие
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      setLoading(true);
+      listAdminUsers({ days, sort, search: search.trim() })
+        .then(r => setUsers(r.users))
+        .catch(() => setUsers([]))
+        .finally(() => setLoading(false));
+    }, 250);
+    return () => clearTimeout(t);
+  }, [days, sort, search]);
+
+  return (
+    <Card padding="md" className="md:p-5">
+      <div className="flex flex-wrap items-center mb-4" style={{ gap: 'var(--sp-2)' }}>
+        {/* Search */}
+        <div
+          className="flex items-center flex-1 min-w-[200px]"
+          style={{
+            backgroundColor: 'var(--bg-secondary)',
+            border: '1.5px solid var(--text-primary)',
+            borderRadius: 9999,
+            padding: 'var(--sp-2) var(--sp-3)',
+            gap: 'var(--sp-2)',
+          }}
+        >
+          <Search size={14} style={{ color: 'var(--text-muted)' }} />
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Поиск по email / имени"
+            className="flex-1 bg-transparent outline-none"
+            style={{
+              color: 'var(--text-primary)',
+              fontSize: 'var(--fs-sm)',
+              minWidth: 0,
+            }}
+          />
+        </div>
+        <Dropdown<string>
+          options={[
+            { key: 'last_active', label: 'По активности' },
+            { key: 'events', label: 'По событиям' },
+            { key: 'sessions', label: 'По сессиям' },
+            { key: 'created', label: 'По регистрации' },
+          ]}
+          value={sort}
+          onChange={setSort}
+        />
+        <span className="text-xs ml-auto" style={{ color: 'var(--text-muted)' }}>
+          {users.length} {users.length === 1 ? 'пользователь' : users.length < 5 ? 'пользователя' : 'пользователей'}
+        </span>
+      </div>
+
+      {/* Table */}
+      <div className="overflow-x-auto -mx-2">
+        <table className="w-full" style={{ minWidth: 720 }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
+              <UCol>Пользователь</UCol>
+              <UCol align="left" hide="md">Роль</UCol>
+              <UCol align="right">Сессий</UCol>
+              <UCol align="right" hide="md">Events</UCol>
+              <UCol align="right" hide="lg">Послед. активность</UCol>
+              <UCol align="left" hide="lg">Создан</UCol>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading && users.length === 0 && (
+              <tr>
+                <td colSpan={7} className="py-6">
+                  <Skeleton height={24} rounded="md" />
+                </td>
+              </tr>
+            )}
+            {!loading && users.length === 0 && (
+              <tr>
+                <td colSpan={7} className="text-center py-6 text-sm" style={{ color: 'var(--text-muted)' }}>
+                  Никого не нашли
+                </td>
+              </tr>
+            )}
+            {users.map(u => (
+              <tr
+                key={u.id}
+                className="hover:bg-white/[0.03] transition-colors cursor-pointer"
+                style={{ borderBottom: '1px solid color-mix(in srgb, var(--border-color) 60%, transparent)' }}
+                onClick={() => { window.location.href = `/admin/users/${u.id}`; }}
+              >
+                {/* User cell — avatar + email */}
+                <td className="px-2 py-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div
+                      className="flex items-center justify-center flex-shrink-0 rounded-full font-bold text-xs"
+                      style={{
+                        width: 28, height: 28,
+                        backgroundColor: 'var(--accent)',
+                        color: '#fff',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      {u.avatar_url ? (
+                        <img src={u.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      ) : (
+                        (u.email[0] || '?').toUpperCase()
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div
+                        className="text-sm font-semibold truncate"
+                        style={{ color: 'var(--text-primary)' }}
+                        title={u.display_name || u.email}
+                      >
+                        {u.display_name || u.username || u.email.split('@')[0]}
+                      </div>
+                      <div
+                        className="text-xs truncate"
+                        style={{ color: 'var(--text-muted)' }}
+                        title={u.email}
+                      >
+                        {u.email}
+                        {u.plan && (
+                          <span className="ml-2" style={{ color: 'var(--accent)' }}>
+                            · {u.plan}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </td>
+
+                <td className="px-2 py-2 hidden md:table-cell">
+                  <span
+                    className="text-xs px-2 py-0.5 rounded-full font-semibold"
+                    style={{
+                      backgroundColor:
+                        u.role === 'admin' ? 'color-mix(in srgb, var(--danger) 18%, transparent)' :
+                        u.role === 'pro' || u.role === 'premium' ? 'color-mix(in srgb, var(--warning) 18%, transparent)' :
+                        'color-mix(in srgb, var(--accent) 18%, transparent)',
+                      color:
+                        u.role === 'admin' ? 'var(--danger)' :
+                        u.role === 'pro' || u.role === 'premium' ? 'var(--warning)' :
+                        'var(--accent)',
+                    }}
+                  >
+                    {u.role}
+                  </span>
+                </td>
+                <td
+                  className="text-right px-2 py-2 text-sm font-semibold"
+                  style={{
+                    color: 'var(--text-primary)',
+                    fontFamily: "'IBM Plex Mono', monospace",
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {u.sessions_count}
+                </td>
+                <td
+                  className="text-right px-2 py-2 text-sm hidden md:table-cell"
+                  style={{
+                    color: 'var(--text-secondary)',
+                    fontFamily: "'IBM Plex Mono', monospace",
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {u.events_count}
+                </td>
+                <td
+                  className="text-right px-2 py-2 text-xs hidden lg:table-cell"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  {u.last_active_ts ? fmtRelative(u.last_active_ts) : '—'}
+                </td>
+                <td
+                  className="px-2 py-2 text-xs hidden lg:table-cell"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  {u.created_at ? new Date(u.created_at).toLocaleDateString('ru-RU') : '—'}
+                </td>
+                <td className="px-2 py-2 text-right">
+                  <Link
+                    to={`/admin/users/${u.id}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="inline-flex items-center transition-opacity hover:opacity-70"
+                    style={{ color: 'var(--text-muted)' }}
+                  >
+                    <ChevronRight size={16} />
+                  </Link>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
+function UCol({ children, align = 'left', hide }: {
+  children: React.ReactNode; align?: 'left' | 'right'; hide?: 'md' | 'lg';
+}) {
+  const cls = `${align === 'right' ? 'text-right' : 'text-left'} px-2 py-2 text-xs uppercase ${
+    hide === 'md' ? 'hidden md:table-cell' : hide === 'lg' ? 'hidden lg:table-cell' : ''
+  }`;
+  return (
+    <th className={cls}
+        style={{ color: 'var(--text-muted)', letterSpacing: '0.08em', fontWeight: 600 }}>
+      {children}
+    </th>
+  );
+}
+
+function fmtRelative(iso: string): string {
+  const now = Date.now();
+  const t = new Date(iso).getTime();
+  const sec = Math.max(0, Math.floor((now - t) / 1000));
+  if (sec < 60) return `${sec}с назад`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min} мин`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `${h}ч`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `${d}д`;
+  return new Date(iso).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
 }

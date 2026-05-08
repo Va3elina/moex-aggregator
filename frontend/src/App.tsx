@@ -33,6 +33,7 @@ import SeasonalityMethodologyPage from './pages/methodology/SeasonalityMethodolo
 import StylePreviewPage from './pages/StylePreviewPage';
 import PrivacyPage from './pages/PrivacyPage';
 import AdminStatsPage from './pages/AdminStatsPage';
+import AdminUserDetailPage from './pages/AdminUserDetailPage';
 
 /** "/" conditional: auth → Overview, guest → Landing.
     Loading state → Overview как fallback (быстрее, avoids flash). */
@@ -114,6 +115,7 @@ export default function App() {
             <Route path="/privacy" element={<PrivacyPage />} />
             {/* Admin */}
             <Route path="/admin/stats" element={<AdminStatsPage />} />
+            <Route path="/admin/users/:userId" element={<AdminUserDetailPage />} />
           </Route>
         </Routes>
       </RouterErrorBoundary>
