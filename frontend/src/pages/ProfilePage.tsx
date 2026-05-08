@@ -193,14 +193,25 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {/* ============ Секция 2: Подписка (real data из /api/billing/status) ============ */}
+      {/* ============ Секция 2: Подписка ============
+          3 ветки: admin → spec, active sub → details, free → CTA */}
       <div className="rounded-2xl border p-6" style={cardStyle}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
             <Crown size={20} style={{ color: 'var(--accent)' }} />
-            Подписка
+            {user.role === 'admin' ? 'Доступ' : 'Подписка'}
           </h2>
-          {billing && (
+          {user.role === 'admin' ? (
+            <span
+              className="px-3 py-1 text-xs font-bold rounded-full"
+              style={{
+                backgroundColor: 'color-mix(in srgb, var(--danger) 18%, transparent)',
+                color: 'var(--danger)',
+              }}
+            >
+              admin
+            </span>
+          ) : billing && (
             <span
               className="px-3 py-1 text-xs font-medium rounded-full"
               style={{
@@ -215,7 +226,29 @@ export default function ProfilePage() {
           )}
         </div>
 
-        {billing?.is_active ? (
+        {user.role === 'admin' ? (
+          // === Admin — полный доступ, без CTA ===
+          <>
+            <p className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>
+              Полный административный доступ ко всем функциям платформы — без ограничений по тарифу.
+            </p>
+            <div className="space-y-2 mb-2">
+              {[
+                'Все индикаторы и инструменты',
+                'Полная история данных по всем тикерам',
+                'Все таймфреймы (5мин / 1ч / 1д / 1мес)',
+                'Аналитика сайта (/admin/stats)',
+                'Управление подписками и invite-ссылками',
+              ].map((text, i) => (
+                <div key={i} className="flex items-center gap-2.5 text-sm">
+                  <Check size={16} style={{ color: 'var(--success)' }} className="shrink-0" />
+                  <span style={{ color: 'var(--text-secondary)' }}>{text}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        ) : billing?.is_active ? (
+          // === Active subscription — детали + ссылка на тарифы ===
           <>
             <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>
               Активна до{' '}
@@ -243,6 +276,7 @@ export default function ProfilePage() {
             </Link>
           </>
         ) : (
+          // === Free user — features list + CTA ===
           <>
             <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
               Все инструменты доступны с базовыми ограничениями
