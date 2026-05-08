@@ -756,3 +756,47 @@ export async function getSeasonalityYearly(
   if (!response.ok) throw new Error('Failed to fetch yearly seasonality');
   return response.json();
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Analytics — admin-only stats endpoint
+// ═══════════════════════════════════════════════════════════════════
+
+export interface AnalyticsStatsSummary {
+  dau: number;
+  sessions: number;
+  events: number;
+  avg_session_sec: number;
+  delta_dau: number | null;
+  delta_sessions_pct: number | null;
+  delta_events_pct: number | null;
+  delta_avg_session_sec: number | null;
+}
+
+export interface AnalyticsStats {
+  period_days: number;
+  segment: string;
+  device: string;
+  summary: AnalyticsStatsSummary;
+  trends: { date: string; dau: number; sessions: number }[];
+  top_pages: { path: string; views: number }[];
+  top_instruments: { secid: string; selects: number }[];
+  top_exports: { indicator: string; count: number }[];
+  mode_distribution: { mode: string; count: number }[];
+}
+
+export async function getAnalyticsStats(opts: {
+  days?: number;
+  segment?: string;
+  device?: string;
+}): Promise<AnalyticsStats> {
+  const params = new URLSearchParams();
+  if (opts.days !== undefined) params.set('days', String(opts.days));
+  if (opts.segment) params.set('segment', opts.segment);
+  if (opts.device) params.set('device', opts.device);
+  const response = await apiFetch(`${API_BASE}/api/analytics/stats?${params}`);
+  if (!response.ok) {
+    if (response.status === 403) throw new Error('Доступ только для администратора');
+    throw new Error('Failed to fetch analytics stats');
+  }
+  return response.json();
+}

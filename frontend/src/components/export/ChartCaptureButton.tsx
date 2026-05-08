@@ -15,6 +15,7 @@
 import { useState, lazy, Suspense } from 'react';
 import { Camera } from 'lucide-react';
 import type { ExportMetadata } from './types';
+import { useAnalytics } from '../../contexts/AnalyticsContext';
 
 // Lazy-import — modal + html2canvas chunk выделяется отдельно
 const ExportModal = lazy(() => import('./ExportModal'));
@@ -45,6 +46,7 @@ export default function ChartCaptureButton({
     const [open, setOpen] = useState(false);
     const [target, setTarget] = useState<HTMLElement | null>(null);
     const [styles, setStyles] = useState<Record<string, string> | undefined>(undefined);
+    const { track } = useAnalytics();
 
     const handleClick = () => {
         const el = getTargetElement();
@@ -56,6 +58,17 @@ export default function ChartCaptureButton({
         // Evaluate styles at click-time (depends on current state e.g. viewMode)
         setStyles(getExportStyles ? getExportStyles() : undefined);
         setOpen(true);
+
+        // Analytics: indicator извлекаем из filename (e.g. "frame-oi-SBER-1y" → "oi")
+        const indicator = filename.startsWith('frame-')
+            ? filename.split('-')[1] || 'unknown'
+            : 'unknown';
+        track('chart_export', {
+            indicator,
+            filename,
+            asset: metadata?.asset,
+            ticker: metadata?.ticker,
+        });
     };
 
     const handleClose = () => {

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Search, X, Star } from 'lucide-react';
 import InstrumentIcon from './InstrumentIcon';
+import { useAnalytics } from '../contexts/AnalyticsContext';
 
 interface Instrument {
   sec_id: string;
@@ -36,6 +37,16 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
   const [instruments, setInstruments] = useState<Instrument[]>([]);
   const [loading, setLoading] = useState(true);
   const [categoryFilter, setCategoryFilter] = useState('all');
+  const { track } = useAnalytics();
+
+  // Track wrapper — отдельная функция чтобы не дублировать в renderItem.
+  const handleSelect = (sectype: string, name: string) => {
+    track('instrument_select', {
+      secid: sectype,
+      from: typeof window !== 'undefined' ? window.location.pathname : null,
+    });
+    onSelect(sectype, name);
+  };
 
   // Избранные из localStorage
   const [favorites, setFavorites] = useState<string[]>(() => {
@@ -118,7 +129,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
     return (
       <div
         key={inst.sectype}
-        onClick={() => onSelect(inst.sectype, inst.name)}
+        onClick={() => handleSelect(inst.sectype, inst.name)}
         className="instrument-item flex items-center gap-3.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors"
         style={{ color: 'var(--text-primary)' }}
       >

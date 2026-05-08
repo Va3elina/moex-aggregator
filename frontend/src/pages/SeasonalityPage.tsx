@@ -14,6 +14,7 @@ import TestDashboard from '../components/seasonality/TestDashboard';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import type { SeasonalityResponse, SeasonalityMode, PriceChartResponse, YearlySeasonalityResponse } from '../services/api';
 import { FUND_PALETTE } from '../config/chartTheme';
+import { useAnalytics } from '../contexts/AnalyticsContext';
 
 const MODE_LABELS: Record<SeasonalityMode, string> = {
   intraday: 'Внутри дня',
@@ -62,6 +63,13 @@ export default function SeasonalityPage() {
   const [chartType, setChartType] = useState<ChartType>('histogram');
   const [excludeDividends, setExcludeDividends] = useState(false);
   const [priceDays, setPriceDays] = useState(365);
+
+  // Analytics
+  const { track } = useAnalytics();
+  const handleModeChange = useCallback((m: SeasonalityMode) => {
+    setMode(m);
+    track('seasonality_mode', { mode: m, secid: selectedStock });
+  }, [track, selectedStock]);
 
   // Серии:
   // - compareYears: массив годов для серий "Период с YYYY". По умолчанию [min_year] — это и есть
@@ -627,7 +635,7 @@ export default function SeasonalityPage() {
               label: MODE_LABELS[m],
             }))}
             value={mode}
-            onChange={setMode}
+            onChange={handleModeChange}
           />
         )}
 

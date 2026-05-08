@@ -1,10 +1,16 @@
 import { useTheme } from '../contexts/ThemeContext';
+import { useAnalytics } from '../contexts/AnalyticsContext';
 
 export default function ThemeToggle() {
   const { theme, setTheme } = useTheme();
+  const { track } = useAnalytics();
   const isDark = theme === 'editorial-dark';
 
-  const toggle = () => setTheme(isDark ? 'editorial-light' : 'editorial-dark');
+  const toggle = () => {
+    const nextTheme = isDark ? 'editorial-light' : 'editorial-dark';
+    setTheme(nextTheme);
+    track('theme_toggle', { to: nextTheme });
+  };
 
   return (
     <button

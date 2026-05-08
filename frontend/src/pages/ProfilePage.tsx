@@ -331,6 +331,9 @@ export default function ProfilePage() {
         </div>
       </div>
 
+      {/* ============ Секция: Конфиденциальность ============ */}
+      <PrivacyOptOutSection />
+
       {/* ============ Секция 4: Выход ============ */}
       <button
         onClick={handleLogout}
@@ -344,6 +347,63 @@ export default function ProfilePage() {
         <LogOut size={16} />
         Выйти из аккаунта
       </button>
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// Privacy section — opt-out из аналитики через cookie + localStorage
+// ════════════════════════════════════════════════════════════════════════
+
+function PrivacyOptOutSection() {
+  // Читаем текущий статус из cookie. Если установлен '1' — opted out.
+  const isOptedOut = (() => {
+    try {
+      return document.cookie.split('; ').some(c => c.startsWith('frame_analytics_optout=1'));
+    } catch {
+      return false;
+    }
+  })();
+
+  const [optedOut, setOptedOut] = useState(isOptedOut);
+
+  const toggle = () => {
+    const next = !optedOut;
+    if (next) {
+      // Set cookie на 10 лет
+      document.cookie = 'frame_analytics_optout=1; path=/; max-age=315360000; SameSite=Lax';
+      // Также reset consent в localStorage чтобы баннер появился снова если user захочет вернуть
+      try { localStorage.removeItem('frame_consent_v1'); } catch { /* ignore */ }
+    } else {
+      // Удаляем cookie
+      document.cookie = 'frame_analytics_optout=; path=/; max-age=0; SameSite=Lax';
+    }
+    setOptedOut(next);
+  };
+
+  return (
+    <div className="mb-4 p-4 rounded-2xl border" style={{
+      borderColor: 'var(--border-color)',
+      backgroundColor: 'var(--bg-secondary)',
+    }}>
+      <h3 className="font-semibold mb-1" style={{ color: 'var(--text-primary)', fontSize: 'var(--fs-base)' }}>
+        Аналитика
+      </h3>
+      <p className="mb-3" style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)' }}>
+        Мы собираем обезличенную статистику посещений (страницы, события, время) для улучшения сервиса.{' '}
+        <Link to="/privacy" style={{ color: 'var(--accent)', textDecoration: 'underline' }}>Подробнее</Link>
+      </p>
+      <label className="flex items-center gap-2 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={optedOut}
+          onChange={toggle}
+          style={{ width: 16, height: 16, accentColor: 'var(--accent)' }}
+        />
+        <span style={{ color: 'var(--text-primary)', fontSize: 'var(--fs-sm)' }}>
+          Не собирать аналитику обо мне
+        </span>
+      </label>
     </div>
   );
 }

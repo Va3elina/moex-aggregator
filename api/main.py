@@ -34,6 +34,7 @@ from api.routers import stats
 from api.routers import auth  # ← НОВОЕ: Аутентификация
 from api.routers import oauth  # ← OAuth (Google, VK, Telegram)
 from api.routers import events  # ← SSE real-time events
+from api.routers import analytics  # ← Custom analytics: POST /event + GET /stats
 
 # Логирование
 from api.logger import setup_logging, get_logger
@@ -212,6 +213,7 @@ app.include_router(billing_router)  # ← /api/billing/* (подписки че�
 app.include_router(auth.router, prefix="/api")  # ← НОВОЕ: /api/auth/*
 app.include_router(oauth.router, prefix="/api")  # ← OAuth: /api/auth/oauth/*
 app.include_router(events.router)  # ← SSE: /api/events/*
+app.include_router(analytics.router)  # ← Analytics: /api/analytics/*
 
 # ═══════════════════════════════════════════════════════════════
 # Служебные эндпоинты

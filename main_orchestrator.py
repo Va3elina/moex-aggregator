@@ -613,6 +613,34 @@ class MainOrchestrator:
 
         return success
 
+    async def run_analytics_cleanup(self) -> bool:
+        """Cleanup analytics_events старше 180 дней (раз в день).
+
+        Запускается inline через SQL DELETE — отдельного скрипта не нужно.
+        180 дней — достаточно для seasonality (week-over-week, month-over-month
+        comparisons), но не overkill (~100K rows / месяц для текущей нагрузки).
+        """
+        log.info("  🧹 Analytics cleanup (events > 180d)...")
+        self.stats.setdefault('analytics_cleanup_runs', 0)
+        self.stats.setdefault('analytics_cleanup_success', 0)
+        self.stats['analytics_cleanup_runs'] += 1
+
+        try:
+            from sqlalchemy import create_engine, text
+            engine = create_engine(DB_URL)
+            with engine.begin() as conn:
+                result = conn.execute(text(
+                    "DELETE FROM analytics_events WHERE server_ts < NOW() - INTERVAL '180 days'"
+                ))
+                deleted = result.rowcount
+            self.stats['analytics_cleanup_success'] += 1
+            log.info(f"    ✓ Analytics cleanup: удалено {deleted} строк")
+            return True
+        except Exception as e:
+            self.stats['errors'] += 1
+            log.error(f"    ✗ Analytics cleanup failed: {e}")
+            return False
+
     async def run_commodity_update(self) -> bool:
         """Дневные цены сырья (Yahoo Finance) для Сезонности."""
         log.info("  🛢️  Commodity Daily (Yahoo)...")
@@ -743,6 +771,7 @@ class MainOrchestrator:
             self.run_breadth_update,
             self.run_dividends_update,
             self.run_commodity_update,
+            self.run_analytics_cleanup,
         ]:
             success = await fn()
             if success:
@@ -857,7 +886,7 @@ class MainOrchestrator:
                 gap_days = self._get_oi_hourly_gap_days()
                 await self.run_hourly_aggregate(recent_days=gap_days)
 
-            # Daily (OI + Funds + Indices + Macro + Market Cap + Breadth + Commodity)
+            # Daily (OI + Funds + Indices + Macro + Market Cap + Breadth + Commodity + Analytics cleanup)
             await self.run_daily_update()
             await self.run_funds_update()
             await self.run_indices_update()
@@ -867,6 +896,7 @@ class MainOrchestrator:
             await self.run_breadth_update()
             await self.run_dividends_update()
             await self.run_commodity_update()
+            await self.run_analytics_cleanup()
 
             # Обновляем все представления после полной синхронизации
             log.info("  🔄 Финальное обновление представлений...")
@@ -969,6 +999,7 @@ class MainOrchestrator:
                     await self.run_market_cap_update()
                     await self.run_breadth_update()
                     await self.run_dividends_update()
+                    await self.run_analytics_cleanup()
                     send_data_notify("daily")
                     self.last_daily_update = slot_day
                     self.print_stats()

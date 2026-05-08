@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useSSE } from '../hooks/useSSE';
-import { Menu, X, LogIn } from 'lucide-react';
+import { Menu, X, LogIn, BarChart3 } from 'lucide-react';
 import Logo from './Logo';
 import FrameLogo from './FrameLogo';
 import ThemeToggle from './ThemeToggle';
@@ -159,6 +159,20 @@ export default function Layout() {
             <div className="flex items-center gap-1 lg:gap-1.5 xl:gap-3">
               {/* Theme Toggle (sun/moon, animated) */}
               <ThemeToggle />
+
+              {/* Admin Stats link — только для role=admin.
+                  Иконка 📊, click → /admin/stats. */}
+              {isAuthenticated && user?.role === 'admin' && (
+                <button
+                  onClick={() => navigate('/admin/stats')}
+                  className="grid place-items-center w-10 h-10 xl:w-8 xl:h-8 rounded-full transition-opacity hover:opacity-70"
+                  style={{ color: 'var(--text-secondary)' }}
+                  title="Статистика сайта"
+                  aria-label="Статистика сайта (admin)"
+                >
+                  <BarChart3 size={18} />
+                </button>
+              )}
 
               {/* Auth button — 40×40 на mobile, 32×32 на xl (компактный desktop). */}
               {isAuthenticated ? (
@@ -346,6 +360,25 @@ export default function Layout() {
       <main className="relative">
           <Outlet />
       </main>
+
+      {/* Footer — компактный, со ссылкой на политику.
+          Bottom of every page. Privacy ссылка обязательна для consent flow. */}
+      <footer
+        className="mt-12 md:mt-16 py-4 md:py-6"
+        style={{
+          borderTop: '1px solid var(--border-color)',
+          color: 'var(--text-muted)',
+        }}
+      >
+        <div className="max-w-7xl mx-auto px-4 md:px-6 flex flex-wrap items-center justify-between gap-3">
+          <span className="text-xs">© Frame · таймфрейм.рф</span>
+          <div className="flex items-center gap-4 text-xs">
+            <Link to="/privacy" className="transition-opacity hover:opacity-80" style={{ color: 'var(--text-secondary)' }}>
+              Политика обработки данных
+            </Link>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }

@@ -2,6 +2,8 @@ import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { AnalyticsProvider, AnalyticsPageViewTracker } from './contexts/AnalyticsContext';
+import CookieConsentBanner from './components/CookieConsentBanner';
 import ErrorBoundary from './components/ErrorBoundary';
 import Layout from './components/Layout';
 import OverviewPage from './pages/OverviewPage';
@@ -29,6 +31,8 @@ import BuffettMethodologyPage from './pages/methodology/BuffettMethodologyPage';
 import StrengthMethodologyPage from './pages/methodology/StrengthMethodologyPage';
 import SeasonalityMethodologyPage from './pages/methodology/SeasonalityMethodologyPage';
 import StylePreviewPage from './pages/StylePreviewPage';
+import PrivacyPage from './pages/PrivacyPage';
+import AdminStatsPage from './pages/AdminStatsPage';
 
 /** "/" conditional: auth → Overview, guest → Landing.
     Loading state → Overview как fallback (быстрее, avoids flash). */
@@ -64,7 +68,10 @@ export default function App() {
     <ThemeProvider>
       <AuthProvider>
       <BrowserRouter>
+      <AnalyticsProvider>
       <ScrollToTop />
+      <AnalyticsPageViewTracker />
+      <CookieConsentBanner />
       <RouterErrorBoundary>
         <Routes>
           {/* Auth callback — без Layout */}
@@ -103,9 +110,14 @@ export default function App() {
             <Route path="/billing/success" element={<BillingSuccessPage />} />
             <Route path="/billing/stub" element={<BillingStubPage />} />
             <Route path="/billing/redeem" element={<BillingRedeemPage />} />
+            {/* Privacy */}
+            <Route path="/privacy" element={<PrivacyPage />} />
+            {/* Admin */}
+            <Route path="/admin/stats" element={<AdminStatsPage />} />
           </Route>
         </Routes>
       </RouterErrorBoundary>
+      </AnalyticsProvider>
       </BrowserRouter>
       </AuthProvider>
     </ThemeProvider>
