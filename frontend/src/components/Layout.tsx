@@ -160,29 +160,43 @@ export default function Layout() {
               {/* Theme Toggle (sun/moon, animated) */}
               <ThemeToggle />
 
-              {/* Admin Stats link — только для role=admin.
-                  Иконка 📊, click → /admin/stats. */}
+              {/* Header-icons унифицированы: 40 → 36 → 32 пропорциональное
+                  масштабирование на mobile/md/xl. ThemeToggle и Admin Stats
+                  имеют одинаковый outline-стиль (border 1.5px text-primary +
+                  transparent bg + accent-tinted icon). Auth — filled accent
+                  для visual-priority "это твой login". */}
+
+              {/* Admin Stats link — только для role=admin (📊 → /admin/stats) */}
               {isAuthenticated && user?.role === 'admin' && (
                 <button
                   onClick={() => navigate('/admin/stats')}
-                  className="grid place-items-center w-10 h-10 xl:w-8 xl:h-8 rounded-full transition-opacity hover:opacity-70"
-                  style={{ color: 'var(--text-secondary)' }}
+                  className="editorial-press grid place-items-center w-10 h-10 md:w-9 md:h-9 xl:w-8 xl:h-8 rounded-full"
+                  style={{
+                    color: 'var(--accent)',
+                    border: '1.5px solid var(--text-primary)',
+                    backgroundColor: 'transparent',
+                  }}
                   title="Статистика сайта"
                   aria-label="Статистика сайта (admin)"
                 >
-                  <BarChart3 size={18} />
+                  <BarChart3
+                    style={{ width: 'clamp(14px, 1vw + 0.4rem, 18px)', height: 'clamp(14px, 1vw + 0.4rem, 18px)' }}
+                    strokeWidth={2}
+                  />
                 </button>
               )}
 
-              {/* Auth button — 40×40 на mobile, 32×32 на xl (компактный desktop). */}
+              {/* Auth button — единый размер с ThemeToggle/AdminStats.
+                  Filled accent с initial — primary visual hierarchy. */}
               {isAuthenticated ? (
                 <button
                   onClick={() => navigate('/profile')}
-                  className="editorial-press grid place-items-center w-10 h-10 xl:w-8 xl:h-8 rounded-full text-xs xl:text-sm font-bold"
+                  className="editorial-press grid place-items-center w-10 h-10 md:w-9 md:h-9 xl:w-8 xl:h-8 rounded-full font-bold"
                   style={{
                     backgroundColor: 'var(--accent)',
-                    color: 'var(--bg-primary)',
+                    color: '#fff',
                     border: '1.5px solid var(--text-primary)',
+                    fontSize: 'clamp(11px, 0.6vw + 0.5rem, 14px)',
                   }}
                   title="Личный кабинет"
                   aria-label="Личный кабинет"
@@ -192,13 +206,13 @@ export default function Layout() {
               ) : (
                 <button
                   onClick={() => navigate('/login')}
-                  className="grid place-items-center w-10 h-10 xl:w-auto xl:h-auto xl:flex xl:items-center xl:gap-1.5 xl:px-3 xl:py-2 rounded-xl text-xs xl:text-sm font-medium transition-opacity hover:opacity-70"
+                  className="grid place-items-center w-10 h-10 md:w-9 md:h-9 xl:w-auto xl:h-auto xl:flex xl:items-center xl:gap-1.5 xl:px-3 xl:py-2 rounded-xl text-xs xl:text-sm font-medium transition-opacity hover:opacity-70"
                   style={{
                     color: 'var(--text-secondary)',
                   }}
                   aria-label="Войти"
                 >
-                  <LogIn size={18} />
+                  <LogIn style={{ width: 'clamp(14px, 1vw + 0.4rem, 18px)', height: 'clamp(14px, 1vw + 0.4rem, 18px)' }} />
                   <span className="hidden xl:inline">Войти</span>
                 </button>
               )}
