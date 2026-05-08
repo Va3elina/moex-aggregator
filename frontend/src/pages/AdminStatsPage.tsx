@@ -1,27 +1,44 @@
 /**
  * AdminStatsPage — admin-only страница со статистикой использования сайта.
  *
- * Source: GET /api/analytics/stats?days=N&segment=X&device=Y
- * Только для role=admin (backend require_admin проверяет, frontend redirects).
+ * Source endpoints (все role=admin):
+ *   GET /api/analytics/stats        — summary + trends + top lists
+ *   GET /api/analytics/funnel       — пошаговая конверсия
+ *   GET /api/analytics/cohort       — D1/D7/D30 retention для auth users
+ *   GET /api/analytics/realtime     — активность за последние 5 минут (auto-refresh)
+ *   GET /api/analytics/experiments  — A/B testing list + create/delete
  *
- * Структура:
- *  - 4 metric cards (DAU / Сессии / Среднее время / Events)
- *  - Filter row (period / segment / device)
- *  - Line chart trends (DAU + sessions × дни)
- *  - Top pages bar
- *  - Top instruments bar
- *  - Top exports bar
- *  - Mode distribution (seasonality)
+ * Структура (вертикально):
+ *  1. Realtime widget (auto-poll 15s) — что прямо сейчас на сайте
+ *  2. 4 summary cards + trends line chart
+ *  3. Top lists (pages/instruments/exports/modes)
+ *  4. Funnel — конверсия по воронке landing → indicator → action
+ *  5. Cohort retention — D1/D7/D30 heatmap-style table
+ *  6. A/B experiments — list + create form
  */
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BarChart3, TrendingUp, TrendingDown, Activity, Users, Clock, MousePointerClick } from 'lucide-react';
+import { BarChart3, TrendingUp, TrendingDown, Activity, Users, Clock, MousePointerClick, Zap, Trash2, Plus } from 'lucide-react';
 import Card from '../components/Card';
 import Skeleton from '../components/Skeleton';
 import Dropdown from '../components/Dropdown';
 import { useAuth } from '../contexts/AuthContext';
-import { getAnalyticsStats } from '../services/api';
-import type { AnalyticsStats } from '../services/api';
+import {
+  getAnalyticsStats,
+  getAnalyticsFunnel,
+  getAnalyticsCohort,
+  getAnalyticsRealtime,
+  listABExperiments,
+  createABExperiment,
+  deleteABExperiment,
+} from '../services/api';
+import type {
+  AnalyticsStats,
+  FunnelResponse,
+  CohortResponse,
+  RealtimeResponse,
+  ABExperiment,
+} from '../services/api';
 
 export default function AdminStatsPage() {
   const { user, loading: authLoading } = useAuth();
@@ -34,6 +51,16 @@ export default function AdminStatsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Phase 6 sections data
+  const [realtime, setRealtime] = useState<RealtimeResponse | null>(null);
+  const [funnel, setFunnel] = useState<FunnelResponse | null>(null);
+  const [cohort, setCohort] = useState<CohortResponse | null>(null);
+  const [experiments, setExperiments] = useState<ABExperiment[]>([]);
+
+  // Default funnel: pageview('/') → pageview('/seasonality') → instrument_select → chart_export
+  // User может выбрать другой preset через dropdown
+  const [funnelPreset, setFunnelPreset] = useState<string>('seasonality_export');
+
   // Guard: только admin
   useEffect(() => {
     if (authLoading) return;
@@ -42,7 +69,27 @@ export default function AdminStatsPage() {
     }
   }, [authLoading, user, navigate]);
 
-  // Fetch
+  // Funnel presets — типовые воронки. Backend принимает строку 'type:path,type:path,...'
+  const FUNNEL_PRESETS: Record<string, { label: string; steps: string }> = {
+    seasonality_export: {
+      label: 'Сезонность → экспорт',
+      steps: 'pageview:/,pageview:/seasonality,instrument_select,chart_export',
+    },
+    heatmap_to_seasonality: {
+      label: 'Карта рынка → Сезонность',
+      steps: 'pageview:/,pageview:/heatmap,pageview:/seasonality',
+    },
+    landing_to_indicator: {
+      label: 'Главная → любой индикатор',
+      steps: 'pageview:/,pageview:/oi',
+    },
+    full_engagement: {
+      label: 'Полное вовлечение',
+      steps: 'pageview:/,pageview:/seasonality,seasonality_mode,instrument_select,chart_export',
+    },
+  };
+
+  // Fetch summary stats
   useEffect(() => {
     if (!user || user.role !== 'admin') return;
     setLoading(true);
@@ -52,6 +99,46 @@ export default function AdminStatsPage() {
       .catch((e: Error) => setError(e.message || 'Не удалось загрузить статистику'))
       .finally(() => setLoading(false));
   }, [user, days, segment, device]);
+
+  // Fetch funnel
+  useEffect(() => {
+    if (!user || user.role !== 'admin') return;
+    const preset = FUNNEL_PRESETS[funnelPreset];
+    if (!preset) return;
+    getAnalyticsFunnel({ steps: preset.steps, days })
+      .then(setFunnel)
+      .catch(() => setFunnel(null));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, funnelPreset, days]);
+
+  // Fetch cohort (фиксировано 8 недель — оптимально читается)
+  useEffect(() => {
+    if (!user || user.role !== 'admin') return;
+    getAnalyticsCohort(8).then(setCohort).catch(() => setCohort(null));
+  }, [user]);
+
+  // Realtime polling (15s)
+  useEffect(() => {
+    if (!user || user.role !== 'admin') return;
+    const tick = () => getAnalyticsRealtime(5).then(setRealtime).catch(() => null);
+    tick();
+    const id = window.setInterval(tick, 15_000);
+    return () => clearInterval(id);
+  }, [user]);
+
+  // A/B experiments list
+  const refreshExperiments = useCallback(async () => {
+    try {
+      const r = await listABExperiments();
+      setExperiments(r.experiments);
+    } catch {
+      setExperiments([]);
+    }
+  }, []);
+  useEffect(() => {
+    if (!user || user.role !== 'admin') return;
+    refreshExperiments();
+  }, [user, refreshExperiments]);
 
   if (authLoading || !user || user.role !== 'admin') {
     return null;
@@ -125,6 +212,9 @@ export default function AdminStatsPage() {
           <p style={{ color: 'var(--danger)' }}>Ошибка: {error}</p>
         </Card>
       )}
+
+      {/* Realtime widget — auto-refresh каждые 15 секунд */}
+      <RealtimeBlock data={realtime} />
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-6 md:mb-8">
@@ -215,6 +305,44 @@ export default function AdminStatsPage() {
           emptyText="Нет переключений режима"
         />
       </div>
+
+      {/* Funnel */}
+      <Section title="Воронка конверсии">
+        <Card padding="md" className="md:p-5">
+          <div className="mb-4">
+            <Dropdown<string>
+              options={Object.entries(FUNNEL_PRESETS).map(([k, v]) => ({ key: k, label: v.label }))}
+              value={funnelPreset}
+              onChange={setFunnelPreset}
+            />
+          </div>
+          {funnel && funnel.steps.length > 0 ? (
+            <FunnelChart data={funnel} />
+          ) : (
+            <p className="text-center py-6 text-sm" style={{ color: 'var(--text-muted)' }}>
+              Загрузка воронки...
+            </p>
+          )}
+        </Card>
+      </Section>
+
+      {/* Cohort retention */}
+      <Section title="Retention (8 недель)">
+        <Card padding="md" className="md:p-5">
+          {cohort && cohort.cohorts.length > 0 ? (
+            <CohortTable data={cohort} />
+          ) : (
+            <p className="text-center py-6 text-sm" style={{ color: 'var(--text-muted)' }}>
+              Недостаточно зарегистрированных пользователей за 8 недель
+            </p>
+          )}
+        </Card>
+      </Section>
+
+      {/* A/B experiments */}
+      <Section title="A/B эксперименты">
+        <ABBlock experiments={experiments} onRefresh={refreshExperiments} />
+      </Section>
     </div>
   );
 }
@@ -475,4 +603,467 @@ function formatDuration(seconds: number): string {
 function formatShortDate(iso: string): string {
   const d = new Date(iso);
   return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// REALTIME BLOCK
+// ════════════════════════════════════════════════════════════════════════════
+
+function RealtimeBlock({ data }: { data: RealtimeResponse | null }) {
+  return (
+    <Section title="Сейчас на сайте">
+      <Card padding="md" className="md:p-5">
+        <div className="flex flex-wrap items-center mb-4" style={{ gap: 'var(--sp-3)' }}>
+          {/* Pulse dot + active sessions count */}
+          <div className="flex items-center" style={{ gap: 'var(--sp-2)' }}>
+            <span
+              className="inline-block"
+              style={{
+                width: 8, height: 8, borderRadius: '50%',
+                backgroundColor: 'var(--success)',
+                animation: 'frame-pulse 2s ease-in-out infinite',
+              }}
+            />
+            <span style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-xs)' }}>
+              live · обновляется каждые 15с
+            </span>
+          </div>
+          <span className="ml-auto text-sm font-bold" style={{
+            color: 'var(--text-primary)',
+            fontFamily: "'IBM Plex Mono', monospace",
+          }}>
+            {data ? data.active_sessions : '—'} активных сессий
+          </span>
+        </div>
+
+        {/* Active pages */}
+        {data && data.active_pages.length > 0 && (
+          <div className="mb-4">
+            <p className="text-xs uppercase mb-2" style={{
+              color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 600,
+            }}>
+              Активные страницы
+            </p>
+            <div className="flex flex-wrap" style={{ gap: 'var(--sp-2)' }}>
+              {data.active_pages.map(p => (
+                <div
+                  key={p.path}
+                  className="flex items-center"
+                  style={{
+                    backgroundColor: 'var(--bg-secondary)',
+                    border: '1.5px solid var(--text-primary)',
+                    borderRadius: 9999,
+                    padding: '4px 12px',
+                    gap: 'var(--sp-2)',
+                    fontSize: 'var(--fs-xs)',
+                  }}
+                >
+                  <span style={{ color: 'var(--text-primary)', fontFamily: "'IBM Plex Mono', monospace" }}>
+                    {p.path}
+                  </span>
+                  <span style={{ color: 'var(--text-muted)' }}>· {p.sessions}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Recent events */}
+        {data && data.recent_events.length > 0 && (
+          <div>
+            <p className="text-xs uppercase mb-2" style={{
+              color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 600,
+            }}>
+              Последние события
+            </p>
+            <div className="space-y-1.5 max-h-48 overflow-y-auto">
+              {data.recent_events.map((ev, i) => (
+                <div
+                  key={`${ev.server_ts}-${i}`}
+                  className="flex items-center justify-between py-1 px-2 -mx-2"
+                  style={{ fontSize: 'var(--fs-xs)' }}
+                >
+                  <div className="flex items-center min-w-0 flex-1" style={{ gap: 'var(--sp-2)' }}>
+                    <Zap size={10} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+                    <span style={{ color: 'var(--text-primary)', fontWeight: 600, flexShrink: 0 }}>
+                      {ev.event_type}
+                    </span>
+                    {ev.event_path && (
+                      <span style={{ color: 'var(--text-secondary)', fontFamily: "'IBM Plex Mono', monospace" }} className="truncate">
+                        {ev.event_path}
+                      </span>
+                    )}
+                    {ev.payload && (
+                      <span style={{ color: 'var(--text-muted)' }} className="truncate">
+                        {JSON.stringify(ev.payload).slice(0, 60)}
+                      </span>
+                    )}
+                  </div>
+                  <span style={{ color: 'var(--text-muted)', flexShrink: 0, marginLeft: 8 }}>
+                    {formatTime(ev.server_ts)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {!data && (
+          <p className="text-center py-4 text-sm" style={{ color: 'var(--text-muted)' }}>
+            Загрузка realtime...
+          </p>
+        )}
+      </Card>
+    </Section>
+  );
+}
+
+function formatTime(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// FUNNEL CHART — каждый шаг = bar, ширина пропорциональна conversion %
+// ════════════════════════════════════════════════════════════════════════════
+
+function FunnelChart({ data }: { data: FunnelResponse }) {
+  return (
+    <div className="space-y-3">
+      {data.steps.map((s, i) => {
+        const widthPct = s.conversion_pct;
+        const isFirst = i === 0;
+        const dropPrev = isFirst ? 0 : (data.steps[i - 1].sessions - s.sessions);
+        return (
+          <div key={s.step}>
+            <div className="flex items-center justify-between mb-1" style={{ gap: 'var(--sp-2)' }}>
+              <span className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }} title={s.label}>
+                Шаг {s.step + 1}: {s.label}
+              </span>
+              <span className="text-sm flex-shrink-0" style={{
+                color: 'var(--text-secondary)',
+                fontFamily: "'IBM Plex Mono', monospace",
+                fontVariantNumeric: 'tabular-nums',
+              }}>
+                {s.sessions} сессий · {s.conversion_pct}%
+              </span>
+            </div>
+            <div className="relative h-7" style={{
+              backgroundColor: 'var(--bg-secondary)',
+              borderRadius: 4,
+              overflow: 'hidden',
+            }}>
+              <div
+                className="absolute inset-y-0 left-0 transition-all duration-300"
+                style={{
+                  width: `${widthPct}%`,
+                  background: `linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 70%, transparent))`,
+                  borderRadius: '4px 0 0 4px',
+                }}
+              />
+            </div>
+            {!isFirst && dropPrev > 0 && (
+              <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                ↓ потеряно {dropPrev} сессий ({(100 - (s.sessions / Math.max(data.steps[i - 1].sessions, 1)) * 100).toFixed(1)}%)
+              </p>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// COHORT TABLE — heatmap-style
+// ════════════════════════════════════════════════════════════════════════════
+
+function CohortTable({ data }: { data: CohortResponse }) {
+  /** Цвет ячейки: интенсивность зависит от % retention. Зелёный градиент. */
+  const cellColor = (pct: number) => {
+    if (pct === 0) return 'var(--bg-secondary)';
+    return `color-mix(in srgb, var(--funds-flow-positive) ${Math.min(pct, 80)}%, transparent)`;
+  };
+
+  return (
+    <div className="overflow-x-auto -mx-2">
+      <table className="w-full" style={{ minWidth: 480 }}>
+        <thead>
+          <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
+            <th className="text-left px-2 py-2 text-xs uppercase" style={{
+              color: 'var(--text-muted)', letterSpacing: '0.08em', fontWeight: 600,
+            }}>
+              Когорта
+            </th>
+            <th className="text-right px-2 py-2 text-xs uppercase" style={{
+              color: 'var(--text-muted)', letterSpacing: '0.08em', fontWeight: 600,
+            }}>
+              Размер
+            </th>
+            <th className="text-center px-2 py-2 text-xs uppercase" style={{
+              color: 'var(--text-muted)', letterSpacing: '0.08em', fontWeight: 600,
+            }}>
+              D1
+            </th>
+            <th className="text-center px-2 py-2 text-xs uppercase" style={{
+              color: 'var(--text-muted)', letterSpacing: '0.08em', fontWeight: 600,
+            }}>
+              D7
+            </th>
+            <th className="text-center px-2 py-2 text-xs uppercase" style={{
+              color: 'var(--text-muted)', letterSpacing: '0.08em', fontWeight: 600,
+            }}>
+              D30
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {data.cohorts.map((c) => (
+            <tr key={c.cohort_week}
+                style={{ borderBottom: '1px solid color-mix(in srgb, var(--border-color) 60%, transparent)' }}>
+              <td className="px-2 py-2 text-sm" style={{ color: 'var(--text-primary)' }}>
+                {formatShortDate(c.cohort_week)}
+              </td>
+              <td className="text-right px-2 py-2 text-sm" style={{
+                color: 'var(--text-secondary)',
+                fontFamily: "'IBM Plex Mono', monospace",
+              }}>
+                {c.cohort_size}
+              </td>
+              <CohortCell pct={c.d1_pct} count={c.d1} bg={cellColor(c.d1_pct)} />
+              <CohortCell pct={c.d7_pct} count={c.d7} bg={cellColor(c.d7_pct)} />
+              <CohortCell pct={c.d30_pct} count={c.d30} bg={cellColor(c.d30_pct)} />
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function CohortCell({ pct, count, bg }: { pct: number; count: number; bg: string }) {
+  return (
+    <td className="text-center px-2 py-2 text-sm" style={{ backgroundColor: bg }}>
+      <div style={{
+        color: 'var(--text-primary)',
+        fontFamily: "'IBM Plex Mono', monospace",
+        fontVariantNumeric: 'tabular-nums',
+      }}>
+        {pct.toFixed(0)}%
+      </div>
+      <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
+        {count}
+      </div>
+    </td>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// A/B EXPERIMENTS
+// ════════════════════════════════════════════════════════════════════════════
+
+interface ABBlockProps {
+  experiments: ABExperiment[];
+  onRefresh: () => Promise<void>;
+}
+function ABBlock({ experiments, onRefresh }: ABBlockProps) {
+  const [showForm, setShowForm] = useState(false);
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [variantA, setVariantA] = useState('control');
+  const [variantB, setVariantB] = useState('treatment');
+  const [trafficSplit, setTrafficSplit] = useState(50);
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const submit = async () => {
+    if (!name.trim() || !variantA.trim() || !variantB.trim()) {
+      setFormError('Заполните name, variant_a и variant_b');
+      return;
+    }
+    setSubmitting(true);
+    setFormError(null);
+    try {
+      await createABExperiment({
+        name: name.trim(),
+        description: description.trim() || undefined,
+        variant_a: variantA.trim(),
+        variant_b: variantB.trim(),
+        traffic_split: trafficSplit,
+        active: true,
+      });
+      setName(''); setDescription('');
+      setShowForm(false);
+      await onRefresh();
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : 'Ошибка создания');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const remove = async (n: string) => {
+    if (!window.confirm(`Удалить эксперимент «${n}» и все его assignments?`)) return;
+    await deleteABExperiment(n);
+    await onRefresh();
+  };
+
+  return (
+    <Card padding="md" className="md:p-5">
+      <div className="flex items-center mb-4">
+        <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+          {experiments.length === 0
+            ? 'Эксперименты не созданы. Создай свой первый A/B test.'
+            : `Активных: ${experiments.filter(e => e.active).length} из ${experiments.length}`}
+        </p>
+        <button
+          onClick={() => setShowForm(s => !s)}
+          className="ml-auto editorial-press font-semibold rounded-full flex items-center"
+          style={{
+            backgroundColor: showForm ? 'var(--bg-secondary)' : 'var(--accent)',
+            color: showForm ? 'var(--text-primary)' : '#fff',
+            border: '1.5px solid var(--text-primary)',
+            fontSize: 'var(--fs-sm)',
+            padding: 'var(--sp-2) var(--sp-3)',
+            gap: 'var(--sp-2)',
+          }}
+        >
+          <Plus size={14} />
+          {showForm ? 'Отмена' : 'Создать'}
+        </button>
+      </div>
+
+      {/* Create form */}
+      {showForm && (
+        <div className="mb-4 p-4 rounded-lg" style={{
+          backgroundColor: 'var(--bg-secondary)',
+          border: '1px solid var(--border-color)',
+        }}>
+          <div className="grid grid-cols-1 md:grid-cols-2" style={{ gap: 'var(--sp-3)' }}>
+            <ABInput label="Имя (slug)" value={name} onChange={setName} placeholder="homepage_v2" />
+            <ABInput label="Описание" value={description} onChange={setDescription} placeholder="Тест нового layout главной" />
+            <ABInput label="Variant A" value={variantA} onChange={setVariantA} placeholder="control" />
+            <ABInput label="Variant B" value={variantB} onChange={setVariantB} placeholder="treatment" />
+            <div>
+              <label className="block text-xs mb-1" style={{ color: 'var(--text-muted)', fontWeight: 600 }}>
+                Traffic split (% в variant A): {trafficSplit}%
+              </label>
+              <input
+                type="range" min={0} max={100} step={5}
+                value={trafficSplit}
+                onChange={e => setTrafficSplit(Number(e.target.value))}
+                className="w-full"
+                style={{ accentColor: 'var(--accent)' }}
+              />
+            </div>
+          </div>
+          {formError && (
+            <p className="mt-3 text-sm" style={{ color: 'var(--danger)' }}>{formError}</p>
+          )}
+          <button
+            onClick={submit}
+            disabled={submitting}
+            className="mt-3 editorial-press font-semibold rounded-full"
+            style={{
+              backgroundColor: 'var(--accent)',
+              color: '#fff',
+              border: '1.5px solid var(--text-primary)',
+              fontSize: 'var(--fs-sm)',
+              padding: 'var(--sp-2) var(--sp-4)',
+              opacity: submitting ? 0.6 : 1,
+            }}
+          >
+            {submitting ? 'Создаём...' : 'Создать эксперимент'}
+          </button>
+        </div>
+      )}
+
+      {/* List */}
+      {experiments.length > 0 && (
+        <div className="space-y-2">
+          {experiments.map(e => (
+            <div
+              key={e.name}
+              className="flex items-center p-3 rounded-lg"
+              style={{
+                gap: 'var(--sp-3)',
+                backgroundColor: 'var(--bg-secondary)',
+                border: '1px solid var(--border-color)',
+              }}
+            >
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center" style={{ gap: 'var(--sp-2)' }}>
+                  <span className="font-bold text-sm" style={{
+                    color: 'var(--text-primary)',
+                    fontFamily: "'IBM Plex Mono', monospace",
+                  }}>
+                    {e.name}
+                  </span>
+                  <span className="text-xs px-2 py-0.5 rounded-full" style={{
+                    backgroundColor: e.active
+                      ? 'color-mix(in srgb, var(--success) 18%, transparent)'
+                      : 'var(--bg-secondary)',
+                    color: e.active ? 'var(--success)' : 'var(--text-muted)',
+                    border: '1px solid currentColor',
+                  }}>
+                    {e.active ? 'active' : 'paused'}
+                  </span>
+                </div>
+                {e.description && (
+                  <p className="text-xs mt-1 truncate" style={{ color: 'var(--text-secondary)' }}>
+                    {e.description}
+                  </p>
+                )}
+                <div className="flex items-center mt-1 text-xs" style={{
+                  color: 'var(--text-muted)',
+                  gap: 'var(--sp-3)',
+                  fontFamily: "'IBM Plex Mono', monospace",
+                }}>
+                  <span>A:{e.variant_a} ({e.traffic_split}%)</span>
+                  <span>B:{e.variant_b} ({100 - e.traffic_split}%)</span>
+                  <span>· {e.total_assignments} assignments</span>
+                </div>
+              </div>
+              <button
+                onClick={() => remove(e.name)}
+                className="grid place-items-center w-8 h-8 rounded-full transition-opacity hover:opacity-60"
+                style={{ color: 'var(--danger)' }}
+                title="Удалить"
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function ABInput({ label, value, onChange, placeholder }: {
+  label: string; value: string; onChange: (v: string) => void; placeholder?: string;
+}) {
+  return (
+    <div>
+      <label className="block text-xs mb-1" style={{ color: 'var(--text-muted)', fontWeight: 600 }}>
+        {label}
+      </label>
+      <input
+        type="text"
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        style={{
+          width: '100%',
+          backgroundColor: 'var(--bg-primary)',
+          border: '1.5px solid var(--text-primary)',
+          borderRadius: 8,
+          padding: '6px 10px',
+          color: 'var(--text-primary)',
+          fontSize: 'var(--fs-sm)',
+          outline: 'none',
+        }}
+      />
+    </div>
+  );
 }

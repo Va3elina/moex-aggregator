@@ -800,3 +800,135 @@ export async function getAnalyticsStats(opts: {
   }
   return response.json();
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Funnel / Cohort / Realtime / A/B
+// ═══════════════════════════════════════════════════════════════════
+
+export interface FunnelResponse {
+  period_days: number;
+  steps: { step: number; label: string; sessions: number; conversion_pct: number }[];
+}
+
+export async function getAnalyticsFunnel(opts: {
+  steps: string;
+  days?: number;
+}): Promise<FunnelResponse> {
+  const params = new URLSearchParams({ steps: opts.steps });
+  if (opts.days !== undefined) params.set('days', String(opts.days));
+  const response = await apiFetch(`${API_BASE}/api/analytics/funnel?${params}`);
+  if (!response.ok) {
+    if (response.status === 403) throw new Error('Доступ только для администратора');
+    throw new Error('Failed to fetch funnel');
+  }
+  return response.json();
+}
+
+export interface CohortRow {
+  cohort_week: string;
+  cohort_size: number;
+  d1: number; d7: number; d30: number;
+  d1_pct: number; d7_pct: number; d30_pct: number;
+}
+
+export interface CohortResponse {
+  weeks: number;
+  cohorts: CohortRow[];
+}
+
+export async function getAnalyticsCohort(weeks: number = 8): Promise<CohortResponse> {
+  const response = await apiFetch(`${API_BASE}/api/analytics/cohort?weeks=${weeks}`);
+  if (!response.ok) {
+    if (response.status === 403) throw new Error('Доступ только для администратора');
+    throw new Error('Failed to fetch cohort');
+  }
+  return response.json();
+}
+
+export interface RealtimeEvent {
+  event_type: string;
+  event_path: string | null;
+  payload: Record<string, unknown> | null;
+  server_ts: string;
+  country: string | null;
+  device: string | null;
+}
+
+export interface RealtimeResponse {
+  minutes: number;
+  active_sessions: number;
+  active_pages: { path: string; sessions: number }[];
+  recent_events: RealtimeEvent[];
+  devices: { device: string; sessions: number }[];
+}
+
+export async function getAnalyticsRealtime(minutes: number = 5): Promise<RealtimeResponse> {
+  const response = await apiFetch(`${API_BASE}/api/analytics/realtime?minutes=${minutes}`);
+  if (!response.ok) {
+    if (response.status === 403) throw new Error('Доступ только для администратора');
+    throw new Error('Failed to fetch realtime');
+  }
+  return response.json();
+}
+
+export interface ABExperiment {
+  name: string;
+  description: string | null;
+  variant_a: string;
+  variant_b: string;
+  traffic_split: number;
+  active: boolean;
+  created_at: string;
+  total_assignments: number;
+}
+
+export async function listABExperiments(): Promise<{ experiments: ABExperiment[] }> {
+  const response = await apiFetch(`${API_BASE}/api/analytics/experiments`);
+  if (!response.ok) throw new Error('Failed to fetch experiments');
+  return response.json();
+}
+
+export async function createABExperiment(exp: {
+  name: string; description?: string;
+  variant_a: string; variant_b: string;
+  traffic_split: number; active: boolean;
+}): Promise<{ status: string; name: string }> {
+  const response = await apiFetch(`${API_BASE}/api/analytics/experiments`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(exp),
+  });
+  if (!response.ok) {
+    if (response.status === 409) throw new Error('Эксперимент с таким именем уже существует');
+    throw new Error('Failed to create experiment');
+  }
+  return response.json();
+}
+
+export async function deleteABExperiment(name: string): Promise<void> {
+  const response = await apiFetch(`${API_BASE}/api/analytics/experiments/${encodeURIComponent(name)}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok && response.status !== 204) {
+    throw new Error('Failed to delete experiment');
+  }
+}
+
+export interface AssignResponse {
+  experiment: string;
+  variant: 'a' | 'b';
+  label: string;
+  active: boolean;
+}
+
+export async function getABAssignment(name: string): Promise<AssignResponse> {
+  // Pass session_id as header — backend читает X-Session-Id для гостей
+  const sessionId = (() => {
+    try { return sessionStorage.getItem('frame_session_id') || ''; } catch { return ''; }
+  })();
+  const response = await apiFetch(`${API_BASE}/api/analytics/experiments/${encodeURIComponent(name)}/assign`, {
+    headers: sessionId ? { 'X-Session-Id': sessionId } : {},
+  });
+  if (!response.ok) throw new Error('Failed to fetch assignment');
+  return response.json();
+}

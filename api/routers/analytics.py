@@ -348,3 +348,386 @@ async def get_stats(
         "top_exports": [{"indicator": r[0], "count": int(r[1])} for r in top_exports],
         "mode_distribution": [{"mode": r[0], "count": int(r[1])} for r in mode_dist],
     }
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# GET /funnel — step-by-step конверсия
+# ════════════════════════════════════════════════════════════════════════════
+#
+# Параметр steps — список шагов через запятую, формат:
+#   "pageview:/,pageview:/seasonality,instrument_select,chart_export"
+#
+# Шаг = "event_type" ИЛИ "event_type:event_path".
+# Для каждой сессии определяем последовательность достигнутых шагов
+# (in-order, как в funnel — нужно дойти до step N через все предыдущие).
+# Возвращаем число сессий на каждом шаге.
+
+@router.get("/funnel")
+async def get_funnel(
+    steps: str = Query(..., description="Шаги через запятую: 'pageview:/,instrument_select'"),
+    days: int = Query(7, ge=1, le=180),
+    user=Depends(require_admin),
+):
+    """Conversion funnel: для каждого step возвращает число сессий, дошедших до него.
+
+    Логика in-order: сессия засчитывается в step N только если она прошла steps 0..N-1
+    (хотя бы по одному event на каждом шаге, и в правильном временном порядке).
+    """
+    period_start = datetime.utcnow() - timedelta(days=days)
+
+    # Parse steps
+    parsed_steps: list[tuple[str, Optional[str]]] = []
+    for part in steps.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if ":" in part:
+            t, p = part.split(":", 1)
+            parsed_steps.append((t.strip(), p.strip()))
+        else:
+            parsed_steps.append((part, None))
+
+    if not parsed_steps:
+        raise HTTPException(400, "steps must contain at least one step")
+    if len(parsed_steps) > 8:
+        raise HTTPException(400, "max 8 steps")
+
+    engine = get_engine()
+    with engine.connect() as conn:
+        # Для каждой сессии считаем earliest timestamp каждого шага.
+        # Сессия засчитывается в step N если ts(N) > ts(N-1) > ... > ts(0).
+        cte_parts = []
+        params: dict[str, Any] = {"period_start": period_start}
+        for i, (etype, epath) in enumerate(parsed_steps):
+            params[f"t{i}"] = etype
+            path_clause = ""
+            if epath is not None:
+                params[f"p{i}"] = epath
+                path_clause = f" AND event_path = :p{i}"
+            cte_parts.append(f"""
+                step_{i} AS (
+                    SELECT session_id, MIN(server_ts) AS ts
+                    FROM analytics_events
+                    WHERE server_ts >= :period_start
+                      AND event_type = :t{i}{path_clause}
+                    GROUP BY session_id
+                )
+            """)
+
+        # JOIN всех CTE с условием прогресса по времени
+        cte_sql = ", ".join(cte_parts)
+        # Step 0 — все сессии прошедшие первый шаг
+        # Step N (N>0) — те которые прошли N-1 + step N произошёл позже
+        step_counts: list[dict] = []
+        with conn.begin():
+            for i, (etype, epath) in enumerate(parsed_steps):
+                where_chain = ""
+                joins = ""
+                for k in range(i + 1):
+                    if k == 0:
+                        joins += f" FROM step_0"
+                    else:
+                        joins += f" JOIN step_{k} ON step_{k}.session_id = step_0.session_id"
+                        where_chain += f" AND step_{k}.ts > step_{k - 1}.ts"
+                query = text(f"""
+                    WITH {cte_sql}
+                    SELECT COUNT(DISTINCT step_0.session_id) {joins}
+                    WHERE 1=1 {where_chain}
+                """)
+                result = conn.execute(query, params).fetchone()
+                count = int(result[0]) if result else 0
+                label = f"{etype}:{epath}" if epath else etype
+                step_counts.append({"step": i, "label": label, "sessions": count})
+
+    # Считаем conversion rate по отношению к step 0
+    base = step_counts[0]["sessions"] if step_counts else 0
+    for s in step_counts:
+        s["conversion_pct"] = round(s["sessions"] / base * 100, 1) if base > 0 else 0.0
+
+    return {
+        "period_days": days,
+        "steps": step_counts,
+    }
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# GET /cohort — retention curves (D1/D7/D30) для авторизованных
+# ════════════════════════════════════════════════════════════════════════════
+
+@router.get("/cohort")
+async def get_cohort(
+    weeks: int = Query(8, ge=1, le=26, description="Сколько cohort-недель показать"),
+    user=Depends(require_admin),
+):
+    """Cohort retention: для каждой недели регистрации — % вернувшихся через D1/D7/D30.
+
+    Только для авторизованных users (которые имеют persistent user_id через login).
+    Гости отслеживаются по session_id, который умирает при закрытии вкладки → cohort impossible.
+    """
+    engine = get_engine()
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            WITH cohorts AS (
+                SELECT id AS user_id,
+                       date_trunc('week', created_at)::date AS cohort_week
+                FROM users
+                WHERE created_at >= NOW() - (:weeks * INTERVAL '1 week')
+            ),
+            user_active_days AS (
+                SELECT DISTINCT user_id, server_ts::date AS day
+                FROM analytics_events
+                WHERE user_id IS NOT NULL
+                  AND server_ts >= NOW() - (:weeks * INTERVAL '1 week') - INTERVAL '30 days'
+            )
+            SELECT
+                c.cohort_week,
+                COUNT(DISTINCT c.user_id) AS cohort_size,
+                COUNT(DISTINCT c.user_id) FILTER (
+                    WHERE EXISTS (
+                        SELECT 1 FROM user_active_days a
+                        WHERE a.user_id = c.user_id
+                          AND a.day = c.cohort_week + INTERVAL '1 day'
+                    )
+                ) AS d1,
+                COUNT(DISTINCT c.user_id) FILTER (
+                    WHERE EXISTS (
+                        SELECT 1 FROM user_active_days a
+                        WHERE a.user_id = c.user_id
+                          AND a.day BETWEEN c.cohort_week + INTERVAL '1 day' AND c.cohort_week + INTERVAL '7 days'
+                    )
+                ) AS d7,
+                COUNT(DISTINCT c.user_id) FILTER (
+                    WHERE EXISTS (
+                        SELECT 1 FROM user_active_days a
+                        WHERE a.user_id = c.user_id
+                          AND a.day BETWEEN c.cohort_week + INTERVAL '1 day' AND c.cohort_week + INTERVAL '30 days'
+                    )
+                ) AS d30
+            FROM cohorts c
+            GROUP BY c.cohort_week
+            ORDER BY c.cohort_week DESC
+        """), {"weeks": weeks}).fetchall()
+
+    cohorts = []
+    for r in rows:
+        size = int(r[1])
+        cohorts.append({
+            "cohort_week": r[0].isoformat(),
+            "cohort_size": size,
+            "d1": int(r[2]),
+            "d7": int(r[3]),
+            "d30": int(r[4]),
+            "d1_pct": round(int(r[2]) / size * 100, 1) if size > 0 else 0.0,
+            "d7_pct": round(int(r[3]) / size * 100, 1) if size > 0 else 0.0,
+            "d30_pct": round(int(r[4]) / size * 100, 1) if size > 0 else 0.0,
+        })
+
+    return {"weeks": weeks, "cohorts": cohorts}
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# GET /realtime — активность за последние N минут
+# ════════════════════════════════════════════════════════════════════════════
+
+@router.get("/realtime")
+async def get_realtime(
+    minutes: int = Query(5, ge=1, le=60),
+    user=Depends(require_admin),
+):
+    """Real-time activity: что происходит на сайте прямо сейчас.
+
+    Endpoint меняется каждые 15-30 секунд → клиент polling'ом обновляет widget.
+    """
+    engine = get_engine()
+    cutoff = datetime.utcnow() - timedelta(minutes=minutes)
+
+    with engine.connect() as conn:
+        # Active sessions (с heartbeat в последние N минут)
+        active = conn.execute(text("""
+            SELECT COUNT(DISTINCT session_id)
+            FROM analytics_events
+            WHERE server_ts >= :cutoff
+        """), {"cutoff": cutoff}).fetchone()
+        active_sessions = int(active[0]) if active else 0
+
+        # Active pages (топ-5 путей за последние N минут)
+        pages = conn.execute(text("""
+            SELECT event_path, COUNT(DISTINCT session_id) AS sessions
+            FROM analytics_events
+            WHERE server_ts >= :cutoff
+              AND event_type = 'pageview'
+              AND event_path IS NOT NULL
+            GROUP BY event_path
+            ORDER BY sessions DESC
+            LIMIT 5
+        """), {"cutoff": cutoff}).fetchall()
+
+        # Recent events (последние 15 событий, любого типа)
+        recent = conn.execute(text("""
+            SELECT event_type, event_path, payload, server_ts, ip_country, device
+            FROM analytics_events
+            WHERE server_ts >= :cutoff
+            ORDER BY server_ts DESC
+            LIMIT 15
+        """), {"cutoff": cutoff}).fetchall()
+
+        # Devices breakdown
+        devices = conn.execute(text("""
+            SELECT device, COUNT(DISTINCT session_id) AS sessions
+            FROM analytics_events
+            WHERE server_ts >= :cutoff AND device IS NOT NULL
+            GROUP BY device
+        """), {"cutoff": cutoff}).fetchall()
+
+    return {
+        "minutes": minutes,
+        "active_sessions": active_sessions,
+        "active_pages": [{"path": r[0], "sessions": int(r[1])} for r in pages],
+        "recent_events": [
+            {
+                "event_type": r[0],
+                "event_path": r[1],
+                "payload": r[2],
+                "server_ts": r[3].isoformat(),
+                "country": r[4],
+                "device": r[5],
+            }
+            for r in recent
+        ],
+        "devices": [{"device": r[0], "sessions": int(r[1])} for r in devices],
+    }
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# A/B testing — experiments + assignment
+# ════════════════════════════════════════════════════════════════════════════
+# Логика deterministic split:
+#   bucket = hash(experiment_name + user_id|session_id) mod 100
+#   bucket < traffic_split → variant_a, иначе variant_b
+# Даёт consistency: один user всегда видит ту же variant для эксперимента.
+
+import hashlib
+
+
+class ABExperimentCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=64)
+    description: Optional[str] = None
+    variant_a: str = Field(..., min_length=1, max_length=64)
+    variant_b: str = Field(..., min_length=1, max_length=64)
+    traffic_split: int = Field(50, ge=0, le=100, description="% trafic в variant_a (rest → b)")
+    active: bool = True
+
+
+@router.get("/experiments")
+async def list_experiments(user=Depends(require_admin)):
+    """Список всех A/B экспериментов (admin-only)."""
+    engine = get_engine()
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            SELECT name, description, variant_a, variant_b, traffic_split, active,
+                   created_at,
+                   (SELECT COUNT(*) FROM ab_assignments WHERE experiment_name = ab_experiments.name) AS total_assignments
+            FROM ab_experiments
+            ORDER BY created_at DESC
+        """)).fetchall()
+    return {
+        "experiments": [
+            {
+                "name": r[0],
+                "description": r[1],
+                "variant_a": r[2],
+                "variant_b": r[3],
+                "traffic_split": int(r[4]),
+                "active": bool(r[5]),
+                "created_at": r[6].isoformat(),
+                "total_assignments": int(r[7]),
+            }
+            for r in rows
+        ]
+    }
+
+
+@router.post("/experiments", status_code=201)
+async def create_experiment(exp: ABExperimentCreate, user=Depends(require_admin)):
+    """Создать новый A/B эксперимент. name unique."""
+    engine = get_engine()
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                text("""
+                    INSERT INTO ab_experiments
+                        (name, description, variant_a, variant_b, traffic_split, active)
+                    VALUES (:name, :description, :variant_a, :variant_b, :traffic_split, :active)
+                """),
+                exp.model_dump(),
+            )
+    except Exception as e:
+        if "duplicate" in str(e).lower() or "unique" in str(e).lower():
+            raise HTTPException(409, f"Эксперимент '{exp.name}' уже существует")
+        raise HTTPException(500, f"DB error: {e}")
+    return {"status": "created", "name": exp.name}
+
+
+@router.delete("/experiments/{name}", status_code=204)
+async def delete_experiment(name: str, user=Depends(require_admin)):
+    """Удалить эксперимент. Cascade удаляет assignments."""
+    engine = get_engine()
+    with engine.begin() as conn:
+        conn.execute(text("DELETE FROM ab_assignments WHERE experiment_name = :name"), {"name": name})
+        conn.execute(text("DELETE FROM ab_experiments WHERE name = :name"), {"name": name})
+    return None
+
+
+@router.get("/experiments/{name}/assign")
+async def assign_variant(
+    name: str,
+    request: Request,
+    user=Depends(get_current_user_optional),
+):
+    """Возвращает variant ('a' / 'b') для текущего пользователя.
+
+    Detarministic split:
+      - Если user залогинен → bucket = hash(name + user_id) mod 100
+      - Иначе → bucket = hash(name + session_id из Cookie 'frame_session_id')
+      - bucket < traffic_split → variant_a, иначе variant_b
+
+    Если эксперимент не найден или inactive → возвращает variant_a (default fallback).
+    Записываем assignment в ab_assignments (idempotent через ON CONFLICT).
+    """
+    engine = get_engine()
+    with engine.connect() as conn:
+        exp = conn.execute(text("""
+            SELECT variant_a, variant_b, traffic_split, active
+            FROM ab_experiments WHERE name = :name
+        """), {"name": name}).fetchone()
+
+    if not exp or not bool(exp[3]):
+        return {"experiment": name, "variant": "a", "label": "default", "active": False}
+
+    # Subject ID: user_id если залогинен, иначе session_id из request body / cookie / header
+    subject = str(user.id) if user else (
+        request.headers.get("X-Session-Id")
+        or request.cookies.get("frame_session_id")
+        or "anonymous"
+    )
+
+    # Deterministic bucket
+    h = hashlib.md5(f"{name}::{subject}".encode("utf-8")).digest()
+    bucket = h[0]  # первый byte → 0-255 → mod 100
+    bucket = bucket % 100
+
+    variant = "a" if bucket < int(exp[2]) else "b"
+    label = exp[0] if variant == "a" else exp[1]
+
+    # Запись assignment (idempotent)
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("""
+                INSERT INTO ab_assignments (experiment_name, subject_id, variant, assigned_at)
+                VALUES (:exp, :subj, :var, NOW())
+                ON CONFLICT (experiment_name, subject_id) DO NOTHING
+            """), {"exp": name, "subj": subject, "var": variant})
+    except Exception:
+        pass  # fire-and-forget — не блокируем отдачу
+
+    return {"experiment": name, "variant": variant, "label": label, "active": True}
