@@ -485,13 +485,18 @@ export default function HeatmapPage() {
           fill={getColor(change)}
           className="hover:brightness-110"
         />
+        {/* fill="#fff" hardcoded by design: текст рендерится поверх цветного tile
+            (red/green/orange color from change %), не на bg-primary. Всегда нужен
+            белый для контраста независимо от темы. var(--text-inverse) тут НЕ подходит —
+            он темный в dark theme (≈ bg-primary inverse), что делает текст нечитаемым
+            на красных/зелёных tiles. */}
         {showTicker && (
           <text
             x={rect.x + rect.width / 2}
             y={rect.y + rect.height / 2 - (showPercent ? fonts.percent * 0.8 : 0)}
             textAnchor="middle"
             dominantBaseline="central"
-            fill="var(--text-inverse)"
+            fill="#fff"
             fontSize={fonts.ticker}
             fontWeight="800"
             clipPath={`url(#${clipId})`}
@@ -511,7 +516,7 @@ export default function HeatmapPage() {
             y={rect.y + rect.height / 2 + fonts.ticker * 0.55}
             textAnchor="middle"
             dominantBaseline="central"
-            fill="var(--text-inverse)"
+            fill="#fff"
             fontSize={fonts.percent}
             fontWeight="700"
             clipPath={`url(#${clipId})`}

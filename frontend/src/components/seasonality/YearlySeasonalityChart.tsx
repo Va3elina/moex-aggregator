@@ -336,7 +336,10 @@ export default function YearlySeasonalityChart({
                   padding: '2px 5px',
                   fontSize: 'var(--chart-font-y, 16px)',
                   fontWeight: 700,
-                  color: 'var(--text-inverse)',
+                  // #fff hardcoded: bg = var(--accent) (pumpkin) — оранжевый цвет
+                  // не зависит от темы. var(--text-inverse) в dark theme = #0B0D0F
+                  // (почти чёрный) → нечитаемый на оранжевом.
+                  color: '#fff',
                   whiteSpace: 'nowrap',
                   zIndex: 2,
                   lineHeight: 1.2,
