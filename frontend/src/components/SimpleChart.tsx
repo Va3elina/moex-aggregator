@@ -857,10 +857,18 @@ export default function SimpleChart({
           <span className="text-4xl font-bold text-theme-primary tracking-tight">
             {formatValue(currentValue)}
           </span>
-          <span className={`text-base font-semibold px-2 py-0.5 rounded-lg ${isPositive
-            ? 'text-[#2EE59D] bg-[#2EE59D]/10'
-            : 'text-[#FF4D4D] bg-[#FF4D4D]/10'
-            }`}>
+          {/* Цвета через theme vars — funds-flow-positive (forest green в editorial-light,
+              brighter в dark) и funds-flow-negative (clay/red). bg = тот же цвет 10% opacity
+              через color-mix чтобы получить tint на любой теме. */}
+          <span
+            className="text-base font-semibold px-2 py-0.5 rounded-lg"
+            style={{
+              color: isPositive ? 'var(--funds-flow-positive)' : 'var(--funds-flow-negative)',
+              background: isPositive
+                ? 'color-mix(in srgb, var(--funds-flow-positive) 10%, transparent)'
+                : 'color-mix(in srgb, var(--funds-flow-negative) 10%, transparent)',
+            }}
+          >
             {isPositive ? '↑' : '↓'} {Math.abs(changePercent).toFixed(2)}%
           </span>
         </div>
@@ -915,7 +923,7 @@ export default function SimpleChart({
                     x={-tokens.axisGap}
                     y={tick.y}
                     textAnchor="end"
-                    dominantBaseline="middle"
+                    dominantBaseline="central"
                     fill={isDualAxis ? primaryColor : 'var(--axis-color, #9CA3B8)'}
                     fontSize={tokens.fontY}
                     fontWeight={tokens.fontYWeight}
@@ -935,7 +943,7 @@ export default function SimpleChart({
                 x={chartWidth + tokens.axisGap}
                 y={tick.y}
                 textAnchor="start"
-                dominantBaseline="middle"
+                dominantBaseline="central"
                 fill={secondaryColor}
                 fontSize={tokens.fontY}
                 fontWeight={tokens.fontYWeight}

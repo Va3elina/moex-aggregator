@@ -490,8 +490,8 @@ export default function HeatmapPage() {
             x={rect.x + rect.width / 2}
             y={rect.y + rect.height / 2 - (showPercent ? fonts.percent * 0.8 : 0)}
             textAnchor="middle"
-            dominantBaseline="middle"
-            fill="white"
+            dominantBaseline="central"
+            fill="var(--text-inverse)"
             fontSize={fonts.ticker}
             fontWeight="800"
             clipPath={`url(#${clipId})`}
@@ -510,8 +510,8 @@ export default function HeatmapPage() {
             x={rect.x + rect.width / 2}
             y={rect.y + rect.height / 2 + fonts.ticker * 0.55}
             textAnchor="middle"
-            dominantBaseline="middle"
-            fill="white"
+            dominantBaseline="central"
+            fill="var(--text-inverse)"
             fontSize={fonts.percent}
             fontWeight="700"
             clipPath={`url(#${clipId})`}

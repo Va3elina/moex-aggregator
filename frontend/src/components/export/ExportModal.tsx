@@ -403,7 +403,7 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
                             style={{
                                 backgroundColor: 'var(--accent)',
                                 border: '1.5px solid var(--text-primary)',
-                                color: '#FFFFFF',
+                                color: 'var(--text-inverse)',
                                 fontSize: 'var(--fs-sm)',
                             }}
                         >
@@ -422,7 +422,7 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
                             style={{
                                 backgroundColor: 'var(--accent)',
                                 border: '1.5px solid var(--text-primary)',
-                                color: '#FFFFFF',
+                                color: 'var(--text-inverse)',
                                 fontSize: 'var(--fs-sm)',
                             }}
                         >
