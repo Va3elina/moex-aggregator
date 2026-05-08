@@ -127,6 +127,8 @@ SCRIPTS = {
     'breadth_daily': BASE_DIR / 'Candles' / 'compute_breadth_history.py',
     # Дивиденды (загрузка с ISS + определение экс-дат)
     'dividends_daily': BASE_DIR / 'Candles' / 'fetch_dividends.py',
+    # Сырьевые товары (Yahoo Finance: BRENT/GOLD/SILVER/...) — для seasonality
+    'commodity_daily': BASE_DIR / 'Commodity' / 'fetch_commodity_realtime.py',
 }
 
 # Материализованные представления
@@ -150,6 +152,13 @@ DAILY_UPDATE_MINUTE = 10
 FUNDS_EARLY_UPDATE_HOUR = 14
 FUNDS_EARLY_UPDATE_MINUTE = 30
 
+# Commodity — Yahoo Finance daily close. US market закрыт в 23:00 EST = 07:00 МСК
+# (или 06:00 в DST). 08:00 МСК — гарантированно после закрытия, дневные close
+# уже окончательные. UPSERT на (secid, trade_date) → безопасно если запустим
+# раньше или дважды.
+COMMODITY_UPDATE_HOUR = 8
+COMMODITY_UPDATE_MINUTE = 0
+
 # Буферы (секунды после закрытия интервала)
 BUFFER_5MIN = 10  # После закрытия 5-минутки
 BUFFER_HOUR = 120  # 2 минуты после часа для агрегации
@@ -168,6 +177,7 @@ TIMEOUTS = {
     'market_cap_daily': 120,  # 2 минуты
     'breadth_daily': 600,  # 10 минут (полный пересчёт ~2 мин)
     'dividends_daily': 900,  # 15 минут (много HTTP-запросов к ISS)
+    'commodity_daily': 600,  # 10 минут (9 тикеров × Yahoo HTTP, обычно <1 мин)
 }
 
 # Директория логов
@@ -374,6 +384,7 @@ class MainOrchestrator:
         self.last_hourly_aggregate = None
         self.last_daily_update = None
         self.last_funds_early_update = None  # ранний funds-only прогон в 14:30
+        self.last_commodity_update = None    # commodity daily — 08:00 МСК после US close
         self.last_weekend_catchup = None
 
         self.stats = {
@@ -602,6 +613,24 @@ class MainOrchestrator:
 
         return success
 
+    async def run_commodity_update(self) -> bool:
+        """Дневные цены сырья (Yahoo Finance) для Сезонности."""
+        log.info("  🛢️  Commodity Daily (Yahoo)...")
+        self.stats.setdefault('commodity_daily_runs', 0)
+        self.stats.setdefault('commodity_daily_success', 0)
+        self.stats['commodity_daily_runs'] += 1
+
+        success, msg, dur = await run_script('commodity_daily', [])
+
+        if success:
+            self.stats['commodity_daily_success'] += 1
+            log.info(f"    ✓ Commodity Daily ({dur:.1f}с)")
+        else:
+            self.stats['errors'] += 1
+            log.error(f"    ✗ Commodity Daily: {msg}")
+
+        return success
+
     async def run_index_candles_hourly_update(self) -> bool:
         """Часовые свечи индексов (для intraday-сезонности IMOEX)."""
         log.info("  📊 Index Candles Hourly...")
@@ -713,6 +742,7 @@ class MainOrchestrator:
             self.run_market_cap_update,
             self.run_breadth_update,
             self.run_dividends_update,
+            self.run_commodity_update,
         ]:
             success = await fn()
             if success:
@@ -798,6 +828,7 @@ class MainOrchestrator:
         log.info(f"  Расписание:")
         log.info(f"    5м цикл: XX:00:{BUFFER_5MIN:02d}, XX:05:{BUFFER_5MIN:02d}...")
         log.info(f"    Агрегация: XX:02:00")
+        log.info(f"    Commodity: {COMMODITY_UPDATE_HOUR:02d}:{COMMODITY_UPDATE_MINUTE:02d}")
         log.info(f"    Funds early: {FUNDS_EARLY_UPDATE_HOUR:02d}:{FUNDS_EARLY_UPDATE_MINUTE:02d}")
         log.info(f"    Daily: {DAILY_UPDATE_HOUR:02d}:{DAILY_UPDATE_MINUTE:02d}")
         log.info(f"  Календарь MOEX: {'✓ загружен' if CALENDAR_AVAILABLE else '✗ не найден'}")
@@ -826,7 +857,7 @@ class MainOrchestrator:
                 gap_days = self._get_oi_hourly_gap_days()
                 await self.run_hourly_aggregate(recent_days=gap_days)
 
-            # Daily (OI + Funds + Indices + Macro + Market Cap + Breadth)
+            # Daily (OI + Funds + Indices + Macro + Market Cap + Breadth + Commodity)
             await self.run_daily_update()
             await self.run_funds_update()
             await self.run_indices_update()
@@ -835,6 +866,7 @@ class MainOrchestrator:
             await self.run_market_cap_update()
             await self.run_breadth_update()
             await self.run_dividends_update()
+            await self.run_commodity_update()
 
             # Обновляем все представления после полной синхронизации
             log.info("  🔄 Финальное обновление представлений...")
@@ -912,6 +944,17 @@ class MainOrchestrator:
                     log.info(f"⏰ [{now:%H:%M:%S} МСК] Ранний funds update...")
                     await self.run_funds_update()
                     self.last_funds_early_update = slot_day
+
+                # === Commodity (08:00 МСК) ===
+                # US market закрывается в 23:00 EST = 07:00 МСК. К 08:00 дневные
+                # close уже окончательные на Yahoo. Запускается ежедневно (включая
+                # выходные — Yahoo не закрывается на выходные MOEX).
+                if (slot_day != self.last_commodity_update and
+                        now.hour == COMMODITY_UPDATE_HOUR and
+                        now.minute >= COMMODITY_UPDATE_MINUTE):
+                    log.info(f"⏰ [{now:%H:%M:%S} МСК] Commodity update...")
+                    await self.run_commodity_update()
+                    self.last_commodity_update = slot_day
 
                 # === Дневное обновление (в 19:10, только в торговые дни) ===
                 if (slot_day != self.last_daily_update and

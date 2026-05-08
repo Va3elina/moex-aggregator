@@ -32,11 +32,18 @@ log = get_logger()
 
 router = APIRouter(prefix="/api/seasonality", tags=["seasonality"])
 
-# Инструменты из index_data (не candles)
+# Инструменты из index_data (не candles).
+# Включает индексы MOEX, валюты + сырьевые товары (Yahoo Finance daily close,
+# хранятся в той же таблице index_data — для seasonality методология общая).
 INDEX_DATA_INSTRUMENTS = {
     "IMOEX", "RTSI", "GLDRUB_TOM", "RGBITR", "RGBI", "RVI",
     "USD000UTSTOM", "EUR_RUB__TOM", "CNYRUB_TOM",
     "MCFTR", "RUSFAR3M",
+    # Сырьё (Yahoo Finance commodities) — см. Commodity/fetch_commodity_realtime.py
+    "BRENT", "NATGAS_HH", "GOLD", "SILVER", "PLATINUM", "PALLADIUM",
+    "COPPER", "ALUMINUM", "WHEAT", "LIT",
+    # Сырьё (MOEX continuous front-month rolled из FORTS expiry contracts)
+    "TTF_GAS", "NICKEL",
 }
 
 # Вечные фьючерсы (candles, type='futures')
@@ -98,12 +105,41 @@ def _get_ex_dates_from_db(engine, secid: str) -> dict[str, float]:
     return ex_dates
 
 
+def _aggregate(values: list[float], agg_type: str = "avg") -> tuple[float, float]:
+    """Возвращает (центр распределения, разброс) пары:
+      - agg_type='avg'    → (mean, std)
+      - agg_type='median' → (median, MAD * 1.4826)
+
+    MAD (Median Absolute Deviation) умножается на 1.4826 — это нормирующий
+    множитель для нормального распределения, чтобы MAD ≈ std. Так пользовательский
+    band/aura «±std» остаётся семантически тем же при переключении avg↔median.
+
+    Median устойчив к выбросам (один экстремальный год не сдвигает значение),
+    поэтому кнопка «Без выбросов» в UI = переключение агрегации на median.
+    Это методологически чище чем hardcoded exclude_years (2008/2014/2020/2022).
+    """
+    if not values:
+        return 0.0, 0.0
+    n = len(values)
+    if agg_type == "median":
+        sv = sorted(values)
+        center = sv[n // 2] if n % 2 else (sv[n // 2 - 1] + sv[n // 2]) / 2
+        deviations = sorted(abs(v - center) for v in values)
+        mad = deviations[n // 2] if n % 2 else (deviations[n // 2 - 1] + deviations[n // 2]) / 2
+        return center, mad * 1.4826
+    # avg
+    mean = sum(values) / n
+    variance = sum((v - mean) ** 2 for v in values) / n
+    return mean, variance ** 0.5
+
+
 def _compute_monthly_returns_index_data(
     engine,
     secid: str,
     iterations: int,
     since_year: int | None = None,
     exclude_years: list[int] | None = None,
+    agg_type: str = "avg",
 ) -> list[dict]:
     """
     Месячная сезонность через close-to-close (правильная методология).
@@ -157,14 +193,12 @@ def _compute_monthly_returns_index_data(
     bars = []
     for m in sorted(groups.keys()):
         vals = groups[m]
-        mean = sum(vals) / len(vals)
-        variance = sum((v - mean) ** 2 for v in vals) / len(vals) if len(vals) > 1 else 0
-        std = variance ** 0.5
+        center, spread = _aggregate(vals, agg_type)
         bars.append({
             "label": MONTH_LABELS.get(m, str(m)),
             "key": m,
-            "avg_change": round(mean, 4),
-            "std_change": round(std, 4),
+            "avg_change": round(center, 4),
+            "std_change": round(spread, 4),
             "count": len(vals),
         })
     return bars
@@ -178,6 +212,7 @@ def _compute_monthly_returns_candles(
     ex_dates: dict[str, float],
     since_year: int | None = None,
     exclude_years: list[int] | None = None,
+    agg_type: str = "avg",
 ) -> list[dict]:
     """
     Месячная сезонность через close-to-close для акций/фьючерсов из candles.
@@ -255,14 +290,12 @@ def _compute_monthly_returns_candles(
     bars = []
     for m in sorted(groups.keys()):
         vals = groups[m]
-        mean = sum(vals) / len(vals)
-        variance = sum((v - mean) ** 2 for v in vals) / len(vals) if len(vals) > 1 else 0
-        std = variance ** 0.5
+        center, spread = _aggregate(vals, agg_type)
         bars.append({
             "label": MONTH_LABELS.get(m, str(m)),
             "key": m,
-            "avg_change": round(mean, 4),
-            "std_change": round(std, 4),
+            "avg_change": round(center, 4),
+            "std_change": round(spread, 4),
             "count": len(vals),
         })
     return bars
@@ -275,6 +308,7 @@ def _compute_seasonality_index_data(
     iterations: int,
     since_year: int | None = None,
     exclude_years: list[int] | None = None,
+    agg_type: str = "avg",
 ) -> list[dict]:
     """Сезонность для инструментов из index_data (IMOEX, RTSI, GLDRUB_TOM и т.д.)."""
     from collections import defaultdict
@@ -284,6 +318,7 @@ def _compute_seasonality_index_data(
         return _compute_monthly_returns_index_data(
             engine, secid, iterations,
             since_year=since_year, exclude_years=exclude_years,
+            agg_type=agg_type,
         )
 
     # Оставшиеся режимы: weekday и monthday считают дневной средний
@@ -343,10 +378,11 @@ def _compute_seasonality_index_data(
     for key in sorted(groups.keys()):
         vals = groups[key]
         label = (labels or {}).get(key, str(key))
+        center, _ = _aggregate(vals, agg_type)
         bars.append({
             "label": label,
             "key": key,
-            "avg_change": round(sum(vals) / len(vals), 4),
+            "avg_change": round(center, 4),
             "count": len(vals),
         })
     return bars
@@ -355,7 +391,8 @@ def _compute_seasonality_index_data(
 def _compute_seasonality_daily(engine, secid: str, mode: str, iterations: int,
                                 ex_dates: dict[str, float],
                                 since_year: int | None = None,
-                                exclude_years: list[int] | None = None) -> list[dict]:
+                                exclude_years: list[int] | None = None,
+                                agg_type: str = "avg") -> list[dict]:
     """
     Вычисляет сезонность для дневных режимов (weekday, monthday, monthly).
 
@@ -374,10 +411,12 @@ def _compute_seasonality_daily(engine, secid: str, mode: str, iterations: int,
             return _compute_monthly_returns_index_data(
                 engine, secid, iterations,
                 since_year=since_year, exclude_years=exclude_years,
+                agg_type=agg_type,
             )
         return _compute_monthly_returns_candles(
             engine, secid, inst_type, iterations, ex_dates,
             since_year=since_year, exclude_years=exclude_years,
+            agg_type=agg_type,
         )
 
     # Для index_data (не monthly) — отдельная логика
@@ -385,6 +424,7 @@ def _compute_seasonality_daily(engine, secid: str, mode: str, iterations: int,
         return _compute_seasonality_index_data(
             engine, secid, mode, iterations,
             since_year=since_year, exclude_years=exclude_years,
+            agg_type=agg_type,
         )
 
     type_filter = f"type = '{inst_type}'" if inst_type else "TRUE"
@@ -502,7 +542,7 @@ def _compute_seasonality_daily(engine, secid: str, mode: str, iterations: int,
     bars = []
     for key in sorted(groups.keys()):
         values = groups[key]
-        avg_change = sum(values) / len(values) if values else 0
+        center, _ = _aggregate(values, agg_type)
         if labels:
             label = labels.get(key, str(key))
         else:
@@ -510,7 +550,7 @@ def _compute_seasonality_daily(engine, secid: str, mode: str, iterations: int,
         bars.append({
             "label": label,
             "key": key,
-            "avg_change": round(avg_change, 4),
+            "avg_change": round(center, 4),
             "count": len(values),
         })
 
@@ -523,6 +563,7 @@ def _compute_yearly_seasonality(
     ex_dates: dict[str, float],
     since_year: int | None = None,
     exclude_years: list[int] | None = None,
+    agg_type: str = "avg",
 ) -> dict:
     """
     Годовая сезонность: кумулятивное изменение цены с начала года.
@@ -665,14 +706,12 @@ def _compute_yearly_seasonality(
     # "среднее" статистически, но полезно для сравнения "как вёл себя 2025".
     # С calendar-aligned resampling все годы дают точки во все bucket'ы.
     MIN_YEARS = 1
-    raw_avg = []  # (bucket, avg, std, count)
+    raw_avg = []  # (bucket, center, spread, count)
     for i in range(N_BUCKETS):
         vals = historical_buckets[i]
         if len(vals) >= MIN_YEARS:
-            mean = sum(vals) / len(vals)
-            variance = sum((v - mean) ** 2 for v in vals) / len(vals)
-            std = variance ** 0.5
-            raw_avg.append((i, mean, std, len(vals)))
+            center, spread = _aggregate(vals, agg_type)
+            raw_avg.append((i, center, spread, len(vals)))
 
     # Без сглаживания — каждый bucket уже средняя по всем годам через
     # calendar-aligned resampling. Smoothing затирал реальные дневные паттерны.
@@ -723,10 +762,13 @@ async def get_seasonality(
     exclude_dividends: bool = Query(False, description="Убрать дивидендные гэпы"),
     since_year: int | None = Query(None, description="Учитывать годы ≥ since_year (для monthly)"),
     exclude_years: str = Query("", description="Исключить года через запятую (для monthly)"),
+    agg_type: str = Query("avg", description="Тип агрегации: avg | median"),
     user=Depends(get_current_user_optional),
 ):
     if mode not in ("intraday", "weekday", "monthday", "monthly"):
         raise HTTPException(400, "mode must be one of: intraday, weekday, monthday, monthly")
+    if agg_type not in ("avg", "median"):
+        raise HTTPException(400, "agg_type must be 'avg' or 'median'")
 
     # Парсинг исключённых годов
     excl_list: list[int] = []
@@ -740,7 +782,7 @@ async def get_seasonality(
     if mode == "intraday":
         enforce_guest_limits(user, interval=60)
 
-    cache_key = f"seasonality:{secid}:{mode}:iter{iterations}:nodiv{exclude_dividends}:sy{since_year}:ex{','.join(map(str,sorted(excl_list)))}"
+    cache_key = f"seasonality:{secid}:{mode}:iter{iterations}:nodiv{exclude_dividends}:sy{since_year}:ex{','.join(map(str,sorted(excl_list)))}:agg{agg_type}"
     cached = get_or_set(cache_key)
     if cached is not None:
         return cached
@@ -795,7 +837,16 @@ async def get_seasonality(
             # Также в recent_days — чтобы исключить эти дни из "последних N"
             recent_year_where += " AND begin_time::date != ALL(:ex_dates_arr ::date[])"
 
-        # Intraday: open-to-close per hour
+        # Intraday: open-to-close per hour.
+        # agg_type='median' → PERCENTILE_CONT(0.5) — robust к outlier-дням.
+        # agg_type='avg'    → AVG — стандартная средняя по дням в bucket.
+        # f-string безопасен: agg_type валидирован whitelist выше.
+        change_expr = "(c.close - c.open) / NULLIF(c.open, 0) * 100"
+        agg_func = (
+            f"PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY {change_expr})"
+            if agg_type == "median"
+            else f"AVG({change_expr})"
+        )
         query = text(f"""
             WITH recent_days AS (
                 SELECT DISTINCT begin_time::date AS trade_date
@@ -807,7 +858,7 @@ async def get_seasonality(
             )
             SELECT
                 EXTRACT(HOUR FROM c.begin_time)::int as key,
-                AVG((c.close - c.open) / NULLIF(c.open, 0) * 100) as avg_change,
+                {agg_func} as avg_change,
                 COUNT(*) as cnt
             FROM candles c
             INNER JOIN recent_days rd ON c.begin_time::date = rd.trade_date
@@ -845,6 +896,7 @@ async def get_seasonality(
         bars = _compute_seasonality_daily(
             engine, secid, mode, iterations, ex_dates,
             since_year=since_year, exclude_years=excl_list,
+            agg_type=agg_type,
         )
 
     if not bars:
@@ -1031,17 +1083,24 @@ async def get_yearly_seasonality(
     secid: str = Query(..., description="Тикер"),
     exclude_dividends: bool = Query(False, description="Убрать дивидендные гэпы"),
     since_year: int | None = Query(None, description="Учитывать годы ≥ since_year"),
-    exclude_years: str = Query("", description="Исключить года (через запятую), напр. '2008,2014,2020,2022'"),
+    exclude_years: str = Query("", description="Исключить года (через запятую)"),
+    agg_type: str = Query("avg", description="Тип агрегации: avg | median"),
     user=Depends(get_current_user_optional),
 ):
     """
-    Годовая сезонность: среднее кумулятивное изменение цены с начала года.
+    Годовая сезонность: кумулятивное изменение цены с начала года, агрегированное по годам.
     Две серии: average (calendar-aligned resample) и current (текущий год).
 
     Параметры фильтрации:
     - since_year: брать только годы ≥ этого значения (для «с 2015 г.»)
-    - exclude_years: список годов для исключения (для «без выбросов»)
+    - exclude_years: список годов для исключения (legacy — оставлен для обратной совместимости)
+    - agg_type: 'avg' (среднее арифметическое) или 'median' (медиана). Median устойчива
+      к выбросам — кризисы 2008/2014/2020/2022 меньше тянут типичную траекторию.
+      Кнопка «Без выбросов» в UI = agg_type='median'.
     """
+    if agg_type not in ("avg", "median"):
+        raise HTTPException(400, "agg_type must be 'avg' or 'median'")
+
     # Парсинг списка исключённых годов
     excl_list: list[int] = []
     if exclude_years:
@@ -1050,7 +1109,7 @@ async def get_yearly_seasonality(
         except ValueError:
             raise HTTPException(400, "exclude_years must be comma-separated integers")
 
-    cache_key = f"seasonality_yearly:{secid}:nodiv{exclude_dividends}:sy{since_year}:ex{','.join(map(str,sorted(excl_list)))}"
+    cache_key = f"seasonality_yearly:{secid}:nodiv{exclude_dividends}:sy{since_year}:ex{','.join(map(str,sorted(excl_list)))}:agg{agg_type}"
     cached = get_or_set(cache_key)
     if cached is not None:
         return cached
@@ -1064,20 +1123,22 @@ async def get_yearly_seasonality(
         ex_dates = _get_ex_dates_from_db(engine, secid)
 
     data = _compute_yearly_seasonality(engine, secid, ex_dates,
-                                       since_year=since_year, exclude_years=excl_list)
+                                       since_year=since_year, exclude_years=excl_list,
+                                       agg_type=agg_type)
     if not data:
         raise HTTPException(404, f"Нет данных для {secid}")
 
     duration = time.time() - start_time
     avg_len = len(data.get("average", []))
     cur_len = len(data.get("current", []))
-    log.info(f"GET /seasonality/yearly {secid} sy={since_year} ex={excl_list} avg={avg_len} cur={cur_len} {duration:.2f}s")
+    log.info(f"GET /seasonality/yearly {secid} sy={since_year} ex={excl_list} agg={agg_type} avg={avg_len} cur={cur_len} {duration:.2f}s")
 
     result = {
         "secid": secid,
         "exclude_dividends": exclude_dividends,
         "since_year": since_year,
         "excluded_years": excl_list,
+        "agg_type": agg_type,
         **data,
     }
     get_or_set(cache_key, result, ttl=300)

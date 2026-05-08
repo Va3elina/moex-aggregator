@@ -517,6 +517,16 @@ export default function FundsMoneyPage() {
                             viewMode === 'flows' ? (flowTimeframe === '1d' ? 'День' : flowTimeframe === '1w' ? 'Неделя' : 'Месяц') : null,
                         ].filter(Boolean) as string[],
                     }}
+                    getExportStyles={(): Record<string, string> => {
+                        // Только для flows mode. Chart имеет only-right axis,
+                        // справа padding-strip шириной --chart-pad-right-single
+                        // содержит Y-numbers с внутренним отступом left:12px.
+                        // Visual distance container-right → начало labels = pad-right - 12.
+                        // Mirror this как left padding в export → симметричное empty
+                        // пространство по обе стороны chart-area, без injecting empty width.
+                        if (viewMode !== 'flows') return {};
+                        return { '--chart-pad-left': 'calc(var(--chart-pad-right-single) - 12px)' };
+                    }}
                     className="ml-auto"
                 />
             </div>

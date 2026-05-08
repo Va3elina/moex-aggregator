@@ -87,11 +87,13 @@ export default function StrengthControls({
                 onChange={onChartModeChange}
             />
 
-            {/* Universe: IMOEX / all stocks */}
+            {/* Universe: IMOEX / 100 акций.
+                Раньше label был 'Все акции' — переименовано чтобы точнее
+                отражать что universe = 100 ликвидных акций (не реально все). */}
             <Dropdown<'imoex' | 'all'>
                 options={[
                     { key: 'imoex', label: currency === 'usd' ? 'Индекс RTSI' : 'Индекс IMOEX' },
-                    { key: 'all', label: 'Все акции' },
+                    { key: 'all', label: '100 акций' },
                 ]}
                 value={universeBase}
                 onChange={onUniverseBaseChange}
@@ -130,7 +132,9 @@ export default function StrengthControls({
                     padding: 'var(--sp-2) var(--sp-4)',
                 }}
             >
-                {currency === 'usd' ? 'RTS' : 'IMOEX'}
+                {universeBase === 'all'
+                    ? (currency === 'usd' ? '100 акций $' : '100 акций ₽')
+                    : (currency === 'usd' ? 'RTS' : 'IMOEX')}
             </button>
 
             {/* Status + counter.

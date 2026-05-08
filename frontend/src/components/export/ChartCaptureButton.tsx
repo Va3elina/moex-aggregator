@@ -26,6 +26,11 @@ interface Props {
     filename: string;
     /** Метаданные для header в экспортированном изображении (title/asset/period) */
     metadata?: ExportMetadata;
+    /** CSS property→value pairs для transient style override на target element
+     *  ПЕРЕД capture (восстанавливаются после). Used для adjustments что нужны
+     *  только в exported PNG (e.g. сократить --chart-pad-left на FlowsHistogram).
+     *  Function — значение может зависеть от текущего state. */
+    getExportStyles?: () => Record<string, string>;
     /** Дополнительные классы кнопки */
     className?: string;
 }
@@ -34,10 +39,12 @@ export default function ChartCaptureButton({
     getTargetElement,
     filename,
     metadata,
+    getExportStyles,
     className = '',
 }: Props) {
     const [open, setOpen] = useState(false);
     const [target, setTarget] = useState<HTMLElement | null>(null);
+    const [styles, setStyles] = useState<Record<string, string> | undefined>(undefined);
 
     const handleClick = () => {
         const el = getTargetElement();
@@ -46,6 +53,8 @@ export default function ChartCaptureButton({
             return;
         }
         setTarget(el);
+        // Evaluate styles at click-time (depends on current state e.g. viewMode)
+        setStyles(getExportStyles ? getExportStyles() : undefined);
         setOpen(true);
     };
 
@@ -79,6 +88,7 @@ export default function ChartCaptureButton({
                         targetElement={target}
                         filename={filename}
                         metadata={metadata}
+                        exportStyles={styles}
                         onClose={handleClose}
                     />
                 </Suspense>

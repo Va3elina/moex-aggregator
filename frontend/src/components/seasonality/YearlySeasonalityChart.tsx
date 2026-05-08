@@ -272,9 +272,15 @@ export default function YearlySeasonalityChart({
         )}
         <div className="absolute" style={{ left: PL, right: PR, top: PT, bottom: PB }}>
           <svg viewBox="0 0 1000 500" preserveAspectRatio="none" width="100%" height="100%">
-            {/* Grid + zero line + month separators */}
+            {/* Grid + zero line + month separators.
+                zeroPct: позиция 0 на оси Y. emphasizeZero=true → жирная контрастная
+                линия (text-primary @ 1.75px @ opacity 0.6) — yearly чарт показывает
+                avg % изменения относительно "точки старта", и нулевая линия — это
+                водораздел между накопленным ростом и накопленным падением. */}
             <ChartGrid
               yTicks={yTicks}
+              zeroPct={yMin <= 0 && yMax >= 0 ? scY(0) * 100 : undefined}
+              emphasizeZero
               xSeparators={monthPositions.slice(1).map(mp => scX(mp.td) * 100)}
             />
 

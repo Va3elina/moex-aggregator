@@ -894,31 +894,38 @@ export default function SimpleChart({
             </clipPath>
           </defs>
 
+          {/* dual-axis активен только когда реально рисуется правая ось
+              (showSecondary + есть secondary y-ticks). В таком случае красим
+              ОБЕ оси своими цветами — симметрия. Иначе single-axis → нейтральный серый. */}
           <g transform={`translate(${padding.left}, ${padding.top})`}>
             {/* Горизонтальные линии сетки */}
-            {targetCalc.yTicks.map((tick, i) => (
-              <g key={i}>
-                <line
-                  x1={0}
-                  y1={tick.y}
-                  x2={chartWidth}
-                  y2={tick.y}
-                  stroke={GRID.major}
-                  strokeWidth="1"
-                />
-                <text
-                  x={-tokens.axisGap}
-                  y={tick.y}
-                  textAnchor="end"
-                  dominantBaseline="middle"
-                  fill="var(--axis-color, #9CA3B8)"
-                  fontSize={tokens.fontY}
-                  fontWeight={tokens.fontYWeight}
-                >
-                  {formatValue(tick.value)}
-                </text>
-              </g>
-            ))}
+            {targetCalc.yTicks.map((tick, i) => {
+              const isDualAxis = showSecondary && !!targetCalc.secYTicks && targetCalc.secYTicks.length > 0;
+              return (
+                <g key={i}>
+                  <line
+                    x1={0}
+                    y1={tick.y}
+                    x2={chartWidth}
+                    y2={tick.y}
+                    stroke={GRID.major}
+                    strokeWidth="1"
+                  />
+                  <text
+                    x={-tokens.axisGap}
+                    y={tick.y}
+                    textAnchor="end"
+                    dominantBaseline="middle"
+                    fill={isDualAxis ? primaryColor : 'var(--axis-color, #9CA3B8)'}
+                    fontSize={tokens.fontY}
+                    fontWeight={tokens.fontYWeight}
+                    opacity={isDualAxis ? 0.9 : 1}
+                  >
+                    {formatValue(tick.value)}
+                  </text>
+                </g>
+              );
+            })}
 
             {/* Правая ось Y (secondary). На мобиле раньше скрывалась из-за маленького
                 --chart-pad-right-dual (48px), но с увеличением до 68px labels помещаются. */}

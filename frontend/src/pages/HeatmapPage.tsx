@@ -3,6 +3,7 @@ import { Grid3X3 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import Dropdown, { type DropdownOption } from '../components/Dropdown';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
+import ChartWatermark from '../components/ChartWatermark';
 import { METHODOLOGY } from '../data/methodology';
 import { getHeatmapData, getHeatmapImoex } from '../services/api';
 import { useRealtimeData } from '../hooks/useRealtimeData';
@@ -125,6 +126,8 @@ function squarify(
 
 export default function HeatmapPage() {
   const containerRef = useRef<HTMLDivElement>(null);
+  // Outer paper-card ref — used for capture (включает watermark в snapshot)
+  const captureRef = useRef<HTMLDivElement>(null);
   const [sectors, setSectors] = useState<HeatmapSector[]>([]);
   const [allStocks, setAllStocks] = useState<HeatmapStock[]>([]);
   const [loading, setLoading] = useState(true);
@@ -567,9 +570,10 @@ export default function HeatmapPage() {
           onChange={setGroupBy}
         />
 
-        {/* Camera button inline, прижат к правому краю */}
+        {/* Camera button inline, прижат к правому краю.
+            captureRef = outer paper-card → snapshot включает watermark. */}
         <ChartCaptureButton
-          getTargetElement={() => containerRef.current}
+          getTargetElement={() => captureRef.current}
           filename={`frame-heatmap-${mapMode}-${period}-${groupBy}`}
           metadata={{
             title: 'Карта рынка',
@@ -584,10 +588,16 @@ export default function HeatmapPage() {
         />
       </div>
 
-      {/* Карта */}
+      {/* Карта — paper-card как у OI/Buffett (inner container с border + paper bg).
+          Treemap SVG внутри. Watermark — absolute bottom-left как у других charts. */}
+      <div
+        ref={captureRef}
+        className="relative rounded-2xl overflow-hidden bg-theme-primary"
+        style={{ border: '1.5px solid var(--text-primary)' }}
+      >
       <div
         ref={containerRef}
-        className="relative rounded-lg overflow-hidden"
+        className="relative"
         style={{ height: containerSize.height }}
       >
         {loading ? (
@@ -601,8 +611,10 @@ export default function HeatmapPage() {
           <svg width={containerSize.width} height={containerSize.height}>
             {treemapData.stockRects.map((rect) => renderStock(rect, `${rect.sector}-${rect.id}`))}
 
-            {/* Заголовки секторов — отдельная полоска.
-                Шрифт адаптивный (10-12px) + truncate с ellipsis если не лезет. */}
+            {/* Заголовки секторов — text на inner paper card без плашки.
+                Шрифт адаптивный (10-12px) + truncate с ellipsis если не лезет.
+                Раньше был <rect fill="var(--bg-secondary)"> подложкой —
+                убрана по запросу: текст напрямую на paper bg обеих тем. */}
             {treemapData.sectorLabels.map((label) => {
               // FontSize: ограничен высотой полоски (height - 4) и не больше 12.
               const labelFs = Math.min(12, Math.max(9, label.height - 4));
@@ -610,25 +622,18 @@ export default function HeatmapPage() {
               const availableW = label.width - padX * 2;
               const displayName = fitText(label.name, availableW, labelFs);
               return (
-                <g key={label.name}>
-                  <rect
-                    x={label.x + 3} y={label.y}
-                    width={label.width - 6} height={label.height}
-                    rx={3}
-                    fill="var(--bg-secondary)"
-                  />
-                  <text
-                    x={label.x + padX}
-                    y={label.y + label.height / 2}
-                    dominantBaseline="central"
-                    fill="var(--text-primary)"
-                    opacity={0.85}
-                    fontSize={labelFs}
-                    fontWeight="600"
-                  >
-                    {displayName}
-                  </text>
-                </g>
+                <text
+                  key={label.name}
+                  x={label.x + padX}
+                  y={label.y + label.height / 2}
+                  dominantBaseline="central"
+                  fill="var(--text-primary)"
+                  opacity={0.85}
+                  fontSize={labelFs}
+                  fontWeight="600"
+                >
+                  {displayName}
+                </text>
               );
             })}
           </svg>
@@ -638,6 +643,9 @@ export default function HeatmapPage() {
           </svg>
         ) : null}
       </div>
+      {/* Watermark — bottom-left, как на других chart-card'ах */}
+      <ChartWatermark left={10} bottom={10} />
+      </div>{/* /paper card */}
 
       </div>{/* /editorial-frame */}
 

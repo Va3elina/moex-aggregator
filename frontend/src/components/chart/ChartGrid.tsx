@@ -11,9 +11,13 @@ interface ChartGridProps {
   zeroPct?: number;
   /** Вертикальные разделители (X-позиции в % от ширины viewBox) */
   xSeparators?: number[];
+  /** emphasize=true → толще, контрастный цвет (text-primary), opacity 0.6.
+      Используется когда 0 — это reference baseline для распределения
+      положительных/отрицательных значений (yearly seasonality avg %). */
+  emphasizeZero?: boolean;
 }
 
-export default function ChartGrid({ yTicks, zeroPct, xSeparators }: ChartGridProps) {
+export default function ChartGrid({ yTicks, zeroPct, xSeparators, emphasizeZero }: ChartGridProps) {
   const W = SVG.viewBoxWidth;
   const H = SVG.viewBoxHeight;
 
@@ -30,7 +34,10 @@ export default function ChartGrid({ yTicks, zeroPct, xSeparators }: ChartGridPro
       {zeroPct !== undefined && (
         <line
           x1="0" x2={W} y1={zeroPct / 100 * H} y2={zeroPct / 100 * H}
-          stroke={GRID.zero} strokeWidth="1" vectorEffect="non-scaling-stroke"
+          stroke={emphasizeZero ? 'var(--text-primary)' : GRID.zero}
+          strokeWidth={emphasizeZero ? '1.75' : '1'}
+          opacity={emphasizeZero ? 0.6 : 1}
+          vectorEffect="non-scaling-stroke"
         />
       )}
       {/* Вертикальные разделители (месяцы и т.д.) */}

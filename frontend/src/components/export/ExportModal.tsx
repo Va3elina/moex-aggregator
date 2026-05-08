@@ -39,10 +39,14 @@ interface Props {
     targetElement: HTMLElement;
     filename: string;
     metadata?: ExportMetadata;
+    /** CSS property→value pairs to apply to targetElement BEFORE capture, restored AFTER.
+     *  Используется для transient layout adjustments (e.g. --chart-pad-left override
+     *  чтобы chart expanded в empty space только в exported PNG, без affecting live). */
+    exportStyles?: Record<string, string>;
     onClose: () => void;
 }
 
-export default function ExportModal({ targetElement, filename, metadata, onClose }: Props) {
+export default function ExportModal({ targetElement, filename, metadata, exportStyles, onClose }: Props) {
     const [state, setState] = useState<ExportModalState>({ phase: 'capturing' });
     const abortRef = useRef<AbortController | null>(null);
 
@@ -68,8 +72,28 @@ export default function ExportModal({ targetElement, filename, metadata, onClose
         abortRef.current = ac;
 
         (async () => {
+            // Apply transient export styles (CSS var overrides) на target.
+            // Browser reflows на следующем frame → ждём rAF → captureChart видит
+            // новый layout → восстанавливаем старые значения после capture.
+            const oldStyles = new Map<string, string>();
+            if (exportStyles) {
+                for (const [prop, val] of Object.entries(exportStyles)) {
+                    oldStyles.set(prop, targetElement.style.getPropertyValue(prop));
+                    targetElement.style.setProperty(prop, val);
+                }
+                await new Promise<void>(r => requestAnimationFrame(() => r()));
+            }
+
             try {
                 const raw = await captureChart(targetElement, ac.signal);
+
+                // Restore exportStyles immediately после capture (live page back to normal)
+                if (exportStyles) {
+                    for (const [prop, oldVal] of oldStyles) {
+                        if (oldVal) targetElement.style.setProperty(prop, oldVal);
+                        else targetElement.style.removeProperty(prop);
+                    }
+                }
 
                 // Wait for fonts so canvas2D drawText использует Inter
                 // (а не fallback) — header/footer text должен match chart.
@@ -84,6 +108,7 @@ export default function ExportModal({ targetElement, filename, metadata, onClose
                 const accent = computed.getPropertyValue('--accent').trim() || '#FF5C2B';
 
                 const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+
                 const framed = composeFramedCanvas(raw, {
                     background: bgColor,
                     textColor,
@@ -97,6 +122,14 @@ export default function ExportModal({ targetElement, filename, metadata, onClose
                 setState({ phase: 'preview', canvas: framed });
             } catch (err) {
                 if (ac.signal.aborted) return;
+                // Восстановить export styles даже при ошибке (защита от
+                // "застрявшего" override на live page после crash в pipeline)
+                if (exportStyles) {
+                    for (const [prop, oldVal] of oldStyles) {
+                        if (oldVal) targetElement.style.setProperty(prop, oldVal);
+                        else targetElement.style.removeProperty(prop);
+                    }
+                }
                 const msg = err instanceof Error ? err.message : 'Не удалось снять график';
                 setState({ phase: 'error', message: msg });
             }

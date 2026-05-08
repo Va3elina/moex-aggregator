@@ -2,8 +2,15 @@
 -- Обновляется каждые 5 минут через оркестратор (refresh_materialized_views)
 --
 -- change_1d: текущая цена vs close последнего будня (PREVPRICE MOEX)
--- change_1w/1m/1y: snapshot-to-snapshot по времени (NOW vs NOW-Period)
---   Используем 5-мин свечи для точности, daily как fallback
+-- change_1w/1m/1y: snapshot-to-snapshot — current price vs split-adjusted historical close
+--   Используем ТОЛЬКО daily candles (interval=24) — 5-мин историю в БД не
+--   пересчитывают при split'ах (например T 2026-04-02), поэтому 5-мин
+--   pre-split close может остаться "raw" (3200₽ вместо 320₽) и испортит расчёт.
+--
+-- known_splits — retroactive split adjustment для pre-split цен.
+-- Если known_splits.split_date IS NOT NULL и begin_time < split_date,
+-- то historical close делится на ratio чтобы привести к post-split equivalent.
+-- Добавлять новые сплиты при появлении (детектировать аномалии в daily change).
 --
 -- ВАЖНО: дневные свечи (interval=24) должны быть из ISS API (не Algopack),
 -- иначе close-цены будут неполными на буднях.
@@ -11,7 +18,14 @@
 DROP MATERIALIZED VIEW IF EXISTS mv_heatmap_stocks;
 
 CREATE MATERIALIZED VIEW mv_heatmap_stocks AS
-WITH ranked_daily AS (
+WITH known_splits AS (
+    -- secid, split_date, ratio (сколько новых акций на 1 старую)
+    -- Применяется ТОЛЬКО к close < split_date (retroactive adjustment)
+    SELECT 'T'::varchar     AS secid, '2026-04-02'::date AS split_date, 10.0::numeric AS ratio
+    UNION ALL
+    SELECT 'SFIN'::varchar, '2025-12-25'::date, 1.93::numeric
+),
+ranked_daily AS (
     SELECT secid, open, close, begin_time,
            ROW_NUMBER() OVER (PARTITION BY secid ORDER BY begin_time DESC) AS rn
     FROM candles
@@ -39,33 +53,44 @@ intraday_close AS (
       AND begin_time::date = CURRENT_DATE
     ORDER BY secid, begin_time DESC
 ),
--- 7D: snapshot-to-snapshot — цена ровно 168 часов назад (тот же HH:mm)
--- 5-мин свечи для точности, daily (begin_time=00:00) как fallback
+-- 7D: snapshot-to-snapshot. Только daily candles + split-adjustment.
 price_1w AS (
-    SELECT DISTINCT ON (secid) secid, close AS price
-    FROM candles
-    WHERE type = 'stock'
-      AND begin_time <= NOW() - INTERVAL '7 days'
-      AND begin_time >= NOW() - INTERVAL '10 days'
-    ORDER BY secid, begin_time DESC
+    SELECT DISTINCT ON (c.secid) c.secid,
+           CASE WHEN ks.split_date IS NOT NULL AND c.begin_time::date < ks.split_date
+                THEN c.close / ks.ratio
+                ELSE c.close END AS price
+    FROM candles c
+    LEFT JOIN known_splits ks ON ks.secid = c.secid
+    WHERE c.type = 'stock' AND c.interval = 24
+      AND c.begin_time <= NOW() - INTERVAL '7 days'
+      AND c.begin_time >= NOW() - INTERVAL '10 days'
+    ORDER BY c.secid, c.begin_time DESC
 ),
--- 30D: snapshot-to-snapshot — то же время 30 дней назад
+-- 30D: snapshot-to-snapshot. Только daily + split-adjustment.
 price_1m AS (
-    SELECT DISTINCT ON (secid) secid, close AS price
-    FROM candles
-    WHERE type = 'stock'
-      AND begin_time <= NOW() - INTERVAL '30 days'
-      AND begin_time >= NOW() - INTERVAL '35 days'
-    ORDER BY secid, begin_time DESC
+    SELECT DISTINCT ON (c.secid) c.secid,
+           CASE WHEN ks.split_date IS NOT NULL AND c.begin_time::date < ks.split_date
+                THEN c.close / ks.ratio
+                ELSE c.close END AS price
+    FROM candles c
+    LEFT JOIN known_splits ks ON ks.secid = c.secid
+    WHERE c.type = 'stock' AND c.interval = 24
+      AND c.begin_time <= NOW() - INTERVAL '30 days'
+      AND c.begin_time >= NOW() - INTERVAL '35 days'
+    ORDER BY c.secid, c.begin_time DESC
 ),
--- 1Y: snapshot-to-snapshot — то же время год назад
+-- 1Y: snapshot-to-snapshot. Только daily + split-adjustment.
 price_1y AS (
-    SELECT DISTINCT ON (secid) secid, close AS price
-    FROM candles
-    WHERE type = 'stock'
-      AND begin_time <= NOW() - INTERVAL '365 days'
-      AND begin_time >= NOW() - INTERVAL '379 days'
-    ORDER BY secid, begin_time DESC
+    SELECT DISTINCT ON (c.secid) c.secid,
+           CASE WHEN ks.split_date IS NOT NULL AND c.begin_time::date < ks.split_date
+                THEN c.close / ks.ratio
+                ELSE c.close END AS price
+    FROM candles c
+    LEFT JOIN known_splits ks ON ks.secid = c.secid
+    WHERE c.type = 'stock' AND c.interval = 24
+      AND c.begin_time <= NOW() - INTERVAL '365 days'
+      AND c.begin_time >= NOW() - INTERVAL '379 days'
+    ORDER BY c.secid, c.begin_time DESC
 ),
 stats_1d AS (
     SELECT secid, SUM(volume) AS volume, SUM(value) AS value

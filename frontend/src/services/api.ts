@@ -637,8 +637,11 @@ export type SeasonalityMode = 'intraday' | 'weekday' | 'monthday' | 'monthly';
 export interface SeasonalityFilters {
   /** Учитывать годы ≥ значения (для «с 2015 г.») */
   sinceYear?: number;
-  /** Исключить конкретные годы (для «без выбросов») */
+  /** Исключить конкретные годы (legacy — оставлен для обратной совместимости) */
   excludeYears?: number[];
+  /** Тип агрегации: 'avg' (по умолчанию) или 'median'.
+   *  Кнопка «Без выбросов» теперь = aggType='median' (устойчива к выбросам). */
+  aggType?: 'avg' | 'median';
 }
 
 export async function getSeasonality(
@@ -656,6 +659,7 @@ export async function getSeasonality(
   });
   if (filters?.sinceYear) params.set('since_year', filters.sinceYear.toString());
   if (filters?.excludeYears?.length) params.set('exclude_years', filters.excludeYears.join(','));
+  if (filters?.aggType) params.set('agg_type', filters.aggType);
   const response = await apiFetch(`${API_BASE}/api/seasonality?${params}`);
   if (!response.ok) throw new Error('Failed to fetch seasonality');
   return response.json();
@@ -747,6 +751,7 @@ export async function getSeasonalityYearly(
   });
   if (filters?.sinceYear) params.set('since_year', filters.sinceYear.toString());
   if (filters?.excludeYears?.length) params.set('exclude_years', filters.excludeYears.join(','));
+  if (filters?.aggType) params.set('agg_type', filters.aggType);
   const response = await apiFetch(`${API_BASE}/api/seasonality/yearly?${params}`);
   if (!response.ok) throw new Error('Failed to fetch yearly seasonality');
   return response.json();

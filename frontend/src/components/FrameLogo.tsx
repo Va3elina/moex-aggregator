@@ -60,12 +60,12 @@ export default function FrameLogo({
   }
 
   // Wordmark version — single SVG с glyph (32×32 viewBox unit) + text.
-  // Text width oценочно ~85px при fontSize 30 (5 chars × ~17px wide × 0.95).
-  // Total SVG viewBox 32 + 11 (gap) + 95 (text) = 138 units.
-  // Aligning text baseline to y=24 (75% of glyph height) даёт visual center
-  // совпадающий с glyph center.
+  // dominantBaseline="central" + y=16 (центр глифа) — em-box wordmark'а сидит
+  // на той же y что центр глифа. "central" = geometric middle of em-box (vs
+  // "alphabetic" baseline которая зависит от font metrics → wordmark "торчал"
+  // вверх). Identical behavior в browser и в html2canvas.
   const gap = 11;
-  const textWidth = 95;
+  const textWidth = 110; // bumped с 95 — fontSize 30 (вместо 26) занимает больше
   const totalWidth = 32 + gap + textWidth;
   const renderHeight = size;
   const renderWidth = (totalWidth / 32) * size;
@@ -85,16 +85,17 @@ export default function FrameLogo({
         <path d="M29 3 H19 V8 H24 V13 H29 Z" fill={color} />
         <path d="M3 29 H13 V24 H8 V19 H3 Z" fill={color} />
         <path d="M29 29 H19 V24 H24 V19 H29 Z" fill={color} />
-        {/* Wordmark — y=22 = baseline alignment с visual center glyph (16) */}
+        {/* Wordmark — em-box центр на y=16 (центр глифа). FontSize 30 — на
+            один шаг больше относительно glyph 32x32 (≈ 94% от glyph height). */}
         <text
           x={32 + gap}
-          y={22.5}
+          y={16}
           fontFamily="'Archivo', 'Inter', system-ui, sans-serif"
           fontWeight={weight}
-          fontSize={26}
+          fontSize={30}
           letterSpacing={-0.5}
           fill={color}
-          dominantBaseline="alphabetic"
+          dominantBaseline="central"
         >
           FRAME
         </text>

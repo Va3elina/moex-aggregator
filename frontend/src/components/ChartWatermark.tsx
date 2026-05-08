@@ -41,8 +41,8 @@ interface ChartWatermarkProps {
 
 export default function ChartWatermark({
   opacity = 0.55,
-  size = 28,
-  minSize = 18,
+  size = 34,
+  minSize = 22,
   mobileSize,
   bottom = '14%',
   left = '10%',

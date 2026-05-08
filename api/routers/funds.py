@@ -19,11 +19,14 @@ router = APIRouter(prefix="/api/funds", tags=["funds"])
 log = get_logger()
 
 # Маппинг category → отображаемое имя и индекс-бенчмарк
+# min_date — нижняя граница истории. У money_market и gold реально доступная
+# история до 2022 содержит шум (мало эмитентов / низкие объёмы / неточные NAV),
+# поэтому отрезаем до 2022-01-09 чтобы не вводить пользователей в заблуждение.
 CATEGORY_INDEX_MAP = {
-    "money_market": {"name": "Денежный рынок", "index": "RUSFAR3M", "min_date": "2020-01-15"},
+    "money_market": {"name": "Денежный рынок", "index": "RUSFAR3M", "min_date": "2022-01-09"},
     "stocks": {"name": "Акции", "index": "IMOEX", "min_date": "1997-05-26"},
     "bonds": {"name": "Облигации", "index": "RGBITR", "min_date": "1997-03-24"},
-    "gold": {"name": "Золото", "index": "GLDRUB_TOM", "min_date": "2020-06-03"},
+    "gold": {"name": "Золото", "index": "GLDRUB_TOM", "min_date": "2022-01-09"},
 }
 
 

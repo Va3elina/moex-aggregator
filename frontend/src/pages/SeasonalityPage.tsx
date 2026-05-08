@@ -67,7 +67,9 @@ export default function SeasonalityPage() {
   // - compareYears: массив годов для серий "Период с YYYY". По умолчанию [min_year] — это и есть
   //   аналог старой "средней за все годы", только теперь одна из равноправных серий.
   //   Пользователь может добавить ещё годов через "+" или убрать через ×.
-  // - showNoOutliers: отдельная серия "Без выбросов" (исключает 2008/2014/2020/2022).
+  // - showNoOutliers: отдельная серия "Без выбросов" — теперь медиана вместо
+  //   среднего арифметического. Median устойчива к выбросам автоматически
+  //   (не нужно hardcode'ить кризисные годы).
   // - showExactYear: траектория конкретного года (одна линия).
   const [compareYears, setCompareYears] = useState<number[]>([]);
   const [showNoOutliers, setShowNoOutliers] = useState(false);
@@ -181,11 +183,12 @@ export default function SeasonalityPage() {
           { sinceYear: yr },
         ));
       });
-      // "Без выбросов"
+      // "Без выбросов" — теперь = медиана вместо среднего арифметического.
+      // Median устойчива к выбросам автоматически — не нужен hardcoded список годов.
       if (showNoOutliers) {
         promises.push(getSeasonality(
           selectedStock, mode, FULL_HISTORY_ITERS, excludeDividends,
-          { excludeYears: [2008, 2014, 2020, 2022] },
+          { aggType: 'median' },
         ));
       }
       // "Показать год" (exact)
@@ -255,7 +258,7 @@ export default function SeasonalityPage() {
       });
       if (showNoOutliers) {
         promises.push(getSeasonalityYearly(selectedStock, excludeDividends,
-          { excludeYears: [2008, 2014, 2020, 2022] }));
+          { aggType: 'median' }));
       }
       if (showExactYear !== null) {
         const currentYear = new Date().getFullYear();
@@ -308,7 +311,7 @@ export default function SeasonalityPage() {
         });
         if (showNoOutliers) {
           arr.push(getSeasonality(selectedStock, mode, FULL_HISTORY_ITERS, excludeDividends,
-            { excludeYears: [2008, 2014, 2020, 2022] }));
+            { aggType: 'median' }));
         }
         if (showExactYear !== null) {
           const currentYear = new Date().getFullYear();
@@ -326,7 +329,7 @@ export default function SeasonalityPage() {
         });
         if (showNoOutliers) {
           arr.push(getSeasonalityYearly(selectedStock, excludeDividends,
-            { excludeYears: [2008, 2014, 2020, 2022] }));
+            { aggType: 'median' }));
         }
         if (showExactYear !== null) {
           const currentYear = new Date().getFullYear();
@@ -458,7 +461,7 @@ export default function SeasonalityPage() {
       )}
       <button
         onClick={() => setShowNoOutliers(!showNoOutliers)}
-        title="Исключить годы крупных кризисов: 2008, 2014, 2020, 2022"
+        title="Медиана вместо среднего — устойчива к выбросам, кризисные годы не сдвигают значение"
         className="editorial-press flex items-center font-semibold rounded-full whitespace-nowrap"
         style={{
           backgroundColor: showNoOutliers ? 'var(--accent)' : 'var(--bg-secondary)',

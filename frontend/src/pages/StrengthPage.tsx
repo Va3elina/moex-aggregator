@@ -147,6 +147,17 @@ export default function StrengthPage() {
     // SSE: автоматическое обновление при новых данных
     useRealtimeData(['daily', 'breadth'], loadData);
 
+    // Лейбл верхнего графика (price chart). Зависит от пары universeBase+currency.
+    //   imoex+rub → "Индекс IMOEX",  imoex+usd → "Индекс RTS"
+    //   all+rub   → "100 акций в рублях",  all+usd → "100 акций в долларах"
+    const priceChartLabel = universeBase === 'all'
+        ? (currency === 'usd' ? '100 акций в долларах' : '100 акций в рублях')
+        : (currency === 'usd' ? 'Индекс RTS' : 'Индекс IMOEX');
+    // Короткий лейбл для hover tooltip (где места меньше)
+    const priceChartShort = universeBase === 'all'
+        ? (currency === 'usd' ? '100 акций $' : '100 акций ₽')
+        : (currency === 'usd' ? 'RTS' : 'IMOEX');
+
     // Данные для графиков
     const breadthData = useMemo(() => {
         if (!history?.data) return [];
@@ -340,7 +351,7 @@ export default function StrengthPage() {
                         filename={`frame-strength-${universe}-ema${emaPeriod}-${period}`}
                         metadata={{
                             title: 'Сила рынка',
-                            asset: universe.includes('imoex') ? 'IMOEX' : 'Все акции',
+                            asset: priceChartLabel,
                             details: [
                                 `EMA${emaPeriod}`,
                                 period === '6m' ? '6 месяцев' :
@@ -491,7 +502,7 @@ export default function StrengthPage() {
                                             <div className="flex items-center justify-between gap-3 py-0.5">
                                                 <div className="flex items-center gap-1.5">
                                                     <span className="legend-dot" style={{ backgroundColor: 'var(--accent)' }} />
-                                                    <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)' }}>IMOEX</span>
+                                                    <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)' }}>{priceChartShort}</span>
                                                 </div>
                                                 <span className="text-xs font-semibold text-theme-primary whitespace-nowrap">
                                                     {hoverData.imoex.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
@@ -521,7 +532,7 @@ export default function StrengthPage() {
                              style={{ minHeight: heights.top + 34 }}>
                             <div className="flex items-center justify-center mb-5 relative z-10">
                                 <ChartLegend
-                                    items={[{ color: 'var(--accent)', label: currency === 'usd' ? 'Индекс RTS' : 'Индекс IMOEX' }]}
+                                    items={[{ color: 'var(--accent)', label: priceChartLabel }]}
                                     fontWeight={600}
                                     style={{ color: 'var(--text-primary)' }}
                                 />
