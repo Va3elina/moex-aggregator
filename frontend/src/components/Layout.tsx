@@ -170,7 +170,7 @@ export default function Layout() {
               {isAuthenticated && user?.role === 'admin' && (
                 <button
                   onClick={() => navigate('/admin/stats')}
-                  className="editorial-press grid place-items-center w-10 h-10 md:w-9 md:h-9 xl:w-8 xl:h-8 rounded-full"
+                  className="editorial-press grid place-items-center w-8 h-8 md:w-9 md:h-9 xl:w-8 xl:h-8 rounded-full"
                   style={{
                     color: 'var(--accent)',
                     border: '1.5px solid var(--text-primary)',
@@ -180,7 +180,7 @@ export default function Layout() {
                   aria-label="Статистика сайта (admin)"
                 >
                   <BarChart3
-                    style={{ width: 'clamp(14px, 1vw + 0.4rem, 18px)', height: 'clamp(14px, 1vw + 0.4rem, 18px)' }}
+                    style={{ width: 'clamp(13px, 1vw + 0.3rem, 17px)', height: 'clamp(13px, 1vw + 0.3rem, 17px)' }}
                     strokeWidth={2}
                   />
                 </button>
@@ -191,7 +191,7 @@ export default function Layout() {
               {isAuthenticated ? (
                 <button
                   onClick={() => navigate('/profile')}
-                  className="editorial-press grid place-items-center w-10 h-10 md:w-9 md:h-9 xl:w-8 xl:h-8 rounded-full font-bold"
+                  className="editorial-press grid place-items-center w-8 h-8 md:w-9 md:h-9 xl:w-8 xl:h-8 rounded-full font-bold"
                   style={{
                     backgroundColor: 'var(--accent)',
                     color: '#fff',
@@ -206,13 +206,13 @@ export default function Layout() {
               ) : (
                 <button
                   onClick={() => navigate('/login')}
-                  className="grid place-items-center w-10 h-10 md:w-9 md:h-9 xl:w-auto xl:h-auto xl:flex xl:items-center xl:gap-1.5 xl:px-3 xl:py-2 rounded-xl text-xs xl:text-sm font-medium transition-opacity hover:opacity-70"
+                  className="grid place-items-center w-8 h-8 md:w-9 md:h-9 xl:w-auto xl:h-auto xl:flex xl:items-center xl:gap-1.5 xl:px-3 xl:py-2 rounded-xl text-xs xl:text-sm font-medium transition-opacity hover:opacity-70"
                   style={{
                     color: 'var(--text-secondary)',
                   }}
                   aria-label="Войти"
                 >
-                  <LogIn style={{ width: 'clamp(14px, 1vw + 0.4rem, 18px)', height: 'clamp(14px, 1vw + 0.4rem, 18px)' }} />
+                  <LogIn style={{ width: 'clamp(13px, 1vw + 0.3rem, 17px)', height: 'clamp(13px, 1vw + 0.3rem, 17px)' }} />
                   <span className="hidden xl:inline">Войти</span>
                 </button>
               )}

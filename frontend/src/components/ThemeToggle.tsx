@@ -19,7 +19,7 @@ export default function ThemeToggle() {
       onClick={toggle}
       aria-label={isDark ? 'Светлая тема' : 'Тёмная тема'}
       title={isDark ? 'Светлая тема' : 'Тёмная тема'}
-      className="editorial-press relative grid place-items-center w-10 h-10 md:w-9 md:h-9 xl:w-8 xl:h-8 overflow-hidden"
+      className="editorial-press relative grid place-items-center w-8 h-8 md:w-9 md:h-9 xl:w-8 xl:h-8 overflow-hidden"
       style={{
         color: 'var(--text-primary)',
         border: '1.5px solid var(--text-primary)',
@@ -37,8 +37,8 @@ export default function ThemeToggle() {
         strokeLinejoin="round"
         className="absolute transition-all duration-500 ease-out"
         style={{
-          width: 'clamp(14px, 1vw + 0.4rem, 18px)',
-          height: 'clamp(14px, 1vw + 0.4rem, 18px)',
+          width: 'clamp(13px, 1vw + 0.3rem, 17px)',
+          height: 'clamp(13px, 1vw + 0.3rem, 17px)',
           opacity: isDark ? 0 : 1,
           transform: isDark ? 'rotate(-90deg) scale(0.4)' : 'rotate(0) scale(1)',
         }}
@@ -64,8 +64,8 @@ export default function ThemeToggle() {
         strokeLinejoin="round"
         className="absolute transition-all duration-500 ease-out"
         style={{
-          width: 'clamp(14px, 1vw + 0.4rem, 18px)',
-          height: 'clamp(14px, 1vw + 0.4rem, 18px)',
+          width: 'clamp(13px, 1vw + 0.3rem, 17px)',
+          height: 'clamp(13px, 1vw + 0.3rem, 17px)',
           opacity: isDark ? 1 : 0,
           transform: isDark ? 'rotate(0) scale(1)' : 'rotate(90deg) scale(0.4)',
         }}
