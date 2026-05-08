@@ -23,6 +23,41 @@ const TIER_LABELS: Record<string, string> = {
   premium: 'Premium',
 };
 
+// Tier-specific features. Каждый next tier включает всё предыдущее (transitively).
+// Здесь только incremental — что добавляется к предыдущему уровню.
+const TIER_FEATURES: Record<string, { tagline: string; features: string[] }> = {
+  basic: {
+    tagline: 'Расширенный доступ к историческим данным и сезонности.',
+    features: [
+      'Все индикаторы и инструменты',
+      'Полная история данных (без 1y guest-лимита)',
+      'Сезонность по дням недели / месяцам / годам',
+      'Полная карта рынка с фильтрами',
+      'Экспорт PNG-графиков с разметкой',
+    ],
+  },
+  pro: {
+    tagline: 'Профессиональный уровень с intraday-данными.',
+    features: [
+      'Всё из Basic',
+      'Часовой таймфрейм (1ч intraday OI и Seasonality)',
+      'Все режимы Сезонности (внутри дня + median режим)',
+      'Расширенный screener в обзоре',
+      'Приоритетная поддержка',
+    ],
+  },
+  premium: {
+    tagline: 'Максимум — 5-минутные данные и real-time WebSocket.',
+    features: [
+      'Всё из Pro',
+      '5-минутный таймфрейм (highest resolution)',
+      'Real-time WebSocket-обновления (без 5-мин SSE-задержки)',
+      'Heavy-weight backtest и screening без лимитов',
+      'Эксклюзивный доступ к новым feature\'ам в beta',
+    ],
+  },
+};
+
 const ROLE_LABELS: Record<string, string> = {
   user: 'Пользователь',
   pro: 'Pro',
@@ -248,7 +283,7 @@ export default function ProfilePage() {
             </div>
           </>
         ) : billing?.is_active ? (
-          // === Active subscription — детали + ссылка на тарифы ===
+          // === Active subscription — детали + tier features + change link ===
           <>
             <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>
               Активна до{' '}
@@ -262,6 +297,24 @@ export default function ProfilePage() {
                 {billing.started_at && ` · с ${formatDate(billing.started_at)}`}
               </p>
             )}
+
+            {/* Tier features — что включено в текущий tier */}
+            {TIER_FEATURES[billing.tier] && (
+              <>
+                <p className="text-sm mb-3" style={{ color: 'var(--text-secondary)' }}>
+                  {TIER_FEATURES[billing.tier].tagline}
+                </p>
+                <div className="space-y-2 mb-5">
+                  {TIER_FEATURES[billing.tier].features.map((text, i) => (
+                    <div key={i} className="flex items-center gap-2.5 text-sm">
+                      <Check size={16} style={{ color: 'var(--success)' }} className="shrink-0" />
+                      <span style={{ color: 'var(--text-secondary)' }}>{text}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
             <Link
               to="/pricing"
               className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-opacity hover:opacity-90"

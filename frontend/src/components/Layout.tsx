@@ -217,27 +217,32 @@ export default function Layout() {
                 </button>
               )}
 
-              {/* Plus версия - скрыта на мобильных.
-                  В editorial — pill с accent + hard-shadow. */}
-              <button
-                className={
-                  isEditorial
-                    ? 'editorial-press hidden xl:block px-4 py-2 text-sm font-bold'
-                    : 'hidden xl:block px-3 md:px-4 py-2 text-white text-sm font-medium rounded-xl transition-colors'
-                }
-                style={
-                  isEditorial
-                    ? {
-                        backgroundColor: 'var(--accent)',
-                        color: 'var(--text-inverse)',
-                        border: '1.5px solid var(--text-primary)',
-                        borderRadius: 999,
-                      }
-                    : { backgroundColor: 'var(--accent-pink)' }
-                }
-              >
-                Plus
-              </button>
+              {/* Plus button — CTA для перехода на /pricing.
+                  Скрыта на мобильных (xl:block). Не показывается admin'у
+                  (бессмысленно — у него full access). */}
+              {user?.role !== 'admin' && (
+                <button
+                  onClick={() => navigate('/pricing')}
+                  className={
+                    isEditorial
+                      ? 'editorial-press hidden xl:block px-4 py-2 text-sm font-bold'
+                      : 'hidden xl:block px-3 md:px-4 py-2 text-white text-sm font-medium rounded-xl transition-colors'
+                  }
+                  style={
+                    isEditorial
+                      ? {
+                          backgroundColor: 'var(--accent)',
+                          color: '#fff',  // hardcoded white: bg=accent (pumpkin) не зависит от темы
+                          border: '1.5px solid var(--text-primary)',
+                          borderRadius: 999,
+                        }
+                      : { backgroundColor: 'var(--accent-pink)' }
+                  }
+                  title="Перейти к тарифам"
+                >
+                  Plus
+                </button>
+              )}
 
               {/* Mobile Menu Button.
                   40×40 — компактно и в размер ThemeToggle/Login. Иконка 22px
