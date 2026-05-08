@@ -1,15 +1,20 @@
 /**
  * OverviewPage — главная для АВТОРИЗОВАННЫХ пользователей.
  *
- * Pulse-стиль аналогично LandingPage, но:
- *  - Персонализированное приветствие с именем user'а
- *  - Нет "Войти / Тарифы" CTA (уже залогинен)
- *  - Секция "Ваш тариф" вместо продающего
- *  - Быстрый доступ к 8 индикаторам
+ * Структура (Variant C "Mosaic"):
+ *  1. Quote tiles — IMOEX/RTSI/USD/CNY/GLD с sparkline 30 дней
+ *  2. Movers + Sectors row — что движется сегодня
+ *  3. Скриннер акций — interactive filter/sort over heatmap data
+ *  4. Top Volume + Funds — куда идут деньги
+ *  5. Indicator grid — 8 индикаторов
+ *
+ * Раньше были «Привет, Вадим» + 3 KEY METRICS (Страх/Сила/Баффетт),
+ * убраны: первое — лишний персональный noise; вторые — дублируют контент
+ * на их собственных страницах. Workspace, не приветствие.
  *
  * Незалогиненные видят LandingPage (routing conditional в App.tsx).
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowRight,
@@ -21,14 +26,11 @@ import {
   Wallet,
   LayoutGrid,
   CalendarDays,
-  User,
+  Search,
   TrendingUp,
   TrendingDown,
 } from 'lucide-react';
 import {
-  getFearIndex,
-  getBreadthCurrent,
-  getBuffettCapGdp,
   getHeatmapData,
   getFundsSummary,
   getSeasonalityPrice,
@@ -36,9 +38,8 @@ import {
 import type { HeatmapStock, FundsSummaryResponse } from '../services/api';
 import { useRealtimeData } from '../hooks/useRealtimeData';
 import Card from '../components/Card';
-import Num from '../components/Num';
 import Skeleton from '../components/Skeleton';
-import { useAuth } from '../contexts/AuthContext';
+import Dropdown from '../components/Dropdown';
 
 const INDICATORS = [
   { path: '/heatmap', title: 'Карта рынка', desc: 'Акции MOEX по секторам, размер = капитализация', icon: Grid3X3 },
@@ -50,15 +51,6 @@ const INDICATORS = [
   { path: '/seasonality', title: 'Сезонность', desc: 'Среднее изменение цены по периодам', icon: CalendarDays },
   { path: '/fear', title: 'Индекс страха', desc: 'Настроения инвесторов по 4 метрикам', icon: Gauge },
 ];
-
-const ROLE_LABELS: Record<string, string> = {
-  free: 'Free',
-  basic: 'Basic',
-  pro: 'Pro',
-  premium: 'Premium',
-  admin: 'Admin',
-  user: 'Free',
-};
 
 /** Тикеры для quote-tiles сверху страницы. Label = отображаемое имя. */
 const QUOTE_TICKERS: { secid: string; label: string }[] = [
@@ -91,11 +83,9 @@ async function fetchQuotes(): Promise<Record<string, { label: string; closes: nu
 }
 
 export default function OverviewPage() {
-  const { user } = useAuth();
-
-  const [fear, setFear] = useState<number | null>(null);
-  const [strength, setStrength] = useState<number | null>(null);
-  const [buffett, setBuffett] = useState<number | null>(null);
+  // Полный список акций с heatmap — используется для movers, top volume, sectors,
+  // и interactive скриннера. 1 fetch → 4 view'а из одного array.
+  const [allStocks, setAllStocks] = useState<HeatmapStock[]>([]);
   const [gainers, setGainers] = useState<HeatmapStock[]>([]);
   const [losers, setLosers] = useState<HeatmapStock[]>([]);
   const [topVolume, setTopVolume] = useState<HeatmapStock[]>([]);
@@ -104,16 +94,13 @@ export default function OverviewPage() {
   // Index / currency tiles (IMOEX, RTSI, USD, CNY, GLD).
   // Храним массив [{secid, label, closes[30]}] → рендерим sparkline + last/prev.
   const [quotes, setQuotes] = useState<Record<string, { label: string; closes: number[] }>>({});
-  const [lastUpdate, setLastUpdate] = useState<string>('');
 
-  /** ГОРЯЧИЕ данные — обновляются каждые 5 минут (SSE '5min' push).
-   *   Fear / Strength / Heatmap / Funds.
-   *   Buffett и Quotes — в loadDaily (обновляются раз в день, не надо пересчитывать). */
+  /** ГОРЯЧИЕ данные — обновляются каждые 5 минут (SSE '5min' push). */
   const loadHotData = useCallback(async () => {
     await Promise.allSettled([
-      getFearIndex().then(r => setFear(r.fear_index)),
-      getBreadthCurrent(50, 'imoex').then(r => setStrength(r.percent_above)),
       getHeatmapData().then(r => {
+        setAllStocks(r.stocks);
+
         // Топ-5 gainers и losers по change_1d.
         const withChange = r.stocks.filter(s => Number.isFinite(s.change_1d));
         const sorted = [...withChange].sort((a, b) => b.change_1d - a.change_1d);
@@ -143,24 +130,13 @@ export default function OverviewPage() {
       }),
       getFundsSummary().then(setFundsSummary),
     ]);
-    setLastUpdate(
-      new Date().toLocaleTimeString('ru-RU', {
-        hour: '2-digit',
-        minute: '2-digit',
-        timeZone: 'Europe/Moscow',
-      })
-    );
   }, []);
 
-  /** HEAVY/DAILY данные — Buffett (годовые) и Quotes (5 × 30-дневных историй).
-   *   Эти данные меняются раз в сутки → рефетчить каждые 5 минут = перегруз API.
-   *   Загружаем 1 раз на mount + при visibilitychange (если вкладка не была активна >1 час). */
+  /** HEAVY/DAILY данные — Quotes (5 × 30-дневных историй).
+   *   Меняются раз в сутки → рефетчить каждые 5 минут = перегруз API.
+   *   Загружаем 1 раз на mount + при visibilitychange (если >1 час неактивности). */
   const loadDailyData = useCallback(async () => {
     await Promise.allSettled([
-      getBuffettCapGdp('1y').then(r => {
-        const last = r.data[r.data.length - 1];
-        if (last) setBuffett(last.buffett);
-      }),
       fetchQuotes().then(setQuotes),
     ]);
   }, []);
@@ -191,20 +167,13 @@ export default function OverviewPage() {
     return () => document.removeEventListener('visibilitychange', onVis);
   }, [loadHotData, loadDailyData]);
 
-  // Приоритет: display_name → email local part → "пользователь"
-  const displayName = user?.display_name
-    || user?.email?.split('@')[0]
-    || 'пользователь';
-
-  const roleLabel = user?.role ? ROLE_LABELS[user.role] || user.role : 'Free';
-
   return (
     <div className="max-w-7xl mx-auto px-4 md:px-6 py-8 md:py-10">
 
       {/* ═══ QUOTE TILES — IMOEX / RTSI / USD / CNY / Gold ═══
           Live-цифры сверху страницы. Sparkline показывает движение за 30 дней.
           Всегда рендерим 5 slot'ов: skeleton если data нет → реальный tile при load. */}
-      <section className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2 md:gap-3 mb-8">
+      <section className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2 md:gap-3 mb-8 md:mb-10">
         {QUOTE_TICKERS.map(t => {
           const q = quotes[t.secid];
           const hasData = q && q.closes.length >= 2;
@@ -212,83 +181,6 @@ export default function OverviewPage() {
             ? <QuoteTile key={t.secid} label={q.label} closes={q.closes} />
             : <Skeleton key={t.secid} height={68} rounded="md" />;
         })}
-      </section>
-
-      {/* ═══ GREETING — одна строка, компактно ═══ */}
-      <section className="flex flex-wrap items-center justify-between gap-3 mb-6 md:mb-8">
-        {/* Левая часть: имя + timestamp + pulse */}
-        <div className="flex items-center gap-3 flex-wrap">
-          <h1
-            className="text-xl md:text-2xl font-semibold"
-            style={{ color: 'var(--text-primary)', letterSpacing: '-0.01em', lineHeight: 1.2 }}
-          >
-            Привет, <span style={{ color: 'var(--accent)' }}>{displayName}</span>
-          </h1>
-          {lastUpdate && (
-            <span className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--text-muted)' }}>
-              <span
-                className="inline-block"
-                style={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: '50%',
-                  backgroundColor: 'var(--success)',
-                  animation: 'frame-pulse 2s ease-in-out infinite',
-                }}
-                title="Данные обновляются автоматически"
-              />
-              live · {lastUpdate}
-            </span>
-          )}
-        </div>
-
-        {/* Правая часть: тариф-pill (легкий, без border) */}
-        <Link
-          to="/profile"
-          className="flex items-center gap-2 px-2.5 py-1.5 transition-opacity hover:opacity-80"
-          style={{
-            backgroundColor: 'color-mix(in srgb, var(--bg-secondary) 80%, transparent)',
-            borderRadius: 'var(--radius-sm, 4px)',
-          }}
-        >
-          <User size={12} style={{ color: 'var(--text-muted)' }} />
-          <span
-            className="font-medium"
-            style={{
-              fontSize: 'var(--fs-2xs)',
-              color: roleLabel === 'Admin' ? 'var(--danger)' :
-                    roleLabel === 'Pro' || roleLabel === 'Premium' ? 'var(--warning)' :
-                    'var(--accent)'
-            }}
-          >
-            {roleLabel}
-          </span>
-        </Link>
-      </section>
-
-      {/* ═══ 3 KEY METRICS ═══ */}
-      <section className="grid grid-cols-3 gap-3 md:gap-4 mb-10 md:mb-12">
-        <MetricCard
-          label="Индекс страха"
-          value={fear}
-          unit="/ 100"
-          color="amber"
-          description={fearClassification(fear)}
-        />
-        <MetricCard
-          label="Сила рынка"
-          value={strength}
-          unit="%"
-          color={strength !== null && strength > 50 ? 'green' : 'red'}
-          description={strength !== null ? `${strength.toFixed(0)}% акций > EMA50` : ''}
-        />
-        <MetricCard
-          label="Баффетт"
-          value={buffett}
-          unit="%"
-          color="amber"
-          description="Cap / GDP"
-        />
       </section>
 
       {/* ═══ TOP MOVERS (Gainers / Losers) ═══
@@ -343,6 +235,31 @@ export default function OverviewPage() {
         {sectors.length > 0
           ? <SectorBars sectors={sectors} />
           : <Skeleton height={320} rounded="lg" />}
+      </section>
+
+      {/* ═══ СКРИННЕР АКЦИЙ ═══
+          Interactive filter/sort over allStocks. Без новых API запросов —
+          использует уже подгруженный heatmap data. Sector dropdown собирается
+          dynamically из самих stocks. */}
+      <section className="mb-10 md:mb-12">
+        <div className="flex items-center gap-3 mb-5 md:mb-6">
+          <p
+            className="text-xs uppercase"
+            style={{ color: 'var(--text-muted)', letterSpacing: '0.12em', fontWeight: 600 }}
+          >
+            Скриннер акций
+          </p>
+          <div className="h-px flex-1" style={{ backgroundColor: 'var(--border-color)' }} />
+          {allStocks.length > 0 && (
+            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+              {allStocks.length} бумаг
+            </span>
+          )}
+        </div>
+
+        {allStocks.length > 0
+          ? <Screener stocks={allStocks} />
+          : <Skeleton height={420} rounded="lg" />}
       </section>
 
       {/* ═══ TOP VOLUME + FUNDS ═══ */}
@@ -420,51 +337,8 @@ export default function OverviewPage() {
 }
 
 // ═══════════════════════════════════════════════════════════
-// SUBCOMPONENTS (идентичны Landing — можно позже extract'нуть)
+// SUBCOMPONENTS
 // ═══════════════════════════════════════════════════════════
-
-interface MetricCardProps {
-  label: string;
-  value: number | null;
-  unit: string;
-  color: 'green' | 'amber' | 'red';
-  description?: string;
-  decimals?: number;
-}
-
-function MetricCard({ label, value, unit, color, description, decimals = 1 }: MetricCardProps) {
-  const colorVar = color === 'amber' ? 'var(--warning)' : color === 'red' ? 'var(--danger)' : 'var(--accent)';
-  return (
-    <Card padding="md" className="md:p-5">
-      <p
-        className="uppercase mb-2"
-        style={{ color: 'var(--text-muted)', letterSpacing: '0.1em', fontWeight: 600, fontSize: 'var(--fs-2xs)' }}
-      >
-        {label}
-      </p>
-      <div className="flex items-baseline gap-1 mb-1">
-        <Num
-          value={value}
-          decimals={decimals}
-          bold
-          color={colorVar}
-          style={{
-            fontSize: 'clamp(1.875rem, 4vw, 3rem)',  // 30px → 48px responsive
-            letterSpacing: '-0.03em',
-          }}
-        />
-        <span className="text-xs md:text-sm" style={{ color: 'var(--text-muted)' }}>
-          {unit}
-        </span>
-      </div>
-      {description && (
-        <p className="truncate" style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-2xs)' }}>
-          {description}
-        </p>
-      )}
-    </Card>
-  );
-}
 
 /** Quote tile — компактная плитка с тикером, ценой, % изменением и sparkline.
     Sparkline = inline SVG path за ~30 дней, без осей (просто силуэт).
@@ -827,11 +701,296 @@ function MoversList({
   );
 }
 
-function fearClassification(fear: number | null): string {
-  if (fear === null) return '';
-  if (fear <= 20) return 'крайний страх';
-  if (fear <= 40) return 'страх';
-  if (fear <= 60) return 'нейтрально';
-  if (fear <= 80) return 'жадность';
-  return 'крайняя жадность';
+/** Скриннер акций — interactive table с filter/sort.
+ *
+ *  Filters:
+ *   - Search (ticker substring или name substring, case-insensitive)
+ *   - Sector dropdown (Все + список из stocks dynamically)
+ *   - Period (1д/1н/1м/1г) — определяет какую change колонку показывать
+ *   - Sort (по выбранному period change / volume / market cap)
+ *
+ *  Display: top 20 строк, кнопка «Показать ещё» добавляет +20.
+ *  Click по тикеру → /heatmap (consistency с MoversList/VolumeList).
+ *
+ *  Без backend запросов — derives view из allStocks через useMemo.
+ *  Mobile: горизонтальный scroll table (компактная таблица не помещается на 320px).
+ */
+type ScreenerPeriod = '1d' | '1w' | '1m' | '1y';
+type ScreenerSort = 'change' | 'volume' | 'mcap';
+
+function Screener({ stocks }: { stocks: HeatmapStock[] }) {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sectorFilter, setSectorFilter] = useState<string>('all');
+  const [period, setPeriod] = useState<ScreenerPeriod>('1d');
+  const [sortBy, setSortBy] = useState<ScreenerSort>('mcap');
+  const [limit, setLimit] = useState(20);
+
+  // Уникальные сектора из stocks для dropdown'а. Sort by alphabet.
+  const sectorOptions = useMemo(() => {
+    const set = new Set<string>();
+    stocks.forEach(s => { if (s.sector) set.add(s.sector); });
+    const list = Array.from(set).sort((a, b) => a.localeCompare(b, 'ru'));
+    return [
+      { key: 'all', label: 'Все сектора' },
+      ...list.map(s => ({ key: s, label: s })),
+    ];
+  }, [stocks]);
+
+  const periodOptions: { key: ScreenerPeriod; label: string }[] = [
+    { key: '1d', label: '1 день' },
+    { key: '1w', label: '1 неделя' },
+    { key: '1m', label: '1 месяц' },
+    { key: '1y', label: '1 год' },
+  ];
+
+  const sortOptions: { key: ScreenerSort; label: string }[] = [
+    { key: 'mcap', label: 'Капитализация' },
+    { key: 'volume', label: 'Объём' },
+    { key: 'change', label: 'Изменение' },
+  ];
+
+  // Helper: change% по выбранному периоду
+  const getChange = (s: HeatmapStock): number => {
+    if (period === '1w') return s.change_1w;
+    if (period === '1m') return s.change_1m;
+    if (period === '1y') return s.change_1y;
+    return s.change_1d;
+  };
+
+  // Filter + sort через useMemo чтобы не пересчитывать на каждый render
+  const filtered = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    let out = stocks.filter(s => {
+      // Search по secId или name (case-insensitive)
+      if (q && !(s.secId.toLowerCase().includes(q) || s.name.toLowerCase().includes(q))) {
+        return false;
+      }
+      // Sector filter
+      if (sectorFilter !== 'all' && s.sector !== sectorFilter) {
+        return false;
+      }
+      // Drop entries без price (защита от пустых rows)
+      if (!Number.isFinite(s.price) || s.price <= 0) return false;
+      return true;
+    });
+
+    // Sort: всегда desc для всех режимов (большие cap / больший объём / большее change сверху).
+    out = out.sort((a, b) => {
+      if (sortBy === 'mcap') return (b.market_cap || 0) - (a.market_cap || 0);
+      if (sortBy === 'volume') return (b.value_1d || 0) - (a.value_1d || 0);
+      // change — sort по abs так "лидеры" и "аутсайдеры" оба на верху,
+      // но внутри pos/neg сортировка по знаку чтобы pos шли первыми.
+      const ca = getChange(a), cb = getChange(b);
+      return cb - ca;
+    });
+    return out;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stocks, searchQuery, sectorFilter, sortBy, period]);
+
+  const visible = filtered.slice(0, limit);
+  const hasMore = filtered.length > limit;
+
+  return (
+    <Card padding="md" className="md:p-5">
+      {/* === Filters row === */}
+      <div className="flex flex-wrap items-center mb-4" style={{ gap: 'var(--sp-2)' }}>
+        {/* Search input */}
+        <div
+          className="flex items-center flex-1 min-w-[180px]"
+          style={{
+            backgroundColor: 'var(--bg-secondary)',
+            border: '1.5px solid var(--text-primary)',
+            borderRadius: '9999px',
+            padding: 'var(--sp-2) var(--sp-3)',
+            gap: 'var(--sp-2)',
+          }}
+        >
+          <Search size={14} style={{ color: 'var(--text-muted)' }} />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            placeholder="Поиск тикера или названия"
+            className="flex-1 bg-transparent outline-none"
+            style={{
+              color: 'var(--text-primary)',
+              fontSize: 'var(--fs-sm)',
+              minWidth: 0,
+            }}
+          />
+        </div>
+        <Dropdown<string>
+          options={sectorOptions}
+          value={sectorFilter}
+          onChange={setSectorFilter}
+        />
+        <Dropdown<ScreenerPeriod>
+          options={periodOptions}
+          value={period}
+          onChange={setPeriod}
+        />
+        <Dropdown<ScreenerSort>
+          options={sortOptions}
+          value={sortBy}
+          onChange={setSortBy}
+        />
+      </div>
+
+      {/* === Table === */}
+      <div className="overflow-x-auto -mx-2">
+        <table className="w-full" style={{ minWidth: 560 }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
+              <th
+                className="text-left px-2 py-2 text-xs uppercase"
+                style={{ color: 'var(--text-muted)', letterSpacing: '0.08em', fontWeight: 600 }}
+              >
+                Тикер
+              </th>
+              <th
+                className="text-left px-2 py-2 text-xs uppercase hidden md:table-cell"
+                style={{ color: 'var(--text-muted)', letterSpacing: '0.08em', fontWeight: 600 }}
+              >
+                Название
+              </th>
+              <th
+                className="text-right px-2 py-2 text-xs uppercase"
+                style={{ color: 'var(--text-muted)', letterSpacing: '0.08em', fontWeight: 600 }}
+              >
+                Цена
+              </th>
+              <th
+                className="text-right px-2 py-2 text-xs uppercase"
+                style={{ color: 'var(--text-muted)', letterSpacing: '0.08em', fontWeight: 600 }}
+              >
+                {period === '1d' ? '1д' : period === '1w' ? '1н' : period === '1m' ? '1м' : '1г'}
+              </th>
+              <th
+                className="text-right px-2 py-2 text-xs uppercase hidden md:table-cell"
+                style={{ color: 'var(--text-muted)', letterSpacing: '0.08em', fontWeight: 600 }}
+              >
+                Объём
+              </th>
+              <th
+                className="text-right px-2 py-2 text-xs uppercase hidden lg:table-cell"
+                style={{ color: 'var(--text-muted)', letterSpacing: '0.08em', fontWeight: 600 }}
+              >
+                Кап-ция
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {visible.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={6}
+                  className="text-center py-6 text-sm"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  Ничего не найдено
+                </td>
+              </tr>
+            ) : (
+              visible.map(s => {
+                const ch = getChange(s);
+                const isUp = ch >= 0;
+                const chColor = isUp ? 'var(--success)' : 'var(--danger)';
+                return (
+                  <tr
+                    key={s.secId}
+                    style={{ borderBottom: '1px solid color-mix(in srgb, var(--border-color) 60%, transparent)' }}
+                    className="hover:bg-white/[0.03] transition-colors"
+                  >
+                    <td className="px-2 py-2">
+                      <Link
+                        to="/heatmap"
+                        className="text-sm font-semibold"
+                        style={{
+                          color: 'var(--text-primary)',
+                          fontFamily: "'IBM Plex Mono', monospace",
+                        }}
+                      >
+                        {s.secId}
+                      </Link>
+                    </td>
+                    <td className="px-2 py-2 hidden md:table-cell">
+                      <span
+                        className="text-xs truncate block"
+                        style={{ color: 'var(--text-secondary)', maxWidth: 180 }}
+                        title={s.name}
+                      >
+                        {s.name}
+                      </span>
+                    </td>
+                    <td
+                      className="text-right px-2 py-2 text-sm"
+                      style={{
+                        color: 'var(--text-primary)',
+                        fontFamily: "'IBM Plex Mono', monospace",
+                        fontVariantNumeric: 'tabular-nums',
+                      }}
+                    >
+                      {s.price.toLocaleString('ru-RU', {
+                        minimumFractionDigits: s.price < 100 ? 2 : 0,
+                        maximumFractionDigits: s.price < 100 ? 2 : 0,
+                      })}
+                    </td>
+                    <td
+                      className="text-right px-2 py-2 text-sm font-semibold"
+                      style={{
+                        color: chColor,
+                        fontFamily: "'IBM Plex Mono', monospace",
+                        fontVariantNumeric: 'tabular-nums',
+                      }}
+                    >
+                      {Number.isFinite(ch) ? `${isUp ? '+' : ''}${ch.toFixed(2)}%` : '—'}
+                    </td>
+                    <td
+                      className="text-right px-2 py-2 text-xs hidden md:table-cell"
+                      style={{
+                        color: 'var(--text-secondary)',
+                        fontFamily: "'IBM Plex Mono', monospace",
+                        fontVariantNumeric: 'tabular-nums',
+                      }}
+                    >
+                      {s.value_1d > 0 ? formatMoney(s.value_1d) : '—'}
+                    </td>
+                    <td
+                      className="text-right px-2 py-2 text-xs hidden lg:table-cell"
+                      style={{
+                        color: 'var(--text-secondary)',
+                        fontFamily: "'IBM Plex Mono', monospace",
+                        fontVariantNumeric: 'tabular-nums',
+                      }}
+                    >
+                      {s.market_cap > 0 ? formatMoney(s.market_cap) : '—'}
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* === "Показать ещё" === */}
+      {hasMore && (
+        <div className="flex justify-center mt-4">
+          <button
+            onClick={() => setLimit(l => l + 20)}
+            className="editorial-press font-semibold rounded-full"
+            style={{
+              backgroundColor: 'var(--bg-secondary)',
+              color: 'var(--text-primary)',
+              border: '1.5px solid var(--text-primary)',
+              fontSize: 'var(--fs-sm)',
+              padding: 'var(--sp-2) var(--sp-4)',
+            }}
+          >
+            Показать ещё ({filtered.length - limit})
+          </button>
+        </div>
+      )}
+    </Card>
+  );
 }
