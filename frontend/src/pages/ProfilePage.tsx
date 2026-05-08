@@ -14,6 +14,7 @@ interface BillingStatus {
   plan_id: string | null;
   started_at: string | null;
   expires_at: string | null;
+  cancelled_at: string | null;  // NULL → активна, NOT NULL → отменена (доступ до expires_at)
 }
 
 const TIER_LABELS: Record<string, string> = {
@@ -94,14 +95,39 @@ export default function ProfilePage() {
 
   // Real subscription status — fetch'аем при mount, заменяет hardcoded "Бесплатный план"
   const [billing, setBilling] = useState<BillingStatus | null>(null);
-  useEffect(() => {
+  const [cancelLoading, setCancelLoading] = useState(false);
+
+  const fetchBilling = () => {
     fetch('/api/billing/status', {
       headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` },
     })
       .then(r => r.ok ? r.json() : null)
       .then(setBilling)
       .catch(() => setBilling(null));
-  }, []);
+  };
+  useEffect(fetchBilling, []);
+
+  // Cancel или Resume — обе ручки идут через те же args, разные endpoints
+  const handleSubAction = async (action: 'cancel' | 'resume') => {
+    if (!billing?.subscription_id) return;
+    if (action === 'cancel' && !window.confirm(
+      'Отменить подписку?\n\nАвто-продление будет отключено, но доступ к Pro-функциям останется до конца оплаченного периода.'
+    )) return;
+    setCancelLoading(true);
+    try {
+      await fetch(`/api/billing/${action}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('access_token')}`,
+        },
+        body: JSON.stringify({ subscription_id: billing.subscription_id }),
+      });
+      fetchBilling();
+    } finally {
+      setCancelLoading(false);
+    }
+  };
 
   // OAuth connect — редирект на провайдера. Если backend увидит совпадение
   // email с текущим аккаунтом → присоединит OAuth identity. Если другой email →
@@ -283,14 +309,34 @@ export default function ProfilePage() {
             </div>
           </>
         ) : billing?.is_active ? (
-          // === Active subscription — детали + tier features + change link ===
+          // === Active subscription — детали + tier features + change/cancel ===
           <>
-            <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>
-              Активна до{' '}
-              <strong style={{ color: 'var(--text-primary)' }}>
-                {billing.expires_at ? formatDate(billing.expires_at) : '—'}
-              </strong>
-            </p>
+            {billing.cancelled_at ? (
+              // === Cancelled (но ещё активна до expires_at) ===
+              <div
+                className="p-3 rounded-xl mb-4 text-sm"
+                style={{
+                  backgroundColor: 'color-mix(in srgb, var(--warning) 12%, transparent)',
+                  border: '1px solid color-mix(in srgb, var(--warning) 35%, transparent)',
+                  color: 'var(--text-secondary)',
+                }}
+              >
+                <strong style={{ color: 'var(--warning)' }}>Подписка отменена.</strong>{' '}
+                Доступ к Pro-функциям сохранится до{' '}
+                <strong style={{ color: 'var(--text-primary)' }}>
+                  {billing.expires_at ? formatDate(billing.expires_at) : '—'}
+                </strong>
+                . После этой даты аккаунт перейдёт на бесплатный план.
+              </div>
+            ) : (
+              <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>
+                Активна до{' '}
+                <strong style={{ color: 'var(--text-primary)' }}>
+                  {billing.expires_at ? formatDate(billing.expires_at) : '—'}
+                </strong>
+              </p>
+            )}
+
             {billing.plan_id && (
               <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
                 План: <span style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{billing.plan_id}</span>
@@ -315,18 +361,49 @@ export default function ProfilePage() {
               </>
             )}
 
-            <Link
-              to="/pricing"
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-opacity hover:opacity-90"
-              style={{
-                backgroundColor: 'var(--bg-secondary)',
-                color: 'var(--text-primary)',
-                border: '1.5px solid var(--text-primary)',
-              }}
-            >
-              Сменить тариф
-              <ExternalLink size={14} />
-            </Link>
+            {/* Action buttons — change tier, cancel/resume */}
+            <div className="flex flex-wrap gap-2 items-center">
+              <Link
+                to="/pricing"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-opacity hover:opacity-90"
+                style={{
+                  backgroundColor: 'var(--bg-secondary)',
+                  color: 'var(--text-primary)',
+                  border: '1.5px solid var(--text-primary)',
+                }}
+              >
+                Сменить тариф
+                <ExternalLink size={14} />
+              </Link>
+
+              {billing.cancelled_at ? (
+                <button
+                  onClick={() => handleSubAction('resume')}
+                  disabled={cancelLoading}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
+                  style={{
+                    backgroundColor: 'var(--accent)',
+                    color: '#fff',
+                    border: '1.5px solid var(--text-primary)',
+                  }}
+                >
+                  Возобновить
+                </button>
+              ) : (
+                <button
+                  onClick={() => handleSubAction('cancel')}
+                  disabled={cancelLoading}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
+                  style={{
+                    backgroundColor: 'transparent',
+                    color: 'var(--danger)',
+                    border: '1.5px solid var(--danger)',
+                  }}
+                >
+                  Отменить подписку
+                </button>
+              )}
+            </div>
           </>
         ) : (
           // === Free user — features list + CTA ===

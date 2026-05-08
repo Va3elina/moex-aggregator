@@ -61,6 +61,7 @@ class StatusResponse(BaseModel):
     plan_id: str | None = None
     started_at: str | None = None
     expires_at: str | None = None
+    cancelled_at: str | None = None      # NULL → активна и продлится, NOT NULL → отменена, доступ до expires_at
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -101,6 +102,7 @@ async def my_status(
         plan_id=sub.plan_id if sub else None,
         started_at=sub.started_at.isoformat() if sub and sub.started_at else None,
         expires_at=sub.expires_at.isoformat() if sub and sub.expires_at else None,
+        cancelled_at=sub.cancelled_at.isoformat() if sub and sub.cancelled_at else None,
     )
 
 
@@ -203,9 +205,16 @@ async def cancel(
     db: Session = Depends(get_db),
 ):
     """
-    Отменяет подписку — статус становится 'cancelled'.
-    Доступ остаётся до expires_at (пользователь уже заплатил).
-    Авто-продление (если реализовано в будущем) отключается.
+    SOFT cancel — отключает авто-продление, но **доступ остаётся** до expires_at.
+    Пользователь уже заплатил за период — несправедливо забирать access сразу.
+
+    Что происходит:
+    - cancelled_at = NOW() (флаг "пользователь нажал отмену")
+    - status остаётся 'active' (current_subscription продолжает возвращать sub)
+    - После expires_at < NOW() → cron expire_due_subscriptions переведёт status='expired'
+    - UI показывает badge "Отменена" + дату окончания
+
+    Можно undo через POST /resume пока expires_at > NOW().
     """
     sub = db.query(Subscription).filter(
         Subscription.id == body.subscription_id,
@@ -215,13 +224,52 @@ async def cancel(
         raise HTTPException(404, "Подписка не найдена")
     if sub.status != "active":
         raise HTTPException(400, f"Нельзя отменить подписку в статусе {sub.status}")
+    if sub.cancelled_at is not None:
+        raise HTTPException(400, "Подписка уже отменена")
 
-    sub.status = "cancelled"
+    # Soft cancel: только флаг, status не трогаем
     sub.cancelled_at = datetime.now(timezone.utc)
     db.commit()
 
-    log.info("User #%s cancelled subscription #%s", user.id, sub.id)
-    return {"ok": True, "expires_at": sub.expires_at.isoformat() if sub.expires_at else None}
+    log.info("User #%s soft-cancelled subscription #%s (access until %s)",
+             user.id, sub.id, sub.expires_at)
+    return {
+        "ok": True,
+        "cancelled_at": sub.cancelled_at.isoformat(),
+        "expires_at": sub.expires_at.isoformat() if sub.expires_at else None,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  5b. POST /resume — отменить отмену (undo soft-cancel)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.post("/resume")
+async def resume(
+    body: CancelRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Отменяет soft-cancel — подписка снова считается активной для авто-продления.
+
+    Работает только пока подписка ещё не истекла (status='active', cancelled_at IS NOT NULL).
+    """
+    sub = db.query(Subscription).filter(
+        Subscription.id == body.subscription_id,
+        Subscription.user_id == user.id,
+    ).first()
+    if not sub:
+        raise HTTPException(404, "Подписка не найдена")
+    if sub.status != "active":
+        raise HTTPException(400, "Подписка уже не активна")
+    if sub.cancelled_at is None:
+        raise HTTPException(400, "Подписка не отменена — нечего возобновлять")
+
+    sub.cancelled_at = None
+    db.commit()
+
+    log.info("User #%s resumed subscription #%s", user.id, sub.id)
+    return {"ok": True}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
