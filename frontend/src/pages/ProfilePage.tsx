@@ -1,11 +1,27 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import {
   LogOut, Lock, Mail, Calendar, Shield, Crown,
-  Check, X as XIcon, Eye, EyeOff, Sparkles,
+  Check, X as XIcon, Eye, EyeOff, Sparkles, ExternalLink,
 } from 'lucide-react';
 import AdminBillingInvites from '../components/AdminBillingInvites';
+
+interface BillingStatus {
+  tier: string;
+  is_active: boolean;
+  subscription_id: number | null;
+  plan_id: string | null;
+  started_at: string | null;
+  expires_at: string | null;
+}
+
+const TIER_LABELS: Record<string, string> = {
+  free: 'Бесплатный план',
+  basic: 'Basic',
+  pro: 'Pro',
+  premium: 'Premium',
+};
 
 const ROLE_LABELS: Record<string, string> = {
   user: 'Пользователь',
@@ -40,6 +56,41 @@ export default function ProfilePage() {
   const [showNewPw, setShowNewPw] = useState(false);
   const [pwLoading, setPwLoading] = useState(false);
   const [pwMsg, setPwMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+
+  // Real subscription status — fetch'аем при mount, заменяет hardcoded "Бесплатный план"
+  const [billing, setBilling] = useState<BillingStatus | null>(null);
+  useEffect(() => {
+    fetch('/api/billing/status', {
+      headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` },
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(setBilling)
+      .catch(() => setBilling(null));
+  }, []);
+
+  // OAuth connect — редирект на провайдера. Если backend увидит совпадение
+  // email с текущим аккаунтом → присоединит OAuth identity. Если другой email →
+  // создаст отдельный аккаунт (не идеально, но MVP — UX лучше "Скоро").
+  const handleOAuthConnect = async (provider: string) => {
+    if (provider === 'telegram') {
+      const botId = '8604817597';
+      const origin = encodeURIComponent(window.location.origin);
+      const returnTo = encodeURIComponent(window.location.origin + '/auth/callback/telegram');
+      window.location.href = `https://oauth.telegram.org/auth?bot_id=${botId}&origin=${origin}&embed=0&request_access=write&return_to=${returnTo}`;
+      return;
+    }
+    try {
+      const resp = await fetch(`/api/auth/oauth/${provider}/url`);
+      const data = await resp.json();
+      if (resp.ok && data.url) {
+        if (data.code_verifier) sessionStorage.setItem('vk_code_verifier', data.code_verifier);
+        if (data.device_id) sessionStorage.setItem('vk_device_id', data.device_id);
+        window.location.href = data.url;
+      }
+    } catch {
+      /* ignore */
+    }
+  };
 
   if (!user) {
     navigate('/login');
@@ -142,61 +193,95 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      {/* ============ Секция 2: Подписка (заглушка) ============ */}
+      {/* ============ Секция 2: Подписка (real data из /api/billing/status) ============ */}
       <div className="rounded-2xl border p-6" style={cardStyle}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
             <Crown size={20} style={{ color: 'var(--accent)' }} />
             Подписка
           </h2>
-          <span
-            className="px-3 py-1 text-xs font-medium rounded-full"
-            style={{
-              backgroundColor: 'color-mix(in srgb, #2EE59D 15%, transparent)',
-              color: 'var(--accent)',
-            }}
-          >
-            Бесплатный план
-          </span>
+          {billing && (
+            <span
+              className="px-3 py-1 text-xs font-medium rounded-full"
+              style={{
+                backgroundColor: billing.is_active
+                  ? 'color-mix(in srgb, var(--success) 18%, transparent)'
+                  : 'color-mix(in srgb, var(--accent) 15%, transparent)',
+                color: billing.is_active ? 'var(--success)' : 'var(--accent)',
+              }}
+            >
+              {TIER_LABELS[billing.tier] || billing.tier}
+            </span>
+          )}
         </div>
 
-        <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
-          Все инструменты доступны с базовыми ограничениями
-        </p>
-
-        <div className="space-y-2.5 mb-5">
-          {[
-            { ok: true, text: 'Все инструменты и индикаторы' },
-            { ok: true, text: 'Обзор рынка в реальном времени' },
-            { ok: true, text: 'Дневной таймфрейм' },
-            { ok: false, text: 'Короткие таймфреймы (5мин, 1ч)' },
-            { ok: false, text: 'Полная история данных' },
-          ].map((item, i) => (
-            <div key={i} className="flex items-center gap-2.5 text-sm">
-              {item.ok ? (
-                <Check size={16} className="text-emerald-400 shrink-0" />
-              ) : (
-                <XIcon size={16} className="shrink-0" style={{ color: 'var(--text-muted)' }} />
-              )}
-              <span style={{ color: item.ok ? 'var(--text-secondary)' : 'var(--text-muted)' }}>
-                {item.text}
-                {!item.ok && <span className="ml-1 text-xs opacity-60">— Plus</span>}
-              </span>
+        {billing?.is_active ? (
+          <>
+            <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>
+              Активна до{' '}
+              <strong style={{ color: 'var(--text-primary)' }}>
+                {billing.expires_at ? formatDate(billing.expires_at) : '—'}
+              </strong>
+            </p>
+            {billing.plan_id && (
+              <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
+                План: <span style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{billing.plan_id}</span>
+                {billing.started_at && ` · с ${formatDate(billing.started_at)}`}
+              </p>
+            )}
+            <Link
+              to="/pricing"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-opacity hover:opacity-90"
+              style={{
+                backgroundColor: 'var(--bg-secondary)',
+                color: 'var(--text-primary)',
+                border: '1.5px solid var(--text-primary)',
+              }}
+            >
+              Сменить тариф
+              <ExternalLink size={14} />
+            </Link>
+          </>
+        ) : (
+          <>
+            <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
+              Все инструменты доступны с базовыми ограничениями
+            </p>
+            <div className="space-y-2.5 mb-5">
+              {[
+                { ok: true, text: 'Все инструменты и индикаторы' },
+                { ok: true, text: 'Обзор рынка в реальном времени' },
+                { ok: true, text: 'Дневной таймфрейм' },
+                { ok: false, text: 'Короткие таймфреймы (5мин, 1ч)' },
+                { ok: false, text: 'Полная история данных' },
+              ].map((item, i) => (
+                <div key={i} className="flex items-center gap-2.5 text-sm">
+                  {item.ok ? (
+                    <Check size={16} style={{ color: 'var(--success)' }} className="shrink-0" />
+                  ) : (
+                    <XIcon size={16} className="shrink-0" style={{ color: 'var(--text-muted)' }} />
+                  )}
+                  <span style={{ color: item.ok ? 'var(--text-secondary)' : 'var(--text-muted)' }}>
+                    {item.text}
+                    {!item.ok && <span className="ml-1 text-xs opacity-60">— Pro</span>}
+                  </span>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-
-        <Link
-          to="/pricing"
-          className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-medium transition-opacity hover:opacity-90"
-          style={{
-            backgroundColor: 'var(--accent-pink)',
-            color: '#fff',
-          }}
-        >
-          <Sparkles size={16} />
-          Перейти к тарифам
-        </Link>
+            <Link
+              to="/pricing"
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold transition-opacity hover:opacity-90"
+              style={{
+                backgroundColor: 'var(--accent)',
+                color: '#fff',
+                border: '1.5px solid var(--text-primary)',
+              }}
+            >
+              <Sparkles size={16} />
+              Перейти к тарифам
+            </Link>
+          </>
+        )}
       </div>
 
       {/* ============ Секция 2.5: Admin — invite-ссылки (только для admin'ов) ============ */}
@@ -305,7 +390,11 @@ export default function ProfilePage() {
               )}
             </div>
 
-            {/* OAuth провайдеры */}
+            {/* OAuth провайдеры — все четыре подключены, можно линковать аккаунт.
+                NB: если email текущего user'а отличается от email из OAuth provider —
+                backend создаст отдельный аккаунт. Это MVP-trade-off:
+                proper "link to existing account" требует backend endpoint
+                /api/auth/oauth/link с auth + state-token. */}
             {['Google', 'ВКонтакте', 'Яндекс', 'Telegram'].map(name => {
               const key = name === 'ВКонтакте' ? 'vk' : name === 'Яндекс' ? 'yandex' : name.toLowerCase();
               const connected = user.oauth_providers.includes(key);
@@ -320,9 +409,27 @@ export default function ProfilePage() {
                     <span>{name}</span>
                   </div>
                   {connected ? (
-                    <span className="text-xs text-emerald-400 font-medium">Подключено</span>
+                    <span
+                      className="text-xs font-medium px-2 py-1 rounded-full"
+                      style={{
+                        backgroundColor: 'color-mix(in srgb, var(--success) 18%, transparent)',
+                        color: 'var(--success)',
+                      }}
+                    >
+                      Подключено
+                    </span>
                   ) : (
-                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Скоро</span>
+                    <button
+                      onClick={() => handleOAuthConnect(key)}
+                      className="text-xs font-medium px-3 py-1 rounded-full transition-opacity hover:opacity-80"
+                      style={{
+                        backgroundColor: 'var(--bg-primary)',
+                        color: 'var(--accent)',
+                        border: '1.5px solid var(--accent)',
+                      }}
+                    >
+                      Подключить
+                    </button>
                   )}
                 </div>
               );
