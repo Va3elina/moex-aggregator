@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.17",
+    "@unhead/react": "^3.1.0",
     "axios": "^1.13.2",
     "fabric": "^6.9.1",
     "hls.js": "^1.6.16",

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Фрейм sitemap. Регенерируется в npm run build (см. scripts/gen-sitemap.mjs).
+  Domain: xn--80aklbnczmv.xn--p1ai (punycode для таймфрейм.рф).
+  Приоритеты:
+    1.0 — главная
+    0.9 — индикаторы (главный продукт)
+    0.7 — тарифы
+    0.6 — методологии
+    0.3 — privacy/legal
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+
+  <url>
+    <loc>https://xn--80aklbnczmv.xn--p1ai/</loc>
+    <lastmod>2026-05-10</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+  </url>
+
+  <!-- Индикаторы — главный продукт, обновляются ежедневно (новые торговые дни) -->
+  <url><loc>https://xn--80aklbnczmv.xn--p1ai/buffett</loc><lastmod>2026-05-10</lastmod><changefreq>daily</changefreq><priority>0.9</priority></url>
+  <url><loc>https://xn--80aklbnczmv.xn--p1ai/oi</loc><lastmod>2026-05-10</lastmod><changefreq>daily</changefreq><priority>0.9</priority></url>
+  <url><loc>https://xn--80aklbnczmv.xn--p1ai/heatmap</loc><lastmod>2026-05-10</lastmod><changefreq>daily</changefreq><priority>0.9</priority></url>
+  <url><loc>https://xn--80aklbnczmv.xn--p1ai/fear</loc><lastmod>2026-05-10</lastmod><changefreq>daily</changefreq><priority>0.9</priority></url>
+  <url><loc>https://xn--80aklbnczmv.xn--p1ai/funds-money</loc><lastmod>2026-05-10</lastmod><changefreq>daily</changefreq><priority>0.9</priority></url>
+  <url><loc>https://xn--80aklbnczmv.xn--p1ai/funds-catalog</loc><lastmod>2026-05-10</lastmod><changefreq>weekly</changefreq><priority>0.8</priority></url>
+  <url><loc>https://xn--80aklbnczmv.xn--p1ai/strength</loc><lastmod>2026-05-10</lastmod><changefreq>daily</changefreq><priority>0.9</priority></url>
+  <url><loc>https://xn--80aklbnczmv.xn--p1ai/seasonality</loc><lastmod>2026-05-10</lastmod><changefreq>weekly</changefreq><priority>0.9</priority></url>
+
+  <!-- Тарифы -->
+  <url><loc>https://xn--80aklbnczmv.xn--p1ai/pricing</loc><lastmod>2026-05-10</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>
+
+  <!-- Методологии — длинный текст, ценный контент для SEO -->
+  <url><loc>https://xn--80aklbnczmv.xn--p1ai/methodology/buffett</loc><lastmod>2026-05-10</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://xn--80aklbnczmv.xn--p1ai/methodology/oi</loc><lastmod>2026-05-10</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://xn--80aklbnczmv.xn--p1ai/methodology/heatmap</loc><lastmod>2026-05-10</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://xn--80aklbnczmv.xn--p1ai/methodology/funds-money</loc><lastmod>2026-05-10</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://xn--80aklbnczmv.xn--p1ai/methodology/funds-catalog</loc><lastmod>2026-05-10</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://xn--80aklbnczmv.xn--p1ai/methodology/strength</loc><lastmod>2026-05-10</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+  <url><loc>https://xn--80aklbnczmv.xn--p1ai/methodology/seasonality</loc><lastmod>2026-05-10</lastmod><changefreq>monthly</changefreq><priority>0.6</priority></url>
+
+  <!-- Legal -->
+  <url><loc>https://xn--80aklbnczmv.xn--p1ai/privacy</loc><lastmod>2026-05-10</lastmod><changefreq>yearly</changefreq><priority>0.3</priority></url>
+
+</urlset>

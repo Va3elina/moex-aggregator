@@ -7,6 +7,7 @@ import { Menu, X, LogIn, BarChart3 } from 'lucide-react';
 import Logo from './Logo';
 import FrameLogo from './FrameLogo';
 import ThemeToggle from './ThemeToggle';
+import PageSEO from './PageSEO';
 
 const NAV_ITEMS: { path: string; label: string; disabled?: boolean }[] = [
   { path: '/fear', label: 'Индекс страха' },
@@ -374,6 +375,12 @@ export default function Layout() {
           </div>
         )}
       </nav>
+
+      {/* SEO: per-page <title>/<meta>/canonical/JSON-LD breadcrumbs.
+          Один компонент на весь Layout — резолвит метаданные через
+          useLocation(). Все 14+ страниц получают уникальный <head>
+          без дублирования <PageSEO /> в каждой. */}
+      <PageSEO />
 
       {/* Контент страницы */}
       <main className="relative">

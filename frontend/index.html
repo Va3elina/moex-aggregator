@@ -6,19 +6,37 @@
   <link rel="icon" type="image/svg+xml" href="/logo.svg" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <!-- SEO -->
-  <title>FRAME — Аналитика MOEX</title>
+  <!-- SEO: базовые meta (per-page переопределяются через react-helmet-async) -->
+  <title>Фрейм — аналитика Московской биржи</title>
   <meta name="description"
-    content="Открытый интерес, карта рынка, индекс страха, денежные потоки фондов и индикатор Баффетта. Данные MOEX в реальном времени." />
-  <meta name="keywords" content="MOEX, Московская биржа, аналитика, открытый интерес, карта рынка, индекс страха" />
+    content="Открытый интерес, карта рынка, индикатор Баффета, денежные потоки фондов, сезонность, индекс страха. Институциональная аналитика MOEX в реальном времени." />
+  <meta name="keywords" content="MOEX, Московская биржа, аналитика, открытый интерес, индикатор Баффета, карта рынка, индекс страха, сезонность акций" />
+  <meta name="robots" content="index, follow, max-image-preview:large" />
+  <link rel="canonical" href="https://xn--80aklbnczmv.xn--p1ai/" />
+
+  <!-- Поисковики: верификация владения сайтом.
+       Замени placeholder'ы на реальные токены из:
+       - https://webmaster.yandex.ru/sites/add  → meta yandex-verification
+       - https://search.google.com/search-console  → meta google-site-verification -->
+  <!-- <meta name="yandex-verification" content="ВСТАВЬ_ТОКЕН" /> -->
+  <!-- <meta name="google-site-verification" content="ВСТАВЬ_ТОКЕН" /> -->
 
   <!-- Open Graph / VK / Telegram -->
   <meta property="og:type" content="website" />
-  <meta property="og:title" content="FRAME — Аналитика MOEX" />
+  <meta property="og:site_name" content="Фрейм" />
+  <meta property="og:url" content="https://xn--80aklbnczmv.xn--p1ai/" />
+  <meta property="og:title" content="Фрейм — аналитика Московской биржи" />
   <meta property="og:description"
-    content="Открытый интерес, карта рынка, индекс страха и другие индикаторы MOEX в реальном времени." />
-  <meta property="og:image" content="/og-image.png" />
+    content="Открытый интерес, карта рынка, индикатор Баффета, денежные потоки фондов и другие индикаторы MOEX в реальном времени." />
+  <meta property="og:image" content="https://xn--80aklbnczmv.xn--p1ai/og-image.png" />
   <meta property="og:locale" content="ru_RU" />
+
+  <!-- Twitter Card (использует и Mastodon, и LinkedIn preview) -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Фрейм — аналитика Московской биржи" />
+  <meta name="twitter:description"
+    content="Открытый интерес, карта рынка, индикатор Баффета, сезонность. Данные MOEX в реальном времени." />
+  <meta name="twitter:image" content="https://xn--80aklbnczmv.xn--p1ai/og-image.png" />
 
   <!-- Mobile -->
   <meta name="theme-color" content="#F4F1EA" />
@@ -32,6 +50,66 @@
   <!-- PWA -->
   <link rel="manifest" href="/manifest.json" />
   <link rel="apple-touch-icon" href="/icon-192.svg" />
+
+  <!--
+    Schema.org JSON-LD — структурированные данные для поисковиков.
+    Три блока:
+      1. WebSite — даёт search box в Google results (если sitelinks enabled)
+      2. Organization — корп.карточка (логотип, соцсети)
+      3. SiteNavigationElement — главный сигнал для появления sitelinks
+         (мини-ссылок «Buffett / OI / Heatmap…» под основным результатом).
+    Без этого Google не понимает структуру сайта и sitelinks не появятся.
+  -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    "name": "Фрейм",
+    "alternateName": ["FRAME", "Frame", "таймфрейм.рф"],
+    "url": "https://xn--80aklbnczmv.xn--p1ai/",
+    "inLanguage": "ru",
+    "description": "Институциональная аналитика Московской биржи: открытый интерес, индикатор Баффета, карта рынка, сезонность.",
+    "potentialAction": {
+      "@type": "SearchAction",
+      "target": {
+        "@type": "EntryPoint",
+        "urlTemplate": "https://xn--80aklbnczmv.xn--p1ai/?q={search_term_string}"
+      },
+      "query-input": "required name=search_term_string"
+    }
+  }
+  </script>
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    "name": "Фрейм",
+    "alternateName": "FRAME",
+    "url": "https://xn--80aklbnczmv.xn--p1ai/",
+    "logo": "https://xn--80aklbnczmv.xn--p1ai/logo.svg",
+    "description": "Аналитический сервис с институциональными индикаторами рынка MOEX.",
+    "sameAs": [
+      "https://t.me/timefreim_app"
+    ]
+  }
+  </script>
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      { "@type": "SiteNavigationElement", "position": 1, "name": "Открытый интерес",      "description": "Срочный рынок MOEX: позиции участников по фьючерсам и опционам", "url": "https://xn--80aklbnczmv.xn--p1ai/oi" },
+      { "@type": "SiteNavigationElement", "position": 2, "name": "Карта рынка",            "description": "Heatmap всех акций по капитализации и динамике",                  "url": "https://xn--80aklbnczmv.xn--p1ai/heatmap" },
+      { "@type": "SiteNavigationElement", "position": 3, "name": "Индекс страха",          "description": "Аналог VIX для российского рынка",                                  "url": "https://xn--80aklbnczmv.xn--p1ai/fear" },
+      { "@type": "SiteNavigationElement", "position": 4, "name": "Денежные потоки фондов", "description": "Чистые притоки/оттоки капитала в БПИФы",                            "url": "https://xn--80aklbnczmv.xn--p1ai/funds-money" },
+      { "@type": "SiteNavigationElement", "position": 5, "name": "Каталог фондов",         "description": "Все российские БПИФы со СЧА, расходами и доходностью",              "url": "https://xn--80aklbnczmv.xn--p1ai/funds-catalog" },
+      { "@type": "SiteNavigationElement", "position": 6, "name": "Индикатор Баффета",      "description": "Капитализация рынка к ВВП — оценка перегретости",                  "url": "https://xn--80aklbnczmv.xn--p1ai/buffett" },
+      { "@type": "SiteNavigationElement", "position": 7, "name": "Сила рынка",             "description": "Доля акций выше своих скользящих средних (market breadth)",        "url": "https://xn--80aklbnczmv.xn--p1ai/strength" },
+      { "@type": "SiteNavigationElement", "position": 8, "name": "Сезонность",             "description": "Историческая статистика доходности акций по месяцам",              "url": "https://xn--80aklbnczmv.xn--p1ai/seasonality" }
+    ]
+  }
+  </script>
 </head>
 
 <body>

@@ -1,0 +1,28 @@
+# Фрейм — robots.txt
+# Документация: https://www.robotstxt.org/  https://yandex.com/support/webmaster/robot-workings/robots-txt.html
+
+User-agent: *
+Allow: /
+
+# Служебные/приватные разделы — не индексируем
+Disallow: /api/
+Disallow: /auth/
+Disallow: /login
+Disallow: /style-preview
+
+# Yandex-специфичные директивы (понимает только YandexBot).
+# Clean-param: отбрасывает UTM/реферальные хвосты — иначе /buffett?utm_source=tg
+# и /buffett считались бы РАЗНЫМИ URL, что размывает ranking.
+User-agent: Yandex
+Allow: /
+Disallow: /api/
+Disallow: /auth/
+Disallow: /login
+Disallow: /style-preview
+Clean-param: utm_source&utm_medium&utm_campaign&utm_term&utm_content&ref&fbclid&gclid&yclid
+
+# Главное зеркало (для Yandex)
+Host: xn--80aklbnczmv.xn--p1ai
+
+# Sitemap (используют все поисковики)
+Sitemap: https://xn--80aklbnczmv.xn--p1ai/sitemap.xml
