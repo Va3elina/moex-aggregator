@@ -711,11 +711,11 @@ export default function SeasonalityPage() {
       )}
 
       {/* Existing Chart block — hidden in test mode.
-          Paper-card как в OI/Buffett/SimpleChart wrapper: rounded-2xl + p-5
-          + bg-theme-primary + 1.5px outline. Visually отделяет график от
-          editorial-frame controls сверху. */}
+          Paper-card как в OI/Funds-Money: rounded-2xl + p-5 + bg-theme-primary
+          + 2px inkstroke. Editorial-стандарт: chart cards = 2px (тяжёлая рамка),
+          chips/buttons = 1.5px. Иерархия по толщине обводки. */}
       {chartType !== 'test' && (
-      <div ref={chartCardRef} className="relative rounded-2xl bg-theme-primary p-2 md:p-5" style={{ border: '1.5px solid var(--text-primary)' }}>
+      <div ref={chartCardRef} className="relative rounded-2xl bg-theme-primary p-2 md:p-5" style={{ border: '2px solid var(--text-primary)' }}>
         {/* Спиннер обновления — paper-style без glass */}
         {loading && (bars.length > 0 || priceData || yearlyData) && (
           <div

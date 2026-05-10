@@ -372,7 +372,9 @@ export default function StrengthPage() {
                 className="relative cursor-crosshair overflow-hidden rounded-2xl bg-theme-primary"
                 style={{
                     minHeight: 'var(--chart-height, 500px)',
-                    border: '1.5px solid var(--text-primary)',
+                    // Editorial inkstroke: 2px на chart cards (как в /oi, /funds-money).
+                    // 1.5px зарезервирован для chips/buttons — иерархия по толщине рамки.
+                    border: '2px solid var(--text-primary)',
                     // touchAction: none — отключает scroll/zoom при tap-and-drag по
                     // chart, иначе мобильный браузер ловит touch как scroll-gesture
                     // и crosshair не follows finger.

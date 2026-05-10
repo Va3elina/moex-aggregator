@@ -593,12 +593,13 @@ export default function HeatmapPage() {
         />
       </div>
 
-      {/* Карта — paper-card как у OI/Buffett (inner container с border + paper bg).
+      {/* Карта — paper-card как у OI/Funds-Money: 2px inkstroke + paper bg.
+          Editorial-стандарт: chart cards 2px, chips/buttons 1.5px.
           Treemap SVG внутри. Watermark — absolute bottom-left как у других charts. */}
       <div
         ref={captureRef}
         className="relative rounded-2xl overflow-hidden bg-theme-primary"
-        style={{ border: '1.5px solid var(--text-primary)' }}
+        style={{ border: '2px solid var(--text-primary)' }}
       >
       <div
         ref={containerRef}
