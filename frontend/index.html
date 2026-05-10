@@ -6,6 +6,26 @@
   <link rel="icon" type="image/svg+xml" href="/logo.svg" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
+  <!-- Yandex.Metrica counter — counter ID 109137033, Webvisor + Clickmap включены.
+       Размещён максимально высоко в <head> по рекомендации Yandex (даёт hit
+       раньше всего, даже если пользователь сразу закрыл вкладку).
+       SPA tracking: переходы между роутами трекаются через useYandexMetrica
+       хук в src/hooks/useYandexMetrica.ts (вызывает ym(...,'hit', url) при
+       каждом изменении location). Без хука Metrica видела бы только
+       первый hit на главную и считала бы все остальные индикаторы как
+       «не посещённые». -->
+  <script type="text/javascript">
+    (function(m,e,t,r,i,k,a){m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
+    m[i].l=1*new Date();
+    for (var j = 0; j < document.scripts.length; j++) {if (document.scripts[j].src === r) { return; }}
+    k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)})
+    (window, document, "script", "https://mc.yandex.ru/metrika/tag.js?id=109137033", "ym");
+
+    ym(109137033, "init", {ssr:true, webvisor:true, clickmap:true, ecommerce:"dataLayer", accurateTrackBounce:true, trackLinks:true});
+  </script>
+  <noscript><div><img src="https://mc.yandex.ru/watch/109137033" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+  <!-- /Yandex.Metrica counter -->
+
   <!-- SEO: базовые meta (per-page переопределяются через react-helmet-async) -->
   <title>Фрейм — аналитика Московской биржи</title>
   <meta name="description"

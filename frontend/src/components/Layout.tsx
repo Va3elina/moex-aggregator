@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useSSE } from '../hooks/useSSE';
+import { useYandexMetrica } from '../hooks/useYandexMetrica';
 import { Menu, X, LogIn, BarChart3 } from 'lucide-react';
 import Logo from './Logo';
 import FrameLogo from './FrameLogo';
@@ -27,6 +28,10 @@ export default function Layout() {
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const isEditorial = theme.startsWith('editorial');
+
+  // SPA-tracking для Yandex.Metrica — фиксирует переходы /buffett → /oi → ...
+  // Первый hit отправляется автоматически через init() в index.html.
+  useYandexMetrica();
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: 'var(--bg-primary)' }}>
