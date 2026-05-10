@@ -57,10 +57,17 @@ interface Props {
     strokeWidth: number;
     /** Callback при изменении истории (для toolbar disabled-state на Undo/Redo) */
     onHistoryChange?: () => void;
+    /**
+     * Callback после создания фигуры (rect/circle/line/arrow/text). Родитель
+     * обычно переключает tool в 'select' — это даёт пользователю сразу
+     * редактировать новую фигуру (drag/resize/rotate), а не клацать новые
+     * поверх. UX-паттерн как в Figma/Excalidraw.
+     */
+    onShapeCreated?: () => void;
 }
 
 const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
-    ({ background, tool, color, strokeWidth, onHistoryChange }, ref) => {
+    ({ background, tool, color, strokeWidth, onHistoryChange, onShapeCreated }, ref) => {
         const canvasRef = useRef<HTMLCanvasElement>(null);
         const containerRef = useRef<HTMLDivElement>(null);
         const fabricRef = useRef<FabricCanvas | null>(null);
@@ -72,9 +79,11 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
         const toolRef = useRef(tool);
         const colorRef = useRef(color);
         const strokeWidthRef = useRef(strokeWidth);
+        const onShapeCreatedRef = useRef(onShapeCreated);
         useEffect(() => { toolRef.current = tool; }, [tool]);
         useEffect(() => { colorRef.current = color; }, [color]);
         useEffect(() => { strokeWidthRef.current = strokeWidth; }, [strokeWidth]);
+        useEffect(() => { onShapeCreatedRef.current = onShapeCreated; }, [onShapeCreated]);
 
         // Init fabric.Canvas один раз при загрузке fabric и DOM-ready.
         // Strict-mode guard: ref проверяется перед созданием — повторный mount
@@ -173,6 +182,12 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
                     text.selectAll();
                     redoStackRef.current = [];
                     onHistoryChange?.();
+                    // UX: переключаем tool в select. Текст останется в editing
+                    // mode (enterEditing/selectAll выше); смена tool на уровне
+                    // toolbar не трогает fabric editing state. Зато после клика
+                    // вне (commit текста) пользователь будет в select mode,
+                    // а не создаст ещё один текст случайным кликом.
+                    onShapeCreatedRef.current?.();
                     return;
                 }
 
@@ -242,8 +257,21 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
                     // После рисования делаем shape manipulable (drag/resize/rotate)
                     activeShape.set({ selectable: true, evented: true });
                     activeShape.setCoords();
+                    // UX: автоматически выделяем созданную фигуру — пользователь
+                    // сразу видит handles для drag/resize/rotate. Без этого
+                    // следующий клик трактовался бы как «начать рисовать новую
+                    // фигуру», и поменять старую было бы невозможно без явного
+                    // переключения tool→select.
+                    const fcLocal = fabricRef.current;
+                    if (fcLocal) {
+                        fcLocal.setActiveObject(activeShape);
+                        fcLocal.requestRenderAll();
+                    }
                     redoStackRef.current = [];
                     onHistoryChange?.();
+                    // Сообщаем родителю — он переключит tool в 'select'
+                    // (паттерн Figma/Excalidraw: после создания → manipulate).
+                    onShapeCreatedRef.current?.();
                 }
                 startPoint = null;
                 activeShape = null;
@@ -295,6 +323,21 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
             if (brush) {
                 brush.color = resolveColor(color);
                 brush.width = strokeWidth;
+            }
+
+            // UX-бонус: если есть выделенный объект — применить новый color/width
+            // к нему «вживую». Так палитра в toolbar работает не только для
+            // будущих фигур, но и для текущей (как в Figma/Excalidraw).
+            // i-text использует `fill` (заливка), shapes — `stroke` (контур).
+            const active = fc.getActiveObject();
+            if (active) {
+                const c = resolveColor(color);
+                if (active.type === 'i-text') {
+                    active.set({ fill: c, fontSize: Math.max(14, strokeWidth * 6) });
+                } else {
+                    active.set({ stroke: c, strokeWidth });
+                }
+                fc.requestRenderAll();
             }
         }, [tool, color, strokeWidth]);
 

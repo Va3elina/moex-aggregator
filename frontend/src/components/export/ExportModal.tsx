@@ -318,6 +318,10 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
                             color={color}
                             strokeWidth={strokeWidth}
                             onHistoryChange={onHistoryChange}
+                            // После создания фигуры — auto-switch в select.
+                            // Пользователь сразу видит handles на новой фигуре
+                            // и может drag/resize/rotate без переключения tool.
+                            onShapeCreated={() => setTool('select')}
                         />
                     )}
 
