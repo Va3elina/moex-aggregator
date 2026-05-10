@@ -3,16 +3,19 @@
 Автоматическое обновление макроэкономических данных (M2, GDP).
 
 Источники:
-- M2: ЦБ РФ XLSX (https://www.cbr.ru/vfs/statistics/credit_statistics/monetary_agg.xlsx)
-- GDP: Росстат XLSX (ручное обновление, файл VVP_kvartal_s1995-2025*.xlsx)
+- M2: ЦБ РФ XLSX
+  https://www.cbr.ru/vfs/statistics/credit_statistics/monetary_agg.xlsx
+- GDP: Росстат, авто-discover ссылки на VVP_kvartal_s_*.xlsx со страницы
+  https://rosstat.gov.ru/statistics/accounts (имя файла меняется ежегодно)
 
-Расписание: ежедневно (M2 обновляется ежемесячно, но проверяем каждый день)
+Расписание: ежедневно (M2 ежемесячно, GDP — раз в квартал, но мы каждый день
+проверяем не появилось ли свежее).
 
 Использование:
-  python Macro/fetch_macro_realtime.py --once          # Обновить M2 из ЦБ
-  python Macro/fetch_macro_realtime.py --once --force   # Полная перезагрузка
-  python Macro/fetch_macro_realtime.py --import-gdp FILE  # Импорт GDP из Excel
-  python Macro/fetch_macro_realtime.py --check          # Проверка целостности данных
+  python Macro/fetch_macro_realtime.py --once             # Обновить M2 + GDP
+  python Macro/fetch_macro_realtime.py --once --force     # Полная перезагрузка
+  python Macro/fetch_macro_realtime.py --import-gdp FILE  # Ручной импорт GDP (fallback)
+  python Macro/fetch_macro_realtime.py --check            # Проверка целостности
 """
 
 import asyncio
@@ -42,6 +45,22 @@ LOG_DIR.mkdir(exist_ok=True)
 
 # === URL источников ===
 CBR_M2_URL = "https://www.cbr.ru/vfs/statistics/credit_statistics/monetary_agg.xlsx"
+
+# Росстат: индексная страница «Национальные счета» (стабильна, имя файла меняется
+# ежегодно: VVP_kvartal_s_1995-2025.xlsx → VVP_kvartal_s_1995-2026.xlsx и т.д.).
+# Поэтому URL файла извлекается из HTML страницы регуляркой.
+ROSSTAT_GDP_PAGE_URL = "https://rosstat.gov.ru/statistics/accounts"
+ROSSTAT_BASE_URL = "https://rosstat.gov.ru"
+# Сертификат rosstat.gov.ru подписан Russian Trusted Root CA, отсутствующим в
+# certifi и системных store macOS/Linux. Используем небезопасный SSL-контекст
+# (verify=False). Альтернатива — установить корневой серт, но это лишняя зависимость.
+import re as _re
+import ssl as _ssl
+def _rosstat_ssl_context() -> _ssl.SSLContext:
+    ctx = _ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = _ssl.CERT_NONE
+    return ctx
 
 # === Лимиты валидации ===
 M2_MIN_VALUE = 1            # M2 min (млрд руб) — в 1993 M2 было ~6.5 млрд руб
@@ -625,45 +644,139 @@ def fetch_m2_from_cbr(engine) -> int:
 
 
 # ═══════════════════════════════════════════════════════════════════
-# GDP: Импорт из Excel (ручной)
+# GDP: Авто-загрузка с rosstat.gov.ru
 # ═══════════════════════════════════════════════════════════════════
 
-def import_gdp_from_xlsx(engine, xlsx_path: str) -> int:
-    """Импортировать GDP из Excel файла Росстат."""
+# Регулярка ловит ссылку вида "/storage/mediabank/VVP_kvartal_s_1995-2025.xlsx"
+# (с опциональным подкаталогом-хешем, как у некоторых файлов на сайте Росстата).
+GDP_XLSX_HREF_RE = _re.compile(
+    r'href="(/storage/mediabank/(?:[^"/]+/)?VVP_kvartal_s_?\d{4}[^"]*\.xlsx)"',
+    _re.IGNORECASE,
+)
+# "Обновлено 10.04.2026г." на странице "Содержание" в самом xlsx.
+GDP_PUBLISH_DATE_RE = _re.compile(r'Обновлено\s+(\d{1,2})\.(\d{1,2})\.(\d{4})')
+
+
+def discover_gdp_url() -> Optional[str]:
+    """Парсит landing-страницу Росстата и возвращает абсолютный URL квартального
+    файла VVP_kvartal_s_*.xlsx. None если ссылка не найдена.
+
+    Использует regex по HTML, а не BeautifulSoup — экономим зависимости.
+    """
+    log.info("Discover URL квартального ВВП на rosstat.gov.ru...")
+    try:
+        req = urllib.request.Request(
+            ROSSTAT_GDP_PAGE_URL,
+            headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64)"},
+        )
+        with urllib.request.urlopen(req, timeout=30, context=_rosstat_ssl_context()) as resp:
+            if resp.status != 200:
+                log.error(f"  HTTP {resp.status} при загрузке {ROSSTAT_GDP_PAGE_URL}")
+                return None
+            html = resp.read().decode("utf-8", errors="replace")
+    except Exception as e:
+        log.error(f"  Не удалось загрузить landing-страницу: {e}")
+        return None
+
+    m = GDP_XLSX_HREF_RE.search(html)
+    if not m:
+        log.error("  Ссылка на VVP_kvartal_s_*.xlsx не найдена на странице. "
+                  "Возможно, Росстат поменял layout — проверьте вручную.")
+        return None
+
+    rel_path = m.group(1)
+    abs_url = ROSSTAT_BASE_URL + rel_path
+    log.info(f"  Найдена ссылка: {abs_url}")
+    return abs_url
+
+
+def _download_to_tempfile(url: str, ssl_context=None) -> Optional[str]:
+    """Скачивает URL во временный .xlsx, возвращает путь или None."""
+    try:
+        req = urllib.request.Request(
+            url, headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64)"}
+        )
+        with urllib.request.urlopen(req, timeout=60, context=ssl_context) as resp:
+            if resp.status != 200:
+                log.error(f"  HTTP {resp.status} при загрузке {url}")
+                return None
+            data = resp.read()
+        if len(data) < 5_000:
+            log.error(f"  Файл слишком маленький ({len(data)} байт)")
+            return None
+
+        fd, path = tempfile.mkstemp(suffix=".xlsx")
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+        log.info(f"  Скачано: {len(data):,} байт → {path}")
+        return path
+    except Exception as e:
+        log.error(f"  Ошибка скачивания {url}: {e}")
+        return None
+
+
+def parse_gdp_xlsx(xlsx_path: str) -> Tuple[Dict[date, float], List[str], Optional[date]]:
+    """Парсит Excel Росстата с квартальным ВВП.
+
+    Берёт ТОЛЬКО листы, у которых R2 содержит «в текущих ценах» —
+    игнорирует индексы физ. объёма, дефляторы, постоянные цены.
+
+    Возвращает (data, validation_errors, publish_date).
+      - data: {period_date: value_млрд_руб}
+      - validation_errors: список строк с диагностикой
+      - publish_date: дата «Обновлено DD.MM.YYYY» с листа Содержание (или None)
+    """
     import openpyxl
 
-    if not os.path.exists(xlsx_path):
-        log.error(f"Файл не найден: {xlsx_path}")
-        return 0
+    Q_DATES = {
+        'I квартал': (3, 31), 'II квартал': (6, 30),
+        'III квартал': (9, 30), 'IV квартал': (12, 31),
+    }
 
-    file_size = os.path.getsize(xlsx_path)
-    log.info(f"Импорт GDP из {xlsx_path} ({file_size:,} байт)...")
+    if not os.path.exists(xlsx_path):
+        return {}, [f"Файл не найден: {xlsx_path}"], None
 
     try:
         wb = openpyxl.load_workbook(xlsx_path, read_only=True, data_only=True)
     except Exception as e:
-        log.error(f"  Не удалось открыть Excel: {e}")
-        return 0
+        return {}, [f"Не удалось открыть xlsx: {e}"], None
 
-    Q_DATES = {
-        'I квартал': (3, 31),
-        'II квартал': (6, 30),
-        'III квартал': (9, 30),
-        'IV квартал': (12, 31),
-    }
-
-    all_data = {}
-    validation_errors = []
-    sheets_processed = 0
+    all_data: Dict[date, float] = {}
+    validation_errors: List[str] = []
+    sheets_used: List[str] = []
+    publish_date: Optional[date] = None
 
     for sheet_name in wb.sheetnames:
         ws = wb[sheet_name]
-        rows_list = list(ws.iter_rows(min_row=3, max_row=5, values_only=True))
-        if len(rows_list) < 3:
-            log.debug(f"  Лист '{sheet_name}': пропущен (мало строк)")
+        rows_list = list(ws.iter_rows(min_row=1, max_row=30, values_only=True))
+        if len(rows_list) < 5:
             continue
-        row3, row4, row5 = rows_list[0], rows_list[1], rows_list[2]
-        sheets_processed += 1
+
+        # Лист "Содержание" — найдём дату публикации "Обновлено DD.MM.YYYY"
+        if sheet_name.lower().startswith('содержание') or 'содержание' in str(rows_list[0][0] or '').lower():
+            for row in rows_list:
+                for cell in row:
+                    if not cell:
+                        continue
+                    m = GDP_PUBLISH_DATE_RE.search(str(cell))
+                    if m:
+                        try:
+                            publish_date = date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+                        except ValueError:
+                            pass
+                        break
+            continue
+
+        # Фильтр листа: R2 должен говорить «в текущих ценах»
+        title = str(rows_list[1][0] or '') if rows_list[1] else ''
+        if 'в текущих ценах' not in title:
+            continue
+        sheets_used.append(sheet_name)
+
+        # Парсинг как раньше: R3=год, R4=квартал, R5=значение
+        row3 = rows_list[2]
+        row4 = rows_list[3]
+        row5 = rows_list[4]
 
         for col_idx in range(len(row4)):
             quarter_label = row4[col_idx]
@@ -671,6 +784,7 @@ def import_gdp_from_xlsx(engine, xlsx_path: str) -> int:
             if quarter_label not in Q_DATES or value is None:
                 continue
 
+            # Год — первая непустая ячейка в R3 при сканировании влево
             year = None
             for j in range(col_idx, -1, -1):
                 y = row3[j]
@@ -685,87 +799,197 @@ def import_gdp_from_xlsx(engine, xlsx_path: str) -> int:
 
             month, day = Q_DATES[quarter_label]
             period_date = date(year, month, day)
-            fval = float(value)
+            try:
+                fval = float(value)
+            except (ValueError, TypeError):
+                continue
 
-            # Валидация даты
             ok, msg = validate_date(period_date, 'GDP_QUARTERLY')
             if not ok:
-                validation_errors.append(f"  Дата: {msg}")
+                validation_errors.append(f"Дата: {msg}")
                 continue
-
-            # Валидация значения
             ok, msg = validate_value(fval, 'GDP_QUARTERLY')
             if not ok:
-                validation_errors.append(f"  Значение {period_date}: {msg}")
+                validation_errors.append(f"Значение {period_date}: {msg}")
                 continue
 
+            # Последний лист wins на стыке (например, лист 2 'переписывает' лист 1
+            # для года 2011, что соответствует более актуальным оценкам Росстата).
             all_data[period_date] = fval
 
     wb.close()
 
-    if not all_data:
-        log.error("  Не удалось распарсить ни одной записи GDP!")
-        for err in validation_errors[:10]:
-            log.error(err)
-        return 0
+    if not sheets_used:
+        validation_errors.append(
+            "Не найдено ни одного листа с «в текущих ценах» — изменилась структура файла Росстата?"
+        )
+    return all_data, validation_errors, publish_date
 
-    log.info(f"  Листов обработано: {sheets_processed}")
-    log.info(f"  Распарсено: {len(all_data)} кварталов ({min(all_data)} - {max(all_data)})")
 
-    if validation_errors:
-        log.warning(f"  Ошибок валидации: {len(validation_errors)}")
-        for err in validation_errors[:5]:
-            log.warning(err)
+def _upsert_gdp_data(engine, all_data: Dict[date, float], source_tag: str) -> Tuple[int, int]:
+    """Записать GDP-серию в БД (upsert, без DELETE — ревизии затираются точечно).
 
-    # Проверка на аномальные скачки
-    sorted_data = sorted(all_data.items())
-    jumps = validate_series_jumps(sorted_data, 'GDP_QUARTERLY')
-    if jumps:
-        log.warning(f"  Обнаружены аномальные скачки в GDP ({len(jumps)}):")
-        for j in jumps[:5]:
-            log.warning(f"    {j}")
-
-    # Получаем текущее состояние БД
+    Возвращает (inserted_or_updated, errors).
+    """
+    inserted, errors = 0, 0
     with engine.connect() as conn:
-        r = conn.execute(text(
-            "SELECT COUNT(*) FROM macro_data WHERE indicator = 'GDP_QUARTERLY'"
-        )).fetchone()
-        db_count_before = r[0] if r else 0
-
-    # Upsert
-    errors = 0
-    with engine.connect() as conn:
-        conn.execute(text("DELETE FROM macro_data WHERE indicator = 'GDP_QUARTERLY'"))
         for period_date, value in sorted(all_data.items()):
             try:
                 conn.execute(text("""
                     INSERT INTO macro_data (indicator, period_date, value, source)
-                    VALUES ('GDP_QUARTERLY', :pd, :val, 'ROSSTAT_XLSX')
+                    VALUES ('GDP_QUARTERLY', :pd, :val, :src)
                     ON CONFLICT (indicator, period_date) DO UPDATE SET
-                        value = EXCLUDED.value, source = EXCLUDED.source
-                """), {"pd": period_date, "val": value})
+                        value = EXCLUDED.value,
+                        source = EXCLUDED.source,
+                        created_at = CURRENT_TIMESTAMP
+                """), {"pd": period_date, "val": value, "src": source_tag})
+                inserted += 1
             except Exception as e:
                 errors += 1
                 log.error(f"  Ошибка вставки GDP {period_date}: {e}")
         conn.commit()
+    return inserted, errors
 
-    # Верификация
+
+def _diff_with_db(engine, new_data: Dict[date, float]) -> Tuple[List[date], List[Tuple[date, float, float]]]:
+    """Сравнивает новые данные с тем что уже в БД.
+
+    Возвращает (новые_кварталы, ревизированные_кварталы).
+    Ревизированный = существует в БД но значение отличается > 0.5%.
+    """
     with engine.connect() as conn:
-        r = conn.execute(text(
-            "SELECT COUNT(*) FROM macro_data WHERE indicator = 'GDP_QUARTERLY'"
-        )).fetchone()
-        db_count_after = r[0] if r else 0
+        rows = conn.execute(text(
+            "SELECT period_date, value FROM macro_data WHERE indicator = 'GDP_QUARTERLY'"
+        )).fetchall()
+    db_map = {r[0]: float(r[1]) for r in rows}
 
-    log.info(f"  GDP итог: {len(all_data)} вставлено, {errors} ошибок")
-    log.info(f"  В БД: было {db_count_before}, стало {db_count_after}")
+    new_dates: List[date] = []
+    revised: List[Tuple[date, float, float]] = []
+    for d, v in sorted(new_data.items()):
+        if d not in db_map:
+            new_dates.append(d)
+        else:
+            old = db_map[d]
+            if old == 0:
+                continue
+            if abs(v - old) / abs(old) > 0.005:  # >0.5%
+                revised.append((d, old, v))
+    return new_dates, revised
 
-    if db_count_after != len(all_data):
-        log.warning(f"  Несовпадение: вставлено {len(all_data)}, в БД {db_count_after}")
 
-    if errors > 0:
-        log.warning(f"  {errors} записей GDP не удалось вставить!")
+def fetch_gdp_from_rosstat(engine) -> int:
+    """Полный auto-pipeline: discover URL → download → parse → diff → upsert.
 
-    return len(all_data)
+    Возвращает количество кварталов в полученной серии. 0 = ошибка/нет данных.
+    """
+    log.info("Загрузка GDP с rosstat.gov.ru...")
+
+    url = discover_gdp_url()
+    if not url:
+        log.warning("  Авто-загрузка GDP не удалась — используйте --import-gdp FILE.xlsx")
+        return 0
+
+    tmp_path = _download_to_tempfile(url, ssl_context=_rosstat_ssl_context())
+    if not tmp_path:
+        log.warning("  Скачивание не удалось — используйте --import-gdp FILE.xlsx")
+        return 0
+
+    try:
+        all_data, errors, publish_date = parse_gdp_xlsx(tmp_path)
+        if not all_data:
+            log.error("  Парсинг не дал ни одного квартала.")
+            for err in errors[:5]:
+                log.error(f"    {err}")
+            return 0
+
+        if publish_date:
+            log.info(f"  Дата публикации Росстата: {publish_date}")
+        log.info(f"  Распарсено: {len(all_data)} кварталов "
+                 f"({min(all_data)} → {max(all_data)})")
+        if errors:
+            log.warning(f"  Ошибок валидации: {len(errors)} (первые 3 ниже)")
+            for err in errors[:3]:
+                log.warning(f"    {err}")
+
+        # Diff с БД — что нового, что переписали
+        new_dates, revised = _diff_with_db(engine, all_data)
+        if new_dates:
+            log.info(f"  НОВЫЕ кварталы: {len(new_dates)}")
+            for d in new_dates[-4:]:  # покажем последние 4
+                log.info(f"    + {d}: {all_data[d]:>12,.2f} млрд ₽")
+        if revised:
+            log.info(f"  РЕВИЗИИ Росстата (>0.5%): {len(revised)}")
+            for d, old, new in revised[-4:]:
+                pct = (new - old) / old * 100
+                log.info(f"    ~ {d}: {old:>12,.2f} → {new:>12,.2f} ({pct:+.2f}%)")
+        if not new_dates and not revised:
+            log.info("  Изменений нет — БД уже актуальна.")
+
+        # Аномальные скачки
+        jumps = validate_series_jumps(sorted(all_data.items()), 'GDP_QUARTERLY')
+        if jumps:
+            log.warning(f"  Аномальные скачки: {len(jumps)}")
+            for j in jumps[-3:]:
+                log.warning(f"    {j}")
+
+        # Upsert
+        inserted, db_errors = _upsert_gdp_data(engine, all_data, source_tag='ROSSTAT_AUTO')
+        log.info(f"  GDP upsert: {inserted}/{len(all_data)}, ошибок: {db_errors}")
+        return inserted
+
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GDP: Импорт из Excel (ручной — fallback)
+# ═══════════════════════════════════════════════════════════════════
+
+def import_gdp_from_xlsx(engine, xlsx_path: str) -> int:
+    """Импорт GDP из локального Excel (fallback если auto-fetch не работает)."""
+    if not os.path.exists(xlsx_path):
+        log.error(f"Файл не найден: {xlsx_path}")
+        return 0
+
+    file_size = os.path.getsize(xlsx_path)
+    log.info(f"Импорт GDP из {xlsx_path} ({file_size:,} байт)...")
+
+    all_data, errors, publish_date = parse_gdp_xlsx(xlsx_path)
+    if publish_date:
+        log.info(f"  Дата публикации Росстата: {publish_date}")
+
+    if not all_data:
+        log.error("  Не удалось распарсить ни одной записи GDP!")
+        for err in errors[:10]:
+            log.error(f"    {err}")
+        return 0
+
+    log.info(f"  Распарсено: {len(all_data)} кварталов ({min(all_data)} → {max(all_data)})")
+    if errors:
+        log.warning(f"  Ошибок валидации: {len(errors)}")
+        for err in errors[:5]:
+            log.warning(f"    {err}")
+
+    # Аномальные скачки
+    jumps = validate_series_jumps(sorted(all_data.items()), 'GDP_QUARTERLY')
+    if jumps:
+        log.warning(f"  Аномальные скачки в GDP: {len(jumps)}")
+        for j in jumps[:5]:
+            log.warning(f"    {j}")
+
+    # Diff с БД
+    new_dates, revised = _diff_with_db(engine, all_data)
+    if new_dates:
+        log.info(f"  НОВЫЕ кварталы: {len(new_dates)} (последний: {new_dates[-1]})")
+    if revised:
+        log.info(f"  Ревизий Росстата: {len(revised)}")
+
+    inserted, db_errors = _upsert_gdp_data(engine, all_data, source_tag='ROSSTAT_XLSX')
+    log.info(f"  GDP итог: {inserted}/{len(all_data)} upsert, {db_errors} ошибок")
+    return inserted
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -781,6 +1005,16 @@ async def update_macro(force: bool = False) -> dict:
     # M2 — всегда обновляем (ЦБ обновляет ежемесячно)
     m2_count = fetch_m2_from_cbr(engine)
     results['M2'] = m2_count
+
+    # GDP — теперь auto. Росстат публикует Q+0 квартал через ~2 месяца после
+    # окончания квартала. Скрипт сам найдёт URL на /statistics/accounts.
+    # Failure здесь не критичен — есть fallback `--import-gdp FILE`.
+    try:
+        gdp_count = fetch_gdp_from_rosstat(engine)
+        results['GDP'] = gdp_count
+    except Exception as e:
+        log.error(f"GDP auto-fetch упал: {e}", exc_info=True)
+        results['GDP'] = 0
 
     # Проверка целостности после обновления
     log.info("Проверка целостности данных после обновления...")
