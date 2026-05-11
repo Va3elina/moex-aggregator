@@ -19,7 +19,7 @@ import requests
 
 URL = "https://community-api.coinmetrics.io/v4/timeseries/asset-metrics"
 OUT_PATH = Path(__file__).parent / "btc_daily_coinmetrics.csv"
-METRICS = ["PriceUSD", "CapMrktCurUSD", "SplyCur"]
+METRICS = ["PriceUSD", "CapMrktCurUSD", "SplyCur", "FlowInExUSD", "FlowOutExUSD"]
 
 
 def fetch_page(params):
