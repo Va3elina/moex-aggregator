@@ -1,0 +1,62 @@
+//@version=6
+// Strategy H: long BTC when BOTH
+//   - log(BTC mcap) z-score vs 200-day baseline > 1.0  (strong rally regime)
+//   - stablecoin (USDT+USDC) 30-day growth > 0          (liquidity expanding)
+// Exit when either condition fails.
+//
+// Expected vs Python research (Coinbase BTC, 2015-2026):
+//   Trades ~54, WR ~33%, PF ~2.92, total return +7,935%,
+//   Sharpe ~1.16 (best of all variants), Max DD ~-49.5%, exposure 32.3%
+strategy("BTC Regime H — mcap_z200 > 1.0 AND stable growth > 0",
+     overlay              = true,
+     initial_capital      = 100,
+     default_qty_type     = strategy.percent_of_equity,
+     default_qty_value    = 100,
+     commission_type      = strategy.commission.percent,
+     commission_value     = 0.10,
+     slippage             = 5,
+     pyramiding           = 0,
+     calc_on_every_tick   = false,
+     process_orders_on_close = true)
+
+// --- Inputs (let users tune thresholds without editing code) ---
+mcap_z_thr     = input.float(1.0, "mcap_z200 threshold", step = 0.1)
+stable_g_thr   = input.float(0.0, "stable 30d growth threshold", step = 0.01)
+z_lookback     = input.int(200, "z-score lookback", minval = 50)
+stable_window  = input.int(30,  "stable growth window (days)", minval = 5)
+
+// --- BTC market cap (log) ---
+btc_mcap_close = request.security("CRYPTOCAP:BTC", "D", close, barmerge.gaps_off, barmerge.lookahead_off)
+log_mcap       = math.log(btc_mcap_close)
+mcap_mean      = ta.sma(log_mcap,   z_lookback)
+mcap_std       = ta.stdev(log_mcap, z_lookback)
+mcap_z200      = (log_mcap - mcap_mean) / mcap_std
+
+// --- Stablecoin 30-day growth ---
+usdt_mcap         = request.security("CRYPTOCAP:USDT", "D", close, barmerge.gaps_off, barmerge.lookahead_off)
+usdc_mcap         = request.security("CRYPTOCAP:USDC", "D", close, barmerge.gaps_off, barmerge.lookahead_off)
+stable_total      = usdt_mcap + usdc_mcap
+stable_30d_growth = stable_total / stable_total[stable_window] - 1.0
+
+// --- Combined signal ---
+regime_ok = mcap_z200 > mcap_z_thr and stable_30d_growth > stable_g_thr
+exit_cond = not regime_ok
+
+if regime_ok and strategy.position_size == 0
+    strategy.entry("Long", strategy.long)
+
+if exit_cond and strategy.position_size > 0
+    strategy.close("Long", comment = "regime broke")
+
+// --- Diagnostics ---
+hline(mcap_z_thr,  "z200 threshold", color = color.new(color.orange, 50), linestyle = hline.style_dashed)
+hline(stable_g_thr * 100, "stable thr (%)", color = color.new(color.purple, 50), linestyle = hline.style_dashed)
+plot(mcap_z200,                  "mcap_z200",            color = color.new(color.orange, 0))
+plot(stable_30d_growth * 100,    "stable growth %",      color = color.new(color.purple, 0))
+bgcolor(regime_ok ? color.new(color.green, 92) : na, title = "Regime ON")
+plotshape(regime_ok and not regime_ok[1], title = "Enter long",
+     location = location.belowbar, color = color.new(color.green, 0),
+     style = shape.triangleup, size = size.small, text = "BUY")
+plotshape(exit_cond and not exit_cond[1] and strategy.position_size > 0, title = "Exit",
+     location = location.abovebar, color = color.new(color.red, 0),
+     style = shape.triangledown, size = size.small, text = "EXIT")

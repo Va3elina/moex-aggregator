@@ -1,0 +1,49 @@
+//@version=6
+// Strategy A: long BTC when stablecoin (USDT+USDC) 30-day mcap growth > 0
+// Backtest BTC daily 2017+ (CRYPTOCAP:USDT history starts ~2017).
+//
+// Expected vs Python research (Coinbase BTC, 2015-2026):
+//   Trades ~63, WR ~62%, PF ~4.90, total return +21,775%,
+//   Sharpe ~1.13, Max DD ~-72%, exposure 67.7%
+strategy("BTC Regime A — stablecoin 30d growth > 0",
+     overlay              = true,
+     initial_capital      = 100,
+     default_qty_type     = strategy.percent_of_equity,
+     default_qty_value    = 100,
+     commission_type      = strategy.commission.percent,
+     commission_value     = 0.10,           // 0.10% per side
+     slippage             = 5,              // ~5 ticks; tune per instrument
+     pyramiding           = 0,
+     calc_on_every_tick   = false,
+     process_orders_on_close = true)
+
+// --- Pull stablecoin market caps from TradingView ---
+// barmerge.lookahead_off = use only past data, no future leak
+usdt_mcap = request.security("CRYPTOCAP:USDT", "D", close, barmerge.gaps_off, barmerge.lookahead_off)
+usdc_mcap = request.security("CRYPTOCAP:USDC", "D", close, barmerge.gaps_off, barmerge.lookahead_off)
+
+stable_total = usdt_mcap + usdc_mcap
+
+// --- 30-day growth rate of total stable supply ---
+stable_30d_growth = stable_total / stable_total[30] - 1.0
+
+// --- Signal ---
+long_cond  = stable_30d_growth > 0.0
+exit_cond  = stable_30d_growth <= 0.0
+
+// --- Trade execution ---
+if long_cond and strategy.position_size == 0
+    strategy.entry("Long", strategy.long)
+
+if exit_cond and strategy.position_size > 0
+    strategy.close("Long", comment = "stable growth ≤ 0")
+
+// --- Diagnostics ---
+plot(stable_30d_growth * 100, "Stable 30d growth %", color = color.new(color.blue, 0))
+hline(0, "Zero line", color = color.gray, linestyle = hline.style_dashed)
+bgcolor(long_cond ? color.new(color.green, 92) : na, title = "Regime ON")
+plotshape(long_cond and not long_cond[1],  title = "Enter long", location = location.belowbar,
+     color = color.new(color.green, 0), style = shape.triangleup,   size = size.small, text = "BUY")
+plotshape(exit_cond and not exit_cond[1] and strategy.position_size > 0,
+     title = "Exit", location = location.abovebar,
+     color = color.new(color.red, 0), style = shape.triangledown, size = size.small, text = "EXIT")
