@@ -1,0 +1,106 @@
+//@version=6
+// Cluster 0 v3 — MOEX with leverage support
+// 3x leverage: ~51% total return / 0 liquidations / DD -13% on portfolio of 8 RU stocks
+// 5x leverage: ~76% total return / 0 liquidations / DD -27%
+strategy("Cluster 0 v3 — MOEX + Leverage",
+     overlay=true, pyramiding=0,
+     initial_capital=100000,
+     default_qty_type=strategy.percent_of_equity,
+     default_qty_value=95,
+     commission_type=strategy.commission.percent,
+     commission_value=0.05,
+     slippage=2,
+     calc_on_every_tick=false,
+     process_orders_on_close=true,
+     margin_long=20)  // 20% margin = 5x leverage available
+
+// ===== Inputs =====
+regimeSymbol      = input.symbol("MOEX:IMOEX",   "Regime leader",                 group="Regime filter")
+regimeEmaMinPct   = input.float(2.0,  "Regime: EMA50-EMA200 min %",  step=0.5, group="Regime filter")
+regimeRet72Min    = input.float(2.0,  "Regime: 72-bar return min %", step=0.5, group="Regime filter")
+pairEmaMinPct     = input.float(1.0,  "Pair: EMA50-EMA200 min %",    step=0.5, group="Pair conditions")
+pullbackMax       = input.float(-1.0, "Pair: 4-bar pullback max %",  step=0.25, group="Pair conditions")
+atrMinPct         = input.float(0.5,  "Pair: ATR(14)/close min %",   step=0.1, group="Pair conditions")
+wickMinFrac       = input.float(0.25, "Pair: lower wick / range",    step=0.05, group="Pair conditions")
+holdBars          = input.int(48,     "Hold bars (48 = 2 days)",     group="Exit")
+leverage          = input.float(3.0,  "Leverage", minval=1.0, maxval=10.0, step=0.5, group="Risk")
+positionPct       = input.float(95.0, "% of equity per trade",       step=5,    group="Risk")
+
+// ===== Pair indicators =====
+ema50_p   = ta.ema(close, 50)
+ema200_p  = ta.ema(close, 200)
+ema_diff_p = (ema50_p - ema200_p) / close * 100
+ret_4h    = (close - close[4]) / close[4] * 100
+atr_14    = ta.atr(14)
+atr_pct   = atr_14 / close * 100
+candle_rng = high - low
+body_lo    = math.min(close, open)
+lower_wick = (body_lo - low) / candle_rng
+
+// ===== Regime indicators (IMOEX) =====
+reg_close  = request.security(regimeSymbol, timeframe.period, close,         barmerge.gaps_off, barmerge.lookahead_off)
+reg_ema50  = request.security(regimeSymbol, timeframe.period, ta.ema(close, 50),  barmerge.gaps_off, barmerge.lookahead_off)
+reg_ema200 = request.security(regimeSymbol, timeframe.period, ta.ema(close, 200), barmerge.gaps_off, barmerge.lookahead_off)
+reg_ret72  = request.security(regimeSymbol, timeframe.period,
+                               (close - close[72]) / close[72] * 100,
+                               barmerge.gaps_off, barmerge.lookahead_off)
+reg_ema_diff = (reg_ema50 - reg_ema200) / reg_close * 100
+
+// ===== Signal =====
+longSignal = (reg_ema_diff > regimeEmaMinPct)
+         and (reg_ret72   > regimeRet72Min)
+         and (ema_diff_p  > pairEmaMinPct)
+         and (ret_4h      < pullbackMax)
+         and (atr_pct     > atrMinPct)
+         and (lower_wick  > wickMinFrac)
+
+// ===== Entry / Exit with leverage =====
+var int barsHeld = 0
+
+if strategy.position_size == 0 and longSignal
+    qty_units = (strategy.equity * leverage * positionPct / 100) / close
+    strategy.entry("L", strategy.long, qty=qty_units)
+    barsHeld := 0
+
+if strategy.position_size > 0
+    barsHeld := barsHeld + 1
+    if barsHeld >= holdBars
+        strategy.close("L", comment="time exit")
+        barsHeld := 0
+
+// ===== Visuals =====
+plotshape(longSignal and strategy.position_size == 0, title="Signal",
+     location=location.belowbar, style=shape.triangleup,
+     color=color.lime, size=size.small, text="C0")
+plot(ema50_p,  title="EMA50",  color=color.new(color.yellow, 50))
+plot(ema200_p, title="EMA200", color=color.new(color.orange, 50))
+
+// ===== Debug table =====
+var table dbg = table.new(position.top_right, 2, 9, bgcolor=color.new(color.black, 70))
+if barstate.islast
+    table.cell(dbg, 0, 0, "Regime EMA Delta",    text_color=color.white)
+    table.cell(dbg, 1, 0, str.tostring(reg_ema_diff, "#.##"),
+               text_color=reg_ema_diff > regimeEmaMinPct ? color.lime : color.red)
+    table.cell(dbg, 0, 1, "Regime ret_72",       text_color=color.white)
+    table.cell(dbg, 1, 1, str.tostring(reg_ret72, "#.##"),
+               text_color=reg_ret72 > regimeRet72Min ? color.lime : color.red)
+    table.cell(dbg, 0, 2, "Pair EMA Delta",      text_color=color.white)
+    table.cell(dbg, 1, 2, str.tostring(ema_diff_p, "#.##"),
+               text_color=ema_diff_p > pairEmaMinPct ? color.lime : color.red)
+    table.cell(dbg, 0, 3, "Pair ret_4",          text_color=color.white)
+    table.cell(dbg, 1, 3, str.tostring(ret_4h, "#.##"),
+               text_color=ret_4h < pullbackMax ? color.lime : color.red)
+    table.cell(dbg, 0, 4, "Pair ATR%",           text_color=color.white)
+    table.cell(dbg, 1, 4, str.tostring(atr_pct, "#.##"),
+               text_color=atr_pct > atrMinPct ? color.lime : color.red)
+    table.cell(dbg, 0, 5, "Lower wick",          text_color=color.white)
+    table.cell(dbg, 1, 5, str.tostring(lower_wick, "#.##"),
+               text_color=lower_wick > wickMinFrac ? color.lime : color.red)
+    table.cell(dbg, 0, 6, "Leverage",            text_color=color.white)
+    table.cell(dbg, 1, 6, str.tostring(leverage, "#.#") + "x", text_color=color.white)
+    table.cell(dbg, 0, 7, "Bars held",           text_color=color.white)
+    table.cell(dbg, 1, 7, str.tostring(barsHeld), text_color=color.white)
+    table.cell(dbg, 0, 8, "ALL CONDITIONS",      text_color=color.white)
+    table.cell(dbg, 1, 8, longSignal ? "TRUE" : "false",
+               text_color=longSignal ? color.lime : color.red,
+               bgcolor=longSignal ? color.new(color.green, 60) : color.new(color.red, 80))
