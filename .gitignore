@@ -74,6 +74,8 @@ deploy.sh
 backtest_*.py
 backtest_*.json
 backtest_*.png
+backtest_*.html
+qs_report_*.html
 pinescript_strategy.pine
 STRATEGY_PARAMS.md
 compare_stocks.py
