@@ -34,20 +34,22 @@ def atr(df, n=14):
 
 
 def atrous_haar(x, J=6):
+    """Vectorized causal à trous Haar wavelet decomposition."""
     n = len(x); sm = [np.asarray(x, dtype=float).copy()]
     for j in range(1, J+1):
-        gap = 2**(j-1); prev = sm[-1]; s = np.full(n, np.nan)
-        for i in range(n):
-            s[i] = prev[i] if i-gap < 0 else 0.5*(prev[i] + prev[i-gap])
+        gap = 2**(j-1); prev = sm[-1]
+        s = prev.copy()
+        if n > gap:
+            s[gap:] = 0.5 * (prev[gap:] + prev[:-gap])
         sm.append(s)
     return sm
 
 
 def slope(arr, lb=5):
+    """Vectorized slope: arr[i] - arr[i-lb], NaN at start."""
     out = np.full(len(arr), np.nan)
-    for i in range(lb, len(arr)):
-        if not np.isnan(arr[i]) and not np.isnan(arr[i-lb]):
-            out[i] = arr[i] - arr[i-lb]
+    if len(arr) > lb:
+        out[lb:] = arr[lb:] - arr[:-lb]
     return out
 
 
