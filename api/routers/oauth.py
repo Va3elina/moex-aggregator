@@ -586,22 +586,16 @@ async def get_oauth_providers():
     return {
         "providers": [
             {
-                "id": "google",
-                "name": "Google",
-                "icon": "google",
-                "configured": bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET),
+                "id": "yandex",
+                "name": "Яндекс",
+                "icon": "yandex",
+                "configured": bool(YANDEX_CLIENT_ID and YANDEX_CLIENT_SECRET),
             },
             {
                 "id": "vk",
                 "name": "ВКонтакте",
                 "icon": "vk",
                 "configured": bool(VK_CLIENT_ID and VK_CLIENT_SECRET),
-            },
-            {
-                "id": "yandex",
-                "name": "Яндекс",
-                "icon": "yandex",
-                "configured": bool(YANDEX_CLIENT_ID and YANDEX_CLIENT_SECRET),
             },
             {
                 "id": "telegram",
