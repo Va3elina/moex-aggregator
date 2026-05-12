@@ -55,12 +55,12 @@ export default function PrivacyPage() {
 
       <Section title="Кто оператор">
         <p>
-          Сервис «Frame» (домен <strong>таймфрейм.рф</strong>) — частный
-          аналитический проект по российскому фондовому рынку. Оператор
-          обработки данных: <strong>Администрация Frame</strong>. Контакт для
-          вопросов и запросов:{' '}
-          <a href="mailto:ermolaeffvadick@gmail.com" style={{ color: 'var(--accent)' }}>
-            ermolaeffvadick@gmail.com
+          Сервис «Frame» (домен <strong>таймфрейм.рф</strong>) — аналитическая
+          платформа по российскому фондовому рынку. Оператор обработки данных:{' '}
+          <strong>ИП Тория Александр Роландович</strong> (ИНН 782627792630,
+          ОГРНИП 325784700029296). Контакт для вопросов и запросов:{' '}
+          <a href="mailto:frameinfo@mail.ru" style={{ color: 'var(--accent)' }}>
+            frameinfo@mail.ru
           </a>
           .
         </p>
@@ -151,8 +151,8 @@ export default function PrivacyPage() {
           </li>
           <li>
             <strong>Запросить выгрузку данных</strong> — пишите на{' '}
-            <a href="mailto:ermolaeffvadick@gmail.com" style={{ color: 'var(--accent)' }}>
-              ermolaeffvadick@gmail.com
+            <a href="mailto:frameinfo@mail.ru" style={{ color: 'var(--accent)' }}>
+              frameinfo@mail.ru
             </a>
             , отправим JSON со всеми вашими данными в течение 30 дней.
           </li>
@@ -191,8 +191,8 @@ export default function PrivacyPage() {
         }}
       >
         Если у вас есть вопросы или замечания по этой политике — напишите на{' '}
-        <a href="mailto:ermolaeffvadick@gmail.com" style={{ color: 'var(--accent)' }}>
-          ermolaeffvadick@gmail.com
+        <a href="mailto:frameinfo@mail.ru" style={{ color: 'var(--accent)' }}>
+          frameinfo@mail.ru
         </a>
         .
       </div>

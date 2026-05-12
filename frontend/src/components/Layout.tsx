@@ -427,8 +427,9 @@ export default function Layout() {
           <Outlet />
       </main>
 
-      {/* Footer — компактный, со ссылкой на политику.
-          Bottom of every page. Privacy ссылка обязательна для consent flow. */}
+      {/* Footer — компактный, со ссылками на обязательные документы.
+          Bottom of every page. Privacy/Contacts/Refund/Delivery/Security
+          обязательны для эквайринга Т-Банка (см. требования к интернет-магазину). */}
       <footer
         className="mt-12 md:mt-16 py-4 md:py-6"
         style={{
@@ -438,7 +439,19 @@ export default function Layout() {
       >
         <div className="max-w-7xl mx-auto px-4 md:px-6 flex flex-wrap items-center justify-between gap-3">
           <span className="text-xs">© Frame · таймфрейм.рф</span>
-          <div className="flex items-center gap-4 text-xs">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+            <Link to="/contacts" className="transition-opacity hover:opacity-80" style={{ color: 'var(--text-secondary)' }}>
+              Контакты
+            </Link>
+            <Link to="/refund" className="transition-opacity hover:opacity-80" style={{ color: 'var(--text-secondary)' }}>
+              Возврат
+            </Link>
+            <Link to="/delivery" className="transition-opacity hover:opacity-80" style={{ color: 'var(--text-secondary)' }}>
+              Услуга
+            </Link>
+            <Link to="/security" className="transition-opacity hover:opacity-80" style={{ color: 'var(--text-secondary)' }}>
+              Безопасность
+            </Link>
             <Link to="/privacy" className="transition-opacity hover:opacity-80" style={{ color: 'var(--text-secondary)' }}>
               Политика обработки данных
             </Link>

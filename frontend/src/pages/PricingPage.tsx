@@ -5,8 +5,10 @@
  * Переключатель "Месяц/Год" внутри каждой платной карточки.
  * Клик "Купить" → POST /api/billing/checkout → редирект на confirmation_url.
  *
- * При работе в STUB-режиме (нет ключей ЮKassa) — confirmation_url ведёт на
- * /billing/stub, где можно симулировать успешную оплату.
+ * Провайдер выбирается на бэке (factory.py):
+ *   - tbank   → confirmation_url ведёт на https://securepay.tinkoff.ru/...
+ *   - yookassa→ confirmation_url ведёт на https://yoomoney.ru/... (legacy)
+ *   - stub    → confirmation_url ведёт на /billing/stub (для dev без ключей)
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -31,7 +33,7 @@ interface TierCard {
 }
 
 interface PlansResponse {
-  provider: 'stub' | 'yookassa';
+  provider: 'stub' | 'yookassa' | 'tbank';
   currency: string;
   tiers: TierCard[];
 }
@@ -119,7 +121,7 @@ export default function PricingPage() {
       <div className="text-center mb-8">
         <h1 className="text-3xl md:text-4xl font-bold text-theme-primary mb-3">Тарифы</h1>
         <p className="text-theme-secondary text-base md:text-lg max-w-2xl mx-auto">
-          Выбирай тариф под задачи. Оплата через ЮKassa — карты, СБП, кошельки.
+          Выбирай тариф под задачи. Оплата через Т-Банк — карты, СБП, T-Pay.
           Отмена в один клик.
         </p>
       </div>
@@ -127,7 +129,7 @@ export default function PricingPage() {
       {/* Баннер STUB-режима — показываем только если провайдер 'stub' */}
       {data.provider === 'stub' && (
         <div className="mb-6 mx-auto max-w-3xl rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-300">
-          ⚙️ <strong>Тестовый режим:</strong> ЮKassa ещё не подключена, платежи не спишутся.
+          ⚙️ <strong>Тестовый режим:</strong> эквайринг ещё не подключён, платежи не спишутся.
           После оплаты будет страница с кнопкой "Симулировать успех" — это для разработки.
         </div>
       )}
@@ -270,17 +272,186 @@ export default function PricingPage() {
         </div>
       )}
 
-      {/* Footer с FAQ (заготовка) */}
-      <div className="mt-12 text-center text-sm text-theme-muted">
+      {/* Способы оплаты — обязательный блок по требованиям эквайринга Т-Банка
+          (логотипы принимаемых ПС + логотип Банка-эквайера + URL на tbank.ru). */}
+      <PaymentMethods />
+
+      {/* Footer с FAQ */}
+      <div className="mt-8 text-center text-sm text-theme-muted">
         <p>
           Есть вопросы? Напиши в{' '}
           <a href="https://t.me/" target="_blank" rel="noreferrer" className="text-theme-primary hover:underline">
             Telegram
           </a>
-          . Возврат — 7 дней по закону ЗПП.
+          {' '}или на{' '}
+          <a href="mailto:frameinfo@mail.ru" className="text-theme-primary hover:underline">
+            frameinfo@mail.ru
+          </a>
+          . Подробнее об{' '}
+          <a href="/refund" className="text-theme-primary hover:underline">
+            условиях возврата
+          </a>
+          .
         </p>
       </div>
     </div>
+  );
+}
+
+/**
+ * PaymentMethods — блок «Способы оплаты» внизу страницы тарифов.
+ * Обязателен для эквайринга T-Bank (Требования к Интернет-магазину, п.1):
+ *   - Изображения с логотипами ПС (Visa / MasterCard / МИР)
+ *   - Логотип Банка-эквайера (T-Bank) + T-Pay
+ *   - URL ссылка на ресурсы Банка: tbank.ru
+ * Логотипы — упрощённые brand-badges (можно заменить на официальные SVG позже).
+ */
+function PaymentMethods() {
+  return (
+    <div
+      className="mt-12 pt-8 border-t"
+      style={{ borderColor: 'var(--border-color)' }}
+    >
+      <p
+        className="text-center uppercase mb-5"
+        style={{
+          color: 'var(--text-muted)',
+          fontSize: 'var(--fs-2xs)',
+          letterSpacing: '0.32em',
+          fontWeight: 700,
+        }}
+      >
+        Способы оплаты
+      </p>
+
+      <div className="flex flex-wrap items-center justify-center gap-3 mb-6">
+        {/* Visa */}
+        <Badge background="#1A1F71" color="#fff" italic>
+          VISA
+        </Badge>
+
+        {/* MasterCard — 2 пересекающихся круга */}
+        <span
+          className="inline-flex items-center"
+          style={{
+            background: '#fff',
+            padding: '6px 10px',
+            borderRadius: 4,
+            border: '1px solid var(--border-color)',
+          }}
+          aria-label="MasterCard"
+        >
+          <svg width="36" height="22" viewBox="0 0 36 22">
+            <circle cx="13" cy="11" r="10" fill="#EB001B" />
+            <circle cx="23" cy="11" r="10" fill="#F79E1B" />
+            <path
+              d="M18 4.5a10 10 0 0 1 0 13 10 10 0 0 1 0-13z"
+              fill="#FF5F00"
+            />
+          </svg>
+        </span>
+
+        {/* МИР */}
+        <Badge background="#0F754E" color="#fff">
+          МИР
+        </Badge>
+
+        {/* T-Pay */}
+        <Badge background="#FFDD2D" color="#111">
+          T-Pay
+        </Badge>
+
+        {/* СБП (Система быстрых платежей) */}
+        <Badge background="#5B2D90" color="#fff">
+          СБП
+        </Badge>
+      </div>
+
+      {/* Логотип Банка-эквайера + ссылка на tbank.ru — обязательное требование */}
+      <div className="flex flex-col items-center gap-2 text-center">
+        <a
+          href="https://tbank.ru"
+          target="_blank"
+          rel="noreferrer noopener"
+          className="inline-flex items-center gap-2 transition-opacity hover:opacity-80"
+          style={{ textDecoration: 'none' }}
+          aria-label="Эквайринг от Т-Банка — перейти на tbank.ru"
+        >
+          {/* T-Bank жёлтый щит-логотип */}
+          <span
+            className="inline-flex items-center justify-center font-bold"
+            style={{
+              width: 28,
+              height: 28,
+              background: '#FFDD2D',
+              color: '#111',
+              borderRadius: 4,
+              fontSize: 16,
+            }}
+          >
+            Т
+          </span>
+          <span
+            className="font-semibold"
+            style={{
+              color: 'var(--text-primary)',
+              fontSize: 'var(--fs-sm)',
+            }}
+          >
+            Эквайринг от Т-Банка
+          </span>
+        </a>
+        <p
+          className="text-xs"
+          style={{ color: 'var(--text-muted)' }}
+        >
+          Платежи защищены банком-эквайером по стандарту PCI DSS.{' '}
+          <a
+            href="https://tbank.ru"
+            target="_blank"
+            rel="noreferrer noopener"
+            style={{ color: 'var(--accent)' }}
+          >
+            tbank.ru
+          </a>
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Badge — простой pill-логотип ПС с brand-colored background.
+ */
+function Badge({
+  children,
+  background,
+  color,
+  italic = false,
+}: {
+  children: React.ReactNode;
+  background: string;
+  color: string;
+  italic?: boolean;
+}) {
+  return (
+    <span
+      className="inline-flex items-center justify-center font-bold"
+      style={{
+        background,
+        color,
+        padding: '6px 14px',
+        borderRadius: 4,
+        fontSize: 14,
+        fontStyle: italic ? 'italic' : 'normal',
+        letterSpacing: '0.05em',
+        minWidth: 60,
+        height: 28,
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif',
+      }}
+    >
+      {children}
+    </span>
   );
 }
 

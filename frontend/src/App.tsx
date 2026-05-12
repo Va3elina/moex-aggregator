@@ -31,6 +31,10 @@ import StrengthMethodologyPage from './pages/methodology/StrengthMethodologyPage
 import SeasonalityMethodologyPage from './pages/methodology/SeasonalityMethodologyPage';
 import StylePreviewPage from './pages/StylePreviewPage';
 import PrivacyPage from './pages/PrivacyPage';
+import ContactsPage from './pages/ContactsPage';
+import RefundPage from './pages/RefundPage';
+import DeliveryPage from './pages/DeliveryPage';
+import SecurityPage from './pages/SecurityPage';
 import AdminStatsPage from './pages/AdminStatsPage';
 import AdminUserDetailPage from './pages/AdminUserDetailPage';
 
@@ -111,6 +115,10 @@ export default function App() {
             <Route path="/billing/redeem" element={<BillingRedeemPage />} />
             {/* Privacy */}
             <Route path="/privacy" element={<PrivacyPage />} />
+            <Route path="/contacts" element={<ContactsPage />} />
+            <Route path="/refund" element={<RefundPage />} />
+            <Route path="/delivery" element={<DeliveryPage />} />
+            <Route path="/security" element={<SecurityPage />} />
             {/* Admin */}
             <Route path="/admin/stats" element={<AdminStatsPage />} />
             <Route path="/admin/users/:userId" element={<AdminUserDetailPage />} />
