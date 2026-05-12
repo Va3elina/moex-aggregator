@@ -178,6 +178,7 @@ class TBankProvider:
         metadata: dict | None = None,
         customer_email: str | None = None,
         customer_phone: str | None = None,
+        widget_mode: bool = False,
     ) -> CheckoutSession:
         """
         Создаёт платёж через T-Bank API. Возвращает PaymentId + PaymentURL.
@@ -226,12 +227,20 @@ class TBankProvider:
 
         # DATA — произвольные key-value, до 20 пар, строки. Передаём наш metadata
         # для последующего матчинга в webhook'е (подписка, тариф, и т.п.).
+        data_block: dict[str, str] = {}
         if metadata:
-            body["DATA"] = {
+            data_block = {
                 str(k): str(v)[:256]  # значение до 256 символов
                 for k, v in metadata.items()
                 if v is not None
             }
+        if widget_mode:
+            # Обязательный маркер для T-Bank JS SDK (SpeedPay / Integration.js).
+            # Без него T-Bank не гарантирует корректную работу виджета.
+            # https://developer.tbank.ru/eacq/intro/developer/setup_js/setup_speedpay/
+            data_block["connection_type"] = "Widget"
+        if data_block:
+            body["DATA"] = data_block
 
         # Receipt — 54-ФЗ фискализация. T-Bank сам пробивает чек в ОФД и отправляет
         # пользователю по email/SMS. Включается через TBANK_RECEIPT_ENABLED=1.

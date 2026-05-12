@@ -45,6 +45,7 @@ router = APIRouter(prefix="/api/billing", tags=["billing"])
 class CheckoutRequest(BaseModel):
     plan_id: str                  # 'pro_monthly' / 'premium_yearly' / ...
     return_url: str | None = None # куда вернуть после оплаты (optional)
+    widget_mode: bool = False     # True если инициирован через T-Bank JS SDK (SpeedPay)
 
 
 class CheckoutResponse(BaseModel):
@@ -76,12 +77,23 @@ async def list_plans():
     Возвращает все тарифы для отображения на Pricing-странице.
     Структура — сгруппировано по tier (free / basic / pro / premium),
     внутри каждого — monthly и yearly варианты.
+
+    Для провайдера tbank дополнительно отдаём terminal_key — он публичный
+    идентификатор магазина (не секрет), фронт использует его для
+    PaymentIntegration.init() при подключении JS SDK (SpeedPay кнопок).
+    Password остаётся серверным секретом.
     """
-    return {
-        "provider": get_payment_provider().name,  # 'stub' или 'yookassa' — фронт может показать баннер
+    provider = get_payment_provider()
+    response: dict = {
+        "provider": provider.name,
         "currency": "RUB",
         "tiers": tiers_grouped(),
     }
+    if provider.name == "tbank":
+        # terminalKey — публичный (зашит в каждый Init request, отображается
+        # в URL платежей). Безопасно отдавать на фронт для SDK init.
+        response["terminal_key"] = getattr(provider, "terminal_key", None)
+    return response
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -140,6 +152,7 @@ async def checkout(
             user=user,
             plan_id=body.plan_id,
             return_url=return_url,
+            widget_mode=body.widget_mode,
         )
     except ValueError as e:
         raise HTTPException(400, str(e))

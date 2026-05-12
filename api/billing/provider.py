@@ -41,6 +41,7 @@ class PaymentProvider(Protocol):
         metadata: dict | None = None,
         customer_email: str | None = None,
         customer_phone: str | None = None,
+        widget_mode: bool = False,
     ) -> CheckoutSession:
         """
         Создать платёжную сессию у провайдера.
@@ -49,6 +50,12 @@ class PaymentProvider(Protocol):
         (T-Bank пробивает чек в ОФД и отправляет по email/SMS). Опциональны для
         провайдеров которые не делают фискализацию (Stub, YooKassa с внешней
         кассой). Хотя бы один из двух желателен, иначе T-Bank Receipt не построит.
+
+        widget_mode — если True, payment инициирован через T-Bank JS SDK
+        (SpeedPay кнопки). Провайдер добавит в DATA маркер connection_type=Widget
+        чтобы T-Bank корректно обработал. Frontend получает только PaymentURL,
+        дальше SDK сам редиректит/открывает QR. Для не-T-Bank провайдеров параметр
+        игнорируется.
 
         Возвращает payment_id (для сохранения в нашу БД) и confirmation_url (для редиректа).
         """

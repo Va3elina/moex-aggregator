@@ -16,6 +16,7 @@ import { Check, Zap, Crown, Sparkles } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch } from '../services/api';
 import TBankCheckoutModal from '../components/billing/TBankCheckoutModal';
+import SpeedPayButtons from '../components/billing/SpeedPayButtons';
 
 interface PlanVariant {
   plan_id: string;
@@ -37,6 +38,8 @@ interface PlansResponse {
   provider: 'stub' | 'yookassa' | 'tbank';
   currency: string;
   tiers: TierCard[];
+  /** Только для provider=tbank — публичный terminalKey для SDK init (SpeedPay). */
+  terminal_key?: string | null;
 }
 
 // Визуал tier'ов: иконка + акцентный цвет
@@ -261,14 +264,40 @@ export default function PricingPage() {
                   Действует
                 </button>
               ) : (
-                <button
-                  onClick={() => variant && handleCheckout(variant.plan_id)}
-                  disabled={!variant || checkoutLoading === variant.plan_id}
-                  className="w-full py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-50"
-                  style={{ backgroundColor: meta.color, color: 'var(--bg-primary)' }}
-                >
-                  {checkoutLoading === variant?.plan_id ? 'Создаём...' : 'Оформить'}
-                </button>
+                <>
+                  <button
+                    onClick={() => variant && handleCheckout(variant.plan_id)}
+                    disabled={!variant || checkoutLoading === variant.plan_id}
+                    className="w-full py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-50"
+                    style={{ backgroundColor: meta.color, color: 'var(--bg-primary)' }}
+                  >
+                    {checkoutLoading === variant?.plan_id ? 'Создаём...' : 'Оформить картой'}
+                  </button>
+
+                  {/* SpeedPay — T-Bank виджет с кнопками СБП / T-Pay / BNPL.
+                      Появляется только когда provider=tbank и SDK успел загрузиться.
+                      Список конкретных кнопок управляется в кабинете T-Bank
+                      (Магазины → Прием оплаты → Кнопки быстрой оплаты). */}
+                  {data.provider === 'tbank' && data.terminal_key && variant && (
+                    <div className="mt-3 pt-3 border-t" style={{ borderColor: 'var(--border-color)' }}>
+                      <p
+                        className="text-center mb-2 uppercase tracking-wider"
+                        style={{
+                          color: 'var(--text-muted)',
+                          fontSize: 'var(--fs-2xs, 10px)',
+                          fontWeight: 600,
+                          letterSpacing: '0.16em',
+                        }}
+                      >
+                        Или быстрее
+                      </p>
+                      <SpeedPayButtons
+                        terminalKey={data.terminal_key}
+                        planId={variant.plan_id}
+                      />
+                    </div>
+                  )}
+                </>
               )}
             </div>
           );

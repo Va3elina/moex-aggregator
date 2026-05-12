@@ -36,6 +36,7 @@ def create_checkout_for_user(
     user: User,
     plan_id: str,
     return_url: str,
+    widget_mode: bool = False,
 ) -> dict:
     """
     Создаёт subscription(pending) + платёж у провайдера.
@@ -78,6 +79,7 @@ def create_checkout_for_user(
             },
             customer_email=customer_email,
             customer_phone=customer_phone,
+            widget_mode=widget_mode,
         )
     except Exception as e:
         # Платёж не создался — помечаем fail и пробрасываем
