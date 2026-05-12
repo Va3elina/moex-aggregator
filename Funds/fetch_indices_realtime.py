@@ -106,6 +106,10 @@ INDICES = {
         "market": "index",
         "board": "RTSI",
         "filter_board": True,
+        # history endpoint перестал отдавать свежие данные RVI после ~2026-04-15
+        # (MOEX особенность для RTSI board). Переключились на candles endpoint,
+        # который actively обновляется. Тот же приём что для USD000UTSTOM.
+        "use_candles": True,
         "start_date": date(2013, 11, 18),
     },
     "USD000UTSTOM": {
