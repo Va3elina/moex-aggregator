@@ -96,8 +96,6 @@ export default function ProfilePage() {
   // Real subscription status — fetch'аем при mount, заменяет hardcoded "Бесплатный план"
   const [billing, setBilling] = useState<BillingStatus | null>(null);
   const [cancelLoading, setCancelLoading] = useState(false);
-  const [refundLoading, setRefundLoading] = useState(false);
-  const [refundMessage, setRefundMessage] = useState<string | null>(null);
 
   const fetchBilling = () => {
     fetch('/api/billing/status', {
@@ -128,39 +126,6 @@ export default function ProfilePage() {
       fetchBilling();
     } finally {
       setCancelLoading(false);
-    }
-  };
-
-  // Refund — полный возврат денег на карту через провайдера.
-  // По закону "О защите прав потребителей" + ст. 26.1 ГК доступен в течение
-  // 14 дней с момента оплаты. Backend проверяет окно и отклоняет если истекло.
-  const handleRefund = async () => {
-    if (!billing?.subscription_id) return;
-    if (!window.confirm(
-      'Запросить возврат денег?\n\n' +
-      'Подписка прекратит действие сразу. Деньги вернутся на карту в течение ' +
-      '7 дней (срок банка-эквайера). Откатить нельзя — придётся оплачивать заново.'
-    )) return;
-    setRefundLoading(true);
-    setRefundMessage(null);
-    try {
-      const r = await fetch('/api/billing/refund', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('access_token')}`,
-        },
-        body: JSON.stringify({ subscription_id: billing.subscription_id }),
-      });
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        setRefundMessage(data.detail || 'Не удалось оформить возврат');
-      } else {
-        setRefundMessage(data.message || 'Возврат оформлен');
-        fetchBilling();
-      }
-    } finally {
-      setRefundLoading(false);
     }
   };
 
@@ -438,31 +403,7 @@ export default function ProfilePage() {
                   Отменить подписку
                 </button>
               )}
-
-              {/* Refund — возврат денег на карту (14 дней по закону) */}
-              <button
-                onClick={handleRefund}
-                disabled={refundLoading}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
-                style={{
-                  backgroundColor: 'transparent',
-                  color: 'var(--text-muted)',
-                  border: '1.5px solid var(--border-color)',
-                }}
-                title="Возврат денег возможен в течение 14 дней с момента оплаты (ст. 26.1 ГК)"
-              >
-                {refundLoading ? 'Оформляем…' : 'Запросить возврат'}
-              </button>
             </div>
-
-            {refundMessage && (
-              <p
-                className="mt-3 text-sm"
-                style={{ color: refundMessage.toLowerCase().includes('не') || refundMessage.toLowerCase().includes('истёк') ? 'var(--danger)' : 'var(--text-primary)' }}
-              >
-                {refundMessage}
-              </p>
-            )}
           </>
         ) : (
           // === Free user — features list + CTA ===
