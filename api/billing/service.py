@@ -113,14 +113,21 @@ def _verify_with_provider(sub: Subscription) -> bool:
     provider = get_payment_provider()
     if provider.name == "stub":
         return True  # stub доверяем всегда
-    if provider.name != "yookassa":
+    if provider.name not in ("yookassa", "tbank"):
         return True  # другие провайдеры — настраивать отдельно
-    # YooKassaProvider имеет verify_payment
+    # YooKassaProvider и TBankProvider имеют verify_payment
     info = provider.verify_payment(sub.yk_payment_id)  # type: ignore[attr-defined]
     if info is None:
-        log.warning("verify failed: payment %s not found in YooKassa", sub.yk_payment_id)
+        log.warning(
+            "verify failed: payment %s not found in %s",
+            sub.yk_payment_id, provider.name,
+        )
         return False
-    return info.get("status") == "succeeded"
+    # YooKassa: status == "succeeded"  /  T-Bank: Status == "CONFIRMED"
+    if provider.name == "yookassa":
+        return info.get("status") == "succeeded"
+    # T-Bank
+    return info.get("Status", "").upper() == "CONFIRMED"
 
 
 def activate_from_webhook(db: Session, event: WebhookEvent) -> Subscription | None:

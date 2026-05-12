@@ -1,120 +1,101 @@
-# Billing (ЮKassa) — инструкция для коллеги
+# Billing — приём платежей и подписки
 
-Эта папка реализует приём платежей и подписки через **ЮKassa**. Сейчас работает
-в режиме заглушки (stub) — **платежи не списываются**, фронт показывает
-"Тестовый режим" на странице /pricing.
+Эта папка реализует приём платежей и подписки через **Т-Банк Acquiring**
+(приоритетный провайдер с 2026). Адаптер для **ЮKassa** оставлен как
+legacy-fallback на случай возврата.
 
-Для активации реальных платежей нужно только **два действия**:
-
----
-
-## 1. Зарегистрироваться в ЮKassa
-
-1. Заходи на https://yookassa.ru → "Подключиться"
-2. Нужен **ИП или ООО** (физлицам недоступно)
-3. Пройти верификацию — загрузить документы (ОГРН, устав, паспорт директора)
-4. Это занимает 1–3 рабочих дня
-5. После одобрения в ЛК: **Настройки → Магазин → Ключи API**
-   - скопировать **`Shop ID`** (число, например `123456`)
-   - скопировать **`Секретный ключ`** (строка вида `live_xxxxxxxxxxxxxxx`)
-
-### Тестовые ключи (для разработки до одобрения)
-
-На странице ключей есть **"Тестовый магазин"** — он работает сразу без
-верификации, использует фейковые карты (`5555 5555 5555 4444`), никакие
-деньги не списываются. Ключи имеют префикс `test_`.
-
-Можно использовать тестовые пока идёт процесс верификации.
+Без ключей factory автоматически возвращает **Stub-провайдер** —
+платежи не списываются, фронт показывает "Тестовый режим".
 
 ---
 
-## 2. Вставить ключи в `.env` на сервере
+## 1. Т-Банк — основной провайдер
 
-На проде файл лежит в `/opt/frame/.env`. Добавь/замени две строки:
+### Регистрация
+
+1. Заходи на https://www.tbank.ru/business/ → «Интернет-эквайринг»
+2. Нужен **ИП или ООО**
+3. Подписать договор (онлайн или офлайн через менеджера)
+4. Т-Банк проверяет сайт на соответствие требованиям к интернет-магазину
+   (см. `docs-requirements-for-online-store.pdf` от Т-Банка):
+   - Контакты + юр. адрес ✓ (`/contacts`)
+   - Условия возврата ✓ (`/refund`)
+   - Условия предоставления услуги ✓ (`/delivery`)
+   - Политика инфобезопасности ✓ (`/security`)
+   - Политика обработки ПДн ✓ (`/privacy`)
+   - Логотипы ПС + T-Bank + ссылка на tbank.ru ✓ (внизу `/pricing`)
+5. После одобрения в ЛК эквайринга:
+   - **Терминалы** → «Создать терминал»
+   - Скопировать **`Terminal Key`** (например `1612345678901DEMO`)
+   - Скопировать **`Password`** (shared secret для подписи)
+
+### Тестовый терминал (sandbox)
+
+Сразу после регистрации создаётся тестовый терминал. URL'ы те же:
+- API: `https://securepay.tinkoff.ru/v2/`
+- Тестовые карты: `2200770100029246` (Visa), `4300000000000777` (3-DS),
+  `5469380041179762` (без 3-DS) — см. документацию Т-Банка.
+
+### Вставить ключи в `.env` на проде
+
+На сервере `/opt/frame/.env`:
 
 ```
-YOOKASSA_SHOP_ID=123456
-YOOKASSA_SECRET_KEY=live_xxxxxxxxxxxxxxx
+TBANK_TERMINAL_KEY=1612345678901DEMO
+TBANK_PASSWORD=<password_from_lk>
 ```
 
-Или для тестового магазина:
+### Настроить Notification URL в ЛК Т-Банка
 
-```
-YOOKASSA_SHOP_ID=54401
-YOOKASSA_SECRET_KEY=test_xxxxxxxxxxxxxxx
-```
+В ЛК эквайринга → **Магазин → Уведомления**:
 
-## 3. Настроить webhook URL в ЛК ЮKassa
+- Notification URL: `https://xn--80aklbnczmv.xn--p1ai/api/billing/webhook`
+- Метод: `POST`
+- Тип: `JSON`
+- Включить статусы: `CONFIRMED`, `REJECTED`, `REFUNDED`, `CANCELED`,
+  `PARTIAL_REFUNDED`, `REVERSED`, `DEADLINE_EXPIRED`.
 
-В ЛК ЮKassa:
-
-1. **Интеграция → HTTP-уведомления**
-2. Добавить URL: `https://xn--80aklbnczmv.xn--p1ai/api/billing/webhook`
-   (для тестового магазина: тот же URL)
-3. Включить события:
-   - `payment.succeeded` — платёж прошёл → активируем подписку
-   - `payment.canceled` — платёж отменён
-   - `refund.succeeded` — возврат → снимаем Pro
-
-## 4. Перезапустить API
+### Перезапустить API
 
 ```bash
 docker restart frame-api-1
 ```
 
-После рестарта factory автоматически выберет YooKassaProvider вместо Stub.
-На `/pricing` исчезнет баннер "Тестовый режим".
+После рестарта factory автоматически выберет `TBankProvider` вместо Stub.
 
----
-
-## Проверка что всё работает
+### Проверка
 
 ```bash
-# 1. /api/billing/plans должен вернуть provider: "yookassa" (а не "stub")
-curl https://xn--80aklbnczmv.xn--p1ai/api/billing/plans | grep provider
+# 1. Stub должен исчезнуть из логов:
+docker logs frame-api-1 2>&1 | grep -i billing | tail -5
 
-# 2. На сайте /pricing → кликнуть "Оформить" → должен редиректить
-#    на yoomoney.ru / yookassa.ru (а не на /billing/stub)
+# 2. Запрос /api/billing/plans должен работать (он не зависит от провайдера)
+curl https://xn--80aklbnczmv.xn--p1ai/api/billing/plans
 
-# 3. Пройти тестовую оплату картой 5555 5555 5555 4444 (тестовый магазин)
-#    → webhook придёт → роль user обновится на 'pro' (или выбранный tier)
+# 3. На /pricing → "Оформить" → должен открыться PaymentURL вида
+#    https://securepay.tinkoff.ru/Cz5GZAOd (а не /billing/stub).
+
+# 4. Оплатить тестовой картой → webhook придёт → роль user обновится.
 ```
 
 ---
 
-## Что уже сделано (и работает прямо сейчас, до получения ключей)
+## 2. ЮKassa (legacy fallback)
 
-| Часть | Статус |
-|---|---|
-| БД: таблица `subscriptions` | ✅ создана в проде |
-| Backend: 6 endpoint'ов `/api/billing/*` | ✅ работают |
-| Backend: адаптер ЮKassa | ✅ готов (спит до ключей) |
-| Backend: Stub-провайдер для dev | ✅ работает прямо сейчас |
-| Frontend: страница `/pricing` | ✅ отдаёт 4 тарифа |
-| Frontend: `/billing/success` poll-страница | ✅ |
-| Frontend: `/billing/stub` (симуляция) | ✅ работает без ключей |
+Старый адаптер. Если по каким-то причинам нужно вернуться на ЮКассу —
+удалить `TBANK_*` из `.env`, добавить:
 
----
+```
+YOOKASSA_SHOP_ID=123456
+YOOKASSA_SECRET_KEY=live_xxxxx
+```
 
-## Что добавить в будущем (не сейчас)
-
-- [ ] **Feature flags** — сейчас tier только проверяет "кто имеет доступ"
-      через `require_tier('pro')`. Постепенно заменяем на точные фичи:
-      `require_feature('timeframe:5min')`, `require_feature('indicator:buffett')`.
-- [ ] **Рекуррентные платежи** — ЮKassa умеет auto-charge через `saved_payment_method`.
-      Пока подписка заканчивается — пользователь платит заново вручную.
-- [ ] **Cron на expire** — `billing.service.expire_overdue(db)` раз в час,
-      чтобы вовремя снимать Pro у истёкших.
-- [ ] **История платежей на ProfilePage** — показать таблицу активных/прошлых
-      подписок. Endpoint `/api/billing/history` легко добавить к service'у.
-- [ ] **Промокоды** — колонка `discount_code` в subscriptions + валидация
-      в create_checkout_for_user.
-- [ ] **Триал на 7 дней** — при регистрации ставить `role='pro'` + запись
-      в subscriptions(status='active', amount=0, expires_at=+7d).
+И настроить webhook в ЛК ЮКассы на тот же URL.
+Подробности см. в `yookassa.py` (исторический README сохранён там).
 
 ---
 
-## Архитектура
+## 3. Архитектура
 
 ```
                                     ┌─────────────────────┐
@@ -129,13 +110,13 @@ curl https://xn--80aklbnczmv.xn--p1ai/api/billing/plans | grep provider
                           ▼                    ▼                  ▼
                   ┌──────────────┐    ┌───────────────┐   ┌──────────────┐
                   │  service.py  │    │   factory.py  │   │  plans.py    │
-                  │ create/     │    │ → yookassa OR │   │ 4 tiers × 2  │
+                  │ create/      │    │ tbank → yk →  │   │ 4 tiers × 2  │
                   │  activate    │    │   stub        │   │ periods SKU  │
                   └──────┬───────┘    └───────┬───────┘   └──────────────┘
                          │                    │
                          ▼                    ▼
                   ┌──────────────┐    ┌───────────────┐
-                  │ subscriptions│    │ YooKassa API  │
+                  │ subscriptions│    │ T-Bank API    │ (или YooKassa)
                   │  table (БД)  │    │ (ext. HTTPS)  │
                   └──────────────┘    └───────────────┘
                          ▲                    │
@@ -148,9 +129,96 @@ curl https://xn--80aklbnczmv.xn--p1ai/api/billing/plans | grep provider
 
 - `provider.py` — Protocol PaymentProvider (контракт для всех адаптеров)
 - `stub.py` — заглушка для dev (без ключей всё через неё)
-- `yookassa.py` — реальный адаптер (активен при ключах)
-- `factory.py` — `get_payment_provider()` — выбирает по env
+- **`tbank.py`** — основной адаптер Т-Банка (активен с 2026)
+- `yookassa.py` — legacy адаптер (активен только если в env только YooKassa-ключи)
+- `factory.py` — `get_payment_provider()` — выбирает по env (tbank > yookassa > stub)
 - `plans.py` — тарифные планы, источник истины
 - `tiers.py` — `require_tier('pro')` dependency для защиты эндпоинтов
 - `service.py` — бизнес-логика (checkout/activate/cancel/sync_role)
 - `../routers/billing.py` — HTTP endpoints
+
+---
+
+## 4. T-Bank API — quick reference
+
+### Init (создание платежа)
+
+```
+POST https://securepay.tinkoff.ru/v2/Init
+Content-Type: application/json
+
+{
+  "TerminalKey": "1612345678901DEMO",
+  "Amount": 14000,           // копейки! (1400 ₽ × 100)
+  "OrderId": "ab12cd34...",  // наш UUID
+  "Description": "Подписка Pro 30 дней",
+  "SuccessURL": "https://таймфрейм.рф/billing/success",
+  "FailURL":    "https://таймфрейм.рф/billing/success",
+  "Token": "<sha256_hex>"    // см. _make_token в tbank.py
+}
+```
+
+Response:
+
+```json
+{
+  "Success": true,
+  "PaymentId": "13660001",
+  "PaymentURL": "https://securepay.tinkoff.ru/Cz5GZAOd"
+}
+```
+
+### Webhook (нотификация → нам)
+
+T-Bank POST'ит JSON на наш `/api/billing/webhook`. После приёма
+**обязательно** вернуть `OK` plain text (HTTP 200), иначе ретраи.
+
+Маппинг `Status` → наш `event_type` (см. `_STATUS_MAP` в tbank.py):
+
+| T-Bank Status | event_type |
+|---|---|
+| CONFIRMED | payment.succeeded |
+| REJECTED / CANCELED / DEADLINE_EXPIRED / REVERSED | payment.canceled |
+| REFUNDED / PARTIAL_REFUNDED | refund.succeeded |
+| остальные (intermediate) | None (игнорируем) |
+
+### Token подпись (SHA-256)
+
+1. Берём все top-level скаляры (исключая `Receipt`, `DATA`, `Token`)
+2. Добавляем `Password` со значением shared secret
+3. Сортируем по ключу alphabetically
+4. Конкатенируем значения без разделителей
+5. SHA-256 → hex lowercase
+
+Подробнее: https://developer.tbank.ru/eacq/api/v2 → Подпись запроса.
+
+---
+
+## 5. Что уже работает
+
+| Часть | Статус |
+|---|---|
+| БД: таблица `subscriptions` | ✅ создана в проде |
+| Backend: 6 endpoint'ов `/api/billing/*` | ✅ работают |
+| Backend: адаптер T-Bank (`tbank.py`) | ✅ готов (спит до ключей) |
+| Backend: legacy YooKassa адаптер | ✅ сохранён как fallback |
+| Backend: Stub-провайдер для dev | ✅ работает прямо сейчас |
+| Frontend: страница `/pricing` + блок «Способы оплаты» | ✅ |
+| Frontend: `/billing/success` poll-страница | ✅ |
+| Frontend: `/billing/stub` (симуляция) | ✅ работает без ключей |
+| Legal: `/contacts /refund /delivery /security /privacy` | ✅ template'ы созданы (требуют заполнения placeholder'ов) |
+
+---
+
+## 6. TODO (после интеграции T-Bank)
+
+- [ ] **Рекуррентные платежи** — T-Bank умеет saved-карту через `Recurrent=Y` +
+      `CustomerKey` в Init. Пока подписка заканчивается — пользователь
+      платит заново вручную.
+- [ ] **Фискализация (54-ФЗ)** — для физлиц-плательщиков из РФ нужно
+      передавать `Receipt` блок при Init. T-Bank сам отправляет чек в ФНС
+      через выбранную ОФД.
+- [ ] **Cron на expire** — `billing.service.expire_overdue(db)` раз в час.
+- [ ] **История платежей на ProfilePage** — endpoint `/api/billing/history`.
+- [ ] **Промокоды** — колонка `discount_code` в `subscriptions`.
+- [ ] **T-Pay в одно касание** — отдельный SDK на frontend, fast checkout.

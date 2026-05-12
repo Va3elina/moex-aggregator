@@ -11,13 +11,15 @@ Routes:
                                      успеха платежа (для тестирования без ключей)
 
 Провайдер выбирается автоматически в api/billing/factory.py через env:
-  - YOOKASSA_SHOP_ID + YOOKASSA_SECRET_KEY заданы → реальная ЮKassa
+  - TBANK_TERMINAL_KEY + TBANK_PASSWORD → T-Bank (приоритет)
+  - YOOKASSA_SHOP_ID + YOOKASSA_SECRET_KEY → ЮKassa (legacy)
   - не заданы → Stub (все платежи fake, для прогона инфраструктуры)
 """
 import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -170,9 +172,17 @@ async def webhook(request: Request, db: Session = Depends(get_db)):
 
     provider = get_payment_provider()
     event = provider.parse_webhook(raw_body, headers)
+
+    # Формат ответа:
+    #   T-Bank ожидает plain text "OK" (иначе ретраит)
+    #   ЮKassa принимает любой 2xx (мы возвращали JSON)
+    # Чтобы не плодить ветвлений, для всех провайдеров отдаём plain text "OK" —
+    # это совместимо с обоими.
+    ok_response = PlainTextResponse("OK", status_code=200)
+
     if not event:
-        log.warning("Webhook: unparseable body (%d bytes)", len(raw_body))
-        return {"ok": True, "message": "ignored"}
+        log.warning("Webhook: unparseable body or bad signature (%d bytes)", len(raw_body))
+        return ok_response
 
     log.info("Webhook event=%s payment_id=%s", event.event_type, event.payment_id)
 
@@ -185,9 +195,9 @@ async def webhook(request: Request, db: Session = Depends(get_db)):
             log.info("Webhook: unknown event type, ignoring: %s", event.event_type)
     except Exception as e:
         log.error("Webhook processing error: %s", e, exc_info=True)
-        # НЕ пробрасываем — чтобы ЮKassa не ретраила. Ошибки смотрим в логах.
+        # НЕ пробрасываем — чтобы провайдер не ретраил. Ошибки смотрим в логах.
 
-    return {"ok": True}
+    return ok_response
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
