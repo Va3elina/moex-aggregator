@@ -15,6 +15,7 @@ import { useNavigate } from 'react-router-dom';
 import { Check, Zap, Crown, Sparkles } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch } from '../services/api';
+import TBankCheckoutModal from '../components/billing/TBankCheckoutModal';
 
 interface PlanVariant {
   plan_id: string;
@@ -53,6 +54,8 @@ export default function PricingPage() {
   const [period, setPeriod] = useState<'monthly' | 'yearly'>('yearly'); // годовой по умолчанию (выгоднее)
   const [loading, setLoading] = useState(true);
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
+  // Modal встроенной оплаты Т-Банка. null = закрыт. paymentUrl = открыт с этим URL.
+  const [tbankCheckout, setTbankCheckout] = useState<{ paymentUrl: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Загружаем план при mount
@@ -99,8 +102,15 @@ export default function PricingPage() {
         throw new Error(errData.detail || 'Ошибка создания платежа');
       }
       const body = await resp.json();
-      // Редирект на страницу оплаты
-      window.location.href = body.confirmation_url;
+      // Если бэкенд работает через T-Bank — открываем встроенную форму
+      // в модалке (iframe), без покидания сайта. Для YooKassa и Stub —
+      // старый flow редиректа (их формы могут блокировать iframe).
+      if (data?.provider === 'tbank') {
+        setTbankCheckout({ paymentUrl: body.confirmation_url });
+        setCheckoutLoading(null);
+      } else {
+        window.location.href = body.confirmation_url;
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Ошибка');
       setCheckoutLoading(null);
@@ -294,6 +304,14 @@ export default function PricingPage() {
           .
         </p>
       </div>
+
+      {/* Встроенная форма Т-Банка — модалка с iframe + polling статуса */}
+      {tbankCheckout && (
+        <TBankCheckoutModal
+          paymentUrl={tbankCheckout.paymentUrl}
+          onCancel={() => setTbankCheckout(null)}
+        />
+      )}
     </div>
   );
 }
