@@ -302,6 +302,87 @@ def subscription_history(db: Session, user: User, limit: int = 20) -> list[Subsc
 #  6. Sync pending — fallback на случай задержки/отсутствия webhook
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def refund_subscription(
+    db: Session,
+    sub: Subscription,
+    amount: float | None = None,
+    reason: str | None = None,
+) -> dict:
+    """
+    Инициирует возврат денег за подписку через провайдера.
+
+    Логика:
+    1. Зовём provider.refund(payment_id, amount). T-Bank /v2/Cancel:
+       - AUTHORIZED → reverse (холд снят, ничего не списано)
+       - CONFIRMED  → refund (возврат на карту, до 7 дней зачисление)
+       - Если amount меньше списанного → частичный возврат
+    2. Если провайдер ОК — сразу обновляем status в БД (не ждём webhook):
+       - 'active'  → 'refunded'
+       - 'pending' → 'cancelled' (платёж не успел подтвердиться)
+    3. sync_user_role пересчитает users.role — если у user'а больше нет
+       активных подписок более высокого tier'а, role понизится
+
+    Возвращает {ok, status, refunded_amount, message}.
+    Если провайдер вернул False — оставляем sub без изменений.
+    """
+    provider = get_payment_provider()
+
+    if provider.name == "stub":
+        # Stub — просто маркируем refunded, без обращения наружу
+        sub.status = "refunded"
+        sub.cancelled_at = datetime.now(timezone.utc)
+        db.flush()
+        user = db.query(User).filter(User.id == sub.user_id).first()
+        if user:
+            sync_user_role(db, user)
+        db.commit()
+        return {"ok": True, "status": "refunded", "refunded_amount": sub.amount, "message": "stub refund"}
+
+    if not sub.yk_payment_id:
+        return {"ok": False, "status": sub.status, "message": "no payment_id"}
+
+    ok = False
+    try:
+        ok = provider.refund(sub.yk_payment_id, amount=amount)  # type: ignore[attr-defined]
+    except Exception as e:
+        log.error("refund_subscription sub=%s provider.refund failed: %s", sub.id, e)
+        return {"ok": False, "status": sub.status, "message": str(e)}
+
+    if not ok:
+        return {
+            "ok": False,
+            "status": sub.status,
+            "message": "Провайдер отклонил возврат (см. логи)",
+        }
+
+    # Провайдер принял запрос — обновляем БД
+    prev_status = sub.status
+    if sub.status == "active":
+        sub.status = "refunded"
+    elif sub.status == "pending":
+        sub.status = "cancelled"
+    # для refunded/cancelled/expired/failed — не трогаем
+
+    sub.cancelled_at = datetime.now(timezone.utc)
+    db.flush()
+
+    user = db.query(User).filter(User.id == sub.user_id).first()
+    if user:
+        sync_user_role(db, user)
+    db.commit()
+
+    log.info(
+        "refund_subscription sub=%s user=%s: %s → %s (amount=%s, reason=%r)",
+        sub.id, sub.user_id, prev_status, sub.status, amount or "FULL", reason,
+    )
+    return {
+        "ok": True,
+        "status": sub.status,
+        "refunded_amount": amount if amount is not None else sub.amount,
+        "message": "Возврат инициирован у Т-Банка (до 7 дней зачисления)",
+    }
+
+
 def sync_pending_for_user(
     db: Session,
     user: User,

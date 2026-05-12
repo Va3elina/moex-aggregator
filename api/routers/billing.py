@@ -333,6 +333,69 @@ async def resume(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+#  5c. POST /refund — пользовательский возврат (в течение 14 дней)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class RefundRequest(BaseModel):
+    subscription_id: int
+    amount: float | None = None  # частичный возврат, по умолчанию полный
+    reason: str | None = None
+
+
+# По закону "О защите прав потребителей" + ст. 26.1 ГК — дистанционно купленные
+# нематериальные услуги можно вернуть в течение 14 дней с момента оплаты.
+USER_REFUND_WINDOW_DAYS = 14
+
+
+@router.post("/refund")
+async def user_refund(
+    body: RefundRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Пользователь запрашивает возврат собственной подписки.
+
+    Условия:
+    - Подписка принадлежит этому user'у
+    - status в ('active', 'pending')  — не уже refunded/cancelled
+    - С момента оплаты прошло не более USER_REFUND_WINDOW_DAYS дней
+    - Возврат полный (amount=None) — частичные только админом
+
+    Возврат частичный (amount != None) — на текущий момент только admin может,
+    user через это endpoint всегда делает полный.
+    """
+    sub = db.query(Subscription).filter(
+        Subscription.id == body.subscription_id,
+        Subscription.user_id == user.id,
+    ).first()
+    if not sub:
+        raise HTTPException(404, "Подписка не найдена")
+    if sub.status not in ("active", "pending"):
+        raise HTTPException(400, f"Подписка в статусе {sub.status} — возврат недоступен")
+
+    # Окно 14 дней от created_at (или started_at если есть)
+    started = sub.started_at or sub.created_at
+    if started:
+        # started_at из БД — timezone-aware (timestamptz)
+        age_days = (datetime.now(timezone.utc) - started).days
+        if age_days > USER_REFUND_WINDOW_DAYS:
+            raise HTTPException(
+                400,
+                f"Срок возврата истёк (прошло {age_days} дней, окно {USER_REFUND_WINDOW_DAYS} дней). "
+                "Для исключения напиши в поддержку."
+            )
+
+    # User может только полный возврат (amount=None). Игнорируем body.amount.
+    result = billing_service.refund_subscription(
+        db, sub, amount=None, reason=body.reason or "user request",
+    )
+    if not result["ok"]:
+        raise HTTPException(502, result.get("message", "Не удалось оформить возврат"))
+    return result
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 #  6. STUB ONLY — /stub/simulate (удобство для разработки без ключей)
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -473,3 +536,50 @@ async def admin_revoke_invite(
     if not ok:
         raise HTTPException(404, "Токен не найден")
     return {"ok": True}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  9. ADMIN — refund любой подписки (без 14-дневного ограничения)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class AdminRefundRequest(BaseModel):
+    subscription_id: int
+    amount: float | None = None  # частичный возврат, по умолчанию полный
+    reason: str | None = None
+
+
+@router.post("/admin/refund")
+async def admin_refund(
+    body: AdminRefundRequest,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Админский возврат — без проверки срока, любая подписка любого user'а.
+    Поддерживает частичный возврат (передать amount меньше sub.amount).
+
+    Используется для:
+    - Возврат по запросу клиента после 14-дневного окна (DSGV / 26.1 ГК)
+    - Решение споров (chargeback prevention)
+    - Корректировка ошибочных платежей
+    """
+    sub = db.query(Subscription).filter(
+        Subscription.id == body.subscription_id,
+    ).first()
+    if not sub:
+        raise HTTPException(404, "Подписка не найдена")
+    if sub.status in ("refunded", "cancelled"):
+        return {
+            "ok": True,
+            "status": sub.status,
+            "message": f"Подписка уже {sub.status} — повторный возврат не нужен",
+        }
+
+    result = billing_service.refund_subscription(
+        db, sub,
+        amount=body.amount,
+        reason=body.reason or f"admin #{admin.id}",
+    )
+    if not result["ok"]:
+        raise HTTPException(502, result.get("message", "Не удалось оформить возврат"))
+    return {**result, "subscription_id": sub.id, "user_id": sub.user_id}
