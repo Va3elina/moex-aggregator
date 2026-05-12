@@ -1,57 +1,103 @@
 /**
- * BillingSuccessPage — возвращаемся сюда после успешной оплаты в ЮKassa.
+ * BillingSuccessPage — возвращаемся сюда после успешной оплаты у провайдера.
  *
- * На момент редиректа webhook от ЮKassa может ещё не дойти до нашего сервера,
- * поэтому подписка может быть ещё в статусе 'pending'. Показываем спиннер +
- * проверяем статус каждые 2 сек (до 30 сек). Как только активна — показываем
- * успех и кнопку "В личный кабинет".
+ * Flow:
+ *  1. Сразу при mount'е дёргаем POST /api/billing/sync — он на сервере
+ *     спросит у T-Bank GetState актуальный статус всех pending платежей
+ *     текущего user'а и активирует те что CONFIRMED. Это страховка на случай
+ *     задержки/отсутствия webhook'а.
+ *  2. Если /sync уже вернул is_active=true → готово.
+ *  3. Иначе polling /api/billing/status каждые 2 сек до 30 сек (вдруг
+ *     webhook всё-таки дойдёт).
+ *  4. По таймауту — кнопка «Проверить статус» делает повторный /sync.
  */
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { CheckCircle2, Clock, AlertCircle } from 'lucide-react';
+import { CheckCircle2, Clock, AlertCircle, RotateCw } from 'lucide-react';
 import { apiFetch } from '../services/api';
 
 interface Status {
   tier: string;
   is_active: boolean;
-  plan_id: string | null;
-  expires_at: string | null;
+  plan_id?: string | null;
+  expires_at?: string | null;
+  subscription_id?: number | null;
 }
 
 export default function BillingSuccessPage() {
   const [status, setStatus] = useState<Status | null>(null);
   const [state, setState] = useState<'pending' | 'active' | 'timeout'>('pending');
+  const [syncing, setSyncing] = useState(false);
+
+  /** Принудительный sync через GetState у провайдера. */
+  const runSync = useCallback(async (): Promise<Status | null> => {
+    try {
+      const r = await apiFetch('/api/billing/sync', { method: 'POST' });
+      if (!r.ok) return null;
+      const s: Status = await r.json();
+      setStatus(s);
+      return s;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  /** Лёгкий polling статуса (без вызовов к провайдеру). */
+  const fetchStatus = useCallback(async (): Promise<Status | null> => {
+    try {
+      const r = await apiFetch('/api/billing/status');
+      if (!r.ok) return null;
+      const s: Status = await r.json();
+      setStatus(s);
+      return s;
+    } catch {
+      return null;
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
     let attempts = 0;
     const maxAttempts = 15; // 15 × 2 сек = 30 сек
 
-    const check = async () => {
+    (async () => {
+      // 1. Сразу sync — спросим T-Bank GetState не дожидаясь webhook
+      const synced = await runSync();
       if (cancelled) return;
-      try {
-        const r = await apiFetch('/api/billing/status');
-        if (!r.ok) throw new Error('status fetch failed');
-        const s: Status = await r.json();
-        setStatus(s);
-        if (s.is_active) {
+      if (synced?.is_active) {
+        setState('active');
+        return;
+      }
+      // 2. Polling каждые 2 сек — вдруг webhook дойдёт за это время
+      const tick = async () => {
+        if (cancelled) return;
+        const s = await fetchStatus();
+        if (s?.is_active) {
           setState('active');
           return;
         }
-      } catch {
-        // ignore, продолжаем polling
-      }
-      attempts++;
-      if (attempts >= maxAttempts) {
-        setState('timeout');
-      } else {
-        setTimeout(check, 2000);
-      }
-    };
+        attempts++;
+        if (attempts >= maxAttempts) {
+          setState('timeout');
+        } else {
+          setTimeout(tick, 2000);
+        }
+      };
+      setTimeout(tick, 2000);
+    })();
 
-    check();
-    return () => { cancelled = true; };
-  }, []);
+    return () => {
+      cancelled = true;
+    };
+  }, [runSync, fetchStatus]);
+
+  /** Кнопка «Проверить статус» в timeout-state. */
+  const handleManualSync = async () => {
+    setSyncing(true);
+    const s = await runSync();
+    setSyncing(false);
+    if (s?.is_active) setState('active');
+  };
 
   return (
     <div className="max-w-xl mx-auto px-6 py-12 text-center">
@@ -97,10 +143,32 @@ export default function BillingSuccessPage() {
           <AlertCircle className="w-16 h-16 mx-auto mb-4 text-amber-400" />
           <h1 className="text-2xl font-bold text-theme-primary mb-2">Подтверждение задерживается</h1>
           <p className="text-theme-secondary mb-6">
-            Платёж возможно прошёл, но webhook ещё не дошёл до нас.<br />
-            Зайди в{' '}
-            <Link to="/profile" className="text-theme-primary underline">профиль</Link>{' '}
-            через пару минут — если не подтвердится, напиши в поддержку.
+            Платёж возможно прошёл, но webhook ещё не дошёл до нас.
+            Нажми «Проверить статус» — мы сами спросим у Т-Банка.
+          </p>
+          <div className="flex flex-wrap gap-3 justify-center">
+            <button
+              onClick={handleManualSync}
+              disabled={syncing}
+              className="inline-flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
+              style={{ backgroundColor: 'var(--accent)', color: '#fff' }}
+            >
+              <RotateCw size={16} className={syncing ? 'animate-spin' : ''} />
+              {syncing ? 'Проверяем…' : 'Проверить статус'}
+            </button>
+            <Link
+              to="/profile"
+              className="px-5 py-2 rounded-xl text-sm font-medium border"
+              style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
+            >
+              В профиль
+            </Link>
+          </div>
+          <p className="mt-6 text-xs" style={{ color: 'var(--text-muted)' }}>
+            Если статус так и не подтвердится — напиши на{' '}
+            <a href="mailto:frameinfo@mail.ru" style={{ color: 'var(--accent)' }} className="hover:underline">
+              frameinfo@mail.ru
+            </a>
           </p>
         </>
       )}

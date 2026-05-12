@@ -264,6 +264,43 @@ async def cancel(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+#  5a. POST /sync — fallback на случай задержки webhook
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@router.post("/sync")
+async def sync_pending(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Принудительно проверяет все pending подписки текущего user'а через
+    GetState у провайдера. CONFIRMED активируется, REJECTED/CANCELED отменяется.
+
+    Frontend дёргает это:
+    1) Сразу при открытии /billing/success — чтобы не ждать webhook
+    2) По кнопке «Проверить статус» если polling вышел в timeout
+
+    Покрывает кейсы:
+    - Webhook URL не настроен в кабинете провайдера
+    - Webhook задержался / упал
+    - Сеть/IP заблокированы временно
+
+    Безопасно: идемпотентно, без side-effects если статус не изменился.
+    """
+    summary = billing_service.sync_pending_for_user(db, user)
+    # Возвращаем актуальный статус user'а после sync
+    sub = billing_service.current_subscription(db, user)
+    return {
+        "ok": True,
+        "summary": summary,  # {activated, cancelled, skipped, checked}
+        "tier": sub.tier if sub else "free",
+        "is_active": sub is not None,
+        "subscription_id": sub.id if sub else None,
+        "expires_at": sub.expires_at.isoformat() if sub and sub.expires_at else None,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 #  5b. POST /resume — отменить отмену (undo soft-cancel)
 # ═══════════════════════════════════════════════════════════════════════════════
 

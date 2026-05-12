@@ -296,3 +296,112 @@ def subscription_history(db: Session, user: User, limit: int = 20) -> list[Subsc
     return db.query(Subscription).filter(
         Subscription.user_id == user.id
     ).order_by(Subscription.created_at.desc()).limit(limit).all()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  6. Sync pending — fallback на случай задержки/отсутствия webhook
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def sync_pending_for_user(
+    db: Session,
+    user: User,
+    max_age_minutes: int = 60,
+) -> dict:
+    """
+    Для всех pending подписок user'а (не старше max_age_minutes) спрашиваем
+    провайдера актуальный статус через verify_payment. Активируем CONFIRMED,
+    отменяем REJECTED/CANCELED/REVERSED/DEADLINE_EXPIRED.
+
+    Используется когда webhook задерживается или вообще не пришёл (URL
+    не зарегистрирован у провайдера, проблемы с сетью, и т.п.). Безопасно
+    вызывать многократно — verify_payment не имеет side-effects, активация
+    идемпотентна.
+
+    Возвращает summary {activated, cancelled, skipped, checked} для логирования.
+    """
+    provider = get_payment_provider()
+    summary = {"activated": 0, "cancelled": 0, "skipped": 0, "checked": 0}
+
+    # Stub провайдер не имеет внешнего state — нет смысла верифицировать.
+    if provider.name == "stub":
+        return summary
+
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=max_age_minutes)
+    pending = db.query(Subscription).filter(
+        Subscription.user_id == user.id,
+        Subscription.status == "pending",
+        Subscription.created_at >= cutoff,
+        Subscription.yk_payment_id.isnot(None),
+    ).all()
+
+    for sub in pending:
+        summary["checked"] += 1
+        info = provider.verify_payment(sub.yk_payment_id) if sub.yk_payment_id else None  # type: ignore[attr-defined]
+        if not info:
+            summary["skipped"] += 1
+            continue
+
+        # Маппинг провайдер-специфичных статусов в наш event_type
+        event_type: str | None = None
+        amount: float | None = None
+        method: str | None = None
+
+        if provider.name == "tbank":
+            status = info.get("Status", "").upper()
+            if status == "CONFIRMED":
+                event_type = "payment.succeeded"
+            elif status in ("REJECTED", "CANCELED", "REVERSED", "DEADLINE_EXPIRED"):
+                event_type = "payment.canceled"
+            elif status in ("REFUNDED", "PARTIAL_REFUNDED"):
+                event_type = "refund.succeeded"
+            # Иначе NEW/AUTHORIZED/*_ING — оставляем pending
+            try:
+                amount = float(info.get("Amount", 0)) / 100.0  # копейки → рубли
+            except (ValueError, TypeError):
+                amount = None
+            method = info.get("PaymentMethod") or "bank_card"
+
+        elif provider.name == "yookassa":
+            yk_status = info.get("status", "")
+            if yk_status == "succeeded":
+                event_type = "payment.succeeded"
+            elif yk_status in ("canceled",):
+                event_type = "payment.canceled"
+            try:
+                amount = float(info.get("amount", {}).get("value", 0))
+            except (ValueError, TypeError):
+                amount = None
+            method = info.get("payment_method", {}).get("type") or "bank_card"
+
+        if not event_type:
+            summary["skipped"] += 1
+            continue
+
+        # Формируем синтетический WebhookEvent и проводим через стандартный flow.
+        # activate_from_webhook сам делает _verify_with_provider повторно —
+        # двойная проверка, но это безопасно и быстро.
+        from api.billing.provider import WebhookEvent
+        event = WebhookEvent(
+            payment_id=sub.yk_payment_id,  # type: ignore[arg-type]
+            event_type=event_type,
+            payment_method=method,
+            amount=amount,
+        )
+
+        try:
+            if event_type == "payment.succeeded":
+                if activate_from_webhook(db, event):
+                    summary["activated"] += 1
+            else:
+                if cancel_by_webhook(db, event):
+                    summary["cancelled"] += 1
+        except Exception as e:
+            log.error("sync_pending_for_user sub=%s failed: %s", sub.id, e)
+            summary["skipped"] += 1
+
+    if summary["activated"] or summary["cancelled"]:
+        log.info(
+            "sync_pending_for_user user=%s: %s",
+            user.id, summary,
+        )
+    return summary
