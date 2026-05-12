@@ -56,6 +56,10 @@ export default function PricingPage() {
   const [period, setPeriod] = useState<'monthly' | 'yearly'>('yearly'); // годовой по умолчанию (выгоднее)
   const [loading, setLoading] = useState(true);
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
+  // recurrent — сохранить карту для авто-продления. Default true (по умолчанию
+  // подписочные сервисы обычно с auto-renewal — Netflix, Spotify тоже).
+  // Юзер может снять галку чтобы заплатить одноразово.
+  const [recurrent, setRecurrent] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
   // Загружаем план при mount
@@ -95,6 +99,7 @@ export default function PricingPage() {
         body: JSON.stringify({
           plan_id: planId,
           return_url: `${window.location.origin}/billing/success`,
+          recurrent,  // сохранить карту для авто-продления?
         }),
       });
       if (!resp.ok) {
@@ -142,7 +147,7 @@ export default function PricingPage() {
       )}
 
       {/* Переключатель Месяц / Год */}
-      <div className="flex justify-center mb-8">
+      <div className="flex justify-center mb-4">
         <div className="inline-flex rounded-xl border p-1" style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-secondary)' }}>
           <button
             onClick={() => setPeriod('monthly')}
@@ -158,6 +163,27 @@ export default function PricingPage() {
           </button>
         </div>
       </div>
+
+      {/* Авто-продление — сохранить карту для будущих списаний */}
+      {data.provider === 'tbank' && (
+        <div className="flex justify-center mb-8">
+          <label
+            className="inline-flex items-center gap-2 cursor-pointer select-none"
+            style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-xs)' }}
+          >
+            <input
+              type="checkbox"
+              checked={recurrent}
+              onChange={(e) => setRecurrent(e.target.checked)}
+              className="w-4 h-4 cursor-pointer"
+              style={{ accentColor: 'var(--accent)' }}
+            />
+            <span>
+              Авто-продление: сохранить карту для следующих периодов
+            </span>
+          </label>
+        </div>
+      )}
 
       {/* Карточки тарифов */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-5">

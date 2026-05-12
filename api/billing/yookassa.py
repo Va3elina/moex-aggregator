@@ -68,15 +68,18 @@ class YooKassaProvider:
         customer_email: str | None = None,
         customer_phone: str | None = None,
         widget_mode: bool = False,
+        recurrent: bool = False,
+        customer_key: str | None = None,
     ) -> CheckoutSession:
         """
         Создаёт платёж в ЮKassa. Возвращает id + confirmation_url (embedded widget
         или страница ЮKassa).
 
-        customer_email/phone и widget_mode — игнорируются (ЮKassa использует
-        внешнюю кассу для фискализации, и SpeedPay-like виджеты у неё иначе).
+        Все T-Bank-специфичные параметры (widget_mode, recurrent, customer_key,
+        customer_email/phone) игнорируются — у ЮKassa другая модель рекуррентов
+        (payment_method_data + save_payment_method=true), нашим кодом не активна.
         """
-        _ = (customer_email, customer_phone, widget_mode)
+        _ = (customer_email, customer_phone, widget_mode, recurrent, customer_key)
         body: dict[str, Any] = {
             "amount": {
                 "value": f"{amount:.2f}",

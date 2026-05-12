@@ -21,10 +21,78 @@ from sqlalchemy.orm import Session
 from api.billing.factory import get_payment_provider
 from api.billing.plans import TIER_LEVELS, get_plan
 from api.billing.provider import WebhookEvent
+from api.models.payment_method import UserPaymentMethod
 from api.models.subscription import Subscription
 from api.models.user import User
 
 log = logging.getLogger(__name__)
+
+
+def _upsert_payment_method(
+    db: Session,
+    user_id: int,
+    event: WebhookEvent,
+) -> UserPaymentMethod | None:
+    """
+    Создаёт или находит UserPaymentMethod на основе данных из webhook.
+
+    Идемпотентно: если карта (user_id + rebill_id) уже есть (NOT deleted),
+    обновляем last_used_at + возможно недостающие поля (last4, brand) и
+    возвращаем существующую запись. Иначе создаём новую.
+
+    Вызывается из activate_from_webhook когда event.rebill_id != None.
+    """
+    if not event.rebill_id:
+        return None
+
+    provider = get_payment_provider()
+
+    existing = db.query(UserPaymentMethod).filter(
+        UserPaymentMethod.user_id == user_id,
+        UserPaymentMethod.rebill_id == event.rebill_id,
+        UserPaymentMethod.deleted_at.is_(None),
+    ).first()
+
+    now = datetime.now(timezone.utc)
+
+    if existing:
+        # Обновляем недостающие поля (если webhook принёс свежие данные)
+        if event.card_last4 and not existing.card_last4:
+            existing.card_last4 = event.card_last4
+        if event.card_brand and not existing.card_brand:
+            existing.card_brand = event.card_brand
+        existing.last_used_at = now
+        db.flush()
+        log.info(
+            "Payment method already exists: user=%s pm=%s (last_used updated)",
+            user_id, existing.id,
+        )
+        return existing
+
+    # Если у юзера ещё нет активных карт — новая будет default
+    has_default = db.query(UserPaymentMethod).filter(
+        UserPaymentMethod.user_id == user_id,
+        UserPaymentMethod.deleted_at.is_(None),
+        UserPaymentMethod.is_default.is_(True),
+    ).first() is not None
+
+    pm = UserPaymentMethod(
+        user_id=user_id,
+        provider=provider.name,
+        rebill_id=event.rebill_id,
+        customer_key=event.customer_key,
+        card_last4=event.card_last4,
+        card_brand=event.card_brand,
+        is_default=not has_default,
+        last_used_at=now,
+    )
+    db.add(pm)
+    db.flush()
+    log.info(
+        "Created payment method: user=%s pm=%s brand=%s last4=%s default=%s",
+        user_id, pm.id, pm.card_brand, pm.card_last4, pm.is_default,
+    )
+    return pm
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -37,6 +105,7 @@ def create_checkout_for_user(
     plan_id: str,
     return_url: str,
     widget_mode: bool = False,
+    recurrent: bool = False,
 ) -> dict:
     """
     Создаёт subscription(pending) + платёж у провайдера.
@@ -80,6 +149,10 @@ def create_checkout_for_user(
             customer_email=customer_email,
             customer_phone=customer_phone,
             widget_mode=widget_mode,
+            recurrent=recurrent,
+            # CustomerKey — обязательный когда recurrent=True. Уникальный
+            # идентификатор клиента у эквайера; у нас str(user.id).
+            customer_key=str(user.id) if recurrent else None,
         )
     except Exception as e:
         # Платёж не создался — помечаем fail и пробрасываем
@@ -166,6 +239,13 @@ def activate_from_webhook(db: Session, event: WebhookEvent) -> Subscription | No
     sub.expires_at = now + timedelta(days=plan.duration_days) if plan else None
     sub.yk_method = event.payment_method
 
+    # Если webhook принёс RebillId — это был recurrent-платёж, сохраняем карту
+    # в user_payment_methods и привязываем к этой подписке.
+    if event.rebill_id:
+        pm = _upsert_payment_method(db, sub.user_id, event)
+        if pm:
+            sub.payment_method_id = pm.id
+
     db.flush()
 
     # Поднимаем роль user'а если нужно
@@ -175,8 +255,9 @@ def activate_from_webhook(db: Session, event: WebhookEvent) -> Subscription | No
 
     db.commit()
     log.info(
-        "Activated subscription #%s for user #%s: tier=%s expires=%s method=%s",
-        sub.id, sub.user_id, sub.tier, sub.expires_at, event.payment_method,
+        "Activated subscription #%s for user #%s: tier=%s expires=%s method=%s pm=%s",
+        sub.id, sub.user_id, sub.tier, sub.expires_at,
+        event.payment_method, sub.payment_method_id,
     )
     return sub
 
@@ -486,3 +567,185 @@ def sync_pending_for_user(
             user.id, summary,
         )
     return summary
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  7. Charge recurrent — списать с сохранённой карты (auto-renewal + test #6)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def charge_recurrent(
+    db: Session,
+    user: User,
+    plan_id: str,
+    payment_method: UserPaymentMethod,
+) -> dict:
+    """
+    Списать с сохранённой карты по plan_id — auto-renewal flow.
+
+    Шаги:
+    1. Проверки: payment_method принадлежит user'у, не удалён, plan валиден
+    2. Создаём Subscription(pending) — для аудита
+    3. provider.charge(amount, rebill_id) → провайдер делает Init + Charge
+       без участия юзера (T-Bank списывает мгновенно, без 3DS)
+    4. Если CONFIRMED → activate_from_webhook (синтетический WebhookEvent)
+       → подписка active, role обновлена, payment_method.last_used_at = now
+    5. Если REJECTED → cancel_by_webhook → status='failed'
+
+    Возвращает {ok, status, subscription_id, payment_id, message?}.
+
+    Используется:
+    - Admin endpoint /api/billing/admin/charge_recurrent (для теста #6)
+    - Auto-renewal cron в orchestrator (будет позже)
+    """
+    if payment_method.user_id != user.id:
+        raise ValueError("payment_method не принадлежит этому user'у")
+    if payment_method.deleted_at is not None:
+        raise ValueError("payment_method удалён")
+
+    plan = get_plan(plan_id)
+    if not plan:
+        raise ValueError(f"Unknown plan_id: {plan_id}")
+
+    provider = get_payment_provider()
+    if not hasattr(provider, "charge"):
+        raise RuntimeError(f"Provider {provider.name} не поддерживает рекурренты")
+
+    # 1. Sub(pending)
+    sub = Subscription(
+        user_id=user.id,
+        tier=plan.tier,
+        period=plan.period,
+        plan_id=plan.plan_id,
+        amount=plan.amount,
+        currency="RUB",
+        status="pending",
+        payment_method_id=payment_method.id,
+    )
+    db.add(sub)
+    db.flush()
+
+    # 2. Init + Charge через провайдера
+    try:
+        result = provider.charge(  # type: ignore[attr-defined]
+            amount=plan.amount,
+            currency="RUB",
+            description=f"{plan.title} — auto-renewal user #{user.id}",
+            rebill_id=payment_method.rebill_id,
+            metadata={
+                "user_id": str(user.id),
+                "subscription_id": str(sub.id),
+                "plan_id": plan.plan_id,
+                "auto_renewal": "1",
+            },
+        )
+    except Exception as e:
+        sub.status = "failed"
+        db.commit()
+        log.error("charge_recurrent failed for sub=%s: %s", sub.id, e)
+        return {
+            "ok": False,
+            "status": "failed",
+            "subscription_id": sub.id,
+            "message": str(e),
+        }
+
+    sub.yk_payment_id = result["payment_id"]
+    db.flush()
+
+    # 3. Активация или fail
+    if result.get("success") and result.get("status") == "CONFIRMED":
+        event = WebhookEvent(
+            payment_id=result["payment_id"],
+            event_type="payment.succeeded",
+            payment_method="bank_card",  # рекуррент всегда карта
+            amount=result.get("amount"),
+        )
+        activated = activate_from_webhook(db, event)
+        # last_used_at обновится через _upsert_payment_method? Нет — там path
+        # только когда RebillId в event. Charge webhook не присылает RebillId
+        # (карта уже привязана). Обновляем вручную.
+        payment_method.last_used_at = datetime.now(timezone.utc)
+        db.commit()
+        return {
+            "ok": True,
+            "status": "active",
+            "subscription_id": sub.id,
+            "payment_id": result["payment_id"],
+            "tier": activated.tier if activated else plan.tier,
+            "expires_at": activated.expires_at.isoformat() if activated and activated.expires_at else None,
+            "message": "Списание прошло, подписка активирована",
+        }
+    else:
+        # REJECTED / AUTHORIZED (ждёт) / etc — помечаем sub failed
+        sub.status = "failed"
+        sub.cancelled_at = datetime.now(timezone.utc)
+        db.commit()
+        return {
+            "ok": False,
+            "status": result.get("status", "failed"),
+            "subscription_id": sub.id,
+            "payment_id": result.get("payment_id"),
+            "message": result.get("message", "Списание отклонено банком"),
+            "error_code": result.get("error_code"),
+        }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  8. Helpers для UI «Сохранённые карты»
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def list_payment_methods(db: Session, user: User) -> list[UserPaymentMethod]:
+    """Все активные (не удалённые) карты юзера, default первой."""
+    return db.query(UserPaymentMethod).filter(
+        UserPaymentMethod.user_id == user.id,
+        UserPaymentMethod.deleted_at.is_(None),
+    ).order_by(
+        UserPaymentMethod.is_default.desc(),
+        UserPaymentMethod.created_at.desc(),
+    ).all()
+
+
+def get_default_payment_method(db: Session, user: User) -> UserPaymentMethod | None:
+    """Default карта или первая активная если default не отмечен."""
+    pms = list_payment_methods(db, user)
+    if not pms:
+        return None
+    return next((p for p in pms if p.is_default), pms[0])
+
+
+def soft_delete_payment_method(
+    db: Session, user: User, payment_method_id: int
+) -> bool:
+    """
+    Soft-удалить карту. Возвращает True если удалено, False если не нашли.
+
+    Не отвязываем у T-Bank (DeleteCard API) — оставляем им очистку. У них
+    карта остаётся привязанной к CustomerKey, но нам она недоступна (мы её
+    больше не вернём из list_payment_methods).
+    """
+    pm = db.query(UserPaymentMethod).filter(
+        UserPaymentMethod.id == payment_method_id,
+        UserPaymentMethod.user_id == user.id,
+        UserPaymentMethod.deleted_at.is_(None),
+    ).first()
+    if not pm:
+        return False
+
+    pm.deleted_at = datetime.now(timezone.utc)
+    was_default = pm.is_default
+    pm.is_default = False
+    db.flush()
+
+    # Если удалили default — назначим default'ом следующую активную (если есть)
+    if was_default:
+        next_pm = db.query(UserPaymentMethod).filter(
+            UserPaymentMethod.user_id == user.id,
+            UserPaymentMethod.deleted_at.is_(None),
+        ).order_by(UserPaymentMethod.created_at.desc()).first()
+        if next_pm:
+            next_pm.is_default = True
+            db.flush()
+
+    db.commit()
+    log.info("Soft-deleted payment method id=%s user=%s", payment_method_id, user.id)
+    return True

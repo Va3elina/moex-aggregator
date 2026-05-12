@@ -77,13 +77,27 @@ class Subscription(Base):
     expires_at = Column(DateTime(timezone=True), nullable=True)   # когда заканчивается
     cancelled_at = Column(DateTime(timezone=True), nullable=True)
 
-    # === ЮKassa реквизиты ===
-    # yk_payment_id — id платежа в ЮKassa, заполняется при создании checkout-сессии.
-    # Используется в webhook'е для лукапа нашей подписки по id от провайдера.
+    # === Провайдер реквизиты ===
+    # yk_payment_id — id платежа у провайдера (T-Bank PaymentId или ЮKassa id),
+    # заполняется при создании checkout-сессии. Используется в webhook'е для
+    # лукапа нашей подписки по id от провайдера. Имя оставлено для backward-compat.
     yk_payment_id = Column(String(64), unique=True, nullable=True, index=True)
-    # yk_method — каким способом оплачено: 'bank_card' / 'sbp' / 'sberpay' / 'yoo_money' / ...
+    # yk_method — каким способом оплачено: 'bank_card' / 'sbp' / 'sberpay' / 'tpay' / ...
     # Заполняется в webhook, используется для аналитики конверсии.
     yk_method = Column(String(32), nullable=True)
+
+    # === Рекуррентные платежи ===
+    # payment_method_id — FK на сохранённую карту в user_payment_methods.
+    # NULL значит разовая оплата без сохранения (юзер не выбрал авто-продление).
+    # NOT NULL значит карта используется/использовалась для этой подписки —
+    # auto-renewal cron сможет дёрнуть Charge через payment_method.rebill_id.
+    # ON DELETE SET NULL: если юзер удалит карту, подписка остаётся, но
+    # auto-renewal не сработает (пользователь увидит "карта отвязана").
+    payment_method_id = Column(
+        Integer,
+        ForeignKey("user_payment_methods.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     # === Метаданные ===
     created_at = Column(

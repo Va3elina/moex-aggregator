@@ -179,6 +179,8 @@ class TBankProvider:
         customer_email: str | None = None,
         customer_phone: str | None = None,
         widget_mode: bool = False,
+        recurrent: bool = False,
+        customer_key: str | None = None,
     ) -> CheckoutSession:
         """
         Создаёт платёж через T-Bank API. Возвращает PaymentId + PaymentURL.
@@ -221,6 +223,21 @@ class TBankProvider:
             "SuccessURL": success_url,
             "FailURL": fail_url,
         }
+
+        # Рекуррентный платёж: сохраняем карту для будущих /v2/Charge без 3DS.
+        # T-Bank требует:
+        #   - Recurrent = "Y"
+        #   - CustomerKey — уникальный идентификатор клиента (у нас str(user.id))
+        # После CONFIRMED в webhook'е придёт RebillId — сохраняем его в
+        # user_payment_methods (см. service.activate_from_webhook).
+        # https://developer.tbank.ru/eacq/api/v2#init-recurrent
+        if recurrent:
+            if not customer_key:
+                raise ValueError(
+                    "TBankProvider.create_checkout: recurrent=True требует customer_key"
+                )
+            body["Recurrent"] = "Y"
+            body["CustomerKey"] = customer_key[:36]  # T-Bank лимит 36 символов
 
         # Token — считаем до добавления DATA и Receipt (они в подписи не участвуют)
         body["Token"] = self._make_token(body)
@@ -341,12 +358,34 @@ class TBankProvider:
         except (ValueError, TypeError):
             amount = None
 
+        # === Рекуррент: достаём RebillId + Pan + CardType если есть ===
+        # T-Bank webhook содержит эти поля только для платежей с Recurrent="Y"
+        # на стадии CONFIRMED (первое успешное списание создаёт привязку).
+        # Для обычных (не recurrent) платежей RebillId будет None.
+        rebill_id = data.get("RebillId")
+        if rebill_id is not None:
+            rebill_id = str(rebill_id)
+
+        # CustomerKey — мы его слали в Init, T-Bank возвращает обратно.
+        customer_key = data.get("CustomerKey")
+
+        # Pan: T-Bank присылает "430000******0333" — берём только last4.
+        pan = data.get("Pan") or ""
+        card_last4 = pan[-4:] if len(pan) >= 4 else None
+
+        # CardType: 'VISA' / 'MASTERCARD' / 'MIR' / 'MAESTRO' / 'JCB' / ...
+        card_brand = data.get("CardType")
+
         return WebhookEvent(
             payment_id=payment_id,
             event_type=event_type,
             payment_method=data.get("PaymentMethod") or "bank_card",
             amount=amount,
             metadata=data.get("DATA") or {},
+            rebill_id=rebill_id,
+            customer_key=customer_key,
+            card_last4=card_last4,
+            card_brand=card_brand,
         )
 
     # ─────────────────────────────────────────────────────────────────────
@@ -385,6 +424,135 @@ class TBankProvider:
             )
             return None
         return data
+
+    # ─────────────────────────────────────────────────────────────────────
+    #  charge — POST /Init + POST /Charge (рекуррентное списание)
+    # ─────────────────────────────────────────────────────────────────────
+    def charge(
+        self,
+        *,
+        amount: float,
+        currency: str,
+        description: str,
+        rebill_id: str,
+        metadata: dict | None = None,
+    ) -> dict:
+        """
+        Списать средства с сохранённой карты по RebillId без участия юзера.
+
+        T-Bank требует двухшаговый flow:
+        1. POST /v2/Init с обычными параметрами (Recurrent НЕ передаём!) → PaymentId
+        2. POST /v2/Charge с PaymentId + RebillId → T-Bank списывает мгновенно
+           (без 3DS, без формы — карта уже верифицирована при первом платеже)
+
+        Используется auto-renewal cron'ом и admin endpoint'ом для теста №6.
+
+        Возвращает {'payment_id', 'status', 'success', 'amount', 'message'?}.
+        status: 'CONFIRMED' (deposited) / 'REJECTED' / 'AUTHORIZED' (ожидает) / ...
+        success: True если status=CONFIRMED, иначе False.
+
+        ВЫЗЫВАЕТ RuntimeError если /Init или /Charge провалились на уровне HTTP/API.
+        """
+        if currency and currency.upper() != "RUB":
+            log.warning(
+                "TBankProvider.charge: terminal обычно RUB, передан %s",
+                currency,
+            )
+
+        order_id = uuid.uuid4().hex
+
+        # ── Шаг 1: Init ─────────────────────────────────────────────────
+        init_body: dict[str, Any] = {
+            "TerminalKey": self.terminal_key,
+            "Amount": int(round(amount * 100)),  # копейки!
+            "OrderId": order_id,
+            "Description": (description or "Авто-продление подписки")[:250],
+        }
+        init_body["Token"] = self._make_token(init_body)
+
+        # DATA — для матчинга в webhook (наша metadata: subscription_id, plan_id)
+        if metadata:
+            init_body["DATA"] = {
+                str(k): str(v)[:256]
+                for k, v in metadata.items()
+                if v is not None
+            }
+
+        try:
+            with httpx.Client(timeout=15) as client:
+                resp = client.post(f"{TBANK_API_BASE}/Init", json=init_body)
+        except httpx.HTTPError as e:
+            log.error("TBank.charge: Init HTTP error: %s", e)
+            raise RuntimeError(f"T-Bank Init failed: {e}") from e
+
+        if resp.status_code >= 400:
+            log.error("TBank.charge: Init %s %s", resp.status_code, resp.text)
+            resp.raise_for_status()
+
+        init_data = resp.json()
+        if not init_data.get("Success"):
+            err = (
+                f"T-Bank Init failed: {init_data.get('Message', 'unknown')} "
+                f"(ErrorCode {init_data.get('ErrorCode')})"
+            )
+            log.error("TBank.charge: %s", err)
+            raise RuntimeError(err)
+
+        payment_id = str(init_data["PaymentId"])
+        log.info(
+            "TBank.charge: Init OK payment_id=%s amount=%.2f RUB",
+            payment_id, amount,
+        )
+
+        # ── Шаг 2: Charge ───────────────────────────────────────────────
+        charge_body: dict[str, Any] = {
+            "TerminalKey": self.terminal_key,
+            "PaymentId": payment_id,
+            "RebillId": str(rebill_id),
+        }
+        charge_body["Token"] = self._make_token(charge_body)
+
+        try:
+            with httpx.Client(timeout=30) as client:
+                # Charge может ждать обработки карты дольше чем Init
+                resp = client.post(f"{TBANK_API_BASE}/Charge", json=charge_body)
+        except httpx.HTTPError as e:
+            log.error("TBank.charge: Charge HTTP error pid=%s: %s", payment_id, e)
+            raise RuntimeError(f"T-Bank Charge failed: {e}") from e
+
+        if resp.status_code >= 400:
+            log.error(
+                "TBank.charge: Charge pid=%s %s %s",
+                payment_id, resp.status_code, resp.text,
+            )
+            resp.raise_for_status()
+
+        charge_data = resp.json()
+        success = bool(charge_data.get("Success"))
+        status = charge_data.get("Status", "").upper()
+
+        result = {
+            "payment_id": payment_id,
+            "status": status,
+            "success": success,
+            "amount": amount,
+        }
+        if not success:
+            result["message"] = charge_data.get("Message", "T-Bank Charge rejected")
+            result["error_code"] = charge_data.get("ErrorCode")
+            log.warning(
+                "TBank.charge: REJECTED pid=%s status=%s code=%s msg=%s",
+                payment_id, status,
+                charge_data.get("ErrorCode"),
+                charge_data.get("Message"),
+            )
+        else:
+            log.info(
+                "TBank.charge: OK pid=%s status=%s amount=%.2f RUB",
+                payment_id, status, amount,
+            )
+
+        return result
 
     # ─────────────────────────────────────────────────────────────────────
     #  refund — POST /Cancel

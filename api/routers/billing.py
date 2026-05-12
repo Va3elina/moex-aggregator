@@ -29,6 +29,7 @@ from api.billing.factory import get_payment_provider
 from api.billing.plans import get_plan, list_public_plans, tiers_grouped
 from api.billing.tiers import user_tier
 from api.database import get_db
+from api.models.payment_method import UserPaymentMethod
 from api.models.subscription import Subscription
 from api.models.user import User
 from api.routers.auth import get_current_user, require_admin
@@ -46,6 +47,7 @@ class CheckoutRequest(BaseModel):
     plan_id: str                  # 'pro_monthly' / 'premium_yearly' / ...
     return_url: str | None = None # куда вернуть после оплаты (optional)
     widget_mode: bool = False     # True если инициирован через T-Bank JS SDK (SpeedPay)
+    recurrent: bool = False       # True → сохранить карту для auto-renewal (T-Bank Recurrent="Y")
 
 
 class CheckoutResponse(BaseModel):
@@ -153,6 +155,7 @@ async def checkout(
             plan_id=body.plan_id,
             return_url=return_url,
             widget_mode=body.widget_mode,
+            recurrent=body.recurrent,
         )
     except ValueError as e:
         raise HTTPException(400, str(e))
@@ -583,3 +586,141 @@ async def admin_refund(
     if not result["ok"]:
         raise HTTPException(502, result.get("message", "Не удалось оформить возврат"))
     return {**result, "subscription_id": sub.id, "user_id": sub.user_id}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  10. PAYMENT METHODS — управление сохранёнными картами
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _serialize_pm(pm: UserPaymentMethod) -> dict:
+    """JSON-сериализация карты для UI «Сохранённые карты»."""
+    return {
+        "id": pm.id,
+        "provider": pm.provider,
+        "card_last4": pm.card_last4,
+        "card_brand": pm.card_brand,
+        "display_name": pm.display_name,
+        "is_default": pm.is_default,
+        "last_used_at": pm.last_used_at.isoformat() if pm.last_used_at else None,
+        "created_at": pm.created_at.isoformat() if pm.created_at else None,
+    }
+
+
+@router.get("/payment_methods")
+async def list_my_payment_methods(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Список сохранённых карт текущего user'а (только активные, не удалённые)."""
+    methods = billing_service.list_payment_methods(db, user)
+    return {"items": [_serialize_pm(pm) for pm in methods]}
+
+
+@router.delete("/payment_methods/{pm_id}")
+async def delete_my_payment_method(
+    pm_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Soft-delete карты юзера. Не отвязываем у T-Bank — она просто скрывается
+    из нашего списка. Подписки которые на неё ссылаются остаются работать
+    до expires_at, но auto-renewal на этой карте не сработает.
+    """
+    ok = billing_service.soft_delete_payment_method(db, user, pm_id)
+    if not ok:
+        raise HTTPException(404, "Карта не найдена")
+    return {"ok": True}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  11. ADMIN — Charge recurrent (auto-renewal trigger; test #6 T-Bank certification)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class AdminChargeRequest(BaseModel):
+    user_id: int                          # на какого user'а списать
+    plan_id: str                          # 'pro_monthly' / 'basic_yearly' / ...
+    payment_method_id: int | None = None  # конкретная карта; если None — default
+
+
+@router.post("/admin/charge_recurrent")
+async def admin_charge_recurrent(
+    body: AdminChargeRequest,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Списать с сохранённой карты юзера принудительно (admin only).
+
+    Использование:
+    - Тест №6 сертификации T-Bank (требует Init + Charge с RebillId из теста №5)
+    - Manual trigger auto-renewal'а если cron не сработал
+    - Помощь юзеру со стороны саппорта ("спишите за следующий месяц сейчас")
+
+    Flow:
+    1. Берём UserPaymentMethod (по pm_id или default юзера)
+    2. provider.charge → Init + /v2/Charge мгновенно
+    3. activate_from_webhook → подписка active, user.role обновлена
+
+    Возвращает результат списания + новый subscription_id.
+    """
+    user = db.query(User).filter(User.id == body.user_id).first()
+    if not user:
+        raise HTTPException(404, f"User #{body.user_id} not found")
+
+    if body.payment_method_id is not None:
+        pm = db.query(UserPaymentMethod).filter(
+            UserPaymentMethod.id == body.payment_method_id,
+            UserPaymentMethod.user_id == body.user_id,
+            UserPaymentMethod.deleted_at.is_(None),
+        ).first()
+        if not pm:
+            raise HTTPException(404, "Payment method не найден")
+    else:
+        pm = billing_service.get_default_payment_method(db, user)
+        if not pm:
+            raise HTTPException(
+                400,
+                f"У user #{body.user_id} нет сохранённых карт — сначала "
+                "нужен Init с Recurrent='Y' (тест №5)",
+            )
+
+    try:
+        result = billing_service.charge_recurrent(db, user, body.plan_id, pm)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except RuntimeError as e:
+        raise HTTPException(502, str(e))
+
+    return {
+        **result,
+        "user_id": body.user_id,
+        "payment_method_id": pm.id,
+        "rebill_id_masked": pm.rebill_id[:4] + "***" + pm.rebill_id[-4:] if pm.rebill_id else None,
+    }
+
+
+@router.get("/admin/payment_methods/{user_id}")
+async def admin_list_user_payment_methods(
+    user_id: int,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    Список карт любого юзера (admin only). Полезно при сертификации T-Bank
+    и для саппорта.
+    """
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(404, f"User #{user_id} not found")
+    methods = billing_service.list_payment_methods(db, user)
+    # Admin видит rebill_id (но не полностью — маскируем для безопасности)
+    items = []
+    for pm in methods:
+        d = _serialize_pm(pm)
+        d["rebill_id_masked"] = (
+            pm.rebill_id[:4] + "***" + pm.rebill_id[-4:] if pm.rebill_id else None
+        )
+        d["customer_key"] = pm.customer_key
+        items.append(d)
+    return {"user_id": user_id, "email": user.email, "items": items}

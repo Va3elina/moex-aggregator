@@ -21,9 +21,16 @@ class WebhookEvent:
     """Распарсенное событие от провайдера."""
     payment_id: str                      # id платежа (для лукапа подписки в БД)
     event_type: str                      # 'payment.succeeded' / 'payment.canceled' / 'refund.succeeded'
-    payment_method: str | None = None    # 'bank_card' / 'sbp' / ...
+    payment_method: str | None = None    # 'bank_card' / 'sbp' / 'tpay' / ...
     amount: float | None = None
     metadata: dict | None = None         # произвольные данные, которые мы прокинули при создании
+    # === Поля для рекуррентных платежей (T-Bank Recurrent flow) ===
+    # Приходят в webhook'е CONFIRMED платежа созданного с Recurrent="Y".
+    # service.py использует их для создания записи в user_payment_methods.
+    rebill_id: str | None = None         # T-Bank токен карты для будущих Charge
+    customer_key: str | None = None      # CustomerKey которым была привязана
+    card_last4: str | None = None        # последние 4 цифры PAN для UI
+    card_brand: str | None = None        # 'VISA' / 'MASTERCARD' / 'MIR' / ...
 
 
 class PaymentProvider(Protocol):
@@ -42,6 +49,8 @@ class PaymentProvider(Protocol):
         customer_email: str | None = None,
         customer_phone: str | None = None,
         widget_mode: bool = False,
+        recurrent: bool = False,
+        customer_key: str | None = None,
     ) -> CheckoutSession:
         """
         Создать платёжную сессию у провайдера.
@@ -52,12 +61,42 @@ class PaymentProvider(Protocol):
         кассой). Хотя бы один из двух желателен, иначе T-Bank Receipt не построит.
 
         widget_mode — если True, payment инициирован через T-Bank JS SDK
-        (SpeedPay кнопки). Провайдер добавит в DATA маркер connection_type=Widget
-        чтобы T-Bank корректно обработал. Frontend получает только PaymentURL,
-        дальше SDK сам редиректит/открывает QR. Для не-T-Bank провайдеров параметр
-        игнорируется.
+        (SpeedPay кнопки). Провайдер добавит в DATA маркер connection_type=Widget.
 
-        Возвращает payment_id (для сохранения в нашу БД) и confirmation_url (для редиректа).
+        recurrent — если True, после успешной оплаты карта будет сохранена для
+        последующих списаний (Recurrent="Y" в T-Bank Init). В CONFIRMED webhook'е
+        провайдер вернёт RebillId который сохраним в user_payment_methods.
+
+        customer_key — обязательный когда recurrent=True. Уникальный идентификатор
+        клиента у провайдера. У нас обычно str(user.id).
+
+        Возвращает payment_id (для сохранения в нашу БД) и confirmation_url.
+        """
+        ...
+
+    def charge(
+        self,
+        *,
+        amount: float,
+        currency: str,
+        description: str,
+        rebill_id: str,
+        metadata: dict | None = None,
+    ) -> dict:
+        """
+        Списать средства с привязанной карты без участия юзера (auto-renewal).
+
+        Flow для T-Bank:
+        1. Делается Init с обычными параметрами + ВНУТРИ провайдера сохраняется
+           PaymentId
+        2. Делается /v2/Charge с PaymentId + RebillId — провайдер списывает
+           без 3DS / без формы
+
+        Возвращает dict с минимум {payment_id, status, success}. Конкретный
+        формат — провайдер-специфичный.
+
+        ВЫЗЫВАЕТ ИСКЛЮЧЕНИЕ если провайдер не поддерживает рекурренты
+        (Stub, YooKassa без specific setup'а).
         """
         ...
 
