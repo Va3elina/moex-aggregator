@@ -3,10 +3,19 @@
 # ═══════════════════════════════════════════════════════════════
 FROM node:20-alpine AS frontend-build
 
+# python3 + Pillow нужны для frontend/package.json::prebuild хука
+# (scripts/build-sprite.py — собирает sprite.png из logos/*.png).
+# Без них `npm run build` падает с "python3: not found".
+RUN apk add --no-cache python3 py3-pip py3-pillow
+
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json* ./
 RUN npm ci
 COPY frontend/ ./
+# scripts/build-sprite.py использует Path(__file__).parent.parent / 'frontend'/...
+# То есть ожидает структуру /app/{frontend/, scripts/}. WORKDIR=/app/frontend,
+# COPY scripts/ → /app/scripts/.
+COPY scripts/ /app/scripts/
 RUN npm run build
 
 # ═══════════════════════════════════════════════════════════════
