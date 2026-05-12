@@ -147,16 +147,13 @@ export default function StrengthPage() {
     // SSE: автоматическое обновление при новых данных
     useRealtimeData(['daily', 'breadth'], loadData);
 
-    // Лейбл верхнего графика (price chart). Зависит от пары universeBase+currency.
-    //   imoex+rub → "Индекс IMOEX",  imoex+usd → "Индекс RTS"
-    //   all+rub   → "100 акций в рублях",  all+usd → "100 акций в долларах"
-    const priceChartLabel = universeBase === 'all'
-        ? (currency === 'usd' ? '100 акций в долларах' : '100 акций в рублях')
-        : (currency === 'usd' ? 'Индекс RTS' : 'Индекс IMOEX');
+    // Лейбл верхнего графика (price chart). Всегда показывает индекс, который
+    // фактически отрисован: IMOEX в рублях или RTS в долларах. От universeBase
+    // (выбора набора акций для breadth-метрики на нижнем графике) НЕ зависит —
+    // верхний график одинаков во всех режимах, и label должен это отражать.
+    const priceChartLabel = currency === 'usd' ? 'Индекс RTS' : 'Индекс IMOEX';
     // Короткий лейбл для hover tooltip (где места меньше)
-    const priceChartShort = universeBase === 'all'
-        ? (currency === 'usd' ? '100 акций $' : '100 акций ₽')
-        : (currency === 'usd' ? 'RTS' : 'IMOEX');
+    const priceChartShort = currency === 'usd' ? 'RTS' : 'IMOEX';
 
     // Данные для графиков
     const breadthData = useMemo(() => {
