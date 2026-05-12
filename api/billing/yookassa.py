@@ -65,11 +65,17 @@ class YooKassaProvider:
         description: str,
         return_url: str,
         metadata: dict | None = None,
+        customer_email: str | None = None,
+        customer_phone: str | None = None,
     ) -> CheckoutSession:
         """
         Создаёт платёж в ЮKassa. Возвращает id + confirmation_url (embedded widget
         или страница ЮKassa).
+
+        customer_email/phone — игнорируются (ЮKassa использует внешнюю кассу
+        для фискализации, наш код её не настраивает).
         """
+        _ = (customer_email, customer_phone)
         body: dict[str, Any] = {
             "amount": {
                 "value": f"{amount:.2f}",

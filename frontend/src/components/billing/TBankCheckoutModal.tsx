@@ -16,7 +16,7 @@
  *   https://developer.tbank.ru/eacq/intro/developer/setup_js/setup_iframe/
  */
 import { useEffect, useRef, useState } from 'react';
-import { X, ExternalLink, Loader2 } from 'lucide-react';
+import { X, ExternalLink, Loader2, XCircle } from 'lucide-react';
 import { apiFetch } from '../../services/api';
 
 interface Props {
@@ -26,6 +26,8 @@ interface Props {
   onCancel: () => void;
   /** Опционально — куда редиректить после успешной оплаты. Default '/billing/success' */
   successRedirectTo?: string;
+  /** Опционально — куда редиректить если оплата провалилась. Default '/billing/fail' */
+  failRedirectTo?: string;
 }
 
 interface BillingStatus {
@@ -40,21 +42,24 @@ export default function TBankCheckoutModal({
   paymentUrl,
   onCancel,
   successRedirectTo = '/billing/success',
+  failRedirectTo = '/billing/fail',
 }: Props) {
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const [iframeBlocked, setIframeBlocked] = useState(false);
   const [paymentDone, setPaymentDone] = useState(false);
+  const [paymentFailed, setPaymentFailed] = useState(false);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const pollTimerRef = useRef<number | null>(null);
   const loadTimerRef = useRef<number | null>(null);
 
   // Esc → cancel
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !paymentDone) onCancel();
+      if (e.key === 'Escape' && !paymentDone && !paymentFailed) onCancel();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onCancel, paymentDone]);
+  }, [onCancel, paymentDone, paymentFailed]);
 
   // Polling /api/billing/status → если активна, success
   useEffect(() => {
@@ -63,7 +68,7 @@ export default function TBankCheckoutModal({
     const maxAttempts = 60; // 60 × 3s = 3 минуты максимум
 
     const tick = async () => {
-      if (cancelled) return;
+      if (cancelled || paymentFailed) return;
       attempts += 1;
       try {
         const r = await apiFetch('/api/billing/status');
@@ -91,7 +96,7 @@ export default function TBankCheckoutModal({
       cancelled = true;
       if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
     };
-  }, [successRedirectTo]);
+  }, [successRedirectTo, paymentFailed]);
 
   // Iframe load timeout — если не загрузился за 5 сек, показываем fallback
   useEffect(() => {
@@ -104,10 +109,43 @@ export default function TBankCheckoutModal({
     };
   }, [iframeLoaded]);
 
+  /**
+   * Каждый раз когда iframe загружает новый URL — пытаемся прочитать его
+   * location. Cross-origin (securepay.tinkoff.ru) кидает DOMException → ловим.
+   * Same-origin (наш домен после редиректа на FailURL/SuccessURL) — читается.
+   *
+   * Если iframe ушёл на /billing/fail — показываем экран неуспеха внутри
+   * модалки и закрываем по кнопке (без редиректа всей страницы).
+   *
+   * Если iframe ушёл на /billing/success — polling и так найдёт is_active,
+   * но можно ускорить переход.
+   */
   const handleIframeLoad = () => {
     setIframeLoaded(true);
     setIframeBlocked(false);
     if (loadTimerRef.current) clearTimeout(loadTimerRef.current);
+
+    try {
+      const path = iframeRef.current?.contentWindow?.location?.pathname;
+      if (!path) return;
+      if (path.includes('/billing/fail')) {
+        setPaymentFailed(true);
+      } else if (path.includes('/billing/success')) {
+        // редкий случай: T-Bank редиректит весь iframe на success, мы успеваем
+        // прочитать pathname. Polling всё равно подхватит is_active.
+        setPaymentDone(true);
+        setTimeout(() => {
+          window.location.href = successRedirectTo;
+        }, 800);
+      }
+    } catch {
+      // Cross-origin — iframe ещё на стороне T-Bank, нормально.
+    }
+  };
+
+  // Кнопка "Закрыть" на failed-state — ведёт на /billing/fail (или /pricing)
+  const handleFailClose = () => {
+    window.location.href = failRedirectTo;
   };
 
   return (
@@ -192,6 +230,7 @@ export default function TBankCheckoutModal({
           {/* Iframe — основная форма Т-Банка */}
           {!iframeBlocked && (
             <iframe
+              ref={iframeRef}
               src={paymentUrl}
               title="Форма оплаты Т-Банка"
               onLoad={handleIframeLoad}
@@ -269,6 +308,45 @@ export default function TBankCheckoutModal({
               <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
                 Перенаправляем в личный кабинет…
               </p>
+            </div>
+          )}
+
+          {/* Failed overlay — iframe внутри ушёл на /billing/fail */}
+          {paymentFailed && !paymentDone && (
+            <div
+              className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6 text-center"
+              style={{
+                backgroundColor: 'var(--bg-primary)',
+                zIndex: 10,
+              }}
+            >
+              <XCircle
+                size={56}
+                style={{ color: 'var(--funds-flow-negative, #EF4444)' }}
+              />
+              <p
+                className="text-base font-semibold"
+                style={{ color: 'var(--text-primary)' }}
+              >
+                Оплата не прошла
+              </p>
+              <p
+                className="text-sm max-w-sm"
+                style={{ color: 'var(--text-secondary)' }}
+              >
+                Платёж был отменён или банк отказал. Деньги не списаны —
+                можно попробовать ещё раз.
+              </p>
+              <button
+                onClick={handleFailClose}
+                className="mt-2 px-5 py-2 rounded-xl text-sm font-medium transition-opacity hover:opacity-90"
+                style={{
+                  backgroundColor: 'var(--accent)',
+                  color: '#fff',
+                }}
+              >
+                Понятно
+              </button>
             </div>
           )}
         </div>

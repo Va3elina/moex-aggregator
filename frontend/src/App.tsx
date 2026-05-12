@@ -20,6 +20,7 @@ import AuthCallback from './pages/AuthCallback';
 import ProfilePage from './pages/ProfilePage';
 import PricingPage from './pages/PricingPage';
 import BillingSuccessPage from './pages/BillingSuccessPage';
+import BillingFailPage from './pages/BillingFailPage';
 import BillingStubPage from './pages/BillingStubPage';
 import BillingRedeemPage from './pages/BillingRedeemPage';
 import OIMethodologyPage from './pages/methodology/OIMethodologyPage';
@@ -111,6 +112,7 @@ export default function App() {
             {/* Billing */}
             <Route path="/pricing" element={<PricingPage />} />
             <Route path="/billing/success" element={<BillingSuccessPage />} />
+            <Route path="/billing/fail" element={<BillingFailPage />} />
             <Route path="/billing/stub" element={<BillingStubPage />} />
             <Route path="/billing/redeem" element={<BillingRedeemPage />} />
             {/* Privacy */}

@@ -27,6 +27,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import uuid
 from typing import Any
 
@@ -37,6 +38,26 @@ from api.billing.provider import CheckoutSession, WebhookEvent
 log = logging.getLogger(__name__)
 
 TBANK_API_BASE = "https://securepay.tinkoff.ru/v2"
+
+# ─── Receipt (54-ФЗ) ────────────────────────────────────────────────────
+# Включать ТОЛЬКО когда:
+#   1) у ИП/ООО реальный (не DEMO) терминал
+#   2) в кабинете T-Bank в настройках "Касса" → "Не использую онлайн-кассу"
+#      (T-Bank сам фискализирует и шлёт в ОФД)
+#   3) или подключена внешняя онлайн-касса (атол / эвотор / штрих-м)
+#
+# Для DEMO terminal'а Receipt не нужен (T-Bank его игнорирует, но логирует
+# warning). Включай через env: TBANK_RECEIPT_ENABLED=1
+TBANK_RECEIPT_ENABLED = os.getenv("TBANK_RECEIPT_ENABLED", "").strip() in ("1", "true", "yes")
+
+# Система налогообложения. Допустимые значения T-Bank API:
+#   osn / usn_income / usn_income_outcome / envd / esn / patent
+TBANK_TAXATION = os.getenv("TBANK_TAXATION", "usn_income").strip()
+
+# НДС для подписки. Допустимые: none / vat0 / vat10 / vat20 / vat110 / vat120
+#   - УСН (доходы / доходы-расходы) → 'none' (НДС не платим)
+#   - ОСН → 'vat20' (или 'vat10' для льготных категорий)
+TBANK_VAT = os.getenv("TBANK_VAT", "none").strip()
 
 # Маппинг T-Bank Status → наш контракт event_type
 _STATUS_MAP = {
@@ -91,6 +112,60 @@ class TBankProvider:
         return hashlib.sha256(concat.encode("utf-8")).hexdigest()
 
     # ─────────────────────────────────────────────────────────────────────
+    #  Receipt (54-ФЗ) helper
+    # ─────────────────────────────────────────────────────────────────────
+    def _build_receipt(
+        self,
+        amount: float,
+        description: str,
+        email: str | None,
+        phone: str | None,
+    ) -> dict | None:
+        """
+        Конструирует Receipt-блок для Init-запроса по правилам T-Bank Acquiring +
+        требованиям 54-ФЗ. Возвращает dict или None если фискализация отключена.
+
+        Spec: https://developer.tbank.ru/eacq/api/v2#init-receipt
+        """
+        if not TBANK_RECEIPT_ENABLED:
+            return None
+
+        # Хотя бы один из контактов обязателен — иначе T-Bank вернёт 1010 ошибку.
+        if not email and not phone:
+            log.warning(
+                "TBank.Receipt: no email/phone provided — пропускаем Receipt "
+                "(payment пройдёт без фискализации; для production нужен contact)"
+            )
+            return None
+
+        amount_kopeks = int(round(amount * 100))
+        receipt: dict[str, Any] = {
+            "Taxation": TBANK_TAXATION,
+            "Items": [
+                {
+                    "Name": (description or "Подписка")[:128],  # max 128 chars
+                    "Price": amount_kopeks,        # копейки
+                    "Quantity": 1.0,
+                    "Amount": amount_kopeks,       # копейки
+                    "PaymentMethod": "full_prepayment",
+                    "PaymentObject": "service",    # подписка = service
+                    "Tax": TBANK_VAT,
+                }
+            ],
+        }
+        if email:
+            receipt["Email"] = email[:64]
+        if phone:
+            # T-Bank ожидает E.164 без '+' (+79991234567 → 79991234567) или с '+'
+            phone_norm = phone.strip()
+            if phone_norm.startswith("8"):
+                phone_norm = "+7" + phone_norm[1:]
+            elif phone_norm.startswith("7") and not phone_norm.startswith("+"):
+                phone_norm = "+" + phone_norm
+            receipt["Phone"] = phone_norm[:19]
+        return receipt
+
+    # ─────────────────────────────────────────────────────────────────────
     #  create_checkout — POST /Init
     # ─────────────────────────────────────────────────────────────────────
     def create_checkout(
@@ -101,6 +176,8 @@ class TBankProvider:
         description: str,
         return_url: str,
         metadata: dict | None = None,
+        customer_email: str | None = None,
+        customer_phone: str | None = None,
     ) -> CheckoutSession:
         """
         Создаёт платёж через T-Bank API. Возвращает PaymentId + PaymentURL.
@@ -119,18 +196,32 @@ class TBankProvider:
         # 32 hex символа UUID без дефисов — укладывается в лимит T-Bank (36).
         order_id = uuid.uuid4().hex
 
+        # SuccessURL — куда T-Bank вернёт пользователя при успешной оплате.
+        # FailURL — куда при отказе/ошибке. Если оба одинаковы, пользователь
+        # увидит "Оплата прошла!" даже при fail, потому что polling в этой
+        # точке начнёт долбить /api/billing/status. Выводим fail_url из success
+        # подстановкой /billing/success → /billing/fail (frontend всегда
+        # передаёт return_url ведущий на success).
+        success_url = return_url
+        if "/billing/success" in return_url:
+            fail_url = return_url.replace("/billing/success", "/billing/fail")
+        elif return_url.endswith("/success"):
+            fail_url = return_url[:-len("/success")] + "/fail"
+        else:
+            # неизвестный шаблон — fail_url = success_url (старый поведение)
+            fail_url = return_url
+
         body: dict[str, Any] = {
             "TerminalKey": self.terminal_key,
             "Amount": int(round(amount * 100)),  # копейки!
             "OrderId": order_id,
             # Description до 250 символов
             "Description": description[:250] if description else "Подписка",
-            # SuccessURL/FailURL — возврат пользователя в браузер после оплаты
-            "SuccessURL": return_url,
-            "FailURL": return_url,
+            "SuccessURL": success_url,
+            "FailURL": fail_url,
         }
 
-        # Token — считаем до добавления DATA (она в подписи не участвует)
+        # Token — считаем до добавления DATA и Receipt (они в подписи не участвуют)
         body["Token"] = self._make_token(body)
 
         # DATA — произвольные key-value, до 20 пар, строки. Передаём наш metadata
@@ -141,6 +232,12 @@ class TBankProvider:
                 for k, v in metadata.items()
                 if v is not None
             }
+
+        # Receipt — 54-ФЗ фискализация. T-Bank сам пробивает чек в ОФД и отправляет
+        # пользователю по email/SMS. Включается через TBANK_RECEIPT_ENABLED=1.
+        receipt = self._build_receipt(amount, description, customer_email, customer_phone)
+        if receipt is not None:
+            body["Receipt"] = receipt
 
         try:
             with httpx.Client(timeout=15) as client:

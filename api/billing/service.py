@@ -60,8 +60,11 @@ def create_checkout_for_user(
     db.add(sub)
     db.flush()  # нужен sub.id до commit'а
 
-    # 2. Зовём провайдера
+    # 2. Зовём провайдера. user.email/phone используется T-Bank провайдером
+    # для построения Receipt (54-ФЗ), остальные провайдеры эти параметры игнорируют.
     provider = get_payment_provider()
+    customer_email = getattr(user, "email", None) or None
+    customer_phone = getattr(user, "phone", None) or None
     try:
         session = provider.create_checkout(
             amount=plan.amount,
@@ -73,6 +76,8 @@ def create_checkout_for_user(
                 "subscription_id": str(sub.id),
                 "plan_id": plan.plan_id,
             },
+            customer_email=customer_email,
+            customer_phone=customer_phone,
         )
     except Exception as e:
         # Платёж не создался — помечаем fail и пробрасываем

@@ -39,9 +39,17 @@ class PaymentProvider(Protocol):
         description: str,
         return_url: str,
         metadata: dict | None = None,
+        customer_email: str | None = None,
+        customer_phone: str | None = None,
     ) -> CheckoutSession:
         """
         Создать платёжную сессию у провайдера.
+
+        customer_email / customer_phone — для отправки кассового чека по 54-ФЗ
+        (T-Bank пробивает чек в ОФД и отправляет по email/SMS). Опциональны для
+        провайдеров которые не делают фискализацию (Stub, YooKassa с внешней
+        кассой). Хотя бы один из двух желателен, иначе T-Bank Receipt не построит.
+
         Возвращает payment_id (для сохранения в нашу БД) и confirmation_url (для редиректа).
         """
         ...

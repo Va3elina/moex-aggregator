@@ -32,7 +32,11 @@ class StubPaymentProvider:
         description: str,
         return_url: str,
         metadata: dict | None = None,
+        customer_email: str | None = None,
+        customer_phone: str | None = None,
     ) -> CheckoutSession:
+        # customer_email/phone — игнорируются stub'ом (нет фискализации)
+        _ = (customer_email, customer_phone)
         payment_id = f"stub_{uuid.uuid4().hex[:16]}"
         # В stub-режиме фронт редиректит на свою же страницу /billing/stub
         # которая покажет "Тестовый режим" и кнопку "Симулировать успех".
