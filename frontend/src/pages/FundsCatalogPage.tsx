@@ -129,6 +129,39 @@ export default function FundsCatalogPage() {
                 helpLink="/methodology/funds-catalog"
             />
 
+            {/* Alpha-banner — индикатор сырой, на стадии тестирования */}
+            <div
+                className="editorial-frame mb-4 md:mb-6 flex items-start gap-3"
+                style={{
+                    padding: 'var(--sp-3) var(--sp-4)',
+                    borderColor: 'var(--accent)',
+                }}
+            >
+                <span
+                    className="uppercase font-bold flex-shrink-0"
+                    style={{
+                        fontSize: '0.7rem',
+                        letterSpacing: '0.08em',
+                        color: 'var(--accent)',
+                        border: '1.5px solid var(--accent)',
+                        borderRadius: '3px',
+                        padding: '3px 8px',
+                        lineHeight: 1.2,
+                        whiteSpace: 'nowrap',
+                        marginTop: '1px',
+                    }}
+                >
+                    Alfa тест
+                </span>
+                <p
+                    className="text-xs md:text-sm"
+                    style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}
+                >
+                    Индикатор находится в стадии тестирования. Методология расчёта и состав данных
+                    могут меняться. Используйте значения с осторожностью.
+                </p>
+            </div>
+
             {/* Editorial frame — обнимает controls + grid в один контейнер */}
             <div className="editorial-frame">
 

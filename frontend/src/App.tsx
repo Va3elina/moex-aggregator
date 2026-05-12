@@ -10,7 +10,6 @@ import OverviewPage from './pages/OverviewPage';
 import LandingPage from './pages/LandingPage';
 import OpenInterestPage from './pages/OpenInterestPage';
 import HeatmapPage from './pages/HeatmapPage';
-import FearIndexPage from './pages/FearIndexPage';
 import FundsMoneyPage from './pages/FundsMoneyPage';
 import StrengthPage from './pages/StrengthPage';
 import BuffettPage from './pages/BuffettPage';
@@ -90,7 +89,6 @@ export default function App() {
             <Route path="/" element={<HomeRoute />} />
             <Route path="/oi" element={<OpenInterestPage />} />
             <Route path="/heatmap" element={<HeatmapPage />} />
-            <Route path="/fear" element={<FearIndexPage />} />
             <Route path="/funds" element={<Navigate to="/funds-money" replace />} />
             <Route path="/funds-money" element={<FundsMoneyPage />} />
             <Route path="/funds-catalog" element={<FundsCatalogPage />} />

@@ -5,7 +5,7 @@ import { ChartGrid, ChartCrosshair, ChartTooltip, TooltipRow } from '../chart';
 import ChartLegend from '../chart/ChartLegend';
 import ChartWatermark from '../ChartWatermark';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
-import { axisFontSize, xAxisTickCount } from '../chart/chartTypography';
+import { axisFontSize, xAxisTickCount, legendFontSize } from '../chart/chartTypography';
 
 interface TooltipState {
   x: number;
@@ -32,6 +32,8 @@ interface SeasonalityHistogramProps {
   seriesMeta?: SeriesMeta[];
   /** Компактный режим (test-dashboard): прореживание X-меток даже на desktop. */
   compact?: boolean;
+  /** Название выбранного актива (например «IMOEX», «SBER»). Рендерится bold перед legend. */
+  assetLabel?: string;
 }
 
 // Параметры волны из единого конфига — совпадают с FlowsHistogram.
@@ -49,6 +51,7 @@ export default function SeasonalityHistogram({
   seriesMeta,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   compact: _compact = false,
+  assetLabel,
 }: SeasonalityHistogramProps) {
   const vw = useViewportWidth();
   const axisFs = axisFontSize(vw);
@@ -169,8 +172,24 @@ export default function SeasonalityHistogram({
       onTouchEnd={() => setTooltip(null)}
     >
       {/* Легенда — SVG-based через <ChartLegend>. dominant-baseline=central
-          даёт pixel-perfect центрирование dot↔text без CSS hacks. */}
-      <div className="absolute top-1 left-1/2 -translate-x-1/2 z-20 pointer-events-none">
+          даёт pixel-perfect центрирование dot↔text без CSS hacks.
+          Перед легендой — bold-label с тикером выбранного актива (если задан).
+          fontSize = legendFontSize(vw) — точное совпадение размера с легендой
+          (breakpoint-aware: 11→12→13→15→17→19px). */}
+      <div className="absolute top-1 left-1/2 -translate-x-1/2 z-20 pointer-events-none flex items-center gap-3">
+        {assetLabel && (
+          <span
+            style={{
+              color: 'var(--text-primary)',
+              fontSize: legendFontSize(vw),
+              fontWeight: 600,
+              letterSpacing: '-0.01em',
+              lineHeight: 1,
+            }}
+          >
+            {assetLabel}
+          </span>
+        )}
         <ChartLegend
           items={isMulti
             ? safeMeta.map(s => ({ color: s.color, label: s.label }))

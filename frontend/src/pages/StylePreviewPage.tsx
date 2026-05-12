@@ -462,7 +462,6 @@ export default function StylePreviewPage() {
   const accent = ACCENTS[accentName];
 
   const navItems = [
-    'Индекс страха',
     'Карта рынка',
     'Открытый интерес',
     'Деньги в фондах',

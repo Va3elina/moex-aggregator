@@ -163,8 +163,6 @@ async def _warmup_cache():
         "/api/heatmap/imoex?color_by=change_1d&group_by=sector",
         "/api/heatmap/all?color_by=change_1d&group_by=sector",
         "/api/funds/chart?category=money_market&period=6m",
-        "/api/funds/fear-index",
-        "/api/funds/fear-index/history?period=3m",
         "/api/funds/catalog",
         "/api/breadth/current?ema_period=200&universe=imoex",
         "/api/breadth/history?ema_period=200&days=365&universe=imoex",

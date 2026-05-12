@@ -7,7 +7,7 @@
  * Структура (после реструктуры):
  *   1. HERO — Tagline + Monte Carlo анимация + CTA
  *   2. 3 ТЕМАТИЧЕСКИХ ГРУППЫ ИНДИКАТОРОВ:
- *        — «Что чувствуют участники» (Индекс страха, Сила рынка, Баффетт)
+ *        — «Что чувствуют участники» (Сила рынка, Баффетт)
  *        — «Куда идут реальные деньги» (ОИ, Деньги в фондах, Состав фондов)
  *        — «Закономерности и текущая картина» (Сезонность, Карта рынка)
  *   3. FINAL CTA — «Начни разбираться в рынке»
@@ -16,7 +16,6 @@
  */
 import { Link } from 'react-router-dom';
 import {
-  Gauge,
   Grid3X3,
   Wallet,
   CalendarDays,
@@ -34,10 +33,9 @@ import type { ReactNode } from 'react';
 import ThermalLinesHero from '../components/landing/ThermalLinesHero';
 import IndicatorGroup, { type Indicator } from '../components/landing/IndicatorGroup';
 import MultiChartShowcase from '../components/landing/MultiChartShowcase';
-import { FearPreview } from '../components/landing/previews';
 
 // ═══════════════════════════════════════════════════════════
-// 8 ИНДИКАТОРОВ → 3 ТЕМАТИЧЕСКИХ ГРУППЫ
+// 7 ИНДИКАТОРОВ → 3 ТЕМАТИЧЕСКИХ ГРУППЫ
 // ═══════════════════════════════════════════════════════════
 
 const ICON_SIZE = 20;
@@ -51,14 +49,6 @@ const v = (name: string) => ({
 
 // Группа 1: Что чувствуют участники
 const SENTIMENT_INDICATORS: Indicator[] = [
-  {
-    title: 'Индекс страха',
-    desc: 'Композитный индекс по 4 метрикам: волатильность, breadth, ликвидность, momentum. Когда все жадны — осторожно.',
-    icon: <Gauge size={ICON_SIZE} strokeWidth={2} />,
-    ctaIcon: <ArrowRight size={CTA_ICON_SIZE} />,
-    href: '/fear',
-    illustration: <FearPreview />,  // оставляем SVG-fallback (видео не делаем)
-  },
   {
     title: 'Сила рынка',
     desc: 'IMOEX + breadth по 90 акциям. Виден ли рост на широком фронте или только на нескольких тяжеловесах.',
@@ -101,6 +91,7 @@ const MONEY_FLOW_INDICATORS: Indicator[] = [
     icon: <PieChart size={ICON_SIZE} strokeWidth={2} />,
     ctaIcon: <ArrowRight size={CTA_ICON_SIZE} />,
     href: '/funds-catalog',
+    badge: 'Alfa тест',
     ...v('funds-catalog'),
   },
 ];
@@ -216,17 +207,6 @@ export default function LandingPage() {
               }}
             >
               <div className="text-center mb-8 md:mb-12 max-w-3xl mx-auto">
-                <p
-                  className="mb-4 uppercase"
-                  style={{
-                    color: 'var(--accent)',
-                    fontSize: 'var(--fs-2xs)',
-                    letterSpacing: '0.32em',
-                    fontWeight: 700,
-                  }}
-                >
-                  ИНДИКАТОРЫ ФРЕЙМ
-                </p>
                 <h2
                   className="font-bold mb-4"
                   style={{
@@ -250,7 +230,7 @@ export default function LandingPage() {
                   className="md:text-lg max-w-2xl mx-auto"
                   style={{ color: 'var(--text-secondary)', lineHeight: 1.55, fontSize: 'var(--fs-sm)' }}
                 >
-                  8 инструментов, разбитые на три группы. От настроения участников
+                  7 инструментов, разбитые на три группы. От настроения участников
                   до структуры реальных денежных потоков и исторических паттернов.
                 </p>
               </div>
@@ -259,7 +239,7 @@ export default function LandingPage() {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-y-8 md:gap-y-0">
                 <SmallFeature
                   icon={<Layers size={28} strokeWidth={1.5} />}
-                  title="8 индикаторов"
+                  title="7 индикаторов"
                   desc="От просмотра цены до композитных метрик и сезонности"
                 />
                 <div className="md:border-l" style={{ borderColor: 'var(--border-color)' }}>
@@ -291,7 +271,7 @@ export default function LandingPage() {
         {/* ═══ ГРУППА 1: Настроение рынка ═══ */}
         <IndicatorGroup
           title="Что чувствуют участники"
-          subtitle="Композитные индексы и метрики настроения. Жадность, страх, переоценка — численно."
+          subtitle="Композитные индексы и метрики настроения. Ширина рынка и макро-переоценка — численно."
           indicators={SENTIMENT_INDICATORS}
         />
 
@@ -337,9 +317,9 @@ export default function LandingPage() {
             className="font-bold mb-4 mx-auto"
             style={{
               color: 'var(--text-inverse)',
-              fontSize: 'clamp(28px, 5vw + 0.5rem, 72px)',
-              letterSpacing: '-0.04em',
-              lineHeight: 0.95,
+              fontSize: 'clamp(26px, 4.5vw + 0.5rem, 64px)',
+              letterSpacing: '-0.035em',
+              lineHeight: 1.0,
               maxWidth: '14ch',
             }}
           >
@@ -411,9 +391,9 @@ function SmallFeature({ icon, title, desc }: { icon: ReactNode; title: string; d
         className="font-bold mb-2"
         style={{
           color: 'var(--text-primary)',
-          fontSize: 'clamp(20px, 1.4vw + 0.8rem, 28px)',
-          letterSpacing: '-0.025em',
-          lineHeight: 1.05,
+          fontSize: 'clamp(15px, 0.4vw + 0.7rem, 20px)',
+          letterSpacing: '-0.015em',
+          lineHeight: 1.2,
         }}
       >
         {title}

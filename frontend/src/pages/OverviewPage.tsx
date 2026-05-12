@@ -18,7 +18,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowRight,
-  Gauge,
   Activity,
   Scale,
   Grid3X3,
@@ -41,15 +40,21 @@ import Card from '../components/Card';
 import Skeleton from '../components/Skeleton';
 import Dropdown from '../components/Dropdown';
 
-const INDICATORS = [
+const INDICATORS: {
+  path: string;
+  title: string;
+  desc: string;
+  icon: typeof Grid3X3;
+  badge?: string;
+}[] = [
   { path: '/heatmap', title: 'Карта рынка', desc: 'Акции MOEX по секторам, размер = капитализация', icon: Grid3X3 },
   { path: '/oi', title: 'Открытый интерес', desc: 'Позиции участников по фьючерсам Мосбиржи', icon: BarChart3 },
   { path: '/funds-money', title: 'Деньги в фондах', desc: 'Динамика СЧА и притоки-оттоки фондов', icon: Wallet },
-  { path: '/funds-catalog', title: 'Состав фондов', desc: 'Портфели фондов акций и облигаций', icon: LayoutGrid },
   { path: '/strength', title: 'Сила рынка', desc: '% акций выше EMA 50/100/200', icon: Activity },
   { path: '/buffett', title: 'Индикатор Баффетта', desc: 'Капитализация / ВВП + Cap / M2', icon: Scale },
   { path: '/seasonality', title: 'Сезонность', desc: 'Среднее изменение цены по периодам', icon: CalendarDays },
-  { path: '/fear', title: 'Индекс страха', desc: 'Настроения инвесторов по 4 метрикам', icon: Gauge },
+  // «Состав фондов» — сырой alpha-индикатор, ставим последним.
+  { path: '/funds-catalog', title: 'Состав фондов', desc: 'Портфели фондов акций и облигаций', icon: LayoutGrid, badge: 'Alfa тест' },
 ];
 
 /** Тикеры для quote-tiles сверху страницы. Label = отображаемое имя. */
@@ -313,10 +318,27 @@ export default function OverviewPage() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <h3
-                    className="font-semibold text-sm md:text-base truncate"
+                    className="font-semibold text-sm md:text-base truncate flex items-center gap-2"
                     style={{ color: 'var(--text-primary)', letterSpacing: '-0.01em' }}
                   >
-                    {ind.title}
+                    <span className="truncate">{ind.title}</span>
+                    {ind.badge && (
+                      <span
+                        className="uppercase font-bold flex-shrink-0"
+                        style={{
+                          fontSize: '0.62rem',
+                          letterSpacing: '0.06em',
+                          color: 'var(--accent)',
+                          border: '1px solid var(--accent)',
+                          borderRadius: '3px',
+                          padding: '1px 5px',
+                          lineHeight: 1.2,
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {ind.badge}
+                      </span>
+                    )}
                   </h3>
                 </div>
                 <ArrowRight

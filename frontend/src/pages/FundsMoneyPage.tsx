@@ -46,11 +46,14 @@ const PERIOD_LABELS: Record<Period, string> = {
 const AUM_PERIODS: Period[] = ['1m', '6m', '2y', 'all'];
 
 // Категории
-const CATEGORIES: { key: FundCategory; name: string; icon: React.ElementType; index: string }[] = [
-    { key: 'money_market', name: 'Денежный рынок', icon: Banknote, index: 'RUSFAR3M' },
-    { key: 'stocks', name: 'Акции', icon: TrendingUp, index: 'IMOEX' },
-    { key: 'bonds', name: 'Облигации', icon: DollarSign, index: 'RGBITR' },
-    { key: 'gold', name: 'Золото', icon: Gem, index: 'GLDRUB_TOM' },
+// `genitive` — родительный падеж для подстановки в шаблоны вида
+// «фонды {genitive}» / «приток в фонды {genitive}». Русское склонение
+// нерегулярное — храним как data, а не вычисляем.
+const CATEGORIES: { key: FundCategory; name: string; genitive: string; icon: React.ElementType; index: string }[] = [
+    { key: 'money_market', name: 'Денежный рынок', genitive: 'денежного рынка', icon: Banknote, index: 'RUSFAR3M' },
+    { key: 'stocks', name: 'Акции', genitive: 'акций', icon: TrendingUp, index: 'IMOEX' },
+    { key: 'bonds', name: 'Облигации', genitive: 'облигаций', icon: DollarSign, index: 'RGBITR' },
+    { key: 'gold', name: 'Золото', genitive: 'золота', icon: Gem, index: 'GLDRUB_TOM' },
 ];
 
 // Цвета СЧА графика — theme-aware. Primary (СЧА) = accent (рыжий), secondary
@@ -550,7 +553,7 @@ export default function FundsMoneyPage() {
                         showSecondary={true}
                         formatValue={formatNav}
                         formatSecondaryValue={(v) => v.toLocaleString('ru-RU', { maximumFractionDigits: 2 })}
-                        primaryLabel="Суммарная СЧА (млрд руб)"
+                        primaryLabel={`Суммарная СЧА фондов ${currentCategory?.genitive ?? ''}, млрд руб`}
                         secondaryLabel={currentCategory?.index || 'Индекс'}
                         loading={loading}
                         showValueHeader={false}
@@ -574,6 +577,8 @@ export default function FundsMoneyPage() {
                         hiddenTickers={hiddenTickers}
                         allTickers={allTickers}
                         category={category}
+                        inflowLabel={`Приток в фонды ${currentCategory?.genitive ?? ''}, млрд руб`}
+                        outflowLabel={`Отток из фондов ${currentCategory?.genitive ?? ''}, млрд руб`}
                         loading={loading}
                         flowContainerRef={flowContainerRef}
                         flowChartRef={flowChartRef}

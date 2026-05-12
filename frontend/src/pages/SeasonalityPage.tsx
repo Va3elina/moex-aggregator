@@ -756,6 +756,7 @@ export default function SeasonalityPage() {
               setTooltip={setTooltip}
               monthlySeries={monthlySeries}
               seriesMeta={seriesMeta}
+              assetLabel={selectedStock}
             />
           )
         ) : chartType === 'price' ? (
@@ -780,6 +781,7 @@ export default function SeasonalityPage() {
             tooltip={tooltip}
             setTooltip={setTooltip}
             chartHeight={chartHeight}
+            assetLabel={selectedStock}
           />
         ) : (
           <div className="flex items-center justify-center text-center px-4" style={{ height: chartHeight, color: 'var(--text-muted)' }}>

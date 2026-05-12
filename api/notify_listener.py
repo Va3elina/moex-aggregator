@@ -19,7 +19,7 @@ SOURCE_CACHE_MAP = {
     "hourly": ["chart:", "oi:"],
     "daily": None,  # None = очистить весь кеш
     "mv_refresh": ["heatmap:", "stats:"],
-    "funds": ["funds_chart:", "fear_history:", "fear_index:"],
+    "funds": ["funds_chart:"],
     "breadth": ["breadth:"],
     "buffett": ["buffett:"],
     "market_cap": ["heatmap:"],

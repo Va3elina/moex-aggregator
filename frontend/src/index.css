@@ -33,7 +33,7 @@
   --fs-xl:  clamp(18px, 1vw + 0.9rem, 22px);      /* h3 */
   --fs-2xl: clamp(20px, 1.5vw + 1rem, 28px);      /* h2 */
   --fs-3xl: clamp(28px, 2.5vw + 1.2rem, 56px);    /* h1 page title */
-  --fs-display: clamp(44px, 5vw + 1.6rem, 88px);  /* hero numbers (fear index, big metrics) */
+  --fs-display: clamp(44px, 5vw + 1.6rem, 88px);  /* hero numbers, big metrics */
 
   /* SPACING SCALE */
   --sp-1: clamp(2px,  0.4vw, 4px);

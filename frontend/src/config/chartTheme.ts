@@ -32,15 +32,6 @@ export const CHART_COLORS = {
   // Вспомогательные
   muted: 'var(--text-muted)',                     // Оси, средние линии, baseline
   adjusted: 'var(--funds-flow-positive)',         // Adjusted price (без гэпов) — match секондару
-
-  // Индекс страха (zones) — отдельная палитра, NOT to be unified (5 семантических уровней)
-  fear: {
-    extremeGreed: '#22c55e',
-    greed: '#84cc16',
-    neutral: '#eab308',
-    fear: '#f97316',
-    extremeFear: '#ef4444',
-  },
 } as const;
 
 // ─── Палитра для множественных линий (compareYears на Сезонности, fund cards) ───

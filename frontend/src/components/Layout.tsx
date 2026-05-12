@@ -10,15 +10,16 @@ import FrameLogo from './FrameLogo';
 import ThemeToggle from './ThemeToggle';
 import PageSEO from './PageSEO';
 
-const NAV_ITEMS: { path: string; label: string; disabled?: boolean }[] = [
-  { path: '/fear', label: 'Индекс страха' },
+const NAV_ITEMS: { path: string; label: string; disabled?: boolean; badge?: string }[] = [
   { path: '/heatmap', label: 'Карта рынка' },
   { path: '/oi', label: 'Открытый интерес' },
   { path: '/funds-money', label: 'Деньги в фондах' },
-  { path: '/funds-catalog', label: 'Состав фондов' },
   { path: '/buffett', label: 'Индикатор Баффетта' },
   { path: '/strength', label: 'Сила рынка' },
   { path: '/seasonality', label: 'Сезонность' },
+  // «Состав фондов» — в самом конце справа, помечен как Alfa-тест
+  // (сырой индикатор, ждёт доработки методологии и данных).
+  { path: '/funds-catalog', label: 'Состав фондов', badge: 'Alfa тест' },
 ];
 
 export default function Layout() {
@@ -140,6 +141,23 @@ export default function Layout() {
                   {({ isActive }) => (
                     <>
                       {item.label}
+                      {item.badge && (
+                        <span
+                          className="ml-1.5 uppercase font-bold inline-block align-middle"
+                          style={{
+                            fontSize: '0.62rem',
+                            letterSpacing: '0.06em',
+                            color: 'var(--accent)',
+                            border: '1px solid var(--accent)',
+                            borderRadius: '3px',
+                            padding: '1px 5px',
+                            lineHeight: 1.2,
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {item.badge}
+                        </span>
+                      )}
                       {/* Editorial active stripe — 3px accent-линия под текстом */}
                       {isEditorial && isActive && (
                         <span
@@ -319,6 +337,23 @@ export default function Layout() {
                   })}
                 >
                   {item.label}
+                  {item.badge && (
+                    <span
+                      className="ml-2 uppercase font-bold inline-block align-middle"
+                      style={{
+                        fontSize: '0.62rem',
+                        letterSpacing: '0.06em',
+                        color: 'var(--accent)',
+                        border: '1px solid var(--accent)',
+                        borderRadius: '3px',
+                        padding: '1px 5px',
+                        lineHeight: 1.2,
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {item.badge}
+                    </span>
+                  )}
                 </NavLink>
               ))}
 

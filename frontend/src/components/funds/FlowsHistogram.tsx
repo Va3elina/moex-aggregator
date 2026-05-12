@@ -30,6 +30,10 @@ interface FlowsHistogramProps {
     onMouseLeave: () => void;
     onSetHoveredAnnotation: (date: string | null) => void;
     onSetFlowNavRange: React.Dispatch<React.SetStateAction<[number, number]>>;
+    /** Текст legend'а для положительных баров (например «Приток в фонды денежного рынка, млрд руб»). Если не задан — default «Приток (млрд руб)». */
+    inflowLabel?: string;
+    /** Текст legend'а для отрицательных баров (например «Отток из фондов денежного рынка»). Если не задан — default «Отток (млрд руб)». */
+    outflowLabel?: string;
 }
 
 export default function FlowsHistogram({
@@ -51,6 +55,8 @@ export default function FlowsHistogram({
     onMouseLeave,
     onSetHoveredAnnotation,
     onSetFlowNavRange,
+    inflowLabel = 'Приток (млрд руб)',
+    outflowLabel = 'Отток (млрд руб)',
 }: FlowsHistogramProps) {
     // На мобиле уменьшаем количество X-tick'ов чтобы даты не накладывались
     // (формат "29 окт. 25 г." ≈ 70px на 10px шрифте → 6 шт. = 420px > 343px viewport).
@@ -88,8 +94,8 @@ export default function FlowsHistogram({
                 <div style={{ marginBottom: 'var(--chart-legend-mb, 16px)' }}>
                     <ChartLegend
                         items={[
-                            { color: 'var(--funds-flow-positive)', label: 'Приток (млрд руб)' },
-                            { color: 'var(--funds-flow-negative)', label: 'Отток (млрд руб)' },
+                            { color: 'var(--funds-flow-positive)', label: inflowLabel },
+                            { color: 'var(--funds-flow-negative)', label: outflowLabel },
                         ]}
                         fontWeight={600}
                         gap={20}

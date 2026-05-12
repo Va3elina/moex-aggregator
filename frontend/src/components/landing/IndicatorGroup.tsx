@@ -33,6 +33,8 @@ export interface Indicator {
   illustration?: ReactNode;
   /** Текст CTA-кнопки (default: «Открыть») */
   ctaLabel?: string;
+  /** Опциональный бэдж рядом с заголовком (например «Alfa тест» для сырых индикаторов) */
+  badge?: string;
 }
 
 interface GroupProps {
@@ -47,26 +49,15 @@ interface GroupProps {
 export default function IndicatorGroup({ title, subtitle, indicators }: GroupProps) {
   return (
     <section className="mb-14 md:mb-20">
-      {/* Header группы — editorial: eyebrow uppercase + большой H2 Archivo + подзаголовок. */}
+      {/* Header группы — editorial: H2 Archivo + подзаголовок. */}
       <div className="mb-8 md:mb-10 max-w-3xl">
-        <p
-          className="mb-3 uppercase"
-          style={{
-            color: 'var(--accent)',
-            fontSize: 'var(--fs-2xs)',
-            letterSpacing: '0.32em',
-            fontWeight: 700,
-          }}
-        >
-          ГРУППА ИНДИКАТОРОВ
-        </p>
         <h2
           className="font-bold mb-3"
           style={{
             color: 'var(--text-primary)',
-            fontSize: 'clamp(28px, 4vw + 0.5rem, 56px)',
-            letterSpacing: '-0.035em',
-            lineHeight: 0.95,
+            fontSize: 'clamp(22px, 2vw + 0.8rem, 40px)',
+            letterSpacing: '-0.03em',
+            lineHeight: 1.05,
           }}
         >
           {title}
@@ -98,7 +89,7 @@ export default function IndicatorGroup({ title, subtitle, indicators }: GroupPro
  * Видео занимает ~770px ширины на десктопе (1280-padding-text-area-gaps).
  */
 function IndicatorCard({ indicator }: { indicator: Indicator }) {
-  const { title, desc, icon, ctaIcon, href, videoUrl, posterUrl, illustration, ctaLabel = 'Открыть' } = indicator;
+  const { title, desc, icon, ctaIcon, href, videoUrl, posterUrl, illustration, ctaLabel = 'Открыть', badge } = indicator;
 
   return (
     <Link
@@ -145,13 +136,30 @@ function IndicatorCard({ indicator }: { indicator: Indicator }) {
             className="font-bold"
             style={{
               color: 'var(--text-primary)',
-              fontSize: 'clamp(20px, 1.5vw + 0.8rem, 28px)',
-              letterSpacing: '-0.025em',
-              lineHeight: 1.15,
+              fontSize: 'clamp(18px, 1.0vw + 0.7rem, 26px)',
+              letterSpacing: '-0.02em',
+              lineHeight: 1.2,
             }}
           >
             {title}
           </h3>
+          {badge && (
+            <span
+              className="uppercase font-bold flex-shrink-0"
+              style={{
+                fontSize: '0.65rem',
+                letterSpacing: '0.06em',
+                color: 'var(--accent)',
+                border: '1px solid var(--accent)',
+                borderRadius: '3px',
+                padding: '2px 6px',
+                lineHeight: 1.2,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {badge}
+            </span>
+          )}
         </div>
 
         {/* Description */}

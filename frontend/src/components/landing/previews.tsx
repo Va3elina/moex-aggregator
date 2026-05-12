@@ -33,52 +33,7 @@ function SvgFrame({ children, label }: { children: ReactNode; label?: string }) 
   );
 }
 
-/** 1. Индекс страха — полукруглый gauge */
-export function FearPreview() {
-  // Gauge: полукольцо от -180° до 0°, value 65/100 → угол -180° + 65% * 180° = -117°
-  const value = 65;
-  const angle = -180 + (value / 100) * 180;
-  const rad = (angle * Math.PI) / 180;
-  const cx = 200, cy = 180, r = 100;
-  const px = cx + r * Math.cos(rad);
-  const py = cy + r * Math.sin(rad);
-
-  return (
-    <SvgFrame label="Индекс страха">
-      {/* Tick marks (полукольцо) */}
-      {[0, 20, 40, 60, 80, 100].map(v => {
-        const a = (-180 + (v / 100) * 180) * Math.PI / 180;
-        const x1 = cx + (r - 4) * Math.cos(a);
-        const y1 = cy + (r - 4) * Math.sin(a);
-        const x2 = cx + (r + 4) * Math.cos(a);
-        const y2 = cy + (r + 4) * Math.sin(a);
-        return <line key={v} x1={x1} y1={y1} x2={x2} y2={y2} stroke={C_MUTED} strokeWidth="1" opacity="0.4" />;
-      })}
-      {/* Arc fill: от -180° до angle */}
-      {[...Array(50)].map((_, i) => {
-        const t = i / 50;
-        const a = (-180 + t * (angle + 180)) * Math.PI / 180;
-        const x = cx + r * Math.cos(a);
-        const y = cy + r * Math.sin(a);
-        const color = t < 0.4 ? C_RED : t < 0.7 ? C_AMBER : C_GREEN;
-        return <circle key={i} cx={x} cy={y} r="3" fill={color} />;
-      })}
-      {/* Needle */}
-      <line x1={cx} y1={cy} x2={px} y2={py} stroke={C_ACCENT} strokeWidth="3" strokeLinecap="round" />
-      <circle cx={cx} cy={cy} r="8" fill="var(--bg-primary)" stroke={C_ACCENT} strokeWidth="2" />
-      {/* Value label */}
-      <text x={cx} y={cy - 25} fontSize="32" fill="var(--text-primary)" textAnchor="middle" fontWeight="700"
-        style={{ fontFamily: "'IBM Plex Mono', monospace" }}>
-        {value}
-      </text>
-      <text x={cx} y={cy - 5} fontSize="11" fill={C_MUTED} textAnchor="middle">
-        жадность
-      </text>
-    </SvgFrame>
-  );
-}
-
-/** 2. Карта рынка — treemap-like grid */
+/** 1. Карта рынка — treemap-like grid */
 export function HeatmapPreview() {
   // Manually positioned tiles (simulating treemap layout)
   const tiles = [

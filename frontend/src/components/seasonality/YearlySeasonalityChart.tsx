@@ -6,6 +6,8 @@ import ChartLegend from '../chart/ChartLegend';
 import ChartNavigator from '../ChartNavigator';
 import ChartWatermark from '../ChartWatermark';
 import { useIsMobile } from '../../hooks/useIsMobile';
+import { useViewportWidth } from '../../hooks/useViewportWidth';
+import { legendFontSize } from '../chart/chartTypography';
 
 interface TooltipState {
   x: number;
@@ -33,6 +35,8 @@ interface YearlySeasonalityChartProps {
   tooltip: TooltipState | null;
   setTooltip: (t: TooltipState | null) => void;
   chartHeight: number;
+  /** Название выбранного актива (например «IMOEX», «SBER»). Рендерится bold перед legend. */
+  assetLabel?: string;
 }
 
 export default function YearlySeasonalityChart({
@@ -42,10 +46,13 @@ export default function YearlySeasonalityChart({
   tooltip,
   setTooltip,
   chartHeight,
+  assetLabel,
 }: YearlySeasonalityChartProps) {
   // На мобиле выводим квартальные подписи (Янв/Апр/Июл/Окт = 4 шт)
   // вместо 12 — иначе они накладываются на 311px viewport.
   const isMobile = useIsMobile();
+  // Viewport-aware размер шрифта для asset label (совпадает с легендой).
+  const vw = useViewportWidth();
   // CSS-reveal на mount (key-based remount в parent)
   const [revealed, setRevealed] = useState(false);
   // Navigator range — [startIdx, endIdx] в координатах bucket'ов baseAvg.
@@ -221,7 +228,23 @@ export default function YearlySeasonalityChart({
 
   return (
     <div className={revealed ? 'chart-reveal' : ''}>
-      <div style={{ marginBottom: 'var(--seasonality-legend-mb, 12px)' }}>
+      <div
+        style={{ marginBottom: 'var(--seasonality-legend-mb, 12px)' }}
+        className="flex items-center justify-center gap-3 flex-wrap"
+      >
+        {assetLabel && (
+          <span
+            style={{
+              color: 'var(--text-primary)',
+              fontSize: legendFontSize(vw),
+              fontWeight: 600,
+              letterSpacing: '-0.01em',
+              lineHeight: 1,
+            }}
+          >
+            {assetLabel}
+          </span>
+        )}
         <ChartLegend
           items={[
             ...allMeta.map(m => ({ color: m.color, label: m.label })),

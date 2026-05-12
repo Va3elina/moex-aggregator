@@ -69,13 +69,6 @@ export const SEO_META: Record<string, SeoMeta> = {
         keywords: 'карта рынка, heatmap MOEX, акции по капитализации, доходность акций',
         breadcrumb: 'Индикаторы',
     },
-    '/fear': {
-        title: 'Индекс страха российского рынка — аналог VIX | Фрейм',
-        description:
-            'Индикатор волатильности и настроений на рынке акций MOEX. Аналог VIX для российских инвесторов с историческим контекстом.',
-        keywords: 'индекс страха, RVI, волатильность MOEX, российский VIX, sentiment',
-        breadcrumb: 'Индикаторы',
-    },
     '/funds-money': {
         title: 'Денежные потоки фондов БПИФ MOEX | Фрейм',
         description:
