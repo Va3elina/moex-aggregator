@@ -1,118 +1,121 @@
 ---
 name: moex-deploy-frontend
-description: Deploy the Фрейм frontend to production. Use when user says "задеплой фронт", "обнови сайт", "залей фронтенд", "выложи на прод фронт", "update frontend", or when frontend TypeScript/TSX/CSS files have been changed and need to be deployed to production server. Also use when SimpleChart, pages, or any frontend components are modified.
+description: Deploy the Фрейм frontend to production via proper image rebuild flow. Use when user says "задеплой фронт", "обнови сайт", "залей фронтенд", "выложи на прод фронт", "update frontend", or when frontend TypeScript/TSX/CSS files have been changed and need to be deployed to production server. Also use when SimpleChart, pages, or any frontend components are modified.
 ---
 
 # Deploy Frontend to Фрейм Production
 
-Strict deployment procedure for the Frame analytics platform frontend. Server resources are tight (4GB RAM), there is fail2ban with 24-hour ban window, and there are specific gotchas that have caused problems before.
+**Главное правило** (с 2026-05-12 после инцидента «откат к v12»):
+**Деплой = `git pull` на сервере → `docker compose build api` → `up -d api`.**
+**Никаких `docker cp` в живой контейнер.**
 
-## ⚠️ Critical Rules (don't skip!)
+## Почему именно так
 
-1. **Build LOCALLY only** — server has 4GB RAM and OOMs if you try `npm run build` there
-2. **Path in container** is `/app/frontend/dist/` — NOT `/app/static/`
-3. **Always bump SW cache version** before deploying — иначе users see cached old version
-4. **Single SSH connection per deploy** — see SSH section below (fail2ban triggers on auth failures)
-5. **NEVER probe SSH** without `IdentitiesOnly=yes` first — see SSH section
-6. **Current SW version**: read `frontend/public/sw.js` and bump на единицу
+Frontend source (`frontend/src/*`, `sw.js`, etc.) — в git. `frontend/dist/` — в `.gitignore` (build artifact). Docker image собирает dist через multi-stage Dockerfile из актуального source.
 
-## ⚠️ SSH Best Practices (LEARNED THE HARD WAY)
+**Раньше делали** `npm run build` локально + `docker cp dist/. frame-api-1:/app/frontend/dist/`. Это было быстро (~30 сек), но **эфемерно**: при любом `docker compose down/up` контейнер пересобирается из image, dist из docker cp **исчезает**, прод откатывается к state на момент последнего image rebuild.
 
-### Why this matters
-Server has fail2ban configured to **ban for 24 hours** after 3 failed auth attempts. Default SSH client offers ALL keys from your agent + `~/.ssh/` — each key tried = 1 auth attempt. With 3+ keys you get banned in **one command**.
+12 мая 2026: контейнер пересоздался → прод откатился к Apr 14 image (v12). 500+ инкрементов SW (v12 → v535) **жили только в running container**.
 
-### Always use this SSH preamble
-```bash
-ssh -o IdentitiesOnly=yes -o IdentityAgent=none -o ConnectTimeout=20 -i ~/.ssh/id_ed25519 root@103.88.243.232 "..."
-```
+**Сейчас**: `docker compose build api` пересобирает image из source, dist baked в image, переживает recreations.
 
-- `IdentitiesOnly=yes` — use ONLY `-i` key, ignore agent
-- `IdentityAgent=none` — disable SSH agent entirely
-- `ConnectTimeout=20` — fail fast if banned (don't hang)
-- `-i ~/.ssh/id_ed25519` — explicit key path
-- `root@103.88.243.232` — current working user (alexgondon@ may not work depending on key state)
+## ⚠️ Critical Rules
 
-### Don't probe with `ssh ... echo ok`
-Each probe is a connection attempt. If you're unsure connection works, use HTTPS curl as a probe (port 443 isn't rate-limited):
-```bash
-curl -sk -o /dev/null -w "%{http_code}\n" "https://103.88.243.232/" -H "Host: xn--80aklbnczmv.xn--p1ai" --max-time 8
-```
-
-### Single-connection deploy (preferred)
-Stream tar through SSH stdin — ONE connection for everything:
-```bash
-cd <LOCAL_PROJECT_PATH>/frontend && tar -cz -C dist . | \
-  ssh -o IdentitiesOnly=yes -o IdentityAgent=none -o ConnectTimeout=30 \
-      -i ~/.ssh/id_ed25519 root@103.88.243.232 \
-  "rm -rf /tmp/dist-new && mkdir -p /tmp/dist-new && \
-   tar -xz -C /tmp/dist-new && \
-   docker cp /tmp/dist-new/. frame-api-1:/app/frontend/dist/ && \
-   rm -rf /tmp/dist-new && \
-   echo '--- SW:' && \
-   curl -sk 'https://localhost/sw.js' -H 'Host: xn--80aklbnczmv.xn--p1ai' | grep CACHE_NAME && \
-   echo '--- Index:' && \
-   curl -sk 'https://localhost/' -H 'Host: xn--80aklbnczmv.xn--p1ai' | grep -oE 'index-[A-Za-z0-9_-]+\\.js'"
-```
-
-This is **1 SSH connection**, includes upload + container copy + verify.
-
-### If you get fail2ban'd
-1. Check first via `nc -z -w 5 103.88.243.232 22` — if BLOCKED, you're banned
-2. **Tell the user** — don't keep retrying. User must unban via TimeWeb VNC:
-   ```bash
-   # On server via VNC console:
-   fail2ban-client unban <YOUR_IP>
-   # or unban all:
-   fail2ban-client status sshd
-   fail2ban-client set sshd unbanip <IP>
-   ```
-3. Default ban duration: **24 hours** (per `server_security.md`)
+1. **Билд на сервере, не на Mac.** Через `docker compose build api` — Dockerfile multi-stage запустит `npm run build` ВНУТРИ image. Источник истины — git.
+2. **Bump SW cache version в `frontend/public/sw.js`** перед commit'ом — иначе users увидят cached старую версию.
+3. **Path в container**: `/app/frontend/dist/` — baked в image, не editable через docker cp (точнее можно, но эфемерно).
+4. **SSH preamble** см. ниже: `IdentitiesOnly=yes -o IdentityAgent=none -i ~/.ssh/id_ed25519` — иначе fail2ban банит на 24ч.
 
 ## Standard Deploy Sequence
 
-### Step 1: Bump Service Worker cache version
-
-Edit `<LOCAL_PROJECT_PATH>/frontend/public/sw.js`:
-
-```js
-const CACHE_NAME = 'frame-v{NEW_VERSION}';
-```
-
-### Step 2: Build locally
+### Step 1: Локально — bump SW + commit + push
 
 ```bash
-cd <LOCAL_PROJECT_PATH>/frontend && npm run build
+# 1. Edit frontend/public/sw.js: const CACHE_NAME = 'frame-vNNN+1';
+# 2. Commit + push
+git add frontend/public/sw.js frontend/src/...  # все изменённые
+git commit -m "fix(scope): описание"
+git push origin main
 ```
 
-Note the new hash from output (e.g., `index-DHF9n17S.js`) — used for verify step.
+### Step 2: На сервере — pull + rebuild + recreate
 
-### Step 3: Single-connection deploy + verify
-
-Use the tar-pipe command from "SSH Best Practices" section above. Replace nothing — paste verbatim.
-
-Expected output ending:
+```bash
+ssh -o IdentitiesOnly=yes -o IdentityAgent=none -o ConnectTimeout=30 \
+    -i ~/.ssh/id_ed25519 root@103.88.243.232 \
+  "cd /opt/frame && git pull origin main && \
+   docker compose build api && \
+   docker compose up -d api && \
+   sleep 10 && \
+   curl -sk 'https://localhost/sw.js' -H 'Host: xn--80aklbnczmv.xn--p1ai' | grep CACHE_NAME | head -1 && \
+   curl -sk 'https://localhost/' -H 'Host: xn--80aklbnczmv.xn--p1ai' | grep -oE 'index-[A-Za-z0-9_-]+\\.js' | head -1"
 ```
---- SW:
-const CACHE_NAME = 'frame-v494';
---- Index:
-index-DHF9n17S.js
+
+**Время**: `docker compose build api` ~1-2 мин с кешем (если только frontend изменился — пересоберёт только frontend-build stage). Без кеша / при правке Dockerfile ~3-5 мин. Downtime пересоздания контейнера ~30 сек.
+
+### Step 3: Локальный test build (опционально)
+
+Если хочешь убедиться что TS не падает **до** push'а:
+```bash
+cd frontend && npm run build
+# проверяет tsc + vite build + prebuild (sprite) + postbuild (logos cleanup)
 ```
 
-If hash matches local build → deploy successful. No docker restart needed (FastAPI serves static files).
+## Verify deployment
+
+После Step 2 ассертим:
+- SW версия в response совпадает с локальным `sw.js`
+- Frontend hash (`index-XXX.js`) изменился (cache busting)
+- `docker exec frame-api-1 python3 -c 'import urllib.request; print(urllib.request.urlopen("http://localhost:8000/health").read().decode())'` → `{"status":"ok","database":"ok"}`
+
+Для подробной проверки: вызови sub-agent `moex-deploy-verifier`.
 
 ## Common Issues
 
-- **Old frontend served**: forgot to bump `CACHE_NAME` → bump and redeploy
-- **TS build fails**: run `tsc -b` locally, fix errors first
-- **OOM during build**: never run `npm run build` на сервере — only locally
-- **`Too many authentication failures`**: forgot `IdentitiesOnly=yes` → likely fail2ban'd, use HTTPS probe
-- **`Connection timeout`**: fail2ban active OR network issue. Verify with `nc -z`. If banned, ask user to unban via VNC
+### `python3: not found` / `bash: not found` в frontend-build stage
+**Причина**: docker `node:20-alpine` минимален. `npm run build` вызывает `python3 ../scripts/build-sprite.py` (prebuild) и bash в postbuild.
+**Fix** (уже в Dockerfile с d12c4b7): `RUN apk add --no-cache python3 py3-pip py3-pillow bash`.
+
+### `COPY scripts/ → /scripts not found`
+**Причина**: `scripts/` был в `.gitignore` целиком, не попадал на сервер при `git pull`.
+**Fix** (уже в gitignore с f3d4408): игнорим только `scripts/landing-videos/` + `scripts/*.flow`, остальное tracked.
+
+### `ModuleNotFoundError: No module named 'redis'` (и т.п.)
+**Причина**: pip-deps в running container ephemeral — `docker exec pip install` теряются при recreate.
+**Fix**: добавить пакет в `requirements.txt`, commit, push, `docker compose build api && up -d api`.
+
+### `Invalid requirement` при `pip install -r requirements.txt`
+**Причина**: `requirements.txt` мог быть в UTF-16 LE (Windows IDE). Pip ждёт ASCII/UTF-8.
+**Fix**: перекодировать в UTF-8 без BOM. См. commit 3fb9dbe для примера.
+
+### TS errors на старые удалённые pages (FearIndexPage, etc.)
+**Причина**: ghost-файлы остались на `/opt/frame/` от ad-hoc docker cp до того как мы перешли на git pull.
+**Fix**: `cd /opt/frame && rm -f frontend/src/pages/FearIndexPage.tsx ...` (см. cleanup в сессии 2026-05-12).
+
+### `Permission denied` / `Too many authentication failures` / `Connection timed out`
+**Причина**: SSH agent предлагает все ключи → fail2ban после 3 failed.
+**Fix**: ВСЕГДА используй полный preamble `-o IdentitiesOnly=yes -o IdentityAgent=none -i ~/.ssh/id_ed25519`. Если случилось — НЕ retry, ждать 24ч или попросить unban через VNC.
 
 ## Project-specific paths
 
-- Server: `root@103.88.243.232` (alexgondon@ also works in theory, but root@ + explicit key is more reliable)
-- Container: `frame-api-1`
-- Container path: `/app/frontend/dist/`
-- Production domain: `xn--80aklbnczmv.xn--p1ai` (punycode for таймфрейм.рф)
-- SSH key: `~/.ssh/id_ed25519` (Vadim's Mac mini)
-- VNC console (для unban): https://timeweb.cloud/my/servers/7006331/console
+- **Server**: `root@103.88.243.232` (key `~/.ssh/id_ed25519`)
+- **Repo на сервере**: `/opt/frame/` (git checkout `main`)
+- **Container**: `frame-api-1`
+- **Container path**: `/app/frontend/dist/` (baked в image, не редактировать docker cp)
+- **Production domain**: `xn--80aklbnczmv.xn--p1ai` (punycode for таймфрейм.рф)
+- **VNC console** (для unban): https://timeweb.cloud/my/servers/7006331/console
+
+## Anti-pattern: docker cp
+
+❌ **Не делать**:
+```bash
+tar -cz -C dist . | ssh ... "docker cp /tmp/dist/. frame-api-1:/app/frontend/dist/"
+```
+
+Это работает мгновенно но **эфемерно**. При recreate container — потеря. См. инцидент 12 мая 2026.
+
+✅ **Правильно**:
+```bash
+git push  # local
+ssh ... "cd /opt/frame && git pull && docker compose build api && docker compose up -d api"
+```

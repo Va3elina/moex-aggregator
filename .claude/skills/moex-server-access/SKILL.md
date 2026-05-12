@@ -1,168 +1,106 @@
 ---
 name: moex-server-access
-description: Безопасная работа с production-сервером Фрейм (таймфрейм.рф) через SSH — деплой файлов, выполнение команд в контейнерах, чтение логов, БД-запросы. Соблюдает rate-limit и fail2ban защиту через single-connection patterns. Триггер когда пользователь говорит «задеплой на сервер», «посмотри логи прода», «выполни SQL на проде», «обнови файл в контейнере», «restart api», «check production», «прод не работает», или просит любое действие требующее SSH к 103.88.243.232.
+description: Безопасная работа с production-сервером Фрейм (таймфрейм.рф) через SSH — деплой кода (frontend/backend) через git pull + image rebuild, выполнение команд в контейнерах, чтение логов, БД-запросы. Соблюдает rate-limit и fail2ban защиту. Триггер когда пользователь говорит «задеплой на сервер», «обнови сайт», «посмотри логи прода», «выполни SQL на проде», «restart api», «check production», «прод не работает».
 ---
 
 # MOEX Server Access
 
-Шаблон работы с сервером Фрейм для AI-помощников. Сервер защищён жёстким SSH rate-limit и fail2ban — нарушение правил приводит к 24-часовому бану IP.
+Безопасная работа с сервером Фрейм для AI-помощников.
 
-## ⚠️ КРИТИЧЕСКИЕ ПРАВИЛА (не нарушать!)
+**Главное правило (с 2026-05-12)**: деплой = **git pull на сервере + `docker compose build` + `docker compose up -d`**. НИКАКИХ `docker cp` в живой контейнер — они эфемерные и теряются при recreate.
 
-### Правило 1: ВСЕГДА используй полный SSH preamble
+Сервер защищён жёстким SSH rate-limit и fail2ban — нарушение SSH-правил приводит к 24-часовому бану IP.
+
+---
+
+## ⚠️ SSH правила (не нарушать!)
+
+### 1. ВСЕГДА полный SSH preamble
 
 ```bash
-ssh -o IdentitiesOnly=yes -o IdentityAgent=none -o ConnectTimeout=20 \
-    -i <ПУТЬ_К_КЛЮЧУ> alexgondon@103.88.243.232 "..."
+ssh -o IdentitiesOnly=yes -o IdentityAgent=none -o ConnectTimeout=30 \
+    -i <ПУТЬ_К_КЛЮЧУ> <USER>@103.88.243.232 "..."
 ```
 
-**Почему `IdentitiesOnly=yes`**: SSH-агент по умолчанию предлагает все ключи подряд. Каждый ключ = 1 auth attempt. С 3+ ключами в агенте → fail2ban ban на 24 часа после первой команды (из-за `Too many authentication failures`).
+**Почему `IdentitiesOnly=yes`**: SSH-агент по умолчанию предлагает все ключи подряд → каждый ключ = 1 auth attempt → fail2ban ban на 24 часа после 3+ failed.
 
-### Правило 2: НЕ probe'и сервер
+**Какой USER**: `root` (Вадим, для управления контейнерами и git) или `alexgondon` (коллега, для тех же целей с sudo).
 
-❌ **Плохо**:
-```bash
-ssh ... "echo ok"          # 1 connection потрачен впустую
-ssh ... "hostname"          # ещё одна
-ssh ... "<реальная команда>"  # третья — попадает под rate-limit
-```
+### 2. НЕ probe'и сервер
 
-✅ **Хорошо** — для проверки доступности используй HTTPS (порт 443 не рейт-лимитнут):
+❌ `ssh ... "echo ok"` — тратит SSH connection попусту.
+
+✅ Для проверки live-state — HTTPS (порт 443 не рейт-лимитнут):
 ```bash
 curl -sk -o /dev/null -w "%{http_code}\n" "https://103.88.243.232/" \
   -H "Host: xn--80aklbnczmv.xn--p1ai" --max-time 8
 # 200 → сервер работает
 ```
 
-### Правило 3: ОДНА SSH connection на одну операцию
+### 3. ОДНА SSH connection на операцию
 
-iptables режет если **5+ NEW SSH connections с одного IP за 60 секунд** → DROP пакетов 60 секунд → таймауты.
+iptables drop'ит если 5+ NEW connections за 60s. Делать **chained command** в одном `ssh "..."`.
 
-❌ **Плохо** — 3 отдельные SSH (часто = 3 connection):
-```bash
-ssh ... "mkdir /tmp/x"
-scp file ... :/tmp/x/
-ssh ... "docker cp /tmp/x/file container:/path/ && docker restart"
-```
+### 4. НЕ retry после `Connection timed out`
 
-✅ **Хорошо** — всё в одном tar-pipe:
-```bash
-tar -cz file | ssh ... \
-  "rm -rf /tmp/x && mkdir /tmp/x && tar -xz -C /tmp/x \
-   && docker cp /tmp/x/file container:/path/ \
-   && docker restart container && rm -rf /tmp/x"
-```
-
-### Правило 4: НЕ retry'ь после `Connection timed out`
-
-Если получил `Connection timed out` — твой IP попал под rate-limit (60s drop) или fail2ban (24h ban). **Повторная попытка в течение минуты обнулит счётчик** и продлит drop ещё на 60s.
-
-**Что делать**:
-1. Подожди минуту (`sleep 60` или используй scheduled wakeup)
-2. Если timeout повторился — проверь port 22 через `nc -z -w 5 103.88.243.232 22`
-3. Если `BLOCKED` — fail2ban забанил, **скажи пользователю** и не retry'ь без unban через VNC
-
-### Правило 5: Для частых операций — HTTP API, не SSH
-
-Если задача "получить данные с прода" — используй HTTPS API на 443 (без лимитов). SSH только когда реально нужен прямой доступ к контейнеру/БД/файлам.
+Если timeout — IP попал в rate-limit (60s drop) или fail2ban (24h ban). Retry в loop'е продлевает drop. Подожди минуту, проверь через `nc -z -w 5 103.88.243.232 22`. Если `BLOCKED` 5+ минут — нужен unban через VNC.
 
 ---
 
-## 🔑 SSH Setup (одноразовая настройка)
+## 🚀 Главный deploy flow (с 12 мая 2026)
 
-Получи приватный ключ от администратора (Vadim) — по умолчанию это `~/.ssh/id_ed25519`. Публичный ключ должен быть зарегистрирован в `/home/alexgondon/.ssh/authorized_keys` на сервере.
+### Шаг 1: Локально — commit + push
 
-Проверка работоспособности через **HTTPS** (НЕ SSH):
 ```bash
-curl -sk "https://таймфрейм.рф/health" --max-time 8
-# {"status":"ok","database":"ok"} → сервер живой
+# Bump SW version если frontend меняли
+# Edit frontend/public/sw.js: const CACHE_NAME = 'frame-vNNN+1';
+
+git add <files>
+git commit -m "scope: description"
+git push origin main
 ```
 
-**Сохрани alias** в `~/.bashrc` или `~/.zshrc` чтобы не печатать длинный preamble:
+### Шаг 2: На сервере — pull + rebuild + recreate
+
+**Одной SSH командой**:
 ```bash
-alias frame-ssh='ssh -o IdentitiesOnly=yes -o IdentityAgent=none -o ConnectTimeout=20 -i ~/.ssh/id_ed25519 alexgondon@103.88.243.232'
+ssh -o IdentitiesOnly=yes -o IdentityAgent=none -o ConnectTimeout=30 \
+    -i ~/.ssh/id_ed25519 root@103.88.243.232 \
+  "cd /opt/frame && git pull origin main && \
+   docker compose build api && \
+   docker compose up -d api && \
+   sleep 10 && \
+   docker exec frame-api-1 python3 -c 'import urllib.request; print(urllib.request.urlopen(\"http://localhost:8000/health\").read().decode())' && \
+   curl -sk 'https://localhost/sw.js' -H 'Host: xn--80aklbnczmv.xn--p1ai' | grep CACHE_NAME | head -1 && \
+   curl -sk 'https://localhost/' -H 'Host: xn--80aklbnczmv.xn--p1ai' | grep -oE 'index-[A-Za-z0-9_-]+\\.js' | head -1"
 ```
+
+**Время**: build ~1-2 мин с кешем (~3-5 без), downtime пересоздания ~30 сек.
 
 ---
 
-## 📦 Типичные операции (с готовыми шаблонами)
-
-### Operation 1: Скопировать файл в контейнер + рестарт сервиса
-
-Используй для замены одного backend-файла (Python router, config):
-
-```bash
-tar -cz <LOCAL_PATH>/myfile.py | \
-  ssh -o IdentitiesOnly=yes -o IdentityAgent=none -o ConnectTimeout=30 \
-      -i ~/.ssh/id_ed25519 alexgondon@103.88.243.232 \
-  "rm -rf /tmp/dep && mkdir -p /tmp/dep && tar -xz -C /tmp/dep && \
-   sudo docker cp /tmp/dep/myfile.py frame-api-1:/app/api/routers/myfile.py && \
-   sudo docker restart frame-api-1 && \
-   rm -rf /tmp/dep && \
-   sleep 6 && \
-   sudo docker exec frame-api-1 python3 -c 'import urllib.request; print(urllib.request.urlopen(\"http://localhost:8000/health\").read().decode())'"
-```
-
-**Что делает**:
-1. Локально tar'ит файл
-2. Передаёт через SSH stdin
-3. Распаковывает в `/tmp/dep`
-4. Копирует в контейнер
-5. Рестартит контейнер
-6. Чистит `/tmp`
-7. Ждёт 6 секунд (FastAPI startup)
-8. Проверяет /health
-
-Всё в **одной SSH connection** — не попадает под rate-limit.
-
-### Operation 2: Деплой множества файлов (batch)
-
-Для нескольких файлов одной командой:
-
-```bash
-tar -cz \
-    api/main.py \
-    api/routers/file1.py \
-    api/routers/file2.py | \
-  ssh -o IdentitiesOnly=yes -o IdentityAgent=none -i ~/.ssh/id_ed25519 \
-      alexgondon@103.88.243.232 \
-  "rm -rf /tmp/dep && mkdir -p /tmp/dep && tar -xz -C /tmp/dep && \
-   sudo docker cp /tmp/dep/api/main.py frame-api-1:/app/api/main.py && \
-   sudo docker cp /tmp/dep/api/routers/file1.py frame-api-1:/app/api/routers/file1.py && \
-   sudo docker cp /tmp/dep/api/routers/file2.py frame-api-1:/app/api/routers/file2.py && \
-   sudo docker restart frame-api-1 && \
-   rm -rf /tmp/dep && \
-   sleep 6 && \
-   sudo docker exec frame-api-1 python3 -c 'import urllib.request; print(urllib.request.urlopen(\"http://localhost:8000/health\").read().decode())'"
-```
-
-### Operation 3: Деплой frontend dist (vite build)
-
-```bash
-tar -cz -C frontend/dist . | \
-  ssh -o IdentitiesOnly=yes -o IdentityAgent=none -i ~/.ssh/id_ed25519 \
-      alexgondon@103.88.243.232 \
-  "rm -rf /tmp/dist && mkdir -p /tmp/dist && tar -xz -C /tmp/dist && \
-   sudo docker cp /tmp/dist/. frame-api-1:/app/frontend/dist/ && \
-   rm -rf /tmp/dist && \
-   curl -sk 'https://localhost/sw.js' -H 'Host: xn--80aklbnczmv.xn--p1ai' | grep CACHE_NAME | head -1"
-```
-
-**Заметь**: frontend dist не требует restart — статика подхватывается на лету.
-
-### Operation 4: Выполнить SQL на production БД
+## 🔍 Чтение логов / диагностика (без deploy)
 
 ```bash
 ssh -o IdentitiesOnly=yes -o IdentityAgent=none -i ~/.ssh/id_ed25519 \
-    alexgondon@103.88.243.232 \
-  'sudo docker exec frame-db-1 psql -U postgres -d moex_db -c "SELECT COUNT(*) FROM users"'
+    root@103.88.243.232 \
+  "docker logs frame-api-1 --tail 50 --since 10m 2>&1 | grep -iE 'error|exception|warning' | tail -20"
 ```
 
-Для длинных multi-line SQL — через stdin:
+Контейнеры: `frame-api-1`, `frame-db-1`, `frame-redis-1`, `frame-orchestrator-1`, `frame-nginx-1`, `frame-tg-bot-1`.
 
+---
+
+## 🗄️ SQL queries
+
+### Простой query
 ```bash
-cat <<'SQL' | ssh -o IdentitiesOnly=yes -o IdentityAgent=none -i ~/.ssh/id_ed25519 \
-    alexgondon@103.88.243.232 'sudo docker exec -i frame-db-1 psql -U postgres -d moex_db'
+ssh ... 'docker exec frame-db-1 psql -U postgres -d moex_db -c "SELECT COUNT(*) FROM users"'
+```
+
+### Длинный multi-line SQL через stdin
+```bash
+cat <<'SQL' | ssh ... 'docker exec -i frame-db-1 psql -U postgres -d moex_db'
 SELECT u.email, COUNT(ae.event_id) AS events
 FROM users u
 LEFT JOIN analytics_events ae ON ae.user_id = u.id
@@ -172,165 +110,139 @@ ORDER BY events DESC LIMIT 10;
 SQL
 ```
 
-### Operation 5: Применить SQL миграцию
-
+### Apply migration
 ```bash
-cat /path/to/migration.sql | \
-  ssh -o IdentitiesOnly=yes -o IdentityAgent=none -i ~/.ssh/id_ed25519 \
-      alexgondon@103.88.243.232 \
-  'sudo docker exec -i frame-db-1 psql -U postgres -d moex_db'
-```
-
-### Operation 6: Посмотреть логи контейнера
-
-```bash
-ssh -o IdentitiesOnly=yes -o IdentityAgent=none -i ~/.ssh/id_ed25519 \
-    alexgondon@103.88.243.232 \
-  "sudo docker logs frame-api-1 --tail 50 --since 10m 2>&1 | grep -iE 'error|exception|warning' | tail -20"
-```
-
-### Operation 7: Установить пакет в контейнер (ephemeral)
-
-⚠️ Это временно — после `docker compose down/up` пакет пропадёт. Для постоянного решения нужно править `requirements.txt` и rebuild image.
-
-```bash
-ssh -o IdentitiesOnly=yes -o IdentityAgent=none -i ~/.ssh/id_ed25519 \
-    alexgondon@103.88.243.232 \
-  "sudo docker exec frame-api-1 pip install --no-cache-dir somepackage && \
-   sudo docker restart frame-api-1"
-```
-
-### Operation 8: Запустить ad-hoc Python script на проде
-
-Создай файл локально, скопируй и выполни:
-
-```bash
-tar -cz /path/to/script.py | \
-  ssh -o IdentitiesOnly=yes -o IdentityAgent=none -i ~/.ssh/id_ed25519 \
-      alexgondon@103.88.243.232 \
-  "rm -rf /tmp/sc && mkdir -p /tmp/sc && tar -xz -C /tmp/sc && \
-   sudo docker cp /tmp/sc/path/to/script.py frame-api-1:/tmp/script.py && \
-   sudo docker exec frame-api-1 python3 /tmp/script.py && \
-   rm -rf /tmp/sc"
-```
-
-### Operation 9: Health check после deploy
-
-```bash
-ssh -o IdentitiesOnly=yes -o IdentityAgent=none -i ~/.ssh/id_ed25519 \
-    alexgondon@103.88.243.232 \
-  "echo '--- containers ---' && sudo docker ps --format '{{.Names}} {{.Status}}' | grep frame && \
-   echo '--- /health ---' && \
-   sudo docker exec frame-api-1 python3 -c 'import urllib.request; print(urllib.request.urlopen(\"http://localhost:8000/health\").read().decode())' && \
-   echo '--- SW + index hash ---' && \
-   curl -sk 'https://localhost/sw.js' -H 'Host: xn--80aklbnczmv.xn--p1ai' | grep CACHE_NAME | head -1 && \
-   curl -sk 'https://localhost/' -H 'Host: xn--80aklbnczmv.xn--p1ai' | grep -oE 'index-[A-Za-z0-9_-]+\\.js' | head -1"
+cat /path/to/migration.sql | ssh ... 'docker exec -i frame-db-1 psql -U postgres -d moex_db'
 ```
 
 ---
 
 ## 🐛 Troubleshooting
 
-### Симптом: `Permission denied (publickey)`
-**Причина**: ключ не зарегистрирован на сервере, или используется не тот.
-**Решение**: проверь путь после `-i` и попроси администратора добавить твой публичный ключ в `/home/alexgondon/.ssh/authorized_keys`.
+### `Permission denied (publickey)`
+Ключ не зарегистрирован. Проверь `-i <path>`, попроси админа добавить твой публичный ключ в `/home/USER/.ssh/authorized_keys`.
 
-### Симптом: `Too many authentication failures`
-**Причина**: SSH агент перебирает все ключи подряд. После 3+ неудачных попыток сервер отключает.
-**Решение**: добавь `-o IdentitiesOnly=yes -o IdentityAgent=none` в команду. **ВНИМАНИЕ**: после нескольких подряд таких ошибок IP попадёт в fail2ban на 24 часа.
+### `Too many authentication failures`
+SSH agent перебирает ключи → fail2ban после 3+. **Решение**: `-o IdentitiesOnly=yes -o IdentityAgent=none`. **Если уже случилось** — IP забанен на 24ч, нужен unban через VNC.
 
-### Симптом: `Connection timed out` (sshd порт 22)
-**Причина А**: rate-limit (5+ NEW connections / 60s) → packet drop на 60 секунд.
-**Решение А**: подожди ровно 60 секунд, **не делай retry в loop'e** — это продлит drop.
+### `Connection timed out`
+- **iptables rate-limit** (5+ conn/60s): подожди 60s.
+- **fail2ban**: подожди 24ч или VNC unban.
+- Diagnose: `nc -z -w 5 103.88.243.232 22 && echo OPEN || echo BLOCKED`.
 
-**Причина Б**: fail2ban забанил IP на 24 часа (после 3+ failed auth).
-**Диагностика**: `nc -z -w 5 103.88.243.232 22 && echo OPEN || echo BLOCKED`. Если BLOCKED уже 5+ минут — это fail2ban.
-**Решение Б**: попроси администратора (Vadim) разбанить через VNC console TimeWeb:
-```bash
-fail2ban-client set sshd unbanip <ВАШ_IP>
-```
+### `ModuleNotFoundError: No module named 'X'`
+Пакет в `requirements.txt`? Если да — нужен `docker compose build api && up -d api`. Если нет — добавить, push, rebuild.
 
-### Симптом: HTTPS работает (https://таймфрейм.рф/), но SSH нет
-**Причина**: точно fail2ban (HTTPS на 443, SSH на 22).
-**Решение**: см. выше — VNC unban.
+### Сайт раздаёт SPA HTML вместо JSON для /api/...
+Endpoint не зарегистрирован (router не include или удалён). Проверь `docker logs frame-api-1` на ImportError при startup.
 
-### Симптом: команда возвращает SPA HTML вместо JSON
-**Причина**: endpoint не существует или nginx fallback.
-**Решение**: проверь URL, должен быть `/api/...` (не `/something/api`). Если 404 — endpoint удалили / переименовали.
+### Container постоянно restarting
+`docker logs frame-api-1 --tail 50` покажет crash reason. Часто — `ModuleNotFoundError` после rebuild без обновления requirements.txt.
 
-### Симптом: `permission denied while trying to connect to the Docker daemon socket`
-**Причина**: ходишь как user без прав на docker (alexgondon → нужен `sudo`).
-**Решение**: префиксуй все docker-команды через `sudo`: `sudo docker exec ...`, `sudo docker cp ...`. В шаблонах выше уже учтено.
+### `Permission denied while trying to connect to Docker daemon`
+User не в группе `docker`. Под `alexgondon` — префиксуй `sudo`: `sudo docker exec ...`. Под `root` — без sudo.
 
 ---
 
-## 🗺️ Project structure (что где)
+## ⚠️ Anti-patterns (не делать!)
+
+### ❌ `docker cp` живого контейнера для деплоя
+```bash
+tar -cz dist | ssh ... "docker cp /tmp/dist/. frame-api-1:/app/frontend/dist/"
+```
+Это работает **5 секунд**, но при любом `docker compose up` или recreate container — **исчезает**. Так мы 12 мая получили откат к Apr 14.
+
+### ❌ `docker exec frame-api-1 pip install pkg`
+Эфемерно. Пакет пропадёт при recreate. Добавлять в `requirements.txt` + rebuild.
+
+### ❌ Редактирование файлов прямо в контейнере (vim, sed)
+Не попадает в git, не попадает в image — потеряется. Всегда правки в git → push → rebuild.
+
+### ❌ `docker compose down` без согласования
+Контейнеры удаляются вместе с ephemeral state (если он был). Сейчас не страшно (всё в image), но раньше было катастрофой.
+
+---
+
+## 🗺️ Project structure
 
 ### Сервер
 - **IP**: `103.88.243.232`
 - **Домен**: `xn--80aklbnczmv.xn--p1ai` (punycode для `таймфрейм.рф`)
-- **User**: `alexgondon` (UID 1000, в группах sudo+docker, NOPASSWD)
+- **Repo path**: `/opt/frame/` — git checkout main (синхронизирован с GitHub)
+- **VNC console** (для unban): https://timeweb.cloud/my/servers/7006331/console
 
 ### Контейнеры
-- `frame-api-1` — FastAPI (Python 3.11), путь `/app/`
-- `frame-db-1` — PostgreSQL 16, db: `moex_db`, user: `postgres`
-- `frame-redis-1` — Redis для cache + SSE
-- `frame-orchestrator-1` — main_orchestrator.py — cron-like джобы
-- `frame-nginx-1` — reverse proxy (HTTPS termination)
-- `frame-tg-bot-1` — Telegram bot (если был)
+- `frame-api-1` — FastAPI + frontend dist (multi-stage build), путь в image: `/app/`
+- `frame-db-1` — PostgreSQL 16, db `moex_db`, user `postgres`
+- `frame-redis-1` — cache + SSE
+- `frame-orchestrator-1` — `main_orchestrator.py`, cron-like jobs
+- `frame-nginx-1` — reverse proxy + HTTPS
+- `frame-tg-bot-1` — Telegram bot
 
-### Структура `/app/` в frame-api-1
-- `/app/api/` — FastAPI код (main.py, routers/)
-- `/app/frontend/dist/` — собранный фронтенд (статика, SW, index.html)
+### Структура в image (`/app/`)
+- `/app/api/` — FastAPI код (main.py + routers/)
+- `/app/frontend/dist/` — frontend production build (baked в image, не редактировать docker cp)
 - `/app/Commodity/`, `/app/Funds/`, `/app/OI/`, `/app/Macro/`, `/app/Candles/` — fetch-скрипты
 - `/app/main_orchestrator.py` — оркестратор
 
-### Главные таблицы БД
-- `users` (id, email, role, ...) — пользователи
-- `analytics_events` — лог событий пользователей
-- `candles` (secid, interval, begin_time, ohlc) — свечи акций/фьючерсов
-- `index_data` (secid, trade_date, close, ...) — индексы + commodity
-- `instruments` — каталог тикеров
-- `funds` + `fund_data` — паевые фонды + СЧА
-- `mv_heatmap_stocks` (materialized view) — карта рынка
-
-### Endpoints на 443 (HTTPS — без rate-limit)
-- `GET /health` — общая проверка
-- `GET /api/instruments` — список инструментов
-- `GET /api/heatmap/stocks` — карта рынка
-- `GET /api/seasonality/yearly?secid=X` — годовая сезонность
-- `GET /api/openapi.json` — OpenAPI схема (полный список endpoints)
+### GitHub
+- **Repo**: `git@github.com:Va3elina/moex-aggregator.git`
+- **Branch**: `main` (один — нет dev/staging)
+- **Что в git**: source code, `frontend/public/sw.js`, `requirements.txt`, `Dockerfile`, `docker-compose.yml`
+- **Что НЕ в git**: `frontend/dist/` (build artifact), `.env*` (секреты), `__pycache__`, `node_modules`, `scripts/landing-videos/`
 
 ---
 
-## 🔐 Что НЕ делать на проде
+## 📖 Reference quick-cards
 
-- ❌ Не запускай `npm run build` на сервере — 4GB RAM, OOM
-- ❌ Не делай `docker compose down` без согласования — это reset state контейнеров (потерянные ephemeral pip installs, например)
-- ❌ Не редактируй файлы в контейнерах напрямую через `docker exec ... vim` — git перестанет быть source of truth
-- ❌ Не запускай `git push --force` к main без согласования
-- ❌ Не пиши credentials (.env, БД-пароли) в commit messages или логи
-
----
-
-## 📖 Reference: одна команда — один источник правды
-
-**Если ты AI-помощник** — этот блок твоё священное правило:
-
+### Deploy frontend/backend (full pipeline)
 ```bash
-# ШАБЛОН ОПЕРАЦИИ С ПРОДОМ (template)
-tar -cz <ЛОКАЛЬНЫЕ_ФАЙЛЫ> | \
-  ssh -o IdentitiesOnly=yes -o IdentityAgent=none -o ConnectTimeout=30 \
-      -i ~/.ssh/id_ed25519 alexgondon@103.88.243.232 \
-  "rm -rf /tmp/op && mkdir -p /tmp/op && tar -xz -C /tmp/op && \
-   <ОПЕРАЦИИ> && \
-   rm -rf /tmp/op && \
-   <ВЕРИФИКАЦИЯ>"
+# Local
+git push origin main
+
+# Server (одна SSH)
+ssh -o IdentitiesOnly=yes -o IdentityAgent=none -i ~/.ssh/id_ed25519 \
+    root@103.88.243.232 \
+  "cd /opt/frame && git pull && docker compose build api && docker compose up -d api"
 ```
 
-**Принципы**:
-1. ВСЕГДА `IdentitiesOnly=yes` + `IdentityAgent=none` + `-i <KEY>`
-2. ОДНА SSH connection на операцию — все шаги через `&&`
-3. Cleanup `/tmp/op` в конце
-4. Verification ВНУТРИ той же connection (не отдельным `ssh`)
-5. При ошибке — НЕ retry, спроси пользователя
+### Health check
+```bash
+ssh ... "docker exec frame-api-1 python3 -c 'import urllib.request; print(urllib.request.urlopen(\"http://localhost:8000/health\").read().decode())'"
+```
+
+### Verify SW version + index hash
+```bash
+ssh ... "curl -sk 'https://localhost/sw.js' -H 'Host: xn--80aklbnczmv.xn--p1ai' | grep CACHE_NAME | head -1"
+ssh ... "curl -sk 'https://localhost/' -H 'Host: xn--80aklbnczmv.xn--p1ai' | grep -oE 'index-[A-Za-z0-9_-]+\\.js' | head -1"
+```
+
+### SQL query
+```bash
+ssh ... 'docker exec frame-db-1 psql -U postgres -d moex_db -c "SELECT ..."'
+```
+
+### Restart api без rebuild (rarely needed)
+```bash
+ssh ... "docker restart frame-api-1"
+```
+
+### Tail recent errors
+```bash
+ssh ... "docker logs frame-api-1 --tail 50 --since 10m 2>&1 | grep -iE 'error|exception'"
+```
+
+---
+
+## 🏛️ Исторический контекст (для AI-помощника)
+
+С марта 2026 до 12 мая 2026 проект использовал **анти-pattern `docker cp` deploys**:
+- Frontend строился локально, копировался через `docker cp` в running container
+- Backend файлы копировались таким же способом
+- Pip-пакеты ставились через `docker exec pip install`
+
+Это работало пока контейнеры не пересоздавались. 12 мая в 18:59 кто-то сделал `docker compose up` — все ephemeral правки за **месяц работы** исчезли, прод откатился к 14 апреля.
+
+**Восстановление** заняло час: git init в `/opt/frame/`, reset к `origin/main`, fix Dockerfile (python3+Pillow+bash в node-alpine), fix requirements.txt (UTF-16 → UTF-8), cleanup ghost files, rebuild image.
+
+**Урок**: deploy должен идти через git + image rebuild. Image — единственный source of truth для production. Делай всегда так.

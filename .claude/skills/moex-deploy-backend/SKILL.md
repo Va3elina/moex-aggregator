@@ -1,124 +1,133 @@
 ---
 name: moex-deploy-backend
-description: Deploy a Python backend file to Фрейм production. Use when user says "задеплой бэк", "обнови X.py на проде", "залей роутер", "update backend", or when any file in api/ folder has been changed and needs to go live. Also triggers when user wants to test API changes on production.
+description: Deploy Python backend changes to Фрейм production. Use when user says "задеплой бэк", "обнови X.py на проде", "залей роутер", "update backend", or when any file in api/ folder has been changed and needs to go live. Also triggers when user wants to test API changes on production.
 ---
 
-# Deploy Backend File to Фрейм Production
+# Deploy Backend to Фрейм Production
 
-Deploy Python files (usually a router or module) to the production FastAPI container.
+**Главное правило** (с 2026-05-12):
+**Деплой = `git pull` → `docker compose build api` → `up -d api`.**
+**Никаких `docker cp` Python-файлов.**
+
+## Почему именно так
+
+Backend код (`api/*`, `main_orchestrator.py`, `requirements.txt`) — в git.
+Docker image содержит Python interpreter + dependencies + копию api/ кода.
+
+Раньше делали `docker cp api/file.py frame-api-1:/app/api/file.py + restart`. Это работало, но при recreate container терялось. **12 мая 2026** контейнер пересоздался → откат к Apr 14 image, потеря всех правок последнего месяца на проде. Восстановили rebuild'ом из git.
 
 ## ⚠️ Critical Rules
 
-1. **Always restart container after deploy** — FastAPI doesn't auto-reload in production
-2. **Wait ~5 seconds after restart** before testing — FastAPI takes time to initialize routes
-3. **Check response is JSON, not HTML** — if endpoint not registered, nginx serves SPA fallback
-4. **Never edit files directly on server** — always upload from local, git is source of truth
-5. **Multi-file deploys** — upload all files, then restart ONCE at the end
-6. **Single SSH connection per deploy** — see SSH section in moex-deploy-frontend skill
+1. **Изменения только через git → image rebuild.** Никаких docker cp.
+2. **`requirements.txt`** должен быть UTF-8 без BOM (pip не парсит UTF-16 LE).
+3. **SSH preamble обязателен**: `-o IdentitiesOnly=yes -o IdentityAgent=none -i ~/.ssh/id_ed25519`.
+4. **При rebuild — image тащит и frontend stage**. Если только backend изменился — docker layer cache переиспользует frontend-build. Если хочешь чисто backend rebuild — `docker compose build --no-cache=false api`.
 
-## ⚠️ SSH Best Practices
+## Standard Deploy Sequence
 
-See `moex-deploy-frontend/SKILL.md` § "SSH Best Practices" — same rules apply:
-- Always use `IdentitiesOnly=yes -o IdentityAgent=none -i ~/.ssh/id_ed25519`
-- Use `root@103.88.243.232` (most reliable)
-- Single connection per deploy via tar pipe
-- Don't probe — use HTTPS curl if you need to check connectivity
-- fail2ban bans for 24 hours — ask user to unban via VNC if locked out
-
-## Single-connection deploy (single file)
+### Один Python-файл (типичный case)
 
 ```bash
-tar -cz -C <LOCAL_PROJECT_PATH>/api/routers {FILE}.py | \
-  ssh -o IdentitiesOnly=yes -o IdentityAgent=none -o ConnectTimeout=30 \
-      -i ~/.ssh/id_ed25519 root@103.88.243.232 \
-  "rm -rf /tmp/router-deploy && mkdir -p /tmp/router-deploy && \
-   tar -xz -C /tmp/router-deploy && \
-   docker cp /tmp/router-deploy/{FILE}.py frame-api-1:/app/api/routers/{FILE}.py && \
-   docker restart frame-api-1 && \
-   rm -rf /tmp/router-deploy && \
-   sleep 5 && \
-   docker exec frame-api-1 python3 -c 'import urllib.request; r=urllib.request.urlopen(\"http://localhost:8000/health\"); print(r.read().decode())'"
+# 1. Локально
+git add api/routers/myfile.py
+git commit -m "fix(api): описание"
+git push origin main
+
+# 2. Сервер — одной SSH командой
+ssh -o IdentitiesOnly=yes -o IdentityAgent=none -o ConnectTimeout=30 \
+    -i ~/.ssh/id_ed25519 root@103.88.243.232 \
+  "cd /opt/frame && git pull origin main && \
+   docker compose build api && \
+   docker compose up -d api && \
+   sleep 10 && \
+   docker exec frame-api-1 python3 -c 'import urllib.request; print(urllib.request.urlopen(\"http://localhost:8000/health\").read().decode())'"
 ```
 
-## Single-connection deploy (multiple files)
+### Несколько файлов / новый роутер
+
+То же. `docker compose build api` собирает image с COPY всех api/* за один проход.
+
+### При новом pip-пакете
 
 ```bash
-tar -cz -C <LOCAL_PROJECT_PATH>/api file1.py routers/file2.py main.py | \
-  ssh -o IdentitiesOnly=yes -o IdentityAgent=none -o ConnectTimeout=30 \
-      -i ~/.ssh/id_ed25519 root@103.88.243.232 \
-  "rm -rf /tmp/api-deploy && mkdir -p /tmp/api-deploy && \
-   tar -xz -C /tmp/api-deploy && \
-   docker cp /tmp/api-deploy/file1.py frame-api-1:/app/api/file1.py && \
-   docker cp /tmp/api-deploy/routers/file2.py frame-api-1:/app/api/routers/file2.py && \
-   docker cp /tmp/api-deploy/main.py frame-api-1:/app/api/main.py && \
-   docker restart frame-api-1 && \
-   rm -rf /tmp/api-deploy && \
-   sleep 5 && \
-   docker exec frame-api-1 python3 -c 'import urllib.request; r=urllib.request.urlopen(\"http://localhost:8000/health\"); print(r.read().decode())'"
+# 1. Edit requirements.txt, добавить строку
+# 2. Локально проверить что файл UTF-8: file requirements.txt
+# 3. git commit + push + (Sequence как выше)
 ```
 
-## Verification After Deploy
+`docker compose build api` пройдёт `RUN pip install -r requirements.txt` → пакет в image permanently.
 
-Health is auto-checked at end of deploy commands above. For deeper verification call `moex-deploy-verifier` agent.
+## Verify after deploy
 
-### Manual endpoint validation (JSON not HTML!)
-
+### Health
 ```bash
-ssh -o IdentitiesOnly=yes -o IdentityAgent=none -i ~/.ssh/id_ed25519 root@103.88.243.232 \
-  "docker exec frame-api-1 python3 -c '
+ssh ... "docker exec frame-api-1 python3 -c 'import urllib.request; print(urllib.request.urlopen(\"http://localhost:8000/health\").read().decode())'"
+```
+Ждём: `{"status":"ok","database":"ok"}`
+
+### Endpoint возвращает JSON (не SPA HTML fallback)
+```bash
+ssh ... "docker exec frame-api-1 python3 -c '
 import urllib.request
 r = urllib.request.urlopen(\"http://localhost:8000/api/YOUR_ENDPOINT\")
 body = r.read()
-if body[:1] in (b\"{\", b\"[\"):
-    print(\"OK: endpoint returns JSON\")
-else:
-    print(\"BROKEN: endpoint returns HTML (SPA fallback)!\")
+print(\"OK: JSON\" if body[:1] in (b\"{\", b\"[\") else \"BROKEN: HTML (SPA fallback)!\")
 '"
 ```
 
-Why this matters: If you delete an endpoint from a router but forget to restart, or there's an import error in your new file, the endpoint returns SPA HTML — not a 404.
+Полная проверка endpoints через sub-agent `moex-deploy-verifier`.
 
-## Project-specific paths
+## Common Issues
 
-- Server: `root@103.88.243.232`
-- Container: `frame-api-1`
-- Container path: `/app/api/`
-- Routers directory: `/app/api/routers/`
-- SSH key: `~/.ssh/id_ed25519`
+### `ModuleNotFoundError: No module named 'redis'` (или другой пакет)
+**Причина**: пакет добавили в `requirements.txt`, но image не пересобрали (или dock cp в running был эфемерен).
+**Fix**: убедиться что пакет в requirements.txt + `docker compose build api && up -d api`.
+
+### TS errors не относящиеся к backend
+**Причина**: `docker compose build api` тащит и frontend stage (multi-stage), TS ошибки в frontend ломают весь build.
+**Fix**: исправить TS отдельно либо проверить что нет ghost-файлов на `/opt/frame/` от прошлых docker cp.
+
+### Restart frame-api-1 не нужен сам по себе
+После `docker compose up -d api` контейнер автоматически recreate'ится с новым image. `docker restart frame-api-1` без rebuild = откат к старому image-state (но кода всё равно в image current).
 
 ## Special cases
 
 ### Adding a new router
 
-Deploy в этом порядке чтобы избежать import errors:
-
-1. Сначала router файл (`api/routers/new_router.py`)
-2. Потом `api/routers/__init__.py` (с import'ом)
-3. Потом `api/main.py` (с `include_router`)
-4. Restart ONCE в конце
+`include_router` order важен. В одном image rebuild всё пройдёт атомарно — ему safe.
 
 ### Removing a router
 
-Reverse order:
+Удалить файл + `git rm` + commit. После rebuild image не содержит. SPA fallback сработает на удалённом endpoint — `moex-deploy-verifier` это поймает.
 
-1. Deploy `api/main.py` без include
-2. Deploy `api/routers/__init__.py` без import
-3. Restart
-4. Удалить файл: `docker exec frame-api-1 rm -f /app/api/routers/old_router.py`
+### Database migration (новая таблица)
 
-### Dependency added (new pip package)
+1. Миграцию SQL пишем в `db/migrations/*.sql` или применяем напрямую.
+2. На сервере: `ssh ... "docker exec -i frame-db-1 psql -U postgres -d moex_db < /opt/frame/db/migration.sql"`.
+3. Потом deploy backend как обычно — он работает с новой схемой.
 
-```bash
-ssh -o IdentitiesOnly=yes -o IdentityAgent=none -i ~/.ssh/id_ed25519 root@103.88.243.232 \
-  "docker exec frame-api-1 pip install PACKAGE && docker restart frame-api-1"
-```
+## Project-specific paths
 
-⚠️ Эфемерно — package потеряется при следующем full rebuild. Для постоянного: update `requirements.txt` и пересобрать image.
+- **Server**: `root@103.88.243.232`
+- **Repo на сервере**: `/opt/frame/` (git checkout main)
+- **Container**: `frame-api-1`
+- **API path**: `/app/api/` (внутри image)
+- **DB**: `docker exec frame-db-1 psql -U postgres -d moex_db`
 
-## Known environment variables (в контейнере)
+## Known env vars (в контейнере)
 
-- `DB_URL` = `postgresql+pg8000://postgres:***@db:5432/moex_db` — для SQLAlchemy
-- `DB_URL_ASYNC` = `postgresql://postgres:***@db:5432/moex_db` — для asyncpg
-- `ALGOPACK_API_KEY` = JWT token для Algopack API
+- `DB_URL` = `postgresql+pg8000://...` (для SQLAlchemy sync)
+- `DB_URL_ASYNC` = `postgresql://...` (для asyncpg)
+- `JWT_SECRET_KEY` — для access/refresh tokens
+- `ALGOPACK_API_KEY` — для Algopack
+- `GOOGLE_CLIENT_ID/SECRET`, `VK_*`, `YANDEX_*`, `TELEGRAM_BOT_TOKEN` — OAuth
+- `TBANK_TERMINAL_KEY`, `TBANK_PASSWORD` — billing T-Bank
+- `YOOKASSA_SHOP_ID`, `YOOKASSA_SECRET_KEY` — billing fallback
 
-Не хардкодь — всегда `os.environ["DB_URL"]` и т.д.
+Все через `os.environ["X"]`. **Не хардкодить значения в коде.**
+
+## Anti-pattern
+
+❌ `docker exec frame-api-1 pip install somepackage` + `docker restart` — эфемерно, потеряется на recreate.
+❌ `docker cp api/file.py frame-api-1:/app/api/...` — то же эфемерно.
+✅ git commit + push + `docker compose build api && up -d api` — все изменения в image, persistent.
