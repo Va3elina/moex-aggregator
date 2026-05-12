@@ -67,6 +67,12 @@ services:
       - YANDEX_REDIRECT_URI=https://xn--80aklbnczmv.xn--p1ai/auth/callback/yandex
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - REDIS_URL=redis://redis:6379/0
+      # Billing — приоритет: T-Bank → YooKassa (legacy) → Stub.
+      # См. .env.example для инструкций по получению ключей.
+      - TBANK_TERMINAL_KEY=${TBANK_TERMINAL_KEY:-}
+      - TBANK_PASSWORD=${TBANK_PASSWORD:-}
+      - YOOKASSA_SHOP_ID=${YOOKASSA_SHOP_ID:-}
+      - YOOKASSA_SECRET_KEY=${YOOKASSA_SECRET_KEY:-}
     expose:
       - "8000"
     healthcheck:
