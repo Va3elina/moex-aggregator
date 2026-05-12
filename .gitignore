@@ -81,5 +81,9 @@ compare_stocks.py
 # Локальные артефакты разработки (v105 session)
 .dev-pids/
 cbonds_capture.flow
-scripts/
+# scripts/ — раньше игнорилось целиком, но build-sprite.py нужен Docker build'у
+# для сборки sprite.png из логотипов. Игнорим только тяжёлые/локальные части:
+scripts/landing-videos/
+scripts/*.flow
+scripts/__pycache__/
 *.pdf

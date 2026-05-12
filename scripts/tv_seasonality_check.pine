@@ -1,0 +1,169 @@
+//@version=6
+indicator("Фрейм: Проверка сезонности", overlay=false)
+
+// ═══════════════════════════════════════════════════════════
+// Повторяет расчёты годовой сезонности из таймфрейм.рф:
+// 1. Средний месячный возврат (close-to-close) — как гистограмма
+// 2. Средний YTD на конец года — как годовая кривая
+// 3. Компаунд месячных = должен ≈ совпасть с YTD?
+// ═══════════════════════════════════════════════════════════
+
+// Входные параметры
+startYear = input.int(2000, "С какого года", minval=1997)
+
+// ─── Расчёт месячных возвратов (close-to-close) ───
+// Месячный возврат = close_end_month / close_end_prev_month - 1
+var float[] janReturns = array.new_float()
+var float[] febReturns = array.new_float()
+var float[] marReturns = array.new_float()
+var float[] aprReturns = array.new_float()
+var float[] mayReturns = array.new_float()
+var float[] junReturns = array.new_float()
+var float[] julReturns = array.new_float()
+var float[] augReturns = array.new_float()
+var float[] sepReturns = array.new_float()
+var float[] octReturns = array.new_float()
+var float[] novReturns = array.new_float()
+var float[] decReturns = array.new_float()
+
+// Массив массивов для удобства
+monthArrays() =>
+    array.from(janReturns, febReturns, marReturns, aprReturns,
+               mayReturns, junReturns, julReturns, augReturns,
+               sepReturns, octReturns, novReturns, decReturns)
+
+// ─── Расчёт YTD по годам ───
+var float[] yearEndYTDs = array.new_float()  // YTD на конец каждого года
+var float firstCloseOfYear = na
+var int currentYearTracked = na
+
+// Отслеживаем первый close года
+newYear = year != year[1]
+if newYear
+    // Сохраняем YTD предыдущего года
+    if not na(firstCloseOfYear) and not na(close[1]) and firstCloseOfYear > 0
+        if year[1] >= startYear and year[1] < year
+            ytd = (close[1] / firstCloseOfYear - 1) * 100
+            array.push(yearEndYTDs, ytd)
+    firstCloseOfYear := close
+    currentYearTracked := year
+
+// Месячные возвраты: конец месяца → начало следующего
+newMonth = month != month[1]
+if newMonth and not na(close[1]) and not na(close[2])
+    // close[1] = последний close предыдущего месяца
+    // Нужен close на конец пред-предыдущего месяца для расчёта возврата
+    // Проще: используем month[1] и считаем возврат за завершившийся месяц
+
+// Более надёжный способ: на последнем баре вычисляем всё через request.security
+// Но для простоты используем month-change detection
+
+var float prevMonthClose = na
+if newMonth
+    if not na(prevMonthClose) and prevMonthClose > 0 and year[1] >= startYear and year[1] < year(timenow)
+        ret = (close[1] / prevMonthClose - 1) * 100
+        m = month[1]
+        if m == 1
+            array.push(janReturns, ret)
+        else if m == 2
+            array.push(febReturns, ret)
+        else if m == 3
+            array.push(marReturns, ret)
+        else if m == 4
+            array.push(aprReturns, ret)
+        else if m == 5
+            array.push(mayReturns, ret)
+        else if m == 6
+            array.push(junReturns, ret)
+        else if m == 7
+            array.push(julReturns, ret)
+        else if m == 8
+            array.push(augReturns, ret)
+        else if m == 9
+            array.push(sepReturns, ret)
+        else if m == 10
+            array.push(octReturns, ret)
+        else if m == 11
+            array.push(novReturns, ret)
+        else if m == 12
+            array.push(decReturns, ret)
+    prevMonthClose := close[1]
+
+// На самом последнем баре — также сохраняем текущий год если он завершён
+if barstate.islast and year == year(timenow)
+    // Текущий год ещё не закончен — не включаем
+    noop = 0
+else if barstate.islast
+    if not na(firstCloseOfYear) and firstCloseOfYear > 0
+        ytd = (close / firstCloseOfYear - 1) * 100
+        array.push(yearEndYTDs, ytd)
+
+// ═══════════════════════════════════════════════════════════
+// ТАБЛИЦА РЕЗУЛЬТАТОВ (на последнем баре)
+// ═══════════════════════════════════════════════════════════
+if barstate.islast
+    var table t = table.new(position.top_right, 4, 16, bgcolor=color.new(color.black, 20), border_width=1)
+
+    // Заголовок
+    table.cell(t, 0, 0, "Месяц", text_color=color.white, text_size=size.small)
+    table.cell(t, 1, 0, "Ср.возврат %", text_color=color.yellow, text_size=size.small)
+    table.cell(t, 2, 0, "Кол-во лет", text_color=color.gray, text_size=size.small)
+    table.cell(t, 3, 0, "Compound %", text_color=color.lime, text_size=size.small)
+
+    monthNames = array.from("Янв", "Фев", "Мар", "Апр", "Май", "Июн",
+                             "Июл", "Авг", "Сен", "Окт", "Ноя", "Дек")
+
+    compound = 1.0
+    sumReturns = 0.0
+
+    for i = 0 to 11
+        arr = switch i
+            0 => janReturns
+            1 => febReturns
+            2 => marReturns
+            3 => aprReturns
+            4 => mayReturns
+            5 => junReturns
+            6 => julReturns
+            7 => augReturns
+            8 => sepReturns
+            9 => octReturns
+            10 => novReturns
+            11 => decReturns
+            => janReturns
+
+        avg = array.size(arr) > 0 ? array.avg(arr) : 0.0
+        cnt = array.size(arr)
+        compound := compound * (1 + avg / 100)
+        sumReturns := sumReturns + avg
+
+        clr = avg >= 0 ? color.green : color.red
+        table.cell(t, 0, i + 1, array.get(monthNames, i), text_color=color.white, text_size=size.small)
+        table.cell(t, 1, i + 1, str.tostring(avg, "#.##") + "%", text_color=clr, text_size=size.small)
+        table.cell(t, 2, i + 1, str.tostring(cnt), text_color=color.gray, text_size=size.small)
+        table.cell(t, 3, i + 1, str.tostring((compound - 1) * 100, "#.##") + "%", text_color=color.lime, text_size=size.small)
+
+    // Итоги
+    table.cell(t, 0, 13, "─────", text_color=color.gray, text_size=size.small)
+    table.cell(t, 1, 13, "─────", text_color=color.gray, text_size=size.small)
+    table.cell(t, 2, 13, "─────", text_color=color.gray, text_size=size.small)
+    table.cell(t, 3, 13, "─────", text_color=color.gray, text_size=size.small)
+
+    table.cell(t, 0, 14, "Сумма", text_color=color.white, text_size=size.small)
+    table.cell(t, 1, 14, str.tostring(sumReturns, "#.##") + "%", text_color=color.yellow, text_size=size.small)
+
+    table.cell(t, 0, 15, "Compound", text_color=color.white, text_size=size.small)
+    table.cell(t, 1, 15, str.tostring((compound - 1) * 100, "#.##") + "%", text_color=color.lime, text_size=size.small)
+
+    // YTD среднее
+    avgYTD = array.size(yearEndYTDs) > 0 ? array.avg(yearEndYTDs) : 0.0
+    ytdCount = array.size(yearEndYTDs)
+    table.cell(t, 2, 14, "YTD avg", text_color=color.white, text_size=size.small)
+    table.cell(t, 3, 14, str.tostring(avgYTD, "#.##") + "%", text_color=color.orange, text_size=size.small)
+    table.cell(t, 2, 15, "Лет", text_color=color.white, text_size=size.small)
+    table.cell(t, 3, 15, str.tostring(ytdCount), text_color=color.orange, text_size=size.small)
+
+// Plot YTD текущего года для визуализации
+ytdCurrent = not na(firstCloseOfYear) and firstCloseOfYear > 0 ? (close / firstCloseOfYear - 1) * 100 : na
+plot(ytdCurrent, "YTD текущий год", color=color.lime, linewidth=2)
+hline(0, "Zero", color=color.gray, linestyle=hline.style_dotted)
