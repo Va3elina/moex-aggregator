@@ -5,8 +5,9 @@ FROM node:20-alpine AS frontend-build
 
 # python3 + Pillow нужны для frontend/package.json::prebuild хука
 # (scripts/build-sprite.py — собирает sprite.png из logos/*.png).
-# Без них `npm run build` падает с "python3: not found".
-RUN apk add --no-cache python3 py3-pip py3-pillow
+# bash нужен для postbuild хука (find dist/logos ... cleanup).
+# Без них `npm run build` падает с "python3: not found" / "bash: not found".
+RUN apk add --no-cache python3 py3-pip py3-pillow bash
 
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json* ./
