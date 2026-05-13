@@ -1,4 +1,4 @@
-import { useLayoutEffect, useState, useMemo } from 'react';
+import { useLayoutEffect, useState, useMemo, useRef } from 'react';
 import type { YearlySeasonalityResponse } from '../../services/api';
 import { CHART_COLORS, PADDING, cssVar } from '../../config/chartTheme';
 import { ChartGrid, ChartCrosshair, ChartDateLabel, ChartTooltip, TooltipRow, ChartYAxis } from '../chart';
@@ -6,6 +6,9 @@ import ChartLegend from '../chart/ChartLegend';
 import ChartNavigator from '../ChartNavigator';
 import ChartWatermark from '../ChartWatermark';
 import { useIsMobile } from '../../hooks/useIsMobile';
+import { useViewportWidth } from '../../hooks/useViewportWidth';
+import { axisFontSize } from '../chart/chartTypography';
+import { measureText } from '../chart/measureText';
 
 interface TooltipState {
   x: number;
@@ -54,6 +57,32 @@ export default function YearlySeasonalityChart({
   useLayoutEffect(() => {
     if (yearlyData.average.length > 0 && !revealed) setRevealed(true);
   }, [yearlyData.average.length, revealed]);
+
+  // === Pill positioning через ResizeObserver ===
+  // Раньше pill был HTML-div с transform: translateY(-50%). В html2canvas
+  // snapshot транформа не применялась — текст съезжал относительно заливки.
+  // Calc-fix через `top: calc(% - halfHeight)` тоже неточен из-за того что
+  // Inter font-box ≈ 1.29em (а не CSS line-height 1.2). Решение — переделать
+  // pill на SVG <rect> + <text dominantBaseline="central"> (как в ChartLegend).
+  // Pixel-perfect и в браузере, и в snapshot'е — SVG geometry spec-compliant.
+  // Для этого нужны pixel-coords data-area, отслеживаем через ResizeObserver.
+  const dataAreaRef = useRef<HTMLDivElement>(null);
+  const [dataAreaSize, setDataAreaSize] = useState({ w: 0, h: 0 });
+  useLayoutEffect(() => {
+    const el = dataAreaRef.current;
+    if (!el) return;
+    const update = () => {
+      const r = el.getBoundingClientRect();
+      setDataAreaSize({ w: r.width, h: r.height });
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  // Viewport-aware font size для pill (совпадает с Y-axis labels).
+  const vw = useViewportWidth();
+  const pillFontPx = axisFontSize(vw);
 
   if (!yearlyData || yearlyData.average.length === 0) {
     return (
@@ -277,7 +306,7 @@ export default function YearlySeasonalityChart({
             <ChartDateLabel date={tooltip.yearlyCurDate} x={tooltip.x} />
           </div>
         )}
-        <div className="absolute" style={{ left: PL, right: PR, top: PT, bottom: PB }}>
+        <div ref={dataAreaRef} className="absolute" style={{ left: PL, right: PR, top: PT, bottom: PB }}>
           {/* Watermark — ВНУТРИ inner data-area div'а (а не chartContainer'а).
               Так absolute left/bottom считаются от границ data-area, а не от
               container'а. Раньше watermark был снаружи с offset через
@@ -328,47 +357,65 @@ export default function YearlySeasonalityChart({
             )}
           </svg>
 
-          {/* Current value label — TradingView-style на y-координате последней
-              точки текущего года. Виден всегда (даже при hover). */}
-          {visCur.length > 0 && (() => {
+          {/* Current value pill — SVG-based для pixel-perfect alignment в
+              html2canvas snapshot. Раньше был HTML <div> с
+              `transform: translateY(-50%)` — html2canvas терял transform и
+              текст съезжал относительно заливки. Calc-fix без transform
+              тоже неточен (Inter font-box ≈ 1.29em ≠ CSS line-height 1.2).
+              SVG <text dominantBaseline="central"> — spec-compliant
+              geometry, рендерится одинаково в браузере и snapshot'е.
+
+              Render только когда ResizeObserver уже измерил data-area
+              (dataAreaSize.h > 0) — иначе на первом тике координаты 0,
+              pill рисуется в углу. */}
+          {visCur.length > 0 && dataAreaSize.h > 0 && (() => {
             const last = visCur[visCur.length - 1];
-            const yPct = scY(last.pct) * 100;
-            // Match Y-axis format: для |v|≥10 toFixed(0), иначе toFixed(1) + %
+            const yPx = scY(last.pct) * dataAreaSize.h;
             const sign = last.pct > 0 ? '+' : '';
             const digits = Math.abs(last.pct) >= 10 ? 0 : 1;
             const value = `${sign}${last.pct.toFixed(digits)}%`;
+            const padX = 6;
+            const padY = 2;
+            const pillH = pillFontPx + padY * 2;
+            const textW = measureText(value, pillFontPx, 700);
+            const pillW = Math.ceil(textW) + padX * 2;
+            // X-позиция pill: справа от data-area, +1px gap
+            const pillX = dataAreaSize.w + 1;
+
             return (
-              <div
-                className="absolute pointer-events-none"
+              <svg
                 style={{
-                  // Центрирование через top: calc(...) вместо transform: translateY(-50%) —
-                  // html2canvas неправильно интерпретирует transform-% (трактует как % от
-                  // родителя, а не от own height). Результат в snapshot'е — текст внутри
-                  // pill смещался ниже относительно фоновой заливки.
-                  // halfHeight = (fontSize × lineHeight + 2 × padY) / 2
-                  //            = (var(--chart-font-y) × 1.2 + 4) / 2
-                  //            = var(--chart-font-y) × 0.6 + 2px
-                  top: `calc(${yPct}% - var(--chart-font-y, 16px) * 0.6 - 2px)`,
-                  // Filled pill — color bg + white text (match SimpleChart/Strength
-                  // current-value pills).
-                  left: 'calc(100% + 1px)',
-                  background: CHART_COLORS.accent,
-                  borderRadius: 4,
-                  padding: '2px 5px',
-                  fontSize: 'var(--chart-font-y, 16px)',
-                  fontWeight: 700,
-                  // #fff hardcoded: bg = var(--accent) (pumpkin) — оранжевый цвет
-                  // не зависит от темы. var(--text-inverse) в dark theme = #0B0D0F
-                  // (почти чёрный) → нечитаемый на оранжевом.
-                  color: '#fff',
-                  whiteSpace: 'nowrap',
+                  position: 'absolute',
+                  inset: 0,
+                  width: '100%',
+                  height: '100%',
+                  pointerEvents: 'none',
+                  overflow: 'visible',
                   zIndex: 2,
-                  lineHeight: 1.2,
-                  fontVariantNumeric: 'tabular-nums',
                 }}
               >
-                {value}
-              </div>
+                <rect
+                  x={pillX}
+                  y={yPx - pillH / 2}
+                  width={pillW}
+                  height={pillH}
+                  rx={4}
+                  ry={4}
+                  fill={CHART_COLORS.accent}
+                />
+                <text
+                  x={pillX + padX}
+                  y={yPx}
+                  textAnchor="start"
+                  dominantBaseline="central"
+                  fontSize={pillFontPx}
+                  fontWeight={700}
+                  fill="#fff"
+                  style={{ fontVariantNumeric: 'tabular-nums', fontFamily: 'inherit' }}
+                >
+                  {value}
+                </text>
+              </svg>
             );
           })()}
         </div>
