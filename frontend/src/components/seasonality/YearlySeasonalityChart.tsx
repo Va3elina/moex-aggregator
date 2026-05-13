@@ -381,14 +381,23 @@ export default function YearlySeasonalityChart({
             const pillW = Math.ceil(textW) + padX * 2;
             // X-позиция pill: справа от data-area, +1px gap
             const pillX = dataAreaSize.w + 1;
+            // SVG должен быть ШИРЕ чем data-area, иначе html2canvas
+            // обрезает content по SVG-bounds даже при overflow:visible.
+            // Делаем SVG width = data + pillW + 8px buffer чтобы pill
+            // (расположенный за правым краем data-area) полностью попал
+            // внутрь viewport SVG.
+            const svgW = dataAreaSize.w + pillW + 8;
+            const svgH = dataAreaSize.h;
 
             return (
               <svg
+                width={svgW}
+                height={svgH}
+                viewBox={`0 0 ${svgW} ${svgH}`}
                 style={{
                   position: 'absolute',
-                  inset: 0,
-                  width: '100%',
-                  height: '100%',
+                  top: 0,
+                  left: 0,
                   pointerEvents: 'none',
                   overflow: 'visible',
                   zIndex: 2,
