@@ -5,7 +5,7 @@ import { ChartGrid, ChartCrosshair, ChartTooltip, TooltipRow } from '../chart';
 import ChartLegend from '../chart/ChartLegend';
 import ChartWatermark from '../ChartWatermark';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
-import { axisFontSize, xAxisTickCount, legendFontSize } from '../chart/chartTypography';
+import { axisFontSize, xAxisTickCount } from '../chart/chartTypography';
 
 interface TooltipState {
   x: number;
@@ -171,31 +171,21 @@ export default function SeasonalityHistogram({
       }}
       onTouchEnd={() => setTooltip(null)}
     >
-      {/* Легенда — SVG-based через <ChartLegend>. dominant-baseline=central
-          даёт pixel-perfect центрирование dot↔text без CSS hacks.
-          Перед легендой — bold-label с тикером выбранного актива (если задан).
-          fontSize = legendFontSize(vw) — точное совпадение размера с легендой
-          (breakpoint-aware: 11→12→13→15→17→19px). */}
+      {/* Легенда: в single-mode — один кружок + название актива (символьно
+          совпадает по структуре с multi-mode, где у каждой серии свой кружок).
+          Размер шрифта берётся ChartLegend'ом из useViewportWidth + legendFontSize
+          (breakpoint-aware: 11→12→13→15→17→19px), dominant-baseline=central даёт
+          pixel-perfect центрирование dot↔text без CSS hacks.
+          Раньше показывали bold-span с тикером слева + ChartLegend «Рост/Падение»
+          справа — но это дублировало информацию: цвет баров уже несёт смысл
+          (зелёные ≥ 0, красные < 0), а тикер дублировался с заголовком карточки.
+          Теперь весь identifier графика — один flex-item (кружок + label). */}
       <div className="absolute top-1 left-1/2 -translate-x-1/2 z-20 pointer-events-none flex items-center gap-3">
-        {assetLabel && (
-          <span
-            style={{
-              color: 'var(--text-primary)',
-              fontSize: legendFontSize(vw),
-              fontWeight: 600,
-              letterSpacing: '-0.01em',
-              lineHeight: 1,
-            }}
-          >
-            {assetLabel}
-          </span>
-        )}
         <ChartLegend
           items={isMulti
             ? safeMeta.map(s => ({ color: s.color, label: s.label }))
             : [
-                { color: CHART_COLORS.positive, label: 'Рост' },
-                { color: CHART_COLORS.negative, label: 'Падение' },
+                { color: CHART_COLORS.positive, label: assetLabel || 'Сезонность' },
               ]
           }
           fontWeight={600}
