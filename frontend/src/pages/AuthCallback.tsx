@@ -109,13 +109,23 @@ export default function AuthCallback() {
         }
         sessionStorage.setItem(storageKey, '1');
 
-        // Собираем payload — VK ID PKCE: code_verifier и device_id из sessionStorage
+        // Собираем payload — VK ID PKCE: code_verifier и device_id.
+        // Читаем из localStorage (а не sessionStorage) потому что VK на iPhone
+        // открывает auth в новой tab, и sessionStorage между ними isolated.
+        // Fallback на sessionStorage — для users со старой версией кода в кэше.
         const payload: Record<string, string> = { code };
-        const deviceId = searchParams.get('device_id') || sessionStorage.getItem('vk_device_id') || '';
+        const deviceId = searchParams.get('device_id')
+            || localStorage.getItem('vk_device_id')
+            || sessionStorage.getItem('vk_device_id')
+            || '';
         if (deviceId) payload.device_id = deviceId;
-        const codeVerifier = sessionStorage.getItem('vk_code_verifier') || '';
+        const codeVerifier = localStorage.getItem('vk_code_verifier')
+            || sessionStorage.getItem('vk_code_verifier')
+            || '';
         if (codeVerifier) payload.code_verifier = codeVerifier;
-        // Очищаем после использования
+        // Очищаем оба storage чтобы не накапливать stale verifier'ы
+        localStorage.removeItem('vk_code_verifier');
+        localStorage.removeItem('vk_device_id');
         sessionStorage.removeItem('vk_code_verifier');
         sessionStorage.removeItem('vk_device_id');
 

@@ -110,12 +110,16 @@ export default function LoginPage() {
             const data = await resp.json();
 
             if (resp.ok && data.url) {
-                // VK ID PKCE: сохраняем code_verifier и device_id для callback
+                // VK ID PKCE: сохраняем code_verifier и device_id для callback.
+                // localStorage (а не sessionStorage) — потому что на iPhone Safari
+                // VK ID open auth в НОВОЙ tab/window, а sessionStorage НЕ shared
+                // между tabs (даже same-origin). Verifier терялся → 'verifier is
+                // missing or invalid' при обмене кода на токен.
                 if (data.code_verifier) {
-                    sessionStorage.setItem('vk_code_verifier', data.code_verifier);
+                    localStorage.setItem('vk_code_verifier', data.code_verifier);
                 }
                 if (data.device_id) {
-                    sessionStorage.setItem('vk_device_id', data.device_id);
+                    localStorage.setItem('vk_device_id', data.device_id);
                 }
                 window.location.href = data.url;
             } else {

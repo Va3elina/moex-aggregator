@@ -144,8 +144,10 @@ export default function ProfilePage() {
       const resp = await fetch(`/api/auth/oauth/${provider}/url`);
       const data = await resp.json();
       if (resp.ok && data.url) {
-        if (data.code_verifier) sessionStorage.setItem('vk_code_verifier', data.code_verifier);
-        if (data.device_id) sessionStorage.setItem('vk_device_id', data.device_id);
+        // localStorage не sessionStorage — VK на iPhone открывает new tab,
+        // sessionStorage isolated per tab. См. LoginPage:115 для деталей.
+        if (data.code_verifier) localStorage.setItem('vk_code_verifier', data.code_verifier);
+        if (data.device_id) localStorage.setItem('vk_device_id', data.device_id);
         window.location.href = data.url;
       }
     } catch {
