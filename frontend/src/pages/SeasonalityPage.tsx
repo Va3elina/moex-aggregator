@@ -585,7 +585,10 @@ export default function SeasonalityPage() {
       {/* Editorial frame — обнимает controls + chart в один контейнер */}
       <div className="editorial-frame">
 
-      {/* Controls Row 1 — Camera в конце через ml-auto. */}
+      {/* Controls Row 1 — селектор актива + тип графика. Камеру в этой
+          строке НЕ держим: на мобиле при wrap'е она попадала в первую строку
+          сама и ломала layout (виден на скрине от 13.05). Камеру переехала
+          в Row 2 — там она всегда «после фильтров, справа» через ml-auto. */}
       <div className="flex flex-wrap items-center mb-4" style={{ gap: 'var(--sp-2)' }}>
         {/* Stock selector — остаётся widget-flat (icon + multiline label) */}
         <div className="relative">
@@ -651,7 +654,24 @@ export default function SeasonalityPage() {
           />
         )}
 
-        {/* Camera button inline, прижат к правому краю. Скрыт в test mode. */}
+      </div>
+
+      {/* Controls Row 2 — общие для histogram и yearly:
+          "Без дивгэпов", "Без выбросов", compareYears pills + "+", "Показать год" (yearly only).
+          Теперь работают и в intraday (для intraday див-гэпы = исключение ex-div дней целиком).
+          Для price — отдельная строка с информацией.
+          В конце через ml-auto — кнопка экспорта графика (📷). Раньше она
+          была в Row 1 и ломала layout при wrap'е на мобиле. */}
+      <div className="flex flex-wrap items-center gap-2 md:gap-4 mb-4">
+        {chartType === 'price' && priceData && (
+          <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            {priceData.data.length} торговых дней • {priceData.ex_dates_count} дивидендных отсечек
+          </div>
+        )}
+
+        {(chartType === 'histogram' || chartType === 'yearly' || chartType === 'test') && renderFilters()}
+
+        {/* Camera button — справа после всех фильтров, скрыт в test mode. */}
         {chartType !== 'test' && (
           <ChartCaptureButton
             getTargetElement={() => chartCardRef.current}
@@ -671,20 +691,6 @@ export default function SeasonalityPage() {
             className="ml-auto"
           />
         )}
-      </div>
-
-      {/* Controls Row 2 — общие для histogram и yearly:
-          "Без дивгэпов", "Без выбросов", compareYears pills + "+", "Показать год" (yearly only).
-          Теперь работают и в intraday (для intraday див-гэпы = исключение ex-div дней целиком).
-          Для price — отдельная строка с информацией */}
-      <div className="flex flex-wrap items-center gap-2 md:gap-4 mb-4">
-        {chartType === 'price' && priceData && (
-          <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            {priceData.data.length} торговых дней • {priceData.ex_dates_count} дивидендных отсечек
-          </div>
-        )}
-
-        {(chartType === 'histogram' || chartType === 'yearly' || chartType === 'test') && renderFilters()}
       </div>
 
       {/* TEST MODE — Seasonax-style dashboard (yearly + 2×2 histograms) */}
@@ -781,7 +787,6 @@ export default function SeasonalityPage() {
             tooltip={tooltip}
             setTooltip={setTooltip}
             chartHeight={chartHeight}
-            assetLabel={selectedStock}
           />
         ) : (
           <div className="flex items-center justify-center text-center px-4" style={{ height: chartHeight, color: 'var(--text-muted)' }}>

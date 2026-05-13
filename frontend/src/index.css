@@ -1438,10 +1438,13 @@
     --seasonality-hist-min-height: 320px;     /* было 260 — больше data-area */
     --seasonality-hist-max-height: 400px;     /* было 320 */
     /* Seasonality-specific chart padding — компактнее обычных --chart-pad-*
-       чтобы yearly chart на 375px viewport был на 30%+ шире. Y-labels
-       поместятся в 32px (хватает на "+25.0%" при clamp font 8-11px). */
+       чтобы yearly chart на 375px viewport был на 30%+ шире.
+       Right=44px (раньше 32px): на 320-375px viewport метки "+25.0%" / "-3.2%"
+       при fluid font (--chart-font-y clamp ~9-11px) занимали ~32-36px и
+       клипались за правый край card. 44 даёт 40px-колонку (padRight-4), что
+       хватает под 6-char метки с запасом. */
     --seasonality-chart-pad-left: 12px;
-    --seasonality-chart-pad-right: 32px;
+    --seasonality-chart-pad-right: 44px;
     /* hist-pad-top/bottom теперь fluid clamp в :root — mobile override не нужен */
     --seasonality-hist-pad-x: 52px;     /* mobile — было 38, обрезало "+0.02%" */
     --seasonality-ylabel-right: 4px;    /* mobile: ближе к краю, больше места на label */

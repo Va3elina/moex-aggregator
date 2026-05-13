@@ -21,6 +21,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { isPeriodAllowed, getDefaultPeriod } from '../config/accessControl';
 import { useRealtimeData } from '../hooks/useRealtimeData';
 import { useFitToViewport } from '../hooks/useFitToViewport';
+import { useViewportWidth } from '../hooks/useViewportWidth';
 import FundCardModal from '../components/funds/FundCardModal';
 import FundsTable from '../components/funds/FundsTable';
 import FlowsHistogram from '../components/funds/FlowsHistogram';
@@ -393,6 +394,21 @@ export default function FundsMoneyPage() {
 
     const currentCategory = CATEGORIES.find(c => c.key === category);
 
+    // Adaptive labels для легенды гистограммы притоков/оттоков.
+    // На узких viewport'ах полный текст («Приток в фонды денежного рынка, млрд руб»)
+    // не помещается даже на одной строке → SVG overflow клипает «руб». Поэтому
+    // на vw < 540 показываем краткую форму без подробностей категории.
+    // 540px — это breakpoint, на котором две полные строки (две для притока и оттока)
+    // ещё вписываются в типичный mobile-card padding (~16px по бокам).
+    const vw = useViewportWidth();
+    const useShortFlowLabels = vw < 540;
+    const flowInflowLabel = useShortFlowLabels
+        ? 'Приток, млрд ₽'
+        : `Приток в фонды ${currentCategory?.genitive ?? ''}, млрд руб`;
+    const flowOutflowLabel = useShortFlowLabels
+        ? 'Отток, млрд ₽'
+        : `Отток из фондов ${currentCategory?.genitive ?? ''}, млрд руб`;
+
     return (
         <div className="max-w-[1408px] mx-auto px-4 md:px-6 py-6 md:py-8 text-theme-primary min-h-screen">
             <PageHeader
@@ -577,8 +593,8 @@ export default function FundsMoneyPage() {
                         hiddenTickers={hiddenTickers}
                         allTickers={allTickers}
                         category={category}
-                        inflowLabel={`Приток в фонды ${currentCategory?.genitive ?? ''}, млрд руб`}
-                        outflowLabel={`Отток из фондов ${currentCategory?.genitive ?? ''}, млрд руб`}
+                        inflowLabel={flowInflowLabel}
+                        outflowLabel={flowOutflowLabel}
                         loading={loading}
                         flowContainerRef={flowContainerRef}
                         flowChartRef={flowChartRef}

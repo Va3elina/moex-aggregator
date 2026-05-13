@@ -6,8 +6,6 @@ import ChartLegend from '../chart/ChartLegend';
 import ChartNavigator from '../ChartNavigator';
 import ChartWatermark from '../ChartWatermark';
 import { useIsMobile } from '../../hooks/useIsMobile';
-import { useViewportWidth } from '../../hooks/useViewportWidth';
-import { legendFontSize } from '../chart/chartTypography';
 
 interface TooltipState {
   x: number;
@@ -35,8 +33,6 @@ interface YearlySeasonalityChartProps {
   tooltip: TooltipState | null;
   setTooltip: (t: TooltipState | null) => void;
   chartHeight: number;
-  /** Название выбранного актива (например «IMOEX», «SBER»). Рендерится bold перед legend. */
-  assetLabel?: string;
 }
 
 export default function YearlySeasonalityChart({
@@ -46,13 +42,10 @@ export default function YearlySeasonalityChart({
   tooltip,
   setTooltip,
   chartHeight,
-  assetLabel,
 }: YearlySeasonalityChartProps) {
   // На мобиле выводим квартальные подписи (Янв/Апр/Июл/Окт = 4 шт)
   // вместо 12 — иначе они накладываются на 311px viewport.
   const isMobile = useIsMobile();
-  // Viewport-aware размер шрифта для asset label (совпадает с легендой).
-  const vw = useViewportWidth();
   // CSS-reveal на mount (key-based remount в parent)
   const [revealed, setRevealed] = useState(false);
   // Navigator range — [startIdx, endIdx] в координатах bucket'ов baseAvg.
@@ -228,23 +221,14 @@ export default function YearlySeasonalityChart({
 
   return (
     <div className={revealed ? 'chart-reveal' : ''}>
+      {/* Легенда: только цветные кружки серий (среднее + сравниваемые года +
+          текущий год). Раньше слева был bold-span с тикером (например «SBER»),
+          но он дублировал название в заголовке карточки. Удалили — теперь
+          легенда содержит только то, что нельзя получить из chrome страницы. */}
       <div
         style={{ marginBottom: 'var(--seasonality-legend-mb, 12px)' }}
         className="flex items-center justify-center gap-3 flex-wrap"
       >
-        {assetLabel && (
-          <span
-            style={{
-              color: 'var(--text-primary)',
-              fontSize: legendFontSize(vw),
-              fontWeight: 600,
-              letterSpacing: '-0.01em',
-              lineHeight: 1,
-            }}
-          >
-            {assetLabel}
-          </span>
-        )}
         <ChartLegend
           items={[
             ...allMeta.map(m => ({ color: m.color, label: m.label })),
@@ -294,6 +278,15 @@ export default function YearlySeasonalityChart({
           </div>
         )}
         <div className="absolute" style={{ left: PL, right: PR, top: PT, bottom: PB }}>
+          {/* Watermark — ВНУТРИ inner data-area div'а (а не chartContainer'а).
+              Так absolute left/bottom считаются от границ data-area, а не от
+              container'а. Раньше watermark был снаружи с offset через
+              `calc(--chart-pad-bottom + 5px)`, и при ситуациях когда
+              container/data-area рассинхронизировались (min-height vs
+              aspect-ratio override на узком экране) — watermark «сползал»
+              ниже X-labels. Теперь координаты не зависят от padding-vars. */}
+          <ChartWatermark left="6px" bottom="6px" />
+
           <svg viewBox="0 0 1000 500" preserveAspectRatio="none" width="100%" height="100%">
             {/* Grid + zero line + month separators.
                 zeroPct: позиция 0 на оси Y. emphasizeZero=true → жирная контрастная
@@ -478,17 +471,6 @@ export default function YearlySeasonalityChart({
             )}
           </ChartTooltip>
         )}
-        {/* Watermark — привязан к data area через CSS calc().
-            Yearly использует ОТДЕЛЬНЫЙ --seasonality-chart-pad-left
-            (60px desktop / 12px mobile) вместо общего --chart-pad-left
-            (100/34-58px). Раньше watermark ссылался на чужой var и
-            "висел отдельно" от левой Y-оси: на mobile ушёл на 29px правее
-            data-area. Теперь var совпадает с PL который рендерит SVG. */}
-        <ChartWatermark
-          left="calc(var(--seasonality-chart-pad-left, 60px) + 5px)"
-          bottom="calc(var(--chart-pad-bottom, 50px) + 5px)"
-        />
-
         {/* Asset name перенесён в legend row выше (на одном уровне с легендой). */}
       </div>
 
