@@ -117,6 +117,36 @@ def create_checkout_for_user(
     if not plan:
         raise ValueError(f"Unknown plan_id: {plan_id}")
 
+    # Защита от дубликата: нельзя купить тот же или более низкий tier,
+    # если у user'а уже active подписка (без cancelled_at).
+    #
+    # Правила (зеркало UI-логики на PricingPage):
+    #   - admin → блокируем все покупки (у него full access)
+    #   - active sub без cancelled_at:
+    #       cardLevel < activeLevel → блок (downgrade недоступен)
+    #       cardLevel == activeLevel && plan_id == active → блок (тот же план)
+    #       иначе → разрешаем (period switch / upgrade)
+    #   - active sub с cancelled_at (юзер отменил, доступ до expires) →
+    #       разрешаем продление того же плана и всё что выше
+    if getattr(user, "role", None) == "admin":
+        raise ValueError("У админа полный доступ — оформление подписок не требуется")
+
+    active_sub = current_subscription(db, user)
+    if active_sub and not active_sub.cancelled_at:
+        active_plan = get_plan(active_sub.plan_id)
+        if active_plan:
+            active_level = TIER_LEVELS.get(active_plan.tier, 0)
+            card_level = TIER_LEVELS.get(plan.tier, 0)
+            if card_level < active_level:
+                raise ValueError(
+                    f"У вас уже активен более высокий тариф ({active_plan.tier}). "
+                    "Понижение тарифа возможно после окончания текущего периода."
+                )
+            if card_level == active_level and active_sub.plan_id == plan.plan_id:
+                raise ValueError(
+                    "Этот план уже активен. Сменить период — после окончания текущего."
+                )
+
     # 1. Создаём запись subscription со статусом 'pending'
     sub = Subscription(
         user_id=user.id,

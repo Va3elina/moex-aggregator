@@ -49,6 +49,29 @@ const TIER_META: Record<string, { icon: React.ReactNode; color: string; accentBg
   premium: { icon: <Sparkles size={24} />, color: '#F97316', accentBg: 'rgba(249,115,22,0.1)' },
 };
 
+// Зеркало api/billing/plans.py::TIER_LEVELS — для сравнения «выше/ниже».
+// admin=99 — у админа полный доступ, тарифы скрываются.
+const TIER_LEVELS: Record<string, number> = {
+  guest: 0,
+  free: 1,
+  basic: 2,
+  pro: 3,
+  premium: 4,
+  admin: 99,
+};
+
+// Тип ответа /api/billing/status — реальное состояние подписки user'а.
+// В отличие от user.role (derived state), здесь актуальный plan_id и
+// cancelled_at — для определения «продление same tier» vs «текущий план».
+interface BillingStatus {
+  tier: string;
+  is_active: boolean;
+  subscription_id: number | null;
+  plan_id: string | null;
+  cancelled_at: string | null;
+  expires_at: string | null;
+}
+
 export default function PricingPage() {
   const { user, isAuthenticated } = useAuth();
   const navigate = useNavigate();
@@ -61,6 +84,11 @@ export default function PricingPage() {
   // Юзер может снять галку чтобы заплатить одноразово.
   const [recurrent, setRecurrent] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  // billing — реальное состояние подписки user'а (через /api/billing/status).
+  // Нужно для блокировки кнопок: с active basic нельзя купить тот же basic
+  // или ниже. Со cancelled подпиской разрешаем продление того же tier'а.
+  // null = ещё грузится или гость.
+  const [billing, setBilling] = useState<BillingStatus | null>(null);
 
   // Загружаем план при mount
   useEffect(() => {
@@ -76,6 +104,19 @@ export default function PricingPage() {
         console.error(e);
       });
   }, []);
+
+  // Параллельно — реальный статус подписки user'а. Для гостя 401, billing=null.
+  // Используется в render-time логике disabled-state кнопок (см. ниже).
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setBilling(null);
+      return;
+    }
+    apiFetch('/api/billing/status')
+      .then(r => (r.ok ? r.json() : null))
+      .then((b: BillingStatus | null) => setBilling(b))
+      .catch(() => setBilling(null));
+  }, [isAuthenticated]);
 
   // Текущий tier пользователя (для подсветки "твоего" тарифа)
   const currentTier = useMemo(() => {
@@ -190,8 +231,30 @@ export default function PricingPage() {
         {data.tiers.map((tier) => {
           const meta = TIER_META[tier.tier] || TIER_META.free;
           const variant = tier.tier === 'free' ? null : (period === 'yearly' ? tier.yearly : tier.monthly);
-          const isCurrent = currentTier === tier.tier;
-          const isDowngrade = isCurrent && tier.tier !== 'free';
+
+          // === Расширенная логика доступности тарифа ===
+          // Источник истины — billing.tier (актуальный server-side state),
+          // fallback на currentTier из user.role. Сравниваем уровни через
+          // TIER_LEVELS (зеркало api/billing/plans.py).
+          const effectiveTier = billing?.is_active ? billing.tier : currentTier;
+          const effectiveLevel = TIER_LEVELS[effectiveTier] ?? 0;
+          const cardLevel = TIER_LEVELS[tier.tier] ?? 0;
+
+          const isAdmin = effectiveTier === 'admin';
+          const isCurrent = effectiveTier === tier.tier;
+          // Тот же тариф + тот же plan_id (period) = «текущий план», нельзя купить
+          // повторно. Pro yearly + пытается купить Pro yearly → blocked.
+          // НО: cancelled подписка → разрешаем продление (восстановление авто-продл).
+          const isSamePlan =
+            isCurrent &&
+            !!variant &&
+            billing?.plan_id === variant.plan_id &&
+            !billing?.cancelled_at;
+          // Tier ниже текущего → blocked (downgrade недоступен пока активная).
+          const isLowerTier = !isAdmin && billing?.is_active && cardLevel < effectiveLevel;
+          // Tier выше текущего ИЛИ same-tier-other-period → можно покупать.
+          // Тарифы скрыты для admin (у него и так full access).
+          const isLocked = isSamePlan || isLowerTier || isAdmin;
 
           return (
             <div
@@ -275,13 +338,24 @@ export default function PricingPage() {
                 >
                   {isCurrent ? 'Текущий тариф' : 'Доступен всем'}
                 </button>
-              ) : isDowngrade ? (
+              ) : isLocked ? (
                 <button
                   disabled
                   className="w-full py-2.5 rounded-xl text-sm font-medium opacity-50 cursor-not-allowed border"
                   style={{ borderColor: meta.color, color: meta.color }}
+                  title={
+                    isAdmin
+                      ? 'У админа полный доступ ко всем функциям'
+                      : isSamePlan
+                      ? 'Этот план уже активен. Изменить — после окончания текущего периода.'
+                      : `У вас активен более высокий тариф (${effectiveTier.toUpperCase()})`
+                  }
                 >
-                  Действует
+                  {isAdmin
+                    ? 'Admin-доступ'
+                    : isSamePlan
+                    ? 'Текущий план'
+                    : 'Меньший тариф'}
                 </button>
               ) : (
                 <>
@@ -291,7 +365,15 @@ export default function PricingPage() {
                     className="w-full py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-50"
                     style={{ backgroundColor: meta.color, color: 'var(--bg-primary)' }}
                   >
-                    {checkoutLoading === variant?.plan_id ? 'Создаём...' : 'Оформить картой'}
+                    {checkoutLoading === variant?.plan_id
+                      ? 'Создаём...'
+                      : (isCurrent && billing?.cancelled_at)
+                        ? 'Продлить'
+                        : (isCurrent && cardLevel === effectiveLevel)
+                          ? 'Сменить период'
+                          : (billing?.is_active && cardLevel > effectiveLevel)
+                            ? `Перейти на ${tier.title}`
+                            : 'Оформить картой'}
                   </button>
 
                   {/* SpeedPay — T-Bank виджет с кнопками СБП / T-Pay / BNPL.
@@ -359,11 +441,13 @@ export default function PricingPage() {
 
 /**
  * PaymentMethods — блок «Способы оплаты» внизу страницы тарифов.
- * Обязателен для эквайринга T-Bank (Требования к Интернет-магазину, п.1):
- *   - Изображения с логотипами ПС (Visa / MasterCard / МИР)
- *   - Логотип Банка-эквайера (T-Bank) + T-Pay
+ * Обязателен для эквайринга T-Bank (Требования к Интернет-магазину):
+ *   - Изображения с логотипами поддерживаемых ПС
+ *   - Логотип Банка-эквайера (T-Bank)
  *   - URL ссылка на ресурсы Банка: tbank.ru
- * Логотипы — упрощённые brand-badges (можно заменить на официальные SVG позже).
+ *
+ * Visa/MasterCard и СБП временно убраны — Вадим согласовал с T-Bank
+ * только МИР + T-Pay. Если T-Bank подключит другие методы — добавим.
  */
 function PaymentMethods() {
   return (
@@ -384,32 +468,6 @@ function PaymentMethods() {
       </p>
 
       <div className="flex flex-wrap items-center justify-center gap-3 mb-6">
-        {/* Visa */}
-        <Badge background="#1A1F71" color="#fff" italic>
-          VISA
-        </Badge>
-
-        {/* MasterCard — 2 пересекающихся круга */}
-        <span
-          className="inline-flex items-center"
-          style={{
-            background: '#fff',
-            padding: '6px 10px',
-            borderRadius: 4,
-            border: '1px solid var(--border-color)',
-          }}
-          aria-label="MasterCard"
-        >
-          <svg width="36" height="22" viewBox="0 0 36 22">
-            <circle cx="13" cy="11" r="10" fill="#EB001B" />
-            <circle cx="23" cy="11" r="10" fill="#F79E1B" />
-            <path
-              d="M18 4.5a10 10 0 0 1 0 13 10 10 0 0 1 0-13z"
-              fill="#FF5F00"
-            />
-          </svg>
-        </span>
-
         {/* МИР */}
         <Badge background="#0F754E" color="#fff">
           МИР
@@ -418,11 +476,6 @@ function PaymentMethods() {
         {/* T-Pay */}
         <Badge background="#FFDD2D" color="#111">
           T-Pay
-        </Badge>
-
-        {/* СБП (Система быстрых платежей) */}
-        <Badge background="#5B2D90" color="#fff">
-          СБП
         </Badge>
       </div>
 

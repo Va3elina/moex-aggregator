@@ -71,6 +71,14 @@ services:
       # См. .env.example для инструкций по получению ключей.
       - TBANK_TERMINAL_KEY=${TBANK_TERMINAL_KEY:-}
       - TBANK_PASSWORD=${TBANK_PASSWORD:-}
+      # Receipt (54-ФЗ) — фискализация через T-Bank → ОФД.
+      # TBANK_RECEIPT_ENABLED=1 включает добавление Receipt блока в /v2/Init.
+      # TBANK_TAXATION: osn / usn_income / usn_income_outcome / envd / esn / patent
+      # TBANK_VAT: none (УСН) / vat0 / vat10 / vat20 / vat110 / vat120 (ОСН)
+      # Требуется хотя бы email или phone у user'а (см. _build_receipt в tbank.py).
+      - TBANK_RECEIPT_ENABLED=${TBANK_RECEIPT_ENABLED:-}
+      - TBANK_TAXATION=${TBANK_TAXATION:-usn_income}
+      - TBANK_VAT=${TBANK_VAT:-none}
       - YOOKASSA_SHOP_ID=${YOOKASSA_SHOP_ID:-}
       - YOOKASSA_SECRET_KEY=${YOOKASSA_SECRET_KEY:-}
     expose:
