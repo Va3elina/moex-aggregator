@@ -341,12 +341,17 @@ export default function YearlySeasonalityChart({
               <div
                 className="absolute pointer-events-none"
                 style={{
-                  top: `${yPct}%`,
+                  // Центрирование через top: calc(...) вместо transform: translateY(-50%) —
+                  // html2canvas неправильно интерпретирует transform-% (трактует как % от
+                  // родителя, а не от own height). Результат в snapshot'е — текст внутри
+                  // pill смещался ниже относительно фоновой заливки.
+                  // halfHeight = (fontSize × lineHeight + 2 × padY) / 2
+                  //            = (var(--chart-font-y) × 1.2 + 4) / 2
+                  //            = var(--chart-font-y) × 0.6 + 2px
+                  top: `calc(${yPct}% - var(--chart-font-y, 16px) * 0.6 - 2px)`,
                   // Filled pill — color bg + white text (match SimpleChart/Strength
-                  // current-value pills). Раньше был outlined (bg-primary + 1.5px
-                  // accent border) — недостаточно контрастно по просьбе user'а.
+                  // current-value pills).
                   left: 'calc(100% + 1px)',
-                  transform: 'translateY(-50%)',
                   background: CHART_COLORS.accent,
                   borderRadius: 4,
                   padding: '2px 5px',
