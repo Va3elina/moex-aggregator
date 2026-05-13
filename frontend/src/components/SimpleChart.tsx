@@ -1316,7 +1316,13 @@ export default function SimpleChart({
           // Pill height = fontY + 2*padY. Pill width = textW + 2*padX.
           const fontY = tokens.fontY;
           const fontWeight = 700;
-          const padX = 5;
+          // padX=6 (было 5 + асимметричный «+1 sub-pixel safety» только справа).
+          // Старая версия делала pill на 1px шире чем измеренный текст +
+          // двойной padding, и этот лишний пиксель уходил ТОЛЬКО на правую
+          // сторону. Результат: «6» в конце "-172 246" вылазила за заливку —
+          // юзер замечал. Симметричный padX=6 даёт равные ~5-6px воздуха с
+          // обеих сторон (зависит от ceil(textW) - textW sub-pixel residual).
+          const padX = 6;
           const padY = 2;
           const pillH = fontY + padY * 2;
           // Pill positioning — pixel-aligned с axis tick text (anchor совпадает).
@@ -1327,7 +1333,12 @@ export default function SimpleChart({
 
           return labels.map((l) => {
             const textW = measureText(l.value, fontY, fontWeight);
-            const pillW = Math.ceil(textW) + padX * 2 + 1; // +1 sub-pixel safety
+            // pillW = ceil(textW) + 2*padX (симметрично, без +1 safety).
+            // measureText на canvas underestimates real SVG glyph width
+            // на 0-1px (sub-pixel advance rounding + Inter kerning). С
+            // padX=6 у нас всегда минимум 5px воздуха с каждой стороны —
+            // overflow невозможен, padding визуально равный.
+            const pillW = Math.ceil(textW) + padX * 2;
 
             const isLeftSide = l.key === 'primary';
             // Pill rect и text-X для каждой стороны — text aligned с axis tick text.
