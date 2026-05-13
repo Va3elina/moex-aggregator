@@ -247,6 +247,12 @@ export default function BuffettPage() {
                     showDownloadButton={false}
                     showNavigator={true}
                     hideTime={true}
+                    // Симметричные padding'и: формат secondary axis = v.toFixed(2)
+                    // ("1234.56" max 7 chars). Колонка labels справа при padRight=100
+                    // = 96px — метки влезают с большим запасом. Глобальный
+                    // --chart-pad-right-dual = 120px остаётся для OI/FundsMoney,
+                    // где labels могут быть длиннее ("1 250 000" в OI).
+                    chartPadding={{ right: 100 }}
                 />
                 </div>
             ) : (
@@ -269,6 +275,8 @@ export default function BuffettPage() {
                     showDownloadButton={false}
                     showNavigator={true}
                     hideTime={true}
+                    // Симметричные padding'и (см. cap-gdp выше).
+                    chartPadding={{ right: 100 }}
                 />
                 </div>
             )}
