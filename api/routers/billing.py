@@ -121,6 +121,39 @@ async def my_status(
     )
 
 
+@router.get("/history")
+async def my_history(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    limit: int = 20,
+):
+    """
+    История платежей текущего user'а — последние N подписок (любого статуса:
+    active / pending / cancelled / refunded / expired / failed).
+
+    Используется на странице /profile в блоке «История платежей».
+    """
+    subs = billing_service.subscription_history(db, user, limit=min(limit, 100))
+    return {
+        "items": [
+            {
+                "id": s.id,
+                "tier": s.tier,
+                "plan_id": s.plan_id,
+                "amount": float(s.amount) if s.amount is not None else None,
+                "currency": s.currency,
+                "status": s.status,
+                "created_at": s.created_at.isoformat() if s.created_at else None,
+                "started_at": s.started_at.isoformat() if s.started_at else None,
+                "expires_at": s.expires_at.isoformat() if s.expires_at else None,
+                "cancelled_at": s.cancelled_at.isoformat() if s.cancelled_at else None,
+                "yk_payment_id": s.yk_payment_id,  # для саппорта (показывать masked в UI)
+            }
+            for s in subs
+        ]
+    }
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  3. POST /checkout — создать платёж
 # ═══════════════════════════════════════════════════════════════════════════════

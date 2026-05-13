@@ -17,6 +17,31 @@ interface BillingStatus {
   cancelled_at: string | null;  // NULL → активна, NOT NULL → отменена (доступ до expires_at)
 }
 
+interface PaymentMethod {
+  id: number;
+  provider: string;
+  card_last4: string | null;
+  card_brand: string | null;   // 'VISA' | 'MASTERCARD' | 'MIR' | null
+  display_name: string;         // 'VISA ····0333' для UI
+  is_default: boolean;
+  last_used_at: string | null;
+  created_at: string | null;
+}
+
+interface HistoryItem {
+  id: number;
+  tier: string;
+  plan_id: string | null;
+  amount: number | null;
+  currency: string | null;
+  status: string;              // pending / active / cancelled / expired / failed / refunded
+  created_at: string | null;
+  started_at: string | null;
+  expires_at: string | null;
+  cancelled_at: string | null;
+  yk_payment_id: string | null;
+}
+
 const TIER_LABELS: Record<string, string> = {
   free: 'Бесплатный план',
   basic: 'Basic',
@@ -97,6 +122,14 @@ export default function ProfilePage() {
   const [billing, setBilling] = useState<BillingStatus | null>(null);
   const [cancelLoading, setCancelLoading] = useState(false);
 
+  // Сохранённые карты для recurring payments (T-Bank RebillId).
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
+  const [pmActionId, setPmActionId] = useState<number | null>(null);
+
+  // История платежей — последние N подписок любого статуса
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [historyExpanded, setHistoryExpanded] = useState(false);
+
   const fetchBilling = () => {
     fetch('/api/billing/status', {
       headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` },
@@ -105,7 +138,49 @@ export default function ProfilePage() {
       .then(setBilling)
       .catch(() => setBilling(null));
   };
-  useEffect(fetchBilling, []);
+  const fetchPaymentMethods = () => {
+    fetch('/api/billing/payment_methods', {
+      headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` },
+    })
+      .then(r => r.ok ? r.json() : { items: [] })
+      .then(d => setPaymentMethods(d.items || []))
+      .catch(() => setPaymentMethods([]));
+  };
+  const fetchHistory = () => {
+    fetch('/api/billing/history?limit=20', {
+      headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` },
+    })
+      .then(r => r.ok ? r.json() : { items: [] })
+      .then(d => setHistory(d.items || []))
+      .catch(() => setHistory([]));
+  };
+  useEffect(() => {
+    fetchBilling();
+    fetchPaymentMethods();
+    fetchHistory();
+  }, []);
+
+  // Удалить сохранённую карту (soft delete на бэке — auto-renewal на этой
+  // карте больше не сработает, но активные подписки продолжают работать
+  // до expires_at).
+  const handleDeletePaymentMethod = async (pmId: number) => {
+    if (!window.confirm(
+      'Удалить карту?\n\n' +
+      'Авто-продление подписок на этой карте перестанет работать. ' +
+      'Текущая подписка продолжит действовать до окончания оплаченного периода. ' +
+      'Сама карта удалена не будет — её можно привязать снова при следующей оплате.'
+    )) return;
+    setPmActionId(pmId);
+    try {
+      await fetch(`/api/billing/payment_methods/${pmId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` },
+      });
+      fetchPaymentMethods();
+    } finally {
+      setPmActionId(null);
+    }
+  };
 
   // Cancel или Resume — обе ручки идут через те же args, разные endpoints
   const handleSubAction = async (action: 'cancel' | 'resume') => {
@@ -449,6 +524,188 @@ export default function ProfilePage() {
           </>
         )}
       </div>
+
+      {/* ============ Секция 2.3: Сохранённые карты ============
+          Показываем когда у user'а есть хотя бы 1 сохранённая карта.
+          У каждой — brand + last4 (e.g. «VISA ····0333»), default-индикатор
+          и кнопка «Удалить». T-Bank продолжает хранить карту у себя
+          (юзер не «отвязывает», а скрывает у нас — auto-renewal перестаёт
+          работать). */}
+      {paymentMethods.length > 0 && (
+        <div className="rounded-2xl border p-6" style={cardStyle}>
+          <h2 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+            <Lock size={20} style={{ color: 'var(--text-muted)' }} />
+            Сохранённые карты
+          </h2>
+          <div className="space-y-3">
+            {paymentMethods.map((pm) => (
+              <div
+                key={pm.id}
+                className="flex items-center justify-between rounded-xl p-3 border"
+                style={{
+                  borderColor: 'var(--border-color)',
+                  backgroundColor: 'var(--bg-secondary)',
+                }}
+              >
+                <div className="flex items-center gap-3">
+                  {/* Иконка карты — простой brand badge */}
+                  <span
+                    className="inline-flex items-center justify-center font-bold rounded"
+                    style={{
+                      width: 44,
+                      height: 28,
+                      background:
+                        pm.card_brand === 'VISA' ? '#1A1F71'
+                        : pm.card_brand === 'MASTERCARD' ? '#EB001B'
+                        : pm.card_brand === 'MIR' ? '#0F754E'
+                        : '#3C3C3C',
+                      color: '#fff',
+                      fontSize: 11,
+                      letterSpacing: '0.04em',
+                    }}
+                    aria-label={pm.card_brand || 'Карта'}
+                  >
+                    {pm.card_brand || 'CARD'}
+                  </span>
+                  <div>
+                    <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                      ····{pm.card_last4 || '????'}
+                      {pm.is_default && (
+                        <span
+                          className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider"
+                          style={{
+                            backgroundColor: 'var(--accent)',
+                            color: '#fff',
+                          }}
+                        >
+                          основная
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                      {pm.last_used_at
+                        ? `Использована ${formatDate(pm.last_used_at)}`
+                        : 'Ещё не использовалась'}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => handleDeletePaymentMethod(pm.id)}
+                  disabled={pmActionId === pm.id}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
+                  style={{
+                    backgroundColor: 'transparent',
+                    color: 'var(--danger)',
+                    border: '1.5px solid var(--danger)',
+                  }}
+                >
+                  <XIcon size={12} />
+                  {pmActionId === pm.id ? 'Удаляем…' : 'Удалить'}
+                </button>
+              </div>
+            ))}
+          </div>
+          <p className="mt-4 text-xs" style={{ color: 'var(--text-muted)' }}>
+            При удалении карта остаётся у Т-Банка, но мы её больше не используем.
+            Активные подписки продолжат работать до окончания оплаченного периода.
+          </p>
+        </div>
+      )}
+
+      {/* ============ Секция 2.4: История платежей ============
+          Показываем когда у юзера есть хотя бы 1 запись в history. Свёрнут по
+          умолчанию — кликабельный header «История платежей (N)». При раскрытии
+          таблица с datetime, tier, amount, status. Раскрытие — useState toggle,
+          без анимации (минималистичный editorial-стиль). */}
+      {history.length > 0 && (
+        <div className="rounded-2xl border" style={cardStyle}>
+          <button
+            onClick={() => setHistoryExpanded(v => !v)}
+            className="w-full flex items-center justify-between p-6 text-left"
+            style={{ background: 'transparent', border: 'none' }}
+          >
+            <h2 className="text-lg font-semibold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+              <Calendar size={20} style={{ color: 'var(--text-muted)' }} />
+              История платежей
+              <span style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)', fontWeight: 400 }}>
+                ({history.length})
+              </span>
+            </h2>
+            <span style={{ color: 'var(--text-muted)', fontSize: 18 }}>
+              {historyExpanded ? '−' : '+'}
+            </span>
+          </button>
+
+          {historyExpanded && (
+            <div className="px-6 pb-6">
+              <div className="space-y-2">
+                {history.map(h => {
+                  // Status → цветной бейдж
+                  const statusColor =
+                    h.status === 'active' ? 'var(--success, #22c55e)'
+                    : h.status === 'pending' ? 'var(--accent)'
+                    : h.status === 'refunded' || h.status === 'cancelled' || h.status === 'expired' ? 'var(--text-muted)'
+                    : h.status === 'failed' ? 'var(--danger)'
+                    : 'var(--text-muted)';
+                  const statusLabel =
+                    h.status === 'active' ? 'активна'
+                    : h.status === 'pending' ? 'ожидает оплаты'
+                    : h.status === 'refunded' ? 'возврат'
+                    : h.status === 'cancelled' ? 'отменена'
+                    : h.status === 'expired' ? 'истекла'
+                    : h.status === 'failed' ? 'не оплачена'
+                    : h.status;
+                  return (
+                    <div
+                      key={h.id}
+                      className="flex items-center justify-between rounded-xl p-3 border"
+                      style={{
+                        borderColor: 'var(--border-color)',
+                        backgroundColor: 'var(--bg-secondary)',
+                      }}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                          {TIER_LABELS[h.tier] || h.tier}
+                          {h.plan_id?.endsWith('_yearly') && (
+                            <span className="ml-2 text-xs" style={{ color: 'var(--text-muted)' }}>год</span>
+                          )}
+                          {h.plan_id?.endsWith('_monthly') && (
+                            <span className="ml-2 text-xs" style={{ color: 'var(--text-muted)' }}>месяц</span>
+                          )}
+                        </div>
+                        <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                          {h.created_at ? formatDate(h.created_at) : '—'}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 flex-shrink-0">
+                        <div className="text-right">
+                          <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                            {h.amount !== null ? `${h.amount.toLocaleString('ru-RU', { maximumFractionDigits: 0 })} ₽` : '—'}
+                          </div>
+                          <div
+                            className="text-[10px] uppercase tracking-wider mt-0.5"
+                            style={{ color: statusColor, fontWeight: 600 }}
+                          >
+                            {statusLabel}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="mt-4 text-xs" style={{ color: 'var(--text-muted)' }}>
+                Возврат денег — через поддержку{' '}
+                <a href="mailto:frameinfo@mail.ru" style={{ color: 'var(--accent)' }} className="hover:underline">
+                  frameinfo@mail.ru
+                </a>
+                . Чеки 54-ФЗ приходят на email сразу после оплаты.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ============ Секция 2.5: Admin — invite-ссылки (только для admin'ов) ============ */}
       {user.role === 'admin' && <AdminBillingInvites />}
