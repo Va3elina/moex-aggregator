@@ -1,13 +1,13 @@
 /**
- * BillingStubPage — заглушка вместо страницы оплаты ЮKassa.
+ * BillingStubPage — заглушка вместо страницы оплаты T-Bank.
  *
- * Показывается когда в backend работает StubPaymentProvider (нет ключей ЮKassa).
+ * Показывается когда в backend работает StubPaymentProvider (нет TBANK ключей).
  * confirmation_url от stub'а ведёт сюда с ?payment_id=X&amount=Y&return_url=Z.
  * Пользователь может "Симулировать успех" → дёргает POST /api/billing/stub/simulate
  * → webhook handler активирует подписку → редирект на return_url.
  *
- * Нужно только для разработки — после подключения ЮKassa эта страница
- * никогда не открывается (confirmation_url ведёт на yookassa.ru).
+ * Нужно только для разработки — на production (где задан TBANK_TERMINAL_KEY)
+ * эта страница никогда не открывается (confirmation_url ведёт на pay.tbank.ru).
  */
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';

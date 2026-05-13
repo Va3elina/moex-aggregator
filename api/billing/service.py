@@ -217,16 +217,15 @@ def create_checkout_for_user(
 
 def _verify_with_provider(sub: Subscription) -> bool:
     """
-    Дополнительная проверка: делаем GET /payments/{id} у провайдера, чтобы
-    убедиться что платёж реально успешен. Защита от подделки webhook'ов
-    (ЮKassa их не подписывает).
+    Дополнительная проверка: GET /v2/GetState у T-Bank, чтобы убедиться
+    что платёж реально CONFIRMED. Защита от подделки webhook'ов (даже
+    если злоумышленник угадал Token, GetState вернёт реальный статус).
     """
     provider = get_payment_provider()
     if provider.name == "stub":
         return True  # stub доверяем всегда
-    if provider.name not in ("yookassa", "tbank"):
+    if provider.name != "tbank":
         return True  # другие провайдеры — настраивать отдельно
-    # YooKassaProvider и TBankProvider имеют verify_payment
     info = provider.verify_payment(sub.yk_payment_id)  # type: ignore[attr-defined]
     if info is None:
         log.warning(
@@ -234,10 +233,6 @@ def _verify_with_provider(sub: Subscription) -> bool:
             sub.yk_payment_id, provider.name,
         )
         return False
-    # YooKassa: status == "succeeded"  /  T-Bank: Status == "CONFIRMED"
-    if provider.name == "yookassa":
-        return info.get("status") == "succeeded"
-    # T-Bank
     return info.get("Status", "").upper() == "CONFIRMED"
 
 
@@ -563,18 +558,6 @@ def sync_pending_for_user(
             except (ValueError, TypeError):
                 amount = None
             method = info.get("PaymentMethod") or "bank_card"
-
-        elif provider.name == "yookassa":
-            yk_status = info.get("status", "")
-            if yk_status == "succeeded":
-                event_type = "payment.succeeded"
-            elif yk_status in ("canceled",):
-                event_type = "payment.canceled"
-            try:
-                amount = float(info.get("amount", {}).get("value", 0))
-            except (ValueError, TypeError):
-                amount = None
-            method = info.get("payment_method", {}).get("type") or "bank_card"
 
         if not event_type:
             summary["skipped"] += 1

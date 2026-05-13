@@ -6,9 +6,8 @@
  * Клик "Купить" → POST /api/billing/checkout → редирект на confirmation_url.
  *
  * Провайдер выбирается на бэке (factory.py):
- *   - tbank   → confirmation_url ведёт на https://securepay.tinkoff.ru/...
- *   - yookassa→ confirmation_url ведёт на https://yoomoney.ru/... (legacy)
- *   - stub    → confirmation_url ведёт на /billing/stub (для dev без ключей)
+ *   - tbank → confirmation_url ведёт на https://pay.tbank.ru/...
+ *   - stub  → confirmation_url ведёт на /billing/stub (для dev без T-Bank ключей)
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -34,7 +33,7 @@ interface TierCard {
 }
 
 interface PlansResponse {
-  provider: 'stub' | 'yookassa' | 'tbank';
+  provider: 'stub' | 'tbank';
   currency: string;
   tiers: TierCard[];
   /** Только для provider=tbank — публичный terminalKey для SDK init (SpeedPay). */

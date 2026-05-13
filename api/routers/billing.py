@@ -11,8 +11,7 @@ Routes:
                                      успеха платежа (для тестирования без ключей)
 
 Провайдер выбирается автоматически в api/billing/factory.py через env:
-  - TBANK_TERMINAL_KEY + TBANK_PASSWORD → T-Bank (приоритет)
-  - YOOKASSA_SHOP_ID + YOOKASSA_SECRET_KEY → ЮKassa (legacy)
+  - TBANK_TERMINAL_KEY + TBANK_PASSWORD → T-Bank
   - не заданы → Stub (все платежи fake, для прогона инфраструктуры)
 """
 import logging
@@ -141,7 +140,7 @@ async def checkout(
     if not plan:
         raise HTTPException(400, f"Unknown plan_id: {body.plan_id}")
 
-    # Определяем return_url — куда ЮKassa вернёт пользователя после оплаты.
+    # Определяем return_url — куда T-Bank вернёт пользователя после оплаты.
     # Если клиент не прислал — строим из Referer.
     return_url = body.return_url
     if not return_url:
@@ -173,15 +172,14 @@ async def checkout(
 @router.post("/webhook", status_code=status.HTTP_200_OK)
 async def webhook(request: Request, db: Session = Depends(get_db)):
     """
-    Принимает webhook-уведомления от платёжного провайдера.
+    Принимает webhook-уведомления от платёжного провайдера (T-Bank).
 
-    ЮKassa шлёт JSON на наш URL — должен быть публичным, без auth.
-    Безопасность: провайдер делает дополнительный GET /payments/{id} внутри
-    service.py (см. _verify_with_provider) — даже если webhook подделают,
-    активация не произойдёт.
+    T-Bank шлёт JSON на наш URL — должен быть публичным, без auth.
+    Безопасность: верифицируем Token подписью, плюс service.py делает
+    дополнительный GET /v2/GetState (см. _verify_with_provider) — даже
+    если webhook подделают, активация не произойдёт.
 
-    Возвращаем 200 всегда (даже если не нашли подписку), иначе ЮKassa будет
-    ретраить с экспоненциальным бэкоффом.
+    Возвращаем 200 + plain text "OK" всегда — это формат T-Bank.
     """
     raw_body = await request.body()
     headers = dict(request.headers)
@@ -189,11 +187,7 @@ async def webhook(request: Request, db: Session = Depends(get_db)):
     provider = get_payment_provider()
     event = provider.parse_webhook(raw_body, headers)
 
-    # Формат ответа:
-    #   T-Bank ожидает plain text "OK" (иначе ретраит)
-    #   ЮKassa принимает любой 2xx (мы возвращали JSON)
-    # Чтобы не плодить ветвлений, для всех провайдеров отдаём plain text "OK" —
-    # это совместимо с обоими.
+    # T-Bank ожидает plain text "OK" (иначе ретраит exponential backoff).
     ok_response = PlainTextResponse("OK", status_code=200)
 
     if not event:
