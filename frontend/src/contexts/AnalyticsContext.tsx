@@ -160,7 +160,12 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
     return true;
   }, [consent]);
 
-  /** Flush queue → POST /api/analytics/event. Если queue пуст или opt-out — no-op. */
+  /** Flush queue → POST /api/analytics/event. Если queue пуст или opt-out — no-op.
+   *
+   *  Auth: у нас JWT в localStorage.access_token, backend читает Bearer header
+   *  через get_current_user_optional. Раньше слали credentials:'include' (cookie),
+   *  но у нас cookies для auth не используются — поэтому user_id всегда был
+   *  NULL → все events помечались как «гости» в /admin/stats. */
   const flush = useCallback(async () => {
     if (queueRef.current.length === 0) return;
     if (!isTrackable()) {
@@ -169,11 +174,13 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
     }
     // Снимаем snapshot, чтобы новые events во время fetch не потерялись
     const batch = queueRef.current.splice(0, MAX_BATCH);
+    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('access_token') : null;
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
     try {
       await fetch(`${API_BASE}/api/analytics/event`, {
         method: 'POST',
-        credentials: 'include',  // для user_id из cookie auth
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ events: batch }),
         keepalive: true,  // ВАЖНО: разрешает доставку при unload (если у sendBeacon issues)
       });
