@@ -16,6 +16,7 @@
 import logging
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import or_ as sa_or_
 from sqlalchemy.orm import Session
 
 from api.billing.factory import get_payment_provider
@@ -500,16 +501,17 @@ def sync_pending_for_user(
     max_age_minutes: int = 60,
 ) -> dict:
     """
-    Для всех pending подписок user'а (не старше max_age_minutes) спрашиваем
-    провайдера актуальный статус через verify_payment. Активируем CONFIRMED,
-    отменяем REJECTED/CANCELED/REVERSED/DEADLINE_EXPIRED.
+    Спрашивает провайдера актуальный статус для:
+    - pending sub'ов user'а младше max_age_minutes — активируем CONFIRMED,
+      отменяем REJECTED/CANCELED/REVERSED/DEADLINE_EXPIRED.
+    - active sub'ов user'а — проверяем не были ли они REFUNDED у провайдера
+      (refund могли инициировать через кабинет T-Bank, не через наш API).
+      Если REFUNDED → status='refunded', sync_user_role понизит роль.
 
     Используется когда webhook задерживается или вообще не пришёл (URL
-    не зарегистрирован у провайдера, проблемы с сетью, и т.п.). Безопасно
-    вызывать многократно — verify_payment не имеет side-effects, активация
-    идемпотентна.
+    не зарегистрирован у провайдера, проблемы с сетью). Идемпотентно.
 
-    Возвращает summary {activated, cancelled, skipped, checked} для логирования.
+    Возвращает summary {activated, cancelled, skipped, checked}.
     """
     provider = get_payment_provider()
     summary = {"activated": 0, "cancelled": 0, "skipped": 0, "checked": 0}
@@ -519,12 +521,21 @@ def sync_pending_for_user(
         return summary
 
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=max_age_minutes)
-    pending = db.query(Subscription).filter(
+    # pending OR active (для подхвата REFUNDED через кабинет провайдера).
+    # active без yk_payment_id (например invite-redeem подписки) исключаем —
+    # их нечего сверять, они не от провайдера.
+    subs = db.query(Subscription).filter(
         Subscription.user_id == user.id,
-        Subscription.status == "pending",
-        Subscription.created_at >= cutoff,
+        Subscription.status.in_(["pending", "active"]),
         Subscription.yk_payment_id.isnot(None),
+        # pending — узкое окно; active — без ограничения, проверяем все
+        # (refund может прийти через месяц после оплаты).
+        sa_or_(
+            Subscription.status != "pending",
+            Subscription.created_at >= cutoff,
+        ),
     ).all()
+    pending = subs
 
     for sub in pending:
         summary["checked"] += 1
