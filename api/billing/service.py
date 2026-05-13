@@ -384,6 +384,102 @@ def expire_overdue(db: Session) -> int:
     return len(overdue)
 
 
+def renew_expiring_subs(db: Session, hours_window: int = 24) -> dict:
+    """
+    Auto-renewal: для каждой active sub с привязанной картой (payment_method_id
+    NOT NULL) и без cancelled_at, у которой expires_at < now + hours_window —
+    запускаем charge_recurrent. Это создаёт новую sub того же plan_id и
+    продлевает доступ.
+
+    Защита от дублей:
+    - Если для того же user + plan_id уже есть pending/active sub созданная
+      после текущей — пропускаем (значит уже продлили в прошлом запуске или
+      юзер сам купил)
+    - payment_method.deleted_at IS NOT NULL — пропускаем (карта удалена)
+
+    Запускать раз в час из orchestrator'а. hours_window=24 даёт буфер в случае
+    задержки cron'а или временных T-Bank проблем (попытаемся ещё раз через
+    час, до 24 раз пока not expired).
+
+    Возвращает {checked, renewed, failed, skipped}.
+    """
+    from api.models.payment_method import UserPaymentMethod  # avoid cycle при import
+
+    now = datetime.now(timezone.utc)
+    cutoff = now + timedelta(hours=hours_window)
+
+    expiring = db.query(Subscription).filter(
+        Subscription.status == "active",
+        Subscription.cancelled_at.is_(None),
+        Subscription.payment_method_id.isnot(None),
+        Subscription.expires_at > now,
+        Subscription.expires_at < cutoff,
+    ).all()
+
+    summary = {"checked": 0, "renewed": 0, "failed": 0, "skipped": 0}
+    if not expiring:
+        return summary
+
+    log.info("renew_expiring_subs: found %d candidates (window=%dh)", len(expiring), hours_window)
+
+    for sub in expiring:
+        summary["checked"] += 1
+
+        # Проверка дублей: уже создана renewal sub в прошлом запуске?
+        existing_renewal = db.query(Subscription).filter(
+            Subscription.user_id == sub.user_id,
+            Subscription.plan_id == sub.plan_id,
+            Subscription.id != sub.id,
+            Subscription.status.in_(("pending", "active")),
+            Subscription.created_at > sub.created_at,
+        ).first()
+        if existing_renewal:
+            log.info(
+                "renew: sub_%s skip — already has follow-up sub_%s",
+                sub.id, existing_renewal.id,
+            )
+            summary["skipped"] += 1
+            continue
+
+        # Карта существует и не удалена?
+        pm = db.query(UserPaymentMethod).filter(
+            UserPaymentMethod.id == sub.payment_method_id
+        ).first()
+        if not pm or pm.deleted_at is not None:
+            log.warning(
+                "renew: sub_%s skip — payment_method %s deleted/missing",
+                sub.id, sub.payment_method_id,
+            )
+            summary["skipped"] += 1
+            continue
+
+        user = db.query(User).filter(User.id == sub.user_id).first()
+        if not user:
+            summary["skipped"] += 1
+            continue
+
+        try:
+            result = charge_recurrent(db, user, sub.plan_id, pm)
+            if result.get("ok"):
+                summary["renewed"] += 1
+                log.info(
+                    "renew: sub_%s OK → new sub_%s for user_%s plan=%s",
+                    sub.id, result.get("subscription_id"), user.id, sub.plan_id,
+                )
+            else:
+                summary["failed"] += 1
+                log.warning(
+                    "renew: sub_%s FAILED user_%s: %s",
+                    sub.id, user.id, result.get("message"),
+                )
+        except Exception as e:
+            summary["failed"] += 1
+            log.error("renew: sub_%s exception: %s", sub.id, e, exc_info=True)
+
+    log.info("renew_expiring_subs summary: %s", summary)
+    return summary
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  5. Для UI — текущий статус пользователя
 # ═══════════════════════════════════════════════════════════════════════════════

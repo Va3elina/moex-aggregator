@@ -386,6 +386,7 @@ class MainOrchestrator:
         self.last_funds_early_update = None  # ранний funds-only прогон в 14:30
         self.last_commodity_update = None    # commodity daily — 08:00 МСК после US close
         self.last_weekend_catchup = None
+        self.last_billing_hourly = None      # billing renewal + expire — раз в час
 
         self.stats = {
             'start_time': datetime.now(),
@@ -520,6 +521,62 @@ class MainOrchestrator:
         log.info(f"  ⏱️ Цикл завершён за {total_duration:.1f}с")
 
         return results
+
+    async def run_billing_hourly(self) -> dict:
+        """Billing hourly job: expire overdue + auto-renewal через T-Bank Charge.
+
+        Сначала expire_overdue — переводит истекшие active sub'ы в expired
+        (для тех у кого нет рекуррентной карты, или charge failed на прошлых
+        итерациях). Затем renew_expiring_subs — для sub'ов с привязанной
+        картой и без cancelled_at пытается продлить через /v2/Charge.
+
+        Безопасно: каждая функция использует свой db.commit. При ошибке в
+        одной — другая отрабатывает.
+
+        Возвращает {expired, renewed, failed, skipped, checked}.
+        """
+        log.info("  💳 Billing hourly: expire + auto-renewal...")
+        try:
+            from api.database import SessionLocal
+            from api.billing.service import expire_overdue, renew_expiring_subs
+        except Exception as e:
+            log.error("billing: import failed: %s", e)
+            return {"error": str(e)}
+
+        result = {"expired": 0, "renewed": 0, "failed": 0, "skipped": 0, "checked": 0}
+
+        # expire_overdue — синхронный, оборачиваем в thread
+        def _do_expire():
+            db = SessionLocal()
+            try:
+                return expire_overdue(db)
+            finally:
+                db.close()
+        try:
+            result["expired"] = await asyncio.to_thread(_do_expire)
+        except Exception as e:
+            log.error("billing.expire_overdue failed: %s", e, exc_info=True)
+
+        # renew_expiring_subs — тоже синхронный + делает T-Bank HTTP
+        def _do_renew():
+            db = SessionLocal()
+            try:
+                return renew_expiring_subs(db)
+            finally:
+                db.close()
+        try:
+            renew_summary = await asyncio.to_thread(_do_renew)
+            result.update({
+                "renewed": renew_summary.get("renewed", 0),
+                "failed": renew_summary.get("failed", 0),
+                "skipped": renew_summary.get("skipped", 0),
+                "checked": renew_summary.get("checked", 0),
+            })
+        except Exception as e:
+            log.error("billing.renew_expiring_subs failed: %s", e, exc_info=True)
+
+        log.info("  💳 Billing hourly result: %s", result)
+        return result
 
     async def run_hourly_aggregate(self, recent_days: int = None) -> bool:
         """Запускает агрегацию OI 5м → 60м.
@@ -925,6 +982,13 @@ class MainOrchestrator:
                 slot_day = self._get_day_slot()
 
                 is_trade_day, trade_day_reason = is_trading_day()
+
+                # === Billing hourly — РАНЬШЕ проверки is_trade_day ===
+                # Подписки истекают и в выходные. expire + auto-renewal должны
+                # работать каждый час 24/7, независимо от торговых часов MOEX.
+                if slot_hour != self.last_billing_hourly and now.minute < 2:
+                    await self.run_billing_hourly()
+                    self.last_billing_hourly = slot_hour
 
                 # === Выходной / праздник ===
                 if not is_trade_day:
