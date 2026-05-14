@@ -54,6 +54,11 @@ QUARTER_RU = {
     "I квартал": 1, "II квартал": 2, "III квартал": 3, "IV квартал": 4,
 }
 
+# Категории которые ЦБ убрал из методологии — не вставляем в БД.
+EXCLUDED_CATEGORIES = {
+    "Дочерние иностранные организации",
+}
+
 # Конфиг листов: какие парсим и под каким instrument_type сохраняем.
 SHEETS_CONFIG = [
     {
@@ -224,6 +229,8 @@ def parse_sheet(wb, sheet_name: str, source_file: str) -> Iterable[dict]:
             continue
 
         for col_idx, cat in categories:
+            if cat in EXCLUDED_CATEGORIES:
+                continue
             val = r[col_idx] if col_idx < len(r) else None
             if val is None:
                 continue

@@ -53,6 +53,13 @@ DB_URL = os.getenv("DB_URL")
 LANDING_URL = "https://cbr.ru/analytics/finstab/orfr/"
 BASE_URL = "https://cbr.ru"
 
+# Категории которые ЦБ убрал из методологии — не вставляем в БД.
+# «Дочерние иностранные организации» — категория из 2022-2023 годов (после
+# санкций), позже свёрнута в общую группу. Захламляет UI участников.
+EXCLUDED_CATEGORIES = {
+    "Дочерние иностранные организации",
+}
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)-7s | %(message)s",
@@ -289,6 +296,8 @@ def _parse_new_format(rows, header_idx, category_cols, source_file):
         else:
             continue
         for col_idx, cat in category_cols:
+            if cat in EXCLUDED_CATEGORIES:
+                continue
             val = r[col_idx] if col_idx < len(r) else None
             if val is None:
                 continue
@@ -337,6 +346,8 @@ def _parse_old_format(rows, header_idx, date_col, category_cols, source_file):
         plabel = list(MONTH_RU.keys())[month - 1]  # «Январь» для month=1
 
         for col_idx, cat in category_cols:
+            if cat in EXCLUDED_CATEGORIES:
+                continue
             val = r[col_idx] if col_idx < len(r) else None
             if val is None:
                 continue

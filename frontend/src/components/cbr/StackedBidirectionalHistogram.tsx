@@ -347,14 +347,15 @@ export default function StackedBidirectionalHistogram({
           })}
         </div>
 
-        {/* === Quarter ticks (short) — между periodами same year,
-            сразу под chart-area. */}
+        {/* === Quarter ticks (short) — только на КВАРТАЛЬНЫХ boundaries
+            (после марта/июня/сентября). Для monthly-only режима с 52
+            периодами без этого было бы 47 tick'ов — визуальный шум.
+            Теперь — ~4 ticks/year на quarter-ends. */}
         <div
           className="absolute"
           style={{
             left: 'var(--chart-pad-left, 100px)',
             right: 'var(--chart-pad-right-single, 95px)',
-            // bottom = top of period labels (period bottom + period height)
             bottom: 'calc(var(--chart-pad-bottom, 50px) - var(--chart-font-x, 17px) + var(--chart-font-x, 17px) + 4px)',
             height: '6px',
             pointerEvents: 'none',
@@ -363,7 +364,11 @@ export default function StackedBidirectionalHistogram({
           {periods.map((_, i) => {
             if (i === 0) return null;
             const isYearBoundary = periods[i].year !== periods[i - 1].year;
-            if (isYearBoundary) return null;  // year ticks отдельной зоной
+            if (isYearBoundary) return null;
+            // Quarter boundary: prev period — month March/June/September
+            const prevMonth = parseInt(periods[i - 1].end_date.split('-')[1], 10);
+            const isQuarterBoundary = [3, 6, 9].includes(prevMonth);
+            if (!isQuarterBoundary) return null;
             const xPct = i * barSlot;
             return (
               <div
@@ -382,44 +387,55 @@ export default function StackedBidirectionalHistogram({
           })}
         </div>
 
-        {/* === X-axis labels (период) — HTML absolute снизу.
-            Над year labels: bottom = pad-bottom + 4 (gap до year). */}
-        <div
-          className="absolute"
-          style={{
-            left: 'var(--chart-pad-left, 100px)',
-            right: 'var(--chart-pad-right-single, 95px)',
-            bottom: 'calc(var(--chart-pad-bottom, 50px) - var(--chart-font-x, 17px))',
-            height: 'calc(var(--chart-font-x, 17px) + 4px)',
-            pointerEvents: 'none',
-          }}
-        >
-          {periods.map((p, i) => {
-            const labelText = p.kind === 'quarter'
-              ? p.label.replace(' квартал', 'к')
-              : p.label.slice(0, 3);
-            const centerPct = i * barSlot + barSlot / 2;
-            const isHovered = hover?.periodIdx === i;
-            return (
-              <div
-                key={`xlab-${i}`}
-                className="absolute font-semibold"
-                style={{
-                  left: `${centerPct}%`,
-                  transform: 'translateX(-50%)',
-                  fontSize: 'var(--chart-font-x, 17px)',
-                  fontWeight: isHovered ? 700 : 500,
-                  color: 'var(--text-primary)',
-                  opacity: hover && !isHovered ? 0.6 : 1,
-                  transition: 'opacity 120ms',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {labelText}
-              </div>
-            );
-          })}
-        </div>
+        {/* === X-axis labels (период) — adaptive thinning.
+            Step = max(1, ceil(N / 12)) — для 52 monthly показываем каждый 5-й.
+            Для 12 — каждый. Для quarter mode (10 periods) — каждый.
+            Всегда показываем FIRST и LAST период (для context). */}
+        {(() => {
+          const xLabelStep = Math.max(1, Math.ceil(periods.length / 12));
+          return (
+            <div
+              className="absolute"
+              style={{
+                left: 'var(--chart-pad-left, 100px)',
+                right: 'var(--chart-pad-right-single, 95px)',
+                bottom: 'calc(var(--chart-pad-bottom, 50px) - var(--chart-font-x, 17px))',
+                height: 'calc(var(--chart-font-x, 17px) + 4px)',
+                pointerEvents: 'none',
+              }}
+            >
+              {periods.map((p, i) => {
+                const isFirst = i === 0;
+                const isLast = i === periods.length - 1;
+                const isStep = i % xLabelStep === 0;
+                if (!isFirst && !isLast && !isStep) return null;
+                const labelText = p.kind === 'quarter'
+                  ? p.label.replace(' квартал', 'к')
+                  : p.label.slice(0, 3);
+                const centerPct = i * barSlot + barSlot / 2;
+                const isHovered = hover?.periodIdx === i;
+                return (
+                  <div
+                    key={`xlab-${i}`}
+                    className="absolute font-semibold"
+                    style={{
+                      left: `${centerPct}%`,
+                      transform: 'translateX(-50%)',
+                      fontSize: 'var(--chart-font-x, 17px)',
+                      fontWeight: isHovered ? 700 : 500,
+                      color: 'var(--text-primary)',
+                      opacity: hover && !isHovered ? 0.6 : 1,
+                      transition: 'opacity 120ms',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {labelText}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
 
         {/* === Год labels — HTML absolute самый низ paper-card.
             bottom = 4px — небольшой gap от низа, year полностью visible. */}
