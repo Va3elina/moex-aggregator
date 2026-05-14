@@ -40,6 +40,13 @@ const INSTRUMENT_TABS: Array<{
   { key: 'fx',     label: 'Валюты', Icon: DollarSign },
 ];
 
+type PeriodFilter = '6m' | '2y' | 'all';
+const PERIOD_OPTIONS: { key: PeriodFilter; label: string; months: number | null }[] = [
+  { key: '6m', label: '6М', months: 6 },
+  { key: '2y', label: '2Г', months: 24 },
+  { key: 'all', label: 'Всё', months: null },
+];
+
 export default function CbrFlowsPage() {
   const { theme } = useTheme();
   const [type, setType] = useState<CbrInstrumentType>('stocks');
@@ -50,6 +57,9 @@ export default function CbrFlowsPage() {
   // Категории-фильтр: какие категории скрыты из графика.
   // При смене type — сбрасываем (категории различаются для stocks/ofz/fx).
   const [hiddenCategories, setHiddenCategories] = useState<Set<string>>(new Set());
+
+  // Период: 6м / 2г / Всё (default 6м)
+  const [period, setPeriod] = useState<PeriodFilter>('6m');
 
   // Popover-dropdown с выбором категорий (открывается при клике на кнопку)
   const [categoriesOpen, setCategoriesOpen] = useState(false);
@@ -114,6 +124,14 @@ export default function CbrFlowsPage() {
     return data.categories.filter((c) => !hiddenCategories.has(c));
   }, [data, hiddenCategories]);
 
+  // Фильтрованные periods по выбранному period filter (последние N месяцев / всё)
+  const visiblePeriods = useMemo(() => {
+    if (!data) return [];
+    const opt = PERIOD_OPTIONS.find((o) => o.key === period);
+    if (!opt || opt.months === null) return data.periods;
+    return data.periods.slice(-opt.months);
+  }, [data, period]);
+
   const toggleCategory = (cat: string) => {
     setHiddenCategories((prev) => {
       const next = new Set(prev);
@@ -172,9 +190,9 @@ export default function CbrFlowsPage() {
           })}
         </div>
 
-        {/* === Row 2: Категории слева + camera button справа === */}
+        {/* === Row 2: Категории + Период chips слева, camera button справа === */}
         <div
-          className="flex items-center justify-between mb-4 md:mb-6"
+          className="flex flex-wrap items-center mb-4 md:mb-6"
           style={{ gap: 'var(--sp-2)' }}
         >
 
@@ -322,19 +340,45 @@ export default function CbrFlowsPage() {
             )}
           </div>
 
+          {/* === Период chips (6М / 2Г / Всё) === */}
+          <div className="flex items-center" style={{ gap: 'var(--sp-1)' }}>
+            {PERIOD_OPTIONS.map((opt) => {
+              const isActive = period === opt.key;
+              return (
+                <button
+                  key={opt.key}
+                  onClick={() => setPeriod(opt.key)}
+                  className="editorial-press font-semibold rounded-full"
+                  style={{
+                    padding: 'var(--sp-2) var(--sp-3)',
+                    fontSize: 'var(--fs-sm)',
+                    minWidth: '48px',
+                    backgroundColor: isActive ? 'var(--accent)' : 'var(--bg-secondary)',
+                    color: isActive ? 'var(--text-inverse)' : 'var(--text-primary)',
+                    border: '2px solid var(--text-primary)',
+                    boxShadow: isActive ? 'var(--shadow-hard-chip)' : undefined,
+                  }}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+
           {/* Camera button — экспорт графика в PNG */}
           <ChartCaptureButton
             getTargetElement={() => chartAnchorRef.current}
-            filename={`frame-cbr-flows-${type}`}
+            filename={`frame-cbr-flows-${type}-${period}`}
             metadata={{
               title: 'Потоки участников биржи',
               asset: data?.instrument_label ?? INSTRUMENT_TABS.find(t => t.key === type)?.label ?? '',
               details: [
+                `Период: ${PERIOD_OPTIONS.find(o => o.key === period)?.label}`,
                 'Источник: Банк России · ОРФР',
                 data?.source ?? '',
               ].filter(Boolean) as string[],
             }}
-            className="shrink-0"
+            className="shrink-0 ml-auto"
           />
         </div>
 
@@ -374,7 +418,7 @@ export default function CbrFlowsPage() {
             </div>
           ) : (
             <StackedBidirectionalHistogram
-              periods={data?.periods ?? []}
+              periods={visiblePeriods}
               categories={visibleCategories}
               unit={data?.unit ?? 'млрд руб.'}
               height={chartHeight}

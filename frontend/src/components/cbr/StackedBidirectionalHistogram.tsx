@@ -77,23 +77,6 @@ export default function StackedBidirectionalHistogram({
     [yMax],
   );
 
-  // Год-сепараторы — между периодами с разным годом.
-  const yearBlocks = useMemo(() => {
-    const blocks: { year: number; firstIdx: number; lastIdx: number }[] = [];
-    if (!periods.length) return blocks;
-    let blockStart = 0;
-    let currentYear = periods[0].year;
-    for (let i = 1; i <= periods.length; i++) {
-      const yearChanged = i === periods.length || periods[i].year !== currentYear;
-      if (yearChanged) {
-        blocks.push({ year: currentYear, firstIdx: blockStart, lastIdx: i - 1 });
-        blockStart = i;
-        if (i < periods.length) currentYear = periods[i].year;
-      }
-    }
-    return blocks;
-  }, [periods]);
-
   const legendItems = useMemo<ChartLegendItem[]>(
     () => categories.map((cat) => ({ color: getCategoryColor(cat, theme), label: cat })),
     [categories, theme],
@@ -177,7 +160,7 @@ export default function StackedBidirectionalHistogram({
           className="absolute"
           style={{
             top: 'var(--chart-pad-top, 19px)',
-            bottom: 'calc(var(--chart-pad-bottom, 50px) + var(--chart-font-x, 17px) + 8px)',
+            bottom: 'var(--chart-pad-bottom, 50px)',
             right: 0,
             width: 'var(--chart-pad-right-single, 95px)',
             pointerEvents: 'none',
@@ -217,7 +200,7 @@ export default function StackedBidirectionalHistogram({
           className="absolute"
           style={{
             top: 'var(--chart-pad-top, 19px)',
-            bottom: 'calc(var(--chart-pad-bottom, 50px) + var(--chart-font-x, 17px) + 8px)',
+            bottom: 'var(--chart-pad-bottom, 50px)',
             left: 'var(--chart-pad-left, 100px)',
             right: 'var(--chart-pad-right-single, 95px)',
           }}
@@ -311,95 +294,21 @@ export default function StackedBidirectionalHistogram({
           </svg>
         </div>
 
-        {/* === Year-boundary ticks — длинные палки от chart-area
-            до уровня цифр года (через всю зону labels). */}
-        <div
-          className="absolute"
-          style={{
-            left: 'var(--chart-pad-left, 100px)',
-            right: 'var(--chart-pad-right-single, 95px)',
-            // bottom = top of year labels (year bottom 4 + year height font-x+4)
-            bottom: 'calc(var(--chart-font-x, 17px) + 8px)',
-            // height = от chart-area bottom до top year labels
-            height: 'var(--chart-pad-bottom, 50px)',
-            pointerEvents: 'none',
-          }}
-        >
-          {periods.map((_, i) => {
-            if (i === 0) return null;
-            const isYearBoundary = periods[i].year !== periods[i - 1].year;
-            if (!isYearBoundary) return null;
-            const xPct = i * barSlot;
-            return (
-              <div
-                key={`year-tick-${i}`}
-                className="absolute"
-                style={{
-                  left: `${xPct}%`,
-                  top: 0,
-                  bottom: 0,
-                  width: '1px',
-                  background: 'var(--text-primary)',
-                  opacity: 0.5,
-                }}
-              />
-            );
-          })}
-        </div>
-
-        {/* === Quarter ticks (short) — только на КВАРТАЛЬНЫХ boundaries
-            (после марта/июня/сентября). Для monthly-only режима с 52
-            периодами без этого было бы 47 tick'ов — визуальный шум.
-            Теперь — ~4 ticks/year на quarter-ends. */}
-        <div
-          className="absolute"
-          style={{
-            left: 'var(--chart-pad-left, 100px)',
-            right: 'var(--chart-pad-right-single, 95px)',
-            bottom: 'calc(var(--chart-pad-bottom, 50px) - var(--chart-font-x, 17px) + var(--chart-font-x, 17px) + 4px)',
-            height: '6px',
-            pointerEvents: 'none',
-          }}
-        >
-          {periods.map((_, i) => {
-            if (i === 0) return null;
-            const isYearBoundary = periods[i].year !== periods[i - 1].year;
-            if (isYearBoundary) return null;
-            // Quarter boundary: prev period — month March/June/September
-            const prevMonth = parseInt(periods[i - 1].end_date.split('-')[1], 10);
-            const isQuarterBoundary = [3, 6, 9].includes(prevMonth);
-            if (!isQuarterBoundary) return null;
-            const xPct = i * barSlot;
-            return (
-              <div
-                key={`q-tick-${i}`}
-                className="absolute"
-                style={{
-                  left: `${xPct}%`,
-                  top: 0,
-                  height: '6px',
-                  width: '1px',
-                  background: 'var(--text-primary)',
-                  opacity: 0.35,
-                }}
-              />
-            );
-          })}
-        </div>
-
-        {/* === X-axis labels (период) — adaptive thinning.
-            Step = max(1, ceil(N / 12)) — для 52 monthly показываем каждый 5-й.
-            Для 12 — каждый. Для quarter mode (10 periods) — каждый.
-            Всегда показываем FIRST и LAST период (для context). */}
+        {/* === X-axis labels (DD.MM.YY format, adaptive thinning) ===
+            Формат match с FlowsHistogram (Притоки/Оттоки): «31.01.22».
+            Step = max(1, ceil(N / tickCount)) — на mobile 3 labels, desktop 6
+            (match с FlowsHistogram pattern). Всегда показываем FIRST и LAST. */}
         {(() => {
-          const xLabelStep = Math.max(1, Math.ceil(periods.length / 12));
+          const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+          const tickCount = isMobile ? 3 : 6;
+          const xLabelStep = Math.max(1, Math.ceil(periods.length / tickCount));
           return (
             <div
               className="absolute"
               style={{
                 left: 'var(--chart-pad-left, 100px)',
                 right: 'var(--chart-pad-right-single, 95px)',
-                bottom: 'calc(var(--chart-pad-bottom, 50px) - var(--chart-font-x, 17px))',
+                bottom: 'calc(var(--chart-pad-bottom, 50px) - var(--chart-font-x, 17px) - 4px)',
                 height: 'calc(var(--chart-font-x, 17px) + 4px)',
                 pointerEvents: 'none',
               }}
@@ -409,9 +318,13 @@ export default function StackedBidirectionalHistogram({
                 const isLast = i === periods.length - 1;
                 const isStep = i % xLabelStep === 0;
                 if (!isFirst && !isLast && !isStep) return null;
-                const labelText = p.kind === 'quarter'
-                  ? p.label.replace(' квартал', 'к')
-                  : p.label.slice(0, 3);
+                // DD.MM.YY формат (как в FlowsHistogram)
+                const date = new Date(p.end_date);
+                const labelText = date.toLocaleDateString('ru-RU', {
+                  day: '2-digit',
+                  month: '2-digit',
+                  year: '2-digit',
+                });
                 const centerPct = i * barSlot + barSlot / 2;
                 const isHovered = hover?.periodIdx === i;
                 return (
@@ -427,6 +340,7 @@ export default function StackedBidirectionalHistogram({
                       opacity: hover && !isHovered ? 0.6 : 1,
                       transition: 'opacity 120ms',
                       whiteSpace: 'nowrap',
+                      fontVariantNumeric: 'tabular-nums',
                     }}
                   >
                     {labelText}
@@ -437,39 +351,6 @@ export default function StackedBidirectionalHistogram({
           );
         })()}
 
-        {/* === Год labels — HTML absolute самый низ paper-card.
-            bottom = 4px — небольшой gap от низа, year полностью visible. */}
-        <div
-          className="absolute"
-          style={{
-            left: 'var(--chart-pad-left, 100px)',
-            right: 'var(--chart-pad-right-single, 95px)',
-            bottom: '4px',
-            height: 'calc(var(--chart-font-x, 17px) + 4px)',
-            pointerEvents: 'none',
-          }}
-        >
-          {yearBlocks.map((block) => {
-            const startCenterPct = block.firstIdx * barSlot + barSlot / 2;
-            const endCenterPct = block.lastIdx * barSlot + barSlot / 2;
-            const midPct = (startCenterPct + endCenterPct) / 2;
-            return (
-              <div
-                key={`year-${block.year}`}
-                className="absolute font-bold"
-                style={{
-                  left: `${midPct}%`,
-                  transform: 'translateX(-50%)',
-                  fontSize: 'var(--chart-font-x, 17px)',
-                  color: 'var(--text-primary)',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {block.year}
-              </div>
-            );
-          })}
-        </div>
 
         {/* === Watermark — на нижней горизонтальной линии grid (bottom of chart-area).
             Нижняя grid line на bottom edge chart-area = pad-bottom + font-x + 8.
