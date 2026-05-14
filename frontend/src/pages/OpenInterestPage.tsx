@@ -581,11 +581,11 @@ export default function OpenInterestPage() {
         legendPosition="top"
         showDownloadButton={false}
         showNavigator={true}
-        // Симметричные padding'и (left=right=100). Default dual=120 даёт
-        // визуальный сдвиг chart-area влево на 20px. Метки OI формата
-        // toLocaleString (max "1 250 000" = 9 chars ~75px) влезают в колонку
-        // padRight-4=96px с большим запасом.
-        chartPadding={{ right: 100 }}
+        // Симметричные padding'и (left=right=120). Для больших OI значений
+        // ("12 345 678" нетто-позиции CR/RI/др. ликвидных, 10+ chars ~85-90px)
+        // padRight=100 не помещался — labels уходили за край. 120/120 даёт
+        // ~116px labels area с обеих сторон, симметрия chart area сохранена.
+        chartPadding={{ left: 120, right: 120 }}
         annotations={useMemo(() => {
           if (!showExpirations) return undefined;
           const switches = filteredData?.contract_switches;
