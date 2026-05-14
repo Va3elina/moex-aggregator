@@ -243,7 +243,7 @@ export default function BuffettPage() {
                     showSecondary={true}
                     reverseLegend={true}
                     formatValue={(v) => `${v.toFixed(2)} трлн ₽`}
-                    formatPrimaryAxis={(v) => v.toFixed(0)}
+                    formatPrimaryAxis={(v) => `${v.toFixed(2)} трлн`}
                     formatSecondaryValue={(v) => `${v.toFixed(2)}%`}
                     formatSecondaryAxis={(v) => `${v.toFixed(1)}%`}
                     primaryLabel={isMobile ? 'Кап. (₽)' : 'Капитализация (трлн ₽)'}
@@ -255,7 +255,9 @@ export default function BuffettPage() {
                     showDownloadButton={false}
                     showNavigator={true}
                     hideTime={true}
-                    chartPadding={{ right: 100 }}
+                    // padding.left=130 для labels вида "123.45 трлн" (~11 chars × ~8px ≈ 88px
+                    // + 6px padX + axis-gap). Default 100px не помещался.
+                    chartPadding={{ left: 130, right: 100 }}
                 />
                 </div>
             ) : (
@@ -269,7 +271,7 @@ export default function BuffettPage() {
                     showSecondary={true}
                     reverseLegend={true}
                     formatValue={(v) => `${v.toFixed(2)} трлн ₽`}
-                    formatPrimaryAxis={(v) => v.toFixed(0)}
+                    formatPrimaryAxis={(v) => `${v.toFixed(2)} трлн`}
                     formatSecondaryValue={(v) => `${(v * 100).toFixed(2)}%`}
                     formatSecondaryAxis={(v) => `${(v * 100).toFixed(1)}%`}
                     primaryLabel={isMobile ? 'Кап. (₽)' : 'Капитализация (трлн ₽)'}
@@ -280,7 +282,7 @@ export default function BuffettPage() {
                     showDownloadButton={false}
                     showNavigator={true}
                     hideTime={true}
-                    chartPadding={{ right: 100 }}
+                    chartPadding={{ left: 130, right: 100 }}
                 />
                 </div>
             )}
