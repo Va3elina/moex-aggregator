@@ -140,11 +140,16 @@ export default function CbrFlowsPage() {
             frame'а. 1.5px outline + rounded-2xl как у Heatmap. */}
         <div
           ref={chartAnchorRef}
-          className="rounded-2xl overflow-hidden"
+          className="rounded-2xl"
           style={{
             background: 'var(--bg-primary)',
             border: '1.5px solid var(--text-primary)',
-            padding: '0',  // chart content расширяется до самых краёв paper-card
+            // padding-bottom 12 — gap между year labels и rounded paper-card edge.
+            // Без него html2canvas при export обрезал year (близко к радиусной зоне).
+            // overflow убран — content может вылезти за rounded corners, но
+            // axis labels ОТКЛ paper-card edges (через CSS-var paddings), не
+            // достают углов.
+            padding: '0 0 12px 0',
           }}
         >
           {error ? (
