@@ -201,9 +201,7 @@ export default function StackedBidirectionalHistogram({
     const svg = e.currentTarget;
     const rect = svg.getBoundingClientRect();
     const xRatio = (e.clientX - rect.left) / rect.width;
-    const yRatio = (e.clientY - rect.top) / rect.height;
     const xView = xRatio * 1000;
-    const yView = yRatio * height;
     if (!periodLayouts.length) return;
     // Найти ближайший период
     let nearestIdx = 0;
@@ -251,7 +249,6 @@ export default function StackedBidirectionalHistogram({
 
   const zeroY = Y_AXIS_PAD_TOP + (height - Y_AXIS_PAD_TOP - Y_AXIS_PAD_BOTTOM) / 2;
   const halfH = (height - Y_AXIS_PAD_TOP - Y_AXIS_PAD_BOTTOM) / 2;
-  const chartW = 1000 - X_AXIS_PAD_LEFT - X_AXIS_PAD_RIGHT;
 
   // ─── Dynamic strokeWidth (внутренние границы между сегментами) ─────────
   const outlineWidth = periodLayouts.length <= 20 ? 1
