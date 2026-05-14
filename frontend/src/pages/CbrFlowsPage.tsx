@@ -14,7 +14,7 @@
  *   • Footer (источник + дата обновления)
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { LineChart, Landmark, DollarSign, Building2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { METHODOLOGY } from '../data/methodology';
@@ -25,7 +25,10 @@ import {
 } from '../services/api';
 import { useFitToViewport } from '../hooks/useFitToViewport';
 import StackedBidirectionalHistogram from '../components/cbr/StackedBidirectionalHistogram';
+import { getCategoryColor } from '../components/cbr/cbrPalette';
+import { getCategoryInfo } from '../components/cbr/cbrCategoryInfo';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
+import { useTheme } from '../contexts/ThemeContext';
 
 const INSTRUMENT_TABS: Array<{
   key: CbrInstrumentType;
@@ -38,10 +41,15 @@ const INSTRUMENT_TABS: Array<{
 ];
 
 export default function CbrFlowsPage() {
+  const { theme } = useTheme();
   const [type, setType] = useState<CbrInstrumentType>('stocks');
   const [data, setData] = useState<CbrFlowsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Категории-фильтр: какие категории скрыты из графика.
+  // При смене type — сбрасываем (категории различаются для stocks/ofz/fx).
+  const [hiddenCategories, setHiddenCategories] = useState<Set<string>>(new Set());
 
   const chartAnchorRef = useRef<HTMLDivElement>(null);
   const chartHeight = useFitToViewport(chartAnchorRef, {
@@ -67,6 +75,31 @@ export default function CbrFlowsPage() {
       });
     return () => { cancelled = true; };
   }, [type]);
+
+  // Reset hidden при смене типа актива
+  useEffect(() => {
+    setHiddenCategories(new Set());
+  }, [type]);
+
+  // Видимые категории (для передачи в график)
+  const visibleCategories = useMemo(() => {
+    if (!data) return [];
+    return data.categories.filter((c) => !hiddenCategories.has(c));
+  }, [data, hiddenCategories]);
+
+  const toggleCategory = (cat: string) => {
+    setHiddenCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(cat)) {
+        next.delete(cat);
+      } else {
+        // Нельзя скрыть последнюю видимую категорию
+        if (visibleCategories.length <= 1) return prev;
+        next.add(cat);
+      }
+      return next;
+    });
+  };
 
   return (
     <div className="max-w-[1408px] mx-auto px-4 md:px-6 py-6 md:py-8 text-theme-primary min-h-screen">
@@ -171,7 +204,7 @@ export default function CbrFlowsPage() {
           ) : (
             <StackedBidirectionalHistogram
               periods={data?.periods ?? []}
-              categories={data?.categories ?? []}
+              categories={visibleCategories}
               unit={data?.unit ?? 'млрд руб.'}
               height={chartHeight}
               loading={loading}
@@ -179,6 +212,99 @@ export default function CbrFlowsPage() {
           )}
         </div>
       </div>{/* /editorial-frame */}
+
+      {/* ═══ Раздел «Участники» — карточки с описаниями и toggle visibility ═══
+          Клик на карточку — скрывает категорию из графика (dim styling).
+          Нельзя скрыть последнюю видимую (защита от пустого графика). */}
+      {data && data.categories.length > 0 && (
+        <div className="mt-6 md:mt-8">
+          <h3
+            className="font-bold text-theme-primary mb-3 md:mb-4"
+            style={{ fontSize: 'var(--fs-xl)' }}
+          >
+            Участники
+          </h3>
+          <div
+            className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3"
+            style={{ gap: 'var(--sp-3)' }}
+          >
+            {data.categories.map((cat) => {
+              const isHidden = hiddenCategories.has(cat);
+              const isLastVisible = !isHidden && visibleCategories.length === 1;
+              const color = getCategoryColor(cat, theme);
+              const info = getCategoryInfo(cat);
+              return (
+                <button
+                  key={cat}
+                  onClick={() => toggleCategory(cat)}
+                  disabled={isLastVisible}
+                  className="editorial-press rounded-2xl text-left transition-opacity duration-150"
+                  style={{
+                    padding: 'var(--sp-3)',
+                    background: 'var(--bg-primary)',
+                    border: '1.5px solid var(--text-primary)',
+                    opacity: isHidden ? 0.45 : 1,
+                    cursor: isLastVisible ? 'not-allowed' : 'pointer',
+                  }}
+                  title={isLastVisible
+                    ? 'Нельзя скрыть последнюю видимую категорию'
+                    : isHidden ? 'Показать категорию' : 'Скрыть из графика'}
+                >
+                  <div className="flex items-start" style={{ gap: 'var(--sp-3)' }}>
+                    {/* Цветной кружок категории */}
+                    <span
+                      style={{
+                        display: 'inline-block',
+                        width: 14,
+                        height: 14,
+                        borderRadius: '50%',
+                        backgroundColor: color,
+                        marginTop: 4,
+                        flexShrink: 0,
+                        // Если категория скрыта — кружок становится контурным
+                        boxShadow: isHidden ? `inset 0 0 0 6px var(--bg-primary)` : undefined,
+                      }}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div
+                        className="font-bold"
+                        style={{
+                          fontSize: 'var(--fs-sm)',
+                          color: 'var(--text-primary)',
+                          marginBottom: 'var(--sp-1)',
+                        }}
+                      >
+                        {cat}
+                      </div>
+                      {info && (
+                        <div
+                          style={{
+                            fontSize: 'var(--fs-xs)',
+                            color: 'var(--text-secondary)',
+                            lineHeight: 1.4,
+                          }}
+                        >
+                          {info}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          <p
+            className="mt-3 md:mt-4"
+            style={{
+              fontSize: 'var(--fs-xs)',
+              color: 'var(--text-muted)',
+              fontStyle: 'italic',
+            }}
+          >
+            Кликни по карточке, чтобы скрыть категорию из графика. Минимум одна должна остаться видимой.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
