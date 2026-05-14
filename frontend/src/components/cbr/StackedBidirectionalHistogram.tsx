@@ -245,24 +245,6 @@ export default function StackedBidirectionalHistogram({
               );
             })}
 
-            {/* Год-сепараторы (solid тонкие линии между годами) */}
-            {yearBlocks.slice(0, -1).map((block, i) => {
-              // Сепаратор между текущим блоком и следующим — посередине между
-              // последним baromof current и первым of next.
-              const x = (block.lastIdx + 1) * barSlot;
-              return (
-                <line
-                  key={`year-sep-${i}`}
-                  x1={`${x}%`} x2={`${x}%`}
-                  y1="0" y2="100%"
-                  stroke="var(--text-muted)"
-                  strokeWidth={1}
-                  opacity={0.4}
-                  vectorEffect="non-scaling-stroke"
-                />
-              );
-            })}
-
             {/* Bars (накопленные стеки) */}
             {periods.map((p, i) => {
               const isHovered = hover?.periodIdx === i;
@@ -402,12 +384,14 @@ export default function StackedBidirectionalHistogram({
           })}
         </div>
 
-        {/* === Watermark === */}
+        {/* === Watermark — на нижней горизонтальной линии grid (bottom of chart-area).
+            Нижняя grid line на bottom edge chart-area = pad-bottom + font-x + 8.
+            Watermark sits with его base на этой линии. */}
         <div
           style={{
             position: 'absolute',
             left: 'calc(var(--chart-pad-left, 100px) + 4px)',
-            bottom: 'var(--chart-pad-bottom, 50px)',
+            bottom: 'calc(var(--chart-pad-bottom, 50px) + var(--chart-font-x, 17px) + 12px)',
             pointerEvents: 'none',
           }}
         >
@@ -427,7 +411,10 @@ export default function StackedBidirectionalHistogram({
 
         const containerW = containerRef.current?.clientWidth ?? 800;
         const tooltipW = 260;
-        const placeLeft = hover.mouseX > containerW - tooltipW - 24;
+        // Переключаем сторону с СЕРЕДИНЫ chart-area, чтобы tooltip не «съезжал»
+        // только у правого края — он переворачивается, когда курсор пересекает
+        // центр.
+        const placeLeft = hover.mouseX > containerW / 2;
         const left = placeLeft ? hover.mouseX - tooltipW - 16 : hover.mouseX + 16;
         const top = Math.max(8, Math.min(hover.mouseY - 20, height - 240));
 
