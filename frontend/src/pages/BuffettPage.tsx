@@ -228,10 +228,12 @@ export default function BuffettPage() {
                 </div>
             ) : viewMode === 'cap-gdp' ? (
                 <div ref={chartAnchorRef}>
-                {/* Swap осей: главное значение (Кап/ВВП) переехало на ПРАВУЮ
-                    ось — TradingView-style, где основная метрика справа. Цвет
-                    accent-orange сохранён за ratio через swap primary/secondary
-                    цветов. Левая ось = капитализация (вспомогательная). */}
+                {/* Swap осей: главное значение (Кап/ВВП) на ПРАВОЙ оси —
+                    TradingView-style. Cap на ЛЕВОЙ. Цвет accent-orange сохранён
+                    за ratio через swap primaryColor/secondaryColor.
+                    reverseLegend=true чтобы в легенде Кап/ВВП шёл первым.
+                    formatPrimaryAxis даёт короткий формат "123" без " трлн ₽"
+                    суффикса — иначе axis labels "123 трлн ₽" не влезают. */}
                 <SimpleChart
                     data={capGdpChartData.secondary}
                     secondaryData={capGdpChartData.primary}
@@ -239,7 +241,9 @@ export default function BuffettPage() {
                     primaryColor="var(--accent-secondary)"
                     secondaryColor="var(--accent)"
                     showSecondary={true}
+                    reverseLegend={true}
                     formatValue={(v) => `${v.toFixed(2)} трлн ₽`}
+                    formatPrimaryAxis={(v) => v.toFixed(0)}
                     formatSecondaryValue={(v) => `${v.toFixed(2)}%`}
                     formatSecondaryAxis={(v) => `${v.toFixed(1)}%`}
                     primaryLabel={isMobile ? 'Кап. (₽)' : 'Капитализация (трлн ₽)'}
@@ -251,9 +255,6 @@ export default function BuffettPage() {
                     showDownloadButton={false}
                     showNavigator={true}
                     hideTime={true}
-                    // Симметричные padding'и: secondary axis теперь = "%.1f%"
-                    // ("123.4%" max 6 chars) — даже короче чем cap (7 chars),
-                    // 96px колонка справа влезает с запасом.
                     chartPadding={{ right: 100 }}
                 />
                 </div>
@@ -266,7 +267,9 @@ export default function BuffettPage() {
                     primaryColor="var(--accent-secondary)"
                     secondaryColor="var(--accent)"
                     showSecondary={true}
+                    reverseLegend={true}
                     formatValue={(v) => `${v.toFixed(2)} трлн ₽`}
+                    formatPrimaryAxis={(v) => v.toFixed(0)}
                     formatSecondaryValue={(v) => `${(v * 100).toFixed(2)}%`}
                     formatSecondaryAxis={(v) => `${(v * 100).toFixed(1)}%`}
                     primaryLabel={isMobile ? 'Кап. (₽)' : 'Капитализация (трлн ₽)'}
@@ -277,7 +280,6 @@ export default function BuffettPage() {
                     showDownloadButton={false}
                     showNavigator={true}
                     hideTime={true}
-                    // Симметричные padding'и (см. cap-gdp выше).
                     chartPadding={{ right: 100 }}
                 />
                 </div>

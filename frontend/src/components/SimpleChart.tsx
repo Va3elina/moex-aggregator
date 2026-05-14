@@ -34,6 +34,10 @@ interface SimpleChartProps {
   showSecondary?: boolean;
   showThird?: boolean;
   formatValue?: (value: number) => string;
+  /** Формат для labels на ЛЕВОЙ оси (primary). Если не задан — fallback на formatValue.
+   *  Используется когда formatValue содержит юнит ("123 трлн ₽"), который не
+   *  помещается на оси — короткая версия для axis ("123"). Симметрично formatSecondaryAxis. */
+  formatPrimaryAxis?: (value: number) => string;
   formatSecondaryValue?: (value: number) => string;
   formatSecondaryAxis?: (value: number) => string;
   formatThirdValue?: (value: number) => string;
@@ -54,6 +58,11 @@ interface SimpleChartProps {
   hideTime?: boolean;
   forecastCount?: number; // reserved for future use
   horizontalLines?: { value: number; color: string; label?: string; axis?: 'primary' | 'secondary' }[];
+  /** Развернуть порядок легенды (secondary первым, primary вторым). Нужно когда
+   *  primary линия рисуется как «вспомогательная» а secondary как «главная» —
+   *  legend должен ставить главное значение первым. См. Buffett swap (cap → primary,
+   *  ratio → secondary), но в легенде ratio должно идти первым. */
+  reverseLegend?: boolean;
 }
 
 // Алиасы для обратной совместимости с внутренним кодом
@@ -72,6 +81,7 @@ export default function SimpleChart({
   showSecondary = false,
   showThird = false,
   formatValue = (v) => v.toLocaleString('ru-RU'),
+  formatPrimaryAxis,
   formatSecondaryValue,
   formatSecondaryAxis,
   formatThirdValue,
@@ -90,6 +100,7 @@ export default function SimpleChart({
   allowHistogram = false,
   histogramDisabled = false,
   defaultHistogram = false,
+  reverseLegend = false,
   showValueHeader = true,
   legendPosition = 'bottom',
   showDownloadButton = true,
@@ -782,11 +793,15 @@ export default function SimpleChart({
   // SVG-based legend: <circle> + <text dominantBaseline="middle"> рендерится
   // pixel-perfect одинаково в browser и html2canvas. Никаких CSS hacks с
   // padding/transform — только spec-compliant SVG geometry.
-  const legendItems: ChartLegendItem[] = [
+  const baseLegendItems: ChartLegendItem[] = [
     { color: primaryColor, label: primaryLabel || '' },
     ...(showSecondary && secondaryLabel ? [{ color: secondaryColor, label: secondaryLabel }] : []),
     ...(showThird && thirdLabel ? [{ color: thirdColor, label: thirdLabel }] : []),
   ];
+  // reverseLegend инвертирует порядок — нужно когда primary/secondary swap'нуты
+  // на уровне компонента-вызывателя (Buffett: cap=primary, ratio=secondary),
+  // но в легенде главное значение (ratio) должно идти первым.
+  const legendItems: ChartLegendItem[] = reverseLegend ? [...baseLegendItems].reverse() : baseLegendItems;
   // Legend size: discrete per breakpoint — handled internally by ChartLegend
   // через chartTypography. SimpleChart не передаёт fontSize/dotSize prop'ы,
   // полагается на responsive defaults.
@@ -929,7 +944,7 @@ export default function SimpleChart({
                     fontWeight={tokens.fontYWeight}
                     opacity={isDualAxis ? 0.9 : 1}
                   >
-                    {formatValue(tick.value)}
+                    {(formatPrimaryAxis || formatValue)(tick.value)}
                   </text>
                 </g>
               );
