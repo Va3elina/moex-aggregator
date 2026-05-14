@@ -944,7 +944,21 @@ export default function SimpleChart({
                     fontWeight={tokens.fontYWeight}
                     opacity={isDualAxis ? 0.9 : 1}
                   >
-                    {(formatPrimaryAxis || formatValue)(tick.value)}
+                    {/* Split на "123.45" + " трлн ₽" — unit рисуется меньшим
+                        шрифтом (70%), чтобы длинные axis labels не «давили»
+                        на chart area. Match требует space перед unit:
+                        "123.45 трлн" → split, "55.43%" → no split. */}
+                    {(() => {
+                      const s = (formatPrimaryAxis || formatValue)(tick.value);
+                      const m = s.match(/^(.+?)\s+([а-яА-Яa-zA-Z₽].*?)$/);
+                      if (!m) return s;
+                      return (
+                        <>
+                          {m[1]}
+                          <tspan dx={2} fontSize={tokens.fontY * 0.7} fontWeight={400} opacity={0.75}>{m[2]}</tspan>
+                        </>
+                      );
+                    })()}
                   </text>
                 </g>
               );
@@ -1294,11 +1308,18 @@ export default function SimpleChart({
           type LabelEntry = { color: string; x: number; y: number; value: string; key: string };
           const labels: LabelEntry[] = [];
           const lastP = targetCalc.points[targetCalc.points.length - 1];
+          // Если formatPrimaryAxis задан явно — используем его (он уже compact
+          // версия для axis: содержит unit в нужной форме, без stripUnits).
+          // Иначе fallback на стрипнутую версию formatValue (старое поведение).
+          // Pill text идентичен axis labels — visual alignment гарантирован.
+          const primaryPillStr = formatPrimaryAxis
+            ? formatPrimaryAxis(lastP.value)
+            : stripUnits(formatValue(lastP.value));
           labels.push({
             color: primaryColor,
             x: padding.left + lastP.x,
             y: padding.top + lastP.y,
-            value: stripUnits(formatValue(lastP.value)),
+            value: primaryPillStr,
             key: 'primary',
           });
           if (showSecondary && targetCalc.secondaryPoints.length > 0) {
@@ -1347,12 +1368,15 @@ export default function SimpleChart({
           const rightAxisTextLeft = padding.left + chartWidth + tokens.axisGap;
 
           return labels.map((l) => {
-            const textW = measureText(l.value, fontY, fontWeight);
-            // pillW = ceil(textW) + 2*padX (симметрично, без +1 safety).
-            // measureText на canvas underestimates real SVG glyph width
-            // на 0-1px (sub-pixel advance rounding + Inter kerning). С
-            // padX=6 у нас всегда минимум 5px воздуха с каждой стороны —
-            // overflow невозможен, padding визуально равный.
+            // Split на main + unit (для smaller fontSize у unit) — symmetric с
+            // axis labels rendering. Pill width учитывает оба фрагмента.
+            const splitMatch = l.value.match(/^(.+?)\s+([а-яА-Яa-zA-Z₽].*?)$/);
+            const mainPart = splitMatch ? splitMatch[1] : l.value;
+            const unitPart = splitMatch ? splitMatch[2] : '';
+            const unitFontY = fontY * 0.7;
+            const mainW = measureText(mainPart, fontY, fontWeight);
+            const unitW = unitPart ? measureText(unitPart, unitFontY, 400) + 2 : 0;
+            const textW = mainW + unitW;
             const pillW = Math.ceil(textW) + padX * 2;
 
             const isLeftSide = l.key === 'primary';
@@ -1394,7 +1418,12 @@ export default function SimpleChart({
                   fontWeight={fontWeight}
                   style={{ fontVariantNumeric: 'tabular-nums' }}
                 >
-                  {l.value}
+                  {mainPart}
+                  {unitPart && (
+                    <tspan dx={2} fontSize={unitFontY} fontWeight={400} opacity={0.85}>
+                      {unitPart}
+                    </tspan>
+                  )}
                 </text>
               </g>
             );
