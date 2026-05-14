@@ -171,12 +171,13 @@ export default function StackedBidirectionalHistogram({
         onMouseMove={handleMove}
         onMouseLeave={handleLeave}
       >
-        {/* === Y-axis labels (HTML absolute справа) === */}
+        {/* === Y-axis labels (HTML absolute справа) ===
+            bottom такой же как chart-area — labels выравниваются с grid lines. */}
         <div
           className="absolute"
           style={{
             top: 'var(--chart-pad-top, 19px)',
-            bottom: 'var(--chart-pad-bottom, 50px)',
+            bottom: 'calc(var(--chart-pad-bottom, 50px) + var(--chart-font-x, 17px) + 8px)',
             right: 0,
             width: 'var(--chart-pad-right-single, 95px)',
             pointerEvents: 'none',
@@ -208,12 +209,15 @@ export default function StackedBidirectionalHistogram({
           })}
         </div>
 
-        {/* === Chart-area (SVG inside absolute div) === */}
+        {/* === Chart-area (SVG inside absolute div) ===
+            bottom = pad-bottom + (font-x + 8) — оставляем место для ДВУХ строк
+            подписей (период + год) под chart-area. Иначе year обрезался за
+            paper-card. */}
         <div
           className="absolute"
           style={{
             top: 'var(--chart-pad-top, 19px)',
-            bottom: 'var(--chart-pad-bottom, 50px)',
+            bottom: 'calc(var(--chart-pad-bottom, 50px) + var(--chart-font-x, 17px) + 8px)',
             left: 'var(--chart-pad-left, 100px)',
             right: 'var(--chart-pad-right-single, 95px)',
           }}
@@ -325,13 +329,14 @@ export default function StackedBidirectionalHistogram({
           </svg>
         </div>
 
-        {/* === X-axis labels (период) — HTML absolute снизу === */}
+        {/* === X-axis labels (период) — HTML absolute снизу.
+            Над year labels: bottom = pad-bottom + 4 (gap до year). */}
         <div
           className="absolute"
           style={{
             left: 'var(--chart-pad-left, 100px)',
             right: 'var(--chart-pad-right-single, 95px)',
-            bottom: 'var(--chart-xlabel-bottom, 20px)',
+            bottom: 'calc(var(--chart-pad-bottom, 50px) - var(--chart-font-x, 17px))',
             height: 'calc(var(--chart-font-x, 17px) + 4px)',
             pointerEvents: 'none',
           }}
@@ -363,13 +368,14 @@ export default function StackedBidirectionalHistogram({
           })}
         </div>
 
-        {/* === Год labels — HTML absolute снизу ПОД labels периодов === */}
+        {/* === Год labels — HTML absolute самый низ paper-card.
+            bottom = 4px — небольшой gap от низа, year полностью visible. */}
         <div
           className="absolute"
           style={{
             left: 'var(--chart-pad-left, 100px)',
             right: 'var(--chart-pad-right-single, 95px)',
-            bottom: 'calc(var(--chart-xlabel-bottom, 20px) - var(--chart-font-x, 17px) - 8px)',
+            bottom: '4px',
             height: 'calc(var(--chart-font-x, 17px) + 4px)',
             pointerEvents: 'none',
           }}
