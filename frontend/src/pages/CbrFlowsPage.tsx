@@ -423,6 +423,7 @@ export default function CbrFlowsPage() {
               unit={data?.unit ?? 'млрд руб.'}
               height={chartHeight}
               loading={loading}
+              animTrigger={`${type}|${period}`}
             />
           )}
         </div>

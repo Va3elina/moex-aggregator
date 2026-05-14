@@ -30,6 +30,15 @@ interface Props {
   unit: string;
   height: number;
   loading?: boolean;
+  /**
+   * Явный триггер re-animation. Меняется когда parent хочет показать wave
+   * заново (смена type активов / period selector). НЕ должен меняться
+   * при toggle категорий (тогда animation не сбрасывается → нет «пустого
+   * графика» при выключении категории по очереди).
+   *
+   * Если не передан — fallback на periods length+dates (старая логика).
+   */
+  animTrigger?: string;
 }
 
 interface HoverState {
@@ -51,16 +60,23 @@ export default function StackedBidirectionalHistogram({
   categories,
   height,
   loading,
+  animTrigger,
 }: Props) {
   const { theme } = useTheme();
   const containerRef = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<HoverState | null>(null);
 
-  // Entrance animation: grow-from-zero wave (как Притоки/Оттоки).
+  // Entrance animation: grow-from-zero wave.
   // animProgress[i] ∈ [0, 1] — прогресс bar'а #i (height + stack scale).
-  // animKey НЕ включает categories — toggle категории не сбрасывает animation
-  // (избегает «пустой график» bug при выключении категории по одной).
-  const animKey = `${periods.length}|${periods[0]?.end_date ?? ''}|${periods[periods.length - 1]?.end_date ?? ''}`;
+  //
+  // animKey:
+  //   - Если parent передал animTrigger (рекомендуется) — используем его.
+  //     Это надёжный сигнал «нужно перезапустить wave».
+  //   - Fallback: length+dates periods. Но если у двух разных type активов
+  //     (stocks/ofz) одинаковые dates для same period (6m/2y) → animKey same
+  //     → animation не fires.
+  const animKey = animTrigger
+    ?? `${periods.length}|${periods[0]?.end_date ?? ''}|${periods[periods.length - 1]?.end_date ?? ''}`;
   const [animProgress, setAnimProgress] = useState<number[]>(() =>
     new Array(periods.length).fill(0),
   );
@@ -68,9 +84,9 @@ export default function StackedBidirectionalHistogram({
     if (periods.length === 0) return;
     setAnimProgress(new Array(periods.length).fill(0));
     const start = performance.now();
-    // Адаптивная длительность: на маленьком наборе быстро, на большом cap'ed
-    const totalStagger = Math.min(400, periods.length * 35);
-    const perBarDuration = 600;
+    // Slower wave (match с Притоки/Оттоки feel):
+    const totalStagger = Math.min(800, periods.length * 70);
+    const perBarDuration = 900;
     const totalDuration = totalStagger + perBarDuration;
     let raf = 0;
     const tick = (now: number) => {
@@ -84,7 +100,6 @@ export default function StackedBidirectionalHistogram({
           const delay = periods.length > 1 ? (i / (periods.length - 1)) * totalStagger : 0;
           const localElapsed = Math.max(0, elapsed - delay);
           const t = Math.min(1, localElapsed / perBarDuration);
-          // ease-out quart — strong старт, slow финиш
           return 1 - Math.pow(1 - t, 4);
         }),
       );
@@ -348,20 +363,16 @@ export default function StackedBidirectionalHistogram({
           </svg>
         </div>
 
-        {/* === X-axis labels (DD.MM.YY format) — match с FlowsHistogram:
-            flex justify-between даёт labels evenly spaced без overflow.
-            FIRST label прижат к LEFT edge container, LAST к RIGHT — никогда
-            не пересекают Y-axis padding'и. tickCount — 3 на mobile, 6 на
-            desktop. Date positioning не привязано к centerOf конкретного бара
-            (как и у Притоки/Оттоки) — это «общая ось дат», не «label per bar». */}
+        {/* === X-axis labels (DD.MM.YY format) — match с FlowsHistogram.
+            color/класс/padding идентичны FlowsHistogram для visual consistency. */}
         <div
-          className="absolute flex justify-between font-semibold"
+          className="absolute flex justify-between font-semibold px-2"
           style={{
             left: 'var(--chart-pad-left, 100px)',
             right: 'var(--chart-pad-right-single, 95px)',
             bottom: 'calc(var(--chart-pad-bottom, 50px) - var(--chart-font-x, 17px) - 4px)',
-            fontSize: 'var(--chart-font-x, 17px)',
-            color: 'var(--text-primary)',
+            fontSize: 'var(--chart-font-x, 14px)',
+            color: 'var(--axis-color, #9CA3B8)',
             fontVariantNumeric: 'tabular-nums',
             pointerEvents: 'none',
           }}
