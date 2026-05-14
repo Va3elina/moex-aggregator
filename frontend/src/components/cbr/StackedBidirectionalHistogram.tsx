@@ -67,8 +67,8 @@ const Y_AXIS_PAD_BOTTOM = 56;    // место под labels периодов + 
 // Симметричные горизонтальные padding'и: chart-area по центру paper-card,
 // независимо от того где Y-axis (теперь labels справа). Equal left/right
 // даёт core-graph центрированный — match со SimpleChart pattern.
-const X_AXIS_PAD_LEFT = 50;
-const X_AXIS_PAD_RIGHT = 50;
+const X_AXIS_PAD_LEFT = 90;
+const X_AXIS_PAD_RIGHT = 90;
 const MIN_BAR_PX = 0.5;          // минимальная высота сегмента в px
 
 // Высота зоны легенды (ChartLegend + visual gap до chart). Чётко
@@ -320,23 +320,32 @@ export default function StackedBidirectionalHistogram({
                 style={{ fontVariantNumeric: 'tabular-nums' }}
               >
                 {Math.round(v)}
+                {/* Compact unit suffix мельче (0.7) и тоже жирный — match Buffett.
+                    Каждая axis label выглядит «123 млрд», single-glance. */}
+                <tspan dx={2} fontSize={axisFs * 0.7} fontWeight={700} opacity={0.85}>
+                  млрд
+                </tspan>
               </text>
             </g>
           );
         })}
 
-        {/* Unit hint справа сверху (рядом с Y-axis labels) */}
-        <text
-          x={1000 - X_AXIS_PAD_RIGHT + 8}
-          y={Y_AXIS_PAD_TOP - 4}
-          textAnchor="start"
-          fontSize={axisFs * 0.85}
-          fontWeight={600}
-          opacity={0.7}
-          fill="var(--text-secondary)"
-        >
-          {unit}
-        </text>
+        {/* Unit «млрд» уже на каждом axis tick — отдельный hint сверху не нужен. */}
+
+        {/* Год-сепараторы — solid тонкая линия между годами (как у ЦБ
+            на оригинальном графике). Помогает визуально разделить
+            кварталы разных лет. Линия идёт через всю высоту chart-area. */}
+        {yearSeparators.slice(0, -1).map((s, i) => (
+          <line
+            key={`year-sep-${i}`}
+            x1={s.x} x2={s.x}
+            y1={Y_AXIS_PAD_TOP} y2={svgHeight - Y_AXIS_PAD_BOTTOM}
+            stroke="var(--text-muted)"
+            strokeWidth={1}
+            opacity={0.4}
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
 
         {/* Bars */}
         {periodLayouts.map((pl) => {
@@ -395,8 +404,7 @@ export default function StackedBidirectionalHistogram({
               textAnchor="middle"
               fontSize={axisFs * 0.95}
               fontWeight={700}
-              fill="var(--text-secondary)"
-              opacity={0.85}
+              fill="var(--text-primary)"
             >
               {s.year}
             </text>
@@ -420,14 +428,13 @@ export default function StackedBidirectionalHistogram({
         )}
       </svg>
 
-      {/* Watermark inside chart-area */}
+      {/* Watermark inside chart-area — default opacity 0.55 (match other pages). */}
       <div
         style={{
           position: 'absolute',
           left: `${(X_AXIS_PAD_LEFT / 1000) * 100}%`,
           bottom: `${Y_AXIS_PAD_BOTTOM + 8}px`,
           pointerEvents: 'none',
-          opacity: 0.3,
         }}
       >
         <ChartWatermark />
