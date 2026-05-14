@@ -25,6 +25,7 @@ import {
 } from '../services/api';
 import { useFitToViewport } from '../hooks/useFitToViewport';
 import StackedBidirectionalHistogram from '../components/cbr/StackedBidirectionalHistogram';
+import ChartCaptureButton from '../components/export/ChartCaptureButton';
 
 const INSTRUMENT_TABS: Array<{
   key: CbrInstrumentType;
@@ -78,9 +79,13 @@ export default function CbrFlowsPage() {
       />
 
       <div className="editorial-frame">
-        {/* === Chip-row переключатель типа активов === */}
+        {/* === Controls row: chip-переключатель активов + camera button справа ===
+            Flex layout с flex:1 для chip'ов даёт равное распределение (как
+            grid-cols-3) и одновременно позволяет добавить camera button с
+            ml-auto. На mobile при недостатке места flex-wrap → camera уходит
+            на отдельную строку — без overflow. */}
         <div
-          className="grid grid-cols-3 mb-4 md:mb-6"
+          className="flex flex-wrap items-center mb-4 md:mb-6"
           style={{ gap: 'var(--sp-2)' }}
         >
           {INSTRUMENT_TABS.map((t) => {
@@ -92,6 +97,8 @@ export default function CbrFlowsPage() {
                 onClick={() => setType(t.key)}
                 className="editorial-press flex items-center justify-center font-semibold rounded-full min-w-0"
                 style={{
+                  flex: '1 1 0',
+                  minWidth: '90px',
                   gap: 'var(--sp-2)',
                   padding: 'var(--sp-2) var(--sp-3)',
                   fontSize: 'var(--fs-sm)',
@@ -109,6 +116,22 @@ export default function CbrFlowsPage() {
               </button>
             );
           })}
+
+          {/* Camera button — экспорт графика в PNG (html2canvas). Metadata
+              включает текущий тип актива (Акции/ОФЗ/Валюты) и источник ЦБ. */}
+          <ChartCaptureButton
+            getTargetElement={() => chartAnchorRef.current}
+            filename={`frame-cbr-flows-${type}`}
+            metadata={{
+              title: 'Потоки участников биржи',
+              asset: data?.instrument_label ?? INSTRUMENT_TABS.find(t => t.key === type)?.label ?? '',
+              details: [
+                'Источник: Банк России · ОРФР',
+                data?.source ?? '',
+              ].filter(Boolean) as string[],
+            }}
+            className="ml-auto shrink-0"
+          />
         </div>
 
         {/* === Inner paper-card вокруг графика ===
