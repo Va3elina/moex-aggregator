@@ -64,7 +64,7 @@ export default function Layout() {
             {/* Логотип */}
             <NavLink to="/" className="flex items-center gap-2">
               {isEditorial ? (
-                <FrameLogo size={isCompactHeader ? 18 : 22} color="var(--accent)" />
+                <FrameLogo size={isCompactHeader ? 15 : 22} color="var(--accent)" />
               ) : (
                 <>
                   <Logo size={28} />
@@ -207,7 +207,7 @@ export default function Layout() {
               {isAuthenticated && user?.role === 'admin' && (
                 <button
                   onClick={() => navigate('/admin/stats')}
-                  className="editorial-press grid place-items-center w-7 h-7 xl:w-8 xl:h-8 rounded-full"
+                  className="editorial-press grid place-items-center w-6 h-6 xl:w-8 xl:h-8 rounded-full"
                   style={{
                     color: 'var(--accent)',
                     border: '1.5px solid var(--text-primary)',
@@ -228,7 +228,7 @@ export default function Layout() {
               {isAuthenticated ? (
                 <button
                   onClick={() => navigate('/profile')}
-                  className="editorial-press grid place-items-center w-7 h-7 xl:w-8 xl:h-8 rounded-full font-bold"
+                  className="editorial-press grid place-items-center w-6 h-6 xl:w-8 xl:h-8 rounded-full font-bold"
                   style={{
                     backgroundColor: 'var(--accent)',
                     color: '#fff',
@@ -243,7 +243,7 @@ export default function Layout() {
               ) : (
                 <button
                   onClick={() => navigate('/login')}
-                  className="grid place-items-center w-7 h-7 xl:w-auto xl:h-auto xl:flex xl:items-center xl:gap-1.5 xl:px-3 xl:py-2 rounded-xl text-xs xl:text-sm font-medium transition-opacity hover:opacity-70"
+                  className="grid place-items-center w-6 h-6 xl:w-auto xl:h-auto xl:flex xl:items-center xl:gap-1.5 xl:px-3 xl:py-2 rounded-xl text-xs xl:text-sm font-medium transition-opacity hover:opacity-70"
                   style={{
                     color: 'var(--text-secondary)',
                   }}
