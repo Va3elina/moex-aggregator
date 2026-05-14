@@ -111,14 +111,14 @@ export default function CbrFlowsPage() {
         </div>
 
         {/* === Inner paper-card вокруг графика ===
-            Match с Heatmap structure: bg-theme-primary + 1.5px outline +
-            rounded-2xl. Графики «лежат» на paper card внутри editorial-frame,
-            а не на серо-secondary фоне frame'а. */}
+            bg-primary = главный фон сайта (paper light / чёрный dark) —
+            графики лежат на «странице», а не на secondary card-фоне
+            frame'а. 1.5px outline + rounded-2xl как у Heatmap. */}
         <div
           ref={chartAnchorRef}
           className="rounded-2xl"
           style={{
-            background: 'var(--bg-theme-primary)',
+            background: 'var(--bg-primary)',
             border: '1.5px solid var(--text-primary)',
             padding: 'var(--sp-3)',
           }}
