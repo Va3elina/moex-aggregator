@@ -16,7 +16,7 @@
  * с aspect ratio viewBox vs container, которое раньше центрировало content.
  */
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CbrFlowsPeriod } from '../../services/api';
 import { getCategoryColor } from './cbrPalette';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -55,6 +55,20 @@ export default function StackedBidirectionalHistogram({
   const { theme } = useTheme();
   const containerRef = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<HoverState | null>(null);
+
+  // Entrance animation state: на mount и при смене data (period/type/categories)
+  // bars fade-in с stagger delay (wave effect). Reset → next frame → setGrown(true)
+  // через requestAnimationFrame чтобы дать React render baseline (opacity 0) first.
+  const [grown, setGrown] = useState(false);
+  // Triggering key — изменения которых вызывают re-animation
+  const animKey = `${periods.length}|${periods[0]?.end_date ?? ''}|${categories.join('|')}`;
+  useEffect(() => {
+    setGrown(false);
+    const raf = requestAnimationFrame(() => {
+      requestAnimationFrame(() => setGrown(true));
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [animKey]);
   // Y-axis симметричный max
   const yMax = useMemo(() => {
     if (!periods.length) return 10;
@@ -228,15 +242,31 @@ export default function StackedBidirectionalHistogram({
               );
             })}
 
-            {/* Bars (накопленные стеки) */}
+            {/* Bars (накопленные стеки) с entrance animation:
+                wave fade-in — каждая колонка проявляется со staggered delay
+                по index. Total wave ~600ms для 6 periods, ~1000ms для 52.
+                Transition `opacity` smoothing — при смене hover тоже плавно. */}
             {periods.map((p, i) => {
               const isHovered = hover?.periodIdx === i;
-              const opacity = hover && !isHovered ? 0.5 : 1;
+              // Hover opacity overrides entrance opacity
+              const hoverOpacity = hover && !isHovered ? 0.5 : 1;
+              // Entrance: 0 → 1 with stagger delay
+              const entranceOpacity = grown ? hoverOpacity : 0;
+              // Stagger delay по index. Cap total wave на 600ms.
+              const staggerDelay = periods.length > 0
+                ? (i / periods.length) * Math.min(600, periods.length * 40)
+                : 0;
               let stackUp = 0;
               let stackDown = 0;
               const x = i * barSlot + barOffset;
               return (
-                <g key={i} opacity={opacity} style={{ transition: 'opacity 120ms' }}>
+                <g
+                  key={i}
+                  opacity={entranceOpacity}
+                  style={{
+                    transition: `opacity 400ms cubic-bezier(0.16, 1, 0.3, 1) ${staggerDelay}ms`,
+                  }}
+                >
                   {categories.map((cat) => {
                     const v = p.values[cat] ?? 0;
                     if (v === 0) return null;
