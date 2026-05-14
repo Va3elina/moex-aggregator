@@ -67,17 +67,6 @@ export default function CbrFlowsPage() {
     return () => { cancelled = true; };
   }, [type]);
 
-  // Форматируем дату обновления (updated_at = ISO timestamp)
-  const updatedDate = (() => {
-    if (!data?.updated_at) return null;
-    try {
-      const d = new Date(data.updated_at);
-      return d.toLocaleDateString('ru-RU', { day: '2-digit', month: 'long', year: 'numeric' });
-    } catch {
-      return null;
-    }
-  })();
-
   return (
     <div className="max-w-[1408px] mx-auto" style={{ padding: 'var(--sp-4) var(--sp-4)' }}>
       <PageHeader
@@ -121,14 +110,24 @@ export default function CbrFlowsPage() {
           })}
         </div>
 
-        {/* === График === */}
-        <div ref={chartAnchorRef}>
+        {/* === Inner paper-card вокруг графика ===
+            Match с Heatmap structure: bg-theme-primary + 1.5px outline +
+            rounded-2xl. Графики «лежат» на paper card внутри editorial-frame,
+            а не на серо-secondary фоне frame'а. */}
+        <div
+          ref={chartAnchorRef}
+          className="rounded-2xl"
+          style={{
+            background: 'var(--bg-theme-primary)',
+            border: '1.5px solid var(--text-primary)',
+            padding: 'var(--sp-3)',
+          }}
+        >
           {error ? (
             <div
-              className="flex items-center justify-center rounded-2xl"
+              className="flex items-center justify-center"
               style={{
                 height: `${chartHeight}px`,
-                background: 'var(--bg-secondary)',
                 color: 'var(--text-secondary)',
                 fontSize: 'var(--fs-sm)',
                 padding: 'var(--sp-4)',
@@ -151,35 +150,6 @@ export default function CbrFlowsPage() {
           )}
         </div>
       </div>{/* /editorial-frame */}
-
-      {/* Footer — источник и дата обновления */}
-      <div
-        className="flex flex-wrap items-center justify-between mt-4"
-        style={{
-          gap: 'var(--sp-2)',
-          fontSize: 'var(--fs-xs)',
-          color: 'var(--text-secondary)',
-          padding: '0 var(--sp-1)',
-        }}
-      >
-        <span>
-          Источник:{' '}
-          <a
-            href="https://cbr.ru/analytics/finstab/orfr/"
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ color: 'var(--text-primary)', textDecoration: 'underline' }}
-          >
-            Банк России · Обзор рисков финансовых рынков
-          </a>
-        </span>
-        {updatedDate && (
-          <span style={{ opacity: 0.75 }}>
-            Обновлено: {updatedDate}
-            {data?.source && ` · ${data.source}`}
-          </span>
-        )}
-      </div>
     </div>
   );
 }
