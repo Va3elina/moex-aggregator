@@ -79,7 +79,6 @@ const LEGEND_AREA_HEIGHT = 48;
 export default function StackedBidirectionalHistogram({
   periods,
   categories,
-  unit,
   height,
   loading,
 }: Props) {
