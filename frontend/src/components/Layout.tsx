@@ -94,8 +94,9 @@ export default function Layout() {
               />
             </NavLink>
 
-            {/* Desktop Навигация */}
-            <div className="hidden lg:flex items-center gap-0.5 xl:gap-1 min-w-0">
+            {/* Desktop Навигация — flex-1 min-w-0 overflow-hidden чтобы
+                не выталкивать right side когда узко (laptop 1024). */}
+            <div className="hidden lg:flex flex-1 min-w-0 items-center justify-center gap-0.5 xl:gap-1 overflow-hidden">
               {NAV_ITEMS.map((item) => (
                 <NavLink
                   key={item.path}
@@ -180,8 +181,12 @@ export default function Layout() {
               ))}
             </div>
 
-            {/* Right side */}
-            <div className="flex items-center gap-1 lg:gap-1.5 xl:gap-3">
+            {/* Right side — flex-shrink-0 чтобы никогда не сжималось
+                под nav overflow. Gap stable 8-12px fluid clamp. */}
+            <div
+              className="flex flex-shrink-0 items-center"
+              style={{ gap: 'clamp(6px, 0.5vw + 0.25rem, 12px)' }}
+            >
               {/* Theme Toggle (sun/moon, animated) */}
               <ThemeToggle />
 
@@ -195,7 +200,7 @@ export default function Layout() {
               {isAuthenticated && user?.role === 'admin' && (
                 <button
                   onClick={() => navigate('/admin/stats')}
-                  className="editorial-press grid place-items-center w-8 h-8 md:w-9 md:h-9 xl:w-8 xl:h-8 rounded-full"
+                  className="editorial-press grid place-items-center w-8 h-8 rounded-full"
                   style={{
                     color: 'var(--accent)',
                     border: '1.5px solid var(--text-primary)',
@@ -216,7 +221,7 @@ export default function Layout() {
               {isAuthenticated ? (
                 <button
                   onClick={() => navigate('/profile')}
-                  className="editorial-press grid place-items-center w-8 h-8 md:w-9 md:h-9 xl:w-8 xl:h-8 rounded-full font-bold"
+                  className="editorial-press grid place-items-center w-8 h-8 rounded-full font-bold"
                   style={{
                     backgroundColor: 'var(--accent)',
                     color: '#fff',
@@ -231,7 +236,7 @@ export default function Layout() {
               ) : (
                 <button
                   onClick={() => navigate('/login')}
-                  className="grid place-items-center w-8 h-8 md:w-9 md:h-9 xl:w-auto xl:h-auto xl:flex xl:items-center xl:gap-1.5 xl:px-3 xl:py-2 rounded-xl text-xs xl:text-sm font-medium transition-opacity hover:opacity-70"
+                  className="grid place-items-center w-8 h-8 xl:w-auto xl:h-auto xl:flex xl:items-center xl:gap-1.5 xl:px-3 xl:py-2 rounded-xl text-xs xl:text-sm font-medium transition-opacity hover:opacity-70"
                   style={{
                     color: 'var(--text-secondary)',
                   }}
