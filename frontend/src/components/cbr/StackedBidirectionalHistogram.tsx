@@ -156,15 +156,12 @@ export default function StackedBidirectionalHistogram({
     });
   }, [periods, categories, layout, height]);
 
-  // Y-axis ticks
+  // Y-axis ticks — 5 уровней как у FlowsHistogram (Притоки/Оттоки):
+  // [-max, -max/2, 0, max/2, max]. Solid lines, без dash — чистый минималистичный
+  // grid без визуального шума.
   const yTicks = useMemo(() => {
     if (!layout) return [];
-    const step = layout.yMax >= 80 ? 20 : layout.yMax >= 40 ? 10 : layout.yMax >= 20 ? 5 : 2;
-    const ticks: number[] = [];
-    for (let v = -layout.yMax; v <= layout.yMax; v += step) {
-      ticks.push(v);
-    }
-    return ticks;
+    return [-layout.yMax, -layout.yMax / 2, 0, layout.yMax / 2, layout.yMax];
   }, [layout]);
 
   // Год-сепараторы — между периодами с разным годом
@@ -272,7 +269,9 @@ export default function StackedBidirectionalHistogram({
         onMouseMove={handleMove}
         onMouseLeave={handleLeave}
       >
-        {/* Y-axis grid + labels */}
+        {/* Y-axis grid + labels — 5 горизонтальных линий, solid, без dash.
+            Match со стилем FlowsHistogram (Притоки/Оттоки): нулевая линия
+            более жирная и чуть темнее, остальные тонкие. */}
         {yTicks.map((v) => {
           const y = zeroY - (v / layout.yMax) * halfH;
           const isZero = v === 0;
@@ -283,7 +282,6 @@ export default function StackedBidirectionalHistogram({
                 y1={y} y2={y}
                 stroke={isZero ? 'var(--text-primary)' : 'var(--text-muted)'}
                 strokeWidth={isZero ? 1.5 : 1}
-                strokeDasharray={isZero ? undefined : '2 4'}
                 opacity={isZero ? 0.55 : 0.3}
                 vectorEffect="non-scaling-stroke"
               />
@@ -297,7 +295,8 @@ export default function StackedBidirectionalHistogram({
                 fill="var(--axis-color, var(--text-primary))"
                 style={{ fontVariantNumeric: 'tabular-nums' }}
               >
-                {v}
+                {/* Округляем — половинка yMax может быть .5 */}
+                {Math.round(v)}
               </text>
             </g>
           );
@@ -315,20 +314,6 @@ export default function StackedBidirectionalHistogram({
         >
           {unit}
         </text>
-
-        {/* Год-сепараторы (вертикальные пунктиры) */}
-        {yearSeparators.slice(0, -1).map((s, i) => (
-          <line
-            key={`sep-${i}`}
-            x1={s.x} x2={s.x}
-            y1={Y_AXIS_PAD_TOP} y2={height - Y_AXIS_PAD_BOTTOM}
-            stroke="var(--text-muted)"
-            strokeWidth={1}
-            strokeDasharray="3 4"
-            opacity={0.35}
-            vectorEffect="non-scaling-stroke"
-          />
-        ))}
 
         {/* Bars */}
         {periodLayouts.map((pl) => {
