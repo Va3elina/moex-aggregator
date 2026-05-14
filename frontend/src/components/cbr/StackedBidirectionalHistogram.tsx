@@ -48,8 +48,7 @@ interface HoverState {
 const PAD_TOP = 20;
 const PAD_BOTTOM = 64;
 const PAD_LEFT = 16;
-const PAD_RIGHT = 64;
-const LEGEND_AREA_HEIGHT = 48;
+const PAD_RIGHT = 84;   // 64 → 84 — для «60 млрд» (main + suffix + breath room)
 const MIN_BAR_H = 0.6;  // % минимум высоты сегмента
 
 export default function StackedBidirectionalHistogram({
@@ -157,25 +156,26 @@ export default function StackedBidirectionalHistogram({
   return (
     <div
       ref={containerRef}
-      className="relative"
+      className="relative flex flex-col"
       style={{ height: `${height}px` }}
     >
-      {/* ═══ Зона легенды ═══ */}
+      {/* ═══ Зона легенды — auto height, не сжимается при wrap (7 категорий
+              могут перейти на 2 строки на узком viewport). flex-shrink: 0
+              чтобы legend никогда не уходила за верхний край. ═══ */}
       <div
         style={{
-          height: `${LEGEND_AREA_HEIGHT}px`,
-          display: 'flex',
-          alignItems: 'center',
+          flexShrink: 0,
+          paddingTop: 'var(--sp-2)',
           paddingBottom: 'var(--sp-2)',
         }}
       >
         <ChartLegend items={legendItems} />
       </div>
 
-      {/* ═══ Контейнер chart (relative для absolute children) ═══ */}
+      {/* ═══ Контейнер chart — flex: 1 (берёт оставшуюся высоту) ═══ */}
       <div
         className="relative"
-        style={{ height: `${height - LEGEND_AREA_HEIGHT}px` }}
+        style={{ flex: 1, minHeight: 0 }}
         onMouseMove={handleMove}
         onMouseLeave={handleLeave}
       >
