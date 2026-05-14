@@ -20,6 +20,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CbrFlowsPeriod } from '../../services/api';
 import { getCategoryColor } from './cbrPalette';
 import { useTheme } from '../../contexts/ThemeContext';
+import { useViewportWidth } from '../../hooks/useViewportWidth';
 import ChartLegend, { type ChartLegendItem } from '../chart/ChartLegend';
 import ChartWatermark from '../ChartWatermark';
 import { TOOLTIP } from '../../config/chartTheme';
@@ -65,6 +66,8 @@ export default function StackedBidirectionalHistogram({
   const { theme } = useTheme();
   const containerRef = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<HoverState | null>(null);
+  const vw = useViewportWidth();
+  const isMobile = vw < 768;
 
   // Entrance animation: grow-from-zero wave.
   // animProgress[i] ∈ [0, 1] — прогресс bar'а #i (height + stack scale).
@@ -379,7 +382,6 @@ export default function StackedBidirectionalHistogram({
           }}
         >
           {(() => {
-            const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
             const tickCount = Math.min(isMobile ? 3 : 6, periods.length);
             if (tickCount < 2) {
               // Edge case: 1 period — single centered label
@@ -434,13 +436,16 @@ export default function StackedBidirectionalHistogram({
         const total = entries.reduce((s, e) => s + e.val, 0);
 
         const containerW = containerRef.current?.clientWidth ?? 800;
-        const tooltipW = 260;
-        // Переключаем сторону с СЕРЕДИНЫ chart-area, чтобы tooltip не «съезжал»
-        // только у правого края — он переворачивается, когда курсор пересекает
-        // центр.
+        // Adaptive tooltip width: 260px default, но не больше container-32
+        // (gap 16px по бокам). На mobile 360-375px tooltip станет ~330-340px.
+        const tooltipW = Math.min(260, Math.max(180, containerW - 32));
+        // Переключаем сторону с СЕРЕДИНЫ chart-area.
         const placeLeft = hover.mouseX > containerW / 2;
         const left = placeLeft ? hover.mouseX - tooltipW - 16 : hover.mouseX + 16;
-        const top = Math.max(8, Math.min(hover.mouseY - 20, height - 240));
+        // Tooltip top clamp: bottom-cap уменьшается на mobile (там tooltip
+        // короче — меньше категорий visible или narrower).
+        const tooltipMaxH = isMobile ? 180 : 240;
+        const top = Math.max(8, Math.min(hover.mouseY - 20, height - tooltipMaxH));
 
         return (
           <div
