@@ -311,6 +311,40 @@ export default function StackedBidirectionalHistogram({
           </svg>
         </div>
 
+        {/* === Quarter dividers — короткие vertical палки между периодами
+            (структура «1к 2к 3к 4к | 1к ...» как у ЦБ-референса).
+            Длинные палки на границах годов. */}
+        <div
+          className="absolute"
+          style={{
+            left: 'var(--chart-pad-left, 100px)',
+            right: 'var(--chart-pad-right-single, 95px)',
+            bottom: 'calc(var(--chart-pad-bottom, 50px) - var(--chart-font-x, 17px) - 4px)',
+            height: '14px',
+            pointerEvents: 'none',
+          }}
+        >
+          {periods.map((p, i) => {
+            if (i === 0) return null;  // не рисуем divider перед первым
+            const xPct = i * barSlot;  // граница между period i-1 и i
+            const isYearBoundary = periods[i].year !== periods[i - 1].year;
+            return (
+              <div
+                key={`tick-${i}`}
+                className="absolute"
+                style={{
+                  left: `${xPct}%`,
+                  top: isYearBoundary ? 0 : 4,  // длинная палка от верха, короткая центрирована
+                  height: isYearBoundary ? '14px' : '6px',
+                  width: '1px',
+                  background: 'var(--text-primary)',
+                  opacity: isYearBoundary ? 0.7 : 0.35,
+                }}
+              />
+            );
+          })}
+        </div>
+
         {/* === X-axis labels (период) — HTML absolute снизу.
             Над year labels: bottom = pad-bottom + 4 (gap до year). */}
         <div
