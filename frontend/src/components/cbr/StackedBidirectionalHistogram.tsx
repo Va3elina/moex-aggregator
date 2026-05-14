@@ -68,11 +68,11 @@ const Y_AXIS_PAD_BOTTOM = 56;    // место под labels периодов + 
 // Симметричные горизонтальные padding'и: chart-area по центру paper-card,
 // независимо от того где Y-axis (теперь labels справа). Equal left/right
 // даёт core-graph центрированный — match со SimpleChart pattern.
-// 70/70 — компромисс между симметрией и шириной chart-area:
-// «60 млрд» = main(~25px) + tspan(~28px) + gap(8) ≈ 60px → влезает с запасом.
-// Раньше 90/90 — сжимало гистограмму. 50/50 — labels могли не влезть.
-const X_AXIS_PAD_LEFT = 70;
-const X_AXIS_PAD_RIGHT = 70;
+// Asymmetric padding — chart-area максимально широкая.
+// Слева ничего на оси нет → минимум 16px (visual breathing).
+// Справа axis labels «60 млрд» — нужно ~80px чтобы влезли.
+const X_AXIS_PAD_LEFT = 16;
+const X_AXIS_PAD_RIGHT = 80;
 const MIN_BAR_PX = 0.5;          // минимальная высота сегмента в px
 
 // Высота зоны легенды (ChartLegend + visual gap до chart). Чётко
