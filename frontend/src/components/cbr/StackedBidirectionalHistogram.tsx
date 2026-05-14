@@ -68,11 +68,12 @@ const Y_AXIS_PAD_BOTTOM = 56;    // место под labels периодов + 
 // Симметричные горизонтальные padding'и: chart-area по центру paper-card,
 // независимо от того где Y-axis (теперь labels справа). Equal left/right
 // даёт core-graph центрированный — match со SimpleChart pattern.
-// Asymmetric padding — chart-area максимально широкая.
-// Слева ничего на оси нет → минимум 16px (visual breathing).
-// Справа axis labels «60 млрд» — нужно ~80px чтобы влезли.
-const X_AXIS_PAD_LEFT = 16;
-const X_AXIS_PAD_RIGHT = 80;
+// Asymmetric padding inside SVG. paper-card убрал внешний padding,
+// поэтому здесь добавляем minimum visual breathing.
+// Слева 8px — слева нет axis labels, минимум для bar-edge от paper-edge.
+// Справа 72px — для axis labels «60 млрд» (тонкий шрифт суффикса).
+const X_AXIS_PAD_LEFT = 8;
+const X_AXIS_PAD_RIGHT = 72;
 const MIN_BAR_PX = 0.5;          // минимальная высота сегмента в px
 
 // Высота зоны легенды (ChartLegend + visual gap до chart). Чётко

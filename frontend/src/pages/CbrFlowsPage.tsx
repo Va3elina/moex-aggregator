@@ -140,11 +140,11 @@ export default function CbrFlowsPage() {
             frame'а. 1.5px outline + rounded-2xl как у Heatmap. */}
         <div
           ref={chartAnchorRef}
-          className="rounded-2xl"
+          className="rounded-2xl overflow-hidden"
           style={{
             background: 'var(--bg-primary)',
             border: '1.5px solid var(--text-primary)',
-            padding: 'var(--sp-3)',
+            padding: '0',  // chart content расширяется до самых краёв paper-card
           }}
         >
           {error ? (
