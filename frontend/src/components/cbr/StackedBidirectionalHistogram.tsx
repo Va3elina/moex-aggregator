@@ -17,7 +17,7 @@
  *   • Дружит с html2canvas (никаких CSS transforms, всё SVG)
  */
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CbrFlowsPeriod } from '../../services/api';
 import { getCategoryColor } from './cbrPalette';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -25,6 +25,7 @@ import { useViewportWidth } from '../../hooks/useViewportWidth';
 import { axisFontSize } from '../chart/chartTypography';
 import ChartLegend, { type ChartLegendItem } from '../chart/ChartLegend';
 import ChartWatermark from '../ChartWatermark';
+import { TOOLTIP } from '../../config/chartTheme';
 
 interface Props {
   periods: CbrFlowsPeriod[];
@@ -88,6 +89,27 @@ export default function StackedBidirectionalHistogram({
   const vw = useViewportWidth();
   const axisFs = axisFontSize(vw);
 
+  // Реальная ширина контейнера через ResizeObserver. viewBox SVG задаётся
+  // в этих же coordinates → preserveAspectRatio не растягивает буквы.
+  // Раньше viewBox=1000 при actual width=1200 давал scaleX=1.2 → текст
+  // выглядел horizontally stretched (буквы шире чем должны быть).
+  const [containerWidth, setContainerWidth] = useState(800);
+  useLayoutEffect(() => {
+    if (!containerRef.current) return;
+    const node = containerRef.current;
+    setContainerWidth(node.clientWidth || 800);
+    const ro = new ResizeObserver((entries) => {
+      for (const e of entries) {
+        const w = e.contentRect.width;
+        if (w > 0) setContainerWidth(w);
+      }
+    });
+    ro.observe(node);
+    return () => ro.disconnect();
+  }, []);
+
+  const VIEW_W = containerWidth;
+
   // ─── Вычисляем layout ──────────────────────────────────────────────────
   const layout = useMemo(() => {
     if (!periods.length) return null;
@@ -115,8 +137,7 @@ export default function StackedBidirectionalHistogram({
   const periodLayouts = useMemo<PeriodLayout[]>(() => {
     if (!periods.length || !layout) return [];
 
-    // chartWidth/Height — будут масштабироваться viewBox, считаем в условных px=1000
-    const VIEW_W = 1000;
+    // viewBox = realWidth × svgHeight → буквы не растягиваются.
     const chartW = VIEW_W - X_AXIS_PAD_LEFT - X_AXIS_PAD_RIGHT;
     const chartH = svgHeight - Y_AXIS_PAD_TOP - Y_AXIS_PAD_BOTTOM;
     const halfH = chartH / 2;
@@ -165,7 +186,7 @@ export default function StackedBidirectionalHistogram({
       }
       return { index: i, period: p, x, centerX, barX, barW, segments, positiveTotal, negativeTotal };
     });
-  }, [periods, categories, layout, svgHeight]);
+  }, [periods, categories, layout, svgHeight, VIEW_W]);
 
   // Y-axis ticks — 5 уровней как у FlowsHistogram (Притоки/Оттоки):
   // [-max, -max/2, 0, max/2, max]. Solid lines, без dash — чистый минималистичный
@@ -209,7 +230,7 @@ export default function StackedBidirectionalHistogram({
     const svg = e.currentTarget;
     const rect = svg.getBoundingClientRect();
     const xRatio = (e.clientX - rect.left) / rect.width;
-    const xView = xRatio * 1000;
+    const xView = xRatio * VIEW_W;
     if (!periodLayouts.length) return;
     // Найти ближайший период
     let nearestIdx = 0;
@@ -283,12 +304,15 @@ export default function StackedBidirectionalHistogram({
         <ChartLegend items={legendItems} />
       </div>
 
-      {/* === Зона гистограммы === */}
+      {/* === Зона гистограммы ===
+          viewBox = realWidth × svgHeight (через ResizeObserver) — буквы не
+          растягиваются по X (раньше preserveAspectRatio="none" + viewBox=1000
+          давал scaleX != scaleY → текст выглядел horizontally stretched). */}
       <svg
         width="100%"
         height={svgHeight}
-        viewBox={`0 0 1000 ${svgHeight}`}
-        preserveAspectRatio="none"
+        viewBox={`0 0 ${VIEW_W} ${svgHeight}`}
+        preserveAspectRatio="xMidYMid meet"
         style={{ overflow: 'visible', display: 'block' }}
         onMouseMove={handleMove}
         onMouseLeave={handleLeave}
@@ -302,7 +326,7 @@ export default function StackedBidirectionalHistogram({
           return (
             <g key={v}>
               <line
-                x1={X_AXIS_PAD_LEFT} x2={1000 - X_AXIS_PAD_RIGHT}
+                x1={X_AXIS_PAD_LEFT} x2={VIEW_W - X_AXIS_PAD_RIGHT}
                 y1={y} y2={y}
                 stroke={isZero ? 'var(--text-primary)' : 'var(--text-muted)'}
                 strokeWidth={isZero ? 1.5 : 1}
@@ -310,7 +334,7 @@ export default function StackedBidirectionalHistogram({
                 vectorEffect="non-scaling-stroke"
               />
               <text
-                x={1000 - X_AXIS_PAD_RIGHT + 8}
+                x={VIEW_W - X_AXIS_PAD_RIGHT + 14}
                 y={y}
                 textAnchor="start"
                 dominantBaseline="central"
@@ -428,11 +452,11 @@ export default function StackedBidirectionalHistogram({
         )}
       </svg>
 
-      {/* Watermark inside chart-area — default opacity 0.55 (match other pages). */}
+      {/* Watermark — внутри chart-area от left edge на X_AXIS_PAD_LEFT (px) */}
       <div
         style={{
           position: 'absolute',
-          left: `${(X_AXIS_PAD_LEFT / 1000) * 100}%`,
+          left: `${X_AXIS_PAD_LEFT}px`,
           bottom: `${Y_AXIS_PAD_BOTTOM + 8}px`,
           pointerEvents: 'none',
         }}
@@ -458,59 +482,49 @@ export default function StackedBidirectionalHistogram({
         return (
           <div
             data-export-ignore="true"
-            className="absolute z-20 rounded-xl"
+            className={`${TOOLTIP.containerClass} absolute z-20`}
             style={{
+              ...TOOLTIP.containerStyle,
               left: `${left}px`,
               top: `${top}px`,
               width: `${tooltipW}px`,
-              background: 'var(--bg-theme-primary)',
-              border: '1.5px solid var(--text-primary)',
-              boxShadow: 'var(--shadow-hard-card)',
-              padding: 'var(--sp-3)',
               pointerEvents: 'none',
-              fontSize: 'var(--fs-xs)',
-              color: 'var(--text-primary)',
+              whiteSpace: 'normal',  // override — мы хотим перенос внутри tooltip
             }}
           >
-            <div className="font-bold" style={{ fontSize: 'var(--fs-sm)', marginBottom: 'var(--sp-2)' }}>
+            <div className={TOOLTIP.dateClass} style={{ ...TOOLTIP.dateStyle, marginBottom: 'var(--sp-1)', display: 'inline-block' }}>
               {p.label} {p.year}
             </div>
             {sortedPositive.map((s) => (
-              <div key={s.category} className="flex items-center justify-between" style={{ gap: 'var(--sp-2)', marginBottom: 2 }}>
-                <span className="flex items-center min-w-0" style={{ gap: 'var(--sp-1)' }}>
-                  <span style={{
-                    display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
-                    background: getCategoryColor(s.category, theme), flexShrink: 0,
-                  }} />
-                  <span className="truncate">{s.category}</span>
-                </span>
-                <span className="font-semibold whitespace-nowrap" style={{ color: 'var(--funds-flow-positive)' }}>
+              <div key={s.category} className="flex items-center justify-between py-0.5" style={{ gap: 'var(--sp-2)' }}>
+                <div className="flex items-center min-w-0" style={{ gap: 'var(--sp-1)' }}>
+                  <span className={TOOLTIP.dotClass} style={{ ...TOOLTIP.dotStyle, backgroundColor: getCategoryColor(s.category, theme) }} />
+                  <span className={`${TOOLTIP.labelClass} truncate`} style={TOOLTIP.labelStyle}>{s.category}</span>
+                </div>
+                <span className={TOOLTIP.valueClass} style={{ ...TOOLTIP.valueStyle, color: 'var(--funds-flow-positive)' }}>
                   +{s.value.toFixed(2)}
                 </span>
               </div>
             ))}
             {sortedPositive.length > 0 && sortedNegative.length > 0 && (
-              <div style={{ height: 1, background: 'var(--text-muted)', opacity: 0.3, margin: 'var(--sp-2) 0' }} />
+              <div style={{ height: 1, background: 'var(--text-muted)', opacity: 0.25, margin: '4px 0' }} />
             )}
             {sortedNegative.map((s) => (
-              <div key={s.category} className="flex items-center justify-between" style={{ gap: 'var(--sp-2)', marginBottom: 2 }}>
-                <span className="flex items-center min-w-0" style={{ gap: 'var(--sp-1)' }}>
-                  <span style={{
-                    display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
-                    background: getCategoryColor(s.category, theme), flexShrink: 0,
-                  }} />
-                  <span className="truncate">{s.category}</span>
-                </span>
-                <span className="font-semibold whitespace-nowrap" style={{ color: 'var(--funds-flow-negative)' }}>
+              <div key={s.category} className="flex items-center justify-between py-0.5" style={{ gap: 'var(--sp-2)' }}>
+                <div className="flex items-center min-w-0" style={{ gap: 'var(--sp-1)' }}>
+                  <span className={TOOLTIP.dotClass} style={{ ...TOOLTIP.dotStyle, backgroundColor: getCategoryColor(s.category, theme) }} />
+                  <span className={`${TOOLTIP.labelClass} truncate`} style={TOOLTIP.labelStyle}>{s.category}</span>
+                </div>
+                <span className={TOOLTIP.valueClass} style={{ ...TOOLTIP.valueStyle, color: 'var(--funds-flow-negative)' }}>
                   {s.value.toFixed(2)}
                 </span>
               </div>
             ))}
-            <div style={{ height: 1.5, background: 'var(--text-primary)', opacity: 0.4, margin: 'var(--sp-2) 0' }} />
-            <div className="flex items-center justify-between font-bold">
+            <div style={{ height: 1, background: 'var(--text-primary)', opacity: 0.35, margin: '4px 0' }} />
+            <div className="flex items-center justify-between font-bold" style={{ fontSize: 'var(--fs-xs)' }}>
               <span>Итого нетто</span>
               <span style={{ color: total >= 0 ? 'var(--funds-flow-positive)' : 'var(--funds-flow-negative)' }}>
-                {total >= 0 ? '+' : ''}{total.toFixed(2)} {unit.replace('млрд руб.', 'млрд')}
+                {total >= 0 ? '+' : ''}{total.toFixed(2)} млрд
               </span>
             </div>
           </div>
