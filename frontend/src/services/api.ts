@@ -965,3 +965,41 @@ export async function getAdminUserDetail(userId: number, days: number = 30): Pro
   }
   return response.json();
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// CBR Flows — ОРФР Банка России (потоки участников биржевых торгов)
+// ────────────────────────────────────────────────────────────────────────────
+
+export type CbrInstrumentType = 'stocks' | 'ofz' | 'fx';
+
+export interface CbrFlowsPeriod {
+  year: number;
+  label: string;          // 'I квартал', 'Апрель', ...
+  kind: 'quarter' | 'month';
+  end_date: string;       // ISO 'YYYY-MM-DD'
+  values: Record<string, number>;  // {category: value_in_billion_rub}
+}
+
+export interface CbrFlowsResponse {
+  instrument_type: CbrInstrumentType;
+  instrument_label: string;
+  categories: string[];   // в порядке для legend/stack
+  periods: CbrFlowsPeriod[];
+  source: string | null;  // 'ORFR_2026-4'
+  updated_at: string | null;
+  unit: string;           // 'млрд руб.'
+  note: string;
+}
+
+/**
+ * Потоки участников биржевых торгов по данным ЦБ (ОРФР).
+ * type: 'stocks' (акции) | 'ofz' (ОФЗ) | 'fx' (валюты)
+ */
+export async function getCbrFlows(type: CbrInstrumentType): Promise<CbrFlowsResponse> {
+  const response = await apiFetch(`${API_BASE}/api/cbr-flows?type=${type}`);
+  if (!response.ok) {
+    if (response.status === 404) throw new Error('Данные ЦБ ещё не загружены');
+    throw new Error('Не удалось получить данные');
+  }
+  return response.json();
+}

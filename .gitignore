@@ -87,3 +87,4 @@ scripts/landing-videos/
 scripts/*.flow
 scripts/__pycache__/
 *.pdf
+frontend/.claude/

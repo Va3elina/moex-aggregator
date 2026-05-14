@@ -17,6 +17,7 @@ const NAV_ITEMS: { path: string; label: string; disabled?: boolean; badge?: stri
   { path: '/buffett', label: 'Индикатор Баффетта' },
   { path: '/strength', label: 'Сила рынка' },
   { path: '/seasonality', label: 'Сезонность' },
+  { path: '/cbr-flows', label: 'Потоки ЦБ' },
   // «Состав фондов» — в самом конце справа, помечен как Alfa-тест
   // (сырой индикатор, ждёт доработки методологии и данных).
   { path: '/funds-catalog', label: 'Состав фондов', badge: 'Alfa тест' },

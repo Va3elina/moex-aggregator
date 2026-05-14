@@ -15,6 +15,7 @@ import StrengthPage from './pages/StrengthPage';
 import BuffettPage from './pages/BuffettPage';
 import SeasonalityPage from './pages/SeasonalityPage';
 import FundsCatalogPage from './pages/FundsCatalogPage';
+import CbrFlowsPage from './pages/CbrFlowsPage';
 import LoginPage from './pages/LoginPage';
 import AuthCallback from './pages/AuthCallback';
 import ProfilePage from './pages/ProfilePage';
@@ -30,6 +31,7 @@ import FundsCatalogMethodologyPage from './pages/methodology/FundsCatalogMethodo
 import BuffettMethodologyPage from './pages/methodology/BuffettMethodologyPage';
 import StrengthMethodologyPage from './pages/methodology/StrengthMethodologyPage';
 import SeasonalityMethodologyPage from './pages/methodology/SeasonalityMethodologyPage';
+import CbrFlowsMethodologyPage from './pages/methodology/CbrFlowsMethodologyPage';
 import StylePreviewPage from './pages/StylePreviewPage';
 import PrivacyPage from './pages/PrivacyPage';
 import ContactsPage from './pages/ContactsPage';
@@ -100,6 +102,7 @@ export default function App() {
             <Route path="/buffett" element={<BuffettPage />} />
             <Route path="/strength" element={<StrengthPage />} />
             <Route path="/seasonality" element={<SeasonalityPage />} />
+            <Route path="/cbr-flows" element={<CbrFlowsPage />} />
             {/* Методология индикаторов */}
             <Route path="/methodology/oi" element={<OIMethodologyPage />} />
             <Route path="/methodology/heatmap" element={<HeatmapMethodologyPage />} />
@@ -108,6 +111,7 @@ export default function App() {
             <Route path="/methodology/buffett" element={<BuffettMethodologyPage />} />
             <Route path="/methodology/strength" element={<StrengthMethodologyPage />} />
             <Route path="/methodology/seasonality" element={<SeasonalityMethodologyPage />} />
+            <Route path="/methodology/cbr-flows" element={<CbrFlowsMethodologyPage />} />
             <Route path="/profile" element={<ProfilePage />} />
             {/* Billing */}
             <Route path="/pricing" element={<PricingPage />} />
