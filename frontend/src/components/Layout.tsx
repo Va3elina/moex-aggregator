@@ -67,8 +67,8 @@ export default function Layout() {
               <span
                 className={
                   isEditorial
-                    ? 'px-2 py-0.5 font-bold tracking-wider hidden 2xl:inline'
-                    : 'px-2 py-0.5 font-medium rounded-full hidden 2xl:inline'
+                    ? 'px-2 py-0.5 font-bold tracking-wider hidden lg:inline'
+                    : 'px-2 py-0.5 font-medium rounded-full hidden lg:inline'
                 }
                 style={
                   isEditorial
@@ -90,7 +90,7 @@ export default function Layout() {
               </span>
               <span
                 title={connected ? 'Live: данные обновляются автоматически' : 'Нет соединения с сервером'}
-                className={`w-2 h-2 rounded-full hidden 2xl:inline-block mr-2 ${connected ? 'bg-emerald-400' : 'bg-gray-500'}`}
+                className={`w-2 h-2 rounded-full hidden xl:inline-block mr-2 ${connected ? 'bg-emerald-400' : 'bg-gray-500'}`}
               />
             </NavLink>
 
@@ -144,7 +144,7 @@ export default function Layout() {
                       {item.label}
                       {item.badge && (
                         <span
-                          className="ml-1.5 uppercase font-bold inline-block align-middle"
+                          className="ml-1.5 uppercase font-bold hidden xl:inline-block align-middle"
                           style={{
                             fontSize: '0.62rem',
                             letterSpacing: '0.06em',
