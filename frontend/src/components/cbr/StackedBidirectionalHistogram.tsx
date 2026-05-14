@@ -311,34 +311,71 @@ export default function StackedBidirectionalHistogram({
           </svg>
         </div>
 
-        {/* === Quarter dividers — короткие vertical палки между периодами
-            (структура «1к 2к 3к 4к | 1к ...» как у ЦБ-референса).
-            Длинные палки на границах годов. */}
+        {/* === Year-boundary ticks — длинные палки от chart-area
+            до уровня цифр года (через всю зону labels). */}
         <div
           className="absolute"
           style={{
             left: 'var(--chart-pad-left, 100px)',
             right: 'var(--chart-pad-right-single, 95px)',
-            bottom: 'calc(var(--chart-pad-bottom, 50px) - var(--chart-font-x, 17px) - 4px)',
-            height: '14px',
+            // bottom = top of year labels (year bottom 4 + year height font-x+4)
+            bottom: 'calc(var(--chart-font-x, 17px) + 8px)',
+            // height = от chart-area bottom до top year labels
+            height: 'var(--chart-pad-bottom, 50px)',
             pointerEvents: 'none',
           }}
         >
           {periods.map((_, i) => {
-            if (i === 0) return null;  // не рисуем divider перед первым
-            const xPct = i * barSlot;  // граница между period i-1 и i
+            if (i === 0) return null;
             const isYearBoundary = periods[i].year !== periods[i - 1].year;
+            if (!isYearBoundary) return null;
+            const xPct = i * barSlot;
             return (
               <div
-                key={`tick-${i}`}
+                key={`year-tick-${i}`}
                 className="absolute"
                 style={{
                   left: `${xPct}%`,
-                  top: isYearBoundary ? 0 : 4,  // длинная палка от верха, короткая центрирована
-                  height: isYearBoundary ? '14px' : '6px',
+                  top: 0,
+                  bottom: 0,
                   width: '1px',
                   background: 'var(--text-primary)',
-                  opacity: isYearBoundary ? 0.7 : 0.35,
+                  opacity: 0.5,
+                }}
+              />
+            );
+          })}
+        </div>
+
+        {/* === Quarter ticks (short) — между periodами same year,
+            сразу под chart-area. */}
+        <div
+          className="absolute"
+          style={{
+            left: 'var(--chart-pad-left, 100px)',
+            right: 'var(--chart-pad-right-single, 95px)',
+            // bottom = top of period labels (period bottom + period height)
+            bottom: 'calc(var(--chart-pad-bottom, 50px) - var(--chart-font-x, 17px) + var(--chart-font-x, 17px) + 4px)',
+            height: '6px',
+            pointerEvents: 'none',
+          }}
+        >
+          {periods.map((_, i) => {
+            if (i === 0) return null;
+            const isYearBoundary = periods[i].year !== periods[i - 1].year;
+            if (isYearBoundary) return null;  // year ticks отдельной зоной
+            const xPct = i * barSlot;
+            return (
+              <div
+                key={`q-tick-${i}`}
+                className="absolute"
+                style={{
+                  left: `${xPct}%`,
+                  top: 0,
+                  height: '6px',
+                  width: '1px',
+                  background: 'var(--text-primary)',
+                  opacity: 0.35,
                 }}
               />
             );
