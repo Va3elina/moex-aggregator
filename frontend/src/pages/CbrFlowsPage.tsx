@@ -15,7 +15,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { LineChart, Landmark, DollarSign, Building2 } from 'lucide-react';
+import { LineChart, Landmark, DollarSign, Building2, ChevronDown, Users } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { METHODOLOGY } from '../data/methodology';
 import {
@@ -50,6 +50,33 @@ export default function CbrFlowsPage() {
   // Категории-фильтр: какие категории скрыты из графика.
   // При смене type — сбрасываем (категории различаются для stocks/ofz/fx).
   const [hiddenCategories, setHiddenCategories] = useState<Set<string>>(new Set());
+
+  // Popover-dropdown с выбором категорий (открывается при клике на кнопку)
+  const [categoriesOpen, setCategoriesOpen] = useState(false);
+  const categoriesBtnRef = useRef<HTMLDivElement>(null);
+
+  // Click-outside handler: закрывает popover при клике вне его контейнера
+  useEffect(() => {
+    if (!categoriesOpen) return;
+    const handler = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (categoriesBtnRef.current && !categoriesBtnRef.current.contains(target)) {
+        setCategoriesOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [categoriesOpen]);
+
+  // Esc-key closes popover
+  useEffect(() => {
+    if (!categoriesOpen) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setCategoriesOpen(false);
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [categoriesOpen]);
 
   const chartAnchorRef = useRef<HTMLDivElement>(null);
   const chartHeight = useFitToViewport(chartAnchorRef, {
@@ -150,8 +177,151 @@ export default function CbrFlowsPage() {
             );
           })}
 
-          {/* Camera button — экспорт графика в PNG (html2canvas). Metadata
-              включает текущий тип актива (Акции/ОФЗ/Валюты) и источник ЦБ. */}
+          {/* === Категории — popover-dropdown с rich items.
+              Кнопка показывает счётчик «N/M» + chevron. Клик → раскрывается
+              панель ниже с карточками каждой категории (dot + name + desc + ✓).
+              Click-outside и Esc закрывают. */}
+          <div ref={categoriesBtnRef} className="relative ml-auto shrink-0">
+            <button
+              onClick={() => setCategoriesOpen((o) => !o)}
+              className="editorial-press flex items-center font-semibold rounded-full"
+              style={{
+                gap: 'var(--sp-2)',
+                padding: 'var(--sp-2) var(--sp-3)',
+                fontSize: 'var(--fs-sm)',
+                backgroundColor: categoriesOpen ? 'var(--accent)' : 'var(--bg-secondary)',
+                color: categoriesOpen ? 'var(--text-inverse)' : 'var(--text-primary)',
+                border: '2px solid var(--text-primary)',
+                boxShadow: categoriesOpen ? 'var(--shadow-hard-chip)' : undefined,
+              }}
+            >
+              <Users style={{ width: 'var(--ico-sm)', height: 'var(--ico-sm)' }} />
+              <span className="whitespace-nowrap">
+                Категории {data ? `${visibleCategories.length}/${data.categories.length}` : ''}
+              </span>
+              <ChevronDown
+                style={{
+                  width: 'var(--ico-sm)',
+                  height: 'var(--ico-sm)',
+                  transition: 'transform 200ms',
+                  transform: categoriesOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                }}
+              />
+            </button>
+
+            {/* === Popover — absolute с правым краем выровненным к кнопке === */}
+            {categoriesOpen && data && (
+              <div
+                className="absolute z-30 rounded-2xl"
+                style={{
+                  top: 'calc(100% + var(--sp-2))',
+                  right: 0,
+                  width: 'min(420px, calc(100vw - 32px))',
+                  maxHeight: '70vh',
+                  overflowY: 'auto',
+                  background: 'var(--bg-primary)',
+                  border: '2px solid var(--text-primary)',
+                  boxShadow: 'var(--shadow-hard-card, 6px 6px 0 var(--text-primary))',
+                }}
+              >
+                {/* Header popover */}
+                <div
+                  className="flex items-center justify-between border-b border-theme"
+                  style={{ padding: 'var(--sp-3) var(--sp-4)' }}
+                >
+                  <span
+                    className="font-bold"
+                    style={{ fontSize: 'var(--fs-base)', color: 'var(--text-primary)' }}
+                  >
+                    Участники биржи
+                  </span>
+                  <span
+                    className="font-mono font-bold"
+                    style={{ fontSize: 'var(--fs-xs)', color: 'var(--accent)' }}
+                  >
+                    {visibleCategories.length}/{data.categories.length}
+                  </span>
+                </div>
+
+                {/* Items list */}
+                <div style={{ padding: 'var(--sp-2)' }}>
+                  {data.categories.map((cat) => {
+                    const isHidden = hiddenCategories.has(cat);
+                    const isLastVisible = !isHidden && visibleCategories.length === 1;
+                    const color = getCategoryColor(cat, theme);
+                    const info = getCategoryInfo(cat);
+                    return (
+                      <button
+                        key={cat}
+                        onClick={() => {
+                          if (!isLastVisible) toggleCategory(cat);
+                        }}
+                        disabled={isLastVisible}
+                        className="w-full text-left rounded-xl transition-all duration-150"
+                        style={{
+                          padding: 'var(--sp-3)',
+                          marginBottom: 'var(--sp-1)',
+                          background: isHidden ? 'transparent' : 'color-mix(in srgb, var(--text-primary) 4%, transparent)',
+                          opacity: isHidden ? 0.4 : 1,
+                          cursor: isLastVisible ? 'not-allowed' : 'pointer',
+                          border: '1.5px solid transparent',
+                          borderColor: isHidden ? 'transparent' : 'color-mix(in srgb, var(--text-primary) 12%, transparent)',
+                        }}
+                        title={isLastVisible
+                          ? 'Нельзя скрыть последнюю видимую категорию'
+                          : isHidden ? 'Показать на графике' : 'Скрыть с графика'}
+                      >
+                        <div className="flex items-start" style={{ gap: 'var(--sp-3)' }}>
+                          {/* Checkbox-style indicator */}
+                          <div
+                            className="flex items-center justify-center flex-shrink-0 rounded-md"
+                            style={{
+                              width: 22, height: 22,
+                              marginTop: 2,
+                              background: isHidden ? 'transparent' : color,
+                              border: `2px solid ${isHidden ? 'var(--text-muted)' : color}`,
+                              transition: 'all 150ms',
+                            }}
+                          >
+                            {!isHidden && (
+                              <svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="2 7 6 11 12 3" />
+                              </svg>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div
+                              className="font-bold"
+                              style={{
+                                fontSize: 'var(--fs-sm)',
+                                color: 'var(--text-primary)',
+                                marginBottom: 'var(--sp-1)',
+                              }}
+                            >
+                              {cat}
+                            </div>
+                            {info && (
+                              <div
+                                style={{
+                                  fontSize: 'var(--fs-xs)',
+                                  color: 'var(--text-secondary)',
+                                  lineHeight: 1.4,
+                                }}
+                              >
+                                {info}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Camera button — экспорт графика в PNG */}
           <ChartCaptureButton
             getTargetElement={() => chartAnchorRef.current}
             filename={`frame-cbr-flows-${type}`}
@@ -163,7 +333,7 @@ export default function CbrFlowsPage() {
                 data?.source ?? '',
               ].filter(Boolean) as string[],
             }}
-            className="ml-auto shrink-0"
+            className="shrink-0"
           />
         </div>
 
@@ -212,92 +382,6 @@ export default function CbrFlowsPage() {
           )}
         </div>
       </div>{/* /editorial-frame */}
-
-      {/* ═══ Таблица «Участники» — match с pattern FundsTable.
-          Header c title и счётчиком, чекбокс toggle visibility, dot + name + description. */}
-      {data && data.categories.length > 0 && (
-        <div
-          className="mt-6 rounded-2xl overflow-hidden editorial-frame"
-          style={{ background: 'var(--bg-secondary)', padding: 0 }}
-        >
-          <div
-            className="border-b border-theme flex items-center justify-between"
-            style={{ padding: 'var(--sp-3) var(--sp-4)' }}
-          >
-            <h3 className="font-semibold" style={{ fontSize: 'var(--fs-base)' }}>
-              Участники биржи
-            </h3>
-            <div className="flex items-center" style={{ gap: 'var(--sp-2)' }}>
-              <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-sm)' }}>
-                Видно на графике:
-              </span>
-              <span className="font-mono font-bold" style={{ color: 'var(--accent)', fontSize: 'var(--fs-sm)' }}>
-                {visibleCategories.length} из {data.categories.length}
-              </span>
-            </div>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full" style={{ fontSize: 'var(--fs-sm)' }}>
-              <thead>
-                <tr className="text-theme-secondary text-left">
-                  <th className="px-4 py-3 font-medium w-10"></th>
-                  <th className="px-4 py-3 font-medium">Категория</th>
-                  <th className="px-4 py-3 font-medium">Описание</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.categories.map((cat) => {
-                  const isHidden = hiddenCategories.has(cat);
-                  const isLastVisible = !isHidden && visibleCategories.length === 1;
-                  const color = getCategoryColor(cat, theme);
-                  const info = getCategoryInfo(cat);
-                  return (
-                    <tr
-                      key={cat}
-                      className={`border-t border-theme transition-colors ${
-                        isHidden ? 'opacity-50' : 'hover:bg-white/5'
-                      }`}
-                    >
-                      <td className="px-4 py-3">
-                        <div
-                          className={`flex items-center justify-center w-8 h-8 rounded-lg transition-colors ${
-                            isLastVisible ? 'cursor-not-allowed' : 'hover:bg-white/5 cursor-pointer'
-                          }`}
-                          onClick={() => {
-                            if (!isLastVisible) toggleCategory(cat);
-                          }}
-                          title={isLastVisible ? 'Нельзя скрыть последнюю видимую категорию' : ''}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={!isHidden}
-                            onChange={() => {}}
-                            disabled={isLastVisible}
-                            className="w-4 h-4 rounded border-theme cursor-pointer"
-                            style={{ accentColor: 'var(--accent)' }}
-                          />
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className="legend-dot flex-shrink-0"
-                            style={{ backgroundColor: color }}
-                          />
-                          <span className="font-medium">{cat}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-theme-secondary" style={{ lineHeight: 1.4 }}>
-                        {info}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
