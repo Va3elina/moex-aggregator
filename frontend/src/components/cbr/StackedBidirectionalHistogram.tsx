@@ -294,72 +294,62 @@ export default function StackedBidirectionalHistogram({
           </svg>
         </div>
 
-        {/* === X-axis labels (DD.MM.YY format, adaptive thinning) ===
-            Формат match с FlowsHistogram (Притоки/Оттоки): «31.01.22».
-            Step = max(1, ceil(N / tickCount)) — на mobile 3 labels, desktop 6
-            (match с FlowsHistogram pattern). Всегда показываем FIRST и LAST. */}
-        {(() => {
-          const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
-          const tickCount = isMobile ? 3 : 6;
-          const xLabelStep = Math.max(1, Math.ceil(periods.length / tickCount));
-          return (
-            <div
-              className="absolute"
-              style={{
-                left: 'var(--chart-pad-left, 100px)',
-                right: 'var(--chart-pad-right-single, 95px)',
-                bottom: 'calc(var(--chart-pad-bottom, 50px) - var(--chart-font-x, 17px) - 4px)',
-                height: 'calc(var(--chart-font-x, 17px) + 4px)',
-                pointerEvents: 'none',
-              }}
-            >
-              {periods.map((p, i) => {
-                const isFirst = i === 0;
-                const isLast = i === periods.length - 1;
-                const isStep = i % xLabelStep === 0;
-                if (!isFirst && !isLast && !isStep) return null;
-                // DD.MM.YY формат (как в FlowsHistogram)
-                const date = new Date(p.end_date);
-                const labelText = date.toLocaleDateString('ru-RU', {
-                  day: '2-digit',
-                  month: '2-digit',
-                  year: '2-digit',
-                });
-                const centerPct = i * barSlot + barSlot / 2;
-                const isHovered = hover?.periodIdx === i;
-                return (
-                  <div
-                    key={`xlab-${i}`}
-                    className="absolute font-semibold"
-                    style={{
-                      left: `${centerPct}%`,
-                      transform: 'translateX(-50%)',
-                      fontSize: 'var(--chart-font-x, 17px)',
-                      fontWeight: isHovered ? 700 : 500,
-                      color: 'var(--text-primary)',
-                      opacity: hover && !isHovered ? 0.6 : 1,
-                      transition: 'opacity 120ms',
-                      whiteSpace: 'nowrap',
-                      fontVariantNumeric: 'tabular-nums',
-                    }}
-                  >
-                    {labelText}
-                  </div>
-                );
-              })}
-            </div>
-          );
-        })()}
+        {/* === X-axis labels (DD.MM.YY format) — match с FlowsHistogram:
+            flex justify-between даёт labels evenly spaced без overflow.
+            FIRST label прижат к LEFT edge container, LAST к RIGHT — никогда
+            не пересекают Y-axis padding'и. tickCount — 3 на mobile, 6 на
+            desktop. Date positioning не привязано к centerOf конкретного бара
+            (как и у Притоки/Оттоки) — это «общая ось дат», не «label per bar». */}
+        <div
+          className="absolute flex justify-between font-semibold"
+          style={{
+            left: 'var(--chart-pad-left, 100px)',
+            right: 'var(--chart-pad-right-single, 95px)',
+            bottom: 'calc(var(--chart-pad-bottom, 50px) - var(--chart-font-x, 17px) - 4px)',
+            fontSize: 'var(--chart-font-x, 17px)',
+            color: 'var(--text-primary)',
+            fontVariantNumeric: 'tabular-nums',
+            pointerEvents: 'none',
+          }}
+        >
+          {(() => {
+            const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+            const tickCount = Math.min(isMobile ? 3 : 6, periods.length);
+            if (tickCount < 2) {
+              // Edge case: 1 period — single centered label
+              const p = periods[0];
+              const date = new Date(p.end_date);
+              return (
+                <span style={{ margin: '0 auto' }}>
+                  {date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                </span>
+              );
+            }
+            return Array.from({ length: tickCount }, (_, i) => {
+              const idx = Math.min(
+                Math.round((i * (periods.length - 1)) / (tickCount - 1)),
+                periods.length - 1,
+              );
+              const p = periods[idx];
+              const date = new Date(p.end_date);
+              return (
+                <span key={`xlab-${i}`}>
+                  {date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                </span>
+              );
+            });
+          })()}
+        </div>
 
 
-        {/* === Watermark — на нижней горизонтальной линии grid (bottom of chart-area).
-            Нижняя grid line на bottom edge chart-area = pad-bottom + font-x + 8.
-            Watermark sits with его base на этой линии. */}
+        {/* === Watermark — на нижней горизонтальной линии grid (bottom chart-area).
+            После убирания year labels chart-area bottom = pad-bottom.
+            Watermark sits с base прямо на bottom grid line + 4px gap. */}
         <div
           style={{
             position: 'absolute',
             left: 'calc(var(--chart-pad-left, 100px) + 4px)',
-            bottom: 'calc(var(--chart-pad-bottom, 50px) + var(--chart-font-x, 17px) + 12px)',
+            bottom: 'calc(var(--chart-pad-bottom, 50px) + 4px)',
             pointerEvents: 'none',
           }}
         >
