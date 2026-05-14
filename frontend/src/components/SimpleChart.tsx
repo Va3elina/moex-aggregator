@@ -955,7 +955,7 @@ export default function SimpleChart({
                       return (
                         <>
                           {m[1]}
-                          <tspan dx={2} fontSize={tokens.fontY * 0.7} fontWeight={400} opacity={0.75}>{m[2]}</tspan>
+                          <tspan dx={2} fontSize={tokens.fontY * 0.7} fontWeight={700} opacity={0.85}>{m[2]}</tspan>
                         </>
                       );
                     })()}
@@ -1420,7 +1420,7 @@ export default function SimpleChart({
                 >
                   {mainPart}
                   {unitPart && (
-                    <tspan dx={2} fontSize={unitFontY} fontWeight={400} opacity={0.85}>
+                    <tspan dx={2} fontSize={unitFontY} fontWeight={700} opacity={0.95}>
                       {unitPart}
                     </tspan>
                   )}
