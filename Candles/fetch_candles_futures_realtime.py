@@ -700,6 +700,7 @@ class CandlesUpdater:
         self.last_60min_update = None
         self.last_daily_update = None
         self.last_gap_check = None
+        self.last_prefix_sync = None  # последняя синхронизация instruments-prefix'ов
 
         self.session_stats = {
             'start_time': datetime.now(),
@@ -708,7 +709,67 @@ class CandlesUpdater:
             'errors': 0
         }
 
+        # При старте — синхронизируем prefix'ы новых контрактов
+        # (catch-up на случай если новые M/U/N контракты появились пока контейнер
+        # лежал; см. инцидент 2026-05-14 — MNM/MGM/GKM не были зарегистрированы)
+        try:
+            registered = self._sync_instrument_prefixes()
+            if registered:
+                log.info(f"✓ Подписано новых instrument-prefix'ов: {registered}")
+        except Exception as e:
+            log.warning(f"Не удалось синхронизировать prefix'ы при старте: {e}")
+
         log.info("✓ CandlesUpdater готов")
+
+    def _sync_instrument_prefixes(self) -> int:
+        """
+        Регистрирует «забытые» prefix'ы фьючерсных контрактов в instruments.
+
+        Проблема: фетчер автоматически ротирует контракты (`_find_active_contract`),
+        но не подписывает новые prefix'ы в instruments. API `/api/chart` берёт
+        список sec_id из instruments — без подписи новый контракт невидим.
+
+        Решение: idempotent INSERT всех 3-буквенных prefix'ов из candles,
+        которых ещё нет в instruments. Имя/группа/сектор копируются от
+        существующего prefix того же sectype.
+
+        Returns: количество добавленных rows.
+        """
+        try:
+            with self.engine.connect() as conn:
+                result = conn.execute(text("""
+                    WITH new_prefixes AS (
+                        SELECT DISTINCT c.sec_id, LEFT(c.sec_id, 2) AS sectype_inferred
+                        FROM candles c
+                        WHERE c.type = 'futures'
+                          AND char_length(c.sec_id) = 3
+                          AND RIGHT(c.sec_id, 1) IN ('F','G','H','J','K','M','N','Q','U','V','X','Z')
+                          AND NOT EXISTS (SELECT 1 FROM instruments i WHERE i.sec_id = c.sec_id)
+                    ),
+                    to_insert AS (
+                        SELECT np.sec_id, ref.name, ref.sectype, ref.type,
+                               ref."group", ref.iss_code, ref.sector
+                        FROM new_prefixes np
+                        CROSS JOIN LATERAL (
+                            SELECT name, sectype, type, "group", iss_code, sector
+                            FROM instruments
+                            WHERE sectype = np.sectype_inferred AND type = 'futures'
+                            LIMIT 1
+                        ) ref
+                    )
+                    INSERT INTO instruments (sec_id, name, sectype, type, "group", iss_code, sector)
+                    SELECT sec_id, name, sectype, type, "group", iss_code, sector
+                    FROM to_insert
+                    ON CONFLICT (sec_id) DO NOTHING
+                    RETURNING sec_id
+                """))
+                added = result.fetchall()
+                conn.commit()
+            self.last_prefix_sync = datetime.now()
+            return len(added)
+        except Exception as e:
+            log.error(f"_sync_instrument_prefixes: {e}")
+            return 0
 
     def get_last_candle_time(self, secid: str, interval: int) -> Optional[datetime]:
         """Время последней свечи в БД"""
@@ -1036,6 +1097,17 @@ class CandlesUpdater:
         att, ins = await self.update_daily(session, contracts)
         results[24] = ins
         log.info(f"  ✓ 24ч: +{ins} новых")
+
+        # Раз в час подписываем новые prefix'ы в instruments
+        # (не каждый 5-мин цикл — лёгкий запрос но не нужен так часто).
+        now = datetime.now()
+        if not self.last_prefix_sync or (now - self.last_prefix_sync) > timedelta(hours=1):
+            try:
+                added = self._sync_instrument_prefixes()
+                if added:
+                    log.info(f"📝 Зарегистрировано новых instrument-prefix'ов: {added}")
+            except Exception as e:
+                log.warning(f"Sync prefix'ов: {e}")
 
         return results
 
