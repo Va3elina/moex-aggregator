@@ -22,6 +22,46 @@ log = get_logger()
 
 router = APIRouter(prefix="/api/breadth", tags=["breadth"])
 
+
+# ════════════════════════════════════════════════════════════════════════════
+# Split-adjustment registry
+#
+# 5-минутные свечи MOEX retroactively не пересчитываются при сплитах. Если
+# акция получила split 1:N, то pre-split close (например 3200₽) и post-split
+# close (320₽) лежат в БД как есть. Любая EMA/breadth-аналитика на смеси даст
+# wrong result: EMA200 будет где-то посередине, current price «ниже EMA» →
+# breadth классифицирует акцию как oversold хоть на самом деле она просто
+# получила сплит.
+#
+# Тот же registry применён в db/mv_heatmap_stocks.sql (Heatmap уже починен).
+# Добавлять новые сплиты при появлении (детектировать по аномальному
+# day-over-day change в daily candles).
+# ════════════════════════════════════════════════════════════════════════════
+from datetime import date as _date_cls
+
+KNOWN_SPLITS: dict[str, tuple[_date_cls, float]] = {
+    # secid : (split_date, ratio).  Сколько новых акций на 1 старую.
+    # Применяется ТОЛЬКО к close < split_date (retroactive adjustment):
+    #   adjusted_close = raw_close / ratio
+    'T':    (_date_cls(2026, 4, 2), 10.0),     # Т-Технологии (бывш. Tinkoff) 1:10
+    'SFIN': (_date_cls(2025, 12, 25), 1.93),   # СФИ — split 1.93
+}
+
+
+def _adjust_for_split(ticker: str, dated_prices: list[tuple]) -> list[tuple]:
+    """
+    Если ticker в KNOWN_SPLITS — делит pre-split цены на ratio. Иначе no-op.
+    dated_prices: [(date, price), ...] в хронологическом порядке.
+    """
+    info = KNOWN_SPLITS.get(ticker)
+    if not info:
+        return dated_prices
+    split_date, ratio = info
+    return [
+        (d, p / ratio) if (d if isinstance(d, _date_cls) else _date_cls.fromisoformat(str(d))) < split_date else (d, p)
+        for d, p in dated_prices
+    ]
+
 IMOEX_ISS_URL = "https://iss.moex.com/iss/statistics/engines/stock/markets/index/analytics/IMOEX.json?limit=100"
 
 
@@ -159,8 +199,13 @@ def _compute_breadth_for_tickers(engine, tickers: list[str], ema_period: int, da
             if len(rows) < ema_period:
                 continue
 
-            prices = [float(r[1]) for r in rows if r[1]]
-            dates = [str(r[0]) for r in rows if r[1]]
+            # Split-adjustment: pre-split цены делим на ratio (см. KNOWN_SPLITS).
+            # Иначе EMA для T/SFIN считается на смеси старых и новых цен
+            # → bogus результат (T выглядит как oversold после split 1:10).
+            dated = [(r[0], float(r[1])) for r in rows if r[1]]
+            dated = _adjust_for_split(ticker, dated)
+            prices = [p for _, p in dated]
+            dates = [str(d) for d, _ in dated]
 
             if len(prices) < ema_period:
                 continue
@@ -267,6 +312,11 @@ async def get_current_breadth(
 
             rows = list(reversed(rows))
             raw_prices = [(r[0], float(r[1])) for r in rows if r[1]]
+
+            # Split-adjustment: pre-split цены делим на ratio. Без этого
+            # T (split 1:10 на 2026-04-02) выглядит как oversold —
+            # EMA200 на смеси 3200₽/320₽ ~1500₽, current 320 < EMA → false.
+            raw_prices = _adjust_for_split(ticker, raw_prices)
 
             # USD конверсия: пропускаем дни без курса
             if is_usd:

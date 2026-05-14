@@ -51,6 +51,15 @@ EXCLUDED = {
     'GLDRUBF', 'GAZPF', 'SBERF',
 }
 
+# Split-adjustment registry — должен совпадать с api/routers/breadth.py.
+# 5-мин/дневные candles в БД retroactively не пересчитываются при сплитах.
+# Pre-split close делится на ratio, чтобы EMA не считалась на смеси
+# до-split и пост-split цен (иначе T (split 1:10) выглядел бы как oversold).
+KNOWN_SPLITS: dict[str, tuple[date, float]] = {
+    'T':    (date(2026, 4, 2), 10.0),     # Т-Технологии 1:10
+    'SFIN': (date(2025, 12, 25), 1.93),   # СФИ 1.93
+}
+
 IMOEX_ISS_URL = "https://iss.moex.com/iss/statistics/engines/stock/markets/index/analytics/IMOEX.json?limit=100"
 
 
@@ -250,7 +259,14 @@ def load_candles(engine, tickers: list[str], date_from: date) -> dict[str, tuple
         if secid not in ticker_data:
             ticker_data[secid] = ([], [])
         ticker_data[secid][0].append(d)
-        ticker_data[secid][1].append(float(close))
+        # Split-adjustment: pre-split цены делим на ratio. Иначе EMA
+        # пересекает разрыв сплита → bogus breadth для T/SFIN.
+        if secid in KNOWN_SPLITS:
+            split_date, ratio = KNOWN_SPLITS[secid]
+            adj_close = float(close) / ratio if d < split_date else float(close)
+        else:
+            adj_close = float(close)
+        ticker_data[secid][1].append(adj_close)
 
     return ticker_data
 

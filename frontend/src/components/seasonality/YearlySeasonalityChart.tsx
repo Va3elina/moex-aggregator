@@ -331,12 +331,14 @@ export default function YearlySeasonalityChart({
 
             {/* Series lines — все равноправны (одна толщина/opacity).
                 Раньше 0-я была "среднее за все годы" и рисовалась приглушённой;
-                теперь все серии — явно выбранные "Период с YYYY", все равнозначные. */}
+                теперь все серии — явно выбранные "Период с YYYY", все равнозначные.
+                strokeWidth=3 совпадает с tokens.linePrimaryW в SimpleChart (OI/Buffett) —
+                визуальная консистентность линий между индикаторами. */}
             {seriesPaths.map((path, s) => (
               path ? (
                 <path key={allMeta[s]?.key ?? s} d={path}
                   fill="none" stroke={allMeta[s]?.color ?? CHART_COLORS.muted}
-                  strokeWidth="2"
+                  strokeWidth="3"
                   vectorEffect="non-scaling-stroke"
                   strokeLinecap="round" strokeLinejoin="round"
                   opacity={0.85}
@@ -346,7 +348,7 @@ export default function YearlySeasonalityChart({
 
             {/* Current year line — accent, поверх */}
             {cur.length > 0 && (
-              <path d={curPath} fill="none" stroke={CHART_COLORS.accent} strokeWidth="2"
+              <path d={curPath} fill="none" stroke={CHART_COLORS.accent} strokeWidth="3"
                 vectorEffect="non-scaling-stroke"
                 strokeLinecap="round" strokeLinejoin="round" />
             )}
