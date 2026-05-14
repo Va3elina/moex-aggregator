@@ -20,8 +20,6 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import type { CbrFlowsPeriod } from '../../services/api';
 import { getCategoryColor } from './cbrPalette';
 import { useTheme } from '../../contexts/ThemeContext';
-import { useViewportWidth } from '../../hooks/useViewportWidth';
-import { axisFontSize } from '../chart/chartTypography';
 import ChartLegend, { type ChartLegendItem } from '../chart/ChartLegend';
 import ChartWatermark from '../ChartWatermark';
 import { TOOLTIP } from '../../config/chartTheme';
@@ -40,15 +38,12 @@ interface HoverState {
   mouseY: number;
 }
 
-// CSS padding chart-area внутри outer container.
-// LEFT = 16 (минимум visual breathing, axis labels справа)
-// RIGHT = 64 (для axis labels "60 млрд")
-// TOP = 20 (зазор от верха chart до первого tick "+60")
-// BOTTOM = 64 (под labels периодов "Iк" + год "2024")
-const PAD_TOP = 20;
-const PAD_BOTTOM = 64;
-const PAD_LEFT = 16;
-const PAD_RIGHT = 84;   // 64 → 84 — для «60 млрд» (main + suffix + breath room)
+// Padding chart-area + font-size через CSS variables (fluid clamp в index.css).
+// Это даёт автоматическую адаптацию на mobile: --chart-pad-left/right на
+// узких экранах меньше (~34-58px), на desktop ~95-100px. Font axis тоже
+// scales дискретно (10→11→13→15→17px на breakpoints 320/375/425/768/1024/1440).
+// Symmetric padding-left ≈ padding-right даёт chart-area по центру paper-card.
+// Match с pattern FlowsHistogram/SimpleChart.
 const MIN_BAR_H = 0.6;  // % минимум высоты сегмента
 
 export default function StackedBidirectionalHistogram({
@@ -60,9 +55,6 @@ export default function StackedBidirectionalHistogram({
   const { theme } = useTheme();
   const containerRef = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<HoverState | null>(null);
-  const vw = useViewportWidth();
-  const axisFs = axisFontSize(vw);
-
   // Y-axis симметричный max
   const yMax = useMemo(() => {
     if (!periods.length) return 10;
@@ -183,10 +175,10 @@ export default function StackedBidirectionalHistogram({
         <div
           className="absolute"
           style={{
-            top: `${PAD_TOP}px`,
-            bottom: `${PAD_BOTTOM}px`,
+            top: 'var(--chart-pad-top, 19px)',
+            bottom: 'var(--chart-pad-bottom, 50px)',
             right: 0,
-            width: `${PAD_RIGHT}px`,
+            width: 'var(--chart-pad-right-single, 95px)',
             pointerEvents: 'none',
           }}
         >
@@ -195,21 +187,20 @@ export default function StackedBidirectionalHistogram({
             return (
               <div
                 key={v}
-                className="absolute"
+                className="absolute font-bold"
                 style={{
                   top: `${yPct}%`,
-                  left: 6,
+                  left: 'var(--sp-2)',
                   right: 0,
                   transform: 'translateY(-50%)',
-                  fontSize: `${axisFs}px`,
-                  fontWeight: 700,
+                  fontSize: 'var(--chart-font-y, 17px)',
                   color: 'var(--axis-color, var(--text-primary))',
                   fontVariantNumeric: 'tabular-nums',
                   whiteSpace: 'nowrap',
                 }}
               >
                 {Math.round(v)}
-                <span style={{ fontSize: `${axisFs * 0.7}px`, fontWeight: 700, opacity: 0.85, marginLeft: 3 }}>
+                <span className="font-bold" style={{ fontSize: '0.7em', opacity: 0.85, marginLeft: 3 }}>
                   млрд
                 </span>
               </div>
@@ -221,10 +212,10 @@ export default function StackedBidirectionalHistogram({
         <div
           className="absolute"
           style={{
-            top: `${PAD_TOP}px`,
-            bottom: `${PAD_BOTTOM}px`,
-            left: `${PAD_LEFT}px`,
-            right: `${PAD_RIGHT}px`,
+            top: 'var(--chart-pad-top, 19px)',
+            bottom: 'var(--chart-pad-bottom, 50px)',
+            left: 'var(--chart-pad-left, 100px)',
+            right: 'var(--chart-pad-right-single, 95px)',
           }}
         >
           <svg
@@ -338,10 +329,10 @@ export default function StackedBidirectionalHistogram({
         <div
           className="absolute"
           style={{
-            left: `${PAD_LEFT}px`,
-            right: `${PAD_RIGHT}px`,
-            bottom: `${PAD_BOTTOM - 22}px`,
-            height: '20px',
+            left: 'var(--chart-pad-left, 100px)',
+            right: 'var(--chart-pad-right-single, 95px)',
+            bottom: 'var(--chart-xlabel-bottom, 20px)',
+            height: 'calc(var(--chart-font-x, 17px) + 4px)',
             pointerEvents: 'none',
           }}
         >
@@ -354,11 +345,11 @@ export default function StackedBidirectionalHistogram({
             return (
               <div
                 key={`xlab-${i}`}
-                className="absolute"
+                className="absolute font-semibold"
                 style={{
                   left: `${centerPct}%`,
                   transform: 'translateX(-50%)',
-                  fontSize: `${axisFs}px`,
+                  fontSize: 'var(--chart-font-x, 17px)',
                   fontWeight: isHovered ? 700 : 500,
                   color: 'var(--text-primary)',
                   opacity: hover && !isHovered ? 0.6 : 1,
@@ -372,14 +363,14 @@ export default function StackedBidirectionalHistogram({
           })}
         </div>
 
-        {/* === Год labels — HTML absolute ниже labels периодов === */}
+        {/* === Год labels — HTML absolute снизу ПОД labels периодов === */}
         <div
           className="absolute"
           style={{
-            left: `${PAD_LEFT}px`,
-            right: `${PAD_RIGHT}px`,
-            bottom: `${PAD_BOTTOM - 48}px`,
-            height: '20px',
+            left: 'var(--chart-pad-left, 100px)',
+            right: 'var(--chart-pad-right-single, 95px)',
+            bottom: 'calc(var(--chart-xlabel-bottom, 20px) - var(--chart-font-x, 17px) - 8px)',
+            height: 'calc(var(--chart-font-x, 17px) + 4px)',
             pointerEvents: 'none',
           }}
         >
@@ -390,12 +381,11 @@ export default function StackedBidirectionalHistogram({
             return (
               <div
                 key={`year-${block.year}`}
-                className="absolute"
+                className="absolute font-bold"
                 style={{
                   left: `${midPct}%`,
                   transform: 'translateX(-50%)',
-                  fontSize: `${axisFs * 0.95}px`,
-                  fontWeight: 700,
+                  fontSize: 'var(--chart-font-x, 17px)',
                   color: 'var(--text-primary)',
                   whiteSpace: 'nowrap',
                 }}
@@ -410,8 +400,8 @@ export default function StackedBidirectionalHistogram({
         <div
           style={{
             position: 'absolute',
-            left: `${PAD_LEFT + 4}px`,
-            bottom: `${PAD_BOTTOM + 4}px`,
+            left: 'calc(var(--chart-pad-left, 100px) + 4px)',
+            bottom: 'var(--chart-pad-bottom, 50px)',
             pointerEvents: 'none',
           }}
         >
