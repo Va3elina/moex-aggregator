@@ -152,10 +152,18 @@ export default function FlowsHistogram({
                             const midY = 50;
                             const halfH = 47;
                             const minBarH = 1.2;
-                            // Outline только когда баров мало — иначе stroke
-                            // съедает interior color (тонкий бар = 80% black)
-                            // и SVG лагает от сотен stroked rect'ов.
-                            const showOutline = visibleIn.length <= 50;
+                            // Динамическая толщина окантовки. Раньше был жёсткий
+                            // cutoff (>50 баров → нет окантовки совсем): тонкие
+                            // бары + stroke=1px = 80% чёрный, поэтому полностью
+                            // отключали. Теперь strokeWidth плавно уменьшается:
+                            // мало баров — полная окантовка 1px (читаемые границы);
+                            // много баров — тонкая 0.25-0.4px (hint, не дoминирует).
+                            // vectorEffect=non-scaling-stroke фиксирует px независимо
+                            // от SVG ширины — окантовка не «прыгает» при resize.
+                            const outlineWidth = visibleIn.length <= 20 ? 1
+                                              : visibleIn.length <= 50 ? 0.7
+                                              : visibleIn.length <= 100 ? 0.4
+                                              : 0.25;
 
                             return visibleIn.map((inVal, i) => {
                                 const outVal = visibleOut[i] ?? 0;
@@ -172,13 +180,15 @@ export default function FlowsHistogram({
                                         {hIn > 0 && (
                                             <rect x={x} y={`${midY - hIn}%`} width={w} height={`${hIn}%`}
                                                 fill={'var(--funds-flow-positive)'}
-                                                {...(showOutline ? { stroke: 'var(--bar-outline)', strokeWidth: 1 } : {})}
+                                                stroke="var(--bar-outline)" strokeWidth={outlineWidth}
+                                                vectorEffect="non-scaling-stroke"
                                                 rx="2" />
                                         )}
                                         {hOut > 0 && (
                                             <rect x={x} y={`${midY}%`} width={w} height={`${hOut}%`}
                                                 fill={'var(--funds-flow-negative)'}
-                                                {...(showOutline ? { stroke: 'var(--bar-outline)', strokeWidth: 1 } : {})}
+                                                stroke="var(--bar-outline)" strokeWidth={outlineWidth}
+                                                vectorEffect="non-scaling-stroke"
                                                 rx="2" />
                                         )}
                                     </g>

@@ -203,10 +203,14 @@ export default function SeasonalityHistogram({
         <svg viewBox="0 0 1000 500" preserveAspectRatio="none" width="100%" height="100%">
           {/* Единый путь: волна слева направо через transition-delay = (i / n) * stagger.
               Каждый бар стартует с задержкой пропорциональной позиции → эффект «волны».
-              Outline видим только когда баров мало — иначе stroke съедает interior
-              color (бар выглядит чёрным на mobile / monthday-31). */}
+              Outline толщина плавно уменьшается с ростом count — раньше при
+              bars > 20 отключали совсем (тонкий бар становился чёрным), теперь
+              0.25-1px gradient даёт hint контура без visual dominance. */}
           {bars.map((bar, i) => {
-            const showBarOutline = bars.length <= 20;
+            const outlineWidth = bars.length <= 20 ? 1
+                              : bars.length <= 50 ? 0.7
+                              : bars.length <= 100 ? 0.4
+                              : 0.25;
             const slotW = W / bars.length;
             const slotPadding = slotW * 0.1;
             const groupW = slotW - slotPadding * 2;
@@ -236,7 +240,8 @@ export default function SeasonalityHistogram({
                         x={bx + 1} y={y}
                         width={subBarW - 2} height={h}
                         fill={style.color} rx="2"
-                        {...(showBarOutline ? { stroke: 'var(--bar-outline)', strokeWidth: 1 } : {})}
+                        stroke="var(--bar-outline)" strokeWidth={outlineWidth}
+                        vectorEffect="non-scaling-stroke"
                         style={transitionStyle}
                       />
                     );
@@ -254,7 +259,8 @@ export default function SeasonalityHistogram({
                       x={bx} y={y}
                       width={subBarW} height={h}
                       fill={color} rx="3"
-                      {...(showBarOutline ? { stroke: 'var(--bar-outline)', strokeWidth: 1 } : {})}
+                      stroke="var(--bar-outline)" strokeWidth={outlineWidth}
+                      vectorEffect="non-scaling-stroke"
                       style={transitionStyle}
                     />
                   );
