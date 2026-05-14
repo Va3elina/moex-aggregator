@@ -213,96 +213,89 @@ export default function CbrFlowsPage() {
         </div>
       </div>{/* /editorial-frame */}
 
-      {/* ═══ Раздел «Участники» — карточки с описаниями и toggle visibility ═══
-          Клик на карточку — скрывает категорию из графика (dim styling).
-          Нельзя скрыть последнюю видимую (защита от пустого графика). */}
+      {/* ═══ Таблица «Участники» — match с pattern FundsTable.
+          Header c title и счётчиком, чекбокс toggle visibility, dot + name + description. */}
       {data && data.categories.length > 0 && (
-        <div className="mt-6 md:mt-8">
-          <h3
-            className="font-bold text-theme-primary mb-3 md:mb-4"
-            style={{ fontSize: 'var(--fs-xl)' }}
-          >
-            Участники
-          </h3>
+        <div
+          className="mt-6 rounded-2xl overflow-hidden editorial-frame"
+          style={{ background: 'var(--bg-secondary)', padding: 0 }}
+        >
           <div
-            className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3"
-            style={{ gap: 'var(--sp-3)' }}
+            className="border-b border-theme flex items-center justify-between"
+            style={{ padding: 'var(--sp-3) var(--sp-4)' }}
           >
-            {data.categories.map((cat) => {
-              const isHidden = hiddenCategories.has(cat);
-              const isLastVisible = !isHidden && visibleCategories.length === 1;
-              const color = getCategoryColor(cat, theme);
-              const info = getCategoryInfo(cat);
-              return (
-                <button
-                  key={cat}
-                  onClick={() => toggleCategory(cat)}
-                  disabled={isLastVisible}
-                  className="editorial-press rounded-2xl text-left transition-opacity duration-150"
-                  style={{
-                    padding: 'var(--sp-3)',
-                    background: 'var(--bg-primary)',
-                    border: '1.5px solid var(--text-primary)',
-                    opacity: isHidden ? 0.45 : 1,
-                    cursor: isLastVisible ? 'not-allowed' : 'pointer',
-                  }}
-                  title={isLastVisible
-                    ? 'Нельзя скрыть последнюю видимую категорию'
-                    : isHidden ? 'Показать категорию' : 'Скрыть из графика'}
-                >
-                  <div className="flex items-start" style={{ gap: 'var(--sp-3)' }}>
-                    {/* Цветной кружок категории */}
-                    <span
-                      style={{
-                        display: 'inline-block',
-                        width: 14,
-                        height: 14,
-                        borderRadius: '50%',
-                        backgroundColor: color,
-                        marginTop: 4,
-                        flexShrink: 0,
-                        // Если категория скрыта — кружок становится контурным
-                        boxShadow: isHidden ? `inset 0 0 0 6px var(--bg-primary)` : undefined,
-                      }}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div
-                        className="font-bold"
-                        style={{
-                          fontSize: 'var(--fs-sm)',
-                          color: 'var(--text-primary)',
-                          marginBottom: 'var(--sp-1)',
-                        }}
-                      >
-                        {cat}
-                      </div>
-                      {info && (
-                        <div
-                          style={{
-                            fontSize: 'var(--fs-xs)',
-                            color: 'var(--text-secondary)',
-                            lineHeight: 1.4,
-                          }}
-                        >
-                          {info}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
+            <h3 className="font-semibold" style={{ fontSize: 'var(--fs-base)' }}>
+              Участники биржи
+            </h3>
+            <div className="flex items-center" style={{ gap: 'var(--sp-2)' }}>
+              <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-sm)' }}>
+                Видно на графике:
+              </span>
+              <span className="font-mono font-bold" style={{ color: 'var(--accent)', fontSize: 'var(--fs-sm)' }}>
+                {visibleCategories.length} из {data.categories.length}
+              </span>
+            </div>
           </div>
-          <p
-            className="mt-3 md:mt-4"
-            style={{
-              fontSize: 'var(--fs-xs)',
-              color: 'var(--text-muted)',
-              fontStyle: 'italic',
-            }}
-          >
-            Кликни по карточке, чтобы скрыть категорию из графика. Минимум одна должна остаться видимой.
-          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full" style={{ fontSize: 'var(--fs-sm)' }}>
+              <thead>
+                <tr className="text-theme-secondary text-left">
+                  <th className="px-4 py-3 font-medium w-10"></th>
+                  <th className="px-4 py-3 font-medium">Категория</th>
+                  <th className="px-4 py-3 font-medium">Описание</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.categories.map((cat) => {
+                  const isHidden = hiddenCategories.has(cat);
+                  const isLastVisible = !isHidden && visibleCategories.length === 1;
+                  const color = getCategoryColor(cat, theme);
+                  const info = getCategoryInfo(cat);
+                  return (
+                    <tr
+                      key={cat}
+                      className={`border-t border-theme transition-colors ${
+                        isHidden ? 'opacity-50' : 'hover:bg-white/5'
+                      }`}
+                    >
+                      <td className="px-4 py-3">
+                        <div
+                          className={`flex items-center justify-center w-8 h-8 rounded-lg transition-colors ${
+                            isLastVisible ? 'cursor-not-allowed' : 'hover:bg-white/5 cursor-pointer'
+                          }`}
+                          onClick={() => {
+                            if (!isLastVisible) toggleCategory(cat);
+                          }}
+                          title={isLastVisible ? 'Нельзя скрыть последнюю видимую категорию' : ''}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={!isHidden}
+                            onChange={() => {}}
+                            disabled={isLastVisible}
+                            className="w-4 h-4 rounded border-theme cursor-pointer"
+                            style={{ accentColor: 'var(--accent)' }}
+                          />
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="legend-dot flex-shrink-0"
+                            style={{ backgroundColor: color }}
+                          />
+                          <span className="font-medium">{cat}</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-theme-secondary" style={{ lineHeight: 1.4 }}>
+                        {info}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
