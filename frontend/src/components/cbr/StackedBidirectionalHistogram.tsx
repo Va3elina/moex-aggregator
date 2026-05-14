@@ -364,13 +364,14 @@ export default function StackedBidirectionalHistogram({
         </div>
 
         {/* === X-axis labels (DD.MM.YY format) — match с FlowsHistogram.
-            color/класс/padding идентичны FlowsHistogram для visual consistency. */}
+            bottom: var(--chart-xlabel-bottom) — same CSS-var как у Притоки/Оттоки.
+            Gap до bottom grid line ~13px (vs прежние 4px) — labels чуть ниже. */}
         <div
           className="absolute flex justify-between font-semibold px-2"
           style={{
             left: 'var(--chart-pad-left, 100px)',
             right: 'var(--chart-pad-right-single, 95px)',
-            bottom: 'calc(var(--chart-pad-bottom, 50px) - var(--chart-font-x, 17px) - 4px)',
+            bottom: 'var(--chart-xlabel-bottom, 20px)',
             fontSize: 'var(--chart-font-x, 14px)',
             color: 'var(--axis-color, #9CA3B8)',
             fontVariantNumeric: 'tabular-nums',
