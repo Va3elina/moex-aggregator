@@ -324,7 +324,7 @@ export default function StackedBidirectionalHistogram({
             pointerEvents: 'none',
           }}
         >
-          {periods.map((p, i) => {
+          {periods.map((_, i) => {
             if (i === 0) return null;  // не рисуем divider перед первым
             const xPct = i * barSlot;  // граница между period i-1 и i
             const isYearBoundary = periods[i].year !== periods[i - 1].year;
