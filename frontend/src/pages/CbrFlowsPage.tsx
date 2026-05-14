@@ -139,13 +139,9 @@ export default function CbrFlowsPage() {
       />
 
       <div className="editorial-frame">
-        {/* === Controls row: chip-переключатель активов + camera button справа ===
-            Flex layout с flex:1 для chip'ов даёт равное распределение (как
-            grid-cols-3) и одновременно позволяет добавить camera button с
-            ml-auto. На mobile при недостатке места flex-wrap → camera уходит
-            на отдельную строку — без overflow. */}
+        {/* === Row 1: 3 chip'а типа активов (grid-cols-3, равные ширины) === */}
         <div
-          className="flex flex-wrap items-center mb-4 md:mb-6"
+          className="grid grid-cols-3 mb-3 md:mb-4"
           style={{ gap: 'var(--sp-2)' }}
         >
           {INSTRUMENT_TABS.map((t) => {
@@ -157,8 +153,6 @@ export default function CbrFlowsPage() {
                 onClick={() => setType(t.key)}
                 className="editorial-press flex items-center justify-center font-semibold rounded-full min-w-0"
                 style={{
-                  flex: '1 1 0',
-                  minWidth: '90px',
                   gap: 'var(--sp-2)',
                   padding: 'var(--sp-2) var(--sp-3)',
                   fontSize: 'var(--fs-sm)',
@@ -176,12 +170,19 @@ export default function CbrFlowsPage() {
               </button>
             );
           })}
+        </div>
 
-          {/* === Категории — popover-dropdown с rich items.
+        {/* === Row 2: Категории слева + camera button справа === */}
+        <div
+          className="flex items-center justify-between mb-4 md:mb-6"
+          style={{ gap: 'var(--sp-2)' }}
+        >
+
+          {/* === Категории — popover-dropdown с rich items (слева в Row 2).
               Кнопка показывает счётчик «N/M» + chevron. Клик → раскрывается
               панель ниже с карточками каждой категории (dot + name + desc + ✓).
               Click-outside и Esc закрывают. */}
-          <div ref={categoriesBtnRef} className="relative ml-auto shrink-0">
+          <div ref={categoriesBtnRef} className="relative shrink-0">
             <button
               onClick={() => setCategoriesOpen((o) => !o)}
               className="editorial-press flex items-center font-semibold rounded-full"
@@ -215,7 +216,7 @@ export default function CbrFlowsPage() {
                 className="absolute z-30 rounded-2xl"
                 style={{
                   top: 'calc(100% + var(--sp-2))',
-                  right: 0,
+                  left: 0,
                   width: 'min(420px, calc(100vw - 32px))',
                   maxHeight: '70vh',
                   overflowY: 'auto',
