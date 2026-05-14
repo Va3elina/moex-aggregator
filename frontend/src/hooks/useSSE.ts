@@ -47,7 +47,11 @@ export function useSSE() {
       }
     };
 
-    es.onerror = () => {
+    es.onerror = (e) => {
+      // Browser сам логирует error в Network tab (ERR_CONNECTION_CLOSED /
+      // 502 при API restart / HTTP2_PROTOCOL_ERROR). Здесь silent close +
+      // reconnect — без console.error spam'a.
+      void e;
       es.close();
       setConnected(false);
 

@@ -18,16 +18,27 @@ class SSEManager:
         self._clients: set[asyncio.Queue] = set()
 
     async def subscribe(self) -> AsyncGenerator[str, None]:
-        """Подписка клиента на события. Yields SSE-форматированные строки."""
+        """Подписка клиента на события. Yields SSE-форматированные строки.
+
+        Каждые 25 секунд шлёт heartbeat-comment `: keepalive\\n\\n` если
+        нет real events — это не доходит до клиента как event, но
+        держит TCP/HTTP connection «активным» в глазах nginx/CDN/браузер.
+        Без heartbeat idle connection через ~60-90с считается мёртвым
+        (особенно за HTTP/2 proxy) и рвётся → клиент видит ERR_HTTP2_*
+        и 502 на reconnect → log spam в console.
+        """
         queue: asyncio.Queue = asyncio.Queue(maxsize=50)
         self._clients.add(queue)
         logger.info(f"SSE client connected (total: {len(self._clients)})")
         try:
-            # Отправляем приветственное событие
             yield f"data: {json.dumps({'type': 'connected', 'clients': len(self._clients)})}\n\n"
             while True:
-                data = await queue.get()
-                yield f"data: {data}\n\n"
+                try:
+                    data = await asyncio.wait_for(queue.get(), timeout=25.0)
+                    yield f"data: {data}\n\n"
+                except asyncio.TimeoutError:
+                    # Heartbeat — comment строка (browser ignores, no event fires)
+                    yield ": keepalive\n\n"
         except asyncio.CancelledError:
             pass
         finally:
