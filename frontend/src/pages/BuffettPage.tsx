@@ -228,18 +228,22 @@ export default function BuffettPage() {
                 </div>
             ) : viewMode === 'cap-gdp' ? (
                 <div ref={chartAnchorRef}>
+                {/* Swap осей: главное значение (Кап/ВВП) переехало на ПРАВУЮ
+                    ось — TradingView-style, где основная метрика справа. Цвет
+                    accent-orange сохранён за ratio через swap primary/secondary
+                    цветов. Левая ось = капитализация (вспомогательная). */}
                 <SimpleChart
-                    data={capGdpChartData.primary}
-                    secondaryData={capGdpChartData.secondary}
+                    data={capGdpChartData.secondary}
+                    secondaryData={capGdpChartData.primary}
                     height={chartHeight}
-                    primaryColor="var(--accent)"
-                    secondaryColor="var(--accent-secondary)"
+                    primaryColor="var(--accent-secondary)"
+                    secondaryColor="var(--accent)"
                     showSecondary={true}
-                    formatValue={(v) => `${v.toFixed(2)}%`}
-                    formatSecondaryValue={(v) => `${v.toFixed(2)} трлн ₽`}
-                    formatSecondaryAxis={(v) => v.toFixed(2)}
-                    primaryLabel={isMobile ? 'Кап / ВВП' : 'Капитализация / ВВП'}
-                    secondaryLabel={isMobile ? 'Кап. (₽)' : 'Капитализация (трлн ₽)'}
+                    formatValue={(v) => `${v.toFixed(2)} трлн ₽`}
+                    formatSecondaryValue={(v) => `${v.toFixed(2)}%`}
+                    formatSecondaryAxis={(v) => `${v.toFixed(1)}%`}
+                    primaryLabel={isMobile ? 'Кап. (₽)' : 'Капитализация (трлн ₽)'}
+                    secondaryLabel={isMobile ? 'Кап / ВВП' : 'Капитализация / ВВП'}
                     loading={loading}
                     forecastCount={forecastTarget !== null ? 12 : 0}
                     showValueHeader={false}
@@ -247,28 +251,26 @@ export default function BuffettPage() {
                     showDownloadButton={false}
                     showNavigator={true}
                     hideTime={true}
-                    // Симметричные padding'и: формат secondary axis = v.toFixed(2)
-                    // ("1234.56" max 7 chars). Колонка labels справа при padRight=100
-                    // = 96px — метки влезают с большим запасом. Глобальный
-                    // --chart-pad-right-dual = 120px остаётся для OI/FundsMoney,
-                    // где labels могут быть длиннее ("1 250 000" в OI).
+                    // Симметричные padding'и: secondary axis теперь = "%.1f%"
+                    // ("123.4%" max 6 chars) — даже короче чем cap (7 chars),
+                    // 96px колонка справа влезает с запасом.
                     chartPadding={{ right: 100 }}
                 />
                 </div>
             ) : (
                 <div ref={chartAnchorRef}>
                 <SimpleChart
-                    data={capM2ChartData.primary}
-                    secondaryData={capM2ChartData.secondary}
+                    data={capM2ChartData.secondary}
+                    secondaryData={capM2ChartData.primary}
                     height={chartHeight}
-                    primaryColor="var(--accent)"
-                    secondaryColor="var(--accent-secondary)"
+                    primaryColor="var(--accent-secondary)"
+                    secondaryColor="var(--accent)"
                     showSecondary={true}
-                    formatValue={(v) => `${(v * 100).toFixed(2)}%`}
-                    formatSecondaryValue={(v) => `${v.toFixed(2)} трлн ₽`}
-                    formatSecondaryAxis={(v) => v.toFixed(2)}
-                    primaryLabel={isMobile ? 'Кап / M2' : 'Капитализация / M2'}
-                    secondaryLabel={isMobile ? 'Кап. (₽)' : 'Капитализация (трлн ₽)'}
+                    formatValue={(v) => `${v.toFixed(2)} трлн ₽`}
+                    formatSecondaryValue={(v) => `${(v * 100).toFixed(2)}%`}
+                    formatSecondaryAxis={(v) => `${(v * 100).toFixed(1)}%`}
+                    primaryLabel={isMobile ? 'Кап. (₽)' : 'Капитализация (трлн ₽)'}
+                    secondaryLabel={isMobile ? 'Кап / M2' : 'Капитализация / M2'}
                     loading={loading}
                     showValueHeader={false}
                     legendPosition="top"
