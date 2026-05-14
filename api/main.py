@@ -29,6 +29,7 @@ from api.routers import (
     buffett_router,
     seasonality_router,
     billing_router,
+    cbr_flows_router,
 )
 from api.routers import stats
 from api.routers import auth  # ← НОВОЕ: Аутентификация
@@ -207,6 +208,7 @@ app.include_router(funds_router)
 app.include_router(breadth_router)
 app.include_router(buffett_router)
 app.include_router(seasonality_router)
+app.include_router(cbr_flows_router)  # ← /api/cbr-flows/* (ОРФР ЦБ — потоки участников)
 app.include_router(billing_router)  # ← /api/billing/* (подписки через ЮKassa)
 app.include_router(auth.router, prefix="/api")  # ← НОВОЕ: /api/auth/*
 app.include_router(oauth.router, prefix="/api")  # ← OAuth: /api/auth/oauth/*

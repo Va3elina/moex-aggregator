@@ -43,6 +43,7 @@ COPY Candles/ ./Candles/
 COPY Funds/ ./Funds/
 COPY Macro/ ./Macro/
 COPY Commodity/ ./Commodity/
+COPY CBR/ ./CBR/
 COPY main_orchestrator.py .
 COPY moex_calendar.py .
 COPY tg_bot.py .
