@@ -64,9 +64,16 @@ interface PeriodLayout {
 const ROW_GAP_X = 0.35;          // 35% gap между барами (slot - 2×pad = bar)
 const Y_AXIS_PAD_TOP = 14;       // px над верхом chart
 const Y_AXIS_PAD_BOTTOM = 56;    // место под labels периодов + год
-const X_AXIS_PAD_LEFT = 64;      // место под y-axis ticks
-const X_AXIS_PAD_RIGHT = 16;
+// Симметричные горизонтальные padding'и: chart-area по центру paper-card,
+// независимо от того где Y-axis (теперь labels справа). Equal left/right
+// даёт core-graph центрированный — match со SimpleChart pattern.
+const X_AXIS_PAD_LEFT = 50;
+const X_AXIS_PAD_RIGHT = 50;
 const MIN_BAR_PX = 0.5;          // минимальная высота сегмента в px
+
+// Высота зоны легенды (ChartLegend + visual gap до chart). Чётко
+// разделяет визуальную зону «легенда сверху» от «гистограмма ниже».
+const LEGEND_AREA_HEIGHT = 48;
 
 export default function StackedBidirectionalHistogram({
   periods,
@@ -101,13 +108,17 @@ export default function StackedBidirectionalHistogram({
     return { yMax };
   }, [periods, categories]);
 
+  // svgHeight — высота SVG ниже зоны легенды. Все математические расчёты
+  // chart-area (zeroY, halfH, period labels y и т.д.) считаются от него.
+  const svgHeight = Math.max(120, height - LEGEND_AREA_HEIGHT);
+
   const periodLayouts = useMemo<PeriodLayout[]>(() => {
     if (!periods.length || !layout) return [];
 
     // chartWidth/Height — будут масштабироваться viewBox, считаем в условных px=1000
     const VIEW_W = 1000;
     const chartW = VIEW_W - X_AXIS_PAD_LEFT - X_AXIS_PAD_RIGHT;
-    const chartH = height - Y_AXIS_PAD_TOP - Y_AXIS_PAD_BOTTOM;
+    const chartH = svgHeight - Y_AXIS_PAD_TOP - Y_AXIS_PAD_BOTTOM;
     const halfH = chartH / 2;
     const zeroY = Y_AXIS_PAD_TOP + halfH;
 
@@ -154,7 +165,7 @@ export default function StackedBidirectionalHistogram({
       }
       return { index: i, period: p, x, centerX, barX, barW, segments, positiveTotal, negativeTotal };
     });
-  }, [periods, categories, layout, height]);
+  }, [periods, categories, layout, svgHeight]);
 
   // Y-axis ticks — 5 уровней как у FlowsHistogram (Притоки/Оттоки):
   // [-max, -max/2, 0, max/2, max]. Solid lines, без dash — чистый минималистичный
@@ -207,12 +218,17 @@ export default function StackedBidirectionalHistogram({
       const d = Math.abs(pl.centerX - xView);
       if (d < nearestDist) { nearestDist = d; nearestIdx = i; }
     });
+    // Tooltip позиционируется в outer container — координаты считаем относительно
+    // outer (containerRef), а не SVG. Иначе при перенесённом layout (legend
+    // выше SVG) tooltip оказывается сдвинутым вверх на LEGEND_AREA_HEIGHT.
+    const outer = containerRef.current;
+    const outerRect = outer ? outer.getBoundingClientRect() : rect;
     setHover({
       periodIdx: nearestIdx,
-      mouseX: e.clientX - rect.left,
-      mouseY: e.clientY - rect.top,
+      mouseX: e.clientX - outerRect.left,
+      mouseY: e.clientY - outerRect.top,
     });
-  }, [periodLayouts, height]);
+  }, [periodLayouts]);
 
   const handleLeave = useCallback(() => setHover(null), []);
 
@@ -244,8 +260,8 @@ export default function StackedBidirectionalHistogram({
     );
   }
 
-  const zeroY = Y_AXIS_PAD_TOP + (height - Y_AXIS_PAD_TOP - Y_AXIS_PAD_BOTTOM) / 2;
-  const halfH = (height - Y_AXIS_PAD_TOP - Y_AXIS_PAD_BOTTOM) / 2;
+  const zeroY = Y_AXIS_PAD_TOP + (svgHeight - Y_AXIS_PAD_TOP - Y_AXIS_PAD_BOTTOM) / 2;
+  const halfH = (svgHeight - Y_AXIS_PAD_TOP - Y_AXIS_PAD_BOTTOM) / 2;
 
   // ─── Dynamic strokeWidth (внутренние границы между сегментами) ─────────
   const outlineWidth = periodLayouts.length <= 20 ? 1
@@ -255,23 +271,31 @@ export default function StackedBidirectionalHistogram({
 
   return (
     <div ref={containerRef} className="relative" style={{ height: `${height}px` }}>
-      {/* Legend сверху */}
-      <div className="absolute top-0 left-0 right-0 z-10" style={{ pointerEvents: 'none' }}>
+      {/* === Зона легенды (block flow, не absolute) === */}
+      <div
+        style={{
+          height: `${LEGEND_AREA_HEIGHT}px`,
+          display: 'flex',
+          alignItems: 'center',
+          paddingBottom: 'var(--sp-2)',
+        }}
+      >
         <ChartLegend items={legendItems} />
       </div>
 
+      {/* === Зона гистограммы === */}
       <svg
         width="100%"
-        height={height}
-        viewBox={`0 0 1000 ${height}`}
+        height={svgHeight}
+        viewBox={`0 0 1000 ${svgHeight}`}
         preserveAspectRatio="none"
         style={{ overflow: 'visible', display: 'block' }}
         onMouseMove={handleMove}
         onMouseLeave={handleLeave}
       >
         {/* Y-axis grid + labels — 5 горизонтальных линий, solid, без dash.
-            Match со стилем FlowsHistogram (Притоки/Оттоки): нулевая линия
-            более жирная и чуть темнее, остальные тонкие. */}
+            Labels СПРАВА (textAnchor="start", x = right edge + 8).
+            Симметричный padding 50/50 = chart-area центрирован в paper-card. */}
         {yTicks.map((v) => {
           const y = zeroY - (v / layout.yMax) * halfH;
           const isZero = v === 0;
@@ -286,27 +310,26 @@ export default function StackedBidirectionalHistogram({
                 vectorEffect="non-scaling-stroke"
               />
               <text
-                x={X_AXIS_PAD_LEFT - 8}
+                x={1000 - X_AXIS_PAD_RIGHT + 8}
                 y={y}
-                textAnchor="end"
+                textAnchor="start"
                 dominantBaseline="central"
                 fontSize={axisFs}
                 fontWeight={700}
                 fill="var(--axis-color, var(--text-primary))"
                 style={{ fontVariantNumeric: 'tabular-nums' }}
               >
-                {/* Округляем — половинка yMax может быть .5 */}
                 {Math.round(v)}
               </text>
             </g>
           );
         })}
 
-        {/* Unit hint вверху слева */}
+        {/* Unit hint справа сверху (рядом с Y-axis labels) */}
         <text
-          x={X_AXIS_PAD_LEFT - 8}
+          x={1000 - X_AXIS_PAD_RIGHT + 8}
           y={Y_AXIS_PAD_TOP - 4}
-          textAnchor="end"
+          textAnchor="start"
           fontSize={axisFs * 0.85}
           fontWeight={600}
           opacity={0.7}
@@ -346,7 +369,7 @@ export default function StackedBidirectionalHistogram({
             <text
               key={`lab-${pl.index}`}
               x={pl.centerX}
-              y={height - Y_AXIS_PAD_BOTTOM + 18}
+              y={svgHeight - Y_AXIS_PAD_BOTTOM + 18}
               textAnchor="middle"
               fontSize={axisFs}
               fontWeight={hover?.periodIdx === pl.index ? 700 : 500}
@@ -368,7 +391,7 @@ export default function StackedBidirectionalHistogram({
             <text
               key={`year-${s.year}`}
               x={midX}
-              y={height - Y_AXIS_PAD_BOTTOM + 40}
+              y={svgHeight - Y_AXIS_PAD_BOTTOM + 40}
               textAnchor="middle"
               fontSize={axisFs * 0.95}
               fontWeight={700}
@@ -386,7 +409,7 @@ export default function StackedBidirectionalHistogram({
             x1={periodLayouts[hover.periodIdx].centerX}
             x2={periodLayouts[hover.periodIdx].centerX}
             y1={Y_AXIS_PAD_TOP}
-            y2={height - Y_AXIS_PAD_BOTTOM}
+            y2={svgHeight - Y_AXIS_PAD_BOTTOM}
             stroke="var(--text-primary)"
             strokeWidth={1}
             opacity={0.25}
