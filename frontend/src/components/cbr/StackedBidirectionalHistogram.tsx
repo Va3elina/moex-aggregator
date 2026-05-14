@@ -56,18 +56,43 @@ export default function StackedBidirectionalHistogram({
   const containerRef = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<HoverState | null>(null);
 
-  // Entrance animation state: на mount и при смене data (period/type/categories)
-  // bars fade-in с stagger delay (wave effect). Reset → next frame → setGrown(true)
-  // через requestAnimationFrame чтобы дать React render baseline (opacity 0) first.
-  const [grown, setGrown] = useState(false);
-  // Triggering key — изменения которых вызывают re-animation
-  const animKey = `${periods.length}|${periods[0]?.end_date ?? ''}|${categories.join('|')}`;
+  // Entrance animation: grow-from-zero wave (как Притоки/Оттоки).
+  // animProgress[i] ∈ [0, 1] — прогресс bar'а #i (height + stack scale).
+  // animKey НЕ включает categories — toggle категории не сбрасывает animation
+  // (избегает «пустой график» bug при выключении категории по одной).
+  const animKey = `${periods.length}|${periods[0]?.end_date ?? ''}|${periods[periods.length - 1]?.end_date ?? ''}`;
+  const [animProgress, setAnimProgress] = useState<number[]>(() =>
+    new Array(periods.length).fill(0),
+  );
   useEffect(() => {
-    setGrown(false);
-    const raf = requestAnimationFrame(() => {
-      requestAnimationFrame(() => setGrown(true));
-    });
+    if (periods.length === 0) return;
+    setAnimProgress(new Array(periods.length).fill(0));
+    const start = performance.now();
+    // Адаптивная длительность: на маленьком наборе быстро, на большом cap'ed
+    const totalStagger = Math.min(400, periods.length * 35);
+    const perBarDuration = 600;
+    const totalDuration = totalStagger + perBarDuration;
+    let raf = 0;
+    const tick = (now: number) => {
+      const elapsed = now - start;
+      if (elapsed >= totalDuration) {
+        setAnimProgress(new Array(periods.length).fill(1));
+        return;
+      }
+      setAnimProgress(
+        periods.map((_, i) => {
+          const delay = periods.length > 1 ? (i / (periods.length - 1)) * totalStagger : 0;
+          const localElapsed = Math.max(0, elapsed - delay);
+          const t = Math.min(1, localElapsed / perBarDuration);
+          // ease-out quart — strong старт, slow финиш
+          return 1 - Math.pow(1 - t, 4);
+        }),
+      );
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [animKey]);
   // Y-axis симметричный max
   const yMax = useMemo(() => {
@@ -242,37 +267,35 @@ export default function StackedBidirectionalHistogram({
               );
             })}
 
-            {/* Bars (накопленные стеки) с entrance animation:
-                wave fade-in — каждая колонка проявляется со staggered delay
-                по index. Total wave ~600ms для 6 periods, ~1000ms для 52.
-                Transition `opacity` smoothing — при смене hover тоже плавно. */}
+            {/* Bars с grow-from-zero wave animation:
+                progress ∈ [0,1] — height и position стека масштабируются
+                пропорционально. На progress=0 — bar высотой 0 у zero line.
+                На progress=1 — полная высота. Stack maintained correctly во
+                все промежуточные моменты (т.к. stackUp/Down тоже scale-ются). */}
             {periods.map((p, i) => {
               const isHovered = hover?.periodIdx === i;
-              // Hover opacity overrides entrance opacity
               const hoverOpacity = hover && !isHovered ? 0.5 : 1;
-              // Entrance: 0 → 1 with stagger delay
-              const entranceOpacity = grown ? hoverOpacity : 0;
-              // Stagger delay по index. Cap total wave на 600ms.
-              const staggerDelay = periods.length > 0
-                ? (i / periods.length) * Math.min(600, periods.length * 40)
-                : 0;
+              // progress: animProgress[i] либо 1 если animation завершена / state cleared
+              const progress = animProgress[i] ?? 1;
               let stackUp = 0;
               let stackDown = 0;
               const x = i * barSlot + barOffset;
               return (
                 <g
                   key={i}
-                  opacity={entranceOpacity}
-                  style={{
-                    transition: `opacity 400ms cubic-bezier(0.16, 1, 0.3, 1) ${staggerDelay}ms`,
-                  }}
+                  opacity={hoverOpacity}
+                  style={{ transition: 'opacity 150ms' }}
                 >
                   {categories.map((cat) => {
                     const v = p.values[cat] ?? 0;
                     if (v === 0) return null;
-                    const hPct = Math.max((Math.abs(v) / yMax) * 50, MIN_BAR_H);
+                    // Final height в % (без scaling)
+                    const hPctFinal = Math.max((Math.abs(v) / yMax) * 50, MIN_BAR_H);
+                    // Scale by progress
+                    const hPct = hPctFinal * progress;
                     if (v > 0) {
-                      const stackUpPct = (stackUp / yMax) * 50;
+                      const stackUpPctFinal = (stackUp / yMax) * 50;
+                      const stackUpPct = stackUpPctFinal * progress;
                       stackUp += v;
                       return (
                         <rect
@@ -287,7 +310,8 @@ export default function StackedBidirectionalHistogram({
                         />
                       );
                     } else {
-                      const stackDownPct = (stackDown / yMax) * 50;
+                      const stackDownPctFinal = (stackDown / yMax) * 50;
+                      const stackDownPct = stackDownPctFinal * progress;
                       stackDown += -v;
                       return (
                         <rect
