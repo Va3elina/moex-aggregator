@@ -19,7 +19,7 @@ export default function ThemeToggle() {
       onClick={toggle}
       aria-label={isDark ? 'Светлая тема' : 'Тёмная тема'}
       title={isDark ? 'Светлая тема' : 'Тёмная тема'}
-      className="editorial-press relative grid place-items-center w-8 h-8 md:w-9 md:h-9 xl:w-8 xl:h-8 overflow-hidden"
+      className="editorial-press relative grid place-items-center w-8 h-8 overflow-hidden"
       style={{
         color: 'var(--text-primary)',
         border: '1.5px solid var(--text-primary)',
