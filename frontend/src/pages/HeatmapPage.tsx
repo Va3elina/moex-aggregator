@@ -308,36 +308,40 @@ export default function HeatmapPage() {
     return `${value.toFixed(2).replace('.', ',')}%`;
   };
 
-  // Размер шрифта — адаптивный под размер блока И реальную длину тикера.
+  // Размер шрифта — пропорциональный размеру плитки через WIDTH-DRIVEN sizing.
   //
-  // 0.7 — консервативный ratio "char-width / font-size" для bold sans-serif
-  // с padding на kerning/hinting/Cyrillic-глифы. Раньше было 0.62 — оценка
-  // "впритык", и из-за реального межбуквенного интервала текст вылезал на
-  // 5-10% шире, после чего clipPath обрезал крайние символы. С 0.7 шрифт
-  // изначально подбирается с ~10% margin → текст всегда вписывается в плитку
-  // без обрезки.
+  // ПРИНЦИП (просьба юзера 2026-05-15):
+  //   Расстояние от текста до левого/правого края плитки — КОНСТАНТА (marginX).
+  //   Шрифт подбирается так, чтобы ticker text заполнил `tile_width - 2*marginX`
+  //   ровно. Это даёт чисто пропорциональное масштабирование: больше плитка →
+  //   линейно больше шрифт.
   //
-  // Дополнительный safety cap: `min(width, height) * 0.50` — на узких
-  // высоких плитках большая высота не даёт огромный шрифт который не
-  // влезает в ширину.
-  //
-  // 2026-05-15 ИТЕРАЦИЯ 2: v607 (cap 96, ratio 0.42/0.50) дал «слишком крупный»
-  // текст на больших плитках — SBER/ROSN заливали свою плитку под завязку.
-  // Откатываем к промежуточному варианту: cap 64 (vs original 48 → +33%) и
-  // лёгкое увеличение ratio (0.35→0.38, 0.42→0.45). На больших плитках текст
-  // заметно больше original'а но не доминирует, на маленьких почти не меняется.
-  const getFontSize = (width: number, height: number, ticker: string): { ticker: number; percent: number } => {
-    const charRatio = 0.7;
-    const horizontalPad = 10;
+  // ПАРАМЕТРЫ:
+  //   - charRatio = 0.62 (estimated char-width / font-size для bold sans-serif).
+  //     С учётом textLength compression safety это даёт ~5% margin на kerning.
+  //   - marginX = 10 (px от текста до edge с обеих сторон, КОНСТАНТА).
+  //   - hasPercent: при показанном проценте под ticker'ом — ticker занимает
+  //     ~40% высоты (остальное под percent и vertical gap). Без percent — 65%.
+  //   - cap 80: ultimate safety на 4K мониторах чтобы не получить 200px шрифт
+  //     (SBER на 1600px-wide плитке без cap'а был бы 600px и доминировал бы
+  //     остальную карту).
+  //   - percent = ticker * 0.6 (percent ~60% от ticker — match old design ratio).
+  const getFontSize = (
+    width: number,
+    height: number,
+    ticker: string,
+    hasPercent: boolean,
+  ): { ticker: number; percent: number } => {
+    const charRatio = 0.62;
+    const marginX = 10;
     const tickerLen = Math.max(ticker.length, 3);
-    const tickerByWidth = Math.floor((width - horizontalPad) / (tickerLen * charRatio));
-    const tickerByHeight = Math.floor(height * 0.38);
-    const tickerByMinDim = Math.floor(Math.min(width, height) * 0.45);
-    const tickerSize = Math.min(
-      Math.max(Math.min(tickerByWidth, tickerByHeight, tickerByMinDim), 9),
-      64
-    );
-    const percent = Math.floor(tickerSize * 0.7);
+    // Primary determinant: ticker fills `width - 2*marginX`
+    const tickerByWidth = Math.floor((width - 2 * marginX) / (tickerLen * charRatio));
+    // Safety: text не вылезает за высоту (на плоских плитках типа 500×40 byWidth
+    // даёт большой шрифт который не влезает по высоте → height limit нужен).
+    const tickerByHeight = Math.floor(height * (hasPercent ? 0.40 : 0.65));
+    const tickerSize = Math.min(Math.max(Math.min(tickerByWidth, tickerByHeight), 9), 80);
+    const percent = Math.floor(tickerSize * 0.6);
     return { ticker: tickerSize, percent };
   };
 
@@ -431,9 +435,11 @@ export default function HeatmapPage() {
 
   const renderStock = (rect: { id: string; x: number; y: number; width: number; height: number; data: HeatmapStock }, key: string) => {
     const change = getColorValue(rect.data);
-    const fonts = getFontSize(rect.width, rect.height, rect.id);
     const showTicker = rect.width > 18 && rect.height > 14;
     const showPercent = rect.width > 30 && rect.height > 25;
+    // hasPercent передаём в getFontSize чтобы корректно учесть height budget
+    // (с процентом ticker занимает меньше высоты, оставляя место под percent).
+    const fonts = getFontSize(rect.width, rect.height, rect.id, showPercent);
     // textLength применяем ТОЛЬКО при overflow — иначе короткие тикеры (SBER)
     // растягиваются на всю ширину блока. Estimate: char-width ≈ fontSize * 0.58
     // для bold sans-serif. Если расчётная ширина > доступной — компрессим.
