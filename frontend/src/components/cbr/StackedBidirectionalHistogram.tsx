@@ -449,7 +449,12 @@ export default function StackedBidirectionalHistogram({
           .filter(e => e.val !== 0);
         const sortedPositive = entries.filter(e => e.val > 0).sort((a, b) => b.val - a.val);
         const sortedNegative = entries.filter(e => e.val < 0).sort((a, b) => a.val - b.val);
-        const total = entries.reduce((s, e) => s + e.val, 0);
+        // Объём торгов между категориями: в balanced market сумма покупок ≈
+        // сумме продаж (нетто всегда ~0). Полезная метрика — total positive =
+        // |total negative| = «сколько денег прокрутилось» в этом периоде.
+        const totalPositive = sortedPositive.reduce((s, e) => s + e.val, 0);
+        const totalNegative = sortedNegative.reduce((s, e) => s + e.val, 0);
+        const tradingVolume = Math.max(totalPositive, -totalNegative);
 
         const containerW = containerRef.current?.clientWidth ?? 800;
         // Adaptive tooltip width: 260px default, но не больше container-32
@@ -506,9 +511,9 @@ export default function StackedBidirectionalHistogram({
             ))}
             <div style={{ height: 1, background: 'var(--text-primary)', opacity: 0.35, margin: '4px 0' }} />
             <div className="flex items-center justify-between font-bold" style={{ fontSize: 'var(--fs-xs)' }}>
-              <span>Итого нетто</span>
-              <span style={{ color: total >= 0 ? 'var(--funds-flow-positive)' : 'var(--funds-flow-negative)' }}>
-                {total >= 0 ? '+' : ''}{total.toFixed(2)} млрд
+              <span>Объём торгов</span>
+              <span style={{ color: 'var(--text-primary)' }}>
+                {tradingVolume.toFixed(2)} млрд
               </span>
             </div>
           </div>
