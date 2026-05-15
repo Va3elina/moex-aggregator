@@ -123,6 +123,7 @@ export default function FundsMoneyPage() {
     const [flowTooltipPos, setFlowTooltipPos] = useState<{ x: number; y: number } | null>(null);
     const [hoveredAnnotation, setHoveredAnnotation] = useState<string | null>(null); // date key
     const [showEvents, setShowEvents] = useState(false);
+    const [showIndex, setShowIndex] = useState(true);
     const [flowNavRange, setFlowNavRange] = useState<[number, number]>([0, 0]);
     const flowChartRef = useRef<SVGSVGElement>(null);
     const flowContainerRef = useRef<HTMLDivElement>(null);
@@ -522,6 +523,27 @@ export default function FundsMoneyPage() {
                     </button>
                 )}
 
+                {/* Индекс — toggle для скрытия secondary линии с IMOEX/RTSI/MCFTR.
+                    Доступен только в AUM режиме (в flows нет index overlay).
+                    Активный (orange) = показан, inactive = скрыт — зеркальный
+                    паттерн с "Капитализация" в Buffett. */}
+                {viewMode === 'aum' && (
+                    <button
+                        onClick={() => setShowIndex(!showIndex)}
+                        className="editorial-press font-semibold rounded-full"
+                        style={{
+                            backgroundColor: showIndex ? 'var(--accent)' : 'var(--bg-secondary)',
+                            color: showIndex ? 'var(--text-inverse)' : 'var(--text-primary)',
+                            border: '2px solid var(--text-primary)',
+                            boxShadow: showIndex ? 'var(--shadow-hard-chip)' : undefined,
+                            fontSize: 'var(--fs-sm)',
+                            padding: 'var(--sp-2) var(--sp-4)',
+                        }}
+                    >
+                        Индекс
+                    </button>
+                )}
+
                 {/* Camera button — на одном уровне с dropdowns/buttons,
                     выровнен по правому краю через ml-auto. */}
                 <ChartCaptureButton
@@ -566,7 +588,7 @@ export default function FundsMoneyPage() {
                         height={chartHeight}
                         primaryColor={NAV_COLOR}
                         secondaryColor={INDEX_COLOR}
-                        showSecondary={true}
+                        showSecondary={showIndex}
                         formatValue={formatNav}
                         formatSecondaryValue={(v) => v.toLocaleString('ru-RU', { maximumFractionDigits: 2 })}
                         primaryLabel={`Суммарная СЧА фондов ${currentCategory?.genitive ?? ''}, млрд руб`}

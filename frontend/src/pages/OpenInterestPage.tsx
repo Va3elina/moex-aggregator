@@ -126,6 +126,7 @@ export default function OpenInterestPage() {
   const [displayMode, setDisplayMode] = useState<DisplayMode>('positions');
   const [oiVariant, setOiVariant] = useState<OIVariant>('net');
   const [showExpirations, setShowExpirations] = useState(false);
+  const [showPrice, setShowPrice] = useState(true);
   const [period, setPeriod] = useState<Period>(getDefaultPeriod('6m', isAuthenticated) as Period);
 
   // Фильтрация нерабочих дней и пре-маркета.
@@ -530,6 +531,27 @@ export default function OpenInterestPage() {
             </button>
           )}
 
+          {/* Цена — toggle для скрытия линии цены инструмента (spot). Доступна
+              только если displayMode !== 'price' (иначе кроме цены ничего нет).
+              Зеркальный паттерн "Капитализация" в Buffett: пользователь хочет
+              максимизировать видимость OI/позиций без отвлекающей price-линии. */}
+          {displayMode !== 'price' && (
+            <button
+              onClick={() => setShowPrice(!showPrice)}
+              className="editorial-press font-semibold rounded-full"
+              style={{
+                backgroundColor: showPrice ? 'var(--accent)' : 'var(--bg-secondary)',
+                color: showPrice ? 'var(--text-inverse)' : 'var(--text-primary)',
+                border: '2px solid var(--text-primary)',
+                boxShadow: showPrice ? 'var(--shadow-hard-chip)' : undefined,
+                fontSize: 'var(--fs-sm)',
+                padding: 'var(--sp-2) var(--sp-4)',
+              }}
+            >
+              Цена
+            </button>
+          )}
+
           {/* Camera button inline, прижат к правому краю */}
           <ChartCaptureButton
             getTargetElement={() => chartAnchorRef.current}
@@ -566,6 +588,7 @@ export default function OpenInterestPage() {
         data={chartData}
         secondaryData={oiData}
         thirdData={oiDataThird}
+        showPrimary={displayMode === 'price' || showPrice}
         showSecondary={displayMode !== 'price' && !!oiData}
         showThird={oiVariant === 'both' && !!oiDataThird}
         primaryColor={COLORS.primary}

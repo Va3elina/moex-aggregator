@@ -34,6 +34,9 @@ export default function BuffettPage() {
     const isMobile = useIsMobile();
     const [viewMode, setViewMode] = useState<ViewMode>('cap-gdp');
     const [period, setPeriod] = useState<BuffettPeriod>('10y');
+    // Показывать капитализацию (secondary axis) — toggle для пользователя
+    // если хочет видеть только ratio Кап/ВВП или Кап/M2 без контекста размера.
+    const [showCap, setShowCap] = useState(true);
     const smooth = false;
     const [timeframe, setTimeframe] = useState<'1d' | '1w' | '1m'>('1m');
     const [forecastTarget, setForecastTarget] = useState<number | null>(null);
@@ -201,6 +204,22 @@ export default function BuffettPage() {
                     />
                 )}
 
+                {/* Toggle капитализации (secondary axis) — chip pattern из Strength */}
+                <button
+                    onClick={() => setShowCap(!showCap)}
+                    className="editorial-press font-semibold rounded-full"
+                    style={{
+                        backgroundColor: showCap ? 'var(--accent)' : 'var(--bg-secondary)',
+                        color: showCap ? 'var(--text-inverse)' : 'var(--text-primary)',
+                        border: '2px solid var(--text-primary)',
+                        boxShadow: showCap ? 'var(--shadow-hard-chip)' : undefined,
+                        fontSize: 'var(--fs-sm)',
+                        padding: 'var(--sp-2) var(--sp-3)',
+                    }}
+                >
+                    Капитализация
+                </button>
+
                 {/* Camera button inline, прижат к правому краю */}
                 <ChartCaptureButton
                     getTargetElement={() => chartAnchorRef.current}
@@ -240,7 +259,7 @@ export default function BuffettPage() {
                     height={chartHeight}
                     primaryColor="var(--accent-secondary)"
                     secondaryColor="var(--accent)"
-                    showSecondary={true}
+                    showSecondary={showCap}
                     reverseLegend={true}
                     formatValue={(v) => `${v.toFixed(2)} трлн ₽`}
                     formatPrimaryAxis={(v) => `${v.toFixed(2)} трлн ₽`}
@@ -269,7 +288,7 @@ export default function BuffettPage() {
                     height={chartHeight}
                     primaryColor="var(--accent-secondary)"
                     secondaryColor="var(--accent)"
-                    showSecondary={true}
+                    showSecondary={showCap}
                     reverseLegend={true}
                     formatValue={(v) => `${v.toFixed(2)} трлн ₽`}
                     formatPrimaryAxis={(v) => `${v.toFixed(2)} трлн ₽`}

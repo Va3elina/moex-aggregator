@@ -33,6 +33,11 @@ interface SimpleChartProps {
   thirdColor?: string;
   showSecondary?: boolean;
   showThird?: boolean;
+  /** Скрыть основную линию + левую ось. Используется в индикаторах где primary —
+   *  «вспомогательный» в user mental model (Открытый интерес: primary=цена,
+   *  юзер воспринимает OI главным). При false: primary line/dots/y-axis/tooltip-line
+   *  не рисуются; secondary остаётся в полном объёме. */
+  showPrimary?: boolean;
   formatValue?: (value: number) => string;
   /** Формат для labels на ЛЕВОЙ оси (primary). Если не задан — fallback на formatValue.
    *  Используется когда formatValue содержит юнит ("123 трлн ₽"), который не
@@ -80,6 +85,7 @@ export default function SimpleChart({
   thirdColor = 'var(--funds-flow-negative)',
   showSecondary = false,
   showThird = false,
+  showPrimary = true,
   formatValue = (v) => v.toLocaleString('ru-RU'),
   formatPrimaryAxis,
   formatSecondaryValue,
@@ -794,7 +800,7 @@ export default function SimpleChart({
   // pixel-perfect одинаково в browser и html2canvas. Никаких CSS hacks с
   // padding/transform — только spec-compliant SVG geometry.
   const baseLegendItems: ChartLegendItem[] = [
-    { color: primaryColor, label: primaryLabel || '' },
+    ...(showPrimary ? [{ color: primaryColor, label: primaryLabel || '' }] : []),
     ...(showSecondary && secondaryLabel ? [{ color: secondaryColor, label: secondaryLabel }] : []),
     ...(showThird && thirdLabel ? [{ color: thirdColor, label: thirdLabel }] : []),
   ];
@@ -921,9 +927,12 @@ export default function SimpleChart({
               (showSecondary + есть secondary y-ticks). В таком случае красим
               ОБЕ оси своими цветами — симметрия. Иначе single-axis → нейтральный серый. */}
           <g transform={`translate(${padding.left}, ${padding.top})`}>
-            {/* Горизонтальные линии сетки */}
-            {targetCalc.yTicks.map((tick, i) => {
-              const isDualAxis = showSecondary && !!targetCalc.secYTicks && targetCalc.secYTicks.length > 0;
+            {/* Горизонтальные линии сетки.
+                Если showPrimary=false → grid рисуем по secondary scale, labels слева не выводим
+                (правая ось остаётся, левая исчезает). Это сохраняет визуальную сетку, не оставляя
+                "висящих" чисел primary scale, которые без primary line не имеют смысла. */}
+            {(showPrimary ? targetCalc.yTicks : (targetCalc.secYTicks || [])).map((tick, i) => {
+              const isDualAxis = showPrimary && showSecondary && !!targetCalc.secYTicks && targetCalc.secYTicks.length > 0;
               return (
                 <g key={i}>
                   <line
@@ -934,32 +943,34 @@ export default function SimpleChart({
                     stroke={GRID.major}
                     strokeWidth="1"
                   />
-                  <text
-                    x={-tokens.axisGap}
-                    y={tick.y}
-                    textAnchor="end"
-                    dominantBaseline="central"
-                    fill={isDualAxis ? primaryColor : 'var(--axis-color, #9CA3B8)'}
-                    fontSize={tokens.fontY}
-                    fontWeight={tokens.fontYWeight}
-                    opacity={isDualAxis ? 0.9 : 1}
-                  >
-                    {/* Split на "123.45" + " трлн ₽" — unit рисуется меньшим
-                        шрифтом (70%), чтобы длинные axis labels не «давили»
-                        на chart area. Match требует space перед unit:
-                        "123.45 трлн" → split, "55.43%" → no split. */}
-                    {(() => {
-                      const s = (formatPrimaryAxis || formatValue)(tick.value);
-                      const m = s.match(/^(.+?)\s+([а-яА-Яa-zA-Z₽].*?)$/);
-                      if (!m) return s;
-                      return (
-                        <>
-                          {m[1]}
-                          <tspan dx={2} fontSize={tokens.fontY * 0.7} fontWeight={700} opacity={0.85}>{m[2]}</tspan>
-                        </>
-                      );
-                    })()}
-                  </text>
+                  {showPrimary && (
+                    <text
+                      x={-tokens.axisGap}
+                      y={tick.y}
+                      textAnchor="end"
+                      dominantBaseline="central"
+                      fill={isDualAxis ? primaryColor : 'var(--axis-color, #9CA3B8)'}
+                      fontSize={tokens.fontY}
+                      fontWeight={tokens.fontYWeight}
+                      opacity={isDualAxis ? 0.9 : 1}
+                    >
+                      {/* Split на "123.45" + " трлн ₽" — unit рисуется меньшим
+                          шрифтом (70%), чтобы длинные axis labels не «давили»
+                          на chart area. Match требует space перед unit:
+                          "123.45 трлн" → split, "55.43%" → no split. */}
+                      {(() => {
+                        const s = (formatPrimaryAxis || formatValue)(tick.value);
+                        const m = s.match(/^(.+?)\s+([а-яА-Яa-zA-Z₽].*?)$/);
+                        if (!m) return s;
+                        return (
+                          <>
+                            {m[1]}
+                            <tspan dx={2} fontSize={tokens.fontY * 0.7} fontWeight={700} opacity={0.85}>{m[2]}</tspan>
+                          </>
+                        );
+                      })()}
+                    </text>
+                  )}
                 </g>
               );
             })}
@@ -1034,8 +1045,9 @@ export default function SimpleChart({
 
               {/* Область под основной линией — отключена */}
 
-              {/* Основная линия (цена — сплошная до прогноза) */}
-              {animatedPaths.primary && (
+              {/* Основная линия (цена — сплошная до прогноза).
+                  showPrimary=false → пропускаем рендер (юзер скрыл primary через toggle). */}
+              {showPrimary && animatedPaths.primary && (
                 <path
                   d={animatedPaths.primary}
                   fill="none"
@@ -1047,8 +1059,9 @@ export default function SimpleChart({
                 />
               )}
 
-              {/* Пунктирный прогноз — хаотичная траектория */}
-              {_forecastCount > 0 && targetCalc.points.length > _forecastCount && (() => {
+              {/* Пунктирный прогноз — хаотичная траектория.
+                  showPrimary=false → forecast тоже скрываем (он визуализирует продолжение primary). */}
+              {showPrimary && _forecastCount > 0 && targetCalc.points.length > _forecastCount && (() => {
                 const pPts = targetCalc.points;
                 const sPts = targetCalc.secondaryPoints;
                 const fc = _forecastCount;
@@ -1201,16 +1214,18 @@ export default function SimpleChart({
                   strokeDasharray="4,4"
                   opacity="0.55"
                 />
-                {/* Точка на основной линии */}
-                <circle
-                  cx={tooltip.x - padding.left}
-                  cy={tooltip.primaryY - padding.top}
-                  r={tokens.dotPrimaryR}
-                  fill={primaryColor}
-                  stroke="#0B0D12"
-                  strokeWidth="2"
-                  className="drop-shadow-lg"
-                />
+                {/* Точка на основной линии — скрываем когда primary не показан */}
+                {showPrimary && (
+                  <circle
+                    cx={tooltip.x - padding.left}
+                    cy={tooltip.primaryY - padding.top}
+                    r={tokens.dotPrimaryR}
+                    fill={primaryColor}
+                    stroke="#0B0D12"
+                    strokeWidth="2"
+                    className="drop-shadow-lg"
+                  />
+                )}
                 {/* Точка на secondary линии */}
                 {showSecondary && tooltip.secondaryY !== null && (
                   <circle
@@ -1250,9 +1265,10 @@ export default function SimpleChart({
             const fmtSecondary = formatSecondaryValue || formatValue;
             const fmtThird = formatThirdValue || formatValue;
 
-            const lines: { color: string; label: string; value: string }[] = [
-              { color: primaryColor, label: primaryLabel, value: formatValue(tooltip.value) },
-            ];
+            const lines: { color: string; label: string; value: string }[] = [];
+            if (showPrimary) {
+              lines.push({ color: primaryColor, label: primaryLabel, value: formatValue(tooltip.value) });
+            }
             if (showSecondary && tooltip.secondaryValue !== undefined) {
               lines.push({ color: secondaryColor, label: secondaryLabel, value: fmtSecondary(tooltip.secondaryValue) });
             }
