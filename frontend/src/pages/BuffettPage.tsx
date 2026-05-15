@@ -259,7 +259,8 @@ export default function BuffettPage() {
                     height={chartHeight}
                     primaryColor="var(--accent-secondary)"
                     secondaryColor="var(--accent)"
-                    showSecondary={showCap}
+                    showPrimary={showCap}
+                    showSecondary={true}
                     reverseLegend={true}
                     formatValue={(v) => `${v.toFixed(2)} трлн ₽`}
                     formatPrimaryAxis={(v) => `${v.toFixed(2)} трлн ₽`}
@@ -288,7 +289,8 @@ export default function BuffettPage() {
                     height={chartHeight}
                     primaryColor="var(--accent-secondary)"
                     secondaryColor="var(--accent)"
-                    showSecondary={showCap}
+                    showPrimary={showCap}
+                    showSecondary={true}
                     reverseLegend={true}
                     formatValue={(v) => `${v.toFixed(2)} трлн ₽`}
                     formatPrimaryAxis={(v) => `${v.toFixed(2)} трлн ₽`}

@@ -932,7 +932,10 @@ export default function SimpleChart({
                 (правая ось остаётся, левая исчезает). Это сохраняет визуальную сетку, не оставляя
                 "висящих" чисел primary scale, которые без primary line не имеют смысла. */}
             {(showPrimary ? targetCalc.yTicks : (targetCalc.secYTicks || [])).map((tick, i) => {
-              const isDualAxis = showPrimary && showSecondary && !!targetCalc.secYTicks && targetCalc.secYTicks.length > 0;
+              // Primary axis всегда красится в primaryColor (раньше был серый fallback
+              // в single-axis режиме — выглядело «безжизненно» когда юзер скрывал
+              // index/cap и оставлял только основную серию). Linecolor = primary
+              // зеркалит цвет линии графика и совпадает с pill.
               return (
                 <g key={i}>
                   <line
@@ -949,10 +952,10 @@ export default function SimpleChart({
                       y={tick.y}
                       textAnchor="end"
                       dominantBaseline="central"
-                      fill={isDualAxis ? primaryColor : 'var(--axis-color, #9CA3B8)'}
+                      fill={primaryColor}
                       fontSize={tokens.fontY}
                       fontWeight={tokens.fontYWeight}
-                      opacity={isDualAxis ? 0.9 : 1}
+                      opacity={0.9}
                     >
                       {/* Split на "123.45" + " трлн ₽" — unit рисуется меньшим
                           шрифтом (70%), чтобы длинные axis labels не «давили»
@@ -1323,21 +1326,26 @@ export default function SimpleChart({
 
           type LabelEntry = { color: string; x: number; y: number; value: string; key: string };
           const labels: LabelEntry[] = [];
-          const lastP = targetCalc.points[targetCalc.points.length - 1];
-          // Если formatPrimaryAxis задан явно — используем его (он уже compact
-          // версия для axis: содержит unit в нужной форме, без stripUnits).
-          // Иначе fallback на стрипнутую версию formatValue (старое поведение).
-          // Pill text идентичен axis labels — visual alignment гарантирован.
-          const primaryPillStr = formatPrimaryAxis
-            ? formatPrimaryAxis(lastP.value)
-            : stripUnits(formatValue(lastP.value));
-          labels.push({
-            color: primaryColor,
-            x: padding.left + lastP.x,
-            y: padding.top + lastP.y,
-            value: primaryPillStr,
-            key: 'primary',
-          });
+          // Primary pill — только если primary видим. showPrimary=false → юзер
+          // выключил основную линию через toggle, pill тоже скрываем (иначе на
+          // пустом chart висит «фантомное» значение цены/капитализации).
+          if (showPrimary) {
+            const lastP = targetCalc.points[targetCalc.points.length - 1];
+            // Если formatPrimaryAxis задан явно — используем его (он уже compact
+            // версия для axis: содержит unit в нужной форме, без stripUnits).
+            // Иначе fallback на стрипнутую версию formatValue (старое поведение).
+            // Pill text идентичен axis labels — visual alignment гарантирован.
+            const primaryPillStr = formatPrimaryAxis
+              ? formatPrimaryAxis(lastP.value)
+              : stripUnits(formatValue(lastP.value));
+            labels.push({
+              color: primaryColor,
+              x: padding.left + lastP.x,
+              y: padding.top + lastP.y,
+              value: primaryPillStr,
+              key: 'primary',
+            });
+          }
           if (showSecondary && targetCalc.secondaryPoints.length > 0) {
             const lastS = targetCalc.secondaryPoints[targetCalc.secondaryPoints.length - 1];
             const fmt = formatSecondaryAxis || formatSecondaryValue || formatValue;
