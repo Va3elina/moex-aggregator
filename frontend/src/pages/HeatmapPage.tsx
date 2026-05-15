@@ -308,40 +308,30 @@ export default function HeatmapPage() {
     return `${value.toFixed(2).replace('.', ',')}%`;
   };
 
-  // Размер шрифта — пропорциональный размеру плитки через WIDTH-DRIVEN sizing.
+  // Размер шрифта — гранулярное пропорциональное масштабирование.
   //
-  // ПРИНЦИП (просьба юзера 2026-05-15):
-  //   Расстояние от текста до левого/правого края плитки — КОНСТАНТА (marginX).
-  //   Шрифт подбирается так, чтобы ticker text заполнил `tile_width - 2*marginX`
-  //   ровно. Это даёт чисто пропорциональное масштабирование: больше плитка →
-  //   линейно больше шрифт.
+  // ИТЕРАЦИЯ 3 (2026-05-15): возвращаемся к length-independent формуле `w/4.5`
+  // (как был дизайн до мая 2026). Length-based variant (v605-v609) делал
+  // медиум-плитки слишком агрессивными и они упирались в cap → SBER, ROSN,
+  // NVTK выглядели одинаково большими. С `w/4.5` только реально огромные
+  // плитки достигают cap, остальные масштабируются плавно — больше «шагов».
   //
   // ПАРАМЕТРЫ:
-  //   - charRatio = 0.62 (estimated char-width / font-size для bold sans-serif).
-  //     С учётом textLength compression safety это даёт ~5% margin на kerning.
-  //   - marginX = 10 (px от текста до edge с обеих сторон, КОНСТАНТА).
-  //   - hasPercent: при показанном проценте под ticker'ом — ticker занимает
-  //     ~40% высоты (остальное под percent и vertical gap). Без percent — 65%.
-  //   - cap 80: ultimate safety на 4K мониторах чтобы не получить 200px шрифт
-  //     (SBER на 1600px-wide плитке без cap'а был бы 600px и доминировал бы
-  //     остальную карту).
-  //   - percent = ticker * 0.6 (percent ~60% от ticker — match old design ratio).
+  //   - tickerByWidth = width / 4.5 (старая формула, length-independent).
+  //     Длинные тикеры (SNGSP) сжимаются через SVG textLength compression.
+  //   - tickerByHeight = height * 0.35 (с percent), * 0.55 (без — compact tile).
+  //   - cap = 64 (vs original 48 → +33% headroom для огромных плиток).
+  //   - percent = ticker * 0.65 (slightly меньше ticker'а — match Finviz-style).
   const getFontSize = (
     width: number,
     height: number,
-    ticker: string,
+    _ticker: string,
     hasPercent: boolean,
   ): { ticker: number; percent: number } => {
-    const charRatio = 0.62;
-    const marginX = 10;
-    const tickerLen = Math.max(ticker.length, 3);
-    // Primary determinant: ticker fills `width - 2*marginX`
-    const tickerByWidth = Math.floor((width - 2 * marginX) / (tickerLen * charRatio));
-    // Safety: text не вылезает за высоту (на плоских плитках типа 500×40 byWidth
-    // даёт большой шрифт который не влезает по высоте → height limit нужен).
-    const tickerByHeight = Math.floor(height * (hasPercent ? 0.40 : 0.65));
-    const tickerSize = Math.min(Math.max(Math.min(tickerByWidth, tickerByHeight), 9), 80);
-    const percent = Math.floor(tickerSize * 0.6);
+    const tickerByWidth = Math.floor(width / 4.5);
+    const tickerByHeight = Math.floor(height * (hasPercent ? 0.35 : 0.55));
+    const tickerSize = Math.min(Math.max(Math.min(tickerByWidth, tickerByHeight), 9), 64);
+    const percent = Math.floor(tickerSize * 0.65);
     return { ticker: tickerSize, percent };
   };
 
