@@ -278,15 +278,26 @@ def get_chart_data(
             daily_volume[day] = {}
         daily_volume[day][sid] = daily_volume[day].get(sid, 0) + vol
 
-    # 6c. Необратимый ролловер: после первого переключения не возвращаемся
-    # на предыдущий контракт в течение 30 дней (защита от "дёрганья" при экспирации)
+    # 6c. Необратимый ролловер с multi-day confirmation.
+    #
+    # Защиты от false switches:
+    # 1. CONFIRM_DAYS=2 — новый лидер должен удерживать первенство 2 дня подряд.
+    #    Защищает от single-day аномалий: например 8.12.2025 CRZ=91k vs нормы
+    #    6-10M (data fetch / половинный день) → CRH временно «лидер» → следующий
+    #    день CRZ снова нормальный → переключения не происходит.
+    # 2. COOLDOWN_DAYS=45 — после переключения нельзя вернуться на предыдущий
+    #    контракт. Защищает от «дёрганья» возле даты экспирации, когда обе серии
+    #    имеют сравнимый объём.
     sorted_days = sorted(daily_volume.keys())
     best_contract_by_day = {}
     current_contract = None
-    prev_contract = None  # Предыдущий контракт — нельзя вернуться
-    last_switch_day = None  # Дата последнего переключения
-    COOLDOWN_DAYS = 45  # Период блокировки возврата
-    contract_switches = []  # Точки переключения контрактов
+    prev_contract = None
+    last_switch_day = None
+    COOLDOWN_DAYS = 45
+    CONFIRM_DAYS = 2  # multi-day confirmation для защиты от шумовых дней
+    contract_switches = []
+    pending_leader = None  # кандидат на нового лидера, ждёт подтверждения
+    pending_days = 0       # сколько подряд дней кандидат лидирует
 
     for day in sorted_days:
         contracts = daily_volume[day]
@@ -301,24 +312,38 @@ def get_chart_data(
                 "from": None
             })
         elif day_leader != current_contract and day_leader in contracts:
-            old_vol = contracts.get(current_contract, 0)
-            new_vol = contracts.get(day_leader, 0)
-            total_day_vol = sum(contracts.values())
-            if new_vol > old_vol and total_day_vol > 1000:
-                # Блокируем возврат на prev_contract только в период cooldown
-                # Также игнорируем дни с аномально низким объёмом (<1000)
-                days_since = (day - last_switch_day).days if last_switch_day else 999
-                if day_leader == prev_contract and days_since < COOLDOWN_DAYS and old_vol > 0:
-                    pass  # Слишком рано для возврата — дёрганье при экспирации
-                else:
-                    contract_switches.append({
-                        "date": day.isoformat(),
-                        "from": current_contract,
-                        "to": day_leader
-                    })
-                    prev_contract = current_contract
-                    current_contract = day_leader
-                    last_switch_day = day
+            # Накапливаем дни подряд для одного и того же кандидата.
+            # Если кандидат сменился — сбрасываем счётчик.
+            if pending_leader == day_leader:
+                pending_days += 1
+            else:
+                pending_leader = day_leader
+                pending_days = 1
+
+            # Подтверждение получено — проверяем условия переключения
+            if pending_days >= CONFIRM_DAYS:
+                old_vol = contracts.get(current_contract, 0)
+                new_vol = contracts.get(day_leader, 0)
+                total_day_vol = sum(contracts.values())
+                if new_vol > old_vol and total_day_vol > 1000:
+                    days_since = (day - last_switch_day).days if last_switch_day else 999
+                    if day_leader == prev_contract and days_since < COOLDOWN_DAYS and old_vol > 0:
+                        pass  # Слишком рано для возврата — дёрганье при экспирации
+                    else:
+                        contract_switches.append({
+                            "date": day.isoformat(),
+                            "from": current_contract,
+                            "to": day_leader
+                        })
+                        prev_contract = current_contract
+                        current_contract = day_leader
+                        last_switch_day = day
+                        pending_leader = None
+                        pending_days = 0
+        else:
+            # Лидер совпадает с текущим контрактом → сброс pending
+            pending_leader = None
+            pending_days = 0
 
         best_contract_by_day[day] = current_contract
 
