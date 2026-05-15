@@ -321,21 +321,21 @@ export default function HeatmapPage() {
   // высоких плитках большая высота не даёт огромный шрифт который не
   // влезает в ширину.
   //
-  // 2026-05-15: ratio bumped (0.35→0.42 height, 0.42→0.50 minDim) и cap 48→96.
-  // Старый cap 48 делал все большие плитки одинаковыми (SBER == ROSN ==
-  // капитализация-1.5T). Юзер хотел чтобы scale был визуально заметнее —
-  // как в TradingView/Seasonax treemap'ах. 96 — компромисс, не настолько
-  // экстремально как 144 (на 4K экранах было бы избыточно).
+  // 2026-05-15 ИТЕРАЦИЯ 2: v607 (cap 96, ratio 0.42/0.50) дал «слишком крупный»
+  // текст на больших плитках — SBER/ROSN заливали свою плитку под завязку.
+  // Откатываем к промежуточному варианту: cap 64 (vs original 48 → +33%) и
+  // лёгкое увеличение ratio (0.35→0.38, 0.42→0.45). На больших плитках текст
+  // заметно больше original'а но не доминирует, на маленьких почти не меняется.
   const getFontSize = (width: number, height: number, ticker: string): { ticker: number; percent: number } => {
     const charRatio = 0.7;
     const horizontalPad = 10;
     const tickerLen = Math.max(ticker.length, 3);
     const tickerByWidth = Math.floor((width - horizontalPad) / (tickerLen * charRatio));
-    const tickerByHeight = Math.floor(height * 0.42);
-    const tickerByMinDim = Math.floor(Math.min(width, height) * 0.50);
+    const tickerByHeight = Math.floor(height * 0.38);
+    const tickerByMinDim = Math.floor(Math.min(width, height) * 0.45);
     const tickerSize = Math.min(
       Math.max(Math.min(tickerByWidth, tickerByHeight, tickerByMinDim), 9),
-      96
+      64
     );
     const percent = Math.floor(tickerSize * 0.7);
     return { ticker: tickerSize, percent };
