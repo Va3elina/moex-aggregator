@@ -140,15 +140,31 @@ export default function StackedBidirectionalHistogram({
   );
 
   // ─── Hover handler ───────────────────────────────────────────────────────
+  // Bars лежат внутри chart-area, которая отступает от краёв container на
+  // var(--chart-pad-left) и var(--chart-pad-right-single). Считаем xRatio
+  // относительно chart-area, не container — иначе у краёв курсор активирует
+  // wrong bar (раньше чем визуально подошёл).
   const handleMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const target = e.currentTarget;
     const rect = target.getBoundingClientRect();
-    const xRatio = (e.clientX - rect.left) / rect.width;
-    if (!periods.length || xRatio < 0 || xRatio > 1) {
+    const cs = getComputedStyle(document.documentElement);
+    const padLeft = parseFloat(cs.getPropertyValue('--chart-pad-left')) || 100;
+    const padRight = parseFloat(cs.getPropertyValue('--chart-pad-right-single')) || 95;
+    const chartAreaWidth = rect.width - padLeft - padRight;
+    if (chartAreaWidth <= 0 || !periods.length) {
       setHover(null);
       return;
     }
-    const nearestIdx = Math.min(periods.length - 1, Math.max(0, Math.floor(xRatio * periods.length)));
+    const xWithinChart = e.clientX - rect.left - padLeft;
+    const xRatio = xWithinChart / chartAreaWidth;
+    if (xRatio < 0 || xRatio > 1) {
+      setHover(null);
+      return;
+    }
+    const nearestIdx = Math.min(
+      periods.length - 1,
+      Math.max(0, Math.floor(xRatio * periods.length)),
+    );
     const outer = containerRef.current;
     const outerRect = outer ? outer.getBoundingClientRect() : rect;
     setHover({
