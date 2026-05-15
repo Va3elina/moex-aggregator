@@ -400,6 +400,11 @@ UPSERT_SQL = text("""
 def upsert_rows(engine, instrument_type: str, rows: list[dict]) -> int:
     if not rows:
         return 0
+    # FX в XLSX ЦБ использует обратную конвенцию знаков (см. fetch_orfr_flows.py
+    # подробный комментарий). Инвертируем чтобы БД была консистентна:
+    # + = покупка, − = продажа для всех instrument_types.
+    if instrument_type == "fx":
+        rows = [{**r, "value": -r["value"]} for r in rows]
     payload = [{**r, "instrument_type": instrument_type} for r in rows]
     with engine.begin() as conn:
         conn.execute(UPSERT_SQL, payload)

@@ -287,6 +287,14 @@ UPSERT_SQL = text("""
 def upsert_rows(engine, instrument_type: str, rows: list[dict]) -> int:
     if not rows:
         return 0
+    # FX в XLSX ЦБ использует ОБРАТНУЮ конвенцию знаков относительно акций/ОФЗ:
+    # лист «рис. 8» имеет заголовок «Нетто-покупка(-) / нетто-продажа (+)
+    # валюты за рубли». То есть минус = покупка, плюс = продажа.
+    # Stocks/OFZ (рис. 32/14) используют стандартно: + = покупка, − = продажа.
+    # Чтобы унифицировать БД (везде «+ = покупка»), инвертируем fx values.
+    # После этого вся pipeline (API, frontend, tooltip) trapping одинаково.
+    if instrument_type == "fx":
+        rows = [{**r, "value": -r["value"]} for r in rows]
     payload = [{**r, "instrument_type": instrument_type} for r in rows]
     with engine.begin() as conn:
         conn.execute(UPSERT_SQL, payload)
