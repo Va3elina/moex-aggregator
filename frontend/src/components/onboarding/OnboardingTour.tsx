@@ -37,6 +37,10 @@ export interface TourStep {
   position?: 'top' | 'bottom' | 'left' | 'right';
   /** Дополнительный padding вокруг target в spotlight cutout (px). По умолчанию 8. */
   spotlightPadding?: number;
+  /** Callback при ВХОДЕ в этот шаг тура. Используется чтобы переключить
+   *  состояние страницы (например, режим графика) под нужный шаг, чтобы
+   *  то что описывает тур, было реально видно на фоне. */
+  onEnter?: () => void;
 }
 
 export interface OnboardingTourProps {
@@ -91,7 +95,19 @@ export default function OnboardingTour({
 
   // Find target element + scroll into view + measure rect
   useLayoutEffect(() => {
-    if (!open || !step?.selector) {
+    if (!open) {
+      setTargetRect(null);
+      return;
+    }
+
+    // Side effect шага: переключает state страницы (например, режим графика)
+    // ПЕРЕД тем как искать target элемент. Это нужно когда подсвечиваемый
+    // контрол существует только в определённом режиме (например, "Индекс toggle"
+    // только в режиме СЧА). setState из onEnter триггерит re-render, после
+    // которого setTimeout(updateRect, 300) находит элемент.
+    step?.onEnter?.();
+
+    if (!step?.selector) {
       setTargetRect(null);
       return;
     }
@@ -106,20 +122,23 @@ export default function OnboardingTour({
       setTargetRect(rect);
     };
 
-    // Scroll target into view first
-    const el = document.querySelector(step.selector) as HTMLElement | null;
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      // Wait for scroll to settle, then measure
-      setTimeout(updateRect, 300);
-    } else {
+    const scrollAndMeasure = () => {
+      const el = document.querySelector(step.selector!) as HTMLElement | null;
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       updateRect();
-    }
+    };
 
-    // Re-measure on resize/scroll
+    // 350ms delay чтобы:
+    //   1. onEnter setState успел обработаться React'ом → DOM обновился
+    //   2. scroll-into-view успел отработать (smooth animation)
+    // Без delay — element может ещё не существовать (если step требует
+    // переключения режима), или scroll ещё не закончился, и getBoundingClientRect
+    // вернёт неверные координаты.
+    const t = setTimeout(scrollAndMeasure, 350);
     window.addEventListener('resize', updateRect);
     window.addEventListener('scroll', updateRect, true);
     return () => {
+      clearTimeout(t);
       window.removeEventListener('resize', updateRect);
       window.removeEventListener('scroll', updateRect, true);
     };

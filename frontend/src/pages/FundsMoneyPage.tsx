@@ -26,7 +26,7 @@ import FundCardModal from '../components/funds/FundCardModal';
 import FundsTable from '../components/funds/FundsTable';
 import { useOnboardingTour } from '../hooks/useFirstVisit';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
-import { fundsMoneyTourSteps } from '../data/tours/funds-money';
+import { buildFundsMoneyTour } from '../data/tours/funds-money';
 import FlowsHistogram from '../components/funds/FlowsHistogram';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
 
@@ -129,8 +129,15 @@ export default function FundsMoneyPage() {
     const [showIndex, setShowIndex] = useState(true);
     const [flowNavRange, setFlowNavRange] = useState<[number, number]>([0, 0]);
 
-    // Onboarding tour
+    // Onboarding tour. Steps собираются через factory чтобы тур мог
+    // автоматически переключать viewMode (СЧА ↔ Притоки) когда подсвечивает
+    // соответствующий контрол — иначе юзер читает про СЧА а на графике
+    // ещё Притоки (или наоборот).
     const tour = useOnboardingTour('funds-money');
+    const fundsMoneyTourSteps = useMemo(
+      () => buildFundsMoneyTour(setViewMode),
+      [setViewMode],
+    );
     const flowChartRef = useRef<SVGSVGElement>(null);
     const flowContainerRef = useRef<HTMLDivElement>(null);
 
