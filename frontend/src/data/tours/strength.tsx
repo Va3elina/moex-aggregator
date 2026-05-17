@@ -36,7 +36,7 @@ export const strengthTourSteps: TourStep[] = [
           <li><strong>Универс</strong> — какой индекс анализируем (IMOEX,
             мосгорбиржа, выборочные).</li>
           <li><strong>Период</strong> — горизонт отображения данных.</li>
-          <li><strong>Цена</strong> — toggle для линии индекса на графике.</li>
+          <li><strong>Цена</strong> — кнопка чтобы показать/скрыть линию индекса на графике.</li>
         </ul>
       </>
     ),
