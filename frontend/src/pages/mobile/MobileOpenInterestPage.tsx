@@ -25,6 +25,8 @@ import type { ChartResponse } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
 import { useRealtimeData } from '../../hooks/useRealtimeData';
 import { getDefaultPeriod } from '../../config/accessControl';
+import { useOnboardingTour } from '../../hooks/useFirstVisit';
+import OnboardingTour, { type TourStep } from '../../components/onboarding/OnboardingTour';
 
 type Period = '1d' | '1w' | '1m' | '3m' | '6m' | '1y' | '2y' | '5y' | 'all';
 type OIVariant = 'oi' | 'long' | 'short' | 'both' | 'net';
@@ -75,6 +77,89 @@ export default function MobileOpenInterestPage() {
   const [oiVariant, setOiVariant] = useState<OIVariant>('net');
   const [data, setData] = useState<ChartResponse | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Onboarding tour — shared storage key с десктопом (juser видит онбординг
+  // один раз на любом устройстве). Контент адаптирован под мобильный layout.
+  const tour = useOnboardingTour('oi');
+  const tourSteps: TourStep[] = [
+    {
+      selector: null,
+      title: 'Открытый интерес',
+      body: (
+        <>
+          <p style={{ marginBottom: 8 }}>
+            Сколько контрактов открыто у участников рынка по фьючерсам.
+            И в какую сторону они ставят деньги.
+          </p>
+          <p>За 4 шага покажу как пользоваться.</p>
+        </>
+      ),
+    },
+    {
+      selector: '[data-tour="oi-instrument"]',
+      title: 'Выбор актива',
+      body: (
+        <p>
+          Тап по плашке снизу слева — выбираешь фьючерс из списка
+          (Сбербанк, Газпром, юань-рубль и др.).
+        </p>
+      ),
+      position: 'top',
+    },
+    {
+      selector: '[data-tour="oi-timerange"]',
+      title: 'Время',
+      body: (
+        <p>
+          Кнопка «Время» — период (6 месяцев / 1 год / все доступные)
+          и интервал данных (день / час / 5 минут).
+        </p>
+      ),
+      position: 'top',
+    },
+    {
+      selector: '[data-tour="oi-variant"]',
+      title: 'Опции',
+      body: (
+        <>
+          <p style={{ marginBottom: 6 }}>
+            Что показывать на графике: открытый интерес, покупки, продажи
+            или чистая позиция (разница).
+          </p>
+          <p>А также: физлица vs юрлица — у них разное поведение.</p>
+        </>
+      ),
+      position: 'top',
+    },
+    {
+      selector: '[data-tour="oi-chart"]',
+      title: 'Чтение графика',
+      body: (
+        <>
+          <p style={{ marginBottom: 6 }}>
+            Синяя линия — цена фьючерса. Цветная — выбранная серия открытого
+            интереса.
+          </p>
+          <p>
+            <strong>Зажми палец на графике</strong> — появится курсор с
+            подробными значениями на этот день.
+          </p>
+        </>
+      ),
+      position: 'bottom',
+      spotlightPadding: 4,
+    },
+    {
+      selector: null,
+      title: 'Готово!',
+      body: (
+        <p>
+          Нажми «?» рядом с заголовком — там подробная методология
+          и сценарии трактовки.
+        </p>
+      ),
+    },
+  ];
 
   // Sheets
   const [assetSearchOpen, setAssetSearchOpen] = useState(false);
@@ -181,6 +266,7 @@ export default function MobileOpenInterestPage() {
       bottomActions={
         <>
           <button
+            data-tour="oi-instrument"
             className="fm-page-action asset"
             onClick={() => setAssetSearchOpen(true)}
             aria-label={`Актив: ${instrumentName}`}
@@ -192,6 +278,7 @@ export default function MobileOpenInterestPage() {
             </div>
           </button>
           <button
+            data-tour="oi-timerange"
             className="fm-page-action"
             onClick={() => setPeriodSheetOpen(true)}
             aria-label={`Время · ${timeLabel}`}
@@ -200,6 +287,7 @@ export default function MobileOpenInterestPage() {
             <span>Время</span>
           </button>
           <button
+            data-tour="oi-variant"
             className="fm-page-action"
             onClick={() => setOptionsSheetOpen(true)}
             aria-label={`Опции · ${optionsLabel}`}
@@ -217,7 +305,7 @@ export default function MobileOpenInterestPage() {
         helpLink="/methodology/oi"
       />
 
-      <div className="fm-frame" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+      <div data-tour="oi-chart" className="fm-frame" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         <div style={{ margin: '0 -10px', flex: 1, minHeight: 0 }}>
           <MobileChart series={chartSeries} loading={loading} />
         </div>
@@ -333,6 +421,12 @@ export default function MobileOpenInterestPage() {
           </div>
         </div>
       </MobileSheet>
+
+      <OnboardingTour
+        steps={tourSteps}
+        open={tour.open}
+        onClose={tour.close}
+      />
     </MobileLayout>
   );
 }

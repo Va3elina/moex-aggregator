@@ -27,14 +27,21 @@ interface MobileLayoutProps {
    *  страницы (asset/time/options и т.д.). Когда передан — main padding-bottom
    *  увеличивается, чтобы скролл не упирался в bar. */
   bottomActions?: ReactNode;
+  /** data-tour ID для всего bottom-actions bar'а. Используется для
+   *  onboarding-туров — даёт целостный bounding-rect для spotlight'а. */
+  bottomActionsTourId?: string;
 }
 
-export default function MobileLayout({ children, bottomActions }: MobileLayoutProps) {
+export default function MobileLayout({ children, bottomActions, bottomActionsTourId }: MobileLayoutProps) {
   return (
     <div className="fm-app">
       <MobileTopBar />
       <main className={`fm-main ${bottomActions ? '' : 'no-actions'}`}>{children}</main>
-      {bottomActions && <div className="fm-page-actions">{bottomActions}</div>}
+      {bottomActions && (
+        <div className="fm-page-actions" data-tour={bottomActionsTourId}>
+          {bottomActions}
+        </div>
+      )}
       <MobileBottomRail />
     </div>
   );

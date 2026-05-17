@@ -14,6 +14,9 @@ import MobilePageHeader from '../../components/mobile/MobilePageHeader';
 import StackedBidirectionalHistogram from '../../components/cbr/StackedBidirectionalHistogram';
 import MobileSkeleton from '../../components/mobile/MobileSkeleton';
 import { getCbrFlows, type CbrInstrumentType, type CbrFlowsResponse } from '../../services/api';
+import { useOnboardingTour } from '../../hooks/useFirstVisit';
+import OnboardingTour from '../../components/onboarding/OnboardingTour';
+import { cbrFlowsMobileTour } from '../../data/tours/mobile';
 
 type PeriodFilter = '6m' | '2y' | 'all';
 
@@ -35,6 +38,8 @@ export default function MobileCbrFlowsPage() {
   const [data, setData] = useState<CbrFlowsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const tour = useOnboardingTour('cbr-flows');
 
   // Загрузка
   useEffect(() => {
@@ -68,6 +73,7 @@ export default function MobileCbrFlowsPage() {
 
   return (
     <MobileLayout
+      bottomActionsTourId="cbr-type"
       bottomActions={
         <>
           {TYPE_TABS.map((tab) => {
@@ -116,6 +122,7 @@ export default function MobileCbrFlowsPage() {
 
       {/* Chart */}
       <div
+        data-tour="cbr-chart"
         style={{
           margin: '0 8px',
           padding: 8,
@@ -145,6 +152,12 @@ export default function MobileCbrFlowsPage() {
           <div style={{ padding: 24, color: 'var(--text-muted)', textAlign: 'center' }}>Нет данных</div>
         )}
       </div>
+
+      <OnboardingTour
+        steps={cbrFlowsMobileTour}
+        open={tour.open}
+        onClose={tour.close}
+      />
     </MobileLayout>
   );
 }

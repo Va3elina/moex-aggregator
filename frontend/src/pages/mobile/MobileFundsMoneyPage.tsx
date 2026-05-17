@@ -18,6 +18,9 @@ import {
   type FundCategory,
   type FundPeriod,
 } from '../../services/api';
+import { useOnboardingTour } from '../../hooks/useFirstVisit';
+import OnboardingTour from '../../components/onboarding/OnboardingTour';
+import { fundsMoneyMobileTour } from '../../data/tours/mobile';
 
 const CATEGORIES: Array<{ key: FundCategory; label: string }> = [
   { key: 'money_market', label: 'Деньги' },
@@ -38,6 +41,8 @@ export default function MobileFundsMoneyPage() {
   const [period, setPeriod] = useState<FundPeriod>('6m');
   const [data, setData] = useState<FundsChartResponse | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const tour = useOnboardingTour('funds-money');
 
   useEffect(() => {
     let cancelled = false;
@@ -94,6 +99,7 @@ export default function MobileFundsMoneyPage() {
 
   return (
     <MobileLayout
+      bottomActionsTourId="funds-category"
       bottomActions={
         <>
           {CATEGORIES.map((cat) => (
@@ -136,11 +142,17 @@ export default function MobileFundsMoneyPage() {
       </div>
 
       {/* Chart */}
-      <div className="fm-frame" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+      <div data-tour="funds-chart" className="fm-frame" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         <div style={{ margin: '0 -10px', flex: 1, minHeight: 0 }}>
           <MobileChart series={chartSeries} loading={loading} />
         </div>
       </div>
+
+      <OnboardingTour
+        steps={fundsMoneyMobileTour}
+        open={tour.open}
+        onClose={tour.close}
+      />
     </MobileLayout>
   );
 }

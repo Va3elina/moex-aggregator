@@ -21,6 +21,7 @@
  *   v1 (`frame_tour_seen:`)    — initial release
  *   v2 (`frame_tour_seen_v2:`) — подробные туры с button-by-button
  *   v3 (`frame_tour_seen_v3:`) — авто-переключение режимов в FundsMoney
+ *   v4 (`frame_tour_seen_v4:`) — mobile-туры для каждого индикатора
  *
  * Возвращает:
  *   isFirstVisit: true если ключа в localStorage нет
@@ -29,7 +30,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-const STORAGE_PREFIX = 'frame_tour_seen_v3:';
+const STORAGE_PREFIX = 'frame_tour_seen_v4:';
 
 export function useFirstVisit(indicatorKey: string) {
   const storageKey = `${STORAGE_PREFIX}${indicatorKey}`;

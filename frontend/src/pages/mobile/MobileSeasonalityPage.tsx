@@ -19,6 +19,9 @@ import {
   type SeasonalityResponse,
   type SeasonalityMode,
 } from '../../services/api';
+import { useOnboardingTour } from '../../hooks/useFirstVisit';
+import OnboardingTour from '../../components/onboarding/OnboardingTour';
+import { seasonalityMobileTour } from '../../data/tours/mobile';
 
 const MODE_LABELS: Record<SeasonalityMode, string> = {
   weekday: 'Дни недели',
@@ -38,6 +41,8 @@ export default function MobileSeasonalityPage() {
   const [loading, setLoading] = useState(true);
   const [assetSearchOpen, setAssetSearchOpen] = useState(false);
   const [modeSheetOpen, setModeSheetOpen] = useState(false);
+
+  const tour = useOnboardingTour('seasonality');
 
   useEffect(() => {
     let cancelled = false;
@@ -79,6 +84,7 @@ export default function MobileSeasonalityPage() {
       bottomActions={
         <>
           <button
+            data-tour="seasonality-asset"
             className="fm-page-action asset"
             onClick={() => setAssetSearchOpen(true)}
           >
@@ -89,6 +95,7 @@ export default function MobileSeasonalityPage() {
             </div>
           </button>
           <button
+            data-tour="seasonality-mode"
             className="fm-page-action"
             onClick={() => setModeSheetOpen(true)}
           >
@@ -105,7 +112,7 @@ export default function MobileSeasonalityPage() {
         helpLink="/methodology/seasonality"
       />
 
-      <div className="fm-frame" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+      <div data-tour="seasonality-chart" className="fm-frame" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         <div style={{ position: 'relative', flex: 1, minHeight: 0, margin: '0 -4px' }}>
           {loading ? (
             <MobileSkeleton variant="chart" height="100%" />
@@ -150,6 +157,12 @@ export default function MobileSeasonalityPage() {
           ))}
         </div>
       </MobileSheet>
+
+      <OnboardingTour
+        steps={seasonalityMobileTour}
+        open={tour.open}
+        onClose={tour.close}
+      />
     </MobileLayout>
   );
 }

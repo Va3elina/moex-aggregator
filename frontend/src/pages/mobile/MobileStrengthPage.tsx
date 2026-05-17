@@ -18,6 +18,9 @@ import {
   type BreadthCurrentResponse,
   type BreadthHistoryResponse,
 } from '../../services/api';
+import { useOnboardingTour } from '../../hooks/useFirstVisit';
+import OnboardingTour from '../../components/onboarding/OnboardingTour';
+import { strengthMobileTour } from '../../data/tours/mobile';
 
 const EMA_PERIODS = [50, 100, 200] as const;
 
@@ -33,6 +36,8 @@ export default function MobileStrengthPage() {
   const [current, setCurrent] = useState<BreadthCurrentResponse | null>(null);
   const [history, setHistory] = useState<BreadthHistoryResponse | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const tour = useOnboardingTour('strength');
 
   useEffect(() => {
     let cancelled = false;
@@ -86,6 +91,7 @@ export default function MobileStrengthPage() {
 
   return (
     <MobileLayout
+      bottomActionsTourId="strength-ema"
       bottomActions={
         <>
           {EMA_PERIODS.map((p) => (
@@ -115,6 +121,7 @@ export default function MobileStrengthPage() {
 
       {/* Current value card */}
       <div
+        data-tour="strength-current"
         style={{
           margin: '0 12px 12px',
           padding: '16px 20px',
@@ -162,7 +169,7 @@ export default function MobileStrengthPage() {
       </div>
 
       {/* History chart — теперь занимает всё доступное место */}
-      <div className="fm-frame" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+      <div data-tour="strength-chart" className="fm-frame" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         <div style={{ margin: '0 -10px', flex: 1, minHeight: 0 }}>
           <MobileChart series={chartSeries} loading={loading} />
         </div>
@@ -170,6 +177,12 @@ export default function MobileStrengthPage() {
           Доля акций выше EMA{emaPeriod}. &gt;70% — широкий рост, &lt;30% — глубокая распродажа.
         </div>
       </div>
+
+      <OnboardingTour
+        steps={strengthMobileTour}
+        open={tour.open}
+        onClose={tour.close}
+      />
     </MobileLayout>
   );
 }

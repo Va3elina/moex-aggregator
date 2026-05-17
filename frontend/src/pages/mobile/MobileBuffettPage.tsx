@@ -17,6 +17,9 @@ import {
   type BuffettRatioResponse,
   type BuffettPeriod,
 } from '../../services/api';
+import { useOnboardingTour } from '../../hooks/useFirstVisit';
+import OnboardingTour from '../../components/onboarding/OnboardingTour';
+import { buffettMobileTour } from '../../data/tours/mobile';
 
 type ViewMode = 'cap-gdp' | 'cap-m2';
 
@@ -36,6 +39,8 @@ export default function MobileBuffettPage() {
 
   const [periodSheetOpen, setPeriodSheetOpen] = useState(false);
   const [modeSheetOpen, setModeSheetOpen] = useState(false);
+
+  const tour = useOnboardingTour('buffett');
 
   // Загрузка данных
   useEffect(() => {
@@ -91,6 +96,7 @@ export default function MobileBuffettPage() {
       bottomActions={
         <>
           <button
+            data-tour="buffett-mode"
             className="fm-page-action asset"
             onClick={() => setModeSheetOpen(true)}
           >
@@ -103,6 +109,7 @@ export default function MobileBuffettPage() {
             </div>
           </button>
           <button
+            data-tour="buffett-period"
             className="fm-page-action"
             onClick={() => setPeriodSheetOpen(true)}
           >
@@ -126,7 +133,7 @@ export default function MobileBuffettPage() {
         helpLink="/methodology/buffett"
       />
 
-      <div className="fm-frame" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+      <div data-tour="buffett-chart" className="fm-frame" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         <div style={{ margin: '0 -10px', flex: 1, minHeight: 0 }}>
           <MobileChart
             series={chartSeries}
@@ -197,6 +204,12 @@ export default function MobileBuffettPage() {
           ))}
         </div>
       </MobileSheet>
+
+      <OnboardingTour
+        steps={buffettMobileTour}
+        open={tour.open}
+        onClose={tour.close}
+      />
     </MobileLayout>
   );
 }

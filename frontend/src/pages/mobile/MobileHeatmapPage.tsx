@@ -22,6 +22,9 @@ import { useRealtimeData } from '../../hooks/useRealtimeData';
 import { squarify } from '../../utils/squarify';
 import { formatNumber } from '../../utils/formatNumber';
 import MobileSkeleton from '../../components/mobile/MobileSkeleton';
+import { useOnboardingTour } from '../../hooks/useFirstVisit';
+import OnboardingTour from '../../components/onboarding/OnboardingTour';
+import { heatmapMobileTour } from '../../data/tours/mobile';
 
 type Period = '1d' | '1w' | '1m' | '1y';
 
@@ -65,6 +68,8 @@ export default function MobileHeatmapPage() {
   const [containerSize, setContainerSize] = useState({ w: 360, h: 500 });
   const [period, setPeriod] = useState<Period>('1d');
   const [selectedStock, setSelectedStock] = useState<HeatmapStock | null>(null);
+
+  const tour = useOnboardingTour('heatmap');
 
   const periodConfig = PERIOD_OPTIONS.find((p) => p.key === period) ?? PERIOD_OPTIONS[0];
   const colorKey = periodConfig.colorKey;
@@ -183,6 +188,7 @@ export default function MobileHeatmapPage() {
 
   return (
     <MobileLayout
+      bottomActionsTourId="heatmap-period"
       bottomActions={
         <>
           {PERIOD_OPTIONS.map((opt) => (
@@ -213,6 +219,7 @@ export default function MobileHeatmapPage() {
       {/* Treemap container — full-bleed, занимает оставшееся место */}
       <div
         ref={containerRef}
+        data-tour="heatmap-chart"
         style={{
           margin: '0 8px',
           border: '2px solid var(--text-primary)',
@@ -363,6 +370,12 @@ export default function MobileHeatmapPage() {
           </div>
         )}
       </MobileSheet>
+
+      <OnboardingTour
+        steps={heatmapMobileTour}
+        open={tour.open}
+        onClose={tour.close}
+      />
     </MobileLayout>
   );
 }
