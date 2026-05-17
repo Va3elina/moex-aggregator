@@ -13,6 +13,9 @@ import YearlySeasonalityChart from '../components/seasonality/YearlySeasonalityC
 import TestDashboard from '../components/seasonality/TestDashboard';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import type { SeasonalityResponse, SeasonalityMode, PriceChartResponse, YearlySeasonalityResponse } from '../services/api';
+import { useFirstVisit } from '../hooks/useFirstVisit';
+import OnboardingTour from '../components/onboarding/OnboardingTour';
+import { seasonalityTourSteps } from '../data/tours/seasonality';
 import { FUND_PALETTE } from '../config/chartTheme';
 import { useAnalytics } from '../contexts/AnalyticsContext';
 
@@ -60,6 +63,16 @@ export default function SeasonalityPage() {
 
   // Mode & params
   const [mode, setMode] = useState<SeasonalityMode>('weekday');
+
+  // Onboarding tour
+  const { isFirstVisit: isFirstVisitSeasonality, markAsSeen: markSeasonalityAsSeen } = useFirstVisit('seasonality');
+  const [tourOpen, setTourOpen] = useState(false);
+  useEffect(() => {
+    if (isFirstVisitSeasonality) {
+      const t = setTimeout(() => setTourOpen(true), 800);
+      return () => clearTimeout(t);
+    }
+  }, [isFirstVisitSeasonality]);
   const [chartType, setChartType] = useState<ChartType>('histogram');
   const [excludeDividends, setExcludeDividends] = useState(false);
   const [priceDays, setPriceDays] = useState(365);
@@ -591,7 +604,7 @@ export default function SeasonalityPage() {
           в Row 2 — там она всегда «после фильтров, справа» через ml-auto. */}
       <div className="flex flex-wrap items-center mb-4" style={{ gap: 'var(--sp-2)' }}>
         {/* Stock selector — остаётся widget-flat (icon + multiline label) */}
-        <div className="relative">
+        <div data-tour="seasonality-instrument" className="relative">
           <button
             onClick={() => setIsModalOpen(true)}
             className="widget-flat font-medium transition-colors flex items-center hover:opacity-90"
@@ -621,6 +634,7 @@ export default function SeasonalityPage() {
         </div>
 
         {/* Chart type toggle */}
+        <div data-tour="seasonality-mode" className="flex" style={{ gap: 'var(--sp-2)' }}>
         <Dropdown<ChartType>
           options={[
             { key: 'histogram', label: 'Сезонность' },
@@ -641,6 +655,7 @@ export default function SeasonalityPage() {
             onChange={handleModeChange}
           />
         )}
+        </div>
 
         {/* Price-specific period */}
         {chartType === 'price' && (
@@ -721,7 +736,7 @@ export default function SeasonalityPage() {
           + 2px inkstroke. Editorial-стандарт: chart cards = 2px (тяжёлая рамка),
           chips/buttons = 1.5px. Иерархия по толщине обводки. */}
       {chartType !== 'test' && (
-      <div ref={chartCardRef} className="relative rounded-2xl bg-theme-primary p-2 md:p-5" style={{ border: '2px solid var(--text-primary)' }}>
+      <div ref={chartCardRef} data-tour="seasonality-chart" className="relative rounded-2xl bg-theme-primary p-2 md:p-5" style={{ border: '2px solid var(--text-primary)' }}>
         {/* Спиннер обновления — paper-style без glass */}
         {loading && (bars.length > 0 || priceData || yearlyData) && (
           <div
@@ -815,6 +830,15 @@ export default function SeasonalityPage() {
         )}
         {chartType === 'histogram' && mode === 'monthday' && <span className="ml-2">• Выходные привязаны к понедельнику</span>}
       </div>
+
+      <OnboardingTour
+        steps={seasonalityTourSteps}
+        open={tourOpen}
+        onClose={(markSeen) => {
+          setTourOpen(false);
+          if (markSeen) markSeasonalityAsSeen();
+        }}
+      />
     </div>
   );
 }

@@ -18,6 +18,9 @@ import { isPeriodAllowed } from '../config/accessControl';
 import { useRealtimeData } from '../hooks/useRealtimeData';
 import { useFitToViewport } from '../hooks/useFitToViewport';
 import { useIsMobile } from '../hooks/useIsMobile';
+import { useFirstVisit } from '../hooks/useFirstVisit';
+import OnboardingTour from '../components/onboarding/OnboardingTour';
+import { buffettTourSteps } from '../data/tours/buffett';
 
 type ViewMode = 'cap-gdp' | 'cap-m2';
 
@@ -44,6 +47,16 @@ export default function BuffettPage() {
     const [error, setError] = useState<string | null>(null);
     const [capGdpData, setCapGdpData] = useState<BuffettCapGdpResponse | null>(null);
     const [capM2Data, setCapM2Data] = useState<BuffettRatioResponse | null>(null);
+
+    // Onboarding tour — auto-открытие для нового юзера на первом визите.
+    const { isFirstVisit, markAsSeen } = useFirstVisit('buffett');
+    const [tourOpen, setTourOpen] = useState(false);
+    useEffect(() => {
+      if (isFirstVisit) {
+        const t = setTimeout(() => setTourOpen(true), 800);
+        return () => clearTimeout(t);
+      }
+    }, [isFirstVisit]);
 
     // Динамическая высота графика — chartAnchorRef как в OI/Funds-Money
     const chartAnchorRef = useRef<HTMLDivElement>(null);
@@ -152,6 +165,7 @@ export default function BuffettPage() {
             {/* Контролы. Camera button — в конце строки через ml-auto. */}
             <div className="flex flex-wrap mb-4 md:mb-6 items-center" style={{ gap: 'var(--sp-2)' }}>
                 {/* Переключатель режимов */}
+                <div data-tour="buffett-view-mode">
                 <Dropdown<ViewMode>
                     options={[
                         { key: 'cap-gdp', label: 'Капитализация / ВВП' },
@@ -160,8 +174,10 @@ export default function BuffettPage() {
                     value={viewMode}
                     onChange={setViewMode}
                 />
+                </div>
 
                 {/* Периоды */}
+                <div data-tour="buffett-period" className="flex" style={{ gap: 'var(--sp-2)' }}>
                 <Dropdown<BuffettPeriod>
                     options={(Object.keys(PERIOD_LABELS) as BuffettPeriod[]).map((p): DropdownOption<BuffettPeriod> => ({
                         key: p,
@@ -203,6 +219,7 @@ export default function BuffettPage() {
                         onChange={(k) => setForecastTarget(k ? Number(k) : null)}
                     />
                 )}
+                </div>{/* /buffett-period */}
 
                 {/* Toggle капитализации (secondary axis) — chip pattern из Strength */}
                 <button
@@ -246,7 +263,7 @@ export default function BuffettPage() {
                     </div>
                 </div>
             ) : viewMode === 'cap-gdp' ? (
-                <div ref={chartAnchorRef}>
+                <div ref={chartAnchorRef} data-tour="buffett-chart">
                 {/* Swap осей: главное значение (Кап/ВВП) на ПРАВОЙ оси —
                     TradingView-style. Cap на ЛЕВОЙ. Цвет accent-orange сохранён
                     за ratio через swap primaryColor/secondaryColor.
@@ -282,7 +299,7 @@ export default function BuffettPage() {
                 />
                 </div>
             ) : (
-                <div ref={chartAnchorRef}>
+                <div ref={chartAnchorRef} data-tour="buffett-chart">
                 <SimpleChart
                     data={capM2ChartData.secondary}
                     secondaryData={capM2ChartData.primary}
@@ -333,6 +350,16 @@ export default function BuffettPage() {
                     </p>
                 </div>
             </div>
+
+            {/* Onboarding tour */}
+            <OnboardingTour
+                steps={buffettTourSteps}
+                open={tourOpen}
+                onClose={(markSeen) => {
+                    setTourOpen(false);
+                    if (markSeen) markAsSeen();
+                }}
+            />
         </div>
     );
 }

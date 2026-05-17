@@ -1812,6 +1812,14 @@ a.btn-accent:active {
   animation: chart-reveal 1s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
 }
 
+/* Onboarding tour — мягкий fade-in при переходе между шагами.
+   Используется в OnboardingTour.tsx через key={stepIndex} на tooltip card.
+   Длительность 240ms ease-out — заметно но не задерживает. */
+@keyframes tourFadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 /* Live-точка "данные обновляются" — расширяющийся ring effect каждые 2с.
    Используется в OverviewPage рядом с timestamp. */
 @keyframes frame-pulse {

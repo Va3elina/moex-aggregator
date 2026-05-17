@@ -2,7 +2,7 @@
  * FundsMoneyMethodologyPage — методология «Деньги в фондах».
  */
 import { Wallet } from 'lucide-react';
-import { MethodologyWrapper, Section, ModeBlock, Interpretation } from './shared';
+import { MethodologyWrapper, Section, ModeBlock, Interpretation, ReplayTourButton } from './shared';
 
 export default function FundsMoneyMethodologyPage() {
   return (
@@ -116,6 +116,14 @@ export default function FundsMoneyMethodologyPage() {
             },
           ]}
         />
+      </Section>
+
+      <Section title="Вводный тур">
+        <p className="mb-4">
+          Повторить четырёхшаговый гайд по категориям, режимам и таблице
+          фондов:
+        </p>
+        <ReplayTourButton tourKey="funds-money" indicatorPath="/funds-money" />
       </Section>
     </MethodologyWrapper>
   );

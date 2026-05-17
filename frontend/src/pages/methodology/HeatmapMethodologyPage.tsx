@@ -2,7 +2,7 @@
  * HeatmapMethodologyPage — методология карты рынка.
  */
 import { Grid3X3 } from 'lucide-react';
-import { MethodologyWrapper, Section, ModeBlock, Interpretation } from './shared';
+import { MethodologyWrapper, Section, ModeBlock, Interpretation, ReplayTourButton } from './shared';
 
 export default function HeatmapMethodologyPage() {
   return (
@@ -124,6 +124,14 @@ export default function HeatmapMethodologyPage() {
             },
           ]}
         />
+      </Section>
+
+      <Section title="Вводный тур">
+        <p className="mb-4">
+          Чтобы повторить четырёхшаговый гайд по controls и карте — нажми
+          кнопку ниже.
+        </p>
+        <ReplayTourButton tourKey="heatmap" indicatorPath="/heatmap" />
       </Section>
     </MethodologyWrapper>
   );

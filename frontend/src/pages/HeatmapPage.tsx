@@ -8,6 +8,9 @@ import { METHODOLOGY } from '../data/methodology';
 import { getHeatmapData, getHeatmapImoex } from '../services/api';
 import { useRealtimeData } from '../hooks/useRealtimeData';
 import type { HeatmapStock, HeatmapSector } from '../services/api';
+import { useFirstVisit } from '../hooks/useFirstVisit';
+import OnboardingTour from '../components/onboarding/OnboardingTour';
+import { heatmapTourSteps } from '../data/tours/heatmap';
 
 // Опции для фильтров
 const PERIOD_OPTIONS = [
@@ -142,6 +145,16 @@ export default function HeatmapPage() {
   const [sizeBy, setSizeBy] = useState<string>('market_cap');
   const [period, setPeriod] = useState('1d');
   const [groupBy, setGroupBy] = useState('sector');
+
+  // Onboarding tour
+  const { isFirstVisit, markAsSeen } = useFirstVisit('heatmap');
+  const [tourOpen, setTourOpen] = useState(false);
+  useEffect(() => {
+    if (isFirstVisit) {
+      const t = setTimeout(() => setTourOpen(true), 800);
+      return () => clearTimeout(t);
+    }
+  }, [isFirstVisit]);
 
   // Вычисляемые значения из периода
   const periodConfig = PERIOD_OPTIONS.find(p => p.value === period) || PERIOD_OPTIONS[0];
@@ -559,6 +572,7 @@ export default function HeatmapPage() {
           onChange={setMapMode}
         />
 
+        <div data-tour="heatmap-size" className="flex" style={{ gap: 'var(--sp-2)' }}>
         <Dropdown<string>
           options={SIZE_OPTIONS.map((o): DropdownOption<string> => ({ key: o.value, label: o.label }))}
           value={sizeBy}
@@ -566,16 +580,19 @@ export default function HeatmapPage() {
         />
 
         <Dropdown<string>
-          options={PERIOD_OPTIONS.map((o): DropdownOption<string> => ({ key: o.value, label: o.label }))}
-          value={period}
-          onChange={setPeriod}
-        />
-
-        <Dropdown<string>
           options={GROUP_OPTIONS.map((o): DropdownOption<string> => ({ key: o.value, label: o.label }))}
           value={groupBy}
           onChange={setGroupBy}
         />
+        </div>
+
+        <div data-tour="heatmap-period">
+        <Dropdown<string>
+          options={PERIOD_OPTIONS.map((o): DropdownOption<string> => ({ key: o.value, label: o.label }))}
+          value={period}
+          onChange={setPeriod}
+        />
+        </div>
 
         {/* Camera button inline, прижат к правому краю.
             captureRef = outer paper-card → snapshot включает watermark. */}
@@ -600,6 +617,7 @@ export default function HeatmapPage() {
           Treemap SVG внутри. Watermark — absolute bottom-left как у других charts. */}
       <div
         ref={captureRef}
+        data-tour="heatmap-chart"
         className="relative rounded-2xl overflow-hidden bg-theme-primary"
         style={{ border: '2px solid var(--text-primary)' }}
       >
@@ -702,6 +720,15 @@ export default function HeatmapPage() {
           </div>
         </div>
       )}
+
+      <OnboardingTour
+        steps={heatmapTourSteps}
+        open={tourOpen}
+        onClose={(markSeen) => {
+          setTourOpen(false);
+          if (markSeen) markAsSeen();
+        }}
+      />
     </div>
   );
 }

@@ -2,7 +2,7 @@
  * SeasonalityMethodologyPage — методология «Сезонность».
  */
 import { CalendarDays } from 'lucide-react';
-import { MethodologyWrapper, Section, ModeBlock, Interpretation } from './shared';
+import { MethodologyWrapper, Section, ModeBlock, Interpretation, ReplayTourButton } from './shared';
 
 export default function SeasonalityMethodologyPage() {
   return (
@@ -155,6 +155,14 @@ export default function SeasonalityMethodologyPage() {
             },
           ]}
         />
+      </Section>
+
+      <Section title="Вводный тур">
+        <p className="mb-4">
+          Повторить четырёхшаговый гайд по выбору актива, режимам графика
+          и сравнению лет:
+        </p>
+        <ReplayTourButton tourKey="seasonality" indicatorPath="/seasonality" />
       </Section>
     </MethodologyWrapper>
   );

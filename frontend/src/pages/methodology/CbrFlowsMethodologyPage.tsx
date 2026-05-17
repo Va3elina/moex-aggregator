@@ -5,7 +5,7 @@
  * раздел «Среднемесячные покупки/продажи акций по категориям участников».
  */
 import { Banknote } from 'lucide-react';
-import { MethodologyWrapper, Section, ModeBlock, Interpretation } from './shared';
+import { MethodologyWrapper, Section, ModeBlock, Interpretation, ReplayTourButton } from './shared';
 
 export default function CbrFlowsMethodologyPage() {
   return (
@@ -139,6 +139,14 @@ export default function CbrFlowsMethodologyPage() {
             },
           ]}
         />
+      </Section>
+
+      <Section title="Вводный тур">
+        <p className="mb-4">
+          Повторить четырёхшаговый гайд по типам активов, категориям и
+          гистограмме:
+        </p>
+        <ReplayTourButton tourKey="cbr-flows" indicatorPath="/cbr-flows" />
       </Section>
     </MethodologyWrapper>
   );

@@ -21,6 +21,9 @@ import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import SectorDetail from '../components/strength/SectorDetail';
 import StrengthControls from '../components/strength/StrengthControls';
 import { computeChartTopLineY, getDatePillStyle } from '../components/chart/datePillLayout';
+import { useFirstVisit } from '../hooks/useFirstVisit';
+import OnboardingTour from '../components/onboarding/OnboardingTour';
+import { strengthTourSteps } from '../data/tours/strength';
 
 type Period = '6m' | '1y' | '2y' | '5y' | 'all';
 type ChartMode = 'line' | 'histogram';
@@ -64,6 +67,16 @@ export default function StrengthPage() {
     const [chartMode, setChartMode] = useState<ChartMode>('histogram');
     const [showPrice, setShowPrice] = useState(true);
     const [selectedSector, setSelectedSector] = useState('Все');
+
+    // Onboarding tour
+    const { isFirstVisit, markAsSeen } = useFirstVisit('strength');
+    const [tourOpen, setTourOpen] = useState(false);
+    useEffect(() => {
+      if (isFirstVisit) {
+        const t = setTimeout(() => setTourOpen(true), 800);
+        return () => clearTimeout(t);
+      }
+    }, [isFirstVisit]);
     const [currency, setCurrency] = useState<'rub' | 'usd'>('rub');
     const [universeBase, setUniverseBase] = useState<'all' | 'imoex'>('imoex');
     // Итоговый universe: добавляем _usd при долларовом режиме
@@ -325,6 +338,7 @@ export default function StrengthPage() {
 
             {/* Контролы — одна строка. Camera button передаётся как trailingSlot
                 чтобы стоять inline с classification chip (не накладываться). */}
+            <div data-tour="strength-controls">
             <StrengthControls
                 period={period}
                 onPeriodChange={setPeriod}
@@ -362,10 +376,12 @@ export default function StrengthPage() {
                     />
                 }
             />
+            </div>{/* /strength-controls */}
 
             {/* Синхронизированные графики — оба в одном paper-контейнере, 1.5px outline */}
             <div
                 ref={containerRef}
+                data-tour="strength-chart"
                 className="relative cursor-crosshair overflow-hidden rounded-2xl bg-theme-primary"
                 style={{
                     minHeight: 'var(--chart-height, 500px)',
@@ -596,6 +612,7 @@ export default function StrengthPage() {
 
             {/* Таблица акций с фильтром по секторам */}
             {current?.stocks && (
+                <div data-tour="strength-sectors">
                 <SectorDetail
                     sectorNames={sectorNames}
                     sectorCounts={sectorCounts}
@@ -604,7 +621,17 @@ export default function StrengthPage() {
                     filteredStocks={filteredStocks}
                     emaPeriod={emaPeriod}
                 />
+                </div>
             )}
+
+            <OnboardingTour
+                steps={strengthTourSteps}
+                open={tourOpen}
+                onClose={(markSeen) => {
+                    setTourOpen(false);
+                    if (markSeen) markAsSeen();
+                }}
+            />
         </div>
     );
 }

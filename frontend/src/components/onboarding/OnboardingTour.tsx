@@ -42,10 +42,12 @@ export interface TourStep {
 export interface OnboardingTourProps {
   steps: TourStep[];
   open: boolean;
-  onClose: () => void;
-  /** Callback на «Закрыть» (X) — отличается от «Готово» на последнем шаге.
-   *  По умолчанию = onClose. */
-  onSkip?: () => void;
+  /** Закрыть тур. Если markAsSeen=true — пометить в localStorage чтобы
+   *  больше не показывался автоматически. Если false — закрытие
+   *  «session-only»: тур появится снова при следующем заходе на страницу.
+   *  Логика: «Готово» (последний шаг) всегда передаёт true; «Пропустить»/«X»
+   *  передают значение чекбокса «Больше не показывать» (default false). */
+  onClose: (markAsSeen: boolean) => void;
 }
 
 const TOOLTIP_WIDTH = 360;
@@ -56,10 +58,10 @@ export default function OnboardingTour({
   steps,
   open,
   onClose,
-  onSkip,
 }: OnboardingTourProps) {
   const [stepIndex, setStepIndex] = useState(0);
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
+  const [dontShowAgain, setDontShowAgain] = useState(false);
   const [viewport, setViewport] = useState({ w: typeof window !== 'undefined' ? window.innerWidth : 1024, h: typeof window !== 'undefined' ? window.innerHeight : 768 });
   const overlayRef = useRef<HTMLDivElement>(null);
 
@@ -67,6 +69,10 @@ export default function OnboardingTour({
   const step = steps[stepIndex];
   const isLastStep = stepIndex === steps.length - 1;
   const isFirstStep = stepIndex === 0;
+
+  // Skip = close с учётом чекбокса. Готово = всегда mark as seen.
+  const handleSkip = useCallback(() => onClose(dontShowAgain), [onClose, dontShowAgain]);
+  const handleDone = useCallback(() => onClose(true), [onClose]);
 
   // Track viewport size
   useEffect(() => {
@@ -76,9 +82,12 @@ export default function OnboardingTour({
     return () => window.removeEventListener('resize', handler);
   }, [open]);
 
-  // Reset step index when tour reopens
+  // Reset state when tour reopens
   useEffect(() => {
-    if (open) setStepIndex(0);
+    if (open) {
+      setStepIndex(0);
+      setDontShowAgain(false);
+    }
   }, [open]);
 
   // Find target element + scroll into view + measure rect
@@ -123,10 +132,10 @@ export default function OnboardingTour({
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
-        (onSkip || onClose)();
+        handleSkip();
       } else if (e.key === 'ArrowRight' || e.key === 'Enter') {
         e.preventDefault();
-        if (isLastStep) onClose();
+        if (isLastStep) handleDone();
         else setStepIndex(i => i + 1);
       } else if (e.key === 'ArrowLeft') {
         e.preventDefault();
@@ -135,12 +144,12 @@ export default function OnboardingTour({
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [open, isLastStep, isFirstStep, onClose, onSkip]);
+  }, [open, isLastStep, isFirstStep, handleSkip, handleDone]);
 
   const handleNext = useCallback(() => {
-    if (isLastStep) onClose();
+    if (isLastStep) handleDone();
     else setStepIndex(i => i + 1);
-  }, [isLastStep, onClose]);
+  }, [isLastStep, handleDone]);
 
   const handlePrev = useCallback(() => {
     if (!isFirstStep) setStepIndex(i => i - 1);
@@ -222,8 +231,10 @@ export default function OnboardingTour({
         )}
       </svg>
 
-      {/* Tooltip card */}
+      {/* Tooltip card. key={stepIndex} → ремоунт при смене шага → срабатывает
+          CSS-анимация tourFadeIn (fade-in + лёгкий translate-up). */}
       <div
+        key={stepIndex}
         className="absolute"
         style={{
           left: tooltipPos.x,
@@ -236,6 +247,7 @@ export default function OnboardingTour({
           borderRadius: 'var(--sp-3)',
           padding: 'var(--sp-5)',
           pointerEvents: 'auto',
+          animation: 'tourFadeIn 240ms ease-out',
         }}
       >
         {/* Header: progress + close button */}
@@ -262,7 +274,7 @@ export default function OnboardingTour({
             </span>
           </div>
           <button
-            onClick={onSkip || onClose}
+            onClick={handleSkip}
             className="text-theme-secondary hover:text-theme-primary transition-colors"
             aria-label="Закрыть тур"
             style={{ padding: 4 }}
@@ -287,10 +299,28 @@ export default function OnboardingTour({
           {step.body}
         </div>
 
+        {/* Чекбокс «Больше не показывать» — только на welcome-шаге (first).
+            Default OFF — закрытие = session-only, тур появится снова на
+            следующий визит. Если юзер хочет навсегда — отмечает галочку. */}
+        {isFirstStep && (
+          <label
+            className="flex items-center mb-4 cursor-pointer select-none"
+            style={{ gap: 8, fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}
+          >
+            <input
+              type="checkbox"
+              checked={dontShowAgain}
+              onChange={(e) => setDontShowAgain(e.target.checked)}
+              style={{ width: 14, height: 14, cursor: 'pointer' }}
+            />
+            Больше не показывать
+          </label>
+        )}
+
         {/* Controls */}
         <div className="flex items-center justify-between" style={{ gap: 'var(--sp-2)' }}>
           <button
-            onClick={onSkip || onClose}
+            onClick={handleSkip}
             className="text-theme-secondary hover:text-theme-primary transition-colors"
             style={{ fontSize: 'var(--fs-xs)', padding: 'var(--sp-2) var(--sp-3)' }}
           >

@@ -28,6 +28,9 @@ import StackedBidirectionalHistogram from '../components/cbr/StackedBidirectiona
 import { getCategoryColor } from '../components/cbr/cbrPalette';
 import { getCategoryInfo } from '../components/cbr/cbrCategoryInfo';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
+import { useFirstVisit } from '../hooks/useFirstVisit';
+import OnboardingTour from '../components/onboarding/OnboardingTour';
+import { cbrFlowsTourSteps } from '../data/tours/cbr-flows';
 import { useTheme } from '../contexts/ThemeContext';
 
 const INSTRUMENT_TABS: Array<{
@@ -63,6 +66,16 @@ export default function CbrFlowsPage() {
 
   // Popover-dropdown с выбором категорий (открывается при клике на кнопку)
   const [categoriesOpen, setCategoriesOpen] = useState(false);
+
+  // Onboarding tour
+  const { isFirstVisit, markAsSeen } = useFirstVisit('cbr-flows');
+  const [tourOpen, setTourOpen] = useState(false);
+  useEffect(() => {
+    if (isFirstVisit) {
+      const t = setTimeout(() => setTourOpen(true), 800);
+      return () => clearTimeout(t);
+    }
+  }, [isFirstVisit]);
   const categoriesBtnRef = useRef<HTMLDivElement>(null);
 
   // Click-outside handler: закрывает popover при клике вне его контейнера
@@ -159,6 +172,7 @@ export default function CbrFlowsPage() {
       <div className="editorial-frame">
         {/* === Row 1: 3 chip'а типа активов (grid-cols-3, равные ширины) === */}
         <div
+          data-tour="cbr-type"
           className="grid grid-cols-3 mb-3 md:mb-4"
           style={{ gap: 'var(--sp-2)' }}
         >
@@ -200,7 +214,7 @@ export default function CbrFlowsPage() {
               Кнопка показывает счётчик «N/M» + chevron. Клик → раскрывается
               панель ниже с карточками каждой категории (dot + name + desc + ✓).
               Click-outside и Esc закрывают. */}
-          <div ref={categoriesBtnRef} className="relative shrink-0">
+          <div ref={categoriesBtnRef} data-tour="cbr-categories" className="relative shrink-0">
             <button
               onClick={() => setCategoriesOpen((o) => !o)}
               className="editorial-press flex items-center font-semibold rounded-full"
@@ -389,6 +403,7 @@ export default function CbrFlowsPage() {
             frame'а. 1.5px outline + rounded-2xl как у Heatmap. */}
         <div
           ref={chartAnchorRef}
+          data-tour="cbr-chart"
           className="rounded-2xl"
           style={{
             background: 'var(--bg-primary)',
@@ -429,6 +444,15 @@ export default function CbrFlowsPage() {
           )}
         </div>
       </div>{/* /editorial-frame */}
+
+      <OnboardingTour
+        steps={cbrFlowsTourSteps}
+        open={tourOpen}
+        onClose={(markSeen) => {
+          setTourOpen(false);
+          if (markSeen) markAsSeen();
+        }}
+      />
     </div>
   );
 }

@@ -24,6 +24,9 @@ import { useFitToViewport } from '../hooks/useFitToViewport';
 import { useViewportWidth } from '../hooks/useViewportWidth';
 import FundCardModal from '../components/funds/FundCardModal';
 import FundsTable from '../components/funds/FundsTable';
+import { useFirstVisit } from '../hooks/useFirstVisit';
+import OnboardingTour from '../components/onboarding/OnboardingTour';
+import { fundsMoneyTourSteps } from '../data/tours/funds-money';
 import FlowsHistogram from '../components/funds/FlowsHistogram';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
 
@@ -125,6 +128,16 @@ export default function FundsMoneyPage() {
     const [showEvents, setShowEvents] = useState(false);
     const [showIndex, setShowIndex] = useState(true);
     const [flowNavRange, setFlowNavRange] = useState<[number, number]>([0, 0]);
+
+    // Onboarding tour
+    const { isFirstVisit, markAsSeen } = useFirstVisit('funds-money');
+    const [tourOpen, setTourOpen] = useState(false);
+    useEffect(() => {
+      if (isFirstVisit) {
+        const t = setTimeout(() => setTourOpen(true), 800);
+        return () => clearTimeout(t);
+      }
+    }, [isFirstVisit]);
     const flowChartRef = useRef<SVGSVGElement>(null);
     const flowContainerRef = useRef<HTMLDivElement>(null);
 
@@ -425,7 +438,7 @@ export default function FundsMoneyPage() {
             <div className="editorial-frame">
 
             {/* Вкладки категорий — pill-стиль с press-effect, fluid font/padding */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 mb-4 md:mb-6" style={{ gap: 'var(--sp-2)' }}>
+            <div data-tour="funds-categories" className="grid grid-cols-2 sm:grid-cols-4 mb-4 md:mb-6" style={{ gap: 'var(--sp-2)' }}>
                 {CATEGORIES.map(cat => {
                     const Icon = cat.icon;
                     const isActive = category === cat.key;
@@ -480,6 +493,7 @@ export default function FundsMoneyPage() {
                 />
 
                 {/* Режим: СЧА / Притоки-оттоки */}
+                <div data-tour="funds-view-mode">
                 <Dropdown<ViewMode>
                     options={[
                         { key: 'aum',   label: 'СЧА' },
@@ -491,6 +505,7 @@ export default function FundsMoneyPage() {
                         if (m === 'aum' && !AUM_PERIODS.includes(period)) setPeriod('6m');
                     }}
                 />
+                </div>
 
                 {/* Таймфрейм для flows */}
                 {viewMode === 'flows' && (
@@ -632,6 +647,7 @@ export default function FundsMoneyPage() {
             </div>{/* /editorial-frame */}
 
             {/* Таблица фондов */}
+            <div data-tour="funds-table">
             <FundsTable
                 data={data}
                 hiddenFunds={hiddenFunds}
@@ -644,6 +660,7 @@ export default function FundsMoneyPage() {
                 onSetNavSortDir={setNavSortDir}
                 onOpenFundCard={openFundCard}
             />
+            </div>{/* /funds-table */}
 
             {/* Модальная карточка фонда */}
             {selectedFund && (
@@ -654,6 +671,15 @@ export default function FundsMoneyPage() {
                     onClose={() => setSelectedFund(null)}
                 />
             )}
+
+            <OnboardingTour
+                steps={fundsMoneyTourSteps}
+                open={tourOpen}
+                onClose={(markSeen) => {
+                    setTourOpen(false);
+                    if (markSeen) markAsSeen();
+                }}
+            />
         </div>
     );
 }

@@ -723,9 +723,9 @@ export default function OpenInterestPage() {
       <OnboardingTour
         steps={oiTourSteps}
         open={tourOpen}
-        onClose={() => {
+        onClose={(markSeen) => {
           setTourOpen(false);
-          markAsSeen();
+          if (markSeen) markAsSeen();
         }}
       />
     </div>

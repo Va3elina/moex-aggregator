@@ -2,7 +2,7 @@
  * StrengthMethodologyPage — методология «Сила рынка».
  */
 import { Activity } from 'lucide-react';
-import { MethodologyWrapper, Section, ModeBlock, Interpretation } from './shared';
+import { MethodologyWrapper, Section, ModeBlock, Interpretation, ReplayTourButton } from './shared';
 
 export default function StrengthMethodologyPage() {
   return (
@@ -146,6 +146,14 @@ export default function StrengthMethodologyPage() {
             },
           ]}
         />
+      </Section>
+
+      <Section title="Вводный тур">
+        <p className="mb-4">
+          Повторить четырёхшаговый гайд по controls, чтению зон и секторной
+          разбивке:
+        </p>
+        <ReplayTourButton tourKey="strength" indicatorPath="/strength" />
       </Section>
     </MethodologyWrapper>
   );

@@ -2,7 +2,7 @@
  * BuffettMethodologyPage — методология индикатора Баффетта.
  */
 import { Scale } from 'lucide-react';
-import { MethodologyWrapper, Section, ModeBlock, Interpretation } from './shared';
+import { MethodologyWrapper, Section, ModeBlock, Interpretation, ReplayTourButton } from './shared';
 
 export default function BuffettMethodologyPage() {
   return (
@@ -118,6 +118,14 @@ export default function BuffettMethodologyPage() {
             },
           ]}
         />
+      </Section>
+
+      <Section title="Вводный тур">
+        <p className="mb-4">
+          Если хочешь повторить четырёхшаговый гайд по controls и графику —
+          нажми кнопку ниже.
+        </p>
+        <ReplayTourButton tourKey="buffett" indicatorPath="/buffett" />
       </Section>
     </MethodologyWrapper>
   );
