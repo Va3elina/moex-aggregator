@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useSSE } from '../hooks/useSSE';
 import { useYandexMetrica } from '../hooks/useYandexMetrica';
 import { useViewportWidth } from '../hooks/useViewportWidth';
+import { useIsMobile } from '../hooks/useIsMobile';
 import { Menu, X, LogIn, BarChart3 } from 'lucide-react';
 import Logo from './Logo';
 import FrameLogo from './FrameLogo';
@@ -25,22 +26,37 @@ const NAV_ITEMS: { path: string; label: string; disabled?: boolean; badge?: stri
 ];
 
 export default function Layout() {
+  // ВСЕ хуки до conditional return — React hooks rule.
   const { theme } = useTheme();
   const { user, isAuthenticated } = useAuth();
   const { connected } = useSSE();
   const navigate = useNavigate();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const isEditorial = theme.startsWith('editorial');
-
-  // Compact header (laptop 1024-1280): уменьшенные logo + icons чтобы
-  // освободить место для nav items, иначе они пересекаются с logo/icons.
-  // На ≥1280 (xl) — нормальные размеры.
+  const isMobileViewport = useIsMobile();
   const vw = useViewportWidth();
-  const isCompactHeader = vw >= 1024 && vw < 1280;
-
   // SPA-tracking для Yandex.Metrica — фиксирует переходы /buffett → /oi → ...
   // Первый hit отправляется автоматически через init() в index.html.
   useYandexMetrica();
+
+  const isEditorial = theme.startsWith('editorial');
+  // Compact header (laptop 1024-1280): уменьшенные logo + icons чтобы
+  // освободить место для nav items, иначе они пересекаются с logo/icons.
+  // На ≥1280 (xl) — нормальные размеры.
+  const isCompactHeader = vw >= 1024 && vw < 1280;
+
+  // На мобиле страницы используют MobileLayout (TopBar + Main + BottomRail),
+  // десктопный chrome не нужен. Рендерим только Outlet — страница сама
+  // рисует свой layout. Используется только для тех routes которые имеют
+  // mobile-версию (через ResponsiveRoute). Остальные показывают desktop
+  // layout даже на мобиле (как fallback пока не сделали mobile-версию).
+  if (isMobileViewport) {
+    return (
+      <>
+        <PageSEO />
+        <Outlet />
+      </>
+    );
+  }
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: 'var(--bg-primary)' }}>

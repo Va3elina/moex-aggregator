@@ -1,0 +1,450 @@
+/* ============================================================
+   FRAME MOBILE — стили для мобильной версии
+   ============================================================
+   Импортируется из MobileLayout.tsx → автоматически code-split'ится
+   через Vite, desktop-юзеры не качают этот CSS.
+
+   Дизайн-токены наследуются из index.css (var(--bg-*), var(--accent),
+   var(--text-*), var(--oi-*)). Шрифты — наши Inter + IBM Plex Mono
+   (не Archivo/JetBrains Mono как в исходном макете).
+
+   Префикс классов: .fm-*  (Frame Mobile)
+   ============================================================ */
+
+/* ========== App container ========== */
+.fm-app {
+  font-family: var(--font-body, 'Inter', system-ui, sans-serif);
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  width: 100%;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: -0.01em;
+  /* Safe-area под notch + home indicator */
+  padding-top: env(safe-area-inset-top, 0);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+.fm-app * { box-sizing: border-box; }
+
+.fm-app h1, .fm-app h2, .fm-app h3 {
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin: 0;
+  line-height: 1.05;
+}
+
+.fm-app .mono {
+  font-family: 'IBM Plex Mono', 'SF Mono', 'Menlo', monospace;
+  font-feature-settings: 'tnum' 1, 'zero' 1;
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+
+/* ========== Top bar ========== */
+.fm-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: clamp(6px, 2vw, 10px) clamp(10px, 3.5vw, 16px) clamp(4px, 1.5vw, 8px);
+  border-bottom: 1.5px solid var(--text-primary);
+  background: var(--bg-primary);
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 30;
+}
+
+.fm-topbar-left {
+  display: flex;
+  align-items: center;
+  gap: clamp(6px, 2vw, 9px);
+}
+
+.fm-logo {
+  font-weight: 800;
+  font-size: clamp(14px, 4.3vw, 18px);
+  letter-spacing: -0.02em;
+  color: var(--accent);
+}
+
+.fm-beta-tag {
+  font-size: clamp(8px, 2.5vw, 10px);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  color: var(--text-primary);
+  border: 1.5px solid var(--text-primary);
+  border-radius: 3px;
+  padding: 1px 5px;
+  text-transform: uppercase;
+}
+
+.fm-topbar-right {
+  display: flex;
+  gap: clamp(5px, 1.8vw, 8px);
+  align-items: center;
+}
+
+.fm-icon-btn {
+  width: clamp(28px, 8.5vw, 36px);
+  height: clamp(28px, 8.5vw, 36px);
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: 1.5px solid var(--text-primary);
+  border-radius: 999px;
+  color: var(--text-primary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: opacity 150ms ease;
+}
+
+.fm-icon-btn:hover { opacity: 0.7; }
+
+.fm-icon-btn.fm-plus {
+  background: var(--accent);
+  color: var(--text-inverse);
+  border-color: var(--text-primary);
+  font-weight: 800;
+  font-size: clamp(10px, 3vw, 12px);
+  letter-spacing: 0.04em;
+  padding: 0 clamp(8px, 3vw, 14px);
+  width: auto;
+  border-radius: 999px;
+}
+
+.fm-icon-btn.fm-avatar {
+  background: var(--accent);
+  color: var(--text-inverse);
+  font-weight: 800;
+  font-size: 12px;
+  font-family: var(--font-body, 'Inter');
+}
+
+/* ========== Page header ========== */
+.fm-pageheader {
+  display: flex;
+  align-items: flex-start;
+  gap: clamp(7px, 2.4vw, 11px);
+  padding: clamp(8px, 2.8vw, 12px) clamp(10px, 3.4vw, 14px) clamp(6px, 2.2vw, 10px);
+  flex-shrink: 0;
+}
+
+.fm-pageheader-icon {
+  width: clamp(34px, 10.5vw, 44px);
+  height: clamp(34px, 10.5vw, 44px);
+  border-radius: clamp(8px, 2.6vw, 12px);
+  background: var(--accent);
+  color: var(--text-inverse);
+  border: 2px solid var(--text-primary);
+  box-shadow: 3px 3px 0 var(--text-primary);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.fm-pageheader-icon svg {
+  width: 55%;
+  height: 55%;
+}
+
+.fm-pageheader-title {
+  font-size: clamp(18px, 5.8vw, 24px);
+  line-height: 1.0;
+  letter-spacing: -0.03em;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fm-pageheader-subtitle {
+  font-size: clamp(10px, 3vw, 12px);
+  color: var(--text-secondary);
+  margin-top: 4px;
+  letter-spacing: 0;
+  line-height: 1.35;
+}
+
+.fm-help {
+  width: 16px;
+  height: 16px;
+  display: inline-grid;
+  place-items: center;
+  border: 1.5px solid var(--text-primary);
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 800;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+/* ========== Editorial Frame ========== */
+.fm-frame {
+  margin: clamp(4px, 1.5vw, 8px) clamp(10px, 3.4vw, 14px);
+  padding: clamp(8px, 3vw, 14px);
+  background: var(--bg-secondary);
+  border: 2px solid var(--text-primary);
+  border-radius: 14px;
+  box-shadow: 5px 5px 0 var(--text-primary);
+  display: flex;
+  flex-direction: column;
+  gap: clamp(8px, 2.5vw, 12px);
+}
+
+/* ========== Main content area ========== */
+.fm-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  /* Bottom rail height + padding для скролла без перекрытия */
+  padding-bottom: clamp(72px, 18vw, 88px);
+}
+
+/* ========== Bottom rail (горизонтальный навигатор) ========== */
+.fm-bottomrail {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  gap: clamp(2px, 0.8vw, 4px);
+  padding: clamp(6px, 2vw, 10px) clamp(8px, 2.8vw, 12px);
+  padding-bottom: calc(clamp(6px, 2vw, 10px) + env(safe-area-inset-bottom, 0));
+  background: var(--bg-primary);
+  border-top: 1.5px solid var(--text-primary);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  z-index: 20;
+}
+.fm-bottomrail::-webkit-scrollbar { display: none; }
+
+.fm-rail-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: clamp(6px, 1.8vw, 8px) clamp(8px, 2.4vw, 12px);
+  background: transparent;
+  border: 1.5px solid transparent;
+  border-radius: 10px;
+  color: var(--text-secondary);
+  font-size: clamp(9px, 2.6vw, 11px);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  flex-shrink: 0;
+  white-space: nowrap;
+  transition: all 150ms ease;
+}
+
+.fm-rail-item.active {
+  color: var(--text-primary);
+  background: var(--accent);
+  color: var(--text-inverse);
+  border-color: var(--text-primary);
+  box-shadow: 3px 3px 0 var(--text-primary);
+}
+
+.fm-rail-ico {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+}
+
+/* ========== Chips ========== */
+.fm-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: clamp(5px, 1.8vw, 7px) clamp(9px, 2.8vw, 12px);
+  background: var(--bg-secondary);
+  border: 1.5px solid var(--text-primary);
+  border-radius: 999px;
+  color: var(--text-primary);
+  font-size: clamp(11px, 3.2vw, 13px);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 150ms ease;
+}
+
+.fm-chip.active {
+  background: var(--accent);
+  color: var(--text-inverse);
+  box-shadow: 3px 3px 0 var(--text-primary);
+}
+
+.fm-chip.dim {
+  background: transparent;
+  color: var(--text-secondary);
+  border-color: var(--text-secondary);
+}
+
+.fm-chip.wide {
+  padding: clamp(6px, 2vw, 8px) clamp(10px, 3.2vw, 14px);
+}
+
+.fm-chip-color {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.fm-chip-logo {
+  width: clamp(20px, 6.2vw, 26px);
+  height: clamp(20px, 6.2vw, 26px);
+  border-radius: 999px;
+  border: 1.5px solid var(--text-primary);
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: clamp(9px, 2.8vw, 11px);
+  background: var(--bg-primary);
+  flex-shrink: 0;
+}
+
+/* ========== Quick Actions row ========== */
+.fm-quickactions {
+  display: flex;
+  gap: clamp(4px, 1.5vw, 6px);
+  align-items: stretch;
+}
+
+.fm-qa {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: clamp(8px, 2.6vw, 11px) clamp(10px, 3vw, 13px);
+  background: var(--bg-primary);
+  border: 1.5px solid var(--text-primary);
+  border-radius: 12px;
+  color: var(--text-primary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 150ms ease;
+}
+
+.fm-qa:active {
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0 var(--text-primary);
+}
+
+.fm-qa.asset {
+  flex: 1;
+  min-width: 0;
+  justify-content: flex-start;
+  padding: clamp(6px, 2vw, 8px) clamp(8px, 2.6vw, 11px);
+}
+
+.fm-qa-star {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.fm-qa-label {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.1;
+  gap: 1px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.fm-qa-name {
+  font-weight: 700;
+  font-size: clamp(12px, 3.5vw, 14px);
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.fm-qa-ticker {
+  font-family: 'IBM Plex Mono', 'SF Mono', monospace;
+  font-size: clamp(8px, 2.4vw, 10px);
+  color: var(--text-secondary);
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+
+.fm-qa.icon-only {
+  width: clamp(36px, 11vw, 44px);
+}
+
+/* ========== Sheet (slide-up modal) ========== */
+.fm-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, var(--text-primary) 30%, transparent);
+  z-index: 100;
+  animation: fm-fade-in 200ms ease;
+}
+
+.fm-sheet {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  max-height: 90vh;
+  background: var(--bg-primary);
+  border-top: 2px solid var(--text-primary);
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -8px 24px color-mix(in srgb, var(--text-primary) 20%, transparent);
+  z-index: 101;
+  display: flex;
+  flex-direction: column;
+  animation: fm-slide-up 250ms cubic-bezier(0.32, 0.72, 0.4, 0.96);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+.fm-sheet-handle {
+  width: 36px;
+  height: 4px;
+  background: var(--text-secondary);
+  border-radius: 999px;
+  margin: 8px auto 0;
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+
+.fm-sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1.5px solid color-mix(in srgb, var(--text-primary) 10%, transparent);
+  flex-shrink: 0;
+}
+
+.fm-sheet-title {
+  font-size: clamp(15px, 4.4vw, 17px);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.fm-sheet-body {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ========== Animations ========== */
+@keyframes fm-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes fm-slide-up {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}

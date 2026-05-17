@@ -1,5 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import ResponsiveRoute from './components/ResponsiveRoute';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AnalyticsProvider, AnalyticsPageViewTracker } from './contexts/AnalyticsContext';
@@ -40,6 +41,9 @@ import DeliveryPage from './pages/DeliveryPage';
 import SecurityPage from './pages/SecurityPage';
 import AdminStatsPage from './pages/AdminStatsPage';
 import AdminUserDetailPage from './pages/AdminUserDetailPage';
+
+// Mobile pages — lazy-loaded, desktop юзеры не качают этот код
+const MobileOpenInterestPage = lazy(() => import('./pages/mobile/MobileOpenInterestPage'));
 
 /** "/" conditional: auth → Overview, guest → Landing.
     Loading state → Overview как fallback (быстрее, avoids flash). */
@@ -94,7 +98,12 @@ export default function App() {
           <Route element={<Layout />}>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/" element={<HomeRoute />} />
-            <Route path="/oi" element={<OpenInterestPage />} />
+            <Route path="/oi" element={
+              <ResponsiveRoute
+                mobile={<MobileOpenInterestPage />}
+                desktop={<OpenInterestPage />}
+              />
+            } />
             <Route path="/heatmap" element={<HeatmapPage />} />
             <Route path="/funds" element={<Navigate to="/funds-money" replace />} />
             <Route path="/funds-money" element={<FundsMoneyPage />} />
