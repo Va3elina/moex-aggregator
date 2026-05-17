@@ -11,6 +11,7 @@ import { Sun, Moon } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
+import FrameLogo from '../FrameLogo';
 
 export default function MobileTopBar() {
   const { user } = useAuth();
@@ -23,8 +24,8 @@ export default function MobileTopBar() {
   return (
     <div className="fm-topbar">
       <div className="fm-topbar-left">
-        <Link to="/" className="fm-logo" style={{ textDecoration: 'none' }}>
-          Фрейм
+        <Link to="/" style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
+          <FrameLogo size={18} color="var(--accent)" />
         </Link>
         <span className="fm-beta-tag">Beta</span>
       </div>
