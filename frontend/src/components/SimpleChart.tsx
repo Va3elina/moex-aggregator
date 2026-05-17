@@ -1375,19 +1375,23 @@ export default function SimpleChart({
           //                              textAnchor="start", прижата к axis
           // Pill height = fontY + 2*padY. Pill width = textW + 2*padX.
           const fontY = tokens.fontY;
-          const fontWeight = 700;
+          // Match axis tick weight (typically 600) — главное условие для
+          // pixel-align между pill'ом и axis tick'ом выше/ниже.
+          const fontWeight = tokens.fontYWeight;
           // padX=6 — равные ~5-6px воздуха с обеих сторон pill'а.
           //
-          // ИТЕРАЦИЯ 2026-05-15: к pill'ам добавлен textLength + lengthAdjust
-          // на SVG-тексте. Раньше была визуальная асимметрия — последняя
-          // цифра вылазила за правый край (для secondary pill) или за левый
-          // (для primary). Корень: `fontVariantNumeric: 'tabular-nums'` на
-          // SVG-тексте делает digits шире чем proportional, но Canvas
-          // measureText не учитывает font-variant и недомерял на 1-3px.
-          // Решение: фиксируем textLength = exact measureText output →
-          // SVG рендерит текст РОВНО той ширины что мы измерили (сжимая
-          // letter-spacing на ~3% при необходимости). Гарантирует
-          // симметричный pad независимо от font-variant квирков.
+          // 2026-05-15 ИТЕРАЦИЯ 2: pill должен иметь те же font-настройки что
+          // и axis tick text (которая рендерится прямо над ним) — тогда они
+          // pixel-align'ятся естественно. Раньше pill использовал weight=700
+          // для main и 700 для tspan unit'а, но ось — weight 600 main + 700
+          // unit. Разница веса → разница ширины → pill смещался от оси.
+          // Плюс был баг: unit unit измерялся с весом 400, рендерился с 700.
+          // Лечится тремя одновременными изменениями (см. ниже):
+          //   1. fontWeight = tokens.fontYWeight (match ось main)
+          //   2. unit measure at 700 (match tspan render)
+          //   3. убран fontVariantNumeric + textLength (на pill теперь они
+          //      не нужны, осi их тоже не используют → natural rendering
+          //      сам гарантирует симметрию).
           const padX = 6;
           const padY = 2;
           const pillH = fontY + padY * 2;
@@ -1405,7 +1409,9 @@ export default function SimpleChart({
             const unitPart = splitMatch ? splitMatch[2] : '';
             const unitFontY = fontY * 0.7;
             const mainW = measureText(mainPart, fontY, fontWeight);
-            const unitW = unitPart ? measureText(unitPart, unitFontY, 400) + 2 : 0;
+            // Unit tspan рендерится с fontWeight=700 (см. SVG ниже).
+            // Измеряем тоже 700 чтобы canvas measure ↔ SVG render совпадали.
+            const unitW = unitPart ? measureText(unitPart, unitFontY, 700) + 2 : 0;
             const textW = mainW + unitW;
             const pillW = Math.ceil(textW) + padX * 2;
 
@@ -1446,9 +1452,6 @@ export default function SimpleChart({
                   fill="#FFFFFF"
                   fontSize={fontY}
                   fontWeight={fontWeight}
-                  style={{ fontVariantNumeric: 'tabular-nums' }}
-                  textLength={Math.ceil(textW)}
-                  lengthAdjust="spacingAndGlyphs"
                 >
                   {mainPart}
                   {unitPart && (
