@@ -44,6 +44,12 @@ import AdminUserDetailPage from './pages/AdminUserDetailPage';
 
 // Mobile pages — lazy-loaded, desktop юзеры не качают этот код
 const MobileOpenInterestPage = lazy(() => import('./pages/mobile/MobileOpenInterestPage'));
+const MobileHeatmapPage = lazy(() => import('./pages/mobile/MobileHeatmapPage'));
+const MobileBuffettPage = lazy(() => import('./pages/mobile/MobileBuffettPage'));
+const MobileCbrFlowsPage = lazy(() => import('./pages/mobile/MobileCbrFlowsPage'));
+const MobileFundsMoneyPage = lazy(() => import('./pages/mobile/MobileFundsMoneyPage'));
+const MobileSeasonalityPage = lazy(() => import('./pages/mobile/MobileSeasonalityPage'));
+const MobileStrengthPage = lazy(() => import('./pages/mobile/MobileStrengthPage'));
 
 /** "/" conditional: auth → Overview, guest → Landing.
     Loading state → Overview как fallback (быстрее, avoids flash). */
@@ -104,14 +110,44 @@ export default function App() {
                 desktop={<OpenInterestPage />}
               />
             } />
-            <Route path="/heatmap" element={<HeatmapPage />} />
+            <Route path="/heatmap" element={
+              <ResponsiveRoute
+                mobile={<MobileHeatmapPage />}
+                desktop={<HeatmapPage />}
+              />
+            } />
             <Route path="/funds" element={<Navigate to="/funds-money" replace />} />
-            <Route path="/funds-money" element={<FundsMoneyPage />} />
+            <Route path="/funds-money" element={
+              <ResponsiveRoute
+                mobile={<MobileFundsMoneyPage />}
+                desktop={<FundsMoneyPage />}
+              />
+            } />
             <Route path="/funds-catalog" element={<FundsCatalogPage />} />
-            <Route path="/buffett" element={<BuffettPage />} />
-            <Route path="/strength" element={<StrengthPage />} />
-            <Route path="/seasonality" element={<SeasonalityPage />} />
-            <Route path="/cbr-flows" element={<CbrFlowsPage />} />
+            <Route path="/buffett" element={
+              <ResponsiveRoute
+                mobile={<MobileBuffettPage />}
+                desktop={<BuffettPage />}
+              />
+            } />
+            <Route path="/strength" element={
+              <ResponsiveRoute
+                mobile={<MobileStrengthPage />}
+                desktop={<StrengthPage />}
+              />
+            } />
+            <Route path="/seasonality" element={
+              <ResponsiveRoute
+                mobile={<MobileSeasonalityPage />}
+                desktop={<SeasonalityPage />}
+              />
+            } />
+            <Route path="/cbr-flows" element={
+              <ResponsiveRoute
+                mobile={<MobileCbrFlowsPage />}
+                desktop={<CbrFlowsPage />}
+              />
+            } />
             {/* Методология индикаторов */}
             <Route path="/methodology/oi" element={<OIMethodologyPage />} />
             <Route path="/methodology/heatmap" element={<HeatmapMethodologyPage />} />
