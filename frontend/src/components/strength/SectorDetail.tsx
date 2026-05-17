@@ -1,5 +1,6 @@
 import { ArrowUp, ArrowDown, Filter } from 'lucide-react';
 import type { BreadthStock } from '../../services/api';
+import { formatNumber } from '../../utils/formatNumber';
 
 interface SectorDetailProps {
     sectorNames: string[];
@@ -82,10 +83,10 @@ export default function SectorDetail({
                                     {stock.ticker}
                                 </td>
                                 <td className="py-3 px-2 text-right text-theme-primary">
-                                    {stock.price.toLocaleString('ru-RU', { maximumFractionDigits: 2 })}
+                                    {formatNumber(stock.price, 2)}
                                 </td>
                                 <td className="py-3 px-2 text-right text-theme-secondary">
-                                    {stock.ema.toLocaleString('ru-RU', { maximumFractionDigits: 2 })}
+                                    {formatNumber(stock.ema, 2)}
                                 </td>
                                 <td className="py-3 px-2 text-right font-medium" style={{ color: stock.diff_percent >= 0 ? 'var(--funds-flow-positive)' : 'var(--funds-flow-negative)' }}>
                                     <span className="flex items-center justify-end gap-1">

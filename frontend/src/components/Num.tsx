@@ -5,13 +5,14 @@
  * с опциональным color-coding по знаку (+ зелёный / − красный).
  *
  * Usage:
- *   <Num value={3287.45} />                    → "3 287,45" (моно, tabular)
- *   <Num value={-1.2} sign percent />          → "−1,20%" красным
- *   <Num value={0.4} sign percent />           → "+0,40%" зелёным
+ *   <Num value={3287.45} />                    → "3 287.45" (моно, tabular)
+ *   <Num value={-1.2} sign percent />          → "−1.20%" красным
+ *   <Num value={0.4} sign percent />           → "+0.40%" зелёным
  *   <Num value={-500} size="xl" />             → крупно
  *   <Num value={null} />                       → "—"
  */
 import type { CSSProperties } from 'react';
+import { formatNumber } from '../utils/formatNumber';
 
 interface NumProps {
   /** Значение (null = показываем "—") */
@@ -81,11 +82,8 @@ export default function Num({
     : 'var(--text-secondary)'
     : 'var(--text-primary)';
 
-  // Format: ru-RU локаль, tabular friendly
-  const formatted = Math.abs(value).toLocaleString('ru-RU', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  });
+  // Format: пробел тысяч + точка дробной (единый стиль сайта).
+  const formatted = formatNumber(Math.abs(value), decimals);
   const signChar = sign ? (value > 0 ? '+' : value < 0 ? '−' : '') : '';
 
   return (

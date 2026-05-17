@@ -305,7 +305,7 @@ export default function HeatmapPage() {
 
   // Форматирование процента (с запятой)
   const formatPercent = (value: number): string => {
-    return `${value.toFixed(2).replace('.', ',')}%`;
+    return `${value.toFixed(2)}%`;
   };
 
   // Размер шрифта — гранулярное пропорциональное масштабирование.

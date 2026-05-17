@@ -9,6 +9,7 @@ import { computeChartTopLineY, getDatePillStyle } from './chart/datePillLayout';
 import ChartLegend, { type ChartLegendItem } from './chart/ChartLegend';
 import { measureText } from './chart/measureText';
 import { axisFontSize } from './chart/chartTypography';
+import { formatNumber } from '../utils/formatNumber';
 
 interface DataPoint {
   time: string;
@@ -86,7 +87,7 @@ export default function SimpleChart({
   showSecondary = false,
   showThird = false,
   showPrimary = true,
-  formatValue = (v) => v.toLocaleString('ru-RU'),
+  formatValue = (v) => formatNumber(v, 0),
   formatPrimaryAxis,
   formatSecondaryValue,
   formatSecondaryAxis,
@@ -992,7 +993,7 @@ export default function SimpleChart({
                 fontWeight={tokens.fontYWeight}
                 opacity="0.9"
               >
-                {formatSecondaryAxis ? formatSecondaryAxis(tick.value) : formatSecondaryValue ? formatSecondaryValue(tick.value) : tick.value.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
+                {formatSecondaryAxis ? formatSecondaryAxis(tick.value) : formatSecondaryValue ? formatSecondaryValue(tick.value) : formatNumber(tick.value, 0)}
               </text>
             ))}
 

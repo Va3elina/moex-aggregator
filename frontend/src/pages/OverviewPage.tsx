@@ -37,6 +37,7 @@ import {
 } from '../services/api';
 import type { HeatmapStock, FundsSummaryResponse } from '../services/api';
 import { useRealtimeData } from '../hooks/useRealtimeData';
+import { formatNumber } from '../utils/formatNumber';
 import Card from '../components/Card';
 import Skeleton from '../components/Skeleton';
 import Dropdown from '../components/Dropdown';
@@ -394,8 +395,8 @@ function QuoteTile({ label, closes }: { label: string; closes: number[] }) {
 
   // Компактный формат: без пробелов в малых числах
   const priceFmt = last >= 1000
-    ? last.toLocaleString('ru-RU', { maximumFractionDigits: 0 })
-    : last.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    ? formatNumber(last, 0)
+    : formatNumber(last, 2);
 
   return (
     <div
@@ -954,10 +955,7 @@ function Screener({ stocks }: { stocks: HeatmapStock[] }) {
                         fontVariantNumeric: 'tabular-nums',
                       }}
                     >
-                      {s.price.toLocaleString('ru-RU', {
-                        minimumFractionDigits: s.price < 100 ? 2 : 0,
-                        maximumFractionDigits: s.price < 100 ? 2 : 0,
-                      })}
+                      {formatNumber(s.price, s.price < 100 ? 2 : 0)}
                     </td>
                     <td
                       className="text-right px-2 py-2 text-sm font-semibold"
