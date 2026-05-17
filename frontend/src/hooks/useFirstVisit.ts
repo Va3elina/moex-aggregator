@@ -6,16 +6,21 @@
  * маркируется как «видел» и больше не показывается автоматически.
  *
  * Реализация: один key per indicator в localStorage:
- *   localStorage['frame_tour_seen_v2:oi'] = '1'
+ *   localStorage['frame_tour_seen_v3:oi'] = '1'
  *
  * Для старых юзеров (зарегистрированных до релиза тура) — тур всё равно
  * сработает, потому что у них в localStorage этого ключа НЕТ. Это и есть
  * способ дотянуть онбординг до текущей аудитории не трогая бэкенд.
  *
- * VERSIONING: bump prefix вместо `frame_tour_seen:` → `frame_tour_seen_v2:`
- * когда хотим показать тур повторно ВСЕМ юзерам (после релиза значительных
- * улучшений контента/UX). Старые ключи остаются в localStorage но
- * игнорируются — нативный механизм cache-bust.
+ * VERSIONING: bump prefix (`_v2` → `_v3` → ...) когда хотим показать тур
+ * повторно ВСЕМ юзерам (после релиза значительных улучшений контента/UX).
+ * Старые ключи остаются в localStorage но игнорируются — нативный механизм
+ * cache-bust.
+ *
+ * История версий:
+ *   v1 (`frame_tour_seen:`)    — initial release
+ *   v2 (`frame_tour_seen_v2:`) — подробные туры с button-by-button
+ *   v3 (`frame_tour_seen_v3:`) — авто-переключение режимов в FundsMoney
  *
  * Возвращает:
  *   isFirstVisit: true если ключа в localStorage нет
@@ -24,7 +29,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-const STORAGE_PREFIX = 'frame_tour_seen_v2:';
+const STORAGE_PREFIX = 'frame_tour_seen_v3:';
 
 export function useFirstVisit(indicatorKey: string) {
   const storageKey = `${STORAGE_PREFIX}${indicatorKey}`;
