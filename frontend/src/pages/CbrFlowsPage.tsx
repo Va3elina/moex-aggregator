@@ -375,7 +375,8 @@ export default function CbrFlowsPage() {
               details: [
                 `Период: ${PERIOD_OPTIONS.find(o => o.key === period)?.label}`,
                 'Источник: Банк России · ОРФР',
-                data?.source ?? '',
+                // `data.source` (имя XLSX-файла) намеренно убрано — не информативно
+                // для пользователя в подписи экспорта.
               ].filter(Boolean) as string[],
             }}
             className="shrink-0 ml-auto"

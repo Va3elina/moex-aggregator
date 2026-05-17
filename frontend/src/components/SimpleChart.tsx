@@ -1392,7 +1392,12 @@ export default function SimpleChart({
           //   3. убран fontVariantNumeric + textLength (на pill теперь они
           //      не нужны, осi их тоже не используют → natural rendering
           //      сам гарантирует симметрию).
-          const padX = 6;
+          //
+          // 2026-05-17: padX 6 → 8 — юзер заметил что первая цифра иногда
+          // визуально касается левого края pill'а. 2px дополнительного воздуха
+          // с каждой стороны делает запас на subpixel rendering quirks (особенно
+          // на mobile где font hinting может слегка раздувать ширину).
+          const padX = 8;
           const padY = 2;
           const pillH = fontY + padY * 2;
           // Pill positioning — pixel-aligned с axis tick text (anchor совпадает).
