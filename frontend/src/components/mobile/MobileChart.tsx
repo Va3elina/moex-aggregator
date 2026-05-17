@@ -183,12 +183,45 @@ export default function MobileChart({
     s.formatValue ? s.formatValue(v) : v.toFixed(0);
 
   if (loading || series.length === 0 || N < 2) {
+    if (loading) {
+      // Skeleton — placeholder с диагональными линиями имитирующими chart
+      return (
+        <div ref={wrapRef} style={{ height, padding: '0 4px' }}>
+          <div
+            style={{
+              width: '100%',
+              height,
+              borderRadius: 8,
+              background: 'color-mix(in srgb, var(--text-primary) 6%, var(--bg-secondary))',
+              animation: 'skeleton-pulse 1.5s ease-in-out infinite',
+              position: 'relative',
+              overflow: 'hidden',
+            }}
+          >
+            {/* SVG-имитация скелета графика для контекста */}
+            <svg width="100%" height={height} viewBox={`0 0 360 ${height}`} preserveAspectRatio="none">
+              {[0.2, 0.5, 0.8].map((t, i) => (
+                <line
+                  key={i}
+                  x1={0}
+                  y1={height * t}
+                  x2={360}
+                  y2={height * t}
+                  stroke="color-mix(in srgb, var(--text-primary) 4%, transparent)"
+                  strokeWidth={1}
+                />
+              ))}
+            </svg>
+          </div>
+        </div>
+      );
+    }
     return (
       <div
         ref={wrapRef}
         style={{ height, display: 'grid', placeItems: 'center', color: 'var(--text-muted)' }}
       >
-        {loading ? 'Загрузка...' : 'Нет данных'}
+        Нет данных
       </div>
     );
   }

@@ -21,6 +21,7 @@ import type { HeatmapSector, HeatmapStock } from '../../services/api';
 import { useRealtimeData } from '../../hooks/useRealtimeData';
 import { squarify } from '../../utils/squarify';
 import { formatNumber } from '../../utils/formatNumber';
+import MobileSkeleton from '../../components/mobile/MobileSkeleton';
 
 type Period = '1d' | '1w' | '1m' | '1y';
 
@@ -225,8 +226,8 @@ export default function MobileHeatmapPage() {
         }}
       >
         {loading && (
-          <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: 'var(--text-muted)' }}>
-            Загрузка...
+          <div style={{ padding: 4, height: '100%' }}>
+            <MobileSkeleton variant="chart" height="100%" />
           </div>
         )}
         {!loading && treemapData && (

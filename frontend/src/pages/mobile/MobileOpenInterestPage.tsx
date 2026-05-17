@@ -27,6 +27,23 @@ import { useRealtimeData } from '../../hooks/useRealtimeData';
 import { getDefaultPeriod } from '../../config/accessControl';
 
 type Period = '1d' | '1w' | '1m' | '3m' | '6m' | '1y' | '2y' | '5y' | 'all';
+type OIVariant = 'oi' | 'long' | 'short' | 'both' | 'net';
+
+const VARIANT_LABELS: Record<OIVariant, string> = {
+  oi:    'Открытый интерес',
+  long:  'Покупки',
+  short: 'Продажи',
+  both:  'Покупки + Продажи',
+  net:   'Чистая позиция',
+};
+
+const VARIANT_COLORS: Record<OIVariant, string> = {
+  oi:    'var(--oi-amber)',
+  long:  'var(--oi-green)',
+  short: 'var(--oi-red)',
+  both:  'var(--oi-purple)',
+  net:   'var(--accent)',
+};
 
 const PERIOD_LABELS: Record<Period, string> = {
   '1d': '1 день',
@@ -55,6 +72,7 @@ export default function MobileOpenInterestPage() {
   const [period, setPeriod] = useState<Period>(getDefaultPeriod('6m', isAuthenticated) as Period);
   const [intervalValue, setIntervalValue] = useState(24);
   const [clgroup, setClgroup] = useState<'FIZ' | 'YUR'>('YUR');
+  const [oiVariant, setOiVariant] = useState<OIVariant>('net');
   const [data, setData] = useState<ChartResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -97,21 +115,34 @@ export default function MobileOpenInterestPage() {
   useEffect(() => { void loadData(); }, [loadData]);
   useRealtimeData(['5min', 'hourly'], () => { void loadData(); });
 
-  // Преобразуем data в series для MobileChart
-  // Phase 2: только цена + чистая позиция (net OI)
+  // Преобразуем data в series для MobileChart с учётом выбранного варианта OI
   const chartSeries = useMemo(() => {
     if (!data || !data.candles || data.candles.length === 0) return [];
 
     const priceData = data.candles.map((c) => ({ time: c.time, value: c.close }));
+    const oiPoints = data.open_interest || [];
+    const fmtOI = (v: number) =>
+      Math.abs(v) >= 1000 ? (v / 1000).toFixed(1) + 'K' : v.toFixed(0);
 
-    // Net position = pos_long + pos_short (pos_short уже отрицательный)
-    // Используем pre-computed net_position если есть
-    const oiData = (data.open_interest || []).map((oi) => ({
-      time: oi.time,
-      value: oi.net_position ?? (oi.pos_long || 0) + (oi.pos_short || 0),
-    }));
+    // Выбираем значение по varianту
+    const variantValue = (oi: typeof oiPoints[number]): number => {
+      switch (oiVariant) {
+        case 'oi':    return (oi.pos_long || 0) + Math.abs(oi.pos_short || 0);
+        case 'long':  return oi.pos_long || 0;
+        case 'short': return Math.abs(oi.pos_short || 0);
+        case 'net':   return oi.net_position ?? (oi.pos_long || 0) + (oi.pos_short || 0);
+        case 'both':  return oi.pos_long || 0; // primary серия для both — long
+      }
+    };
 
-    return [
+    const oiData = oiPoints.map((oi) => ({ time: oi.time, value: variantValue(oi) }));
+    // Для 'both' — добавляем дополнительную серию short
+    const shortData =
+      oiVariant === 'both'
+        ? oiPoints.map((oi) => ({ time: oi.time, value: Math.abs(oi.pos_short || 0) }))
+        : [];
+
+    const baseSeries = [
       {
         data: priceData,
         color: 'var(--chart-line-1, #5DA3E9)',
@@ -122,17 +153,25 @@ export default function MobileOpenInterestPage() {
       ...(oiData.length > 0
         ? [{
             data: oiData,
-            color: 'var(--accent)',
-            label: 'Чистая позиция',
+            color: VARIANT_COLORS[oiVariant],
+            label: oiVariant === 'both' ? 'Покупки' : VARIANT_LABELS[oiVariant],
             axis: 'right' as const,
-            formatValue: (v: number) =>
-              Math.abs(v) >= 1000
-                ? (v / 1000).toFixed(1) + 'K'
-                : v.toFixed(0),
+            formatValue: fmtOI,
+          }]
+        : []),
+      ...(shortData.length > 0
+        ? [{
+            data: shortData,
+            color: VARIANT_COLORS.short,
+            label: 'Продажи',
+            axis: 'right' as const,
+            formatValue: fmtOI,
           }]
         : []),
     ];
-  }, [data, instrumentName]);
+
+    return baseSeries;
+  }, [data, instrumentName, oiVariant]);
 
   return (
     <MobileLayout>
@@ -158,7 +197,7 @@ export default function MobileOpenInterestPage() {
             ticker: `${selectedInstrument} · ФЬЮЧЕРС`,
           }}
           timeLabel={`${PERIOD_LABELS[period]} · ${INTERVAL_LABELS[intervalValue] ?? intervalValue + 'ч'}`}
-          optionsLabel={`Чист. поз. · ${clgroup === 'FIZ' ? 'Физ' : 'Юр'}`}
+          optionsLabel={`${VARIANT_LABELS[oiVariant]} · ${clgroup === 'FIZ' ? 'Физ' : 'Юр'}`}
           onAsset={() => setAssetSearchOpen(true)}
           onTime={() => setPeriodSheetOpen(true)}
           onOptions={() => setOptionsSheetOpen(true)}
@@ -222,7 +261,7 @@ export default function MobileOpenInterestPage() {
         </div>
       </MobileSheet>
 
-      {/* Sheet: опции (категория участников) */}
+      {/* Sheet: опции (вариант OI + категория участников) */}
       <MobileSheet
         open={optionsSheetOpen}
         onClose={() => setOptionsSheetOpen(false)}
@@ -230,9 +269,37 @@ export default function MobileOpenInterestPage() {
       >
         <div style={{ padding: 16 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+            Что показать на графике
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 20 }}>
+            {(Object.keys(VARIANT_LABELS) as OIVariant[]).map((v) => (
+              <button
+                key={v}
+                onClick={() => {
+                  setOiVariant(v);
+                  setOptionsSheetOpen(false);
+                }}
+                className={`fm-chip ${oiVariant === v ? 'active' : ''}`}
+                style={{ gap: 6 }}
+              >
+                <span
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: 99,
+                    background: VARIANT_COLORS[v],
+                    flexShrink: 0,
+                  }}
+                />
+                {VARIANT_LABELS[v]}
+              </button>
+            ))}
+          </div>
+
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
             Категория участников
           </div>
-          <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
+          <div style={{ display: 'flex', gap: 6 }}>
             {(['YUR', 'FIZ'] as const).map((g) => (
               <button
                 key={g}
@@ -241,15 +308,12 @@ export default function MobileOpenInterestPage() {
                   setClgroup(g);
                   setOptionsSheetOpen(false);
                 }}
+                style={{ flex: 1, justifyContent: 'center' }}
               >
-                {g === 'YUR' ? 'Юридические лица' : 'Физические лица'}
+                {g === 'YUR' ? 'Юрлица' : 'Физлица'}
               </button>
             ))}
           </div>
-          <p style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>
-            Phase 2 пока показывает только режим «Чистая позиция». Скоро добавим:
-            режимы Позиции / Участники, варианты ОИ / Покупки / Продажи, экспирации.
-          </p>
         </div>
       </MobileSheet>
     </MobileLayout>

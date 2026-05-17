@@ -14,6 +14,7 @@ import MobilePageHeader from '../../components/mobile/MobilePageHeader';
 import MobileQuickActions from '../../components/mobile/MobileQuickActions';
 import MobileAssetSearch from '../../components/mobile/MobileAssetSearch';
 import MobileSheet from '../../components/mobile/MobileSheet';
+import MobileSkeleton from '../../components/mobile/MobileSkeleton';
 import {
   getSeasonality,
   type SeasonalityResponse,
@@ -87,9 +88,7 @@ export default function MobileSeasonalityPage() {
         {/* SVG histogram */}
         <div style={{ position: 'relative', height: 240, margin: '0 -4px' }}>
           {loading ? (
-            <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: 'var(--text-muted)' }}>
-              Загрузка...
-            </div>
+            <MobileSkeleton variant="chart" height={240} />
           ) : bars.length === 0 ? (
             <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: 'var(--text-muted)' }}>
               Нет данных

@@ -12,6 +12,7 @@ import { Banknote, Landmark, DollarSign, Building2 } from 'lucide-react';
 import MobileLayout from '../../components/mobile/MobileLayout';
 import MobilePageHeader from '../../components/mobile/MobilePageHeader';
 import StackedBidirectionalHistogram from '../../components/cbr/StackedBidirectionalHistogram';
+import MobileSkeleton from '../../components/mobile/MobileSkeleton';
 import { getCbrFlows, type CbrInstrumentType, type CbrFlowsResponse } from '../../services/api';
 
 type PeriodFilter = '6m' | '2y' | 'all';
@@ -137,7 +138,7 @@ export default function MobileCbrFlowsPage() {
         {error ? (
           <div style={{ padding: 24, color: 'var(--text-muted)', textAlign: 'center' }}>{error}</div>
         ) : loading ? (
-          <div style={{ padding: 24, color: 'var(--text-muted)', textAlign: 'center' }}>Загрузка...</div>
+          <MobileSkeleton variant="chart" height={360} />
         ) : data && visiblePeriods.length > 0 ? (
           <StackedBidirectionalHistogram
             periods={visiblePeriods}
