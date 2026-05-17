@@ -13,7 +13,7 @@ import YearlySeasonalityChart from '../components/seasonality/YearlySeasonalityC
 import TestDashboard from '../components/seasonality/TestDashboard';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import type { SeasonalityResponse, SeasonalityMode, PriceChartResponse, YearlySeasonalityResponse } from '../services/api';
-import { useFirstVisit } from '../hooks/useFirstVisit';
+import { useOnboardingTour } from '../hooks/useFirstVisit';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { seasonalityTourSteps } from '../data/tours/seasonality';
 import { FUND_PALETTE } from '../config/chartTheme';
@@ -65,14 +65,7 @@ export default function SeasonalityPage() {
   const [mode, setMode] = useState<SeasonalityMode>('weekday');
 
   // Onboarding tour
-  const { isFirstVisit: isFirstVisitSeasonality, markAsSeen: markSeasonalityAsSeen } = useFirstVisit('seasonality');
-  const [tourOpen, setTourOpen] = useState(false);
-  useEffect(() => {
-    if (isFirstVisitSeasonality) {
-      const t = setTimeout(() => setTourOpen(true), 800);
-      return () => clearTimeout(t);
-    }
-  }, [isFirstVisitSeasonality]);
+  const tour = useOnboardingTour('seasonality');
   const [chartType, setChartType] = useState<ChartType>('histogram');
   const [excludeDividends, setExcludeDividends] = useState(false);
   const [priceDays, setPriceDays] = useState(365);
@@ -684,10 +677,15 @@ export default function SeasonalityPage() {
           </div>
         )}
 
-        {(chartType === 'histogram' || chartType === 'yearly' || chartType === 'test') && renderFilters()}
+        {(chartType === 'histogram' || chartType === 'yearly' || chartType === 'test') && (
+          <div data-tour="seasonality-filters" className="flex flex-wrap items-center" style={{ gap: 'var(--sp-2)' }}>
+            {renderFilters()}
+          </div>
+        )}
 
         {/* Camera button — справа после всех фильтров, скрыт в test mode. */}
         {chartType !== 'test' && (
+          <div data-tour="seasonality-export" className="ml-auto">
           <ChartCaptureButton
             getTargetElement={() => chartCardRef.current}
             filename={`frame-seasonality-${selectedStock.toLowerCase()}-${chartType}-${mode}`}
@@ -703,8 +701,8 @@ export default function SeasonalityPage() {
                 showNoOutliers ? 'Без выбросов' : null,
               ].filter(Boolean) as string[],
             }}
-            className="ml-auto"
           />
+          </div>
         )}
       </div>
 
@@ -833,11 +831,8 @@ export default function SeasonalityPage() {
 
       <OnboardingTour
         steps={seasonalityTourSteps}
-        open={tourOpen}
-        onClose={(markSeen) => {
-          setTourOpen(false);
-          if (markSeen) markSeasonalityAsSeen();
-        }}
+        open={tour.open}
+        onClose={tour.close}
       />
     </div>
   );

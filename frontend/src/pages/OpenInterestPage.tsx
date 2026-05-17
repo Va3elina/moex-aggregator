@@ -18,7 +18,7 @@ import { useTheme } from '../contexts/ThemeContext';
 import { isIntervalAllowed, isPeriodAllowed, getDefaultPeriod } from '../config/accessControl';
 import { useRealtimeData } from '../hooks/useRealtimeData';
 import { useFitToViewport } from '../hooks/useFitToViewport';
-import { useFirstVisit } from '../hooks/useFirstVisit';
+import { useOnboardingTour } from '../hooks/useFirstVisit';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { oiTourSteps } from '../data/tours/oi';
 
@@ -123,20 +123,9 @@ export default function OpenInterestPage() {
   // Интервал, для которого загружены текущие данные — обновляется атомарно с data
   const [dataInterval, setDataInterval] = useState(24);
 
-  // Onboarding tour — auto-открывается на первом заходе.
-  // useFirstVisit смотрит в localStorage[`frame_tour_seen:oi`]. Старые
-  // юзеры без этого ключа увидят тур; новые после первого dismissal не
-  // увидят его снова автоматически.
-  const { isFirstVisit, markAsSeen } = useFirstVisit('oi');
-  const [tourOpen, setTourOpen] = useState(false);
-  useEffect(() => {
-    if (isFirstVisit) {
-      // Delay 800ms чтобы page успел отрендериться + chartAnchor получил высоту.
-      // Без delay — spotlight маска показывается на пустом контейнере.
-      const t = setTimeout(() => setTourOpen(true), 800);
-      return () => clearTimeout(t);
-    }
-  }, [isFirstVisit]);
+  // Onboarding tour — единый хук обёртка. Auto-open ровно один раз
+  // на mount (autoOpenedRef guard внутри хука).
+  const tour = useOnboardingTour('oi');
 
   // Настройки
   const [interval, setIntervalValue] = useState(24);
@@ -450,6 +439,7 @@ export default function OpenInterestPage() {
 
           {/* FIZ/YUR — только если displayMode !== price */}
           {displayMode !== 'price' && (
+            <div data-tour="oi-clgroup">
             <Dropdown<'FIZ' | 'YUR'>
               options={[
                 { key: 'FIZ', label: 'Физлица' },
@@ -458,9 +448,11 @@ export default function OpenInterestPage() {
               value={clgroup}
               onChange={setClgroup}
             />
+            </div>
           )}
 
-          {/* Таймфрейм */}
+          {/* Таймфрейм + Период */}
+          <div data-tour="oi-timerange" className="flex" style={{ gap: 'var(--sp-2)' }}>
           <Dropdown<string>
             options={[5, 60, 24].map((int): DropdownOption<string> => {
               const available = displayMode === 'price' || hasInterval(int);
@@ -502,6 +494,7 @@ export default function OpenInterestPage() {
               setPeriod(p);
             }}
           />
+          </div>{/* /oi-timerange */}
 
           {/* Режим отображения */}
           <div data-tour="oi-display-mode">
@@ -539,6 +532,7 @@ export default function OpenInterestPage() {
           {/* Экспирации — отдельный toggle (boolean state, не входит в OI variants) */}
           {displayMode !== 'price' && (
             <button
+              data-tour="oi-expirations"
               onClick={() => setShowExpirations(!showExpirations)}
               className="editorial-press font-semibold rounded-full"
               style={{
@@ -560,6 +554,7 @@ export default function OpenInterestPage() {
               максимизировать видимость OI/позиций без отвлекающей price-линии. */}
           {displayMode !== 'price' && (
             <button
+              data-tour="oi-price-toggle"
               onClick={() => setShowPrice(!showPrice)}
               className="editorial-press font-semibold rounded-full"
               style={{
@@ -576,6 +571,7 @@ export default function OpenInterestPage() {
           )}
 
           {/* Camera button inline, прижат к правому краю */}
+          <div data-tour="oi-export" className="ml-auto">
           <ChartCaptureButton
             getTargetElement={() => chartAnchorRef.current}
             filename={`frame-oi-${selectedInstrument.toLowerCase()}-${interval}`}
@@ -590,8 +586,8 @@ export default function OpenInterestPage() {
                 displayMode === 'price' ? 'Только цена' : displayMode === 'positions' ? 'Позиции' : 'Участники',
               ].filter(Boolean),
             }}
-            className="ml-auto"
           />
+          </div>
         </div>
       </div>
 
@@ -654,7 +650,7 @@ export default function OpenInterestPage() {
       {/* Легенда — оформлена как editorial card (frame с hard shadow в editorial,
           обычная widget панель в OKX/dark). Inner bg = secondary чтобы выделяться
           на page-bg, в editorial CSS override применит outline + hard shadow. */}
-      <div className="mt-6 bg-theme-secondary border border-theme rounded-2xl widget" style={{ padding: 'var(--sp-5)' }}>
+      <div data-tour="oi-legend" className="mt-6 bg-theme-secondary border border-theme rounded-2xl widget" style={{ padding: 'var(--sp-5)' }}>
         <div style={{ fontSize: 'var(--fs-sm)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
           {/* Линии графика */}
           <div className="flex items-start" style={{ gap: 'var(--sp-3)' }}>
@@ -722,11 +718,8 @@ export default function OpenInterestPage() {
           через методологию (см. /methodology/oi). */}
       <OnboardingTour
         steps={oiTourSteps}
-        open={tourOpen}
-        onClose={(markSeen) => {
-          setTourOpen(false);
-          if (markSeen) markAsSeen();
-        }}
+        open={tour.open}
+        onClose={tour.close}
       />
     </div>
   );

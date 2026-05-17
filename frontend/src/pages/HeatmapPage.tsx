@@ -8,7 +8,7 @@ import { METHODOLOGY } from '../data/methodology';
 import { getHeatmapData, getHeatmapImoex } from '../services/api';
 import { useRealtimeData } from '../hooks/useRealtimeData';
 import type { HeatmapStock, HeatmapSector } from '../services/api';
-import { useFirstVisit } from '../hooks/useFirstVisit';
+import { useOnboardingTour } from '../hooks/useFirstVisit';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { heatmapTourSteps } from '../data/tours/heatmap';
 
@@ -147,14 +147,7 @@ export default function HeatmapPage() {
   const [groupBy, setGroupBy] = useState('sector');
 
   // Onboarding tour
-  const { isFirstVisit, markAsSeen } = useFirstVisit('heatmap');
-  const [tourOpen, setTourOpen] = useState(false);
-  useEffect(() => {
-    if (isFirstVisit) {
-      const t = setTimeout(() => setTourOpen(true), 800);
-      return () => clearTimeout(t);
-    }
-  }, [isFirstVisit]);
+  const tour = useOnboardingTour('heatmap');
 
   // Вычисляемые значения из периода
   const periodConfig = PERIOD_OPTIONS.find(p => p.value === period) || PERIOD_OPTIONS[0];
@@ -563,6 +556,7 @@ export default function HeatmapPage() {
 
       {/* Контролы — Dropdown'ы. Camera button — в конце через ml-auto. */}
       <div className="flex flex-wrap mb-4 md:mb-6 items-center" style={{ gap: 'var(--sp-2)' }}>
+        <div data-tour="heatmap-map-mode">
         <Dropdown<'imoex' | 'all'>
           options={[
             { key: 'imoex', label: 'Индекс IMOEX' },
@@ -571,6 +565,7 @@ export default function HeatmapPage() {
           value={mapMode}
           onChange={setMapMode}
         />
+        </div>
 
         <div data-tour="heatmap-size" className="flex" style={{ gap: 'var(--sp-2)' }}>
         <Dropdown<string>
@@ -596,6 +591,7 @@ export default function HeatmapPage() {
 
         {/* Camera button inline, прижат к правому краю.
             captureRef = outer paper-card → snapshot включает watermark. */}
+        <div data-tour="heatmap-export" className="ml-auto">
         <ChartCaptureButton
           getTargetElement={() => captureRef.current}
           filename={`frame-heatmap-${mapMode}-${period}-${groupBy}`}
@@ -608,8 +604,8 @@ export default function HeatmapPage() {
               GROUP_OPTIONS.find(o => o.value === groupBy)?.label ?? groupBy,
             ].filter(Boolean),
           }}
-          className="ml-auto"
         />
+        </div>
       </div>
 
       {/* Карта — paper-card как у OI/Funds-Money: 2px inkstroke + paper bg.
@@ -723,11 +719,8 @@ export default function HeatmapPage() {
 
       <OnboardingTour
         steps={heatmapTourSteps}
-        open={tourOpen}
-        onClose={(markSeen) => {
-          setTourOpen(false);
-          if (markSeen) markAsSeen();
-        }}
+        open={tour.open}
+        onClose={tour.close}
       />
     </div>
   );

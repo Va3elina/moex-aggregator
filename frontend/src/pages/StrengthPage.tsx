@@ -21,7 +21,7 @@ import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import SectorDetail from '../components/strength/SectorDetail';
 import StrengthControls from '../components/strength/StrengthControls';
 import { computeChartTopLineY, getDatePillStyle } from '../components/chart/datePillLayout';
-import { useFirstVisit } from '../hooks/useFirstVisit';
+import { useOnboardingTour } from '../hooks/useFirstVisit';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { strengthTourSteps } from '../data/tours/strength';
 
@@ -69,14 +69,7 @@ export default function StrengthPage() {
     const [selectedSector, setSelectedSector] = useState('Все');
 
     // Onboarding tour
-    const { isFirstVisit, markAsSeen } = useFirstVisit('strength');
-    const [tourOpen, setTourOpen] = useState(false);
-    useEffect(() => {
-      if (isFirstVisit) {
-        const t = setTimeout(() => setTourOpen(true), 800);
-        return () => clearTimeout(t);
-      }
-    }, [isFirstVisit]);
+    const tour = useOnboardingTour('strength');
     const [currency, setCurrency] = useState<'rub' | 'usd'>('rub');
     const [universeBase, setUniverseBase] = useState<'all' | 'imoex'>('imoex');
     // Итоговый universe: добавляем _usd при долларовом режиме
@@ -626,11 +619,8 @@ export default function StrengthPage() {
 
             <OnboardingTour
                 steps={strengthTourSteps}
-                open={tourOpen}
-                onClose={(markSeen) => {
-                    setTourOpen(false);
-                    if (markSeen) markAsSeen();
-                }}
+                open={tour.open}
+                onClose={tour.close}
             />
         </div>
     );

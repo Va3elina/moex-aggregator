@@ -28,7 +28,7 @@ import StackedBidirectionalHistogram from '../components/cbr/StackedBidirectiona
 import { getCategoryColor } from '../components/cbr/cbrPalette';
 import { getCategoryInfo } from '../components/cbr/cbrCategoryInfo';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
-import { useFirstVisit } from '../hooks/useFirstVisit';
+import { useOnboardingTour } from '../hooks/useFirstVisit';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { cbrFlowsTourSteps } from '../data/tours/cbr-flows';
 import { useTheme } from '../contexts/ThemeContext';
@@ -68,14 +68,7 @@ export default function CbrFlowsPage() {
   const [categoriesOpen, setCategoriesOpen] = useState(false);
 
   // Onboarding tour
-  const { isFirstVisit, markAsSeen } = useFirstVisit('cbr-flows');
-  const [tourOpen, setTourOpen] = useState(false);
-  useEffect(() => {
-    if (isFirstVisit) {
-      const t = setTimeout(() => setTourOpen(true), 800);
-      return () => clearTimeout(t);
-    }
-  }, [isFirstVisit]);
+  const tour = useOnboardingTour('cbr-flows');
   const categoriesBtnRef = useRef<HTMLDivElement>(null);
 
   // Click-outside handler: закрывает popover при клике вне его контейнера
@@ -355,7 +348,7 @@ export default function CbrFlowsPage() {
           </div>
 
           {/* === Период chips (6М / 2Г / Всё) === */}
-          <div className="flex items-center" style={{ gap: 'var(--sp-1)' }}>
+          <div data-tour="cbr-period" className="flex items-center" style={{ gap: 'var(--sp-1)' }}>
             {PERIOD_OPTIONS.map((opt) => {
               const isActive = period === opt.key;
               return (
@@ -380,6 +373,7 @@ export default function CbrFlowsPage() {
           </div>
 
           {/* Camera button — экспорт графика в PNG */}
+          <div data-tour="cbr-export" className="shrink-0 ml-auto">
           <ChartCaptureButton
             getTargetElement={() => chartAnchorRef.current}
             filename={`frame-cbr-flows-${type}-${period}`}
@@ -393,8 +387,8 @@ export default function CbrFlowsPage() {
                 // для пользователя в подписи экспорта.
               ].filter(Boolean) as string[],
             }}
-            className="shrink-0 ml-auto"
           />
+          </div>
         </div>
 
         {/* === Inner paper-card вокруг графика ===
@@ -447,11 +441,8 @@ export default function CbrFlowsPage() {
 
       <OnboardingTour
         steps={cbrFlowsTourSteps}
-        open={tourOpen}
-        onClose={(markSeen) => {
-          setTourOpen(false);
-          if (markSeen) markAsSeen();
-        }}
+        open={tour.open}
+        onClose={tour.close}
       />
     </div>
   );

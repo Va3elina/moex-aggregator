@@ -6,20 +6,25 @@
  * маркируется как «видел» и больше не показывается автоматически.
  *
  * Реализация: один key per indicator в localStorage:
- *   localStorage['frame_tour_seen:oi'] = '1'
+ *   localStorage['frame_tour_seen_v2:oi'] = '1'
  *
  * Для старых юзеров (зарегистрированных до релиза тура) — тур всё равно
  * сработает, потому что у них в localStorage этого ключа НЕТ. Это и есть
  * способ дотянуть онбординг до текущей аудитории не трогая бэкенд.
+ *
+ * VERSIONING: bump prefix вместо `frame_tour_seen:` → `frame_tour_seen_v2:`
+ * когда хотим показать тур повторно ВСЕМ юзерам (после релиза значительных
+ * улучшений контента/UX). Старые ключи остаются в localStorage но
+ * игнорируются — нативный механизм cache-bust.
  *
  * Возвращает:
  *   isFirstVisit: true если ключа в localStorage нет
  *   markAsSeen: функция чтобы прямо сейчас пометить как видевшего
  *   resetSeen: для разработки/тестирования — сбросить флаг
  */
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
-const STORAGE_PREFIX = 'frame_tour_seen:';
+const STORAGE_PREFIX = 'frame_tour_seen_v2:';
 
 export function useFirstVisit(indicatorKey: string) {
   const storageKey = `${STORAGE_PREFIX}${indicatorKey}`;
@@ -54,4 +59,46 @@ export function useFirstVisit(indicatorKey: string) {
   }, [storageKey]);
 
   return { isFirstVisit, markAsSeen, resetSeen };
+}
+
+/**
+ * useOnboardingTour — единая обёртка для интеграции тура на страницу.
+ *
+ * Логика:
+ *   1. На mount проверяет localStorage. Если ключа нет (первый визит) —
+ *      запускает setTimeout 800ms → open=true.
+ *   2. autoOpenedRef гарантирует что auto-open сработает РОВНО ОДИН РАЗ
+ *      за mount страницы. Раньше был баг на CBR Flows: при close без
+ *      markAsSeen, isFirstVisit оставался true, и потенциальный re-render
+ *      мог re-fire useEffect → re-open. Теперь это исключено.
+ *   3. close(markSeen): если markSeen=true → markAsSeen + close;
+ *      если false → close session-only, при следующем заходе тур опять
+ *      покажется (новый mount → autoOpenedRef сбросится).
+ *
+ * Page usage (1 строка вместо 8):
+ *   const tour = useOnboardingTour('oi');
+ *   <OnboardingTour open={tour.open} onClose={tour.close} steps={...} />
+ */
+export function useOnboardingTour(indicatorKey: string) {
+  const { isFirstVisit, markAsSeen } = useFirstVisit(indicatorKey);
+  const [open, setOpen] = useState(false);
+  const autoOpenedRef = useRef(false);
+
+  useEffect(() => {
+    if (isFirstVisit && !autoOpenedRef.current) {
+      autoOpenedRef.current = true;
+      const t = setTimeout(() => setOpen(true), 800);
+      return () => clearTimeout(t);
+    }
+  }, [isFirstVisit]);
+
+  const close = useCallback(
+    (markSeen: boolean) => {
+      setOpen(false);
+      if (markSeen) markAsSeen();
+    },
+    [markAsSeen],
+  );
+
+  return { open, close };
 }

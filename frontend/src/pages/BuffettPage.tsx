@@ -18,7 +18,7 @@ import { isPeriodAllowed } from '../config/accessControl';
 import { useRealtimeData } from '../hooks/useRealtimeData';
 import { useFitToViewport } from '../hooks/useFitToViewport';
 import { useIsMobile } from '../hooks/useIsMobile';
-import { useFirstVisit } from '../hooks/useFirstVisit';
+import { useOnboardingTour } from '../hooks/useFirstVisit';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { buffettTourSteps } from '../data/tours/buffett';
 
@@ -48,15 +48,8 @@ export default function BuffettPage() {
     const [capGdpData, setCapGdpData] = useState<BuffettCapGdpResponse | null>(null);
     const [capM2Data, setCapM2Data] = useState<BuffettRatioResponse | null>(null);
 
-    // Onboarding tour — auto-открытие для нового юзера на первом визите.
-    const { isFirstVisit, markAsSeen } = useFirstVisit('buffett');
-    const [tourOpen, setTourOpen] = useState(false);
-    useEffect(() => {
-      if (isFirstVisit) {
-        const t = setTimeout(() => setTourOpen(true), 800);
-        return () => clearTimeout(t);
-      }
-    }, [isFirstVisit]);
+    // Onboarding tour
+    const tour = useOnboardingTour('buffett');
 
     // Динамическая высота графика — chartAnchorRef как в OI/Funds-Money
     const chartAnchorRef = useRef<HTMLDivElement>(null);
@@ -176,8 +169,8 @@ export default function BuffettPage() {
                 />
                 </div>
 
-                {/* Периоды */}
-                <div data-tour="buffett-period" className="flex" style={{ gap: 'var(--sp-2)' }}>
+                {/* Период */}
+                <div data-tour="buffett-period">
                 <Dropdown<BuffettPeriod>
                     options={(Object.keys(PERIOD_LABELS) as BuffettPeriod[]).map((p): DropdownOption<BuffettPeriod> => ({
                         key: p,
@@ -191,9 +184,11 @@ export default function BuffettPage() {
                         setPeriod(p);
                     }}
                 />
+                </div>
 
                 {/* Таймфрейм — для cap-gdp и cap-m2 */}
                 {(viewMode === 'cap-gdp' || viewMode === 'cap-m2') && (
+                    <div data-tour="buffett-timeframe">
                     <Dropdown<'1d' | '1w' | '1m'>
                         options={[
                             { key: '1d', label: '1Д' },
@@ -203,10 +198,12 @@ export default function BuffettPage() {
                         value={timeframe}
                         onChange={setTimeframe}
                     />
+                    </div>
                 )}
 
                 {/* Прогноз — только для cap-gdp */}
                 {viewMode === 'cap-gdp' && (
+                    <div data-tour="buffett-forecast">
                     <Dropdown<string>
                         options={[
                             { key: '', label: 'Прогноз: выкл' },
@@ -218,11 +215,12 @@ export default function BuffettPage() {
                         value={forecastTarget !== null ? String(forecastTarget) : ''}
                         onChange={(k) => setForecastTarget(k ? Number(k) : null)}
                     />
+                    </div>
                 )}
-                </div>{/* /buffett-period */}
 
                 {/* Toggle капитализации (secondary axis) — chip pattern из Strength */}
                 <button
+                    data-tour="buffett-cap-toggle"
                     onClick={() => setShowCap(!showCap)}
                     className="editorial-press font-semibold rounded-full"
                     style={{
@@ -238,6 +236,7 @@ export default function BuffettPage() {
                 </button>
 
                 {/* Camera button inline, прижат к правому краю */}
+                <div data-tour="buffett-export" className="ml-auto">
                 <ChartCaptureButton
                     getTargetElement={() => chartAnchorRef.current}
                     filename={`frame-buffett-${viewMode}-${period}-${timeframe}`}
@@ -249,8 +248,8 @@ export default function BuffettPage() {
                             timeframe === '1d' ? '1 день' : timeframe === '1w' ? '1 неделя' : '1 месяц',
                         ].filter(Boolean),
                     }}
-                    className="ml-auto"
                 />
+                </div>
 
             </div>
 
@@ -354,11 +353,8 @@ export default function BuffettPage() {
             {/* Onboarding tour */}
             <OnboardingTour
                 steps={buffettTourSteps}
-                open={tourOpen}
-                onClose={(markSeen) => {
-                    setTourOpen(false);
-                    if (markSeen) markAsSeen();
-                }}
+                open={tour.open}
+                onClose={tour.close}
             />
         </div>
     );

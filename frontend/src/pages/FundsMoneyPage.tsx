@@ -24,7 +24,7 @@ import { useFitToViewport } from '../hooks/useFitToViewport';
 import { useViewportWidth } from '../hooks/useViewportWidth';
 import FundCardModal from '../components/funds/FundCardModal';
 import FundsTable from '../components/funds/FundsTable';
-import { useFirstVisit } from '../hooks/useFirstVisit';
+import { useOnboardingTour } from '../hooks/useFirstVisit';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { fundsMoneyTourSteps } from '../data/tours/funds-money';
 import FlowsHistogram from '../components/funds/FlowsHistogram';
@@ -130,14 +130,7 @@ export default function FundsMoneyPage() {
     const [flowNavRange, setFlowNavRange] = useState<[number, number]>([0, 0]);
 
     // Onboarding tour
-    const { isFirstVisit, markAsSeen } = useFirstVisit('funds-money');
-    const [tourOpen, setTourOpen] = useState(false);
-    useEffect(() => {
-      if (isFirstVisit) {
-        const t = setTimeout(() => setTourOpen(true), 800);
-        return () => clearTimeout(t);
-      }
-    }, [isFirstVisit]);
+    const tour = useOnboardingTour('funds-money');
     const flowChartRef = useRef<SVGSVGElement>(null);
     const flowContainerRef = useRef<HTMLDivElement>(null);
 
@@ -476,6 +469,7 @@ export default function FundsMoneyPage() {
 
             {/* Контролы */}
             <div className="flex flex-wrap mb-4 md:mb-6" style={{ gap: 'var(--sp-2)' }}>
+                <div data-tour="funds-period">
                 <Dropdown<Period>
                     options={(Object.keys(PERIOD_LABELS) as Period[])
                         .filter(p => AUM_PERIODS.includes(p))
@@ -491,6 +485,7 @@ export default function FundsMoneyPage() {
                         if (isFlowPeriodAvailable(p)) setPeriod(p);
                     }}
                 />
+                </div>
 
                 {/* Режим: СЧА / Притоки-оттоки */}
                 <div data-tour="funds-view-mode">
@@ -509,6 +504,7 @@ export default function FundsMoneyPage() {
 
                 {/* Таймфрейм для flows */}
                 {viewMode === 'flows' && (
+                    <div data-tour="funds-flow-timeframe">
                     <Dropdown<FlowTimeframe>
                         options={[
                             { key: '1d', label: 'День' },
@@ -518,11 +514,13 @@ export default function FundsMoneyPage() {
                         value={flowTimeframe}
                         onChange={setFlowTimeframe}
                     />
+                    </div>
                 )}
 
                 {/* Тоггл событий */}
                 {viewMode === 'flows' && (
                     <button
+                        data-tour="funds-events"
                         onClick={() => setShowEvents(!showEvents)}
                         className="editorial-press font-semibold rounded-full"
                         style={{
@@ -544,6 +542,7 @@ export default function FundsMoneyPage() {
                     паттерн с "Капитализация" в Buffett. */}
                 {viewMode === 'aum' && (
                     <button
+                        data-tour="funds-index-toggle"
                         onClick={() => setShowIndex(!showIndex)}
                         className="editorial-press font-semibold rounded-full"
                         style={{
@@ -561,6 +560,7 @@ export default function FundsMoneyPage() {
 
                 {/* Camera button — на одном уровне с dropdowns/buttons,
                     выровнен по правому краю через ml-auto. */}
+                <div data-tour="funds-export" className="ml-auto">
                 <ChartCaptureButton
                     getTargetElement={() => chartAnchorRef.current}
                     filename={`frame-funds-${category}-${viewMode}-${period}`}
@@ -583,8 +583,8 @@ export default function FundsMoneyPage() {
                         if (viewMode !== 'flows') return {};
                         return { '--chart-pad-left': 'calc(var(--chart-pad-right-single) - 12px)' };
                     }}
-                    className="ml-auto"
                 />
+                </div>
             </div>
 
             {/* График */}
@@ -596,7 +596,7 @@ export default function FundsMoneyPage() {
                     </div>
                 </div>
             ) : viewMode === 'aum' ? (
-                <div ref={chartAnchorRef}>
+                <div ref={chartAnchorRef} data-tour="funds-chart">
                     <SimpleChart
                         data={aggregatedData.chartData}
                         secondaryData={indexData}
@@ -618,7 +618,7 @@ export default function FundsMoneyPage() {
                     />
                 </div>
             ) : (
-            <div ref={chartAnchorRef} style={{ ['--chart-height' as string]: `${chartHeight}px` }}>
+            <div ref={chartAnchorRef} data-tour="funds-chart" style={{ ['--chart-height' as string]: `${chartHeight}px` }}>
             <FlowsHistogram
                         flowsData={flowsData}
                         animatedBarsIn={animatedBarsIn}
@@ -674,11 +674,8 @@ export default function FundsMoneyPage() {
 
             <OnboardingTour
                 steps={fundsMoneyTourSteps}
-                open={tourOpen}
-                onClose={(markSeen) => {
-                    setTourOpen(false);
-                    if (markSeen) markAsSeen();
-                }}
+                open={tour.open}
+                onClose={tour.close}
             />
         </div>
     );
