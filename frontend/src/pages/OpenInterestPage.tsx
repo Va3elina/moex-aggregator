@@ -18,6 +18,9 @@ import { useTheme } from '../contexts/ThemeContext';
 import { isIntervalAllowed, isPeriodAllowed, getDefaultPeriod } from '../config/accessControl';
 import { useRealtimeData } from '../hooks/useRealtimeData';
 import { useFitToViewport } from '../hooks/useFitToViewport';
+import { useFirstVisit } from '../hooks/useFirstVisit';
+import OnboardingTour from '../components/onboarding/OnboardingTour';
+import { oiTourSteps } from '../data/tours/oi';
 
 type DisplayMode = 'price' | 'positions' | 'participants';
 type OIVariant = 'oi' | 'long' | 'short' | 'both' | 'net';
@@ -119,6 +122,21 @@ export default function OpenInterestPage() {
   const [data, setData] = useState<ChartResponse | null>(null);
   // Интервал, для которого загружены текущие данные — обновляется атомарно с data
   const [dataInterval, setDataInterval] = useState(24);
+
+  // Onboarding tour — auto-открывается на первом заходе.
+  // useFirstVisit смотрит в localStorage[`frame_tour_seen:oi`]. Старые
+  // юзеры без этого ключа увидят тур; новые после первого dismissal не
+  // увидят его снова автоматически.
+  const { isFirstVisit, markAsSeen } = useFirstVisit('oi');
+  const [tourOpen, setTourOpen] = useState(false);
+  useEffect(() => {
+    if (isFirstVisit) {
+      // Delay 800ms чтобы page успел отрендериться + chartAnchor получил высоту.
+      // Без delay — spotlight маска показывается на пустом контейнере.
+      const t = setTimeout(() => setTourOpen(true), 800);
+      return () => clearTimeout(t);
+    }
+  }, [isFirstVisit]);
 
   // Настройки
   const [interval, setIntervalValue] = useState(24);
@@ -411,6 +429,7 @@ export default function OpenInterestPage() {
         <div className="flex flex-wrap items-center gap-2 md:gap-3">
           {/* Селектор инструмента — открывает модалку */}
           <button
+            data-tour="oi-instrument"
             onClick={() => setIsModalOpen(true)}
             className="widget-flat font-medium transition-colors flex items-center hover:opacity-90"
             style={{
@@ -485,21 +504,24 @@ export default function OpenInterestPage() {
           />
 
           {/* Режим отображения */}
-          <Dropdown<DisplayMode>
-            options={[
-              { key: 'price', label: 'Только цена' },
-              { key: 'positions', label: 'Позиции' },
-              { key: 'participants', label: 'Участники' },
-            ]}
-            value={displayMode}
-            onChange={(m) => {
-              setDisplayMode(m);
-              if (m !== 'price') setOiVariant('oi');
-            }}
-          />
+          <div data-tour="oi-display-mode">
+            <Dropdown<DisplayMode>
+              options={[
+                { key: 'price', label: 'Только цена' },
+                { key: 'positions', label: 'Позиции' },
+                { key: 'participants', label: 'Участники' },
+              ]}
+              value={displayMode}
+              onChange={(m) => {
+                setDisplayMode(m);
+                if (m !== 'price') setOiVariant('oi');
+              }}
+            />
+          </div>
 
           {/* Варианты OI — каждый с цветной полоской слева */}
           {displayMode !== 'price' && (
+            <div data-tour="oi-variant">
             <Dropdown<OIVariant>
               options={[
                 { key: 'oi',    label: 'Открытый интерес',                                                     color: 'var(--oi-amber)' },
@@ -511,6 +533,7 @@ export default function OpenInterestPage() {
               value={oiVariant}
               onChange={setOiVariant}
             />
+            </div>
           )}
 
           {/* Экспирации — отдельный toggle (boolean state, не входит в OI variants) */}
@@ -583,7 +606,7 @@ export default function OpenInterestPage() {
           border + hard shadow в editorial). Обёртка убрана чтобы не было
           двойной рамки. chartAnchorRef нужен хуку useFitToViewport для
           расчёта высоты графика «остаток до низа viewport». */}
-      <div ref={chartAnchorRef}>
+      <div ref={chartAnchorRef} data-tour="oi-chart">
       <SimpleChart
         data={chartData}
         secondaryData={oiData}
@@ -693,6 +716,18 @@ export default function OpenInterestPage() {
           filterType="futures"
         />
       )}
+
+      {/* Onboarding tour — spotlight гайд для первого визита.
+          Авто-открывается через useFirstVisit, можно перезапустить
+          через методологию (см. /methodology/oi). */}
+      <OnboardingTour
+        steps={oiTourSteps}
+        open={tourOpen}
+        onClose={() => {
+          setTourOpen(false);
+          markAsSeen();
+        }}
+      />
     </div>
   );
 }
