@@ -1376,12 +1376,18 @@ export default function SimpleChart({
           // Pill height = fontY + 2*padY. Pill width = textW + 2*padX.
           const fontY = tokens.fontY;
           const fontWeight = 700;
-          // padX=6 (было 5 + асимметричный «+1 sub-pixel safety» только справа).
-          // Старая версия делала pill на 1px шире чем измеренный текст +
-          // двойной padding, и этот лишний пиксель уходил ТОЛЬКО на правую
-          // сторону. Результат: «6» в конце "-172 246" вылазила за заливку —
-          // юзер замечал. Симметричный padX=6 даёт равные ~5-6px воздуха с
-          // обеих сторон (зависит от ceil(textW) - textW sub-pixel residual).
+          // padX=6 — равные ~5-6px воздуха с обеих сторон pill'а.
+          //
+          // ИТЕРАЦИЯ 2026-05-15: к pill'ам добавлен textLength + lengthAdjust
+          // на SVG-тексте. Раньше была визуальная асимметрия — последняя
+          // цифра вылазила за правый край (для secondary pill) или за левый
+          // (для primary). Корень: `fontVariantNumeric: 'tabular-nums'` на
+          // SVG-тексте делает digits шире чем proportional, но Canvas
+          // measureText не учитывает font-variant и недомерял на 1-3px.
+          // Решение: фиксируем textLength = exact measureText output →
+          // SVG рендерит текст РОВНО той ширины что мы измерили (сжимая
+          // letter-spacing на ~3% при необходимости). Гарантирует
+          // симметричный pad независимо от font-variant квирков.
           const padX = 6;
           const padY = 2;
           const pillH = fontY + padY * 2;
@@ -1441,6 +1447,8 @@ export default function SimpleChart({
                   fontSize={fontY}
                   fontWeight={fontWeight}
                   style={{ fontVariantNumeric: 'tabular-nums' }}
+                  textLength={Math.ceil(textW)}
+                  lengthAdjust="spacingAndGlyphs"
                 >
                   {mainPart}
                   {unitPart && (
