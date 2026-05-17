@@ -42,11 +42,9 @@ export interface TourStep {
 export interface OnboardingTourProps {
   steps: TourStep[];
   open: boolean;
-  /** Закрыть тур. Если markAsSeen=true — пометить в localStorage чтобы
-   *  больше не показывался автоматически. Если false — закрытие
-   *  «session-only»: тур появится снова при следующем заходе на страницу.
-   *  Логика: «Готово» (последний шаг) всегда передаёт true; «Пропустить»/«X»
-   *  передают значение чекбокса «Больше не показывать» (default false). */
+  /** Закрыть тур. Передаваемый boolean всегда true (после v620 любое
+   *  закрытие = mark as seen permanent). Параметр сохранён в API для
+   *  обратной совместимости с хуком useOnboardingTour. */
   onClose: (markAsSeen: boolean) => void;
 }
 
@@ -61,7 +59,6 @@ export default function OnboardingTour({
 }: OnboardingTourProps) {
   const [stepIndex, setStepIndex] = useState(0);
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
-  const [dontShowAgain, setDontShowAgain] = useState(false);
   const [viewport, setViewport] = useState({ w: typeof window !== 'undefined' ? window.innerWidth : 1024, h: typeof window !== 'undefined' ? window.innerHeight : 768 });
   const overlayRef = useRef<HTMLDivElement>(null);
 
@@ -70,9 +67,12 @@ export default function OnboardingTour({
   const isLastStep = stepIndex === steps.length - 1;
   const isFirstStep = stepIndex === 0;
 
-  // Skip = close с учётом чекбокса. Готово = всегда mark as seen.
-  const handleSkip = useCallback(() => onClose(dontShowAgain), [onClose, dontShowAgain]);
-  const handleDone = useCallback(() => onClose(true), [onClose]);
+  // ЛЮБОЕ закрытие = mark as seen (after v620).
+  // Юзер запросил: «X должен = больше не показывать». Раньше был чекбокс,
+  // но это создавало путаницу + риск что тур покажется повторно при
+  // случайном закрытии без галочки. Теперь simple model: увидел и закрыл —
+  // больше не покажется. Re-open только через «Replay tour» в методологии.
+  const handleClose = useCallback(() => onClose(true), [onClose]);
 
   // Track viewport size
   useEffect(() => {
@@ -86,7 +86,6 @@ export default function OnboardingTour({
   useEffect(() => {
     if (open) {
       setStepIndex(0);
-      setDontShowAgain(false);
     }
   }, [open]);
 
@@ -132,10 +131,10 @@ export default function OnboardingTour({
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
-        handleSkip();
+        handleClose();
       } else if (e.key === 'ArrowRight' || e.key === 'Enter') {
         e.preventDefault();
-        if (isLastStep) handleDone();
+        if (isLastStep) handleClose();
         else setStepIndex(i => i + 1);
       } else if (e.key === 'ArrowLeft') {
         e.preventDefault();
@@ -144,12 +143,12 @@ export default function OnboardingTour({
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [open, isLastStep, isFirstStep, handleSkip, handleDone]);
+  }, [open, isLastStep, isFirstStep, handleClose]);
 
   const handleNext = useCallback(() => {
-    if (isLastStep) handleDone();
+    if (isLastStep) handleClose();
     else setStepIndex(i => i + 1);
-  }, [isLastStep, handleDone]);
+  }, [isLastStep, handleClose]);
 
   const handlePrev = useCallback(() => {
     if (!isFirstStep) setStepIndex(i => i - 1);
@@ -274,7 +273,7 @@ export default function OnboardingTour({
             </span>
           </div>
           <button
-            onClick={handleSkip}
+            onClick={handleClose}
             className="text-theme-secondary hover:text-theme-primary transition-colors"
             aria-label="Закрыть тур"
             style={{ padding: 4 }}
@@ -299,28 +298,10 @@ export default function OnboardingTour({
           {step.body}
         </div>
 
-        {/* Чекбокс «Больше не показывать» — только на welcome-шаге (first).
-            Default OFF — закрытие = session-only, тур появится снова на
-            следующий визит. Если юзер хочет навсегда — отмечает галочку. */}
-        {isFirstStep && (
-          <label
-            className="flex items-center mb-4 cursor-pointer select-none"
-            style={{ gap: 8, fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}
-          >
-            <input
-              type="checkbox"
-              checked={dontShowAgain}
-              onChange={(e) => setDontShowAgain(e.target.checked)}
-              style={{ width: 14, height: 14, cursor: 'pointer' }}
-            />
-            Больше не показывать
-          </label>
-        )}
-
         {/* Controls */}
         <div className="flex items-center justify-between" style={{ gap: 'var(--sp-2)' }}>
           <button
-            onClick={handleSkip}
+            onClick={handleClose}
             className="text-theme-secondary hover:text-theme-primary transition-colors"
             style={{ fontSize: 'var(--fs-xs)', padding: 'var(--sp-2) var(--sp-3)' }}
           >
