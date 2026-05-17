@@ -17,9 +17,9 @@ import { BarChart3 } from 'lucide-react';
 import MobileLayout from '../../components/mobile/MobileLayout';
 import MobilePageHeader from '../../components/mobile/MobilePageHeader';
 import MobileChart from '../../components/mobile/MobileChart';
-import MobileQuickActions from '../../components/mobile/MobileQuickActions';
 import MobileSheet from '../../components/mobile/MobileSheet';
 import MobileAssetSearch from '../../components/mobile/MobileAssetSearch';
+import { Clock, Settings, Star } from 'lucide-react';
 import { getChartData, getInstrument } from '../../services/api';
 import type { ChartResponse } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
@@ -173,8 +173,43 @@ export default function MobileOpenInterestPage() {
     return baseSeries;
   }, [data, instrumentName, oiVariant]);
 
+  const timeLabel = `${PERIOD_LABELS[period]} · ${INTERVAL_LABELS[intervalValue] ?? intervalValue + 'ч'}`;
+  const optionsLabel = `${VARIANT_LABELS[oiVariant]}`;
+
   return (
-    <MobileLayout>
+    <MobileLayout
+      bottomActions={
+        <>
+          <button
+            className="fm-page-action asset"
+            onClick={() => setAssetSearchOpen(true)}
+            aria-label={`Актив: ${instrumentName}`}
+          >
+            <Star size={14} fill="var(--accent)" strokeWidth={0} />
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', minWidth: 0, flex: 1 }}>
+              <span className="fm-asset-name">{instrumentName}</span>
+              <span className="fm-asset-ticker">{selectedInstrument}</span>
+            </div>
+          </button>
+          <button
+            className="fm-page-action"
+            onClick={() => setPeriodSheetOpen(true)}
+            aria-label={`Время · ${timeLabel}`}
+          >
+            <span className="fm-rail-ico"><Clock size={16} strokeWidth={2.2} /></span>
+            <span>Время</span>
+          </button>
+          <button
+            className="fm-page-action"
+            onClick={() => setOptionsSheetOpen(true)}
+            aria-label={`Опции · ${optionsLabel}`}
+          >
+            <span className="fm-rail-ico"><Settings size={16} strokeWidth={2.2} /></span>
+            <span>Опции</span>
+          </button>
+        </>
+      }
+    >
       <MobilePageHeader
         Icon={BarChart3}
         title="Открытый интерес"
@@ -182,28 +217,10 @@ export default function MobileOpenInterestPage() {
         helpLink="/methodology/oi"
       />
 
-      <div className="fm-frame">
-        <div style={{ margin: '0 -10px' }}>
-          <MobileChart
-            series={chartSeries}
-            height={280}
-            loading={loading}
-          />
+      <div className="fm-frame" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        <div style={{ margin: '0 -10px', flex: 1, minHeight: 0 }}>
+          <MobileChart series={chartSeries} loading={loading} />
         </div>
-
-        <MobileQuickActions
-          asset={{
-            name: instrumentName,
-            ticker: `${selectedInstrument} · ФЬЮЧЕРС`,
-          }}
-          timeLabel={`${PERIOD_LABELS[period]} · ${INTERVAL_LABELS[intervalValue] ?? intervalValue + 'ч'}`}
-          optionsLabel={`${VARIANT_LABELS[oiVariant]} · ${clgroup === 'FIZ' ? 'Физ' : 'Юр'}`}
-          onAsset={() => setAssetSearchOpen(true)}
-          onTime={() => setPeriodSheetOpen(true)}
-          onOptions={() => setOptionsSheetOpen(true)}
-          showFullscreen={false}
-          showExport={false}
-        />
       </div>
 
       {/* Sheet: выбор актива */}

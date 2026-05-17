@@ -5,11 +5,10 @@
  * Прогноз и forecast scenarios — Phase 4.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { Scale } from 'lucide-react';
+import { Scale, Clock, Settings } from 'lucide-react';
 import MobileLayout from '../../components/mobile/MobileLayout';
 import MobilePageHeader from '../../components/mobile/MobilePageHeader';
 import MobileChart from '../../components/mobile/MobileChart';
-import MobileQuickActions from '../../components/mobile/MobileQuickActions';
 import MobileSheet from '../../components/mobile/MobileSheet';
 import {
   getBuffettCapGdp,
@@ -88,7 +87,38 @@ export default function MobileBuffettPage() {
   }, [viewMode, capGdpData, capM2Data]);
 
   return (
-    <MobileLayout>
+    <MobileLayout
+      bottomActions={
+        <>
+          <button
+            className="fm-page-action asset"
+            onClick={() => setModeSheetOpen(true)}
+          >
+            <Scale size={14} strokeWidth={2.4} style={{ color: 'var(--accent)' }} />
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', minWidth: 0, flex: 1 }}>
+              <span className="fm-asset-name">
+                {viewMode === 'cap-gdp' ? 'Кап / ВВП' : 'Кап / M2'}
+              </span>
+              <span className="fm-asset-ticker">Версия</span>
+            </div>
+          </button>
+          <button
+            className="fm-page-action"
+            onClick={() => setPeriodSheetOpen(true)}
+          >
+            <span className="fm-rail-ico"><Clock size={16} strokeWidth={2.2} /></span>
+            <span>Период</span>
+          </button>
+          <button
+            className="fm-page-action"
+            onClick={() => setModeSheetOpen(true)}
+          >
+            <span className="fm-rail-ico"><Settings size={16} strokeWidth={2.2} /></span>
+            <span>Опции</span>
+          </button>
+        </>
+      }
+    >
       <MobilePageHeader
         Icon={Scale}
         title="Индикатор Баффетта"
@@ -96,11 +126,10 @@ export default function MobileBuffettPage() {
         helpLink="/methodology/buffett"
       />
 
-      <div className="fm-frame">
-        <div style={{ margin: '0 -10px' }}>
+      <div className="fm-frame" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        <div style={{ margin: '0 -10px', flex: 1, minHeight: 0 }}>
           <MobileChart
             series={chartSeries}
-            height={280}
             loading={loading}
             formatXLabel={(t) => {
               const d = new Date(t);
@@ -108,20 +137,6 @@ export default function MobileBuffettPage() {
             }}
           />
         </div>
-
-        <MobileQuickActions
-          asset={{
-            name: viewMode === 'cap-gdp' ? 'Кап / ВВП' : 'Кап / M2',
-            ticker: PERIOD_LABELS[period] ?? period,
-          }}
-          timeLabel={PERIOD_LABELS[period]}
-          optionsLabel={viewMode === 'cap-gdp' ? 'ВВП' : 'M2'}
-          onAsset={() => setModeSheetOpen(true)}
-          onTime={() => setPeriodSheetOpen(true)}
-          onOptions={() => setModeSheetOpen(true)}
-          showFullscreen={false}
-          showExport={false}
-        />
       </div>
 
       <MobileSheet

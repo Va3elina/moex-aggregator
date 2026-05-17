@@ -8,10 +8,9 @@
  *   - Compare years, exclude dividends — Phase 4
  */
 import { useEffect, useMemo, useState } from 'react';
-import { CalendarDays } from 'lucide-react';
+import { CalendarDays, Settings, Star } from 'lucide-react';
 import MobileLayout from '../../components/mobile/MobileLayout';
 import MobilePageHeader from '../../components/mobile/MobilePageHeader';
-import MobileQuickActions from '../../components/mobile/MobileQuickActions';
 import MobileAssetSearch from '../../components/mobile/MobileAssetSearch';
 import MobileSheet from '../../components/mobile/MobileSheet';
 import MobileSkeleton from '../../components/mobile/MobileSkeleton';
@@ -76,7 +75,29 @@ export default function MobileSeasonalityPage() {
   }, [bars]);
 
   return (
-    <MobileLayout>
+    <MobileLayout
+      bottomActions={
+        <>
+          <button
+            className="fm-page-action asset"
+            onClick={() => setAssetSearchOpen(true)}
+          >
+            <Star size={14} fill="var(--accent)" strokeWidth={0} />
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', minWidth: 0, flex: 1 }}>
+              <span className="fm-asset-name">{selectedName}</span>
+              <span className="fm-asset-ticker">{selectedStock}</span>
+            </div>
+          </button>
+          <button
+            className="fm-page-action"
+            onClick={() => setModeSheetOpen(true)}
+          >
+            <span className="fm-rail-ico"><Settings size={16} strokeWidth={2.2} /></span>
+            <span>Режим</span>
+          </button>
+        </>
+      }
+    >
       <MobilePageHeader
         Icon={CalendarDays}
         title="Сезонность"
@@ -84,11 +105,10 @@ export default function MobileSeasonalityPage() {
         helpLink="/methodology/seasonality"
       />
 
-      <div className="fm-frame">
-        {/* SVG histogram */}
-        <div style={{ position: 'relative', height: 240, margin: '0 -4px' }}>
+      <div className="fm-frame" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        <div style={{ position: 'relative', flex: 1, minHeight: 0, margin: '0 -4px' }}>
           {loading ? (
-            <MobileSkeleton variant="chart" height={240} />
+            <MobileSkeleton variant="chart" height="100%" />
           ) : bars.length === 0 ? (
             <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: 'var(--text-muted)' }}>
               Нет данных
@@ -97,17 +117,6 @@ export default function MobileSeasonalityPage() {
             <SeasonalityBars bars={bars} maxAbs={maxAbs} />
           )}
         </div>
-
-        <MobileQuickActions
-          asset={{ name: selectedName, ticker: selectedStock }}
-          timeLabel={MODE_LABELS[mode]}
-          optionsLabel="Среднее"
-          onAsset={() => setAssetSearchOpen(true)}
-          onTime={() => setModeSheetOpen(true)}
-          onOptions={() => setModeSheetOpen(true)}
-          showFullscreen={false}
-          showExport={false}
-        />
       </div>
 
       <MobileAssetSearch
@@ -156,7 +165,11 @@ interface BarData {
 }
 
 function SeasonalityBars({ bars, maxAbs }: { bars: BarData[]; maxAbs: number }) {
-  const width = 360; // logical, viewBox scaling
+  // viewBox-based SVG — растягивается на 100% контейнера через
+  // preserveAspectRatio. Логические координаты width=360 / height=240
+  // используются только для расчёта позиций bar'ов; реальный размер
+  // CSS-управляется через width/height='100%'.
+  const width = 360;
   const height = 240;
   const padX = 12;
   const padTop = 12;
@@ -168,7 +181,7 @@ function SeasonalityBars({ bars, maxAbs }: { bars: BarData[]; maxAbs: number }) 
   const barGap = (innerW / bars.length) * 0.3;
 
   return (
-    <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
+    <svg width="100%" height="100%" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" style={{ display: 'block' }}>
       {/* Zero line */}
       <line
         x1={padX}

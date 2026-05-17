@@ -67,7 +67,32 @@ export default function MobileCbrFlowsPage() {
   const visibleCategories = data?.categories ?? [];
 
   return (
-    <MobileLayout>
+    <MobileLayout
+      bottomActions={
+        <>
+          {TYPE_TABS.map((tab) => {
+            const isActive = type === tab.key;
+            const Icon = tab.Icon;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setType(tab.key)}
+                className="fm-page-action"
+                style={{
+                  color: isActive ? 'var(--text-inverse)' : 'var(--text-secondary)',
+                  background: isActive ? 'var(--accent)' : 'transparent',
+                  borderColor: isActive ? 'var(--text-primary)' : 'transparent',
+                  boxShadow: isActive ? '3px 3px 0 var(--text-primary)' : undefined,
+                }}
+              >
+                <span className="fm-rail-ico"><Icon size={16} strokeWidth={2.2} /></span>
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
+        </>
+      }
+    >
       <MobilePageHeader
         Icon={Banknote}
         title="Потоки ЦБ"
@@ -75,43 +100,8 @@ export default function MobileCbrFlowsPage() {
         helpLink="/methodology/cbr-flows"
       />
 
-      {/* Type tabs */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr 1fr',
-          gap: 6,
-          padding: '0 12px 8px',
-        }}
-      >
-        {TYPE_TABS.map((tab) => {
-          const isActive = type === tab.key;
-          const Icon = tab.Icon;
-          return (
-            <button
-              key={tab.key}
-              onClick={() => setType(tab.key)}
-              className={`fm-chip ${isActive ? 'active' : ''}`}
-              style={{
-                justifyContent: 'center',
-                gap: 6,
-              }}
-            >
-              <Icon size={14} strokeWidth={2.2} />
-              {tab.label}
-            </button>
-          );
-        })}
-      </div>
-
-      {/* Period chips */}
-      <div
-        style={{
-          display: 'flex',
-          gap: 6,
-          padding: '0 12px 8px',
-        }}
-      >
+      {/* Period chips (компактный ряд под заголовком) */}
+      <div style={{ display: 'flex', gap: 6, padding: '0 12px 8px' }}>
         {PERIOD_OPTIONS.map((opt) => (
           <button
             key={opt.key}
@@ -132,7 +122,10 @@ export default function MobileCbrFlowsPage() {
           background: 'var(--bg-primary)',
           border: '1.5px solid var(--text-primary)',
           borderRadius: 12,
-          minHeight: 380,
+          flex: 1,
+          minHeight: 0,
+          display: 'flex',
+          flexDirection: 'column',
         }}
       >
         {error ? (

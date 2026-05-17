@@ -93,7 +93,27 @@ export default function MobileFundsMoneyPage() {
   }, [data]);
 
   return (
-    <MobileLayout>
+    <MobileLayout
+      bottomActions={
+        <>
+          {CATEGORIES.map((cat) => (
+            <button
+              key={cat.key}
+              className="fm-page-action"
+              onClick={() => setCategory(cat.key)}
+              style={{
+                color: category === cat.key ? 'var(--text-inverse)' : 'var(--text-secondary)',
+                background: category === cat.key ? 'var(--accent)' : 'transparent',
+                borderColor: category === cat.key ? 'var(--text-primary)' : 'transparent',
+                boxShadow: category === cat.key ? '3px 3px 0 var(--text-primary)' : undefined,
+              }}
+            >
+              <span>{cat.label}</span>
+            </button>
+          ))}
+        </>
+      }
+    >
       <MobilePageHeader
         Icon={Wallet}
         title="Деньги в фондах"
@@ -101,35 +121,8 @@ export default function MobileFundsMoneyPage() {
         helpLink="/methodology/funds-money"
       />
 
-      {/* Category chips */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: 6,
-          padding: '0 12px 8px',
-        }}
-      >
-        {CATEGORIES.map((cat) => (
-          <button
-            key={cat.key}
-            className={`fm-chip ${category === cat.key ? 'active' : ''}`}
-            onClick={() => setCategory(cat.key)}
-            style={{ justifyContent: 'center' }}
-          >
-            {cat.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Period chips */}
-      <div
-        style={{
-          display: 'flex',
-          gap: 6,
-          padding: '0 12px 8px',
-        }}
-      >
+      {/* Period chips остаются в шапке (категории — внизу через bottomActions) */}
+      <div style={{ display: 'flex', gap: 6, padding: '0 12px 8px' }}>
         {PERIODS.map((p) => (
           <button
             key={p.key}
@@ -143,19 +136,10 @@ export default function MobileFundsMoneyPage() {
       </div>
 
       {/* Chart */}
-      <div className="fm-frame">
-        <div style={{ margin: '0 -10px' }}>
-          <MobileChart
-            series={chartSeries}
-            height={300}
-            loading={loading}
-          />
+      <div className="fm-frame" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        <div style={{ margin: '0 -10px', flex: 1, minHeight: 0 }}>
+          <MobileChart series={chartSeries} loading={loading} />
         </div>
-        {data && (
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-            Суммарная СЧА категории в млрд руб. Синяя линия — индекс-эталон для сравнения.
-          </div>
-        )}
       </div>
     </MobileLayout>
   );

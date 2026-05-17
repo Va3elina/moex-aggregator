@@ -30,7 +30,9 @@ export interface MobileChartSeries {
 
 interface MobileChartProps {
   series: MobileChartSeries[];
-  /** Высота canvas в px. На мобиле обычно 240-320. */
+  /** Фиксированная высота canvas в px. Если не задана — chart авто-фитится
+   *  в контейнер через ResizeObserver (parent должен иметь flex:1 или явную
+   *  высоту). */
   height?: number;
   /** Видимость X-axis date labels. */
   showXLabels?: boolean;
@@ -46,29 +48,35 @@ const LONG_PRESS_MS = 300;
 
 export default function MobileChart({
   series,
-  height = 260,
+  height: heightProp,
   showXLabels = true,
   formatXLabel,
   loading = false,
 }: MobileChartProps) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(360);
+  const [measuredHeight, setMeasuredHeight] = useState(260);
   const [crosshair, setCrosshair] = useState<{ idx: number; pinned: boolean } | null>(null);
   const longPressTimer = useRef<number | null>(null);
 
-  // ResizeObserver — измеряем родительский контейнер
+  // ResizeObserver — измеряем И ширину И высоту контейнера, чтобы chart
+  // мог авто-фититься в любой layout (включая flex:1).
   useEffect(() => {
     if (!wrapRef.current) return;
     const ro = new ResizeObserver((entries) => {
       for (const e of entries) {
         const w = e.contentRect.width;
+        const h = e.contentRect.height;
         if (w > 0) setWidth(Math.max(200, w));
+        if (h > 0) setMeasuredHeight(Math.max(160, h));
       }
     });
     ro.observe(wrapRef.current);
     return () => ro.disconnect();
   }, []);
 
+  // Если задан явно — используем; иначе измеренная высота контейнера.
+  const height = heightProp ?? measuredHeight;
   const innerW = width - PAD_X * 2;
   const innerH = height - PAD_TOP - PAD_BOTTOM;
 
@@ -186,7 +194,7 @@ export default function MobileChart({
     if (loading) {
       // Skeleton — placeholder с диагональными линиями имитирующими chart
       return (
-        <div ref={wrapRef} style={{ height, padding: '0 4px' }}>
+        <div ref={wrapRef} style={{ width: '100%', height: heightProp ?? '100%', minHeight: 160, padding: '0 4px' }}>
           <div
             style={{
               width: '100%',
@@ -219,7 +227,7 @@ export default function MobileChart({
     return (
       <div
         ref={wrapRef}
-        style={{ height, display: 'grid', placeItems: 'center', color: 'var(--text-muted)' }}
+        style={{ width: '100%', height: heightProp ?? '100%', minHeight: 160, display: 'grid', placeItems: 'center', color: 'var(--text-muted)' }}
       >
         Нет данных
       </div>
@@ -231,7 +239,7 @@ export default function MobileChart({
   const rightLastIdx = hasRight ? rightSeries[0].data.length - 1 : -1;
 
   return (
-    <div ref={wrapRef} style={{ position: 'relative', width: '100%', height }}>
+    <div ref={wrapRef} style={{ position: 'relative', width: '100%', height: heightProp ?? '100%', minHeight: 160 }}>
       <svg
         width={width}
         height={height}

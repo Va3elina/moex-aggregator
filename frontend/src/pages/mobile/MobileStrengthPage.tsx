@@ -85,7 +85,27 @@ export default function MobileStrengthPage() {
   }, [history]);
 
   return (
-    <MobileLayout>
+    <MobileLayout
+      bottomActions={
+        <>
+          {EMA_PERIODS.map((p) => (
+            <button
+              key={p}
+              className="fm-page-action"
+              onClick={() => setEmaPeriod(p)}
+              style={{
+                color: emaPeriod === p ? 'var(--text-inverse)' : 'var(--text-secondary)',
+                background: emaPeriod === p ? 'var(--accent)' : 'transparent',
+                borderColor: emaPeriod === p ? 'var(--text-primary)' : 'transparent',
+                boxShadow: emaPeriod === p ? '3px 3px 0 var(--text-primary)' : undefined,
+              }}
+            >
+              <span>EMA {p}</span>
+            </button>
+          ))}
+        </>
+      }
+    >
       <MobilePageHeader
         Icon={Activity}
         title="Сила рынка"
@@ -141,32 +161,12 @@ export default function MobileStrengthPage() {
         )}
       </div>
 
-      {/* EMA chips */}
-      <div
-        style={{
-          display: 'flex',
-          gap: 6,
-          padding: '0 12px 8px',
-        }}
-      >
-        {EMA_PERIODS.map((p) => (
-          <button
-            key={p}
-            className={`fm-chip ${emaPeriod === p ? 'active' : ''}`}
-            onClick={() => setEmaPeriod(p)}
-            style={{ flex: 1, justifyContent: 'center' }}
-          >
-            EMA {p}
-          </button>
-        ))}
-      </div>
-
-      {/* History chart */}
-      <div className="fm-frame">
-        <div style={{ margin: '0 -10px' }}>
-          <MobileChart series={chartSeries} height={260} loading={loading} />
+      {/* History chart — теперь занимает всё доступное место */}
+      <div className="fm-frame" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        <div style={{ margin: '0 -10px', flex: 1, minHeight: 0 }}>
+          <MobileChart series={chartSeries} loading={loading} />
         </div>
-        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
           Доля акций выше EMA{emaPeriod}. &gt;70% — широкий рост, &lt;30% — глубокая распродажа.
         </div>
       </div>

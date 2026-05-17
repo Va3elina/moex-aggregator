@@ -182,34 +182,33 @@ export default function MobileHeatmapPage() {
   };
 
   return (
-    <MobileLayout>
+    <MobileLayout
+      bottomActions={
+        <>
+          {PERIOD_OPTIONS.map((opt) => (
+            <button
+              key={opt.key}
+              className="fm-page-action"
+              onClick={() => setPeriod(opt.key)}
+              style={{
+                color: period === opt.key ? 'var(--text-inverse)' : 'var(--text-secondary)',
+                background: period === opt.key ? 'var(--accent)' : 'transparent',
+                borderColor: period === opt.key ? 'var(--text-primary)' : 'transparent',
+                boxShadow: period === opt.key ? '3px 3px 0 var(--text-primary)' : undefined,
+              }}
+            >
+              <span>{opt.label}</span>
+            </button>
+          ))}
+        </>
+      }
+    >
       <MobilePageHeader
         Icon={Grid3X3}
         title="Карта рынка"
         subtitle="IMOEX · По секторам"
         helpLink="/methodology/heatmap"
       />
-
-      {/* Period chips */}
-      <div
-        style={{
-          display: 'flex',
-          gap: 6,
-          padding: '4px 12px 8px',
-          flexShrink: 0,
-        }}
-      >
-        {PERIOD_OPTIONS.map((opt) => (
-          <button
-            key={opt.key}
-            className={`fm-chip ${period === opt.key ? 'active' : ''}`}
-            onClick={() => setPeriod(opt.key)}
-            style={{ flex: 1, justifyContent: 'center' }}
-          >
-            {opt.label}
-          </button>
-        ))}
-      </div>
 
       {/* Treemap container — full-bleed, занимает оставшееся место */}
       <div
