@@ -15,13 +15,13 @@ import type { TourStep } from '../../components/onboarding/OnboardingTour';
 
 export const oiTourSteps: TourStep[] = [
   {
-    selector: null, // Generic welcome — центрированная модалка без spotlight'а
+    selector: null, // Generic welcome — центрированная карточка без подсветки
     title: 'Открытый интерес',
     body: (
       <>
         <p style={{ marginBottom: 8 }}>
           Этот индикатор показывает <strong>сколько контрактов</strong> сейчас
-          открыто у участников рынка на фьючерсах MOEX и в каком направлении
+          открыто у участников рынка на фьючерсах Мосбиржи и в каком направлении
           стоят их позиции.
         </p>
         <p>
@@ -57,7 +57,7 @@ export const oiTourSteps: TourStep[] = [
         <ul style={{ paddingLeft: 18, marginBottom: 8 }}>
           <li><strong>Позиции</strong> — объём в контрактах</li>
           <li><strong>Участники</strong> — количество людей с позициями</li>
-          <li><strong>Только цена</strong> — без OI overlay'а</li>
+          <li><strong>Только цена</strong> — без линии открытого интереса</li>
         </ul>
       </>
     ),
@@ -68,13 +68,13 @@ export const oiTourSteps: TourStep[] = [
     title: 'Что показать на графике',
     body: (
       <>
-        <p style={{ marginBottom: 8 }}>Пять вариантов отображения OI:</p>
+        <p style={{ marginBottom: 8 }}>Пять вариантов:</p>
         <ul style={{ paddingLeft: 18 }}>
-          <li><strong>Открытый интерес</strong> — суммарно</li>
-          <li><strong>Покупки</strong> — длинные позиции</li>
-          <li><strong>Продажи</strong> — короткие позиции</li>
+          <li><span style={{ color: 'var(--oi-amber)' }}>●</span> <strong>Открытый интерес</strong> — суммарно</li>
+          <li><span style={{ color: 'var(--oi-green)' }}>●</span> <strong>Покупки</strong> — длинные позиции</li>
+          <li><span style={{ color: 'var(--oi-red)' }}>●</span> <strong>Продажи</strong> — короткие позиции</li>
           <li><strong>Покупки + Продажи</strong> — обе серии вместе</li>
-          <li><strong>Чистая позиция</strong> — разница (зелёный = перевес покупателей, красный = продавцов)</li>
+          <li><span style={{ color: 'var(--oi-cyan)' }}>●</span> <strong>Чистая позиция</strong> — разница «покупки минус продажи». Выше нуля = перевес покупателей, ниже нуля = перевес продавцов.</li>
         </ul>
       </>
     ),
@@ -86,16 +86,17 @@ export const oiTourSteps: TourStep[] = [
     body: (
       <>
         <p style={{ marginBottom: 8 }}>
-          <strong>Синяя линия</strong> — цена фьючерса. <strong>Цветная линия</strong>
-          {' '}— выбранная OI-серия (правая ось).
+          <strong>Синяя линия</strong> — цена фьючерса (левая ось).{' '}
+          <strong>Цветная линия</strong> — выбранная серия открытого интереса
+          (правая ось).
         </p>
         <p style={{ marginBottom: 8 }}>
           Вертикальные подписи на графике — точки <strong>экспирации</strong>{' '}
           контрактов (CRH, CRM, CRU, CRZ — март, июнь, сентябрь, декабрь).
         </p>
         <p>
-          Hover'ом на точке — увидишь значения цены и OI на этот день.
-          Toggle «Цена» скрывает спот, оставляя только OI.
+          Наведи курсор на точку — увидишь значения цены и открытого интереса
+          на этот день. Кнопка «Цена» скрывает спот, оставляя только данные ОИ.
         </p>
       </>
     ),
@@ -113,8 +114,8 @@ export const oiTourSteps: TourStep[] = [
           описание формул, источников данных и инструкции по работе.
         </p>
         <p style={{ opacity: 0.7, fontSize: 12 }}>
-          Этот тур больше не появится автоматически — но если захочешь
-          повторить, найди ссылку в методологии.
+          Этот тур больше не появится автоматически — но в методологии есть
+          ссылка «Показать ещё раз», чтобы его повторить.
         </p>
       </>
     ),

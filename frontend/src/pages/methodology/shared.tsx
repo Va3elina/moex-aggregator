@@ -7,8 +7,8 @@
  *   - Только Московская биржа упоминается как публичный источник
  *   - Без англицизмов в тексте
  */
-import { Link } from 'react-router-dom';
-import { ArrowLeft, type LucideIcon } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { ArrowLeft, PlayCircle, type LucideIcon } from 'lucide-react';
 
 interface MethodologyWrapperProps {
   icon: LucideIcon;
@@ -118,6 +118,75 @@ export function ModeBlock({ title, desc }: { title: string; desc: string }) {
         {title}
       </div>
       <div style={{ color: 'var(--text-secondary)', fontSize: 14 }}>{desc}</div>
+    </div>
+  );
+}
+
+/**
+ * ReplayTourButton — кнопка перезапуска onboarding-тура.
+ *
+ * Очищает `localStorage['frame_tour_seen:<key>']` и редиректит на страницу
+ * индикатора. На странице индикатора `useFirstVisit` снова прочитает
+ * пустой ключ и auto-откроет тур.
+ */
+export function ReplayTourButton({
+  tourKey,
+  indicatorPath,
+}: {
+  /** Ключ тура — должен совпадать с тем что используется в useFirstVisit. */
+  tourKey: string;
+  /** Путь к странице индикатора. */
+  indicatorPath: string;
+}) {
+  const navigate = useNavigate();
+  return (
+    <button
+      onClick={() => {
+        try {
+          localStorage.removeItem(`frame_tour_seen:${tourKey}`);
+        } catch {
+          /* silent fail */
+        }
+        navigate(indicatorPath);
+      }}
+      className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold transition-colors hover:opacity-90"
+      style={{
+        backgroundColor: 'var(--bg-secondary)',
+        color: 'var(--text-primary)',
+        border: '2px solid var(--text-primary)',
+        borderRadius: 'var(--radius-md, 8px)',
+      }}
+    >
+      <PlayCircle size={16} />
+      Показать вводный тур ещё раз
+    </button>
+  );
+}
+
+/**
+ * Interpretation — секция «Как интерпретировать значения».
+ *
+ * Универсальный блок: одна или несколько пар «Сценарий → Что это значит».
+ * Используется во всех методологиях для трактовки графика и тренда.
+ */
+export function Interpretation({ rows }: { rows: { label: string; meaning: string }[] }) {
+  return (
+    <div className="space-y-3">
+      {rows.map((row, i) => (
+        <div
+          key={i}
+          className="p-4 rounded-xl border"
+          style={{
+            backgroundColor: 'var(--bg-secondary)',
+            borderColor: 'var(--border-color)',
+          }}
+        >
+          <div className="font-bold mb-1" style={{ color: 'var(--text-primary)', fontSize: 15 }}>
+            {row.label}
+          </div>
+          <div style={{ color: 'var(--text-secondary)', fontSize: 14 }}>{row.meaning}</div>
+        </div>
+      ))}
     </div>
   );
 }
