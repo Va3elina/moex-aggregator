@@ -12,15 +12,22 @@ import { Wallet } from 'lucide-react';
 import MobileLayout from '../../components/mobile/MobileLayout';
 import MobilePageHeader from '../../components/mobile/MobilePageHeader';
 import MobileChart from '../../components/mobile/MobileChart';
+import MobileSkeleton from '../../components/mobile/MobileSkeleton';
+import MobileFlowsHistogram from '../../components/mobile/MobileFlowsHistogram';
 import {
   getFundsChartData,
+  getFundsFlows,
   type FundsChartResponse,
+  type FundsFlowsResponse,
   type FundCategory,
   type FundPeriod,
+  type FlowTimeframe,
 } from '../../services/api';
 import { useOnboardingTour } from '../../hooks/useFirstVisit';
 import OnboardingTour from '../../components/onboarding/OnboardingTour';
 import { fundsMoneyMobileTour } from '../../data/tours/mobile';
+
+type ViewMode = 'aum' | 'flows';
 
 const CATEGORIES: Array<{ key: FundCategory; label: string }> = [
   { key: 'money_market', label: 'Деньги' },
@@ -39,12 +46,17 @@ const PERIODS: Array<{ key: FundPeriod; label: string }> = [
 export default function MobileFundsMoneyPage() {
   const [category, setCategory] = useState<FundCategory>('money_market');
   const [period, setPeriod] = useState<FundPeriod>('6m');
+  const [viewMode, setViewMode] = useState<ViewMode>('aum');
+  const [flowTimeframe, setFlowTimeframe] = useState<FlowTimeframe>('1w');
   const [data, setData] = useState<FundsChartResponse | null>(null);
+  const [flowsData, setFlowsData] = useState<FundsFlowsResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
   const tour = useOnboardingTour('funds-money');
 
+  // Загрузка данных СЧА (когда viewMode === 'aum')
   useEffect(() => {
+    if (viewMode !== 'aum') return;
     let cancelled = false;
     async function load() {
       try {
@@ -52,14 +64,33 @@ export default function MobileFundsMoneyPage() {
         const result = await getFundsChartData(category, period);
         if (!cancelled) setData(result);
       } catch (err) {
-        console.error('Ошибка funds:', err);
+        console.error('Ошибка funds aum:', err);
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
     load();
     return () => { cancelled = true; };
-  }, [category, period]);
+  }, [viewMode, category, period]);
+
+  // Загрузка flows (когда viewMode === 'flows')
+  useEffect(() => {
+    if (viewMode !== 'flows') return;
+    let cancelled = false;
+    async function load() {
+      try {
+        setLoading(true);
+        const result = await getFundsFlows(category, flowTimeframe, period);
+        if (!cancelled) setFlowsData(result);
+      } catch (err) {
+        console.error('Ошибка funds flows:', err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [viewMode, category, flowTimeframe, period]);
 
   // Series: суммарная СЧА (млрд ₽) + индекс
   const chartSeries = useMemo(() => {
@@ -127,8 +158,22 @@ export default function MobileFundsMoneyPage() {
         helpLink="/methodology/funds-money"
       />
 
-      {/* Period chips остаются в шапке (категории — внизу через bottomActions) */}
-      <div style={{ display: 'flex', gap: 6, padding: '0 12px 8px' }}>
+      {/* ViewMode toggle: СЧА / Притоки */}
+      <div style={{ display: 'flex', gap: 6, padding: '0 12px 6px' }}>
+        {(['aum', 'flows'] as const).map((m) => (
+          <button
+            key={m}
+            className={`fm-chip ${viewMode === m ? 'active' : ''}`}
+            onClick={() => setViewMode(m)}
+            style={{ flex: 1, justifyContent: 'center' }}
+          >
+            {m === 'aum' ? 'СЧА' : 'Притоки'}
+          </button>
+        ))}
+      </div>
+
+      {/* Period chips (в обоих режимах) */}
+      <div style={{ display: 'flex', gap: 6, padding: '0 12px 6px' }}>
         {PERIODS.map((p) => (
           <button
             key={p.key}
@@ -141,11 +186,37 @@ export default function MobileFundsMoneyPage() {
         ))}
       </div>
 
-      {/* Chart */}
-      <div data-tour="funds-chart" className="fm-frame" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-        <div style={{ margin: '0 -10px', flex: 1, minHeight: 0 }}>
-          <MobileChart series={chartSeries} loading={loading} />
+      {/* Flow timeframe — только в режиме Притоки */}
+      {viewMode === 'flows' && (
+        <div style={{ display: 'flex', gap: 6, padding: '0 12px 8px' }}>
+          {(['1d', '1w', '1m'] as FlowTimeframe[]).map((tf) => (
+            <button
+              key={tf}
+              className={`fm-chip ${flowTimeframe === tf ? 'active' : ''}`}
+              onClick={() => setFlowTimeframe(tf)}
+              style={{ flex: 1, justifyContent: 'center' }}
+            >
+              {tf === '1d' ? 'День' : tf === '1w' ? 'Неделя' : 'Месяц'}
+            </button>
+          ))}
         </div>
+      )}
+
+      {/* Chart area */}
+      <div data-tour="funds-chart" className="fm-frame" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        {viewMode === 'aum' ? (
+          <div style={{ margin: '0 -10px', flex: 1, minHeight: 0 }}>
+            <MobileChart series={chartSeries} loading={loading} />
+          </div>
+        ) : loading ? (
+          <MobileSkeleton variant="chart" height="100%" />
+        ) : flowsData && flowsData.flows.length > 0 ? (
+          <MobileFlowsHistogram flows={flowsData.flows} />
+        ) : (
+          <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: 'var(--text-muted)' }}>
+            Нет данных
+          </div>
+        )}
       </div>
 
       <OnboardingTour
