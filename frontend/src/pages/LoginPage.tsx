@@ -52,6 +52,9 @@ export default function LoginPage() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [providers, setProviders] = useState<OAuthProvider[]>([]);
+    // Согласие на обработку персональных данных (ФЗ-152). Active consent —
+    // не pre-checked, submit заблокирован пока юзер не согласится.
+    const [agreedToTerms, setAgreedToTerms] = useState(false);
 
     // Загрузка списка провайдеров
     useEffect(() => {
@@ -278,11 +281,47 @@ export default function LoginPage() {
                         </div>
                     </div>
 
+                    {/* Consent checkbox — только при регистрации.
+                        ФЗ-152: active consent (не pre-checked) + явная ссылка
+                        на политику обработки персональных данных. */}
+                    {mode === 'register' && (
+                        <label
+                            className="flex items-start gap-2 cursor-pointer select-none"
+                            style={{ color: 'var(--text-secondary)' }}
+                        >
+                            <input
+                                type="checkbox"
+                                checked={agreedToTerms}
+                                onChange={(e) => setAgreedToTerms(e.target.checked)}
+                                required
+                                style={{
+                                    width: 16,
+                                    height: 16,
+                                    marginTop: 2,
+                                    accentColor: 'var(--accent)',
+                                    flexShrink: 0,
+                                    cursor: 'pointer',
+                                }}
+                            />
+                            <span className="text-xs leading-relaxed">
+                                Я даю согласие на обработку персональных данных в соответствии с{' '}
+                                <a
+                                    href="/privacy"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    style={{ color: 'var(--accent)', textDecoration: 'underline' }}
+                                >
+                                    Политикой конфиденциальности
+                                </a>
+                            </span>
+                        </label>
+                    )}
+
                     {/* Submit */}
                     <button
                         type="submit"
-                        disabled={loading}
-                        className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-bold text-sm transition-opacity disabled:opacity-50 hover:opacity-90"
+                        disabled={loading || (mode === 'register' && !agreedToTerms)}
+                        className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl font-bold text-sm transition-opacity disabled:opacity-50 disabled:cursor-not-allowed hover:opacity-90"
                         style={{ backgroundColor: 'var(--accent)', color: 'var(--bg-primary)' }}
                     >
                         {loading ? (

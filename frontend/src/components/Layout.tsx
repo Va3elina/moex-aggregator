@@ -457,8 +457,10 @@ export default function Layout() {
       </main>
 
       {/* Footer — компактный, со ссылками на обязательные документы.
-          Bottom of every page. Privacy/Contacts/Refund/Delivery/Security
-          обязательны для эквайринга Т-Банка (см. требования к интернет-магазину). */}
+          Privacy/Contacts/Refund/Delivery — обязательны для эквайринга Т-Банка
+          (см. требования к интернет-магазину). Layout: однострочный flex с
+          равномерным распределением (justify-between на широких, wrap на узких).
+          В конце — иконка Telegram-канала. */}
       <footer
         className="mt-12 md:mt-16 py-4 md:py-6"
         style={{
@@ -466,25 +468,40 @@ export default function Layout() {
           color: 'var(--text-muted)',
         }}
       >
-        <div className="max-w-7xl mx-auto px-4 md:px-6 flex flex-wrap items-center justify-between gap-3">
-          <span className="text-xs">© Frame · таймфрейм.рф</span>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-            <Link to="/contacts" className="transition-opacity hover:opacity-80" style={{ color: 'var(--text-secondary)' }}>
-              Контакты
-            </Link>
-            <Link to="/refund" className="transition-opacity hover:opacity-80" style={{ color: 'var(--text-secondary)' }}>
-              Возврат
-            </Link>
-            <Link to="/delivery" className="transition-opacity hover:opacity-80" style={{ color: 'var(--text-secondary)' }}>
-              Услуга
-            </Link>
-            <Link to="/security" className="transition-opacity hover:opacity-80" style={{ color: 'var(--text-secondary)' }}>
-              Безопасность
-            </Link>
-            <Link to="/privacy" className="transition-opacity hover:opacity-80" style={{ color: 'var(--text-secondary)' }}>
-              Политика обработки данных
-            </Link>
-          </div>
+        <div className="max-w-7xl mx-auto px-4 md:px-6 flex flex-wrap items-center justify-between gap-x-5 gap-y-2 text-xs">
+          <span>© Frame · таймфрейм.рф</span>
+          <Link to="/contacts" className="transition-opacity hover:opacity-80" style={{ color: 'var(--text-secondary)' }}>
+            Контакты
+          </Link>
+          <Link to="/refund" className="transition-opacity hover:opacity-80" style={{ color: 'var(--text-secondary)' }}>
+            Возврат
+          </Link>
+          <Link to="/delivery" className="transition-opacity hover:opacity-80" style={{ color: 'var(--text-secondary)' }}>
+            Услуга
+          </Link>
+          <Link to="/privacy" className="transition-opacity hover:opacity-80" style={{ color: 'var(--text-secondary)' }}>
+            Политика обработки данных
+          </Link>
+          <a
+            href="https://t.me/FrameTool"
+            target="_blank"
+            rel="noreferrer noopener"
+            className="inline-flex items-center gap-1.5 transition-opacity hover:opacity-80"
+            style={{ color: 'var(--text-secondary)' }}
+            aria-label="Telegram-канал Фрейм"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              width="16"
+              height="16"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              {/* Telegram paper-plane glyph — single path, brand-recognizable */}
+              <path d="M9.78 18.65l.28-4.23 7.68-6.92c.34-.31-.07-.46-.52-.19L7.74 13.3 3.64 12c-.88-.25-.89-.86.2-1.3l15.97-6.16c.73-.33 1.43.18 1.15 1.3l-2.72 12.81c-.19.91-.74 1.13-1.5.71L12.6 16.3l-1.99 1.93c-.23.23-.42.42-.83.42z" />
+            </svg>
+            Telegram
+          </a>
         </div>
       </footer>
     </div>

@@ -1,6 +1,7 @@
 import { useEffect, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import ResponsiveRoute from './components/ResponsiveRoute';
+import { useIsMobile } from './hooks/useIsMobile';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AnalyticsProvider, AnalyticsPageViewTracker } from './contexts/AnalyticsContext';
@@ -35,10 +36,12 @@ import SeasonalityMethodologyPage from './pages/methodology/SeasonalityMethodolo
 import CbrFlowsMethodologyPage from './pages/methodology/CbrFlowsMethodologyPage';
 import StylePreviewPage from './pages/StylePreviewPage';
 import PrivacyPage from './pages/PrivacyPage';
+import AgreementPage from './pages/legal/AgreementPage';
+import OfferPage from './pages/legal/OfferPage';
+import RecurringPage from './pages/legal/RecurringPage';
 import ContactsPage from './pages/ContactsPage';
 import RefundPage from './pages/RefundPage';
 import DeliveryPage from './pages/DeliveryPage';
-import SecurityPage from './pages/SecurityPage';
 import AdminStatsPage from './pages/AdminStatsPage';
 import AdminUserDetailPage from './pages/AdminUserDetailPage';
 
@@ -50,12 +53,20 @@ const MobileCbrFlowsPage = lazy(() => import('./pages/mobile/MobileCbrFlowsPage'
 const MobileFundsMoneyPage = lazy(() => import('./pages/mobile/MobileFundsMoneyPage'));
 const MobileSeasonalityPage = lazy(() => import('./pages/mobile/MobileSeasonalityPage'));
 const MobileStrengthPage = lazy(() => import('./pages/mobile/MobileStrengthPage'));
+const MobileFundsCatalogPage = lazy(() => import('./pages/mobile/MobileFundsCatalogPage'));
+const MobileProfilePage = lazy(() => import('./pages/mobile/MobileProfilePage'));
+const MobilePricingPage = lazy(() => import('./pages/mobile/MobilePricingPage'));
 
 /** "/" conditional: auth → Overview, guest → Landing.
     Loading state → Overview как fallback (быстрее, avoids flash). */
 function HomeRoute() {
   const { isAuthenticated, loading } = useAuth();
+  const isMobile = useIsMobile();
   if (loading) return null;
+  // На мобиле главной/лендинга нет — все (гости и авторизованные) сразу
+  // попадают на карту рынка. Heatmap доступен с free-уровня, так что
+  // гость тоже увидит контент, а не маркетинговый лендинг.
+  if (isMobile) return <Navigate to="/heatmap" replace />;
   return isAuthenticated ? <OverviewPage /> : <LandingPage />;
 }
 
@@ -123,7 +134,12 @@ export default function App() {
                 desktop={<FundsMoneyPage />}
               />
             } />
-            <Route path="/funds-catalog" element={<FundsCatalogPage />} />
+            <Route path="/funds-catalog" element={
+              <ResponsiveRoute
+                mobile={<MobileFundsCatalogPage />}
+                desktop={<FundsCatalogPage />}
+              />
+            } />
             <Route path="/buffett" element={
               <ResponsiveRoute
                 mobile={<MobileBuffettPage />}
@@ -157,19 +173,33 @@ export default function App() {
             <Route path="/methodology/strength" element={<StrengthMethodologyPage />} />
             <Route path="/methodology/seasonality" element={<SeasonalityMethodologyPage />} />
             <Route path="/methodology/cbr-flows" element={<CbrFlowsMethodologyPage />} />
-            <Route path="/profile" element={<ProfilePage />} />
+            <Route path="/profile" element={
+              <ResponsiveRoute
+                mobile={<MobileProfilePage />}
+                desktop={<ProfilePage />}
+              />
+            } />
             {/* Billing */}
-            <Route path="/pricing" element={<PricingPage />} />
+            <Route path="/pricing" element={
+              <ResponsiveRoute
+                mobile={<MobilePricingPage />}
+                desktop={<PricingPage />}
+              />
+            } />
             <Route path="/billing/success" element={<BillingSuccessPage />} />
             <Route path="/billing/fail" element={<BillingFailPage />} />
             <Route path="/billing/stub" element={<BillingStubPage />} />
             <Route path="/billing/redeem" element={<BillingRedeemPage />} />
-            {/* Privacy */}
+            {/* Privacy + Legal */}
             <Route path="/privacy" element={<PrivacyPage />} />
+            <Route path="/agreement" element={<AgreementPage />} />
+            <Route path="/offer" element={<OfferPage />} />
+            <Route path="/recurring" element={<RecurringPage />} />
             <Route path="/contacts" element={<ContactsPage />} />
             <Route path="/refund" element={<RefundPage />} />
             <Route path="/delivery" element={<DeliveryPage />} />
-            <Route path="/security" element={<SecurityPage />} />
+            {/* /security удалён 2026-05-18, редирект на главную для старых bookmark'ов */}
+            <Route path="/security" element={<Navigate to="/" replace />} />
             {/* Admin */}
             <Route path="/admin/stats" element={<AdminStatsPage />} />
             <Route path="/admin/users/:userId" element={<AdminUserDetailPage />} />

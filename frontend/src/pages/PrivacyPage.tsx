@@ -157,10 +157,10 @@ export default function PrivacyPage() {
             , отправим JSON со всеми вашими данными в течение 30 дней.
           </li>
           <li>
-            <strong>Удалить аккаунт</strong> — кнопка в{' '}
-            <Link to="/profile" style={{ color: 'var(--accent)' }}>
-              профиле
-            </Link>
+            <strong>Удалить аккаунт</strong> — отправьте запрос на{' '}
+            <a href="mailto:frameinfo@mail.ru" style={{ color: 'var(--accent)' }}>
+              frameinfo@mail.ru
+            </a>
             . Все ваши данные стираются в течение 30 дней.
           </li>
         </ul>

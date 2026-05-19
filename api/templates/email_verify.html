@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Подтверждение почты — Фрейм</title>
+  <!--
+    Email-safe styling: inline CSS, table-based layout, no JS, no external fonts.
+    Inter может не быть на email client'ах — fallback на system sans-serif.
+    Colors из editorial-dark theme Frame:
+      bg: #0E0E10 (тёплый чёрный)
+      text: #F5F1E8 (warm cream)
+      accent: #FF5C2B (pumpkin)
+      border: #F5F1E8
+  -->
+</head>
+<body style="margin:0;padding:0;background:#0E0E10;font-family:'Inter','Helvetica Neue',Arial,sans-serif;color:#F5F1E8;">
+  <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="background:#0E0E10;padding:40px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="max-width:520px;background:#17171A;border:2px solid #F5F1E8;border-radius:16px;padding:32px 28px;">
+
+          <!-- Header: FrameLogo + Beta badge -->
+          <tr>
+            <td style="padding-bottom:24px;">
+              <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                <tr>
+                  <td style="vertical-align:middle;">
+                    <!-- Inline SVG логотипа (упрощённый FrameLogo) -->
+                    <span style="display:inline-block;font-family:'Inter','Helvetica Neue',Arial,sans-serif;font-size:22px;font-weight:900;letter-spacing:-0.02em;color:#FF5C2B;">FRAME</span>
+                  </td>
+                  <td style="vertical-align:middle;padding-left:8px;">
+                    <span style="display:inline-block;border:1.5px solid #F5F1E8;border-radius:4px;padding:2px 6px;font-size:9px;font-weight:700;letter-spacing:0.08em;color:#F5F1E8;">BETA</span>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Title -->
+          <tr>
+            <td style="padding-bottom:14px;">
+              <h1 style="margin:0;font-family:'Inter','Helvetica Neue',Arial,sans-serif;font-size:24px;font-weight:800;letter-spacing:-0.02em;color:#F5F1E8;line-height:1.2;">
+                Подтверждение почты
+              </h1>
+            </td>
+          </tr>
+
+          <!-- Body text -->
+          <tr>
+            <td style="padding-bottom:24px;">
+              <p style="margin:0;font-size:14px;line-height:1.55;color:#9A9A9A;">
+                Привет! Подтверди свою почту, чтобы завершить регистрацию во Фрейме —
+                аналитической платформе по российскому рынку.
+              </p>
+            </td>
+          </tr>
+
+          <!-- CTA button -->
+          <tr>
+            <td align="center" style="padding-bottom:24px;">
+              <table role="presentation" cellspacing="0" cellpadding="0" border="0">
+                <tr>
+                  <td style="background:#FF5C2B;border:2px solid #F5F1E8;border-radius:999px;box-shadow:4px 4px 0 #F5F1E8;">
+                    <a href="{{VERIFY_URL}}"
+                       style="display:inline-block;padding:14px 32px;font-family:'Inter','Helvetica Neue',Arial,sans-serif;font-size:14px;font-weight:800;letter-spacing:0.04em;color:#0A0A0A;text-decoration:none;">
+                      ПОДТВЕРДИТЬ ПОЧТУ
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Fallback link -->
+          <tr>
+            <td style="padding-bottom:24px;">
+              <p style="margin:0 0 8px 0;font-size:11px;color:#6B6B6B;line-height:1.5;">
+                Если кнопка не работает, скопируй ссылку в браузер:
+              </p>
+              <p style="margin:0;font-size:11px;color:#5DA3E9;word-break:break-all;font-family:'IBM Plex Mono','Menlo','Courier New',monospace;line-height:1.4;">
+                {{VERIFY_URL}}
+              </p>
+            </td>
+          </tr>
+
+          <!-- Footer info -->
+          <tr>
+            <td style="border-top:1px solid rgba(245,241,232,0.15);padding-top:16px;">
+              <p style="margin:0 0 6px 0;font-size:11px;color:#6B6B6B;line-height:1.5;">
+                Ссылка действительна 24 часа. Если ты не регистрировался во Фрейме,
+                просто игнорируй это письмо.
+              </p>
+            </td>
+          </tr>
+
+        </table>
+
+        <!-- Brand footer below card -->
+        <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="max-width:520px;padding:20px 4px 0;">
+          <tr>
+            <td align="center">
+              <p style="margin:0;font-size:10px;color:#6B6B6B;letter-spacing:0.04em;">
+                <a href="https://xn--80aklbnczmv.xn--p1ai" style="color:#9A9A9A;text-decoration:none;font-weight:600;">таймфрейм.рф</a>
+                &nbsp;·&nbsp; Аналитика Московской биржи
+              </p>
+            </td>
+          </tr>
+        </table>
+
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

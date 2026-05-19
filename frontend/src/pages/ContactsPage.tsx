@@ -134,11 +134,6 @@ export default function ContactsPage() {
               Условия и сроки предоставления услуги
             </Link>
           </li>
-          <li>
-            <Link to="/security" style={{ color: 'var(--accent)' }}>
-              Политика информационной безопасности
-            </Link>
-          </li>
         </ul>
       </Section>
 

@@ -435,13 +435,19 @@ class TBankProvider:
         currency: str,
         description: str,
         rebill_id: str,
+        customer_key: str,
+        customer_email: str | None = None,
+        customer_phone: str | None = None,
         metadata: dict | None = None,
     ) -> dict:
         """
         Списать средства с сохранённой карты по RebillId без участия юзера.
 
         T-Bank требует двухшаговый flow:
-        1. POST /v2/Init с обычными параметрами (Recurrent НЕ передаём!) → PaymentId
+        1. POST /v2/Init с TerminalKey/Amount/OrderId/CustomerKey → PaymentId
+           ⚠️ CustomerKey ОБЯЗАТЕЛЕН — это связка с привязкой карты, без неё
+           T-Bank вернёт ErrorCode 309 «Неверные параметры». Recurrent="Y" НЕ
+           передаём (это только для первого платежа, который создаёт привязку).
         2. POST /v2/Charge с PaymentId + RebillId → T-Bank списывает мгновенно
            (без 3DS, без формы — карта уже верифицирована при первом платеже)
 
@@ -462,10 +468,14 @@ class TBankProvider:
         order_id = uuid.uuid4().hex
 
         # ── Шаг 1: Init ─────────────────────────────────────────────────
+        # CustomerKey обязателен: T-Bank по {CustomerKey+RebillId} находит
+        # привязку карты и понимает что это рекуррент. Без него /Charge на шаге 2
+        # вернёт 308 «Не найдено сохранённой карты».
         init_body: dict[str, Any] = {
             "TerminalKey": self.terminal_key,
             "Amount": int(round(amount * 100)),  # копейки!
             "OrderId": order_id,
+            "CustomerKey": customer_key[:36],
             "Description": (description or "Авто-продление подписки")[:250],
         }
         init_body["Token"] = self._make_token(init_body)
@@ -477,6 +487,13 @@ class TBankProvider:
                 for k, v in metadata.items()
                 if v is not None
             }
+
+        # Receipt (54-ФЗ) — если фискализация включена и есть контакт, T-Bank
+        # требует Receipt-блок ДЛЯ ВСЕХ /Init, включая рекуррентные. Без него
+        # терминал-с-фискализацией возвращает 309 «expected.receipt».
+        receipt = self._build_receipt(amount, description, customer_email, customer_phone)
+        if receipt is not None:
+            init_body["Receipt"] = receipt
 
         try:
             with httpx.Client(timeout=15) as client:
@@ -493,7 +510,8 @@ class TBankProvider:
         if not init_data.get("Success"):
             err = (
                 f"T-Bank Init failed: {init_data.get('Message', 'unknown')} "
-                f"(ErrorCode {init_data.get('ErrorCode')})"
+                f"(ErrorCode {init_data.get('ErrorCode')}) "
+                f"Details: {init_data.get('Details')}"
             )
             log.error("TBank.charge: %s", err)
             raise RuntimeError(err)

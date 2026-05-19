@@ -17,17 +17,6 @@ interface BillingStatus {
   cancelled_at: string | null;  // NULL → активна, NOT NULL → отменена (доступ до expires_at)
 }
 
-interface PaymentMethod {
-  id: number;
-  provider: string;
-  card_last4: string | null;
-  card_brand: string | null;   // 'VISA' | 'MASTERCARD' | 'MIR' | null
-  display_name: string;         // 'VISA ····0333' для UI
-  is_default: boolean;
-  last_used_at: string | null;
-  created_at: string | null;
-}
-
 interface HistoryItem {
   id: number;
   tier: string;
@@ -122,10 +111,6 @@ export default function ProfilePage() {
   const [billing, setBilling] = useState<BillingStatus | null>(null);
   const [cancelLoading, setCancelLoading] = useState(false);
 
-  // Сохранённые карты для recurring payments (T-Bank RebillId).
-  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
-  const [pmActionId, setPmActionId] = useState<number | null>(null);
-
   // История платежей — последние N подписок любого статуса
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [historyExpanded, setHistoryExpanded] = useState(false);
@@ -138,14 +123,6 @@ export default function ProfilePage() {
       .then(setBilling)
       .catch(() => setBilling(null));
   };
-  const fetchPaymentMethods = () => {
-    fetch('/api/billing/payment_methods', {
-      headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` },
-    })
-      .then(r => r.ok ? r.json() : { items: [] })
-      .then(d => setPaymentMethods(d.items || []))
-      .catch(() => setPaymentMethods([]));
-  };
   const fetchHistory = () => {
     fetch('/api/billing/history?limit=20', {
       headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` },
@@ -156,31 +133,8 @@ export default function ProfilePage() {
   };
   useEffect(() => {
     fetchBilling();
-    fetchPaymentMethods();
     fetchHistory();
   }, []);
-
-  // Удалить сохранённую карту (soft delete на бэке — auto-renewal на этой
-  // карте больше не сработает, но активные подписки продолжают работать
-  // до expires_at).
-  const handleDeletePaymentMethod = async (pmId: number) => {
-    if (!window.confirm(
-      'Удалить карту?\n\n' +
-      'Авто-продление подписок на этой карте перестанет работать. ' +
-      'Текущая подписка продолжит действовать до окончания оплаченного периода. ' +
-      'Сама карта удалена не будет — её можно привязать снова при следующей оплате.'
-    )) return;
-    setPmActionId(pmId);
-    try {
-      await fetch(`/api/billing/payment_methods/${pmId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` },
-      });
-      fetchPaymentMethods();
-    } finally {
-      setPmActionId(null);
-    }
-  };
 
   // Cancel или Resume — обе ручки идут через те же args, разные endpoints
   const handleSubAction = async (action: 'cancel' | 'resume') => {
@@ -201,32 +155,6 @@ export default function ProfilePage() {
       fetchBilling();
     } finally {
       setCancelLoading(false);
-    }
-  };
-
-  // OAuth connect — редирект на провайдера. Если backend увидит совпадение
-  // email с текущим аккаунтом → присоединит OAuth identity. Если другой email →
-  // создаст отдельный аккаунт (не идеально, но MVP — UX лучше "Скоро").
-  const handleOAuthConnect = async (provider: string) => {
-    if (provider === 'telegram') {
-      const botId = '8604817597';
-      const origin = encodeURIComponent(window.location.origin);
-      const returnTo = encodeURIComponent(window.location.origin + '/auth/callback/telegram');
-      window.location.href = `https://oauth.telegram.org/auth?bot_id=${botId}&origin=${origin}&embed=0&request_access=write&return_to=${returnTo}`;
-      return;
-    }
-    try {
-      const resp = await fetch(`/api/auth/oauth/${provider}/url`);
-      const data = await resp.json();
-      if (resp.ok && data.url) {
-        // localStorage не sessionStorage — VK на iPhone открывает new tab,
-        // sessionStorage isolated per tab. См. LoginPage:115 для деталей.
-        if (data.code_verifier) localStorage.setItem('vk_code_verifier', data.code_verifier);
-        if (data.device_id) localStorage.setItem('vk_device_id', data.device_id);
-        window.location.href = data.url;
-      }
-    } catch {
-      /* ignore */
     }
   };
 
@@ -414,13 +342,6 @@ export default function ProfilePage() {
               </p>
             )}
 
-            {billing.plan_id && (
-              <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
-                План: <span style={{ fontFamily: "'IBM Plex Mono', monospace" }}>{billing.plan_id}</span>
-                {billing.started_at && ` · с ${formatDate(billing.started_at)}`}
-              </p>
-            )}
-
             {/* Tier features — что включено в текущий tier */}
             {TIER_FEATURES[billing.tier] && (
               <>
@@ -525,92 +446,11 @@ export default function ProfilePage() {
         )}
       </div>
 
-      {/* ============ Секция 2.3: Сохранённые карты ============
-          Показываем когда у user'а есть хотя бы 1 сохранённая карта.
-          У каждой — brand + last4 (e.g. «VISA ····0333»), default-индикатор
-          и кнопка «Удалить». T-Bank продолжает хранить карту у себя
-          (юзер не «отвязывает», а скрывает у нас — auto-renewal перестаёт
-          работать). */}
-      {paymentMethods.length > 0 && (
-        <div className="rounded-2xl border p-6" style={cardStyle}>
-          <h2 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-            <Lock size={20} style={{ color: 'var(--text-muted)' }} />
-            Сохранённые карты
-          </h2>
-          <div className="space-y-3">
-            {paymentMethods.map((pm) => (
-              <div
-                key={pm.id}
-                className="flex items-center justify-between rounded-xl p-3 border"
-                style={{
-                  borderColor: 'var(--border-color)',
-                  backgroundColor: 'var(--bg-secondary)',
-                }}
-              >
-                <div className="flex items-center gap-3">
-                  {/* Иконка карты — простой brand badge */}
-                  <span
-                    className="inline-flex items-center justify-center font-bold rounded"
-                    style={{
-                      width: 44,
-                      height: 28,
-                      background:
-                        pm.card_brand === 'VISA' ? '#1A1F71'
-                        : pm.card_brand === 'MASTERCARD' ? '#EB001B'
-                        : pm.card_brand === 'MIR' ? '#0F754E'
-                        : '#3C3C3C',
-                      color: '#fff',
-                      fontSize: 11,
-                      letterSpacing: '0.04em',
-                    }}
-                    aria-label={pm.card_brand || 'Карта'}
-                  >
-                    {pm.card_brand || 'CARD'}
-                  </span>
-                  <div>
-                    <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                      ····{pm.card_last4 || '????'}
-                      {pm.is_default && (
-                        <span
-                          className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider"
-                          style={{
-                            backgroundColor: 'var(--accent)',
-                            color: '#fff',
-                          }}
-                        >
-                          основная
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                      {pm.last_used_at
-                        ? `Использована ${formatDate(pm.last_used_at)}`
-                        : 'Ещё не использовалась'}
-                    </div>
-                  </div>
-                </div>
-                <button
-                  onClick={() => handleDeletePaymentMethod(pm.id)}
-                  disabled={pmActionId === pm.id}
-                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
-                  style={{
-                    backgroundColor: 'transparent',
-                    color: 'var(--danger)',
-                    border: '1.5px solid var(--danger)',
-                  }}
-                >
-                  <XIcon size={12} />
-                  {pmActionId === pm.id ? 'Удаляем…' : 'Удалить'}
-                </button>
-              </div>
-            ))}
-          </div>
-          <p className="mt-4 text-xs" style={{ color: 'var(--text-muted)' }}>
-            При удалении карта остаётся у Т-Банка, но мы её больше не используем.
-            Активные подписки продолжат работать до окончания оплаченного периода.
-          </p>
-        </div>
-      )}
+      {/* Секция «Сохранённые карты» убрана 2026-05-18: T-Bank хранит карту
+          у себя по RebillId, нам показывать её в UI нет смысла. Юзер
+          управляет только подпиской (отмена/возобновление); при отмене
+          подписки auto-renewal cron перестаёт дёргать /v2/Charge, токен
+          у T-Bank остаётся неиспользованным. */}
 
       {/* ============ Секция 2.4: История платежей ============
           Показываем когда у юзера есть хотя бы 1 запись в history. Свёрнут по
@@ -710,7 +550,11 @@ export default function ProfilePage() {
       {/* ============ Секция 2.5: Admin — invite-ссылки (только для admin'ов) ============ */}
       {user.role === 'admin' && <AdminBillingInvites />}
 
-      {/* ============ Секция 3: Безопасность ============ */}
+      {/* ============ Секция 3: Безопасность ============
+          Скрыта для OAuth-юзеров (Telegram/VK/Google), у которых нет
+          пароля и менять нечего. Единственный контент секции —
+          форма смены пароля. */}
+      {user.has_password && (
       <div className="rounded-2xl border p-6" style={cardStyle}>
         <h2 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
           <Shield size={20} style={{ color: 'var(--text-muted)' }} />
@@ -718,8 +562,7 @@ export default function ProfilePage() {
         </h2>
 
         {/* Смена пароля */}
-        {user.has_password && (
-          <div className="mb-6">
+        <div className="mb-6">
             <h3 className="text-sm font-medium mb-3" style={{ color: 'var(--text-secondary)' }}>
               Смена пароля
             </h3>
@@ -789,77 +632,12 @@ export default function ProfilePage() {
               </button>
             </form>
           </div>
-        )}
 
-        {/* Привязанные провайдеры */}
-        <div>
-          <h3 className="text-sm font-medium mb-3" style={{ color: 'var(--text-secondary)' }}>
-            Способы входа
-          </h3>
-          <div className="space-y-2">
-            {/* Email + пароль */}
-            <div
-              className="flex items-center justify-between px-4 py-3 rounded-xl border text-sm"
-              style={{ borderColor: 'var(--border-color)' }}
-            >
-              <div className="flex items-center gap-2" style={{ color: 'var(--text-secondary)' }}>
-                <Mail size={16} />
-                <span>Email + пароль</span>
-              </div>
-              {user.has_password ? (
-                <span className="text-xs text-emerald-400 font-medium">Подключено</span>
-              ) : (
-                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Не задан</span>
-              )}
-            </div>
-
-            {/* OAuth провайдеры — все четыре подключены, можно линковать аккаунт.
-                NB: если email текущего user'а отличается от email из OAuth provider —
-                backend создаст отдельный аккаунт. Это MVP-trade-off:
-                proper "link to existing account" требует backend endpoint
-                /api/auth/oauth/link с auth + state-token. */}
-            {['Google', 'ВКонтакте', 'Яндекс', 'Telegram'].map(name => {
-              const key = name === 'ВКонтакте' ? 'vk' : name === 'Яндекс' ? 'yandex' : name.toLowerCase();
-              const connected = user.oauth_providers.includes(key);
-              return (
-                <div
-                  key={key}
-                  className="flex items-center justify-between px-4 py-3 rounded-xl border text-sm"
-                  style={{ borderColor: 'var(--border-color)' }}
-                >
-                  <div className="flex items-center gap-2" style={{ color: 'var(--text-secondary)' }}>
-                    <Shield size={16} style={{ color: 'var(--text-muted)' }} />
-                    <span>{name}</span>
-                  </div>
-                  {connected ? (
-                    <span
-                      className="text-xs font-medium px-2 py-1 rounded-full"
-                      style={{
-                        backgroundColor: 'color-mix(in srgb, var(--success) 18%, transparent)',
-                        color: 'var(--success)',
-                      }}
-                    >
-                      Подключено
-                    </span>
-                  ) : (
-                    <button
-                      onClick={() => handleOAuthConnect(key)}
-                      className="text-xs font-medium px-3 py-1 rounded-full transition-opacity hover:opacity-80"
-                      style={{
-                        backgroundColor: 'var(--bg-primary)',
-                        color: 'var(--accent)',
-                        border: '1.5px solid var(--accent)',
-                      }}
-                    >
-                      Подключить
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
+        {/* Секция «Способы входа» удалена: на финансовой платформе для
+            обычного юзера это шум. Линкование OAuth-провайдеров остаётся
+            доступным через /login flow при необходимости. */}
       </div>
+      )}
 
       {/* ============ Секция: Конфиденциальность ============ */}
       <PrivacyOptOutSection />

@@ -10,11 +10,10 @@
  *   - stub  → confirmation_url ведёт на /billing/stub (для dev без T-Bank ключей)
  */
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Check, Zap, Crown, Sparkles } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { Check, Zap, Crown, Sparkles, X } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch } from '../services/api';
-import SpeedPayButtons from '../components/billing/SpeedPayButtons';
 
 interface PlanVariant {
   plan_id: string;
@@ -40,12 +39,15 @@ interface PlansResponse {
   terminal_key?: string | null;
 }
 
-// Визуал tier'ов: иконка + акцентный цвет
+// Визуал tier'ов: иконка + акцентный цвет.
+// Editorial palette: все цвета через CSS-vars (theme-aware: light/dark).
+// Pro выделен var(--accent) (pumpkin) — это «звезда» каталога, остальные —
+// нейтральные оттенки с возрастающим контрастом снизу вверх.
 const TIER_META: Record<string, { icon: React.ReactNode; color: string; accentBg: string }> = {
-  free: { icon: <Check size={24} />, color: '#9CA3B8', accentBg: 'rgba(156,163,184,0.1)' },
-  basic: { icon: <Zap size={24} />, color: '#60A5FA', accentBg: 'rgba(96,165,250,0.1)' },
-  pro: { icon: <Crown size={24} />, color: '#C8FF2E', accentBg: 'rgba(200,255,46,0.1)' },
-  premium: { icon: <Sparkles size={24} />, color: '#F97316', accentBg: 'rgba(249,115,22,0.1)' },
+  free:    { icon: <Check size={24} />,    color: 'var(--text-muted)',     accentBg: 'color-mix(in srgb, var(--text-muted) 12%, transparent)' },
+  basic:   { icon: <Zap size={24} />,      color: 'var(--text-secondary)', accentBg: 'color-mix(in srgb, var(--text-secondary) 10%, transparent)' },
+  pro:     { icon: <Crown size={24} />,    color: 'var(--accent)',         accentBg: 'color-mix(in srgb, var(--accent) 14%, transparent)' },
+  premium: { icon: <Sparkles size={24} />, color: 'var(--text-primary)',   accentBg: 'color-mix(in srgb, var(--text-primary) 12%, transparent)' },
 };
 
 // Зеркало api/billing/plans.py::TIER_LEVELS — для сравнения «выше/ниже».
@@ -89,6 +91,16 @@ export default function PricingPage() {
   // null = ещё грузится или гость.
   const [billing, setBilling] = useState<BillingStatus | null>(null);
 
+  // === Модалка подтверждения согласий ===
+  // ФЗ-152 + общая гигиена: перед платежом юзер должен явно подтвердить
+  // принятие Соглашения + Политики конфиденциальности (всегда), а если
+  // активна опция авто-продления — ещё и Договор о рекуррентных платежах.
+  // pendingPlanId — какой plan был кликнут, ждёт подтверждения юзера.
+  // null = модалка закрыта.
+  const [pendingPlanId, setPendingPlanId] = useState<string | null>(null);
+  const [agreementConsent, setAgreementConsent] = useState<boolean>(false);
+  const [recurringConsent, setRecurringConsent] = useState<boolean>(false);
+
   // Загружаем план при mount
   useEffect(() => {
     fetch('/api/billing/plans')
@@ -124,12 +136,30 @@ export default function PricingPage() {
     return role === 'user' ? 'free' : role;
   }, [user, isAuthenticated]);
 
-  // Клик "Купить"
-  const handleCheckout = async (planId: string) => {
+  // Клик "Купить" — открываем модалку согласий (НЕ создаём checkout сразу).
+  // Гость → редирект на логин с next=/pricing (модалка не нужна).
+  const handleCheckout = (planId: string) => {
     if (!isAuthenticated) {
       navigate(`/login?next=/pricing`);
       return;
     }
+    setError(null);
+    setAgreementConsent(false);
+    setRecurringConsent(false);
+    setPendingPlanId(planId);
+  };
+
+  // Закрыть модалку без покупки
+  const closeConsent = () => {
+    setPendingPlanId(null);
+    setAgreementConsent(false);
+    setRecurringConsent(false);
+  };
+
+  // Подтверждение: создаём checkout-сессию на бэке и редиректим на pay.tbank.ru
+  const confirmCheckout = async () => {
+    if (!pendingPlanId) return;
+    const planId = pendingPlanId;
     setCheckoutLoading(planId);
     setError(null);
     try {
@@ -147,17 +177,19 @@ export default function PricingPage() {
         throw new Error(errData.detail || 'Ошибка создания платежа');
       }
       const body = await resp.json();
-      // Full-page redirect на pay.tbank.ru (или yoomoney.ru / /billing/stub).
-      // Раньше мы для T-Bank открывали iframe modal, но из-за X-Frame-Options:DENY
-      // на нашем nginx редирект внутри iframe на наш /billing/fail блокировался
-      // (ERR_BLOCKED_BY_RESPONSE). T-Bank рекомендует именно redirect-flow,
-      // когда параллельно используется SpeedPay SDK.
+      // Full-page redirect на pay.tbank.ru (или /billing/stub).
       window.location.href = body.confirmation_url;
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Ошибка');
       setCheckoutLoading(null);
+      setPendingPlanId(null);
     }
   };
+
+  // Можно ли нажать "Подтвердить":
+  //  - всегда: Соглашение+Политика конфиденциальности
+  //  - если выбрано авто-продление: ещё и Договор о рекуррентных платежах
+  const consentReady = agreementConsent && (!recurrent || recurringConsent);
 
   if (loading) return (
     <div className="max-w-6xl mx-auto p-8 text-center text-theme-secondary">Загрузка тарифов...</div>
@@ -169,61 +201,53 @@ export default function PricingPage() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 md:px-6 py-6 md:py-8">
-      {/* Заголовок */}
-      <div className="text-center mb-8">
-        <h1 className="text-3xl md:text-4xl font-bold text-theme-primary mb-3">Тарифы</h1>
-        <p className="text-theme-secondary text-base md:text-lg max-w-2xl mx-auto">
-          Выбирай тариф под задачи. Оплата через Т-Банк — карты, СБП, T-Pay.
-          Отмена в один клик.
-        </p>
+      {/* Заголовок без описательной подписи — оставляем чистый «Тарифы»,
+          подробности по способам оплаты есть в блоке внизу. */}
+      <div className="text-center mb-6 md:mb-8">
+        <h1 className="text-3xl md:text-4xl font-bold text-theme-primary">Тарифы</h1>
       </div>
 
       {/* Баннер STUB-режима — показываем только если провайдер 'stub' */}
       {data.provider === 'stub' && (
         <div className="mb-6 mx-auto max-w-3xl rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-300">
           ⚙️ <strong>Тестовый режим:</strong> эквайринг ещё не подключён, платежи не спишутся.
-          После оплаты будет страница с кнопкой "Симулировать успех" — это для разработки.
         </div>
       )}
 
-      {/* Переключатель Месяц / Год */}
-      <div className="flex justify-center mb-4">
-        <div className="inline-flex rounded-xl border p-1" style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-secondary)' }}>
+      {/* Переключатель Месяц / Год — увеличен, более заметный CTA-уровень */}
+      <div className="flex justify-center mb-8">
+        <div
+          className="inline-flex rounded-2xl border p-1.5"
+          style={{ borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-secondary)' }}
+        >
           <button
             onClick={() => setPeriod('monthly')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${period === 'monthly' ? 'bg-theme-tertiary text-theme-primary' : 'text-theme-secondary'}`}
+            className="px-6 py-3 rounded-xl text-base font-semibold transition-colors"
+            style={{
+              backgroundColor: period === 'monthly' ? 'var(--bg-tertiary)' : 'transparent',
+              color: period === 'monthly' ? 'var(--text-primary)' : 'var(--text-secondary)',
+            }}
           >
             Месяц
           </button>
           <button
             onClick={() => setPeriod('yearly')}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${period === 'yearly' ? 'bg-theme-tertiary text-theme-primary' : 'text-theme-secondary'}`}
+            className="px-6 py-3 rounded-xl text-base font-semibold transition-colors inline-flex items-center gap-2"
+            style={{
+              backgroundColor: period === 'yearly' ? 'var(--bg-tertiary)' : 'transparent',
+              color: period === 'yearly' ? 'var(--text-primary)' : 'var(--text-secondary)',
+            }}
           >
-            Год <span className="text-green-400 text-xs ml-1">−17%</span>
+            Год
+            <span
+              className="px-2 py-0.5 rounded-full text-xs font-bold"
+              style={{ background: 'var(--accent)', color: 'var(--bg-primary)' }}
+            >
+              −20%
+            </span>
           </button>
         </div>
       </div>
-
-      {/* Авто-продление — сохранить карту для будущих списаний */}
-      {data.provider === 'tbank' && (
-        <div className="flex justify-center mb-8">
-          <label
-            className="inline-flex items-center gap-2 cursor-pointer select-none"
-            style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-xs)' }}
-          >
-            <input
-              type="checkbox"
-              checked={recurrent}
-              onChange={(e) => setRecurrent(e.target.checked)}
-              className="w-4 h-4 cursor-pointer"
-              style={{ accentColor: 'var(--accent)' }}
-            />
-            <span>
-              Авто-продление: сохранить карту для следующих периодов
-            </span>
-          </label>
-        </div>
-      )}
 
       {/* Карточки тарифов */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-5">
@@ -299,11 +323,20 @@ export default function PricingPage() {
               <div className="mb-5">
                 {variant ? (
                   <>
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-3xl font-bold text-theme-primary">
+                    <div className="flex items-baseline gap-1.5 flex-wrap">
+                      <span
+                        className="font-bold text-theme-primary leading-none"
+                        style={{
+                          // Fluid scale: 1.5rem на узких → 2rem на широких карточках.
+                          // clamp() предотвращает overflow когда длинная цена (19 990 ₽)
+                          // не помещается в узкую карточку на грид 4-в-ряд.
+                          fontSize: 'clamp(1.5rem, 2.2vw, 2rem)',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
                         {variant.amount.toLocaleString('ru-RU', { maximumFractionDigits: 0 })} ₽
                       </span>
-                      <span className="text-sm text-theme-secondary">
+                      <span className="text-sm text-theme-secondary leading-none">
                         /{period === 'yearly' ? 'год' : 'мес'}
                       </span>
                     </div>
@@ -314,7 +347,15 @@ export default function PricingPage() {
                     )}
                   </>
                 ) : (
-                  <div className="text-3xl font-bold text-theme-primary">Бесплатно</div>
+                  <div
+                    className="font-bold text-theme-primary leading-none"
+                    style={{
+                      fontSize: 'clamp(1.5rem, 2.2vw, 2rem)',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    Бесплатно
+                  </div>
                 )}
               </div>
 
@@ -357,48 +398,22 @@ export default function PricingPage() {
                     : 'Меньший тариф'}
                 </button>
               ) : (
-                <>
-                  <button
-                    onClick={() => variant && handleCheckout(variant.plan_id)}
-                    disabled={!variant || checkoutLoading === variant.plan_id}
-                    className="w-full py-2.5 rounded-xl text-sm font-medium transition-colors disabled:opacity-50"
-                    style={{ backgroundColor: meta.color, color: 'var(--bg-primary)' }}
-                  >
-                    {checkoutLoading === variant?.plan_id
-                      ? 'Создаём...'
-                      : (isCurrent && billing?.cancelled_at)
-                        ? 'Продлить'
-                        : (isCurrent && cardLevel === effectiveLevel)
-                          ? 'Сменить период'
-                          : (billing?.is_active && cardLevel > effectiveLevel)
-                            ? `Перейти на ${tier.title}`
-                            : 'Оформить картой'}
-                  </button>
-
-                  {/* SpeedPay — T-Bank виджет с кнопками СБП / T-Pay / BNPL.
-                      Появляется только когда provider=tbank и SDK успел загрузиться.
-                      Список конкретных кнопок управляется в кабинете T-Bank
-                      (Магазины → Прием оплаты → Кнопки быстрой оплаты). */}
-                  {data.provider === 'tbank' && data.terminal_key && variant && (
-                    <div className="mt-3 pt-3 border-t" style={{ borderColor: 'var(--border-color)' }}>
-                      <p
-                        className="text-center mb-2 uppercase tracking-wider"
-                        style={{
-                          color: 'var(--text-muted)',
-                          fontSize: 'var(--fs-2xs, 10px)',
-                          fontWeight: 600,
-                          letterSpacing: '0.16em',
-                        }}
-                      >
-                        Или быстрее
-                      </p>
-                      <SpeedPayButtons
-                        terminalKey={data.terminal_key}
-                        planId={variant.plan_id}
-                      />
-                    </div>
-                  )}
-                </>
+                <button
+                  onClick={() => variant && handleCheckout(variant.plan_id)}
+                  disabled={!variant || checkoutLoading === variant.plan_id}
+                  className="w-full py-3 rounded-xl text-sm font-semibold transition-colors disabled:opacity-50"
+                  style={{ backgroundColor: meta.color, color: 'var(--bg-primary)' }}
+                >
+                  {checkoutLoading === variant?.plan_id
+                    ? 'Создаём...'
+                    : (isCurrent && billing?.cancelled_at)
+                      ? 'Продлить'
+                      : (isCurrent && cardLevel === effectiveLevel)
+                        ? 'Сменить период'
+                        : (billing?.is_active && cardLevel > effectiveLevel)
+                          ? `Перейти на ${tier.title}`
+                          : 'Оформить'}
+                </button>
               )}
             </div>
           );
@@ -420,7 +435,7 @@ export default function PricingPage() {
       <div className="mt-8 text-center text-sm text-theme-muted">
         <p>
           Есть вопросы? Напиши в{' '}
-          <a href="https://t.me/" target="_blank" rel="noreferrer" className="text-theme-primary hover:underline">
+          <a href="https://t.me/TorSasha" target="_blank" rel="noreferrer" className="text-theme-primary hover:underline">
             Telegram
           </a>
           {' '}или на{' '}
@@ -434,19 +449,336 @@ export default function PricingPage() {
           .
         </p>
       </div>
+
+      {/* === Модалка подтверждения согласий ===
+          Появляется при клике "Оформить картой". Юзер обязан подтвердить
+          соглашение + (если выбрано) рекуррент перед редиректом на T-Bank.
+          Это требование ФЗ-152 (явное согласие) + общая защита от
+          случайных списаний. */}
+      {pendingPlanId && (
+        <ConsentModal
+          recurrent={recurrent}
+          onRecurrentChange={setRecurrent}
+          agreementConsent={agreementConsent}
+          recurringConsent={recurringConsent}
+          onAgreementChange={setAgreementConsent}
+          onRecurringChange={setRecurringConsent}
+          onConfirm={confirmCheckout}
+          onClose={closeConsent}
+          isLoading={checkoutLoading === pendingPlanId}
+          canConfirm={consentReady}
+        />
+      )}
     </div>
   );
 }
 
 /**
- * PaymentMethods — блок «Способы оплаты» внизу страницы тарифов.
- * Обязателен для эквайринга T-Bank (Требования к Интернет-магазину):
- *   - Изображения с логотипами поддерживаемых ПС
- *   - Логотип Банка-эквайера (T-Bank)
- *   - URL ссылка на ресурсы Банка: tbank.ru
+ * ConsentModal — модальное окно подтверждения согласий перед оплатой.
  *
- * Visa/MasterCard и СБП временно убраны — Вадим согласовал с T-Bank
- * только МИР + T-Pay. Если T-Bank подключит другие методы — добавим.
+ * Два тоггла:
+ *   1. Соглашение + Политика конфиденциальности (всегда обязателен)
+ *   2. Договор о рекуррентных платежах (обязателен ТОЛЬКО если recurrent=true)
+ *
+ * Кнопка "Подтвердить" disabled до проставления всех нужных галок.
+ */
+function ConsentModal({
+  recurrent,
+  onRecurrentChange,
+  agreementConsent,
+  recurringConsent,
+  onAgreementChange,
+  onRecurringChange,
+  onConfirm,
+  onClose,
+  isLoading,
+  canConfirm,
+}: {
+  recurrent: boolean;
+  onRecurrentChange: (v: boolean) => void;
+  agreementConsent: boolean;
+  recurringConsent: boolean;
+  onAgreementChange: (v: boolean) => void;
+  onRecurringChange: (v: boolean) => void;
+  onConfirm: () => void;
+  onClose: () => void;
+  isLoading: boolean;
+  canConfirm: boolean;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center px-4 py-6"
+      style={{ background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)' }}
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="consent-modal-title"
+    >
+      <div
+        className="relative w-full max-w-md rounded-2xl border p-6"
+        style={{
+          background: 'var(--bg-secondary)',
+          borderColor: 'var(--border-color)',
+          boxShadow: '0 24px 64px rgba(0,0,0,0.4)',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Close X */}
+        <button
+          onClick={onClose}
+          aria-label="Закрыть"
+          className="absolute top-3 right-3 w-8 h-8 rounded-full flex items-center justify-center transition-colors"
+          style={{
+            color: 'var(--text-secondary)',
+            background: 'transparent',
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-tertiary)')}
+          onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+        >
+          <X size={18} />
+        </button>
+
+        <h2
+          id="consent-modal-title"
+          style={{
+            fontSize: 'var(--fs-xl, 22px)',
+            fontWeight: 800,
+            letterSpacing: '-0.02em',
+            color: 'var(--text-primary)',
+            marginBottom: '0.4rem',
+            paddingRight: '2rem',
+          }}
+        >
+          Подтверждение
+        </h2>
+        <p
+          style={{
+            fontSize: 'var(--fs-sm, 13px)',
+            color: 'var(--text-secondary)',
+            lineHeight: 1.5,
+            marginBottom: '1.25rem',
+          }}
+        >
+          Перед оплатой подтвердите согласие со следующими условиями:
+        </p>
+
+        {/* Тоггл «Авто-продление» — переехал в модалку (раньше торчал
+            отдельной строкой над тарифами, занимал место и сбивал ритм
+            страницы). Default ON: типовое поведение подписочных сервисов. */}
+        <label
+          className="flex items-center justify-between gap-3 cursor-pointer select-none mb-4 p-3 rounded-xl border"
+          style={{
+            borderColor: 'var(--border-color)',
+            background: 'transparent',
+          }}
+        >
+          <span
+            style={{
+              fontSize: 'var(--fs-sm, 13px)',
+              color: 'var(--text-primary)',
+              lineHeight: 1.4,
+            }}
+          >
+            Авто-продление
+            <span
+              style={{
+                display: 'block',
+                fontSize: 'var(--fs-xs, 11px)',
+                color: 'var(--text-muted)',
+                marginTop: 2,
+              }}
+            >
+              Карта сохранится для следующих периодов
+            </span>
+          </span>
+          <span
+            className="relative inline-flex flex-shrink-0"
+            style={{
+              width: 36,
+              height: 20,
+              borderRadius: 999,
+              background: recurrent ? 'var(--accent)' : 'var(--bg-tertiary)',
+              border: `1.5px solid ${recurrent ? 'var(--accent)' : 'var(--border-color)'}`,
+              transition: 'background 0.18s ease, border-color 0.18s ease',
+            }}
+          >
+            <span
+              style={{
+                position: 'absolute',
+                top: 1,
+                left: recurrent ? 17 : 1,
+                width: 14,
+                height: 14,
+                borderRadius: '50%',
+                background: 'var(--bg-primary)',
+                transition: 'left 0.18s ease',
+              }}
+            />
+            <input
+              type="checkbox"
+              checked={recurrent}
+              onChange={(e) => onRecurrentChange(e.target.checked)}
+              style={{
+                position: 'absolute',
+                opacity: 0,
+                inset: 0,
+                cursor: 'pointer',
+              }}
+            />
+          </span>
+        </label>
+
+        {/* Toggle 1: Agreement + Privacy */}
+        <ConsentRow
+          checked={agreementConsent}
+          onChange={onAgreementChange}
+          label={
+            <>
+              Я принимаю условия{' '}
+              <Link
+                to="/agreement"
+                target="_blank"
+                style={{ color: 'var(--accent)', textDecoration: 'underline' }}
+              >
+                Пользовательского соглашения
+              </Link>
+              {' '}и{' '}
+              <Link
+                to="/privacy"
+                target="_blank"
+                style={{ color: 'var(--accent)', textDecoration: 'underline' }}
+              >
+                Политики конфиденциальности
+              </Link>
+            </>
+          }
+        />
+
+        {/* Toggle 2: Recurring (только если выбрано авто-продление) */}
+        {recurrent && (
+          <ConsentRow
+            checked={recurringConsent}
+            onChange={onRecurringChange}
+            label={
+              <>
+                Я соглашаюсь с условиями{' '}
+                <Link
+                  to="/recurring"
+                  target="_blank"
+                  style={{ color: 'var(--accent)', textDecoration: 'underline' }}
+                >
+                  Договора о регулярных (рекуррентных) платежах
+                </Link>
+              </>
+            }
+          />
+        )}
+
+        {/* Buttons */}
+        <div className="flex gap-3 mt-6">
+          <button
+            onClick={onClose}
+            disabled={isLoading}
+            className="flex-1 py-2.5 rounded-xl text-sm font-medium border transition-colors disabled:opacity-50"
+            style={{
+              borderColor: 'var(--border-color)',
+              color: 'var(--text-secondary)',
+              background: 'transparent',
+            }}
+          >
+            Отменить
+          </button>
+          <button
+            onClick={onConfirm}
+            disabled={!canConfirm || isLoading}
+            className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{
+              background: 'var(--accent)',
+              color: 'var(--bg-primary)',
+            }}
+          >
+            {isLoading ? 'Создаём…' : 'Подтвердить'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * ConsentRow — одна строка с toggle-switch и подписью.
+ * Toggle сделан на чистом CSS через label + scaled checkbox для accessibility.
+ */
+function ConsentRow({
+  checked,
+  onChange,
+  label,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label: React.ReactNode;
+}) {
+  return (
+    <label
+      className="flex items-start gap-3 cursor-pointer select-none mb-3 p-3 rounded-xl border transition-colors"
+      style={{
+        borderColor: checked ? 'var(--accent)' : 'var(--border-color)',
+        background: checked ? 'rgba(255,92,43,0.06)' : 'transparent',
+      }}
+    >
+      <span
+        className="relative inline-flex flex-shrink-0 mt-0.5"
+        style={{
+          width: 36,
+          height: 20,
+          borderRadius: 999,
+          background: checked ? 'var(--accent)' : 'var(--bg-tertiary)',
+          border: `1.5px solid ${checked ? 'var(--accent)' : 'var(--border-color)'}`,
+          transition: 'background 0.18s ease, border-color 0.18s ease',
+        }}
+      >
+        <span
+          style={{
+            position: 'absolute',
+            top: 1,
+            left: checked ? 17 : 1,
+            width: 14,
+            height: 14,
+            borderRadius: '50%',
+            background: 'var(--bg-primary)',
+            transition: 'left 0.18s ease',
+          }}
+        />
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(e) => onChange(e.target.checked)}
+          style={{
+            position: 'absolute',
+            opacity: 0,
+            inset: 0,
+            cursor: 'pointer',
+          }}
+        />
+      </span>
+      <span
+        style={{
+          fontSize: 'var(--fs-sm, 13px)',
+          color: 'var(--text-primary)',
+          lineHeight: 1.45,
+        }}
+      >
+        {label}
+      </span>
+    </label>
+  );
+}
+
+/**
+ * PaymentMethods — блок «Способы оплаты» внизу страницы тарифов.
+ * Обязателен для эквайринга T-Bank: показываем только логотип Банка-эквайера
+ * + ссылка на tbank.ru. Логотипы конкретных ПС (МИР/T-Pay/СБП) убраны —
+ * юзер увидит все доступные варианты прямо на pay.tbank.ru.
  */
 function PaymentMethods() {
   return (
@@ -465,18 +797,6 @@ function PaymentMethods() {
       >
         Способы оплаты
       </p>
-
-      <div className="flex flex-wrap items-center justify-center gap-3 mb-6">
-        {/* МИР */}
-        <Badge background="#0F754E" color="#fff">
-          МИР
-        </Badge>
-
-        {/* T-Pay */}
-        <Badge background="#FFDD2D" color="#111">
-          T-Pay
-        </Badge>
-      </div>
 
       {/* Логотип Банка-эквайера + ссылка на tbank.ru — обязательное требование */}
       <div className="flex flex-col items-center gap-2 text-center">
@@ -528,41 +848,6 @@ function PaymentMethods() {
         </p>
       </div>
     </div>
-  );
-}
-
-/**
- * Badge — простой pill-логотип ПС с brand-colored background.
- */
-function Badge({
-  children,
-  background,
-  color,
-  italic = false,
-}: {
-  children: React.ReactNode;
-  background: string;
-  color: string;
-  italic?: boolean;
-}) {
-  return (
-    <span
-      className="inline-flex items-center justify-center font-bold"
-      style={{
-        background,
-        color,
-        padding: '6px 14px',
-        borderRadius: 4,
-        fontSize: 14,
-        fontStyle: italic ? 'italic' : 'normal',
-        letterSpacing: '0.05em',
-        minWidth: 60,
-        height: 28,
-        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif',
-      }}
-    >
-      {children}
-    </span>
   );
 }
 

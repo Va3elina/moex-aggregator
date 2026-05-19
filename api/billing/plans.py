@@ -38,14 +38,19 @@ class Plan:
 
 
 # Базовые цены (месячные). Годовые = 10×месячных (экономия 2 мес).
-BASIC_MONTHLY = 299.00
+# Basic временно снижен до 30 ₽ — для тестирования боевого T-Bank эквайринга
+# реальной картой. Вернуть обратно: BASIC_MONTHLY = 299.00.
+BASIC_MONTHLY = 30.00
 PRO_MONTHLY = 799.00
 PREMIUM_MONTHLY = 1999.00
 
 
 def _make_pair(tier: str, title_base: str, monthly_price: float, popular: bool = False) -> list[Plan]:
-    """Создаёт пару monthly + yearly для одного tier'а. Годовая = 10×месячных."""
-    yearly_price = round(monthly_price * 10, 2)  # скидка ~17% = 2 месяца бесплатно
+    """Создаёт пару monthly + yearly для одного tier'а. Годовая = 9.6×месячных (скидка 20%)."""
+    # 20% скидка относительно (monthly × 12). Округление до 10 ₽ для эстетики.
+    yearly_price_raw = monthly_price * 12 * 0.8
+    yearly_price = round(yearly_price_raw / 10) * 10
+    yearly_savings = round(monthly_price * 12 - yearly_price)
     return [
         Plan(
             plan_id=f"{tier}_monthly",
@@ -62,10 +67,10 @@ def _make_pair(tier: str, title_base: str, monthly_price: float, popular: bool =
             tier=tier,
             period="yearly",
             title=f"{title_base} — год",
-            description=f"Доступ на 365 дней. Экономия {round(monthly_price * 2, 0):.0f} ₽",
+            description=f"Доступ на 365 дней. Экономия {yearly_savings} ₽",
             amount=yearly_price,
             duration_days=365,
-            badge="Выгодно −2 мес.",
+            badge="Скидка 20%",
         ),
     ]
 

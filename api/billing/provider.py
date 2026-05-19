@@ -81,6 +81,9 @@ class PaymentProvider(Protocol):
         currency: str,
         description: str,
         rebill_id: str,
+        customer_key: str,
+        customer_email: str | None = None,
+        customer_phone: str | None = None,
         metadata: dict | None = None,
     ) -> dict:
         """

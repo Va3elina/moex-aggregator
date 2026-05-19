@@ -495,9 +495,22 @@ def current_subscription(db: Session, user: User) -> Subscription | None:
 
 
 def subscription_history(db: Session, user: User, limit: int = 20) -> list[Subscription]:
-    """Последние N подписок пользователя (для ProfilePage → История платежей)."""
+    """
+    Последние N подписок пользователя для ProfilePage → История платежей.
+
+    Фильтрация:
+    - Все «конечные» статусы (active/expired/refunded/failed/cancelled) — всегда
+    - pending — только если создан в последний час (юзер прямо сейчас платит,
+      webhook ещё не пришёл). Старые pending'и — это брошенные checkout'ы
+      («открыл форму, закрыл вкладку») и в истории не показываются.
+    """
+    pending_cutoff = datetime.now(timezone.utc) - timedelta(hours=1)
     return db.query(Subscription).filter(
-        Subscription.user_id == user.id
+        Subscription.user_id == user.id,
+        sa_or_(
+            Subscription.status != "pending",
+            Subscription.created_at > pending_cutoff,
+        ),
     ).order_by(Subscription.created_at.desc()).limit(limit).all()
 
 
@@ -745,12 +758,19 @@ def charge_recurrent(
     db.flush()
 
     # 2. Init + Charge через провайдера
+    # customer_key: T-Bank требует ТУ ЖЕ связку CustomerKey+RebillId что и при
+    # первом платеже. Сохранён в pm.customer_key. Fallback на str(user.id)
+    # для старых записей (до 2026-05) где customer_key не сохранялся.
+    # customer_email: для Receipt-блока (54-ФЗ). Терминал-с-фискализацией без
+    # Receipt вернёт 309 «expected.receipt». Берём из user.email.
     try:
         result = provider.charge(  # type: ignore[attr-defined]
             amount=plan.amount,
             currency="RUB",
             description=f"{plan.title} — auto-renewal user #{user.id}",
             rebill_id=payment_method.rebill_id,
+            customer_key=payment_method.customer_key or str(user.id),
+            customer_email=user.email,
             metadata={
                 "user_id": str(user.id),
                 "subscription_id": str(sub.id),
