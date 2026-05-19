@@ -35,6 +35,32 @@ export function formatNumber(value: number, decimals: number = 0): string {
 }
 
 /**
+ * formatPrice — для цен инструментов с adaptive precision по магнитуде.
+ *
+ * Зачем: hard-coded `formatNumber(v, 0)` для FX/commodity-фьючерсов даёт
+ * катастрофическую потерю точности (EUR/USD = 1.1635 → "1"). Финансовая
+ * норма — больше знаков на меньших значениях.
+ *
+ *   abs ≥ 100  → 0 знаков ("33 034")
+ *   abs ≥ 10   → 2 знака  ("33.50", "74.09")
+ *   abs ≥ 1    → 4 знака  ("1.1635", "9.4365")
+ *   abs <  1   → 4 знака  ("0.7223")
+ *   0          → "0"
+ *
+ * Использовать для цены актива в chart formatValue.
+ * НЕ использовать для OI/контрактов (там целые числа десятками тысяч).
+ */
+export function formatPrice(value: number): string {
+  const abs = Math.abs(value);
+  let decimals: number;
+  if (abs === 0) decimals = 0;
+  else if (abs >= 100) decimals = 0;
+  else if (abs >= 10)  decimals = 2;
+  else                 decimals = 4;
+  return formatNumber(value, decimals);
+}
+
+/**
  * Краткий формат для больших чисел: "1.5 млрд", "234 млн".
  * Авто-выбирает unit на основе масштаба value.
  */

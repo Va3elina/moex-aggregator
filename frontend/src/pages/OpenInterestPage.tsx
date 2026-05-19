@@ -21,6 +21,7 @@ import { useFitToViewport } from '../hooks/useFitToViewport';
 import { useOnboardingTour } from '../hooks/useFirstVisit';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { oiTourSteps } from '../data/tours/oi';
+import { formatPrice } from '../utils/formatNumber';
 
 type DisplayMode = 'price' | 'positions' | 'participants';
 type OIVariant = 'oi' | 'long' | 'short' | 'both' | 'net';
@@ -618,7 +619,7 @@ export default function OpenInterestPage() {
         thirdColor={colors.third}
         height={chartHeight}
         loading={loading}
-        formatValue={(v) => v.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
+        formatValue={formatPrice}
         primaryLabel={instrumentName || selectedInstrument}
         secondaryLabel={labels.secondary}
         thirdLabel={labels.third}

@@ -18,7 +18,7 @@ import { useSearchParams } from 'react-router-dom';
 import SimpleChart from '../components/SimpleChart';
 import { getChartData } from '../services/api';
 import { displayTicker } from '../utils/displayTicker';
-import { formatNumber } from '../utils/formatNumber';
+import { formatNumber, formatPrice } from '../utils/formatNumber';
 
 // Derive типа из функции — она возвращает локальный (не-exported) тип.
 type ChartData = Awaited<ReturnType<typeof getChartData>>;
@@ -179,7 +179,7 @@ export default function SignalExportPage() {
             showNavigator={false}
             showValueHeader={false}
             legendPosition="top"
-            formatValue={(v) => formatNumber(v, 0)}
+            formatValue={formatPrice}
             formatSecondaryValue={(v) => formatNumber(v, 0)}
           />
         )}
