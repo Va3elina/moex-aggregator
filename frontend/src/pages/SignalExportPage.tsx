@@ -71,10 +71,12 @@ export default function SignalExportPage() {
   [data]);
 
   const oiData = useMemo(() =>
-    (data?.open_interest ?? []).map((o: { time: string; net_position: number }) => ({
-      time: o.time,
-      value: o.net_position,  // чистая позиция = pos_long + pos_short
-    })),
+    (data?.open_interest ?? [])
+      .filter((o: { net_position: number | null }) => o.net_position !== null)
+      .map((o: { time: string; net_position: number | null }) => ({
+        time: o.time,
+        value: o.net_position as number,  // чистая позиция = pos_long + pos_short
+      })),
   [data]);
 
   const displayName = instrumentName || ticker;
