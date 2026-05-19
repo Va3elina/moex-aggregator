@@ -39,6 +39,7 @@ export default function SignalExportPage() {
 
   const [data, setData] = useState<ChartData | null>(null);
   const [ready, setReady] = useState(false);
+  const [markerPos, setMarkerPos] = useState<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     if (!ticker) return;
@@ -55,10 +56,53 @@ export default function SignalExportPage() {
   }, [ticker, clgroup, period]);
 
   // После того как SimpleChart рендеренmounted с данными — ждём короткий промежуток
-  // на анимацию SVG-paths, потом ставим ready=true.
+  // на анимацию SVG-paths, потом находим last point OI-линии (orange-stroke path)
+  // и ставим marker позицию. Затем ready=true → Playwright делает screenshot.
   useEffect(() => {
     if (!data) return;
-    const t = setTimeout(() => setReady(true), 1500);
+    const t = setTimeout(() => {
+      // Walk SVG, найти secondary (OI) path и взять его endpoint.
+      // SimpleChart рисует secondary линию с stroke = secondaryColor (var(--accent)).
+      const svg = document.querySelector<SVGSVGElement>('[data-signal-export-root] svg');
+      if (svg) {
+        // Берём все path-элементы с не-нулевой длиной, выбираем тот что нарисован
+        // вторичным цветом (orange). Fallback: последний path в SVG.
+        const paths = Array.from(svg.querySelectorAll<SVGPathElement>('path[d]'));
+        const accentPath = paths
+          .filter((p) => {
+            const stroke = p.getAttribute('stroke') || getComputedStyle(p).stroke;
+            // Сматчим оранжевый (rgb(255, 92, 43) или var(--accent))
+            return /5C2B|255.*92.*43|--accent/i.test(stroke);
+          })
+          .pop();
+        const target = accentPath || paths[paths.length - 1];
+        if (target) {
+          try {
+            const len = target.getTotalLength();
+            if (len > 0) {
+              const pt = target.getPointAtLength(len);
+              // pt в SVG user-space. Конвертируем в screen coords относительно root.
+              const ctm = target.getCTM();
+              const svgRect = svg.getBoundingClientRect();
+              const rootRect =
+                document.querySelector('[data-signal-export-root]')?.getBoundingClientRect() ||
+                svgRect;
+              if (ctm) {
+                const screenX = svgRect.left + (pt.x * ctm.a + pt.y * ctm.c + ctm.e);
+                const screenY = svgRect.top + (pt.x * ctm.b + pt.y * ctm.d + ctm.f);
+                setMarkerPos({
+                  x: screenX - rootRect.left,
+                  y: screenY - rootRect.top,
+                });
+              }
+            }
+          } catch {
+            // SVG может ещё не быть готов / path malformed — fallback на approximate
+          }
+        }
+      }
+      setReady(true);
+    }, 1500);
     return () => clearTimeout(t);
   }, [data]);
 
@@ -96,6 +140,7 @@ export default function SignalExportPage() {
 
   return (
     <div
+      data-signal-export-root="true"
       data-render-ready={ready ? 'true' : 'false'}
       style={{
         width: CANVAS_W,
@@ -156,25 +201,26 @@ export default function SignalExportPage() {
             height={CANVAS_H - HEADER_H - FOOTER_H - PAD * 2 - 24}
             showDownloadButton={false}
             showNavigator={false}
+            showValueHeader={false}
             legendPosition="top"
             formatValue={(v) => formatNumber(v, 0)}
             formatSecondaryValue={(v) => formatNumber(v, 0)}
           />
         )}
-        {/* Marker overlay — красный кружок на правом краю (последняя точка OI) */}
-        {ready && oiData.length > 0 && (
+        {/* Marker — красный кружок точно на endpoint OI-линии (post-render DOM walk). */}
+        {ready && markerPos && (
           <div
             style={{
               position: 'absolute',
-              right: 80,
-              top: '50%',
-              transform: 'translateY(-50%)',
+              left: markerPos.x - 14,
+              top: markerPos.y - 14,
               width: 28,
               height: 28,
               borderRadius: '50%',
-              border: '3px solid var(--accent, #FF5C2B)',
+              border: '3px solid #ef4444',
               background: 'transparent',
               pointerEvents: 'none',
+              boxShadow: '0 0 0 2px rgba(239, 68, 68, 0.25)',
             }}
           />
         )}

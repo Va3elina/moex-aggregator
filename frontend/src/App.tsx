@@ -92,6 +92,19 @@ function ScrollToTop() {
   return null;
 }
 
+/**
+ * Banner показываем на всех маршрутах **кроме** /signal-export — там
+ * headless Playwright рендерит чарт для Telegram-постов и cookie-overlay
+ * только мешает (закрывает footer, попадает в скриншот). useLocation()
+ * требует жить внутри <BrowserRouter>, поэтому wrapper рендерим там же,
+ * где раньше был CookieConsentBanner.
+ */
+function ConditionalCookieBanner() {
+  const loc = useLocation();
+  if (loc.pathname.startsWith('/signal-export')) return null;
+  return <CookieConsentBanner />;
+}
+
 export default function App() {
   return (
     <ThemeProvider>
@@ -100,7 +113,7 @@ export default function App() {
       <AnalyticsProvider>
       <ScrollToTop />
       <AnalyticsPageViewTracker />
-      <CookieConsentBanner />
+      <ConditionalCookieBanner />
       <RouterErrorBoundary>
         <Routes>
           {/* Auth callback — без Layout */}
