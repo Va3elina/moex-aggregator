@@ -35,6 +35,7 @@ import StrengthMethodologyPage from './pages/methodology/StrengthMethodologyPage
 import SeasonalityMethodologyPage from './pages/methodology/SeasonalityMethodologyPage';
 import CbrFlowsMethodologyPage from './pages/methodology/CbrFlowsMethodologyPage';
 import StylePreviewPage from './pages/StylePreviewPage';
+import SignalExportPage from './pages/SignalExportPage';
 import PrivacyPage from './pages/PrivacyPage';
 import AgreementPage from './pages/legal/AgreementPage';
 import OfferPage from './pages/legal/OfferPage';
@@ -110,6 +111,9 @@ export default function App() {
 
           {/* Style preview — standalone без Layout, для оценки нового дизайна */}
           <Route path="/style-preview" element={<StylePreviewPage />} />
+
+          {/* Headless-render для signal-engine — без Layout (только chart+frame) */}
+          <Route path="/signal-export" element={<SignalExportPage />} />
 
           {/* Основное приложение */}
           <Route element={<Layout />}>
