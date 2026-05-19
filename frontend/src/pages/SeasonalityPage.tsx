@@ -18,6 +18,7 @@ import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { seasonalityTourSteps } from '../data/tours/seasonality';
 import { FUND_PALETTE } from '../config/chartTheme';
 import { useAnalytics } from '../contexts/AnalyticsContext';
+import { displayTicker } from '../utils/displayTicker';
 
 const MODE_LABELS: Record<SeasonalityMode, string> = {
   intraday: 'Внутри дня',
@@ -612,7 +613,7 @@ export default function SeasonalityPage() {
             <InstrumentIcon sectype={selectedStock} size={28} rounded="full" eager />
             <div className="flex-1 text-left">
               <div className="font-medium">{selectedName}</div>
-              <div className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)' }}>{selectedStock}</div>
+              <div className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)' }}>{displayTicker(selectedStock)}</div>
             </div>
             <ChevronDown size={14} className="text-theme-secondary" />
           </button>
@@ -688,11 +689,11 @@ export default function SeasonalityPage() {
           <div data-tour="seasonality-export" className="ml-auto">
           <ChartCaptureButton
             getTargetElement={() => chartCardRef.current}
-            filename={`frame-seasonality-${selectedStock.toLowerCase()}-${chartType}-${mode}`}
+            filename={`frame-seasonality-${displayTicker(selectedStock).replace('/', '-').toLowerCase()}-${chartType}-${mode}`}
             metadata={{
               title: 'Сезонность',
               asset: selectedName,
-              ticker: selectedStock,
+              ticker: displayTicker(selectedStock),
               details: [
                 chartType === 'histogram' ? MODE_LABELS[mode] :
                 chartType === 'price' ? `${priceDays === 9999 ? 'Всё' : priceDays + ' дн'}` :
@@ -775,7 +776,7 @@ export default function SeasonalityPage() {
               setTooltip={setTooltip}
               monthlySeries={monthlySeries}
               seriesMeta={seriesMeta}
-              assetLabel={selectedStock}
+              assetLabel={displayTicker(selectedStock)}
             />
           )
         ) : chartType === 'price' ? (
@@ -816,10 +817,10 @@ export default function SeasonalityPage() {
         {chartType === 'histogram'
           ? `Среднее изменение (${mode === 'intraday' ? 'open-to-close per hour' : 'close-to-close'}) ${MODE_LABELS[mode].toLowerCase()}`
           : chartType === 'price'
-          ? `График цены ${selectedStock} — с дивидендными гэпами и без (adjusted close)`
+          ? `График цены ${displayTicker(selectedStock)} — с дивидендными гэпами и без (adjusted close)`
           : chartType === 'test'
           ? `Экспериментальный режим: годовая траектория + 4 среза сезонности одновременно`
-          : `Кумулятивное изменение ${selectedStock} с начала года • ${yearlyData?.current_year ?? ''}`
+          : `Кумулятивное изменение ${displayTicker(selectedStock)} с начала года • ${yearlyData?.current_year ?? ''}`
         }
         {(chartType === 'histogram' || chartType === 'yearly' || chartType === 'test') && excludeDividends && (
           <span className="ml-2 text-green-500">

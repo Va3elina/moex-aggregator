@@ -577,7 +577,10 @@ export default function OpenInterestPage() {
             filename={`frame-oi-${selectedInstrument.toLowerCase()}-${interval}`}
             metadata={{
               title: 'Открытый интерес',
-              asset: instrumentName || selectedInstrument,
+              // Не фолбэчим на ticker — иначе при ещё-не-загрузившемся instrumentName
+              // получим asset=ticker и дубликат в header. composeFramedCanvas сам
+              // сделает primary fallback на title если asset undefined.
+              asset: instrumentName || undefined,
               ticker: selectedInstrument,
               details: [
                 INTERVAL_LABELS[interval as keyof typeof INTERVAL_LABELS] || `${interval}ч`,

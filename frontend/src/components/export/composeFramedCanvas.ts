@@ -129,8 +129,10 @@ function drawHeader(
     const primaryBaseline = y + primarySize * 0.85; // visual top-aligned
     ctx.fillText(primaryText, x, primaryBaseline);
 
-    // Ticker badge — INLINE справа от primary text (10px gap)
-    if (meta.ticker) {
+    // Ticker badge — INLINE справа от primary text (10px gap).
+    // Не показываем badge если ticker совпадает с primary (asset еще не загрузился
+    // и упал в fallback на сам ticker → иначе получаем "CR · CR").
+    if (meta.ticker && meta.ticker !== primaryText) {
         ctx.font = `700 ${primarySize}px ${FONT_FAMILY}`;
         const primaryW = ctx.measureText(primaryText).width;
         const tickerBadgeX = x + primaryW + 10 * dpr;
