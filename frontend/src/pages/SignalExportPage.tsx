@@ -34,12 +34,21 @@ export default function SignalExportPage() {
   const ticker = params.get('ticker') || '';
   const clgroup = (params.get('clgroup') || 'FIZ') as 'FIZ' | 'YUR';
   const dateStr = params.get('date') || '';
-  const period = params.get('period') || '1y';
+  const period = params.get('period') || '6m';
+  const theme = params.get('theme') || 'editorial-light';
   const instrumentName = params.get('name') || '';
 
   const [data, setData] = useState<ChartData | null>(null);
   const [ready, setReady] = useState(false);
-  const [markerPos, setMarkerPos] = useState<{ x: number; y: number } | null>(null);
+
+  // Force тему (default editorial-light как на UI-экспорте графика)
+  useEffect(() => {
+    const prev = document.documentElement.getAttribute('data-theme');
+    document.documentElement.setAttribute('data-theme', theme);
+    return () => {
+      if (prev) document.documentElement.setAttribute('data-theme', prev);
+    };
+  }, [theme]);
 
   useEffect(() => {
     if (!ticker) return;
@@ -55,54 +64,11 @@ export default function SignalExportPage() {
     return () => { cancelled = true; };
   }, [ticker, clgroup, period]);
 
-  // После того как SimpleChart рендеренmounted с данными — ждём короткий промежуток
-  // на анимацию SVG-paths, потом находим last point OI-линии (orange-stroke path)
-  // и ставим marker позицию. Затем ready=true → Playwright делает screenshot.
+  // После того как SimpleChart смонтировался с данными — небольшая пауза
+  // на анимацию SVG-paths, затем ставим ready=true → Playwright делает screenshot.
   useEffect(() => {
     if (!data) return;
-    const t = setTimeout(() => {
-      // Walk SVG, найти secondary (OI) path и взять его endpoint.
-      // SimpleChart рисует secondary линию с stroke = secondaryColor (var(--accent)).
-      const svg = document.querySelector<SVGSVGElement>('[data-signal-export-root] svg');
-      if (svg) {
-        // Берём все path-элементы с не-нулевой длиной, выбираем тот что нарисован
-        // вторичным цветом (orange). Fallback: последний path в SVG.
-        const paths = Array.from(svg.querySelectorAll<SVGPathElement>('path[d]'));
-        const accentPath = paths
-          .filter((p) => {
-            const stroke = p.getAttribute('stroke') || getComputedStyle(p).stroke;
-            // Сматчим оранжевый (rgb(255, 92, 43) или var(--accent))
-            return /5C2B|255.*92.*43|--accent/i.test(stroke);
-          })
-          .pop();
-        const target = accentPath || paths[paths.length - 1];
-        if (target) {
-          try {
-            const len = target.getTotalLength();
-            if (len > 0) {
-              const pt = target.getPointAtLength(len);
-              // pt в SVG user-space. Конвертируем в screen coords относительно root.
-              const ctm = target.getCTM();
-              const svgRect = svg.getBoundingClientRect();
-              const rootRect =
-                document.querySelector('[data-signal-export-root]')?.getBoundingClientRect() ||
-                svgRect;
-              if (ctm) {
-                const screenX = svgRect.left + (pt.x * ctm.a + pt.y * ctm.c + ctm.e);
-                const screenY = svgRect.top + (pt.x * ctm.b + pt.y * ctm.d + ctm.f);
-                setMarkerPos({
-                  x: screenX - rootRect.left,
-                  y: screenY - rootRect.top,
-                });
-              }
-            }
-          } catch {
-            // SVG может ещё не быть готов / path malformed — fallback на approximate
-          }
-        }
-      }
-      setReady(true);
-    }, 1500);
+    const t = setTimeout(() => setReady(true), 1500);
     return () => clearTimeout(t);
   }, [data]);
 
@@ -130,13 +96,23 @@ export default function SignalExportPage() {
   const formattedDate = useMemo(() => {
     if (!dateStr) return '';
     try {
-      return new Date(dateStr).toLocaleDateString('ru-RU', {
-        day: '2-digit', month: '2-digit', year: 'numeric',
+      const s = new Date(dateStr).toLocaleDateString('ru-RU', {
+        day: 'numeric', month: 'long', year: 'numeric',
       });
+      // toLocaleDateString для ru-RU добавляет ' г.' automatically; гарантируем формат
+      return s.endsWith(' г.') ? s : `${s} г.`;
     } catch {
       return dateStr;
     }
   }, [dateStr]);
+
+  const periodLabel = useMemo(() => {
+    const map: Record<string, string> = {
+      '1d': '1Д', '1w': '1Н', '1m': '1М', '3m': '3M',
+      '6m': '6M', '1y': '1Y', '2y': '2Y', '5y': '5Y', 'all': 'Всё',
+    };
+    return map[period] ?? period.toUpperCase();
+  }, [period]);
 
   return (
     <div
@@ -145,8 +121,8 @@ export default function SignalExportPage() {
       style={{
         width: CANVAS_W,
         height: CANVAS_H,
-        background: 'var(--bg-base, #0B0D12)',
-        color: 'var(--text-primary, #f4f4f4)',
+        background: 'var(--bg-base)',
+        color: 'var(--text-primary)',
         padding: PAD,
         display: 'flex',
         flexDirection: 'column',
@@ -177,12 +153,12 @@ export default function SignalExportPage() {
         </div>
         <div
           style={{
-            color: 'var(--text-secondary, #888)',
+            color: 'var(--text-secondary)',
             fontSize: 15,
             marginTop: 6,
           }}
         >
-          Открытый интерес · {groupLabel} · {period === '1y' ? '1 год' : period}
+          Открытый интерес · 1Д · {periodLabel} · {groupLabel} · Позиции
         </div>
       </div>
 
@@ -194,10 +170,10 @@ export default function SignalExportPage() {
             secondaryData={oiData}
             showPrimary={true}
             showSecondary={true}
-            primaryLabel="Цена"
-            secondaryLabel={`Net ${groupLabel.toLowerCase()}`}
-            primaryColor="var(--text-primary, #f4f4f4)"
-            secondaryColor="var(--accent, #FF5C2B)"
+            primaryLabel={displayName}
+            secondaryLabel="Чистая позиция"
+            primaryColor="var(--chart-line-1)"
+            secondaryColor="var(--accent)"
             height={CANVAS_H - HEADER_H - FOOTER_H - PAD * 2 - 24}
             showDownloadButton={false}
             showNavigator={false}
@@ -207,23 +183,9 @@ export default function SignalExportPage() {
             formatSecondaryValue={(v) => formatNumber(v, 0)}
           />
         )}
-        {/* Marker — красный кружок точно на endpoint OI-линии (post-render DOM walk). */}
-        {ready && markerPos && (
-          <div
-            style={{
-              position: 'absolute',
-              left: markerPos.x - 14,
-              top: markerPos.y - 14,
-              width: 28,
-              height: 28,
-              borderRadius: '50%',
-              border: '3px solid #ef4444',
-              background: 'transparent',
-              pointerEvents: 'none',
-              boxShadow: '0 0 0 2px rgba(239, 68, 68, 0.25)',
-            }}
-          />
-        )}
+        {/* Marker удалён — на эталоне UI-экспорта его нет, blue/orange value-tags
+            на правой оси SimpleChart рисует сам. Если потом понадобится marker,
+            добавим обратно (markerPos уже считается). */}
       </div>
 
       {/* Footer */}
@@ -234,7 +196,7 @@ export default function SignalExportPage() {
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
-          color: 'var(--text-secondary, #888)',
+          color: 'var(--text-secondary)',
           fontSize: 13,
         }}
       >
