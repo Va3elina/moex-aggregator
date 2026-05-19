@@ -17,9 +17,11 @@ import { useEffect, useState, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import SimpleChart from '../components/SimpleChart';
 import { getChartData } from '../services/api';
-import type { ChartResponse } from '../services/api';
 import { displayTicker } from '../utils/displayTicker';
 import { formatNumber } from '../utils/formatNumber';
+
+// Derive типа из функции — она возвращает локальный (не-exported) тип.
+type ChartData = Awaited<ReturnType<typeof getChartData>>;
 
 const CANVAS_W = 1280;
 const CANVAS_H = 720;
@@ -35,7 +37,7 @@ export default function SignalExportPage() {
   const period = params.get('period') || '1y';
   const instrumentName = params.get('name') || '';
 
-  const [data, setData] = useState<ChartResponse | null>(null);
+  const [data, setData] = useState<ChartData | null>(null);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
