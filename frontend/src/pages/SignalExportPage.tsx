@@ -17,7 +17,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import SimpleChart from '../components/SimpleChart';
 import { getChartData } from '../services/api';
-import type { ChartDataResponse } from '../services/api';
+import type { ChartResponse } from '../services/api';
 import { displayTicker } from '../utils/displayTicker';
 import { formatNumber } from '../utils/formatNumber';
 
@@ -35,7 +35,7 @@ export default function SignalExportPage() {
   const period = params.get('period') || '1y';
   const instrumentName = params.get('name') || '';
 
-  const [data, setData] = useState<ChartDataResponse | null>(null);
+  const [data, setData] = useState<ChartResponse | null>(null);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -62,17 +62,17 @@ export default function SignalExportPage() {
 
   // Подготовка данных как на OI page
   const chartData = useMemo(() =>
-    data?.candles?.map((c) => ({
+    (data?.candles ?? []).map((c: { time: string; close: number }) => ({
       time: c.time,
       value: c.close,
-    })) ?? [],
+    })),
   [data]);
 
   const oiData = useMemo(() =>
-    data?.open_interest?.map((o) => ({
+    (data?.open_interest ?? []).map((o: { time: string; net_position: number }) => ({
       time: o.time,
       value: o.net_position,  // чистая позиция = pos_long + pos_short
-    })) ?? [],
+    })),
   [data]);
 
   const displayName = instrumentName || ticker;
