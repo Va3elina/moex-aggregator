@@ -7,16 +7,23 @@
  *   - Existing StackedBidirectionalHistogram переиспользуется (адаптивен)
  *   - Hidden categories через sheet — Phase 4
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Banknote, Landmark, DollarSign, Building2 } from 'lucide-react';
 import MobileLayout from '../../components/mobile/MobileLayout';
 import MobilePageHeader from '../../components/mobile/MobilePageHeader';
-import StackedBidirectionalHistogram from '../../components/cbr/StackedBidirectionalHistogram';
+import MobileSheet from '../../components/mobile/MobileSheet';
 import MobileSkeleton from '../../components/mobile/MobileSkeleton';
-import { getCbrFlows, type CbrInstrumentType, type CbrFlowsResponse } from '../../services/api';
+import { getCategoryColor } from '../../components/cbr/cbrPalette';
+import { useTheme } from '../../contexts/ThemeContext';
+import {
+  getCbrFlows,
+  type CbrInstrumentType,
+  type CbrFlowsResponse,
+  type CbrFlowsPeriod,
+} from '../../services/api';
 import { useOnboardingTour } from '../../hooks/useFirstVisit';
 import OnboardingTour from '../../components/onboarding/OnboardingTour';
-import { cbrFlowsMobileTour } from '../../data/tours/mobile';
+import type { TourStep } from '../../components/onboarding/OnboardingTour';
 
 type PeriodFilter = '6m' | '2y' | 'all';
 
@@ -38,27 +45,140 @@ export default function MobileCbrFlowsPage() {
   const [data, setData] = useState<CbrFlowsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [timeSheetOpen, setTimeSheetOpen] = useState(false);
+  const [optionsSheetOpen, setOptionsSheetOpen] = useState(false);
+  // Hidden categories — match desktop pattern (Set, exclude from stack).
+  const [hiddenCategories, setHiddenCategories] = useState<Set<string>>(new Set());
 
   const tour = useOnboardingTour('cbr-flows');
+  // Единый паттерн тура: Intro → Кнопки → Время → Опции (с демо) → Чтение → End
+  const tourSteps: TourStep[] = [
+    {
+      selector: null,
+      title: 'Потоки ЦБ',
+      body: (
+        <>
+          <p style={{ marginBottom: 8 }}>
+            Кто покупает и кто продаёт на российском рынке: банки, СЗКО,
+            физлица, нерезиденты. Данные раскрываются Банком России
+            ежемесячно — структурный взгляд на рынок.
+          </p>
+          <p>Разберём управление и научимся читать гистограмму.</p>
+        </>
+      ),
+      onEnter: () => { setTimeSheetOpen(false); setOptionsSheetOpen(false); },
+    },
+    {
+      selector: '.fm-page-actions',
+      title: 'Кнопки управления',
+      body: (
+        <>
+          <p style={{ marginBottom: 6 }}>Снизу — 3 кнопки:</p>
+          <p style={{ marginBottom: 4 }}>
+            <strong>Время</strong> — глубина истории (6М/1Г/2Г/Всё)
+          </p>
+          <p style={{ marginBottom: 4 }}>
+            <strong>Опции</strong> — тип инструмента (Акции/ОФЗ/Валюта)
+            + скрытие отдельных категорий участников
+          </p>
+          <p>
+            <strong>Экран</strong> — развернуть гистограмму
+          </p>
+        </>
+      ),
+      position: 'top',
+      spotlightPadding: 4,
+    },
+    {
+      selector: null,
+      title: 'Период',
+      align: 'top',
+      body: (
+        <>
+          <p style={{ marginBottom: 6 }}>
+            Открыл для тебя кнопку <strong>«Время»</strong>:
+          </p>
+          <p>
+            <strong>6М / 1Г / 2Г / Всё</strong> — глубина истории помесячно.
+            На длинных периодах виден исторический контекст потоков.
+          </p>
+        </>
+      ),
+      onEnter: () => { setTimeSheetOpen(true); setOptionsSheetOpen(false); },
+    },
+    {
+      selector: null,
+      title: 'Инструменты и категории',
+      align: 'top',
+      body: (
+        <>
+          <p style={{ marginBottom: 4 }}>
+            Открыл кнопку <strong>«Опции»</strong>:
+          </p>
+          <p style={{ marginBottom: 4 }}>
+            <strong>Тип инструмента:</strong> Акции, ОФЗ (облигации фед.займа),
+            Валюта. У каждого свой список категорий участников.
+          </p>
+          <p>
+            <strong>Категории участников</strong> можно скрывать/показывать
+            индивидуально — изолируешь именно тот сегмент, что важен
+            (например, только «Физлица» или «СЗКО»).
+          </p>
+        </>
+      ),
+      onEnter: () => { setOptionsSheetOpen(true); setTimeSheetOpen(false); },
+    },
+    {
+      selector: '[data-tour="cbr-chart"]',
+      title: 'Чтение гистограммы',
+      body: (
+        <>
+          <p style={{ marginBottom: 6 }}>
+            Стек-бары по месяцам. <strong>Сверху от нуля</strong> — нетто-покупки
+            категории, <strong>снизу</strong> — нетто-продажи. Цвет = категория.
+          </p>
+          <p>
+            Зажми палец — появится тултип с конкретными значениями за месяц
+            по каждому участнику.
+          </p>
+        </>
+      ),
+      position: 'top',
+      spotlightPadding: 4,
+      onEnter: () => { setOptionsSheetOpen(false); setTimeSheetOpen(false); },
+    },
+    {
+      selector: null,
+      title: 'Готово!',
+      body: (
+        <p>
+          Нажми <strong>?</strong> рядом с заголовком — методология и
+          источники данных ЦБ (обзоры финансового рынка).
+        </p>
+      ),
+    },
+  ];
 
   // Загрузка
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
+  const loadData = useMemo(
+    () => async () => {
       try {
         setLoading(true);
         setError(null);
         const result = await getCbrFlows(type);
-        if (!cancelled) setData(result);
+        setData(result);
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Ошибка загрузки');
+        setError(err instanceof Error ? err.message : 'Ошибка загрузки');
       } finally {
-        if (!cancelled) setLoading(false);
+        setLoading(false);
       }
-    }
-    load();
-    return () => { cancelled = true; };
-  }, [type]);
+    },
+    [type],
+  );
+
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
 
   // Применение фильтра периода
   const visiblePeriods = useMemo(() => {
@@ -68,96 +188,509 @@ export default function MobileCbrFlowsPage() {
     return data.periods.slice(-opt.months);
   }, [data, period]);
 
-  // Все категории видимы (Hidden categories — Phase 4)
-  const visibleCategories = data?.categories ?? [];
+  // Hidden categories filtering
+  const visibleCategories = useMemo(
+    () => (data?.categories ?? []).filter((c) => !hiddenCategories.has(c)),
+    [data, hiddenCategories],
+  );
+
+  const toggleCategory = (cat: string) => {
+    setHiddenCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(cat)) next.delete(cat);
+      else next.add(cat);
+      return next;
+    });
+  };
+
+  const typeLabel = TYPE_TABS.find((t) => t.key === type)?.label ?? '';
+  const periodLabel = PERIOD_OPTIONS.find((p) => p.key === period)?.label ?? '';
 
   return (
     <MobileLayout
-      bottomActionsTourId="cbr-type"
-      bottomActions={
-        <>
-          {TYPE_TABS.map((tab) => {
-            const isActive = type === tab.key;
-            const Icon = tab.Icon;
-            return (
-              <button
-                key={tab.key}
-                onClick={() => setType(tab.key)}
-                className="fm-page-action"
-                style={{
-                  color: isActive ? 'var(--text-inverse)' : 'var(--text-secondary)',
-                  background: isActive ? 'var(--accent)' : 'transparent',
-                  borderColor: isActive ? 'var(--text-primary)' : 'transparent',
-                  boxShadow: isActive ? '3px 3px 0 var(--text-primary)' : undefined,
-                }}
-              >
-                <span className="fm-rail-ico"><Icon size={16} strokeWidth={2.2} /></span>
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
-        </>
-      }
+      onTimeClick={() => setTimeSheetOpen(true)}
+      timeSummary={periodLabel}
+      timeTourId="cbr-time"
+      onSettingsClick={() => setOptionsSheetOpen(true)}
+      settingsSummary={typeLabel}
+      settingsTourId="cbr-type"
+      onRefresh={loadData}
+      loading={loading}
     >
       <MobilePageHeader
         Icon={Banknote}
         title="Потоки ЦБ"
-        subtitle={data?.instrument_label ?? 'Загрузка...'}
         helpLink="/methodology/cbr-flows"
       />
 
-      {/* Period chips (компактный ряд под заголовком) */}
-      <div style={{ display: 'flex', gap: 6, padding: '0 12px 8px' }}>
-        {PERIOD_OPTIONS.map((opt) => (
-          <button
-            key={opt.key}
-            className={`fm-chip ${period === opt.key ? 'active' : ''}`}
-            onClick={() => setPeriod(opt.key)}
-            style={{ flex: 1, justifyContent: 'center' }}
-          >
-            {opt.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Chart */}
+      {/* Mobile-optimized stacked histogram — pixel coords, touch handlers,
+          vibrate tick, compact tooltip, year в датах. */}
       <div
         data-tour="cbr-chart"
-        style={{
-          margin: '0 8px',
-          padding: 8,
-          background: 'var(--bg-primary)',
-          border: '1.5px solid var(--text-primary)',
-          borderRadius: 12,
-          flex: 1,
-          minHeight: 0,
-          display: 'flex',
-          flexDirection: 'column',
-        }}
+        style={{ flex: 1, minHeight: 0, position: 'relative' }}
       >
-        {error ? (
-          <div style={{ padding: 24, color: 'var(--text-muted)', textAlign: 'center' }}>{error}</div>
-        ) : loading ? (
-          <MobileSkeleton variant="chart" height={360} />
-        ) : data && visiblePeriods.length > 0 ? (
-          <StackedBidirectionalHistogram
-            periods={visiblePeriods}
-            categories={visibleCategories}
-            unit={data.unit}
-            height={360}
-            loading={loading}
-            animTrigger={`${type}|${period}`}
-          />
-        ) : (
-          <div style={{ padding: 24, color: 'var(--text-muted)', textAlign: 'center' }}>Нет данных</div>
-        )}
+        <div style={{ position: 'absolute', inset: 0 }}>
+          {error ? (
+            <div style={{ padding: 24, color: 'var(--text-muted)', textAlign: 'center' }}>{error}</div>
+          ) : loading ? (
+            <MobileSkeleton variant="chart" height="100%" />
+          ) : data && visiblePeriods.length > 0 ? (
+            <MobileCbrHistogram
+              periods={visiblePeriods}
+              categories={visibleCategories}
+              animKey={`${type}|${period}|${Array.from(hiddenCategories).sort().join(',')}`}
+            />
+          ) : (
+            <div style={{ padding: 24, color: 'var(--text-muted)', textAlign: 'center' }}>Нет данных</div>
+          )}
+        </div>
       </div>
 
+      {/* Time sheet — period */}
+      <MobileSheet
+        open={timeSheetOpen}
+        onClose={() => setTimeSheetOpen(false)}
+        title="Период"
+      >
+        <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {PERIOD_OPTIONS.map((opt) => (
+            <button
+              key={opt.key}
+              className={`fm-chip ${period === opt.key ? 'active' : ''}`}
+              onClick={() => {
+                setPeriod(opt.key);
+                setTimeSheetOpen(false);
+              }}
+              style={{ justifyContent: 'flex-start', padding: '14px 16px' }}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </MobileSheet>
+
+      {/* Settings sheet — instrument type + категории toggle */}
+      <MobileSheet
+        open={optionsSheetOpen}
+        onClose={() => setOptionsSheetOpen(false)}
+        title="Опции"
+      >
+        <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 18 }}>
+          {/* Тип инструмента */}
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+              Тип инструмента
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {TYPE_TABS.map((tab) => {
+                const Icon = tab.Icon;
+                const isActive = type === tab.key;
+                return (
+                  <button
+                    key={tab.key}
+                    className={`fm-chip ${isActive ? 'active' : ''}`}
+                    onClick={() => setType(tab.key)}
+                    style={{ justifyContent: 'flex-start', gap: 10, padding: '12px 16px' }}
+                  >
+                    <Icon size={16} strokeWidth={2.2} />
+                    <span>{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Категории toggle */}
+          {data && data.categories.length > 0 && (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  Категории
+                </div>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600 }}>
+                  {visibleCategories.length}/{data.categories.length}
+                </div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {data.categories.map((cat) => {
+                  const visible = !hiddenCategories.has(cat);
+                  return (
+                    <CategoryToggleRow
+                      key={cat}
+                      label={cat}
+                      visible={visible}
+                      onToggle={() => toggleCategory(cat)}
+                    />
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      </MobileSheet>
+
       <OnboardingTour
-        steps={cbrFlowsMobileTour}
+        steps={tourSteps}
         open={tour.open}
         onClose={tour.close}
       />
     </MobileLayout>
+  );
+}
+
+// ──────────────────────────────────────────────────────────
+// CategoryToggleRow — строка с цветным dot + label + checkbox для toggle.
+// ──────────────────────────────────────────────────────────
+
+function CategoryToggleRow({
+  label,
+  visible,
+  onToggle,
+}: {
+  label: string;
+  visible: boolean;
+  onToggle: () => void;
+}) {
+  const { theme } = useTheme();
+  const color = getCategoryColor(label, theme);
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 10,
+        padding: '10px 12px',
+        background: visible ? 'var(--bg-secondary)' : 'transparent',
+        border: '1.5px solid var(--text-primary)',
+        borderRadius: 8,
+        font: 'inherit',
+        color: 'var(--text-primary)',
+        textAlign: 'left',
+        cursor: 'pointer',
+        opacity: visible ? 1 : 0.5,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
+        <span
+          style={{
+            width: 12,
+            height: 12,
+            borderRadius: 3,
+            background: color,
+            border: '1px solid var(--text-primary)',
+            flexShrink: 0,
+          }}
+        />
+        <span style={{ fontSize: 12, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {label}
+        </span>
+      </div>
+      <span style={{ fontSize: 10, fontWeight: 700, color: visible ? 'var(--accent)' : 'var(--text-muted)' }}>
+        {visible ? '●' : '○'}
+      </span>
+    </button>
+  );
+}
+
+// ──────────────────────────────────────────────────────────
+// MobileCbrHistogram — stacked bidirectional bars. Mobile-optimized:
+//   - Pixel coords через ResizeObserver
+//   - Touch handlers + vibrate
+//   - Grow-up wave animation (stagger)
+//   - Compact tooltip с values для visible categories
+//   - Smart X-labels с годом
+// ──────────────────────────────────────────────────────────
+
+function MobileCbrHistogram({
+  periods,
+  categories,
+  animKey,
+}: {
+  periods: CbrFlowsPeriod[];
+  categories: string[];
+  animKey: string;
+}) {
+  const { theme } = useTheme();
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState({ w: 360, h: 320 });
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const [touchX, setTouchX] = useState<number | null>(null);
+  const [animated, setAnimated] = useState(false);
+
+  useEffect(() => {
+    if (!wrapRef.current) return;
+    const ro = new ResizeObserver((entries) => {
+      for (const e of entries) {
+        const r = e.contentRect;
+        if (r.width > 0 && r.height > 0) {
+          setSize((prev) => {
+            if (Math.abs(prev.w - r.width) < 8 && Math.abs(prev.h - r.height) < 8) return prev;
+            return { w: Math.max(200, r.width), h: Math.max(200, r.height) };
+          });
+        }
+      }
+    });
+    ro.observe(wrapRef.current);
+    return () => ro.disconnect();
+  }, []);
+
+  // Replay animation на смену animKey (type/period/hiddenCategories).
+  useEffect(() => {
+    setAnimated(false);
+    const t = setTimeout(() => setAnimated(true), 30);
+    return () => clearTimeout(t);
+  }, [animKey]);
+
+  const { w: W, h: H } = size;
+  const padX = 8;
+  const padTop = 14;
+  const padBottom = 22;
+  const innerW = W - padX * 2;
+  const innerH = H - padTop - padBottom;
+  const midY = padTop + innerH / 2;
+  const halfH = innerH / 2;
+
+  const slotW = periods.length > 0 ? innerW / periods.length : 0;
+  // slotPadding 0.2 → barW = slotW * 0.6. Тоньше столбцы, больше воздуха
+  // между периодами (consistent с FlowsHistogram + SeasonalityBars).
+  const slotPadding = slotW * 0.2;
+  const barW = slotW - slotPadding * 2;
+
+  // Y-max: симметрично для + и − стэков по абсолютной сумме.
+  const yMax = useMemo(() => {
+    let max = 0.1;
+    for (const p of periods) {
+      let sumPos = 0, sumNeg = 0;
+      for (const cat of categories) {
+        const v = p.values[cat] ?? 0;
+        if (v > 0) sumPos += v;
+        else sumNeg += -v;
+      }
+      max = Math.max(max, sumPos, sumNeg);
+    }
+    return max;
+  }, [periods, categories]);
+
+  // Smart X-label step
+  const labelStep = Math.max(1, Math.ceil(periods.length / 5));
+
+  // Unified формат: всегда месяц-год (через end_date period'а).
+  // Quarters автоматически конвертятся: Q1=март, Q2=июнь, Q3=сент, Q4=дек.
+  const MONTH_SHORT = ['Янв','Фев','Мар','Апр','Май','Июн','Июл','Авг','Сен','Окт','Ноя','Дек'];
+  const fmtPeriodLabel = (p: CbrFlowsPeriod): string => {
+    const d = new Date(p.end_date);
+    if (isNaN(d.getTime())) return `${p.label} ${p.year}`;
+    return `${MONTH_SHORT[d.getMonth()]} '${String(d.getFullYear()).slice(-2)}`;
+  };
+
+  const updateHover = (clientX: number) => {
+    const rect = wrapRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const relX = clientX - rect.left;
+    setTouchX(relX);
+    const idx = Math.floor((relX - padX) / slotW);
+    if (idx < 0 || idx >= periods.length) {
+      setHoverIdx(null);
+      return;
+    }
+    setHoverIdx((prev) => {
+      if (prev === idx) return prev;
+      if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+        navigator.vibrate(8);
+      }
+      return idx;
+    });
+  };
+
+  return (
+    <div ref={wrapRef} style={{ position: 'relative', width: '100%', height: '100%', minHeight: 200 }}>
+      <svg
+        width={W}
+        height={H}
+        style={{ display: 'block', touchAction: 'none' }}
+        onTouchStart={(e) => updateHover(e.touches[0].clientX)}
+        onTouchMove={(e) => updateHover(e.touches[0].clientX)}
+        onTouchEnd={() => { setHoverIdx(null); setTouchX(null); }}
+      >
+        {/* Y-grid lines (3 уровня + zero) */}
+        {[0.25, 0.5, 0.75].map((t) => {
+          const yUp = midY - halfH * t;
+          const yDown = midY + halfH * t;
+          return (
+            <g key={t}>
+              <line x1={padX} y1={yUp} x2={padX + innerW} y2={yUp}
+                stroke="color-mix(in srgb, var(--text-primary) 8%, transparent)" strokeWidth={1} />
+              <line x1={padX} y1={yDown} x2={padX + innerW} y2={yDown}
+                stroke="color-mix(in srgb, var(--text-primary) 8%, transparent)" strokeWidth={1} />
+            </g>
+          );
+        })}
+        {/* Zero line */}
+        <line x1={padX} y1={midY} x2={padX + innerW} y2={midY}
+          stroke="var(--text-primary)" strokeWidth={1.2} opacity={0.6} />
+
+        {/* Y-axis labels убраны — значения видны в tooltip на тапе. */}
+
+        {/* Stacked bars per period */}
+        {periods.map((p, i) => {
+          const x = padX + i * slotW + slotPadding;
+          const isHovered = hoverIdx === i;
+          const delay = Math.min(i * 4, 200);
+          const transition = `transform 500ms cubic-bezier(0.34, 1.56, 0.64, 1) ${delay}ms, opacity 150ms ease`;
+          let stackUp = 0;
+          let stackDown = 0;
+          return (
+            <g
+              key={i}
+              opacity={hoverIdx === null || isHovered ? 1 : 0.45}
+              style={{ transition: 'opacity 150ms ease' }}
+            >
+              {categories.map((cat) => {
+                const v = p.values[cat] ?? 0;
+                if (v === 0) return null;
+                const hFinal = (Math.abs(v) / yMax) * halfH;
+                const h = animated ? hFinal : 0;
+                const color = getCategoryColor(cat, theme);
+                if (v > 0) {
+                  const stackUpFinal = (stackUp / yMax) * halfH;
+                  const stackUpAnim = animated ? stackUpFinal : 0;
+                  stackUp += v;
+                  return (
+                    <rect
+                      key={cat}
+                      x={x}
+                      y={midY - stackUpAnim - h}
+                      width={barW}
+                      height={h}
+                      fill={color}
+                      style={{ transition }}
+                    />
+                  );
+                } else {
+                  const stackDownFinal = (stackDown / yMax) * halfH;
+                  const stackDownAnim = animated ? stackDownFinal : 0;
+                  stackDown += -v;
+                  return (
+                    <rect
+                      key={cat}
+                      x={x}
+                      y={midY + stackDownAnim}
+                      width={barW}
+                      height={h}
+                      fill={color}
+                      style={{ transition }}
+                    />
+                  );
+                }
+              })}
+            </g>
+          );
+        })}
+
+        {/* Crosshair */}
+        {hoverIdx !== null && (() => {
+          const cx = padX + hoverIdx * slotW + slotW / 2;
+          return (
+            <line x1={cx} y1={padTop} x2={cx} y2={padTop + innerH}
+              stroke="var(--text-primary)" strokeWidth={1} strokeDasharray="3,3"
+              opacity={0.6} pointerEvents="none" />
+          );
+        })()}
+
+        {/* X-axis labels: только indices кратные labelStep — равномерная сетка.
+            Anchor 'start' на первом, 'middle' для остальных. Не дублируем
+            последний если он не на step — это создавало неравный gap. */}
+        {periods.map((p, i) => {
+          if (i % labelStep !== 0) return null;
+          const isFirst = i === 0;
+          const anchor: 'start' | 'middle' = isFirst ? 'start' : 'middle';
+          const x = isFirst
+            ? padX
+            : padX + i * slotW + slotW / 2;
+          return (
+            <text
+              key={`xl-${i}`}
+              x={x}
+              y={H - 6}
+              fontSize={9}
+              fontWeight={600}
+              fill="var(--text-secondary)"
+              textAnchor={anchor}
+              dominantBaseline="alphabetic"
+            >
+              {fmtPeriodLabel(p)}
+            </text>
+          );
+        })}
+      </svg>
+
+      {/* Tooltip — список visible categories со значениями */}
+      {hoverIdx !== null && touchX !== null && periods[hoverIdx] && (() => {
+        const tooltipW = 240;
+        const margin = 8;
+        const left = Math.max(margin, Math.min(touchX - tooltipW / 2, W - tooltipW - margin));
+        const p = periods[hoverIdx];
+        // Сортируем категории: сначала positive (>0), потом negative
+        const entries = categories
+          .map((c) => ({ cat: c, v: p.values[c] ?? 0 }))
+          .filter((e) => e.v !== 0);
+        return (
+          <div
+            style={{
+              position: 'absolute',
+              top: 4,
+              left,
+              width: tooltipW,
+              padding: '6px 10px',
+              background: 'var(--bg-primary)',
+              border: '1.5px solid var(--text-primary)',
+              borderRadius: 8,
+              fontSize: 11,
+              pointerEvents: 'none',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 2,
+            }}
+          >
+            {(() => {
+              // Header: полный месяц + год через end_date (quarter → месяц)
+              const ed = new Date(p.end_date);
+              const dateStr = isNaN(ed.getTime())
+                ? `${p.label} ${p.year}`
+                : ed.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
+              return (
+                <div style={{ fontSize: 10, color: 'var(--text-secondary)', fontWeight: 700, marginBottom: 2, textTransform: 'capitalize' }}>
+                  {dateStr}
+                </div>
+              );
+            })()}
+            {entries.map(({ cat, v }) => (
+              <div key={cat} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0, flex: 1 }}>
+                  <span style={{ width: 7, height: 7, borderRadius: 99, background: getCategoryColor(cat, theme), flexShrink: 0 }} />
+                  <span style={{ fontSize: 10, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {cat}
+                  </span>
+                </span>
+                <span
+                  className="mono"
+                  style={{
+                    color: v >= 0 ? 'var(--funds-flow-positive, #5BD49C)' : 'var(--funds-flow-negative, #FF7A5C)',
+                    fontWeight: 800,
+                    fontSize: 11,
+                    flexShrink: 0,
+                  }}
+                >
+                  {v >= 0 ? '+' : ''}{v.toFixed(1)} млрд ₽
+                </span>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+    </div>
   );
 }

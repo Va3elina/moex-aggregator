@@ -41,6 +41,10 @@ export interface TourStep {
    *  состояние страницы (например, режим графика) под нужный шаг, чтобы
    *  то что описывает тур, было реально видно на фоне. */
   onEnter?: () => void;
+  /** Вертикальное выравнивание для generic-шагов (selector=null).
+   *  'center' — по центру экрана (default).
+   *  'top' — у верхнего края (чтобы не перекрывать open'нутый снизу sheet). */
+  align?: 'center' | 'top';
 }
 
 export interface OnboardingTourProps {
@@ -181,6 +185,7 @@ export default function OnboardingTour({
     viewport,
     preferred: step.position,
     isMobile,
+    align: step.align,
   });
 
   // Spotlight rect with padding
@@ -377,22 +382,28 @@ function calculateTooltipPosition({
   viewport,
   preferred = 'bottom',
   isMobile,
+  align = 'center',
 }: {
   rect: DOMRect | null;
   viewport: { w: number; h: number };
   preferred?: 'top' | 'bottom' | 'left' | 'right';
   isMobile: boolean;
+  align?: 'center' | 'top';
 }): { x: number; y: number } {
   const w = isMobile ? viewport.w - TOOLTIP_MOBILE_PADDING * 2 : TOOLTIP_WIDTH;
   const estimatedHeight = 280; // rough estimate, ok для positioning
   const gap = 16;
 
-  // Generic mode (no target) — center
+  // Generic mode (no target) — center или top.
+  // align='top' нужен для шагов открывающих sheet снизу: иначе центр
+  // tooltip накладывается на содержимое sheet, юзер не видит что показано.
   if (!rect) {
-    return {
-      x: (viewport.w - w) / 2,
-      y: (viewport.h - estimatedHeight) / 2,
-    };
+    const x = (viewport.w - w) / 2;
+    if (align === 'top') {
+      // Прижимаем к верху, с небольшим отступом от safe-area
+      return { x, y: VIEWPORT_PADDING + 8 };
+    }
+    return { x, y: (viewport.h - estimatedHeight) / 2 };
   }
 
   // На mobile всегда показываем снизу target'а — проще читается

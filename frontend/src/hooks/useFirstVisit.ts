@@ -85,18 +85,33 @@ export function useFirstVisit(indicatorKey: string) {
  *   const tour = useOnboardingTour('oi');
  *   <OnboardingTour open={tour.open} onClose={tour.close} steps={...} />
  */
-export function useOnboardingTour(indicatorKey: string) {
+export function useOnboardingTour(
+  indicatorKey: string,
+  options?: { gatedBy?: string },
+) {
   const { isFirstVisit, markAsSeen } = useFirstVisit(indicatorKey);
   const [open, setOpen] = useState(false);
   const autoOpenedRef = useRef(false);
 
   useEffect(() => {
+    // Gating: per-page туры не показываются пока юзер не прошёл вводный
+    // (mobile-intro). Это избегает stacking'а двух модалок на первом
+    // визите мобилки. Если gatedBy не задан — gate не активен.
+    if (options?.gatedBy) {
+      try {
+        const guardSeen =
+          localStorage.getItem(`${STORAGE_PREFIX}${options.gatedBy}`) === '1';
+        if (!guardSeen) return;
+      } catch {
+        // localStorage недоступен → не блокируем, открываем как обычно
+      }
+    }
     if (isFirstVisit && !autoOpenedRef.current) {
       autoOpenedRef.current = true;
       const t = setTimeout(() => setOpen(true), 800);
       return () => clearTimeout(t);
     }
-  }, [isFirstVisit]);
+  }, [isFirstVisit, options?.gatedBy]);
 
   const close = useCallback(
     (markSeen: boolean) => {

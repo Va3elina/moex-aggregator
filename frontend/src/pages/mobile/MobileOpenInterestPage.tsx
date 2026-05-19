@@ -19,8 +19,7 @@ import MobilePageHeader from '../../components/mobile/MobilePageHeader';
 import MobileChart from '../../components/mobile/MobileChart';
 import MobileSheet from '../../components/mobile/MobileSheet';
 import MobileAssetSearch from '../../components/mobile/MobileAssetSearch';
-import { Clock, Settings, Star } from 'lucide-react';
-import { getChartData, getInstrument } from '../../services/api';
+import { getChartData } from '../../services/api';
 import type { ChartResponse } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
 import { useRealtimeData } from '../../hooks/useRealtimeData';
@@ -65,6 +64,17 @@ const INTERVAL_LABELS: Record<number, string> = {
   24: '1 день',
 };
 
+// Ограничения периодов для каждого таймфрейма (производительность + смысл).
+// Зеркалит desktop OpenInterestPage logic.
+//   - 5мин: только короткие периоды (1д/1н/1м)
+//   - 1час: до полугода
+//   - 1д:   все периоды (1д не имеет смысла — переключаем на 1н)
+const MAX_PERIODS_BY_INTERVAL: Record<number, Period[]> = {
+  5: ['1d', '1w', '1m'],
+  60: ['1d', '1w', '1m', '3m', '6m'],
+  24: ['1w', '1m', '3m', '6m', '1y', '2y', '5y', 'all'],
+};
+
 export default function MobileOpenInterestPage() {
   const { isAuthenticated } = useAuth();
 
@@ -81,6 +91,18 @@ export default function MobileOpenInterestPage() {
   // Onboarding tour — shared storage key с десктопом (juser видит онбординг
   // один раз на любом устройстве). Контент адаптирован под мобильный layout.
   const tour = useOnboardingTour('oi');
+  // Sheets state — объявляю до tourSteps чтобы onEnter мог их открывать
+  const [assetSearchOpen, setAssetSearchOpen] = useState(false);
+  const [periodSheetOpen, setPeriodSheetOpen] = useState(false);
+  const [optionsSheetOpen, setOptionsSheetOpen] = useState(false);
+
+  // === Единый паттерн тура для всех индикаторов ===
+  // 1. Intro — что это за индикатор
+  // 2. Кнопки управления — обзор всех action-кнопок (Актив/Время/Опции/Экран)
+  // 3. Время — открывает sheet с периодами и таймфреймами
+  // 4. Опции/Режимы — открывает sheet, описывает все внутренние настройки + демо смены режима
+  // 5. Чтение графика — закрывает sheets, объясняет crosshair и оси
+  // 6. End — ссылка на методологию
   const tourSteps: TourStep[] = [
     {
       selector: null,
@@ -88,48 +110,78 @@ export default function MobileOpenInterestPage() {
       body: (
         <>
           <p style={{ marginBottom: 8 }}>
-            Сколько контрактов открыто у участников рынка по фьючерсам.
+            Сколько контрактов открыто у участников рынка по фьючерсам Мосбиржи.
             И в какую сторону они ставят деньги.
           </p>
-          <p>За 4 шага покажу как пользоваться.</p>
+          <p>Разберём управление и научимся читать график.</p>
         </>
       ),
+      onEnter: () => { setAssetSearchOpen(false); setPeriodSheetOpen(false); setOptionsSheetOpen(false); },
     },
     {
-      selector: '[data-tour="oi-instrument"]',
-      title: 'Выбор актива',
+      selector: '.fm-page-actions',
+      title: 'Кнопки управления',
       body: (
-        <p>
-          Тап по плашке снизу слева — выбираешь фьючерс из списка
-          (Сбербанк, Газпром, юань-рубль и др.).
-        </p>
+        <>
+          <p style={{ marginBottom: 6 }}>Снизу — 4 кнопки:</p>
+          <p style={{ marginBottom: 4 }}>
+            <strong>Актив</strong> — выбор фьючерса (Сбер, Газпром, Si, BR…)
+          </p>
+          <p style={{ marginBottom: 4 }}>
+            <strong>Время</strong> — период и интервал
+          </p>
+          <p style={{ marginBottom: 4 }}>
+            <strong>Опции</strong> — вариант ОИ и категория участников
+          </p>
+          <p>
+            <strong>Экран</strong> — развернуть график на весь экран
+          </p>
+        </>
       ),
       position: 'top',
+      spotlightPadding: 4,
     },
     {
-      selector: '[data-tour="oi-timerange"]',
-      title: 'Время',
-      body: (
-        <p>
-          Кнопка «Время» — период (6 месяцев / 1 год / все доступные)
-          и интервал данных (день / час / 5 минут).
-        </p>
-      ),
-      position: 'top',
-    },
-    {
-      selector: '[data-tour="oi-variant"]',
-      title: 'Опции',
+      selector: null,
+      title: 'Период и интервал',
+      align: 'top',
       body: (
         <>
           <p style={{ marginBottom: 6 }}>
-            Что показывать на графике: открытый интерес, покупки, продажи
-            или чистая позиция (разница).
+            Открыл для тебя кнопку <strong>«Время»</strong>. Внутри:
           </p>
-          <p>А также: физлица vs юрлица — у них разное поведение.</p>
+          <p style={{ marginBottom: 4 }}>
+            <strong>Интервал</strong> — шаг данных: 5 мин (только до 1 месяца) /
+            1 час (до 6 месяцев) / 1 день (вся история)
+          </p>
+          <p>
+            <strong>Период</strong> — глубина истории: 1М / 6М / 1Г / Всё
+          </p>
         </>
       ),
-      position: 'top',
+      onEnter: () => { setPeriodSheetOpen(true); setOptionsSheetOpen(false); setAssetSearchOpen(false); },
+    },
+    {
+      selector: null,
+      title: 'Варианты ОИ и категории',
+      align: 'top',
+      body: (
+        <>
+          <p style={{ marginBottom: 6 }}>
+            Открыл кнопку <strong>«Опции»</strong>. Внутри:
+          </p>
+          <p style={{ marginBottom: 4 }}>
+            <strong>Вариант ОИ:</strong> общий (long+short), покупки, продажи,
+            чистая позиция (long−short), обе линии вместе.
+          </p>
+          <p>
+            <strong>Физ/Юр:</strong> биржа считает позиции отдельно для физлиц
+            и юрлиц. Их поведение часто различается — физики «на эмоциях»,
+            юрики стратегически. Сравнение групп = ключевой инсайт.
+          </p>
+        </>
+      ),
+      onEnter: () => { setOptionsSheetOpen(true); setPeriodSheetOpen(false); setAssetSearchOpen(false); },
     },
     {
       selector: '[data-tour="oi-chart"]',
@@ -137,44 +189,63 @@ export default function MobileOpenInterestPage() {
       body: (
         <>
           <p style={{ marginBottom: 6 }}>
-            Синяя линия — цена фьючерса. Цветная — выбранная серия открытого
-            интереса.
+            Голубая линия — цена фьючерса (левая ось). Цветная — выбранный
+            вариант ОИ (правая ось, в тысячах контрактов).
           </p>
           <p>
-            <strong>Зажми палец на графике</strong> — появится курсор с
-            подробными значениями на этот день.
+            <strong>Коснись и удерживай палец</strong> — появится перекрестье
+            с точными значениями на эту дату.
           </p>
         </>
       ),
-      position: 'bottom',
+      position: 'top',
       spotlightPadding: 4,
+      onEnter: () => { setOptionsSheetOpen(false); setPeriodSheetOpen(false); setAssetSearchOpen(false); },
     },
     {
       selector: null,
       title: 'Готово!',
       body: (
         <p>
-          Нажми «?» рядом с заголовком — там подробная методология
-          и сценарии трактовки.
+          Нажми <strong>?</strong> рядом с заголовком — подробная методология
+          и сценарии трактовки ОИ.
         </p>
       ),
     },
   ];
 
-  // Sheets
-  const [assetSearchOpen, setAssetSearchOpen] = useState(false);
-  const [periodSheetOpen, setPeriodSheetOpen] = useState(false);
-  const [optionsSheetOpen, setOptionsSheetOpen] = useState(false);
+  // Какие периоды доступны для текущего interval'а
+  const allowedPeriods = MAX_PERIODS_BY_INTERVAL[intervalValue] ?? MAX_PERIODS_BY_INTERVAL[24];
+  const isPeriodAvailable = (p: Period) => allowedPeriods.includes(p);
 
-  // Загрузка имени при изменении тикера (если пришло из URL)
-  useEffect(() => {
-    let cancelled = false;
-    getInstrument(selectedInstrument).then((inst) => {
-      if (cancelled) return;
-      if (inst?.name) setInstrumentName(inst.name);
-    });
-    return () => { cancelled = true; };
-  }, [selectedInstrument]);
+  // Смена interval'а: авто-перенастройка period'а если стал недоступен
+  function handleIntervalChange(newInterval: number) {
+    const allowed = MAX_PERIODS_BY_INTERVAL[newInterval] ?? MAX_PERIODS_BY_INTERVAL[24];
+    setIntervalValue(newInterval);
+    if (!allowed.includes(period)) {
+      // Берём максимальный доступный (последний в массиве)
+      setPeriod(allowed[allowed.length - 1]);
+    }
+  }
+
+  // Смена period'а: авто-фикс interval'а если выбранный не поддерживает
+  function handlePeriodChange(newPeriod: Period) {
+    setPeriod(newPeriod);
+    const currentAllowed = MAX_PERIODS_BY_INTERVAL[intervalValue] ?? MAX_PERIODS_BY_INTERVAL[24];
+    if (!currentAllowed.includes(newPeriod)) {
+      // Найти минимальный interval который поддерживает этот период
+      const candidate = [24, 60, 5].find((int) =>
+        (MAX_PERIODS_BY_INTERVAL[int] ?? []).includes(newPeriod),
+      );
+      if (candidate) setIntervalValue(candidate);
+    }
+  }
+
+  // Имя инструмента приходит из MobileAssetSearch (callback ставит и тикер,
+  // и название атомарно). Запрашивать getInstrument отдельно не надо —
+  // на мобиле нет URL deep-links для assets, синхронизация гарантирована.
+  // (Раньше тут был useEffect → /api/instruments/SR, но 'SR' это futures
+  // code, а endpoint работает только со stocks → 404 в консоли.)
 
   // Загрузка chart data
   const loadData = useMemo(() => async () => {
@@ -259,63 +330,54 @@ export default function MobileOpenInterestPage() {
   }, [data, instrumentName, oiVariant]);
 
   const timeLabel = `${PERIOD_LABELS[period]} · ${INTERVAL_LABELS[intervalValue] ?? intervalValue + 'ч'}`;
-  const optionsLabel = `${VARIANT_LABELS[oiVariant]}`;
+  const optionsLabel = `${VARIANT_LABELS[oiVariant]} · ${clgroup === 'YUR' ? 'Юр' : 'Физ'}`;
 
   return (
     <MobileLayout
-      bottomActions={
-        <>
-          <button
-            data-tour="oi-instrument"
-            className="fm-page-action asset"
-            onClick={() => setAssetSearchOpen(true)}
-            aria-label={`Актив: ${instrumentName}`}
-          >
-            <Star size={14} fill="var(--accent)" strokeWidth={0} />
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', minWidth: 0, flex: 1 }}>
-              <span className="fm-asset-name">{instrumentName}</span>
-              <span className="fm-asset-ticker">{selectedInstrument}</span>
-            </div>
-          </button>
-          <button
-            data-tour="oi-timerange"
-            className="fm-page-action"
-            onClick={() => setPeriodSheetOpen(true)}
-            aria-label={`Время · ${timeLabel}`}
-          >
-            <span className="fm-rail-ico"><Clock size={16} strokeWidth={2.2} /></span>
-            <span>Время</span>
-          </button>
-          <button
-            data-tour="oi-variant"
-            className="fm-page-action"
-            onClick={() => setOptionsSheetOpen(true)}
-            aria-label={`Опции · ${optionsLabel}`}
-          >
-            <span className="fm-rail-ico"><Settings size={16} strokeWidth={2.2} /></span>
-            <span>Опции</span>
-          </button>
-        </>
-      }
+      onAssetClick={() => setAssetSearchOpen(true)}
+      assetLabel={instrumentName}
+      assetTicker={selectedInstrument}
+      assetTourId="oi-asset"
+      onTimeClick={() => setPeriodSheetOpen(true)}
+      timeSummary={timeLabel}
+      timeTourId="oi-time"
+      onSettingsClick={() => setOptionsSheetOpen(true)}
+      settingsSummary={optionsLabel}
+      settingsTourId="oi-settings"
+      fullscreenTourId="oi-fullscreen"
+      onRefresh={loadData}
+      loading={loading}
     >
       <MobilePageHeader
         Icon={BarChart3}
         title="Открытый интерес"
-        subtitle="Позиции участников · Фьючерсы"
+        subtitle={`${instrumentName} · ${timeLabel}`}
         helpLink="/methodology/oi"
       />
 
-      <div data-tour="oi-chart" className="fm-frame" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-        <div style={{ margin: '0 -10px', flex: 1, minHeight: 0 }}>
+      {/* Full-bleed chart — без рамки/padding'а, как в TradingView mobile.
+          Absolute positioning гарантирует что chart заполнит весь parent —
+          height:100% на MobileChart wrapRef плохо resolves в flex-context
+          на iOS WebKit, а с position:absolute + inset:0 — всегда работает. */}
+      <div
+        data-tour="oi-chart"
+        style={{
+          flex: 1,
+          minHeight: 0,
+          position: 'relative',
+        }}
+      >
+        <div style={{ position: 'absolute', inset: 0 }}>
           <MobileChart series={chartSeries} loading={loading} />
         </div>
       </div>
 
-      {/* Sheet: выбор актива */}
+      {/* Sheet: выбор актива. Без filterType — MobileAssetSearch грузит
+          полный список (futures + валюта + индексы + сырьё + акции)
+          и фильтрует через chips. */}
       <MobileAssetSearch
         open={assetSearchOpen}
         onClose={() => setAssetSearchOpen(false)}
-        filterType="futures"
         onSelect={(sectype, name) => {
           setSelectedInstrument(sectype);
           setInstrumentName(name);
@@ -330,38 +392,48 @@ export default function MobileOpenInterestPage() {
       >
         <div style={{ padding: 16 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
-            Период
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
-            {(Object.keys(PERIOD_LABELS) as Period[]).map((p) => (
-              <button
-                key={p}
-                className={`fm-chip ${period === p ? 'active' : ''}`}
-                onClick={() => {
-                  setPeriod(p);
-                  setPeriodSheetOpen(false);
-                }}
-              >
-                {PERIOD_LABELS[p]}
-              </button>
-            ))}
-          </div>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
             Интервал
           </div>
-          <div style={{ display: 'flex', gap: 6 }}>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
             {[24, 60, 5].map((int) => (
               <button
                 key={int}
                 className={`fm-chip ${intervalValue === int ? 'active' : ''}`}
-                onClick={() => {
-                  setIntervalValue(int);
-                  setPeriodSheetOpen(false);
-                }}
+                onClick={() => handleIntervalChange(int)}
+                style={{ flex: 1, justifyContent: 'center' }}
               >
                 {INTERVAL_LABELS[int]}
               </button>
             ))}
+          </div>
+
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+            Период
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {(Object.keys(PERIOD_LABELS) as Period[]).map((p) => {
+              const available = isPeriodAvailable(p);
+              return (
+                <button
+                  key={p}
+                  className={`fm-chip ${period === p ? 'active' : ''}`}
+                  onClick={() => {
+                    if (!available) return;
+                    handlePeriodChange(p);
+                    setPeriodSheetOpen(false);
+                  }}
+                  disabled={!available}
+                  style={{
+                    opacity: available ? 1 : 0.35,
+                    cursor: available ? 'pointer' : 'not-allowed',
+                  }}
+                  aria-disabled={!available}
+                  title={!available ? `Недоступно для ${INTERVAL_LABELS[intervalValue]}` : undefined}
+                >
+                  {PERIOD_LABELS[p]}
+                </button>
+              );
+            })}
           </div>
         </div>
       </MobileSheet>

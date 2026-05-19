@@ -16,7 +16,7 @@ import { Grid3X3 } from 'lucide-react';
 import MobileLayout from '../../components/mobile/MobileLayout';
 import MobilePageHeader from '../../components/mobile/MobilePageHeader';
 import MobileSheet from '../../components/mobile/MobileSheet';
-import { getHeatmapImoex } from '../../services/api';
+import { getHeatmapImoex, getHeatmapData } from '../../services/api';
 import type { HeatmapSector, HeatmapStock } from '../../services/api';
 import { useRealtimeData } from '../../hooks/useRealtimeData';
 import { squarify } from '../../utils/squarify';
@@ -24,32 +24,42 @@ import { formatNumber } from '../../utils/formatNumber';
 import MobileSkeleton from '../../components/mobile/MobileSkeleton';
 import { useOnboardingTour } from '../../hooks/useFirstVisit';
 import OnboardingTour from '../../components/onboarding/OnboardingTour';
-import { heatmapMobileTour } from '../../data/tours/mobile';
+import type { TourStep } from '../../components/onboarding/OnboardingTour';
 
 type Period = '1d' | '1w' | '1m' | '1y';
+type SizeBy = 'market_cap' | 'volume';
 
-const PERIOD_OPTIONS: Array<{ key: Period; label: string; colorKey: keyof HeatmapStock }> = [
-  { key: '1d', label: '1Д', colorKey: 'change_1d' },
-  { key: '1w', label: '1Н', colorKey: 'change_1w' },
-  { key: '1m', label: '1М', colorKey: 'change_1m' },
-  { key: '1y', label: '1Г', colorKey: 'change_1y' },
+const PERIOD_OPTIONS: Array<{
+  key: Period;
+  label: string;
+  colorKey: keyof HeatmapStock;
+  volumeKey: keyof HeatmapStock;
+}> = [
+  { key: '1d', label: '1Д', colorKey: 'change_1d', volumeKey: 'value_1d' },
+  { key: '1w', label: '1Н', colorKey: 'change_1w', volumeKey: 'value_1w' },
+  { key: '1m', label: '1М', colorKey: 'change_1m', volumeKey: 'value_1m' },
+  // 1Г: годового оборота нет в API → используем месячный как ближайший прокси
+  { key: '1y', label: '1Г', colorKey: 'change_1y', volumeKey: 'value_1m' },
 ];
 
-// Color scale: red (-X) → dark → green (+X), интенсивность ~ |change|
+// Earth-tone палитра — match desktop HeatmapPage:
+//   centre #2a2a2a (dark grey) → pos max #2d6b3f (deep forest green)
+//                              → neg max #7a3528 (deep brick/clay)
+// Без неона: землистые тона на максимуме, как в финансовых референсах.
 function getColor(change: number, maxChange: number): string {
   if (!Number.isFinite(change)) return '#2a2a2a';
   const t = Math.min(Math.abs(change) / maxChange, 1);
   if (change > 0) {
-    // Зелёный
-    const r = Math.round(42 + t * (16 - 42));
-    const g = Math.round(40 + t * (160 - 40));
-    const b = Math.round(42 + t * (40 - 42));
+    // #2a2a2a → #2d6b3f (forest green)
+    const r = Math.round(42 + t * (45 - 42));
+    const g = Math.round(42 + t * (107 - 42));
+    const b = Math.round(42 + t * (63 - 42));
     return `rgb(${r},${g},${b})`;
   }
   if (change < 0) {
-    // Красный
-    const r = Math.round(42 + t * (192 - 42));
-    const g = Math.round(40 + t * (32 - 40));
+    // #2a2a2a → #7a3528 (brick / clay)
+    const r = Math.round(42 + t * (122 - 42));
+    const g = Math.round(42 + t * (53 - 42));
     const b = Math.round(42 + t * (40 - 42));
     return `rgb(${r},${g},${b})`;
   }
@@ -61,29 +71,151 @@ function formatPercent(v: number): string {
   return `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`;
 }
 
+type Universe = 'imoex' | 'all';
+type GroupBy = 'sector' | 'none';
+
 export default function MobileHeatmapPage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [sectors, setSectors] = useState<HeatmapSector[]>([]);
   const [loading, setLoading] = useState(true);
   const [containerSize, setContainerSize] = useState({ w: 360, h: 500 });
   const [period, setPeriod] = useState<Period>('1d');
+  const [universe, setUniverse] = useState<Universe>('imoex');
+  const [groupBy, setGroupBy] = useState<GroupBy>('sector');
+  const [sizeBy, setSizeBy] = useState<SizeBy>('market_cap');
   const [selectedStock, setSelectedStock] = useState<HeatmapStock | null>(null);
 
+  const [timeSheetOpen, setTimeSheetOpen] = useState(false);
+  const [optionsSheetOpen, setOptionsSheetOpen] = useState(false);
+
   const tour = useOnboardingTour('heatmap');
+  // Единый паттерн тура (как у OI/Buffett/Funds/Seasonality):
+  // Intro → Кнопки → Время → Опции (с демо режима) → Чтение → End
+  const tourSteps: TourStep[] = [
+    {
+      selector: null,
+      title: 'Карта рынка',
+      body: (
+        <>
+          <p style={{ marginBottom: 8 }}>
+            Все акции IMOEX на одной плитке. Размер плитки —
+            капитализация (или оборот), цвет — изменение цены за период.
+          </p>
+          <p>Разберём управление и научимся читать карту.</p>
+        </>
+      ),
+      onEnter: () => { setTimeSheetOpen(false); setOptionsSheetOpen(false); },
+    },
+    {
+      selector: '.fm-page-actions',
+      title: 'Кнопки управления',
+      body: (
+        <>
+          <p style={{ marginBottom: 6 }}>Снизу — 3 кнопки:</p>
+          <p style={{ marginBottom: 4 }}>
+            <strong>Время</strong> — период расчёта изменения цены
+          </p>
+          <p style={{ marginBottom: 4 }}>
+            <strong>Опции</strong> — что определяет размер плитки
+          </p>
+          <p>
+            <strong>Экран</strong> — развернуть карту на весь экран
+          </p>
+        </>
+      ),
+      position: 'top',
+      spotlightPadding: 4,
+    },
+    {
+      selector: null,
+      title: 'Период изменения цены',
+      align: 'top',
+      body: (
+        <>
+          <p style={{ marginBottom: 6 }}>
+            Открыл для тебя кнопку <strong>«Время»</strong>:
+          </p>
+          <p>
+            <strong>1Д / 1Н / 1М / 1Г</strong> — за какой период считается
+            рост/падение цены, и соответственно — каким цветом окрашивается
+            плитка.
+          </p>
+        </>
+      ),
+      onEnter: () => { setTimeSheetOpen(true); setOptionsSheetOpen(false); },
+    },
+    {
+      selector: null,
+      title: 'Размер плитки',
+      align: 'top',
+      body: (
+        <>
+          <p style={{ marginBottom: 6 }}>
+            Открыл кнопку <strong>«Опции»</strong>:
+          </p>
+          <p style={{ marginBottom: 4 }}>
+            <strong>Капитализация</strong> — крупные компании занимают
+            больше места (Сбер, Лукойл, Газпром доминируют)
+          </p>
+          <p>
+            <strong>Оборот</strong> — больше места там, где сегодня больше
+            торгов. Полезно когда хочешь видеть «где сейчас движуха».
+          </p>
+        </>
+      ),
+      onEnter: () => { setOptionsSheetOpen(true); setTimeSheetOpen(false); },
+    },
+    {
+      selector: '[data-tour="heatmap-chart"]',
+      title: 'Чтение карты',
+      body: (
+        <>
+          <p style={{ marginBottom: 6 }}>
+            <strong>Тёмно-зелёные</strong> плитки — сильный рост, <strong>тёмно-красные</strong> —
+            сильное падение. Серые — около нуля.
+          </p>
+          <p>
+            <strong>Тап по плитке</strong> — детали компании: цена, изменения
+            за все периоды, капитализация, оборот.
+          </p>
+        </>
+      ),
+      position: 'top',
+      spotlightPadding: 4,
+      onEnter: () => { setOptionsSheetOpen(false); setTimeSheetOpen(false); },
+    },
+    {
+      selector: null,
+      title: 'Готово!',
+      body: (
+        <p>
+          Нажми <strong>?</strong> рядом с заголовком — методология
+          цветовых порогов и источники данных.
+        </p>
+      ),
+    },
+  ];
 
   const periodConfig = PERIOD_OPTIONS.find((p) => p.key === period) ?? PERIOD_OPTIONS[0];
   const colorKey = periodConfig.colorKey;
   // Maximum для color scaling — зависит от периода (1Д макс 0.8%, 1Г 20%)
   const maxChange = period === '1y' ? 20 : period === '1m' ? 5 : period === '1w' ? 2 : 0.8;
 
-  // ResizeObserver — обновляем размер контейнера
+  // ResizeObserver с threshold-фильтром: микро-изменения <8px игнорируются.
+  // Treemap re-layouts на каждое изменение размера (squarify O(n)), частые
+  // вызовы из-за iOS address bar show/hide создают визуальное дёрганье.
   useEffect(() => {
     if (!containerRef.current) return;
     const ro = new ResizeObserver((entries) => {
       for (const e of entries) {
         const r = e.contentRect;
         if (r.width > 0 && r.height > 0) {
-          setContainerSize({ w: r.width, h: r.height });
+          setContainerSize((prev) => {
+            if (Math.abs(prev.w - r.width) < 8 && Math.abs(prev.h - r.height) < 8) {
+              return prev; // микро-изменение — игнорируем
+            }
+            return { w: r.width, h: r.height };
+          });
         }
       }
     });
@@ -91,12 +223,15 @@ export default function MobileHeatmapPage() {
     return () => ro.disconnect();
   }, []);
 
-  // Загрузка данных
+  // Загрузка данных — учитывает universe (IMOEX vs все) + groupBy
   const load = useMemo(
     () => async () => {
       try {
         setLoading(true);
-        const data = await getHeatmapImoex('change_1d', 'sector');
+        const data =
+          universe === 'imoex'
+            ? await getHeatmapImoex('change_1d', groupBy)
+            : await getHeatmapData('market_cap', 'change_1d', groupBy);
         setSectors(data.sectors || []);
       } catch (err) {
         console.error('Ошибка загрузки heatmap:', err);
@@ -104,14 +239,19 @@ export default function MobileHeatmapPage() {
         setLoading(false);
       }
     },
-    [],
+    [universe, groupBy],
   );
 
   useEffect(() => { void load(); }, [load]);
   useRealtimeData(['5min', 'mv_refresh'], () => { void load(); });
 
-  // Построение treemap'а: сначала размер сектора (по market_cap), потом
-  // внутри каждого сектора — отдельные акции через squarify.
+  // Построение treemap'а:
+  //   - groupBy='sector': сначала размер сектора, потом акции внутри
+  //   - groupBy='none': плоский squarify по всем акциям сразу (без header'ов)
+  //   - sizeBy='market_cap': площадь = капитализация
+  //   - sizeBy='volume':     площадь = оборот за выбранный период (value_*)
+  // Компрессия `pow(value, 0.55)` на уровне акций — чтобы мелкие тикеры
+  // не схлопывались в невидимые полоски (паттерн из desktop heatmap).
   const treemapData = useMemo(() => {
     if (sectors.length === 0 || containerSize.w === 0) return null;
 
@@ -120,16 +260,19 @@ export default function MobileHeatmapPage() {
     const W = containerSize.w;
     const H = containerSize.h;
 
-    // Размер сектора = total market_cap его акций
-    const sectorItems = sectors.map((s) => ({
-      id: s.name,
-      value: s.stocks.reduce((sum, st) => sum + (st.market_cap || 0), 0),
-      data: s,
-    }));
+    const volumeKey = periodConfig.volumeKey;
 
-    const sectorRects = squarify(sectorItems, 0, 0, W, H);
+    // Сырое значение размера для одной акции
+    const rawSize = (s: HeatmapStock): number => {
+      const key: keyof HeatmapStock = sizeBy === 'volume' ? volumeKey : 'market_cap';
+      const v = (s[key] as number) || 0;
+      return Math.max(v, 1);
+    };
+    // Компрессированное значение для акций (внутри сектора и в плоском режиме)
+    const stockSize = (s: HeatmapStock): number => Math.pow(rawSize(s), 0.55);
+    // Компрессированное значение для секторов (сумма по их акциям)
+    const sectorSize = (s: HeatmapStock): number => Math.pow(rawSize(s), 0.85);
 
-    // Внутри каждого сектора — акции
     const stockRects: Array<{
       id: string;
       x: number;
@@ -139,8 +282,39 @@ export default function MobileHeatmapPage() {
       stock: HeatmapStock;
       sector: string;
     }> = [];
-
     const sectorLabels: Array<{ name: string; x: number; y: number; w: number }> = [];
+
+    if (groupBy === 'none') {
+      // Плоский режим: все акции в одном squarify, без header'ов секторов
+      const allStocks = sectors
+        .flatMap((s) => s.stocks.map((st) => ({ ...st, sectorName: s.name })))
+        .filter((s) => rawSize(s) > 1)
+        .map((s) => ({ id: s.secId, value: stockSize(s), data: s }));
+
+      const rects = squarify(allStocks, 0, 0, W, H);
+      rects.forEach((r) => {
+        stockRects.push({
+          id: r.id,
+          x: r.x,
+          y: r.y,
+          width: r.width,
+          height: r.height,
+          stock: r.data,
+          sector: r.data.sectorName,
+        });
+      });
+
+      return { stockRects, sectorLabels };
+    }
+
+    // Иерархический режим: секторы → акции
+    const sectorItems = sectors.map((s) => ({
+      id: s.name,
+      value: s.stocks.reduce((sum, st) => sum + sectorSize(st), 0),
+      data: s,
+    }));
+
+    const sectorRects = squarify(sectorItems, 0, 0, W, H);
 
     sectorRects.forEach((rect) => {
       const sectorData = rect.data;
@@ -150,8 +324,8 @@ export default function MobileHeatmapPage() {
       sectorLabels.push({ name: sectorData.name, x: rect.x, y: rect.y, w: rect.width });
 
       const stockItems = sectorData.stocks
-        .filter((s) => s.change_1d !== 0 || s.change_1w !== 0 || s.market_cap > 0)
-        .map((s) => ({ id: s.secId, value: s.market_cap || 0, data: s }));
+        .filter((s) => rawSize(s) > 1)
+        .map((s) => ({ id: s.secId, value: stockSize(s), data: s }));
 
       const childRects = squarify(
         stockItems,
@@ -175,60 +349,48 @@ export default function MobileHeatmapPage() {
     });
 
     return { stockRects, sectorLabels };
-  }, [sectors, containerSize]);
+  }, [sectors, containerSize, groupBy, sizeBy, periodConfig]);
 
-  // Размер шрифта тикера в зависимости от плитки
+  // Размер шрифта тикера в зависимости от плитки.
+  // На очень мелких плитках (< 20×14) опускаем minimum до 7px чтобы хоть
+  // что-то было видно — лучше мелкий тикер, чем пустая цветная плашка.
   const getFontSize = (w: number, h: number): { tk: number; pct: number } => {
-    const tickerByWidth = Math.floor(w / 4.5);
-    const tickerByHeight = Math.floor(h * 0.38);
-    const tk = Math.min(Math.max(Math.min(tickerByWidth, tickerByHeight), 9), 36);
+    // Подбираем размер по самой узкой оси с учётом длины тикера (~4 символа)
+    const tickerByWidth = Math.floor(w / 3.6);
+    const tickerByHeight = Math.floor(h * 0.42);
+    const tk = Math.min(Math.max(Math.min(tickerByWidth, tickerByHeight), 7), 36);
     const pct = Math.floor(tk * 0.65);
     return { tk, pct };
   };
 
   return (
     <MobileLayout
-      bottomActionsTourId="heatmap-period"
-      bottomActions={
-        <>
-          {PERIOD_OPTIONS.map((opt) => (
-            <button
-              key={opt.key}
-              className="fm-page-action"
-              onClick={() => setPeriod(opt.key)}
-              style={{
-                color: period === opt.key ? 'var(--text-inverse)' : 'var(--text-secondary)',
-                background: period === opt.key ? 'var(--accent)' : 'transparent',
-                borderColor: period === opt.key ? 'var(--text-primary)' : 'transparent',
-                boxShadow: period === opt.key ? '3px 3px 0 var(--text-primary)' : undefined,
-              }}
-            >
-              <span>{opt.label}</span>
-            </button>
-          ))}
-        </>
-      }
+      onTimeClick={() => setTimeSheetOpen(true)}
+      timeSummary={periodConfig.label}
+      timeTourId="heatmap-period"
+      onSettingsClick={() => setOptionsSheetOpen(true)}
+      settingsSummary={`${universe === 'imoex' ? 'IMOEX' : 'Все'} · ${sizeBy === 'volume' ? 'Оборот' : 'Кап'}`}
+      settingsTourId="heatmap-options"
+      onRefresh={load}
+      loading={loading}
     >
       <MobilePageHeader
         Icon={Grid3X3}
         title="Карта рынка"
-        subtitle="IMOEX · По секторам"
         helpLink="/methodology/heatmap"
       />
 
-      {/* Treemap container — full-bleed, занимает оставшееся место */}
+      {/* Full-bleed treemap (как OI chart): без рамки, без margin, без bg.
+          position:relative + minHeight:0 — те же приёмы что в OI, чтобы
+          treemap не выпрыгивал за main и не вызывал page-scroll. */}
       <div
         ref={containerRef}
         data-tour="heatmap-chart"
         style={{
-          margin: '0 8px',
-          border: '2px solid var(--text-primary)',
-          borderRadius: 12,
-          overflow: 'hidden',
-          background: 'var(--bg-secondary)',
           flex: 1,
-          minHeight: 400,
+          minHeight: 0,
           position: 'relative',
+          overflow: 'hidden',
         }}
       >
         {loading && (
@@ -241,15 +403,17 @@ export default function MobileHeatmapPage() {
             width={containerSize.w}
             height={containerSize.h}
             viewBox={`0 0 ${containerSize.w} ${containerSize.h}`}
-            style={{ display: 'block' }}
+            style={{ display: 'block', touchAction: 'none' }}
           >
             {/* Сначала плитки акций */}
             {treemapData.stockRects.map((r) => {
               const change = (r.stock[colorKey] as number) || 0;
               const fill = getColor(change, maxChange);
               const { tk, pct } = getFontSize(r.width, r.height);
-              const showTicker = r.width > 28 && r.height > 18;
-              const showPct = r.width > 38 && r.height > 30;
+              // Снижено: показываем ticker почти всегда (до 18×12) — лучше
+              // мелкий ticker чем пустая плитка. % скрываем чуть раньше.
+              const showTicker = r.width > 18 && r.height > 12;
+              const showPct = r.width > 38 && r.height > 28;
               return (
                 <g
                   key={`${r.sector}-${r.id}`}
@@ -297,22 +461,32 @@ export default function MobileHeatmapPage() {
               );
             })}
 
-            {/* Поверх — sector labels */}
-            {treemapData.sectorLabels.map((s, i) => (
-              <text
-                key={`sl-${i}`}
-                x={s.x + 4}
-                y={s.y + 9}
-                fontSize={8}
-                fontWeight={700}
-                fill="var(--text-secondary)"
-                letterSpacing={0.4}
-                style={{ textTransform: 'uppercase' }}
-                pointerEvents="none"
-              >
-                {s.name}
-              </text>
-            ))}
+            {/* Sector labels поверх плиток с truncation:
+                - sector width < 36px → label не рисуется (слишком тесно)
+                - иначе обрезаем по char-budget = (width - 8 padding) / 7 (px per char) */}
+            {treemapData.sectorLabels.map((s, i) => {
+              if (s.w < 36) return null;
+              const budget = Math.floor((s.w - 8) / 7);
+              const display =
+                s.name.length <= budget
+                  ? s.name
+                  : s.name.slice(0, Math.max(3, budget - 1)) + '…';
+              return (
+                <text
+                  key={`sl-${i}`}
+                  x={s.x + 4}
+                  y={s.y + 9}
+                  fontSize={8}
+                  fontWeight={700}
+                  fill="var(--text-secondary)"
+                  letterSpacing={0.4}
+                  style={{ textTransform: 'uppercase' }}
+                  pointerEvents="none"
+                >
+                  {display}
+                </text>
+              );
+            })}
           </svg>
         )}
       </div>
@@ -362,7 +536,9 @@ export default function MobileHeatmapPage() {
               })}
             </div>
             <div style={{ marginTop: 12, fontSize: 12, color: 'var(--text-muted)' }}>
-              Капитализация: {formatNumber(selectedStock.market_cap / 1e9, 1)} млрд ₽
+              {/* API quirk: market_cap уже в МИЛЛИАРДАХ ₽ (113.0 = 113 млрд),
+                  а value_1d — в рублях. Не делим первое, делим второе. */}
+              Капитализация: {formatNumber(selectedStock.market_cap, 1)} млрд ₽
               {selectedStock.value_1d > 0 && (
                 <> · Объём за день: {formatNumber(selectedStock.value_1d / 1e9, 2)} млрд ₽</>
               )}
@@ -371,8 +547,136 @@ export default function MobileHeatmapPage() {
         )}
       </MobileSheet>
 
+      {/* Time sheet — выбор периода для расчёта цвета */}
+      <MobileSheet
+        open={timeSheetOpen}
+        onClose={() => setTimeSheetOpen(false)}
+        title="Период расчёта"
+      >
+        <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {PERIOD_OPTIONS.map((opt) => (
+            <button
+              key={opt.key}
+              className={`fm-chip ${period === opt.key ? 'active' : ''}`}
+              onClick={() => {
+                setPeriod(opt.key);
+                setTimeSheetOpen(false);
+              }}
+              style={{ justifyContent: 'flex-start', padding: '14px 16px' }}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </MobileSheet>
+
+      {/* Options sheet — universe + groupBy */}
+      <MobileSheet
+        open={optionsSheetOpen}
+        onClose={() => setOptionsSheetOpen(false)}
+        title="Опции"
+      >
+        <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 20 }}>
+          {/* Universe: IMOEX vs все акции */}
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+              Что показать
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {([
+                { key: 'imoex' as const, label: 'IMOEX', hint: '~50 акций индекса' },
+                { key: 'all' as const, label: 'Все акции', hint: '200+ MOEX' },
+              ]).map((opt) => (
+                <button
+                  key={opt.key}
+                  onClick={() => setUniverse(opt.key)}
+                  style={{
+                    flex: 1,
+                    padding: '12px 10px',
+                    background: universe === opt.key ? 'var(--accent)' : 'var(--bg-secondary)',
+                    color: universe === opt.key ? 'var(--text-inverse)' : 'var(--text-primary)',
+                    border: '1.5px solid var(--text-primary)',
+                    borderRadius: 10,
+                    cursor: 'pointer',
+                    font: 'inherit',
+                    textAlign: 'center',
+                  }}
+                >
+                  <div style={{ fontSize: 13, fontWeight: 700 }}>{opt.label}</div>
+                  <div style={{ fontSize: 10, opacity: 0.7, marginTop: 2 }}>{opt.hint}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* SizeBy: market_cap / volume */}
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+              Размер плиток
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {([
+                { key: 'market_cap' as const, label: 'Капитализация', hint: 'Кто стоит дороже' },
+                { key: 'volume' as const, label: 'Оборот', hint: 'Кого торгуют активнее' },
+              ]).map((opt) => (
+                <button
+                  key={opt.key}
+                  onClick={() => setSizeBy(opt.key)}
+                  style={{
+                    flex: 1,
+                    padding: '12px 10px',
+                    background: sizeBy === opt.key ? 'var(--accent)' : 'var(--bg-secondary)',
+                    color: sizeBy === opt.key ? 'var(--text-inverse)' : 'var(--text-primary)',
+                    border: '1.5px solid var(--text-primary)',
+                    borderRadius: 10,
+                    cursor: 'pointer',
+                    font: 'inherit',
+                    textAlign: 'center',
+                  }}
+                >
+                  <div style={{ fontSize: 12, fontWeight: 700 }}>{opt.label}</div>
+                  <div style={{ fontSize: 9, opacity: 0.7, marginTop: 2 }}>{opt.hint}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* GroupBy: sector / none */}
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+              Группировка
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {([
+                { key: 'sector' as const, label: 'По секторам', hint: 'Группы IT, Нефть и т.д.' },
+                { key: 'none' as const, label: 'Без группировки', hint: 'Только по размеру' },
+              ]).map((opt) => (
+                <button
+                  key={opt.key}
+                  onClick={() => setGroupBy(opt.key)}
+                  style={{
+                    flex: 1,
+                    padding: '12px 10px',
+                    background: groupBy === opt.key ? 'var(--accent)' : 'var(--bg-secondary)',
+                    color: groupBy === opt.key ? 'var(--text-inverse)' : 'var(--text-primary)',
+                    border: '1.5px solid var(--text-primary)',
+                    borderRadius: 10,
+                    cursor: 'pointer',
+                    font: 'inherit',
+                    textAlign: 'center',
+                  }}
+                >
+                  <div style={{ fontSize: 12, fontWeight: 700 }}>{opt.label}</div>
+                  <div style={{ fontSize: 9, opacity: 0.7, marginTop: 2 }}>{opt.hint}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </MobileSheet>
+
       <OnboardingTour
-        steps={heatmapMobileTour}
+        steps={tourSteps}
         open={tour.open}
         onClose={tour.close}
       />
