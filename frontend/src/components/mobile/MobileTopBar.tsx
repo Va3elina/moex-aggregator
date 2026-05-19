@@ -1,19 +1,27 @@
 /**
  * MobileTopBar — компактный header для мобильной версии.
  *
- * Структура слева направо:
- *   - Логотип «Фрейм» (accent color) + Beta-тег
- *   - Иконка темы (theme toggle)
- *   - PLUS-кнопка (apricot/accent — ссылка на pricing)
- *   - Аватар (буква имени)
+ * Default mode (главные страницы индикаторов):
+ *   - Логотип «Фрейм» (link на /) + Beta-тег
+ *   - Иконка темы / PLUS / Аватар справа
+ *
+ * Back mode (передан `onBack` через MobileLayout):
+ *   - Логотип заменяется на ← back-button — natural cue для detail/
+ *     secondary страниц (Profile, Pricing, Methodology)
+ *   - Остальные кнопки справа те же
  */
-import { Sun, Moon } from 'lucide-react';
+import { Sun, Moon, ChevronLeft } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import FrameLogo from '../FrameLogo';
 
-export default function MobileTopBar() {
+interface MobileTopBarProps {
+  /** Если задан — на месте логотипа рендерится ← back-кнопка. */
+  onBack?: () => void;
+}
+
+export default function MobileTopBar({ onBack }: MobileTopBarProps) {
   const { user } = useAuth();
   const { theme, cycleTheme } = useTheme();
   const isLight = theme === 'editorial-light';
@@ -24,10 +32,23 @@ export default function MobileTopBar() {
   return (
     <div className="fm-topbar">
       <div className="fm-topbar-left">
-        <Link to="/" style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
-          <FrameLogo size={18} color="var(--accent)" />
-        </Link>
-        <span className="fm-beta-tag">Beta</span>
+        {onBack ? (
+          <button
+            onClick={onBack}
+            className="fm-back-btn"
+            aria-label="Назад"
+          >
+            <ChevronLeft size={18} strokeWidth={2.4} />
+            <span>Назад</span>
+          </button>
+        ) : (
+          <>
+            <Link to="/" style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
+              <FrameLogo size={18} color="var(--accent)" />
+            </Link>
+            <span className="fm-beta-tag">Beta</span>
+          </>
+        )}
       </div>
       <div className="fm-topbar-right">
         <button
@@ -35,7 +56,7 @@ export default function MobileTopBar() {
           aria-label="Сменить тему"
           onClick={cycleTheme}
         >
-          {isLight ? <Moon size={14} /> : <Sun size={14} />}
+          {isLight ? <Moon size={16} strokeWidth={2.2} /> : <Sun size={16} strokeWidth={2.2} />}
         </button>
         <Link to="/pricing" className="fm-icon-btn fm-plus" style={{ textDecoration: 'none' }}>
           PLUS

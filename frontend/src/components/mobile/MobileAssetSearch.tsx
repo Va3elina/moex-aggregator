@@ -22,18 +22,30 @@ interface MobileAssetSearchProps {
   open: boolean;
   onClose: () => void;
   onSelect: (sectype: string, name: string) => void;
-  filterType?: 'stock' | 'futures';
+  filterType?: 'stock' | 'futures' | 'no-futures';
   excludeType?: string;
 }
 
 const FAVORITES_KEY = 'favoriteInstruments';
 
-const CATEGORY_CHIPS = [
+// Категории-чипы. Зависят от filterType:
+//   - 'no-futures' (Seasonality) → Акции/Валюта/Индексы/Сырьё (без Фьючерсов)
+//   - undefined (OI, default)    → Фьючерсы/Валюта/Индексы/Сырьё (как было)
+//   - 'stock' / 'futures'        → чипы не показываем (один тип уже)
+// Key матчит inst.type ('futures', 'shares') или inst.group ('Валюта' и т.д.).
+const CATEGORY_CHIPS_FUTURES_FIRST = [
   { key: 'all', label: 'Все' },
-  { key: 'stock', label: 'Акции' },
   { key: 'futures', label: 'Фьючерсы' },
-  { key: 'currency', label: 'Валюты' },
-  { key: 'index', label: 'Индексы' },
+  { key: 'Валюта', label: 'Валюта' },
+  { key: 'Индексы', label: 'Индексы' },
+  { key: 'Сырьё', label: 'Сырьё' },
+];
+const CATEGORY_CHIPS_NO_FUTURES = [
+  { key: 'all', label: 'Все' },
+  { key: 'shares', label: 'Акции' },
+  { key: 'Валюта', label: 'Валюта' },
+  { key: 'Индексы', label: 'Индексы' },
+  { key: 'Сырьё', label: 'Сырьё' },
 ];
 
 export default function MobileAssetSearch({
@@ -52,17 +64,43 @@ export default function MobileAssetSearch({
     return saved ? JSON.parse(saved) : ['SR', 'GZ', 'MX'];
   });
 
-  // Загрузка списка
+  // Загрузка списка. Futures лежат в отдельной таблице (требует
+  // ?type=futures), валюта/индексы/сырьё/акции в общей.
+  // filterType:
+  //   - 'stock' / 'futures' → один endpoint
+  //   - 'no-futures' → только /api/instruments (без futures)
+  //   - undefined → оба endpoint'а параллельно (futures + general)
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
     async function load() {
       try {
         setLoading(true);
-        const url = filterType ? `/api/instruments?type=${filterType}` : '/api/instruments';
-        const resp = await fetch(url);
-        const data = await resp.json();
-        if (!cancelled) setInstruments(data.instruments || []);
+        if (filterType === 'stock' || filterType === 'futures') {
+          const resp = await fetch(`/api/instruments?type=${filterType}`);
+          const data = await resp.json();
+          if (!cancelled) setInstruments(data.instruments || []);
+        } else if (filterType === 'no-futures') {
+          const resp = await fetch('/api/instruments');
+          const data = await resp.json();
+          if (!cancelled) setInstruments(data.instruments || []);
+        } else {
+          const [generalResp, futuresResp] = await Promise.all([
+            fetch('/api/instruments'),
+            fetch('/api/instruments?type=futures'),
+          ]);
+          const [general, futures] = await Promise.all([
+            generalResp.json(),
+            futuresResp.json(),
+          ]);
+          if (!cancelled) {
+            const merged = [
+              ...(futures.instruments || []),
+              ...(general.instruments || []),
+            ];
+            setInstruments(merged);
+          }
+        }
       } catch (err) {
         console.error('Ошибка загрузки инструментов:', err);
       } finally {
@@ -220,18 +258,20 @@ export default function MobileAssetSearch({
         </button>
       </div>
 
-      {/* Category chips */}
+      {/* Category chips — gap ужат, чтобы все 5 категорий помещались
+          в строку на 320px viewport без скролла. */}
       <div
         style={{
           display: 'flex',
-          gap: 7,
-          padding: '12px 14px 8px',
+          gap: 4,
+          padding: '12px 10px 8px',
           overflowX: 'auto',
           scrollbarWidth: 'none',
           flexShrink: 0,
+          justifyContent: 'center',
         }}
       >
-        {CATEGORY_CHIPS.map((c) => (
+        {(filterType === 'no-futures' ? CATEGORY_CHIPS_NO_FUTURES : CATEGORY_CHIPS_FUTURES_FIRST).map((c) => (
           <button
             key={c.key}
             className={`fm-chip ${categoryFilter === c.key ? 'active' : 'dim'}`}

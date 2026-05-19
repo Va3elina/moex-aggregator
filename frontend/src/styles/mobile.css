@@ -17,7 +17,12 @@
   color: var(--text-primary);
   background: var(--bg-primary);
   width: 100%;
-  min-height: 100vh;
+  /* Fixed-app паттерн: запираем page на viewport, никакого page-scroll.
+     100dvh учитывает динамические UI элементы браузера (iOS address bar
+     show/hide). Fallback к 100vh если dvh не поддерживается. */
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   font-size: 14px;
@@ -87,9 +92,36 @@
   align-items: center;
 }
 
+/* Back button в TopBar (на месте лого для secondary страниц).
+   Inline pill с chevron + текст «Назад». */
+.fm-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px 6px 8px;
+  background: var(--bg-secondary);
+  border: 1.5px solid var(--text-primary);
+  border-radius: 999px;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: transform 100ms ease;
+}
+
+.fm-back-btn:active {
+  transform: translate(1px, 1px);
+}
+
 .fm-icon-btn {
-  width: clamp(28px, 8.5vw, 36px);
-  height: clamp(28px, 8.5vw, 36px);
+  /* Theme button (default): 28×28. Outlined circle с border 1.5px на
+     transparent background визуально "толще" чем filled accent button —
+     если physical size = avatar (32px), theme воспринимается как крупнее.
+     Уменьшение до 28px компенсирует этот эффект и визуально matches avatar. */
+  width: 28px;
+  height: 28px;
   display: grid;
   place-items: center;
   background: transparent;
@@ -104,6 +136,9 @@
 .fm-icon-btn:hover { opacity: 0.7; }
 
 .fm-icon-btn.fm-plus {
+  /* PLUS height = 32 (match avatar) — два filled элемента в группе
+     одного "веса". Theme (outline) — visually отдельный класс. */
+  height: 32px;
   background: var(--accent);
   color: var(--text-inverse);
   border-color: var(--text-primary);
@@ -116,10 +151,15 @@
 }
 
 .fm-icon-btn.fm-avatar {
+  /* Avatar physical size 32×32 — слегка больше theme button (28px), но
+     filled accent делает её visually equal — accent fill "поглощает"
+     лишние пиксели, theme outline их выпячивает. */
+  width: 32px;
+  height: 32px;
   background: var(--accent);
   color: var(--text-inverse);
   font-weight: 800;
-  font-size: 12px;
+  font-size: 14px;
   font-family: var(--font-body, 'Inter');
 }
 
@@ -200,14 +240,20 @@
   display: flex;
   flex-direction: column;
   min-height: 0; /* нужно для flex:1 chart-children без overflow */
-  /* Bottom: page-actions bar (50px) + bottomrail (~60px). Без page-actions
-     fall back на меньший padding через CSS-переменную в самой странице. */
-  padding-bottom: clamp(125px, 30vw, 150px);
+  /* Запрещаем page-scroll: вся страница locked в viewport, скроллится
+     только содержимое внутри (например стоковая таблица в Strength sheet),
+     а chart full-bleed остаётся фиксированным. */
+  overflow: hidden;
+  /* FIXED padding (не clamp): расстояние от X-axis даты до action-bar
+     должно быть одинаковым на любом viewport. Раньше clamp(135, 32vw, 160)
+     рос с шириной экрана с разной скоростью чем action-bar bottom, что
+     меняло gap между датой и линией разделения. */
+  padding-bottom: 140px;
 }
 
-/* Страницы БЕЗ page-actions переопределяют padding на меньший — только BottomRail. */
+/* Страницы БЕЗ page-actions — только BottomRail снизу. */
 .fm-main.no-actions {
-  padding-bottom: clamp(72px, 18vw, 88px);
+  padding-bottom: 80px;
 }
 
 /* ========== Page Actions Bar — fixed между chart и BottomRail ========== */
@@ -215,41 +261,46 @@
   position: fixed;
   left: 0;
   right: 0;
-  /* Bottom: сразу над BottomRail (его высота + safe-area). */
-  bottom: clamp(56px, 14vw, 70px);
+  /* FIXED bottom (не clamp): расстояние от chart до action-bar должно быть
+     одинаковым на всех viewport'ах. 70px = BottomRail height + 6px зазора
+     чтобы оранжевая окантовка активной rail-кнопки не обрезалась. */
+  bottom: 70px;
   display: flex;
-  gap: clamp(2px, 0.8vw, 4px);
-  padding: clamp(6px, 2vw, 10px) clamp(8px, 2.8vw, 12px);
+  gap: 5px;
+  padding: 8px 12px;
   background: var(--bg-primary);
+  /* Две границы:
+     - top (чёткая): отделяет chart от nav-зоны
+     - bottom (subtle): разделитель внутри nav-зоны между action-bar и rail */
   border-top: 1.5px solid var(--text-primary);
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
+  border-bottom: 1px solid color-mix(in srgb, var(--text-primary) 55%, transparent);
   z-index: 21; /* выше BottomRail (20) чтобы тени border'ов не наслаивались */
 }
-.fm-page-actions::-webkit-scrollbar { display: none; }
 
-/* Кнопки внутри page-actions — те же стили что .fm-rail-item, но без
-   active-фона (это контекстные кнопки, а не навигация). */
+/* Кнопки внутри page-actions — каждая занимает равную долю ширины.
+   На странице с 4 кнопками — по 25%, с 3 — по 33%, с 2 — по 50%.
+   FIXED размеры — чтобы action-bar имел одинаковую высоту на всех viewport'ах
+   (раньше clamp давал разный min-height → менялась геометрия chart-bottom). */
 .fm-page-action {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  padding: clamp(6px, 1.8vw, 8px) clamp(8px, 2.4vw, 12px);
+  justify-content: center;
+  gap: 3px;
+  padding: 9px 6px;
   background: transparent;
   border: 1.5px solid transparent;
   border-radius: 10px;
   color: var(--text-secondary);
-  font-size: clamp(9px, 2.6vw, 11px);
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 700;
   letter-spacing: -0.01em;
   cursor: pointer;
-  flex-shrink: 0;
   white-space: nowrap;
   transition: all 150ms ease;
-  min-width: clamp(56px, 14vw, 64px);
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 50px;
 }
 
 .fm-page-action:hover {
@@ -264,33 +315,260 @@
   color: var(--text-primary);
 }
 
-/* Asset chip — занимает больше места, текстом вместо иконки */
-.fm-page-action.asset {
-  flex: 1;
-  flex-direction: row;
-  gap: 6px;
-  min-width: 0;
-  padding: clamp(6px, 1.8vw, 8px) clamp(10px, 3vw, 14px);
-  border-color: var(--text-primary);
-  background: var(--bg-secondary);
+/* ========== PWA Install Banner ========== */
+.fm-pwa-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 40;
+  animation: fm-pwa-fade 200ms ease;
 }
 
-.fm-page-action.asset .fm-asset-name {
-  font-weight: 700;
-  font-size: clamp(11px, 3.2vw, 13px);
-  color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 100%;
+.fm-pwa-banner {
+  position: fixed;
+  bottom: clamp(120px, 30vw, 145px); /* над page-actions + bottomrail */
+  left: clamp(12px, 4vw, 20px);
+  right: clamp(12px, 4vw, 20px);
+  z-index: 41;
+  padding: 16px;
+  background: var(--bg-primary);
+  border: 2px solid var(--text-primary);
+  border-radius: 14px;
+  box-shadow: 5px 5px 0 var(--text-primary);
+  animation: fm-pwa-slide 250ms ease;
 }
 
-.fm-page-action.asset .fm-asset-ticker {
-  font-family: 'IBM Plex Mono', 'SF Mono', monospace;
-  font-size: clamp(8px, 2.4vw, 10px);
+@keyframes fm-pwa-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes fm-pwa-slide {
+  from { transform: translateY(30px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.fm-pwa-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--text-primary) 30%, transparent);
+  border-radius: 999px;
   color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.fm-pwa-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding-right: 24px;
+}
+
+.fm-pwa-logo {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  background: var(--bg-secondary);
+  border: 1.5px solid var(--text-primary);
+  border-radius: 10px;
+}
+
+.fm-pwa-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin: 0 0 3px;
+  letter-spacing: -0.01em;
+}
+
+.fm-pwa-subtitle {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.35;
+}
+
+.fm-pwa-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.fm-pwa-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 14px;
+  background: var(--bg-secondary);
+  border: 1.5px solid var(--text-primary);
+  border-radius: 10px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: transform 100ms ease;
+}
+
+.fm-pwa-btn:active {
+  transform: translate(1px, 1px);
+}
+
+.fm-pwa-btn.primary {
+  background: var(--accent);
+  color: var(--text-inverse);
+  box-shadow: 2px 2px 0 var(--text-primary);
+}
+
+.fm-pwa-btn.primary:active {
+  box-shadow: none;
+}
+
+.fm-pwa-ios-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fm-pwa-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid color-mix(in srgb, var(--text-primary) 15%, transparent);
+  border-radius: 8px;
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.04em;
+  color: var(--text-primary);
+}
+
+.fm-pwa-step-num {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  background: var(--text-primary);
+  color: var(--bg-primary);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+/* ========== Top Loading Bar ==========
+   Тонкая accent-полоска под TopBar — индикатор загрузки страницы.
+   Indeterminate keyframe анимация: gradient бегает слева-направо, как
+   у Safari address bar при подгрузке. Не блокирует UI, юзер видит
+   что данные обновляются. */
+.fm-loading-bar {
+  position: relative;
+  width: 100%;
+  height: 2px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  flex-shrink: 0;
+}
+
+.fm-loading-bar::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 40%;
+  background: var(--accent);
+  animation: fm-loading-slide 1100ms ease-in-out infinite;
+}
+
+@keyframes fm-loading-slide {
+  0%   { left: -40%; }
+  50%  { left: 50%; }
+  100% { left: 110%; }
+}
+
+/* ========== Pull-to-refresh indicator ========== */
+.fm-pull-indicator {
+  position: fixed;
+  top: 8px;
+  left: 50%;
+  z-index: 30;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  background: var(--bg-secondary);
+  border: 1.5px solid var(--text-primary);
+  border-radius: 999px;
+  box-shadow: 2px 2px 0 var(--text-primary);
+  color: var(--accent);
+  pointer-events: none;
+  transition: opacity 100ms ease;
+}
+
+.fm-pull-indicator .fm-pull-ready {
+  color: var(--accent);
+}
+
+.fm-pull-indicator .fm-pull-spin {
+  animation: fm-pull-rotate 700ms linear infinite;
+}
+
+@keyframes fm-pull-rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Плавающая кнопка выхода из полноэкранного режима. Расположена внизу
+   справа — примерно там же где раньше была кнопка «Экран» в action-bar.
+   Это сохраняет muscle memory: юзер нажал «Экран» внизу-справа → выходит
+   из fullscreen тем же тапом в той же зоне.
+   Полупрозрачная в idle (40%) чтобы не мешала чтению графика, при касании
+   яркая (85%) — обратная связь. */
+.fm-fullscreen-exit {
+  position: fixed;
+  right: 14px;
+  bottom: calc(14px + env(safe-area-inset-bottom, 0));
+  z-index: 50;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  background: var(--bg-secondary);
+  border: 1.5px solid var(--text-primary);
+  border-radius: 999px;
+  color: var(--text-primary);
+  cursor: pointer;
+  opacity: 0.4;
+  transition: opacity 150ms ease, transform 100ms ease;
+}
+
+.fm-fullscreen-exit:hover {
+  opacity: 0.7;
+}
+
+.fm-fullscreen-exit:active {
+  opacity: 0.85;
+  transform: translate(1px, 1px);
+}
+
+/* В fullscreen режиме main не имеет padding'а — chart на весь экран */
+.fm-app.fullscreen .fm-main {
+  padding-bottom: 0;
+}
+
+/* В fullscreen — скрыть PageHeader (заголовок) если он есть */
+.fm-app.fullscreen .fm-page-header {
+  display: none;
 }
 
 /* ========== Bottom rail (горизонтальный навигатор) ========== */
@@ -304,7 +582,10 @@
   padding: clamp(6px, 2vw, 10px) clamp(8px, 2.8vw, 12px);
   padding-bottom: calc(clamp(6px, 2vw, 10px) + env(safe-area-inset-bottom, 0));
   background: var(--bg-primary);
-  border-top: 1.5px solid var(--text-primary);
+  /* НЕТ border-top: action-bar накладывается на rail на iPhone с notch
+     (safe-area-inset-bottom раздувает rail), её top border оказывался
+     скрыт под action-bar background. Разделитель теперь живёт на
+     action-bar.border-bottom — он всегда видим (action-bar z-index выше). */
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
@@ -347,17 +628,19 @@
   height: 16px;
 }
 
-/* ========== Chips ========== */
+/* ========== Chips ==========
+   font-size adaptive: на 320px (min) — 10px чтобы 5+ chip'ов помещались
+   в одну строку без overflow scroll. На 425px+ — 13px (комфортный). */
 .fm-chip {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: clamp(5px, 1.8vw, 7px) clamp(9px, 2.8vw, 12px);
+  padding: clamp(4px, 1.6vw, 7px) clamp(7px, 2.6vw, 12px);
   background: var(--bg-secondary);
   border: 1.5px solid var(--text-primary);
   border-radius: 999px;
   color: var(--text-primary);
-  font-size: clamp(11px, 3.2vw, 13px);
+  font-size: clamp(10px, 3vw, 13px);
   font-weight: 600;
   letter-spacing: -0.01em;
   cursor: pointer;
@@ -537,4 +820,84 @@
 @keyframes fm-slide-up {
   from { transform: translateY(100%); }
   to   { transform: translateY(0); }
+}
+
+/* ========== Landscape overrides ==========
+   В горизонтальной ориентации viewport короткий по высоте (390-450px),
+   а vw огромный (700-900px). Базовый clamp на vw даёт неоправданно
+   большие padding'и/высоты, которые съедают полезное пространство.
+   В landscape: фиксированные px, компактная высота, BottomRail items
+   распределяются равномерно по всей ширине. */
+@media (orientation: landscape) and (max-height: 500px) {
+  /* Main padding-bottom: ~36 (rail) + 4 (gap) + 40 (actions) + 6 (air for date)
+     = 86px. Chart забирает +19px высоты vs прошлой версии. */
+  .fm-main {
+    padding-bottom: 86px;
+  }
+  .fm-main.no-actions {
+    padding-bottom: 42px;
+  }
+
+  /* Action bar: лежит почти на rail (4px gap для активной rail-окантовки).
+     Меньше высоты — больше места графику. */
+  .fm-page-actions {
+    bottom: 40px;
+    gap: 3px;
+    padding: 3px 10px;
+  }
+
+  /* Action кнопки: компактные — 32px высоты, 9px шрифт. */
+  .fm-page-action {
+    gap: 1px;
+    padding: 3px 5px;
+    min-height: 32px;
+    font-size: 9px;
+  }
+  .fm-page-action .fm-rail-ico {
+    width: 13px;
+    height: 13px;
+  }
+  .fm-page-action .fm-rail-ico svg {
+    width: 13px;
+    height: 13px;
+  }
+
+  /* BottomRail: items равномерно по всей ширине без скролла. */
+  .fm-bottomrail {
+    overflow-x: visible;
+    justify-content: space-between;
+    gap: 3px;
+    padding: 2px 10px;
+    padding-bottom: calc(2px + env(safe-area-inset-bottom, 0));
+  }
+  .fm-rail-item {
+    flex: 1 1 0;
+    min-width: 0;
+    gap: 1px;
+    padding: 2px 4px;
+    font-size: 8px;
+  }
+  .fm-rail-item .fm-rail-ico {
+    width: 13px;
+    height: 13px;
+  }
+  .fm-rail-item .fm-rail-ico svg {
+    width: 13px;
+    height: 13px;
+  }
+
+  /* TopBar: компактнее */
+  .fm-topbar {
+    padding: 3px 12px;
+  }
+
+  /* Page header: компактнее */
+  .fm-pageheader {
+    padding: 4px 12px 3px;
+    gap: 6px;
+  }
+  .fm-pageheader-icon {
+    width: 28px;
+    height: 28px;
+  }
 }

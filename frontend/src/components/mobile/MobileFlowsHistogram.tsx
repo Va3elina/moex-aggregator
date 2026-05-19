@@ -10,7 +10,7 @@
  *
  * Tap по столбцу → краткий tooltip с цифрами на этот период.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FlowDataPoint } from '../../services/api';
 
 interface MobileFlowsHistogramProps {
@@ -23,7 +23,7 @@ const COLOR_OUT = 'var(--funds-flow-negative, #FF7A5C)';
 function fmtDate(iso: string): string {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+  return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
 }
 
 function fmtBillions(v: number): string {
@@ -36,10 +36,34 @@ function fmtBillions(v: number): string {
 
 export default function MobileFlowsHistogram({ flows }: MobileFlowsHistogramProps) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  // Touch X position для floating tooltip — null когда нет активного touch.
+  const [touchX, setTouchX] = useState<number | null>(null);
 
-  // Логические координаты — viewBox растягивается на 100% контейнера
-  const W = 360;
-  const H = 280;
+  // Real pixel size через ResizeObserver с threshold-фильтром.
+  // Threshold 8px стабилизирует SVG при iOS Safari address bar toggle.
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState({ w: 360, h: 280 });
+  useEffect(() => {
+    if (!wrapRef.current) return;
+    const ro = new ResizeObserver((entries) => {
+      for (const e of entries) {
+        const r = e.contentRect;
+        if (r.width > 0 && r.height > 0) {
+          setSize((prev) => {
+            if (Math.abs(prev.w - r.width) < 8 && Math.abs(prev.h - r.height) < 8) {
+              return prev;
+            }
+            return { w: Math.max(200, r.width), h: Math.max(180, r.height) };
+          });
+        }
+      }
+    });
+    ro.observe(wrapRef.current);
+    return () => ro.disconnect();
+  }, []);
+
+  const W = size.w;
+  const H = size.h;
   const padX = 8;
   const padTop = 16;
   const padBottom = 24;
@@ -47,13 +71,12 @@ export default function MobileFlowsHistogram({ flows }: MobileFlowsHistogramProp
   const innerH = H - padTop - padBottom;
   const zeroY = padTop + innerH / 2;
 
-  // Максимум по абсолютному значению для нормализации высоты
+  // Максимум по абсолютному значению net flow — каждый bar теперь рисуется
+  // как net (один цвет на знак), gross_in/gross_out видны только в tooltip.
+  // Это match с desktop histogram: clean visual signal "приходят/уходят деньги".
   const maxAbs = useMemo(() => {
     if (flows.length === 0) return 1;
-    return Math.max(
-      ...flows.flatMap((f) => [Math.abs(f.gross_in), Math.abs(f.gross_out)]),
-      0.1,
-    );
+    return Math.max(...flows.map((f) => Math.abs(f.flow)), 0.1);
   }, [flows]);
 
   const barW = (innerW / flows.length) * 0.7;
@@ -65,25 +88,45 @@ export default function MobileFlowsHistogram({ flows }: MobileFlowsHistogramProp
   // Currently hovered tooltip
   const hovered = hoverIdx !== null ? flows[hoverIdx] : null;
 
+  // Bar grow-up animation: на mount/новые flows initial height = 0,
+  // в следующем frame -> actual. CSS transition даёт springy spring up.
+  const [animated, setAnimated] = useState(false);
+  useEffect(() => {
+    setAnimated(false);
+    const t = setTimeout(() => setAnimated(true), 30);
+    return () => clearTimeout(t);
+  }, [flows]);
+
+  // Haptic tick + setHoverIdx (только если новая bar — иначе vibration spam).
+  // Также tracks touchX в SVG-координатах для floating tooltip position.
+  const updateHoverFromTouch = (clientX: number) => {
+    const rect = wrapRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const relX = clientX - rect.left;
+    setTouchX(relX);
+    const idx = Math.floor((relX - padX) / (barW + barGap));
+    if (idx < 0 || idx >= flows.length) {
+      setHoverIdx(null);
+      return;
+    }
+    setHoverIdx((prev) => {
+      if (prev === idx) return prev;
+      if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+        navigator.vibrate(8);
+      }
+      return idx;
+    });
+  };
+
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%', minHeight: 200 }}>
+    <div ref={wrapRef} style={{ position: 'relative', width: '100%', height: '100%', minHeight: 180 }}>
       <svg
-        width="100%"
-        height="100%"
-        viewBox={`0 0 ${W} ${H}`}
-        preserveAspectRatio="none"
-        style={{ display: 'block', touchAction: 'manipulation' }}
-        onClick={(e) => {
-          // Hit-testing — определяем какой bar тапнули
-          const rect = (e.currentTarget as SVGSVGElement).getBoundingClientRect();
-          const relX = ((e.clientX - rect.left) / rect.width) * W;
-          const idx = Math.floor((relX - padX) / (barW + barGap));
-          if (idx >= 0 && idx < flows.length) {
-            setHoverIdx(hoverIdx === idx ? null : idx);
-          } else {
-            setHoverIdx(null);
-          }
-        }}
+        width={W}
+        height={H}
+        style={{ display: 'block', touchAction: 'none' }}
+        onTouchStart={(e) => updateHoverFromTouch(e.touches[0].clientX)}
+        onTouchMove={(e) => updateHoverFromTouch(e.touches[0].clientX)}
+        onTouchEnd={() => { setHoverIdx(null); setTouchX(null); }}
       >
         {/* Zero line */}
         <line
@@ -95,45 +138,72 @@ export default function MobileFlowsHistogram({ flows }: MobileFlowsHistogramProp
           strokeWidth={1}
         />
 
-        {/* Bars */}
+        {/* Dashed crosshair — vertical line через центр выбранной bar.
+            Помогает визуально связать tooltip values с конкретным столбцом. */}
+        {hoverIdx !== null && (() => {
+          const cx = padX + hoverIdx * (barW + barGap) + barGap / 2 + barW / 2;
+          return (
+            <line
+              x1={cx}
+              y1={padTop}
+              x2={cx}
+              y2={H - padBottom}
+              stroke="var(--text-primary)"
+              strokeWidth={1}
+              strokeDasharray="3,3"
+              opacity={0.6}
+              pointerEvents="none"
+            />
+          );
+        })()}
+
+        {/* Net-only bars: один bar на период, цвет = знак flow.
+            flow >= 0 → зелёный вверх от zero-line.
+            flow < 0  → красный вниз от zero-line.
+            Springy grow-up animation с staggered delay. */}
         {flows.map((f, i) => {
           const x = padX + i * (barW + barGap) + barGap / 2;
-          const hIn = (Math.abs(f.gross_in) / maxAbs) * (innerH / 2);
-          const hOut = (Math.abs(f.gross_out) / maxAbs) * (innerH / 2);
+          const isPositive = f.flow >= 0;
+          const finalH = (Math.abs(f.flow) / maxAbs) * (innerH / 2);
+          const h = animated ? finalH : 0;
           const isHovered = hoverIdx === i;
+          const delay = Math.min(i * 3, 200);
+          const color = isPositive ? COLOR_IN : COLOR_OUT;
+          const y = isPositive ? zeroY - h : zeroY;
+
+          if (finalH === 0) return null;
 
           return (
-            <g key={i}>
-              {hIn > 0 && (
-                <rect
-                  x={x}
-                  y={zeroY - hIn}
-                  width={barW}
-                  height={hIn}
-                  fill={COLOR_IN}
-                  opacity={isHovered ? 1 : 0.85}
-                  rx={1.5}
-                />
-              )}
-              {hOut > 0 && (
-                <rect
-                  x={x}
-                  y={zeroY}
-                  width={barW}
-                  height={hOut}
-                  fill={COLOR_OUT}
-                  opacity={isHovered ? 1 : 0.85}
-                  rx={1.5}
-                />
-              )}
-            </g>
+            <rect
+              key={i}
+              x={x}
+              y={y}
+              width={barW}
+              height={h}
+              fill={color}
+              opacity={isHovered ? 1 : 0.85}
+              rx={1.5}
+              style={{
+                transition: `y 500ms cubic-bezier(0.34, 1.56, 0.64, 1) ${delay}ms, height 500ms cubic-bezier(0.34, 1.56, 0.64, 1) ${delay}ms, opacity 150ms ease`,
+              }}
+            />
           );
         })}
 
-        {/* X-axis labels */}
+        {/* X-axis labels: первый — anchor=start, последний — anchor=end,
+            остальные — middle. Это держит labels всегда внутри SVG, не
+            выпадая за edges при большом количестве bars. */}
         {flows.map((f, i) => {
           if (i % labelStep !== 0 && i !== flows.length - 1) return null;
-          const x = padX + i * (barW + barGap) + barGap / 2 + barW / 2;
+          const isFirst = i === 0;
+          const isLast = i === flows.length - 1;
+          const anchor: 'start' | 'middle' | 'end' = isFirst ? 'start' : isLast ? 'end' : 'middle';
+          // x: первый → padX (с edge), последний → W - padX, остальные → центр bar
+          const x = isFirst
+            ? padX
+            : isLast
+              ? W - padX
+              : padX + i * (barW + barGap) + barGap / 2 + barW / 2;
           return (
             <text
               key={`xl-${i}`}
@@ -142,7 +212,7 @@ export default function MobileFlowsHistogram({ flows }: MobileFlowsHistogramProp
               fontSize={9}
               fontWeight={600}
               fill="var(--text-secondary)"
-              textAnchor="middle"
+              textAnchor={anchor}
             >
               {fmtDate(f.period_start)}
             </text>
@@ -150,54 +220,55 @@ export default function MobileFlowsHistogram({ flows }: MobileFlowsHistogramProp
         })}
       </svg>
 
-      {/* Tooltip card */}
-      {hovered && (
+      {/* Floating tooltip — следует за пальцем как в TradingView. Position
+          clamped по [margin, W - tooltipW - margin] чтобы не вылезал за SVG. */}
+      {hovered && touchX !== null && (() => {
+        const tooltipW = 200;
+        const margin = 8;
+        const left = Math.max(margin, Math.min(touchX - tooltipW / 2, W - tooltipW - margin));
+        return (
         <div
           style={{
             position: 'absolute',
-            top: 8,
-            left: 8,
-            right: 8,
-            padding: '10px 12px',
+            top: 4,
+            left,
+            width: tooltipW,
+            padding: '6px 10px',
             background: 'var(--bg-primary)',
             border: '1.5px solid var(--text-primary)',
             borderRadius: 8,
-            boxShadow: '3px 3px 0 var(--text-primary)',
             fontSize: 11,
             pointerEvents: 'none',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 3,
           }}
         >
-          <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginBottom: 4, fontWeight: 600 }}>
+          <div style={{ fontSize: 9.5, color: 'var(--text-secondary)', fontWeight: 600, letterSpacing: '0.02em' }}>
             {fmtDate(hovered.period_start)} — {fmtDate(hovered.period_end)}
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
-            <span style={{ color: COLOR_IN, fontWeight: 600 }}>● Притоки</span>
-            <span className="mono" style={{ fontWeight: 700 }}>{fmtBillions(hovered.gross_in)} ₽</span>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-            <span style={{ color: COLOR_OUT, fontWeight: 600 }}>● Оттоки</span>
-            <span className="mono" style={{ fontWeight: 700 }}>{fmtBillions(hovered.gross_out)} ₽</span>
-          </div>
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              paddingTop: 4,
-              borderTop: '1px solid color-mix(in srgb, var(--text-primary) 15%, transparent)',
-              fontWeight: 700,
-            }}
-          >
-            <span>Нетто</span>
+          {/* Минималистичный: только нетто и процент изменения СЧА */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
             <span
               className="mono"
-              style={{ color: hovered.flow >= 0 ? COLOR_IN : COLOR_OUT }}
+              style={{ color: hovered.flow >= 0 ? COLOR_IN : COLOR_OUT, fontWeight: 800, fontSize: 13 }}
             >
               {hovered.flow >= 0 ? '+' : ''}{fmtBillions(hovered.flow)} ₽
             </span>
+            <span
+              className="mono"
+              style={{
+                color: hovered.flow_pct >= 0 ? COLOR_IN : COLOR_OUT,
+                fontWeight: 700,
+                fontSize: 11,
+              }}
+            >
+              {hovered.flow_pct >= 0 ? '+' : ''}{hovered.flow_pct.toFixed(2)}%
+            </span>
           </div>
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

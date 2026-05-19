@@ -16,8 +16,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 
 export interface MobileChartSeries {
-  /** Точки данных (timestamp + value). Должно быть >= 2 точек. */
-  data: Array<{ time: string; value: number }>;
+  /** Точки данных. Должно быть >= 2 точек.
+   *  - `time` используется для X-позиционирования (alignment, downsampling).
+   *  - `displayTime` (опционально) — реальная дата для tooltip/labels.
+   *    Используется когда `time` синтетический (например seasonality yearly
+   *    где time = синтетическая дата td-mapping'а, а displayTime = реальная
+   *    дата торгового дня "2026-05-19"). */
+  data: Array<{ time: string; value: number; displayTime?: string }>;
   /** Цвет линии (var(--*)). */
   color: string;
   /** Подпись для tooltip'а / legend'а. */
@@ -26,6 +31,9 @@ export interface MobileChartSeries {
   axis?: 'left' | 'right';
   /** Форматтер значений в pill / tooltip. */
   formatValue?: (v: number) => string;
+  /** Скрыть current-value pill на оси (для секций где pill misleading,
+   *  например yearly average которая accumulated за весь год). */
+  hidePill?: boolean;
 }
 
 interface MobileChartProps {
@@ -42,33 +50,271 @@ interface MobileChartProps {
 }
 
 const PAD_TOP = 8;
-const PAD_BOTTOM = 18;
+const PAD_BOTTOM = 34; // воздух снизу для X-labels (дата чуть выше bottom edge)
 const PAD_X = 4;
-const LONG_PRESS_MS = 300;
+
+/**
+ * Лёгкий haptic tick — срабатывает когда crosshair переходит на новую точку.
+ * Имитирует TradingView mobile feel. На iOS Safari тихо не работает (Apple
+ * специально не имплементировал Vibration API) — graceful fallback.
+ */
+function hapticTick() {
+  if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+    navigator.vibrate(8);
+  }
+}
+
+// Y-axis tick positions: 5 равномерных уровней (10/30/50/70/90% от высоты).
+// Чаще чем стандартные 3 — приближает к десктоп-чарту, юзеру проще читать
+// промежуточные значения OI / цены.
+const Y_TICK_POSITIONS = [0.1, 0.3, 0.5, 0.7, 0.9];
+
+/**
+ * LTTB (Largest Triangle Three Buckets) — downsampling алгоритм для визуального
+ * сохранения формы линии. На годовом графике с 250 точками и 360px viewport
+ * без downsampling'а получается "забор" — каждый день рендерится как пик.
+ * LTTB выбрасывает монотонные сегменты, сохраняя локальные экстремумы.
+ *
+ * Сложность O(n). Сохраняет первую и последнюю точку (важно для pill'ов с
+ * current value). Stable: одни и те же данные дают одинаковый результат.
+ *
+ * Reference: Sveinn Steinarsson, MSc thesis 2013 (University of Iceland).
+ */
+function lttbDownsample<T extends { time: string; value: number }>(
+  data: T[],
+  threshold: number,
+): T[] {
+  if (threshold >= data.length || threshold <= 2) return data;
+
+  const sampled: T[] = [data[0]];
+  const bucketSize = (data.length - 2) / (threshold - 2);
+  let a = 0;
+
+  for (let i = 0; i < threshold - 2; i++) {
+    // Bounds следующего bucket для расчёта "среднего" anchor'а
+    const rangeStart = Math.floor((i + 1) * bucketSize) + 1;
+    const rangeEnd = Math.min(Math.floor((i + 2) * bucketSize) + 1, data.length);
+
+    let avgX = 0;
+    let avgY = 0;
+    const rangeLen = rangeEnd - rangeStart;
+    for (let j = rangeStart; j < rangeEnd; j++) {
+      avgX += j;
+      avgY += data[j].value;
+    }
+    avgX /= rangeLen;
+    avgY /= rangeLen;
+
+    // Текущий bucket — ищем точку формирующую максимальную площадь треугольника
+    const currStart = Math.floor(i * bucketSize) + 1;
+    const currEnd = Math.floor((i + 1) * bucketSize) + 1;
+    const aX = a;
+    const aY = data[a].value;
+
+    let maxArea = -1;
+    let bestIdx = currStart;
+    for (let j = currStart; j < currEnd; j++) {
+      const area = Math.abs(
+        (aX - avgX) * (data[j].value - aY) - (aX - j) * (avgY - aY),
+      );
+      if (area > maxArea) {
+        maxArea = area;
+        bestIdx = j;
+      }
+    }
+
+    sampled.push(data[bestIdx]);
+    a = bestIdx;
+  }
+
+  sampled.push(data[data.length - 1]);
+  return sampled;
+}
+
+/**
+ * Симметричное SMA — sliding window [i - w/2, i + w/2]. В отличие от
+ * trailing SMA не сдвигает кривую вправо: для каждой точки берётся
+ * среднее с её соседями по обе стороны.
+ *
+ * Применяется ПОСЛЕ LTTB чтобы убрать high-frequency джиттер. LTTB
+ * сохраняет swing-точки (high/low) что на волатильных рядах (OI, news
+ * spike'и) создаёт эффект "забора". SMA усредняет соседние swing'и в
+ * плавный тренд. Тейлдеры именно так смотрят OI — через MA-сглаженный
+ * график, а не raw daily ticks.
+ */
+function smaSmooth<T extends { time: string; value: number }>(
+  data: T[],
+  window: number,
+): T[] {
+  if (data.length < window || window < 2) return data;
+  const half = Math.floor(window / 2);
+  const result: T[] = [];
+  for (let i = 0; i < data.length; i++) {
+    const start = Math.max(0, i - half);
+    const end = Math.min(data.length, i + half + 1);
+    let sum = 0;
+    for (let j = start; j < end; j++) sum += data[j].value;
+    result.push({ ...data[i], value: sum / (end - start) });
+  }
+  return result;
+}
+
+/**
+ * Универсальный форматтер даты/времени для X-axis и tooltip.
+ *
+ * Автоматически определяет intraday vs daily timeframe по timestamp:
+ *  - "2026-05-12T08:00:00" → "12.05 08:00" (есть ненулевое время)
+ *  - "2026-05-12T00:00:00" → "12.05.26"     (daily — полночь)
+ *  - "2026-05-12"          → "12.05.26"     (без time)
+ *
+ * Раньше использовался toLocaleDateString для всего, поэтому на 5мин/1ч
+ * таймфреймах часы пропадали — юзер видел повторяющиеся даты без понимания
+ * какой час показан.
+ */
+function formatTimeForDisplay(time: string): string {
+  const d = new Date(time);
+  if (isNaN(d.getTime())) return time;
+  // Intraday если timestamp содержит время и оно НЕ полночь UTC
+  const isIntraday = time.includes('T') && !time.endsWith('T00:00:00');
+  if (isIntraday) {
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const HH = String(d.getHours()).padStart(2, '0');
+    const MM = String(d.getMinutes()).padStart(2, '0');
+    return `${dd}.${mm} ${HH}:${MM}`;
+  }
+  return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
+}
+
+/**
+ * Time-align all series to a common X-axis baseline.
+ *
+ * Контекст: разные источники данных возвращают ряды РАЗНОЙ длины и/или
+ * РАЗНОГО диапазона. Примеры:
+ *   - OI: candles 161 точка Nov-May, OI 118 точек Nov-May (одинаковый
+ *     диапазон, пропуски внутри) → нужно forward-fill чтобы линии
+ *     заканчивались на одной x-координате
+ *   - Seasonality yearly: median Jan-Dec (252 точки), current year Jan-May
+ *     (100 точек) → median должен занимать всю ширину, current year только
+ *     часть слева (не extend'им в будущее искусственно)
+ *
+ * Алгоритм:
+ *   1. Baseline = САМАЯ ДЛИННАЯ серия (по числу точек). Она задаёт x-ось.
+ *   2. Для каждой не-baseline серии: для каждого baseline-timestamp ищем
+ *      значение этой серии с тем же ключом (дата для дневных или полный
+ *      timestamp для intraday). Нет match — carry-forward (внутри диапазона).
+ *   3. После последнего timestamp'а secondary — STOP (не extend'им). Это
+ *      позволяет короткой серии (current year) визуально закончиться где
+ *      её данные кончаются, а длинная — продолжалась до правого края.
+ *
+ * Зеркало `alignToCandles` из OpenInterestPage.tsx, обобщённое для случая
+ * когда baseline не series[0].
+ */
+function alignSeriesToPrimary(series: MobileChartSeries[]): MobileChartSeries[] {
+  if (series.length < 2) return series;
+
+  // Baseline = longest series. Обрабатывает оба случая:
+  //   - OI: longest = price (series[0]) — поведение как раньше
+  //   - Seasonality yearly: longest = median (series[N-1]) — текущий год
+  //     остаётся короче, не достраивается в будущее
+  let baselineIdx = 0;
+  for (let i = 1; i < series.length; i++) {
+    if (series[i].data.length > series[baselineIdx].data.length) baselineIdx = i;
+  }
+  const baseline = series[baselineIdx];
+  if (!baseline || baseline.data.length < 2) return series;
+
+  // intraday vs daily: ключ по полному timestamp если у baseline видна
+  // intraday-точность (нечастая ситуация на мобиле, но безопасно).
+  const looksIntraday = baseline.data.some((p) => p.time.includes('T') && !p.time.endsWith('T00:00:00'));
+  const keyOf = (t: string) => (looksIntraday ? t : t.slice(0, 10));
+
+  return series.map((s, i) => {
+    if (i === baselineIdx) return s; // baseline не трогаем
+    if (s.data.length === 0) return s;
+
+    // Map значений по date-key + parallel map для displayTime (если есть).
+    const valueMap = new Map<string, number>();
+    const displayMap = new Map<string, string | undefined>();
+    for (const p of s.data) {
+      const k = keyOf(p.time);
+      valueMap.set(k, p.value);
+      displayMap.set(k, p.displayTime);
+    }
+
+    // sLastTime ограничивает aligned справа: не extend'им за пределы
+    // фактических данных secondary серии.
+    const sLastTime = s.data[s.data.length - 1].time;
+    const firstValue = s.data[0].value;
+    const firstDisplay = s.data[0].displayTime;
+
+    const aligned: { time: string; value: number; displayTime?: string }[] = [];
+    let lastValue: number | null = null;
+    let lastDisplay: string | undefined = undefined;
+    for (const bp of baseline.data) {
+      // STOP когда вышли за пределы данных secondary справа.
+      // Это позволяет seasonality yearly: median 252 точки полная ширина,
+      // current year aligned обрывается в текущем месяце.
+      if (bp.time > sLastTime) break;
+      const k = keyOf(bp.time);
+      const v = valueMap.get(k);
+      if (v !== undefined) {
+        lastValue = v;
+        lastDisplay = displayMap.get(k);
+      }
+      // Backward-fill: до первого match используем первое значение secondary
+      // (защита от обрыва слева).
+      aligned.push({
+        time: bp.time,
+        value: lastValue ?? firstValue,
+        displayTime: lastDisplay ?? firstDisplay,
+      });
+    }
+    return { ...s, data: aligned };
+  });
+}
 
 export default function MobileChart({
-  series,
+  series: rawSeries,
   height: heightProp,
   showXLabels = true,
   formatXLabel,
   loading = false,
 }: MobileChartProps) {
+  // Выравниваем secondary серии к primary по времени (forward-fill).
+  // Это перед всеми useMemo, потому что downsampling и range computation
+  // должны работать уже на выровненных рядах.
+  const series = useMemo(() => alignSeriesToPrimary(rawSeries), [rawSeries]);
+
   const wrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(360);
   const [measuredHeight, setMeasuredHeight] = useState(260);
   const [crosshair, setCrosshair] = useState<{ idx: number; pinned: boolean } | null>(null);
-  const longPressTimer = useRef<number | null>(null);
+  // Refs к каждой SVG <path> для line-drawing animation.
+  // Sparse array — index соответствует sIdx в downsampledSeries.map.
+  const pathRefs = useRef<(SVGPathElement | null)[]>([]);
 
-  // ResizeObserver — измеряем И ширину И высоту контейнера, чтобы chart
-  // мог авто-фититься в любой layout (включая flex:1).
+  // ResizeObserver с разделёнными threshold'ами:
+  //  - ширина: 1px (на iOS address bar НЕ меняет ширину контейнера, threshold
+  //    не нужен; убрав 8px фильтр получаем точное соответствие SVG ширины
+  //    реальному контейнеру — критично для fullscreen где разница в несколько
+  //    пикселей даёт визуальную «обрезку» графика справа).
+  //  - высота: 8px (iOS Safari address bar show/hide меняет высоту вьюпорта
+  //    постоянно при скролле — без фильтра chart дёргается).
   useEffect(() => {
     if (!wrapRef.current) return;
     const ro = new ResizeObserver((entries) => {
       for (const e of entries) {
         const w = e.contentRect.width;
         const h = e.contentRect.height;
-        if (w > 0) setWidth(Math.max(200, w));
-        if (h > 0) setMeasuredHeight(Math.max(160, h));
+        if (w > 0) {
+          setWidth((prev) => (Math.abs(prev - w) >= 1 ? Math.max(200, w) : prev));
+        }
+        if (h > 0) {
+          setMeasuredHeight((prev) =>
+            Math.abs(prev - h) >= 8 ? Math.max(160, h) : prev,
+          );
+        }
       }
     });
     ro.observe(wrapRef.current);
@@ -77,12 +323,111 @@ export default function MobileChart({
 
   // Если задан явно — используем; иначе измеренная высота контейнера.
   const height = heightProp ?? measuredHeight;
+
   const innerW = width - PAD_X * 2;
   const innerH = height - PAD_TOP - PAD_BOTTOM;
 
-  // Разделяем серии по осям
-  const leftSeries = useMemo(() => series.filter((s) => s.axis !== 'right'), [series]);
-  const rightSeries = useMemo(() => series.filter((s) => s.axis === 'right'), [series]);
+  // Pipeline двух стадий:
+  //   1. LTTB — уменьшение количества точек до ~width*0.4 (≈144 на 360px)
+  //   2. SMA — симметричное сглаживание с adaptive окном:
+  //        > 80 точек → window 7 (агрессивно)
+  //        > 40       → window 5
+  //        > 20       → window 3
+  //        иначе      → без сглаживания (короткий период)
+  // LTTB сохраняет важные swing'и, но на OI и других волатильных рядах
+  // эти swing'и И ЕСТЬ шум. SMA усредняет соседние пики в плавный тренд.
+  // Cubic-bezier поверх в pathFor добавляет финальную геометрическую
+  // плавность.
+  const downsampledSeries = useMemo(() => {
+    const threshold = Math.max(50, Math.floor(width * 0.4));
+
+    // Baseline (longest) определяет downsampling ratio. Это критично для
+    // index-based xAt: если baseline сжимается 252→160 (ratio 0.635), а
+    // короткая серия 124 точки остаётся 124 → их индексы не пропорциональны
+    // времени. Current year (Jan-Jun) рендерится до 77% width вместо 49%.
+    // Решение: пропорциональный downsample. Короткая серия сжимается с
+    // тем же ratio (124 → 79), и относительные позиции сохраняются.
+    let baselineLength = 0;
+    for (const s of series) {
+      if (s.data.length > baselineLength) baselineLength = s.data.length;
+    }
+    const ratio = baselineLength > threshold ? threshold / baselineLength : 1;
+
+    return series.map((s) => {
+      // Целевое число точек для этой серии — пропорционально baseline.
+      const targetCount = ratio < 1
+        ? Math.max(2, Math.round(s.data.length * ratio))
+        : s.data.length;
+      let data = lttbDownsample(s.data, targetCount);
+      const smaWindow =
+        data.length > 80 ? 7 : data.length > 40 ? 5 : data.length > 20 ? 3 : 0;
+      if (smaWindow > 0) data = smaSmooth(data, smaWindow);
+      return { ...s, data };
+    });
+  }, [series, width]);
+
+  // Line drawing animation — replay'ится при СТРУКТУРНОЙ смене серий
+  // (загрузка новых данных, смена актива, смена периода). Не запускается:
+  //   - на изменения width/height (ResizeObserver) — был баг с "обрезкой"
+  //     графика в fullscreen, потому что downsampling зависел от width
+  //   - на изменения значений в тех же таймстемпах (например, toggle фонда
+  //     в Деньгах-в-Фондах — длина и first/last timestamps те же, просто
+  //     суммы пересчитались)
+  //
+  // Сигнатура структуры: длина primary + first/last timestamp. Если оба
+  // совпадают с предыдущим — анимацию не перезапускаем.
+  //
+  // Pattern:
+  //  1. dasharray = pathLength, dashoffset = pathLength → линия скрыта
+  //  2. Force reflow → applied
+  //  3. transition 600ms → dashoffset 0 → линия проявляется
+  //  4. По завершении: dasharray='none' → если потом ResizeObserver изменит
+  //     geometry path'а, линия остаётся полностью видимой.
+  const lastStructureRef = useRef<string>('');
+  useEffect(() => {
+    const primary = rawSeries[0]?.data;
+    const signature = primary && primary.length > 0
+      ? `${primary.length}|${primary[0].time}|${primary[primary.length - 1].time}|${rawSeries.length}`
+      : '';
+    // Если структура та же (toggle/refresh без новых таймстемпов) — пропускаем
+    if (signature === lastStructureRef.current) return;
+    lastStructureRef.current = signature;
+
+    const timers: number[] = [];
+    pathRefs.current.forEach((p) => {
+      if (!p) return;
+      const len = p.getTotalLength();
+      if (!Number.isFinite(len) || len === 0) return;
+      p.style.transition = 'none';
+      p.style.strokeDasharray = `${len}`;
+      p.style.strokeDashoffset = `${len}`;
+      // Force reflow чтобы initial dashoffset применился до transition
+      p.getBoundingClientRect();
+      p.style.transition = 'stroke-dashoffset 600ms ease-out';
+      p.style.strokeDashoffset = '0';
+      // Clear dasharray after animation — путь должен оставаться видимым
+      // даже если потом ResizeObserver изменит длину path.
+      const tid = window.setTimeout(() => {
+        if (p && p.isConnected) {
+          p.style.strokeDasharray = 'none';
+        }
+      }, 650);
+      timers.push(tid);
+    });
+    return () => {
+      for (const t of timers) window.clearTimeout(t);
+    };
+  }, [rawSeries]);
+
+  // Разделяем серии по осям (на downsampled)
+  const leftSeries = useMemo(
+    () => downsampledSeries.filter((s) => s.axis !== 'right'),
+    [downsampledSeries],
+  );
+  const rightSeries = useMemo(
+    () => downsampledSeries.filter((s) => s.axis === 'right'),
+    [downsampledSeries],
+  );
   const hasLeft = leftSeries.length > 0;
   const hasRight = rightSeries.length > 0;
 
@@ -95,17 +440,22 @@ export default function MobileChart({
     return { min: min - span * 0.05, max: max + span * 0.05, span: span * 1.1 };
   };
 
+  // Range берёт min/max по ВСЕМ series на оси — иначе secondary series
+  // могут выйти за visible (если её range шире чем у primary).
   const leftRange = useMemo(
-    () => (hasLeft ? fit(leftSeries[0].data.map((d) => d.value)) : null),
+    () => (hasLeft ? fit(leftSeries.flatMap((s) => s.data.map((d) => d.value))) : null),
     [hasLeft, leftSeries],
   );
   const rightRange = useMemo(
-    () => (hasRight ? fit(rightSeries[0].data.map((d) => d.value)) : null),
+    () => (hasRight ? fit(rightSeries.flatMap((s) => s.data.map((d) => d.value))) : null),
     [hasRight, rightSeries],
   );
 
-  // Сколько точек на оси X — берём из самой длинной серии
-  const N = useMemo(() => Math.max(...series.map((s) => s.data.length), 0), [series]);
+  // Сколько точек на оси X — берём из самой длинной серии (после downsampling)
+  const N = useMemo(
+    () => Math.max(...downsampledSeries.map((s) => s.data.length), 0),
+    [downsampledSeries],
+  );
 
   // X-coordinate i-th точки
   const xAt = (i: number) => PAD_X + (i / Math.max(N - 1, 1)) * innerW;
@@ -114,47 +464,67 @@ export default function MobileChart({
   const yAt = (v: number, range: { min: number; span: number } | null) =>
     range ? PAD_TOP + innerH - ((v - range.min) / range.span) * innerH : 0;
 
-  // SVG path для линии
-  const pathFor = (data: { value: number }[], range: { min: number; span: number } | null) =>
-    data
-      .map((d, i) => {
-        const x = xAt(i);
-        const y = yAt(d.value, range);
-        return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
-      })
-      .join(' ');
+  // SVG path для линии — Catmull-Rom через cubic Bezier. Преобразует
+  // ряд точек в плавную кривую через C{c1} {c2} {p2} сегменты, где c1/c2
+  // вычисляются как взвешенная разница соседних точек. Tension 0.5 —
+  // стандарт для финансовых графиков (no artificial overshoot на swing'ах).
+  // На <3 точках падаем к простому M-L pattern.
+  const pathFor = (data: { value: number }[], range: { min: number; span: number } | null) => {
+    if (data.length < 2) return '';
+    if (data.length === 2) {
+      const [a, b] = data;
+      return `M${xAt(0).toFixed(1)},${yAt(a.value, range).toFixed(1)} L${xAt(1).toFixed(1)},${yAt(b.value, range).toFixed(1)}`;
+    }
+
+    const pts = data.map((d, i) => ({ x: xAt(i), y: yAt(d.value, range) }));
+    const tension = 0.5;
+    let path = `M${pts[0].x.toFixed(1)},${pts[0].y.toFixed(1)}`;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[i === 0 ? 0 : i - 1];
+      const p1 = pts[i];
+      const p2 = pts[i + 1];
+      const p3 = pts[i + 2 < pts.length ? i + 2 : i + 1];
+      const c1x = p1.x + ((p2.x - p0.x) * tension) / 6;
+      const c1y = p1.y + ((p2.y - p0.y) * tension) / 6;
+      const c2x = p2.x - ((p3.x - p1.x) * tension) / 6;
+      const c2y = p2.y - ((p3.y - p1.y) * tension) / 6;
+      path += ` C${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`;
+    }
+    return path;
+  };
 
   // Long-press handlers
-  const handleTouchStart = (e: React.TouchEvent) => {
-    if (longPressTimer.current) clearTimeout(longPressTimer.current);
-    const touch = e.touches[0];
+  // TradingView-style touch pattern:
+  //   touchstart → crosshair появляется МГНОВЕННО на позиции пальца
+  //   touchmove  → crosshair следует за пальцем (через тот же handler)
+  //   touchend   → crosshair исчезает (палец = указатель, lift = clear)
+  // Раньше был 300ms long-press hold для "pin" режима — это и было
+  // ощущение "ожидания". TradingView не делает pin вообще, crosshair
+  // ведёт себя как live cursor пока палец на chart'е.
+  // Haptic tick на каждой новой точке имитирует TradingView feel.
+  const updateCrosshairFromTouch = (touchX: number) => {
     const rect = wrapRef.current?.getBoundingClientRect();
     if (!rect) return;
-    const relX = touch.clientX - rect.left - PAD_X;
+    const relX = touchX - rect.left - PAD_X;
     const idx = Math.round((relX / innerW) * (N - 1));
-    longPressTimer.current = window.setTimeout(() => {
-      setCrosshair({ idx: Math.max(0, Math.min(N - 1, idx)), pinned: true });
-    }, LONG_PRESS_MS);
+    const clamped = Math.max(0, Math.min(N - 1, idx));
+    setCrosshair((prev) => {
+      if (prev?.idx === clamped) return prev;
+      hapticTick();
+      return { idx: clamped, pinned: false };
+    });
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    updateCrosshairFromTouch(e.touches[0].clientX);
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
-    // Если crosshair pinned — двигаем его за пальцем (drag mode)
-    if (!crosshair?.pinned) return;
-    e.preventDefault();
-    const touch = e.touches[0];
-    const rect = wrapRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const relX = touch.clientX - rect.left - PAD_X;
-    const idx = Math.round((relX / innerW) * (N - 1));
-    setCrosshair({ idx: Math.max(0, Math.min(N - 1, idx)), pinned: true });
+    updateCrosshairFromTouch(e.touches[0].clientX);
   };
 
   const handleTouchEnd = () => {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current);
-      longPressTimer.current = null;
-    }
-    // Crosshair остаётся pinned — закрывается tap'ом по экрану вне chart'а
+    setCrosshair(null);
   };
 
   const handleClickAway = () => setCrosshair(null);
@@ -178,12 +548,12 @@ export default function MobileChart({
     return Array.from({ length: count }, (_, i) => Math.round((i / (count - 1)) * (N - 1)));
   }, [N]);
 
-  // Format X label
+  // Format X label — DD.MM.YY для дневных таймфреймов, DD.MM HH:mm для intraday.
+  // Страницы могут override через formatXLabel prop для специфических форматов
+  // (например, MM.YY для Buffett на 10-летних периодах).
   const fmtX = (time: string) => {
     if (formatXLabel) return formatXLabel(time);
-    const d = new Date(time);
-    if (isNaN(d.getTime())) return time;
-    return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+    return formatTimeForDisplay(time);
   };
 
   // Format Y (axis pill)
@@ -243,7 +613,16 @@ export default function MobileChart({
       <svg
         width={width}
         height={height}
-        style={{ display: 'block', userSelect: 'none', touchAction: 'pan-y' }}
+        style={{
+          display: 'block',
+          userSelect: 'none',
+          // touch-action: none — chart полностью не реагирует на встроенные
+          // browser-жесты (нет scroll rubber-band, нет dragging). Page sсroll
+          // вообще запрещён (.fm-app overflow:hidden), поэтому pan-y был
+          // не нужен. Pull-to-refresh работает через document listener
+          // в hooks/usePullToRefresh — он независим от SVG touch-action.
+          touchAction: 'none',
+        }}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
@@ -251,10 +630,10 @@ export default function MobileChart({
         onMouseLeave={handleMouseLeave}
         onClick={handleClickAway}
       >
-        {/* Y-axis tick lines (3 штуки: 15%, 50%, 85% от высоты) */}
-        {[0.15, 0.5, 0.85].map((t, i) => (
+        {/* Y-axis grid lines (горизонтальные) — 5 уровней. */}
+        {Y_TICK_POSITIONS.map((t, i) => (
           <line
-            key={`grid-${i}`}
+            key={`grid-y-${i}`}
             x1={PAD_X}
             y1={PAD_TOP + innerH * t}
             x2={PAD_X + innerW}
@@ -264,12 +643,34 @@ export default function MobileChart({
           />
         ))}
 
-        {/* Линии */}
-        {series.map((s, sIdx) => {
+        {/* X-axis grid lines (вертикальные) — на тех же X-tick позициях
+            что и нижние даты. Полная сетка как в десктопном SimpleChart. */}
+        {xTicks.map((idx, i) => {
+          // Пропускаем первый и последний tick — они на самом краю SVG,
+          // линия слилась бы с edge'ами chart-area.
+          if (i === 0 || i === xTicks.length - 1) return null;
+          const x = xAt(idx);
+          return (
+            <line
+              key={`grid-x-${i}`}
+              x1={x}
+              y1={PAD_TOP}
+              x2={x}
+              y2={PAD_TOP + innerH}
+              stroke="color-mix(in srgb, var(--text-primary) 8%, transparent)"
+              strokeWidth={1}
+            />
+          );
+        })}
+
+        {/* Линии — рисуются из downsampled данных. Каждая получает ref для
+            line-drawing animation (см. useEffect выше). */}
+        {downsampledSeries.map((s, sIdx) => {
           const range = s.axis === 'right' ? rightRange : leftRange;
           return (
             <path
               key={`line-${sIdx}`}
+              ref={(el) => { pathRefs.current[sIdx] = el; }}
               d={pathFor(s.data, range)}
               fill="none"
               stroke={s.color}
@@ -280,8 +681,9 @@ export default function MobileChart({
           );
         })}
 
-        {/* Y-axis tick labels — INSIDE chart edges */}
-        {hasLeft && leftRange && [0.15, 0.5, 0.85].map((t, i) => {
+        {/* Y-axis tick labels — INSIDE chart edges. 5 значений на каждой
+            оси (10/30/50/70/90% от высоты), match с tick lines выше. */}
+        {hasLeft && leftRange && Y_TICK_POSITIONS.map((t, i) => {
           const v = leftRange.min + leftRange.span * (1 - t);
           return (
             <text
@@ -297,7 +699,7 @@ export default function MobileChart({
             </text>
           );
         })}
-        {hasRight && rightRange && [0.15, 0.5, 0.85].map((t, i) => {
+        {hasRight && rightRange && Y_TICK_POSITIONS.map((t, i) => {
           const v = rightRange.min + rightRange.span * (1 - t);
           return (
             <text
@@ -315,20 +717,41 @@ export default function MobileChart({
           );
         })}
 
-        {/* Current value pills (на последней точке каждой серии) */}
-        {hasLeft && leftRange && leftLastIdx >= 0 && (() => {
+        {/* Current value pills — каждая У СВОЕЙ оси (как на десктопе):
+            primary (left axis) → pill прижата к ЛЕВОМУ краю chart-area
+            secondary (right axis) → pill прижата к ПРАВОМУ краю
+            Pill сидит на Y-координате последнего значения серии. Это даёт
+            юзеру "current value" анкер на стороне соответствующей оси,
+            а не оба значения сжатых в правом верхнем углу. */}
+        {hasLeft && leftRange && leftLastIdx >= 0 && !leftSeries[0].hidePill && (() => {
           const lastV = leftSeries[0].data[leftLastIdx].value;
-          const x = xAt(leftLastIdx);
           const y = yAt(lastV, leftRange);
           const text = fmtY(lastV, leftSeries[0]);
-          return <PillLabel key="pill-left" x={x} y={y} text={text} color={leftSeries[0].color} anchor="end" />;
+          return (
+            <PillLabel
+              key="pill-left"
+              x={PAD_X}
+              y={y}
+              text={text}
+              color={leftSeries[0].color}
+              anchor="start"
+            />
+          );
         })()}
-        {hasRight && rightRange && rightLastIdx >= 0 && (() => {
+        {hasRight && rightRange && rightLastIdx >= 0 && !rightSeries[0].hidePill && (() => {
           const lastV = rightSeries[0].data[rightLastIdx].value;
-          const x = xAt(rightLastIdx);
           const y = yAt(lastV, rightRange);
           const text = fmtY(lastV, rightSeries[0]);
-          return <PillLabel key="pill-right" x={x} y={y} text={text} color={rightSeries[0].color} anchor="end" />;
+          return (
+            <PillLabel
+              key="pill-right"
+              x={PAD_X + innerW}
+              y={y}
+              text={text}
+              color={rightSeries[0].color}
+              anchor="end"
+            />
+          );
         })()}
 
         {/* Crosshair vertical line + tooltip-data dots */}
@@ -344,9 +767,11 @@ export default function MobileChart({
               strokeDasharray="3,3"
               opacity={0.6}
             />
-            {series.map((s, sIdx) => {
+            {downsampledSeries.map((s, sIdx) => {
               const range = s.axis === 'right' ? rightRange : leftRange;
-              const point = s.data[Math.min(crosshair.idx, s.data.length - 1)];
+              // Skip если idx за пределами этой series — не clamp
+              if (crosshair.idx >= s.data.length) return null;
+              const point = s.data[crosshair.idx];
               if (!point) return null;
               const x = xAt(crosshair.idx);
               const y = yAt(point.value, range);
@@ -369,7 +794,10 @@ export default function MobileChart({
         {showXLabels && (
           <g>
             {xTicks.map((idx, ti) => {
-              const longest = series.reduce((acc, s) => (s.data.length > acc.data.length ? s : acc), series[0]);
+              const longest = downsampledSeries.reduce(
+                (acc, s) => (s.data.length > acc.data.length ? s : acc),
+                downsampledSeries[0],
+              );
               const point = longest.data[Math.min(idx, longest.data.length - 1)];
               if (!point) return null;
               const x = xAt(idx);
@@ -380,11 +808,12 @@ export default function MobileChart({
                 <text
                   key={`xl-${idx}`}
                   x={x}
-                  y={height - 4}
+                  y={height - 16}
                   fontSize={10}
                   fontWeight={600}
                   fill="var(--text-secondary)"
                   textAnchor={anchor}
+                  dominantBaseline="alphabetic"
                 >
                   {fmtX(point.time)}
                 </text>
@@ -394,12 +823,16 @@ export default function MobileChart({
         )}
       </svg>
 
-      {/* Tooltip — над линиями. Только когда crosshair активен. */}
+      {/* Tooltip — над линиями. Только когда crosshair активен.
+          Использует downsampled данные для consistency с crosshair-dots
+          и нарисованными линиями (если бы передали original series — была
+          бы рассинхронизация: точка показана на одной y-координате, а
+          tooltip показывает другое значение). */}
       {crosshair && (
         <TooltipCard
           x={xAt(crosshair.idx)}
           chartW={width}
-          series={series}
+          series={downsampledSeries}
           idx={crosshair.idx}
         />
       )}
@@ -458,10 +891,24 @@ function TooltipCard({ x, chartW, series, idx }: TooltipCardProps) {
   const leftSide = x > chartW / 2;
   const left = leftSide ? Math.max(8, x - W - 8) : Math.min(chartW - W - 8, x + 8);
 
-  const firstPoint = series[0]?.data[Math.min(idx, series[0].data.length - 1)];
-  const date = firstPoint?.time
-    ? new Date(firstPoint.time).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' })
-    : '';
+  // Дата для tooltip:
+  //   1. Сначала ищем серию у которой есть точка с этим idx — это «primary
+  //      по охвату»: на seasonality yearly cur(2026) покрывает только первую
+  //      половину индексов, и её дата (реальная "19.05.26") должна
+  //      показываться, а не avg synthetic дата для того же idx ("26.06.26").
+  //   2. Если ни одна серия не покрывает (краевой случай) — берём самую
+  //      длинную (она всегда имеет какую-то точку).
+  const refSeries = series.find((s) => idx < s.data.length) ?? series.reduce(
+    (acc, s) => (s.data.length > acc.data.length ? s : acc),
+    series[0],
+  );
+  const refPoint = refSeries?.data[Math.min(idx, refSeries.data.length - 1)];
+  // Формат даты с учётом intraday: для 5мин/1ч timestamps с ненулевым временем
+  // (e.g. "2026-05-12T08:00:00") показываем "12.05 08:00". Для daily — "12.05.26".
+  // displayTime > time: для seasonality yearly time синтетический (td-mapping),
+  // а displayTime — реальная дата ("2026-05-19").
+  const refTime = refPoint?.displayTime ?? refPoint?.time;
+  const date = refTime ? formatTimeForDisplay(refTime) : '';
 
   const style: CSSProperties = {
     position: 'absolute',
@@ -483,7 +930,12 @@ function TooltipCard({ x, chartW, series, idx }: TooltipCardProps) {
         {date}
       </div>
       {series.map((s, i) => {
-        const point = s.data[Math.min(idx, s.data.length - 1)];
+        // Skip серии где idx за пределами data — не clamp'аем к last point,
+        // иначе tooltip "висит" на последнем известном значении когда юзер
+        // навёлся на дату для которой данных нет (например yearly current
+        // year ещё не дошёл до этого td).
+        if (idx >= s.data.length) return null;
+        const point = s.data[idx];
         if (!point) return null;
         const value = s.formatValue ? s.formatValue(point.value) : point.value.toFixed(2);
         return (
