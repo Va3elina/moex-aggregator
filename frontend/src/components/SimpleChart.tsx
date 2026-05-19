@@ -1395,10 +1395,13 @@ export default function SimpleChart({
           //      сам гарантирует симметрию).
           //
           // 2026-05-17: padX 6 → 8 — юзер заметил что первая цифра иногда
-          // визуально касается левого края pill'а. 2px дополнительного воздуха
-          // с каждой стороны делает запас на subpixel rendering quirks (особенно
-          // на mobile где font hinting может слегка раздувать ширину).
-          const padX = 8;
+          // визуально касается левого края pill'а.
+          // 2026-05-19: padX 8 → 12 — после формата с 4 знаками (1.1616) и
+          // длинных net-значений (-175 037) measureText недооценивает ширину
+          // Inter (canvas measure ≠ SVG render для proportional digits).
+          // Плюс fontVariantNumeric="tabular-nums" ниже фиксирует одинаковую
+          // ширину каждой цифры — canvas measure становится точным.
+          const padX = 12;
           const padY = 2;
           const pillH = fontY + padY * 2;
           // Pill positioning — pixel-aligned с axis tick text (anchor совпадает).
@@ -1458,10 +1461,17 @@ export default function SimpleChart({
                   fill="#FFFFFF"
                   fontSize={fontY}
                   fontWeight={fontWeight}
+                  style={{ fontVariantNumeric: 'tabular-nums' }}
                 >
                   {mainPart}
                   {unitPart && (
-                    <tspan dx={2} fontSize={unitFontY} fontWeight={700} opacity={0.95}>
+                    <tspan
+                      dx={2}
+                      fontSize={unitFontY}
+                      fontWeight={700}
+                      opacity={0.95}
+                      style={{ fontVariantNumeric: 'tabular-nums' }}
+                    >
                       {unitPart}
                     </tspan>
                   )}
