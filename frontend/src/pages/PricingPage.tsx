@@ -252,8 +252,10 @@ export default function PricingPage() {
         </div>
       </div>
 
-      {/* Карточки тарифов */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-5">
+      {/* Карточки тарифов — 3 колонки на десктопе, в стек на мобилке.
+          Раньше было grid-cols-4 для 4-х тарифов (Free/Basic/Pro/Premium),
+          теперь Premium удалён → 3 равные колонки. */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-5 max-w-5xl mx-auto">
         {data.tiers.map((tier) => {
           const meta = TIER_META[tier.tier] || TIER_META.free;
           const variant = tier.tier === 'free' ? null : (period === 'yearly' ? tier.yearly : tier.monthly);

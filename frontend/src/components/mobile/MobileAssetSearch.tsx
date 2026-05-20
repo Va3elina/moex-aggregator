@@ -172,6 +172,9 @@ export default function MobileAssetSearch({
             onSelect(inst.sectype, inst.name);
             onClose();
           } else if (requiredTier && indicator) {
+            // Закрываем mobile sheet и сразу открываем UpgradeModal сверху —
+            // иначе bottom-sheet не даст увидеть upgrade dialog.
+            onClose();
             showUpgrade({
               tier: requiredTier,
               featureName: `актив ${inst.name} (${inst.sectype})`,

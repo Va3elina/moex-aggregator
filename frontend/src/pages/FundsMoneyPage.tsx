@@ -113,6 +113,16 @@ export default function FundsMoneyPage() {
             setPeriod(allowed[0]);
         }
     };
+
+    // Smart default: для Free '1d' недоступен → переключаем на '1w'
+    const defaultTfSwitchedRef = useRef(false);
+    useEffect(() => {
+        if (fundsAccess.isLoading || defaultTfSwitchedRef.current) return;
+        defaultTfSwitchedRef.current = true;
+        if (!fundsAccess.canUseTimeframe(flowTimeframe)) {
+            setFlowTimeframeRaw('1w');
+        }
+    }, [fundsAccess.isLoading, fundsAccess, flowTimeframe]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [data, setData] = useState<FundsChartResponse | null>(null);

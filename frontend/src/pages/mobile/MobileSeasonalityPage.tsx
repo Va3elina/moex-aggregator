@@ -59,6 +59,8 @@ export default function MobileSeasonalityPage() {
   const [selectedStock, setSelectedStock] = useState('SBER');
   const [selectedName, setSelectedName] = useState('Сбербанк');
   const [mode, setMode] = useState<MobileMode>('monthly');
+  // Smart default: для Free histogram-режимы недоступны → 'yearly'
+  const defaultSwitchedRef = useRef(false);
   const seasonAccess = useTierAccess('seasonality');
   const { showUpgrade } = useUpgradePrompt();
   // Для Free yearly — единственный доступный режим
@@ -298,6 +300,15 @@ export default function MobileSeasonalityPage() {
   useEffect(() => {
     void loadData();
   }, [loadData]);
+
+  // Smart default — переключение на yearly если histogram-режимы недоступны.
+  useEffect(() => {
+    if (seasonAccess.isLoading || defaultSwitchedRef.current) return;
+    defaultSwitchedRef.current = true;
+    if (histogramLocked && mode !== 'yearly') {
+      setMode('yearly');
+    }
+  }, [seasonAccess.isLoading, histogramLocked, mode]);
 
   // Helper: маппинг b.key → label по mode
   const labelFor = (key: number): string => {

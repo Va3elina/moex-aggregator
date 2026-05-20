@@ -80,8 +80,11 @@ export async function apiFetch(url: string, init?: RequestInit): Promise<Respons
   }
 
   if (response.status === 403) {
+    // 403 — это либо tier-restriction («Доступно на тарифе Basic...»),
+    // либо отсутствие auth-token'а. Backend всегда возвращает detail
+    // с конкретным текстом — пробрасываем его как есть.
     const data = await response.json().catch(() => ({ detail: 'Доступ ограничен' }));
-    throw new Error(data.detail || 'Для доступа необходима авторизация');
+    throw new Error(data.detail || 'Доступ ограничен');
   }
 
   return response;

@@ -148,6 +148,9 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
       if (accessible) {
         handleSelect(inst.sectype, inst.name);
       } else if (requiredTier && indicator) {
+        // Закрываем instrument-модалку и открываем UpgradeModal — иначе
+        // получается две full-screen модалки наложенных друг на друга.
+        onClose();
         showUpgrade({
           tier: requiredTier,
           featureName: `актив ${inst.name} (${inst.sectype})`,

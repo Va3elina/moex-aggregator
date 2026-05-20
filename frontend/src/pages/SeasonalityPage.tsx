@@ -77,6 +77,18 @@ export default function SeasonalityPage() {
   const [excludeDividends, setExcludeDividends] = useState(false);
   const [priceDays, setPriceDays] = useState(365);
 
+  // Smart default: для Free 'histogram' недоступен — переключаемся на 'yearly'.
+  // Только при ПЕРВОЙ загрузке матрицы, чтобы не сбрасывать пользовательский
+  // выбор когда tier меняется (apgrade/cancel). Используем ref-флаг.
+  const defaultSwitchedRef = useRef(false);
+  useEffect(() => {
+    if (seasonAccess.isLoading || defaultSwitchedRef.current) return;
+    defaultSwitchedRef.current = true;
+    if (!seasonAccess.canUseMode('histogram')) {
+      setChartType('yearly');
+    }
+  }, [seasonAccess.isLoading, seasonAccess]);
+
   // Analytics
   const { track } = useAnalytics();
   const handleModeChange = useCallback((m: SeasonalityMode) => {
