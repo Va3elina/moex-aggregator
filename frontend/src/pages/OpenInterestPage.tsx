@@ -619,9 +619,12 @@ export default function OpenInterestPage() {
           <div data-tour="oi-export" className="ml-auto">
           <ChartCaptureButton
             getTargetElement={() => chartAnchorRef.current}
-            filename={`frame-oi-${selectedInstrument.toLowerCase()}-${interval}`}
+            filename={`frame-oi-${selectedInstrument.toLowerCase()}-${interval}-${displayMode}`}
             metadata={{
-              title: 'Открытый интерес',
+              // displayMode сразу в title — попадает в первую строку subtitle
+              // экспорта («Открытый интерес — Позиции · 1 час · ...»), сразу
+              // видно режим без копания в tag-list.
+              title: `Открытый интерес — ${displayMode === 'price' ? 'Цена' : displayMode === 'positions' ? 'Позиции' : 'Участники'}`,
               // Не фолбэчим на ticker — иначе при ещё-не-загрузившемся instrumentName
               // получим asset=ticker и дубликат в header. composeFramedCanvas сам
               // сделает primary fallback на title если asset undefined.
@@ -631,7 +634,6 @@ export default function OpenInterestPage() {
                 INTERVAL_LABELS[interval as keyof typeof INTERVAL_LABELS] || `${interval}ч`,
                 PERIOD_LABELS[period],
                 clgroup === 'FIZ' ? 'Физлица' : 'Юрлица',
-                displayMode === 'price' ? 'Только цена' : displayMode === 'positions' ? 'Позиции' : 'Участники',
               ].filter(Boolean),
             }}
           />

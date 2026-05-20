@@ -112,8 +112,8 @@ export default function App() {
     <ThemeProvider>
       <AuthProvider>
       <TierFeaturesProvider>
-      <UpgradePromptProvider>
       <BrowserRouter>
+      <UpgradePromptProvider>
       <AnalyticsProvider>
       <ScrollToTop />
       <AnalyticsPageViewTracker />
@@ -228,8 +228,8 @@ export default function App() {
         </Routes>
       </RouterErrorBoundary>
       </AnalyticsProvider>
-      </BrowserRouter>
       </UpgradePromptProvider>
+      </BrowserRouter>
       </TierFeaturesProvider>
       </AuthProvider>
     </ThemeProvider>

@@ -877,23 +877,26 @@ export default function SeasonalityPage() {
 
       </div>{/* /editorial-frame */}
 
-      {/* Description */}
-      <div className="mt-4 text-sm" style={{ color: 'var(--text-muted)' }}>
-        {chartType === 'histogram'
-          ? `Среднее изменение (${mode === 'intraday' ? 'open-to-close per hour' : 'close-to-close'}) ${MODE_LABELS[mode].toLowerCase()}`
-          : chartType === 'price'
-          ? `График цены ${displayTicker(selectedStock)} — с дивидендными гэпами и без (adjusted close)`
-          : chartType === 'test'
-          ? `Экспериментальный режим: годовая траектория + 4 среза сезонности одновременно`
-          : `Кумулятивное изменение ${displayTicker(selectedStock)} с начала года • ${yearlyData?.current_year ?? ''}`
-        }
-        {(chartType === 'histogram' || chartType === 'yearly' || chartType === 'test') && excludeDividends && (
-          <span className="ml-2 text-green-500">
-            • {mode === 'intraday' && chartType === 'histogram' ? 'Экс-дивидендные дни исключены' : 'Дивидендные гэпы убраны'}
-          </span>
-        )}
-        {chartType === 'histogram' && mode === 'monthday' && <span className="ml-2">• Выходные привязаны к понедельнику</span>}
-      </div>
+      {/* Description — для yearly не показываем «Кумулятивное изменение...»
+          (избыточная подпись, year уже понятен из контекста графика). */}
+      {chartType !== 'yearly' && (
+        <div className="mt-4 text-sm" style={{ color: 'var(--text-muted)' }}>
+          {chartType === 'histogram'
+            ? `Среднее изменение (${mode === 'intraday' ? 'open-to-close per hour' : 'close-to-close'}) ${MODE_LABELS[mode].toLowerCase()}`
+            : chartType === 'price'
+            ? `График цены ${displayTicker(selectedStock)} — с дивидендными гэпами и без (adjusted close)`
+            : chartType === 'test'
+            ? `Экспериментальный режим: годовая траектория + 4 среза сезонности одновременно`
+            : null
+          }
+          {(chartType === 'histogram' || chartType === 'test') && excludeDividends && (
+            <span className="ml-2 text-green-500">
+              • {mode === 'intraday' && chartType === 'histogram' ? 'Экс-дивидендные дни исключены' : 'Дивидендные гэпы убраны'}
+            </span>
+          )}
+          {chartType === 'histogram' && mode === 'monthday' && <span className="ml-2">• Выходные привязаны к понедельнику</span>}
+        </div>
+      )}
 
       <OnboardingTour
         steps={seasonalityTourSteps}
