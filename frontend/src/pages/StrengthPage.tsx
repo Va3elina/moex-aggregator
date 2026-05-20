@@ -24,6 +24,7 @@ import { computeChartTopLineY, getDatePillStyle } from '../components/chart/date
 import { useOnboardingTour } from '../hooks/useFirstVisit';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { strengthTourSteps } from '../data/tours/strength';
+import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 
 type Period = '6m' | '1y' | '2y' | '5y' | 'all';
 type ChartMode = 'line' | 'histogram';
@@ -81,6 +82,7 @@ export default function StrengthPage() {
     const [history, setHistory] = useState<BreadthHistoryResponse | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const { showUpgrade } = useUpgradePrompt();
 
     // Синхронизированный hover между графиками
     const [hoverIndex, setHoverIndex] = useState<number | null>(null);
@@ -141,12 +143,24 @@ export default function StrengthPage() {
             setCurrent(currentData);
             setHistory(historyData);
         } catch (err) {
-            setError('Не удалось загрузить данные');
+            const msg = err instanceof Error ? err.message : String(err);
+            if (msg.includes('тарифе') || msg.includes('недоступ')) {
+                const requiredTier: 'basic' | 'pro' = msg.includes('Pro') ? 'pro' : 'basic';
+                showUpgrade({
+                    tier: requiredTier,
+                    featureName: universeBase === 'all' ? 'вселенная «100 акций»' :
+                        currency === 'usd' ? 'долларовый режим' : 'индикатор «Сила рынка»',
+                    indicator: 'strength',
+                });
+                setError(null);
+            } else {
+                setError('Не удалось загрузить данные');
+            }
             console.error(err);
         } finally {
             setLoading(false);
         }
-    }, [emaPeriod, period, universe]);
+    }, [emaPeriod, period, universe, universeBase, currency, showUpgrade]);
 
     useEffect(() => { loadData(); }, [loadData]);
 

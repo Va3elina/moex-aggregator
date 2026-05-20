@@ -19,6 +19,8 @@ import { seasonalityTourSteps } from '../data/tours/seasonality';
 import { FUND_PALETTE } from '../config/chartTheme';
 import { useAnalytics } from '../contexts/AnalyticsContext';
 import { displayTicker } from '../utils/displayTicker';
+import { useTierAccess } from '../contexts/TierFeaturesContext';
+import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 
 const MODE_LABELS: Record<SeasonalityMode, string> = {
   intraday: 'Внутри дня',
@@ -56,6 +58,10 @@ export default function SeasonalityPage() {
   // Фоновая предзагрузка лого один раз — модалка выбора актива потом
   // открывается мгновенно из SW cache, без 100 запросов.
   usePrefetchLogos();
+
+  // Tier-gating
+  const seasonAccess = useTierAccess('seasonality');
+  const { showUpgrade } = useUpgradePrompt();
 
   // Stock selector
   const [selectedStock, setSelectedStock] = useState<string>('SBER');
@@ -145,6 +151,19 @@ export default function SeasonalityPage() {
   const [yearlyFetchId, setYearlyFetchId] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Хелпер для catch-блоков: tier-related msg → upgrade modal, иначе — setError.
+  // Возвращает true если был tier-error (caller не делает setError повторно).
+  const handleTierError = useCallback((e: unknown, featureName: string): boolean => {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (msg.includes('тарифе') || msg.includes('недоступ')) {
+      const requiredTier: 'basic' | 'pro' = msg.includes('Pro') ? 'pro' : 'basic';
+      showUpgrade({ tier: requiredTier, featureName, indicator: 'seasonality' });
+      setError(null);
+      return true;
+    }
+    return false;
+  }, [showUpgrade]);
 
   // Test-режим: yearly сверху + 4 гистограммы 2×2. Общие фильтры,
   // каждая гистограмма имеет свой tooltip (чтобы hover в одной не мигал другие).
@@ -236,11 +255,13 @@ export default function SeasonalityPage() {
       setHistogramFetchId(id => id + 1);
     } catch (e: unknown) {
       if (reqId !== seasonalityReqIdRef.current) return;
-      setError(e instanceof Error ? e.message : 'Ошибка загрузки');
+      if (!handleTierError(e, `режим «Сезонность»`)) {
+        setError(e instanceof Error ? e.message : 'Ошибка загрузки');
+      }
     } finally {
       if (reqId === seasonalityReqIdRef.current) setLoading(false);
     }
-  }, [selectedStock, mode, excludeDividends, compareYears, showNoOutliers, showExactYear, availableYears]);
+  }, [selectedStock, mode, excludeDividends, compareYears, showNoOutliers, showExactYear, availableYears, handleTierError]);
 
   // Fetch price data
   const fetchPrice = useCallback(async () => {
@@ -251,11 +272,13 @@ export default function SeasonalityPage() {
       setPriceData(res);
       setPriceNavRange(null);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Ошибка загрузки');
+      if (!handleTierError(e, 'график цены')) {
+        setError(e instanceof Error ? e.message : 'Ошибка загрузки');
+      }
     } finally {
       setLoading(false);
     }
-  }, [selectedStock, priceDays]);
+  }, [selectedStock, priceDays, handleTierError]);
 
   // Fetch yearly seasonality — тот же паттерн что histogram.
   // Порядок: compareYears[], noOutliers?, exactYear? — должен совпадать с seriesMeta.
@@ -301,11 +324,13 @@ export default function SeasonalityPage() {
       setYearlyFetchId(id => id + 1);
     } catch (e: unknown) {
       if (reqId !== yearlyReqIdRef.current) return;
-      setError(e instanceof Error ? e.message : 'Ошибка загрузки');
+      if (!handleTierError(e, 'годовая сезонность')) {
+        setError(e instanceof Error ? e.message : 'Ошибка загрузки');
+      }
     } finally {
       if (reqId === yearlyReqIdRef.current) setLoading(false);
     }
-  }, [selectedStock, excludeDividends, compareYears, showNoOutliers, showExactYear, availableYears]);
+  }, [selectedStock, excludeDividends, compareYears, showNoOutliers, showExactYear, availableYears, handleTierError]);
 
   // Fetch для Test-режима — ПРОГРЕССИВНЫЙ:
   //   1) Yearly (пришёл первым → пользователь видит топ-чарт ~300ms)
@@ -623,6 +648,7 @@ export default function SeasonalityPage() {
               onSelect={handleSelectInstrument}
               onClose={() => setIsModalOpen(false)}
               excludeType="futures"
+              indicator="seasonality"
             />
           )}
         </div>
@@ -631,11 +657,26 @@ export default function SeasonalityPage() {
         <div data-tour="seasonality-mode" className="flex" style={{ gap: 'var(--sp-2)' }}>
         <Dropdown<ChartType>
           options={[
-            { key: 'histogram', label: 'Сезонность' },
-            { key: 'yearly',    label: 'Годовая' },
+            {
+              key: 'histogram',
+              label: 'Сезонность',
+              // На Free доступен только yearly. Histogram-режимы заблокированы.
+              locked: !seasonAccess.isLoading && !seasonAccess.canUseMode('histogram'),
+            },
+            { key: 'yearly', label: 'Годовая' },
           ]}
           value={chartType === 'price' || chartType === 'test' ? 'histogram' : chartType}
           onChange={setChartType}
+          onLockedClick={() => {
+            const tier = seasonAccess.requiredTierFor({ mode: 'histogram' });
+            if (tier) {
+              showUpgrade({
+                tier,
+                featureName: 'режим «Сезонность»',
+                indicator: 'seasonality',
+              });
+            }
+          }}
         />
 
         {/* Histogram-specific: mode */}
@@ -644,9 +685,21 @@ export default function SeasonalityPage() {
             options={(Object.keys(MODE_LABELS) as SeasonalityMode[]).map((m): DropdownOption<SeasonalityMode> => ({
               key: m,
               label: MODE_LABELS[m],
+              // intraday — Pro-only по матрице
+              locked: !seasonAccess.isLoading && !seasonAccess.canUseMode(m),
             }))}
             value={mode}
             onChange={handleModeChange}
+            onLockedClick={(m) => {
+              const tier = seasonAccess.requiredTierFor({ mode: m });
+              if (tier) {
+                showUpgrade({
+                  tier,
+                  featureName: `режим «${MODE_LABELS[m]}»`,
+                  indicator: 'seasonality',
+                });
+              }
+            }}
           />
         )}
         </div>

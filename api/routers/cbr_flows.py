@@ -20,14 +20,18 @@ Endpoint:
 Данные приходят из таблицы cbr_flows, которая обновляется ежедневно
 скриптом CBR/fetch_orfr_flows.py из orchestrator'а.
 """
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
 
+from api.billing.features import get_indicator_limits
+from api.billing.tiers import user_tier
 from api.cache import get_or_set
 from api.database import get_engine
 from api.logger import get_logger
+from api.routers.auth import get_current_user_optional
 
 log = get_logger()
 
@@ -76,23 +80,53 @@ INSTRUMENT_LABELS = {
 @router.get("")
 def get_cbr_flows(
     type: InstrumentType = Query("stocks", description="stocks | ofz | fx"),
+    user = Depends(get_current_user_optional),
 ):
-    """Потоки участников биржи по выбранному типу инструмента."""
+    """Потоки участников биржи по выбранному типу инструмента.
 
-    cache_key = f"cbr_flows:{type}"
+    Tier-gating:
+      - Free: данные с задержкой 24ч + только последние 365 дней.
+      - Basic/Pro: real-time + полная история.
+    """
+    # Определяем tier limits заранее — нужны для cache_key (разные tier'ы
+    # получают разные слайсы, нельзя шарить кэш).
+    tier = user_tier(user)
+    limits = get_indicator_limits(tier, "cbr_flows")
+    delay_hours: int = int(limits.get("data_delay_hours") or 0)
+    max_history_days = limits.get("max_history_days")
+
+    cache_key = f"cbr_flows:{type}:delay={delay_hours}:hist={max_history_days}"
     cached = get_or_set(cache_key)
     if cached is not None:
         return cached
 
+    # Граничные даты для tier-фильтра
+    now = datetime.now(timezone.utc).date()
+    effective_end = now - timedelta(hours=delay_hours) if delay_hours else None
+    effective_start = (
+        now - timedelta(days=int(max_history_days))
+        if max_history_days is not None
+        else None
+    )
+
     engine = get_engine()
+    sql = """
+        SELECT period_year, period_label, period_kind, period_end_date,
+               category, value, source_file, updated_at
+        FROM cbr_flows
+        WHERE instrument_type = :itype
+    """
+    params: dict = {"itype": type}
+    if effective_start is not None:
+        sql += " AND period_end_date >= :start_date"
+        params["start_date"] = effective_start
+    if effective_end is not None:
+        sql += " AND period_end_date <= :end_date"
+        params["end_date"] = effective_end
+    sql += " ORDER BY period_end_date, category"
+
     with engine.connect() as conn:
-        rows = conn.execute(text("""
-            SELECT period_year, period_label, period_kind, period_end_date,
-                   category, value, source_file, updated_at
-            FROM cbr_flows
-            WHERE instrument_type = :itype
-            ORDER BY period_end_date, category
-        """), {"itype": type}).fetchall()
+        rows = conn.execute(text(sql), params).fetchall()
 
     if not rows:
         raise HTTPException(

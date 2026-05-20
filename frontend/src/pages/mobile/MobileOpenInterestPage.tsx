@@ -21,6 +21,8 @@ import MobileSheet from '../../components/mobile/MobileSheet';
 import MobileAssetSearch from '../../components/mobile/MobileAssetSearch';
 import { getChartData } from '../../services/api';
 import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
+import { useTierAccess } from '../../contexts/TierFeaturesContext';
+import { Lock } from 'lucide-react';
 import type { ChartResponse } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
 import { useRealtimeData } from '../../hooks/useRealtimeData';
@@ -79,6 +81,7 @@ const MAX_PERIODS_BY_INTERVAL: Record<number, Period[]> = {
 export default function MobileOpenInterestPage() {
   const { isAuthenticated } = useAuth();
   const { showUpgrade } = useUpgradePrompt();
+  const oiAccess = useTierAccess('open_interest');
 
   // State
   const [selectedInstrument, setSelectedInstrument] = useState('SR');
@@ -396,6 +399,7 @@ export default function MobileOpenInterestPage() {
           setSelectedInstrument(sectype);
           setInstrumentName(name);
         }}
+        indicator="open_interest"
       />
 
       {/* Sheet: период + интервал */}
@@ -409,16 +413,43 @@ export default function MobileOpenInterestPage() {
             Интервал
           </div>
           <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
-            {[24, 60, 5].map((int) => (
-              <button
-                key={int}
-                className={`fm-chip ${intervalValue === int ? 'active' : ''}`}
-                onClick={() => handleIntervalChange(int)}
-                style={{ flex: 1, justifyContent: 'center' }}
-              >
-                {INTERVAL_LABELS[int]}
-              </button>
-            ))}
+            {[24, 60, 5].map((int) => {
+              const allowed = oiAccess.isLoading || oiAccess.canUseInterval(int);
+              return (
+                <button
+                  key={int}
+                  className={`fm-chip ${intervalValue === int ? 'active' : ''}`}
+                  onClick={() => {
+                    if (!allowed) {
+                      const tier = oiAccess.requiredTierFor({ interval: int });
+                      if (tier) {
+                        showUpgrade({
+                          tier,
+                          featureName: `${int === 5 ? '5-минутный' : `${int}-часовой`} таймфрейм`,
+                          indicator: 'open_interest',
+                        });
+                      }
+                      return;
+                    }
+                    handleIntervalChange(int);
+                  }}
+                  style={{
+                    flex: 1,
+                    justifyContent: 'center',
+                    opacity: allowed ? 1 : 0.5,
+                    cursor: allowed ? 'pointer' : 'not-allowed',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                  }}
+                  aria-disabled={!allowed}
+                  title={!allowed ? 'Доступно на повышенном тарифе' : undefined}
+                >
+                  {INTERVAL_LABELS[int]}
+                  {!allowed && <Lock size={11} strokeWidth={2.2} />}
+                </button>
+              );
+            })}
           </div>
 
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>

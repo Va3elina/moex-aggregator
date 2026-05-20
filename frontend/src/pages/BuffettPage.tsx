@@ -21,6 +21,8 @@ import { useIsMobile } from '../hooks/useIsMobile';
 import { useOnboardingTour } from '../hooks/useFirstVisit';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { buffettTourSteps } from '../data/tours/buffett';
+import { useTierAccess } from '../contexts/TierFeaturesContext';
+import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 
 type ViewMode = 'cap-gdp' | 'cap-m2';
 
@@ -36,6 +38,8 @@ export default function BuffettPage() {
     const navigate = useNavigate();
     const isMobile = useIsMobile();
     const [viewMode, setViewMode] = useState<ViewMode>('cap-gdp');
+    const buffAccess = useTierAccess('buffett');
+    const { showUpgrade } = useUpgradePrompt();
     const [period, setPeriod] = useState<BuffettPeriod>('10y');
     // Показывать капитализацию (secondary axis) — toggle для пользователя
     // если хочет видеть только ratio Кап/ВВП или Кап/M2 без контекста размера.
@@ -78,12 +82,23 @@ export default function BuffettPage() {
                 setPeriod('1y');
                 return;
             }
-            setError('Ошибка загрузки данных');
+            // Tier-related 403 → upgrade modal, не destructive error
+            if (msg.includes('тарифе') || msg.includes('недоступ')) {
+                const requiredTier: 'basic' | 'pro' = msg.includes('Pro') ? 'pro' : 'basic';
+                showUpgrade({
+                    tier: requiredTier,
+                    featureName: viewMode === 'cap-m2' ? 'режим «Кап / M2»' : 'индикатор Баффетта',
+                    indicator: 'buffett',
+                });
+                setError(null);
+            } else {
+                setError('Ошибка загрузки данных');
+            }
             console.error(err);
         } finally {
             setLoading(false);
         }
-    }, [period, smooth, viewMode, timeframe]);
+    }, [period, smooth, viewMode, timeframe, showUpgrade]);
 
     useEffect(() => { loadData(); }, [loadData]);
 
@@ -162,10 +177,24 @@ export default function BuffettPage() {
                 <Dropdown<ViewMode>
                     options={[
                         { key: 'cap-gdp', label: 'Капитализация / ВВП' },
-                        { key: 'cap-m2',  label: 'Капитализация / M2' },
+                        {
+                            key: 'cap-m2',
+                            label: 'Капитализация / M2',
+                            locked: !buffAccess.isLoading && !buffAccess.canUseMode('cap-m2'),
+                        },
                     ]}
                     value={viewMode}
                     onChange={setViewMode}
+                    onLockedClick={() => {
+                        const tier = buffAccess.requiredTierFor({ mode: 'cap-m2' });
+                        if (tier) {
+                            showUpgrade({
+                                tier,
+                                featureName: 'режим «Капитализация / M2»',
+                                indicator: 'buffett',
+                            });
+                        }
+                    }}
                 />
                 </div>
 

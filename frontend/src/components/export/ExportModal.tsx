@@ -34,6 +34,7 @@ import AnnotationCanvas, {
     type AnnotationTool,
 } from './AnnotationCanvas';
 import AnnotationToolbar, { COLOR_PRESETS, STROKE_PRESETS } from './AnnotationToolbar';
+import { useCommonFeatures } from '../../contexts/TierFeaturesContext';
 
 interface Props {
     targetElement: HTMLElement;
@@ -49,6 +50,9 @@ interface Props {
 export default function ExportModal({ targetElement, filename, metadata, exportStyles, onClose }: Props) {
     const [state, setState] = useState<ExportModalState>({ phase: 'capturing' });
     const abortRef = useRef<AbortController | null>(null);
+
+    // Tier features — Free → watermark on export.
+    const commonFeatures = useCommonFeatures();
 
     // Annotation state — изолировано от phase, чтобы tool/color не сбрасывались
     // при downloading → preview transitions.
@@ -116,6 +120,7 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
                     accentColor: accent,
                     dpr,
                     metadata,
+                    watermark: commonFeatures.watermark_on_export,
                 });
 
                 if (ac.signal.aborted) return;
@@ -138,7 +143,7 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
         return () => {
             ac.abort();
         };
-    }, [targetElement]);
+    }, [targetElement, commonFeatures.watermark_on_export]);
 
     // ESC to close. Если есть annotations — confirm (защита от случайного потерь).
     useEffect(() => {

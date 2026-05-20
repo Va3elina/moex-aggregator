@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
-import { Search, X, Star } from 'lucide-react';
+import { Search, X, Star, Lock } from 'lucide-react';
 import InstrumentIcon from './InstrumentIcon';
 import { useAnalytics } from '../contexts/AnalyticsContext';
+import { useTierAccess } from '../contexts/TierFeaturesContext';
+import { useUpgradePrompt } from './tier/UpgradeModal';
 
 interface Instrument {
   sec_id: string;
@@ -26,18 +28,26 @@ interface InstrumentSearchModalProps {
   filterType?: 'stock' | 'futures';
   excludeType?: string;
   onlyGroups?: string[];
+  /** Если задан — для каждого инструмента проверяем доступность по tier'у.
+   *  Заблокированные затемняются + lock icon + клик открывает UpgradeModal. */
+  indicator?: string;
 }
 
 
 // InstrumentIcon + INSTRUMENT_ICONS + FUT_TO_STOCK перенесены в
 // отдельный модуль ./InstrumentIcon.tsx, общий для всех страниц.
 
-export default function InstrumentSearchModal({ onSelect, onClose, filterType, excludeType, onlyGroups }: InstrumentSearchModalProps) {
+export default function InstrumentSearchModal({ onSelect, onClose, filterType, excludeType, onlyGroups, indicator }: InstrumentSearchModalProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [instruments, setInstruments] = useState<Instrument[]>([]);
   const [loading, setLoading] = useState(true);
   const [categoryFilter, setCategoryFilter] = useState('all');
   const { track } = useAnalytics();
+
+  // Tier-gating: если передан indicator — проверяем доступ для каждого актива.
+  // Если нет — useTierAccess всё равно вызывается (rules of hooks), но не используется.
+  const tierAccess = useTierAccess(indicator || '');
+  const { showUpgrade } = useUpgradePrompt();
 
   // Track wrapper — отдельная функция чтобы не дублировать в renderItem.
   const handleSelect = (sectype: string, name: string) => {
@@ -126,16 +136,63 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
   // Один render для items — переиспользуется в favorites и regular списках.
   const renderItem = (inst: Instrument) => {
     const isFavorite = favorites.includes(inst.sectype);
+
+    // Tier-gating: проверяем доступ к активу. Если indicator не задан или
+    // матрица ещё грузится → считаем accessible (graceful fallback).
+    const accessible = !indicator || tierAccess.isLoading
+      ? true
+      : tierAccess.canAccessAsset(inst.sectype);
+    const requiredTier = !accessible ? tierAccess.requiredTierFor({ asset: inst.sectype }) : null;
+
+    const handleClick = () => {
+      if (accessible) {
+        handleSelect(inst.sectype, inst.name);
+      } else if (requiredTier && indicator) {
+        showUpgrade({
+          tier: requiredTier,
+          featureName: `актив ${inst.name} (${inst.sectype})`,
+          indicator,
+        });
+      }
+    };
+
     return (
       <div
         key={inst.sectype}
-        onClick={() => handleSelect(inst.sectype, inst.name)}
-        className="instrument-item flex items-center gap-3.5 px-3 py-2.5 rounded-lg cursor-pointer transition-colors"
-        style={{ color: 'var(--text-primary)' }}
+        onClick={handleClick}
+        className="instrument-item flex items-center gap-3.5 px-3 py-2.5 rounded-lg transition-colors"
+        style={{
+          color: 'var(--text-primary)',
+          cursor: accessible ? 'pointer' : 'not-allowed',
+        }}
+        title={!accessible && requiredTier
+          ? `Доступно на тарифе ${requiredTier === 'basic' ? 'Basic' : 'Pro'}`
+          : undefined}
       >
-        <InstrumentIcon sectype={inst.sectype} size={32} />
-        <span className="font-bold flex-shrink-0 mr-1.5" style={{ fontSize: 'var(--fs-sm)' }}>{inst.sectype}</span>
-        <span className="truncate flex-1" style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-xs)' }}>{inst.name}</span>
+        {/* Затемнённая часть — иконка + тикер + название. opacity 0.45 если заблокирован. */}
+        <div
+          className="flex items-center gap-3.5 flex-1 min-w-0"
+          style={{
+            opacity: accessible ? 1 : 0.45,
+            filter: accessible ? undefined : 'grayscale(0.5)',
+          }}
+        >
+          <InstrumentIcon sectype={inst.sectype} size={32} />
+          <span className="font-bold flex-shrink-0 mr-1.5" style={{ fontSize: 'var(--fs-sm)' }}>{inst.sectype}</span>
+          <span className="truncate flex-1" style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-xs)' }}>{inst.name}</span>
+        </div>
+
+        {/* Lock icon если заблокирован — между названием и звёздочкой */}
+        {!accessible && (
+          <Lock
+            size={16}
+            strokeWidth={2.2}
+            style={{ color: 'var(--text-muted)', flexShrink: 0 }}
+            aria-label="Доступно на повышенном тарифе"
+          />
+        )}
+
+        {/* Star — всегда кликабельна (можно добавить в избранное даже заблок. актив) */}
         <button
           onClick={(e) => toggleFavorite(inst.sectype, e)}
           className="p-2 transition-colors"

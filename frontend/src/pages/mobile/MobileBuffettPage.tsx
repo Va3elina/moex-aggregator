@@ -4,7 +4,9 @@
  * Простая структура: chart (cap + ratio) + viewMode toggle + period sheet.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { Scale } from 'lucide-react';
+import { Scale, Lock } from 'lucide-react';
+import { useTierAccess } from '../../contexts/TierFeaturesContext';
+import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
 import MobileLayout from '../../components/mobile/MobileLayout';
 import MobilePageHeader from '../../components/mobile/MobilePageHeader';
 import MobileChart from '../../components/mobile/MobileChart';
@@ -30,6 +32,8 @@ const PERIOD_LABELS: Partial<Record<BuffettPeriod, string>> = {
 
 export default function MobileBuffettPage() {
   const [viewMode, setViewMode] = useState<ViewMode>('cap-gdp');
+  const buffAccess = useTierAccess('buffett');
+  const { showUpgrade } = useUpgradePrompt();
   const [period, setPeriod] = useState<BuffettPeriod>('10y');
   // Таймфрейм аггрегации: день/неделя/месяц. По умолчанию месяц.
   const [timeframe, setTimeframe] = useState<'1d' | '1w' | '1m'>('1m');
@@ -165,11 +169,20 @@ export default function MobileBuffettPage() {
         }
       } catch (err) {
         console.error('Ошибка Buffett:', err);
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes('тарифе') || msg.includes('недоступ')) {
+          const requiredTier: 'basic' | 'pro' = msg.includes('Pro') ? 'pro' : 'basic';
+          showUpgrade({
+            tier: requiredTier,
+            featureName: viewMode === 'cap-m2' ? 'режим «Кап / M2»' : 'индикатор Баффетта',
+            indicator: 'buffett',
+          });
+        }
       } finally {
         setLoading(false);
       }
     },
-    [viewMode, period, timeframe],
+    [viewMode, period, timeframe, showUpgrade],
   );
 
   useEffect(() => {
@@ -291,30 +304,53 @@ export default function MobileBuffettPage() {
               Версия индикатора
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {(['cap-gdp', 'cap-m2'] as const).map((m) => (
-                <button
-                  key={m}
-                  onClick={() => setViewMode(m)}
-                  style={{
-                    display: 'block',
-                    width: '100%',
-                    textAlign: 'left',
-                    padding: '12px 14px',
-                    background: viewMode === m ? 'var(--accent)' : 'var(--bg-secondary)',
-                    color: viewMode === m ? 'var(--text-inverse)' : 'var(--text-primary)',
-                    border: '1.5px solid var(--text-primary)',
-                    borderRadius: 10,
-                    fontWeight: 700,
-                    fontSize: 13,
-                    cursor: 'pointer',
-                  }}
-                >
-                  {m === 'cap-gdp' ? 'Капитализация / ВВП' : 'Капитализация / M2'}
-                  <div style={{ fontSize: 10, fontWeight: 500, opacity: 0.8, marginTop: 3, lineHeight: 1.3 }}>
-                    {m === 'cap-gdp' ? 'Классика. Сравнение с экономикой.' : 'Альтернатива. Сравнение с денежной массой.'}
-                  </div>
-                </button>
-              ))}
+              {(['cap-gdp', 'cap-m2'] as const).map((m) => {
+                const allowed = buffAccess.isLoading || buffAccess.canUseMode(m);
+                const label = m === 'cap-gdp' ? 'Капитализация / ВВП' : 'Капитализация / M2';
+                return (
+                  <button
+                    key={m}
+                    onClick={() => {
+                      if (!allowed) {
+                        const tier = buffAccess.requiredTierFor({ mode: m });
+                        if (tier) {
+                          showUpgrade({
+                            tier,
+                            featureName: `режим «${label}»`,
+                            indicator: 'buffett',
+                          });
+                        }
+                        return;
+                      }
+                      setViewMode(m);
+                    }}
+                    style={{
+                      display: 'block',
+                      width: '100%',
+                      textAlign: 'left',
+                      padding: '12px 14px',
+                      background: viewMode === m ? 'var(--accent)' : 'var(--bg-secondary)',
+                      color: viewMode === m ? 'var(--text-inverse)' : 'var(--text-primary)',
+                      border: '1.5px solid var(--text-primary)',
+                      borderRadius: 10,
+                      fontWeight: 700,
+                      fontSize: 13,
+                      cursor: allowed ? 'pointer' : 'not-allowed',
+                      opacity: allowed ? 1 : 0.5,
+                      position: 'relative',
+                    }}
+                    aria-disabled={!allowed}
+                  >
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      {label}
+                      {!allowed && <Lock size={12} strokeWidth={2.2} />}
+                    </div>
+                    <div style={{ fontSize: 10, fontWeight: 500, opacity: 0.8, marginTop: 3, lineHeight: 1.3 }}>
+                      {m === 'cap-gdp' ? 'Классика. Сравнение с экономикой.' : 'Альтернатива. Сравнение с денежной массой.'}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
 

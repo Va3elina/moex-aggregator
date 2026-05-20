@@ -13,9 +13,11 @@
  * API совпадает с InstrumentSearchModal — onSelect(sectype, name).
  */
 import { useEffect, useState } from 'react';
-import { Search, Star } from 'lucide-react';
+import { Search, Star, Lock } from 'lucide-react';
 import MobileSheet from './MobileSheet';
 import InstrumentIcon from '../InstrumentIcon';
+import { useTierAccess } from '../../contexts/TierFeaturesContext';
+import { useUpgradePrompt } from '../tier/UpgradeModal';
 import type { Instrument } from '../../types';
 
 interface MobileAssetSearchProps {
@@ -24,6 +26,9 @@ interface MobileAssetSearchProps {
   onSelect: (sectype: string, name: string) => void;
   filterType?: 'stock' | 'futures' | 'no-futures';
   excludeType?: string;
+  /** Если задан — для каждого инструмента проверяем доступность по tier'у.
+   *  Заблокированные затемняются + lock icon + клик открывает UpgradeModal. */
+  indicator?: string;
 }
 
 const FAVORITES_KEY = 'favoriteInstruments';
@@ -54,6 +59,7 @@ export default function MobileAssetSearch({
   onSelect,
   filterType,
   excludeType,
+  indicator,
 }: MobileAssetSearchProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [instruments, setInstruments] = useState<Instrument[]>([]);
@@ -63,6 +69,10 @@ export default function MobileAssetSearch({
     const saved = localStorage.getItem(FAVORITES_KEY);
     return saved ? JSON.parse(saved) : ['SR', 'GZ', 'MX'];
   });
+
+  // Tier-gating: проверяем доступ для каждого актива если задан indicator.
+  const tierAccess = useTierAccess(indicator || '');
+  const { showUpgrade } = useUpgradePrompt();
 
   // Загрузка списка. Futures лежат в отдельной таблице (требует
   // ?type=futures), валюта/индексы/сырьё/акции в общей.
@@ -147,12 +157,27 @@ export default function MobileAssetSearch({
   // Render одного элемента списка
   const renderItem = (inst: Instrument) => {
     const isFav = favorites.includes(inst.sectype);
+
+    // Tier-check. Graceful fallback если indicator не задан или матрица грузится.
+    const accessible = !indicator || tierAccess.isLoading
+      ? true
+      : tierAccess.canAccessAsset(inst.sectype);
+    const requiredTier = !accessible ? tierAccess.requiredTierFor({ asset: inst.sectype }) : null;
+
     return (
       <button
         key={inst.sectype}
         onClick={() => {
-          onSelect(inst.sectype, inst.name);
-          onClose();
+          if (accessible) {
+            onSelect(inst.sectype, inst.name);
+            onClose();
+          } else if (requiredTier && indicator) {
+            showUpgrade({
+              tier: requiredTier,
+              featureName: `актив ${inst.name} (${inst.sectype})`,
+              indicator,
+            });
+          }
         }}
         style={{
           display: 'flex',
@@ -162,26 +187,49 @@ export default function MobileAssetSearch({
           borderTop: '1px solid color-mix(in srgb, var(--text-primary) 10%, transparent)',
           width: '100%',
           background: 'transparent',
-          cursor: 'pointer',
+          cursor: accessible ? 'pointer' : 'not-allowed',
           color: 'var(--text-primary)',
           textAlign: 'left',
         }}
       >
-        <InstrumentIcon sectype={inst.sectype} size={36} />
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, lineHeight: 1.15 }}>{inst.name}</div>
-          <div
-            className="mono"
-            style={{
-              fontSize: 10.5,
-              color: 'var(--text-secondary)',
-              letterSpacing: '0.04em',
-              marginTop: 2,
-            }}
-          >
-            {inst.sectype}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 14,
+            flex: 1,
+            minWidth: 0,
+            opacity: accessible ? 1 : 0.45,
+            filter: accessible ? undefined : 'grayscale(0.5)',
+          }}
+        >
+          <InstrumentIcon sectype={inst.sectype} size={36} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, lineHeight: 1.15 }}>{inst.name}</div>
+            <div
+              className="mono"
+              style={{
+                fontSize: 10.5,
+                color: 'var(--text-secondary)',
+                letterSpacing: '0.04em',
+                marginTop: 2,
+              }}
+            >
+              {inst.sectype}
+            </div>
           </div>
         </div>
+
+        {/* Lock icon для заблокированных */}
+        {!accessible && (
+          <Lock
+            size={16}
+            strokeWidth={2.2}
+            style={{ color: 'var(--text-muted)', flexShrink: 0 }}
+            aria-label="Доступно на повышенном тарифе"
+          />
+        )}
+
         <span
           role="button"
           onClick={(e) => toggleFavorite(inst.sectype, e)}

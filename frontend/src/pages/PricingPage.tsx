@@ -1,15 +1,18 @@
 /**
  * PricingPage — страница тарифов.
  *
- * Загружает /api/billing/plans → показывает 4 тарифа (Free / Basic / Pro / Premium).
+ * Загружает /api/billing/plans → показывает 3 тарифа (Free / Basic / Pro).
  * Переключатель "Месяц/Год" внутри каждой платной карточки.
  * Клик "Купить" → POST /api/billing/checkout → редирект на confirmation_url.
  *
- * Провайдер выбирается на бэке (factory.py):
+ * Provider выбирается на бэке (factory.py):
  *   - tbank → confirmation_url ведёт на https://pay.tbank.ru/...
  *   - stub  → confirmation_url ведёт на /billing/stub (для dev без T-Bank ключей)
+ *
+ * Premium tier удалён 2026-05-19. Премиум-юзеры мигрированы в pro,
+ * Вадим (id 2/4) и Тория (id 3/11) — в admin (полный доступ).
  */
-import { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Check, Zap, Crown, Sparkles, X } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
@@ -427,6 +430,9 @@ export default function PricingPage() {
         </div>
       )}
 
+      {/* Сравнительная таблица тарифов — детальная матрица по индикаторам */}
+      <ComparisonMatrix />
+
       {/* Способы оплаты — обязательный блок по требованиям эквайринга Т-Банка
           (логотипы принимаемых ПС + логотип Банка-эквайера + URL на tbank.ru). */}
       <PaymentMethods />
@@ -775,6 +781,150 @@ function ConsentRow({
 }
 
 /**
+ * ComparisonMatrix — детальная таблица сравнения тарифов по каждому индикатору.
+ * Источник истины — api/billing/features.py. Здесь — hand-crafted, потому что
+ * нужно человекочитаемое описание каждой строки, а не raw matrix.
+ *
+ * Mobile (< 640px): table расщепляется в 3 card-секции (по tier'у) через CSS.
+ * Desktop: классическая горизонтальная матрица 3 столбца × N строк.
+ */
+function ComparisonMatrix() {
+  // Структура: [section_title, [row_label, free_val, basic_val, pro_val]]
+  const sections: Array<[string, Array<[string, string, string, string]>]> = [
+    ['Карта рынка', [
+      ['Доступные режимы', 'Индекс IMOEX', 'IMOEX + Все акции', 'IMOEX + Все акции'],
+    ]],
+    ['Открытый интерес', [
+      ['Активов', '12 крупных фьючерсов', 'Все 65', 'Все 65'],
+      ['Таймфреймы', 'Часовой, дневной', 'Часовой, дневной', '5 мин + часовой + дневной'],
+      ['История', '6 месяцев', '10 лет', 'Вся'],
+      ['Задержка данных', '24 часа', 'Real-time', 'Real-time'],
+    ]],
+    ['Деньги в фондах', [
+      ['Фондов', '8 крупнейших', 'Все', 'Все'],
+      ['Таймфреймы', 'Неделя, месяц', 'Все', 'Все'],
+      ['История', '6 месяцев', 'Вся', 'Вся'],
+    ]],
+    ['Сила рынка', [
+      ['Вселенные', 'Только IMOEX', 'IMOEX + 100 акций', 'IMOEX + 100 акций'],
+      ['Долларовый режим', '—', 'Да', 'Да'],
+      ['История', '1 год', '10 лет', 'Вся'],
+    ]],
+    ['Индикатор Баффетта', [
+      ['Режимы', 'Кап / ВВП', 'Кап / ВВП + Кап / M2', 'Кап / ВВП + Кап / M2'],
+      ['История', '5 лет', '10 лет', 'Вся'],
+      ['Кастомные диапазоны', '—', '—', 'Да'],
+    ]],
+    ['Сезонность', [
+      ['Активов', '10 крупных акций', 'Все', 'Все'],
+      ['Режимы', 'Только годовая', 'Гистограмма + годовая', 'Все + внутри дня'],
+      ['История', '10 лет', 'Вся', 'Вся'],
+    ]],
+    ['Потоки участников биржи', [
+      ['Задержка данных', '24 часа', 'Real-time', 'Real-time'],
+      ['История', '1 год', 'Вся', 'Вся'],
+      ['Фильтры по категориям', '—', 'Да', 'Да'],
+    ]],
+    ['Каталог фондов', [
+      ['Доступ', 'Полный', 'Полный', 'Полный'],
+    ]],
+    ['Общие фичи', [
+      ['Водяной знак на экспорте', 'Да', '—', '—'],
+      ['Экспорт CSV / Excel', '—', '—', 'Да'],
+      ['API-доступ', '—', '—', 'Да'],
+      ['Алерты в Telegram', '—', '20 / месяц', 'Безлимит'],
+    ]],
+  ];
+
+  const cellStyle: React.CSSProperties = {
+    padding: '10px 12px',
+    fontSize: 'var(--fs-sm)',
+    color: 'var(--text-primary)',
+    borderBottom: '1px solid var(--border-color)',
+    verticalAlign: 'top',
+    lineHeight: 1.4,
+  };
+
+  const headerStyle: React.CSSProperties = {
+    ...cellStyle,
+    textAlign: 'center',
+    fontWeight: 700,
+    textTransform: 'uppercase',
+    letterSpacing: '0.08em',
+    fontSize: 'var(--fs-2xs)',
+    color: 'var(--text-secondary)',
+    borderBottom: '2px solid var(--text-primary)',
+  };
+
+  return (
+    <div className="mt-12 pt-8 border-t" style={{ borderColor: 'var(--border-color)' }}>
+      <h3
+        className="text-center mb-6 font-bold"
+        style={{
+          color: 'var(--text-primary)',
+          fontSize: 'var(--fs-lg)',
+          letterSpacing: '0.01em',
+        }}
+      >
+        Что входит в каждый тариф
+      </h3>
+
+      <div className="overflow-x-auto -mx-4 px-4 styled-scrollbar">
+        <table
+          style={{
+            width: '100%',
+            borderCollapse: 'collapse',
+            tableLayout: 'fixed',
+            minWidth: 560,
+          }}
+        >
+          <thead>
+            <tr>
+              <th style={{ ...headerStyle, textAlign: 'left', width: '34%' }}>Возможность</th>
+              <th style={headerStyle}>Free</th>
+              <th style={{ ...headerStyle, color: 'var(--accent)' }}>Basic</th>
+              <th style={headerStyle}>Pro</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sections.map(([sectionTitle, rows], si) => (
+              <React.Fragment key={si}>
+                <tr>
+                  <td
+                    colSpan={4}
+                    style={{
+                      padding: '14px 12px 6px',
+                      fontWeight: 700,
+                      fontSize: 'var(--fs-sm)',
+                      color: 'var(--text-primary)',
+                      background: 'color-mix(in srgb, var(--text-muted) 6%, transparent)',
+                      borderBottom: '1px solid var(--border-color)',
+                    }}
+                  >
+                    {sectionTitle}
+                  </td>
+                </tr>
+                {rows.map(([label, free, basic, pro], ri) => (
+                  <tr key={`${si}-${ri}`}>
+                    <td style={cellStyle}>{label}</td>
+                    <td style={{ ...cellStyle, textAlign: 'center', color: 'var(--text-secondary)' }}>
+                      {free}
+                    </td>
+                    <td style={{ ...cellStyle, textAlign: 'center' }}>{basic}</td>
+                    <td style={{ ...cellStyle, textAlign: 'center', fontWeight: 600 }}>{pro}</td>
+                  </tr>
+                ))}
+              </React.Fragment>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+
+/**
  * PaymentMethods — блок «Способы оплаты» внизу страницы тарифов.
  * Обязателен для эквайринга T-Bank: показываем только логотип Банка-эквайера
  * + ссылка на tbank.ru. Логотипы конкретных ПС (МИР/T-Pay/СБП) убраны —
@@ -852,40 +1002,40 @@ function PaymentMethods() {
 }
 
 /**
- * Текущий список фичей для каждого tier'а.
- * ВРЕМЕННАЯ ЗАГЛУШКА — реальная feature-matrix появится позже
- * в api/billing/features.py и будет приходить из /api/billing/plans.
+ * Список фичей для каждого tier'а — отражает api/billing/features.py.
+ * Premium удалён (упразднён в пользу 3-уровневой схемы).
  */
 function getFeaturesList(tier: string): string[] {
   switch (tier) {
     case 'free':
       return [
-        'Просмотр основных индикаторов',
-        'Дневные таймфреймы',
-        'Последний год истории',
+        'Все 9 индикаторов с базовой функциональностью',
+        '12 крупных фьючерсов в ОИ + 10 акций в Сезонности',
+        'Только режим IMOEX в Карте рынка',
+        'История за 6–12 месяцев, дневные данные',
+        'Задержка данных 24 часа',
+        'Водяной знак на экспорте',
       ];
     case 'basic':
       return [
-        'Всё из Free',
-        'Часовые таймфреймы',
-        'Полная история за 5 лет',
-        'Все базовые индикаторы',
+        'Всё из Free, плюс:',
+        'Все 65 фьючерсов в Открытом интересе',
+        '«Все акции» в Карте рынка и Силе рынка',
+        'Долларовый режим в Силе рынка',
+        'Капитализация / M2 в индикаторе Баффетта',
+        'История до 10 лет, без задержки данных',
+        '20 алертов в Telegram',
       ];
     case 'pro':
       return [
-        'Всё из Basic',
-        '5-минутные таймфреймы',
+        'Всё из Basic, плюс:',
+        '5-минутные таймфреймы в Открытом интересе',
+        'Внутридневная сезонность',
         'Вся история без ограничений',
-        'Индикатор Баффета + ОИ в деталях',
-        'Real-time обновление',
-        'Экспорт в CSV',
-      ];
-    case 'premium':
-      return [
-        'Всё из Pro',
-        'Доступ к API для автоматизации',
-        'Приоритетная поддержка',
-        'Все будущие фичи включены',
+        'Экспорт в CSV/Excel',
+        'API-доступ для автоматизации',
+        'Безлимитные Telegram-алерты',
+        'Без водяного знака на экспорте',
       ];
     default:
       return [];

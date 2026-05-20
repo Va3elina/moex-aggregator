@@ -29,6 +29,8 @@ import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { buildFundsMoneyTour } from '../data/tours/funds-money';
 import FlowsHistogram from '../components/funds/FlowsHistogram';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
+import { useTierAccess } from '../contexts/TierFeaturesContext';
+import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 
 // Режимы отображения
 type ViewMode = 'aum' | 'flows';
@@ -78,6 +80,8 @@ export default function FundsMoneyPage() {
     // Default режим — Притоки-Оттоки (более информативно для нового пользователя)
     const [viewMode, setViewMode] = useState<ViewMode>('flows');
     const [flowTimeframe, setFlowTimeframeRaw] = useState<FlowTimeframe>('1d');
+    const fundsAccess = useTierAccess('funds_money');
+    const { showUpgrade } = useUpgradePrompt();
 
     // Динамическая высота графика — chartAnchorRef как в OI page
     const chartAnchorRef = useRef<HTMLDivElement>(null);
@@ -160,12 +164,23 @@ export default function FundsMoneyPage() {
             const result = await getFundsChartData(category, period as FundPeriod);
             setData(result);
         } catch (err) {
-            setError('Ошибка загрузки данных');
+            const msg = err instanceof Error ? err.message : String(err);
+            if (msg.includes('тарифе') || msg.includes('недоступ')) {
+                const requiredTier: 'basic' | 'pro' = msg.includes('Pro') ? 'pro' : 'basic';
+                showUpgrade({
+                    tier: requiredTier,
+                    featureName: 'индикатор «Деньги в фондах»',
+                    indicator: 'funds_money',
+                });
+                setError(null);
+            } else {
+                setError('Ошибка загрузки данных');
+            }
             console.error(err);
         } finally {
             setLoading(false);
         }
-    }, [category, period]);
+    }, [category, period, showUpgrade]);
 
     useEffect(() => { loadData(); }, [loadData]);
 
@@ -514,12 +529,27 @@ export default function FundsMoneyPage() {
                     <div data-tour="funds-flow-timeframe">
                     <Dropdown<FlowTimeframe>
                         options={[
-                            { key: '1d', label: 'День' },
+                            {
+                                key: '1d',
+                                label: 'День',
+                                // Free → только 1w/1m, дневной заблокирован
+                                locked: !fundsAccess.isLoading && !fundsAccess.canUseTimeframe('1d'),
+                            },
                             { key: '1w', label: 'Неделя' },
                             { key: '1m', label: 'Месяц' },
                         ]}
                         value={flowTimeframe}
                         onChange={setFlowTimeframe}
+                        onLockedClick={() => {
+                            const tier = fundsAccess.requiredTierFor({ timeframe: '1d' });
+                            if (tier) {
+                                showUpgrade({
+                                    tier,
+                                    featureName: 'дневной таймфрейм',
+                                    indicator: 'funds_money',
+                                });
+                            }
+                        }}
                     />
                     </div>
                 )}

@@ -2,6 +2,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { isPeriodAllowed } from '../../config/accessControl';
 import Dropdown, { type DropdownOption } from '../Dropdown';
+import { useTierAccess } from '../../contexts/TierFeaturesContext';
+import { useUpgradePrompt } from '../tier/UpgradeModal';
 
 type Period = '6m' | '1y' | '2y' | '5y' | 'all';
 type ChartMode = 'line' | 'histogram';
@@ -60,6 +62,11 @@ export default function StrengthControls({
 }: StrengthControlsProps) {
     const { isAuthenticated } = useAuth();
     const navigate = useNavigate();
+    const strengthAccess = useTierAccess('strength');
+    const { showUpgrade } = useUpgradePrompt();
+
+    const universeAllLocked = !strengthAccess.isLoading && !strengthAccess.canUseUniverse('all');
+    const usdLocked = !strengthAccess.isLoading && !strengthAccess.canUseUniverse('imoex_usd');
 
     return (
         <div className="flex items-center flex-wrap mb-4 md:mb-6" style={{ gap: 'var(--sp-2)' }}>
@@ -93,20 +100,40 @@ export default function StrengthControls({
             <Dropdown<'imoex' | 'all'>
                 options={[
                     { key: 'imoex', label: currency === 'usd' ? 'Индекс RTSI' : 'Индекс IMOEX' },
-                    { key: 'all', label: '100 акций' },
+                    { key: 'all', label: '100 акций', locked: universeAllLocked },
                 ]}
                 value={universeBase}
                 onChange={onUniverseBaseChange}
+                onLockedClick={() => {
+                    const tier = strengthAccess.requiredTierFor({ universe: 'all' });
+                    if (tier) {
+                        showUpgrade({
+                            tier,
+                            featureName: 'вселенная «100 акций»',
+                            indicator: 'strength',
+                        });
+                    }
+                }}
             />
 
             {/* Currency */}
             <Dropdown<'rub' | 'usd'>
                 options={[
                     { key: 'rub', label: '₽ Рубль' },
-                    { key: 'usd', label: '$ Доллар' },
+                    { key: 'usd', label: '$ Доллар', locked: usdLocked },
                 ]}
                 value={currency}
                 onChange={onCurrencyChange}
+                onLockedClick={() => {
+                    const tier = strengthAccess.requiredTierFor({ universe: 'imoex_usd' });
+                    if (tier) {
+                        showUpgrade({
+                            tier,
+                            featureName: 'долларовый режим',
+                            indicator: 'strength',
+                        });
+                    }
+                }}
             />
 
             {/* EMA period */}

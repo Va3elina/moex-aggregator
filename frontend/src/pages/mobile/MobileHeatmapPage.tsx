@@ -12,7 +12,9 @@
  * Phase 3 — только индекс IMOEX (~50 акций). Все 200+ акций — Phase 4.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Grid3X3 } from 'lucide-react';
+import { Grid3X3, Lock } from 'lucide-react';
+import { useTierAccess } from '../../contexts/TierFeaturesContext';
+import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
 import MobileLayout from '../../components/mobile/MobileLayout';
 import MobilePageHeader from '../../components/mobile/MobilePageHeader';
 import MobileSheet from '../../components/mobile/MobileSheet';
@@ -81,6 +83,8 @@ export default function MobileHeatmapPage() {
   const [containerSize, setContainerSize] = useState({ w: 360, h: 500 });
   const [period, setPeriod] = useState<Period>('1d');
   const [universe, setUniverse] = useState<Universe>('imoex');
+  const heatAccess = useTierAccess('heatmap');
+  const { showUpgrade } = useUpgradePrompt();
   const [groupBy, setGroupBy] = useState<GroupBy>('sector');
   const [sizeBy, setSizeBy] = useState<SizeBy>('market_cap');
   const [selectedStock, setSelectedStock] = useState<HeatmapStock | null>(null);
@@ -235,11 +239,20 @@ export default function MobileHeatmapPage() {
         setSectors(data.sectors || []);
       } catch (err) {
         console.error('Ошибка загрузки heatmap:', err);
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes('тарифе') || msg.includes('недоступ')) {
+          const requiredTier: 'basic' | 'pro' = msg.includes('Pro') ? 'pro' : 'basic';
+          showUpgrade({
+            tier: requiredTier,
+            featureName: 'режим «Все акции»',
+            indicator: 'heatmap',
+          });
+        }
       } finally {
         setLoading(false);
       }
     },
-    [universe, groupBy],
+    [universe, groupBy, showUpgrade],
   );
 
   useEffect(() => { void load(); }, [load]);
@@ -586,26 +599,48 @@ export default function MobileHeatmapPage() {
               {([
                 { key: 'imoex' as const, label: 'IMOEX', hint: '~50 акций индекса' },
                 { key: 'all' as const, label: 'Все акции', hint: '200+ MOEX' },
-              ]).map((opt) => (
-                <button
-                  key={opt.key}
-                  onClick={() => setUniverse(opt.key)}
-                  style={{
-                    flex: 1,
-                    padding: '12px 10px',
-                    background: universe === opt.key ? 'var(--accent)' : 'var(--bg-secondary)',
-                    color: universe === opt.key ? 'var(--text-inverse)' : 'var(--text-primary)',
-                    border: '1.5px solid var(--text-primary)',
-                    borderRadius: 10,
-                    cursor: 'pointer',
-                    font: 'inherit',
-                    textAlign: 'center',
-                  }}
-                >
-                  <div style={{ fontSize: 13, fontWeight: 700 }}>{opt.label}</div>
-                  <div style={{ fontSize: 10, opacity: 0.7, marginTop: 2 }}>{opt.hint}</div>
-                </button>
-              ))}
+              ]).map((opt) => {
+                const allowed = heatAccess.isLoading || heatAccess.canUseMode(opt.key);
+                return (
+                  <button
+                    key={opt.key}
+                    onClick={() => {
+                      if (!allowed) {
+                        const tier = heatAccess.requiredTierFor({ mode: opt.key });
+                        if (tier) {
+                          showUpgrade({
+                            tier,
+                            featureName: `режим «${opt.label}»`,
+                            indicator: 'heatmap',
+                          });
+                        }
+                        return;
+                      }
+                      setUniverse(opt.key);
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: '12px 10px',
+                      background: universe === opt.key ? 'var(--accent)' : 'var(--bg-secondary)',
+                      color: universe === opt.key ? 'var(--text-inverse)' : 'var(--text-primary)',
+                      border: '1.5px solid var(--text-primary)',
+                      borderRadius: 10,
+                      cursor: allowed ? 'pointer' : 'not-allowed',
+                      font: 'inherit',
+                      textAlign: 'center',
+                      opacity: allowed ? 1 : 0.5,
+                      position: 'relative',
+                    }}
+                    aria-disabled={!allowed}
+                  >
+                    <div style={{ fontSize: 13, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      {opt.label}
+                      {!allowed && <Lock size={11} strokeWidth={2.2} />}
+                    </div>
+                    <div style={{ fontSize: 10, opacity: 0.7, marginTop: 2 }}>{opt.hint}</div>
+                  </button>
+                );
+              })}
             </div>
           </div>
 

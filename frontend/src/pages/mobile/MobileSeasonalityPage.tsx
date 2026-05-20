@@ -8,7 +8,9 @@
  *   - Compare years, exclude dividends — Phase 4
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarDays } from 'lucide-react';
+import { CalendarDays, Lock } from 'lucide-react';
+import { useTierAccess } from '../../contexts/TierFeaturesContext';
+import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
 import MobileLayout from '../../components/mobile/MobileLayout';
 import MobilePageHeader from '../../components/mobile/MobilePageHeader';
 import MobileAssetSearch from '../../components/mobile/MobileAssetSearch';
@@ -57,6 +59,10 @@ export default function MobileSeasonalityPage() {
   const [selectedStock, setSelectedStock] = useState('SBER');
   const [selectedName, setSelectedName] = useState('Сбербанк');
   const [mode, setMode] = useState<MobileMode>('monthly');
+  const seasonAccess = useTierAccess('seasonality');
+  const { showUpgrade } = useUpgradePrompt();
+  // Для Free yearly — единственный доступный режим
+  const histogramLocked = !seasonAccess.isLoading && !seasonAccess.canUseMode('histogram');
   // Phase-4 фильтры:
   const [excludeDividends, setExcludeDividends] = useState(false);
   const [aggType, setAggType] = useState<'avg' | 'median'>('avg');
@@ -272,11 +278,21 @@ export default function MobileSeasonalityPage() {
         }
       } catch (err) {
         console.error('Ошибка seasonality:', err);
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes('тарифе') || msg.includes('недоступ')) {
+          const requiredTier: 'basic' | 'pro' = msg.includes('Pro') ? 'pro' : 'basic';
+          showUpgrade({
+            tier: requiredTier,
+            featureName: mode === 'intraday' ? 'режим «Внутри дня»' :
+              histogramLocked ? 'режим «Сезонность»' : `актив ${selectedStock}`,
+            indicator: 'seasonality',
+          });
+        }
       } finally {
         setLoading(false);
       }
     },
-    [selectedStock, mode, excludeDividends, aggType, compareYears, exactYears, availableYears],
+    [selectedStock, mode, excludeDividends, aggType, compareYears, exactYears, availableYears, showUpgrade, histogramLocked],
   );
 
   useEffect(() => {
@@ -388,6 +404,7 @@ export default function MobileSeasonalityPage() {
           setSelectedStock(sectype);
           setSelectedName(name);
         }}
+        indicator="seasonality"
       />
 
       <MobileSheet
@@ -406,11 +423,33 @@ export default function MobileSeasonalityPage() {
               <button
                 className={`fm-chip ${mode !== 'yearly' ? 'active' : ''}`}
                 onClick={() => {
+                  if (histogramLocked) {
+                    const tier = seasonAccess.requiredTierFor({ mode: 'histogram' });
+                    if (tier) {
+                      showUpgrade({
+                        tier,
+                        featureName: 'режим «Сезонность»',
+                        indicator: 'seasonality',
+                      });
+                    }
+                    return;
+                  }
                   if (mode === 'yearly') setMode('monthly');
                 }}
-                style={{ flex: 1, justifyContent: 'center', padding: '12px 8px' }}
+                style={{
+                  flex: 1,
+                  justifyContent: 'center',
+                  padding: '12px 8px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  opacity: histogramLocked ? 0.5 : 1,
+                  cursor: histogramLocked ? 'not-allowed' : 'pointer',
+                }}
+                aria-disabled={histogramLocked}
               >
                 Гистограмма
+                {histogramLocked && <Lock size={11} strokeWidth={2.2} />}
               </button>
               <button
                 className={`fm-chip ${mode === 'yearly' ? 'active' : ''}`}

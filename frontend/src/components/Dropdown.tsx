@@ -36,6 +36,10 @@ interface DropdownProps<T extends string> {
   minWidth?: number;
   /** className для wrapper'а */
   className?: string;
+  /** Фолбэк-handler для клика по locked-опции. Если задан — закрывает popup
+   *  и вызывается с key. Используется для показа UpgradeModal вместо тихого
+   *  отказа. Если не задан — locked click игнорируется (legacy behavior). */
+  onLockedClick?: (key: T) => void;
 }
 
 export default function Dropdown<T extends string>({
@@ -46,6 +50,7 @@ export default function Dropdown<T extends string>({
   placeholder = 'Выбрать',
   minWidth,
   className = '',
+  onLockedClick,
 }: DropdownProps<T>) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -138,10 +143,18 @@ export default function Dropdown<T extends string>({
               <button
                 key={opt.key}
                 type="button"
-                disabled={opt.locked}
+                // Не disabled если onLockedClick задан — иначе native disabled
+                // блокирует pointer events и колбэк не сработает
+                disabled={opt.locked && !onLockedClick}
                 data-active={active}
                 onClick={() => {
-                  if (opt.locked) return;
+                  if (opt.locked) {
+                    if (onLockedClick) {
+                      onLockedClick(opt.key);
+                      setOpen(false);
+                    }
+                    return;
+                  }
                   onChange(opt.key);
                   setOpen(false);
                 }}

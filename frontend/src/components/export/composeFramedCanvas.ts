@@ -78,10 +78,44 @@ export function composeFramedCanvas(
     const chartY = sp + headerH + headerGap;
     ctx.drawImage(chartCanvas, chartX, chartY);
 
+    // Watermark (Free tier) — большая полупрозрачная надпись поверх chart area
+    if (options.watermark) {
+        drawWatermark(ctx, chartX, chartY, chartW, chartH, dpr);
+    }
+
     // Render footer (всегда — site url + date)
     drawFooter(ctx, sp, totalH - sp - footerH, totalW - sp * 2, footerH, dpr, textSecondary);
 
     return out;
+}
+
+/**
+ * Watermark для Free tier — наклонная полупрозрачная надпись
+ * "таймфрейм.рф" в центре chart area. Размер пропорционален chart width,
+ * чтобы читался на любых aspect ratios.
+ */
+function drawWatermark(
+    ctx: CanvasRenderingContext2D,
+    x: number, y: number, w: number, h: number,
+    dpr: number,
+) {
+    ctx.save();
+    // Размер шрифта ~10% от ширины графика, но не больше высоты
+    const fontSize = Math.min(w * 0.1, h * 0.18);
+    ctx.font = `800 ${fontSize}px ${FONT_FAMILY}`;
+    ctx.fillStyle = 'rgba(128, 128, 128, 0.18)';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    // Поворачиваем canvas на -20° и пишем по центру chart area
+    const cx = x + w / 2;
+    const cy = y + h / 2;
+    ctx.translate(cx, cy);
+    ctx.rotate(-20 * Math.PI / 180);
+    ctx.fillText(SITE_URL, 0, 0);
+
+    ctx.restore();
+    void dpr;  // dpr учитывается через fontSize → не нужен явно
 }
 
 /**

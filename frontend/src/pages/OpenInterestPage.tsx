@@ -23,6 +23,7 @@ import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { oiTourSteps } from '../data/tours/oi';
 import { formatPrice } from '../utils/formatNumber';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
+import { useTierAccess } from '../contexts/TierFeaturesContext';
 
 type DisplayMode = 'price' | 'positions' | 'participants';
 type OIVariant = 'oi' | 'long' | 'short' | 'both' | 'net';
@@ -63,7 +64,9 @@ export default function OpenInterestPage() {
   const navigate = useNavigate();
 
   // Tier upgrade prompt — открывается при 403 от backend (см. loadData catch)
+  // и при тапе на locked-опции в Dropdown'ах
   const { showUpgrade } = useUpgradePrompt();
+  const oiAccess = useTierAccess('open_interest');
 
   // Фоновая предзагрузка лого один раз — модалка выбора актива потом
   // открывается мгновенно из SW cache, без 100 запросов.
@@ -477,11 +480,12 @@ export default function OpenInterestPage() {
           <Dropdown<string>
             options={[5, 60, 24].map((int): DropdownOption<string> => {
               const available = displayMode === 'price' || hasInterval(int);
-              const allowed = isIntervalAllowed(int, isAuthenticated);
+              const allowedLegacy = isIntervalAllowed(int, isAuthenticated);
+              const allowedTier = oiAccess.isLoading || oiAccess.canUseInterval(int);
               return {
                 key: String(int),
                 label: INTERVAL_LABELS[int as keyof typeof INTERVAL_LABELS],
-                locked: !allowed || !available,
+                locked: !allowedLegacy || !allowedTier || !available,
               };
             })}
             value={String(interval)}
@@ -491,6 +495,26 @@ export default function OpenInterestPage() {
               if (!allowed) { navigate('/login'); return; }
               const available = displayMode === 'price' || hasInterval(int);
               if (available) handleIntervalChange(int);
+            }}
+            onLockedClick={(k) => {
+              const int = Number(k);
+              // Если заблокировано по tier'у — показываем upgrade modal,
+              // а не редиректим на /login (как для legacy guest gate).
+              if (!oiAccess.canUseInterval(int)) {
+                const requiredTier = oiAccess.requiredTierFor({ interval: int });
+                if (requiredTier) {
+                  showUpgrade({
+                    tier: requiredTier,
+                    featureName: `${int === 5 ? '5-минутный' : `${int}-часовой`} таймфрейм`,
+                    indicator: 'open_interest',
+                  });
+                  return;
+                }
+              }
+              // Иначе guest и не залогинен — на /login
+              if (!isIntervalAllowed(int, isAuthenticated)) {
+                navigate('/login');
+              }
             }}
           />
 
@@ -734,6 +758,7 @@ export default function OpenInterestPage() {
           onSelect={handleSelectInstrument}
           onClose={() => setIsModalOpen(false)}
           filterType="futures"
+          indicator="open_interest"
         />
       )}
 

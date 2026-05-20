@@ -56,4 +56,7 @@ export interface FrameOptions {
     aspectRatio?: number;
     /** Метаданные для header/footer. Если null — фрейм без header/footer. */
     metadata?: ExportMetadata;
+    /** Free tier — добавляем большой полупрозрачный watermark "таймфрейм.рф"
+     *  поверх chart area. Pro/Basic — без watermark. */
+    watermark?: boolean;
 }

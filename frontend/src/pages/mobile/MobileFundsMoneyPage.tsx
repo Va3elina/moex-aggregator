@@ -8,7 +8,9 @@
  *   - Притоки-Оттоки и таблица фондов — Phase 4
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Wallet } from 'lucide-react';
+import { Wallet, Lock } from 'lucide-react';
+import { useTierAccess } from '../../contexts/TierFeaturesContext';
+import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
 import MobileLayout from '../../components/mobile/MobileLayout';
 import MobilePageHeader from '../../components/mobile/MobilePageHeader';
 import MobileChart from '../../components/mobile/MobileChart';
@@ -50,6 +52,8 @@ export default function MobileFundsMoneyPage() {
   // (приток/отток денег за день/неделю/месяц), а не статичный график СЧА.
   const [viewMode, setViewMode] = useState<ViewMode>('flows');
   const [flowTimeframe, setFlowTimeframe] = useState<FlowTimeframe>('1w');
+  const fundsAccess = useTierAccess('funds_money');
+  const { showUpgrade } = useUpgradePrompt();
   const [data, setData] = useState<FundsChartResponse | null>(null);
   const [flowsData, setFlowsData] = useState<FundsFlowsResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -211,11 +215,20 @@ export default function MobileFundsMoneyPage() {
         }
       } catch (err) {
         console.error('Ошибка funds:', err);
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes('тарифе') || msg.includes('недоступ')) {
+          const requiredTier: 'basic' | 'pro' = msg.includes('Pro') ? 'pro' : 'basic';
+          showUpgrade({
+            tier: requiredTier,
+            featureName: flowTimeframe === '1d' ? 'дневной таймфрейм' : 'индикатор «Деньги в фондах»',
+            indicator: 'funds_money',
+          });
+        }
       } finally {
         setLoading(false);
       }
     },
-    [viewMode, category, period, flowTimeframe],
+    [viewMode, category, period, flowTimeframe, showUpgrade],
   );
 
   useEffect(() => {
@@ -425,16 +438,43 @@ export default function MobileFundsMoneyPage() {
                 Период притоков
               </div>
               <div style={{ display: 'flex', gap: 6 }}>
-                {(['1d', '1w', '1m'] as FlowTimeframe[]).map((tf) => (
-                  <button
-                    key={tf}
-                    className={`fm-chip ${flowTimeframe === tf ? 'active' : ''}`}
-                    onClick={() => setFlowTimeframe(tf)}
-                    style={{ flex: 1, justifyContent: 'center' }}
-                  >
-                    {tf === '1d' ? 'День' : tf === '1w' ? 'Неделя' : 'Месяц'}
-                  </button>
-                ))}
+                {(['1d', '1w', '1m'] as FlowTimeframe[]).map((tf) => {
+                  const allowed = fundsAccess.isLoading || fundsAccess.canUseTimeframe(tf);
+                  const label = tf === '1d' ? 'День' : tf === '1w' ? 'Неделя' : 'Месяц';
+                  return (
+                    <button
+                      key={tf}
+                      className={`fm-chip ${flowTimeframe === tf ? 'active' : ''}`}
+                      onClick={() => {
+                        if (!allowed) {
+                          const tier = fundsAccess.requiredTierFor({ timeframe: tf });
+                          if (tier) {
+                            showUpgrade({
+                              tier,
+                              featureName: `таймфрейм «${label}»`,
+                              indicator: 'funds_money',
+                            });
+                          }
+                          return;
+                        }
+                        setFlowTimeframe(tf);
+                      }}
+                      style={{
+                        flex: 1,
+                        justifyContent: 'center',
+                        opacity: allowed ? 1 : 0.5,
+                        cursor: allowed ? 'pointer' : 'not-allowed',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4,
+                      }}
+                      aria-disabled={!allowed}
+                    >
+                      {label}
+                      {!allowed && <Lock size={11} strokeWidth={2.2} />}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}

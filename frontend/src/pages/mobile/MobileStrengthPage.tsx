@@ -8,7 +8,9 @@
  *        currency (rub/usd). Сектора — отдельный sheet (deep dive).
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Activity, ChevronDown, ChevronRight, LayoutGrid } from 'lucide-react';
+import { Activity, ChevronDown, ChevronRight, LayoutGrid, Lock } from 'lucide-react';
+import { useTierAccess } from '../../contexts/TierFeaturesContext';
+import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
 import MobileLayout from '../../components/mobile/MobileLayout';
 import MobilePageHeader from '../../components/mobile/MobilePageHeader';
 import MobileSheet from '../../components/mobile/MobileSheet';
@@ -59,6 +61,8 @@ export default function MobileStrengthPage() {
   const [period, setPeriod] = useState<Period>('1y');
   const [universeBase, setUniverseBase] = useState<UniverseBase>('imoex');
   const [currency, setCurrency] = useState<Currency>('rub');
+  const strengthAccess = useTierAccess('strength');
+  const { showUpgrade } = useUpgradePrompt();
   const [current, setCurrent] = useState<BreadthCurrentResponse | null>(null);
   const [history, setHistory] = useState<BreadthHistoryResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -222,11 +226,21 @@ export default function MobileStrengthPage() {
         setHistory(hist);
       } catch (err) {
         console.error('Ошибка strength:', err);
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes('тарифе') || msg.includes('недоступ')) {
+          const requiredTier: 'basic' | 'pro' = msg.includes('Pro') ? 'pro' : 'basic';
+          showUpgrade({
+            tier: requiredTier,
+            featureName: universeBase === 'all' ? 'вселенная «100 акций»' :
+              currency === 'usd' ? 'долларовый режим' : 'индикатор «Сила рынка»',
+            indicator: 'strength',
+          });
+        }
       } finally {
         setLoading(false);
       }
     },
-    [emaPeriod, period, universe],
+    [emaPeriod, period, universe, universeBase, currency, showUpgrade],
   );
 
   useEffect(() => {
@@ -407,16 +421,42 @@ export default function MobileStrengthPage() {
               {([
                 { key: 'imoex' as const, label: 'IMOEX' },
                 { key: 'all' as const, label: 'Все акции' },
-              ]).map((opt) => (
-                <button
-                  key={opt.key}
-                  className={`fm-chip ${universeBase === opt.key ? 'active' : ''}`}
-                  onClick={() => setUniverseBase(opt.key)}
-                  style={{ flex: 1, justifyContent: 'center' }}
-                >
-                  {opt.label}
-                </button>
-              ))}
+              ]).map((opt) => {
+                const allowed = strengthAccess.isLoading || strengthAccess.canUseUniverse(opt.key);
+                return (
+                  <button
+                    key={opt.key}
+                    className={`fm-chip ${universeBase === opt.key ? 'active' : ''}`}
+                    onClick={() => {
+                      if (!allowed) {
+                        const tier = strengthAccess.requiredTierFor({ universe: opt.key });
+                        if (tier) {
+                          showUpgrade({
+                            tier,
+                            featureName: `вселенная «${opt.label}»`,
+                            indicator: 'strength',
+                          });
+                        }
+                        return;
+                      }
+                      setUniverseBase(opt.key);
+                    }}
+                    style={{
+                      flex: 1,
+                      justifyContent: 'center',
+                      opacity: allowed ? 1 : 0.5,
+                      cursor: allowed ? 'pointer' : 'not-allowed',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                    }}
+                    aria-disabled={!allowed}
+                  >
+                    {opt.label}
+                    {!allowed && <Lock size={11} strokeWidth={2.2} />}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -438,16 +478,45 @@ export default function MobileStrengthPage() {
               {([
                 { key: 'rub' as const, label: 'Рубли (IMOEX)' },
                 { key: 'usd' as const, label: 'Доллары (RTS)' },
-              ]).map((opt) => (
-                <button
-                  key={opt.key}
-                  className={`fm-chip ${currency === opt.key ? 'active' : ''}`}
-                  onClick={() => setCurrency(opt.key)}
-                  style={{ flex: 1, justifyContent: 'center' }}
-                >
-                  {opt.label}
-                </button>
-              ))}
+              ]).map((opt) => {
+                // USD доступен только если можно использовать любую _usd вселенную
+                const allowed = opt.key === 'rub' ||
+                  strengthAccess.isLoading ||
+                  strengthAccess.canUseUniverse('imoex_usd');
+                return (
+                  <button
+                    key={opt.key}
+                    className={`fm-chip ${currency === opt.key ? 'active' : ''}`}
+                    onClick={() => {
+                      if (!allowed) {
+                        const tier = strengthAccess.requiredTierFor({ universe: 'imoex_usd' });
+                        if (tier) {
+                          showUpgrade({
+                            tier,
+                            featureName: 'долларовый режим',
+                            indicator: 'strength',
+                          });
+                        }
+                        return;
+                      }
+                      setCurrency(opt.key);
+                    }}
+                    style={{
+                      flex: 1,
+                      justifyContent: 'center',
+                      opacity: allowed ? 1 : 0.5,
+                      cursor: allowed ? 'pointer' : 'not-allowed',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                    }}
+                    aria-disabled={!allowed}
+                  >
+                    {opt.label}
+                    {!allowed && <Lock size={11} strokeWidth={2.2} />}
+                  </button>
+                );
+              })}
             </div>
           </div>
 

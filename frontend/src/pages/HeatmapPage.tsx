@@ -11,6 +11,8 @@ import type { HeatmapStock, HeatmapSector } from '../services/api';
 import { useOnboardingTour } from '../hooks/useFirstVisit';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { heatmapTourSteps } from '../data/tours/heatmap';
+import { useTierAccess } from '../contexts/TierFeaturesContext';
+import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 
 // Опции для фильтров
 const PERIOD_OPTIONS = [
@@ -140,6 +142,10 @@ export default function HeatmapPage() {
   // Кэш prev_close для real-time пересчёта change_1d
   const prevCloseMap = useRef<Record<string, number>>({});
 
+  // Tier-gating: Free → только IMOEX, Basic/Pro → + Все акции
+  const heatAccess = useTierAccess('heatmap');
+  const { showUpgrade } = useUpgradePrompt();
+
   // Фильтры
   const [mapMode, setMapMode] = useState<'imoex' | 'all'>('imoex');
   const [sizeBy, setSizeBy] = useState<string>('market_cap');
@@ -223,9 +229,18 @@ export default function HeatmapPage() {
       hasDataRef.current = true;
     } catch (error) {
       console.error('Error loading heatmap:', error);
+      const msg = error instanceof Error ? error.message : String(error);
+      if (msg.includes('тарифе') || msg.includes('недоступ')) {
+        const requiredTier: 'basic' | 'pro' = msg.includes('Pro') ? 'pro' : 'basic';
+        showUpgrade({
+          tier: requiredTier,
+          featureName: 'режим «Все акции»',
+          indicator: 'heatmap',
+        });
+      }
     }
     setLoading(false);
-  }, [mapMode, groupBy]);
+  }, [mapMode, groupBy, showUpgrade]);
 
   // Первая загрузка + при смене mapMode/groupBy
   useEffect(() => { loadData(); }, [loadData]);
@@ -560,10 +575,24 @@ export default function HeatmapPage() {
         <Dropdown<'imoex' | 'all'>
           options={[
             { key: 'imoex', label: 'Индекс IMOEX' },
-            { key: 'all',   label: 'Все акции' },
+            {
+              key: 'all',
+              label: 'Все акции',
+              locked: !heatAccess.isLoading && !heatAccess.canUseMode('all'),
+            },
           ]}
           value={mapMode}
           onChange={setMapMode}
+          onLockedClick={() => {
+            const tier = heatAccess.requiredTierFor({ mode: 'all' });
+            if (tier) {
+              showUpgrade({
+                tier,
+                featureName: 'режим «Все акции»',
+                indicator: 'heatmap',
+              });
+            }
+          }}
         />
         </div>
 
