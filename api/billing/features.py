@@ -72,9 +72,9 @@ INDICATOR_FEATURES: dict[str, dict[str, dict]] = {
     # 1. Карта рынка (/heatmap)
     # ───────────────────────────────────────────────────────────────
     "heatmap": {
-        "free":  {"mode_imoex": True,  "mode_all": False, "max_history_days": None},
-        "basic": {"mode_imoex": True,  "mode_all": True,  "max_history_days": None},
-        "pro":   {"mode_imoex": True,  "mode_all": True,  "max_history_days": None},
+        "free":  {"allowed_modes": ["imoex"],         "max_history_days": None},
+        "basic": {"allowed_modes": ["imoex", "all"],  "max_history_days": None},
+        "pro":   {"allowed_modes": ["imoex", "all"],  "max_history_days": None},
     },
 
     # ───────────────────────────────────────────────────────────────
