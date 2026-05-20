@@ -7,7 +7,7 @@ from fastapi import APIRouter, Query, HTTPException, Depends
 from sqlalchemy import text
 
 from api.database import get_engine
-from api.routers.auth import require_admin
+from api.routers.auth import require_admin, get_current_user_optional
 from api.schemas.validators import HeatmapSizeByType, HeatmapColorByType, HeatmapGroupByType
 
 IMOEX_ISS_URL = "https://iss.moex.com/iss/statistics/engines/stock/markets/index/analytics/IMOEX.json?limit=100"
@@ -20,7 +20,11 @@ async def get_stocks_heatmap(
     size_by: HeatmapSizeByType = Query("value_1d", description="Размер блока"),
     color_by: HeatmapColorByType = Query("change_1d", description="Цвет блока"),
     group_by: HeatmapGroupByType = Query("sector", description="Группировка"),
+    user = Depends(get_current_user_optional),
 ):
+    # Free: только режим IMOEX (см. /imoex endpoint); /stocks — для Basic+
+    from api.security.access_control import enforce_tier_limits
+    enforce_tier_limits(user, "heatmap", mode="all")
     """
     Возвращает данные для карты рынка из материализованного представления.
     Параметры валидируются автоматически через Literal типы.

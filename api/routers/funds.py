@@ -13,7 +13,7 @@ import time
 from api.database import get_engine
 from api.logger import get_logger
 from api.routers.auth import get_current_user_optional
-from api.security.access_control import enforce_guest_limits
+from api.security.access_control import enforce_guest_limits, enforce_tier_limits
 
 router = APIRouter(prefix="/api/funds", tags=["funds"])
 log = get_logger()
@@ -84,8 +84,8 @@ async def get_funds_chart(
     - index: данные индекса
     - total_nav: суммарная СЧА по дням
     """
-    # Ограничения для гостей
-    enforce_guest_limits(user, period=period)
+    # Tier: period limit для funds_money
+    enforce_tier_limits(user, "funds_money", period=period)
 
     start_time = time.time()
     log.info(f"REQUEST: /funds/chart category={category}, period={period}")

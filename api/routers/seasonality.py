@@ -26,7 +26,7 @@ from api.database import get_engine
 from api.cache import get_or_set
 from api.logger import get_logger
 from api.routers.auth import get_current_user_optional
-from api.security.access_control import enforce_guest_limits
+from api.security.access_control import enforce_guest_limits, enforce_tier_limits
 
 log = get_logger()
 
@@ -778,9 +778,10 @@ async def get_seasonality(
         except ValueError:
             raise HTTPException(400, "exclude_years must be comma-separated integers")
 
-    # Гостевые ограничения
-    if mode == "intraday":
-        enforce_guest_limits(user, interval=60)
+    # Tier-ограничения: asset whitelist + mode whitelist
+    # Маппинг наших режимов на матрицу: intraday → intraday; weekday/monthday → histogram; monthly → yearly
+    matrix_mode = "intraday" if mode == "intraday" else ("yearly" if mode == "monthly" else "histogram")
+    enforce_tier_limits(user, "seasonality", asset=secid, mode=matrix_mode)
 
     cache_key = f"seasonality:{secid}:{mode}:iter{iterations}:nodiv{exclude_dividends}:sy{since_year}:ex{','.join(map(str,sorted(excl_list)))}:agg{agg_type}"
     cached = get_or_set(cache_key)

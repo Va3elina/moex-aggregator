@@ -13,7 +13,7 @@ import time
 from api.database import get_engine
 from api.logger import get_logger
 from api.routers.auth import get_current_user_optional
-from api.security.access_control import enforce_guest_limits
+from api.security.access_control import enforce_guest_limits, enforce_tier_limits
 
 router = APIRouter(prefix="/api/buffett", tags=["buffett"])
 log = get_logger()
@@ -92,8 +92,8 @@ async def get_buffett_cap_gdp(
     Индикатор Баффетта: 100 × Капитализация / ВВП (TTM).
     GDP_TTM = скользящая сумма 4 последних кварталов, линейно интерполированная на ежедневную сетку.
     """
-    # Ограничения для гостей
-    enforce_guest_limits(user, period=period)
+    # Tier: cap-gdp доступен всем, проверяем только period
+    enforce_tier_limits(user, "buffett", mode="cap-gdp", period=period)
 
     start_time = time.time()
     engine = get_engine()
@@ -286,7 +286,8 @@ async def get_buffett_cap_m2(
     Капитализация / M2: рыночная капитализация / денежная масса.
     M2 линейно интерполирована на сетку дат капитализации.
     """
-    enforce_guest_limits(user, period=period)
+    # Tier: cap-m2 доступен только Basic+ (Free имеет только cap-gdp)
+    enforce_tier_limits(user, "buffett", mode="cap-m2", period=period)
 
     start_time = time.time()
     engine = get_engine()

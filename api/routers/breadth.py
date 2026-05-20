@@ -16,7 +16,7 @@ from api.database import get_engine
 from api.cache import get_or_set
 from api.logger import get_logger
 from api.routers.auth import get_current_user_optional
-from api.security.access_control import enforce_guest_limits
+from api.security.access_control import enforce_guest_limits, enforce_tier_limits
 
 log = get_logger()
 
@@ -397,8 +397,8 @@ async def get_breadth_history(
         universe = "all"
     is_usd = universe.endswith("_usd")
 
-    # Ограничения для гостей
-    enforce_guest_limits(user, days=days)
+    # Tier-ограничения: universe whitelist + max_history_days
+    enforce_tier_limits(user, "strength", universe=universe, days=days)
     cache_key = f"breadth:history:{ema_period}:{days}:{universe}"
     cached = get_or_set(cache_key)
     if cached is not None:
