@@ -91,13 +91,15 @@ function UpgradeDialog({ tier, featureName, onClose }: UpgradePromptProps & { on
             <div
                 onClick={(e) => e.stopPropagation()}
                 style={{
-                    background: 'var(--bg-base, #fff)',
+                    // bg-secondary — panel/card в editorial: белый light / тёмный dark.
+                    // text-primary автоматически contrast: чёрный light / cream dark.
+                    background: 'var(--bg-secondary, #fff)',
                     color: 'var(--text-primary, #1a1a1a)',
                     borderRadius: isMobile ? '20px 20px 0 0' : 16,
                     padding: isMobile ? 24 : 32,
                     maxWidth: isMobile ? '100%' : 480,
                     width: isMobile ? '100%' : '90%',
-                    border: '1px solid var(--border, #ddd)',
+                    border: '1px solid var(--border-color, #ddd)',
                     boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
                     paddingBottom: isMobile ? 'max(24px, env(safe-area-inset-bottom))' : 32,
                     maxHeight: '90vh',
@@ -109,7 +111,8 @@ function UpgradeDialog({ tier, featureName, onClose }: UpgradePromptProps & { on
                     <div
                         style={{
                             width: 40, height: 4, borderRadius: 2,
-                            background: 'var(--border, #ddd)',
+                            background: 'var(--text-muted, #ddd)',
+                            opacity: 0.4,
                             margin: '0 auto 16px',
                         }}
                     />
@@ -160,7 +163,10 @@ function UpgradeDialog({ tier, featureName, onClose }: UpgradePromptProps & { on
 
                 <div
                     style={{
-                        background: 'var(--bg-secondary, #f5f1e8)',
+                        // Inner panel — отличается от main bg, в editorial
+                        // light/dark получает соответствующий контраст.
+                        background: 'var(--bg-tertiary, #f5f1e8)',
+                        border: '1px solid var(--border-color, #e5e5e5)',
                         borderRadius: 10,
                         padding: 16,
                         marginBottom: 20,
@@ -191,12 +197,12 @@ function UpgradeDialog({ tier, featureName, onClose }: UpgradePromptProps & { on
                         style={{
                             padding: '12px 20px',
                             borderRadius: 8,
-                            border: '1px solid var(--border, #ddd)',
+                            border: '1px solid var(--border-color, #ddd)',
                             background: 'transparent',
                             color: 'var(--text-primary, #1a1a1a)',
                             cursor: 'pointer',
                             fontSize: 14,
-                            fontWeight: 500,
+                            fontWeight: 600,
                             minHeight: 44,  // mobile touch target
                         }}
                     >
