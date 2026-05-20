@@ -146,7 +146,6 @@ export default function AdminBillingInvites() {
                 style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}>
                 <option value="basic">Basic</option>
                 <option value="pro">Pro</option>
-                <option value="premium">Premium</option>
               </select>
             </div>
             <div>

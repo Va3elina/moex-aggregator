@@ -336,7 +336,7 @@ export default function LandingPage() {
             }}
           >
             Бесплатный доступ к базовым индикаторам — без оплаты и без карты.
-            Подписка Pro или Premium — когда и если понадобятся продвинутые фичи.
+            Тарифы Basic и Pro — когда понадобятся real-time данные, расширенная история и продвинутые режимы.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-3">
             <Link
