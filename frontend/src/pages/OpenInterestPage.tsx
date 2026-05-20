@@ -22,6 +22,8 @@ import { useOnboardingTour } from '../hooks/useFirstVisit';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { oiTourSteps } from '../data/tours/oi';
 import { formatPrice } from '../utils/formatNumber';
+import { useTierAccess } from '../contexts/TierFeaturesContext';
+import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 
 type DisplayMode = 'price' | 'positions' | 'participants';
 type OIVariant = 'oi' | 'long' | 'short' | 'both' | 'net';
@@ -60,6 +62,10 @@ export default function OpenInterestPage() {
   const { isAuthenticated } = useAuth();
   const { theme: _theme } = useTheme();
   const navigate = useNavigate();
+
+  // Tier-based access checks
+  const oiAccess = useTierAccess('open_interest');
+  const { showUpgrade } = useUpgradePrompt();
 
   // Фоновая предзагрузка лого один раз — модалка выбора актива потом
   // открывается мгновенно из SW cache, без 100 запросов.
@@ -242,8 +248,24 @@ export default function OpenInterestPage() {
         setIntervalValue(Math.max(...result.available_intervals));
       }
     } catch (err) {
-      setError('Ошибка загрузки данных');
-      console.error(err);
+      // Tier-related 403 → показываем upgrade prompt, а не destructive ошибку
+      const msg = err instanceof Error ? err.message : String(err);
+      const tierLimited = msg.includes('тарифе') || msg.includes('недоступ');
+      if (tierLimited) {
+        // Определяем какой tier нужен — пробуем угадать по deny reason
+        const requiredTier: 'basic' | 'pro' =
+          msg.includes('5мин') ? 'pro' :
+          msg.includes('Pro') ? 'pro' : 'basic';
+        showUpgrade({
+          tier: requiredTier,
+          featureName: msg.replace(/^.*?: /, ''),
+          indicator: 'open_interest',
+        });
+        setError(null);  // не показываем destructive error
+      } else {
+        setError('Ошибка загрузки данных');
+        console.error(err);
+      }
     } finally {
       setLoading(false);
     }

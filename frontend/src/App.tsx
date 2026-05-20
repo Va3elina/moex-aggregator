@@ -5,6 +5,8 @@ import { useIsMobile } from './hooks/useIsMobile';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AnalyticsProvider, AnalyticsPageViewTracker } from './contexts/AnalyticsContext';
+import { TierFeaturesProvider } from './contexts/TierFeaturesContext';
+import { UpgradePromptProvider } from './components/tier/UpgradeModal';
 import CookieConsentBanner from './components/CookieConsentBanner';
 import ErrorBoundary from './components/ErrorBoundary';
 import Layout from './components/Layout';
@@ -109,6 +111,8 @@ export default function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
+      <TierFeaturesProvider>
+      <UpgradePromptProvider>
       <BrowserRouter>
       <AnalyticsProvider>
       <ScrollToTop />
@@ -225,6 +229,8 @@ export default function App() {
       </RouterErrorBoundary>
       </AnalyticsProvider>
       </BrowserRouter>
+      </UpgradePromptProvider>
+      </TierFeaturesProvider>
       </AuthProvider>
     </ThemeProvider>
   );
