@@ -64,7 +64,8 @@ export default function OpenInterestPage() {
   const navigate = useNavigate();
 
   // Tier-based access checks
-  const oiAccess = useTierAccess('open_interest');
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _oiAccess = useTierAccess('open_interest');
   const { showUpgrade } = useUpgradePrompt();
 
   // Фоновая предзагрузка лого один раз — модалка выбора актива потом

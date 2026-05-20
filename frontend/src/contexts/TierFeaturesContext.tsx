@@ -137,11 +137,6 @@ function normalizeTier(role: string | undefined): Tier {
     return 'free';
 }
 
-// admin → имеет все права (как Pro+)
-const TIER_ORDER: Record<Tier, number> = {
-    guest: 0, free: 1, basic: 2, pro: 3, admin: 99,
-};
-
 function effectiveTierForLimits(tier: Tier): 'free' | 'basic' | 'pro' {
     if (tier === 'admin') return 'pro';
     if (tier === 'guest') return 'free';
