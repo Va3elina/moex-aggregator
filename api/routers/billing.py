@@ -72,11 +72,27 @@ class StatusResponse(BaseModel):
 #  1. GET /plans — список тарифов (публичный)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+@router.get("/features")
+async def features_matrix():
+    """
+    Возвращает tier × indicator × feature_flags матрицу для frontend.
+
+    Frontend кэширует ответ в AuthContext и использует для:
+      - TierGate компонент (замочки на UI)
+      - условный рендеринг (показ/скрытие режимов индикаторов)
+      - PricingPage сравнительная таблица фич
+
+    Источник истины — api/billing/features.py. Никаких изменений вне этого файла.
+    """
+    from api.billing.features import matrix_for_frontend
+    return matrix_for_frontend()
+
+
 @router.get("/plans")
 async def list_plans():
     """
     Возвращает все тарифы для отображения на Pricing-странице.
-    Структура — сгруппировано по tier (free / basic / pro / premium),
+    Структура — сгруппировано по tier (free / basic / pro),
     внутри каждого — monthly и yearly варианты.
 
     Для провайдера tbank дополнительно отдаём terminal_key — он публичный

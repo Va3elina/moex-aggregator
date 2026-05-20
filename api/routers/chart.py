@@ -31,7 +31,7 @@ from api.schemas.validators import (
     validate_safe_id
 )
 from api.routers.auth import get_current_user_optional
-from api.security.access_control import enforce_guest_limits
+from api.security.access_control import enforce_tier_limits, get_effective_end_date
 
 router = APIRouter(prefix='/api/chart', tags=['chart'])
 
@@ -113,14 +113,23 @@ def get_chart_data(
     if interval not in {5, 60, 24}:
         raise HTTPException(status_code=400, detail="interval должен быть 5, 60 или 24")
 
-    # Ограничения для гостей (временно отключено для отладки)
-    # enforce_guest_limits(user, interval=interval, period=period)
-
     try:
         sec_id = validate_safe_id(sec_id, "sec_id")
         sectype = validate_safe_id(sectype, "sectype")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+    # Tier-ограничения (chart endpoint используется на OI странице → правила OI)
+    enforce_tier_limits(
+        user, "open_interest",
+        asset=sectype, interval=interval, period=period, clgroup=clgroup,
+    )
+
+    # 24h delay для Free
+    effective_end = get_effective_end_date(user, "open_interest")
+    if effective_end is not None:
+        if date_to is None or date_to > effective_end:
+            date_to = effective_end
 
     if date_from and date_to and date_to < date_from:
         raise HTTPException(status_code=400, detail="date_to не может быть раньше date_from")

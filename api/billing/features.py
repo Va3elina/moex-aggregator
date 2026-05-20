@@ -1,0 +1,287 @@
+"""
+Tier × Indicator × Feature-flags — единая матрица доступа.
+
+Источник истины для tier-based gating на бэкенде и frontend.
+  - Backend импортирует напрямую (роутеры используют `get_indicator_limits()`)
+  - Frontend получает через GET /api/billing/features при login → кэширует в AuthContext
+
+При изменении этого файла:
+  1. Перебилдить frontend (он подхватит матрицу через endpoint при login)
+  2. Бэкенд cначала перезагружается (роутеры используют новые лимиты)
+
+Любая новая Pro-фича добавляется здесь, не разбрасывается по коду.
+"""
+from __future__ import annotations
+from typing import Optional
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Whitelist'ы крупных активов для Free (хардкод по спецификации 2026-05-20)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Открытый интерес — 12 крупных фьючерсов
+FREE_OI_ASSETS: list[str] = [
+    "SR",        # Сбербанк
+    "GZ",        # Газпром
+    "RN",        # Роснефть
+    "LK",        # Лукойл
+    "VB",        # ВТБ
+    "GK",        # Норильский никель
+    "MX",        # Индекс МосБиржи
+    "IMOEXF",    # Индекс МосБиржи (вечный)
+    "USDRUBF",   # USD/RUB вечный
+    "CNYRUBF",   # CNY/RUB вечный
+    "GD",        # Золото
+    "BR",        # Brent
+]
+
+# Сезонность — 10 крупных акций (spot тикеры, не фьючерсные)
+FREE_SEASONALITY_ASSETS: list[str] = [
+    "SBER",         # Сбербанк
+    "GAZP",         # Газпром
+    "ROSN",         # Роснефть
+    "LKOH",         # Лукойл
+    "GMKN",         # Норникель
+    "VTBR",         # ВТБ
+    "ALRS",         # Алроса
+    "NVTK",         # Новатэк
+    "IMOEX",        # Индекс
+    "USD000UTSTOM", # USD/RUB
+]
+
+# Деньги в фондах — топ-2 в каждой из 4 категорий = 8 тикеров
+FREE_FUNDS_TICKERS: list[str] = [
+    # money_market
+    "LQDT", "AKMM",
+    # bonds
+    "TOFZ", "SBLB",
+    # stocks
+    "TMOS", "SBMX",
+    # gold
+    "GOLD", "TGLD",
+]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Per-indicator feature-flags по tier
+# ═══════════════════════════════════════════════════════════════════════════════
+
+INDICATOR_FEATURES: dict[str, dict[str, dict]] = {
+
+    # ───────────────────────────────────────────────────────────────
+    # 1. Карта рынка (/heatmap)
+    # ───────────────────────────────────────────────────────────────
+    "heatmap": {
+        "free":  {"mode_imoex": True,  "mode_all": False, "max_history_days": None},
+        "basic": {"mode_imoex": True,  "mode_all": True,  "max_history_days": None},
+        "pro":   {"mode_imoex": True,  "mode_all": True,  "max_history_days": None},
+    },
+
+    # ───────────────────────────────────────────────────────────────
+    # 2. Открытый интерес (/open-interest)
+    # ───────────────────────────────────────────────────────────────
+    "open_interest": {
+        "free": {
+            "assets_whitelist": FREE_OI_ASSETS,    # только эти 12
+            "allowed_intervals": [24, 60],          # daily + hourly, без 5min
+            "max_history_days": 180,                # 6 месяцев
+            "data_delay_hours": 24,                 # задержка 24 часа
+            "clgroups": ["FIZ", "YUR"],
+        },
+        "basic": {
+            "assets_whitelist": None,                # все 65
+            "allowed_intervals": [24, 60],
+            "max_history_days": 365 * 10,            # 10 лет
+            "data_delay_hours": 0,
+            "clgroups": ["FIZ", "YUR"],
+        },
+        "pro": {
+            "assets_whitelist": None,
+            "allowed_intervals": [5, 24, 60],        # + 5min
+            "max_history_days": None,                # вся история
+            "data_delay_hours": 0,
+            "clgroups": ["FIZ", "YUR"],
+        },
+    },
+
+    # ───────────────────────────────────────────────────────────────
+    # 3. Деньги в фондах (/funds-money)
+    # ───────────────────────────────────────────────────────────────
+    "funds_money": {
+        "free": {
+            "tickers_whitelist": FREE_FUNDS_TICKERS,   # 8 фондов
+            "allowed_timeframes": ["1w", "1m"],        # без дневного
+            "max_history_days": 180,
+        },
+        "basic": {
+            "tickers_whitelist": None,
+            "allowed_timeframes": None,                # все
+            "max_history_days": None,
+        },
+        "pro": {
+            "tickers_whitelist": None,
+            "allowed_timeframes": None,
+            "max_history_days": None,
+        },
+    },
+
+    # ───────────────────────────────────────────────────────────────
+    # 4. Сила рынка (/strength)
+    # ───────────────────────────────────────────────────────────────
+    # Вселенные в БД breadth_history: all / all_usd / imoex / imoex_usd
+    "strength": {
+        "free": {
+            "universes": ["imoex"],
+            "usd_mode": False,
+            "max_history_days": 365,                   # 1 год
+        },
+        "basic": {
+            "universes": ["all", "all_usd", "imoex", "imoex_usd"],
+            "usd_mode": True,
+            "max_history_days": 365 * 10,
+        },
+        "pro": {
+            "universes": ["all", "all_usd", "imoex", "imoex_usd"],
+            "usd_mode": True,
+            "max_history_days": None,
+        },
+    },
+
+    # ───────────────────────────────────────────────────────────────
+    # 5. Индикатор Баффетта (/buffett)
+    # ───────────────────────────────────────────────────────────────
+    "buffett": {
+        "free":  {"modes": ["cap-gdp"],            "max_history_days": 365 * 5,  "custom_ranges": False},
+        "basic": {"modes": ["cap-gdp", "cap-m2"], "max_history_days": 365 * 10, "custom_ranges": False},
+        "pro":   {"modes": ["cap-gdp", "cap-m2"], "max_history_days": None,     "custom_ranges": True},
+    },
+
+    # ───────────────────────────────────────────────────────────────
+    # 6. Сезонность (/seasonality)
+    # ───────────────────────────────────────────────────────────────
+    # Режимы: histogram / price / mtd / yearly / intraday
+    # intraday и filters (без выбросов, без дивгэпов) — Pro-фичи, backlog.
+    "seasonality": {
+        "free": {
+            "assets_whitelist": FREE_SEASONALITY_ASSETS,   # 10 крупных
+            "allowed_modes": ["yearly"],
+            "max_history_years": 10,
+            "filter_no_outliers": False,
+            "filter_no_dividends": False,
+        },
+        "basic": {
+            "assets_whitelist": None,
+            "allowed_modes": ["histogram", "price", "mtd", "yearly"],  # без intraday
+            "max_history_years": None,
+            "filter_no_outliers": False,
+            "filter_no_dividends": False,
+        },
+        "pro": {
+            "assets_whitelist": None,
+            "allowed_modes": ["histogram", "price", "mtd", "yearly", "intraday"],
+            "max_history_years": None,
+            "filter_no_outliers": True,
+            "filter_no_dividends": True,
+        },
+    },
+
+    # ───────────────────────────────────────────────────────────────
+    # 7. Потоки участников биржи (/cbr-flows)
+    # ───────────────────────────────────────────────────────────────
+    "cbr_flows": {
+        "free": {
+            "data_delay_hours": 24,
+            "max_history_days": 365,
+            "category_filters_enabled": False,   # все категории всегда вкл, нельзя фильтровать
+        },
+        "basic": {
+            "data_delay_hours": 0,
+            "max_history_days": None,
+            "category_filters_enabled": True,
+        },
+        "pro": {
+            "data_delay_hours": 0,
+            "max_history_days": None,
+            "category_filters_enabled": True,
+        },
+    },
+
+    # ───────────────────────────────────────────────────────────────
+    # 8. Каталог фондов (/funds-catalog) — пока полностью бесплатный
+    # ───────────────────────────────────────────────────────────────
+    "funds_catalog": {
+        "free":  {"open": True},
+        "basic": {"open": True},
+        "pro":   {"open": True},
+    },
+}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Общие фичи (не привязанные к индикатору)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+COMMON_FEATURES: dict[str, dict] = {
+    "free": {
+        "watermark_on_export": True,    # PNG с водяным знаком таймфрейм.рф
+        "csv_export": False,            # Excel/CSV экспорт
+        "api_access": False,            # /api/v1/public/* с ключами
+        "telegram_alerts_quota": 0,     # лимит индивидуальных алертов
+    },
+    "basic": {
+        "watermark_on_export": False,
+        "csv_export": False,
+        "api_access": False,
+        "telegram_alerts_quota": 20,    # 20 алертов
+    },
+    "pro": {
+        "watermark_on_export": False,
+        "csv_export": True,             # endpoint не реализован пока — будет 501
+        "api_access": True,             # endpoint не реализован пока — будет 501
+        "telegram_alerts_quota": None,  # unlimited
+    },
+}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Public API
+# ═══════════════════════════════════════════════════════════════════════════════
+
+VALID_TIERS = ("free", "basic", "pro")
+
+
+def _normalize_tier(tier: str) -> str:
+    """admin → pro доступ; guest → free; unknown → free."""
+    if tier == "admin":
+        return "pro"
+    if tier in VALID_TIERS:
+        return tier
+    return "free"
+
+
+def get_indicator_limits(tier: str, indicator: str) -> dict:
+    """Лимиты для конкретного (tier, indicator).
+
+    Используется в роутерах: `from api.billing.features import get_indicator_limits`.
+
+    Если indicator не найден — пустой dict (нет ограничений).
+    """
+    tier = _normalize_tier(tier)
+    return INDICATOR_FEATURES.get(indicator, {}).get(tier, {})
+
+
+def get_common_features(tier: str) -> dict:
+    """Общие фичи (watermark, csv, api, alerts) для tier."""
+    return COMMON_FEATURES.get(_normalize_tier(tier), COMMON_FEATURES["free"])
+
+
+def matrix_for_frontend() -> dict:
+    """Полная матрица для отдачи через GET /api/billing/features.
+
+    Frontend кэширует в AuthContext и используется во всех TierGate компонентах.
+    """
+    return {
+        "indicators": INDICATOR_FEATURES,
+        "common": COMMON_FEATURES,
+        "valid_tiers": list(VALID_TIERS),
+    }

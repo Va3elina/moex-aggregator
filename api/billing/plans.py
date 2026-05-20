@@ -14,12 +14,14 @@ from dataclasses import dataclass
 
 # Уровни доступа (tier). Каждый следующий включает всё предыдущее.
 # Используется в api/billing/tiers.py для проверок вида "пользователь >= pro".
+#
+# Premium убран 2026-05-20 — спецификация тарифов сжата до 3 уровней
+# (Free / Basic / Pro). Все бывшие Premium фичи перенесены в Pro.
 TIER_LEVELS: dict[str, int] = {
     "guest": 0,     # не залогинен
     "free": 1,      # залогинен без подписки
     "basic": 2,
     "pro": 3,
-    "premium": 4,
     "admin": 99,    # роль из users.role — обходит все проверки
 }
 
@@ -37,12 +39,13 @@ class Plan:
     badge: str | None = None  # "Скидка 17%" / "Самое популярное" / None
 
 
-# Базовые цены (месячные). Годовые = 10×месячных (экономия 2 мес).
-# Basic временно снижен до 30 ₽ — для тестирования боевого T-Bank эквайринга
-# реальной картой. Вернуть обратно: BASIC_MONTHLY = 299.00.
-BASIC_MONTHLY = 30.00
-PRO_MONTHLY = 799.00
-PREMIUM_MONTHLY = 1999.00
+# Базовые цены (месячные). Годовые = 9.6×месячных (экономия 20%).
+#
+# Финальные цены из спецификации тарифов 2026-05-20:
+#   Basic — основной платный, realtime, почти весь функционал
+#   Pro   — полный функционал + API + Excel/CSV + TradingView/Т-терминал
+BASIC_MONTHLY = 2900.00
+PRO_MONTHLY = 5900.00
 
 
 def _make_pair(tier: str, title_base: str, monthly_price: float, popular: bool = False) -> list[Plan]:
@@ -75,13 +78,12 @@ def _make_pair(tier: str, title_base: str, monthly_price: float, popular: bool =
     ]
 
 
-# Все платные SKU
+# Все платные SKU (Premium убран 2026-05-20)
 PLANS: dict[str, Plan] = {
     p.plan_id: p
     for p in [
         *_make_pair("basic", "Basic", BASIC_MONTHLY),
         *_make_pair("pro", "Pro", PRO_MONTHLY, popular=True),
-        *_make_pair("premium", "Premium", PREMIUM_MONTHLY),
     ]
 }
 
@@ -112,7 +114,7 @@ def tiers_grouped() -> list[dict]:
             "is_current_default": True,
         }
     ]
-    for tier in ("basic", "pro", "premium"):
+    for tier in ("basic", "pro"):
         monthly = PLANS.get(f"{tier}_monthly")
         yearly = PLANS.get(f"{tier}_yearly")
         if not monthly:

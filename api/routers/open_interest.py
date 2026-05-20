@@ -11,7 +11,7 @@ from api.models import OpenInterest
 from api.schemas import OpenInterestResponse, OpenInterestListResponse
 from api.schemas.validators import ClgroupType, validate_safe_id
 from api.routers.auth import get_current_user_optional
-from api.security.access_control import enforce_guest_limits
+from api.security.access_control import enforce_tier_limits, get_effective_end_date
 
 router = APIRouter(prefix="/api/openinterest", tags=["open_interest"])
 
@@ -33,14 +33,23 @@ def get_open_interest(
     if interval not in {5, 60, 24}:
         raise HTTPException(status_code=400, detail="interval должен быть 5, 60 или 24")
 
-    # Ограничения для гостей
-    enforce_guest_limits(user, interval=interval)
-
     # Валидация sectype
     try:
         sectype = validate_safe_id(sectype, "sectype")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+    # Tier-ограничения: asset whitelist, interval, clgroup, max history
+    enforce_tier_limits(
+        user, "open_interest",
+        asset=sectype, interval=interval, clgroup=clgroup,
+    )
+
+    # 24h задержка для Free — backend подменяет date_to, не доверяя фронту
+    effective_end = get_effective_end_date(user, "open_interest")
+    if effective_end is not None:
+        if date_to is None or date_to > effective_end:
+            date_to = effective_end
 
     # Валидация диапазона дат
     if date_from and date_to and date_to < date_from:
