@@ -290,6 +290,10 @@ export interface FundInfo {
   subcategory?: string | null;
   uk_id?: string | null;
   data: FundDataPoint[];
+  /** Tier-gated: фонд недоступен в текущем тарифе (Free показывает только
+   *  whitelist'овые с данными, остальные приходят с tier_locked=true и
+   *  пустым data). Frontend рендерит их затемнёнными в FundsTable. */
+  tier_locked?: boolean;
 }
 
 export interface FundHolding {

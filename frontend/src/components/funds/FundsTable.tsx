@@ -1,6 +1,9 @@
 import React from 'react';
+import { Lock } from 'lucide-react';
 import { UK_LOGOS } from '../../config/fundConfig';
 import type { FundInfo, FundsChartResponse } from '../../services/api';
+import { useUpgradePrompt } from '../tier/UpgradeModal';
+import { useTierAccess } from '../../contexts/TierFeaturesContext';
 
 const FUND_COLORS = [
     '#2EE59D', '#4DA3FF', '#9D4DFF', '#FF4D4D', '#FFB020',
@@ -32,6 +35,9 @@ export default function FundsTable({
     onSetNavSortDir,
     onOpenFundCard,
 }: FundsTableProps) {
+    const { showUpgrade } = useUpgradePrompt();
+    const fundsAccess = useTierAccess('funds_money');
+
     return (
         <div className="mt-6 rounded-2xl overflow-hidden editorial-frame" style={{ background: 'var(--bg-secondary)', padding: 0 }}>
             <div className="border-b border-theme flex items-center justify-between" style={{ padding: 'var(--sp-3) var(--sp-4)' }}>
@@ -146,26 +152,57 @@ export default function FundsTable({
                                             const colorIdx = globalIdx++;
                                             const lastData = fund.data[fund.data.length - 1];
                                             const isHidden = hiddenFunds.has(fund.fund_id);
+                                            const isLocked = fund.tier_locked === true;
+
+                                            // Click-handler для locked → upgrade modal вместо
+                                            // открытия FundCard (нет данных, нечего смотреть).
+                                            const handleLockedClick = (e: React.MouseEvent) => {
+                                                e.stopPropagation();
+                                                const requiredTier = fundsAccess.requiredTierFor({});
+                                                showUpgrade({
+                                                    tier: requiredTier || 'basic',
+                                                    featureName: `фонд ${fund.name} (${fund.ticker})`,
+                                                    indicator: 'funds_money',
+                                                });
+                                            };
+
                                             return (
                                                 <tr
                                                     key={fund.fund_id}
-                                                    className={`border-t border-theme transition-colors ${isHidden ? 'opacity-50 grayscale' : 'hover:bg-white/5'}`}
+                                                    className={`border-t border-theme transition-colors ${
+                                                        isLocked ? 'cursor-not-allowed' :
+                                                        isHidden ? 'opacity-50 grayscale' : 'hover:bg-white/5'
+                                                    }`}
+                                                    style={isLocked ? { opacity: 0.45, filter: 'grayscale(0.5)' } : undefined}
+                                                    title={isLocked ? 'Доступно на повышенном тарифе' : undefined}
                                                 >
                                                     <td className="px-4 py-3">
-                                                        <div
-                                                            className="flex items-center justify-center w-8 h-8 rounded-lg hover:bg-white/5 cursor-pointer transition-colors"
-                                                            onClick={() => onToggleFundVisibility(fund.fund_id)}
-                                                        >
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={!isHidden}
-                                                                onChange={() => {}}
-                                                                className="w-4 h-4 rounded border-theme cursor-pointer"
-                                                            style={{ accentColor: 'var(--accent)' }}
-                                                            />
-                                                        </div>
+                                                        {isLocked ? (
+                                                            <div
+                                                                className="flex items-center justify-center w-8 h-8 rounded-lg cursor-pointer"
+                                                                onClick={handleLockedClick}
+                                                            >
+                                                                <Lock size={14} strokeWidth={2.2} style={{ color: 'var(--text-muted)' }} />
+                                                            </div>
+                                                        ) : (
+                                                            <div
+                                                                className="flex items-center justify-center w-8 h-8 rounded-lg hover:bg-white/5 cursor-pointer transition-colors"
+                                                                onClick={() => onToggleFundVisibility(fund.fund_id)}
+                                                            >
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={!isHidden}
+                                                                    onChange={() => {}}
+                                                                    className="w-4 h-4 rounded border-theme cursor-pointer"
+                                                                    style={{ accentColor: 'var(--accent)' }}
+                                                                />
+                                                            </div>
+                                                        )}
                                                     </td>
-                                                    <td className="px-4 py-3 cursor-pointer" onClick={() => onOpenFundCard(fund)}>
+                                                    <td
+                                                        className="px-4 py-3 cursor-pointer"
+                                                        onClick={isLocked ? handleLockedClick : () => onOpenFundCard(fund)}
+                                                    >
                                                         <div className="flex items-center gap-2">
                                                             {(() => {
                                                                 const uk = fund.uk_id ? UK_LOGOS[fund.uk_id] : null;
@@ -185,12 +222,17 @@ export default function FundsTable({
                                                             <span className="font-medium">{fund.ticker}</span>
                                                         </div>
                                                     </td>
-                                                    <td className="px-4 py-3 text-theme-secondary cursor-pointer" onClick={() => onOpenFundCard(fund)}>{fund.name}</td>
+                                                    <td
+                                                        className="px-4 py-3 text-theme-secondary cursor-pointer"
+                                                        onClick={isLocked ? handleLockedClick : () => onOpenFundCard(fund)}
+                                                    >
+                                                        {fund.name}
+                                                    </td>
                                                     <td className="px-4 py-3 text-right font-mono">
-                                                        {lastData?.nav ? `${(lastData.nav / 1e9).toFixed(2)} млрд ₽` : '—'}
+                                                        {isLocked ? '—' : (lastData?.nav ? `${(lastData.nav / 1e9).toFixed(2)} млрд ₽` : '—')}
                                                     </td>
                                                     <td className="px-4 py-3 text-right text-theme-secondary">
-                                                        {lastData?.date || '—'}
+                                                        {isLocked ? '—' : (lastData?.date || '—')}
                                                     </td>
                                                 </tr>
                                             );

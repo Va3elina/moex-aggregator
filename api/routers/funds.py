@@ -89,8 +89,10 @@ async def get_funds_chart(
     # Tier: period limit для funds_money
     enforce_tier_limits(user, "funds_money", period=period)
 
-    # Tier whitelist — Free показывает только 8 крупных фондов (tickers_whitelist),
-    # Basic/Pro — все. Получаем limits и фильтруем fund_ids ниже.
+    # Tier whitelist — Free показывает только 8 крупных фондов (tickers_whitelist)
+    # с данными NAV, остальные приходят с tier_locked=true (только метаданные,
+    # без data) — frontend показывает их в FundsTable затемнёнными с lock-иконкой
+    # и при клике открывает UpgradeModal.
     tier = user_tier(user)
     limits = get_indicator_limits(tier, "funds_money")
     tickers_whitelist: Optional[List[str]] = limits.get("tickers_whitelist")
@@ -100,7 +102,7 @@ async def get_funds_chart(
 
     from api.cache import get_or_set
     # Cache key учитывает tier-фильтр — без этого Free мог бы получить cache
-    # Basic'а со всеми фондами или наоборот.
+    # Basic'а с данными NAV для locked фондов (бесплатный обход tier-гейта).
     cache_suffix = "wl_" + ("_".join(tickers_whitelist) if tickers_whitelist else "all")
     cache_key = f"funds_chart:{category}:{period}:{cache_suffix}"
     cached = get_or_set(cache_key)
@@ -112,16 +114,19 @@ async def get_funds_chart(
         raise HTTPException(status_code=400, detail=f"Неизвестная категория: {category}")
 
     cat_config = fund_categories[category]
+    # Все fund_ids остаются — фильтрация по tier применяется ниже на этапе
+    # сбора NAV (locked фонды получают пустой data + tier_locked=true).
     fund_ids = list(cat_config["funds"].keys())
 
-    # Применяем whitelist для Free tier — оставляем только fund_id с ticker
-    # в whitelist'е. cat_config["funds"] это dict {fund_id: {ticker, name, ...}}.
+    # Множество accessible fund_ids для tier'а (для NAV-запросов и total).
     if tickers_whitelist:
         wl_set = set(tickers_whitelist)
-        fund_ids = [
+        accessible_fund_ids = [
             fid for fid in fund_ids
             if cat_config["funds"].get(fid, {}).get("ticker") in wl_set
         ]
+    else:
+        accessible_fund_ids = fund_ids
 
     index_secid = cat_config["index"]
 
@@ -140,56 +145,63 @@ async def get_funds_chart(
 
     try:
         with engine.connect() as conn:
-            # === Данные фондов (СЧА) ===
-            funds_query = text("""
-                SELECT fd.fund_id, fd.trade_date, fd.nav
-                FROM fund_data fd
-                WHERE fd.fund_id = ANY(:fund_ids)
-                  AND fd.trade_date >= :date_from
-                  AND fd.nav IS NOT NULL
-                  AND fd.nav > 0
-                ORDER BY fd.fund_id, fd.trade_date
-            """)
-            
-            funds_result = conn.execute(funds_query, {
-                "fund_ids": fund_ids,
-                "date_from": date_from
-            }).fetchall()
-            
-            # Группируем по фондам
+            # === Инициализация funds_data — ВСЕ фонды категории (включая locked).
+            # Locked получают tier_locked=true + пустой data — на frontend это
+            # показывается затемнённой строкой в FundsTable с lock-иконкой.
+            accessible_set = set(accessible_fund_ids)
             funds_data = {}
-            for row in funds_result:
-                fid = row[0]
-                if fid not in funds_data:
-                    fund_info = cat_config["funds"].get(fid, {})
-                    funds_data[fid] = {
-                        "fund_id": fid,
-                        "ticker": fund_info.get("ticker", str(fid)),
-                        "name": fund_info.get("name", f"Фонд {fid}"),
-                        "subcategory": fund_info.get("subcategory"),
-                        "uk_id": fund_info.get("uk_id"),
-                        "data": []
-                    }
-                funds_data[fid]["data"].append({
-                    "date": row[1].isoformat(),
-                    "nav": float(row[2]) if row[2] else None
-                })
-            
-            # === Суммарная СЧА по датам ===
-            total_query = text("""
-                SELECT trade_date, SUM(nav) as total_nav
-                FROM fund_data
-                WHERE fund_id = ANY(:fund_ids)
-                  AND trade_date >= :date_from
-                  AND nav IS NOT NULL
-                GROUP BY trade_date
-                ORDER BY trade_date
-            """)
-            
-            total_result = conn.execute(total_query, {
-                "fund_ids": fund_ids,
-                "date_from": date_from
-            }).fetchall()
+            for fid in fund_ids:
+                fund_info = cat_config["funds"].get(fid, {})
+                funds_data[fid] = {
+                    "fund_id": fid,
+                    "ticker": fund_info.get("ticker", str(fid)),
+                    "name": fund_info.get("name", f"Фонд {fid}"),
+                    "subcategory": fund_info.get("subcategory"),
+                    "uk_id": fund_info.get("uk_id"),
+                    "tier_locked": fid not in accessible_set,
+                    "data": []
+                }
+
+            # === NAV-данные только для accessible фондов (tier-gated).
+            # Если accessible_fund_ids пуст — пропускаем запрос.
+            if accessible_fund_ids:
+                funds_query = text("""
+                    SELECT fd.fund_id, fd.trade_date, fd.nav
+                    FROM fund_data fd
+                    WHERE fd.fund_id = ANY(:fund_ids)
+                      AND fd.trade_date >= :date_from
+                      AND fd.nav IS NOT NULL
+                      AND fd.nav > 0
+                    ORDER BY fd.fund_id, fd.trade_date
+                """)
+                funds_result = conn.execute(funds_query, {
+                    "fund_ids": accessible_fund_ids,
+                    "date_from": date_from
+                }).fetchall()
+                for row in funds_result:
+                    fid = row[0]
+                    if fid in funds_data:
+                        funds_data[fid]["data"].append({
+                            "date": row[1].isoformat(),
+                            "nav": float(row[2]) if row[2] else None
+                        })
+
+            # === Суммарная СЧА — только по accessible фондам ===
+            total_result = []
+            if accessible_fund_ids:
+                total_query = text("""
+                    SELECT trade_date, SUM(nav) as total_nav
+                    FROM fund_data
+                    WHERE fund_id = ANY(:fund_ids)
+                      AND trade_date >= :date_from
+                      AND nav IS NOT NULL
+                    GROUP BY trade_date
+                    ORDER BY trade_date
+                """)
+                total_result = conn.execute(total_query, {
+                    "fund_ids": accessible_fund_ids,
+                    "date_from": date_from
+                }).fetchall()
             
             total_nav = [
                 {"date": row[0].isoformat(), "nav": float(row[1])}
