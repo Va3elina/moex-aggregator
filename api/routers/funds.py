@@ -10,6 +10,8 @@ from datetime import date, timedelta
 from collections import defaultdict
 import time
 
+from api.billing.features import get_indicator_limits
+from api.billing.tiers import user_tier
 from api.database import get_engine
 from api.logger import get_logger
 from api.routers.auth import get_current_user_optional
@@ -87,11 +89,20 @@ async def get_funds_chart(
     # Tier: period limit для funds_money
     enforce_tier_limits(user, "funds_money", period=period)
 
+    # Tier whitelist — Free показывает только 8 крупных фондов (tickers_whitelist),
+    # Basic/Pro — все. Получаем limits и фильтруем fund_ids ниже.
+    tier = user_tier(user)
+    limits = get_indicator_limits(tier, "funds_money")
+    tickers_whitelist: Optional[List[str]] = limits.get("tickers_whitelist")
+
     start_time = time.time()
-    log.info(f"REQUEST: /funds/chart category={category}, period={period}")
+    log.info(f"REQUEST: /funds/chart category={category}, period={period}, tier={tier}")
 
     from api.cache import get_or_set
-    cache_key = f"funds_chart:{category}:{period}"
+    # Cache key учитывает tier-фильтр — без этого Free мог бы получить cache
+    # Basic'а со всеми фондами или наоборот.
+    cache_suffix = "wl_" + ("_".join(tickers_whitelist) if tickers_whitelist else "all")
+    cache_key = f"funds_chart:{category}:{period}:{cache_suffix}"
     cached = get_or_set(cache_key)
     if cached is not None:
         return cached
@@ -102,6 +113,16 @@ async def get_funds_chart(
 
     cat_config = fund_categories[category]
     fund_ids = list(cat_config["funds"].keys())
+
+    # Применяем whitelist для Free tier — оставляем только fund_id с ticker
+    # в whitelist'е. cat_config["funds"] это dict {fund_id: {ticker, name, ...}}.
+    if tickers_whitelist:
+        wl_set = set(tickers_whitelist)
+        fund_ids = [
+            fid for fid in fund_ids
+            if cat_config["funds"].get(fid, {}).get("ticker") in wl_set
+        ]
+
     index_secid = cat_config["index"]
 
     # Расчёт периода (с учётом min_date категории)
@@ -426,8 +447,12 @@ async def get_funds_flows(
     - flow > 0 → приток (зелёный)
     - flow < 0 → отток (красный)
     """
-    # Ограничения для гостей
-    enforce_guest_limits(user, period=period)
+    # Tier-gating: timeframe (Free → только 1w/1m) + period + tickers_whitelist
+    enforce_tier_limits(user, "funds_money", period=period, timeframe=timeframe)
+
+    tier = user_tier(user)
+    limits = get_indicator_limits(tier, "funds_money")
+    tickers_whitelist: Optional[List[str]] = limits.get("tickers_whitelist")
 
     fund_categories = load_fund_categories()
     if category not in fund_categories:
@@ -436,7 +461,17 @@ async def get_funds_flows(
     cat_config = fund_categories[category]
     all_fund_ids = list(cat_config["funds"].keys())
 
-    # Фильтр по выбранным фондам
+    # Применяем tier whitelist (Free → 8 фондов). Делаем до пользовательского
+    # filter — иначе можно обойти tier-rule передав fund_ids=non-whitelisted.
+    if tickers_whitelist:
+        wl_set = set(tickers_whitelist)
+        all_fund_ids = [
+            fid for fid in all_fund_ids
+            if cat_config["funds"].get(fid, {}).get("ticker") in wl_set
+        ]
+
+    # Фильтр по выбранным фондам (UI-уровень — фронтенд может убрать какие-то
+    # из видимых; пересекаем с уже-tier-filtered all_fund_ids).
     if fund_ids_filter:
         try:
             requested_ids = [int(x) for x in fund_ids_filter.split(",") if x.strip()]
