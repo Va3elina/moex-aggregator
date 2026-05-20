@@ -20,6 +20,7 @@ import MobileChart from '../../components/mobile/MobileChart';
 import MobileSheet from '../../components/mobile/MobileSheet';
 import MobileAssetSearch from '../../components/mobile/MobileAssetSearch';
 import { getChartData } from '../../services/api';
+import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
 import type { ChartResponse } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
 import { useRealtimeData } from '../../hooks/useRealtimeData';
@@ -77,6 +78,7 @@ const MAX_PERIODS_BY_INTERVAL: Record<number, Period[]> = {
 
 export default function MobileOpenInterestPage() {
   const { isAuthenticated } = useAuth();
+  const { showUpgrade } = useUpgradePrompt();
 
   // State
   const [selectedInstrument, setSelectedInstrument] = useState('SR');
@@ -262,11 +264,23 @@ export default function MobileOpenInterestPage() {
       );
       setData(result);
     } catch (err) {
-      console.error('Ошибка загрузки OI:', err);
+      // Tier 403 → upgrade prompt вместо silent console error
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('тарифе') || msg.includes('недоступ')) {
+        const requiredTier: 'basic' | 'pro' =
+          msg.includes('5мин') || msg.includes('Pro') ? 'pro' : 'basic';
+        showUpgrade({
+          tier: requiredTier,
+          featureName: msg.replace(/^.*?: /, ''),
+          indicator: 'open_interest',
+        });
+      } else {
+        console.error('Ошибка загрузки OI:', err);
+      }
     } finally {
       setLoading(false);
     }
-  }, [selectedInstrument, intervalValue, clgroup, period]);
+  }, [selectedInstrument, intervalValue, clgroup, period, showUpgrade]);
 
   useEffect(() => { void loadData(); }, [loadData]);
   useRealtimeData(['5min', 'hourly'], () => { void loadData(); });
