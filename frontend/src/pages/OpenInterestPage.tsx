@@ -22,7 +22,6 @@ import { useOnboardingTour } from '../hooks/useFirstVisit';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { oiTourSteps } from '../data/tours/oi';
 import { formatPrice } from '../utils/formatNumber';
-import { useTierAccess } from '../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 
 type DisplayMode = 'price' | 'positions' | 'participants';
@@ -63,9 +62,7 @@ export default function OpenInterestPage() {
   const { theme: _theme } = useTheme();
   const navigate = useNavigate();
 
-  // Tier-based access checks
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const _oiAccess = useTierAccess('open_interest');
+  // Tier upgrade prompt — открывается при 403 от backend (см. loadData catch)
   const { showUpgrade } = useUpgradePrompt();
 
   // Фоновая предзагрузка лого один раз — модалка выбора актива потом
