@@ -1460,11 +1460,11 @@ export default function SimpleChart({
 
             // Знак минус — тонкий символ, у него меньше воздуха надо. Если
             // значение отрицательное — укорачиваем pill со стороны минуса
-            // (минус всегда левый символ) на 2px, чтобы заливка не заходила
+            // (минус всегда левый символ) на 4px, чтобы заливка не заходила
             // на ядро графика.
             const hasMinus = /^[−-]/.test(mainPart);
-            const finalPillLeft = hasMinus ? pillLeft + 2 : pillLeft;
-            const finalPillW = hasMinus ? pillW - 2 : pillW;
+            const finalPillLeft = hasMinus ? pillLeft + 4 : pillLeft;
+            const finalPillW = hasMinus ? pillW - 4 : pillW;
 
             return (
               <g key={l.key} pointerEvents="none">
@@ -1651,8 +1651,12 @@ export default function SimpleChart({
             data={data}
             onChange={(s, e, isDrag) => { navDragRef.current = isDrag; setNavRange([s, e]); }}
             color={primaryColor}
-            insetLeft="var(--chart-pad-left)"
-            insetRight={showSecondary ? 'var(--chart-pad-right-dual)' : 'var(--chart-pad-right-single)'}
+            // Фактический padding (число), не CSS-переменная. padding уже
+            // учитывает mobile labelMax, chartPadding-override и desktop CSS —
+            // навигатор всегда ровно по ядру графика. CSS-var давал рассинхрон
+            // когда страница переопределяла chartPadding (OI/СЧА/Баффетт).
+            insetLeft={padding.left}
+            insetRight={padding.right}
           />
         </div>
       )}
