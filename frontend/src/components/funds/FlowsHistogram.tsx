@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { BarChart3 } from 'lucide-react';
 import { UK_LOGOS } from '../../config/fundConfig';
 import { FUND_ANNOTATIONS } from '../../config/fundAnnotations';
 import type { FundsFlowsResponse, FundCategory } from '../../services/api';
@@ -83,7 +84,25 @@ export default function FlowsHistogram({
                     className="flex flex-col items-center justify-center text-center"
                     style={{ height: 'calc(var(--chart-height, 450px) + 100px)', gap: 'var(--sp-3)', padding: 'var(--sp-6)' }}
                 >
-                    <div style={{ fontSize: 40, lineHeight: 1 }}>📊</div>
+                    {/* Editorial-эмблема: accent-square с outline + hard-shadow
+                        и белой иконкой — тот же стиль что page-header-icon
+                        и иконка в UpgradeModal. */}
+                    <div
+                        style={{
+                            width: 56,
+                            height: 56,
+                            borderRadius: 12,
+                            background: 'var(--accent)',
+                            border: '2px solid var(--text-primary)',
+                            boxShadow: 'var(--shadow-hard-chip, 3px 3px 0 var(--text-primary))',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            marginBottom: 'var(--sp-2)',
+                        }}
+                    >
+                        <BarChart3 size={28} strokeWidth={2.4} color="#FFFFFF" />
+                    </div>
                     <div className="font-semibold text-theme-primary" style={{ fontSize: 'var(--fs-lg)' }}>
                         Не выбрано ни одного фонда
                     </div>
