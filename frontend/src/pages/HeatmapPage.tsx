@@ -563,6 +563,7 @@ export default function HeatmapPage() {
         subtitle={`Обновлено в ${lastUpdate || '--:--'}`}
         help={METHODOLOGY.heatmap}
         helpLink="/methodology/heatmap"
+        sourceNote="Источник: Московская биржа"
       />
 
       {/* Editorial frame — обнимает controls + treemap в один контейнер с

@@ -338,6 +338,7 @@ export default function StrengthPage() {
                 subtitle={`% ${universe === 'imoex' ? 'акций индекса MOEX' : 'акций'} выше EMA${emaPeriod}`}
                 help={METHODOLOGY.strength}
                 helpLink="/methodology/strength"
+                sourceNote="Источник: Московская биржа"
             />
 
             {/* Editorial frame — обнимает controls + chart в один контейнер */}

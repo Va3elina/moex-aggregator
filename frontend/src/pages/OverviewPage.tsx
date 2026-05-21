@@ -184,7 +184,7 @@ export default function OverviewPage() {
       {/* ═══ QUOTE TILES — IMOEX / RTSI / USD / CNY / Gold ═══
           Live-цифры сверху страницы. Sparkline показывает движение за 30 дней.
           Всегда рендерим 5 slot'ов: skeleton если data нет → реальный tile при load. */}
-      <section className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2 md:gap-3 mb-8 md:mb-10">
+      <section className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2 md:gap-3 mb-2 md:mb-3">
         {QUOTE_TICKERS.map(t => {
           const q = quotes[t.secid];
           const hasData = q && q.closes.length >= 2;
@@ -193,6 +193,13 @@ export default function OverviewPage() {
             : <Skeleton key={t.secid} height={68} rounded="md" />;
         })}
       </section>
+      {/* Памятка об источнике: котировки индексов и валют — данные Мосбиржи. */}
+      <p
+        className="mb-8 md:mb-10"
+        style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-2xs)' }}
+      >
+        Источник: Московская биржа
+      </p>
 
       {/* ═══ TOP MOVERS (Gainers / Losers) ═══
           Секция всегда рендерится: skeleton если data грузится → MoversList при load.

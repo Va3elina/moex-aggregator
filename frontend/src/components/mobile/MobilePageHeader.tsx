@@ -15,6 +15,8 @@ interface MobilePageHeaderProps {
   title: string;
   subtitle?: string;
   helpLink?: string;
+  /** Памятка об источнике данных — мелкая приглушённая строка под title. */
+  sourceNote?: string;
 }
 
 export default function MobilePageHeader({
@@ -22,6 +24,7 @@ export default function MobilePageHeader({
   title,
   subtitle,
   helpLink,
+  sourceNote,
 }: MobilePageHeaderProps) {
   return (
     <div className="fm-pageheader">
@@ -43,6 +46,11 @@ export default function MobilePageHeader({
           )}
         </h1>
         {subtitle && <p className="fm-pageheader-subtitle">{subtitle}</p>}
+        {sourceNote && (
+          <p style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-2xs)', marginTop: 2 }}>
+            {sourceNote}
+          </p>
+        )}
       </div>
     </div>
   );

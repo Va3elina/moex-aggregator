@@ -532,6 +532,18 @@ export interface BuffettRatioResponse {
 
 export type BuffettPeriod = '1m' | '1y' | '2y' | '3y' | '5y' | '10y' | '20y' | 'all';
 
+/** Извлекает человекочитаемый detail из 4xx-ответа buffett-эндпоинтов.
+ *  Backend (enforce_tier_limits) шлёт {detail: "Период all недоступен на
+ *  тарифе ..."}. Без этого фронт видел бы generic-ошибку и не мог отличить
+ *  tier-ограничение от реального сбоя. */
+async function buffettErrorDetail(response: Response, fallback: string): Promise<string> {
+  try {
+    const body = await response.json();
+    if (body && typeof body.detail === 'string' && body.detail) return body.detail;
+  } catch { /* не JSON — отдаём fallback */ }
+  return `Failed to fetch Buffett ${fallback}`;
+}
+
 export async function getBuffettCapGdp(
   period: BuffettPeriod = '3y',
   smooth: boolean = true,
@@ -543,7 +555,7 @@ export async function getBuffettCapGdp(
     timeframe
   });
   const response = await apiFetch(`${API_BASE}/api/buffett/cap-gdp?${params}`);
-  if (!response.ok) throw new Error('Failed to fetch Buffett cap/gdp');
+  if (!response.ok) throw new Error(await buffettErrorDetail(response, 'cap/gdp'));
   return response.json();
 }
 
@@ -554,7 +566,7 @@ export async function getBuffettCapM2(
 ): Promise<BuffettRatioResponse> {
   const params = new URLSearchParams({ period, smooth: smooth.toString(), timeframe });
   const response = await apiFetch(`${API_BASE}/api/buffett/cap-m2?${params}`);
-  if (!response.ok) throw new Error('Failed to fetch Buffett cap/m2');
+  if (!response.ok) throw new Error(await buffettErrorDetail(response, 'cap/m2'));
   return response.json();
 }
 

@@ -3,7 +3,7 @@
  *
  * Простая структура: chart (cap + ratio) + viewMode toggle + period sheet.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Scale, Lock } from 'lucide-react';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
@@ -35,6 +35,9 @@ export default function MobileBuffettPage() {
   const buffAccess = useTierAccess('buffett');
   const { showUpgrade } = useUpgradePrompt();
   const [period, setPeriod] = useState<BuffettPeriod>('10y');
+  // Последний период, по которому данные успешно загрузились. «Вся история»
+  // (all) недоступна Free/Гостю → backend отдаёт 403 → откатываемся сюда.
+  const lastGoodPeriod = useRef<BuffettPeriod>('10y');
   // Таймфрейм аггрегации: день/неделя/месяц. По умолчанию месяц.
   const [timeframe, setTimeframe] = useState<'1d' | '1w' | '1m'>('1m');
   const [capGdpData, setCapGdpData] = useState<BuffettCapGdpResponse | null>(null);
@@ -167,9 +170,25 @@ export default function MobileBuffettPage() {
           const result = await getBuffettCapM2(period, false, timeframe);
           setCapM2Data(result);
         }
+        // Период успешно загрузился — запоминаем как «безопасный» для отката.
+        lastGoodPeriod.current = period;
       } catch (err) {
         console.error('Ошибка Buffett:', err);
         const msg = err instanceof Error ? err.message : String(err);
+        // Ограничение глубины истории: «Вся история» (all) недоступна на
+        // Free/Гостю — backend шлёт «Период all недоступен на тарифе …».
+        // Откатываем период на последний рабочий, иначе график завис бы с
+        // пустыми данными, а кнопка «Время» показывала бы «Вся история».
+        if (msg.includes('Период') && msg.includes('недоступ')) {
+          setPeriod(lastGoodPeriod.current);
+          showUpgrade({
+            tier: 'pro',
+            featureName: 'полная история',
+            indicator: 'buffett',
+          });
+          return;
+        }
+        // Ограничение режима (Кап / M2) или иной tier-отказ.
         if (msg.includes('тарифе') || msg.includes('недоступ')) {
           const requiredTier: 'basic' | 'pro' = msg.includes('Pro') ? 'pro' : 'basic';
           showUpgrade({

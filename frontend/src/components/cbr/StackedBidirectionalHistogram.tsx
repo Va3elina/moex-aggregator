@@ -72,14 +72,20 @@ export default function StackedBidirectionalHistogram({
   // Entrance animation: grow-from-zero wave.
   // animProgress[i] ∈ [0, 1] — прогресс bar'а #i (height + stack scale).
   //
-  // animKey:
-  //   - Если parent передал animTrigger (рекомендуется) — используем его.
-  //     Это надёжный сигнал «нужно перезапустить wave».
-  //   - Fallback: length+dates periods. Но если у двух разных type активов
-  //     (stocks/ofz) одинаковые dates для same period (6m/2y) → animKey same
-  //     → animation не fires.
-  const animKey = animTrigger
-    ?? `${periods.length}|${periods[0]?.end_date ?? ''}|${periods[periods.length - 1]?.end_date ?? ''}`;
+  // animKey — комбинируем ДВА сигнала:
+  //   - animTrigger (от parent) — меняется при смене type/period, явный
+  //     сигнал «перезапусти wave».
+  //   - data-signature (длина + крайние даты periods) — меняется когда
+  //     данные впервые приезжают. На первом открытии компонент рендерится
+  //     в loading-состоянии с periods=[]; эффект делает early-return, а
+  //     animTrigger потом не меняется → entrance-анимация НЕ играла при
+  //     первом открытии страницы. Signature ловит переход [] → загружено.
+  //   Toggle категорий не меняет ни animTrigger, ни signature (periods те
+  //   же объекты) → wave корректно НЕ перезапускается.
+  const dataSig =
+    `${periods.length}|${periods[0]?.end_date ?? ''}` +
+    `|${periods[periods.length - 1]?.end_date ?? ''}`;
+  const animKey = `${animTrigger ?? ''}|${dataSig}`;
   const [animProgress, setAnimProgress] = useState<number[]>(() =>
     new Array(periods.length).fill(0),
   );

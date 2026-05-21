@@ -289,6 +289,12 @@ export default function MobileChart({
   const wrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(360);
   const [measuredHeight, setMeasuredHeight] = useState(260);
+  // measured — стал ли известен реальный размер контейнера (первый колбэк
+  // ResizeObserver). Line-drawing анимация не должна стартовать до этого:
+  // getTotalLength() на path'е, нарисованном по placeholder-ширине 360,
+  // вернёт неверную длину → strokeDasharray окажется короче реального пути
+  // → правый край графика «не дорисовывается» при первом открытии.
+  const [measured, setMeasured] = useState(false);
   const [crosshair, setCrosshair] = useState<{ idx: number; pinned: boolean } | null>(null);
   // Refs к каждой SVG <path> для line-drawing animation.
   // Sparse array — index соответствует sIdx в downsampledSeries.map.
@@ -309,6 +315,7 @@ export default function MobileChart({
         const h = e.contentRect.height;
         if (w > 0) {
           setWidth((prev) => (Math.abs(prev - w) >= 1 ? Math.max(200, w) : prev));
+          setMeasured(true);  // реальная ширина известна — анимация может стартовать
         }
         if (h > 0) {
           setMeasuredHeight((prev) =>
@@ -367,7 +374,9 @@ export default function MobileChart({
   }, [series, width]);
 
   // Line drawing animation — replay'ится при СТРУКТУРНОЙ смене серий
-  // (загрузка новых данных, смена актива, смена периода). Не запускается:
+  // (загрузка новых данных, смена актива, смена периода) и один раз —
+  // когда ResizeObserver впервые сообщил реальную ширину (measured).
+  // Не запускается:
   //   - на изменения width/height (ResizeObserver) — был баг с "обрезкой"
   //     графика в fullscreen, потому что downsampling зависел от width
   //   - на изменения значений в тех же таймстемпах (например, toggle фонда
@@ -385,6 +394,13 @@ export default function MobileChart({
   //     geometry path'а, линия остаётся полностью видимой.
   const lastStructureRef = useRef<string>('');
   useEffect(() => {
+    // Ждём первого реального замера контейнера (measured): до него path
+    // нарисован по placeholder-ширине 360 → getTotalLength() вернул бы
+    // неверную длину → strokeDasharray короче пути → правый край не
+    // дорисовывается. measured флипается один раз, поэтому при последующих
+    // resize (fullscreen) эффект НЕ перезапускается — это сохраняет
+    // прежнее поведение «анимация не реагирует на ширину».
+    if (!measured) return;
     const primary = rawSeries[0]?.data;
     const signature = primary && primary.length > 0
       ? `${primary.length}|${primary[0].time}|${primary[primary.length - 1].time}|${rawSeries.length}`
@@ -417,7 +433,7 @@ export default function MobileChart({
     return () => {
       for (const t of timers) window.clearTimeout(t);
     };
-  }, [rawSeries]);
+  }, [rawSeries, measured]);
 
   // Разделяем серии по осям (на downsampled)
   const leftSeries = useMemo(

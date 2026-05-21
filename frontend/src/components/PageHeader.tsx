@@ -34,6 +34,9 @@ interface PageHeaderProps {
   /** Ссылка на отдельную страницу методологии. Если указана — "?" ведёт
    *  на эту страницу. Иначе — показывает popover с текстом help. */
   helpLink?: string;
+  /** Памятка об источнике данных (e.g. «Источник: Московская биржа»).
+   *  Рендерится мелким приглушённым текстом под subtitle. */
+  sourceNote?: string;
 }
 
 export default function PageHeader({
@@ -44,6 +47,7 @@ export default function PageHeader({
   rightSlot,
   help,
   helpLink,
+  sourceNote,
 }: PageHeaderProps) {
   return (
     <div className="flex items-start mb-6" style={{ gap: 'var(--sp-3)' }}>
@@ -92,6 +96,14 @@ export default function PageHeader({
             style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)' }}
           >
             {subtitle}
+          </p>
+        )}
+        {sourceNote && (
+          <p
+            className="mt-0.5"
+            style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-2xs)' }}
+          >
+            {sourceNote}
           </p>
         )}
       </div>
