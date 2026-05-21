@@ -54,18 +54,23 @@ QUARTER_RU = {
     "I квартал": 1, "II квартал": 2, "III квартал": 3, "IV квартал": 4,
 }
 
-# Категории которые ЦБ убрал из методологии (на апрель 2026) — не вставляем
-# в БД. Старые отчёты их публиковали; ЦБ свернул эти разрезы.
-EXCLUDED_CATEGORIES = {
-    "Дочерние иностранные организации",  # stocks/ofz: 2022-2023
-    "Минфин",                            # ofz: ранние отчёты
-    "Минфин России",                     # ofz: ранние отчёты
-    "Банк России (ЦБ РФ)",               # fx: переименовали в просто «Банк России»
-    "Доверительное управление",          # fx: уже не публикуется для валют
-    "Нерезиденты",                       # fx: уже не публикуется
-    "Нефинансовые организации",          # fx: уже не публикуется
-    "Прочие Банки",                      # fx: уже не публикуется
-    "СЗКО",                              # fx: уже не публикуется
+# Категории которые ЦБ убрал из методологии — не вставляем в БД.
+# КРИТИЧНО: per-instrument! Имена «Нерезиденты», «СЗКО», «Прочие Банки»,
+# «Доверительное управление», «Нефинансовые организации» есть И в stocks,
+# И в fx. Для fx ЦБ их свернул, для stocks — это основные категории.
+# Глобальный set исключал бы их и для акций (баг — концы кварталов теряли
+# 5 категорий из 7).
+EXCLUDED_BY_TYPE: dict[str, set[str]] = {
+    "stocks": {"Дочерние иностранные организации"},  # 2022-2023, свёрнута
+    "ofz": {"Дочерние иностранные организации", "Минфин", "Минфин России"},
+    "fx": {
+        "Банк России (ЦБ РФ)",        # переименовали в «Банк России»
+        "Доверительное управление",   # уже не публикуется для валют
+        "Нерезиденты",
+        "Нефинансовые организации",
+        "Прочие Банки",
+        "СЗКО",
+    },
 }
 
 # Конфиг листов: какие парсим и под каким instrument_type сохраняем.
@@ -170,7 +175,7 @@ def _month_end(year: int, month: int) -> date:
     return first_next - timedelta(days=1)
 
 
-def parse_sheet(wb, sheet_name: str, source_file: str) -> Iterable[dict]:
+def parse_sheet(wb, sheet_name: str, source_file: str, instrument_type: str) -> Iterable[dict]:
     """
     Yields {period_year, period_label, period_kind, period_end_date, category, value}.
 
@@ -240,8 +245,9 @@ def parse_sheet(wb, sheet_name: str, source_file: str) -> Iterable[dict]:
             log.debug(f"{sheet_name}: неизвестный период {plabel!r} в году {current_year} — пропуск")
             continue
 
+        excluded = EXCLUDED_BY_TYPE.get(instrument_type, set())
         for col_idx, cat in categories:
-            if cat in EXCLUDED_CATEGORIES:
+            if cat in excluded:
                 continue
             val = r[col_idx] if col_idx < len(r) else None
             if val is None:
@@ -332,7 +338,7 @@ def run(xlsx_path: Optional[str] = None, dry_run: bool = False) -> int:
     # 3) Парсим листы
     all_rows: dict[str, list[dict]] = {}
     for cfg in SHEETS_CONFIG:
-        rows = list(parse_sheet(wb, cfg["sheet"], source_file))
+        rows = list(parse_sheet(wb, cfg["sheet"], source_file, cfg["instrument_type"]))
         all_rows[cfg["instrument_type"]] = rows
         log.info(f"  → {cfg['label']:8s} ({cfg['instrument_type']}): {len(rows)} rows")
 

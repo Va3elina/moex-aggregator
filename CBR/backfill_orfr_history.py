@@ -53,18 +53,21 @@ DB_URL = os.getenv("DB_URL")
 LANDING_URL = "https://cbr.ru/analytics/finstab/orfr/"
 BASE_URL = "https://cbr.ru"
 
-# Категории которые ЦБ убрал из методологии (на апрель 2026) — не вставляем
-# в БД. Старые отчёты их публиковали; ЦБ свернул эти разрезы.
-EXCLUDED_CATEGORIES = {
-    "Дочерние иностранные организации",  # stocks/ofz: 2022-2023
-    "Минфин",                            # ofz: ранние отчёты
-    "Минфин России",                     # ofz: ранние отчёты
-    "Банк России (ЦБ РФ)",               # fx: переименовали в просто «Банк России»
-    "Доверительное управление",          # fx: уже не публикуется для валют
-    "Нерезиденты",                       # fx: уже не публикуется
-    "Нефинансовые организации",          # fx: уже не публикуется
-    "Прочие Банки",                      # fx: уже не публикуется
-    "СЗКО",                              # fx: уже не публикуется
+# Категории которые ЦБ убрал из методологии — не вставляем в БД.
+# КРИТИЧНО: per-instrument! Имена «Нерезиденты», «СЗКО», «Прочие Банки»,
+# «Доверительное управление», «Нефинансовые организации» есть И в stocks,
+# И в fx. Глобальный set исключал бы их и для акций (баг).
+EXCLUDED_BY_TYPE: dict[str, set[str]] = {
+    "stocks": {"Дочерние иностранные организации"},
+    "ofz": {"Дочерние иностранные организации", "Минфин", "Минфин России"},
+    "fx": {
+        "Банк России (ЦБ РФ)",
+        "Доверительное управление",
+        "Нерезиденты",
+        "Нефинансовые организации",
+        "Прочие Банки",
+        "СЗКО",
+    },
 }
 
 logging.basicConfig(
@@ -206,7 +209,7 @@ def find_target_sheets(wb) -> dict[str, str]:
     return result
 
 
-def parse_sheet(wb, sheet_name: str, source_file: str) -> Iterable[dict]:
+def parse_sheet(wb, sheet_name: str, source_file: str, instrument_type: str) -> Iterable[dict]:
     """Yields {period_year, period_label, period_kind, period_end_date, category, value}.
 
     Robust auto-detect — header может не иметь «Дата»/«Год» label,
@@ -257,7 +260,7 @@ def parse_sheet(wb, sheet_name: str, source_file: str) -> Iterable[dict]:
         category_cols = [(i, c.strip()) for i, c in enumerate(header[2:], start=2)
                          if isinstance(c, str) and c.strip()]
         log.info(f"  {sheet_name}: NEW format, {len(category_cols)} categories")
-        yield from _parse_new_format(rows, header_idx, category_cols, source_file)
+        yield from _parse_new_format(rows, header_idx, category_cols, source_file, instrument_type)
     else:
         # OLD format. Find date_col by scanning data_row для первого datetime.
         date_col = None
@@ -276,10 +279,10 @@ def parse_sheet(wb, sheet_name: str, source_file: str) -> Iterable[dict]:
             log.warning(f"  {sheet_name}: категории не найдены")
             return
         log.info(f"  {sheet_name}: OLD format (monthly), {len(category_cols)} categories, date_col={date_col}")
-        yield from _parse_old_format(rows, header_idx, date_col, category_cols, source_file)
+        yield from _parse_old_format(rows, header_idx, date_col, category_cols, source_file, instrument_type)
 
 
-def _parse_new_format(rows, header_idx, category_cols, source_file):
+def _parse_new_format(rows, header_idx, category_cols, source_file, instrument_type):
     current_year = None
     count = 0
     for r in rows[header_idx + 1:]:
@@ -304,8 +307,9 @@ def _parse_new_format(rows, header_idx, category_cols, source_file):
             end_dt = _month_end(current_year, MONTH_RU[plabel])
         else:
             continue
+        excluded = EXCLUDED_BY_TYPE.get(instrument_type, set())
         for col_idx, cat in category_cols:
-            if cat in EXCLUDED_CATEGORIES:
+            if cat in excluded:
                 continue
             val = r[col_idx] if col_idx < len(r) else None
             if val is None:
@@ -326,7 +330,7 @@ def _parse_new_format(rows, header_idx, category_cols, source_file):
             count += 1
 
 
-def _parse_old_format(rows, header_idx, date_col, category_cols, source_file):
+def _parse_old_format(rows, header_idx, date_col, category_cols, source_file, instrument_type):
     """Old format — каждая row имеет date в одной колонке + values в категориях.
     Каждая дата = первый день месяца (2022-01-01), period_end = последний день месяца."""
     count = 0
@@ -354,8 +358,9 @@ def _parse_old_format(rows, header_idx, date_col, category_cols, source_file):
         end_dt = _month_end(year, month)
         plabel = list(MONTH_RU.keys())[month - 1]  # «Январь» для month=1
 
+        excluded = EXCLUDED_BY_TYPE.get(instrument_type, set())
         for col_idx, cat in category_cols:
-            if cat in EXCLUDED_CATEGORIES:
+            if cat in excluded:
                 continue
             val = r[col_idx] if col_idx < len(r) else None
             if val is None:
