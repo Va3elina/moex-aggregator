@@ -258,7 +258,9 @@ export async function getHeatmapData(
     color_by: colorBy,
     group_by: groupBy
   });
-  const response = await fetch(`${API_BASE}/api/heatmap/stocks?${params}`);
+  // apiFetch (не голый fetch) — endpoint /stocks tier-gated (Basic+).
+  // Без Authorization-заголовка backend видит guest → 403 даже у admin'а.
+  const response = await apiFetch(`${API_BASE}/api/heatmap/stocks?${params}`);
   if (!response.ok) throw new Error('Failed to fetch heatmap data');
   return response.json();
 }
@@ -271,7 +273,8 @@ export async function getHeatmapImoex(
     color_by: colorBy,
     group_by: groupBy
   });
-  const response = await fetch(`${API_BASE}/api/heatmap/imoex?${params}`);
+  // apiFetch для единообразия — /imoex бесплатный, но токен не помешает.
+  const response = await apiFetch(`${API_BASE}/api/heatmap/imoex?${params}`);
   if (!response.ok) throw new Error('Failed to fetch IMOEX heatmap');
   return response.json();
 }

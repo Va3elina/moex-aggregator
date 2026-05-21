@@ -31,7 +31,7 @@ import {
   Building2,
 } from 'lucide-react';
 import {
-  getHeatmapData,
+  getHeatmapImoex,
   getFundsSummary,
   getSeasonalityPrice,
 } from '../services/api';
@@ -106,7 +106,10 @@ export default function OverviewPage() {
   /** ГОРЯЧИЕ данные — обновляются каждые 5 минут (SSE '5min' push). */
   const loadHotData = useCallback(async () => {
     await Promise.allSettled([
-      getHeatmapData().then(r => {
+      // /imoex (не /stocks) — обзор строим по индексным голубым фишкам.
+      // /stocks tier-gated (Basic+), на главную попадают и free-юзеры →
+      // imoex работает для всех тиров без 403 и даёт меньше неликвид-шума.
+      getHeatmapImoex().then(r => {
         setAllStocks(r.stocks);
 
         // Топ-5 gainers и losers по change_1d.
