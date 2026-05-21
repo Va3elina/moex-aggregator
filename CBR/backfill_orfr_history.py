@@ -444,7 +444,7 @@ def process_xlsx(xlsx_url: str, source_file: str, engine, dry_run: bool) -> dict
 
     stats = {}
     for instrument_type, sheet_name in sheets_map.items():
-        rows = list(parse_sheet(wb, sheet_name, source_file))
+        rows = list(parse_sheet(wb, sheet_name, source_file, instrument_type))
         if not rows:
             continue
         if dry_run:
