@@ -13,6 +13,17 @@ interface ChartNavigatorProps {
     /** Показывать мини-line preview данных внутри. Default true.
         Для гистограмм (FlowsHistogram) ставим false — line plot не подходит. */
     showPreview?: boolean;
+    /** Отступ слева — выравнивает навигатор по plot-area графика (под Y-осью).
+        CSS-length: число (px) или строка (например 'var(--chart-pad-left)').
+        Default 8px — лёгкий зазор как было раньше. */
+    insetLeft?: number | string;
+    /** Отступ справа — аналогично insetLeft. Default 8px. */
+    insetRight?: number | string;
+}
+
+/** number → 'Npx', string остаётся как есть (поддержка var(--xxx)). */
+function cssLen(v: number | string): string {
+    return typeof v === 'number' ? `${v}px` : v;
 }
 
 const HANDLE_W = 14;
@@ -30,9 +41,17 @@ export default function ChartNavigator({
     color = 'var(--accent)',
     height = 52,
     showPreview = true,
+    insetLeft = 8,
+    insetRight = 8,
 }: ChartNavigatorProps) {
     const containerRef = useRef<HTMLDivElement>(null);
+    // innerRef — измеряем ширину ВНУТРЕННЕЙ области (между inset'ами), а не
+    // контейнера. Иначе drag-математика (deltaX / width) рассинхронится с
+    // курсором когда insetLeft/insetRight сужают навигатор.
+    const innerRef = useRef<HTMLDivElement>(null);
     const [width, setWidth] = useState(lastKnownWidth);
+    const ilCss = cssLen(insetLeft);
+    const irCss = cssLen(insetRight);
     const [selFrac, setSelFrac] = useState<[number, number]>([0, 1]);
 
     // true только во время реального перетаскивания пользователем
@@ -43,9 +62,10 @@ export default function ChartNavigator({
 
     // Синхронная инициализация ширины до первой отрисовки — иначе хендлы
     // позиционируются в 0 и некликабельны до срабатывания ResizeObserver.
+    // Мерим innerRef (область между inset'ами) — это реальная plot-ширина.
     useLayoutEffect(() => {
-        if (containerRef.current) {
-            const w = containerRef.current.clientWidth;
+        if (innerRef.current) {
+            const w = innerRef.current.clientWidth;
             if (w > 0) {
                 setWidth(w);
                 lastKnownWidth = w;  // кэшируем для последующих маунтов
@@ -53,9 +73,9 @@ export default function ChartNavigator({
         }
     }, []);
 
-    // Наблюдаем за шириной контейнера при изменениях размера
+    // Наблюдаем за шириной inner-области при изменениях размера
     useEffect(() => {
-        const el = containerRef.current;
+        const el = innerRef.current;
         if (!el) return;
         const ro = new ResizeObserver(entries => {
             const w = entries[0].contentRect.width;
@@ -196,16 +216,17 @@ export default function ChartNavigator({
         <div
             ref={containerRef}
             className="chart-navigator relative select-none mt-3 overflow-visible"
-            style={{ height: height + 4, paddingLeft: 8, paddingRight: 8 }}
+            style={{ height: height + 4 }}
         >
             {/* SVG для мини-графика — viewBox с фикс. шириной 1000, preserveAspectRatio="none"
                 позволяет браузеру растянуть path до реальной ширины БЕЗ зависимости от JS-width.
-                Мини-график появляется сразу в правильных пропорциях, не «удлиняется» при монтировании. */}
+                Мини-график появляется сразу в правильных пропорциях, не «удлиняется» при монтировании.
+                left/right = inset'ы → навигатор выровнен по plot-area графика. */}
             <svg
                 viewBox={`0 0 ${VB_WIDTH} ${height}`}
                 preserveAspectRatio="none"
                 className="nav-mini-svg block overflow-visible"
-                style={{ position: 'absolute', top: 0, left: 8, right: 8, width: 'calc(100% - 16px)', height: height }}
+                style={{ position: 'absolute', top: 0, left: ilCss, right: irCss, width: `calc(100% - ${ilCss} - ${irCss})`, height: height }}
             >
                 <defs>
                     <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
@@ -222,8 +243,9 @@ export default function ChartNavigator({
             </svg>
 
             {/* Selection и handles как HTML div с CSS %, не зависят от JS-width.
-                Это устраняет glitch "расширения правого края" при монтировании — CSS % резолвится браузером сразу. */}
-            <div className="nav-inner absolute" style={{ top: 0, left: 8, right: 8, bottom: 4, pointerEvents: 'none' }}>
+                Это устраняет glitch "расширения правого края" при монтировании — CSS % резолвится браузером сразу.
+                innerRef + left/right=inset'ы → ширина = реальная plot-area навигатора. */}
+            <div ref={innerRef} className="nav-inner absolute" style={{ top: 0, left: ilCss, right: irCss, bottom: 4, pointerEvents: 'none' }}>
                 {/* Маски невыбранной области — theme-aware через --nav-mask */}
                 <div className="absolute top-0 bottom-0 left-0" style={{ width: `${selFrac[0] * 100}%`, background: 'var(--nav-mask, rgba(0,0,0,0.5))' }} />
                 <div className="absolute top-0 bottom-0 right-0" style={{ width: `${(1 - selFrac[1]) * 100}%`, background: 'var(--nav-mask, rgba(0,0,0,0.5))' }} />

@@ -374,7 +374,9 @@ export default function MobileSeasonalityPage() {
       <MobilePageHeader
         Icon={CalendarDays}
         title="Сезонность"
-        subtitle={`${selectedName} · ${MODE_LABELS[mode]}`}
+        subtitle={`${selectedName} · ${MODE_LABELS[mode]}${
+          compareYears.length === 1 ? ` · с ${compareYears[0]} г.` : ''
+        }`}
         helpLink="/methodology/seasonality"
       />
 

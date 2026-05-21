@@ -1396,12 +1396,13 @@ export default function SimpleChart({
           //
           // 2026-05-17: padX 6 → 8 — юзер заметил что первая цифра иногда
           // визуально касается левого края pill'а.
-          // 2026-05-19: padX 8 → 12 — после формата с 4 знаками (1.1616) и
-          // длинных net-значений (-175 037) measureText недооценивает ширину
-          // Inter (canvas measure ≠ SVG render для proportional digits).
-          // Плюс fontVariantNumeric="tabular-nums" ниже фиксирует одинаковую
-          // ширину каждой цифры — canvas measure становится точным.
-          const padX = 12;
+          // 2026-05-19: padX 8 → 12 — measureText недооценивал ширину Inter
+          // для proportional digits.
+          // 2026-05-21: padX 12 → 8 — fontVariantNumeric="tabular-nums" (ниже)
+          // уже фиксирует равную ширину цифр → measure снова точен, и 12 было
+          // overcompensation. Заливка pill сильно заходила на chart area;
+          // 8px даёт симметричный ~6px воздух без захвата графика.
+          const padX = 8;
           const padY = 2;
           const pillH = fontY + padY * 2;
           // Pill positioning — pixel-aligned с axis tick text (anchor совпадает).
@@ -1625,6 +1626,8 @@ export default function SimpleChart({
             data={data}
             onChange={(s, e, isDrag) => { navDragRef.current = isDrag; setNavRange([s, e]); }}
             color={primaryColor}
+            insetLeft="var(--chart-pad-left)"
+            insetRight={showSecondary ? 'var(--chart-pad-right-dual)' : 'var(--chart-pad-right-single)'}
           />
         </div>
       )}

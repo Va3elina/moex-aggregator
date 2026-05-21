@@ -34,6 +34,10 @@ interface SeasonalityHistogramProps {
   compact?: boolean;
   /** Название выбранного актива (например «IMOEX», «SBER»). Рендерится bold перед legend. */
   assetLabel?: string;
+  /** Описание выбранного периода для single-mode легенды (например «С 2008 г.»).
+   *  Рендерится мелким шрифтом под названием актива. В multi-mode игнорируется
+   *  (там периоды уже видны как метки серий). */
+  periodLabel?: string;
 }
 
 // Параметры волны из единого конфига — совпадают с FlowsHistogram.
@@ -52,6 +56,7 @@ export default function SeasonalityHistogram({
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   compact: _compact = false,
   assetLabel,
+  periodLabel,
 }: SeasonalityHistogramProps) {
   const vw = useViewportWidth();
   const axisFs = axisFontSize(vw);
@@ -111,6 +116,14 @@ export default function SeasonalityHistogram({
         0.01,
       )
     : maxAbs;
+
+  // Subtitle с периодом — только single-mode (в multi периоды видны в seriesMeta).
+  // Когда subtitle есть — легенда занимает 2 строки, поэтому увеличиваем
+  // верхний padding bar-area чтобы subtitle не наезжал на бары.
+  const hasPeriodSubtitle = !isMulti && !!periodLabel;
+  const padTop = hasPeriodSubtitle
+    ? 'var(--seasonality-hist-pad-top-sub, 42px)'
+    : 'var(--seasonality-hist-pad-top, 28px)';
 
   const W = 1000, H = 500;
   const midY = H / 2;
@@ -180,7 +193,7 @@ export default function SeasonalityHistogram({
           справа — но это дублировало информацию: цвет баров уже несёт смысл
           (зелёные ≥ 0, красные < 0), а тикер дублировался с заголовком карточки.
           Теперь весь identifier графика — один flex-item (кружок + label). */}
-      <div className="absolute top-1 left-1/2 -translate-x-1/2 z-20 pointer-events-none flex items-center gap-3">
+      <div className="absolute top-1 left-1/2 -translate-x-1/2 z-20 pointer-events-none flex flex-col items-center" style={{ gap: 1 }}>
         <ChartLegend
           items={isMulti
             ? safeMeta.map(s => ({ color: s.color, label: s.label }))
@@ -192,10 +205,24 @@ export default function SeasonalityHistogram({
           gap={16}
           style={{ color: 'var(--text-primary)' }}
         />
+        {/* Subtitle с выбранным периодом — только single-mode. В multi периоды
+            уже видны как метки серий (seriesMeta). Шрифт на ступень мельче
+            названия актива, цвет вторичный. */}
+        {hasPeriodSubtitle && (
+          <span style={{
+            fontSize: 'var(--fs-2xs, 11px)',
+            fontWeight: 500,
+            color: 'var(--text-secondary)',
+            lineHeight: 1,
+            whiteSpace: 'nowrap',
+          }}>
+            {periodLabel}
+          </span>
+        )}
       </div>
 
       <div className="absolute" style={{
-        top: 'var(--seasonality-hist-pad-top, 28px)',
+        top: padTop,
         bottom: 'var(--seasonality-hist-pad-bottom, 24px)',
         left: 'var(--seasonality-hist-pad-x, 70px)',
         right: 'var(--seasonality-hist-pad-x, 70px)',
@@ -352,9 +379,9 @@ export default function SeasonalityHistogram({
         );
       })()}
 
-      {/* Y labels — синхронно с bar-area по высоте */}
+      {/* Y labels — синхронно с bar-area по высоте (тот же padTop) */}
       <div className="absolute pointer-events-none" style={{
-        top: 'var(--seasonality-hist-pad-top, 28px)',
+        top: padTop,
         bottom: 'var(--seasonality-hist-pad-bottom, 24px)',
         right: 0,
         width: 'var(--seasonality-hist-pad-x, 70px)',

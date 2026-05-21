@@ -470,6 +470,20 @@ export default function SeasonalityPage() {
     return meta;
   }, [compareYears, showNoOutliers, showExactYear]);
 
+  // Описание периода для single-mode легенды гистограммы («С 2008 г.»).
+  // В multi-mode возвращаем undefined — там периоды видны как метки серий.
+  const histogramPeriodLabel = useMemo(() => {
+    if (compareYears.length === 1) return `С ${compareYears[0]} г.`;
+    return undefined;
+  }, [compareYears]);
+
+  // Описание периода для экспорта (работает и в multi — серии перечисляются).
+  const periodsExportLabel = useMemo(() => {
+    if (compareYears.length === 0) return null;
+    if (compareYears.length === 1) return `С ${compareYears[0]} г.`;
+    return `Периоды: ${compareYears.map(y => y).join(', ')}`;
+  }, [compareYears]);
+
   // Инструменты без дивидендов: индексы, валюты, сырьё.
   // Кнопка «Без дивидендных гэпов» бесполезна для них — прячем.
   const NON_DIVIDEND_TICKERS = new Set([
@@ -763,6 +777,9 @@ export default function SeasonalityPage() {
                 chartType === 'histogram' ? MODE_LABELS[mode] :
                 chartType === 'price' ? `${priceDays === 9999 ? 'Всё' : priceDays + ' дн'}` :
                 chartType === 'yearly' ? 'Годовая' : '',
+                // Период выборки — для histogram/yearly (для price неактуально).
+                (chartType === 'histogram' || chartType === 'yearly') ? periodsExportLabel : null,
+                showExactYear !== null ? `Год ${showExactYear}` : null,
                 excludeDividends ? 'Без дивгэпов' : null,
                 showNoOutliers ? 'Без выбросов' : null,
               ].filter(Boolean) as string[],
@@ -842,6 +859,7 @@ export default function SeasonalityPage() {
               monthlySeries={monthlySeries}
               seriesMeta={seriesMeta}
               assetLabel={displayTicker(selectedStock)}
+              periodLabel={histogramPeriodLabel}
             />
           )
         ) : chartType === 'price' ? (

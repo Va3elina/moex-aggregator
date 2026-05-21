@@ -480,6 +480,8 @@ export default function FlowsHistogram({
                             color="var(--accent)"
                             showPreview={false}
                             onChange={(s, e) => onSetFlowNavRange([s, e])}
+                            insetLeft="var(--chart-pad-left)"
+                            insetRight="var(--chart-pad-right-single)"
                         />
                     </div>
                 )}
