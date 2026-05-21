@@ -109,14 +109,20 @@ export function useFitToViewport(
     const compute = () => {
       const anchor = anchorRef.current;
       if (!anchor) return;
-      // top — позиция anchor относительно VIEWPORT (меняется при scroll).
-      // Если страница прокручена так что anchor выше viewport (scrollY больше
-      // позиции anchor в документе), top становится отрицательным → available
-      // разрастается за пределы экрана. Math.max(0, top) трактует anchor «как
-      // будто он на верху viewport» — даёт стабильный размер chart независимо
-      // от scroll-позиции при mount/resize.
-      const top = Math.max(0, anchor.getBoundingClientRect().top);
-      const available = window.innerHeight - top - bottomBuffer;
+      // getBoundingClientRect().top — позиция anchor относительно VIEWPORT,
+      // она УМЕНЬШАЕТСЯ при скролле вниз (anchor визуально поднимается).
+      // Если считать available по viewport-top, то при проскролленной странице
+      // formula даёт завышенную высоту → график растягивается.
+      //
+      // Берём DOCUMENT-relative позицию: rect.top + scrollY. Она инвариантна
+      // к скроллу — это «где anchor оказался бы, если страница на самом верху».
+      // compute() дёргается на mount/resize/ResizeObserver/fonts — и при reload
+      // браузер восстанавливает scroll, поэтому без document-relative расчёта
+      // высота скачет при любом изменении на проскролленной странице.
+      const rect = anchor.getBoundingClientRect();
+      const scrollY = window.scrollY || window.pageYOffset || 0;
+      const documentTop = rect.top + scrollY;
+      const available = window.innerHeight - documentTop - bottomBuffer;
       const next = Math.max(min, Math.min(max, available));
       // Сохраняем в module-cache + localStorage → следующий mount/reload стартует
       // с правильным значением (zero CLS).
