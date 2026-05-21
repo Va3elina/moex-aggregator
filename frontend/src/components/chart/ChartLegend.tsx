@@ -25,7 +25,7 @@ import { useViewportWidth } from '../../hooks/useViewportWidth';
 import { legendFontSize, legendDotSize } from './chartTypography';
 
 export interface ChartLegendItem {
-    /** Цвет dot circle (CSS color: hex / rgb / var(--xxx)) */
+    /** Цвет маркера (CSS color: hex / rgb / var(--xxx)) */
     color: string;
     /** Текст label */
     label: string;
@@ -33,6 +33,8 @@ export interface ChartLegendItem {
     opacity?: number;
     /** Текст color override (default — currentColor наследуется от parent) */
     textColor?: string;
+    /** Форма маркера: 'dot' (кружок, default) или 'dash' (горизонтальное тире). */
+    marker?: 'dot' | 'dash';
 }
 
 interface Props {
@@ -108,13 +110,25 @@ export default function ChartLegend({
                     style={{ display: 'block', flexShrink: 0, opacity: it.opacity ?? 1, overflow: 'visible' }}
                     aria-label={it.label}
                 >
-                    {/* Dot — center y = totalH/2 (geometric center of SVG height) */}
-                    <circle
-                        cx={effectiveDot / 2}
-                        cy={it.totalH / 2}
-                        r={effectiveDot / 2}
-                        fill={it.color}
-                    />
+                    {/* Маркер — dot (кружок) или dash (горизонтальное тире).
+                        Оба вписаны в квадрат effectiveDot, center y = totalH/2. */}
+                    {it.marker === 'dash' ? (
+                        <rect
+                            x={0}
+                            y={it.totalH / 2 - Math.max(2, effectiveDot * 0.2) / 2}
+                            width={effectiveDot}
+                            height={Math.max(2, effectiveDot * 0.2)}
+                            rx={1}
+                            fill={it.color}
+                        />
+                    ) : (
+                        <circle
+                            cx={effectiveDot / 2}
+                            cy={it.totalH / 2}
+                            r={effectiveDot / 2}
+                            fill={it.color}
+                        />
+                    )}
                     {/* Text — dominantBaseline="central" даёт ТОЧНЫЙ pixel center
                         (em-box middle на y), в отличие от "middle" которое полагается
                         на font's middle baseline metric → сдвиг на 1-2px у Inter

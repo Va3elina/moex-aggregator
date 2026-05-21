@@ -207,12 +207,12 @@ export default function SeasonalityHistogram({
           (зелёные ≥ 0, красные < 0), а тикер дублировался с заголовком карточки.
           Теперь весь identifier графика — один flex-item (кружок + label). */}
       {/* Двухуровневая легенда:
-            ① название актива — accent-кружок, крупный bold-шрифт
-            ② периоды — каждый со своим цветом, мельче, вторичный цвет текста */}
+            ① название актива — чёрное тире-маркер, крупный bold-шрифт
+            ② периоды — каждый со своим цветом-кружком, мельче, вторичный текст */}
       <div className="absolute top-1 left-1/2 -translate-x-1/2 z-20 pointer-events-none flex flex-col items-center" style={{ gap: 2 }}>
-        {/* Уровень 1 — актив */}
+        {/* Уровень 1 — актив (тире-маркер цвета text-primary) */}
         <ChartLegend
-          items={[{ color: 'var(--accent)', label: assetLabel || 'Сезонность' }]}
+          items={[{ color: 'var(--text-primary)', label: assetLabel || 'Сезонность', marker: 'dash' }]}
           fontSize={lvl1Fs}
           dotSize={lvl1Dot}
           fontWeight={700}

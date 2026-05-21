@@ -248,6 +248,16 @@ export default function SimpleChart({
   const isFirstRender = useRef(true);
   const [revealed, setRevealed] = useState(false);
 
+  // fontsReady — после загрузки Inter форсим re-render, чтобы measureText
+  // пересчитал ширину pill'ов уже с правильным шрифтом (до загрузки canvas
+  // меряет fallback Arial — он у́же Inter → pill узкий → текст обрезается).
+  const [fontsReady, setFontsReady] = useState(false);
+  useEffect(() => {
+    if (typeof document !== 'undefined' && 'fonts' in document) {
+      document.fonts.ready.then(() => setFontsReady(true));
+    }
+  }, []);
+
   // Ширина стабилизировалась — не запускаем animateMorph пока не замерим реальный размер
   const widthStableRef = useRef(false);
   const prevWidthRef = useRef(0);
@@ -1413,6 +1423,9 @@ export default function SimpleChart({
           const leftAxisTextRight = padding.left - tokens.axisGap;
           const rightAxisTextLeft = padding.left + chartWidth + tokens.axisGap;
 
+          // void — fontsReady в зависимостях: после загрузки Inter компонент
+          // ре-рендерится, measureText ниже пересчитывается с точным шрифтом.
+          void fontsReady;
           return labels.map((l) => {
             // Split на main + unit (для smaller fontSize у unit) — symmetric с
             // axis labels rendering. Pill width учитывает оба фрагмента.
@@ -1425,26 +1438,19 @@ export default function SimpleChart({
             // Измеряем тоже 700 чтобы canvas measure ↔ SVG render совпадали.
             const unitW = unitPart ? measureText(unitPart, unitFontY, 700) + 2 : 0;
             const textW = mainW + unitW;
-            // +2px fudge — субпиксельная разница canvas-measure ↔ SVG-render.
-            const pillW = Math.ceil(textW) + padX * 2 + 2;
+            // +4px fudge — субпиксельная разница canvas-measure ↔ SVG-render.
+            // Распределяется СИММЕТРИЧНО (pill центрируется на тексте ниже).
+            const pillW = Math.ceil(textW) + padX * 2 + 4;
 
             const isLeftSide = l.key === 'primary';
-            // Pill rect и text-X для каждой стороны — text aligned с axis tick text.
-            let pillLeft: number;
-            let textX: number;
-            let textAnchor: 'start' | 'end';
-            if (isLeftSide) {
-              // text-RIGHT совпадает с leftAxisTextRight (axis tick text-RIGHT)
-              const pillRight = leftAxisTextRight + padX;
-              pillLeft = pillRight - pillW;
-              textX = leftAxisTextRight;
-              textAnchor = 'end';
-            } else {
-              // text-LEFT совпадает с rightAxisTextLeft (axis tick text-LEFT)
-              pillLeft = rightAxisTextLeft - padX;
-              textX = rightAxisTextLeft;
-              textAnchor = 'start';
-            }
+            const textAnchor: 'start' | 'end' = isLeftSide ? 'end' : 'start';
+            // textX — anchor-точка у оси (text-RIGHT для primary / text-LEFT для secondary).
+            const textX = isLeftSide ? leftAxisTextRight : rightAxisTextLeft;
+            // Pill ЦЕНТРИРУЕТСЯ относительно текста — fudge и padX распределяются
+            // симметрично с обеих сторон. Раньше pillRight был привязан к оси,
+            // и весь fudge уходил в одну сторону → «у минуса заливка длиннее».
+            const textCenter = isLeftSide ? textX - textW / 2 : textX + textW / 2;
+            const pillLeft = textCenter - pillW / 2;
 
             return (
               <g key={l.key} pointerEvents="none">

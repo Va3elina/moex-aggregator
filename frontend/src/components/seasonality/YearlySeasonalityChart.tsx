@@ -261,10 +261,10 @@ export default function YearlySeasonalityChart({
         style={{ marginBottom: 'var(--seasonality-legend-mb, 12px)', gap: 2 }}
         className="flex flex-col items-center"
       >
-        {/* Уровень 1 — актив */}
+        {/* Уровень 1 — актив (чёрное тире-маркер) */}
         {assetLabel && (
           <ChartLegend
-            items={[{ color: 'var(--accent)', label: assetLabel }]}
+            items={[{ color: 'var(--text-primary)', label: assetLabel, marker: 'dash' }]}
             fontSize={legendFontSize(vw)}
             dotSize={legendDotSize(vw)}
             fontWeight={700}
