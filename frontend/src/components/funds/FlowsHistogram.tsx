@@ -12,6 +12,9 @@ import { computeChartTopLineY, getDatePillStyle } from '../chart/datePillLayout'
 
 interface FlowsHistogramProps {
     flowsData: FundsFlowsResponse | null;
+    /** Все фонды категории выключены пользователем — показываем empty-state
+     *  «Выберите фонды» вместо пустой/сломанной гистограммы. */
+    noFundsSelected?: boolean;
     animatedBarsIn: number[];
     animatedBarsOut: number[];
     flowNavRange: [number, number];
@@ -38,6 +41,7 @@ interface FlowsHistogramProps {
 
 export default function FlowsHistogram({
     flowsData,
+    noFundsSelected = false,
     animatedBarsIn,
     animatedBarsOut,
     flowNavRange,
@@ -72,6 +76,22 @@ export default function FlowsHistogram({
 
     return (
         <div className="rounded-2xl p-5 bg-theme-primary border border-theme relative">
+            {/* Empty-state: все фонды выключены. Показываем подсказку вместо
+                сломанной/пустой гистограммы. Приоритетнее loading и data. */}
+            {noFundsSelected ? (
+                <div
+                    className="flex flex-col items-center justify-center text-center"
+                    style={{ height: 'calc(var(--chart-height, 450px) + 100px)', gap: 'var(--sp-3)', padding: 'var(--sp-6)' }}
+                >
+                    <div style={{ fontSize: 40, lineHeight: 1 }}>📊</div>
+                    <div className="font-semibold text-theme-primary" style={{ fontSize: 'var(--fs-lg)' }}>
+                        Не выбрано ни одного фонда
+                    </div>
+                    <div className="text-theme-secondary" style={{ fontSize: 'var(--fs-sm)', maxWidth: 360 }}>
+                        Отметьте фонды в списке «Фонды категории» ниже, чтобы увидеть гистограмму притоков и оттоков.
+                    </div>
+                </div>
+            ) : (<>
             {/* Спиннер загрузки — height МАТЧИТ полный размер loaded-версии:
                 chart-height + legend (~36) + navigator (~64). Иначе CLS-jump когда данные приедут. */}
             {loading && !flowsData?.flows?.length && animatedBarsIn.length === 0 ? (
@@ -492,6 +512,7 @@ export default function FlowsHistogram({
                     </div>
                 );
             })()}
+            </>)}
         </div>
     );
 }

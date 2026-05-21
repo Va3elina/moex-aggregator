@@ -198,13 +198,31 @@ export default function FundsMoneyPage() {
     useRealtimeData(['funds'], loadData);
 
     // Видимые fund_ids (для фильтрации flows)
+    // Доступные (не tier-locked) фонды — только они дают данные на графики.
+    // Locked-фонды есть в data.funds (для FundsTable-тизера), но в расчётах
+    // притоков/СЧА не участвуют.
+    const accessibleFunds = useMemo(
+        () => data?.funds.filter(f => !f.tier_locked) ?? [],
+        [data?.funds],
+    );
+
+    // Видимые доступные = accessible минус скрытые пользователем.
+    const visibleAccessibleFunds = useMemo(
+        () => accessibleFunds.filter(f => !hiddenFunds.has(f.fund_id)),
+        [accessibleFunds, hiddenFunds],
+    );
+
+    // Все доступные фонды выключены — нужен empty-state вместо ошибки.
+    const noFundsSelected = data != null
+        && accessibleFunds.length > 0
+        && visibleAccessibleFunds.length === 0;
+
     const visibleFundIds = useMemo(() => {
         if (!data?.funds) return undefined;
-        const visible = data.funds.filter(f => !hiddenFunds.has(f.fund_id));
-        // Если все видимы — не передаём фильтр (все фонды)
-        if (visible.length === data.funds.length) return undefined;
-        return visible.map(f => f.fund_id);
-    }, [data?.funds, hiddenFunds]);
+        // Все доступные видимы — не передаём фильтр (backend вернёт tier-set).
+        if (visibleAccessibleFunds.length === accessibleFunds.length) return undefined;
+        return visibleAccessibleFunds.map(f => f.fund_id);
+    }, [data?.funds, visibleAccessibleFunds, accessibleFunds]);
 
     // Тикеры скрытых фондов (для фильтрации событий на графике)
     const hiddenTickers = useMemo(() => {
@@ -224,6 +242,14 @@ export default function FundsMoneyPage() {
     useEffect(() => {
         if (viewMode !== 'flows') return;
 
+        // Все фонды выключены — не дёргаем backend, ставим пустой результат.
+        // FlowsHistogram по noFundsSelected покажет «Выберите фонды».
+        if (noFundsSelected) {
+            setFlowsData({ category, timeframe: flowTimeframe, period, flows: [] });
+            setLoading(false);
+            return;
+        }
+
         async function loadFlowsData() {
             try {
                 setLoading(true);
@@ -236,7 +262,7 @@ export default function FundsMoneyPage() {
             }
         }
         loadFlowsData();
-    }, [viewMode, category, flowTimeframe, period, visibleFundIds]);
+    }, [viewMode, category, flowTimeframe, period, visibleFundIds, noFundsSelected]);
 
     // Агрегация данных на основе видимых фондов
     const aggregatedData = useMemo(() => {
@@ -668,6 +694,7 @@ export default function FundsMoneyPage() {
             <div ref={chartAnchorRef} data-tour="funds-chart" style={{ ['--chart-height' as string]: `${chartHeight}px` }}>
             <FlowsHistogram
                         flowsData={flowsData}
+                        noFundsSelected={noFundsSelected}
                         animatedBarsIn={animatedBarsIn}
                         animatedBarsOut={animatedBarsOut}
                         flowNavRange={flowNavRange}
