@@ -368,19 +368,44 @@ export default function MobileFundsMoneyPage() {
         title="Период"
       >
         <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {PERIODS.map((p) => (
-            <button
-              key={p.key}
-              className={`fm-chip ${period === p.key ? 'active' : ''}`}
-              onClick={() => {
-                setPeriod(p.key);
-                setTimeSheetOpen(false);
-              }}
-              style={{ justifyContent: 'flex-start', padding: '14px 16px' }}
-            >
-              {p.label}
-            </button>
-          ))}
+          {PERIODS.map((p) => {
+            // Глубокие периоды (2Г/Всё) для гостя/Free под замком: backend
+            // ответит 403. canUsePeriod читает ту же матрицу тарифов.
+            const allowed = fundsAccess.isLoading || fundsAccess.canUsePeriod(p.key);
+            return (
+              <button
+                key={p.key}
+                className={`fm-chip ${period === p.key ? 'active' : ''}`}
+                onClick={() => {
+                  if (!allowed) {
+                    const tier = fundsAccess.requiredTierFor({ period: p.key });
+                    if (tier) {
+                      showUpgrade({
+                        tier,
+                        featureName: `период «${p.label}»`,
+                        indicator: 'funds_money',
+                      });
+                    }
+                    setTimeSheetOpen(false);
+                    return;
+                  }
+                  setPeriod(p.key);
+                  setTimeSheetOpen(false);
+                }}
+                style={{
+                  justifyContent: 'flex-start',
+                  padding: '14px 16px',
+                  opacity: allowed ? 1 : 0.5,
+                }}
+                aria-disabled={!allowed}
+              >
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  {p.label}
+                  {!allowed && <Lock size={12} strokeWidth={2.2} />}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </MobileSheet>
 

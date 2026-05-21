@@ -457,25 +457,44 @@ export default function MobileOpenInterestPage() {
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {(Object.keys(PERIOD_LABELS) as Period[]).map((p) => {
+              // Два независимых ограничения:
+              //   available  — производительность (5м-интервал ≠ длинная история)
+              //   tierAllowed — подписка (глубокая история на Basic/Pro)
               const available = isPeriodAvailable(p);
+              const tierAllowed = oiAccess.isLoading || oiAccess.canUsePeriod(p);
               return (
                 <button
                   key={p}
                   className={`fm-chip ${period === p ? 'active' : ''}`}
                   onClick={() => {
                     if (!available) return;
+                    if (!tierAllowed) {
+                      const tier = oiAccess.requiredTierFor({ period: p });
+                      if (tier) {
+                        showUpgrade({
+                          tier,
+                          featureName: `период «${PERIOD_LABELS[p]}»`,
+                          indicator: 'open_interest',
+                        });
+                      }
+                      return;
+                    }
                     handlePeriodChange(p);
                     setPeriodSheetOpen(false);
                   }}
                   disabled={!available}
                   style={{
-                    opacity: available ? 1 : 0.35,
-                    cursor: available ? 'pointer' : 'not-allowed',
+                    opacity: !available ? 0.35 : tierAllowed ? 1 : 0.5,
+                    cursor: available && tierAllowed ? 'pointer' : 'not-allowed',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
                   }}
-                  aria-disabled={!available}
+                  aria-disabled={!available || !tierAllowed}
                   title={!available ? `Недоступно для ${INTERVAL_LABELS[intervalValue]}` : undefined}
                 >
                   {PERIOD_LABELS[p]}
+                  {available && !tierAllowed && <Lock size={11} strokeWidth={2.2} />}
                 </button>
               );
             })}

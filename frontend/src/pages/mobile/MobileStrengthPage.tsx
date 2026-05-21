@@ -310,19 +310,44 @@ export default function MobileStrengthPage() {
         title="Период"
       >
         <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {(Object.keys(PERIOD_LABELS) as Period[]).map((p) => (
-            <button
-              key={p}
-              className={`fm-chip ${period === p ? 'active' : ''}`}
-              onClick={() => {
-                setPeriod(p);
-                setTimeSheetOpen(false);
-              }}
-              style={{ justifyContent: 'flex-start', padding: '14px 16px' }}
-            >
-              {PERIOD_LABELS[p]}
-            </button>
-          ))}
+          {(Object.keys(PERIOD_LABELS) as Period[]).map((p) => {
+            // Глубокие периоды (2Г/5Л/Всё) для гостя/Free под замком —
+            // backend ответит 403. canUsePeriod читает матрицу тарифов.
+            const allowed = strengthAccess.isLoading || strengthAccess.canUsePeriod(p);
+            return (
+              <button
+                key={p}
+                className={`fm-chip ${period === p ? 'active' : ''}`}
+                onClick={() => {
+                  if (!allowed) {
+                    const tier = strengthAccess.requiredTierFor({ period: p });
+                    if (tier) {
+                      showUpgrade({
+                        tier,
+                        featureName: `период «${PERIOD_LABELS[p]}»`,
+                        indicator: 'strength',
+                      });
+                    }
+                    setTimeSheetOpen(false);
+                    return;
+                  }
+                  setPeriod(p);
+                  setTimeSheetOpen(false);
+                }}
+                style={{
+                  justifyContent: 'flex-start',
+                  padding: '14px 16px',
+                  opacity: allowed ? 1 : 0.5,
+                }}
+                aria-disabled={!allowed}
+              >
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  {PERIOD_LABELS[p]}
+                  {!allowed && <Lock size={12} strokeWidth={2.2} />}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </MobileSheet>
 

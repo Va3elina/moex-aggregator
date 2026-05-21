@@ -401,21 +401,16 @@ export default function MobileSeasonalityPage() {
               Нет данных
             </div>
           ) : (
-            // SeasonalityBars сам разруливает single-series (одна bar на slot,
-            // зелёный/красный по знаку) vs multi-series (grouped sub-bars
-            // side-by-side, цвет = series.color) — как на десктопе.
-            <>
-              <SeasonalityBars seriesGroups={seriesGroups} maxAbs={maxAbs} />
-              {/* Легенда периодов — overlay сверху, только в multi-режиме
-                  (>1 серии). В single период уже виден в subtitle хедера.
-                  Уровень «актив» на мобилке не дублируем — он в MobilePageHeader. */}
+            // Histogram: легенда — flow-элемент НАД графиком (flex-column),
+            // не absolute overlay. Раньше легенда была absolute поверх SVG, и
+            // при >2 сериях (легенда переносится на 2 строки) высокий столбик
+            // залезал на её текст. Теперь bars получают остаток высоты (flex:1).
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
               {seriesGroups.length > 1 && (
                 <div style={{
-                  position: 'absolute', top: 4, left: '50%',
-                  transform: 'translateX(-50%)', zIndex: 5,
-                  pointerEvents: 'none', display: 'flex', gap: 10,
+                  flexShrink: 0, display: 'flex', gap: 10,
                   flexWrap: 'wrap', justifyContent: 'center',
-                  padding: '0 8px',
+                  padding: '2px 8px 4px',
                 }}>
                   {seriesGroups.map((g) => (
                     <span key={g.label} style={{
@@ -432,7 +427,12 @@ export default function MobileSeasonalityPage() {
                   ))}
                 </div>
               )}
-            </>
+              {/* SeasonalityBars: single-series — зелёный/красный по знаку;
+                  multi-series — grouped sub-bars side-by-side (как на ПК). */}
+              <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+                <SeasonalityBars seriesGroups={seriesGroups} maxAbs={maxAbs} />
+              </div>
+            </div>
           )}
         </div>
       </div>
