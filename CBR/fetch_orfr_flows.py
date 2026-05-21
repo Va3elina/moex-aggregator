@@ -226,10 +226,13 @@ def parse_sheet(wb, sheet_name: str, source_file: str) -> Iterable[dict]:
             continue
 
         plabel = period_cell.strip()
-        # Определяем kind и end_date
+        # Определяем kind и end_date.
+        # КВАРТАЛЫ ПРОПУСКАЕМ: индикатор работает только с месячными данными.
+        # Квартальная строка имеет тот же period_end_date что последний месяц
+        # квартала (31.03/30.06/30.09/31.12) → через ON CONFLICT затирала бы
+        # корректную месячную запись. Парсим только month.
         if plabel in QUARTER_RU:
-            kind = "quarter"
-            end_dt = _quarter_end_date(current_year, QUARTER_RU[plabel])
+            continue
         elif plabel in MONTH_RU:
             kind = "month"
             end_dt = _month_end(current_year, MONTH_RU[plabel])

@@ -294,9 +294,11 @@ def _parse_new_format(rows, header_idx, category_cols, source_file):
         if current_year is None or not isinstance(period_cell, str):
             continue
         plabel = period_cell.strip()
+        # КВАРТАЛЫ ПРОПУСКАЕМ — индикатор работает только с месячными данными.
+        # Квартальная строка имеет тот же period_end_date что последний месяц
+        # квартала → затирала бы корректную месячную запись через ON CONFLICT.
         if plabel in QUARTER_RU:
-            kind = "quarter"
-            end_dt = _quarter_end(current_year, QUARTER_RU[plabel])
+            continue
         elif plabel in MONTH_RU:
             kind = "month"
             end_dt = _month_end(current_year, MONTH_RU[plabel])

@@ -43,9 +43,9 @@ const INSTRUMENT_TABS: Array<{
   { key: 'fx',     label: 'Валюты', Icon: DollarSign },
 ];
 
-type PeriodFilter = '6m' | '2y' | 'all';
+type PeriodFilter = '1y' | '2y' | 'all';
 const PERIOD_OPTIONS: { key: PeriodFilter; label: string; months: number | null }[] = [
-  { key: '6m', label: '6М', months: 6 },
+  { key: '1y', label: '1Г', months: 12 },
   { key: '2y', label: '2Г', months: 24 },
   { key: 'all', label: 'Всё', months: null },
 ];
@@ -61,8 +61,8 @@ export default function CbrFlowsPage() {
   // При смене type — сбрасываем (категории различаются для stocks/ofz/fx).
   const [hiddenCategories, setHiddenCategories] = useState<Set<string>>(new Set());
 
-  // Период: 6м / 2г / Всё (default 6м)
-  const [period, setPeriod] = useState<PeriodFilter>('6m');
+  // Период: 1г / 2г / Всё (default 1г)
+  const [period, setPeriod] = useState<PeriodFilter>('1y');
 
   // Popover-dropdown с выбором категорий (открывается при клике на кнопку)
   const [categoriesOpen, setCategoriesOpen] = useState(false);

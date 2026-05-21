@@ -110,11 +110,15 @@ def get_cbr_flows(
     )
 
     engine = get_engine()
+    # period_kind = 'month' — индикатор работает только с месячными данными.
+    # Квартальные строки ОРФР имеют тот же period_end_date что последний
+    # месяц квартала и несопоставимы по методологии — отфильтровываем.
     sql = """
         SELECT period_year, period_label, period_kind, period_end_date,
                category, value, source_file, updated_at
         FROM cbr_flows
         WHERE instrument_type = :itype
+          AND period_kind = 'month'
     """
     params: dict = {"itype": type}
     if effective_start is not None:

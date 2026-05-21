@@ -25,7 +25,7 @@ import { useOnboardingTour } from '../../hooks/useFirstVisit';
 import OnboardingTour from '../../components/onboarding/OnboardingTour';
 import type { TourStep } from '../../components/onboarding/OnboardingTour';
 
-type PeriodFilter = '6m' | '2y' | 'all';
+type PeriodFilter = '1y' | '2y' | 'all';
 
 const TYPE_TABS: Array<{ key: CbrInstrumentType; label: string; Icon: typeof Banknote }> = [
   { key: 'stocks', label: 'Акции', Icon: Building2 },
@@ -34,14 +34,14 @@ const TYPE_TABS: Array<{ key: CbrInstrumentType; label: string; Icon: typeof Ban
 ];
 
 const PERIOD_OPTIONS: Array<{ key: PeriodFilter; label: string; months: number | null }> = [
-  { key: '6m', label: '6М', months: 6 },
+  { key: '1y', label: '1Г', months: 12 },
   { key: '2y', label: '2Г', months: 24 },
   { key: 'all', label: 'Всё', months: null },
 ];
 
 export default function MobileCbrFlowsPage() {
   const [type, setType] = useState<CbrInstrumentType>('stocks');
-  const [period, setPeriod] = useState<PeriodFilter>('6m');
+  const [period, setPeriod] = useState<PeriodFilter>('1y');
   const [data, setData] = useState<CbrFlowsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -75,7 +75,7 @@ export default function MobileCbrFlowsPage() {
         <>
           <p style={{ marginBottom: 6 }}>Снизу — 3 кнопки:</p>
           <p style={{ marginBottom: 4 }}>
-            <strong>Время</strong> — глубина истории (6М/1Г/2Г/Всё)
+            <strong>Время</strong> — глубина истории (1Г/2Г/Всё)
           </p>
           <p style={{ marginBottom: 4 }}>
             <strong>Опции</strong> — тип инструмента (Акции/ОФЗ/Валюта)
@@ -99,7 +99,7 @@ export default function MobileCbrFlowsPage() {
             Открыл для тебя кнопку <strong>«Время»</strong>:
           </p>
           <p>
-            <strong>6М / 1Г / 2Г / Всё</strong> — глубина истории помесячно.
+            <strong>1Г / 2Г / Всё</strong> — глубина истории помесячно.
             На длинных периодах виден исторический контекст потоков.
           </p>
         </>
