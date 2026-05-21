@@ -13,11 +13,11 @@ interface ChartNavigatorProps {
     /** Показывать мини-line preview данных внутри. Default true.
         Для гистограмм (FlowsHistogram) ставим false — line plot не подходит. */
     showPreview?: boolean;
-    /** Отступ слева — выравнивает навигатор по plot-area графика (под Y-осью).
-        CSS-length: число (px) или строка (например 'var(--chart-pad-left)').
-        Default 8px — лёгкий зазор как было раньше. */
+    /** Отступ слева — сужает навигатор. CSS-length (число px или строка).
+        Default 0 — навигатор во всю ширину контейнера (= ширине SVG графика
+        «от края до края», как просил коллега). */
     insetLeft?: number | string;
-    /** Отступ справа — аналогично insetLeft. Default 8px. */
+    /** Отступ справа — аналогично insetLeft. Default 0. */
     insetRight?: number | string;
 }
 
@@ -41,8 +41,8 @@ export default function ChartNavigator({
     color = 'var(--accent)',
     height = 52,
     showPreview = true,
-    insetLeft = 8,
-    insetRight = 8,
+    insetLeft = 0,
+    insetRight = 0,
 }: ChartNavigatorProps) {
     const containerRef = useRef<HTMLDivElement>(null);
     // innerRef — измеряем ширину ВНУТРЕННЕЙ области (между inset'ами), а не

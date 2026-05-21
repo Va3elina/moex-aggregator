@@ -5,7 +5,7 @@ import { ChartGrid, ChartCrosshair, ChartTooltip, TooltipRow } from '../chart';
 import ChartLegend from '../chart/ChartLegend';
 import ChartWatermark from '../ChartWatermark';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
-import { axisFontSize, xAxisTickCount, legendFontSize, legendDotSize } from '../chart/chartTypography';
+import { axisFontSize, xAxisTickCount } from '../chart/chartTypography';
 
 interface TooltipState {
   x: number;
@@ -32,11 +32,8 @@ interface SeasonalityHistogramProps {
   seriesMeta?: SeriesMeta[];
   /** Компактный режим (test-dashboard): прореживание X-меток даже на desktop. */
   compact?: boolean;
-  /** Название выбранного актива (например «IMOEX», «SBER»). Рендерится bold перед legend. */
-  assetLabel?: string;
   /** Описание выбранного периода для single-mode легенды (например «С 2008 г.»).
-   *  Рендерится мелким шрифтом под названием актива. В multi-mode игнорируется
-   *  (там периоды уже видны как метки серий). */
+   *  В multi-mode игнорируется (там периоды видны как метки серий seriesMeta). */
   periodLabel?: string;
 }
 
@@ -55,7 +52,6 @@ export default function SeasonalityHistogram({
   seriesMeta,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   compact: _compact = false,
-  assetLabel,
   periodLabel,
 }: SeasonalityHistogramProps) {
   const vw = useViewportWidth();
@@ -117,26 +113,16 @@ export default function SeasonalityHistogram({
       )
     : maxAbs;
 
-  // Двухуровневая легенда:
-  //   Уровень 1 — название актива (accent-кружок, крупнее).
-  //   Уровень 2 — периоды, каждый со своим цветом-кружком (мельче).
-  // В multi-mode уровень 2 = seriesMeta (у каждой серии свой цвет).
-  // В single-mode = один период (цвет positive — базовый цвет гистограммы).
+  // Легенда — только периоды/года (название актива убрано: оно есть в
+  // заголовке карточки и дублирование выглядело перегружено).
+  //   multi-mode → seriesMeta (у каждой серии свой цвет-кружок)
+  //   single-mode → один период (цвет positive — базовый цвет гистограммы)
   const periodItems: { color: string; label: string }[] = isMulti
     ? safeMeta.map(s => ({ color: s.color, label: s.label }))
     : (periodLabel ? [{ color: CHART_COLORS.positive, label: periodLabel }] : []);
 
-  // Font/dot уровня 2 — на ступень мельче уровня 1 (~0.82×).
-  const lvl1Fs = legendFontSize(vw);
-  const lvl1Dot = legendDotSize(vw);
-  const lvl2Fs = Math.round(lvl1Fs * 0.82);
-  const lvl2Dot = Math.max(6, Math.round(lvl1Dot * 0.82));
-
-  // Легенда теперь всегда 2 строки → увеличенный верхний padding bar-area,
-  // чтобы второй уровень не наезжал на бары.
-  const padTop = periodItems.length > 0
-    ? 'var(--seasonality-hist-pad-top-sub, 46px)'
-    : 'var(--seasonality-hist-pad-top, 28px)';
+  // Легенда снова однострочная → стандартный верхний padding.
+  const padTop = 'var(--seasonality-hist-pad-top, 28px)';
 
   const W = 1000, H = 500;
   const midY = H / 2;
@@ -206,31 +192,17 @@ export default function SeasonalityHistogram({
           справа — но это дублировало информацию: цвет баров уже несёт смысл
           (зелёные ≥ 0, красные < 0), а тикер дублировался с заголовком карточки.
           Теперь весь identifier графика — один flex-item (кружок + label). */}
-      {/* Двухуровневая легенда:
-            ① название актива — чёрное тире-маркер, крупный bold-шрифт
-            ② периоды — каждый со своим цветом-кружком, мельче, вторичный текст */}
-      <div className="absolute top-1 left-1/2 -translate-x-1/2 z-20 pointer-events-none flex flex-col items-center" style={{ gap: 2 }}>
-        {/* Уровень 1 — актив (тире-маркер цвета text-primary) */}
-        <ChartLegend
-          items={[{ color: 'var(--text-primary)', label: assetLabel || 'Сезонность', marker: 'dash' }]}
-          fontSize={lvl1Fs}
-          dotSize={lvl1Dot}
-          fontWeight={700}
-          gap={16}
-          style={{ color: 'var(--text-primary)' }}
-        />
-        {/* Уровень 2 — периоды (свои цвета, мельче) */}
-        {periodItems.length > 0 && (
+      {/* Легенда — периоды/года, каждый со своим цветом-кружком. */}
+      {periodItems.length > 0 && (
+        <div className="absolute top-1 left-1/2 -translate-x-1/2 z-20 pointer-events-none">
           <ChartLegend
             items={periodItems}
-            fontSize={lvl2Fs}
-            dotSize={lvl2Dot}
             fontWeight={600}
-            gap={12}
-            style={{ color: 'var(--text-secondary)' }}
+            gap={16}
+            style={{ color: 'var(--text-primary)' }}
           />
-        )}
-      </div>
+        </div>
+      )}
 
       <div className="absolute" style={{
         top: padTop,

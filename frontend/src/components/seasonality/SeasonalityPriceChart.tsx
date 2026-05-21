@@ -325,8 +325,6 @@ export default function SeasonalityPriceChart({
           data={priceNavData}
           onChange={(s, e) => setPriceNavRange([s, e])}
           color={CHART_COLORS.accent}
-          insetLeft="var(--chart-pad-left)"
-          insetRight="var(--chart-pad-right-single)"
         />
       </div>
     </div>

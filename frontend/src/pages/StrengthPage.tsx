@@ -609,8 +609,6 @@ export default function StrengthPage() {
                                 data={navigatorData}
                                 onChange={(s, e, isDrag) => { isNavDragRef.current = isDrag; setNavRange([s, e]); }}
                                 color="var(--accent)"
-                                insetLeft={padding.left}
-                                insetRight={padding.right}
                             />
                         </div>
                     )}

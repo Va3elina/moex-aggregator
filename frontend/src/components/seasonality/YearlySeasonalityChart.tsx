@@ -7,7 +7,7 @@ import ChartNavigator from '../ChartNavigator';
 import ChartWatermark from '../ChartWatermark';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
-import { axisFontSize, legendFontSize, legendDotSize } from '../chart/chartTypography';
+import { axisFontSize } from '../chart/chartTypography';
 import { measureText } from '../chart/measureText';
 
 interface TooltipState {
@@ -33,8 +33,6 @@ interface YearlySeasonalityChartProps {
   seriesData?: YearlySeasonalityResponse[] | null;
   /** Метки серий — цвета и лейблы. */
   seriesMeta?: SeriesMeta[];
-  /** Название актива — рендерится первым уровнем легенды (accent-кружок). */
-  assetLabel?: string;
   tooltip: TooltipState | null;
   setTooltip: (t: TooltipState | null) => void;
   chartHeight: number;
@@ -44,7 +42,6 @@ export default function YearlySeasonalityChart({
   yearlyData,
   seriesData,
   seriesMeta,
-  assetLabel,
   tooltip,
   setTooltip,
   chartHeight,
@@ -253,36 +250,21 @@ export default function YearlySeasonalityChart({
 
   return (
     <div className={revealed ? 'chart-reveal' : ''}>
-      {/* Двухуровневая легенда:
-            ① название актива — accent-кружок, крупный bold-шрифт
-            ② серии-периоды (среднее + сравниваемые года + текущий год) —
-               каждая со своим цветом линии, мельче, вторичный цвет текста */}
+      {/* Легенда — серии-периоды (среднее + сравниваемые года + текущий год),
+          каждая со своим цветом линии. Название актива убрано — оно есть
+          в заголовке карточки, дублирование выглядело перегружено. */}
       <div
-        style={{ marginBottom: 'var(--seasonality-legend-mb, 12px)', gap: 2 }}
-        className="flex flex-col items-center"
+        style={{ marginBottom: 'var(--seasonality-legend-mb, 12px)' }}
+        className="flex items-center justify-center gap-3 flex-wrap"
       >
-        {/* Уровень 1 — актив (чёрное тире-маркер) */}
-        {assetLabel && (
-          <ChartLegend
-            items={[{ color: 'var(--text-primary)', label: assetLabel, marker: 'dash' }]}
-            fontSize={legendFontSize(vw)}
-            dotSize={legendDotSize(vw)}
-            fontWeight={700}
-            gap={16}
-            style={{ color: 'var(--text-primary)' }}
-          />
-        )}
-        {/* Уровень 2 — серии-периоды (мельче) */}
         <ChartLegend
           items={[
             ...allMeta.map(m => ({ color: m.color, label: m.label })),
             { color: CHART_COLORS.accent, label: String(yearlyData.current_year) },
           ]}
-          fontSize={Math.round(legendFontSize(vw) * 0.82)}
-          dotSize={Math.max(6, Math.round(legendDotSize(vw) * 0.82))}
           fontWeight={600}
-          gap={12}
-          style={{ color: 'var(--text-secondary)' }}
+          gap={16}
+          style={{ color: 'var(--text-primary)' }}
         />
       </div>
 
@@ -560,8 +542,6 @@ export default function YearlySeasonalityChart({
           data={navData}
           onChange={(s, e) => setNavRange([s, e])}
           color={CHART_COLORS.muted}
-          insetLeft="var(--seasonality-chart-pad-left)"
-          insetRight="var(--seasonality-chart-pad-right)"
         />
       </div>
     </div>

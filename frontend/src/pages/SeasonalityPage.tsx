@@ -858,7 +858,6 @@ export default function SeasonalityPage() {
               setTooltip={setTooltip}
               monthlySeries={monthlySeries}
               seriesMeta={seriesMeta}
-              assetLabel={displayTicker(selectedStock)}
               periodLabel={histogramPeriodLabel}
             />
           )
@@ -881,7 +880,6 @@ export default function SeasonalityPage() {
             yearlyData={yearlyData}
             seriesData={yearlySeries}
             seriesMeta={seriesMeta}
-            assetLabel={displayTicker(selectedStock)}
             tooltip={tooltip}
             setTooltip={setTooltip}
             chartHeight={chartHeight}

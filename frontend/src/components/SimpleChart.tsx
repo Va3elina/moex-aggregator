@@ -1,4 +1,4 @@
-import { useMemo, useState, useRef, useEffect, useCallback } from 'react';
+import { useMemo, useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
 import { Download, BarChart2, TrendingUp } from 'lucide-react';
 import ChartNavigator from './ChartNavigator';
 import ChartWatermark from './ChartWatermark';
@@ -248,15 +248,29 @@ export default function SimpleChart({
   const isFirstRender = useRef(true);
   const [revealed, setRevealed] = useState(false);
 
-  // fontsReady — после загрузки Inter форсим re-render, чтобы measureText
-  // пересчитал ширину pill'ов уже с правильным шрифтом (до загрузки canvas
-  // меряет fallback Arial — он у́же Inter → pill узкий → текст обрезается).
-  const [fontsReady, setFontsReady] = useState(false);
-  useEffect(() => {
-    if (typeof document !== 'undefined' && 'fonts' in document) {
-      document.fonts.ready.then(() => setFontsReady(true));
-    }
-  }, []);
+  // === Pill width — точное измерение через getBBox (не canvas-предсказание).
+  // canvas.measureText() систематически расходится с SVG-рендером (шрифт,
+  // kerning, субпиксели) → pill узкий → текст обрезается. Решение: меряем
+  // РЕАЛЬНЫЙ отрисованный <text> через getBBox() в useLayoutEffect (two-pass:
+  // 1-й рендер по measureText-estimate, 2-й — по точному bbox).
+  const pillTextRefs = useRef<Map<string, SVGTextElement>>(new Map());
+  const [pillTextW, setPillTextW] = useState<Map<string, number>>(new Map());
+  useLayoutEffect(() => {
+    const next = new Map<string, number>();
+    pillTextRefs.current.forEach((el, key) => {
+      if (el && el.isConnected) {
+        try { next.set(key, el.getBBox().width); } catch { /* not rendered */ }
+      }
+    });
+    // setState только при реальном изменении — иначе бесконечный re-render.
+    setPillTextW((prev) => {
+      if (prev.size !== next.size) return next;
+      for (const [k, v] of next) {
+        if (Math.abs((prev.get(k) ?? -1) - v) > 0.5) return next;
+      }
+      return prev;
+    });
+  });
 
   // Ширина стабилизировалась — не запускаем animateMorph пока не замерим реальный размер
   const widthStableRef = useRef(false);
@@ -1404,16 +1418,10 @@ export default function SimpleChart({
           //      не нужны, осi их тоже не используют → natural rendering
           //      сам гарантирует симметрию).
           //
-          // 2026-05-17: padX 6 → 8 — юзер заметил что первая цифра иногда
-          // визуально касается левого края pill'а.
-          // 2026-05-21: padX = 8. РАЗГАДКА «обрезанного текста»:
-          // canvas.measureText() меряет цифры ПРОПОРЦИОНАЛЬНО, а SVG-текст
-          // раньше рендерился с fontVariantNumeric="tabular-nums" → табличные
-          // (более широкие) цифры. measure систематически недооценивал ширину
-          // → pillW узкий → белый текст вылезал за оранжевый pill «в обрезку».
-          // Фикс: tabular-nums убран из pill <text>/<tspan> (см. ниже) → обе
-          // стороны (measure ↔ render) пропорциональны → measure точен.
-          // +2px fudge в pillW — запас на субпиксельную разницу canvas/SVG.
+          // 2026-05-21 ФИНАЛ: ширина pill теперь измеряется через getBBox()
+          // реально отрисованного <text> (см. pillTextW выше) — это ТОЧНОЕ
+          // измерение, а не canvas-предсказание. padX=8 — симметричный воздух
+          // с обеих сторон, pill центрируется на тексте.
           const padX = 8;
           const padY = 2;
           const pillH = fontY + padY * 2;
@@ -1423,9 +1431,6 @@ export default function SimpleChart({
           const leftAxisTextRight = padding.left - tokens.axisGap;
           const rightAxisTextLeft = padding.left + chartWidth + tokens.axisGap;
 
-          // void — fontsReady в зависимостях: после загрузки Inter компонент
-          // ре-рендерится, measureText ниже пересчитывается с точным шрифтом.
-          void fontsReady;
           return labels.map((l) => {
             // Split на main + unit (для smaller fontSize у unit) — symmetric с
             // axis labels rendering. Pill width учитывает оба фрагмента.
@@ -1434,22 +1439,23 @@ export default function SimpleChart({
             const unitPart = splitMatch ? splitMatch[2] : '';
             const unitFontY = fontY * 0.7;
             const mainW = measureText(mainPart, fontY, fontWeight);
-            // Unit tspan рендерится с fontWeight=700 (см. SVG ниже).
-            // Измеряем тоже 700 чтобы canvas measure ↔ SVG render совпадали.
             const unitW = unitPart ? measureText(unitPart, unitFontY, 700) + 2 : 0;
-            const textW = mainW + unitW;
-            // +4px fudge — субпиксельная разница canvas-measure ↔ SVG-render.
-            // Распределяется СИММЕТРИЧНО (pill центрируется на тексте ниже).
-            const pillW = Math.ceil(textW) + padX * 2 + 4;
+            // estimateW — canvas-прикидка для ПЕРВОГО рендера. На втором рендере
+            // берём ТОЧНУЮ ширину из getBBox (pillTextW) — она измерена с
+            // реально отрисованного <text>, совпадает пиксель-в-пиксель.
+            const estimateW = mainW + unitW;
+            const measuredW = pillTextW.get(l.key);
+            const effectiveTextW = measuredW != null ? measuredW : estimateW;
+            // padX*2 — симметричный воздух. Pill центрируется на тексте ниже.
+            const pillW = Math.ceil(effectiveTextW) + padX * 2;
 
             const isLeftSide = l.key === 'primary';
             const textAnchor: 'start' | 'end' = isLeftSide ? 'end' : 'start';
             // textX — anchor-точка у оси (text-RIGHT для primary / text-LEFT для secondary).
             const textX = isLeftSide ? leftAxisTextRight : rightAxisTextLeft;
-            // Pill ЦЕНТРИРУЕТСЯ относительно текста — fudge и padX распределяются
-            // симметрично с обеих сторон. Раньше pillRight был привязан к оси,
-            // и весь fudge уходил в одну сторону → «у минуса заливка длиннее».
-            const textCenter = isLeftSide ? textX - textW / 2 : textX + textW / 2;
+            // Pill ЦЕНТРИРУЕТСЯ относительно текста по ТОЧНОЙ ширине (effectiveTextW)
+            // → padX распределён симметрично, «у минуса» не длиннее.
+            const textCenter = isLeftSide ? textX - effectiveTextW / 2 : textX + effectiveTextW / 2;
             const pillLeft = textCenter - pillW / 2;
 
             return (
@@ -1464,6 +1470,10 @@ export default function SimpleChart({
                   fill={l.color}
                 />
                 <text
+                  ref={(el) => {
+                    if (el) pillTextRefs.current.set(l.key, el);
+                    else pillTextRefs.current.delete(l.key);
+                  }}
                   x={textX}
                   y={l.y}
                   textAnchor={textAnchor}
@@ -1471,8 +1481,6 @@ export default function SimpleChart({
                   fill="#FFFFFF"
                   fontSize={fontY}
                   fontWeight={fontWeight}
-                  // БЕЗ fontVariantNumeric — пропорциональные цифры совпадают
-                  // с canvas.measureText() → pillW точен, текст не обрезается.
                 >
                   {mainPart}
                   {unitPart && (
@@ -1635,8 +1643,6 @@ export default function SimpleChart({
             data={data}
             onChange={(s, e, isDrag) => { navDragRef.current = isDrag; setNavRange([s, e]); }}
             color={primaryColor}
-            insetLeft="var(--chart-pad-left)"
-            insetRight={showSecondary ? 'var(--chart-pad-right-dual)' : 'var(--chart-pad-right-single)'}
           />
         </div>
       )}
