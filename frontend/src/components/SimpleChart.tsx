@@ -1458,12 +1458,20 @@ export default function SimpleChart({
             const textCenter = isLeftSide ? textX - effectiveTextW / 2 : textX + effectiveTextW / 2;
             const pillLeft = textCenter - pillW / 2;
 
+            // Знак минус — тонкий символ, у него меньше воздуха надо. Если
+            // значение отрицательное — укорачиваем pill со стороны минуса
+            // (минус всегда левый символ) на 2px, чтобы заливка не заходила
+            // на ядро графика.
+            const hasMinus = /^[−-]/.test(mainPart);
+            const finalPillLeft = hasMinus ? pillLeft + 2 : pillLeft;
+            const finalPillW = hasMinus ? pillW - 2 : pillW;
+
             return (
               <g key={l.key} pointerEvents="none">
                 <rect
-                  x={pillLeft}
+                  x={finalPillLeft}
                   y={l.y - pillH / 2}
-                  width={pillW}
+                  width={finalPillW}
                   height={pillH}
                   rx={4}
                   ry={4}
@@ -1643,6 +1651,8 @@ export default function SimpleChart({
             data={data}
             onChange={(s, e, isDrag) => { navDragRef.current = isDrag; setNavRange([s, e]); }}
             color={primaryColor}
+            insetLeft="var(--chart-pad-left)"
+            insetRight={showSecondary ? 'var(--chart-pad-right-dual)' : 'var(--chart-pad-right-single)'}
           />
         </div>
       )}

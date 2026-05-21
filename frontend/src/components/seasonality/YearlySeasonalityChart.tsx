@@ -542,6 +542,8 @@ export default function YearlySeasonalityChart({
           data={navData}
           onChange={(s, e) => setNavRange([s, e])}
           color={CHART_COLORS.muted}
+          insetLeft="var(--seasonality-chart-pad-left)"
+          insetRight="var(--seasonality-chart-pad-right)"
         />
       </div>
     </div>
