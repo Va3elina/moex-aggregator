@@ -191,18 +191,24 @@ export default function FlowsHistogram({
                             const midY = 50;
                             const halfH = 47;
                             const minBarH = 1.2;
-                            // Динамическая толщина окантовки. Раньше был жёсткий
-                            // cutoff (>50 баров → нет окантовки совсем): тонкие
-                            // бары + stroke=1px = 80% чёрный, поэтому полностью
-                            // отключали. Теперь strokeWidth плавно уменьшается:
-                            // мало баров — полная окантовка 1px (читаемые границы);
-                            // много баров — тонкая 0.25-0.4px (hint, не дoминирует).
-                            // vectorEffect=non-scaling-stroke фиксирует px независимо
-                            // от SVG ширины — окантовка не «прыгает» при resize.
-                            const outlineWidth = visibleIn.length <= 20 ? 1
-                                              : visibleIn.length <= 50 ? 0.7
-                                              : visibleIn.length <= 100 ? 0.4
-                                              : 0.25;
+                            // Окантовка баров. На длинных таймфреймах (2г/«всё»)
+                            // видимых баров — сотни. SVG-stroke + vectorEffect=
+                            // non-scaling-stroke на каждом баре делает repaint
+                            // дорогим, и при hover (re-render всех баров с новой
+                            // opacity) график «виснет». Поэтому при >50 баров
+                            // окантовку выключаем полностью (она там и так была
+                            // лишь 0.25-0.4px «хинтом») — это возвращает прежний
+                            // быстрый рендер. ≤50 баров — полноценная окантовка,
+                            // non-scaling-stroke фиксирует px при resize.
+                            const showOutline = visibleIn.length <= 50;
+                            const outlineWidth = visibleIn.length <= 20 ? 1 : 0.7;
+                            const strokeProps: React.SVGProps<SVGRectElement> = showOutline
+                                ? {
+                                      stroke: 'var(--bar-outline)',
+                                      strokeWidth: outlineWidth,
+                                      vectorEffect: 'non-scaling-stroke',
+                                  }
+                                : {};
 
                             return visibleIn.map((inVal, i) => {
                                 const outVal = visibleOut[i] ?? 0;
@@ -219,15 +225,13 @@ export default function FlowsHistogram({
                                         {hIn > 0 && (
                                             <rect x={x} y={`${midY - hIn}%`} width={w} height={`${hIn}%`}
                                                 fill={'var(--funds-flow-positive)'}
-                                                stroke="var(--bar-outline)" strokeWidth={outlineWidth}
-                                                vectorEffect="non-scaling-stroke"
+                                                {...strokeProps}
                                                 rx="2" />
                                         )}
                                         {hOut > 0 && (
                                             <rect x={x} y={`${midY}%`} width={w} height={`${hOut}%`}
                                                 fill={'var(--funds-flow-negative)'}
-                                                stroke="var(--bar-outline)" strokeWidth={outlineWidth}
-                                                vectorEffect="non-scaling-stroke"
+                                                {...strokeProps}
                                                 rx="2" />
                                         )}
                                     </g>

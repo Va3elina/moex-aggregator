@@ -89,6 +89,16 @@ export default function StackedBidirectionalHistogram({
   const [animProgress, setAnimProgress] = useState<number[]>(() =>
     new Array(periods.length).fill(0),
   );
+  // Сброс прогресса СИНХРОННО при смене animKey (React-паттерн «adjust state
+  // during render»). Без него один кадр бары рендерятся со старым animProgress:
+  // при переключении на более длинный период правые бары (индексы за пределами
+  // старого массива) попадают на `animProgress[i] ?? 1` = full — и видны на
+  // полную высоту до того, как до них дойдёт wave.
+  const [animatedKey, setAnimatedKey] = useState(animKey);
+  if (animKey !== animatedKey) {
+    setAnimatedKey(animKey);
+    setAnimProgress(new Array(periods.length).fill(0));
+  }
   useEffect(() => {
     if (periods.length === 0) return;
     setAnimProgress(new Array(periods.length).fill(0));
