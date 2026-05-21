@@ -7,7 +7,7 @@ import ChartNavigator from '../ChartNavigator';
 import ChartWatermark from '../ChartWatermark';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
-import { axisFontSize } from '../chart/chartTypography';
+import { axisFontSize, legendFontSize, legendDotSize } from '../chart/chartTypography';
 import { measureText } from '../chart/measureText';
 
 interface TooltipState {
@@ -33,6 +33,8 @@ interface YearlySeasonalityChartProps {
   seriesData?: YearlySeasonalityResponse[] | null;
   /** Метки серий — цвета и лейблы. */
   seriesMeta?: SeriesMeta[];
+  /** Название актива — рендерится первым уровнем легенды (accent-кружок). */
+  assetLabel?: string;
   tooltip: TooltipState | null;
   setTooltip: (t: TooltipState | null) => void;
   chartHeight: number;
@@ -42,6 +44,7 @@ export default function YearlySeasonalityChart({
   yearlyData,
   seriesData,
   seriesMeta,
+  assetLabel,
   tooltip,
   setTooltip,
   chartHeight,
@@ -250,22 +253,36 @@ export default function YearlySeasonalityChart({
 
   return (
     <div className={revealed ? 'chart-reveal' : ''}>
-      {/* Легенда: только цветные кружки серий (среднее + сравниваемые года +
-          текущий год). Раньше слева был bold-span с тикером (например «SBER»),
-          но он дублировал название в заголовке карточки. Удалили — теперь
-          легенда содержит только то, что нельзя получить из chrome страницы. */}
+      {/* Двухуровневая легенда:
+            ① название актива — accent-кружок, крупный bold-шрифт
+            ② серии-периоды (среднее + сравниваемые года + текущий год) —
+               каждая со своим цветом линии, мельче, вторичный цвет текста */}
       <div
-        style={{ marginBottom: 'var(--seasonality-legend-mb, 12px)' }}
-        className="flex items-center justify-center gap-3 flex-wrap"
+        style={{ marginBottom: 'var(--seasonality-legend-mb, 12px)', gap: 2 }}
+        className="flex flex-col items-center"
       >
+        {/* Уровень 1 — актив */}
+        {assetLabel && (
+          <ChartLegend
+            items={[{ color: 'var(--accent)', label: assetLabel }]}
+            fontSize={legendFontSize(vw)}
+            dotSize={legendDotSize(vw)}
+            fontWeight={700}
+            gap={16}
+            style={{ color: 'var(--text-primary)' }}
+          />
+        )}
+        {/* Уровень 2 — серии-периоды (мельче) */}
         <ChartLegend
           items={[
             ...allMeta.map(m => ({ color: m.color, label: m.label })),
             { color: CHART_COLORS.accent, label: String(yearlyData.current_year) },
           ]}
+          fontSize={Math.round(legendFontSize(vw) * 0.82)}
+          dotSize={Math.max(6, Math.round(legendDotSize(vw) * 0.82))}
           fontWeight={600}
-          gap={16}
-          style={{ color: 'var(--text-primary)' }}
+          gap={12}
+          style={{ color: 'var(--text-secondary)' }}
         />
       </div>
 

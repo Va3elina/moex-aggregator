@@ -216,17 +216,21 @@ export default function ChartNavigator({
         <div
             ref={containerRef}
             className="chart-navigator relative select-none mt-3 overflow-visible"
-            style={{ height: height + 4 }}
+            // inset'ы применяются как margin КОНТЕЙНЕРА — сужается весь навигатор
+            // целиком (включая editorial border-рамку), а не только внутренности.
+            // Внутренние svg/nav-inner остаются на left:0/right:0 (editorial CSS
+            // их так и форсит через !important) — но теперь внутри уже-суженного
+            // контейнера это даёт навигатор ровно по plot-area графика.
+            style={{ height: height + 4, marginLeft: ilCss, marginRight: irCss }}
         >
             {/* SVG для мини-графика — viewBox с фикс. шириной 1000, preserveAspectRatio="none"
                 позволяет браузеру растянуть path до реальной ширины БЕЗ зависимости от JS-width.
-                Мини-график появляется сразу в правильных пропорциях, не «удлиняется» при монтировании.
-                left/right = inset'ы → навигатор выровнен по plot-area графика. */}
+                Мини-график появляется сразу в правильных пропорциях, не «удлиняется» при монтировании. */}
             <svg
                 viewBox={`0 0 ${VB_WIDTH} ${height}`}
                 preserveAspectRatio="none"
                 className="nav-mini-svg block overflow-visible"
-                style={{ position: 'absolute', top: 0, left: ilCss, right: irCss, width: `calc(100% - ${ilCss} - ${irCss})`, height: height }}
+                style={{ position: 'absolute', top: 0, left: 8, right: 8, width: 'calc(100% - 16px)', height: height }}
             >
                 <defs>
                     <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
@@ -244,8 +248,8 @@ export default function ChartNavigator({
 
             {/* Selection и handles как HTML div с CSS %, не зависят от JS-width.
                 Это устраняет glitch "расширения правого края" при монтировании — CSS % резолвится браузером сразу.
-                innerRef + left/right=inset'ы → ширина = реальная plot-area навигатора. */}
-            <div ref={innerRef} className="nav-inner absolute" style={{ top: 0, left: ilCss, right: irCss, bottom: 4, pointerEvents: 'none' }}>
+                innerRef → drag-математика мерит реальную ширину (= суженный контейнер). */}
+            <div ref={innerRef} className="nav-inner absolute" style={{ top: 0, left: 8, right: 8, bottom: 4, pointerEvents: 'none' }}>
                 {/* Маски невыбранной области — theme-aware через --nav-mask */}
                 <div className="absolute top-0 bottom-0 left-0" style={{ width: `${selFrac[0] * 100}%`, background: 'var(--nav-mask, rgba(0,0,0,0.5))' }} />
                 <div className="absolute top-0 bottom-0 right-0" style={{ width: `${(1 - selFrac[1]) * 100}%`, background: 'var(--nav-mask, rgba(0,0,0,0.5))' }} />

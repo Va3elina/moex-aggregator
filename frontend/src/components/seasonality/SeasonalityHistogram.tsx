@@ -5,7 +5,7 @@ import { ChartGrid, ChartCrosshair, ChartTooltip, TooltipRow } from '../chart';
 import ChartLegend from '../chart/ChartLegend';
 import ChartWatermark from '../ChartWatermark';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
-import { axisFontSize, xAxisTickCount } from '../chart/chartTypography';
+import { axisFontSize, xAxisTickCount, legendFontSize, legendDotSize } from '../chart/chartTypography';
 
 interface TooltipState {
   x: number;
@@ -117,12 +117,25 @@ export default function SeasonalityHistogram({
       )
     : maxAbs;
 
-  // Subtitle с периодом — только single-mode (в multi периоды видны в seriesMeta).
-  // Когда subtitle есть — легенда занимает 2 строки, поэтому увеличиваем
-  // верхний padding bar-area чтобы subtitle не наезжал на бары.
-  const hasPeriodSubtitle = !isMulti && !!periodLabel;
-  const padTop = hasPeriodSubtitle
-    ? 'var(--seasonality-hist-pad-top-sub, 42px)'
+  // Двухуровневая легенда:
+  //   Уровень 1 — название актива (accent-кружок, крупнее).
+  //   Уровень 2 — периоды, каждый со своим цветом-кружком (мельче).
+  // В multi-mode уровень 2 = seriesMeta (у каждой серии свой цвет).
+  // В single-mode = один период (цвет positive — базовый цвет гистограммы).
+  const periodItems: { color: string; label: string }[] = isMulti
+    ? safeMeta.map(s => ({ color: s.color, label: s.label }))
+    : (periodLabel ? [{ color: CHART_COLORS.positive, label: periodLabel }] : []);
+
+  // Font/dot уровня 2 — на ступень мельче уровня 1 (~0.82×).
+  const lvl1Fs = legendFontSize(vw);
+  const lvl1Dot = legendDotSize(vw);
+  const lvl2Fs = Math.round(lvl1Fs * 0.82);
+  const lvl2Dot = Math.max(6, Math.round(lvl1Dot * 0.82));
+
+  // Легенда теперь всегда 2 строки → увеличенный верхний padding bar-area,
+  // чтобы второй уровень не наезжал на бары.
+  const padTop = periodItems.length > 0
+    ? 'var(--seasonality-hist-pad-top-sub, 46px)'
     : 'var(--seasonality-hist-pad-top, 28px)';
 
   const W = 1000, H = 500;
@@ -193,31 +206,29 @@ export default function SeasonalityHistogram({
           справа — но это дублировало информацию: цвет баров уже несёт смысл
           (зелёные ≥ 0, красные < 0), а тикер дублировался с заголовком карточки.
           Теперь весь identifier графика — один flex-item (кружок + label). */}
-      <div className="absolute top-1 left-1/2 -translate-x-1/2 z-20 pointer-events-none flex flex-col items-center" style={{ gap: 1 }}>
+      {/* Двухуровневая легенда:
+            ① название актива — accent-кружок, крупный bold-шрифт
+            ② периоды — каждый со своим цветом, мельче, вторичный цвет текста */}
+      <div className="absolute top-1 left-1/2 -translate-x-1/2 z-20 pointer-events-none flex flex-col items-center" style={{ gap: 2 }}>
+        {/* Уровень 1 — актив */}
         <ChartLegend
-          items={isMulti
-            ? safeMeta.map(s => ({ color: s.color, label: s.label }))
-            : [
-                { color: CHART_COLORS.positive, label: assetLabel || 'Сезонность' },
-              ]
-          }
-          fontWeight={600}
+          items={[{ color: 'var(--accent)', label: assetLabel || 'Сезонность' }]}
+          fontSize={lvl1Fs}
+          dotSize={lvl1Dot}
+          fontWeight={700}
           gap={16}
           style={{ color: 'var(--text-primary)' }}
         />
-        {/* Subtitle с выбранным периодом — только single-mode. В multi периоды
-            уже видны как метки серий (seriesMeta). Шрифт на ступень мельче
-            названия актива, цвет вторичный. */}
-        {hasPeriodSubtitle && (
-          <span style={{
-            fontSize: 'var(--fs-2xs, 11px)',
-            fontWeight: 500,
-            color: 'var(--text-secondary)',
-            lineHeight: 1,
-            whiteSpace: 'nowrap',
-          }}>
-            {periodLabel}
-          </span>
+        {/* Уровень 2 — периоды (свои цвета, мельче) */}
+        {periodItems.length > 0 && (
+          <ChartLegend
+            items={periodItems}
+            fontSize={lvl2Fs}
+            dotSize={lvl2Dot}
+            fontWeight={600}
+            gap={12}
+            style={{ color: 'var(--text-secondary)' }}
+          />
         )}
       </div>
 

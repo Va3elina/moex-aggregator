@@ -404,7 +404,35 @@ export default function MobileSeasonalityPage() {
             // SeasonalityBars сам разруливает single-series (одна bar на slot,
             // зелёный/красный по знаку) vs multi-series (grouped sub-bars
             // side-by-side, цвет = series.color) — как на десктопе.
-            <SeasonalityBars seriesGroups={seriesGroups} maxAbs={maxAbs} />
+            <>
+              <SeasonalityBars seriesGroups={seriesGroups} maxAbs={maxAbs} />
+              {/* Легенда периодов — overlay сверху, только в multi-режиме
+                  (>1 серии). В single период уже виден в subtitle хедера.
+                  Уровень «актив» на мобилке не дублируем — он в MobilePageHeader. */}
+              {seriesGroups.length > 1 && (
+                <div style={{
+                  position: 'absolute', top: 4, left: '50%',
+                  transform: 'translateX(-50%)', zIndex: 5,
+                  pointerEvents: 'none', display: 'flex', gap: 10,
+                  flexWrap: 'wrap', justifyContent: 'center',
+                  padding: '0 8px',
+                }}>
+                  {seriesGroups.map((g) => (
+                    <span key={g.label} style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 4,
+                      fontSize: 10.5, fontWeight: 600, color: 'var(--text-secondary)',
+                      whiteSpace: 'nowrap',
+                    }}>
+                      <span style={{
+                        width: 7, height: 7, borderRadius: '50%',
+                        background: g.color, flexShrink: 0,
+                      }} />
+                      {g.label}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

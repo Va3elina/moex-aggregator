@@ -1396,12 +1396,14 @@ export default function SimpleChart({
           //
           // 2026-05-17: padX 6 → 8 — юзер заметил что первая цифра иногда
           // визуально касается левого края pill'а.
-          // 2026-05-19: padX 8 → 12 — measureText недооценивал ширину Inter
-          // для proportional digits.
-          // 2026-05-21: padX 12 → 8 — fontVariantNumeric="tabular-nums" (ниже)
-          // уже фиксирует равную ширину цифр → measure снова точен, и 12 было
-          // overcompensation. Заливка pill сильно заходила на chart area;
-          // 8px даёт симметричный ~6px воздух без захвата графика.
+          // 2026-05-21: padX = 8. РАЗГАДКА «обрезанного текста»:
+          // canvas.measureText() меряет цифры ПРОПОРЦИОНАЛЬНО, а SVG-текст
+          // раньше рендерился с fontVariantNumeric="tabular-nums" → табличные
+          // (более широкие) цифры. measure систематически недооценивал ширину
+          // → pillW узкий → белый текст вылезал за оранжевый pill «в обрезку».
+          // Фикс: tabular-nums убран из pill <text>/<tspan> (см. ниже) → обе
+          // стороны (measure ↔ render) пропорциональны → measure точен.
+          // +2px fudge в pillW — запас на субпиксельную разницу canvas/SVG.
           const padX = 8;
           const padY = 2;
           const pillH = fontY + padY * 2;
@@ -1423,7 +1425,8 @@ export default function SimpleChart({
             // Измеряем тоже 700 чтобы canvas measure ↔ SVG render совпадали.
             const unitW = unitPart ? measureText(unitPart, unitFontY, 700) + 2 : 0;
             const textW = mainW + unitW;
-            const pillW = Math.ceil(textW) + padX * 2;
+            // +2px fudge — субпиксельная разница canvas-measure ↔ SVG-render.
+            const pillW = Math.ceil(textW) + padX * 2 + 2;
 
             const isLeftSide = l.key === 'primary';
             // Pill rect и text-X для каждой стороны — text aligned с axis tick text.
@@ -1462,7 +1465,8 @@ export default function SimpleChart({
                   fill="#FFFFFF"
                   fontSize={fontY}
                   fontWeight={fontWeight}
-                  style={{ fontVariantNumeric: 'tabular-nums' }}
+                  // БЕЗ fontVariantNumeric — пропорциональные цифры совпадают
+                  // с canvas.measureText() → pillW точен, текст не обрезается.
                 >
                   {mainPart}
                   {unitPart && (
@@ -1471,7 +1475,6 @@ export default function SimpleChart({
                       fontSize={unitFontY}
                       fontWeight={700}
                       opacity={0.95}
-                      style={{ fontVariantNumeric: 'tabular-nums' }}
                     >
                       {unitPart}
                     </tspan>
