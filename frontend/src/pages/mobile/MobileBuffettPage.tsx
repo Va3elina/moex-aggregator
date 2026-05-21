@@ -407,19 +407,47 @@ export default function MobileBuffettPage() {
               Период
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {(Object.keys(PERIOD_LABELS) as BuffettPeriod[]).map((p) => (
-                <button
-                  key={p}
-                  className={`fm-chip ${period === p ? 'active' : ''}`}
-                  onClick={() => {
-                    setPeriod(p);
-                    setPeriodSheetOpen(false);
-                  }}
-                  style={{ justifyContent: 'flex-start', padding: '14px 16px' }}
-                >
-                  {PERIOD_LABELS[p]}
-                </button>
-              ))}
+              {(Object.keys(PERIOD_LABELS) as BuffettPeriod[]).map((p) => {
+                // «Вся история» (и любой период глубже tier-лимита) — под
+                // замком для гостя/Free: backend вернул бы 403. Тап показывает
+                // upgrade вместо обречённого запроса. canUsePeriod читает ту же
+                // матрицу тарифов что и backend. Зеркалит десктоп и паттерн
+                // «Версия индикатора» выше.
+                const allowed = buffAccess.isLoading || buffAccess.canUsePeriod(p);
+                return (
+                  <button
+                    key={p}
+                    className={`fm-chip ${period === p ? 'active' : ''}`}
+                    onClick={() => {
+                      if (!allowed) {
+                        const tier = buffAccess.requiredTierFor({ period: p });
+                        if (tier) {
+                          showUpgrade({
+                            tier,
+                            featureName: `период «${PERIOD_LABELS[p]}»`,
+                            indicator: 'buffett',
+                          });
+                        }
+                        setPeriodSheetOpen(false);
+                        return;
+                      }
+                      setPeriod(p);
+                      setPeriodSheetOpen(false);
+                    }}
+                    style={{
+                      justifyContent: 'flex-start',
+                      padding: '14px 16px',
+                      opacity: allowed ? 1 : 0.5,
+                    }}
+                    aria-disabled={!allowed}
+                  >
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      {PERIOD_LABELS[p]}
+                      {!allowed && <Lock size={12} strokeWidth={2.2} />}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
