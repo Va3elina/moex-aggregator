@@ -128,12 +128,12 @@ def find_all_xlsx_urls() -> list[dict]:
             "month": end_month,
         })
 
-    # FORWARD chronological order (старые → новые) — новые выпуски через
-    # ON CONFLICT DO UPDATE перезаписывают старые. ЦБ ревизирует данные
-    # прошлых месяцев в свежих выпусках → forward-order даёт АКТУАЛЬНЫЕ
-    # (ревизированные) значения. Раньше был reverse для «monthly побеждает
-    # quarterly», но кварталы больше не парсятся → reverse не нужен.
-    items.sort(key=lambda x: (x["year"], x["month"]))
+    # REVERSE chronological order (новые → старые) — старые выпуски
+    # обрабатываются ПОСЛЕДНИМИ и через ON CONFLICT побеждают. Для каждого
+    # месяца это даёт значение из выпуска-месяца (первичная публикация ЦБ).
+    # Эмпирически совпадает с эталонной таблицей ЦБ лучше, чем поздние
+    # ревизии (которые «гуляют» по волатильным категориям типа НФО).
+    items.sort(key=lambda x: (x["year"], x["month"]), reverse=True)
     log.info(f"  Найдено {len(items)} XLSX")
     return items
 
