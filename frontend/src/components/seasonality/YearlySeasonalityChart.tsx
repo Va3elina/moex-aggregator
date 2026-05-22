@@ -36,6 +36,8 @@ interface YearlySeasonalityChartProps {
   tooltip: TooltipState | null;
   setTooltip: (t: TooltipState | null) => void;
   chartHeight: number;
+  /** Показывать линию текущего года (accent). По умолчанию true. */
+  showCurrentYear?: boolean;
 }
 
 export default function YearlySeasonalityChart({
@@ -45,6 +47,7 @@ export default function YearlySeasonalityChart({
   tooltip,
   setTooltip,
   chartHeight,
+  showCurrentYear = true,
 }: YearlySeasonalityChartProps) {
   // На мобиле выводим квартальные подписи (Янв/Апр/Июл/Окт = 4 шт)
   // вместо 12 — иначе они накладываются на 311px viewport.
@@ -104,7 +107,9 @@ export default function YearlySeasonalityChart({
   const allMeta: SeriesMeta[] = meta.slice(0, safeCount);
 
   const baseAvg = yearlyData.average;
-  const cur = yearlyData.current;
+  // Тоггл «Текущий год»: пустой массив каскадно убирает линию, value-pill,
+  // вклад в Y-шкалу и строки тултипа. Легенда гейтится отдельно (ниже).
+  const cur = showCurrentYear ? yearlyData.current : [];
   const fullMaxTD = yearlyData.max_trading_days || 252;
 
   // Navigator data (для миниатюры внизу) — базовая серия
@@ -260,7 +265,9 @@ export default function YearlySeasonalityChart({
         <ChartLegend
           items={[
             ...allMeta.map(m => ({ color: m.color, label: m.label })),
-            { color: CHART_COLORS.accent, label: String(yearlyData.current_year) },
+            ...(cur.length > 0
+              ? [{ color: CHART_COLORS.accent, label: String(yearlyData.current_year) }]
+              : []),
           ]}
           fontWeight={600}
           gap={16}

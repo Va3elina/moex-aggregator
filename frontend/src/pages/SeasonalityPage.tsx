@@ -107,6 +107,8 @@ export default function SeasonalityPage() {
   const [compareYears, setCompareYears] = useState<number[]>([]);
   const [showNoOutliers, setShowNoOutliers] = useState(false);
   const [showExactYear, setShowExactYear] = useState<number | null>(null);
+  // Линия текущего года на годовом графике — можно скрыть тогглом.
+  const [showCurrentYear, setShowCurrentYear] = useState(true);
   // Доступные годы (для dropdown). Обновляется при смене тикера.
   const [availableYears, setAvailableYears] = useState<number[]>([]);
 
@@ -542,6 +544,23 @@ export default function SeasonalityPage() {
         <span className="inline-block rounded-full" style={{ width: 'var(--ico-xs)', height: 'var(--ico-xs)', backgroundColor: showNoOutliers ? COLOR_NO_OUTLIERS : 'var(--text-muted)' }} />
         Без выбросов
       </button>
+      {chartType === 'yearly' && (
+        <button
+          onClick={() => setShowCurrentYear(!showCurrentYear)}
+          title="Показать или скрыть линию текущего года"
+          className="editorial-press font-semibold rounded-full whitespace-nowrap"
+          style={{
+            backgroundColor: showCurrentYear ? 'var(--accent)' : 'var(--bg-secondary)',
+            color: showCurrentYear ? 'var(--text-inverse)' : 'var(--text-primary)',
+            border: '1.5px solid var(--text-primary)',
+            boxShadow: showCurrentYear ? 'var(--shadow-hard-chip)' : undefined,
+            fontSize: 'var(--fs-sm)',
+            padding: 'var(--sp-2) var(--sp-3)',
+          }}
+        >
+          Текущий год
+        </button>
+      )}
       {renderCompareYearsControls()}
       {availableYears.length > 1 && (
         <Dropdown<string>
@@ -883,6 +902,7 @@ export default function SeasonalityPage() {
             tooltip={tooltip}
             setTooltip={setTooltip}
             chartHeight={chartHeight}
+            showCurrentYear={showCurrentYear}
           />
         ) : (
           <div className="flex items-center justify-center text-center px-4" style={{ height: chartHeight, color: 'var(--text-muted)' }}>
