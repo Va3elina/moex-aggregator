@@ -105,7 +105,14 @@ def search_instruments(
 
 @router.get("/{sec_id}", response_model=InstrumentResponse)
 def get_instrument(sec_id: str, db: Session = Depends(get_db)):
-    """Получить инструмент по sec_id"""
+    """Получить инструмент по sec_id или sectype.
+
+    Фронтенд оперирует sectype как идентификатором актива: для фьючерсов это
+    код серии («CR», «Si»), а в instruments sec_id хранит конкретный контракт
+    («CRH», «SiU»). Матч только по sec_id не находил строку при резолве имени
+    из URL-параметра (?instrument=CR) → в UI вместо названия оставался тикер.
+    Ищем по обоим полям; точное совпадение по sec_id приоритетнее.
+    """
 
     # Валидация sec_id
     try:
@@ -113,7 +120,12 @@ def get_instrument(sec_id: str, db: Session = Depends(get_db)):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    instrument = db.query(Instrument).filter(Instrument.sec_id == sec_id).first()
+    instrument = (
+        db.query(Instrument)
+        .filter((Instrument.sec_id == sec_id) | (Instrument.sectype == sec_id))
+        .order_by((Instrument.sec_id == sec_id).desc())
+        .first()
+    )
 
     if not instrument:
         raise HTTPException(status_code=404, detail=f"Инструмент {sec_id} не найден")

@@ -215,10 +215,11 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
     };
 
     const objectsCount = annotationRef.current?.getObjectsCount() ?? 0;
-    const redoCount = annotationRef.current?.getRedoCount() ?? 0;
+    const canUndo = annotationRef.current?.canUndo() ?? false;
+    const canRedo = annotationRef.current?.canRedo() ?? false;
     // historyTick — dependency для re-render toolbar disabled-state. Используется
-    // imperatively (objectsCount/redoCount читаются в render), поэтому ESLint не
-    // видит её — оставляем явный void чтобы линтер не выпилил.
+    // imperatively (objectsCount/canUndo/canRedo читаются в render), поэтому ESLint
+    // не видит её — оставляем явный void чтобы линтер не выпилил.
     void historyTick;
 
     return createPortal(
@@ -282,8 +283,8 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
                             tool={tool}
                             color={color}
                             strokeWidth={strokeWidth}
-                            canUndo={objectsCount > 0}
-                            canRedo={redoCount > 0}
+                            canUndo={canUndo}
+                            canRedo={canRedo}
                             canClear={objectsCount > 0}
                             onToolChange={setTool}
                             onColorChange={setColor}

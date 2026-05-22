@@ -4,8 +4,9 @@
  * Архитектура:
  *   1. Background = chart canvas (passed from preview), set via FabricImage
  *   2. fabric.Canvas с isDrawingMode = true, freeDrawingBrush для pen
- *   3. History stack (undo/redo): track objects через event 'path:created'
- *   4. Exposes API через ref: undo/redo/clear/exportToCanvas/getCounts
+ *   3. History (undo/redo): snapshot-стек JSON-снимков объектов — отменяет
+ *      любое изменение (создание, move/resize/rotate, правку текста, удаление)
+ *   4. Exposes API через ref: undo/redo/clear/exportToCanvas/canUndo/canRedo
  *
  * Resize handling:
  *   - Native canvas size = background dimensions (px-perfect drawing)
@@ -18,7 +19,7 @@
  *   - React strict-mode: guard через if (fabricRef.current) return
  */
 
-import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from 'react';
 import { Loader2 } from 'lucide-react';
 import { useFabric } from './useFabric';
 import type { Canvas as FabricCanvas, FabricObject } from 'fabric';
@@ -47,7 +48,8 @@ export interface AnnotationCanvasHandle {
     clear: () => void;
     exportToCanvas: () => HTMLCanvasElement | null;
     getObjectsCount: () => number;
-    getRedoCount: () => number;
+    canUndo: () => boolean;
+    canRedo: () => boolean;
 }
 
 interface Props {
@@ -71,7 +73,13 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
         const canvasRef = useRef<HTMLCanvasElement>(null);
         const containerRef = useRef<HTMLDivElement>(null);
         const fabricRef = useRef<FabricCanvas | null>(null);
-        const redoStackRef = useRef<FabricObject[]>([]);
+        // История undo/redo: snapshot-стек. Каждый снимок — JSON массива объектов
+        // (фон не сериализуется — он живёт отдельно как backgroundImage). Так undo
+        // отменяет ЛЮБОЕ изменение: создание, move/resize/rotate, правку текста,
+        // перекраску, удаление — а не только последнюю добавленную фигуру.
+        const historyRef = useRef<string[]>([]);
+        const historyIdxRef = useRef<number>(-1);
+        const restoringRef = useRef<boolean>(false);
         const fabric = useFabric();
         // Refs для текущих tool/color/strokeWidth — handlers shape drawing
         // читают через них (вместо closure), чтобы handlers attach один раз
@@ -80,10 +88,63 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
         const colorRef = useRef(color);
         const strokeWidthRef = useRef(strokeWidth);
         const onShapeCreatedRef = useRef(onShapeCreated);
+        const onHistoryChangeRef = useRef(onHistoryChange);
         useEffect(() => { toolRef.current = tool; }, [tool]);
         useEffect(() => { colorRef.current = color; }, [color]);
         useEffect(() => { strokeWidthRef.current = strokeWidth; }, [strokeWidth]);
         useEffect(() => { onShapeCreatedRef.current = onShapeCreated; }, [onShapeCreated]);
+        useEffect(() => { onHistoryChangeRef.current = onHistoryChange; }, [onHistoryChange]);
+
+        // ── История undo/redo (snapshot-стек) ──────────────────────────────
+        // saveSnapshot пишет JSON-снимок объектов на каждое дискретное изменение;
+        // restore грузит снимок обратно через enlivenObjects.
+        const saveSnapshot = useCallback(() => {
+            const fc = fabricRef.current;
+            if (!fc || restoringRef.current) return;
+            const snap = JSON.stringify(fc.getObjects().map((o) => o.toObject()));
+            // Дубль не пишем: object:modified иногда стреляет вхолостую, а пара
+            // object:modified + text:editing:exited прилетает на одно событие.
+            if (historyRef.current[historyIdxRef.current] === snap) return;
+            // Новое действие обрезает redo-ветку.
+            historyRef.current = historyRef.current.slice(0, historyIdxRef.current + 1);
+            historyRef.current.push(snap);
+            historyIdxRef.current = historyRef.current.length - 1;
+            onHistoryChangeRef.current?.();
+        }, []);
+
+        const restore = useCallback(async (targetIdx: number) => {
+            const fc = fabricRef.current;
+            if (!fc || !fabric || restoringRef.current) return;
+            if (targetIdx < 0 || targetIdx >= historyRef.current.length) return;
+            restoringRef.current = true;
+            try {
+                const objs = JSON.parse(historyRef.current[targetIdx]);
+                const enlivened = (await fabric.util.enlivenObjects(objs)) as FabricObject[];
+                const live = fabricRef.current;
+                if (!live) return;
+                live.remove(...live.getObjects());
+                live.add(...enlivened);
+                enlivened.forEach((o) => o.setCoords());
+                live.discardActiveObject();
+                live.requestRenderAll();
+                historyIdxRef.current = targetIdx;
+            } finally {
+                restoringRef.current = false;
+            }
+            onHistoryChangeRef.current?.();
+        }, [fabric]);
+
+        const undo = useCallback(() => { void restore(historyIdxRef.current - 1); }, [restore]);
+        const redo = useCallback(() => { void restore(historyIdxRef.current + 1); }, [restore]);
+
+        const clearAll = useCallback(() => {
+            const fc = fabricRef.current;
+            if (!fc || fc.getObjects().length === 0) return;
+            fc.remove(...fc.getObjects());
+            fc.discardActiveObject();
+            fc.requestRenderAll();
+            saveSnapshot(); // очистка — тоже шаг истории, её можно отменить
+        }, [saveSnapshot]);
 
         // Init fabric.Canvas один раз при загрузке fabric и DOM-ready.
         // Strict-mode guard: ref проверяется перед созданием — повторный mount
@@ -109,6 +170,11 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
             brush.color = resolveColor(color);
             fc.freeDrawingBrush = brush;
 
+            // Стартовый снимок — пустой холст (фон в backgroundImage, не в objects).
+            // Первый undo вернёт сюда.
+            historyRef.current = ['[]'];
+            historyIdxRef.current = 0;
+
             // Set background — async (FabricImage.fromURL → Promise)
             let cancelled = false;
             fabric.FabricImage.fromURL(background.toDataURL()).then((img) => {
@@ -119,12 +185,13 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
                 fabricRef.current.requestRenderAll();
             });
 
-            // History tracking — каждый новый path сбрасывает redo stack
-            // (стандартное textarea behavior — после нового действия forward-history теряется)
-            fc.on('path:created', () => {
-                redoStackRef.current = [];
-                onHistoryChange?.();
-            });
+            // Снимок истории на каждое дискретное изменение холста:
+            //   path:created          — завершён штрих карандаша
+            //   object:modified       — завершён drag / resize / rotate объекта
+            //   text:editing:exited   — завершено редактирование текста
+            fc.on('path:created', () => saveSnapshot());
+            fc.on('object:modified', () => saveSnapshot());
+            fc.on('text:editing:exited', () => saveSnapshot());
 
             // Shape drawing handlers (line / arrow / rectangle / circle).
             // Активны только когда toolRef.current ≠ 'pen'. PencilBrush сама
@@ -180,8 +247,7 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
                     fcLocal.setActiveObject(text);
                     text.enterEditing();
                     text.selectAll();
-                    redoStackRef.current = [];
-                    onHistoryChange?.();
+                    saveSnapshot();
                     // UX: переключаем tool в select. Текст останется в editing
                     // mode (enterEditing/selectAll выше); смена tool на уровне
                     // toolbar не трогает fabric editing state. Зато после клика
@@ -267,8 +333,7 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
                         fcLocal.setActiveObject(activeShape);
                         fcLocal.requestRenderAll();
                     }
-                    redoStackRef.current = [];
-                    onHistoryChange?.();
+                    saveSnapshot();
                     // Сообщаем родителю — он переключит tool в 'select'
                     // (паттерн Figma/Excalidraw: после создания → manipulate).
                     onShapeCreatedRef.current?.();
@@ -277,21 +342,28 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
                 activeShape = null;
             });
 
-            // Keyboard handler: Delete/Backspace удаляет active object.
-            // Не активен когда IText в editing mode (там Backspace удаляет символы).
+            // Keyboard: Ctrl/Cmd+Z — undo, Ctrl/Cmd+Shift+Z или Ctrl+Y — redo,
+            // Delete/Backspace — удалить выделенный объект. Когда IText в editing
+            // mode — хоткеи не трогаем (там свой текстовый ввод).
             const onKeyDown = (e: KeyboardEvent) => {
                 const fcLocal = fabricRef.current;
                 if (!fcLocal) return;
-                if (e.key !== 'Delete' && e.key !== 'Backspace') return;
                 const active = fcLocal.getActiveObject();
-                if (!active) return;
-                // Если это IText в editing mode — не вмешиваемся
-                if (active.type === 'i-text' && (active as InstanceType<typeof fabric.IText>).isEditing) return;
+                const editingText = active?.type === 'i-text'
+                    && (active as InstanceType<typeof fabric.IText>).isEditing;
+
+                if ((e.ctrlKey || e.metaKey) && !editingText) {
+                    const key = e.key.toLowerCase();
+                    if (key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); return; }
+                    if ((key === 'z' && e.shiftKey) || key === 'y') { e.preventDefault(); redo(); return; }
+                }
+
+                if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+                if (!active || editingText) return;
                 fcLocal.remove(active);
                 fcLocal.discardActiveObject();
                 fcLocal.requestRenderAll();
-                redoStackRef.current = [];
-                onHistoryChange?.();
+                saveSnapshot();
                 e.preventDefault();
             };
             window.addEventListener('keydown', onKeyDown);
@@ -338,8 +410,12 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
                     active.set({ stroke: c, strokeWidth });
                 }
                 fc.requestRenderAll();
+                // Перекраска / смена толщины выделенного объекта — шаг истории.
+                // Холостой вызов (сменился только tool, цвет тот же) отсечёт
+                // dedup внутри saveSnapshot по равенству снимков.
+                saveSnapshot();
             }
-        }, [tool, color, strokeWidth]);
+        }, [tool, color, strokeWidth, saveSnapshot]);
 
         // Scale-to-fit container: native canvas size остаётся = background
         // (drawing px-perfect), CSS scales display size. ResizeObserver реагирует
@@ -391,36 +467,9 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
         useImperativeHandle(
             ref,
             () => ({
-                undo: () => {
-                    const fc = fabricRef.current;
-                    if (!fc) return;
-                    const objs = fc.getObjects();
-                    const last = objs[objs.length - 1];
-                    if (!last) return;
-                    redoStackRef.current.push(last);
-                    fc.remove(last);
-                    fc.requestRenderAll();
-                    onHistoryChange?.();
-                },
-                redo: () => {
-                    const fc = fabricRef.current;
-                    if (!fc) return;
-                    const obj = redoStackRef.current.pop();
-                    if (!obj) return;
-                    fc.add(obj);
-                    fc.requestRenderAll();
-                    onHistoryChange?.();
-                },
-                clear: () => {
-                    const fc = fabricRef.current;
-                    if (!fc) return;
-                    const objs = fc.getObjects();
-                    if (objs.length === 0) return;
-                    redoStackRef.current = [];
-                    fc.remove(...objs);
-                    fc.requestRenderAll();
-                    onHistoryChange?.();
-                },
+                undo,
+                redo,
+                clear: clearAll,
                 exportToCanvas: () => {
                     const fc = fabricRef.current;
                     if (!fc) return null;
@@ -430,9 +479,12 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
                     return fc.toCanvasElement(1) as HTMLCanvasElement;
                 },
                 getObjectsCount: () => fabricRef.current?.getObjects().length ?? 0,
-                getRedoCount: () => redoStackRef.current.length,
+                // canUndo/canRedo — позиция в snapshot-стеке. idx 0 — пустой
+                // стартовый снимок, поэтому undo доступен только при idx > 0.
+                canUndo: () => historyIdxRef.current > 0,
+                canRedo: () => historyIdxRef.current < historyRef.current.length - 1,
             }),
-            [onHistoryChange],
+            [undo, redo, clearAll],
         );
 
         if (!fabric) {
