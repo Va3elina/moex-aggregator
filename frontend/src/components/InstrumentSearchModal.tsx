@@ -360,7 +360,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
 
         {/* Шапка со столбцами — клик по «Изм. %» / «Объём» сортирует список */}
         <div
-          className="flex items-center px-6 pb-2"
+          className="flex items-center px-6 pb-2 mb-3"
           style={{ borderBottom: '1px solid var(--border-color)' }}
         >
           <span
