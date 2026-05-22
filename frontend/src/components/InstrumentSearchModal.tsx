@@ -360,7 +360,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
 
         {/* Шапка со столбцами — клик по «Изм. %» / «Объём» сортирует список */}
         <div
-          className="flex items-center px-6 pb-2 mb-3"
+          className="flex items-center pl-9 pr-6 pb-2 mb-3"
           style={{ borderBottom: '1px solid var(--border-color)' }}
         >
           <span
@@ -393,7 +393,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
               {favoriteInstruments.length > 0 && searchQuery === '' && (
                 <div className="mb-6">
                   <h3
-                    className="text-xs font-semibold uppercase tracking-wider mb-4"
+                    className="text-xs font-semibold uppercase tracking-wider mb-4 pl-3"
                     style={{ color: 'var(--text-secondary)' }}
                   >
                     Избранные
