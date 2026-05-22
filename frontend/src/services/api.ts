@@ -532,14 +532,20 @@ export interface BuffettRatioResponse {
 
 export type BuffettPeriod = '1m' | '1y' | '2y' | '3y' | '5y' | '10y' | '20y' | 'all';
 
-/** Извлекает человекочитаемый detail из 4xx-ответа buffett-эндпоинтов.
- *  Backend (enforce_tier_limits) шлёт {detail: "Период all недоступен на
- *  тарифе ..."}. Без этого фронт видел бы generic-ошибку и не мог отличить
- *  tier-ограничение от реального сбоя. */
+/** Извлекает человекочитаемый текст ошибки из 4xx-ответа buffett-эндпоинтов.
+ *  Backend оборачивает ошибки в envelope {success:false,error:{code,message}};
+ *  legacy-роуты — в {detail}. Парсим оба. Без этого период «Всё» на free-
+ *  тарифе показывал «Ошибка загрузки данных» вместо upgrade-модалки —
+ *  tier-403 сообщение терялось и фронт не отличал его от реального сбоя. */
 async function buffettErrorDetail(response: Response, fallback: string): Promise<string> {
   try {
     const body = await response.json();
+    // Legacy FastAPI-формат: {detail: "..."}
     if (body && typeof body.detail === 'string' && body.detail) return body.detail;
+    // Текущий envelope ошибок: {success:false, error:{code, message}}
+    if (body?.error && typeof body.error.message === 'string' && body.error.message) {
+      return body.error.message;
+    }
   } catch { /* не JSON — отдаём fallback */ }
   return `Failed to fetch Buffett ${fallback}`;
 }

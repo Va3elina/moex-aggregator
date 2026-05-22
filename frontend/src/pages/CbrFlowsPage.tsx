@@ -430,6 +430,7 @@ export default function CbrFlowsPage() {
             <StackedBidirectionalHistogram
               periods={visiblePeriods}
               categories={visibleCategories}
+              allPeriods={data?.periods}
               unit={data?.unit ?? 'млрд руб.'}
               height={chartHeight}
               loading={loading}

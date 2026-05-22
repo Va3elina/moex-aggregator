@@ -40,6 +40,12 @@ interface Props {
    * Если не передан — fallback на periods length+dates (старая логика).
    */
   animTrigger?: string;
+  /**
+   * Полный (нефильтрованный) список периодов — для расчёта м/м и г/г в
+   * тултипе. При узком period-фильтре («1Г») соседи для сравнения лежат
+   * за пределами видимых `periods`. Не передан → fallback на `periods`.
+   */
+  allPeriods?: CbrFlowsPeriod[];
 }
 
 interface HoverState {
@@ -56,12 +62,26 @@ interface HoverState {
 // Match с pattern FlowsHistogram/SimpleChart.
 const MIN_BAR_H = 0.6;  // % минимум высоты сегмента
 
+// Объём торгов периода = max(сумма нетто-покупок, |сумма нетто-продаж|).
+// В balanced market покупки ≈ продажи, поэтому это «сколько денег
+// прокрутилось». Совпадает с метрикой «Объём торгов» в тултипе.
+function periodVolume(p: CbrFlowsPeriod, categories: string[]): number {
+  let pos = 0, neg = 0;
+  for (const cat of categories) {
+    const v = p.values[cat] ?? 0;
+    if (v > 0) pos += v;
+    else neg += -v;
+  }
+  return Math.max(pos, neg);
+}
+
 export default function StackedBidirectionalHistogram({
   periods,
   categories,
   height,
   loading,
   animTrigger,
+  allPeriods,
 }: Props) {
   const { theme } = useTheme();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -466,11 +486,32 @@ export default function StackedBidirectionalHistogram({
         const sortedPositive = entries.filter(e => e.val > 0).sort((a, b) => b.val - a.val);
         const sortedNegative = entries.filter(e => e.val < 0).sort((a, b) => a.val - b.val);
         // Объём торгов между категориями: в balanced market сумма покупок ≈
-        // сумме продаж (нетто всегда ~0). Полезная метрика — total positive =
-        // |total negative| = «сколько денег прокрутилось» в этом периоде.
-        const totalPositive = sortedPositive.reduce((s, e) => s + e.val, 0);
-        const totalNegative = sortedNegative.reduce((s, e) => s + e.val, 0);
-        const tradingVolume = Math.max(totalPositive, -totalNegative);
+        // сумме продаж (нетто всегда ~0). Полезная метрика — «сколько денег
+        // прокрутилось» в этом периоде = max(покупки, |продажи|).
+        const tradingVolume = periodVolume(p, categories);
+
+        // м/м и г/г — изменение объёма торгов к прошлому периоду и к тому же
+        // периоду год назад. Считаем по allPeriods (полный список): при узком
+        // фильтре («1Г») соседи для сравнения лежат за пределами `periods`.
+        const fullPeriods = allPeriods ?? periods;
+        const curIdx = fullPeriods.findIndex((x) => x.end_date === p.end_date);
+        const prevPeriod = curIdx > 0 ? fullPeriods[curIdx - 1] : undefined;
+        const yoyPeriod = fullPeriods.find(
+          (x) => x.label === p.label && x.year === p.year - 1,
+        );
+        const pctVs = (base: number): number | null =>
+          base > 0 ? ((tradingVolume - base) / base) * 100 : null;
+        const momPct = prevPeriod ? pctVs(periodVolume(prevPeriod, categories)) : null;
+        const yoyPct = yoyPeriod ? pctVs(periodVolume(yoyPeriod, categories)) : null;
+        const momLabel = p.kind === 'quarter' ? 'кв/кв' : 'м/м';
+        const fmtPct = (v: number | null) =>
+          v === null ? '—' : `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`;
+        const pctColor = (v: number | null) =>
+          v === null
+            ? 'var(--text-muted)'
+            : v >= 0
+              ? 'var(--funds-flow-positive)'
+              : 'var(--funds-flow-negative)';
 
         const containerW = containerRef.current?.clientWidth ?? 800;
         // Adaptive tooltip width: 260px default, но не больше container-32
@@ -530,6 +571,21 @@ export default function StackedBidirectionalHistogram({
               <span>Объём торгов</span>
               <span style={{ color: 'var(--text-primary)' }}>
                 {tradingVolume.toFixed(2)} млрд
+              </span>
+            </div>
+            {/* Изменение объёма: м/м (к прошлому периоду) и г/г (к тому же
+                периоду год назад). «—» если периода для сравнения нет. */}
+            <div
+              className="flex items-center justify-between"
+              style={{ fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-1)' }}
+            >
+              <span>
+                <span style={{ color: 'var(--text-muted)' }}>{momLabel} </span>
+                <span style={{ color: pctColor(momPct), fontWeight: 700 }}>{fmtPct(momPct)}</span>
+              </span>
+              <span>
+                <span style={{ color: 'var(--text-muted)' }}>г/г </span>
+                <span style={{ color: pctColor(yoyPct), fontWeight: 700 }}>{fmtPct(yoyPct)}</span>
               </span>
             </div>
           </div>
