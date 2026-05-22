@@ -565,7 +565,7 @@ export default function SeasonalityPage() {
       {availableYears.length > 1 && (
         <Dropdown<string>
           options={[
-            { key: '', label: 'Показать год' },
+            { key: '', label: showExactYear !== null ? 'Убрать год' : 'Показать год' },
             ...availableYears.filter(y => y < currentYearNum).map((y): DropdownOption<string> => ({
               key: String(y),
               label: String(y),
