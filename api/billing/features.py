@@ -159,8 +159,11 @@ INDICATOR_FEATURES: dict[str, dict[str, dict]] = {
     # ───────────────────────────────────────────────────────────────
     # 6. Сезонность (/seasonality)
     # ───────────────────────────────────────────────────────────────
-    # Режимы: histogram / price / mtd / yearly / intraday
-    # intraday и filters (без выбросов, без дивгэпов) — Pro-фичи, backlog.
+    # canUseMode на фронте проверяется для chartType 'histogram' и для 4
+    # режимов гистограммы: intraday / weekday / monthday / monthly.
+    #   Free  — только «Годовая» (histogram закрыт целиком).
+    #   Basic — histogram + weekday/monthday/monthly (без intraday).
+    #   Pro   — без ограничений (allowed_modes=None ⇒ canUseMode всегда true).
     "seasonality": {
         "free": {
             "assets_whitelist": FREE_SEASONALITY_ASSETS,   # 10 крупных
@@ -171,14 +174,14 @@ INDICATOR_FEATURES: dict[str, dict[str, dict]] = {
         },
         "basic": {
             "assets_whitelist": None,
-            "allowed_modes": ["histogram", "price", "mtd", "yearly"],  # без intraday
+            "allowed_modes": ["histogram", "weekday", "monthday", "monthly", "yearly"],  # без intraday
             "max_history_years": None,
             "filter_no_outliers": False,
             "filter_no_dividends": False,
         },
         "pro": {
             "assets_whitelist": None,
-            "allowed_modes": ["histogram", "price", "mtd", "yearly", "intraday"],
+            "allowed_modes": None,   # без ограничений — все режимы сезонности
             "max_history_years": None,
             "filter_no_outliers": True,
             "filter_no_dividends": True,

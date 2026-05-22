@@ -41,7 +41,8 @@ def get_instruments(
 
     rows = db.execute(text(f"""
         SELECT i.sec_id, i.sectype, i.name, i.type, i."group", i.iss_code,
-               COALESCE(v.vol, 0) as daily_volume
+               COALESCE(v.vol, 0) as daily_volume,
+               d.change_pct as day_change_pct
         FROM instruments i
         LEFT JOIN (
             SELECT sec_id, SUM(volume) as vol
@@ -50,6 +51,22 @@ def get_instruments(
               AND begin_time >= CURRENT_DATE - INTERVAL '3 days'
             GROUP BY sec_id
         ) v ON v.sec_id = i.sec_id
+        LEFT JOIN (
+            -- Изменение цены за последний торговый день (дневной ТФ):
+            -- последняя дневная свеча против предыдущей.
+            SELECT sec_id,
+                   (close - prev_close) / NULLIF(prev_close, 0) * 100.0 AS change_pct
+            FROM (
+                SELECT sec_id, close,
+                       LAG(close)   OVER (PARTITION BY sec_id ORDER BY begin_time) AS prev_close,
+                       ROW_NUMBER() OVER (PARTITION BY sec_id ORDER BY begin_time DESC) AS rn
+                FROM candles
+                WHERE interval = 24
+                  AND begin_time >= CURRENT_DATE - INTERVAL '14 days'
+                  AND close > 0
+            ) c
+            WHERE rn = 1
+        ) d ON d.sec_id = i.sec_id
         {where_clause}
         ORDER BY daily_volume DESC
     """), params).fetchall()
@@ -58,7 +75,8 @@ def get_instruments(
         InstrumentResponse(
             sec_id=r[0], sectype=r[1], name=r[2],
             type=r[3], group=r[4], iss_code=r[5],
-            daily_volume=float(r[6]) if r[6] else 0
+            daily_volume=float(r[6]) if r[6] else 0,
+            day_change_pct=round(float(r[7]), 2) if r[7] is not None else None,
         )
         for r in rows
     ]

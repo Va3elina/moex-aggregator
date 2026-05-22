@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { Search, X, Star, Lock } from 'lucide-react';
 import InstrumentIcon from './InstrumentIcon';
+import Dropdown, { type DropdownOption } from './Dropdown';
+import { formatCompact } from '../utils/formatNumber';
 import { useAnalytics } from '../contexts/AnalyticsContext';
 import { useTierAccess } from '../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from './tier/UpgradeModal';
@@ -12,6 +14,7 @@ interface Instrument {
   type: string;
   group?: string;
   daily_volume?: number;
+  day_change_pct?: number | null;
 }
 
 const CATEGORY_FILTERS = [
@@ -20,6 +23,14 @@ const CATEGORY_FILTERS = [
   { key: 'Индексы', label: 'Индексы' },
   { key: 'Валюта', label: 'Валюта' },
   { key: 'Сырьё', label: 'Сырьё' },
+];
+
+// Сортировка списка активов. 'volume' — дефолт (по убыванию объёма, как было).
+type SortKey = 'volume' | 'gainers' | 'losers';
+const SORT_OPTIONS: DropdownOption<SortKey>[] = [
+  { key: 'volume',  label: 'По объёму' },
+  { key: 'gainers', label: 'Лидеры роста' },
+  { key: 'losers',  label: 'Лидеры падения' },
 ];
 
 interface InstrumentSearchModalProps {
@@ -42,6 +53,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
   const [instruments, setInstruments] = useState<Instrument[]>([]);
   const [loading, setLoading] = useState(true);
   const [categoryFilter, setCategoryFilter] = useState('all');
+  const [sortBy, setSortBy] = useState<SortKey>('volume');
   const { track } = useAnalytics();
 
   // Tier-gating: если передан indicator — проверяем доступ для каждого актива.
@@ -118,7 +130,12 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
     }
     return acc;
   }, [] as Instrument[])
-  .sort((a, b) => (b.daily_volume || 0) - (a.daily_volume || 0));
+  .sort((a, b) => {
+    // Активы без day_change_pct уезжают в конец при сортировке по изменению.
+    if (sortBy === 'gainers') return (b.day_change_pct ?? -Infinity) - (a.day_change_pct ?? -Infinity);
+    if (sortBy === 'losers')  return (a.day_change_pct ??  Infinity) - (b.day_change_pct ??  Infinity);
+    return (b.daily_volume || 0) - (a.daily_volume || 0);
+  });
 
   // При поиске — все инструменты в одном списке (избранные не прячутся)
   const favoriteInstruments = searchQuery ? [] : uniqueInstruments.filter(inst => favorites.includes(inst.sectype));
@@ -183,6 +200,31 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
           <InstrumentIcon sectype={inst.sectype} size={32} />
           <span className="font-bold flex-shrink-0 mr-1.5" style={{ fontSize: 'var(--fs-sm)' }}>{inst.sectype}</span>
           <span className="truncate flex-1" style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-xs)' }}>{inst.name}</span>
+        </div>
+
+        {/* Изменение за торговый день + объём (дневной ТФ) */}
+        <div
+          className="flex-shrink-0 text-right leading-tight"
+          style={{ opacity: accessible ? 1 : 0.45, minWidth: 72 }}
+        >
+          {inst.day_change_pct != null && (
+            <div
+              style={{
+                fontSize: 'var(--fs-xs)',
+                fontWeight: 600,
+                color: inst.day_change_pct >= 0
+                  ? 'var(--funds-flow-positive)'
+                  : 'var(--funds-flow-negative)',
+              }}
+            >
+              {inst.day_change_pct >= 0 ? '+' : ''}{inst.day_change_pct.toFixed(2)}%
+            </div>
+          )}
+          {inst.daily_volume ? (
+            <div style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)' }}>
+              {formatCompact(inst.daily_volume)}
+            </div>
+          ) : null}
         </div>
 
         {/* Lock icon если заблокирован — между названием и звёздочкой */}
@@ -287,6 +329,15 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
             })}
           </div>
           )}
+
+          {/* Сортировка списка — по объёму / лидеры роста / падения */}
+          <div className="flex justify-end mt-3">
+            <Dropdown<SortKey>
+              options={SORT_OPTIONS}
+              value={sortBy}
+              onChange={setSortBy}
+            />
+          </div>
         </div>
 
         {/* Results */}
