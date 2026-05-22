@@ -409,9 +409,9 @@ export default function MobileOpenInterestPage() {
         </div>
       </div>
 
-      {/* Sheet: выбор актива. Без filterType — MobileAssetSearch грузит
-          полный список (futures + валюта + индексы + сырьё + акции)
-          и фильтрует через chips. */}
+      {/* Sheet: выбор актива. Открытый интерес существует только по
+          фьючерсам — filterType="futures" ограничивает список фьючерсами
+          FORTS (паритет с десктопным InstrumentSearchModal). */}
       <MobileAssetSearch
         open={assetSearchOpen}
         onClose={() => setAssetSearchOpen(false)}
@@ -419,6 +419,7 @@ export default function MobileOpenInterestPage() {
           setSelectedInstrument(sectype);
           setInstrumentName(name);
         }}
+        filterType="futures"
         indicator="open_interest"
       />
 

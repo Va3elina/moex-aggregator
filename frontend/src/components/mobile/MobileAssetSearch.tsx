@@ -47,7 +47,7 @@ const CATEGORY_CHIPS_FUTURES_FIRST = [
 ];
 const CATEGORY_CHIPS_NO_FUTURES = [
   { key: 'all', label: 'Все' },
-  { key: 'shares', label: 'Акции' },
+  { key: 'Акции', label: 'Акции' },
   { key: 'Валюта', label: 'Валюта' },
   { key: 'Индексы', label: 'Индексы' },
   { key: 'Сырьё', label: 'Сырьё' },
@@ -136,6 +136,10 @@ export default function MobileAssetSearch({
   // Фильтрация (та же логика что в десктопном InstrumentSearchModal)
   const filtered = instruments.filter((inst) => {
     if (excludeType && inst.type === excludeType) return false;
+    // filterType='no-futures' грузит общий список — фьючерсы туда тоже
+    // приходят, поэтому отсекаем их здесь: Сезонность работает по
+    // спот-валютам / индексам / акциям / сырью, но не по фьючерсам.
+    if (filterType === 'no-futures' && inst.type === 'futures') return false;
     const matchesSearch =
       !searchQuery ||
       inst.sectype.toLowerCase().includes(searchQuery.toLowerCase()) ||
