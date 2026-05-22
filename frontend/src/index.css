@@ -1350,7 +1350,7 @@
      (они абсолютно позиционируются, не рисуются SVG-native как в SimpleChart). */
   --seasonality-aspect-ratio: 2.4;
   --seasonality-min-height: 280px;          /* Yearly + MTD */
-  --seasonality-max-height: 460px;          /* было 550 — слишком высокий график на десктопе */
+  --seasonality-max-height: 550px;
   --seasonality-hist-min-height: 240px;     /* Histogram меньше — нет date row */
   --seasonality-hist-max-height: 500px;     /* При card-width 1111px и aspect 2.4 желаемая
                                                высота = 463px. maxHeight 450 clamp'ил её

@@ -68,6 +68,8 @@ export default function MobileSeasonalityPage() {
   // Phase-4 фильтры:
   const [excludeDividends, setExcludeDividends] = useState(false);
   const [aggType, setAggType] = useState<'avg' | 'median'>('avg');
+  // Линия текущего года на годовом графике — можно скрыть тогглом.
+  const [showCurrentYear, setShowCurrentYear] = useState(true);
 
   const [data, setData] = useState<SeasonalityResponse | null>(null);
   const [yearlyData, setYearlyData] = useState<YearlySeasonalityResponse | null>(null);
@@ -391,7 +393,7 @@ export default function MobileSeasonalityPage() {
           {loading ? (
             <MobileSkeleton variant="chart" height="100%" />
           ) : mode === 'yearly' ? (
-            yearlyData ? <YearlySeasonalityChart data={yearlyData} compareData={compareYearlyData} compareYears={compareYears} /> : (
+            yearlyData ? <YearlySeasonalityChart data={yearlyData} compareData={compareYearlyData} compareYears={compareYears} showCurrentYear={showCurrentYear} /> : (
               <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: 'var(--text-muted)' }}>
                 Нет данных
               </div>
@@ -605,6 +607,13 @@ export default function MobileSeasonalityPage() {
 
           {/* Toggles row — без hints, простые лейблы */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {mode === 'yearly' && (
+              <ToggleRow
+                label="Текущий год"
+                checked={showCurrentYear}
+                onChange={setShowCurrentYear}
+              />
+            )}
             <ToggleRow
               label="Без дивидендов"
               checked={excludeDividends}
@@ -993,10 +1002,12 @@ function YearlySeasonalityChart({
   data,
   compareData,
   compareYears,
+  showCurrentYear,
 }: {
   data: YearlySeasonalityResponse;
   compareData: YearlySeasonalityResponse[];
   compareYears: number[];
+  showCurrentYear: boolean;
 }) {
   // Преобразуем td (trading day) в синтетические даты С УЧЁТОМ ФАКТИЧЕСКИХ
   // month-границ из API (поле p.month у average). Без этого td=123 у SBER
@@ -1080,7 +1091,7 @@ function YearlySeasonalityChart({
     }));
 
     return [
-      ...(curData.length > 0
+      ...(curData.length > 0 && showCurrentYear
         ? [{
             data: curData,
             color: 'var(--accent)',
@@ -1100,7 +1111,7 @@ function YearlySeasonalityChart({
       },
     ];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, compareData, compareYears]);
+  }, [data, compareData, compareYears, showCurrentYear]);
 
   return (
     <MobileChart
