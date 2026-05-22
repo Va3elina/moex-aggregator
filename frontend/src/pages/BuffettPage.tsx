@@ -207,10 +207,17 @@ export default function BuffettPage() {
                         locked: !isPeriodAllowed(p, isAuthenticated),
                     }))}
                     value={period}
-                    onChange={(p) => {
-                        const allowed = isPeriodAllowed(p, isAuthenticated);
-                        if (!allowed) { navigate('/login'); return; }
-                        setPeriod(p);
+                    onChange={setPeriod}
+                    onLockedClick={(p) => {
+                        // Tier-блокировка → upgrade modal; иначе legacy guest gate → /login.
+                        if (!buffAccess.canUsePeriod(p)) {
+                            const tier = buffAccess.requiredTierFor({ period: p });
+                            if (tier) {
+                                showUpgrade({ tier, featureName: `период «${PERIOD_LABELS[p] ?? p}»`, indicator: 'buffett' });
+                                return;
+                            }
+                        }
+                        if (!isPeriodAllowed(p, isAuthenticated)) navigate('/login');
                     }}
                 />
                 </div>

@@ -78,9 +78,17 @@ export default function StrengthControls({
                     locked: !isPeriodAllowed(p, isAuthenticated),
                 }))}
                 value={period}
-                onChange={(p) => {
-                    if (!isPeriodAllowed(p, isAuthenticated)) { navigate('/login'); return; }
-                    onPeriodChange(p);
+                onChange={onPeriodChange}
+                onLockedClick={(p) => {
+                    // Tier-блокировка → upgrade modal; иначе legacy guest gate → /login.
+                    if (!strengthAccess.canUsePeriod(p)) {
+                        const tier = strengthAccess.requiredTierFor({ period: p });
+                        if (tier) {
+                            showUpgrade({ tier, featureName: `период «${PERIOD_LABELS[p]}»`, indicator: 'strength' });
+                            return;
+                        }
+                    }
+                    if (!isPeriodAllowed(p, isAuthenticated)) navigate('/login');
                 }}
             />
 

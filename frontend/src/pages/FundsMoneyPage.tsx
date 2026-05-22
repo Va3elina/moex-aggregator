@@ -537,10 +537,18 @@ export default function FundsMoneyPage() {
                             locked: !isPeriodAllowed(p, isAuthenticated) || !isFlowPeriodAvailable(p),
                         }))}
                     value={period}
-                    onChange={(p) => {
-                        const allowed = isPeriodAllowed(p, isAuthenticated);
-                        if (!allowed) { navigate('/login'); return; }
-                        if (isFlowPeriodAvailable(p)) setPeriod(p);
+                    onChange={setPeriod}
+                    onLockedClick={(p) => {
+                        // Tier-блокировка → upgrade modal; иначе legacy guest gate → /login.
+                        // Locked только из-за !isFlowPeriodAvailable (нет данных) — ничего.
+                        if (!fundsAccess.canUsePeriod(p)) {
+                            const tier = fundsAccess.requiredTierFor({ period: p });
+                            if (tier) {
+                                showUpgrade({ tier, featureName: `период «${PERIOD_LABELS[p]}»`, indicator: 'funds_money' });
+                                return;
+                            }
+                        }
+                        if (!isPeriodAllowed(p, isAuthenticated)) navigate('/login');
                     }}
                 />
                 </div>

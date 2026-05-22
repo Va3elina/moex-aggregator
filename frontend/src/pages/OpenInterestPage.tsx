@@ -531,12 +531,20 @@ export default function OpenInterestPage() {
             })}
             value={period}
             onChange={(p) => {
-              const allowed = isPeriodAllowed(p, isAuthenticated);
-              if (!allowed) { navigate('/login'); return; }
-              const available = isPeriodAvailable(p);
-              if (!available) return;
               if (p === '1d' && interval === 24) setIntervalValue(60);
               setPeriod(p);
+            }}
+            onLockedClick={(p) => {
+              // Tier-блокировка → upgrade modal; иначе legacy guest gate → /login.
+              // Locked только из-за !isPeriodAvailable (нет данных) — ничего не делаем.
+              if (!oiAccess.canUsePeriod(p)) {
+                const tier = oiAccess.requiredTierFor({ period: p });
+                if (tier) {
+                  showUpgrade({ tier, featureName: `период «${PERIOD_LABELS[p]}»`, indicator: 'open_interest' });
+                  return;
+                }
+              }
+              if (!isPeriodAllowed(p, isAuthenticated)) navigate('/login');
             }}
           />
           </div>{/* /oi-timerange */}
