@@ -7,7 +7,7 @@
  *   - Asset/Period/Options открывают slide-up Sheet'ы
  *
  * Phase 2 — упрощённая версия:
- *   - Только режим «positions» с вариантом «net» (Чистая позиция)
+ *   - Тип данных «Позиции» / «Участники», 5 вариантов ОИ
  *   - Период через sheet (1д/1н/1м/3м/6м/1г/2г/5л/Всё)
  *   - Один график: цена + net OI
  *   - Экспирации, толкование тура — Phase 4
@@ -32,14 +32,22 @@ import OnboardingTour, { type TourStep } from '../../components/onboarding/Onboa
 
 type Period = '1d' | '1w' | '1m' | '3m' | '6m' | '1y' | '2y' | '5y' | 'all';
 type OIVariant = 'oi' | 'long' | 'short' | 'both' | 'net';
+type DisplayMode = 'positions' | 'participants';
 
-const VARIANT_LABELS: Record<OIVariant, string> = {
-  oi:    'Открытый интерес',
-  long:  'Покупки',
-  short: 'Продажи',
-  both:  'Покупки + Продажи',
-  net:   'Чистая позиция',
-};
+const OI_VARIANTS: OIVariant[] = ['oi', 'long', 'short', 'both', 'net'];
+
+// Подписи вариантов зависят от типа данных: объём контрактов («Покупки»)
+// либо количество участников («Покупатели»).
+function variantLabel(v: OIVariant, mode: DisplayMode): string {
+  const pos = mode === 'positions';
+  switch (v) {
+    case 'oi':    return 'Открытый интерес';
+    case 'long':  return pos ? 'Покупки' : 'Покупатели';
+    case 'short': return pos ? 'Продажи' : 'Продавцы';
+    case 'both':  return pos ? 'Покупки + Продажи' : 'Покупатели + Продавцы';
+    case 'net':   return 'Чистая позиция';
+  }
+}
 
 const VARIANT_COLORS: Record<OIVariant, string> = {
   oi:    'var(--oi-amber)',
@@ -90,6 +98,7 @@ export default function MobileOpenInterestPage() {
   const [intervalValue, setIntervalValue] = useState(24);
   const [clgroup, setClgroup] = useState<'FIZ' | 'YUR'>('YUR');
   const [oiVariant, setOiVariant] = useState<OIVariant>('net');
+  const [displayMode, setDisplayMode] = useState<DisplayMode>('positions');
   const [data, setData] = useState<ChartResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -174,6 +183,10 @@ export default function MobileOpenInterestPage() {
         <>
           <p style={{ marginBottom: 6 }}>
             Открыл кнопку <strong>«Опции»</strong>. Внутри:
+          </p>
+          <p style={{ marginBottom: 4 }}>
+            <strong>Тип данных:</strong> «Позиции» — объём в контрактах,
+            «Участники» — количество участников торгов.
           </p>
           <p style={{ marginBottom: 4 }}>
             <strong>Вариант ОИ:</strong> общий (long+short), покупки, продажи,
@@ -297,14 +310,19 @@ export default function MobileOpenInterestPage() {
     const fmtOI = (v: number) =>
       Math.abs(v) >= 1000 ? (v / 1000).toFixed(1) + 'K' : v.toFixed(0);
 
-    // Выбираем значение по varianту
+    // Тип данных: позиции (объём контрактов) или участники (их количество).
+    const isPos = displayMode === 'positions';
     const variantValue = (oi: typeof oiPoints[number]): number => {
       switch (oiVariant) {
-        case 'oi':    return (oi.pos_long || 0) + Math.abs(oi.pos_short || 0);
-        case 'long':  return oi.pos_long || 0;
-        case 'short': return Math.abs(oi.pos_short || 0);
-        case 'net':   return oi.net_position ?? (oi.pos_long || 0) + (oi.pos_short || 0);
-        case 'both':  return oi.pos_long || 0; // primary серия для both — long
+        case 'oi':    return isPos
+          ? (oi.pos_long || 0) + Math.abs(oi.pos_short || 0)
+          : (oi.pos_long_num || 0) + (oi.pos_short_num || 0);
+        case 'long':  return isPos ? (oi.pos_long || 0) : (oi.pos_long_num || 0);
+        case 'short': return isPos ? Math.abs(oi.pos_short || 0) : (oi.pos_short_num || 0);
+        case 'net':   return isPos
+          ? (oi.net_position ?? (oi.pos_long || 0) + (oi.pos_short || 0))
+          : (oi.pos_long_num || 0) - (oi.pos_short_num || 0);
+        case 'both':  return isPos ? (oi.pos_long || 0) : (oi.pos_long_num || 0); // primary серия — long
       }
     };
 
@@ -312,7 +330,7 @@ export default function MobileOpenInterestPage() {
     // Для 'both' — добавляем дополнительную серию short
     const shortData =
       oiVariant === 'both'
-        ? oiPoints.map((oi) => ({ time: oi.time, value: Math.abs(oi.pos_short || 0) }))
+        ? oiPoints.map((oi) => ({ time: oi.time, value: isPos ? Math.abs(oi.pos_short || 0) : (oi.pos_short_num || 0) }))
         : [];
 
     const baseSeries = [
@@ -327,7 +345,9 @@ export default function MobileOpenInterestPage() {
         ? [{
             data: oiData,
             color: VARIANT_COLORS[oiVariant],
-            label: oiVariant === 'both' ? 'Покупки' : VARIANT_LABELS[oiVariant],
+            label: oiVariant === 'both'
+              ? variantLabel('long', displayMode)
+              : variantLabel(oiVariant, displayMode),
             axis: 'right' as const,
             formatValue: fmtOI,
           }]
@@ -336,7 +356,7 @@ export default function MobileOpenInterestPage() {
         ? [{
             data: shortData,
             color: VARIANT_COLORS.short,
-            label: 'Продажи',
+            label: variantLabel('short', displayMode),
             axis: 'right' as const,
             formatValue: fmtOI,
           }]
@@ -344,10 +364,10 @@ export default function MobileOpenInterestPage() {
     ];
 
     return baseSeries;
-  }, [data, instrumentName, oiVariant]);
+  }, [data, instrumentName, oiVariant, displayMode]);
 
   const timeLabel = `${PERIOD_LABELS[period]} · ${INTERVAL_LABELS[intervalValue] ?? intervalValue + 'ч'}`;
-  const optionsLabel = `${VARIANT_LABELS[oiVariant]} · ${clgroup === 'YUR' ? 'Юр' : 'Физ'}`;
+  const optionsLabel = `${variantLabel(oiVariant, displayMode)} · ${clgroup === 'YUR' ? 'Юр' : 'Физ'}`;
 
   return (
     <MobileLayout
@@ -510,10 +530,29 @@ export default function MobileOpenInterestPage() {
       >
         <div style={{ padding: 16 }}>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+            Тип данных
+          </div>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 20 }}>
+            {([['positions', 'Позиции'], ['participants', 'Участники']] as const).map(([m, label]) => (
+              <button
+                key={m}
+                className={`fm-chip ${displayMode === m ? 'active' : ''}`}
+                onClick={() => {
+                  setDisplayMode(m);
+                  setOptionsSheetOpen(false);
+                }}
+                style={{ flex: 1, justifyContent: 'center' }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
             Что показать на графике
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 20 }}>
-            {(Object.keys(VARIANT_LABELS) as OIVariant[]).map((v) => (
+            {OI_VARIANTS.map((v) => (
               <button
                 key={v}
                 onClick={() => {
@@ -532,7 +571,7 @@ export default function MobileOpenInterestPage() {
                     flexShrink: 0,
                   }}
                 />
-                {VARIANT_LABELS[v]}
+                {variantLabel(v, displayMode)}
               </button>
             ))}
           </div>
