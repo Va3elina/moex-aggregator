@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
-import { Search, X, Star, Lock } from 'lucide-react';
+import { Search, X, Star, Lock, ChevronUp, ChevronDown } from 'lucide-react';
 import InstrumentIcon from './InstrumentIcon';
-import Dropdown, { type DropdownOption } from './Dropdown';
 import { formatCompact } from '../utils/formatNumber';
 import { useAnalytics } from '../contexts/AnalyticsContext';
 import { useTierAccess } from '../contexts/TierFeaturesContext';
@@ -25,13 +24,9 @@ const CATEGORY_FILTERS = [
   { key: 'Сырьё', label: 'Сырьё' },
 ];
 
-// Сортировка списка активов. 'volume' — дефолт (по убыванию объёма, как было).
-type SortKey = 'volume' | 'gainers' | 'losers';
-const SORT_OPTIONS: DropdownOption<SortKey>[] = [
-  { key: 'volume',  label: 'По объёму' },
-  { key: 'gainers', label: 'Лидеры роста' },
-  { key: 'losers',  label: 'Лидеры падения' },
-];
+// Сортировка списка: активная колонка (изменение / объём) + направление.
+type SortCol = 'change' | 'volume';
+type SortDir = 'asc' | 'desc';
 
 interface InstrumentSearchModalProps {
   onSelect: (sectype: string, name: string) => void;
@@ -53,7 +48,8 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
   const [instruments, setInstruments] = useState<Instrument[]>([]);
   const [loading, setLoading] = useState(true);
   const [categoryFilter, setCategoryFilter] = useState('all');
-  const [sortBy, setSortBy] = useState<SortKey>('volume');
+  const [sortCol, setSortCol] = useState<SortCol>('volume');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
   const { track } = useAnalytics();
 
   // Tier-gating: если передан indicator — проверяем доступ для каждого актива.
@@ -131,10 +127,13 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
     return acc;
   }, [] as Instrument[])
   .sort((a, b) => {
-    // Активы без day_change_pct уезжают в конец при сортировке по изменению.
-    if (sortBy === 'gainers') return (b.day_change_pct ?? -Infinity) - (a.day_change_pct ?? -Infinity);
-    if (sortBy === 'losers')  return (a.day_change_pct ??  Infinity) - (b.day_change_pct ??  Infinity);
-    return (b.daily_volume || 0) - (a.daily_volume || 0);
+    const av = sortCol === 'change' ? a.day_change_pct : a.daily_volume;
+    const bv = sortCol === 'change' ? b.day_change_pct : b.daily_volume;
+    // Активы без значения — всегда в конце, в обе стороны сортировки.
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    return sortDir === 'desc' ? bv - av : av - bv;
   });
 
   // При поиске — все инструменты в одном списке (избранные не прячутся)
@@ -148,6 +147,34 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
     } else {
       setFavorites([...favorites, sectype]);
     }
+  };
+
+  // Кликабельный заголовок-сортировки. Клик: если колонка уже активна —
+  // переключает направление; иначе делает колонку активной (по убыванию).
+  const renderSortHeader = (col: SortCol, label: string) => {
+    const active = sortCol === col;
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          if (active) setSortDir(d => (d === 'desc' ? 'asc' : 'desc'));
+          else { setSortCol(col); setSortDir('desc'); }
+        }}
+        className="flex items-center uppercase font-semibold transition-colors"
+        style={{
+          gap: 2,
+          fontSize: 'var(--fs-2xs)',
+          letterSpacing: '0.06em',
+          color: active ? 'var(--accent)' : 'var(--text-secondary)',
+          cursor: 'pointer',
+        }}
+      >
+        {label}
+        {active && (sortDir === 'desc'
+          ? <ChevronDown size={12} />
+          : <ChevronUp size={12} />)}
+      </button>
+    );
   };
 
   // Один render для items — переиспользуется в favorites и regular списках.
@@ -329,14 +356,22 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
             })}
           </div>
           )}
+        </div>
 
-          {/* Сортировка списка — по объёму / лидеры роста / падения */}
-          <div className="flex justify-end mt-3">
-            <Dropdown<SortKey>
-              options={SORT_OPTIONS}
-              value={sortBy}
-              onChange={setSortBy}
-            />
+        {/* Шапка со столбцами — клик по «Изм. %» / «Объём» сортирует список */}
+        <div
+          className="flex items-center px-6 pb-2"
+          style={{ borderBottom: '1px solid var(--border-color)' }}
+        >
+          <span
+            className="uppercase font-semibold"
+            style={{ fontSize: 'var(--fs-2xs)', letterSpacing: '0.06em', color: 'var(--text-secondary)' }}
+          >
+            Актив
+          </span>
+          <div className="ml-auto flex items-center" style={{ gap: 'var(--sp-4)', paddingRight: 48 }}>
+            {renderSortHeader('change', 'Изм. %')}
+            {renderSortHeader('volume', 'Объём')}
           </div>
         </div>
 
