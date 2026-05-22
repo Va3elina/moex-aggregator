@@ -401,17 +401,41 @@ def get_chart_data(
         }).fetchall()
         log.info(f"[7] OI query: {(time.time()-t0)*1000:.0f} мс | rows: {len(oi_raw)}")
 
+    # 7.5 Back-adjustment непрерывного фьючерса по корпоративным событиям.
+    #
+    # При сплите акции MOEX пере-специфицирует фьючерс — цена контракта
+    # скачкообразно меняется в разы (ГМК Норникель, апрель 2024: ~15000 → ~1800).
+    # Без коррекции многолетний график получает вертикальный «обрыв». Скачок
+    # детектируем по отношению close соседних свечей: рыночное движение и
+    # ролловер-гэп ликвидного фьючерса не дают >2x за бар — сплит и
+    # пере-спецификация дают. Идём с конца (свежие цены — якорь, не трогаем),
+    # накапливаем множитель и применяем к более старым свечам.
+    SPLIT_RATIO_THRESHOLD = 2.0
+    n_c = len(sorted_candles)
+    price_mult = [1.0] * n_c
+    adj_factor = 1.0
+    for i in range(n_c - 1, 0, -1):
+        prev_close = float(sorted_candles[i - 1][4] or 0)
+        cur_close = float(sorted_candles[i][4] or 0)
+        if prev_close > 0 and cur_close > 0:
+            ratio = cur_close / prev_close
+            if ratio >= SPLIT_RATIO_THRESHOLD or ratio <= 1.0 / SPLIT_RATIO_THRESHOLD:
+                adj_factor *= ratio
+        price_mult[i - 1] = adj_factor
+    if adj_factor != 1.0:
+        log.info(f"[7.5] back-adjust {sec_id}: factor={adj_factor:.4g}")
+
     # 8. Формируем ответ (прямые dict вместо Pydantic — в 5-10x быстрее)
     t0 = time.time()
     candles_list = [
         {
             "time": c[0].isoformat(),
-            "open": float(c[1] or 0),
-            "high": float(c[2] or 0),
-            "low": float(c[3] or 0),
-            "close": float(c[4] or 0),
+            "open": float(c[1] or 0) * price_mult[idx],
+            "high": float(c[2] or 0) * price_mult[idx],
+            "low": float(c[3] or 0) * price_mult[idx],
+            "close": float(c[4] or 0) * price_mult[idx],
             "volume": float(c[5] or 0),
-        } for c in sorted_candles
+        } for idx, c in enumerate(sorted_candles)
     ]
 
     # net_position = pos_long + pos_short
