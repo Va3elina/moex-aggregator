@@ -47,6 +47,15 @@ interface MobileChartProps {
   /** Кастомный format для X-axis labels. По умолчанию DD.MM. */
   formatXLabel?: (time: string) => string;
   loading?: boolean;
+  /**
+   * Явный триггер replay'я line-draw анимации. Структурная сигнатура
+   * (длина + крайние таймстемпы price-серии) не ловит смену контента, когда
+   * меняются только значения при тех же датах — например переключение
+   * «что показать» в ОИ (Открытый интерес → Лонг → Нетто). Parent передаёт
+   * идентификатор «что показано»; смена → анимация replay'ится. Не передан
+   * → fallback на структурную сигнатуру (прежнее поведение).
+   */
+  animKey?: string;
 }
 
 const PAD_TOP = 8;
@@ -280,6 +289,7 @@ export default function MobileChart({
   showXLabels = true,
   formatXLabel,
   loading = false,
+  animKey,
 }: MobileChartProps) {
   // Выравниваем secondary серии к primary по времени (forward-fill).
   // Это перед всеми useMemo, потому что downsampling и range computation
@@ -402,10 +412,15 @@ export default function MobileChart({
     // прежнее поведение «анимация не реагирует на ширину».
     if (!measured) return;
     const primary = rawSeries[0]?.data;
-    const signature = primary && primary.length > 0
+    const structurePart = primary && primary.length > 0
       ? `${primary.length}|${primary[0].time}|${primary[primary.length - 1].time}|${rawSeries.length}`
       : '';
-    // Если структура та же (toggle/refresh без новых таймстемпов) — пропускаем
+    // animKey (опц., от parent) — явный триггер replay'я. structurePart НЕ
+    // ловит смену контента, когда меняются только значения при тех же датах
+    // (переключение «что показать» в ОИ: Открытый интерес → Лонг → Нетто).
+    // Сигнатура = animKey + структура: смена любой части перезапускает.
+    const signature = `${animKey ?? ''}|${structurePart}`;
+    // Сигнатура та же (toggle/refresh без новых таймстемпов) — пропускаем
     if (signature === lastStructureRef.current) return;
     lastStructureRef.current = signature;
 
@@ -433,7 +448,7 @@ export default function MobileChart({
     return () => {
       for (const t of timers) window.clearTimeout(t);
     };
-  }, [rawSeries, measured]);
+  }, [rawSeries, measured, animKey]);
 
   // Разделяем серии по осям (на downsampled)
   const leftSeries = useMemo(

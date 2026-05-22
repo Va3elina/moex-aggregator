@@ -405,7 +405,11 @@ export default function MobileOpenInterestPage() {
         }}
       >
         <div style={{ position: 'absolute', inset: 0 }}>
-          <MobileChart series={chartSeries} loading={loading} />
+          <MobileChart
+            series={chartSeries}
+            loading={loading}
+            animKey={`${selectedInstrument}|${period}|${intervalValue}|${clgroup}|${displayMode}|${oiVariant}`}
+          />
         </div>
       </div>
 
