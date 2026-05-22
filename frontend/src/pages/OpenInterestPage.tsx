@@ -545,15 +545,11 @@ export default function OpenInterestPage() {
           <div data-tour="oi-display-mode">
             <Dropdown<DisplayMode>
               options={[
-                { key: 'price', label: 'Только цена' },
                 { key: 'positions', label: 'Позиции' },
                 { key: 'participants', label: 'Участники' },
               ]}
               value={displayMode}
-              onChange={(m) => {
-                setDisplayMode(m);
-                if (m !== 'price') setOiVariant('oi');
-              }}
+              onChange={setDisplayMode}
             />
           </div>
 

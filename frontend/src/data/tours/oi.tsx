@@ -89,10 +89,8 @@ export const oiTourSteps: TourStep[] = [
     title: 'Режим отображения',
     body: (
       <>
-        <p style={{ marginBottom: 8 }}>Три варианта:</p>
+        <p style={{ marginBottom: 8 }}>Два варианта:</p>
         <ul style={{ paddingLeft: 18, marginBottom: 8 }}>
-          <li><strong>Только цена</strong> — обычный график без данных по
-            позициям. Полезно когда нужно просто посмотреть как двигался актив.</li>
           <li><strong>Позиции</strong> — объём в контрактах. Большие числа = большая
             активность крупных игроков.</li>
           <li><strong>Участники</strong> — количество людей с позициями. Растёт
