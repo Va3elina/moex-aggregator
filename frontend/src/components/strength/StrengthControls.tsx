@@ -146,7 +146,11 @@ export default function StrengthControls({
                 onChange={(k) => onEmaPeriodChange(Number(k) as EmaPeriod)}
             />
 
-            {/* Show price toggle — editorial-press chip */}
+            {/* Тоггл показа верхнего графика — editorial-press chip.
+                Метка = индекс, который рисуется сверху (IMOEX в ₽ / RTS в $).
+                Верхний график — всегда индекс и НЕ зависит от вселенной
+                breadth-метрики (universeBase), поэтому метка считается только
+                по валюте. Не возвращать ветку на universeBase. */}
             <button
                 onClick={() => onShowPriceChange(!showPrice)}
                 className="editorial-press font-semibold rounded-full"
@@ -159,9 +163,7 @@ export default function StrengthControls({
                     padding: 'var(--sp-2) var(--sp-4)',
                 }}
             >
-                {universeBase === 'all'
-                    ? (currency === 'usd' ? '100 акций $' : '100 акций ₽')
-                    : (currency === 'usd' ? 'RTS' : 'IMOEX')}
+                {currency === 'usd' ? 'RTS' : 'IMOEX'}
             </button>
 
             {/* Status + counter.
