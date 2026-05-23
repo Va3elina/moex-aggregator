@@ -43,8 +43,12 @@ KNOWN_SPLITS: dict[str, tuple[_date_cls, float]] = {
     # secid : (split_date, ratio).  Сколько новых акций на 1 старую.
     # Применяется ТОЛЬКО к close < split_date (retroactive adjustment):
     #   adjusted_close = raw_close / ratio
-    'T':    (_date_cls(2026, 4, 2), 10.0),     # Т-Технологии (бывш. Tinkoff) 1:10
-    'SFIN': (_date_cls(2025, 12, 25), 1.93),   # СФИ — split 1.93
+    #
+    # ПУСТОЙ. Каноничный способ закрытия сплита — re-import через
+    # Candles/backfill_daily_history.py (ISS отдаёт уже адъюстнутую серию).
+    # Реестр оставлен как аварийное окно: если backfill не запущен сразу
+    # после сплита, можно временно добавить тикер сюда. ВАЖНО — после
+    # backfill'а удалить запись, иначе двойная коррекция.
 }
 
 

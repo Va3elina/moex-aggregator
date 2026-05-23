@@ -52,13 +52,12 @@ EXCLUDED = {
 }
 
 # Split-adjustment registry — должен совпадать с api/routers/breadth.py.
-# 5-мин/дневные candles в БД retroactively не пересчитываются при сплитах.
-# Pre-split close делится на ratio, чтобы EMA не считалась на смеси
-# до-split и пост-split цен (иначе T (split 1:10) выглядел бы как oversold).
-KNOWN_SPLITS: dict[str, tuple[date, float]] = {
-    'T':    (date(2026, 4, 2), 10.0),     # Т-Технологии 1:10
-    'SFIN': (date(2025, 12, 25), 1.93),   # СФИ 1.93
-}
+# ПУСТОЙ. Каноничный способ закрытия сплита — re-import через
+# Candles/backfill_daily_history.py (ISS отдаёт уже адъюстнутую серию).
+# Реестр оставлен как аварийное окно: если backfill не запущен сразу
+# после сплита, можно временно добавить тикер сюда. ВАЖНО — после
+# backfill'а удалить запись, иначе двойная коррекция.
+KNOWN_SPLITS: dict[str, tuple[date, float]] = {}
 
 IMOEX_ISS_URL = "https://iss.moex.com/iss/statistics/engines/stock/markets/index/analytics/IMOEX.json?limit=100"
 
