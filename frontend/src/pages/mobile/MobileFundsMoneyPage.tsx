@@ -348,7 +348,18 @@ export default function MobileFundsMoneyPage() {
       >
         <div style={{ position: 'absolute', inset: 0 }}>
           {viewMode === 'aum' ? (
-            <MobileChart series={chartSeries} loading={loading} />
+            <MobileChart
+              series={chartSeries}
+              loading={loading}
+              formatXLabel={(t) => {
+                // FundsMoney AUM — всегда дневные точки. Default formatter
+                // ошибочно считает intraday timestamp типа T07:00:00 (MOEX-open),
+                // выводит часы. Принудительно DD.MM.YY.
+                const d = new Date(t);
+                if (isNaN(d.getTime())) return t;
+                return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
+              }}
+            />
           ) : loading ? (
             <MobileSkeleton variant="chart" height="100%" />
           ) : flowsData && flowsData.flows.length > 0 ? (

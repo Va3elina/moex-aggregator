@@ -409,6 +409,22 @@ export default function MobileOpenInterestPage() {
             series={chartSeries}
             loading={loading}
             animKey={`${selectedInstrument}|${period}|${intervalValue}|${clgroup}|${displayMode}|${oiVariant}`}
+            formatXLabel={(t) => {
+              // Явный форматтер вместо default'а MobileChart: default'у нельзя
+              // надёжно отличить daily-свечу с timestamp T07:00:00 (MOEX-open)
+              // от 1h-тика с T07:00:00 — обе имеют minutes=0. Поэтому решение
+              // на уровне страницы: интервал известен → формат detrminистичный.
+              const d = new Date(t);
+              if (isNaN(d.getTime())) return t;
+              if (intervalValue !== 24) {
+                const dd = String(d.getDate()).padStart(2, '0');
+                const mm = String(d.getMonth() + 1).padStart(2, '0');
+                const HH = String(d.getHours()).padStart(2, '0');
+                const MM = String(d.getMinutes()).padStart(2, '0');
+                return `${dd}.${mm} ${HH}:${MM}`;
+              }
+              return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
+            }}
           />
         </div>
       </div>
