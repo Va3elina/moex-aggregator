@@ -196,8 +196,13 @@ export default function YearlySeasonalityChart({
   // незаметна, на mobile при выводе квартальных меток (idx 0,3,6,9) "Окт"
   // оказывался на 82% labels-area вместо реальных 75% chart-data — отсюда
   // визуальный сдвиг. Теперь label положение точно совпадает с месяцем в данных.
+  // Фильтр по td: если активен navigator с узким окном, рендерим только те
+  // month-метки, чей td попадает в видимый диапазон. Без этого метки вне окна
+  // получали scX(td) < 0 или > 1, позиционировались левее/правее dataArea и
+  // визуально «уезжали» за видимые границы при перемещении navigator'а.
   const visibleMonthLabels = monthPositions
     .map((mp, idx) => ({ ...mp, idx }))
+    .filter(mp => mp.td >= visibleTdMin && mp.td <= visibleTdMax)
     .filter(mp => !isMobile || mp.idx % 3 === 0);
 
   // PL/PR — seasonality-specific (12px/32px на mobile, 60/70 на desktop)
