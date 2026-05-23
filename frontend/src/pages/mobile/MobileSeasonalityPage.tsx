@@ -75,6 +75,10 @@ export default function MobileSeasonalityPage() {
   const [yearlyData, setYearlyData] = useState<YearlySeasonalityResponse | null>(null);
   // compareYearlyData[i] — yearly response для compareYears[i] (с sinceYear=yr)
   const [compareYearlyData, setCompareYearlyData] = useState<YearlySeasonalityResponse[]>([]);
+  // exactYearlyData[i] — yearly response для exactYears[i]. Yearly endpoint
+  // не поддерживает excludeYears → используем sinceYear=yr (approximation:
+  // не «только этот год», а «с года X». См. комментарий в loadData ниже).
+  const [exactYearlyData, setExactYearlyData] = useState<YearlySeasonalityResponse[]>([]);
   const [availableYears, setAvailableYears] = useState<number[]>([]);
   // Сравнение: rolling window (с года X и позже) + single year (только X).
   const [compareYears, setCompareYears] = useState<number[]>([]);
@@ -250,6 +254,7 @@ export default function MobileSeasonalityPage() {
           const all = await Promise.all([basePromise, ...comparePromises, ...exactYearlyPromises]);
           setYearlyData(all[0]);
           setCompareYearlyData(all.slice(1, 1 + compareYears.length));
+          setExactYearlyData(all.slice(1 + compareYears.length));
         } else {
           const basePromise = getSeasonality(
             selectedStock,
@@ -393,7 +398,7 @@ export default function MobileSeasonalityPage() {
           {loading ? (
             <MobileSkeleton variant="chart" height="100%" />
           ) : mode === 'yearly' ? (
-            yearlyData ? <YearlySeasonalityChart data={yearlyData} compareData={compareYearlyData} compareYears={compareYears} showCurrentYear={showCurrentYear} /> : (
+            yearlyData ? <YearlySeasonalityChart data={yearlyData} compareData={compareYearlyData} compareYears={compareYears} exactData={exactYearlyData} exactYears={exactYears} showCurrentYear={showCurrentYear} /> : (
               <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: 'var(--text-muted)' }}>
                 Нет данных
               </div>
@@ -1002,11 +1007,15 @@ function YearlySeasonalityChart({
   data,
   compareData,
   compareYears,
+  exactData,
+  exactYears,
   showCurrentYear,
 }: {
   data: YearlySeasonalityResponse;
   compareData: YearlySeasonalityResponse[];
   compareYears: number[];
+  exactData: YearlySeasonalityResponse[];
+  exactYears: number[];
   showCurrentYear: boolean;
 }) {
   // Преобразуем td (trading day) в синтетические даты С УЧЁТОМ ФАКТИЧЕСКИХ
@@ -1079,8 +1088,7 @@ function YearlySeasonalityChart({
       displayTime: p.date,
     }));
 
-    // Order: current first (pill), затем compareYears (свои цвета),
-    // затем base average (last, hidePill). Shared left axis, % units.
+    // compareYears — палитра COMPARE_COLORS с offset 0.
     const compareSeries = compareData.map((cd, i) => ({
       data: cd.average.map((p) => ({ time: tdToTime(p.td), value: p.avg_pct })),
       color: COMPARE_COLORS[i % COMPARE_COLORS.length],
@@ -1089,8 +1097,38 @@ function YearlySeasonalityChart({
       formatValue: (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`,
       hidePill: true,
     }));
+    // exactYears — та же палитра со сдвигом, чтобы цвета не повторялись если
+    // юзер выбрал и compare, и exact для разных лет. Yearly endpoint не
+    // поддерживает «только этот год», и backend отдаёт sinceYear-approximation
+    // (см. loadData) → линии compare и exact могут оказаться идентичными для
+    // одинакового года; разные индексы цвета хотя бы дают разный hue в легенде.
+    const exactSeries = exactData.map((cd, i) => ({
+      data: cd.average.map((p) => ({ time: tdToTime(p.td), value: p.avg_pct })),
+      color: COMPARE_COLORS[(i + compareData.length) % COMPARE_COLORS.length],
+      label: `${exactYears[i]}+`,
+      axis: 'left' as const,
+      formatValue: (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`,
+      hidePill: true,
+    }));
 
+    // Z-ORDER в SVG: позже добавленные path рисуются ПОВЕРХ. Раньше порядок
+    // был [current, compare, avg] → серая avg-линия закрывала цветные compare,
+    // и юзеру казалось «compare не отрисована, хотя в тултипе значения есть».
+    // Правильный порядок для финансовой визуализации:
+    //   1. avg (серая, контекст, под всем) — первая.
+    //   2. compare/exact (цветные accent-линии) — в середине.
+    //   3. current (accent, самая важная) — последняя, поверх всех.
     return [
+      {
+        data: avgData,
+        color: 'var(--text-secondary)',
+        label: 'Средняя',
+        axis: 'left' as const,
+        formatValue: (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`,
+        hidePill: true,
+      },
+      ...compareSeries,
+      ...exactSeries,
       ...(curData.length > 0 && showCurrentYear
         ? [{
             data: curData,
@@ -1100,23 +1138,23 @@ function YearlySeasonalityChart({
             formatValue: (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`,
           }]
         : []),
-      ...compareSeries,
-      {
-        data: avgData,
-        color: 'var(--text-secondary)',
-        label: 'Средняя',
-        axis: 'left' as const,
-        formatValue: (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`,
-        hidePill: true,
-      },
     ];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, compareData, compareYears, showCurrentYear]);
+  }, [data, compareData, compareYears, exactData, exactYears, showCurrentYear]);
+
+  // animKey: явный re-trigger анимации при смене выбранных лет. Без него
+  // structurePart в MobileChart не ловит замену одного compareYear на другой
+  // (длина и временные крайние точки серий те же), и dasharray-replay не
+  // запускается → новая линия может остаться «застрявшей в скрытом состоянии»
+  // если animation effect ранее не зачистил dasharray. Паттерн — как у OI
+  // и Buffett mobile (фикс 762dbda и 8394cd5).
+  const animKey = `${compareYears.join(',')}|${exactYears.join(',')}|${showCurrentYear ? 'y' : 'n'}`;
 
   return (
     <MobileChart
       series={series}
       loading={false}
+      animKey={animKey}
       formatXLabel={(t) => {
         const d = new Date(t);
         if (isNaN(d.getTime())) return t;
