@@ -111,7 +111,14 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
     const matchesSearch = !searchQuery ||
       inst.sectype.toLowerCase().includes(searchQuery.toLowerCase()) ||
       inst.name.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = categoryFilter === 'all' || inst.group === categoryFilter;
+    // matchesCategory: основной путь — group (backend проставляет
+    // 'Акции'/'Валюта'/'Индексы'/'Сырьё'). Fallback для категории «Акции» —
+    // type='stock', на случай если у инструмента группа не заполнена
+    // (видели 2 такие записи на проде → попадали в "не найдено").
+    const matchesCategory =
+      categoryFilter === 'all' ||
+      inst.group === categoryFilter ||
+      (categoryFilter === 'Акции' && inst.type === 'stock');
     return matchesSearch && matchesCategory;
   });
 

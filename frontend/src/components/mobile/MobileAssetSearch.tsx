@@ -144,7 +144,17 @@ export default function MobileAssetSearch({
       !searchQuery ||
       inst.sectype.toLowerCase().includes(searchQuery.toLowerCase()) ||
       inst.name.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = categoryFilter === 'all' || inst.group === categoryFilter || inst.type === categoryFilter;
+    // matchesCategory: совпадение по group (основной путь — backend проставляет
+    // 'Акции'/'Валюта'/'Индексы'/'Сырьё') ИЛИ по type (fallback). Для категории
+    // «Акции» есть особый случай: если backend не проставил group у какой-то
+    // акции (видели 2 такие записи на проде), но type='stock' — она всё равно
+    // должна попадать в категорию. Без этого fallback юзер искал «акции»
+    // через chip и не видел эти 2 инструмента.
+    const matchesCategory =
+      categoryFilter === 'all' ||
+      inst.group === categoryFilter ||
+      inst.type === categoryFilter ||
+      (categoryFilter === 'Акции' && inst.type === 'stock');
     return matchesSearch && matchesCategory;
   });
 
