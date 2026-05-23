@@ -303,6 +303,7 @@ export default function MobileBuffettPage() {
           <MobileChart
             series={chartSeries}
             loading={loading}
+            animKey={`${viewMode}|${period}|${timeframe}`}
             formatXLabel={(t) => {
               const d = new Date(t);
               return isNaN(d.getTime()) ? t : d.toLocaleDateString('ru-RU', { month: '2-digit', year: '2-digit' });
