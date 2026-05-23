@@ -816,14 +816,19 @@ interface DualChartPoint {
   price: number;
 }
 
+// Амбер-pivot для среднего звена. Не CSS-var: --warning меняется по темам
+// (bordeaux в light, amber в dark) → дал бы разный gradient. Хардкод даёт
+// одинаковый hue-переход через жёлтый в обеих темах.
+const BREADTH_AMBER = '#F5B935';
+
 function breadthBarColor(v: number): string {
-  // 2-colour gradient вместо 4-stage с серым:
-  //   ≥50% → зелёный (bullish), оттенок насыщеннее при overbought
-  //   <50% → красный (bearish), темнее при oversold
-  // Не используем серый — он терялся на dark theme.
-  if (v >= 70) return 'var(--funds-flow-positive, #5BD49C)';
-  if (v >= 50) return 'color-mix(in srgb, var(--funds-flow-positive, #5BD49C) 70%, transparent)';
-  if (v >= 30) return 'color-mix(in srgb, var(--funds-flow-negative, #FF7A5C) 65%, transparent)';
+  // 5-ступенчатый gradient через амбер: зелёный → жёлто-зелёный → амбер →
+  // жёлто-красный → красный. Без transparent (он съедал насыщенность на
+  // dark theme — bars выглядели тусклыми, особенно в зоне 30-70%).
+  if (v >= 80) return 'var(--funds-flow-positive, #5BD49C)';
+  if (v >= 60) return `color-mix(in srgb, var(--funds-flow-positive, #5BD49C) 60%, ${BREADTH_AMBER} 40%)`;
+  if (v >= 40) return BREADTH_AMBER;
+  if (v >= 20) return `color-mix(in srgb, var(--funds-flow-negative, #FF7A5C) 60%, ${BREADTH_AMBER} 40%)`;
   return 'var(--funds-flow-negative, #FF7A5C)';
 }
 
