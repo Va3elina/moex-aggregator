@@ -44,6 +44,11 @@ const MODE_LABELS: Record<MobileMode, string> = {
 const WEEKDAY_LABELS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт'];
 const MONTH_LABELS = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'];
 
+// Максимум пользовательских серий-сравнений (compareYears + exactYears).
+// Не считая current year (accent) и среднюю (серую) на yearly — они системные.
+// Лимит 5 = 6 серий на гистограмме (base + 5 user) и 7 на yearly (base + 5 + current).
+const MAX_COMPARE_SERIES = 5;
+
 // Палитра цветов для compare-series. Accent neutral hues, без конфликта
 // с base accent (orange) и зелёный/красный (sentiment).
 const COMPARE_COLORS = [
@@ -531,12 +536,21 @@ export default function MobileSeasonalityPage() {
           )}
 
           {/* Сравнить с — multi-select для обоих режимов (histogram + yearly).
-              Два независимых типа: rolling window + конкретный год. */}
-          {availableYears.length > 0 && (
+              Два независимых типа: rolling window + конкретный год.
+              Суммарный лимит: MAX_COMPARE_SERIES (5). Не считает current+avg. */}
+          {availableYears.length > 0 && (() => {
+            const totalSelected = compareYears.length + exactYears.length;
+            const limitReached = totalSelected >= MAX_COMPARE_SERIES;
+            return (
             <>
               <div>
-                <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
-                  Период с года
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                    Период с года
+                  </div>
+                  <div style={{ fontSize: 10, fontWeight: 600, color: limitReached ? 'var(--accent)' : 'var(--text-muted)' }}>
+                    {totalSelected} / {MAX_COMPARE_SERIES}
+                  </div>
                 </div>
                 <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 10 }}>
                   Средняя за период от выбранного года до сегодня.
@@ -544,16 +558,25 @@ export default function MobileSeasonalityPage() {
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {availableYears.map((yr) => {
                     const selected = compareYears.includes(yr);
+                    const disabled = !selected && limitReached;
                     return (
                       <button
                         key={yr}
                         className={`fm-chip ${selected ? 'active' : ''}`}
                         onClick={() => {
+                          if (disabled) return;
                           setCompareYears((prev) =>
                             prev.includes(yr) ? prev.filter((y) => y !== yr) : [...prev, yr],
                           );
                         }}
-                        style={{ flex: '0 0 auto', minWidth: 56, justifyContent: 'center' }}
+                        aria-disabled={disabled}
+                        style={{
+                          flex: '0 0 auto',
+                          minWidth: 56,
+                          justifyContent: 'center',
+                          opacity: disabled ? 0.35 : 1,
+                          cursor: disabled ? 'not-allowed' : 'pointer',
+                        }}
                       >
                         {yr}
                       </button>
@@ -572,16 +595,25 @@ export default function MobileSeasonalityPage() {
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {availableYears.map((yr) => {
                     const selected = exactYears.includes(yr);
+                    const disabled = !selected && limitReached;
                     return (
                       <button
                         key={yr}
                         className={`fm-chip ${selected ? 'active' : ''}`}
                         onClick={() => {
+                          if (disabled) return;
                           setExactYears((prev) =>
                             prev.includes(yr) ? prev.filter((y) => y !== yr) : [...prev, yr],
                           );
                         }}
-                        style={{ flex: '0 0 auto', minWidth: 56, justifyContent: 'center' }}
+                        aria-disabled={disabled}
+                        style={{
+                          flex: '0 0 auto',
+                          minWidth: 56,
+                          justifyContent: 'center',
+                          opacity: disabled ? 0.35 : 1,
+                          cursor: disabled ? 'not-allowed' : 'pointer',
+                        }}
                       >
                         {yr}
                       </button>
@@ -608,7 +640,8 @@ export default function MobileSeasonalityPage() {
                 )}
               </div>
             </>
-          )}
+            );
+          })()}
 
           {/* Toggles row — без hints, простые лейблы */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

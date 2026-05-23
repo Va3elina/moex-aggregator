@@ -503,6 +503,13 @@ export default function SeasonalityPage() {
     y => !compareYears.includes(y) && y < currentYearNum
   );
 
+  // Лимит пользовательских серий. Не считает current year (accent) и
+  // среднюю/базу (системные). Совпадает с мобильной MAX_COMPARE_SERIES.
+  // На десктопе: compareYears + (showExactYear ? 1 : 0).
+  const MAX_COMPARE_SERIES = 5;
+  const totalCompareSelected = compareYears.length + (showExactYear !== null ? 1 : 0);
+  const compareLimitReached = totalCompareSelected >= MAX_COMPARE_SERIES;
+
   // Блок фильтров (Без дивгэпов / Без выбросов / Период с / Показать год) —
   // вынесен в callback, чтобы можно было рендерить и на главной row2, и внутри
   // test-модалки. Дублирования 0, вся логика тут.
@@ -562,20 +569,27 @@ export default function SeasonalityPage() {
         </button>
       )}
       {renderCompareYearsControls()}
-      {availableYears.length > 1 && (
-        <Dropdown<string>
-          options={[
-            { key: '', label: showExactYear !== null ? 'Убрать год' : 'Показать год' },
-            ...availableYears.filter(y => y < currentYearNum).map((y): DropdownOption<string> => ({
-              key: String(y),
-              label: String(y),
-              color: COLOR_EXACT_YEAR,
-            })),
-          ]}
-          value={showExactYear !== null ? String(showExactYear) : ''}
-          onChange={(k) => setShowExactYear(k ? Number(k) : null)}
-        />
-      )}
+      {availableYears.length > 1 && (() => {
+        // При достижении лимита (compareYears + exact = 5) разрешаем только
+        // СМЕНУ уже выбранного exact-года или его удаление; добавить новый
+        // нельзя. Если showExactYear === null И лимит достигнут — dropdown
+        // вообще скрываем, иначе юзер увидел бы пустой выпадающий список.
+        if (showExactYear === null && compareLimitReached) return null;
+        return (
+          <Dropdown<string>
+            options={[
+              { key: '', label: showExactYear !== null ? 'Убрать год' : 'Показать год' },
+              ...availableYears.filter(y => y < currentYearNum).map((y): DropdownOption<string> => ({
+                key: String(y),
+                label: String(y),
+                color: COLOR_EXACT_YEAR,
+              })),
+            ]}
+            value={showExactYear !== null ? String(showExactYear) : ''}
+            onChange={(k) => setShowExactYear(k ? Number(k) : null)}
+          />
+        );
+      })()}
     </>
   );
 
@@ -621,7 +635,7 @@ export default function SeasonalityPage() {
             </div>
           );
         })}
-        {addableYears.length > 0 && (
+        {addableYears.length > 0 && !compareLimitReached && (
           <Dropdown<string>
             options={[
               { key: '', label: '+ Период с' },
@@ -633,11 +647,24 @@ export default function SeasonalityPage() {
             value=""
             onChange={(k) => {
               const yr = Number(k);
-              if (yr && !compareYears.includes(yr)) {
+              if (yr && !compareYears.includes(yr) && !compareLimitReached) {
                 setCompareYears([...compareYears, yr].sort((a, b) => a - b));
               }
             }}
           />
+        )}
+        {compareLimitReached && addableYears.length > 0 && (
+          <span
+            className="font-medium whitespace-nowrap"
+            style={{
+              fontSize: 'var(--fs-xs)',
+              color: 'var(--text-muted)',
+              padding: 'var(--sp-2) var(--sp-3)',
+            }}
+            title={`Достигнут лимит ${MAX_COMPARE_SERIES} пользовательских серий. Уберите одну, чтобы добавить новую.`}
+          >
+            Лимит {MAX_COMPARE_SERIES} серий
+          </span>
         )}
       </>
     );
