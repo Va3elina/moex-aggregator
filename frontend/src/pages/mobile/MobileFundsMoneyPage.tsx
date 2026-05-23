@@ -184,16 +184,24 @@ export default function MobileFundsMoneyPage() {
     },
   ];
 
+  // Доступные (не tier-locked) фонды — только они дают данные на графики.
+  // Locked-фонды приходят с tier_locked=true (тизер для гостя/Free на тарифных
+  // фондах) — отображаем в funds-sheet с замочком, в расчётах не участвуют.
+  // Зеркало desktop FundsMoneyPage.accessibleFunds.
+  const accessibleFunds = useMemo(
+    () => data?.funds.filter((f) => !f.tier_locked) ?? [],
+    [data?.funds],
+  );
+
   // visibleFundIds: список fund_id'ов для фильтрации API-запроса flows.
-  // undefined = все видимы (без фильтра, fastpath на бэке). Если есть hidden —
-  // отправляем явный список видимых.
-  //
-  // Используется ТОЛЬКО для flows: в AUM режиме фильтрация на клиенте
-  // через chartSeries useMemo, refetch не нужен.
+  // undefined = все доступные видимы (без фильтра, fastpath на бэке).
+  // Если есть hidden — отправляем явный список видимых (только из accessible).
   const visibleFundIds = useMemo(() => {
-    if (!data?.funds || hiddenFunds.size === 0) return undefined;
-    return data.funds.filter((f) => !hiddenFunds.has(f.fund_id)).map((f) => f.fund_id);
-  }, [data?.funds, hiddenFunds]);
+    if (!data?.funds) return undefined;
+    const visibleAccessible = accessibleFunds.filter((f) => !hiddenFunds.has(f.fund_id));
+    if (visibleAccessible.length === accessibleFunds.length) return undefined;
+    return visibleAccessible.map((f) => f.fund_id);
+  }, [data?.funds, accessibleFunds, hiddenFunds]);
 
   // loadData — для refresh / pull-to-refresh. Зависит ТОЛЬКО от выбора
   // категории/периода/режима — не от hiddenFunds, чтобы toggle фонда
@@ -206,12 +214,16 @@ export default function MobileFundsMoneyPage() {
     () => async () => {
       try {
         setLoading(true);
-        if (viewMode === 'aum') {
-          const result = await getFundsChartData(category, period);
-          setData(result);
-        } else {
-          const result = await getFundsFlows(category, flowTimeframe, period, visibleFundIdsRef.current);
-          setFlowsData(result);
+        // data (FundsChartResponse) грузим ВСЕГДА — он несёт список фондов
+        // и tier_locked-флаги, нужные для кнопки «Фонды» и lock-индикаторов
+        // в funds-sheet. Раньше data грузился только в AUM-режиме → в flows
+        // кнопка управления фондами оставалась скрытой пока не переключишься.
+        const chartResult = await getFundsChartData(category, period);
+        setData(chartResult);
+        // flowsData — только в flows-режиме (для гистограммы притоков-оттоков).
+        if (viewMode === 'flows') {
+          const flowsResult = await getFundsFlows(category, flowTimeframe, period, visibleFundIdsRef.current);
+          setFlowsData(flowsResult);
         }
       } catch (err) {
         console.error('Ошибка funds:', err);
@@ -266,7 +278,8 @@ export default function MobileFundsMoneyPage() {
   const chartSeries = useMemo(() => {
     if (!data) return [];
 
-    const visibleFunds = data.funds.filter((f) => !hiddenFunds.has(f.fund_id));
+    // Только accessible (не tier_locked) и не скрытые юзером.
+    const visibleFunds = accessibleFunds.filter((f) => !hiddenFunds.has(f.fund_id));
 
     // Все уникальные даты по всем видимым фондам
     const allDates = new Set<string>();
@@ -516,7 +529,8 @@ export default function MobileFundsMoneyPage() {
           )}
 
           {/* Выбор видимых фондов — открывает отдельный sheet чтоб не
-              перегружать основной options. */}
+              перегружать основной options. Counter показывает только accessible
+              (не locked) — locked-фонды для гостя/Free не идут в расчёт. */}
           {data && data.funds.length > 1 && (
             <button
               className="fm-chip"
@@ -528,7 +542,7 @@ export default function MobileFundsMoneyPage() {
             >
               <span>Фонды</span>
               <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>
-                {data.funds.length - hiddenFunds.size}/{data.funds.length}
+                {accessibleFunds.length - hiddenFunds.size}/{accessibleFunds.length}
               </span>
             </button>
           )}
@@ -555,8 +569,9 @@ export default function MobileFundsMoneyPage() {
             <button
               className="fm-chip"
               onClick={() => {
-                if (!data) return;
-                setHiddenFunds(new Set(data.funds.map((f) => f.fund_id)));
+                // Скрыть только accessible — locked фонды и так не в расчётах,
+                // включать их в hiddenFunds бессмысленно.
+                setHiddenFunds(new Set(accessibleFunds.map((f) => f.fund_id)));
               }}
               style={{ flex: 1, justifyContent: 'center' }}
             >
@@ -564,56 +579,81 @@ export default function MobileFundsMoneyPage() {
             </button>
           </div>
           {data?.funds.map((f) => {
+            const locked = !!f.tier_locked;
             const hidden = hiddenFunds.has(f.fund_id);
             const lastNav = f.data.length > 0 ? f.data[f.data.length - 1].nav : null;
+            // На locked-фондах tap → upgrade-modal, как на десктопе в FundsTable.
+            // requiredTier берём через access-матрицу, как везде. Без actual
+            // тира backend всё равно отдаст подходящий 403, но мы предотвращаем
+            // запрос — показываем modal заранее.
+            const requiredTier: 'basic' | 'pro' = fundsAccess.requiredTierFor({ asset: f.ticker }) ?? 'basic';
             return (
               <button
                 key={f.fund_id}
-                onClick={() => toggleFundVisibility(f.fund_id)}
+                onClick={() => {
+                  if (locked) {
+                    showUpgrade({
+                      tier: requiredTier,
+                      featureName: `фонд ${f.ticker}`,
+                      indicator: 'funds_money',
+                    });
+                    return;
+                  }
+                  toggleFundVisibility(f.fund_id);
+                }}
                 className="fm-chip"
                 style={{
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
                   padding: '12px 14px',
-                  opacity: hidden ? 0.5 : 1,
+                  opacity: locked ? 0.55 : hidden ? 0.5 : 1,
                   transition: 'opacity 0.15s',
+                  cursor: 'pointer',
                 }}
+                aria-disabled={locked}
               >
                 <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
-                  <span style={{ fontWeight: 700, fontSize: 13 }}>{f.ticker}</span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 13 }}>
+                    {f.ticker}
+                    {locked && <Lock size={11} strokeWidth={2.2} />}
+                  </span>
                   <span style={{ fontSize: 11, color: 'var(--text-muted)', textAlign: 'left' }}>
                     {f.name}
                   </span>
                 </span>
                 <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
                   <span style={{ fontSize: 12, fontWeight: 600 }}>
-                    {lastNav ? (lastNav / 1e9).toFixed(1) + ' млрд' : '—'}
+                    {locked
+                      ? '—'
+                      : lastNav ? (lastNav / 1e9).toFixed(1) + ' млрд' : '—'}
                   </span>
-                  <span
-                    style={{
-                      width: 36,
-                      height: 18,
-                      borderRadius: 999,
-                      background: hidden ? 'var(--bg-tertiary)' : 'var(--accent)',
-                      border: `1.5px solid ${hidden ? 'var(--border-color)' : 'var(--accent)'}`,
-                      position: 'relative',
-                      transition: 'background 0.18s ease',
-                    }}
-                  >
+                  {!locked && (
                     <span
                       style={{
-                        position: 'absolute',
-                        top: 1,
-                        left: hidden ? 1 : 17,
-                        width: 12,
-                        height: 12,
-                        borderRadius: '50%',
-                        background: 'var(--bg-primary)',
-                        transition: 'left 0.18s ease',
+                        width: 36,
+                        height: 18,
+                        borderRadius: 999,
+                        background: hidden ? 'var(--bg-tertiary)' : 'var(--accent)',
+                        border: `1.5px solid ${hidden ? 'var(--border-color)' : 'var(--accent)'}`,
+                        position: 'relative',
+                        transition: 'background 0.18s ease',
                       }}
-                    />
-                  </span>
+                    >
+                      <span
+                        style={{
+                          position: 'absolute',
+                          top: 1,
+                          left: hidden ? 1 : 17,
+                          width: 12,
+                          height: 12,
+                          borderRadius: '50%',
+                          background: 'var(--bg-primary)',
+                          transition: 'left 0.18s ease',
+                        }}
+                      />
+                    </span>
+                  )}
                 </span>
               </button>
             );
