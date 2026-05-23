@@ -367,7 +367,13 @@ export default function MobileOpenInterestPage() {
   }, [data, instrumentName, oiVariant, displayMode]);
 
   const timeLabel = `${PERIOD_LABELS[period]} · ${INTERVAL_LABELS[intervalValue] ?? intervalValue + 'ч'}`;
-  const optionsLabel = `${variantLabel(oiVariant, displayMode)} · ${clgroup === 'YUR' ? 'Юр' : 'Физ'}`;
+  // Summary в кнопке «Опции» (aria-label/title) — три chunks, чтобы юзер
+  // понимал текущий displayMode (Позиции/Участники), variant и категорию
+  // участников без открытия sheet'а. Раньше displayMode был только косвенно
+  // (через variantLabel: «Покупки» vs «Покупатели»), что не помогало
+  // юзерам понять «где же переключатель Позиции/Участники».
+  const modeShort = displayMode === 'positions' ? 'Поз.' : 'Уч.';
+  const optionsLabel = `${modeShort} · ${variantLabel(oiVariant, displayMode)} · ${clgroup === 'YUR' ? 'Юр' : 'Физ'}`;
 
   return (
     <MobileLayout
