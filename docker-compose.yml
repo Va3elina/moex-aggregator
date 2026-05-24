@@ -44,12 +44,28 @@ services:
   api:
     build: .
     restart: always
-    # TODO security hardening: запуск под non-root. Первая попытка
-    # (commit 231411a) сломала prod — api/logger.py создаёт /app/logs при
-    # импорте, а COPY делает файлы owner=root → uid=1000 PermissionError.
-    # Правильный путь: либо `RUN chown -R appuser:appuser /app` в Dockerfile
-    # после COPY-инструкций, либо смонтировать /app/logs как volume с
-    # явным owner. Делать отдельной задачей с тестированием на staging.
+    # Linux capabilities hardening:
+    # - cap_drop ALL: убираем все capabilities (NET_ADMIN, SYS_ADMIN, SYS_PTRACE...)
+    # - cap_add: оставляем только минимум для Python+nginx-style операций.
+    #   CHOWN/SETUID/SETGID — для useradd/login операций (запас на будущее),
+    #   DAC_OVERRIDE — для read/write файлов с разными owner'ами,
+    #   NET_BIND_SERVICE — для bind порта 8000 (>1024 не нужен, но без вреда).
+    # - no-new-privileges: процесс не может escalate'нуть через setuid binary.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
+      - NET_BIND_SERVICE
+    # TODO security hardening: запуск под non-root + read_only rootfs.
+    # Первая попытка (commit 231411a) сломала prod — api/logger.py создаёт
+    # /app/logs при импорте, COPY → root owner → uid=1000 PermissionError.
+    # Правильный путь: `RUN chown -R appuser:appuser /app` в Dockerfile
+    # после всех COPY-инструкций. Делать отдельной задачей с тестированием.
     depends_on:
       db:
         condition: service_healthy
