@@ -31,6 +31,8 @@ from api.routers import (
     billing_router,
     cbr_flows_router,
     csp_report_router,
+    watchlist_router,
+    screeners_router,
 )
 from api.routers import stats
 from api.routers import auth  # ← НОВОЕ: Аутентификация
@@ -211,6 +213,8 @@ app.include_router(buffett_router)
 app.include_router(seasonality_router)
 app.include_router(cbr_flows_router)  # ← /api/cbr-flows/* (ОРФР ЦБ — потоки участников)
 app.include_router(csp_report_router)  # ← /api/csp-report (browser violation reports)
+app.include_router(watchlist_router)  # ← /api/watchlist/* (personal favorites)
+app.include_router(screeners_router)  # ← /api/screeners/* (curated quick filters)
 app.include_router(billing_router)  # ← /api/billing/* (подписки через ЮKassa)
 app.include_router(auth.router, prefix="/api")  # ← НОВОЕ: /api/auth/*
 app.include_router(oauth.router, prefix="/api")  # ← OAuth: /api/auth/oauth/*

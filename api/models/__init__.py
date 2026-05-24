@@ -8,6 +8,7 @@ from api.models.user import User, RefreshToken, UserRole
 from api.models.payment_method import UserPaymentMethod
 from api.models.subscription import Subscription
 from api.models.subscription_invite import SubscriptionInvite, InviteRedemption
+from api.models.watchlist import UserWatchlist
 
 __all__ = [
     "Instrument", "Candle", "OpenInterest",
@@ -15,4 +16,5 @@ __all__ = [
     "UserPaymentMethod",
     "Subscription",
     "SubscriptionInvite", "InviteRedemption",
+    "UserWatchlist",
 ]
