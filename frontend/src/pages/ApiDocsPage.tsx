@@ -1,34 +1,66 @@
 /**
- * ApiDocsPage — публичная документация по REST API Фрейма.
+ * ApiDocsPage — интерактивная документация по REST API Фрейма.
+ *
+ * UX по образцу Stripe/Postman:
+ *   - Sticky sidebar с TOC и подсветкой активной секции (IntersectionObserver).
+ *   - API-key bar сверху — введи один раз, используется во всех примерах.
+ *   - Две колонки на endpoint'ах: слева docs+params, справа code+try-it.
+ *   - Language tabs (curl/Python/JS) — переключение синхронизировано
+ *     на всю страницу.
+ *   - "Попробовать" — реальный fetch с пользовательским ключом, ответ
+ *     рендерится с status-badge и временем выполнения.
  *
  * Доступ к API — Pro tier (создание ключей через /profile).
- * Страница сама по себе публичная — её могут читать гости (для оценки фичи).
- * Auth не требуется чтобы видеть docs, только чтобы создать ключ.
- *
- * Содержание:
- *   1. Intro + ссылка на /profile для создания ключа
- *   2. Authentication (X-API-Key header)
- *   3. Rate limits
- *   4. 6 endpoints с примерами на curl/Python/JS
- *   5. Error format
+ * Сама страница публичная — гость может читать документацию,
+ * но без ключа ничего не получится протестировать.
  */
-import { Fragment, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Key, ArrowLeft, Copy, Check } from 'lucide-react';
+import {
+    Key,
+    ArrowLeft,
+    Copy,
+    Check,
+    Play,
+    AlertCircle,
+    Eye,
+    EyeOff,
+    Trash2,
+} from 'lucide-react';
 
 // Базовый URL для примеров — берём origin страницы, так юзер
 // автоматически видит https://таймфрейм.рф/api/v1/... вместо абстрактного <BASE>.
-const BASE_URL = typeof window !== 'undefined'
-    ? window.location.origin
-    : 'https://xn--80aklbnczmv.xn--p1ai';
+const BASE_URL =
+    typeof window !== 'undefined'
+        ? window.location.origin
+        : 'https://xn--80aklbnczmv.xn--p1ai';
+
+const API_KEY_STORAGE_KEY = 'frame_api_docs_key';
+
+// ════════════════════════════════════════════════════════════════════
+// Типы и константы
+// ════════════════════════════════════════════════════════════════════
+
+type Lang = 'curl' | 'python' | 'javascript';
+
+interface ParamDef {
+    name: string;
+    type: 'string' | 'int';
+    required: boolean;
+    description: string;
+    /** Дефолтное значение в форме "Попробовать". Пусто = не подставлять. */
+    defaultValue?: string;
+    /** Если задан — рендерится <select> вместо <input>. */
+    enum?: string[];
+}
 
 interface EndpointDef {
     id: string;
-    method: string;
+    method: 'GET';
     path: string;
     title: string;
     description: string;
-    params: { name: string; type: string; required: boolean; description: string }[];
+    params: ParamDef[];
     exampleResponse: string;
 }
 
@@ -38,7 +70,8 @@ const ENDPOINTS: EndpointDef[] = [
         method: 'GET',
         path: '/api/v1/public/heatmap',
         title: 'Карта рынка',
-        description: 'Снапшот всех акций: цена, изменение за разные периоды, капитализация. Источник — `mv_heatmap_stocks` (обновляется ежедневно).',
+        description:
+            'Снапшот всех акций: цена, изменение за разные периоды (день/неделя/месяц/год), оборот и капитализация. Источник — материализованное представление, обновляется ежедневно.',
         params: [],
         exampleResponse: `{
   "data": [
@@ -69,10 +102,24 @@ const ENDPOINTS: EndpointDef[] = [
         method: 'GET',
         path: '/api/v1/public/breadth/current',
         title: 'Сила рынка — текущий снимок',
-        description: 'Процент акций торгующихся выше выбранной EMA. Классический индикатор широты рынка.',
+        description:
+            'Процент акций торгующихся выше выбранной EMA. Классический индикатор широты рынка — выше 70% = перегрев, ниже 30% = перепроданность.',
         params: [
-            { name: 'ema', type: 'int', required: false, description: 'Период EMA (10–500). По умолчанию 200.' },
-            { name: 'universe', type: 'string', required: false, description: '`imoex` / `all` / `imoex_usd` / `all_usd`. По умолчанию `imoex`.' },
+            {
+                name: 'ema',
+                type: 'int',
+                required: false,
+                description: 'Период EMA (от 10 до 500). По умолчанию 200.',
+                defaultValue: '200',
+            },
+            {
+                name: 'universe',
+                type: 'string',
+                required: false,
+                description: 'Вселенная акций: `imoex` (50 топ), `all` (все), `imoex_usd` или `all_usd` (в долларах).',
+                defaultValue: 'imoex',
+                enum: ['imoex', 'all', 'imoex_usd', 'all_usd'],
+            },
         ],
         exampleResponse: `{
   "data": {
@@ -90,9 +137,16 @@ const ENDPOINTS: EndpointDef[] = [
         method: 'GET',
         path: '/api/v1/public/instruments',
         title: 'Список инструментов',
-        description: 'Все инструменты доступные на Фрейме — акции и фьючерсы с тикерами и группами.',
+        description:
+            'Все инструменты доступные на Фрейме — акции и фьючерсы с тикерами, sectype и торговыми группами MOEX.',
         params: [
-            { name: 'type', type: 'string', required: false, description: '`stock` или `futures`. По умолчанию все.' },
+            {
+                name: 'type',
+                type: 'string',
+                required: false,
+                description: 'Фильтр: `stock` (акции) или `futures` (фьючерсы). По умолчанию — все.',
+                enum: ['stock', 'futures'],
+            },
         ],
         exampleResponse: `{
   "data": [
@@ -108,10 +162,24 @@ const ENDPOINTS: EndpointDef[] = [
         method: 'GET',
         path: '/api/v1/public/oi/current',
         title: 'Открытый интерес — последняя точка',
-        description: 'Текущий открытый интерес по фьючерсу с разбивкой long/short по физлицам или юрлицам.',
+        description:
+            'Текущий открытый интерес по фьючерсу с разбивкой long/short по клиентским группам — физические или юридические лица.',
         params: [
-            { name: 'instrument', type: 'string', required: true, description: 'Sectype фьючерса (например `SR` для Сбербанка).' },
-            { name: 'clgroup', type: 'string', required: false, description: '`YUR` (юрлица) или `FIZ` (физлица). По умолчанию `YUR`.' },
+            {
+                name: 'instrument',
+                type: 'string',
+                required: true,
+                description: 'Sectype фьючерса (например `SR` для Сбербанка, `BR` для Brent).',
+                defaultValue: 'SR',
+            },
+            {
+                name: 'clgroup',
+                type: 'string',
+                required: false,
+                description: '`YUR` (юрлица) или `FIZ` (физлица). По умолчанию `YUR`.',
+                defaultValue: 'YUR',
+                enum: ['YUR', 'FIZ'],
+            },
         ],
         exampleResponse: `{
   "data": {
@@ -132,7 +200,8 @@ const ENDPOINTS: EndpointDef[] = [
         method: 'GET',
         path: '/api/v1/public/funds/categories',
         title: 'БПИФы — категории и тикеры',
-        description: 'Список всех БПИФов которые отслеживает Фрейм, с категориями и подкатегориями.',
+        description:
+            'Список всех БПИФов которые отслеживает Фрейм, с категорией (денежный рынок, акции, облигации, золото) и подкатегорией.',
         params: [],
         exampleResponse: `{
   "data": [
@@ -147,11 +216,24 @@ const ENDPOINTS: EndpointDef[] = [
         id: 'seasonality',
         method: 'GET',
         path: '/api/v1/public/seasonality',
-        title: 'Сезонность — дневные свечи для расчёта',
-        description: 'Daily candles для тикера за указанный период — для самостоятельного расчёта сезонности или других метрик.',
+        title: 'Сезонность — дневные свечи',
+        description:
+            'Daily-свечи для тикера за указанный период. Полезно для самостоятельного расчёта сезонности, бэктестов и аналитики.',
         params: [
-            { name: 'ticker', type: 'string', required: true, description: 'Тикер акции (например `SBER`).' },
-            { name: 'days', type: 'int', required: false, description: 'Глубина истории в днях (30–15000). По умолчанию 3650 (10 лет).' },
+            {
+                name: 'ticker',
+                type: 'string',
+                required: true,
+                description: 'Тикер акции (например `SBER`, `GAZP`, `LKOH`).',
+                defaultValue: 'SBER',
+            },
+            {
+                name: 'days',
+                type: 'int',
+                required: false,
+                description: 'Глубина истории в днях (30–15000). По умолчанию 3650 (10 лет).',
+                defaultValue: '3650',
+            },
         ],
         exampleResponse: `{
   "data": [
@@ -164,19 +246,25 @@ const ENDPOINTS: EndpointDef[] = [
     },
 ];
 
+// Все секции на странице — для sidebar TOC.
+const SECTIONS = [
+    { id: 'intro', label: 'Введение' },
+    { id: 'auth', label: 'Аутентификация' },
+    { id: 'limits', label: 'Лимиты' },
+    { id: 'errors', label: 'Ошибки' },
+    ...ENDPOINTS.map((e) => ({ id: e.id, label: e.title })),
+];
+
+// ════════════════════════════════════════════════════════════════════
+// Утилиты
+// ════════════════════════════════════════════════════════════════════
+
 /** Парсит `текст` в JSX, заменяя `code` фрагменты на <code>. */
 function renderWithBackticks(text: string): React.ReactNode {
     const parts = text.split(/`([^`]+)`/);
     return parts.map((part, i) =>
         i % 2 === 1 ? (
-            <code
-                key={i}
-                style={{
-                    fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
-                    color: 'var(--text-primary)',
-                    fontSize: '0.92em',
-                }}
-            >
+            <code key={i} className="api-inline-code">
                 {part}
             </code>
         ) : (
@@ -185,74 +273,130 @@ function renderWithBackticks(text: string): React.ReactNode {
     );
 }
 
-function CodeBlock({ code, language }: { code: string; language?: string }) {
-    const [copied, setCopied] = useState(false);
-    const handleCopy = () => {
-        navigator.clipboard?.writeText(code).then(() => {
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
+/** Построить URL запроса с query-параметрами. Пустые значения пропускаются. */
+function buildUrl(path: string, params: Record<string, string>): string {
+    const filtered = Object.entries(params).filter(([, v]) => v.trim() !== '');
+    if (filtered.length === 0) return `${BASE_URL}${path}`;
+    const qs = filtered
+        .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+        .join('&');
+    return `${BASE_URL}${path}?${qs}`;
+}
+
+/** Генерация code-example для языка. */
+function codeExample(lang: Lang, url: string, apiKey: string): string {
+    const keyPlaceholder = apiKey || 'pk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
+    if (lang === 'curl') {
+        return `curl -H "X-API-Key: ${keyPlaceholder}" \\
+  "${url}"`;
+    }
+    if (lang === 'python') {
+        return `import requests
+
+API_KEY = "${keyPlaceholder}"
+r = requests.get(
+    "${url}",
+    headers={"X-API-Key": API_KEY},
+    timeout=30,
+)
+r.raise_for_status()
+data = r.json()
+print(data)`;
+    }
+    return `const API_KEY = "${keyPlaceholder}";
+
+const res = await fetch(
+    "${url}",
+    { headers: { "X-API-Key": API_KEY } }
+);
+const data = await res.json();
+console.log(data);`;
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Хуки
+// ════════════════════════════════════════════════════════════════════
+
+/** localStorage-bound state для API-ключа. */
+function useApiKey(): readonly [string, (k: string) => void] {
+    const [key, setKey] = useState<string>(() => {
+        if (typeof window === 'undefined') return '';
+        try {
+            return localStorage.getItem(API_KEY_STORAGE_KEY) || '';
+        } catch {
+            return '';
+        }
+    });
+    const save = useCallback((k: string) => {
+        setKey(k);
+        try {
+            if (k) localStorage.setItem(API_KEY_STORAGE_KEY, k);
+            else localStorage.removeItem(API_KEY_STORAGE_KEY);
+        } catch {
+            /* localStorage может быть disabled — игнор */
+        }
+    }, []);
+    return [key, save] as const;
+}
+
+/** Активная секция по IntersectionObserver. */
+function useActiveSection(ids: string[]): string {
+    const [active, setActive] = useState<string>(ids[0] || '');
+    // useRef — иначе при ре-рендере observer пересоздаётся каждый раз.
+    const observerRef = useRef<IntersectionObserver | null>(null);
+    useEffect(() => {
+        observerRef.current?.disconnect();
+        const obs = new IntersectionObserver(
+            (entries) => {
+                // Выбираем самый верхний пересекающийся элемент.
+                const visible = entries
+                    .filter((e) => e.isIntersecting)
+                    .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+                if (visible.length > 0) {
+                    setActive(visible[0].target.id);
+                }
+            },
+            { rootMargin: '-20% 0% -60% 0%' }
+        );
+        ids.forEach((id) => {
+            const el = document.getElementById(id);
+            if (el) obs.observe(el);
         });
-    };
+        observerRef.current = obs;
+        return () => obs.disconnect();
+    }, [ids]);
+    return active;
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Компоненты
+// ════════════════════════════════════════════════════════════════════
+
+function CopyButton({ text }: { text: string }) {
+    const [copied, setCopied] = useState(false);
     return (
-        <div
-            style={{
-                position: 'relative',
-                marginTop: 8,
-                marginBottom: 8,
-                background: 'var(--bg-secondary)',
-                border: '1px solid color-mix(in srgb, var(--text-primary) 12%, transparent)',
-                borderRadius: 8,
-                overflow: 'hidden',
+        <button
+            onClick={() => {
+                navigator.clipboard?.writeText(text).then(() => {
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 1500);
+                });
             }}
+            title="Копировать"
+            className="api-copy-btn"
+            style={{ color: copied ? 'var(--success, #2dd478)' : 'var(--text-secondary)' }}
         >
-            {language && (
-                <div
-                    style={{
-                        position: 'absolute',
-                        top: 8,
-                        right: 36,
-                        fontSize: 'var(--fs-2xs)',
-                        color: 'var(--text-muted)',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.04em',
-                        fontWeight: 600,
-                    }}
-                >
-                    {language}
-                </div>
-            )}
-            <button
-                onClick={handleCopy}
-                title="Копировать"
-                style={{
-                    position: 'absolute',
-                    top: 6,
-                    right: 6,
-                    background: 'var(--bg-primary)',
-                    border: '1px solid color-mix(in srgb, var(--text-primary) 18%, transparent)',
-                    borderRadius: 6,
-                    padding: 4,
-                    cursor: 'pointer',
-                    color: copied ? 'var(--success, #2dd478)' : 'var(--text-secondary)',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                }}
-            >
-                {copied ? <Check size={12} /> : <Copy size={12} />}
-            </button>
-            <pre
-                style={{
-                    margin: 0,
-                    padding: '14px 16px',
-                    paddingRight: 56,
-                    fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
-                    fontSize: 'var(--fs-xs)',
-                    color: 'var(--text-primary)',
-                    lineHeight: 1.55,
-                    overflow: 'auto',
-                    whiteSpace: 'pre',
-                }}
-            >
+            {copied ? <Check size={12} /> : <Copy size={12} />}
+        </button>
+    );
+}
+
+function CodeBlock({ code, language }: { code: string; language?: string }) {
+    return (
+        <div className="api-code-block">
+            {language && <div className="api-code-lang">{language}</div>}
+            <CopyButton text={code} />
+            <pre className="api-code-pre">
                 <code>{code}</code>
             </pre>
         </div>
@@ -261,10 +405,13 @@ function CodeBlock({ code, language }: { code: string; language?: string }) {
 
 function MethodBadge({ method }: { method: string }) {
     const color =
-        method === 'GET' ? 'var(--accent)'
-        : method === 'POST' ? 'var(--success, #2dd478)'
-        : method === 'DELETE' ? 'var(--danger, #ef4444)'
-        : 'var(--text-secondary)';
+        method === 'GET'
+            ? 'var(--accent)'
+            : method === 'POST'
+              ? 'var(--success, #2dd478)'
+              : method === 'DELETE'
+                ? 'var(--danger, #ef4444)'
+                : 'var(--text-secondary)';
     return (
         <span
             style={{
@@ -284,402 +431,1043 @@ function MethodBadge({ method }: { method: string }) {
     );
 }
 
-function EndpointSection({ ep }: { ep: EndpointDef }) {
-    const fullUrl = `${BASE_URL}${ep.path}`;
-    const exampleParams =
-        ep.params.length > 0
-            ? '?' + ep.params
-                  .filter((p) => p.required || p.name === 'ema' || p.name === 'ticker' || p.name === 'instrument')
-                  .map((p) => {
-                      if (p.name === 'ticker') return 'ticker=SBER';
-                      if (p.name === 'instrument') return 'instrument=SR';
-                      if (p.name === 'ema') return 'ema=200';
-                      if (p.name === 'days') return 'days=3650';
-                      if (p.name === 'universe') return 'universe=imoex';
-                      if (p.name === 'clgroup') return 'clgroup=YUR';
-                      if (p.name === 'type') return 'type=stock';
-                      return `${p.name}=`;
-                  })
-                  .join('&')
-            : '';
-    const exampleUrl = `${fullUrl}${exampleParams}`;
-    const curlExample = `curl -H "X-API-Key: pk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \\
-  "${exampleUrl}"`;
-    const pythonExample = `import requests
-
-API_KEY = "pk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-r = requests.get(
-    "${exampleUrl}",
-    headers={"X-API-Key": API_KEY},
-    timeout=30,
-)
-r.raise_for_status()
-data = r.json()
-print(data)`;
-    const jsExample = `const API_KEY = "pk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
-
-const res = await fetch(
-    "${exampleUrl}",
-    { headers: { "X-API-Key": API_KEY } }
-);
-const data = await res.json();
-console.log(data);`;
-
+function StatusBadge({ status }: { status: number }) {
+    const color =
+        status >= 200 && status < 300
+            ? 'var(--success, #2dd478)'
+            : status >= 400 && status < 500
+              ? 'var(--warning, #f59e0b)'
+              : 'var(--danger, #ef4444)';
+    const label =
+        status === 200
+            ? '200 OK'
+            : status === 400
+              ? '400 Bad Request'
+              : status === 401
+                ? '401 Unauthorized'
+                : status === 403
+                  ? '403 Forbidden'
+                  : status === 404
+                    ? '404 Not Found'
+                    : status === 429
+                      ? '429 Too Many Requests'
+                      : status >= 500
+                        ? `${status} Server Error`
+                        : status === 0
+                          ? 'Network Error'
+                          : String(status);
     return (
-        <section
-            id={ep.id}
+        <span
             style={{
-                marginTop: 40,
-                paddingTop: 24,
-                borderTop: '1px solid color-mix(in srgb, var(--text-primary) 10%, transparent)',
+                display: 'inline-block',
+                padding: '3px 10px',
+                background: `color-mix(in srgb, ${color} 14%, transparent)`,
+                color,
+                fontSize: 'var(--fs-2xs)',
+                fontWeight: 700,
+                borderRadius: 4,
+                letterSpacing: '0.04em',
+                fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
             }}
         >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
-                <MethodBadge method={ep.method} />
-                <code
-                    style={{
-                        fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
-                        fontSize: 'var(--fs-sm)',
-                        color: 'var(--text-primary)',
-                        fontWeight: 600,
-                    }}
-                >
-                    {ep.path}
-                </code>
-            </div>
-            <h2
-                style={{
-                    fontSize: 'var(--fs-xl)',
-                    fontWeight: 700,
-                    color: 'var(--text-primary)',
-                    marginTop: 8,
-                    marginBottom: 6,
-                }}
-            >
-                {ep.title}
-            </h2>
-            <p
-                style={{
-                    fontSize: 'var(--fs-sm)',
-                    color: 'var(--text-secondary)',
-                    lineHeight: 1.55,
-                    marginBottom: 12,
-                }}
-            >
-                {renderWithBackticks(ep.description)}
-            </p>
-
-            {ep.params.length > 0 && (
-                <div style={{ marginTop: 12 }}>
-                    <h3
-                        style={{
-                            fontSize: 'var(--fs-sm)',
-                            fontWeight: 700,
-                            color: 'var(--text-primary)',
-                            marginBottom: 6,
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.04em',
-                        }}
-                    >
-                        Параметры
-                    </h3>
-                    <div
-                        style={{
-                            display: 'grid',
-                            gap: 6,
-                            fontSize: 'var(--fs-sm)',
-                            color: 'var(--text-secondary)',
-                        }}
-                    >
-                        {ep.params.map((p) => (
-                            <div key={p.name}>
-                                <code
-                                    style={{
-                                        fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
-                                        color: 'var(--text-primary)',
-                                        fontWeight: 600,
-                                    }}
-                                >
-                                    {p.name}
-                                </code>
-                                {' '}
-                                <span style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-xs)' }}>
-                                    {p.type}
-                                    {p.required ? ' · обязательный' : ' · опциональный'}
-                                </span>
-                                {' — '}
-                                {renderWithBackticks(p.description)}
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
-
-            <h3
-                style={{
-                    fontSize: 'var(--fs-sm)',
-                    fontWeight: 700,
-                    color: 'var(--text-primary)',
-                    marginTop: 16,
-                    marginBottom: 4,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.04em',
-                }}
-            >
-                Примеры
-            </h3>
-            <CodeBlock code={curlExample} language="curl" />
-            <CodeBlock code={pythonExample} language="python" />
-            <CodeBlock code={jsExample} language="javascript" />
-
-            <h3
-                style={{
-                    fontSize: 'var(--fs-sm)',
-                    fontWeight: 700,
-                    color: 'var(--text-primary)',
-                    marginTop: 16,
-                    marginBottom: 4,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.04em',
-                }}
-            >
-                Ответ
-            </h3>
-            <CodeBlock code={ep.exampleResponse} language="json" />
-        </section>
+            {label}
+        </span>
     );
 }
 
-export default function ApiDocsPage() {
+interface ApiKeyBarProps {
+    apiKey: string;
+    onChange: (k: string) => void;
+}
+
+function ApiKeyBar({ apiKey, onChange }: ApiKeyBarProps) {
+    const [draft, setDraft] = useState(apiKey);
+    const [showKey, setShowKey] = useState(false);
+    useEffect(() => {
+        setDraft(apiKey);
+    }, [apiKey]);
+
+    const isSaved = draft === apiKey && apiKey !== '';
+    const hasUnsaved = draft !== apiKey;
+
     return (
-        <div className="max-w-3xl mx-auto px-4 md:px-6 py-6 md:py-8">
-            <Link
-                to="/profile"
-                className="inline-flex items-center gap-2 text-sm mb-6"
-                style={{ color: 'var(--text-secondary)' }}
+        <div
+            style={{
+                position: 'sticky',
+                top: 0,
+                zIndex: 30,
+                background: 'var(--bg-primary)',
+                borderBottom: '1px solid color-mix(in srgb, var(--text-primary) 10%, transparent)',
+                padding: '12px 16px',
+                marginBottom: 24,
+            }}
+        >
+            <div
+                style={{
+                    maxWidth: 1200,
+                    margin: '0 auto',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    flexWrap: 'wrap',
+                }}
             >
-                <ArrowLeft size={14} />К профилю
-            </Link>
-
-            {/* Header */}
-            <header className="flex items-center gap-4 mb-8">
-                <div
-                    className="flex items-center justify-center flex-shrink-0"
-                    style={{
-                        width: 48,
-                        height: 48,
-                        borderRadius: 8,
-                        background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
-                        color: 'var(--accent)',
-                    }}
-                >
-                    <Key size={24} strokeWidth={1.8} />
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                    <Key size={14} style={{ color: 'var(--text-secondary)' }} />
+                    <span
+                        style={{
+                            fontSize: 'var(--fs-xs)',
+                            color: 'var(--text-secondary)',
+                            fontWeight: 600,
+                        }}
+                    >
+                        API-ключ:
+                    </span>
                 </div>
-                <h1
-                    className="text-2xl md:text-3xl font-bold"
-                    style={{ color: 'var(--text-primary)', letterSpacing: '-0.015em' }}
-                >
-                    API Фрейма
-                </h1>
-            </header>
-
-            {/* Intro */}
-            <section style={{ marginBottom: 24 }}>
-                <p
+                <input
+                    type={showKey ? 'text' : 'password'}
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    placeholder="pk_live_…"
                     style={{
-                        fontSize: 'var(--fs-base)',
-                        color: 'var(--text-secondary)',
-                        lineHeight: 1.6,
-                    }}
-                >
-                    Программный доступ к данным MOEX через REST API. Для торговых ботов,
-                    скриптов аналитики и личных дашбордов. Возвращает JSON, аутентификация
-                    через персональный ключ <code style={{ fontFamily: 'ui-monospace, monospace' }}>pk_live_…</code>.
-                </p>
-                <p
-                    style={{
-                        fontSize: 'var(--fs-sm)',
-                        color: 'var(--text-muted)',
-                        lineHeight: 1.6,
-                        marginTop: 8,
-                    }}
-                >
-                    Доступ — тариф <strong style={{ color: 'var(--text-primary)' }}>Pro</strong>.
-                    Создать ключ можно в{' '}
-                    <Link to="/profile" style={{ color: 'var(--accent)', textDecoration: 'underline' }}>
-                        личном кабинете
-                    </Link>.
-                </p>
-            </section>
-
-            {/* Authentication */}
-            <section
-                style={{
-                    marginTop: 24,
-                    paddingTop: 20,
-                    borderTop: '1px solid color-mix(in srgb, var(--text-primary) 10%, transparent)',
-                }}
-            >
-                <h2
-                    style={{
-                        fontSize: 'var(--fs-xl)',
-                        fontWeight: 700,
+                        flex: 1,
+                        minWidth: 200,
+                        padding: '6px 12px',
+                        background: 'var(--bg-secondary)',
+                        border: `1.5px solid ${
+                            isSaved
+                                ? 'color-mix(in srgb, var(--success, #2dd478) 50%, var(--text-primary))'
+                                : 'color-mix(in srgb, var(--text-primary) 20%, transparent)'
+                        }`,
+                        borderRadius: 8,
                         color: 'var(--text-primary)',
-                        marginBottom: 8,
+                        fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+                        fontSize: 'var(--fs-xs)',
+                        outline: 'none',
                     }}
-                >
-                    Аутентификация
-                </h2>
-                <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-secondary)', lineHeight: 1.55 }}>
-                    Передавайте ключ в заголовке <code style={{ fontFamily: 'ui-monospace, monospace' }}>X-API-Key</code>{' '}
-                    или как <code style={{ fontFamily: 'ui-monospace, monospace' }}>Authorization: Bearer</code>.
-                    Ключи генерируются один раз — мы храним только их хеш, восстановить нельзя.
-                </p>
-                <CodeBlock
-                    language="http"
-                    code={`X-API-Key: pk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-
-# или
-
-Authorization: Bearer pk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`}
                 />
-                <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: 8 }}>
-                    Если ключ скомпрометирован — отзовите его в личном кабинете и создайте новый.
-                    Максимум 10 активных ключей на аккаунт.
-                </p>
-            </section>
-
-            {/* Rate limits */}
-            <section
+                <button
+                    onClick={() => setShowKey((v) => !v)}
+                    title={showKey ? 'Скрыть' : 'Показать'}
+                    style={{
+                        padding: 6,
+                        background: 'var(--bg-secondary)',
+                        border: '1.5px solid color-mix(in srgb, var(--text-primary) 20%, transparent)',
+                        borderRadius: 8,
+                        cursor: 'pointer',
+                        color: 'var(--text-secondary)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                    }}
+                >
+                    {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+                <button
+                    onClick={() => onChange(draft)}
+                    disabled={!hasUnsaved}
+                    style={{
+                        padding: '6px 14px',
+                        background: hasUnsaved ? 'var(--accent)' : 'var(--bg-secondary)',
+                        border: '1.5px solid var(--text-primary)',
+                        borderRadius: 999,
+                        cursor: hasUnsaved ? 'pointer' : 'default',
+                        color: hasUnsaved ? 'var(--text-inverse)' : 'var(--text-muted)',
+                        fontSize: 'var(--fs-xs)',
+                        fontWeight: 700,
+                        opacity: hasUnsaved ? 1 : 0.6,
+                    }}
+                >
+                    {isSaved ? 'Сохранён' : 'Сохранить'}
+                </button>
+                {apiKey && (
+                    <button
+                        onClick={() => {
+                            setDraft('');
+                            onChange('');
+                        }}
+                        title="Удалить из браузера"
+                        style={{
+                            padding: 6,
+                            background: 'transparent',
+                            border: '1.5px solid color-mix(in srgb, var(--text-primary) 20%, transparent)',
+                            borderRadius: 8,
+                            cursor: 'pointer',
+                            color: 'var(--text-secondary)',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                        }}
+                    >
+                        <Trash2 size={12} />
+                    </button>
+                )}
+            </div>
+            <p
                 style={{
-                    marginTop: 32,
-                    paddingTop: 20,
-                    borderTop: '1px solid color-mix(in srgb, var(--text-primary) 10%, transparent)',
+                    maxWidth: 1200,
+                    margin: '6px auto 0',
+                    fontSize: 'var(--fs-2xs)',
+                    color: 'var(--text-muted)',
+                    lineHeight: 1.4,
                 }}
             >
-                <h2
-                    style={{
-                        fontSize: 'var(--fs-xl)',
-                        fontWeight: 700,
-                        color: 'var(--text-primary)',
-                        marginBottom: 8,
-                    }}
-                >
-                    Лимиты
-                </h2>
-                <ul
-                    style={{
-                        fontSize: 'var(--fs-sm)',
-                        color: 'var(--text-secondary)',
-                        lineHeight: 1.6,
-                        margin: 0,
-                        paddingLeft: 20,
-                    }}
-                >
-                    <li>
-                        <strong style={{ color: 'var(--text-primary)' }}>60 запросов / минуту</strong>{' '}
-                        на API-ключ. При превышении — <code style={{ fontFamily: 'ui-monospace, monospace' }}>429
-                        Too Many Requests</code> с заголовком <code style={{ fontFamily: 'ui-monospace, monospace' }}>Retry-After: 60</code>.
-                    </li>
-                    <li>
-                        <strong style={{ color: 'var(--text-primary)' }}>30 запросов / секунду</strong> на IP —
-                        общий лимит на уровне nginx, действует для всего сайта.
-                    </li>
-                    <li>
-                        Все ответы сжаты gzip — экономия трафика до 80%.
-                    </li>
-                </ul>
-            </section>
+                Сохраняется в браузере (localStorage). Используется в примерах и кнопке «Попробовать».{' '}
+                Нет ключа? Создайте в{' '}
+                <Link to="/profile" style={{ color: 'var(--accent)', textDecoration: 'underline' }}>
+                    личном кабинете
+                </Link>
+                .
+            </p>
+        </div>
+    );
+}
 
-            {/* Errors */}
-            <section
-                style={{
-                    marginTop: 32,
-                    paddingTop: 20,
-                    borderTop: '1px solid color-mix(in srgb, var(--text-primary) 10%, transparent)',
-                }}
-            >
-                <h2
-                    style={{
-                        fontSize: 'var(--fs-xl)',
-                        fontWeight: 700,
-                        color: 'var(--text-primary)',
-                        marginBottom: 8,
-                    }}
-                >
-                    Ошибки
-                </h2>
-                <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-secondary)', lineHeight: 1.55, marginBottom: 8 }}>
-                    Все ошибки возвращаются в формате{' '}
-                    <code style={{ fontFamily: 'ui-monospace, monospace' }}>{'{"detail": "..."}'}</code>{' '}
-                    с соответствующим HTTP-кодом:
-                </p>
-                <ul
-                    style={{
-                        fontSize: 'var(--fs-sm)',
-                        color: 'var(--text-secondary)',
-                        lineHeight: 1.6,
-                        margin: 0,
-                        paddingLeft: 20,
-                    }}
-                >
-                    <li>
-                        <code style={{ fontFamily: 'ui-monospace, monospace' }}>400</code> — некорректные параметры
-                    </li>
-                    <li>
-                        <code style={{ fontFamily: 'ui-monospace, monospace' }}>401</code> — ключ отсутствует, отозван или невалиден
-                    </li>
-                    <li>
-                        <code style={{ fontFamily: 'ui-monospace, monospace' }}>403</code> — у пользователя не Pro tier
-                    </li>
-                    <li>
-                        <code style={{ fontFamily: 'ui-monospace, monospace' }}>404</code> — данные не найдены
-                    </li>
-                    <li>
-                        <code style={{ fontFamily: 'ui-monospace, monospace' }}>429</code> — превышен лимит (Retry-After в заголовке)
-                    </li>
-                    <li>
-                        <code style={{ fontFamily: 'ui-monospace, monospace' }}>500</code> — внутренняя ошибка сервера
-                    </li>
-                </ul>
-            </section>
+interface SidebarProps {
+    active: string;
+}
 
-            {/* Endpoints */}
-            <h2
+function Sidebar({ active }: SidebarProps) {
+    return (
+        <nav
+            className="api-sidebar"
+            aria-label="Навигация по документации"
+        >
+            <div
                 style={{
-                    fontSize: 'var(--fs-2xl)',
+                    fontSize: 'var(--fs-2xs)',
+                    color: 'var(--text-muted)',
                     fontWeight: 700,
-                    color: 'var(--text-primary)',
-                    marginTop: 48,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    marginBottom: 8,
+                }}
+            >
+                Документация
+            </div>
+            <a href="#intro" className={`api-toc-link ${active === 'intro' ? 'active' : ''}`}>
+                Введение
+            </a>
+            <a href="#auth" className={`api-toc-link ${active === 'auth' ? 'active' : ''}`}>
+                Аутентификация
+            </a>
+            <a href="#limits" className={`api-toc-link ${active === 'limits' ? 'active' : ''}`}>
+                Лимиты
+            </a>
+            <a href="#errors" className={`api-toc-link ${active === 'errors' ? 'active' : ''}`}>
+                Ошибки
+            </a>
+            <div
+                style={{
+                    fontSize: 'var(--fs-2xs)',
+                    color: 'var(--text-muted)',
+                    fontWeight: 700,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    marginTop: 16,
                     marginBottom: 8,
                 }}
             >
                 Эндпоинты
-            </h2>
+            </div>
             {ENDPOINTS.map((ep) => (
-                <EndpointSection key={ep.id} ep={ep} />
+                <a
+                    key={ep.id}
+                    href={`#${ep.id}`}
+                    className={`api-toc-link ${active === ep.id ? 'active' : ''}`}
+                >
+                    {ep.title}
+                </a>
             ))}
+        </nav>
+    );
+}
 
-            {/* Footer note */}
-            <section
-                style={{
-                    marginTop: 48,
-                    paddingTop: 20,
-                    borderTop: '1px solid color-mix(in srgb, var(--text-primary) 10%, transparent)',
-                }}
-            >
-                <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', lineHeight: 1.6 }}>
-                    API находится в стабильной версии <code>v1</code>. Breaking changes выпускаются
-                    в новой версии <code>v2</code> с минимум 30-дневным депрекацией старой.
-                    Вопросы и feature requests — на{' '}
-                    <a
-                        href="mailto:frameinfo@mail.ru"
-                        style={{ color: 'var(--accent)', textDecoration: 'underline' }}
-                    >
-                        frameinfo@mail.ru
-                    </a>.
-                </p>
-            </section>
+interface LangTabsProps {
+    value: Lang;
+    onChange: (l: Lang) => void;
+}
+
+function LangTabs({ value, onChange }: LangTabsProps) {
+    const tabs: { id: Lang; label: string }[] = [
+        { id: 'curl', label: 'cURL' },
+        { id: 'python', label: 'Python' },
+        { id: 'javascript', label: 'JavaScript' },
+    ];
+    return (
+        <div
+            style={{
+                display: 'flex',
+                gap: 4,
+                marginBottom: 8,
+                padding: 4,
+                background: 'var(--bg-secondary)',
+                borderRadius: 8,
+                width: 'fit-content',
+            }}
+        >
+            {tabs.map((t) => (
+                <button
+                    key={t.id}
+                    onClick={() => onChange(t.id)}
+                    style={{
+                        padding: '4px 12px',
+                        background: value === t.id ? 'var(--bg-primary)' : 'transparent',
+                        color: value === t.id ? 'var(--text-primary)' : 'var(--text-secondary)',
+                        border: value === t.id
+                            ? '1px solid color-mix(in srgb, var(--text-primary) 18%, transparent)'
+                            : '1px solid transparent',
+                        borderRadius: 6,
+                        cursor: 'pointer',
+                        fontSize: 'var(--fs-xs)',
+                        fontWeight: value === t.id ? 700 : 600,
+                        fontFamily: 'inherit',
+                    }}
+                >
+                    {t.label}
+                </button>
+            ))}
         </div>
     );
 }
+
+interface ResponseState {
+    status: number;
+    body: unknown;
+    ms: number;
+    error?: string;
+}
+
+interface EndpointBlockProps {
+    ep: EndpointDef;
+    apiKey: string;
+    lang: Lang;
+    onLangChange: (l: Lang) => void;
+}
+
+function EndpointBlock({ ep, apiKey, lang, onLangChange }: EndpointBlockProps) {
+    // Локальный state параметров формы — keyed by param name.
+    const initialParams = useMemo(() => {
+        const obj: Record<string, string> = {};
+        ep.params.forEach((p) => {
+            obj[p.name] = p.defaultValue || '';
+        });
+        return obj;
+    }, [ep.params]);
+    const [params, setParams] = useState<Record<string, string>>(initialParams);
+    const [response, setResponse] = useState<ResponseState | null>(null);
+    const [loading, setLoading] = useState(false);
+
+    const url = buildUrl(ep.path, params);
+    const code = codeExample(lang, url, apiKey);
+
+    const handleTry = async () => {
+        if (!apiKey) {
+            setResponse({
+                status: 0,
+                body: { detail: 'Введите API-ключ в верхней панели чтобы протестировать запрос.' },
+                ms: 0,
+                error: 'no-key',
+            });
+            return;
+        }
+        // Валидация required-параметров на клиенте — UX-приятнее чем 400 с сервера.
+        const missing = ep.params.filter((p) => p.required && !params[p.name]?.trim());
+        if (missing.length > 0) {
+            setResponse({
+                status: 0,
+                body: { detail: `Заполните обязательные параметры: ${missing.map((p) => p.name).join(', ')}` },
+                ms: 0,
+                error: 'missing-params',
+            });
+            return;
+        }
+        setLoading(true);
+        const start = performance.now();
+        try {
+            const r = await fetch(url, { headers: { 'X-API-Key': apiKey } });
+            const ms = Math.round(performance.now() - start);
+            const body = await r.json().catch(() => ({ detail: 'Не удалось распарсить ответ как JSON' }));
+            setResponse({ status: r.status, body, ms });
+        } catch (e) {
+            setResponse({
+                status: 0,
+                body: { detail: (e as Error).message },
+                ms: Math.round(performance.now() - start),
+                error: 'network',
+            });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Текст ответа — pretty-printed JSON или fallback.
+    const responseText = response
+        ? JSON.stringify(response.body, null, 2)
+        : ep.exampleResponse;
+
+    return (
+        <section id={ep.id} className="api-endpoint">
+            {/* Заголовок: method + path */}
+            <div className="api-endpoint-header">
+                <MethodBadge method={ep.method} />
+                <code className="api-endpoint-path">{ep.path}</code>
+            </div>
+            <h2 className="api-endpoint-title">{ep.title}</h2>
+
+            <div className="api-endpoint-grid">
+                {/* ════════ Левая колонка: docs + params ════════ */}
+                <div>
+                    <p className="api-endpoint-desc">{renderWithBackticks(ep.description)}</p>
+
+                    {ep.params.length > 0 && (
+                        <>
+                            <h3 className="api-section-h3">Параметры</h3>
+                            <div className="api-params-table">
+                                {ep.params.map((p) => (
+                                    <div key={p.name} className="api-param-row">
+                                        <div>
+                                            <code className="api-param-name">{p.name}</code>
+                                            {p.required && <span className="api-required">обязательный</span>}
+                                            <span className="api-param-type">{p.type}</span>
+                                        </div>
+                                        <div className="api-param-desc">
+                                            {renderWithBackticks(p.description)}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <h3 className="api-section-h3">Попробовать</h3>
+                            <div className="api-try-form">
+                                {ep.params.map((p) => (
+                                    <label key={p.name} className="api-try-field">
+                                        <span className="api-try-label">
+                                            {p.name}
+                                            {p.required && <span style={{ color: 'var(--danger, #ef4444)' }}> *</span>}
+                                        </span>
+                                        {p.enum ? (
+                                            <select
+                                                value={params[p.name] ?? ''}
+                                                onChange={(e) =>
+                                                    setParams({ ...params, [p.name]: e.target.value })
+                                                }
+                                                className="api-try-input"
+                                            >
+                                                <option value="">— не задавать —</option>
+                                                {p.enum.map((opt) => (
+                                                    <option key={opt} value={opt}>
+                                                        {opt}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        ) : (
+                                            <input
+                                                type={p.type === 'int' ? 'number' : 'text'}
+                                                value={params[p.name] ?? ''}
+                                                onChange={(e) =>
+                                                    setParams({ ...params, [p.name]: e.target.value })
+                                                }
+                                                placeholder={p.defaultValue || ''}
+                                                className="api-try-input"
+                                            />
+                                        )}
+                                    </label>
+                                ))}
+                            </div>
+                        </>
+                    )}
+
+                    <button
+                        onClick={handleTry}
+                        disabled={loading}
+                        className="api-try-btn"
+                    >
+                        <Play size={12} />
+                        {loading ? 'Отправляем…' : ep.params.length > 0 ? 'Отправить запрос' : 'Попробовать'}
+                    </button>
+                    {!apiKey && (
+                        <p className="api-try-hint">
+                            <AlertCircle size={11} style={{ verticalAlign: '-1px' }} /> Введите ключ
+                            в верхней панели, чтобы получить реальный ответ.
+                        </p>
+                    )}
+                </div>
+
+                {/* ════════ Правая колонка: code + response ════════ */}
+                <div>
+                    <LangTabs value={lang} onChange={onLangChange} />
+                    <CodeBlock code={code} />
+
+                    <h3 className="api-section-h3 api-response-h3">
+                        Ответ
+                        {response && (
+                            <>
+                                <StatusBadge status={response.status} />
+                                <span className="api-response-time">{response.ms} мс</span>
+                            </>
+                        )}
+                        {!response && (
+                            <span style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-2xs)', fontWeight: 500 }}>
+                                пример
+                            </span>
+                        )}
+                    </h3>
+                    <div className="api-code-block">
+                        <CopyButton text={responseText} />
+                        <pre
+                            className="api-code-pre"
+                            style={{ maxHeight: 360, overflow: 'auto' }}
+                        >
+                            <code>{responseText}</code>
+                        </pre>
+                    </div>
+                </div>
+            </div>
+        </section>
+    );
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Главный компонент
+// ════════════════════════════════════════════════════════════════════
+
+export default function ApiDocsPage() {
+    const [apiKey, setApiKey] = useApiKey();
+    const [lang, setLang] = useState<Lang>('curl');
+    const sectionIds = useMemo(() => SECTIONS.map((s) => s.id), []);
+    const active = useActiveSection(sectionIds);
+
+    return (
+        <>
+            <style>{INLINE_STYLES}</style>
+
+            {/* Sticky API-key bar */}
+            <ApiKeyBar apiKey={apiKey} onChange={setApiKey} />
+
+            <div className="api-docs-layout">
+                {/* Sidebar */}
+                <aside className="api-sidebar-wrap">
+                    <Sidebar active={active} />
+                </aside>
+
+                {/* Main content */}
+                <main className="api-main">
+                    <Link
+                        to="/profile"
+                        style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            color: 'var(--text-secondary)',
+                            fontSize: 'var(--fs-sm)',
+                            marginBottom: 16,
+                            textDecoration: 'none',
+                        }}
+                    >
+                        <ArrowLeft size={14} />К профилю
+                    </Link>
+
+                    {/* ════ Intro ════ */}
+                    <section id="intro" className="api-section">
+                        <header className="flex items-center gap-4 mb-6">
+                            <div
+                                style={{
+                                    width: 48,
+                                    height: 48,
+                                    borderRadius: 8,
+                                    background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
+                                    color: 'var(--accent)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                }}
+                            >
+                                <Key size={24} strokeWidth={1.8} />
+                            </div>
+                            <h1
+                                style={{
+                                    fontSize: 'var(--fs-3xl)',
+                                    fontWeight: 700,
+                                    color: 'var(--text-primary)',
+                                    letterSpacing: '-0.015em',
+                                    margin: 0,
+                                }}
+                            >
+                                API Фрейма
+                            </h1>
+                        </header>
+                        <p
+                            style={{
+                                fontSize: 'var(--fs-base)',
+                                color: 'var(--text-secondary)',
+                                lineHeight: 1.6,
+                            }}
+                        >
+                            Программный доступ к данным MOEX через REST API. Для торговых ботов,
+                            скриптов аналитики и личных дашбордов. Возвращает JSON, аутентификация
+                            через персональный ключ <code className="api-inline-code">pk_live_…</code>.
+                        </p>
+                        <p
+                            style={{
+                                fontSize: 'var(--fs-sm)',
+                                color: 'var(--text-muted)',
+                                lineHeight: 1.6,
+                                marginTop: 8,
+                            }}
+                        >
+                            Доступ — тариф <strong style={{ color: 'var(--text-primary)' }}>Pro</strong>.
+                            Создать ключ можно в{' '}
+                            <Link to="/profile" style={{ color: 'var(--accent)', textDecoration: 'underline' }}>
+                                личном кабинете
+                            </Link>
+                            .
+                        </p>
+                    </section>
+
+                    {/* ════ Auth ════ */}
+                    <section id="auth" className="api-section">
+                        <h2 className="api-section-h2">Аутентификация</h2>
+                        <p className="api-section-p">
+                            Передавайте ключ в заголовке <code className="api-inline-code">X-API-Key</code>{' '}
+                            или как <code className="api-inline-code">Authorization: Bearer</code>.
+                            Ключи генерируются один раз — мы храним только их хеш, восстановить нельзя.
+                        </p>
+                        <CodeBlock
+                            language="http"
+                            code={`X-API-Key: pk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# или
+
+Authorization: Bearer pk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`}
+                        />
+                        <p
+                            style={{
+                                fontSize: 'var(--fs-xs)',
+                                color: 'var(--text-muted)',
+                                marginTop: 8,
+                            }}
+                        >
+                            Если ключ скомпрометирован — отзовите его в личном кабинете и создайте новый.
+                            Максимум 10 активных ключей на аккаунт.
+                        </p>
+                    </section>
+
+                    {/* ════ Limits ════ */}
+                    <section id="limits" className="api-section">
+                        <h2 className="api-section-h2">Лимиты</h2>
+                        <ul className="api-section-ul">
+                            <li>
+                                <strong style={{ color: 'var(--text-primary)' }}>60 запросов / минуту</strong>{' '}
+                                на API-ключ. При превышении — <code className="api-inline-code">429 Too Many Requests</code>{' '}
+                                с заголовком <code className="api-inline-code">Retry-After: 60</code>.
+                            </li>
+                            <li>
+                                <strong style={{ color: 'var(--text-primary)' }}>30 запросов / секунду</strong>{' '}
+                                на IP — общий nginx-лимит для всего сайта.
+                            </li>
+                            <li>Все ответы сжаты gzip — экономия трафика до 80%.</li>
+                        </ul>
+                    </section>
+
+                    {/* ════ Errors ════ */}
+                    <section id="errors" className="api-section">
+                        <h2 className="api-section-h2">Ошибки</h2>
+                        <p className="api-section-p">
+                            Все ошибки возвращаются в формате{' '}
+                            <code className="api-inline-code">{'{"detail": "..."}'}</code>{' '}
+                            с соответствующим HTTP-кодом:
+                        </p>
+                        <div className="api-errors-grid">
+                            {[
+                                { code: 400, label: 'некорректные параметры' },
+                                { code: 401, label: 'ключ отсутствует, отозван или невалиден' },
+                                { code: 403, label: 'у пользователя не Pro tier' },
+                                { code: 404, label: 'данные не найдены' },
+                                { code: 429, label: 'превышен лимит (Retry-After в заголовке)' },
+                                { code: 500, label: 'внутренняя ошибка сервера' },
+                            ].map((row) => (
+                                <div key={row.code} className="api-error-row">
+                                    <StatusBadge status={row.code} />
+                                    <span style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)' }}>
+                                        {row.label}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+                    </section>
+
+                    {/* ════ Endpoints ════ */}
+                    {ENDPOINTS.map((ep) => (
+                        <EndpointBlock
+                            key={ep.id}
+                            ep={ep}
+                            apiKey={apiKey}
+                            lang={lang}
+                            onLangChange={setLang}
+                        />
+                    ))}
+
+                    {/* ════ Footer ════ */}
+                    <section
+                        style={{
+                            marginTop: 48,
+                            paddingTop: 20,
+                            borderTop: '1px solid color-mix(in srgb, var(--text-primary) 10%, transparent)',
+                        }}
+                    >
+                        <p
+                            style={{
+                                fontSize: 'var(--fs-xs)',
+                                color: 'var(--text-muted)',
+                                lineHeight: 1.6,
+                            }}
+                        >
+                            API находится в стабильной версии <code className="api-inline-code">v1</code>.
+                            Breaking changes выпускаются в новой версии <code className="api-inline-code">v2</code>{' '}
+                            с минимум 30-дневной депрекацией старой. Вопросы и feature requests — на{' '}
+                            <a
+                                href="mailto:frameinfo@mail.ru"
+                                style={{ color: 'var(--accent)', textDecoration: 'underline' }}
+                            >
+                                frameinfo@mail.ru
+                            </a>
+                            .
+                        </p>
+                    </section>
+                </main>
+            </div>
+        </>
+    );
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Стили — inline через <style> чтобы не плодить .css-файлы
+// ════════════════════════════════════════════════════════════════════
+
+const INLINE_STYLES = `
+.api-docs-layout {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 16px 64px;
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 32px;
+}
+@media (max-width: 900px) {
+    .api-docs-layout {
+        grid-template-columns: 1fr;
+        gap: 0;
+    }
+}
+
+.api-sidebar-wrap {
+    position: sticky;
+    top: 88px;
+    align-self: start;
+    max-height: calc(100vh - 100px);
+    overflow-y: auto;
+    padding-right: 8px;
+}
+@media (max-width: 900px) {
+    .api-sidebar-wrap {
+        display: none;
+    }
+}
+
+.api-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+.api-toc-link {
+    display: block;
+    padding: 6px 10px;
+    font-size: var(--fs-xs);
+    color: var(--text-secondary);
+    text-decoration: none;
+    border-radius: 6px;
+    border-left: 2px solid transparent;
+    transition: background 120ms, color 120ms, border-color 120ms;
+}
+.api-toc-link:hover {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+}
+.api-toc-link.active {
+    color: var(--accent);
+    border-left-color: var(--accent);
+    font-weight: 700;
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.api-main {
+    min-width: 0;
+}
+
+.api-section {
+    margin-top: 32px;
+    padding-top: 24px;
+    border-top: 1px solid color-mix(in srgb, var(--text-primary) 10%, transparent);
+}
+.api-section:first-of-type {
+    border-top: none;
+    padding-top: 0;
+    margin-top: 0;
+}
+
+.api-section-h2 {
+    font-size: var(--fs-xl);
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0 0 8px;
+}
+.api-section-h3 {
+    font-size: var(--fs-sm);
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 16px 0 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.api-section-p {
+    font-size: var(--fs-sm);
+    color: var(--text-secondary);
+    line-height: 1.55;
+    margin: 0 0 8px;
+}
+.api-section-ul {
+    font-size: var(--fs-sm);
+    color: var(--text-secondary);
+    line-height: 1.6;
+    margin: 0;
+    padding-left: 20px;
+}
+.api-section-ul li {
+    margin-bottom: 4px;
+}
+
+.api-errors-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 8px;
+    margin-top: 8px;
+}
+.api-error-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 10px;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+}
+
+.api-endpoint {
+    margin-top: 48px;
+    padding-top: 28px;
+    border-top: 1px solid color-mix(in srgb, var(--text-primary) 10%, transparent);
+}
+
+.api-endpoint-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 6px;
+}
+.api-endpoint-path {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: var(--fs-sm);
+    color: var(--text-primary);
+    font-weight: 600;
+}
+.api-endpoint-title {
+    font-size: var(--fs-xl);
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 8px 0 16px;
+}
+.api-endpoint-desc {
+    font-size: var(--fs-sm);
+    color: var(--text-secondary);
+    line-height: 1.55;
+    margin: 0 0 12px;
+}
+
+.api-endpoint-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+    gap: 24px;
+    margin-top: 12px;
+}
+@media (max-width: 900px) {
+    .api-endpoint-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.api-params-table {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+}
+.api-param-row {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.api-param-name {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    color: var(--text-primary);
+    font-weight: 700;
+    font-size: var(--fs-sm);
+}
+.api-param-type {
+    margin-left: 8px;
+    font-size: var(--fs-2xs);
+    color: var(--text-muted);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+.api-required {
+    margin-left: 8px;
+    font-size: var(--fs-2xs);
+    color: var(--danger, #ef4444);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.api-param-desc {
+    font-size: var(--fs-xs);
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.api-try-form {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.api-try-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.api-try-label {
+    font-size: var(--fs-xs);
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+.api-try-input {
+    padding: 6px 10px;
+    background: var(--bg-secondary);
+    border: 1.5px solid color-mix(in srgb, var(--text-primary) 18%, transparent);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: var(--fs-xs);
+    outline: none;
+}
+.api-try-input:focus {
+    border-color: var(--accent);
+}
+
+.api-try-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 12px;
+    padding: 8px 18px;
+    background: var(--accent);
+    color: var(--text-inverse);
+    border: 1.5px solid var(--text-primary);
+    border-radius: 999px;
+    font-size: var(--fs-sm);
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: var(--shadow-hard-chip, none);
+    font-family: inherit;
+}
+.api-try-btn:disabled {
+    opacity: 0.6;
+    cursor: wait;
+}
+
+.api-try-hint {
+    margin-top: 6px;
+    font-size: var(--fs-2xs);
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.api-response-h3 {
+    justify-content: space-between;
+}
+.api-response-time {
+    margin-left: auto;
+    font-size: var(--fs-2xs);
+    color: var(--text-muted);
+    font-weight: 500;
+    text-transform: none;
+    letter-spacing: 0;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+.api-code-block {
+    position: relative;
+    margin: 4px 0 8px;
+    background: var(--bg-secondary);
+    border: 1px solid color-mix(in srgb, var(--text-primary) 12%, transparent);
+    border-radius: 8px;
+    overflow: hidden;
+}
+.api-code-lang {
+    position: absolute;
+    top: 8px;
+    right: 36px;
+    font-size: var(--fs-2xs);
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 600;
+}
+.api-copy-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    background: var(--bg-primary);
+    border: 1px solid color-mix(in srgb, var(--text-primary) 18%, transparent);
+    border-radius: 6px;
+    padding: 4px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    z-index: 2;
+}
+.api-code-pre {
+    margin: 0;
+    padding: 14px 16px 14px 16px;
+    padding-right: 56px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: var(--fs-xs);
+    color: var(--text-primary);
+    line-height: 1.55;
+    overflow: auto;
+    white-space: pre;
+}
+
+.api-inline-code {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    color: var(--text-primary);
+    font-size: 0.92em;
+    background: color-mix(in srgb, var(--text-primary) 7%, transparent);
+    padding: 1px 5px;
+    border-radius: 3px;
+}
+`;
