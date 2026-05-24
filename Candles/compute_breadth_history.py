@@ -52,12 +52,12 @@ EXCLUDED = {
 }
 
 # Split-adjustment registry — должен совпадать с api/routers/breadth.py.
-# ПУСТОЙ. Каноничный способ закрытия сплита — re-import через
-# Candles/backfill_daily_history.py (ISS отдаёт уже адъюстнутую серию).
-# Реестр оставлен как аварийное окно: если backfill не запущен сразу
-# после сплита, можно временно добавить тикер сюда. ВАЖНО — после
-# backfill'а удалить запись, иначе двойная коррекция.
-KNOWN_SPLITS: dict[str, tuple[date, float]] = {}
+# Каноничный способ — re-import через backfill_daily_history.py. Но ISS не
+# для всех splits делает retroactive adjustment. См. подробности в
+# api/routers/breadth.py — там же актуальный список тикеров.
+KNOWN_SPLITS: dict[str, tuple[date, float]] = {
+    'BELU': (date(2024, 8, 22), 8.0),  # НоваБев Групп — split 1:8 (ISS не adjusts)
+}
 
 IMOEX_ISS_URL = "https://iss.moex.com/iss/statistics/engines/stock/markets/index/analytics/IMOEX.json?limit=100"
 

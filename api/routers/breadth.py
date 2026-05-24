@@ -44,11 +44,14 @@ KNOWN_SPLITS: dict[str, tuple[_date_cls, float]] = {
     # Применяется ТОЛЬКО к close < split_date (retroactive adjustment):
     #   adjusted_close = raw_close / ratio
     #
-    # ПУСТОЙ. Каноничный способ закрытия сплита — re-import через
-    # Candles/backfill_daily_history.py (ISS отдаёт уже адъюстнутую серию).
-    # Реестр оставлен как аварийное окно: если backfill не запущен сразу
-    # после сплита, можно временно добавить тикер сюда. ВАЖНО — после
-    # backfill'а удалить запись, иначе двойная коррекция.
+    # Каноничный способ — re-import через backfill_daily_history.py.
+    # Но ISS не для всех splits делает retroactive adjustment. Эмпирически:
+    #   T (1:10, апр 2026) — ISS adjusts ✓
+    #   SFIN (1.93, дек 2025) — ISS adjusts ✓
+    #   BELU (1:8, авг 2024) — ISS НЕ adjusts (сырая серия) — реестр обязателен.
+    # При появлении нового сплита: запустить backfill, проверить ISS-ответ,
+    # если pre-split цены не пересчитаны — добавить сюда.
+    'BELU': (_date_cls(2024, 8, 22), 8.0),  # НоваБев Групп — split 1:8
 }
 
 
