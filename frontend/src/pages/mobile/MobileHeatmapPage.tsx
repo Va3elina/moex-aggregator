@@ -391,7 +391,6 @@ export default function MobileHeatmapPage() {
         Icon={Grid3X3}
         title="Карта рынка"
         helpLink="/methodology/heatmap"
-        sourceNote="Источник: Московская биржа"
       />
 
       {/* Full-bleed treemap (как OI chart): без рамки, без margin, без bg.

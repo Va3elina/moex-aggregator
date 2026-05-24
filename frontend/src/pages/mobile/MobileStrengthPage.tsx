@@ -284,7 +284,7 @@ export default function MobileStrengthPage() {
         Icon={Activity}
         title="Сила рынка"
         helpLink="/methodology/strength"
-        sourceNote="Источник: Московская биржа"
+        sourceNote="Индекс IMOEX/RTSI: ПАО Московская Биржа"
       />
 
       {/* Dual chart: один SVG, top=price line, bottom=breadth bars (histogram).

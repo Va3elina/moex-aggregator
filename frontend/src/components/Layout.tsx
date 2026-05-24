@@ -470,10 +470,12 @@ export default function Layout() {
       >
         <div className="max-w-7xl mx-auto px-4 md:px-6 flex flex-wrap items-center justify-between gap-x-5 gap-y-2 text-xs">
           <span>© Frame · таймфрейм.рф</span>
-          {/* Attribution к источникам данных (compliance MOEX license).
-              MOEX требует видимое упоминание на сайтах использующих их данные. */}
+          {/* Attribution к индексам MOEX (Strength + FundsMoney используют
+              IMOEX/RTSI/RGBI как benchmark). License MOEX требует видимое
+              упоминание сайтов отображающих их индексы. Свечи акций (Heatmap,
+              Seasonality, OI) — обычная market data, attribution не требуется. */}
           <span style={{ color: 'var(--text-muted)' }}>
-            Биржевые данные:{' '}
+            Индексы:{' '}
             <a
               href="https://www.moex.com"
               target="_blank"

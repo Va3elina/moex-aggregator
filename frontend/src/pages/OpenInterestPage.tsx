@@ -425,7 +425,6 @@ export default function OpenInterestPage() {
           subtitle="Анализ позиций участников по фьючерсам MOEX"
           help={METHODOLOGY.oi}
           helpLink="/methodology/oi"
-          sourceNote="Источник: Московская биржа (Algopack)"
         />
       </div>
 

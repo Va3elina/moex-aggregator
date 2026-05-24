@@ -482,7 +482,7 @@ export default function FundsMoneyPage() {
                 subtitle="Динамика СЧА фондов и индексов"
                 help={METHODOLOGY.fundsMoney}
                 helpLink="/methodology/funds-money"
-                sourceNote="Источник: Московская биржа"
+                sourceNote="Индексы (IMOEX, RGBI, IMOEX2, GLDRUB): ПАО Московская Биржа"
             />
 
             {/* Editorial frame — обнимает категории + controls + chart в один контейнер.

@@ -351,7 +351,7 @@ export default function MobileFundsMoneyPage() {
         Icon={Wallet}
         title="Деньги в фондах"
         helpLink="/methodology/funds-money"
-        sourceNote="Источник: Московская биржа"
+        sourceNote="Индексы (IMOEX, RGBI, IMOEX2, GLDRUB): ПАО Московская Биржа"
       />
 
       {/* Full-bleed chart area. Histogram (Притоки) и MobileChart (СЧА)

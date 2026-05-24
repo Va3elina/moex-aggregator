@@ -165,7 +165,6 @@ export default function BuffettPage() {
                 subtitle="Оценка рынка относительно экономики"
                 help={METHODOLOGY.buffett}
                 helpLink="/methodology/buffett"
-                sourceNote="Источник: Московская биржа · Росстат"
             />
 
             {/* Editorial frame — обнимает controls + chart в один контейнер */}

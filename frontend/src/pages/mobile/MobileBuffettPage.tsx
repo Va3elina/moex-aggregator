@@ -292,7 +292,6 @@ export default function MobileBuffettPage() {
         Icon={Scale}
         title="Индикатор Баффетта"
         helpLink="/methodology/buffett"
-        sourceNote="Источник: Московская биржа · Росстат"
       />
 
       {/* Full-bleed chart — без рамки, как в OI. */}
