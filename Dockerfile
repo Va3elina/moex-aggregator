@@ -32,6 +32,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
+# Non-root user для API-сервиса. uid=1000 — стандарт, совместим с host
+# bind-mount'ами. /sbin/nologin блокирует interactive shell. orchestrator
+# и tg-bot переопределяют user через docker-compose (или работают как root —
+# они batch-процессы без HTTP exposure, низкая attack surface).
+RUN useradd --system --uid 1000 --no-create-home --shell /usr/sbin/nologin appuser
+
 # Python зависимости
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
@@ -51,6 +57,13 @@ COPY backup_db.sh .
 
 # Frontend из stage 1
 COPY --from=frontend-build /app/frontend/dist ./frontend/dist
+
+# КРИТИЧНО: chown ПОСЛЕ всех COPY (которые делают файлы owner=root). Без
+# этого uid=1000 не сможет читать `/app/api/*.py`, импорт упадёт. /app/logs
+# создаётся pre-emptively (api/logger.py делает mkdir при импорте) — если
+# не создать тут, runtime упадёт на PermissionError. Первая попытка
+# (commit 231411a) сломалась именно из-за этого.
+RUN mkdir -p /app/logs && chown -R appuser:appuser /app
 
 # Порт
 EXPOSE 8000

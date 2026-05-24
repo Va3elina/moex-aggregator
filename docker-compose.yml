@@ -44,6 +44,11 @@ services:
   api:
     build: .
     restart: always
+    # Non-root запуск (security hardening, attempt #2 — chown в Dockerfile
+    # gewährt'ит uid=1000 read+write на /app, что в первой попытке (commit
+    # 231411a) сломало старт). orchestrator и tg-bot остаются root —
+    # ради backward-compat batch-процессов без HTTP exposure.
+    user: "1000:1000"
     # Linux capabilities hardening:
     # - cap_drop ALL: убираем все capabilities (NET_ADMIN, SYS_ADMIN, SYS_PTRACE...)
     # - cap_add: оставляем только минимум для Python+nginx-style операций.
