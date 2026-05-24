@@ -1,7 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
 import { ChevronDown, CalendarDays, X } from 'lucide-react';
-import { useTrackRecent } from '../hooks/useRecent';
 import PageHeader from '../components/PageHeader';
 import InstrumentIcon from '../components/InstrumentIcon';
 import Dropdown, { type DropdownOption } from '../components/Dropdown';
@@ -65,26 +63,10 @@ export default function SeasonalityPage() {
   const seasonAccess = useTierAccess('seasonality');
   const { showUpgrade } = useUpgradePrompt();
 
-  // Deep-link support: /seasonality?ticker=SBER → pre-select актив.
-  // Используется со страницы Overview (Watchlist click-through, Screeners).
-  const [searchParams] = useSearchParams();
-  const initialTicker = searchParams.get('ticker')?.toUpperCase() || 'SBER';
-
   // Stock selector
-  const [selectedStock, setSelectedStock] = useState<string>(initialTicker);
-  const [selectedName, setSelectedName] = useState<string>(
-    initialTicker === 'SBER' ? 'Сбербанк' : initialTicker,
-  );
+  const [selectedStock, setSelectedStock] = useState<string>('SBER');
+  const [selectedName, setSelectedName] = useState<string>('Сбербанк');
   const [isModalOpen, setIsModalOpen] = useState(false);
-
-  // Tracking recent activity для overview RecentWidget.
-  useTrackRecent({
-    kind: 'indicator',
-    indicatorId: 'seasonality',
-    label: `Сезонность · ${selectedName}`,
-    ticker: selectedStock,
-    path: `/seasonality?ticker=${encodeURIComponent(selectedStock)}`,
-  });
 
   // Mode & params
   const [mode, setMode] = useState<SeasonalityMode>('weekday');

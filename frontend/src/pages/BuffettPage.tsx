@@ -1,7 +1,6 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { Scale } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useTrackRecent } from '../hooks/useRecent';
 import PageHeader from '../components/PageHeader';
 import { METHODOLOGY } from '../data/methodology';
 import {
@@ -35,8 +34,6 @@ const PERIOD_LABELS: Partial<Record<BuffettPeriod, string>> = {
 };
 
 export default function BuffettPage() {
-    useTrackRecent({ kind: 'indicator', indicatorId: 'buffett', label: 'Индикатор Баффета', path: '/buffett' });
-
     const { isAuthenticated } = useAuth();
     const navigate = useNavigate();
     const isMobile = useIsMobile();

@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Grid3X3 } from 'lucide-react';
-import { useTrackRecent } from '../hooks/useRecent';
 import PageHeader from '../components/PageHeader';
 import Dropdown, { type DropdownOption } from '../components/Dropdown';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
@@ -131,9 +130,6 @@ function squarify(
 }
 
 export default function HeatmapPage() {
-  // Tracking recent activity для RecentWidget на overview.
-  useTrackRecent({ kind: 'indicator', indicatorId: 'heatmap', label: 'Карта рынка', path: '/heatmap' });
-
   const containerRef = useRef<HTMLDivElement>(null);
   // Outer paper-card ref — used for capture (включает watermark в snapshot)
   const captureRef = useRef<HTMLDivElement>(null);
