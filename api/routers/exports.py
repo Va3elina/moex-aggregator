@@ -26,9 +26,36 @@ from sqlalchemy.orm import Session
 from api.database import get_db
 from api.models import User
 from api.routers.auth import require_pro
-from api.utils.csv_export import csv_streaming_response, zip_response
+from api.utils.csv_export import csv_streaming_response, zip_response, xlsx_response
 
 router = APIRouter(prefix="/api/export", tags=["export"])
+
+
+def _bundle_response(
+    files: dict,
+    base_name: str,
+    fmt: str,
+):
+    """
+    Унифицированный выбор формата output'а.
+
+    fmt:
+      'csv'  → если 1 файл — CSV, если >1 — ZIP с CSV.
+      'xlsx' → всегда XLSX с sheet per file.
+
+    Args:
+        files: {name: (rows, fieldnames)}.
+        base_name: без extension (e.g. 'seasonality_20260524_0934').
+        fmt: 'csv' или 'xlsx'.
+    """
+    if fmt == "xlsx":
+        return xlsx_response(files, filename=f"{base_name}.xlsx")
+
+    # csv mode
+    if len(files) == 1:
+        name, (rows, fieldnames) = next(iter(files.items()))
+        return csv_streaming_response(rows=rows, fieldnames=fieldnames, filename=name)
+    return zip_response(files, filename=f"{base_name}.zip")
 
 
 def _ts() -> str:
@@ -91,6 +118,7 @@ def _date_range_clause(
 # ════════════════════════════════════════════════════════════════════
 @router.get("/heatmap.csv")
 def export_heatmap(
+    fmt: str = Query("csv", description="csv|xlsx — формат output'а"),
     user: User = Depends(require_pro),
     db: Session = Depends(get_db),
 ):
@@ -102,16 +130,14 @@ def export_heatmap(
         FROM mv_heatmap_stocks
         ORDER BY market_cap DESC NULLS LAST
     """)).mappings().all()
-    return csv_streaming_response(
-        rows=[dict(r) for r in rows],
-        fieldnames=[
-            "sec_id", "name", "sector",
-            "price", "prev_close",
-            "change_1d", "change_1w", "change_1m", "change_1y",
-            "volume_1d", "value_1d", "market_cap",
-        ],
-        filename=f"heatmap_{_ts()}.csv",
-    )
+    fieldnames = [
+        "sec_id", "name", "sector",
+        "price", "prev_close",
+        "change_1d", "change_1w", "change_1m", "change_1y",
+        "volume_1d", "value_1d", "market_cap",
+    ]
+    files = {f"heatmap_{_ts()}.csv": ([dict(r) for r in rows], fieldnames)}
+    return _bundle_response(files, f"heatmap_{_ts()}", fmt)
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -125,6 +151,7 @@ def export_breadth(
     period_from: str | None = Query(None),
     period_to: str | None = Query(None),
     layers: str | None = Query(None, description="history,stocks"),
+    fmt: str = Query("csv", description="csv|xlsx — формат output'а"),
     user: User = Depends(require_pro),
     db: Session = Depends(get_db),
 ):
@@ -197,11 +224,7 @@ def export_breadth(
         rows, fields = stocks_data()
         files["strength_stocks_snapshot.csv"] = (rows, fields)
 
-    if len(files) == 1:
-        name, (rows, fields) = next(iter(files.items()))
-        return csv_streaming_response(rows=rows, fieldnames=fields, filename=name)
-
-    return zip_response(files, filename=f"strength_{_ts()}.zip")
+    return _bundle_response(files, f"strength_{_ts()}", fmt)
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -211,6 +234,7 @@ def export_breadth(
 def export_seasonality(
     ticker: str = Query(..., description="Тикер ИЛИ comma-sep список: SBER или SBER,GAZP,LKOH"),
     layers: str | None = Query(None, description="daily,weekday_avg,monthly_avg,monthday_avg"),
+    fmt: str = Query("csv", description="csv|xlsx — формат output'а"),
     user: User = Depends(require_pro),
     db: Session = Depends(get_db),
 ):
@@ -345,12 +369,7 @@ def export_seasonality(
     if not files:
         raise HTTPException(status_code=404, detail=f"Нет данных по {','.join(tickers)}")
 
-    if len(files) == 1:
-        # Single CSV — отдаём напрямую, не ZIP.
-        name, (rows, fields) = next(iter(files.items()))
-        return csv_streaming_response(rows=rows, fieldnames=fields, filename=name)
-
-    return zip_response(files, filename=f"seasonality_{_ts()}.zip")
+    return _bundle_response(files, f"seasonality_{_ts()}", fmt)
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -359,6 +378,7 @@ def export_seasonality(
 @router.get("/buffett.csv")
 def export_buffett(
     mode: str = Query("cap-gdp", description="cap-gdp|cap-m2, comma-sep для обоих"),
+    fmt: str = Query("csv", description="csv|xlsx — формат output'а"),
     user: User = Depends(require_pro),
     db: Session = Depends(get_db),
 ):
@@ -436,10 +456,7 @@ def export_buffett(
         rows, fields = mode_fns[m]()
         files[f"buffett_{m}.csv"] = (rows, fields)
 
-    if len(files) == 1:
-        name, (rows, fields) = next(iter(files.items()))
-        return csv_streaming_response(rows=rows, fieldnames=fields, filename=name)
-    return zip_response(files, filename=f"buffett_{_ts()}.zip")
+    return _bundle_response(files, f"buffett_{_ts()}", fmt)
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -452,6 +469,7 @@ def export_funds_money(
     period_from: str | None = Query(None),
     period_to: str | None = Query(None),
     funds: str | None = Query(None, description="Comma-sep tickers фондов"),
+    fmt: str = Query("csv", description="csv|xlsx — формат output'а"),
     user: User = Depends(require_pro),
     db: Session = Depends(get_db),
 ):
@@ -496,10 +514,7 @@ def export_funds_money(
         rows, fields = fetch(cat)
         files[f"funds_{cat}.csv"] = (rows, fields)
 
-    if len(files) == 1:
-        name, (rows, fields) = next(iter(files.items()))
-        return csv_streaming_response(rows=rows, fieldnames=fields, filename=name)
-    return zip_response(files, filename=f"funds_{_ts()}.zip")
+    return _bundle_response(files, f"funds_{_ts()}", fmt)
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -510,6 +525,7 @@ def export_cbr_flows(
     instrument: str = Query("stocks", description="comma-sep: stocks,ofz,fx"),
     years: int = Query(10, ge=1, le=30),
     categories: str | None = Query(None),
+    fmt: str = Query("csv", description="csv|xlsx — формат output'а"),
     user: User = Depends(require_pro),
     db: Session = Depends(get_db),
 ):
@@ -550,10 +566,7 @@ def export_cbr_flows(
         rows, fields = fetch(inst)
         files[f"cbr_flows_{inst}.csv"] = (rows, fields)
 
-    if len(files) == 1:
-        name, (rows, fields) = next(iter(files.items()))
-        return csv_streaming_response(rows=rows, fieldnames=fields, filename=name)
-    return zip_response(files, filename=f"cbr_flows_{_ts()}.zip")
+    return _bundle_response(files, f"cbr_flows_{_ts()}", fmt)
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -567,6 +580,7 @@ def export_oi(
     days: int | None = Query(None, ge=1, le=3650),
     period_from: str | None = Query(None, description="ISO date YYYY-MM-DD (range mode)"),
     period_to: str | None = Query(None, description="ISO date YYYY-MM-DD (range mode)"),
+    fmt: str = Query("csv", description="csv|xlsx — формат output'а"),
     user: User = Depends(require_pro),
     db: Session = Depends(get_db),
 ):
@@ -644,7 +658,4 @@ def export_oi(
             detail=f"Нет OI данных для выбранных параметров",
         )
 
-    if len(files) == 1:
-        name, (rows, fields) = next(iter(files.items()))
-        return csv_streaming_response(rows=rows, fieldnames=fields, filename=name)
-    return zip_response(files, filename=f"oi_{_ts()}.zip")
+    return _bundle_response(files, f"oi_{_ts()}", fmt)

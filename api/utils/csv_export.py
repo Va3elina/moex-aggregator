@@ -79,6 +79,61 @@ def _csv_blob(rows: Iterable[dict], fieldnames: list[str]) -> str:
     return buffer.getvalue()
 
 
+def xlsx_response(
+    sheets: dict[str, tuple[Iterable[dict], list[str]]],
+    filename: str,
+) -> Response:
+    """
+    Упаковывает несколько rowsets в XLSX (один файл, multiple sheets).
+
+    Преимущество vs ZIP: один файл, Excel-нативная навигация по табам
+    (sheet'ам). Размер сравним с ZIP-of-CSVs.
+
+    Args:
+        sheets: {sheet_name: (rows, fieldnames)}. Sheet name max 31 char
+                (Excel limit), запрещены чары \\ / ? * [ ].
+        filename: имя .xlsx файла для download.
+    """
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    # Удаляем default sheet который Workbook() создаёт автоматически.
+    wb.remove(wb.active)
+
+    for raw_name, (rows, fieldnames) in sheets.items():
+        # Sanitize sheet name под Excel-ограничения.
+        safe_name = _sanitize_sheet_name(raw_name)
+        ws = wb.create_sheet(title=safe_name)
+        # Header row.
+        ws.append(fieldnames)
+        for row in rows:
+            ws.append([row.get(f) for f in fieldnames])
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+def _sanitize_sheet_name(name: str) -> str:
+    """Excel запрещает / \\ ? * [ ] в sheet name + max 31 char."""
+    sanitized = name
+    for ch in r"/\?*[]:":
+        sanitized = sanitized.replace(ch, "_")
+    # Strip .csv extension если осталось из ZIP-naming convention.
+    if sanitized.endswith(".csv"):
+        sanitized = sanitized[:-4]
+    return sanitized[:31]
+
+
 def zip_response(
     files: dict[str, tuple[Iterable[dict], list[str]]],
     filename: str,

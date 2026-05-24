@@ -137,6 +137,7 @@ export default function CsvExportModal({ config, onClose }: Props) {
     });
 
     const [downloading, setDownloading] = useState(false);
+    const [format, setFormat] = useState<'csv' | 'xlsx'>('csv');
 
     // Esc + body scroll lock.
     useEffect(() => {
@@ -181,12 +182,20 @@ export default function CsvExportModal({ config, onClose }: Props) {
     const handleDownload = async () => {
         if (selectedLayers.size === 0) return;
         const layerIds = Array.from(selectedLayers);
-        const url = config.buildUrl(layerIds, values);
-        const filename = config.buildFilename(layerIds, values);
+        // Add format to URL — backend выбирает CSV/ZIP/XLSX по этому param'у.
+        let url = config.buildUrl(layerIds, values);
+        url += (url.includes('?') ? '&' : '?') + `fmt=${format}`;
+
+        // Filename: для XLSX заменяем .csv/.zip → .xlsx.
+        let filename = config.buildFilename(layerIds, values);
+        if (format === 'xlsx') {
+            filename = filename.replace(/\.(csv|zip)$/, '.xlsx');
+            if (!filename.endsWith('.xlsx')) filename += '.xlsx';
+        }
 
         track('chart_export', {
             indicator: config.indicator,
-            format: isZip ? 'zip' : 'csv',
+            format,
             layers: layerIds.join(','),
             combinations: totalCombinations,
         });
@@ -354,35 +363,29 @@ export default function CsvExportModal({ config, onClose }: Props) {
                     </Section>
                 )}
 
-                {/* Format hint */}
-                <div
-                    style={{
-                        padding: '14px 20px',
-                        borderBottom: '1px dashed color-mix(in srgb, var(--text-primary) 15%, transparent)',
-                    }}
-                >
-                    <div
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 10,
-                            fontSize: 'var(--fs-sm)',
-                            color: 'var(--text-secondary)',
-                        }}
-                    >
-                        {isZip ? (
-                            <>
-                                <FileArchive size={16} />
-                                <span>ZIP-архив ({totalCombinations} CSV файлов)</span>
-                            </>
-                        ) : (
-                            <>
-                                <FileText size={16} />
-                                <span>CSV (UTF-8, открывается в Excel/Numbers)</span>
-                            </>
-                        )}
+                {/* Format selector — radio: CSV vs XLSX */}
+                <Section title="Формат файла">
+                    <div style={{ display: 'flex', gap: 8 }}>
+                        <FormatButton
+                            active={format === 'csv'}
+                            onClick={() => setFormat('csv')}
+                            icon={isZip ? <FileArchive size={14} /> : <FileText size={14} />}
+                            label={isZip ? `ZIP · ${totalCombinations} CSV` : 'CSV'}
+                            description="UTF-8 · открывается в Excel/Numbers/любом редакторе"
+                        />
+                        <FormatButton
+                            active={format === 'xlsx'}
+                            onClick={() => setFormat('xlsx')}
+                            icon={<FileText size={14} />}
+                            label="XLSX"
+                            description={
+                                totalCombinations > 1
+                                    ? `Excel · ${totalCombinations} sheet'ов в одном файле`
+                                    : 'Excel · нативный формат'
+                            }
+                        />
                     </div>
-                </div>
+                </Section>
 
                 {/* Actions */}
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, padding: '14px 20px' }}>
@@ -432,6 +435,59 @@ export default function CsvExportModal({ config, onClose }: Props) {
 // ────────────────────────────────────────────────────────────────────
 // Subcomponents
 // ────────────────────────────────────────────────────────────────────
+
+function FormatButton({
+    active,
+    onClick,
+    icon,
+    label,
+    description,
+}: {
+    active: boolean;
+    onClick: () => void;
+    icon: React.ReactNode;
+    label: string;
+    description: string;
+}) {
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            style={{
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'flex-start',
+                gap: 4,
+                padding: '10px 14px',
+                background: active
+                    ? 'color-mix(in srgb, var(--accent) 12%, var(--bg-secondary))'
+                    : 'var(--bg-secondary)',
+                border: `1.5px solid ${active ? 'var(--accent)' : 'var(--text-primary)'}`,
+                borderRadius: 10,
+                cursor: 'pointer',
+                textAlign: 'left',
+            }}
+        >
+            <span
+                style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    fontWeight: 700,
+                    fontSize: 'var(--fs-sm)',
+                    color: 'var(--text-primary)',
+                }}
+            >
+                {icon}
+                {label}
+            </span>
+            <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', lineHeight: 1.3 }}>
+                {description}
+            </span>
+        </button>
+    );
+}
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
     return (
