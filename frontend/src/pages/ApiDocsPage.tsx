@@ -26,7 +26,11 @@ import {
     Eye,
     EyeOff,
     Trash2,
+    Lock,
+    Sparkles,
 } from 'lucide-react';
+import { useCommonFeatures } from '../contexts/TierFeaturesContext';
+import { useAuth } from '../contexts/AuthContext';
 
 // Базовый URL для примеров — берём origin страницы, так юзер
 // автоматически видит https://таймфрейм.рф/api/v1/... вместо абстрактного <BASE>.
@@ -1133,9 +1137,11 @@ interface EndpointBlockProps {
     apiKey: string;
     lang: Lang;
     onLangChange: (l: Lang) => void;
+    /** True если у юзера НЕТ api_access (гость / free / basic). Включает lock на Try-кнопку. */
+    locked: boolean;
 }
 
-function EndpointBlock({ ep, apiKey, lang, onLangChange }: EndpointBlockProps) {
+function EndpointBlock({ ep, apiKey, lang, onLangChange, locked }: EndpointBlockProps) {
     // Локальный state параметров формы — keyed by param name.
     const initialParams = useMemo(() => {
         const obj: Record<string, string> = {};
@@ -1290,15 +1296,26 @@ function EndpointBlock({ ep, apiKey, lang, onLangChange }: EndpointBlockProps) {
                         </>
                     )}
 
-                    <button
-                        onClick={handleTry}
-                        disabled={loading}
-                        className="api-try-btn"
-                    >
-                        <Play size={12} />
-                        {loading ? 'Отправляем…' : ep.params.length > 0 ? 'Отправить запрос' : 'Попробовать'}
-                    </button>
-                    {!apiKey && (
+                    {locked ? (
+                        <Link
+                            to="/pricing"
+                            className="api-try-btn"
+                            style={{ textDecoration: 'none' }}
+                        >
+                            <Lock size={12} />
+                            Доступно на Pro
+                        </Link>
+                    ) : (
+                        <button
+                            onClick={handleTry}
+                            disabled={loading}
+                            className="api-try-btn"
+                        >
+                            <Play size={12} />
+                            {loading ? 'Отправляем…' : ep.params.length > 0 ? 'Отправить запрос' : 'Попробовать'}
+                        </button>
+                    )}
+                    {!locked && !apiKey && (
                         <p className="api-try-hint">
                             <AlertCircle size={11} style={{ verticalAlign: '-1px' }} /> Введите ключ
                             в верхней панели, чтобы получить реальный ответ.
@@ -1344,18 +1361,113 @@ function EndpointBlock({ ep, apiKey, lang, onLangChange }: EndpointBlockProps) {
 // Главный компонент
 // ════════════════════════════════════════════════════════════════════
 
+/**
+ * Pro-CTA баннер для non-Pro юзеров.
+ * Показывается сверху страницы — над ApiKeyBar. Объясняет что API
+ * доступен только на тарифе Pro, со ссылкой на /pricing.
+ */
+function ProRequiredBanner() {
+    return (
+        <div
+            style={{
+                background: 'color-mix(in srgb, var(--accent) 12%, var(--bg-secondary))',
+                borderBottom: '2px solid var(--accent)',
+                padding: '14px 16px',
+            }}
+        >
+            <div
+                style={{
+                    maxWidth: 1200,
+                    margin: '0 auto',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 14,
+                    flexWrap: 'wrap',
+                }}
+            >
+                <div
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: 36,
+                        height: 36,
+                        background: 'var(--accent)',
+                        borderRadius: 8,
+                        color: 'var(--text-inverse)',
+                        flexShrink: 0,
+                    }}
+                >
+                    <Lock size={18} strokeWidth={2.2} />
+                </div>
+                <div style={{ flex: 1, minWidth: 220 }}>
+                    <div
+                        style={{
+                            fontSize: 'var(--fs-sm)',
+                            fontWeight: 700,
+                            color: 'var(--text-primary)',
+                            marginBottom: 2,
+                        }}
+                    >
+                        API-доступ — функция тарифа Pro
+                    </div>
+                    <div
+                        style={{
+                            fontSize: 'var(--fs-xs)',
+                            color: 'var(--text-secondary)',
+                            lineHeight: 1.45,
+                        }}
+                    >
+                        Документация открыта для всех — её можно читать, чтобы оценить возможности.
+                        Но создавать ключи и делать запросы можно только на Pro.
+                    </div>
+                </div>
+                <Link
+                    to="/pricing"
+                    style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        padding: '8px 18px',
+                        background: 'var(--accent)',
+                        color: 'var(--text-inverse)',
+                        textDecoration: 'none',
+                        borderRadius: 999,
+                        fontSize: 'var(--fs-sm)',
+                        fontWeight: 700,
+                        border: '1.5px solid var(--text-primary)',
+                        flexShrink: 0,
+                    }}
+                >
+                    <Sparkles size={14} />
+                    Перейти на Pro
+                </Link>
+            </div>
+        </div>
+    );
+}
+
 export default function ApiDocsPage() {
     const [apiKey, setApiKey] = useApiKey();
     const [lang, setLang] = useState<Lang>('curl');
     const sectionIds = useMemo(() => SECTIONS.map((s) => s.id), []);
     const active = useActiveSection(sectionIds);
+    // Tier-gating: показываем CTA-баннер если у юзера нет api_access.
+    // Не блокируем доступ к документации — она нужна гостям/free-юзерам
+    // чтобы принять решение о покупке Pro.
+    const common = useCommonFeatures();
+    const { isAuthenticated } = useAuth();
+    const showProBanner = !common.api_access;
 
     return (
         <>
             <style>{INLINE_STYLES}</style>
 
-            {/* Sticky API-key bar */}
-            <ApiKeyBar apiKey={apiKey} onChange={setApiKey} />
+            {/* Pro-CTA сверху для не-Pro юзеров (гостей + free + basic) */}
+            {showProBanner && <ProRequiredBanner />}
+
+            {/* Sticky API-key bar — скрываем для гостей (бессмысленно вводить ключ) */}
+            {isAuthenticated && <ApiKeyBar apiKey={apiKey} onChange={setApiKey} />}
 
             <div className="api-docs-layout">
                 {/* Sidebar */}
@@ -1661,6 +1773,7 @@ X-RateLimit-Reset:     1716548340 # unix-ts когда окно сброситс
                                     apiKey={apiKey}
                                     lang={lang}
                                     onLangChange={setLang}
+                                    locked={!common.api_access}
                                 />
                             ))}
                         </Fragment>

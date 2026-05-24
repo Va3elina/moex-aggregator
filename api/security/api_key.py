@@ -77,12 +77,13 @@ def get_user_by_api_key(
     """
     Authenticates request through API key.
 
-    Возвращает User или 401. Также обновляет last_used_at для аналитики.
+    Возвращает User или 401/403. Также обновляет last_used_at для аналитики.
 
-    Pro-tier check: API keys создавать могут только Pro, но к моменту
-    использования ключа юзер может уже не быть Pro (downgrade) — пускаем
-    его всё равно, потому что ключ был создан валидно. Если хотим строгий
-    revoke при downgrade — добавим cron-задачу.
+    Pro-tier check: API — это Pro-only фича. Если подписка истекла
+    (cron `expire_overdue` опускает role до 'free'), возвращаем 403 с
+    понятным сообщением. Ключ остаётся в БД — после возобновления подписки
+    он автоматически снова работает. Это лучше чем revoke: пользователь
+    не должен пересоздавать ключи (и переписывать их в своих ботах).
     """
     plain_key = _extract_api_key(x_api_key, authorization)
     if not plain_key:
@@ -102,6 +103,18 @@ def get_user_by_api_key(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid API key")
 
     api_key, user = row
+
+    # Pro-tier enforcement: только active Pro/admin может использовать API.
+    # Free/basic/expired — отказ. admin всегда проходит (это manual override).
+    if user.role not in ("pro", "admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "API доступен только на тарифе Pro. Возобновите подписку — "
+                "ваш ключ продолжит работать без пересоздания."
+            ),
+        )
+
     # Update last_used_at — async-friendly write, не блокирует response.
     api_key.last_used_at = datetime.now(timezone.utc)
     db.commit()
