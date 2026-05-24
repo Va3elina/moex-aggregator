@@ -29,6 +29,7 @@ import { getCategoryColor } from '../components/cbr/cbrPalette';
 import { getCategoryInfo } from '../components/cbr/cbrCategoryInfo';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import CsvExportButton from '../components/export/CsvExportButton';
+import { periodToQuery } from '../utils/csvPeriod';
 import { useOnboardingTour } from '../hooks/useFirstVisit';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { cbrFlowsTourSteps } from '../data/tours/cbr-flows';
@@ -378,47 +379,82 @@ export default function CbrFlowsPage() {
           <div data-tour="cbr-export" className="shrink-0 ml-auto flex items-center" style={{ gap: 'var(--sp-2)' }}>
           <CsvExportButton
             indicator="cbr_flows"
-            config={() => {
-              const periodYears: Record<string, number> = {
-                '1y': 1, '2y': 2, '3y': 3, '5y': 5, 'all': 30,
-              };
-              return {
-                indicator: 'cbr_flows',
-                title: 'Экспорт: Потоки участников биржи',
-                layers: [{
-                  id: 'flows',
-                  label: 'Потоки ОРФР',
-                  description: 'period_year, label, category, value (млрд ₽)',
-                  defaultSelected: true,
-                }],
-                selectors: [
-                  {
-                    kind: 'multiselect',
-                    id: 'instruments',
-                    label: 'Тип инструмента',
-                    default: [type],
-                    hint: 'Несколько → ZIP с CSV per тип',
-                    options: INSTRUMENT_TABS.map(t => ({ value: t.key, label: t.label })),
-                  },
-                  {
-                    kind: 'number',
-                    id: 'years',
-                    label: 'Глубина истории',
-                    default: periodYears[period] ?? 10,
-                    min: 1,
-                    max: 30,
-                    suffix: 'лет',
-                  },
-                ],
-                params: [],
-                buildUrl: (_layers, vals) => {
-                  const insts = (vals.instruments as string[] ?? [type]).join(',');
-                  const years = vals.years as number ?? periodYears[period] ?? 10;
-                  return `/api/export/cbr-flows.csv?instrument=${insts}&years=${years}`;
+            config={() => ({
+              indicator: 'cbr_flows',
+              title: 'Экспорт: Потоки участников биржи',
+              layers: [{
+                id: 'flows',
+                label: 'Потоки ОРФР',
+                description: 'period_year, label, category, value (млрд ₽)',
+                defaultSelected: true,
+              }],
+              // Unified порядок: тип инструмента (актив-эквивалент) →
+              // категории (mode-эквивалент) → период.
+              selectors: [
+                {
+                  kind: 'multiselect',
+                  id: 'instruments',
+                  label: 'Тип инструмента',
+                  default: [type],
+                  hint: 'Несколько → ZIP с CSV per тип',
+                  options: INSTRUMENT_TABS.map(t => ({ value: t.key, label: t.label })),
                 },
-                buildFilename: () => `cbr_flows_${Date.now()}.zip`,
-              };
-            }}
+                {
+                  kind: 'multiselect',
+                  id: 'categories',
+                  label: 'Категории участников',
+                  default: [], // пустой = все категории (backend не фильтрует)
+                  hint: 'Пусто = все категории',
+                  options: [
+                    { value: 'Физические лица', label: 'Физлица' },
+                    { value: 'СЗКО', label: 'СЗКО' },
+                    { value: 'Прочие Банки', label: 'Прочие банки' },
+                    { value: 'Нерезиденты', label: 'Нерезиденты' },
+                    { value: 'НФО', label: 'НФО' },
+                    { value: 'Нефинансовые организации', label: 'Нефин. организации' },
+                    { value: 'Доверительное управление', label: 'ДУ' },
+                    { value: 'Банк России', label: 'ЦБ' },
+                    { value: 'Российские кредитные организации', label: 'РКО' },
+                    { value: 'Клиенты российских кредитных организаций', label: 'Клиенты РКО' },
+                  ],
+                },
+                {
+                  kind: 'period',
+                  id: 'period',
+                  label: 'Период',
+                  default: { type: 'preset', value: period },
+                  presets: [
+                    { value: '1y', label: '1Г', days: 365 },
+                    { value: '2y', label: '2Г', days: 730 },
+                    { value: '3y', label: '3Г', days: 1095 },
+                    { value: '5y', label: '5Л', days: 1825 },
+                    { value: 'all', label: 'Всё', days: 11000 },
+                  ],
+                },
+              ],
+              params: [],
+              buildUrl: (_layers, vals) => {
+                const insts = (vals.instruments as string[] ?? [type]).join(',');
+                const cats = (vals.categories as string[] ?? []);
+                const catsParam = cats.length > 0 ? `&categories=${encodeURIComponent(cats.join(','))}` : '';
+                // ORFR хранит данные по годам, так что period конвертируется в `years`.
+                let yearsParam = '';
+                const pv = vals.period;
+                if (pv && typeof pv === 'object' && (pv as { type?: string }).type === 'range') {
+                  // Range — берём years = diff в годах.
+                  const r = pv as { type: 'range'; from: string; to: string };
+                  const fromY = parseInt(r.from.slice(0, 4), 10);
+                  const toY = parseInt(r.to.slice(0, 4), 10);
+                  yearsParam = `&years=${Math.max(1, toY - fromY + 1)}`;
+                } else {
+                  // Preset → days → years.
+                  const days = parseInt(periodToQuery(pv, 365).replace('days=', ''), 10);
+                  yearsParam = `&years=${Math.max(1, Math.round(days / 365))}`;
+                }
+                return `/api/export/cbr-flows.csv?instrument=${insts}${yearsParam}${catsParam}`;
+              },
+              buildFilename: () => `cbr_flows_${Date.now()}.zip`,
+            })}
           />
           <ChartCaptureButton
             getTargetElement={() => chartAnchorRef.current}

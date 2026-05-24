@@ -378,6 +378,10 @@ def export_seasonality(
 @router.get("/buffett.csv")
 def export_buffett(
     mode: str = Query("cap-gdp", description="cap-gdp|cap-m2, comma-sep для обоих"),
+    days: int | None = Query(None, ge=1, le=15000),
+    period_from: str | None = Query(None),
+    period_to: str | None = Query(None),
+    timeframe: str = Query("1d", description="1d|1w|1m — sampling step"),
     fmt: str = Query("csv", description="csv|xlsx — формат output'а"),
     user: User = Depends(require_pro),
     db: Session = Depends(get_db),
@@ -392,8 +396,47 @@ def export_buffett(
     if not modes:
         raise HTTPException(status_code=400, detail="mode invalid")
 
+    if timeframe not in ("1d", "1w", "1m"):
+        raise HTTPException(status_code=400, detail="timeframe invalid")
+
+    # Date range — opt-in. Default = вся история.
+    date_clause, date_params = _date_range_clause(
+        days, period_from, period_to, date_column="trade_date",
+    )
+
+    # Timeframe sampling — после fetch'а rows.
+    def sample(rows: list[dict]) -> list[dict]:
+        """Sample каждую N-ю строку для weekly/monthly. Для 1d — нет sampling."""
+        if timeframe == "1d" or not rows:
+            return rows
+        # Простой sampling по дате: для 1w — Friday only, для 1m — last
+        # day of month. Это даёт регулярный шаг + соответствует тому что
+        # юзер видит на странице (UI timeframe тоже sampling).
+        seen_buckets: set = set()
+        sampled = []
+        for r in rows:
+            d = r["trade_date"]
+            if timeframe == "1w":
+                # ISO week year-week (одна сэмпл per неделю — берём последнюю).
+                bucket = (d.isocalendar()[0], d.isocalendar()[1]) if hasattr(d, 'isocalendar') else str(d)[:7]
+            else:  # 1m
+                bucket = (d.year, d.month) if hasattr(d, 'year') else str(d)[:7]
+            seen_buckets.add(bucket)
+        # Для каждого bucket — берём last row.
+        last_per_bucket: dict = {}
+        for r in rows:
+            d = r["trade_date"]
+            if timeframe == "1w":
+                bucket = (d.isocalendar()[0], d.isocalendar()[1]) if hasattr(d, 'isocalendar') else str(d)[:7]
+            else:
+                bucket = (d.year, d.month) if hasattr(d, 'year') else str(d)[:7]
+            last_per_bucket[bucket] = r
+        sampled = list(last_per_bucket.values())
+        sampled.sort(key=lambda x: x["trade_date"])
+        return sampled
+
     def cap_gdp_data():
-        rows = db.execute(text("""
+        rows = db.execute(text(f"""
             WITH cap AS (
               SELECT period_date AS dt, value AS cap
               FROM macro_data WHERE indicator='MARKET_CAP_TOTAL'
@@ -419,12 +462,13 @@ def export_buffett(
                         THEN ROUND((market_cap / gdp_ttm * 100)::numeric, 4)
                         ELSE NULL END AS buffett_ratio_pct
             FROM joined
+            WHERE 1=1 {date_clause}
             ORDER BY trade_date ASC
-        """)).mappings().all()
-        return [dict(r) for r in rows], ["trade_date", "market_cap", "gdp_ttm", "buffett_ratio_pct"]
+        """), date_params).mappings().all()
+        return sample([dict(r) for r in rows]), ["trade_date", "market_cap", "gdp_ttm", "buffett_ratio_pct"]
 
     def cap_m2_data():
-        rows = db.execute(text("""
+        rows = db.execute(text(f"""
             WITH cap AS (
               SELECT period_date AS dt, value AS cap
               FROM macro_data WHERE indicator='MARKET_CAP_TOTAL'
@@ -446,9 +490,10 @@ def export_buffett(
                         THEN ROUND((market_cap / m2)::numeric, 6)
                         ELSE NULL END AS cap_m2_ratio
             FROM joined
+            WHERE 1=1 {date_clause}
             ORDER BY trade_date ASC
-        """)).mappings().all()
-        return [dict(r) for r in rows], ["trade_date", "market_cap", "m2", "cap_m2_ratio"]
+        """), date_params).mappings().all()
+        return sample([dict(r) for r in rows]), ["trade_date", "market_cap", "m2", "cap_m2_ratio"]
 
     mode_fns = {"cap-gdp": cap_gdp_data, "cap-m2": cap_m2_data}
     files: dict = {}

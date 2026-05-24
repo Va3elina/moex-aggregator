@@ -664,7 +664,17 @@ export default function FundsMoneyPage() {
                           description: 'Daily NAV per fund по выбранной категории',
                           defaultSelected: true,
                         }],
+                        // Unified порядок: фонды (актив) → категории (mode) → период.
                         selectors: [
+                          {
+                            kind: 'instrument-picker',
+                            id: 'funds',
+                            label: 'Фонды (опционально)',
+                            default: [],
+                            source: 'funds',
+                            pickerTitle: 'Выберите фонды',
+                            hint: 'Пусто = все фонды выбранных категорий. Иначе — только эти.',
+                          },
                           {
                             kind: 'multiselect',
                             id: 'categories',
@@ -689,14 +699,15 @@ export default function FundsMoneyPage() {
                             ],
                           },
                         ],
-                        params: visibleTickers.length > 0
-                          ? [{ label: 'Фильтр фондов (с UI)', value: visibleTickers.join(', ') }]
-                          : [],
+                        params: [],
                         buildUrl: (_layers, vals) => {
                           const cats = (vals.categories as string[] ?? [category]).join(',');
                           const periodParam = periodToQuery(vals.period, periodDays[period] ?? 365);
-                          const fundsParam = visibleTickers.length > 0
-                            ? `&funds=${encodeURIComponent(visibleTickers.join(','))}`
+                          // Picker override — если юзер выбрал → этими фондами; иначе UI hidden funds.
+                          const pickedFunds = (vals.funds as string[] ?? []);
+                          const effectiveFundsList = pickedFunds.length > 0 ? pickedFunds : visibleTickers;
+                          const fundsParam = effectiveFundsList.length > 0
+                            ? `&funds=${encodeURIComponent(effectiveFundsList.join(','))}`
                             : '';
                           return `/api/export/funds-money.csv?category=${cats}&${periodParam}${fundsParam}`;
                         },

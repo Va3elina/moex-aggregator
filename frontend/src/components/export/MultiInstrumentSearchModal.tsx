@@ -24,7 +24,10 @@ interface Instrument {
 interface Props {
     /** Уже выбранные тикеры (для pre-check). */
     initial: string[];
-    /** Фильтр по типу — как в InstrumentSearchModal. */
+    /** Source данных: instruments (акции/фьючерсы/индексы из /api/instruments)
+     *  ИЛИ funds (БПИФ из /api/funds/categories). */
+    source?: 'instruments' | 'funds';
+    /** Фильтр по типу — как в InstrumentSearchModal. (instruments mode only) */
     filterType?: 'stock' | 'futures' | 'no-futures';
     /** Заголовок modal. */
     title?: string;
@@ -45,6 +48,7 @@ const CATEGORY_FILTERS = [
 
 export default function MultiInstrumentSearchModal({
     initial,
+    source = 'instruments',
     filterType,
     title = 'Выберите инструменты',
     maxItems,
@@ -71,17 +75,35 @@ export default function MultiInstrumentSearchModal({
         };
     }, [onClose]);
 
-    // Load instruments. Аналогично InstrumentSearchModal.
+    // Load — instruments или funds-categories в зависимости от source prop.
     useEffect(() => {
         let cancelled = false;
         async function load() {
             try {
-                if (filterType === 'stock' || filterType === 'futures') {
+                if (source === 'funds') {
+                    // Funds endpoint имеет nested структуру categories[].funds[].
+                    // Flatten в Instrument-like shape для общего list-renderer'а.
+                    const resp = await apiFetch('/api/funds/categories');
+                    const data = await resp.json();
+                    const flat: Instrument[] = [];
+                    for (const cat of data.categories ?? []) {
+                        for (const f of cat.funds ?? []) {
+                            flat.push({
+                                sec_id: String(f.id ?? f.ticker),
+                                sectype: f.ticker,
+                                name: f.name ?? f.ticker,
+                                type: 'fund',
+                                // Категория фонда → group (для chip-фильтра).
+                                group: cat.name ?? cat.key,
+                            });
+                        }
+                    }
+                    if (!cancelled) setInstruments(flat);
+                } else if (filterType === 'stock' || filterType === 'futures') {
                     const resp = await apiFetch(`/api/instruments?type=${filterType}`);
                     const data = await resp.json();
                     if (!cancelled) setInstruments(data.instruments || []);
                 } else {
-                    // no-futures или undefined → грузим всё, фильтруем locally.
                     const resp = await apiFetch('/api/instruments');
                     const data = await resp.json();
                     if (!cancelled) setInstruments(data.instruments || []);
@@ -94,7 +116,7 @@ export default function MultiInstrumentSearchModal({
         }
         load();
         return () => { cancelled = true; };
-    }, [filterType]);
+    }, [source, filterType]);
 
     const toggle = (sectype: string) => {
         setSelected((prev) => {
@@ -247,7 +269,8 @@ export default function MultiInstrumentSearchModal({
                     </div>
                 </div>
 
-                {/* Category chips */}
+                {/* Category chips — для funds-source делаем динамически
+                    из самих фондов (категории = Деньги/Акции/Облигации/Золото). */}
                 <div
                     style={{
                         display: 'flex',
@@ -256,8 +279,13 @@ export default function MultiInstrumentSearchModal({
                         overflowX: 'auto',
                     }}
                 >
-                    {CATEGORY_FILTERS.filter(
-                        (c) => !(filterType === 'no-futures' && c.key === 'futures'),
+                    {(source === 'funds'
+                        ? [{ key: 'all', label: 'Все категории' as string, match: undefined },
+                           ...Array.from(new Set(instruments.map(i => i.group).filter(Boolean)))
+                               .map(g => ({ key: g!, label: g!, match: 'group' as const }))]
+                        : CATEGORY_FILTERS.filter(
+                            (c) => !(filterType === 'no-futures' && c.key === 'futures'),
+                          )
                     ).map((c) => (
                         <button
                             key={c.key}

@@ -64,6 +64,7 @@ export type CsvSelector =
         label: string;
         default: string[];
         hint?: string;
+        source?: 'instruments' | 'funds';
         filterType?: 'stock' | 'futures' | 'no-futures';
         pickerTitle?: string;
         /** Лимит — защита backend от monster-ZIP. По default 6. */
@@ -790,6 +791,7 @@ function InstrumentPickerControl({ selector, value, onChange }: InstrumentPicker
                 <Suspense fallback={null}>
                     <MultiInstrumentSearchModal
                         initial={value}
+                        source={selector.source ?? 'instruments'}
                         filterType={selector.filterType}
                         title={selector.pickerTitle ?? 'Выберите инструменты'}
                         maxItems={selector.maxItems ?? 6}
