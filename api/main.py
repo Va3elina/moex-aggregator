@@ -30,6 +30,7 @@ from api.routers import (
     seasonality_router,
     billing_router,
     cbr_flows_router,
+    csp_report_router,
 )
 from api.routers import stats
 from api.routers import auth  # ← НОВОЕ: Аутентификация
