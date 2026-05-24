@@ -239,6 +239,13 @@ const ENDPOINT_GROUPS: EndpointGroup[] = [
                         description: 'Глубина истории в днях (1–15000). По умолчанию 365.',
                         defaultValue: '365',
                     },
+                    {
+                        name: 'format',
+                        type: 'string',
+                        required: false,
+                        description: '`json` (default) или `csv` — для удобного импорта в pandas / Excel.',
+                        enum: ['json', 'csv'],
+                    },
                 ],
                 exampleResponse: `{
   "data": [
@@ -323,6 +330,13 @@ const ENDPOINT_GROUPS: EndpointGroup[] = [
                         description: 'Глубина истории в днях (1–3650). По умолчанию 365.',
                         defaultValue: '365',
                     },
+                    {
+                        name: 'format',
+                        type: 'string',
+                        required: false,
+                        description: '`json` (default) или `csv`.',
+                        enum: ['json', 'csv'],
+                    },
                 ],
                 exampleResponse: `{
   "data": [
@@ -361,6 +375,13 @@ const ENDPOINT_GROUPS: EndpointGroup[] = [
                         description: 'Глубина истории в днях (30–15000). По умолчанию 3650 (10 лет).',
                         defaultValue: '3650',
                     },
+                    {
+                        name: 'format',
+                        type: 'string',
+                        required: false,
+                        description: '`json` (default) или `csv`.',
+                        enum: ['json', 'csv'],
+                    },
                 ],
                 exampleResponse: `{
   "data": [
@@ -391,6 +412,13 @@ const ENDPOINT_GROUPS: EndpointGroup[] = [
                         description: 'Глубина истории в днях (30–15000). По умолчанию 3650 (10 лет).',
                         defaultValue: '3650',
                     },
+                    {
+                        name: 'format',
+                        type: 'string',
+                        required: false,
+                        description: '`json` (default) или `csv`.',
+                        enum: ['json', 'csv'],
+                    },
                 ],
                 exampleResponse: `{
   "data": [
@@ -420,6 +448,13 @@ const ENDPOINT_GROUPS: EndpointGroup[] = [
                         required: false,
                         description: 'Глубина истории в днях (30–15000). По умолчанию 3650.',
                         defaultValue: '3650',
+                    },
+                    {
+                        name: 'format',
+                        type: 'string',
+                        required: false,
+                        description: '`json` (default) или `csv`.',
+                        enum: ['json', 'csv'],
                     },
                 ],
                 exampleResponse: `{
@@ -518,6 +553,13 @@ const ENDPOINT_GROUPS: EndpointGroup[] = [
                         description: 'Глубина истории в днях (1–3650). По умолчанию 365.',
                         defaultValue: '365',
                     },
+                    {
+                        name: 'format',
+                        type: 'string',
+                        required: false,
+                        description: '`json` (default) или `csv`.',
+                        enum: ['json', 'csv'],
+                    },
                 ],
                 exampleResponse: `{
   "data": [
@@ -556,6 +598,13 @@ const ENDPOINT_GROUPS: EndpointGroup[] = [
                         description: 'Глубина истории в годах (1–30). По умолчанию 10.',
                         defaultValue: '10',
                     },
+                    {
+                        name: 'format',
+                        type: 'string',
+                        required: false,
+                        description: '`json` (default) или `csv`.',
+                        enum: ['json', 'csv'],
+                    },
                 ],
                 exampleResponse: `{
   "data": [
@@ -582,6 +631,8 @@ const SECTIONS = [
     { id: 'auth', label: 'Аутентификация' },
     { id: 'limits', label: 'Лимиты' },
     { id: 'errors', label: 'Ошибки' },
+    { id: 'tools', label: 'Инструменты' },
+    { id: 'changelog', label: 'Changelog' },
     ...ENDPOINTS.map((e) => ({ id: e.id, label: e.title })),
 ];
 
@@ -998,6 +1049,12 @@ function Sidebar({ active }: SidebarProps) {
             <a href="#errors" className={`api-toc-link ${active === 'errors' ? 'active' : ''}`}>
                 Ошибки
             </a>
+            <a href="#tools" className={`api-toc-link ${active === 'tools' ? 'active' : ''}`}>
+                Инструменты
+            </a>
+            <a href="#changelog" className={`api-toc-link ${active === 'changelog' ? 'active' : ''}`}>
+                Changelog
+            </a>
             {ENDPOINT_GROUPS.map((group) => (
                 <Fragment key={group.title}>
                     {groupHeading(group.title)}
@@ -1120,7 +1177,18 @@ function EndpointBlock({ ep, apiKey, lang, onLangChange }: EndpointBlockProps) {
         try {
             const r = await fetch(url, { headers: { 'X-API-Key': apiKey } });
             const ms = Math.round(performance.now() - start);
-            const body = await r.json().catch(() => ({ detail: 'Не удалось распарсить ответ как JSON' }));
+            const contentType = r.headers.get('content-type') || '';
+            // CSV responses → парсим как text, показываем первые ~200 строк.
+            // JSON responses → парсим как JSON (с graceful fallback).
+            let body: unknown;
+            if (contentType.includes('text/csv') || contentType.includes('text/plain')) {
+                const text = await r.text();
+                // Срезаем BOM если есть. Показываем raw CSV.
+                const cleaned = text.replace(/^﻿/, '');
+                body = { _csv: cleaned, _csv_lines: cleaned.split('\n').length };
+            } else {
+                body = await r.json().catch(() => ({ detail: 'Не удалось распарсить ответ как JSON' }));
+            }
             setResponse({ status: r.status, body, ms });
         } catch (e) {
             setResponse({
@@ -1134,10 +1202,21 @@ function EndpointBlock({ ep, apiKey, lang, onLangChange }: EndpointBlockProps) {
         }
     };
 
-    // Текст ответа — pretty-printed JSON или fallback.
-    const responseText = response
-        ? JSON.stringify(response.body, null, 2)
-        : ep.exampleResponse;
+    // Текст ответа — pretty-printed JSON, CSV-первые строки, или example.
+    let responseText: string;
+    if (response) {
+        // Special-case для CSV: показать raw text (не stringify).
+        const csvBody = response.body as { _csv?: string; _csv_lines?: number } | null;
+        if (csvBody && typeof csvBody === 'object' && '_csv' in csvBody) {
+            const lines = csvBody._csv!.split('\n');
+            const preview = lines.slice(0, 30).join('\n');
+            responseText = preview + (lines.length > 30 ? `\n… (${lines.length - 30} more lines)` : '');
+        } else {
+            responseText = JSON.stringify(response.body, null, 2);
+        }
+    } else {
+        responseText = ep.exampleResponse;
+    }
 
     return (
         <section id={ep.id} className="api-endpoint">
@@ -1393,7 +1472,8 @@ Authorization: Bearer pk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`}
                             <li>
                                 <strong style={{ color: 'var(--text-primary)' }}>60 запросов / минуту</strong>{' '}
                                 на API-ключ. При превышении — <code className="api-inline-code">429 Too Many Requests</code>{' '}
-                                с заголовком <code className="api-inline-code">Retry-After: 60</code>.
+                                с заголовком <code className="api-inline-code">Retry-After</code>{' '}
+                                (секунды до сброса окна).
                             </li>
                             <li>
                                 <strong style={{ color: 'var(--text-primary)' }}>30 запросов / секунду</strong>{' '}
@@ -1401,15 +1481,40 @@ Authorization: Bearer pk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`}
                             </li>
                             <li>Все ответы сжаты gzip — экономия трафика до 80%.</li>
                         </ul>
+                        <p className="api-section-p" style={{ marginTop: 12 }}>
+                            <strong style={{ color: 'var(--text-primary)' }}>Headers в каждом успешном ответе:</strong>
+                        </p>
+                        <CodeBlock
+                            language="http"
+                            code={`X-RateLimit-Limit:     60         # суммарный лимит за окно
+X-RateLimit-Remaining: 47         # сколько запросов осталось
+X-RateLimit-Reset:     1716548340 # unix-ts когда окно сбросится`}
+                        />
+                        <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: 4 }}>
+                            Используйте <code className="api-inline-code">X-RateLimit-Remaining</code> в своём
+                            боте для backoff — не дожидайтесь 429.
+                        </p>
                     </section>
 
                     {/* ════ Errors ════ */}
                     <section id="errors" className="api-section">
                         <h2 className="api-section-h2">Ошибки</h2>
                         <p className="api-section-p">
-                            Все ошибки возвращаются в формате{' '}
-                            <code className="api-inline-code">{'{"detail": "..."}'}</code>{' '}
-                            с соответствующим HTTP-кодом:
+                            Все ошибки возвращаются в едином envelope-формате с HTTP-кодом и
+                            детальным сообщением:
+                        </p>
+                        <CodeBlock
+                            language="json"
+                            code={`{
+  "success": false,
+  "error": {
+    "code": 401,
+    "message": "Invalid API key"
+  }
+}`}
+                        />
+                        <p className="api-section-p" style={{ marginTop: 8 }}>
+                            Возможные коды:
                         </p>
                         <div className="api-errors-grid">
                             {[
@@ -1417,7 +1522,7 @@ Authorization: Bearer pk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`}
                                 { code: 401, label: 'ключ отсутствует, отозван или невалиден' },
                                 { code: 403, label: 'у пользователя не Pro tier' },
                                 { code: 404, label: 'данные не найдены' },
-                                { code: 429, label: 'превышен лимит (Retry-After в заголовке)' },
+                                { code: 429, label: 'превышен лимит (Retry-After + RateLimit headers)' },
                                 { code: 500, label: 'внутренняя ошибка сервера' },
                             ].map((row) => (
                                 <div key={row.code} className="api-error-row">
@@ -1427,6 +1532,110 @@ Authorization: Bearer pk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`}
                                     </span>
                                 </div>
                             ))}
+                        </div>
+                    </section>
+
+                    {/* ════ Tools / OpenAPI ════ */}
+                    <section id="tools" className="api-section">
+                        <h2 className="api-section-h2">Инструменты для интеграции</h2>
+                        <p className="api-section-p">
+                            Для удобной разработки клиентских приложений:
+                        </p>
+                        <ul className="api-section-ul">
+                            <li>
+                                <strong style={{ color: 'var(--text-primary)' }}>OpenAPI 3.0 спека:</strong>{' '}
+                                <a
+                                    href="/api/v1/public/openapi.json"
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    style={{ color: 'var(--accent)', textDecoration: 'underline' }}
+                                >
+                                    /api/v1/public/openapi.json
+                                </a>
+                                {' '}— импортируйте в Postman, Insomnia, или сгенерируйте клиент
+                                на любом языке через openapi-codegen.
+                            </li>
+                            <li>
+                                <strong style={{ color: 'var(--text-primary)' }}>CSV-формат:</strong>{' '}
+                                для history-эндпоинтов (
+                                <code className="api-inline-code">/breadth/history</code>,{' '}
+                                <code className="api-inline-code">/oi/history</code>,{' '}
+                                <code className="api-inline-code">/seasonality</code>,{' '}
+                                <code className="api-inline-code">/buffett/*</code>,{' '}
+                                <code className="api-inline-code">/funds/&#123;ticker&#125;/history</code>,{' '}
+                                <code className="api-inline-code">/cbr-flows</code>) можно
+                                запросить ответ как CSV, добавив <code className="api-inline-code">?format=csv</code>{' '}
+                                — удобно для pandas / Excel.
+                            </li>
+                            <li>
+                                <strong style={{ color: 'var(--text-primary)' }}>Health-check:</strong>{' '}
+                                <code className="api-inline-code">GET /api/v1/public/health</code>{' '}
+                                — без авторизации, для UptimeRobot / Pingdom.
+                            </li>
+                        </ul>
+                    </section>
+
+                    {/* ════ Changelog ════ */}
+                    <section id="changelog" className="api-section">
+                        <h2 className="api-section-h2">История версий</h2>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                            <div>
+                                <div style={{
+                                    fontSize: 'var(--fs-sm)',
+                                    fontWeight: 700,
+                                    color: 'var(--text-primary)',
+                                    marginBottom: 4,
+                                }}>
+                                    v1.2 — 2026-05-24
+                                </div>
+                                <ul className="api-section-ul">
+                                    <li>Унифицированный envelope для ошибок: <code className="api-inline-code">{'{success, error: {code, message}}'}</code></li>
+                                    <li>Headers <code className="api-inline-code">X-RateLimit-*</code> в каждом ответе</li>
+                                    <li>Параметр <code className="api-inline-code">?format=csv</code> для history-эндпоинтов</li>
+                                    <li>OpenAPI 3.0 спека на <code className="api-inline-code">/openapi.json</code></li>
+                                    <li>Health-check эндпоинт без auth</li>
+                                </ul>
+                            </div>
+                            <div>
+                                <div style={{
+                                    fontSize: 'var(--fs-sm)',
+                                    fontWeight: 700,
+                                    color: 'var(--text-primary)',
+                                    marginBottom: 4,
+                                }}>
+                                    v1.1 — 2026-05-24
+                                </div>
+                                <ul className="api-section-ul">
+                                    <li>+8 эндпоинтов: <code className="api-inline-code">/stocks/&#123;ticker&#125;/quote</code>,{' '}
+                                        <code className="api-inline-code">/breadth/history</code>,{' '}
+                                        <code className="api-inline-code">/oi/history</code>,{' '}
+                                        <code className="api-inline-code">/buffett/cap-gdp</code>,{' '}
+                                        <code className="api-inline-code">/buffett/cap-m2</code>,{' '}
+                                        <code className="api-inline-code">/funds/&#123;ticker&#125;</code>,{' '}
+                                        <code className="api-inline-code">/funds/&#123;ticker&#125;/history</code>,{' '}
+                                        <code className="api-inline-code">/cbr-flows</code>
+                                    </li>
+                                </ul>
+                            </div>
+                            <div>
+                                <div style={{
+                                    fontSize: 'var(--fs-sm)',
+                                    fontWeight: 700,
+                                    color: 'var(--text-primary)',
+                                    marginBottom: 4,
+                                }}>
+                                    v1.0 — 2026-05-23
+                                </div>
+                                <ul className="api-section-ul">
+                                    <li>Релиз публичного API: <code className="api-inline-code">/heatmap</code>,{' '}
+                                        <code className="api-inline-code">/breadth/current</code>,{' '}
+                                        <code className="api-inline-code">/instruments</code>,{' '}
+                                        <code className="api-inline-code">/oi/current</code>,{' '}
+                                        <code className="api-inline-code">/funds/categories</code>,{' '}
+                                        <code className="api-inline-code">/seasonality</code>
+                                    </li>
+                                </ul>
+                            </div>
                         </div>
                     </section>
 
