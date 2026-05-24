@@ -109,13 +109,17 @@ def setup_logging():
         # stdout handler уже подключён выше, лог не потеряется.
         pass
 
-    fh_err = logging.FileHandler(
-        LOG_DIR / f"funds_errors_{datetime.now():%Y%m%d}.log",
-        encoding='utf-8'
-    )
-    fh_err.setLevel(logging.WARNING)
-    fh_err.setFormatter(detailed_fmt)
-    root.addHandler(fh_err)
+    try:
+        fh_err = logging.FileHandler(
+            LOG_DIR / f"funds_errors_{datetime.now():%Y%m%d}.log",
+            encoding='utf-8'
+        )
+        fh_err.setLevel(logging.WARNING)
+        fh_err.setFormatter(detailed_fmt)
+        root.addHandler(fh_err)
+    except OSError:
+        # Read-only filesystem — silent skip (production API контейнер).
+        pass
 
     return logging.getLogger(__name__)
 
