@@ -1,17 +1,19 @@
 /**
  * MultiInstrumentSearchModal — multi-select picker инструментов для CSV-экспорта.
  *
- * Отличия от обычного InstrumentSearchModal:
- *   - Каждый item с чекбоксом, клик = toggle (не закрытие).
- *   - Counter "N выбрано" + sticky footer с "Готово" / "Отмена".
- *   - onConfirm(tickers) возвращает массив, не один.
+ * Стилистически идентичен InstrumentSearchModal (тот же InstrumentIcon,
+ * day_change_pct, объём), но с чекбоксами вместо click-to-select и sticky
+ * footer'ом "N выбрано · Готово".
  *
- * Стиль соответствует InstrumentSearchModal — поиск + категории + список.
- * Простая реализация без favorites (для CSV exports не нужно).
+ * Поддерживает source='funds' для CSV экспорта БПИФ — грузит /api/funds/
+ * categories вместо /api/instruments и не показывает category-chips
+ * (chip-row для funds = 4 категории, отдельный layout).
  */
 import { useState, useEffect, useMemo } from 'react';
 import { Search, X, Check } from 'lucide-react';
 import { apiFetch } from '../../services/api';
+import InstrumentIcon from '../InstrumentIcon';
+import { formatCompact } from '../../utils/formatNumber';
 
 interface Instrument {
     sec_id: string;
@@ -19,31 +21,34 @@ interface Instrument {
     name: string;
     type: string;
     group?: string;
+    daily_volume?: number;
+    day_change_pct?: number | null;
 }
 
 interface Props {
     /** Уже выбранные тикеры (для pre-check). */
     initial: string[];
-    /** Source данных: instruments (акции/фьючерсы/индексы из /api/instruments)
-     *  ИЛИ funds (БПИФ из /api/funds/categories). */
+    /** Source данных. */
     source?: 'instruments' | 'funds';
-    /** Фильтр по типу — как в InstrumentSearchModal. (instruments mode only) */
+    /** Фильтр по типу — только для instruments source. */
     filterType?: 'stock' | 'futures' | 'no-futures';
     /** Заголовок modal. */
     title?: string;
-    /** Максимум выбираемых элементов. Защищает backend от monster-ZIP'ов. */
+    /** Максимум выбираемых элементов. */
     maxItems?: number;
     onConfirm: (tickers: string[]) => void;
     onClose: () => void;
 }
 
-const CATEGORY_FILTERS = [
+// Категории для instruments. Match column: 'group' (Акции/Валюта/...) или
+// 'type' (futures). Список выровнен с CATEGORY_FILTERS из обычного modal'а.
+const INST_CATEGORIES: { key: string; label: string; match?: 'group' | 'type' }[] = [
     { key: 'all', label: 'Все' },
-    { key: 'Акции', label: 'Акции', match: 'group' as const },
-    { key: 'futures', label: 'Фьючерсы', match: 'type' as const },
-    { key: 'Валюта', label: 'Валюта', match: 'group' as const },
-    { key: 'Индексы', label: 'Индексы', match: 'group' as const },
-    { key: 'Сырьё', label: 'Сырьё', match: 'group' as const },
+    { key: 'Акции', label: 'Акции', match: 'group' },
+    { key: 'futures', label: 'Фьючерсы', match: 'type' },
+    { key: 'Валюта', label: 'Валюта', match: 'group' },
+    { key: 'Индексы', label: 'Индексы', match: 'group' },
+    { key: 'Сырьё', label: 'Сырьё', match: 'group' },
 ];
 
 export default function MultiInstrumentSearchModal({
@@ -75,14 +80,11 @@ export default function MultiInstrumentSearchModal({
         };
     }, [onClose]);
 
-    // Load — instruments или funds-categories в зависимости от source prop.
     useEffect(() => {
         let cancelled = false;
         async function load() {
             try {
                 if (source === 'funds') {
-                    // Funds endpoint имеет nested структуру categories[].funds[].
-                    // Flatten в Instrument-like shape для общего list-renderer'а.
                     const resp = await apiFetch('/api/funds/categories');
                     const data = await resp.json();
                     const flat: Instrument[] = [];
@@ -93,7 +95,6 @@ export default function MultiInstrumentSearchModal({
                                 sectype: f.ticker,
                                 name: f.name ?? f.ticker,
                                 type: 'fund',
-                                // Категория фонда → group (для chip-фильтра).
                                 group: cat.name ?? cat.key,
                             });
                         }
@@ -124,7 +125,6 @@ export default function MultiInstrumentSearchModal({
             if (next.has(sectype)) {
                 next.delete(sectype);
             } else {
-                // Лимит: если уже выбрано max, не даём добавить ещё.
                 if (maxItems && next.size >= maxItems) return prev;
                 next.add(sectype);
             }
@@ -132,26 +132,38 @@ export default function MultiInstrumentSearchModal({
         });
     };
 
-    // Filter logic: filterType + category + search.
+    // Категории для chip-row — динамика для funds, статика для instruments.
+    const categories = useMemo(() => {
+        if (source === 'funds') {
+            const uniqueCats = Array.from(
+                new Set(instruments.map((i) => i.group).filter(Boolean)),
+            ) as string[];
+            return [
+                { key: 'all', label: 'Все', match: undefined as 'group' | 'type' | undefined },
+                ...uniqueCats.map((g) => ({ key: g, label: g, match: 'group' as const })),
+            ];
+        }
+        return INST_CATEGORIES.filter(
+            (c) => !(filterType === 'no-futures' && c.key === 'futures'),
+        );
+    }, [source, filterType, instruments]);
+
+    // Filter.
     const filtered = useMemo(() => {
         return instruments.filter((inst) => {
             if (filterType === 'no-futures' && inst.type === 'futures') return false;
 
-            // Category filter.
             if (category !== 'all') {
-                const cat = CATEGORY_FILTERS.find((c) => c.key === category);
-                if (cat?.match === 'type') {
-                    if (inst.type !== cat.key) return false;
-                } else if (cat?.match === 'group') {
-                    if (inst.group !== cat.key && inst.type !== 'stock') return false;
-                    // Special case "Акции" с stock-type fallback (как в MobileAssetSearch).
+                const cat = categories.find((c) => c.key === category);
+                if (cat?.match === 'type' && inst.type !== cat.key) return false;
+                if (cat?.match === 'group') {
+                    // Special: "Акции" chip также пускает stock-type без group.
                     if (category === 'Акции') {
                         if (inst.group !== 'Акции' && inst.type !== 'stock') return false;
                     } else if (inst.group !== cat.key) return false;
                 }
             }
 
-            // Search.
             if (search) {
                 const q = search.toLowerCase();
                 return (
@@ -161,7 +173,7 @@ export default function MultiInstrumentSearchModal({
             }
             return true;
         });
-    }, [instruments, filterType, category, search]);
+    }, [instruments, filterType, category, categories, search]);
 
     // Unique по sectype.
     const unique = useMemo(() => {
@@ -175,7 +187,6 @@ export default function MultiInstrumentSearchModal({
 
     return (
         <div
-            // Очень высокий z-index — мы рендеримся ПОВЕРХ CsvExportModal.
             onClick={(e) => {
                 if (e.target === e.currentTarget) onClose();
             }}
@@ -199,7 +210,7 @@ export default function MultiInstrumentSearchModal({
                     borderRadius: 16,
                     boxShadow: '6px 6px 0 var(--text-primary)',
                     width: '100%',
-                    maxWidth: 580,
+                    maxWidth: 620,
                     maxHeight: '85vh',
                     display: 'flex',
                     flexDirection: 'column',
@@ -213,6 +224,7 @@ export default function MultiInstrumentSearchModal({
                         justifyContent: 'space-between',
                         padding: '14px 18px',
                         borderBottom: '1.5px solid var(--text-primary)',
+                        flexShrink: 0,
                     }}
                 >
                     <h3
@@ -239,9 +251,16 @@ export default function MultiInstrumentSearchModal({
                     </button>
                 </div>
 
-                {/* Search */}
-                <div style={{ padding: '12px 18px 8px' }}>
-                    <div style={{ position: 'relative' }}>
+                {/* Sticky search + categories */}
+                <div
+                    style={{
+                        padding: '12px 18px 8px',
+                        background: 'var(--bg-primary)',
+                        borderBottom: '1px solid color-mix(in srgb, var(--text-primary) 10%, transparent)',
+                        flexShrink: 0,
+                    }}
+                >
+                    <div style={{ position: 'relative', marginBottom: 10 }}>
                         <Search
                             size={14}
                             style={{
@@ -267,55 +286,43 @@ export default function MultiInstrumentSearchModal({
                             }}
                         />
                     </div>
-                </div>
 
-                {/* Category chips — для funds-source делаем динамически
-                    из самих фондов (категории = Деньги/Акции/Облигации/Золото). */}
-                <div
-                    style={{
-                        display: 'flex',
-                        gap: 6,
-                        padding: '0 18px 10px',
-                        overflowX: 'auto',
-                    }}
-                >
-                    {(source === 'funds'
-                        ? [{ key: 'all', label: 'Все категории' as string, match: undefined },
-                           ...Array.from(new Set(instruments.map(i => i.group).filter(Boolean)))
-                               .map(g => ({ key: g!, label: g!, match: 'group' as const }))]
-                        : CATEGORY_FILTERS.filter(
-                            (c) => !(filterType === 'no-futures' && c.key === 'futures'),
-                          )
-                    ).map((c) => (
-                        <button
-                            key={c.key}
-                            type="button"
-                            onClick={() => setCategory(c.key)}
-                            style={{
-                                padding: '4px 10px',
-                                background: category === c.key ? 'var(--accent)' : 'var(--bg-secondary)',
-                                color: category === c.key ? 'var(--text-inverse)' : 'var(--text-primary)',
-                                border: '1.5px solid var(--text-primary)',
-                                borderRadius: 999,
-                                fontSize: 'var(--fs-xs)',
-                                fontWeight: 600,
-                                cursor: 'pointer',
-                                whiteSpace: 'nowrap',
-                            }}
-                        >
-                            {c.label}
-                        </button>
-                    ))}
+                    {/* Category chips — wrap, not horizontal scroll (фикс обрезания) */}
+                    <div
+                        style={{
+                            display: 'flex',
+                            flexWrap: 'wrap',
+                            gap: 6,
+                        }}
+                    >
+                        {categories.map((c) => {
+                            const active = category === c.key;
+                            return (
+                                <button
+                                    key={c.key}
+                                    type="button"
+                                    onClick={() => setCategory(c.key)}
+                                    style={{
+                                        padding: '4px 12px',
+                                        background: active ? 'var(--accent)' : 'var(--bg-secondary)',
+                                        color: active ? 'var(--text-inverse)' : 'var(--text-primary)',
+                                        border: '1.5px solid var(--text-primary)',
+                                        borderRadius: 999,
+                                        fontSize: 'var(--fs-xs)',
+                                        fontWeight: 600,
+                                        cursor: 'pointer',
+                                        whiteSpace: 'nowrap',
+                                    }}
+                                >
+                                    {c.label}
+                                </button>
+                            );
+                        })}
+                    </div>
                 </div>
 
                 {/* List */}
-                <div
-                    style={{
-                        flex: 1,
-                        overflowY: 'auto',
-                        borderTop: '1px dashed color-mix(in srgb, var(--text-primary) 15%, transparent)',
-                    }}
-                >
+                <div style={{ flex: 1, overflowY: 'auto', padding: '4px 8px' }}>
                     {loading ? (
                         <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)' }}>
                             Загрузка...
@@ -337,27 +344,28 @@ export default function MultiInstrumentSearchModal({
                                     style={{
                                         display: 'flex',
                                         alignItems: 'center',
-                                        gap: 12,
+                                        gap: 14,
                                         width: '100%',
-                                        padding: '10px 18px',
+                                        padding: '10px 12px',
                                         background: checked
                                             ? 'color-mix(in srgb, var(--accent) 10%, transparent)'
                                             : 'transparent',
                                         border: 'none',
-                                        borderBottom:
-                                            '1px solid color-mix(in srgb, var(--text-primary) 8%, transparent)',
+                                        borderRadius: 10,
                                         cursor: limitReached ? 'not-allowed' : 'pointer',
                                         textAlign: 'left',
                                         color: 'var(--text-primary)',
                                         opacity: limitReached ? 0.4 : 1,
+                                        transition: 'background 0.12s',
                                     }}
                                 >
+                                    {/* Checkbox */}
                                     <span
                                         aria-hidden="true"
                                         style={{
-                                            width: 18,
-                                            height: 18,
-                                            borderRadius: 4,
+                                            width: 20,
+                                            height: 20,
+                                            borderRadius: 5,
                                             border: '1.5px solid var(--text-primary)',
                                             background: checked ? 'var(--accent)' : 'transparent',
                                             display: 'flex',
@@ -367,26 +375,73 @@ export default function MultiInstrumentSearchModal({
                                         }}
                                     >
                                         {checked && (
-                                            <Check size={12} strokeWidth={3} color="var(--text-inverse)" />
+                                            <Check size={13} strokeWidth={3} color="var(--text-inverse)" />
                                         )}
                                     </span>
-                                    <span style={{ flex: 1, minWidth: 0 }}>
-                                        <div style={{ fontWeight: 700, fontSize: 'var(--fs-sm)' }}>
+
+                                    {/* Icon — pretty логотип/sprite для тикера */}
+                                    <InstrumentIcon sectype={inst.sectype} size={32} />
+
+                                    {/* Ticker + name */}
+                                    <div
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: 8,
+                                            flex: 1,
+                                            minWidth: 0,
+                                        }}
+                                    >
+                                        <span style={{ fontWeight: 700, fontSize: 'var(--fs-sm)' }}>
                                             {inst.sectype}
-                                        </div>
-                                        <div
+                                        </span>
+                                        <span
                                             style={{
+                                                color: 'var(--text-secondary)',
                                                 fontSize: 'var(--fs-xs)',
-                                                color: 'var(--text-muted)',
                                                 overflow: 'hidden',
                                                 textOverflow: 'ellipsis',
                                                 whiteSpace: 'nowrap',
                                             }}
                                         >
                                             {inst.name}
+                                        </span>
+                                    </div>
+
+                                    {/* Day change % + volume */}
+                                    {(inst.day_change_pct != null || inst.daily_volume) && (
+                                        <div
+                                            style={{
+                                                textAlign: 'right',
+                                                lineHeight: 1.2,
+                                                flexShrink: 0,
+                                                minWidth: 64,
+                                            }}
+                                        >
+                                            {inst.day_change_pct != null && (
+                                                <div
+                                                    style={{
+                                                        fontSize: 'var(--fs-xs)',
+                                                        fontWeight: 600,
+                                                        color: inst.day_change_pct >= 0
+                                                            ? 'var(--funds-flow-positive)'
+                                                            : 'var(--funds-flow-negative)',
+                                                    }}
+                                                >
+                                                    {inst.day_change_pct >= 0 ? '+' : ''}
+                                                    {inst.day_change_pct.toFixed(2)}%
+                                                </div>
+                                            )}
+                                            {inst.daily_volume ? (
+                                                <div style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)' }}>
+                                                    {formatCompact(inst.daily_volume)}
+                                                </div>
+                                            ) : null}
                                         </div>
-                                    </span>
-                                    {inst.group && (
+                                    )}
+
+                                    {/* Group badge — только если нет day_change (для fund-mode) */}
+                                    {inst.day_change_pct == null && inst.group && (
                                         <span
                                             style={{
                                                 fontSize: 'var(--fs-2xs)',
@@ -416,6 +471,7 @@ export default function MultiInstrumentSearchModal({
                         padding: '12px 18px',
                         borderTop: '1.5px solid var(--text-primary)',
                         background: 'var(--bg-primary)',
+                        flexShrink: 0,
                     }}
                 >
                     <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-secondary)' }}>
