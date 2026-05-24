@@ -5,16 +5,18 @@ Endpoints:
   POST   /api/keys              — создать новый ключ (returns plain key один раз)
   GET    /api/keys              — list ключей юзера (без plain text)
   DELETE /api/keys/{id}         — revoke ключ
+  GET    /api/keys/usage        — статистика использования за последние 30 дней
 
 Все require_pro. Лимит: 10 active keys на юзера.
 """
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
+from api.cache import _get_redis as get_redis
 from api.database import get_db
 from api.models import ApiKey, User
 from api.routers.auth import require_pro
@@ -105,6 +107,64 @@ def create_key(
         plain_key=plain_key,
         created_at=new_key.created_at,
     )
+
+
+@router.get("/usage")
+def get_usage_stats(
+    days: int = 30,
+    user: User = Depends(require_pro),
+):
+    """
+    Статистика использования API за последние `days` дней.
+
+    Returns:
+        {
+            "days": 30,
+            "total": 1245,
+            "by_day": [
+                {"date": "2026-04-25", "count": 42},
+                {"date": "2026-04-26", "count": 38},
+                ...
+            ]
+        }
+
+    Источник: Redis counters api_usage:{user_id}:{YYYY-MM-DD} (TTL 32 дня),
+    обновляются в `check_rate_limit` при каждом успешном API-запросе.
+    Если Redis недоступен — возвращает пустую серию.
+    """
+    if days < 1 or days > 90:
+        raise HTTPException(status_code=400, detail="days must be between 1 and 90")
+
+    redis = get_redis()
+    by_day = []
+    total = 0
+
+    if redis:
+        today = date.today()
+        keys = []
+        for i in range(days):
+            d = today - timedelta(days=i)
+            keys.append((d.isoformat(), f"api_usage:{user.id}:{d.isoformat()}"))
+        try:
+            # MGET — атомарный batch lookup, гораздо быстрее N отдельных GET'ов.
+            values = redis.mget([k for _, k in keys])
+            for (date_str, _), val in zip(keys, values):
+                count = 0
+                if val is not None:
+                    try:
+                        count = int(val.decode() if isinstance(val, bytes) else val)
+                    except (ValueError, AttributeError):
+                        count = 0
+                by_day.append({"date": date_str, "count": count})
+                total += count
+        except Exception:
+            # Redis ошибка — возвращаем пустую серию вместо 500.
+            by_day = [{"date": d.isoformat(), "count": 0}
+                      for d in (date.today() - timedelta(days=i) for i in range(days))]
+
+    # Сортируем по дате ASC чтобы chart рендерился в правильном порядке.
+    by_day.sort(key=lambda x: x["date"])
+    return {"days": days, "total": total, "by_day": by_day}
 
 
 @router.delete("/{key_id}", status_code=status.HTTP_204_NO_CONTENT)

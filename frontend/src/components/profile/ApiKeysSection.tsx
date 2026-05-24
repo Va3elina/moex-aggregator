@@ -11,14 +11,16 @@
  * Tier-gating: показывает CTA на upgrade для не-Pro, скрывает UI.
  */
 import { useEffect, useState } from 'react';
-import { Key, Plus, Copy, Trash2, AlertCircle, ExternalLink } from 'lucide-react';
+import { Key, Plus, Copy, Trash2, AlertCircle, ExternalLink, Activity } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import {
     listApiKeys,
     createApiKey,
     revokeApiKey,
+    getApiKeyUsage,
     type ApiKeyInfo,
     type ApiKeyCreated,
+    type ApiKeyUsageStats,
 } from '../../services/api';
 import { useCommonFeatures } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../tier/UpgradeModal';
@@ -29,6 +31,9 @@ export default function ApiKeysSection() {
     const [keys, setKeys] = useState<ApiKeyInfo[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+
+    // Usage stats — за последние 30 дней.
+    const [usage, setUsage] = useState<ApiKeyUsageStats | null>(null);
 
     // Create flow
     const [creating, setCreating] = useState(false);
@@ -44,8 +49,15 @@ export default function ApiKeysSection() {
         try {
             setLoading(true);
             setError(null);
-            const list = await listApiKeys();
-            setKeys(list);
+            // Параллельно — ключи и статистика. Статистика опциональна:
+            // если упала, list ключей всё равно отображаем.
+            const [list, usageData] = await Promise.allSettled([
+                listApiKeys(),
+                getApiKeyUsage(30),
+            ]);
+            if (list.status === 'fulfilled') setKeys(list.value);
+            else throw list.reason;
+            if (usageData.status === 'fulfilled') setUsage(usageData.value);
         } catch (e) {
             setError((e as Error).message);
         } finally {
@@ -433,6 +445,9 @@ export default function ApiKeysSection() {
                 ))}
             </div>
 
+            {/* Usage chart — 30-day bar chart */}
+            {usage && usage.total > 0 && <UsageChart usage={usage} />}
+
             {/* Docs link */}
             <div style={{ marginTop: 16 }}>
                 <Link
@@ -450,6 +465,99 @@ export default function ApiKeysSection() {
                 </Link>
             </div>
         </section>
+    );
+}
+
+/**
+ * UsageChart — bar chart запросов за последние 30 дней.
+ *
+ * Pure CSS — без external charting library, чтобы не таскать recharts/d3
+ * на /profile (страница лёгкая, не хочется +200KB ради простого графика).
+ * Каждый столбец — высота пропорциональна max-значению в окне.
+ */
+function UsageChart({ usage }: { usage: ApiKeyUsageStats }) {
+    const maxCount = Math.max(...usage.by_day.map((d) => d.count), 1);
+    return (
+        <div
+            style={{
+                marginTop: 24,
+                paddingTop: 20,
+                borderTop: '1px dashed color-mix(in srgb, var(--text-primary) 12%, transparent)',
+            }}
+        >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                <Activity size={14} style={{ color: 'var(--text-secondary)' }} />
+                <span
+                    style={{
+                        fontSize: 'var(--fs-sm)',
+                        fontWeight: 700,
+                        color: 'var(--text-primary)',
+                    }}
+                >
+                    Использование API
+                </span>
+                <span
+                    style={{
+                        marginLeft: 'auto',
+                        fontSize: 'var(--fs-xs)',
+                        color: 'var(--text-muted)',
+                    }}
+                >
+                    {usage.total.toLocaleString('ru-RU')} запросов · {usage.days} дней
+                </span>
+            </div>
+            <div
+                style={{
+                    display: 'flex',
+                    alignItems: 'flex-end',
+                    gap: 3,
+                    height: 64,
+                    padding: '0 2px',
+                }}
+                title={`Максимум за день: ${maxCount}`}
+            >
+                {usage.by_day.map((d) => {
+                    const heightPct = (d.count / maxCount) * 100;
+                    const isToday = d.date === new Date().toISOString().slice(0, 10);
+                    return (
+                        <div
+                            key={d.date}
+                            title={`${d.date}: ${d.count}`}
+                            style={{
+                                flex: 1,
+                                minWidth: 4,
+                                height: '100%',
+                                display: 'flex',
+                                alignItems: 'flex-end',
+                            }}
+                        >
+                            <div
+                                style={{
+                                    width: '100%',
+                                    height: `${Math.max(heightPct, d.count > 0 ? 4 : 0)}%`,
+                                    background: isToday ? 'var(--accent)' : 'color-mix(in srgb, var(--accent) 50%, var(--text-muted))',
+                                    borderRadius: '2px 2px 0 0',
+                                    minHeight: d.count > 0 ? 2 : 0,
+                                    transition: 'background 120ms',
+                                }}
+                            />
+                        </div>
+                    );
+                })}
+            </div>
+            <div
+                style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    marginTop: 6,
+                    fontSize: 'var(--fs-2xs)',
+                    color: 'var(--text-muted)',
+                }}
+            >
+                <span>{usage.by_day[0]?.date}</span>
+                <span>сегодня</span>
+            </div>
+        </div>
     );
 }
 

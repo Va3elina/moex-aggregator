@@ -1075,3 +1075,16 @@ export async function revokeApiKey(id: number): Promise<void> {
     const resp = await apiFetch(`${API_BASE}/api/keys/${id}`, { method: 'DELETE' });
     if (!resp.ok && resp.status !== 204) throw new Error('Не удалось отозвать ключ');
 }
+
+export interface ApiKeyUsageStats {
+    days: number;
+    total: number;
+    by_day: { date: string; count: number }[];
+}
+
+export async function getApiKeyUsage(days = 30): Promise<ApiKeyUsageStats> {
+    const resp = await apiFetch(`${API_BASE}/api/keys/usage?days=${days}`);
+    if (resp.status === 403) throw new Error('Доступно на тарифе Pro');
+    if (!resp.ok) throw new Error('Не удалось загрузить статистику');
+    return resp.json();
+}

@@ -52,43 +52,121 @@ router = APIRouter(prefix="/api/v1/public", tags=["public-api"])
 # чтобы один компрометированный ключ не пожрал бюджет всего IP.
 RATE_LIMIT_PER_MIN = 60
 
+# Cache-Control presets — TTL по типу данных. Клиент (или intermediate proxy)
+# может агрессивно кэшировать ответы что снижает нагрузку на бэк.
+CACHE_REALTIME = "public, max-age=60"         # snapshot обновляется раз/мин
+CACHE_HOURLY = "public, max-age=300"           # snapshot обновляется раз/5мин
+CACHE_DAILY = "public, max-age=86400"          # история — раз/день
+CACHE_STATIC = "public, max-age=86400, immutable"  # справочники (instruments, fund list)
+CACHE_QUARTERLY = "public, max-age=3600"       # CBR flows — обновление кварталами
+
+
+def _set_subscription_header(response: Response, user: User) -> None:
+    """
+    Устанавливает `X-Subscription-Expires-At` header чтобы клиенты могли
+    проактивно реагировать на approaching expiry — слать уведомления
+    владельцу бота, останавливать неcritical-операции, etc.
+
+    Для admin → "never" (нет привязки к подписке).
+    Для Pro с активной sub → ISO timestamp.
+    Для остальных (если бы они дошли сюда — а они не дойдут из-за
+    Pro-tier check в get_user_by_api_key) → ничего не выставляем.
+
+    Кэшируется в Redis 60s чтобы не делать DB-query на каждый request.
+    """
+    if user.role == "admin":
+        response.headers["X-Subscription-Expires-At"] = "never"
+        return
+
+    # Redis cache: api_sub_expires:{user_id} → ISO string, TTL 60s
+    redis = get_redis()
+    cache_key = f"api_sub_expires:{user.id}"
+    if redis:
+        try:
+            cached = redis.get(cache_key)
+            if cached:
+                response.headers["X-Subscription-Expires-At"] = (
+                    cached.decode() if isinstance(cached, bytes) else cached
+                )
+                return
+        except Exception:
+            pass
+
+    # Cache miss — query DB.
+    from api.database import get_engine
+    try:
+        with get_engine().connect() as conn:
+            row = conn.execute(text(
+                "SELECT expires_at FROM subscriptions "
+                "WHERE user_id = :uid AND status = 'active' "
+                "ORDER BY expires_at DESC NULLS LAST LIMIT 1"
+            ), {"uid": user.id}).fetchone()
+        if row and row[0]:
+            iso = row[0].isoformat()
+            response.headers["X-Subscription-Expires-At"] = iso
+            if redis:
+                try:
+                    redis.setex(cache_key, 60, iso)
+                except Exception:
+                    pass
+    except Exception:
+        # Если query упал — лучше не выставлять header чем 500.
+        pass
+
+
+def _track_daily_usage(user: User) -> None:
+    """
+    Увеличивает Redis-счётчик использования API за день — для статистики
+    в /profile. Дёшево (один INCR), не блокирует если Redis недоступен.
+
+    Key: `api_usage:{user_id}:{YYYY-MM-DD}` → counter с TTL 32 дня.
+    """
+    redis = get_redis()
+    if not redis:
+        return
+    today = date.today().isoformat()
+    key = f"api_usage:{user.id}:{today}"
+    try:
+        count = redis.incr(key)
+        if count == 1:
+            # 32 дня — чтобы график «30 дней» всегда имел полный набор.
+            redis.expire(key, 32 * 24 * 60 * 60)
+    except Exception:
+        pass
+
 
 def check_rate_limit(
     response: Response,
     user: User = Depends(get_user_by_api_key),
 ) -> User:
     """
-    Combined dependency: auth via API key + rate-limit check + headers.
+    Combined dependency: auth via API key + rate-limit + headers + usage tracking.
 
-    Возвращает `User` чтобы endpoint мог использовать это как drop-in
-    замену `get_user_by_api_key`. Дополнительно устанавливает три
-    стандартных rate-limit заголовка:
-      - X-RateLimit-Limit:    суммарный лимит за окно (60).
-      - X-RateLimit-Remaining: сколько запросов осталось в текущей минуте.
-      - X-RateLimit-Reset:    unix timestamp когда окно сбросится.
-
-    Реализация: Redis counter `apikey:rate:{user_id}:{minute}` с TTL 70s
-    (минута + небольшой запас на boundary effect). INCR atomic, поэтому
-    параллельные запросы не теряются. Если Redis недоступен — graceful:
-    не блокируем юзера и не выставляем headers (вместо 500).
+    Headers устанавливаемые при каждом успешном ответе:
+      - X-RateLimit-Limit / Remaining / Reset — стандартный rate-limit.
+      - X-Subscription-Expires-At — ISO timestamp окончания подписки
+        (или "never" для admin).
     """
     now = int(time.time())
     minute_bucket = now // 60
-    reset_at = (minute_bucket + 1) * 60  # начало следующей минуты
+    reset_at = (minute_bucket + 1) * 60
 
-    # Дефолтные headers — даже если Redis упадёт, клиент увидит лимит.
     response.headers["X-RateLimit-Limit"] = str(RATE_LIMIT_PER_MIN)
     response.headers["X-RateLimit-Reset"] = str(reset_at)
 
+    # Subscription expiry header — клиент видит когда истекает Pro.
+    _set_subscription_header(response, user)
+
+    # Daily usage counter — для графика на /profile.
+    _track_daily_usage(user)
+
     redis = get_redis()
     if not redis:
-        # Redis выключен — лимит неизвестен, но не блокируем.
         response.headers["X-RateLimit-Remaining"] = str(RATE_LIMIT_PER_MIN)
         return user
 
     key = f"apikey:rate:{user.id}:{minute_bucket}"
     try:
-        # INCR atomic — returns post-increment value.
         count = redis.incr(key)
         if count == 1:
             redis.expire(key, 70)
@@ -108,9 +186,59 @@ def check_rate_limit(
     except HTTPException:
         raise
     except Exception:
-        # Redis ошибка — graceful: пропускаем без блокировки.
         response.headers["X-RateLimit-Remaining"] = str(RATE_LIMIT_PER_MIN)
     return user
+
+
+def _parse_after_date(after_date: str | None) -> date | None:
+    """
+    Парсит `after_date` query parameter (ISO YYYY-MM-DD) для cursor-based
+    pagination. Возвращает None если не задан. Бросает 400 если invalid.
+
+    Pattern: клиент шлёт `?after_date=null` (первый запрос), получает
+    `next_cursor=2024-05-15` в ответе, передаёт его на следующий запрос
+    `?after_date=2024-05-15` чтобы продолжить с того же места.
+    """
+    if not after_date:
+        return None
+    try:
+        return date.fromisoformat(after_date)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=f"after_date must be ISO format YYYY-MM-DD, got '{after_date}'",
+        )
+
+
+# Cursor-pagination defaults — history endpoints возвращают max этого числа
+# точек за один запрос. Клиент использует next_cursor для chunked-загрузки.
+HISTORY_DEFAULT_LIMIT = 1000
+HISTORY_MAX_LIMIT = 10000
+
+
+def _paginate_by_date(
+    rows: list[dict],
+    limit: int,
+    date_col: str = "trade_date",
+) -> tuple[list[dict], str | None]:
+    """
+    Cursor-based pagination by date column.
+
+    Ожидает что SQL запрашивал `LIMIT (limit + 1)`. Если row count == limit+1
+    значит есть следующая страница; срезаем до limit и возвращаем дату
+    последней строки как next_cursor.
+
+    Returns:
+        (page, next_cursor). next_cursor=None если это последняя страница.
+    """
+    if len(rows) <= limit:
+        return rows, None
+    page = rows[:limit]
+    last_val = page[-1].get(date_col)
+    if last_val is None:
+        return page, None
+    cursor = last_val.isoformat() if hasattr(last_val, "isoformat") else str(last_val)
+    return page, cursor
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -178,6 +306,7 @@ def public_openapi(request: Request):
 # ════════════════════════════════════════════════════════════════════
 @router.get("/heatmap")
 def public_heatmap(
+    response: Response,
     user: User = Depends(check_rate_limit),
     db: Session = Depends(get_db),
 ):
@@ -185,6 +314,7 @@ def public_heatmap(
     Snapshot всех акций с current price + change % + market cap.
     Source: mv_heatmap_stocks (refreshed daily orchestrator'ом).
     """
+    response.headers["Cache-Control"] = CACHE_REALTIME
     rows = db.execute(text("""
         SELECT sec_id, name, sector, price, prev_close,
                change_1d, change_1w, change_1m, change_1y,
@@ -207,11 +337,13 @@ def public_heatmap(
 # ════════════════════════════════════════════════════════════════════
 @router.get("/breadth/current")
 def public_breadth_current(
+    response: Response,
     ema: int = Query(200, ge=10, le=500),
     universe: str = Query("imoex"),
     user: User = Depends(check_rate_limit),
     db: Session = Depends(get_db),
 ):
+    response.headers["Cache-Control"] = CACHE_HOURLY
     if universe not in ("all", "imoex", "all_usd", "imoex_usd"):
         raise HTTPException(status_code=400, detail="universe invalid")
 
@@ -231,10 +363,12 @@ def public_breadth_current(
 # ════════════════════════════════════════════════════════════════════
 @router.get("/instruments")
 def public_instruments(
+    response: Response,
     type: str | None = Query(None, description="stock|futures"),
     user: User = Depends(check_rate_limit),
     db: Session = Depends(get_db),
 ):
+    response.headers["Cache-Control"] = CACHE_STATIC
     if type and type not in ("stock", "futures"):
         raise HTTPException(status_code=400, detail="type invalid")
     where = "WHERE type = :type" if type else ""
@@ -253,11 +387,13 @@ def public_instruments(
 # ════════════════════════════════════════════════════════════════════
 @router.get("/oi/current")
 def public_oi_current(
+    response: Response,
     instrument: str = Query(...),
     clgroup: str = Query("YUR"),
     user: User = Depends(check_rate_limit),
     db: Session = Depends(get_db),
 ):
+    response.headers["Cache-Control"] = CACHE_HOURLY
     if clgroup not in ("YUR", "FIZ"):
         raise HTTPException(status_code=400, detail="clgroup invalid")
     row = db.execute(text("""
@@ -278,9 +414,11 @@ def public_oi_current(
 # ════════════════════════════════════════════════════════════════════
 @router.get("/funds/categories")
 def public_funds_categories(
+    response: Response,
     user: User = Depends(check_rate_limit),
     db: Session = Depends(get_db),
 ):
+    response.headers["Cache-Control"] = CACHE_STATIC
     rows = db.execute(text("""
         SELECT ticker, name, category, subcategory
         FROM funds
@@ -294,31 +432,49 @@ def public_funds_categories(
 # ════════════════════════════════════════════════════════════════════
 @router.get("/seasonality")
 def public_seasonality(
+    response: Response,
     ticker: str = Query(..., min_length=1, max_length=20),
     days: int = Query(3650, ge=30, le=15000, description="Глубина истории"),
+    after_date: str | None = Query(None, description="Cursor для pagination (ISO YYYY-MM-DD)"),
+    limit: int = Query(HISTORY_DEFAULT_LIMIT, ge=1, le=HISTORY_MAX_LIMIT),
     format: str = Query("json", description="json | csv"),
     user: User = Depends(check_rate_limit),
     db: Session = Depends(get_db),
 ):
+    response.headers["Cache-Control"] = CACHE_DAILY
     threshold = date.today() - timedelta(days=days)
+    after = _parse_after_date(after_date)
+    cursor_date = after if after else threshold - timedelta(days=1)  # exclusive lower
 
     rows = db.execute(text("""
         SELECT begin_time::date AS trade_date,
                open, high, low, close, volume
         FROM candles
         WHERE secid = :ticker AND interval = 24 AND type = 'stock'
-          AND close > 0 AND begin_time >= :threshold
+          AND close > 0 AND begin_time > :cursor_date
         ORDER BY begin_time ASC
-    """), {"ticker": ticker.upper(), "threshold": threshold}).mappings().all()
+        LIMIT :limit_plus_one
+    """), {
+        "ticker": ticker.upper(),
+        "cursor_date": cursor_date,
+        "limit_plus_one": limit + 1,
+    }).mappings().all()
     if not rows:
         raise HTTPException(status_code=404, detail=f"data not found for {ticker}")
+    data_list = [dict(r) for r in rows]
+    page, next_cursor = _paginate_by_date(data_list, limit)
     if format == "csv":
         return csv_streaming_response(
-            [dict(r) for r in rows],
+            page,
             ["trade_date", "open", "high", "low", "close", "volume"],
             f"seasonality_{ticker.upper()}.csv",
         )
-    return {"data": [dict(r) for r in rows], "ticker": ticker.upper(), "count": len(rows)}
+    return {
+        "data": page,
+        "ticker": ticker.upper(),
+        "count": len(page),
+        "next_cursor": next_cursor,
+    }
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -326,6 +482,7 @@ def public_seasonality(
 # ════════════════════════════════════════════════════════════════════
 @router.get("/stocks/{ticker}/quote")
 def public_stock_quote(
+    response: Response,
     ticker: str = Path(..., min_length=1, max_length=20),
     user: User = Depends(check_rate_limit),
     db: Session = Depends(get_db),
@@ -335,6 +492,7 @@ def public_stock_quote(
     тикеру — удобно для бота который тащит цену по одной бумаге без
     overhead'а всей карты рынка.
     """
+    response.headers["Cache-Control"] = CACHE_REALTIME
     row = db.execute(text("""
         SELECT sec_id, name, sector, price, prev_close,
                change_1d, change_1w, change_1m, change_1y,
@@ -359,41 +517,58 @@ def public_stock_quote(
 # ════════════════════════════════════════════════════════════════════
 @router.get("/breadth/history")
 def public_breadth_history(
+    response: Response,
     ema: int = Query(200, ge=10, le=500),
     universe: str = Query("imoex"),
     days: int = Query(365, ge=1, le=15000, description="Глубина истории в днях"),
+    after_date: str | None = Query(None, description="Cursor для pagination (ISO YYYY-MM-DD)"),
+    limit: int = Query(HISTORY_DEFAULT_LIMIT, ge=1, le=HISTORY_MAX_LIMIT),
     format: str = Query("json", description="json | csv"),
     user: User = Depends(check_rate_limit),
     db: Session = Depends(get_db),
 ):
     """
-    История Силы рынка за `days` дней назад. Каждая точка — % акций
-    торгующихся выше EMA на эту дату.
+    История Силы рынка. Cursor-pagination через `after_date` + `limit`.
+    Если ответ содержит `next_cursor` != null — есть следующая страница,
+    передайте `?after_date=<cursor>` чтобы её получить.
     """
+    response.headers["Cache-Control"] = CACHE_DAILY
     if universe not in ("all", "imoex", "all_usd", "imoex_usd"):
         raise HTTPException(status_code=400, detail="universe invalid")
 
     threshold = date.today() - timedelta(days=days)
+    after = _parse_after_date(after_date)
+    cursor_date = after if after else threshold - timedelta(days=1)
+
     rows = db.execute(text("""
         SELECT trade_date, percent_above, count_above, count_total
         FROM breadth_history
         WHERE ema_period = :ema AND universe = :universe
-          AND trade_date >= :threshold
+          AND trade_date > :cursor_date
         ORDER BY trade_date ASC
-    """), {"ema": ema, "universe": universe, "threshold": threshold}).mappings().all()
+        LIMIT :limit_plus_one
+    """), {
+        "ema": ema,
+        "universe": universe,
+        "cursor_date": cursor_date,
+        "limit_plus_one": limit + 1,
+    }).mappings().all()
     if not rows:
         raise HTTPException(status_code=404, detail="data not found")
+    data_list = [dict(r) for r in rows]
+    page, next_cursor = _paginate_by_date(data_list, limit)
     if format == "csv":
         return csv_streaming_response(
-            [dict(r) for r in rows],
+            page,
             ["trade_date", "percent_above", "count_above", "count_total"],
             f"breadth_history_{universe}_ema{ema}.csv",
         )
     return {
-        "data": [dict(r) for r in rows],
+        "data": page,
         "ema_period": ema,
         "universe": universe,
-        "count": len(rows),
+        "count": len(page),
+        "next_cursor": next_cursor,
     }
 
 
@@ -402,21 +577,28 @@ def public_breadth_history(
 # ════════════════════════════════════════════════════════════════════
 @router.get("/oi/history")
 def public_oi_history(
+    response: Response,
     instrument: str = Query(..., description="Sectype фьючерса (SR, GZ, MX, BR, ...)"),
     clgroup: str = Query("YUR", description="YUR (юрлица) или FIZ (физлица)"),
     days: int = Query(365, ge=1, le=3650),
+    after_date: str | None = Query(None, description="Cursor для pagination (ISO YYYY-MM-DD)"),
+    limit: int = Query(HISTORY_DEFAULT_LIMIT, ge=1, le=HISTORY_MAX_LIMIT),
     format: str = Query("json", description="json | csv"),
     user: User = Depends(check_rate_limit),
     db: Session = Depends(get_db),
 ):
     """
-    История открытого интереса по фьючерсу за `days` дней назад.
-    Только daily (interval=24) — internal intraday данные слишком тяжёлые
-    для programmatic access.
+    История открытого интереса по фьючерсу. Cursor-pagination через
+    `after_date` + `limit` для chunked-загрузки больших периодов.
+    Только daily (interval=24) — intraday данные слишком тяжёлые для API.
     """
+    response.headers["Cache-Control"] = CACHE_DAILY
     if clgroup not in ("YUR", "FIZ"):
         raise HTTPException(status_code=400, detail="clgroup invalid")
     threshold = date.today() - timedelta(days=days)
+    after = _parse_after_date(after_date)
+    cursor_date = after if after else threshold - timedelta(days=1)
+
     rows = db.execute(text("""
         SELECT tradedate AS trade_date,
                tradetime AS trade_time,
@@ -424,30 +606,35 @@ def public_oi_history(
                pos_long, pos_short, pos_long_num, pos_short_num
         FROM open_interest
         WHERE sectype = :inst AND clgroup = :cl AND interval = 24
-          AND tradedate >= :threshold
+          AND tradedate > :cursor_date
         ORDER BY tradedate ASC, tradetime ASC
+        LIMIT :limit_plus_one
     """), {
         "inst": instrument.upper(),
         "cl": clgroup,
-        "threshold": threshold,
+        "cursor_date": cursor_date,
+        "limit_plus_one": limit + 1,
     }).mappings().all()
     if not rows:
         raise HTTPException(
             status_code=404,
             detail=f"OI data not found for {instrument}/{clgroup}",
         )
+    data_list = [dict(r) for r in rows]
+    page, next_cursor = _paginate_by_date(data_list, limit)
     if format == "csv":
         return csv_streaming_response(
-            [dict(r) for r in rows],
+            page,
             ["trade_date", "trade_time", "open_interest", "pos_long",
              "pos_short", "pos_long_num", "pos_short_num"],
             f"oi_{instrument.upper()}_{clgroup}.csv",
         )
     return {
-        "data": [dict(r) for r in rows],
+        "data": page,
         "instrument": instrument.upper(),
         "clgroup": clgroup,
-        "count": len(rows),
+        "count": len(page),
+        "next_cursor": next_cursor,
     }
 
 
@@ -456,7 +643,10 @@ def public_oi_history(
 # ════════════════════════════════════════════════════════════════════
 @router.get("/buffett/cap-gdp")
 def public_buffett_cap_gdp(
+    response: Response,
     days: int = Query(3650, ge=30, le=15000, description="Глубина истории, дни"),
+    after_date: str | None = Query(None, description="Cursor для pagination (ISO YYYY-MM-DD)"),
+    limit: int = Query(HISTORY_DEFAULT_LIMIT, ge=1, le=HISTORY_MAX_LIMIT),
     format: str = Query("json", description="json | csv"),
     user: User = Depends(check_rate_limit),
     db: Session = Depends(get_db),
@@ -467,7 +657,11 @@ def public_buffett_cap_gdp(
     (TTM = сумма последних 4 кварталов forward-fill'нутые на каждую
     дату capitalization).
     """
+    response.headers["Cache-Control"] = CACHE_DAILY
     threshold = date.today() - timedelta(days=days)
+    after = _parse_after_date(after_date)
+    cursor_date = after if after else threshold - timedelta(days=1)
+
     rows = db.execute(text("""
         WITH cap AS (
           SELECT period_date AS dt, value AS cap
@@ -488,7 +682,7 @@ def public_buffett_cap_gdp(
                   WHERE g.dt <= c.dt AND g.gdp_ttm IS NOT NULL
                   ORDER BY g.dt DESC LIMIT 1) AS gdp_ttm
           FROM cap c
-          WHERE c.dt >= :threshold
+          WHERE c.dt > :cursor_date
         )
         SELECT trade_date, market_cap, gdp_ttm,
                CASE WHEN gdp_ttm > 0
@@ -496,23 +690,27 @@ def public_buffett_cap_gdp(
                     ELSE NULL END AS buffett_ratio_pct
         FROM joined
         ORDER BY trade_date ASC
-    """), {"threshold": threshold}).mappings().all()
+        LIMIT :limit_plus_one
+    """), {"cursor_date": cursor_date, "limit_plus_one": limit + 1}).mappings().all()
     if not rows:
         raise HTTPException(status_code=404, detail="buffett data not found")
+    data_list = [dict(r) for r in rows]
+    page, next_cursor = _paginate_by_date(data_list, limit)
     if format == "csv":
         return csv_streaming_response(
-            [dict(r) for r in rows],
+            page,
             ["trade_date", "market_cap", "gdp_ttm", "buffett_ratio_pct"],
             "buffett_cap_gdp.csv",
         )
     return {
-        "data": [dict(r) for r in rows],
+        "data": page,
+        "next_cursor": next_cursor,
         "meta": {
             "indicator": "cap-gdp",
             "unit": "ratio_pct",
             "source_cap": "MOEX",
             "source_gdp": "Росстат (TTM forward-fill)",
-            "count": len(rows),
+            "count": len(page),
         },
     }
 
@@ -522,7 +720,10 @@ def public_buffett_cap_gdp(
 # ════════════════════════════════════════════════════════════════════
 @router.get("/buffett/cap-m2")
 def public_buffett_cap_m2(
+    response: Response,
     days: int = Query(3650, ge=30, le=15000),
+    after_date: str | None = Query(None, description="Cursor для pagination (ISO YYYY-MM-DD)"),
+    limit: int = Query(HISTORY_DEFAULT_LIMIT, ge=1, le=HISTORY_MAX_LIMIT),
     format: str = Query("json", description="json | csv"),
     user: User = Depends(check_rate_limit),
     db: Session = Depends(get_db),
@@ -531,7 +732,11 @@ def public_buffett_cap_m2(
     Кап / M2 — отношение рыночной капитализации к денежной массе M2.
     M2 — данные ЦБ (monthly), forward-fill'нутые до каждой даты cap.
     """
+    response.headers["Cache-Control"] = CACHE_DAILY
     threshold = date.today() - timedelta(days=days)
+    after = _parse_after_date(after_date)
+    cursor_date = after if after else threshold - timedelta(days=1)
+
     rows = db.execute(text("""
         WITH cap AS (
           SELECT period_date AS dt, value AS cap
@@ -548,7 +753,7 @@ def public_buffett_cap_m2(
                   WHERE mm.dt <= c.dt AND mm.m2 IS NOT NULL
                   ORDER BY mm.dt DESC LIMIT 1) AS m2
           FROM cap c
-          WHERE c.dt >= :threshold
+          WHERE c.dt > :cursor_date
         )
         SELECT trade_date, market_cap, m2,
                CASE WHEN m2 > 0
@@ -556,23 +761,27 @@ def public_buffett_cap_m2(
                     ELSE NULL END AS cap_m2_ratio
         FROM joined
         ORDER BY trade_date ASC
-    """), {"threshold": threshold}).mappings().all()
+        LIMIT :limit_plus_one
+    """), {"cursor_date": cursor_date, "limit_plus_one": limit + 1}).mappings().all()
     if not rows:
         raise HTTPException(status_code=404, detail="buffett m2 data not found")
+    data_list = [dict(r) for r in rows]
+    page, next_cursor = _paginate_by_date(data_list, limit)
     if format == "csv":
         return csv_streaming_response(
-            [dict(r) for r in rows],
+            page,
             ["trade_date", "market_cap", "m2", "cap_m2_ratio"],
             "buffett_cap_m2.csv",
         )
     return {
-        "data": [dict(r) for r in rows],
+        "data": page,
+        "next_cursor": next_cursor,
         "meta": {
             "indicator": "cap-m2",
             "unit": "ratio",
             "source_cap": "MOEX",
             "source_m2": "ЦБ РФ (monthly forward-fill)",
-            "count": len(rows),
+            "count": len(page),
         },
     }
 
@@ -582,6 +791,7 @@ def public_buffett_cap_m2(
 # ════════════════════════════════════════════════════════════════════
 @router.get("/funds/{ticker}")
 def public_fund_detail(
+    response: Response,
     ticker: str = Path(..., min_length=1, max_length=20),
     user: User = Depends(check_rate_limit),
     db: Session = Depends(get_db),
@@ -595,6 +805,7 @@ def public_fund_detail(
 
     Возвращает 404 если ticker не найден.
     """
+    response.headers["Cache-Control"] = CACHE_HOURLY
     row = db.execute(text("""
         SELECT f.fund_id, f.ticker, f.name, f.category, f.subcategory, f.uk_id,
             fd_last.nav AS last_nav, fd_last.pay AS last_pay,
@@ -688,8 +899,11 @@ def public_fund_detail(
 # ════════════════════════════════════════════════════════════════════
 @router.get("/funds/{ticker}/history")
 def public_fund_history(
+    response: Response,
     ticker: str = Path(..., min_length=1, max_length=20),
     days: int = Query(365, ge=1, le=3650),
+    after_date: str | None = Query(None, description="Cursor для pagination (ISO YYYY-MM-DD)"),
+    limit: int = Query(HISTORY_DEFAULT_LIMIT, ge=1, le=HISTORY_MAX_LIMIT),
     format: str = Query("json", description="json | csv"),
     user: User = Depends(check_rate_limit),
     db: Session = Depends(get_db),
@@ -699,16 +913,25 @@ def public_fund_history(
     На основе этого можно посчитать доходность, sharpe, любые
     кастомные метрики и притоки/оттоки.
     """
+    response.headers["Cache-Control"] = CACHE_DAILY
     threshold = date.today() - timedelta(days=days)
+    after = _parse_after_date(after_date)
+    cursor_date = after if after else threshold - timedelta(days=1)
+
     rows = db.execute(text("""
         SELECT fd.trade_date, fd.nav, fd.pay
         FROM fund_data fd
         JOIN funds f ON f.fund_id = fd.fund_id
         WHERE UPPER(f.ticker) = UPPER(:ticker)
-          AND fd.trade_date >= :threshold
+          AND fd.trade_date > :cursor_date
           AND (fd.nav IS NOT NULL OR fd.pay IS NOT NULL)
         ORDER BY fd.trade_date ASC
-    """), {"ticker": ticker, "threshold": threshold}).mappings().all()
+        LIMIT :limit_plus_one
+    """), {
+        "ticker": ticker,
+        "cursor_date": cursor_date,
+        "limit_plus_one": limit + 1,
+    }).mappings().all()
     if not rows:
         raise HTTPException(
             status_code=404,
@@ -722,16 +945,18 @@ def public_fund_history(
             "nav": float(r["nav"]) if r["nav"] is not None else None,
             "pay": float(r["pay"]) if r["pay"] is not None else None,
         })
+    page, next_cursor = _paginate_by_date(data, limit)
     if format == "csv":
         return csv_streaming_response(
-            data,
+            page,
             ["trade_date", "nav", "pay"],
             f"fund_{ticker.upper()}_history.csv",
         )
     return {
-        "data": data,
+        "data": page,
         "ticker": ticker.upper(),
-        "count": len(data),
+        "count": len(page),
+        "next_cursor": next_cursor,
     }
 
 
@@ -740,6 +965,7 @@ def public_fund_history(
 # ════════════════════════════════════════════════════════════════════
 @router.get("/cbr-flows")
 def public_cbr_flows(
+    response: Response,
     type: str = Query("stocks", description="stocks | ofz | fx"),
     years: int = Query(10, ge=1, le=30, description="Глубина истории в годах"),
     format: str = Query("json", description="json | csv"),
@@ -757,6 +983,7 @@ def public_cbr_flows(
     investment_funds / corporates / brokers / others — конкретный набор
     зависит от `type` и периода (ЦБ может менять состав отчётности).
     """
+    response.headers["Cache-Control"] = CACHE_QUARTERLY
     if type not in ("stocks", "ofz", "fx"):
         raise HTTPException(status_code=400, detail="type invalid")
 

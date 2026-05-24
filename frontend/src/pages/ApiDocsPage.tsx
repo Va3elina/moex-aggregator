@@ -1598,13 +1598,17 @@ Authorization: Bearer pk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`}
                         </p>
                         <CodeBlock
                             language="http"
-                            code={`X-RateLimit-Limit:     60         # суммарный лимит за окно
-X-RateLimit-Remaining: 47         # сколько запросов осталось
-X-RateLimit-Reset:     1716548340 # unix-ts когда окно сбросится`}
+                            code={`X-RateLimit-Limit:        60                          # лимит за окно
+X-RateLimit-Remaining:    47                          # сколько осталось
+X-RateLimit-Reset:        1716548340                  # unix-ts когда сбросится
+X-Subscription-Expires-At: 2026-12-31T23:59:59+03:00  # когда истекает Pro
+Cache-Control:            public, max-age=60          # как долго можно кэшировать`}
                         />
                         <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: 4 }}>
-                            Используйте <code className="api-inline-code">X-RateLimit-Remaining</code> в своём
-                            боте для backoff — не дожидайтесь 429.
+                            Используйте <code className="api-inline-code">X-RateLimit-Remaining</code> для
+                            backoff и <code className="api-inline-code">X-Subscription-Expires-At</code> чтобы
+                            заблаговременно напоминать о продлении. <code className="api-inline-code">Cache-Control</code>
+                            — клиент может кэшировать результат указанное число секунд.
                         </p>
                     </section>
 
@@ -1680,9 +1684,23 @@ X-RateLimit-Reset:     1716548340 # unix-ts когда окно сброситс
                                 — удобно для pandas / Excel.
                             </li>
                             <li>
+                                <strong style={{ color: 'var(--text-primary)' }}>Cursor-pagination:</strong>{' '}
+                                для history-эндпоинтов добавьте{' '}
+                                <code className="api-inline-code">?limit=1000</code> чтобы получать
+                                ответ чанками. В ответе будет{' '}
+                                <code className="api-inline-code">next_cursor</code> — передайте его как{' '}
+                                <code className="api-inline-code">?after_date=&lt;cursor&gt;</code> чтобы
+                                получить следующую страницу. Полезно для огромных периодов (10+ лет).
+                            </li>
+                            <li>
                                 <strong style={{ color: 'var(--text-primary)' }}>Health-check:</strong>{' '}
                                 <code className="api-inline-code">GET /api/v1/public/health</code>{' '}
                                 — без авторизации, для UptimeRobot / Pingdom.
+                            </li>
+                            <li>
+                                <strong style={{ color: 'var(--text-primary)' }}>Usage stats:</strong>{' '}
+                                смотрите в <Link to="/profile" style={{ color: 'var(--accent)', textDecoration: 'underline' }}>личном кабинете</Link>
+                                {' '}— график запросов за последние 30 дней.
                             </li>
                         </ul>
                     </section>
@@ -1691,6 +1709,23 @@ X-RateLimit-Reset:     1716548340 # unix-ts когда окно сброситс
                     <section id="changelog" className="api-section">
                         <h2 className="api-section-h2">История версий</h2>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                            <div>
+                                <div style={{
+                                    fontSize: 'var(--fs-sm)',
+                                    fontWeight: 700,
+                                    color: 'var(--text-primary)',
+                                    marginBottom: 4,
+                                }}>
+                                    v1.3 — 2026-05-24
+                                </div>
+                                <ul className="api-section-ul">
+                                    <li>Header <code className="api-inline-code">X-Subscription-Expires-At</code> — для проактивных уведомлений</li>
+                                    <li>Header <code className="api-inline-code">Cache-Control</code> с разумным max-age (60s/300s/86400s)</li>
+                                    <li>Cursor pagination: <code className="api-inline-code">?after_date=YYYY-MM-DD&amp;limit=1000</code> + <code className="api-inline-code">next_cursor</code> в ответе</li>
+                                    <li>Usage stats endpoint <code className="api-inline-code">/api/keys/usage</code> + chart в личном кабинете</li>
+                                    <li>Pro-tier enforcement: после истечения подписки key возвращает 403 до возобновления</li>
+                                </ul>
+                            </div>
                             <div>
                                 <div style={{
                                     fontSize: 'var(--fs-sm)',
