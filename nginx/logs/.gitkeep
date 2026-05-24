@@ -1,0 +1,1 @@
+Логи nginx, монтируются как volume в docker-compose. fail2ban читает error.log для rate-limit jail.

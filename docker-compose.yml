@@ -168,6 +168,11 @@ services:
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      # Логи на host для fail2ban-чтения. По умолчанию nginx:alpine
+      # симлинкает access.log → /dev/stdout, error.log → /dev/stderr —
+      # bind-mount поверх /var/log/nginx убирает симлинки, nginx пишет
+      # в файлы. fail2ban читает error.log для rate-limit ban'ов.
+      - ./nginx/logs:/var/log/nginx
       - certbot_data:/var/www/certbot:ro
       - certbot_certs:/etc/letsencrypt:ro
 
