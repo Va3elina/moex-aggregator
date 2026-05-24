@@ -1,6 +1,7 @@
 import React, { useEffect, useLayoutEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { TrendingUp, DollarSign, Banknote, Gem, Wallet } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useTrackRecent } from '../hooks/useRecent';
 import PageHeader from '../components/PageHeader';
 import Dropdown, { type DropdownOption } from '../components/Dropdown';
 import { METHODOLOGY } from '../data/methodology';
@@ -73,6 +74,8 @@ const easeOutCubic = ANIMATION.easing;
 
 
 export default function FundsMoneyPage() {
+    useTrackRecent({ kind: 'indicator', indicatorId: 'funds-money', label: 'Деньги в фондах', path: '/funds-money' });
+
     const { isAuthenticated } = useAuth();
     const navigate = useNavigate();
     const [category, setCategory] = useState<FundCategory>('money_market');

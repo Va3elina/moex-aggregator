@@ -41,6 +41,7 @@ import { formatNumber } from '../utils/formatNumber';
 import Card from '../components/Card';
 import Skeleton from '../components/Skeleton';
 import Dropdown from '../components/Dropdown';
+import { WatchlistWidget, RecentWidget, ScreenersWidget } from '../components/overview/PersonalWidgets';
 
 const INDICATORS: {
   path: string;
@@ -200,6 +201,17 @@ export default function OverviewPage() {
       >
         Источник: Московская биржа
       </p>
+
+      {/* ═══ ЛИЧНЫЕ ВИДЖЕТЫ — Watchlist + Recent ═══
+          Доступны всем тарифам. Click-through на актив (например /heatmap?focus=SBER)
+          вызывает useTierAccess на странице индикатора если актив locked. */}
+      <section className="grid grid-cols-1 lg:grid-cols-2 gap-3 md:gap-4 mb-10 md:mb-12">
+        <WatchlistWidget />
+        <RecentWidget />
+      </section>
+
+      {/* ═══ SCREENERS — preset фильтры (curated) ═══ */}
+      <ScreenersWidget />
 
       {/* ═══ TOP MOVERS (Gainers / Losers) ═══
           Секция всегда рендерится: skeleton если data грузится → MoversList при load.

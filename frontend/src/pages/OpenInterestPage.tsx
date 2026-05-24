@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { ChevronDown, BarChart3 } from 'lucide-react';
+import { useTrackRecent } from '../hooks/useRecent';
 import PageHeader from '../components/PageHeader';
 import InstrumentIcon from '../components/InstrumentIcon';
 import { usePrefetchLogos } from '../hooks/usePrefetchLogos';
@@ -58,6 +59,8 @@ const COLORS = {
 };
 
 export default function OpenInterestPage() {
+  useTrackRecent({ kind: 'indicator', indicatorId: 'oi', label: 'Открытый интерес', path: '/oi' });
+
   const [searchParams, setSearchParams] = useSearchParams();
   const { isAuthenticated } = useAuth();
   const { theme: _theme } = useTheme();

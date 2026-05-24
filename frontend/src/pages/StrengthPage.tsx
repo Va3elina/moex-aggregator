@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { Activity } from 'lucide-react';
+import { useTrackRecent } from '../hooks/useRecent';
 import ChartNavigator from '../components/ChartNavigator';
 import PageHeader from '../components/PageHeader';
 import { METHODOLOGY } from '../data/methodology';
@@ -60,6 +61,8 @@ const DEFAULT_PADDING: ChartPadding = { left: 70, right: 70, top: 10, bottom: 30
 const DEFAULT_HEIGHTS = { top: 300, bottomDual: 150, bottomSolo: 450 };
 
 export default function StrengthPage() {
+    useTrackRecent({ kind: 'indicator', indicatorId: 'strength', label: 'Сила рынка', path: '/strength' });
+
     const { isAuthenticated } = useAuth();
     const [period, setPeriod] = useState<Period>(getDefaultPeriod('1y', isAuthenticated) as Period);
     // EMA-период: 50 (краткосрок), 100 (среднесрок), 200 (долгосрок, по умолчанию).
