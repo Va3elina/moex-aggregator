@@ -66,6 +66,16 @@ services:
       - SETGID
       - DAC_OVERRIDE
       - NET_BIND_SERVICE
+    # Read-only rootfs: атакующий с RCE не может persistent backdoor
+    # через подмену файлов. Writeable места — только tmpfs и named volume.
+    read_only: true
+    tmpfs:
+      # /tmp — Python multiprocessing IPC, gunicorn worker tmp, matplotlib cache.
+      - /tmp:size=100M,mode=1777
+    volumes:
+      # /app/logs — runtime logs от api/logger.py. Named volume чтобы пережить
+      # docker compose down (если хочется debug-archive логов через docker cp).
+      - api_logs:/app/logs
     # TODO security hardening: запуск под non-root + read_only rootfs.
     # Первая попытка (commit 231411a) сломала prod — api/logger.py создаёт
     # /app/logs при импорте, COPY → root owner → uid=1000 PermissionError.
@@ -114,6 +124,10 @@ services:
       - TBANK_RECEIPT_ENABLED=${TBANK_RECEIPT_ENABLED:-}
       - TBANK_TAXATION=${TBANK_TAXATION:-usn_income}
       - TBANK_VAT=${TBANK_VAT:-none}
+      # Python не пишет .pyc файлы в /app/api/__pycache__ при импорте
+      # модулей. Совместимо с read_only rootfs. Лёгкая просадка на cold
+      # import — pyc-кэш отсутствует. Compensated кэш гранулы Python 3.11.
+      - PYTHONDONTWRITEBYTECODE=1
     expose:
       - "8000"
     healthcheck:
@@ -198,3 +212,6 @@ volumes:
   postgres_data:
   certbot_data:
   certbot_certs:
+  # /app/logs внутри read_only rootfs api-контейнера. Named volume
+  # переживает container recreate — можно `docker cp` из инспекции инцидента.
+  api_logs:
