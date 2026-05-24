@@ -32,12 +32,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Non-root user для API-сервиса (security hardening: если RCE в FastAPI или
-# зависимости, attacker остаётся под uid=1000 — нужен kernel/docker CVE чтобы
-# escape'нуться к root). orchestrator и tg-bot продолжают работать как root
-# через docker-compose override (они batch-процессы без HTTP exposure).
-RUN useradd --system --uid 1000 --no-create-home --shell /usr/sbin/nologin appuser
-
 # Python зависимости
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

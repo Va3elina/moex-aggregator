@@ -44,11 +44,12 @@ services:
   api:
     build: .
     restart: always
-    # Security hardening: API-сервис под non-root (appuser создан в Dockerfile).
-    # Если RCE в FastAPI/uvicorn/зависимости → атакующий остаётся uid=1000,
-    # нужен kernel/docker CVE для escape'а к root. orchestrator и tg-bot
-    # остаются root — batch-процессы без HTTP exposure.
-    user: "1000:1000"
+    # TODO security hardening: запуск под non-root. Первая попытка
+    # (commit 231411a) сломала prod — api/logger.py создаёт /app/logs при
+    # импорте, а COPY делает файлы owner=root → uid=1000 PermissionError.
+    # Правильный путь: либо `RUN chown -R appuser:appuser /app` в Dockerfile
+    # после COPY-инструкций, либо смонтировать /app/logs как volume с
+    # явным owner. Делать отдельной задачей с тестированием на staging.
     depends_on:
       db:
         condition: service_healthy
