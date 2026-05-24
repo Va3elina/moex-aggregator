@@ -10,10 +10,31 @@
  * (chip-row для funds = 4 категории, отдельный layout).
  */
 import { useState, useEffect, useMemo } from 'react';
-import { Search, X, Check } from 'lucide-react';
+import { Search, X, Check, Star } from 'lucide-react';
 import { apiFetch } from '../../services/api';
 import InstrumentIcon from '../InstrumentIcon';
 import { formatCompact } from '../../utils/formatNumber';
+
+// Тот же storage key что использует обычный InstrumentSearchModal — favorites
+// общие между picker'ами. Юзер избранно SBER на странице — видит в CSV-picker.
+const FAVORITES_KEY = 'favoriteInstruments';
+
+function loadFavorites(): string[] {
+    try {
+        const raw = localStorage.getItem(FAVORITES_KEY);
+        return raw ? JSON.parse(raw) : [];
+    } catch {
+        return [];
+    }
+}
+
+function saveFavorites(list: string[]) {
+    try {
+        localStorage.setItem(FAVORITES_KEY, JSON.stringify(list));
+    } catch {
+        /* ignore */
+    }
+}
 
 interface Instrument {
     sec_id: string;
@@ -41,8 +62,9 @@ interface Props {
 }
 
 // Категории для instruments. Match column: 'group' (Акции/Валюта/...) или
-// 'type' (futures). Список выровнен с CATEGORY_FILTERS из обычного modal'а.
-const INST_CATEGORIES: { key: string; label: string; match?: 'group' | 'type' }[] = [
+// 'type' (futures). Динамически фильтруются по filterType — chips которые
+// не могут вернуть результат в текущем filterType режиме скрываются.
+const ALL_INST_CATEGORIES: { key: string; label: string; match?: 'group' | 'type' }[] = [
     { key: 'all', label: 'Все' },
     { key: 'Акции', label: 'Акции', match: 'group' },
     { key: 'futures', label: 'Фьючерсы', match: 'type' },
@@ -50,6 +72,32 @@ const INST_CATEGORIES: { key: string; label: string; match?: 'group' | 'type' }[
     { key: 'Индексы', label: 'Индексы', match: 'group' },
     { key: 'Сырьё', label: 'Сырьё', match: 'group' },
 ];
+
+/**
+ * Фильтрация chip-list по filterType:
+ *   - 'stock' → только stocks загружены → chip "Фьючерсы" даст 0 → скрываем.
+ *     Также Валюта/Индексы/Сырьё — там нет stock-инструментов. Только Акции.
+ *   - 'futures' → загружены все фьючерсы (на акции, валюту, индексы, сырьё).
+ *     Chip "Фьючерсы" избыточен (тип и так фильтр). Группы Акции/Валюта/.../
+ *     Сырьё работают как фильтр БАЗОВОГО актива фьючерса — оставляем.
+ *   - 'no-futures' → все кроме фьючерсов. Chip "Фьючерсы" скрываем.
+ *   - undefined → все 6 chips.
+ */
+function filterCategoryChips(
+    chips: typeof ALL_INST_CATEGORIES,
+    filterType: 'stock' | 'futures' | 'no-futures' | undefined,
+) {
+    if (filterType === 'stock') {
+        return chips.filter((c) => c.key === 'all' || c.key === 'Акции');
+    }
+    if (filterType === 'futures') {
+        return chips.filter((c) => c.key !== 'futures'); // убираем избыточный
+    }
+    if (filterType === 'no-futures') {
+        return chips.filter((c) => c.key !== 'futures');
+    }
+    return chips;
+}
 
 export default function MultiInstrumentSearchModal({
     initial,
@@ -65,6 +113,18 @@ export default function MultiInstrumentSearchModal({
     const [search, setSearch] = useState('');
     const [category, setCategory] = useState('all');
     const [selected, setSelected] = useState<Set<string>>(() => new Set(initial));
+    const [favorites, setFavorites] = useState<string[]>(() => loadFavorites());
+
+    const toggleFavorite = (sectype: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        setFavorites((prev) => {
+            const next = prev.includes(sectype)
+                ? prev.filter((t) => t !== sectype)
+                : [...prev, sectype];
+            saveFavorites(next);
+            return next;
+        });
+    };
 
     // Esc + body scroll lock.
     useEffect(() => {
@@ -132,7 +192,7 @@ export default function MultiInstrumentSearchModal({
         });
     };
 
-    // Категории для chip-row — динамика для funds, статика для instruments.
+    // Категории для chip-row — динамика для funds, фильтр для instruments.
     const categories = useMemo(() => {
         if (source === 'funds') {
             const uniqueCats = Array.from(
@@ -143,9 +203,7 @@ export default function MultiInstrumentSearchModal({
                 ...uniqueCats.map((g) => ({ key: g, label: g, match: 'group' as const })),
             ];
         }
-        return INST_CATEGORIES.filter(
-            (c) => !(filterType === 'no-futures' && c.key === 'futures'),
-        );
+        return filterCategoryChips(ALL_INST_CATEGORIES, filterType);
     }, [source, filterType, instruments]);
 
     // Filter.
@@ -184,6 +242,19 @@ export default function MultiInstrumentSearchModal({
             return true;
         });
     }, [filtered]);
+
+    // Если текущая категория не в available list — сбрасываем на 'all'.
+    // (например: filterType сменился со 'futures' на 'stock', а category='Фьючерсы')
+    useEffect(() => {
+        if (category !== 'all' && !categories.some((c) => c.key === category)) {
+            setCategory('all');
+        }
+    }, [categories, category]);
+
+    // Sticky favorites section (только когда нет search).
+    // Source 'funds' тоже поддерживает — фонды могут быть в избранном.
+    const favoriteItems = !search ? unique.filter((i) => favorites.includes(i.sectype)) : [];
+    const regularItems = search ? unique : unique.filter((i) => !favorites.includes(i.sectype));
 
     return (
         <div
@@ -332,132 +403,31 @@ export default function MultiInstrumentSearchModal({
                             Не найдено
                         </div>
                     ) : (
-                        unique.map((inst) => {
-                            const checked = selected.has(inst.sectype);
-                            const limitReached = !!maxItems && !checked && selected.size >= maxItems;
-                            return (
-                                <button
-                                    key={inst.sectype}
-                                    type="button"
-                                    onClick={() => toggle(inst.sectype)}
-                                    disabled={limitReached}
-                                    style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: 14,
-                                        width: '100%',
-                                        padding: '10px 12px',
-                                        background: checked
-                                            ? 'color-mix(in srgb, var(--accent) 10%, transparent)'
-                                            : 'transparent',
-                                        border: 'none',
-                                        borderRadius: 10,
-                                        cursor: limitReached ? 'not-allowed' : 'pointer',
-                                        textAlign: 'left',
-                                        color: 'var(--text-primary)',
-                                        opacity: limitReached ? 0.4 : 1,
-                                        transition: 'background 0.12s',
-                                    }}
-                                >
-                                    {/* Checkbox */}
-                                    <span
-                                        aria-hidden="true"
-                                        style={{
-                                            width: 20,
-                                            height: 20,
-                                            borderRadius: 5,
-                                            border: '1.5px solid var(--text-primary)',
-                                            background: checked ? 'var(--accent)' : 'transparent',
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'center',
-                                            flexShrink: 0,
-                                        }}
-                                    >
-                                        {checked && (
-                                            <Check size={13} strokeWidth={3} color="var(--text-inverse)" />
-                                        )}
-                                    </span>
-
-                                    {/* Icon — pretty логотип/sprite для тикера */}
-                                    <InstrumentIcon sectype={inst.sectype} size={32} />
-
-                                    {/* Ticker + name */}
-                                    <div
-                                        style={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: 8,
-                                            flex: 1,
-                                            minWidth: 0,
-                                        }}
-                                    >
-                                        <span style={{ fontWeight: 700, fontSize: 'var(--fs-sm)' }}>
-                                            {inst.sectype}
-                                        </span>
-                                        <span
-                                            style={{
-                                                color: 'var(--text-secondary)',
-                                                fontSize: 'var(--fs-xs)',
-                                                overflow: 'hidden',
-                                                textOverflow: 'ellipsis',
-                                                whiteSpace: 'nowrap',
-                                            }}
-                                        >
-                                            {inst.name}
-                                        </span>
-                                    </div>
-
-                                    {/* Day change % + volume */}
-                                    {(inst.day_change_pct != null || inst.daily_volume) && (
-                                        <div
-                                            style={{
-                                                textAlign: 'right',
-                                                lineHeight: 1.2,
-                                                flexShrink: 0,
-                                                minWidth: 64,
-                                            }}
-                                        >
-                                            {inst.day_change_pct != null && (
-                                                <div
-                                                    style={{
-                                                        fontSize: 'var(--fs-xs)',
-                                                        fontWeight: 600,
-                                                        color: inst.day_change_pct >= 0
-                                                            ? 'var(--funds-flow-positive)'
-                                                            : 'var(--funds-flow-negative)',
-                                                    }}
-                                                >
-                                                    {inst.day_change_pct >= 0 ? '+' : ''}
-                                                    {inst.day_change_pct.toFixed(2)}%
-                                                </div>
-                                            )}
-                                            {inst.daily_volume ? (
-                                                <div style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)' }}>
-                                                    {formatCompact(inst.daily_volume)}
-                                                </div>
-                                            ) : null}
-                                        </div>
+                        <>
+                            {favoriteItems.length > 0 && (
+                                <>
+                                    <SectionLabel icon={<Star size={11} fill="currentColor" strokeWidth={0} />} text="Избранные" accent />
+                                    {favoriteItems.map((inst) =>
+                                        renderRow(inst, {
+                                            selected, maxItems, toggle, toggleFavorite, isFavorite: true,
+                                        }),
                                     )}
-
-                                    {/* Group badge — только если нет day_change (для fund-mode) */}
-                                    {inst.day_change_pct == null && inst.group && (
-                                        <span
-                                            style={{
-                                                fontSize: 'var(--fs-2xs)',
-                                                color: 'var(--text-muted)',
-                                                padding: '2px 6px',
-                                                background: 'var(--bg-secondary)',
-                                                borderRadius: 4,
-                                                flexShrink: 0,
-                                            }}
-                                        >
-                                            {inst.group}
-                                        </span>
+                                </>
+                            )}
+                            {regularItems.length > 0 && (
+                                <>
+                                    {favoriteItems.length > 0 && (
+                                        <SectionLabel text="Все инструменты" />
                                     )}
-                                </button>
-                            );
-                        })
+                                    {regularItems.map((inst) =>
+                                        renderRow(inst, {
+                                            selected, maxItems, toggle, toggleFavorite,
+                                            isFavorite: favorites.includes(inst.sectype),
+                                        }),
+                                    )}
+                                </>
+                            )}
+                        </>
                     )}
                 </div>
 
@@ -524,6 +494,177 @@ export default function MultiInstrumentSearchModal({
                     </div>
                 </div>
             </div>
+        </div>
+    );
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Row + section label helpers — extracted чтобы render-loop проще.
+// ────────────────────────────────────────────────────────────────────
+
+interface RowContext {
+    selected: Set<string>;
+    maxItems?: number;
+    toggle: (sectype: string) => void;
+    toggleFavorite: (sectype: string, e: React.MouseEvent) => void;
+    isFavorite: boolean;
+}
+
+function renderRow(inst: Instrument, ctx: RowContext) {
+    const checked = ctx.selected.has(inst.sectype);
+    const limitReached = !!ctx.maxItems && !checked && ctx.selected.size >= ctx.maxItems;
+    return (
+        <button
+            key={inst.sectype}
+            type="button"
+            onClick={() => ctx.toggle(inst.sectype)}
+            disabled={limitReached}
+            style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 14,
+                width: '100%',
+                padding: '10px 12px',
+                background: checked
+                    ? 'color-mix(in srgb, var(--accent) 10%, transparent)'
+                    : 'transparent',
+                border: 'none',
+                borderRadius: 10,
+                cursor: limitReached ? 'not-allowed' : 'pointer',
+                textAlign: 'left',
+                color: 'var(--text-primary)',
+                opacity: limitReached ? 0.4 : 1,
+                transition: 'background 0.12s',
+            }}
+        >
+            {/* Checkbox */}
+            <span
+                aria-hidden="true"
+                style={{
+                    width: 20,
+                    height: 20,
+                    borderRadius: 5,
+                    border: '1.5px solid var(--text-primary)',
+                    background: checked ? 'var(--accent)' : 'transparent',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                }}
+            >
+                {checked && <Check size={13} strokeWidth={3} color="var(--text-inverse)" />}
+            </span>
+
+            <InstrumentIcon sectype={inst.sectype} size={32} />
+
+            <div
+                style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    flex: 1,
+                    minWidth: 0,
+                }}
+            >
+                <span style={{ fontWeight: 700, fontSize: 'var(--fs-sm)' }}>{inst.sectype}</span>
+                <span
+                    style={{
+                        color: 'var(--text-secondary)',
+                        fontSize: 'var(--fs-xs)',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                    }}
+                >
+                    {inst.name}
+                </span>
+            </div>
+
+            {(inst.day_change_pct != null || inst.daily_volume) && (
+                <div style={{ textAlign: 'right', lineHeight: 1.2, flexShrink: 0, minWidth: 64 }}>
+                    {inst.day_change_pct != null && (
+                        <div
+                            style={{
+                                fontSize: 'var(--fs-xs)',
+                                fontWeight: 600,
+                                color: inst.day_change_pct >= 0
+                                    ? 'var(--funds-flow-positive)'
+                                    : 'var(--funds-flow-negative)',
+                            }}
+                        >
+                            {inst.day_change_pct >= 0 ? '+' : ''}{inst.day_change_pct.toFixed(2)}%
+                        </div>
+                    )}
+                    {inst.daily_volume ? (
+                        <div style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)' }}>
+                            {formatCompact(inst.daily_volume)}
+                        </div>
+                    ) : null}
+                </div>
+            )}
+
+            {/* Group badge — только если нет day_change (для fund-mode) */}
+            {inst.day_change_pct == null && inst.group && (
+                <span
+                    style={{
+                        fontSize: 'var(--fs-2xs)',
+                        color: 'var(--text-muted)',
+                        padding: '2px 6px',
+                        background: 'var(--bg-secondary)',
+                        borderRadius: 4,
+                        flexShrink: 0,
+                    }}
+                >
+                    {inst.group}
+                </span>
+            )}
+
+            {/* Star button — toggle favorites. Не пропускает click дальше
+                (через e.stopPropagation внутри toggleFavorite). */}
+            <button
+                type="button"
+                onClick={(e) => ctx.toggleFavorite(inst.sectype, e)}
+                aria-label={ctx.isFavorite ? 'Убрать из избранных' : 'Добавить в избранные'}
+                style={{
+                    background: 'transparent',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: 4,
+                    color: ctx.isFavorite ? 'var(--accent)' : 'var(--text-muted)',
+                    flexShrink: 0,
+                }}
+            >
+                <Star size={18} fill={ctx.isFavorite ? 'currentColor' : 'transparent'} />
+            </button>
+        </button>
+    );
+}
+
+function SectionLabel({
+    text,
+    icon,
+    accent,
+}: {
+    text: string;
+    icon?: React.ReactNode;
+    accent?: boolean;
+}) {
+    return (
+        <div
+            style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '10px 14px 4px',
+                fontSize: 'var(--fs-2xs)',
+                fontWeight: 800,
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase',
+                color: accent ? 'var(--accent)' : 'var(--text-muted)',
+            }}
+        >
+            {icon}
+            {text}
         </div>
     );
 }
