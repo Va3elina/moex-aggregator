@@ -460,8 +460,8 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 interface SelectorControlProps {
     selector: CsvSelector;
-    value: string | string[] | number | undefined;
-    onChange: (v: string | string[] | number) => void;
+    value: CsvSelectorValue | undefined;
+    onChange: (v: CsvSelectorValue) => void;
 }
 
 function SelectorControl({ selector, value, onChange }: SelectorControlProps) {
@@ -578,7 +578,7 @@ function SelectorControl({ selector, value, onChange }: SelectorControlProps) {
     }
 
     if (selector.kind === 'period') {
-        const current = (value as PeriodValue) ?? selector.default;
+        const current = (value as PeriodValue | undefined) ?? selector.default;
         return (
             <PeriodControl
                 selector={selector}
