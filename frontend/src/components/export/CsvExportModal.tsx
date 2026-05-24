@@ -1,19 +1,17 @@
 /**
- * CsvExportModal — модалка выбора что включить в CSV-экспорт.
+ * CsvExportModal — конфигуратор CSV-экспорта.
  *
- * Открывается из CsvExportButton (если у юзера Pro). Юзер видит:
- *   1. Текущие параметры индикатора (period, ticker, mode etc.) — readonly,
- *      показывает что попадёт в выгрузку.
- *   2. Список слоёв (layers) — checkbox'ы. Выбрал > 1 → backend отдаст ZIP
- *      с отдельными CSV.
- *   3. Format selector (пока только CSV, заглушка для будущего XLSX/JSON).
- *   4. Кнопки: Скачать / Отмена.
+ * Расширенная версия: помимо layer-чекбоксов даёт юзеру задать ПАРАМЕТРЫ
+ * самого экспорта (тикеры, период, режим etc.). Defaults = current UI state,
+ * но юзер может override / добавить дополнительные значения.
  *
- * Config-driven: страница декларирует свой CsvExportConfig (layers, params,
- * URL builder) и передаёт в CsvExportButton, который пробрасывает в модалку.
+ * При multi-select (несколько тикеров, несколько режимов) backend упаковывает
+ * результат в ZIP — каждый CSV per combination.
+ *
+ * Config-driven — каждая страница декларирует layers + selectors + builders.
  */
-import { useState, useEffect } from 'react';
-import { X, Download, FileText, FileArchive } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { X, Download, FileText, FileArchive, Check } from 'lucide-react';
 import { apiFetch } from '../../services/api';
 import { useAnalytics } from '../../contexts/AnalyticsContext';
 
@@ -24,24 +22,55 @@ export interface CsvLayer {
     defaultSelected?: boolean;
 }
 
-export interface CsvParamSummary {
-    label: string;
+export interface CsvSelectOption {
     value: string;
+    label: string;
 }
 
+/** Один из 3 типов селекторов в модалке. */
+export type CsvSelector =
+    | {
+        kind: 'select';
+        id: string;
+        label: string;
+        options: CsvSelectOption[];
+        default: string;
+    }
+    | {
+        kind: 'multiselect';
+        id: string;
+        label: string;
+        options: CsvSelectOption[];
+        default: string[];
+        /** Подсказка после selector'а: «Несколько → ZIP с отдельным CSV per item». */
+        hint?: string;
+    }
+    | {
+        kind: 'number';
+        id: string;
+        label: string;
+        default: number;
+        min?: number;
+        max?: number;
+        suffix?: string;
+    };
+
 export interface CsvExportConfig {
-    /** Indicator ID для analytics + UpgradeModal. */
     indicator: string;
-    /** Заголовок модалки — "Экспорт: Сезонность SBER". */
     title: string;
-    /** Список слоёв что юзер может выбрать. Если 1 — скрываем секцию. */
     layers: CsvLayer[];
-    /** Параметры текущего UI-состояния — readonly, информация для юзера. */
-    params: CsvParamSummary[];
-    /** Builder URL'а на основе выбранных layer ID. */
-    buildUrl: (layerIds: string[]) => string;
-    /** Builder имени файла на основе выбранных layer ID. */
-    buildFilename: (layerIds: string[]) => string;
+    /** Параметры с возможностью override. Default = current UI state. */
+    selectors: CsvSelector[];
+    /** URL builder — получает выбранные layers + текущие selector values. */
+    buildUrl: (
+        layers: string[],
+        values: Record<string, string | string[] | number>,
+    ) => string;
+    /** Filename builder — то же сигнатура. */
+    buildFilename: (
+        layers: string[],
+        values: Record<string, string | string[] | number>,
+    ) => string;
 }
 
 interface Props {
@@ -52,41 +81,47 @@ interface Props {
 export default function CsvExportModal({ config, onClose }: Props) {
     const { track } = useAnalytics();
 
-    // Default selection: defaultSelected=true → on; иначе если только 1 layer → on.
-    const [selected, setSelected] = useState<Set<string>>(() => {
+    // ──── Layer selection state ────
+    const [selectedLayers, setSelectedLayers] = useState<Set<string>>(() => {
         const initial = new Set<string>();
         for (const l of config.layers) {
             if (l.defaultSelected || config.layers.length === 1) {
                 initial.add(l.id);
             }
         }
-        // Если ни один не дефолтный — выбираем первый.
         if (initial.size === 0 && config.layers.length > 0) {
             initial.add(config.layers[0].id);
         }
         return initial;
     });
+
+    // ──── Selectors values state ────
+    const [values, setValues] = useState<Record<string, string | string[] | number>>(() => {
+        const init: Record<string, string | string[] | number> = {};
+        for (const s of config.selectors) init[s.id] = s.default;
+        return init;
+    });
+
     const [downloading, setDownloading] = useState(false);
 
-    // Esc — close. Body scroll lock.
+    // Esc + body scroll lock.
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
             if (e.key === 'Escape' && !downloading) onClose();
         };
         document.addEventListener('keydown', onKey);
-        const prevOverflow = document.body.style.overflow;
+        const prev = document.body.style.overflow;
         document.body.style.overflow = 'hidden';
         return () => {
             document.removeEventListener('keydown', onKey);
-            document.body.style.overflow = prevOverflow;
+            document.body.style.overflow = prev;
         };
     }, [onClose, downloading]);
 
     const toggleLayer = (id: string) => {
-        setSelected((prev) => {
+        setSelectedLayers((prev) => {
             const next = new Set(prev);
             if (next.has(id)) {
-                // Не позволяем снять последний — должен быть хотя бы 1 layer.
                 if (next.size > 1) next.delete(id);
             } else {
                 next.add(id);
@@ -95,16 +130,31 @@ export default function CsvExportModal({ config, onClose }: Props) {
         });
     };
 
+    // Сколько combinations всего → если ≥2, будет ZIP.
+    const totalCombinations = useMemo(() => {
+        let count = selectedLayers.size;
+        for (const s of config.selectors) {
+            if (s.kind === 'multiselect') {
+                const v = values[s.id];
+                if (Array.isArray(v)) count *= Math.max(1, v.length);
+            }
+        }
+        return count;
+    }, [selectedLayers, values, config.selectors]);
+
+    const isZip = totalCombinations > 1;
+
     const handleDownload = async () => {
-        if (selected.size === 0) return;
-        const layerIds = Array.from(selected);
-        const url = config.buildUrl(layerIds);
-        const filename = config.buildFilename(layerIds);
+        if (selectedLayers.size === 0) return;
+        const layerIds = Array.from(selectedLayers);
+        const url = config.buildUrl(layerIds, values);
+        const filename = config.buildFilename(layerIds, values);
 
         track('chart_export', {
             indicator: config.indicator,
-            format: layerIds.length > 1 ? 'zip' : 'csv',
+            format: isZip ? 'zip' : 'csv',
             layers: layerIds.join(','),
+            combinations: totalCombinations,
         });
 
         setDownloading(true);
@@ -134,12 +184,8 @@ export default function CsvExportModal({ config, onClose }: Props) {
         }
     };
 
-    const isZip = selected.size > 1;
-    const hideLayersSection = config.layers.length <= 1;
-
     return (
         <div
-            // Backdrop
             onClick={(e) => {
                 if (e.target === e.currentTarget && !downloading) onClose();
             }}
@@ -164,7 +210,7 @@ export default function CsvExportModal({ config, onClose }: Props) {
                     borderRadius: 16,
                     boxShadow: '6px 6px 0 var(--text-primary)',
                     width: '100%',
-                    maxWidth: 540,
+                    maxWidth: 580,
                     maxHeight: '90vh',
                     overflowY: 'auto',
                 }}
@@ -177,6 +223,10 @@ export default function CsvExportModal({ config, onClose }: Props) {
                         justifyContent: 'space-between',
                         padding: '16px 20px',
                         borderBottom: '1.5px solid var(--text-primary)',
+                        position: 'sticky',
+                        top: 0,
+                        background: 'var(--bg-primary)',
+                        zIndex: 1,
                     }}
                 >
                     <h2
@@ -206,24 +256,12 @@ export default function CsvExportModal({ config, onClose }: Props) {
                     </button>
                 </div>
 
-                {/* Layers selection */}
-                {!hideLayersSection && (
-                    <div style={{ padding: '16px 20px', borderBottom: '1px dashed color-mix(in srgb, var(--text-primary) 15%, transparent)' }}>
-                        <div
-                            style={{
-                                fontSize: 11,
-                                fontWeight: 800,
-                                color: 'var(--text-secondary)',
-                                textTransform: 'uppercase',
-                                letterSpacing: '0.06em',
-                                marginBottom: 10,
-                            }}
-                        >
-                            Что включить
-                        </div>
+                {/* Layers */}
+                {config.layers.length > 1 && (
+                    <Section title="Что включить">
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                             {config.layers.map((layer) => {
-                                const checked = selected.has(layer.id);
+                                const checked = selectedLayers.has(layer.id);
                                 return (
                                     <label
                                         key={layer.id}
@@ -232,7 +270,9 @@ export default function CsvExportModal({ config, onClose }: Props) {
                                             alignItems: 'flex-start',
                                             gap: 10,
                                             padding: '10px 12px',
-                                            background: checked ? 'color-mix(in srgb, var(--accent) 10%, var(--bg-secondary))' : 'var(--bg-secondary)',
+                                            background: checked
+                                                ? 'color-mix(in srgb, var(--accent) 10%, var(--bg-secondary))'
+                                                : 'var(--bg-secondary)',
                                             border: '1.5px solid var(--text-primary)',
                                             borderRadius: 10,
                                             cursor: 'pointer',
@@ -242,16 +282,10 @@ export default function CsvExportModal({ config, onClose }: Props) {
                                             type="checkbox"
                                             checked={checked}
                                             onChange={() => toggleLayer(layer.id)}
-                                            style={{
-                                                marginTop: 2,
-                                                accentColor: 'var(--accent)',
-                                                cursor: 'pointer',
-                                            }}
+                                            style={{ marginTop: 2, accentColor: 'var(--accent)', cursor: 'pointer' }}
                                         />
                                         <span style={{ flex: 1 }}>
-                                            <div style={{ fontWeight: 700, fontSize: 'var(--fs-sm)' }}>
-                                                {layer.label}
-                                            </div>
+                                            <div style={{ fontWeight: 700, fontSize: 'var(--fs-sm)' }}>{layer.label}</div>
                                             <div
                                                 style={{
                                                     fontSize: 'var(--fs-xs)',
@@ -267,40 +301,32 @@ export default function CsvExportModal({ config, onClose }: Props) {
                                 );
                             })}
                         </div>
-                    </div>
+                    </Section>
                 )}
 
-                {/* Params summary */}
-                {config.params.length > 0 && (
-                    <div style={{ padding: '16px 20px', borderBottom: '1px dashed color-mix(in srgb, var(--text-primary) 15%, transparent)' }}>
-                        <div
-                            style={{
-                                fontSize: 11,
-                                fontWeight: 800,
-                                color: 'var(--text-secondary)',
-                                textTransform: 'uppercase',
-                                letterSpacing: '0.06em',
-                                marginBottom: 10,
-                            }}
-                        >
-                            Параметры экспорта
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                            {config.params.map((p) => (
-                                <div
-                                    key={p.label}
-                                    style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 'var(--fs-sm)' }}
-                                >
-                                    <span style={{ color: 'var(--text-muted)' }}>{p.label}</span>
-                                    <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{p.value}</span>
-                                </div>
+                {/* Selectors — параметры экспорта */}
+                {config.selectors.length > 0 && (
+                    <Section title="Параметры экспорта">
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                            {config.selectors.map((sel) => (
+                                <SelectorControl
+                                    key={sel.id}
+                                    selector={sel}
+                                    value={values[sel.id]}
+                                    onChange={(v) => setValues((prev) => ({ ...prev, [sel.id]: v }))}
+                                />
                             ))}
                         </div>
-                    </div>
+                    </Section>
                 )}
 
                 {/* Format hint */}
-                <div style={{ padding: '14px 20px', borderBottom: '1px dashed color-mix(in srgb, var(--text-primary) 15%, transparent)' }}>
+                <div
+                    style={{
+                        padding: '14px 20px',
+                        borderBottom: '1px dashed color-mix(in srgb, var(--text-primary) 15%, transparent)',
+                    }}
+                >
                     <div
                         style={{
                             display: 'flex',
@@ -313,12 +339,12 @@ export default function CsvExportModal({ config, onClose }: Props) {
                         {isZip ? (
                             <>
                                 <FileArchive size={16} />
-                                <span>Формат: ZIP-архив ({selected.size} CSV файлов)</span>
+                                <span>ZIP-архив ({totalCombinations} CSV файлов)</span>
                             </>
                         ) : (
                             <>
                                 <FileText size={16} />
-                                <span>Формат: CSV (UTF-8, открывается в Excel/Numbers)</span>
+                                <span>CSV (UTF-8, открывается в Excel/Numbers)</span>
                             </>
                         )}
                     </div>
@@ -344,7 +370,7 @@ export default function CsvExportModal({ config, onClose }: Props) {
                     </button>
                     <button
                         onClick={handleDownload}
-                        disabled={downloading || selected.size === 0}
+                        disabled={downloading || selectedLayers.size === 0}
                         style={{
                             display: 'inline-flex',
                             alignItems: 'center',
@@ -364,6 +390,185 @@ export default function CsvExportModal({ config, onClose }: Props) {
                         {downloading ? 'Скачиваем…' : 'Скачать'}
                     </button>
                 </div>
+            </div>
+        </div>
+    );
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Subcomponents
+// ────────────────────────────────────────────────────────────────────
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+    return (
+        <div
+            style={{
+                padding: '16px 20px',
+                borderBottom: '1px dashed color-mix(in srgb, var(--text-primary) 15%, transparent)',
+            }}
+        >
+            <div
+                style={{
+                    fontSize: 11,
+                    fontWeight: 800,
+                    color: 'var(--text-secondary)',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.06em',
+                    marginBottom: 10,
+                }}
+            >
+                {title}
+            </div>
+            {children}
+        </div>
+    );
+}
+
+interface SelectorControlProps {
+    selector: CsvSelector;
+    value: string | string[] | number | undefined;
+    onChange: (v: string | string[] | number) => void;
+}
+
+function SelectorControl({ selector, value, onChange }: SelectorControlProps) {
+    if (selector.kind === 'select') {
+        return (
+            <div>
+                <label
+                    style={{
+                        display: 'block',
+                        fontSize: 'var(--fs-xs)',
+                        fontWeight: 700,
+                        color: 'var(--text-secondary)',
+                        marginBottom: 6,
+                    }}
+                >
+                    {selector.label}
+                </label>
+                <select
+                    value={(value as string) ?? selector.default}
+                    onChange={(e) => onChange(e.target.value)}
+                    style={{
+                        width: '100%',
+                        padding: '8px 12px',
+                        background: 'var(--bg-secondary)',
+                        border: '1.5px solid var(--text-primary)',
+                        borderRadius: 10,
+                        color: 'var(--text-primary)',
+                        fontSize: 'var(--fs-sm)',
+                        fontWeight: 600,
+                    }}
+                >
+                    {selector.options.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                        </option>
+                    ))}
+                </select>
+            </div>
+        );
+    }
+
+    if (selector.kind === 'multiselect') {
+        const current = Array.isArray(value) ? value : selector.default;
+        const toggle = (v: string) => {
+            const next = current.includes(v) ? current.filter((x) => x !== v) : [...current, v];
+            onChange(next);
+        };
+        return (
+            <div>
+                <label
+                    style={{
+                        display: 'block',
+                        fontSize: 'var(--fs-xs)',
+                        fontWeight: 700,
+                        color: 'var(--text-secondary)',
+                        marginBottom: 6,
+                    }}
+                >
+                    {selector.label}
+                </label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {selector.options.map((opt) => {
+                        const selected = current.includes(opt.value);
+                        return (
+                            <button
+                                key={opt.value}
+                                type="button"
+                                onClick={() => toggle(opt.value)}
+                                style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                    padding: '6px 12px',
+                                    background: selected ? 'var(--accent)' : 'var(--bg-secondary)',
+                                    color: selected ? 'var(--text-inverse)' : 'var(--text-primary)',
+                                    border: '1.5px solid var(--text-primary)',
+                                    borderRadius: 999,
+                                    fontSize: 'var(--fs-sm)',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                }}
+                            >
+                                {selected && <Check size={12} strokeWidth={3} />}
+                                {opt.label}
+                            </button>
+                        );
+                    })}
+                </div>
+                {selector.hint && (
+                    <div
+                        style={{
+                            marginTop: 6,
+                            fontSize: 'var(--fs-2xs)',
+                            color: 'var(--text-muted)',
+                            lineHeight: 1.4,
+                        }}
+                    >
+                        {selector.hint}
+                    </div>
+                )}
+            </div>
+        );
+    }
+
+    // number
+    return (
+        <div>
+            <label
+                style={{
+                    display: 'block',
+                    fontSize: 'var(--fs-xs)',
+                    fontWeight: 700,
+                    color: 'var(--text-secondary)',
+                    marginBottom: 6,
+                }}
+            >
+                {selector.label}
+            </label>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                <input
+                    type="number"
+                    value={(value as number) ?? selector.default}
+                    min={selector.min}
+                    max={selector.max}
+                    onChange={(e) => onChange(Number(e.target.value))}
+                    style={{
+                        width: 140,
+                        padding: '8px 12px',
+                        background: 'var(--bg-secondary)',
+                        border: '1.5px solid var(--text-primary)',
+                        borderRadius: 10,
+                        color: 'var(--text-primary)',
+                        fontSize: 'var(--fs-sm)',
+                        fontWeight: 600,
+                    }}
+                />
+                {selector.suffix && (
+                    <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>
+                        {selector.suffix}
+                    </span>
+                )}
             </div>
         </div>
     );

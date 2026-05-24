@@ -373,30 +373,56 @@ export default function StrengthPage() {
                             indicator: 'strength',
                             title: 'Экспорт: Сила рынка',
                             layers: [
+                                { id: 'history', label: 'История Силы рынка',
+                                  description: 'Timeseries % акций выше EMA',
+                                  defaultSelected: true },
+                                { id: 'stocks', label: 'Снапшот акций',
+                                  description: 'Текущие цены + изменения по всем акциям' },
+                            ],
+                            selectors: [
                                 {
-                                    id: 'history',
-                                    label: 'История Силы рынка',
-                                    description: 'Timeseries % акций выше EMA по дням за выбранный период',
-                                    defaultSelected: true,
+                                    kind: 'multiselect',
+                                    id: 'emas',
+                                    label: 'EMA периоды',
+                                    default: [String(emaPeriod)],
+                                    hint: 'Несколько EMA → ZIP с CSV per EMA',
+                                    options: [
+                                        { value: '50', label: 'EMA 50' },
+                                        { value: '100', label: 'EMA 100' },
+                                        { value: '200', label: 'EMA 200' },
+                                    ],
                                 },
                                 {
-                                    id: 'stocks',
-                                    label: 'Снапшот акций (сейчас)',
-                                    description: 'Текущая цена + изменения 1д/1н/1м по всем акциям вселенной',
+                                    kind: 'multiselect',
+                                    id: 'universes',
+                                    label: 'Вселенные',
+                                    default: [universe],
+                                    hint: 'Несколько → ZIP с CSV per universe',
+                                    options: [
+                                        { value: 'imoex', label: 'IMOEX' },
+                                        { value: 'all', label: 'Все акции' },
+                                        { value: 'imoex_usd', label: 'IMOEX (USD)' },
+                                        { value: 'all_usd', label: 'Все (USD)' },
+                                    ],
+                                },
+                                {
+                                    kind: 'number',
+                                    id: 'days',
+                                    label: 'Глубина истории',
+                                    default: PERIOD_DAYS[period],
+                                    min: 30,
+                                    max: 7000,
+                                    suffix: 'дней',
                                 },
                             ],
-                            params: [
-                                { label: 'EMA', value: `${emaPeriod}` },
-                                { label: 'Вселенная', value: universe === 'imoex' ? 'IMOEX' : universe === 'all' ? 'Все акции' : universe },
-                                { label: 'Период', value: period.toUpperCase() },
-                                { label: 'Валюта', value: currency === 'usd' ? 'USD' : 'RUB' },
-                            ],
-                            buildUrl: (layers) =>
-                                `/api/export/breadth.csv?ema=${emaPeriod}&universe=${universe}&days=${PERIOD_DAYS[period]}&layers=${layers.join(',')}`,
-                            buildFilename: (layers) =>
-                                layers.length > 1
-                                    ? `strength_${emaPeriod}_${universe}.zip`
-                                    : `strength_${layers[0]}_ema${emaPeriod}_${universe}.csv`,
+                            params: [],
+                            buildUrl: (layers, vals) => {
+                                const emas = (vals.emas as string[] ?? [String(emaPeriod)]).join(',');
+                                const universes = (vals.universes as string[] ?? [universe]).join(',');
+                                const days = vals.days as number ?? PERIOD_DAYS[period];
+                                return `/api/export/breadth.csv?ema=${emas}&universe=${universes}&days=${days}&layers=${layers.join(',')}`;
+                            },
+                            buildFilename: () => `strength_${Date.now()}.zip`,
                         })}
                     />
                     <ChartCaptureButton

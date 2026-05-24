@@ -819,38 +819,44 @@ export default function SeasonalityPage() {
               indicator: 'seasonality',
               title: `Экспорт: Сезонность · ${selectedName}`,
               layers: [
+                { id: 'daily', label: 'Дневные свечи',
+                  description: 'OHLCV + change_pct + декомпозиция (year/month/weekday)',
+                  defaultSelected: true },
+                { id: 'weekday_avg', label: 'Средняя по дню недели',
+                  description: 'Avg change_pct по Пн-Вс + stdev + размер выборки' },
+                { id: 'monthly_avg', label: 'Средняя по месяцам',
+                  description: 'Avg change_pct по Янв-Дек (классическая сезонность)' },
+                { id: 'monthday_avg', label: 'Средняя по дню месяца',
+                  description: 'Avg change_pct по 1-31 числу — turn-of-month' },
+              ],
+              selectors: [
                 {
-                  id: 'daily',
-                  label: 'Дневные свечи',
-                  description: 'OHLCV + change_pct + декомпозиция (year/month/weekday) для self-pivot в Excel',
-                  defaultSelected: true,
-                },
-                {
-                  id: 'weekday_avg',
-                  label: 'Средняя по дню недели',
-                  description: 'Avg change_pct по Пн-Вс + stdev + размер выборки',
-                },
-                {
-                  id: 'monthly_avg',
-                  label: 'Средняя по месяцам',
-                  description: 'Avg change_pct по Янв-Дек (классическая сезонность)',
-                },
-                {
-                  id: 'monthday_avg',
-                  label: 'Средняя по дню месяца',
-                  description: 'Avg change_pct по 1-31 числу — turn-of-month effect',
+                  kind: 'multiselect',
+                  id: 'tickers',
+                  label: 'Тикеры (можно несколько)',
+                  default: [selectedStock],
+                  hint: 'Несколько → ZIP с отдельным CSV per ticker × layer',
+                  // Топ-10 ликвидных + текущий тикер. Можно расширить — но
+                  // chip-row становится длинной. Юзер выбирает основные.
+                  options: Array.from(new Set([
+                    selectedStock,
+                    'SBER', 'GAZP', 'LKOH', 'GMKN', 'YDEX',
+                    'TATN', 'NVTK', 'SNGS', 'MGNT', 'ROSN',
+                  ])).map(t => ({ value: t, label: t })),
                 },
               ],
-              params: [
-                { label: 'Актив', value: `${selectedName} (${selectedStock})` },
-                { label: 'Режим (UI)', value: MODE_LABELS[mode] ?? mode },
-              ],
-              buildUrl: (layers) =>
-                `/api/export/seasonality.csv?ticker=${encodeURIComponent(selectedStock)}&layers=${layers.join(',')}`,
-              buildFilename: (layers) =>
-                layers.length > 1
-                  ? `seasonality_${selectedStock}.zip`
-                  : `seasonality_${selectedStock}_${layers[0]}.csv`,
+              params: [],
+              buildUrl: (layers, vals) => {
+                const tickers = (vals.tickers as string[]) ?? [selectedStock];
+                return `/api/export/seasonality.csv?ticker=${encodeURIComponent(tickers.join(','))}&layers=${layers.join(',')}`;
+              },
+              buildFilename: (layers, vals) => {
+                const tickers = (vals.tickers as string[]) ?? [selectedStock];
+                if (tickers.length === 1 && layers.length === 1) {
+                  return `seasonality_${tickers[0]}_${layers[0]}.csv`;
+                }
+                return `seasonality_${Date.now()}.zip`;
+              },
             })}
           />
           <ChartCaptureButton

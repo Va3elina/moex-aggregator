@@ -630,13 +630,14 @@ export default function HeatmapPage() {
             layers: [{
               id: 'current',
               label: 'Снапшот всех акций',
-              description: 'Текущая цена + изменения 1д/1н/1м/1г + market cap + объём по всем акциям MOEX',
+              description: 'Текущая цена + изменения 1д/1н/1м/1г + market cap + объём',
               defaultSelected: true,
             }],
+            selectors: [],
             params: [
-              { label: 'Режим', value: mapMode === 'imoex' ? 'IMOEX' : 'Все акции' },
-              { label: 'Размер', value: SIZE_OPTIONS.find(o => o.value === sizeBy)?.label ?? sizeBy },
-              { label: 'Период', value: PERIOD_OPTIONS.find(o => o.value === period)?.label ?? period },
+              { label: 'Режим (UI)', value: mapMode === 'imoex' ? 'IMOEX' : 'Все акции' },
+              { label: 'Размер (UI)', value: SIZE_OPTIONS.find(o => o.value === sizeBy)?.label ?? sizeBy },
+              { label: 'Период (UI)', value: PERIOD_OPTIONS.find(o => o.value === period)?.label ?? period },
             ],
             buildUrl: () => '/api/export/heatmap.csv',
             buildFilename: () => 'heatmap.csv',

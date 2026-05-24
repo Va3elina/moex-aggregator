@@ -382,23 +382,41 @@ export default function CbrFlowsPage() {
               const periodYears: Record<string, number> = {
                 '1y': 1, '2y': 2, '3y': 3, '5y': 5, 'all': 30,
               };
-              const years = periodYears[period] ?? 10;
-              const instLabel = INSTRUMENT_TABS.find(t => t.key === type)?.label ?? type;
               return {
                 indicator: 'cbr_flows',
-                title: `Экспорт: Потоки участников · ${instLabel}`,
+                title: 'Экспорт: Потоки участников биржи',
                 layers: [{
                   id: 'flows',
                   label: 'Потоки ОРФР',
-                  description: 'period_year, period_label, category, value (млрд ₽) по типу инструмента',
+                  description: 'period_year, label, category, value (млрд ₽)',
                   defaultSelected: true,
                 }],
-                params: [
-                  { label: 'Инструмент', value: instLabel },
-                  { label: 'Глубина', value: years === 30 ? 'Вся история' : `${years} лет` },
+                selectors: [
+                  {
+                    kind: 'multiselect',
+                    id: 'instruments',
+                    label: 'Тип инструмента',
+                    default: [type],
+                    hint: 'Несколько → ZIP с CSV per тип',
+                    options: INSTRUMENT_TABS.map(t => ({ value: t.key, label: t.label })),
+                  },
+                  {
+                    kind: 'number',
+                    id: 'years',
+                    label: 'Глубина истории',
+                    default: periodYears[period] ?? 10,
+                    min: 1,
+                    max: 30,
+                    suffix: 'лет',
+                  },
                 ],
-                buildUrl: () => `/api/export/cbr-flows.csv?instrument=${type}&years=${years}`,
-                buildFilename: () => `cbr_flows_${type}_${period}.csv`,
+                params: [],
+                buildUrl: (_layers, vals) => {
+                  const insts = (vals.instruments as string[] ?? [type]).join(',');
+                  const years = vals.years as number ?? periodYears[period] ?? 10;
+                  return `/api/export/cbr-flows.csv?instrument=${insts}&years=${years}`;
+                },
+                buildFilename: () => `cbr_flows_${Date.now()}.zip`,
               };
             }}
           />

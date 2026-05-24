@@ -629,26 +629,59 @@ export default function OpenInterestPage() {
                 '1d': 2, '1w': 7, '1m': 30, '3m': 90, '6m': 180,
                 '1y': 365, '2y': 730, '5y': 1825, 'all': 7000,
               };
-              const days = periodDays[period] ?? 365;
-              const intervalLabel = interval === 5 ? '5 мин' : interval === 60 ? '1 час' : '1 день';
               return {
                 indicator: 'open_interest',
                 title: `Экспорт: Открытый интерес · ${instrumentName}`,
                 layers: [{
                   id: 'oi',
-                  label: 'История ОИ',
+                  label: 'История позиций',
                   description: 'trade_date, trade_time, open_interest, pos_long/short, число участников',
                   defaultSelected: true,
                 }],
+                selectors: [
+                  {
+                    kind: 'multiselect',
+                    id: 'clgroups',
+                    label: 'Категория участников',
+                    default: [clgroup],
+                    hint: 'Оба → 2 CSV в ZIP',
+                    options: [
+                      { value: 'YUR', label: 'Юрлица' },
+                      { value: 'FIZ', label: 'Физлица' },
+                    ],
+                  },
+                  {
+                    kind: 'multiselect',
+                    id: 'intervals',
+                    label: 'Таймфрейм',
+                    default: [String(interval)],
+                    hint: 'Несколько → ZIP с CSV per таймфрейм',
+                    options: [
+                      { value: '5', label: '5 мин' },
+                      { value: '60', label: '1 час' },
+                      { value: '24', label: '1 день' },
+                    ],
+                  },
+                  {
+                    kind: 'number',
+                    id: 'days',
+                    label: 'Глубина истории',
+                    default: periodDays[period] ?? 365,
+                    min: 1,
+                    max: 3650,
+                    suffix: 'дней',
+                  },
+                ],
                 params: [
                   { label: 'Инструмент', value: `${instrumentName} (${selectedInstrument})` },
-                  { label: 'Категория', value: clgroup === 'YUR' ? 'Юрлица' : 'Физлица' },
-                  { label: 'Таймфрейм', value: intervalLabel },
-                  { label: 'Период', value: PERIOD_LABELS[period] ?? period },
                 ],
-                buildUrl: () =>
-                  `/api/export/oi.csv?instrument=${encodeURIComponent(selectedInstrument)}&clgroup=${clgroup}&interval=${interval}&days=${days}`,
-                buildFilename: () => `oi_${selectedInstrument}_${clgroup}_${interval}_${period}.csv`,
+                buildUrl: (_layers, vals) => {
+                  const cls = (vals.clgroups as string[] ?? [clgroup]).join(',');
+                  const ints = (vals.intervals as string[] ?? [String(interval)]).join(',');
+                  const days = vals.days as number ?? periodDays[period] ?? 365;
+                  return `/api/export/oi.csv?instrument=${encodeURIComponent(selectedInstrument)}&clgroup=${cls}&interval=${ints}&days=${days}`;
+                },
+                buildFilename: () => `oi_${selectedInstrument}_${Date.now()}.zip`,
               };
             }}
           />

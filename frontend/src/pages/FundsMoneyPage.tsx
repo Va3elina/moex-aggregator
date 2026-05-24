@@ -651,30 +651,49 @@ export default function FundsMoneyPage() {
                         '1m': 30, '3m': 90, '6m': 180, '1y': 365,
                         '2y': 730, '3y': 1095, 'all': 7000,
                       };
-                      const days = periodDays[period] ?? 365;
                       const visibleTickers = data?.funds
                         ?.filter(f => !f.tier_locked && !hiddenFunds.has(f.fund_id))
                         ?.map(f => f.ticker) ?? [];
-                      const fundsParam = visibleTickers.length > 0
-                        ? `&funds=${encodeURIComponent(visibleTickers.join(','))}`
-                        : '';
-                      const catName = CATEGORIES.find(c => c.key === category)?.name ?? category;
                       return {
                         indicator: 'funds_money',
-                        title: `Экспорт: Деньги в фондах · ${catName}`,
+                        title: 'Экспорт: Деньги в фондах',
                         layers: [{
                           id: 'nav',
                           label: 'История СЧА фондов',
-                          description: `Daily NAV per fund за выбранный период (видимые фонды: ${visibleTickers.length})`,
+                          description: 'Daily NAV per fund по выбранной категории',
                           defaultSelected: true,
                         }],
-                        params: [
-                          { label: 'Категория', value: catName },
-                          { label: 'Период', value: PERIOD_LABELS[period] ?? period },
-                          { label: 'Видимых фондов', value: `${visibleTickers.length}` },
+                        selectors: [
+                          {
+                            kind: 'multiselect',
+                            id: 'categories',
+                            label: 'Категории',
+                            default: [category],
+                            hint: 'Несколько → ZIP с CSV per категория',
+                            options: CATEGORIES.map(c => ({ value: c.key, label: c.name })),
+                          },
+                          {
+                            kind: 'number',
+                            id: 'days',
+                            label: 'Глубина истории',
+                            default: periodDays[period] ?? 365,
+                            min: 30,
+                            max: 7000,
+                            suffix: 'дней',
+                          },
                         ],
-                        buildUrl: () => `/api/export/funds-money.csv?category=${category}&days=${days}${fundsParam}`,
-                        buildFilename: () => `funds_${category}_${period}.csv`,
+                        params: visibleTickers.length > 0
+                          ? [{ label: 'Фильтр фондов (с UI)', value: visibleTickers.join(', ') }]
+                          : [],
+                        buildUrl: (_layers, vals) => {
+                          const cats = (vals.categories as string[] ?? [category]).join(',');
+                          const days = vals.days as number ?? periodDays[period] ?? 365;
+                          const fundsParam = visibleTickers.length > 0
+                            ? `&funds=${encodeURIComponent(visibleTickers.join(','))}`
+                            : '';
+                          return `/api/export/funds-money.csv?category=${cats}&days=${days}${fundsParam}`;
+                        },
+                        buildFilename: () => `funds_${Date.now()}.zip`,
                       };
                     }}
                 />

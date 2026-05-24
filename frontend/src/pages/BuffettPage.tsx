@@ -281,19 +281,32 @@ export default function BuffettPage() {
                         title: 'Экспорт: Индикатор Баффета',
                         layers: [{
                             id: 'main',
-                            label: viewMode === 'cap-gdp' ? 'Капитализация / ВВП' : 'Капитализация / M2',
-                            description: viewMode === 'cap-gdp'
-                                ? 'trade_date, market_cap, gdp_ttm, buffett_ratio_pct'
-                                : 'trade_date, market_cap, m2, cap_m2_ratio',
+                            label: 'Данные индикатора',
+                            description: 'date, market_cap, knex (gdp_ttm или m2), ratio',
                             defaultSelected: true,
                         }],
-                        params: [
-                            { label: 'Режим', value: viewMode === 'cap-gdp' ? 'Кап / ВВП' : 'Кап / M2' },
-                            { label: 'Период (UI)', value: PERIOD_LABELS[period] ?? period },
-                            { label: 'Таймфрейм (UI)', value: timeframe === '1d' ? 'День' : timeframe === '1w' ? 'Неделя' : 'Месяц' },
-                        ],
-                        buildUrl: () => `/api/export/buffett.csv?mode=${viewMode}`,
-                        buildFilename: () => `buffett_${viewMode}.csv`,
+                        selectors: [{
+                            kind: 'multiselect',
+                            id: 'modes',
+                            label: 'Режим расчёта',
+                            default: [viewMode],
+                            hint: 'Несколько → ZIP с CSV per режим',
+                            options: [
+                                { value: 'cap-gdp', label: 'Кап / ВВП' },
+                                { value: 'cap-m2', label: 'Кап / M2' },
+                            ],
+                        }],
+                        params: [],
+                        buildUrl: (_layers, vals) => {
+                            const modes = (vals.modes as string[] ?? [viewMode]).join(',');
+                            return `/api/export/buffett.csv?mode=${modes}`;
+                        },
+                        buildFilename: (_, vals) => {
+                            const modes = (vals.modes as string[] ?? [viewMode]);
+                            return modes.length === 1
+                                ? `buffett_${modes[0]}.csv`
+                                : `buffett_${Date.now()}.zip`;
+                        },
                     })}
                 />
                 <ChartCaptureButton
