@@ -6,6 +6,7 @@ import {
   Check, X as XIcon, Eye, EyeOff, Sparkles, ExternalLink,
 } from 'lucide-react';
 import AdminBillingInvites from '../components/AdminBillingInvites';
+import ApiKeysSection from '../components/profile/ApiKeysSection';
 
 interface BillingStatus {
   tier: string;
@@ -630,6 +631,13 @@ export default function ProfilePage() {
             доступным через /login flow при необходимости. */}
       </div>
       )}
+
+      {/* ============ Секция: API-ключи (Pro tier) ============
+          Компонент сам обрабатывает tier-gating: для free/basic показывает
+          CTA на upgrade. Для admin/pro — list ключей + create form. */}
+      <div className="rounded-2xl border p-6" style={cardStyle}>
+        <ApiKeysSection />
+      </div>
 
       {/* ============ Секция: Конфиденциальность ============ */}
       <PrivacyOptOutSection />

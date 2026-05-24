@@ -1031,3 +1031,47 @@ export async function getCbrFlows(type: CbrInstrumentType): Promise<CbrFlowsResp
   }
   return response.json();
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// API Keys (Pro tier) — personal programmatic access tokens
+// ════════════════════════════════════════════════════════════════════════════
+
+export interface ApiKeyInfo {
+    id: number;
+    name: string | null;
+    key_prefix: string;
+    created_at: string;
+    last_used_at: string | null;
+    is_revoked: boolean;
+}
+
+export interface ApiKeyCreated extends ApiKeyInfo {
+    plain_key: string;  // показывается ОДИН раз
+}
+
+export async function listApiKeys(): Promise<ApiKeyInfo[]> {
+    const resp = await apiFetch(`${API_BASE}/api/keys`);
+    if (resp.status === 403) throw new Error('Доступно на тарифе Pro');
+    if (!resp.ok) throw new Error('Failed to list API keys');
+    return resp.json();
+}
+
+export async function createApiKey(name?: string): Promise<ApiKeyCreated> {
+    const resp = await apiFetch(`${API_BASE}/api/keys`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name || null }),
+    });
+    if (resp.status === 403) throw new Error('Доступно на тарифе Pro');
+    if (resp.status === 400) {
+        const data = await resp.json().catch(() => ({}));
+        throw new Error(data.detail || 'Не удалось создать ключ');
+    }
+    if (!resp.ok) throw new Error('Не удалось создать ключ');
+    return resp.json();
+}
+
+export async function revokeApiKey(id: number): Promise<void> {
+    const resp = await apiFetch(`${API_BASE}/api/keys/${id}`, { method: 'DELETE' });
+    if (!resp.ok && resp.status !== 204) throw new Error('Не удалось отозвать ключ');
+}
