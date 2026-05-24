@@ -98,9 +98,13 @@ def _date_range_clause(
     Приоритет:
       1. period_from + period_to → BETWEEN (custom range mode)
       2. period_from → >= (open-ended)
-      3. days → >= CURRENT_DATE - days (preset mode)
+      3. days → >= today - days (preset mode, threshold вычисляется в Python
+         потому что pg8000 не умеет `CURRENT_DATE - :integer` без явных
+         type casts — ловили 'operator does not exist: date >= integer').
       4. ничего → '' пустой clause (вся история)
     """
+    from datetime import date, timedelta
+
     if period_from and period_to:
         return f"AND {date_column} BETWEEN :_pfrom AND :_pto", {
             "_pfrom": period_from,
@@ -109,7 +113,8 @@ def _date_range_clause(
     if period_from:
         return f"AND {date_column} >= :_pfrom", {"_pfrom": period_from}
     if days:
-        return f"AND {date_column} >= CURRENT_DATE - :_pdays", {"_pdays": days}
+        threshold = date.today() - timedelta(days=days)
+        return f"AND {date_column} >= :_pthreshold", {"_pthreshold": threshold}
     return "", {}
 
 
