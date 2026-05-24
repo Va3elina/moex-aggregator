@@ -315,8 +315,14 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             remaining = limit - len(self.requests[key])
 
         response = await call_next(request)
-        response.headers["X-RateLimit-Limit"] = str(limit)
-        response.headers["X-RateLimit-Remaining"] = str(remaining)
+        # /api/v1/public/* устанавливает свои X-RateLimit-* headers через
+        # check_rate_limit dependency (per-key, не per-IP). IP-лимит здесь
+        # остаётся как backstop в случае compromised key, но headers не
+        # перезаписываем — иначе клиенты увидят 100/min вместо реальных
+        # 60/min на ключ.
+        if not path.startswith("/api/v1/public"):
+            response.headers["X-RateLimit-Limit"] = str(limit)
+            response.headers["X-RateLimit-Remaining"] = str(remaining)
 
         return response
 
