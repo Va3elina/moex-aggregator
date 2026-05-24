@@ -259,6 +259,11 @@ async def fetch_cbonds_holdings(session, parent_fund_id: int) -> tuple[List[dict
     """
     Получить состав фонда из Cbonds API.
 
+    Cbonds возвращает `weight` в долях (0.0-1.0). Мы домножаем на 100
+    чтобы привести к процентам (0-100) — одинаковая шкала с ВИМ-парсером.
+    Sanity-check: sum(weight) после конверсии должно быть близко к 100;
+    если сильно меньше — логируем warning (вероятно non-full snapshot).
+
     Returns:
         (holdings, snapshot_date_iso). snapshot_date — дата от УК которую
         возвращает Cbonds (поле 'date' в item). Может быть None если ответ
@@ -277,14 +282,22 @@ async def fetch_cbonds_holdings(session, parent_fund_id: int) -> tuple[List[dict
             snapshot_date = None
             for i in items:
                 name = str(i.get("asset_name") or i.get("name") or "Прочее").strip()
-                weight = float(i.get("weight", 0))
-                # Дата snapshot'а от УК — берём из первого item с непустой датой.
-                # У всех items должна быть одна дата (один snapshot).
+                # Cbonds weight = доля (0.0-1.0), приводим к проценту (0-100).
+                weight = float(i.get("weight", 0)) * 100
                 if snapshot_date is None and i.get("date"):
                     snapshot_date = i["date"][:10]  # YYYY-MM-DD из ISO
                 if weight > 0 and name not in seen:
                     seen.add(name)
                     result.append({"name": name, "weight": weight})
+
+            # Sanity-check: суммарный вес должен быть ~100%. Если сильно ниже
+            # — partial snapshot или баг шкалы (например уже в %).
+            total = sum(r["weight"] for r in result)
+            if result and (total < 80 or total > 120):
+                log.warning(
+                    f"  Cbonds {parent_fund_id}: подозрительный sum(weight)={total:.2f}%"
+                    f" (ожидаем ~100). {len(result)} позиций."
+                )
             return result, snapshot_date
     except Exception as e:
         log.warning(f"  Cbonds holdings {parent_fund_id}: {e}")
@@ -302,6 +315,15 @@ def save_fund_holdings(
     Сохранить состав фонда в `fund_holdings` (current snapshot) И
     в `fund_holdings_history` (append с датой).
 
+    Двойная шкала weight (важно):
+      - `fund_holdings` (legacy table, читается /funds-catalog с UI × 100)
+        → хранит ДОЛИ (0.0-1.0). Конвертация: weight / 100 при save.
+      - `fund_holdings_history` (новая table для /fund-trades) → хранит
+        ПРОЦЕНТЫ (0-100). Сохраняется as-is.
+
+    Все парсеры возвращают `holdings[i]["weight"]` в ПРОЦЕНТАХ (как видно
+    юзеру: 15.73). Эта функция конвертирует под нужную таблицу.
+
     Args:
         snapshot_date: ISO YYYY-MM-DD дата к которой относится snapshot.
             Если None — используется CURRENT_DATE (сегодня).
@@ -314,19 +336,23 @@ def save_fund_holdings(
     if not holdings:
         return 0
     with engine.connect() as conn:
-        # 1. Current snapshot — DELETE + INSERT, как раньше.
+        # 1. Current snapshot — DELETE + INSERT. Сохраняем weight / 100
+        # для backwards-compat (legacy /funds-catalog UI домножает на 100).
         conn.execute(text("DELETE FROM fund_holdings WHERE fund_id = :fid"), {"fid": fund_id})
         n = 0
         for h in holdings:
             conn.execute(text("""
                 INSERT INTO fund_holdings (fund_id, asset_name, weight, updated_at)
                 VALUES (:fid, :name, :weight, NOW())
-            """), {"fid": fund_id, "name": h["name"], "weight": h["weight"]})
+            """), {
+                "fid": fund_id,
+                "name": h["name"],
+                "weight": h["weight"] / 100.0,  # % → доли для legacy table
+            })
             n += 1
 
-        # 2. History append — идемпотентно через UNIQUE constraint.
-        # Если snapshot_date не передана — fallback на сегодня (для парсеров
-        # которые не отдают дату).
+        # 2. History append — weight в процентах (0-100), как пришёл.
+        # Идемпотентно через UNIQUE constraint.
         date_clause = ":snap_date" if snapshot_date else "CURRENT_DATE"
         params_base: dict = {"fid": fund_id, "source": source}
         if snapshot_date:
@@ -344,7 +370,7 @@ def save_fund_holdings(
             """), {
                 **params_base,
                 "name": h["name"],
-                "weight": h["weight"],
+                "weight": h["weight"],  # проценты as-is
                 "positions": h.get("positions"),
                 "amount_rub": h.get("amount_rub"),
             })
