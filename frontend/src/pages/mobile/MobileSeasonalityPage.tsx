@@ -390,6 +390,7 @@ export default function MobileSeasonalityPage() {
           compareYears.length === 1 ? ` · с ${compareYears[0]} г.` : ''
         }`}
         helpLink="/methodology/seasonality"
+        sourceNote="Источник: Московская биржа"
       />
 
       {/* Full-bleed histogram, как Heatmap. SeasonalityBars сам растягивается

@@ -482,6 +482,7 @@ export default function FundsMoneyPage() {
                 subtitle="Динамика СЧА фондов и индексов"
                 help={METHODOLOGY.fundsMoney}
                 helpLink="/methodology/funds-money"
+                sourceNote="Источник: Московская биржа"
             />
 
             {/* Editorial frame — обнимает категории + controls + chart в один контейнер.

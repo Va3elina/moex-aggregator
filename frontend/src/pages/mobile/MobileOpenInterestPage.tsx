@@ -396,6 +396,7 @@ export default function MobileOpenInterestPage() {
         title="Открытый интерес"
         subtitle={`${instrumentName} · ${timeLabel}`}
         helpLink="/methodology/oi"
+        sourceNote="Источник: Московская биржа (Algopack)"
       />
 
       {/* Full-bleed chart — без рамки/padding'а, как в TradingView mobile.

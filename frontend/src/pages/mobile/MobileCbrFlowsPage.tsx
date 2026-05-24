@@ -221,6 +221,7 @@ export default function MobileCbrFlowsPage() {
         Icon={Banknote}
         title="Потоки ЦБ"
         helpLink="/methodology/cbr-flows"
+        sourceNote="Источник: Банк России (ОРФР) · Московская биржа"
       />
 
       {/* Mobile-optimized stacked histogram — pixel coords, touch handlers,

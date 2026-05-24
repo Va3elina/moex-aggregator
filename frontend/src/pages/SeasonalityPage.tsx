@@ -684,6 +684,7 @@ export default function SeasonalityPage() {
         subtitle="Среднее изменение цены по временным периодам"
         help={METHODOLOGY.seasonality}
         helpLink="/methodology/seasonality"
+        sourceNote="Источник: Московская биржа"
       />
 
       {/* Editorial frame — обнимает controls + chart в один контейнер */}

@@ -127,6 +127,7 @@ export default function FundsCatalogPage() {
                 subtitle="Структура портфелей фондов акций и облигаций"
                 help={METHODOLOGY.fundsCatalog}
                 helpLink="/methodology/funds-catalog"
+                sourceNote="Источник: Московская биржа"
             />
 
             {/* Alpha-banner — индикатор сырой, на стадии тестирования */}

@@ -160,6 +160,7 @@ export default function CbrFlowsPage() {
         subtitle="Кто покупает и кто продаёт по типам активов — по данным Банка России"
         help={METHODOLOGY.cbrFlows}
         helpLink="/methodology/cbr-flows"
+        sourceNote="Источник: Банк России (ОРФР) · Московская биржа"
       />
 
       <div className="editorial-frame">
