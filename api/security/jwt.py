@@ -60,6 +60,17 @@ if not SECRET_KEY:
     warnings.warn("JWT_SECRET_KEY not set! Using insecure default for local development only.", stacklevel=2)
     SECRET_KEY = "LOCAL_DEV_ONLY_NOT_FOR_PRODUCTION_KEY"
 
+# Старый секрет для grace-period ротации.
+# Используется ТОЛЬКО для verify (не для sign). Если задан — при decode
+# пробуем сначала текущий SECRET_KEY, при fail — fallback на OLD.
+# Это позволяет ротировать секрет без logout'а всех юзеров:
+#   1. Сгенерировал новый ключ → JWT_SECRET_KEY=NEW, JWT_SECRET_KEY_OLD=OLD
+#   2. Все новые токены подписываются NEW, старые токены валидны через OLD.
+#   3. Через 7 дней (max refresh-token lifetime) — все OLD-токены истекли.
+#   4. Убрать JWT_SECRET_KEY_OLD из .env, перезапустить API.
+# Пустая строка = grace-period неактивен (нормальное состояние).
+SECRET_KEY_OLD = os.environ.get("JWT_SECRET_KEY_OLD", "")
+
 # Алгоритм подписи
 # HS256 — HMAC с SHA-256, симметричный (один ключ для подписи и проверки)
 # RS256 — RSA, асимметричный (приватный для подписи, публичный для проверки)
@@ -173,33 +184,48 @@ def verify_token(token: str, token_type: str = "access") -> Optional[TokenPayloa
     - jwt.ExpiredSignatureError — токен истёк
     - jwt.InvalidTokenError — подпись неверная или токен повреждён
     """
-    try:
-        # jwt.decode проверяет подпись и срок действия
-        payload = jwt.decode(
-            token,
-            SECRET_KEY,
-            algorithms=[ALGORITHM]
-        )
+    payload = None
+    used_old_key = False
 
-        # Проверяем тип токена
-        if payload.get("type") != token_type:
+    # Попытка 1: текущий SECRET_KEY.
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    except jwt.ExpiredSignatureError:
+        # Токен истёк — это нормально, нужен refresh. Fallback на OLD не помогает.
+        return None
+    except jwt.InvalidTokenError:
+        # Подпись не проходит с current key — возможно токен из grace-period.
+        # Попытка 2: fallback на SECRET_KEY_OLD (если активен).
+        if SECRET_KEY_OLD:
+            try:
+                payload = jwt.decode(token, SECRET_KEY_OLD, algorithms=[ALGORITHM])
+                used_old_key = True
+            except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
+                # И с OLD не проходит — токен подделан или ну совсем сломан.
+                return None
+        else:
             return None
 
-        return TokenPayload(
-            sub=payload["sub"],
-            exp=datetime.fromtimestamp(payload["exp"], tz=timezone.utc),
-            iat=datetime.fromtimestamp(payload["iat"], tz=timezone.utc),
-            type=payload["type"],
-            role=payload.get("role", "user"),
+    # Проверяем тип токена
+    if payload.get("type") != token_type:
+        return None
+
+    # Если декодировали через OLD — логируем для отслеживания progress'а ротации.
+    # Когда warning'и в логах прекратятся, можно убирать JWT_SECRET_KEY_OLD из .env.
+    if used_old_key:
+        import logging
+        logging.getLogger("moex_api").info(
+            "JWT decoded via OLD secret (rotation in progress)",
+            extra={"extra_data": {"sub": payload.get("sub"), "type": payload.get("type")}},
         )
 
-    except jwt.ExpiredSignatureError:
-        # Токен истёк — это нормально, нужен refresh
-        return None
-
-    except jwt.InvalidTokenError:
-        # Токен повреждён или подделан
-        return None
+    return TokenPayload(
+        sub=payload["sub"],
+        exp=datetime.fromtimestamp(payload["exp"], tz=timezone.utc),
+        iat=datetime.fromtimestamp(payload["iat"], tz=timezone.utc),
+        type=payload["type"],
+        role=payload.get("role", "user"),
+    )
 
 
 def decode_token_unsafe(token: str) -> Optional[dict]:

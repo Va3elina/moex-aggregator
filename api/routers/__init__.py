@@ -12,6 +12,7 @@ from api.routers.buffett import router as buffett_router
 from api.routers.seasonality import router as seasonality_router
 from api.routers.billing import router as billing_router
 from api.routers.cbr_flows import router as cbr_flows_router
+from api.routers.csp_report import router as csp_report_router
 
 __all__ = [
     "instruments_router",
@@ -25,4 +26,5 @@ __all__ = [
     "seasonality_router",
     "billing_router",
     "cbr_flows_router",
+    "csp_report_router",
 ]

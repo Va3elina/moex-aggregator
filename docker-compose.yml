@@ -80,6 +80,14 @@ services:
       - DB_URL=postgresql+pg8000://${DB_USER:-postgres}:${DB_PASSWORD}@db:5432/${DB_NAME:-moex_db}
       - DB_URL_ASYNC=postgresql://postgres:${DB_PASSWORD}@db:5432/${DB_NAME:-moex_db}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      # Grace-period для ротации JWT секрета. Пустая строка = ротация не идёт.
+      # Procedure rotation:
+      #   1. Сгенерировать новый: openssl rand -hex 32
+      #   2. JWT_SECRET_KEY_OLD=<текущий>, JWT_SECRET_KEY=<новый> в .env
+      #   3. docker compose up -d --force-recreate api
+      #   4. Подождать 7 дней (max refresh-token lifetime)
+      #   5. Убрать JWT_SECRET_KEY_OLD, recreate.
+      - JWT_SECRET_KEY_OLD=${JWT_SECRET_KEY_OLD:-}
       - ALGOPACK_API_KEY=${ALGOPACK_API_KEY}
       - ENV=production
       - ALLOWED_ORIGINS=https://таймфрейм.рф,https://xn--80aklbnczmv.xn--p1ai
