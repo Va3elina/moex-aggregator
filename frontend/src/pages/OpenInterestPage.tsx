@@ -623,8 +623,17 @@ export default function OpenInterestPage() {
           {/* Camera + CSV buttons inline, прижаты к правому краю */}
           <div data-tour="oi-export" className="ml-auto flex items-center" style={{ gap: 'var(--sp-2)' }}>
           <CsvExportButton
-            url={`/api/export/oi.csv?instrument=${encodeURIComponent(selectedInstrument)}&clgroup=${clgroup}&days=365`}
-            filename={`oi_${selectedInstrument}_${clgroup}.csv`}
+            url={() => {
+              // Map period → days inline (нет shared helper). Логика
+              // зеркалит UI period-Dropdown.
+              const periodDays: Record<string, number> = {
+                '1d': 2, '1w': 7, '1m': 30, '3m': 90, '6m': 180,
+                '1y': 365, '2y': 730, '5y': 1825, 'all': 7000,
+              };
+              const days = periodDays[period] ?? 365;
+              return `/api/export/oi.csv?instrument=${encodeURIComponent(selectedInstrument)}&clgroup=${clgroup}&interval=${interval}&days=${days}`;
+            }}
+            filename={() => `oi_${selectedInstrument}_${clgroup}_${interval}_${period}.csv`}
             indicator="open_interest"
           />
           <ChartCaptureButton

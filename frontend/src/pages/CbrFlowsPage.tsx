@@ -377,8 +377,15 @@ export default function CbrFlowsPage() {
           {/* Camera + CSV buttons — экспорт графика в PNG / данных в CSV */}
           <div data-tour="cbr-export" className="shrink-0 ml-auto flex items-center" style={{ gap: 'var(--sp-2)' }}>
           <CsvExportButton
-            url={`/api/export/cbr-flows.csv?instrument=${type}`}
-            filename={`cbr_flows_${type}.csv`}
+            url={() => {
+              // Map UI period → years for backend filter.
+              const periodYears: Record<string, number> = {
+                '1y': 1, '2y': 2, '3y': 3, '5y': 5, 'all': 30,
+              };
+              const years = periodYears[period] ?? 10;
+              return `/api/export/cbr-flows.csv?instrument=${type}&years=${years}`;
+            }}
+            filename={() => `cbr_flows_${type}_${period}.csv`}
             indicator="cbr_flows"
           />
           <ChartCaptureButton

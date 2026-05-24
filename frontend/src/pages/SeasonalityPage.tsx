@@ -814,8 +814,8 @@ export default function SeasonalityPage() {
         {chartType !== 'test' && (
           <div data-tour="seasonality-export" className="ml-auto flex items-center" style={{ gap: 'var(--sp-2)' }}>
           <CsvExportButton
-            url={`/api/export/seasonality.csv?ticker=${encodeURIComponent(selectedStock)}`}
-            filename={`seasonality_${selectedStock}.csv`}
+            url={() => `/api/export/seasonality.csv?ticker=${encodeURIComponent(selectedStock)}`}
+            filename={() => `seasonality_${selectedStock}.csv`}
             indicator="seasonality"
           />
           <ChartCaptureButton

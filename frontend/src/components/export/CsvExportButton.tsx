@@ -13,18 +13,20 @@
  * Authorization header). Если backend возвращает 403 (например токен
  * протух) — показываем upgrade modal как fallback.
  */
-import { Download } from 'lucide-react';
+import { Download, Lock } from 'lucide-react';
 import { apiFetch } from '../../services/api';
 import { useCommonFeatures } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../tier/UpgradeModal';
 import { useAnalytics } from '../../contexts/AnalyticsContext';
 
 interface Props {
-    /** URL endpoint — относительный или абсолютный. Например /api/export/heatmap.csv */
-    url: string;
-    /** Имя файла для browser download. Backend задаёт через Content-Disposition,
-     *  но для UX consistency дублируем здесь. */
-    filename: string;
+    /** URL endpoint. Может быть строкой ИЛИ getter-функцией для lazy evaluation.
+     *  Getter полезен когда URL зависит от текущего state страницы (period,
+     *  ticker, category) — компонент не re-render'ится при каждом изменении
+     *  state'а, но при клике берёт актуальное значение. */
+    url: string | (() => string);
+    /** Имя файла для browser download. Также может быть getter'ом для lazy state. */
+    filename: string | (() => string);
     /** Indicator ID для UpgradeModal context. */
     indicator: string;
     /** Подсказка title (tooltip). По умолчанию "Скачать CSV". */
@@ -44,9 +46,11 @@ export default function CsvExportButton({
     const { showUpgrade } = useUpgradePrompt();
     const { track } = useAnalytics();
 
+    const locked = !common.csv_export;
+
     const handleClick = async () => {
         // Pre-gate: если tier не Pro — открываем upgrade modal сразу без запроса.
-        if (!common.csv_export) {
+        if (locked) {
             showUpgrade({
                 tier: 'pro',
                 featureName: 'экспорт в CSV',
@@ -55,34 +59,34 @@ export default function CsvExportButton({
             return;
         }
 
+        // Lazy resolve URL/filename — на момент клика, не render'а.
+        const resolvedUrl = typeof url === 'function' ? url() : url;
+        const resolvedFilename = typeof filename === 'function' ? filename() : filename;
+
         // Используем существующий 'chart_export' event-type с extra payload —
         // не плодим новый enum-вариант ради subdivision.
         track('chart_export', { indicator, format: 'csv' });
 
         try {
-            const resp = await apiFetch(url);
+            const resp = await apiFetch(resolvedUrl);
             if (resp.status === 403) {
-                // Backup case: токен протух / matrix не обновилась.
                 showUpgrade({ tier: 'pro', featureName: 'экспорт в CSV', indicator });
                 return;
             }
             if (!resp.ok) {
-                // 404 / 400 / 500 — показать alert, не оверкомпенсировать.
                 // eslint-disable-next-line no-alert
                 alert(`Не удалось скачать CSV (статус ${resp.status})`);
                 return;
             }
 
             const blob = await resp.blob();
-            // Trigger browser download через временный anchor.
             const blobUrl = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = blobUrl;
-            a.download = filename;
+            a.download = resolvedFilename;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
-            // Cleanup blob — иначе Safari/Firefox держат memory.
             setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
         } catch (err) {
             console.error('[CsvExportButton] download failed:', err);
@@ -103,11 +107,36 @@ export default function CsvExportButton({
                 color: 'var(--text-primary)',
                 width: 44,
                 height: 44,
+                opacity: locked ? 0.65 : 1,
+                position: 'relative',
             }}
-            aria-label={title}
-            title={title}
+            aria-label={locked ? `${title} (Pro)` : title}
+            title={locked ? `${title} — доступно на тарифе Pro` : title}
         >
             <Download size={22} />
+            {locked && (
+                // Lock-badge в правом-верхнем углу. Тот же паттерн что у
+                // locked-chip'ов в Buffett/Strength sheet'ах.
+                <span
+                    style={{
+                        position: 'absolute',
+                        top: -4,
+                        right: -4,
+                        width: 18,
+                        height: 18,
+                        borderRadius: '50%',
+                        background: 'var(--accent)',
+                        color: 'var(--text-inverse)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        border: '1.5px solid var(--text-primary)',
+                    }}
+                    aria-hidden="true"
+                >
+                    <Lock size={10} strokeWidth={2.5} />
+                </span>
+            )}
         </button>
     );
 }

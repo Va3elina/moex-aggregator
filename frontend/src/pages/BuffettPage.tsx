@@ -275,8 +275,8 @@ export default function BuffettPage() {
                 {/* Camera + CSV buttons inline, прижаты к правому краю */}
                 <div data-tour="buffett-export" className="ml-auto flex items-center" style={{ gap: 'var(--sp-2)' }}>
                 <CsvExportButton
-                    url="/api/export/buffett.csv"
-                    filename="buffett.csv"
+                    url={() => `/api/export/buffett.csv?mode=${viewMode}`}
+                    filename={() => `buffett_${viewMode}.csv`}
                     indicator="buffett"
                 />
                 <ChartCaptureButton

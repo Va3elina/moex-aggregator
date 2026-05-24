@@ -368,8 +368,8 @@ export default function StrengthPage() {
                 trailingSlot={
                     <div className="flex items-center" style={{ gap: 'var(--sp-2)' }}>
                     <CsvExportButton
-                        url={`/api/export/breadth.csv?ema=${emaPeriod}&universe=${universe}&days=730`}
-                        filename={`strength_ema${emaPeriod}_${universe}.csv`}
+                        url={() => `/api/export/breadth.csv?ema=${emaPeriod}&universe=${universe}&days=${PERIOD_DAYS[period]}`}
+                        filename={() => `strength_ema${emaPeriod}_${universe}_${period}.csv`}
                         indicator="strength"
                     />
                     <ChartCaptureButton
