@@ -284,8 +284,22 @@ async def fetch_cbonds_holdings(session, parent_fund_id: int) -> tuple[List[dict
                 name = str(i.get("asset_name") or i.get("name") or "Прочее").strip()
                 # Cbonds weight = доля (0.0-1.0), приводим к проценту (0-100).
                 weight = float(i.get("weight", 0)) * 100
+                # Cbonds возвращает дату как unix timestamp (int) или ISO string.
+                # На практике видели integer (1777496400 = 2026-04-29). Парсим
+                # оба варианта graceful'но.
                 if snapshot_date is None and i.get("date"):
-                    snapshot_date = i["date"][:10]  # YYYY-MM-DD из ISO
+                    raw_date = i["date"]
+                    try:
+                        if isinstance(raw_date, (int, float)):
+                            from datetime import datetime as _dt, timezone as _tz
+                            snapshot_date = _dt.fromtimestamp(
+                                raw_date, tz=_tz.utc
+                            ).date().isoformat()
+                        elif isinstance(raw_date, str):
+                            # ISO "2026-04-29T00:00:00Z" → "2026-04-29"
+                            snapshot_date = raw_date[:10]
+                    except (ValueError, OSError):
+                        pass
                 if weight > 0 and name not in seen:
                     seen.add(name)
                     result.append({"name": name, "weight": weight})
