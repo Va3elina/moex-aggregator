@@ -35,7 +35,7 @@ Rate-limit: 60 req/min per API key (через Redis-counter).
 import time
 from datetime import datetime, date, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query, Request, Response
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -135,9 +135,51 @@ def _track_daily_usage(user: User) -> None:
         pass
 
 
+API_VERSION = "v1"
+# Поддерживаемые версии. Когда v2 появится — добавим сюда. Клиент шлёт
+# `Accept: application/vnd.frame.v1+json` чтобы зафиксировать версию.
+SUPPORTED_VERSIONS = {"v1"}
+
+
+def _negotiate_version(accept_header: str | None) -> str:
+    """
+    Парсит Accept header в Stripe-style media type:
+        `application/vnd.frame.v1+json` → "v1"
+        `application/json` или None → default (latest)
+        неподдерживаемая версия → 406 Not Acceptable
+
+    Returns: версия которую endpoint должен использовать.
+    """
+    if not accept_header:
+        return API_VERSION
+    # Берём первый media type — клиент мог послать несколько с весами.
+    parts = accept_header.split(",")
+    for raw in parts:
+        media = raw.split(";")[0].strip().lower()
+        # Generic application/json — не pin'ит версию.
+        if media in ("application/json", "*/*", ""):
+            continue
+        # Vendor-specific: application/vnd.frame.<version>+json
+        if media.startswith("application/vnd.frame."):
+            ver_part = media[len("application/vnd.frame."):]
+            ver = ver_part.replace("+json", "").strip()
+            if ver in SUPPORTED_VERSIONS:
+                return ver
+            raise HTTPException(
+                status_code=406,
+                detail=(
+                    f"API version '{ver}' not supported. "
+                    f"Available: {', '.join(sorted(SUPPORTED_VERSIONS))}"
+                ),
+            )
+    # Никаких vendor-specific → default.
+    return API_VERSION
+
+
 def check_rate_limit(
     response: Response,
     user: User = Depends(get_user_by_api_key),
+    accept: str | None = Header(default=None, alias="Accept"),
 ) -> User:
     """
     Combined dependency: auth via API key + rate-limit + headers + usage tracking.
@@ -146,7 +188,14 @@ def check_rate_limit(
       - X-RateLimit-Limit / Remaining / Reset — стандартный rate-limit.
       - X-Subscription-Expires-At — ISO timestamp окончания подписки
         (или "never" для admin).
+      - X-Frame-Version — версия API которая отдала ответ. Клиент может
+        зафиксировать версию через Accept: application/vnd.frame.v1+json
+        и получить 406 если она больше не поддерживается.
     """
+    # Version negotiation. 406 если клиент запросил несуществующую версию.
+    negotiated_version = _negotiate_version(accept)
+    response.headers["X-Frame-Version"] = negotiated_version
+
     now = int(time.time())
     minute_bucket = now // 60
     reset_at = (minute_bucket + 1) * 60

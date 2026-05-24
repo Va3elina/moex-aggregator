@@ -25,26 +25,37 @@ from api.database import get_db
 from api.models import ApiKey, User
 
 
-# Format: pk_live_<32 random chars>. Префикс "pk_live_" — однозначно
-# идентифицирует ключ при copy-paste (как у Stripe/T-Bank).
-KEY_PREFIX = "pk_live_"
+# Format: pk_{live|test}_<32 random chars>. Префиксы pk_live_/pk_test_ —
+# Stripe-style чтобы юзер визуально различал ключи по mode при copy-paste.
+LIVE_PREFIX = "pk_live_"
+TEST_PREFIX = "pk_test_"
 PLAIN_KEY_LENGTH = 32  # без префикса
 
+# Backward-compat алиас для импортов из других модулей.
+KEY_PREFIX = LIVE_PREFIX
 
-def generate_api_key() -> tuple[str, str, str]:
+
+def generate_api_key(mode: str = "live") -> tuple[str, str, str]:
     """
     Создаёт новый API-ключ.
+
+    Args:
+        mode: 'live' (default, требует Pro tier) или 'test' (для разработки,
+              не требует подписки). Префикс ключа отражает mode.
 
     Returns:
         (plain_key, key_hash, key_prefix_for_display)
         plain_key — показываем юзеру один раз, в БД НЕ сохраняем.
         key_hash — sha256 в hex (64 char), сохраняется в БД.
-        key_prefix_for_display — pk_live_<первые 4 char>... (12 char total).
+        key_prefix_for_display — pk_{live|test}_<первые 4 char>... (12 char total).
     """
+    if mode not in ("live", "test"):
+        raise ValueError(f"mode must be 'live' or 'test', got '{mode}'")
+    prefix = LIVE_PREFIX if mode == "live" else TEST_PREFIX
     random_part = secrets.token_urlsafe(PLAIN_KEY_LENGTH)[:PLAIN_KEY_LENGTH]
-    plain_key = f"{KEY_PREFIX}{random_part}"
+    plain_key = f"{prefix}{random_part}"
     key_hash = hashlib.sha256(plain_key.encode()).hexdigest()
-    # Prefix для UI: "pk_live_abcd…" — первые 12 chars + ellipsis.
+    # Display prefix: "pk_live_abcd…" / "pk_test_abcd…" — первые 12 chars.
     key_prefix = plain_key[:12]
     return plain_key, key_hash, key_prefix
 
@@ -61,10 +72,10 @@ def _extract_api_key(
         parts = authorization.split(None, 1)
         if len(parts) == 2 and parts[0].lower() == "bearer":
             token = parts[1].strip()
-            # Принимаем только если это API-key (начинается с pk_live_) —
+            # Принимаем только если это API-key (pk_live_ или pk_test_) —
             # иначе это JWT (другая auth), отдаём None и пусть другой
             # dependency обработает.
-            if token.startswith(KEY_PREFIX):
+            if token.startswith(LIVE_PREFIX) or token.startswith(TEST_PREFIX):
                 return token
     return None
 
@@ -79,11 +90,16 @@ def get_user_by_api_key(
 
     Возвращает User или 401/403. Также обновляет last_used_at для аналитики.
 
-    Pro-tier check: API — это Pro-only фича. Если подписка истекла
-    (cron `expire_overdue` опускает role до 'free'), возвращаем 403 с
-    понятным сообщением. Ключ остаётся в БД — после возобновления подписки
-    он автоматически снова работает. Это лучше чем revoke: пользователь
-    не должен пересоздавать ключи (и переписывать их в своих ботах).
+    Modes:
+      - live (pk_live_*): требует Pro tier. Если подписка истекла →
+        403 с понятным сообщением. Ключ остаётся в БД — после возобновления
+        подписки автоматически снова работает (без пересоздания).
+      - test (pk_test_*): для разработки. НЕ требует Pro tier — может
+        использоваться любым залогиненным юзером для разработки ботов,
+        тестирования интеграций, CI/CD pipelines.
+
+    Mode detection: по `api_key.mode` поле (источник истины) — не по
+    префиксу строки. Префикс — это display, mode — это authorization.
     """
     plain_key = _extract_api_key(x_api_key, authorization)
     if not plain_key:
@@ -104,9 +120,9 @@ def get_user_by_api_key(
 
     api_key, user = row
 
-    # Pro-tier enforcement: только active Pro/admin может использовать API.
-    # Free/basic/expired — отказ. admin всегда проходит (это manual override).
-    if user.role not in ("pro", "admin"):
+    # Pro-tier enforcement только для live-keys. Test-keys пропускаем —
+    # это разработческий режим, юзер может ещё не купить Pro.
+    if api_key.mode == "live" and user.role not in ("pro", "admin"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=(

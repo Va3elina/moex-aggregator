@@ -1040,6 +1040,7 @@ export interface ApiKeyInfo {
     id: number;
     name: string | null;
     key_prefix: string;
+    mode: 'live' | 'test';
     created_at: string;
     last_used_at: string | null;
     is_revoked: boolean;
@@ -1056,16 +1057,27 @@ export async function listApiKeys(): Promise<ApiKeyInfo[]> {
     return resp.json();
 }
 
-export async function createApiKey(name?: string): Promise<ApiKeyCreated> {
+export async function createApiKey(
+    name?: string,
+    mode: 'live' | 'test' = 'live',
+): Promise<ApiKeyCreated> {
     const resp = await apiFetch(`${API_BASE}/api/keys`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name || null }),
+        body: JSON.stringify({ name: name || null, mode }),
     });
-    if (resp.status === 403) throw new Error('Доступно на тарифе Pro');
+    if (resp.status === 403) {
+        const data = await resp.json().catch(() => ({}));
+        // Прокидываем backend-сообщение если есть, иначе generic.
+        throw new Error(
+            data?.error?.message
+            || data?.detail
+            || 'Доступно на тарифе Pro',
+        );
+    }
     if (resp.status === 400) {
         const data = await resp.json().catch(() => ({}));
-        throw new Error(data.detail || 'Не удалось создать ключ');
+        throw new Error(data?.error?.message || data?.detail || 'Не удалось создать ключ');
     }
     if (!resp.ok) throw new Error('Не удалось создать ключ');
     return resp.json();

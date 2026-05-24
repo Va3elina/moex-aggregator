@@ -1575,6 +1575,49 @@ Authorization: Bearer pk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`}
                             Если ключ скомпрометирован — отзовите его в личном кабинете и создайте новый.
                             Максимум 10 активных ключей на аккаунт.
                         </p>
+
+                        <h3 className="api-section-h3" style={{ marginTop: 20 }}>
+                            Live и Test ключи
+                        </h3>
+                        <p className="api-section-p">
+                            Два режима ключей по аналогии со Stripe:
+                        </p>
+                        <ul className="api-section-ul">
+                            <li>
+                                <code className="api-inline-code">pk_live_…</code> —{' '}
+                                <strong style={{ color: 'var(--text-primary)' }}>production</strong>,
+                                требует тариф Pro, все endpoints доступны.
+                            </li>
+                            <li>
+                                <code className="api-inline-code">pk_test_…</code> —{' '}
+                                <strong style={{ color: 'var(--text-primary)' }}>разработка</strong>,
+                                бесплатно для любого юзера. Те же endpoints, тот же rate-limit, те же
+                                данные. Идеально для локальной разработки, CI/CD pipelines, демо.
+                            </li>
+                        </ul>
+                        <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: 8 }}>
+                            Префикс ключа сразу показывает режим — нельзя случайно «подсунуть»
+                            test-ключ в production бот или наоборот.
+                        </p>
+
+                        <h3 className="api-section-h3" style={{ marginTop: 20 }}>
+                            Фиксация версии API
+                        </h3>
+                        <p className="api-section-p">
+                            По умолчанию ваш клиент получает <strong style={{ color: 'var(--text-primary)' }}>latest</strong>{' '}
+                            версию. Чтобы зафиксироваться на конкретной версии и не зависеть от
+                            будущих изменений — передавайте <code className="api-inline-code">Accept</code>{' '}
+                            header:
+                        </p>
+                        <CodeBlock
+                            language="http"
+                            code={`Accept: application/vnd.frame.v1+json`}
+                        />
+                        <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: 8 }}>
+                            В каждом ответе есть <code className="api-inline-code">X-Frame-Version</code> —
+                            фактическая версия которая отдала данные. Если вы запросили несуществующую
+                            версию — получите <code className="api-inline-code">406 Not Acceptable</code>.
+                        </p>
                     </section>
 
                     {/* ════ Limits ════ */}
@@ -1602,6 +1645,7 @@ Authorization: Bearer pk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`}
 X-RateLimit-Remaining:    47                          # сколько осталось
 X-RateLimit-Reset:        1716548340                  # unix-ts когда сбросится
 X-Subscription-Expires-At: 2026-12-31T23:59:59+03:00  # когда истекает Pro
+X-Frame-Version:          v1                          # версия API в этом ответе
 Cache-Control:            public, max-age=60          # как долго можно кэшировать`}
                         />
                         <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', marginTop: 4 }}>
@@ -1709,6 +1753,22 @@ Cache-Control:            public, max-age=60          # как долго мож
                     <section id="changelog" className="api-section">
                         <h2 className="api-section-h2">История версий</h2>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                            <div>
+                                <div style={{
+                                    fontSize: 'var(--fs-sm)',
+                                    fontWeight: 700,
+                                    color: 'var(--text-primary)',
+                                    marginBottom: 4,
+                                }}>
+                                    v1.4 — 2026-05-24
+                                </div>
+                                <ul className="api-section-ul">
+                                    <li>Test mode: <code className="api-inline-code">pk_test_</code> ключи доступны без Pro — для разработки и CI/CD</li>
+                                    <li>API version pinning через <code className="api-inline-code">Accept: application/vnd.frame.v1+json</code></li>
+                                    <li>Header <code className="api-inline-code">X-Frame-Version</code> в каждом ответе</li>
+                                    <li>406 Not Acceptable если запросить несуществующую версию</li>
+                                </ul>
+                            </div>
                             <div>
                                 <div style={{
                                     fontSize: 'var(--fs-sm)',

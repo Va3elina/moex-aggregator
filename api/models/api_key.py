@@ -40,6 +40,12 @@ class ApiKey(Base):
     # Юзерское имя для удобной идентификации ("prod-бот", "test-script").
     name = Column(String(100), nullable=True)
 
+    # 'live' (требует Pro tier, реальные rate-limits) или 'test' (для
+    # разработки, не требует подписки). Префикс ключа отражает mode —
+    # `pk_live_` для live, `pk_test_` для test (Stripe-style).
+    # См. api/security/api_key.py:get_user_by_api_key для логики gating.
+    mode = Column(String(10), nullable=False, default="live", server_default="live")
+
     created_at = Column(DateTime, server_default=func.now(), nullable=False)
     last_used_at = Column(DateTime, nullable=True)
 

@@ -38,19 +38,16 @@ export default function ApiKeysSection() {
     // Create flow
     const [creating, setCreating] = useState(false);
     const [newName, setNewName] = useState('');
+    const [newMode, setNewMode] = useState<'live' | 'test'>('live');
     const [createdKey, setCreatedKey] = useState<ApiKeyCreated | null>(null);
     const [creatingInFlight, setCreatingInFlight] = useState(false);
 
     const load = async () => {
-        if (!common.api_access) {
-            setLoading(false);
-            return;
-        }
+        // Грузим всегда — даже для не-Pro юзеров, потому что они могут
+        // создавать и управлять test-ключами.
         try {
             setLoading(true);
             setError(null);
-            // Параллельно — ключи и статистика. Статистика опциональна:
-            // если упала, list ключей всё равно отображаем.
             const [list, usageData] = await Promise.allSettled([
                 listApiKeys(),
                 getApiKeyUsage(30),
@@ -71,16 +68,18 @@ export default function ApiKeysSection() {
     }, [common.api_access]);
 
     const handleCreate = async () => {
-        if (!common.api_access) {
+        // Live-ключ требует Pro. Test-ключ — любой залогиненный юзер.
+        if (newMode === 'live' && !common.api_access) {
             showUpgrade({ tier: 'pro', featureName: 'API-доступ', indicator: 'api_access' });
             return;
         }
         setCreatingInFlight(true);
         try {
-            const created = await createApiKey(newName.trim() || undefined);
+            const created = await createApiKey(newName.trim() || undefined, newMode);
             setCreatedKey(created);
             setKeys((prev) => [created, ...prev]);
             setNewName('');
+            setNewMode('live');  // reset to default
             setCreating(false);
         } catch (e) {
             // eslint-disable-next-line no-alert
@@ -105,70 +104,62 @@ export default function ApiKeysSection() {
         navigator.clipboard?.writeText(text);
     };
 
-    // Non-Pro юзер — CTA + краткое описание фичи.
-    if (!common.api_access) {
-        return (
-            <section style={{ marginTop: 32 }}>
-                <SectionHeader />
+    return (
+        <section style={{ marginTop: 32 }}>
+            <SectionHeader />
+
+            {/* Non-Pro CTA баннер — компактный, не блокирующий. Test-ключи всё
+                равно доступны для разработки. */}
+            {!common.api_access && (
                 <div
-                    className="editorial-frame"
                     style={{
-                        padding: 24,
-                        textAlign: 'center',
                         marginTop: 12,
+                        padding: 14,
+                        background: 'color-mix(in srgb, var(--accent) 6%, var(--bg-secondary))',
+                        border: '1.5px solid color-mix(in srgb, var(--accent) 30%, transparent)',
+                        borderRadius: 10,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 12,
+                        flexWrap: 'wrap',
                     }}
                 >
-                    <Key size={32} style={{ color: 'var(--text-muted)', margin: '0 auto 12px' }} />
-                    <p
-                        style={{
-                            fontSize: 'var(--fs-md)',
-                            fontWeight: 700,
-                            marginBottom: 8,
-                            color: 'var(--text-primary)',
-                        }}
-                    >
-                        API-доступ для автоматизации
-                    </p>
-                    <p
-                        style={{
-                            fontSize: 'var(--fs-sm)',
-                            color: 'var(--text-secondary)',
-                            marginBottom: 16,
-                            maxWidth: 480,
-                            marginLeft: 'auto',
-                            marginRight: 'auto',
-                            lineHeight: 1.5,
-                        }}
-                    >
-                        Программный доступ к данным через REST API. Получайте котировки, Силу
-                        рынка, ОИ, фонды и сезонность из своих скриптов и торговых ботов.
-                    </p>
+                    <div style={{ flex: 1, minWidth: 200 }}>
+                        <div
+                            style={{
+                                fontSize: 'var(--fs-sm)',
+                                fontWeight: 700,
+                                color: 'var(--text-primary)',
+                                marginBottom: 2,
+                            }}
+                        >
+                            Live-ключи — на тарифе Pro
+                        </div>
+                        <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)', lineHeight: 1.45 }}>
+                            Сейчас вы можете создать <strong>test-ключ</strong> для разработки —
+                            бесплатно, с теми же эндпоинтами и rate-limit'ом.
+                        </div>
+                    </div>
                     <button
                         onClick={() =>
                             showUpgrade({ tier: 'pro', featureName: 'API-доступ', indicator: 'api_access' })
                         }
                         style={{
-                            padding: '8px 18px',
+                            padding: '6px 14px',
                             background: 'var(--accent)',
                             color: 'var(--text-inverse)',
                             border: '1.5px solid var(--text-primary)',
                             borderRadius: 999,
-                            fontSize: 'var(--fs-sm)',
+                            fontSize: 'var(--fs-xs)',
                             fontWeight: 700,
                             cursor: 'pointer',
-                            boxShadow: 'var(--shadow-hard-chip)',
+                            flexShrink: 0,
                         }}
                     >
                         Перейти на Pro
                     </button>
                 </div>
-            </section>
-        );
-    }
-
-    return (
-        <section style={{ marginTop: 32 }}>
-            <SectionHeader />
+            )}
 
             {/* После создания — показать plain key один раз */}
             {createdKey && (
@@ -290,63 +281,117 @@ export default function ApiKeysSection() {
                     <div
                         style={{
                             display: 'flex',
-                            gap: 8,
+                            flexDirection: 'column',
+                            gap: 10,
                             padding: 12,
                             background: 'var(--bg-secondary)',
                             border: '1.5px solid var(--text-primary)',
                             borderRadius: 10,
                         }}
                     >
-                        <input
-                            value={newName}
-                            onChange={(e) => setNewName(e.target.value)}
-                            placeholder="Имя ключа (e.g. prod-bot)"
-                            maxLength={100}
-                            autoFocus
-                            style={{
-                                flex: 1,
-                                padding: '6px 12px',
-                                background: 'var(--bg-primary)',
-                                border: '1.5px solid var(--text-primary)',
-                                borderRadius: 8,
-                                color: 'var(--text-primary)',
-                                fontSize: 'var(--fs-sm)',
-                            }}
-                        />
-                        <button
-                            onClick={handleCreate}
-                            disabled={creatingInFlight}
-                            style={{
-                                padding: '6px 14px',
-                                background: 'var(--accent)',
-                                color: 'var(--text-inverse)',
-                                border: '1.5px solid var(--text-primary)',
-                                borderRadius: 999,
-                                fontSize: 'var(--fs-sm)',
-                                fontWeight: 700,
-                                cursor: creatingInFlight ? 'wait' : 'pointer',
-                            }}
-                        >
-                            {creatingInFlight ? 'Создаём…' : 'Создать'}
-                        </button>
-                        <button
-                            onClick={() => {
-                                setCreating(false);
-                                setNewName('');
-                            }}
-                            style={{
-                                padding: '6px 14px',
-                                background: 'transparent',
-                                color: 'var(--text-primary)',
-                                border: '1.5px solid var(--text-primary)',
-                                borderRadius: 999,
-                                fontSize: 'var(--fs-sm)',
-                                fontWeight: 600,
-                                cursor: 'pointer',
-                            }}
-                        >
-                            Отмена
-                        </button>
+                        {/* Mode toggle — Live vs Test */}
+                        <div style={{ display: 'flex', gap: 8 }}>
+                            {(['live', 'test'] as const).map((m) => {
+                                const isActive = newMode === m;
+                                const isLiveLocked = m === 'live' && !common.api_access;
+                                return (
+                                    <button
+                                        key={m}
+                                        onClick={() => setNewMode(m)}
+                                        style={{
+                                            flex: 1,
+                                            padding: '8px 12px',
+                                            background: isActive
+                                                ? 'var(--accent)'
+                                                : 'var(--bg-primary)',
+                                            color: isActive
+                                                ? 'var(--text-inverse)'
+                                                : 'var(--text-primary)',
+                                            border: '1.5px solid var(--text-primary)',
+                                            borderRadius: 8,
+                                            fontSize: 'var(--fs-xs)',
+                                            fontWeight: isActive ? 700 : 600,
+                                            cursor: 'pointer',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            alignItems: 'flex-start',
+                                            gap: 2,
+                                            opacity: isLiveLocked ? 0.85 : 1,
+                                        }}
+                                    >
+                                        <span style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: 6,
+                                            fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+                                            fontSize: 'var(--fs-sm)',
+                                        }}>
+                                            {m === 'live' ? 'pk_live_' : 'pk_test_'}
+                                            {isLiveLocked && '🔒'}
+                                        </span>
+                                        <span style={{ fontSize: 'var(--fs-2xs)', opacity: 0.8 }}>
+                                            {m === 'live'
+                                                ? 'Продакшн (Pro)'
+                                                : 'Разработка (бесплатно)'}
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        {/* Name + Create + Cancel */}
+                        <div style={{ display: 'flex', gap: 8 }}>
+                            <input
+                                value={newName}
+                                onChange={(e) => setNewName(e.target.value)}
+                                placeholder="Имя ключа (e.g. prod-bot)"
+                                maxLength={100}
+                                autoFocus
+                                style={{
+                                    flex: 1,
+                                    padding: '6px 12px',
+                                    background: 'var(--bg-primary)',
+                                    border: '1.5px solid var(--text-primary)',
+                                    borderRadius: 8,
+                                    color: 'var(--text-primary)',
+                                    fontSize: 'var(--fs-sm)',
+                                }}
+                            />
+                            <button
+                                onClick={handleCreate}
+                                disabled={creatingInFlight}
+                                style={{
+                                    padding: '6px 14px',
+                                    background: 'var(--accent)',
+                                    color: 'var(--text-inverse)',
+                                    border: '1.5px solid var(--text-primary)',
+                                    borderRadius: 999,
+                                    fontSize: 'var(--fs-sm)',
+                                    fontWeight: 700,
+                                    cursor: creatingInFlight ? 'wait' : 'pointer',
+                                }}
+                            >
+                                {creatingInFlight ? 'Создаём…' : 'Создать'}
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setCreating(false);
+                                    setNewName('');
+                                    setNewMode('live');
+                                }}
+                                style={{
+                                    padding: '6px 14px',
+                                    background: 'transparent',
+                                    color: 'var(--text-primary)',
+                                    border: '1.5px solid var(--text-primary)',
+                                    borderRadius: 999,
+                                    fontSize: 'var(--fs-sm)',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                }}
+                            >
+                                Отмена
+                            </button>
+                        </div>
                     </div>
                 )}
             </div>
@@ -378,16 +423,38 @@ export default function ApiKeysSection() {
                                     fontWeight: 700,
                                     fontSize: 'var(--fs-sm)',
                                     color: 'var(--text-primary)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 6,
+                                    flexWrap: 'wrap',
                                 }}
                             >
-                                {k.name || '(без имени)'}{' '}
+                                {k.name || '(без имени)'}
+                                {/* Mode badge — отличает live/test визуально */}
+                                <span
+                                    style={{
+                                        fontSize: 'var(--fs-2xs)',
+                                        fontWeight: 700,
+                                        padding: '1px 6px',
+                                        borderRadius: 4,
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.04em',
+                                        background: k.mode === 'test'
+                                            ? 'color-mix(in srgb, var(--warning, #f59e0b) 18%, transparent)'
+                                            : 'color-mix(in srgb, var(--accent) 18%, transparent)',
+                                        color: k.mode === 'test'
+                                            ? 'var(--warning, #f59e0b)'
+                                            : 'var(--accent)',
+                                    }}
+                                >
+                                    {k.mode === 'test' ? 'TEST' : 'LIVE'}
+                                </span>
                                 {k.is_revoked && (
                                     <span
                                         style={{
                                             fontSize: 'var(--fs-2xs)',
                                             color: 'var(--funds-flow-negative)',
                                             fontWeight: 600,
-                                            marginLeft: 6,
                                         }}
                                     >
                                         ОТОЗВАН
