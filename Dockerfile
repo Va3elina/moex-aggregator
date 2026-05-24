@@ -42,6 +42,11 @@ RUN useradd --system --uid 1000 --no-create-home --shell /usr/sbin/nologin appus
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# gunicorn — production process manager (graceful restart, worker timeouts,
+# max-requests recycling). Установлен отдельно от requirements.txt, потому
+# что requirements.txt uncommitted (signal-engine territory, Вадимов patch).
+RUN pip install --no-cache-dir gunicorn==21.2.0
+
 # Код приложения
 COPY api/ ./api/
 COPY OI/ ./OI/
@@ -72,10 +77,26 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Запуск
-# --workers 3: 4-ядерная VM, 3 worker'a используют 75% CPU (4-й оставляем
-# OS/Postgres/Redis). Каждый worker ~200MB RSS → ~600MB total, безопасно на
-# 4GB RAM. Подтверждено аудитом 2026-05-24.
-# Non-root запуск выставляется через docker-compose `user: 1000:1000` (только
-# для api-сервиса, orchestrator/tg-bot остаются root для backward-compat).
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "3"]
+# Запуск — gunicorn + uvicorn worker class.
+# gunicorn vs uvicorn-only:
+#   - graceful-timeout 30s: при SIGTERM ждём 30с in-flight requests
+#     (zero-downtime deploy через SIGHUP reload)
+#   - timeout 60s: kill worker если завис на одном запросе (защита от hang)
+#   - max-requests 1000 + jitter 50: каждый worker recycle после ~1k
+#     запросов — защита от Python memory leaks в long-running процессах
+#   - forwarded-allow-ips=* : доверять X-Forwarded-* от nginx (через docker
+#     network IP, не 127.0.0.1). Без этого RateLimitMiddleware видит
+#     всех юзеров под одним IP 172.18.x.x и сразу лимитит.
+#   - workers 3: 4-ядерная VM, 3 worker'a используют ~75% CPU.
+# Non-root запуск через docker-compose `user: 1000:1000` (api сервис).
+CMD ["gunicorn", "api.main:app", \
+     "-k", "uvicorn.workers.UvicornWorker", \
+     "-w", "3", \
+     "-b", "0.0.0.0:8000", \
+     "--graceful-timeout", "30", \
+     "--timeout", "60", \
+     "--max-requests", "1000", \
+     "--max-requests-jitter", "50", \
+     "--forwarded-allow-ips=*", \
+     "--access-logfile", "-", \
+     "--error-logfile", "-"]
