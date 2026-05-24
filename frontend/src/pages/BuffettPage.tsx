@@ -12,6 +12,7 @@ import {
 } from '../services/api';
 import SimpleChart from '../components/SimpleChart';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
+import CsvExportButton from '../components/export/CsvExportButton';
 import Dropdown, { type DropdownOption } from '../components/Dropdown';
 import { useAuth } from '../contexts/AuthContext';
 import { isPeriodAllowed } from '../config/accessControl';
@@ -271,8 +272,13 @@ export default function BuffettPage() {
                     Капитализация
                 </button>
 
-                {/* Camera button inline, прижат к правому краю */}
-                <div data-tour="buffett-export" className="ml-auto">
+                {/* Camera + CSV buttons inline, прижаты к правому краю */}
+                <div data-tour="buffett-export" className="ml-auto flex items-center" style={{ gap: 'var(--sp-2)' }}>
+                <CsvExportButton
+                    url="/api/export/buffett.csv"
+                    filename="buffett.csv"
+                    indicator="buffett"
+                />
                 <ChartCaptureButton
                     getTargetElement={() => chartAnchorRef.current}
                     filename={`frame-buffett-${viewMode}-${period}-${timeframe}`}

@@ -28,6 +28,7 @@ import StackedBidirectionalHistogram from '../components/cbr/StackedBidirectiona
 import { getCategoryColor } from '../components/cbr/cbrPalette';
 import { getCategoryInfo } from '../components/cbr/cbrCategoryInfo';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
+import CsvExportButton from '../components/export/CsvExportButton';
 import { useOnboardingTour } from '../hooks/useFirstVisit';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { cbrFlowsTourSteps } from '../data/tours/cbr-flows';
@@ -373,8 +374,13 @@ export default function CbrFlowsPage() {
             })}
           </div>
 
-          {/* Camera button — экспорт графика в PNG */}
-          <div data-tour="cbr-export" className="shrink-0 ml-auto">
+          {/* Camera + CSV buttons — экспорт графика в PNG / данных в CSV */}
+          <div data-tour="cbr-export" className="shrink-0 ml-auto flex items-center" style={{ gap: 'var(--sp-2)' }}>
+          <CsvExportButton
+            url={`/api/export/cbr-flows.csv?instrument=${type}`}
+            filename={`cbr_flows_${type}.csv`}
+            indicator="cbr_flows"
+          />
           <ChartCaptureButton
             getTargetElement={() => chartAnchorRef.current}
             filename={`frame-cbr-flows-${type}-${period}`}

@@ -10,6 +10,7 @@ import type { ChartResponse } from '../types';
 import type { ChartAnnotation } from '../components/SimpleChart';
 import SimpleChart from '../components/SimpleChart';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
+import CsvExportButton from '../components/export/CsvExportButton';
 import InstrumentSearchModal from '../components/InstrumentSearchModal';
 import Dropdown, { type DropdownOption } from '../components/Dropdown';
 import { PERIOD_LABELS as ALL_PERIOD_LABELS, INTERVAL_LABELS } from '../config/chartConfig';
@@ -619,8 +620,13 @@ export default function OpenInterestPage() {
             </button>
           )}
 
-          {/* Camera button inline, прижат к правому краю */}
-          <div data-tour="oi-export" className="ml-auto">
+          {/* Camera + CSV buttons inline, прижаты к правому краю */}
+          <div data-tour="oi-export" className="ml-auto flex items-center" style={{ gap: 'var(--sp-2)' }}>
+          <CsvExportButton
+            url={`/api/export/oi.csv?instrument=${encodeURIComponent(selectedInstrument)}&clgroup=${clgroup}&days=365`}
+            filename={`oi_${selectedInstrument}_${clgroup}.csv`}
+            indicator="open_interest"
+          />
           <ChartCaptureButton
             getTargetElement={() => chartAnchorRef.current}
             filename={`frame-oi-${selectedInstrument.toLowerCase()}-${interval}-${displayMode}`}

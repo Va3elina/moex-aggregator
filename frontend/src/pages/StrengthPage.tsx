@@ -18,6 +18,7 @@ import IndexChart from '../components/strength/IndexChart';
 import BreadthChart from '../components/strength/BreadthChart';
 import ChartLegend from '../components/chart/ChartLegend';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
+import CsvExportButton from '../components/export/CsvExportButton';
 import SectorDetail from '../components/strength/SectorDetail';
 import StrengthControls from '../components/strength/StrengthControls';
 import { computeChartTopLineY, getDatePillStyle } from '../components/chart/datePillLayout';
@@ -365,6 +366,12 @@ export default function StrengthPage() {
                 classInfo={classInfo}
                 hasCurrent={!!current}
                 trailingSlot={
+                    <div className="flex items-center" style={{ gap: 'var(--sp-2)' }}>
+                    <CsvExportButton
+                        url={`/api/export/breadth.csv?ema=${emaPeriod}&universe=${universe}&days=730`}
+                        filename={`strength_ema${emaPeriod}_${universe}.csv`}
+                        indicator="strength"
+                    />
                     <ChartCaptureButton
                         getTargetElement={() => containerRef.current}
                         filename={`frame-strength-${universe}-ema${emaPeriod}-${period}`}
@@ -382,6 +389,7 @@ export default function StrengthPage() {
                             ].filter(Boolean),
                         }}
                     />
+                    </div>
                 }
             />
             </div>{/* /strength-controls */}

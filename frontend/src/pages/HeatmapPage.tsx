@@ -3,6 +3,7 @@ import { Grid3X3 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import Dropdown, { type DropdownOption } from '../components/Dropdown';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
+import CsvExportButton from '../components/export/CsvExportButton';
 import ChartWatermark from '../components/ChartWatermark';
 import { METHODOLOGY } from '../data/methodology';
 import { getHeatmapData, getHeatmapImoex } from '../services/api';
@@ -620,7 +621,12 @@ export default function HeatmapPage() {
 
         {/* Camera button inline, прижат к правому краю.
             captureRef = outer paper-card → snapshot включает watermark. */}
-        <div data-tour="heatmap-export" className="ml-auto">
+        <div data-tour="heatmap-export" className="ml-auto flex items-center gap-2">
+        <CsvExportButton
+          url="/api/export/heatmap.csv"
+          filename="heatmap.csv"
+          indicator="heatmap"
+        />
         <ChartCaptureButton
           getTargetElement={() => captureRef.current}
           filename={`frame-heatmap-${mapMode}-${period}-${groupBy}`}

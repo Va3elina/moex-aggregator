@@ -29,6 +29,7 @@ import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { buildFundsMoneyTour } from '../data/tours/funds-money';
 import FlowsHistogram from '../components/funds/FlowsHistogram';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
+import CsvExportButton from '../components/export/CsvExportButton';
 import { useTierAccess } from '../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 
@@ -640,9 +641,14 @@ export default function FundsMoneyPage() {
                     </button>
                 )}
 
-                {/* Camera button — на одном уровне с dropdowns/buttons,
-                    выровнен по правому краю через ml-auto. */}
-                <div data-tour="funds-export" className="ml-auto">
+                {/* Camera + CSV buttons — на одном уровне с dropdowns/buttons,
+                    выровнены по правому краю через ml-auto. */}
+                <div data-tour="funds-export" className="ml-auto flex items-center" style={{ gap: 'var(--sp-2)' }}>
+                <CsvExportButton
+                    url={`/api/export/funds-money.csv?category=${category}`}
+                    filename={`funds_${category}.csv`}
+                    indicator="funds_money"
+                />
                 <ChartCaptureButton
                     getTargetElement={() => chartAnchorRef.current}
                     filename={`frame-funds-${category}-${viewMode}-${period}`}

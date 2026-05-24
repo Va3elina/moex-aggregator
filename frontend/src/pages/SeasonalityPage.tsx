@@ -12,6 +12,7 @@ import SeasonalityPriceChart from '../components/seasonality/SeasonalityPriceCha
 import YearlySeasonalityChart from '../components/seasonality/YearlySeasonalityChart';
 import TestDashboard from '../components/seasonality/TestDashboard';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
+import CsvExportButton from '../components/export/CsvExportButton';
 import type { SeasonalityResponse, SeasonalityMode, PriceChartResponse, YearlySeasonalityResponse } from '../services/api';
 import { useOnboardingTour } from '../hooks/useFirstVisit';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
@@ -809,9 +810,14 @@ export default function SeasonalityPage() {
           </div>
         )}
 
-        {/* Camera button — справа после всех фильтров, скрыт в test mode. */}
+        {/* Camera + CSV buttons — справа после всех фильтров, скрыт в test mode. */}
         {chartType !== 'test' && (
-          <div data-tour="seasonality-export" className="ml-auto">
+          <div data-tour="seasonality-export" className="ml-auto flex items-center" style={{ gap: 'var(--sp-2)' }}>
+          <CsvExportButton
+            url={`/api/export/seasonality.csv?ticker=${encodeURIComponent(selectedStock)}`}
+            filename={`seasonality_${selectedStock}.csv`}
+            indicator="seasonality"
+          />
           <ChartCaptureButton
             getTargetElement={() => chartCardRef.current}
             filename={`frame-seasonality-${displayTicker(selectedStock).replace('/', '-').toLowerCase()}-${chartType}-${mode}`}
