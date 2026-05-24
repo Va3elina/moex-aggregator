@@ -14,7 +14,12 @@
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Check, Zap, Crown, Sparkles, X } from 'lucide-react';
+import {
+  Check, Zap, Crown, Sparkles, X,
+  Grid3X3, BarChart3, Wallet, Activity, Scale,
+  CalendarDays, Banknote, LayoutGrid, Settings,
+  type LucideIcon,
+} from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch } from '../services/api';
 
@@ -791,64 +796,138 @@ function ConsentRow({
  * Desktop: классическая горизонтальная матрица 3 столбца × N строк.
  */
 function ComparisonMatrix() {
-  // Структура: [section_title, [row_label, free_val, basic_val, pro_val]]
-  const sections: Array<[string, Array<[string, string, string, string]>]> = [
-    ['Карта рынка', [
-      ['Доступные режимы', 'Индекс IMOEX', 'IMOEX + Все акции', 'IMOEX + Все акции'],
-    ]],
-    ['Открытый интерес', [
-      ['Активов', '12 крупных фьючерсов', 'Все 65', 'Все 65'],
-      ['Таймфреймы', 'Часовой, дневной', 'Часовой, дневной', '5 мин + часовой + дневной'],
-      ['История', '6 месяцев', '10 лет', 'Вся'],
-      ['Задержка данных', '24 часа', 'Real-time', 'Real-time'],
-    ]],
-    ['Деньги в фондах', [
-      ['Фондов', '8 крупнейших', 'Все', 'Все'],
-      ['Таймфреймы', 'Неделя, месяц', 'Все', 'Все'],
-      ['История', '6 месяцев', 'Вся', 'Вся'],
-    ]],
-    ['Сила рынка', [
-      ['Вселенные', 'Только IMOEX', 'IMOEX + 100 акций', 'IMOEX + 100 акций'],
-      ['Долларовый режим', '—', 'Да', 'Да'],
-      ['История', '1 год', '10 лет', 'Вся'],
-    ]],
-    ['Индикатор Баффетта', [
-      ['Режимы', 'Кап / ВВП', 'Кап / ВВП + Кап / M2', 'Кап / ВВП + Кап / M2'],
-      ['История', '5 лет', '10 лет', 'Вся'],
-      ['Кастомные диапазоны', '—', '—', 'Да'],
-    ]],
-    ['Сезонность', [
-      ['Активов', '10 крупных акций', 'Все', 'Все'],
-      ['Режимы', 'Только годовая', 'Гистограмма + годовая', 'Все + внутри дня'],
-      ['История', '10 лет', 'Вся', 'Вся'],
-    ]],
-    ['Потоки участников биржи', [
-      ['Задержка данных', '24 часа', 'Real-time', 'Real-time'],
-      ['История', '1 год', 'Вся', 'Вся'],
-      ['Фильтры по категориям', '—', 'Да', 'Да'],
-    ]],
-    ['Каталог фондов', [
-      ['Доступ', 'Полный', 'Полный', 'Полный'],
-    ]],
-    ['Общие фичи', [
-      ['Водяной знак на экспорте', 'Да', '—', '—'],
-      ['Экспорт CSV / Excel', '—', '—', 'Да'],
-      ['API-доступ', '—', '—', 'Да'],
-      ['Алерты в Telegram', '—', '20 / месяц', 'Безлимит'],
-    ]],
+  // Структура: [section_title, icon, [row_label, free_val, basic_val, pro_val]]
+  // Иконки взяты из methodology-страниц индикаторов — единый visual язык.
+  const sections: Array<{
+    title: string;
+    icon: LucideIcon;
+    rows: Array<[string, string, string, string]>;
+  }> = [
+    {
+      title: 'Карта рынка',
+      icon: Grid3X3,
+      rows: [
+        ['Доступные режимы', 'Индекс IMOEX', 'IMOEX + Все акции', 'IMOEX + Все акции'],
+      ],
+    },
+    {
+      title: 'Открытый интерес',
+      icon: BarChart3,
+      rows: [
+        ['Активов', '12 крупных фьючерсов', 'Все 65', 'Все 65'],
+        ['Таймфреймы', 'Часовой, дневной', 'Часовой, дневной', '5 мин + часовой + дневной'],
+        ['История', '6 месяцев', '10 лет', 'Вся'],
+        ['Задержка данных', '24 часа', 'Real-time', 'Real-time'],
+      ],
+    },
+    {
+      title: 'Деньги в фондах',
+      icon: Wallet,
+      rows: [
+        ['Фондов', '8 крупнейших', 'Все', 'Все'],
+        ['Таймфреймы', 'Неделя, месяц', 'Все', 'Все'],
+        ['История', '6 месяцев', 'Вся', 'Вся'],
+      ],
+    },
+    {
+      title: 'Сила рынка',
+      icon: Activity,
+      rows: [
+        ['Вселенные', 'Только IMOEX', 'IMOEX + 100 акций', 'IMOEX + 100 акций'],
+        ['Долларовый режим', '—', 'Да', 'Да'],
+        ['История', '1 год', '10 лет', 'Вся'],
+      ],
+    },
+    {
+      title: 'Индикатор Баффетта',
+      icon: Scale,
+      rows: [
+        ['Режимы', 'Кап / ВВП', 'Кап / ВВП + Кап / M2', 'Кап / ВВП + Кап / M2'],
+        ['История', '5 лет', '10 лет', 'Вся'],
+        ['Кастомные диапазоны', '—', '—', 'Да'],
+      ],
+    },
+    {
+      title: 'Сезонность',
+      icon: CalendarDays,
+      rows: [
+        ['Активов', '10 крупных акций', 'Все', 'Все'],
+        ['Режимы', 'Только годовая', 'Гистограмма + годовая', 'Все + внутри дня'],
+        ['История', '10 лет', 'Вся', 'Вся'],
+      ],
+    },
+    {
+      title: 'Потоки участников биржи',
+      icon: Banknote,
+      rows: [
+        ['Задержка данных', '24 часа', 'Real-time', 'Real-time'],
+        ['История', '1 год', 'Вся', 'Вся'],
+        ['Фильтры по категориям', '—', 'Да', 'Да'],
+      ],
+    },
+    {
+      title: 'Каталог фондов',
+      icon: LayoutGrid,
+      rows: [
+        ['Доступ', 'Полный', 'Полный', 'Полный'],
+      ],
+    },
+    {
+      title: 'Общие фичи',
+      icon: Settings,
+      rows: [
+        ['Водяной знак на экспорте', 'Да', '—', '—'],
+        ['Экспорт CSV / Excel', '—', '—', 'Да'],
+        ['API-доступ', '—', '—', 'Да'],
+        ['Алерты в Telegram', '—', '20 / месяц', 'Безлимит'],
+      ],
+    },
   ];
 
-  const cellStyle: React.CSSProperties = {
-    padding: '10px 12px',
+  // ── Стили cells ─────────────────────────────────────────────────
+  const subRowLabelStyle: React.CSSProperties = {
+    padding: '11px 12px 11px 48px',  // 48px indent — выравнивается под текст заголовка (12 + 28 icon + 8 gap)
     fontSize: 'var(--fs-sm)',
-    color: 'var(--text-primary)',
-    borderBottom: '1px solid var(--border-color)',
-    verticalAlign: 'top',
+    color: 'var(--text-secondary)',
+    borderBottom: '1px solid color-mix(in srgb, var(--border-color) 60%, transparent)',
+    verticalAlign: 'middle',
     lineHeight: 1.4,
   };
 
+  const valueCellBase: React.CSSProperties = {
+    padding: '11px 12px',
+    fontSize: 'var(--fs-sm)',
+    textAlign: 'center',
+    borderBottom: '1px solid color-mix(in srgb, var(--border-color) 60%, transparent)',
+    verticalAlign: 'middle',
+    lineHeight: 1.4,
+  };
+
+  /** Стилизация ячейки значения с учётом «—» (отсутствие). */
+  const valueStyle = (
+    value: string,
+    tier: 'free' | 'basic' | 'pro',
+  ): React.CSSProperties => {
+    const isAbsent = value === '—';
+    if (isAbsent) {
+      return { ...valueCellBase, color: 'var(--text-muted)', opacity: 0.55 };
+    }
+    if (tier === 'free') {
+      return { ...valueCellBase, color: 'var(--text-muted)' };
+    }
+    if (tier === 'basic') {
+      return { ...valueCellBase, color: 'var(--text-primary)' };
+    }
+    // pro — accent + bold для подсвечивания «топового» предложения
+    return {
+      ...valueCellBase,
+      color: 'var(--accent)',
+      fontWeight: 700,
+    };
+  };
+
   const headerStyle: React.CSSProperties = {
-    ...cellStyle,
+    padding: '12px',
     textAlign: 'center',
     fontWeight: 700,
     textTransform: 'uppercase',
@@ -877,47 +956,77 @@ function ComparisonMatrix() {
             width: '100%',
             borderCollapse: 'collapse',
             tableLayout: 'fixed',
-            minWidth: 560,
+            minWidth: 640,
           }}
         >
           <thead>
             <tr>
-              <th style={{ ...headerStyle, textAlign: 'left', width: '34%' }}>Возможность</th>
+              <th style={{ ...headerStyle, textAlign: 'left', width: '38%' }}>Возможность</th>
               <th style={headerStyle}>Free</th>
               <th style={{ ...headerStyle, color: 'var(--accent)' }}>Basic</th>
-              <th style={headerStyle}>Pro</th>
+              <th style={{ ...headerStyle, color: 'var(--accent)' }}>Pro</th>
             </tr>
           </thead>
           <tbody>
-            {sections.map(([sectionTitle, rows], si) => (
-              <React.Fragment key={si}>
-                <tr>
-                  <td
-                    colSpan={4}
-                    style={{
-                      padding: '14px 12px 6px',
-                      fontWeight: 700,
-                      fontSize: 'var(--fs-sm)',
-                      color: 'var(--text-primary)',
-                      background: 'color-mix(in srgb, var(--text-muted) 6%, transparent)',
-                      borderBottom: '1px solid var(--border-color)',
-                    }}
-                  >
-                    {sectionTitle}
-                  </td>
-                </tr>
-                {rows.map(([label, free, basic, pro], ri) => (
-                  <tr key={`${si}-${ri}`}>
-                    <td style={cellStyle}>{label}</td>
-                    <td style={{ ...cellStyle, textAlign: 'center', color: 'var(--text-secondary)' }}>
-                      {free}
+            {sections.map((section, si) => {
+              const Icon = section.icon;
+              return (
+                <React.Fragment key={si}>
+                  {/* Section header — крупная строка с иконкой, фоном и top-border'ом */}
+                  <tr>
+                    <td
+                      colSpan={4}
+                      style={{
+                        padding: si === 0 ? '8px 12px' : '20px 12px 8px',
+                        background: 'color-mix(in srgb, var(--accent) 6%, var(--bg-secondary))',
+                        borderTop:
+                          si === 0
+                            ? 'none'
+                            : '2px solid color-mix(in srgb, var(--text-primary) 25%, transparent)',
+                        borderBottom: '1px solid var(--border-color)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            width: 28,
+                            height: 28,
+                            borderRadius: 6,
+                            background: 'color-mix(in srgb, var(--accent) 18%, transparent)',
+                            color: 'var(--accent)',
+                            flexShrink: 0,
+                          }}
+                        >
+                          <Icon size={16} strokeWidth={2} />
+                        </span>
+                        <span
+                          style={{
+                            fontSize: 'var(--fs-md)',
+                            fontWeight: 800,
+                            color: 'var(--text-primary)',
+                            letterSpacing: '-0.005em',
+                          }}
+                        >
+                          {section.title}
+                        </span>
+                      </div>
                     </td>
-                    <td style={{ ...cellStyle, textAlign: 'center' }}>{basic}</td>
-                    <td style={{ ...cellStyle, textAlign: 'center', fontWeight: 600 }}>{pro}</td>
                   </tr>
-                ))}
-              </React.Fragment>
-            ))}
+                  {/* Sub-rows — indented, label приглушённый, значения с tier-coloring */}
+                  {section.rows.map(([label, free, basic, pro], ri) => (
+                    <tr key={`${si}-${ri}`}>
+                      <td style={subRowLabelStyle}>{label}</td>
+                      <td style={valueStyle(free, 'free')}>{free}</td>
+                      <td style={valueStyle(basic, 'basic')}>{basic}</td>
+                      <td style={valueStyle(pro, 'pro')}>{pro}</td>
+                    </tr>
+                  ))}
+                </React.Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>
