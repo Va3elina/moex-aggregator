@@ -16,6 +16,7 @@ from api.routers.csp_report import router as csp_report_router
 from api.routers.exports import router as exports_router
 from api.routers.api_keys import router as api_keys_router
 from api.routers.public_api import router as public_api_router
+from api.routers.fund_trades import router as fund_trades_router
 
 __all__ = [
     "instruments_router",
@@ -33,4 +34,5 @@ __all__ = [
     "exports_router",
     "api_keys_router",
     "public_api_router",
+    "fund_trades_router",
 ]

@@ -51,6 +51,7 @@ export interface CommonFeatures {
     watermark_on_export: boolean;
     csv_export: boolean;
     api_access: boolean;
+    fund_trades_access: boolean;
     telegram_alerts_quota: number | null;
 }
 
@@ -248,6 +249,7 @@ export function useCommonFeatures(): CommonFeatures {
         watermark_on_export: true,
         csv_export: false,
         api_access: false,
+        fund_trades_access: false,
         telegram_alerts_quota: 0,
     };
 }

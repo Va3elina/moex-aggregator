@@ -48,6 +48,7 @@ import DeliveryPage from './pages/DeliveryPage';
 import AdminStatsPage from './pages/AdminStatsPage';
 import AdminUserDetailPage from './pages/AdminUserDetailPage';
 import ApiDocsPage from './pages/ApiDocsPage';
+import FundTradesPage from './pages/FundTradesPage';
 
 // Mobile pages — lazy-loaded, desktop юзеры не качают этот код
 const MobileOpenInterestPage = lazy(() => import('./pages/mobile/MobileOpenInterestPage'));
@@ -224,6 +225,8 @@ export default function App() {
             <Route path="/security" element={<Navigate to="/" replace />} />
             {/* API docs (Pro tier feature) — публичная страница, доступ без auth */}
             <Route path="/api-docs" element={<ApiDocsPage />} />
+            {/* Fund trades (Pro tier) — что покупают/продают БПИФы */}
+            <Route path="/fund-trades" element={<FundTradesPage />} />
             {/* Admin */}
             <Route path="/admin/stats" element={<AdminStatsPage />} />
             <Route path="/admin/users/:userId" element={<AdminUserDetailPage />} />

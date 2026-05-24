@@ -229,18 +229,21 @@ COMMON_FEATURES: dict[str, dict] = {
         "watermark_on_export": True,    # PNG с водяным знаком таймфрейм.рф
         "csv_export": False,            # Excel/CSV экспорт
         "api_access": False,            # /api/v1/public/* с ключами
+        "fund_trades_access": False,    # /fund-trades — что покупают/продают БПИФ
         "telegram_alerts_quota": 0,     # лимит индивидуальных алертов
     },
     "basic": {
         "watermark_on_export": False,
         "csv_export": False,
         "api_access": False,
+        "fund_trades_access": False,
         "telegram_alerts_quota": 20,    # 20 алертов
     },
     "pro": {
         "watermark_on_export": False,
-        "csv_export": True,             # endpoint не реализован пока — будет 501
-        "api_access": True,             # endpoint не реализован пока — будет 501
+        "csv_export": True,
+        "api_access": True,
+        "fund_trades_access": True,     # smart-money tracking — Pro feature
         "telegram_alerts_quota": None,  # unlimited
     },
 }

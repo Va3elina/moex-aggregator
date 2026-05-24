@@ -1100,3 +1100,106 @@ export async function getApiKeyUsage(days = 30): Promise<ApiKeyUsageStats> {
     if (!resp.ok) throw new Error('Не удалось загрузить статистику');
     return resp.json();
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// Fund Trades — отслеживание покупок/продаж в БПИФах (Pro tier)
+// ════════════════════════════════════════════════════════════════════════════
+
+export type FundTradesPeriod = '1m' | '3m' | '6m' | '1y';
+
+export interface FundWithHistory {
+    fund_id: number;
+    ticker: string;
+    name: string;
+    category: string;
+    subcategory: string | null;
+    last_snapshot_date: string | null;
+    snapshot_count: number;
+}
+
+export interface FundTradesHolding {
+    asset_name: string;
+    weight: number | null;
+    positions: number | null;
+    amount_rub: number | null;
+}
+
+export type FundTradeChangeType = 'new' | 'sold_out' | 'accumulated' | 'reduced' | 'unchanged';
+
+export interface FundTradeDiff {
+    asset_name: string;
+    change_type: FundTradeChangeType;
+    delta_weight: number | null;
+    current_weight: number | null;
+    previous_weight: number | null;
+    current_positions: number | null;
+    previous_positions: number | null;
+}
+
+export interface FundTradesDetail {
+    fund: {
+        fund_id: number;
+        ticker: string;
+        name: string;
+        category: string;
+        subcategory: string | null;
+    };
+    period: FundTradesPeriod;
+    current_snapshot_date: string | null;
+    previous_snapshot_date: string | null;
+    current_holdings: FundTradesHolding[];
+    diff: FundTradeDiff[];
+    summary: {
+        new: number;
+        sold_out: number;
+        accumulated: number;
+        reduced: number;
+    };
+}
+
+export interface FundTradesMover {
+    asset_name: string;
+    total_delta_weight: number;
+    funds_buying: number;
+    funds_selling: number;
+}
+
+export interface FundTradesMovers {
+    period: FundTradesPeriod;
+    category: string | null;
+    top_accumulated: FundTradesMover[];
+    top_reduced: FundTradesMover[];
+}
+
+export async function listFundsWithHistory(): Promise<{ funds: FundWithHistory[]; count: number }> {
+    const resp = await apiFetch(`${API_BASE}/api/fund-trades/funds`);
+    if (resp.status === 403) throw new Error('Доступно на тарифе Pro');
+    if (!resp.ok) throw new Error('Не удалось загрузить фонды');
+    return resp.json();
+}
+
+export async function getFundTradesDetail(
+    ticker: string,
+    period: FundTradesPeriod = '3m',
+): Promise<FundTradesDetail> {
+    const resp = await apiFetch(
+        `${API_BASE}/api/fund-trades/fund/${encodeURIComponent(ticker)}?period=${period}`,
+    );
+    if (resp.status === 403) throw new Error('Доступно на тарифе Pro');
+    if (resp.status === 404) throw new Error(`Фонд ${ticker} не найден`);
+    if (!resp.ok) throw new Error('Не удалось загрузить детали фонда');
+    return resp.json();
+}
+
+export async function getFundTradesMovers(
+    period: FundTradesPeriod = '1m',
+    category?: string,
+    limit = 20,
+): Promise<FundTradesMovers> {
+    const params = new URLSearchParams({ period, limit: String(limit) });
+    if (category) params.set('category', category);
+    const resp = await apiFetch(`${API_BASE}/api/fund-trades/movers?${params}`);
+    if (resp.status === 403) throw new Error('Доступно на тарифе Pro');
+    if (!resp.ok) throw new Error('Не удалось загрузить топ движений');
+    return resp.json();
+}

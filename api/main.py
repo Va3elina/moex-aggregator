@@ -34,6 +34,7 @@ from api.routers import (
     exports_router,
     api_keys_router,
     public_api_router,
+    fund_trades_router,
 )
 from api.routers import stats
 from api.routers import auth  # ← НОВОЕ: Аутентификация
@@ -217,6 +218,7 @@ app.include_router(csp_report_router)  # ← /api/csp-report (browser violation 
 app.include_router(exports_router)  # ← /api/export/*.csv (Pro-only data download)
 app.include_router(api_keys_router)  # ← /api/keys/* (manage personal API keys)
 app.include_router(public_api_router)  # ← /api/v1/public/* (programmatic JSON access)
+app.include_router(fund_trades_router)  # ← /api/fund-trades/* (диффы holdings БПИФов)
 app.include_router(billing_router)  # ← /api/billing/* (подписки через ЮKassa)
 app.include_router(auth.router, prefix="/api")  # ← НОВОЕ: /api/auth/*
 app.include_router(oauth.router, prefix="/api")  # ← OAuth: /api/auth/oauth/*
