@@ -11,6 +11,7 @@ import type { ChartAnnotation } from '../components/SimpleChart';
 import SimpleChart from '../components/SimpleChart';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import CsvExportButton from '../components/export/CsvExportButton';
+import { periodToQuery } from '../utils/csvPeriod';
 import InstrumentSearchModal from '../components/InstrumentSearchModal';
 import Dropdown, { type DropdownOption } from '../components/Dropdown';
 import { PERIOD_LABELS as ALL_PERIOD_LABELS, INTERVAL_LABELS } from '../config/chartConfig';
@@ -672,13 +673,18 @@ export default function OpenInterestPage() {
                     ],
                   },
                   {
-                    kind: 'number',
-                    id: 'days',
-                    label: 'Глубина истории',
-                    default: periodDays[period] ?? 365,
-                    min: 1,
-                    max: 3650,
-                    suffix: 'дней',
+                    kind: 'period',
+                    id: 'period',
+                    label: 'Период',
+                    default: { type: 'preset', value: period },
+                    presets: [
+                      { value: '1m', label: '1М', days: 30 },
+                      { value: '3m', label: '3М', days: 90 },
+                      { value: '6m', label: '6М', days: 180 },
+                      { value: '1y', label: '1Г', days: 365 },
+                      { value: '2y', label: '2Г', days: 730 },
+                      { value: 'all', label: 'Всё', days: 7000 },
+                    ],
                   },
                 ],
                 params: [],
@@ -686,8 +692,8 @@ export default function OpenInterestPage() {
                   const insts = (vals.instruments as string[] ?? [selectedInstrument]).join(',');
                   const cls = (vals.clgroups as string[] ?? [clgroup]).join(',');
                   const ints = (vals.intervals as string[] ?? [String(interval)]).join(',');
-                  const days = vals.days as number ?? periodDays[period] ?? 365;
-                  return `/api/export/oi.csv?instrument=${encodeURIComponent(insts)}&clgroup=${cls}&interval=${ints}&days=${days}`;
+                  const periodParam = periodToQuery(vals.period, periodDays[period] ?? 365);
+                  return `/api/export/oi.csv?instrument=${encodeURIComponent(insts)}&clgroup=${cls}&interval=${ints}&${periodParam}`;
                 },
                 buildFilename: () => `oi_${Date.now()}.zip`,
               };

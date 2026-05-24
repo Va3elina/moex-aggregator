@@ -28,6 +28,8 @@ interface Props {
     filterType?: 'stock' | 'futures' | 'no-futures';
     /** Заголовок modal. */
     title?: string;
+    /** Максимум выбираемых элементов. Защищает backend от monster-ZIP'ов. */
+    maxItems?: number;
     onConfirm: (tickers: string[]) => void;
     onClose: () => void;
 }
@@ -45,6 +47,7 @@ export default function MultiInstrumentSearchModal({
     initial,
     filterType,
     title = 'Выберите инструменты',
+    maxItems,
     onConfirm,
     onClose,
 }: Props) {
@@ -96,8 +99,13 @@ export default function MultiInstrumentSearchModal({
     const toggle = (sectype: string) => {
         setSelected((prev) => {
             const next = new Set(prev);
-            if (next.has(sectype)) next.delete(sectype);
-            else next.add(sectype);
+            if (next.has(sectype)) {
+                next.delete(sectype);
+            } else {
+                // Лимит: если уже выбрано max, не даём добавить ещё.
+                if (maxItems && next.size >= maxItems) return prev;
+                next.add(sectype);
+            }
             return next;
         });
     };
@@ -291,11 +299,13 @@ export default function MultiInstrumentSearchModal({
                     ) : (
                         unique.map((inst) => {
                             const checked = selected.has(inst.sectype);
+                            const limitReached = !!maxItems && !checked && selected.size >= maxItems;
                             return (
                                 <button
                                     key={inst.sectype}
                                     type="button"
                                     onClick={() => toggle(inst.sectype)}
+                                    disabled={limitReached}
                                     style={{
                                         display: 'flex',
                                         alignItems: 'center',
@@ -308,9 +318,10 @@ export default function MultiInstrumentSearchModal({
                                         border: 'none',
                                         borderBottom:
                                             '1px solid color-mix(in srgb, var(--text-primary) 8%, transparent)',
-                                        cursor: 'pointer',
+                                        cursor: limitReached ? 'not-allowed' : 'pointer',
                                         textAlign: 'left',
                                         color: 'var(--text-primary)',
+                                        opacity: limitReached ? 0.4 : 1,
                                     }}
                                 >
                                     <span
@@ -380,7 +391,17 @@ export default function MultiInstrumentSearchModal({
                     }}
                 >
                     <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-secondary)' }}>
-                        Выбрано: <strong style={{ color: 'var(--text-primary)' }}>{selected.size}</strong>
+                        Выбрано:{' '}
+                        <strong
+                            style={{
+                                color: maxItems && selected.size >= maxItems
+                                    ? 'var(--accent)'
+                                    : 'var(--text-primary)',
+                            }}
+                        >
+                            {selected.size}
+                        </strong>
+                        {maxItems ? ` / ${maxItems}` : ''}
                     </span>
                     <div style={{ display: 'flex', gap: 8 }}>
                         <button

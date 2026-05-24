@@ -66,7 +66,28 @@ export type CsvSelector =
         hint?: string;
         filterType?: 'stock' | 'futures' | 'no-futures';
         pickerTitle?: string;
+        /** Лимит — защита backend от monster-ZIP. По default 6. */
+        maxItems?: number;
+    }
+    | {
+        // Period — toggle между preset'ами (1M/3M/6M/1Y/...) и custom date range.
+        // Default = preset (для UX простоты), юзер может переключиться в "Точные
+        // даты" с двумя date input'ами.
+        // Value хранится как объект { type: 'preset' | 'range', ... }, в URL
+        // конвертируется в days=N или from=...&to=... через buildUrl callback.
+        kind: 'period';
+        id: string;
+        label: string;
+        presets: { value: string; label: string; days: number }[];
+        default: PeriodValue;
     };
+
+export type PeriodValue =
+    | { type: 'preset'; value: string }
+    | { type: 'range'; from: string; to: string };
+
+/** Все типы values в записи селекторов. */
+export type CsvSelectorValue = string | string[] | number | PeriodValue;
 
 export interface CsvExportConfig {
     indicator: string;
@@ -77,12 +98,12 @@ export interface CsvExportConfig {
     /** URL builder — получает выбранные layers + текущие selector values. */
     buildUrl: (
         layers: string[],
-        values: Record<string, string | string[] | number>,
+        values: Record<string, CsvSelectorValue>,
     ) => string;
     /** Filename builder — то же сигнатура. */
     buildFilename: (
         layers: string[],
-        values: Record<string, string | string[] | number>,
+        values: Record<string, CsvSelectorValue>,
     ) => string;
 }
 
@@ -109,8 +130,8 @@ export default function CsvExportModal({ config, onClose }: Props) {
     });
 
     // ──── Selectors values state ────
-    const [values, setValues] = useState<Record<string, string | string[] | number>>(() => {
-        const init: Record<string, string | string[] | number> = {};
+    const [values, setValues] = useState<Record<string, CsvSelectorValue>>(() => {
+        const init: Record<string, CsvSelectorValue> = {};
         for (const s of config.selectors) init[s.id] = s.default;
         return init;
     });
@@ -546,12 +567,23 @@ function SelectorControl({ selector, value, onChange }: SelectorControlProps) {
     }
 
     if (selector.kind === 'instrument-picker') {
-        const current = Array.isArray(value) ? value : selector.default;
+        const current = Array.isArray(value) ? (value as string[]) : selector.default;
         return (
             <InstrumentPickerControl
                 selector={selector}
                 value={current}
-                onChange={onChange}
+                onChange={(v) => onChange(v)}
+            />
+        );
+    }
+
+    if (selector.kind === 'period') {
+        const current = (value as PeriodValue) ?? selector.default;
+        return (
+            <PeriodControl
+                selector={selector}
+                value={current}
+                onChange={(v) => onChange(v)}
             />
         );
     }
@@ -704,6 +736,7 @@ function InstrumentPickerControl({ selector, value, onChange }: InstrumentPicker
                         initial={value}
                         filterType={selector.filterType}
                         title={selector.pickerTitle ?? 'Выберите инструменты'}
+                        maxItems={selector.maxItems ?? 6}
                         onConfirm={(tickers) => {
                             onChange(tickers);
                             setPickerOpen(false);
@@ -713,5 +746,154 @@ function InstrumentPickerControl({ selector, value, onChange }: InstrumentPicker
                 </Suspense>
             )}
         </div>
+    );
+}
+
+// ────────────────────────────────────────────────────────────────────
+// PeriodControl — toggle между preset (1M/3M/6M/1Y/2Y/All) и custom date range.
+// ────────────────────────────────────────────────────────────────────
+
+interface PeriodControlProps {
+    selector: Extract<CsvSelector, { kind: 'period' }>;
+    value: PeriodValue;
+    onChange: (v: PeriodValue) => void;
+}
+
+function PeriodControl({ selector, value, onChange }: PeriodControlProps) {
+    const isRange = value.type === 'range';
+
+    // Today as default `to`, 1 year ago as `from` для smooth UX когда юзер
+    // первый раз переключается в Range mode.
+    const defaultRange = useMemo(() => {
+        const today = new Date().toISOString().slice(0, 10);
+        const yearAgo = new Date(Date.now() - 365 * 86400_000).toISOString().slice(0, 10);
+        return { type: 'range' as const, from: yearAgo, to: today };
+    }, []);
+
+    return (
+        <div>
+            <label
+                style={{
+                    display: 'block',
+                    fontSize: 'var(--fs-xs)',
+                    fontWeight: 700,
+                    color: 'var(--text-secondary)',
+                    marginBottom: 6,
+                }}
+            >
+                {selector.label}
+            </label>
+
+            {/* Tabs: Period preset vs Date range */}
+            <div style={{ display: 'flex', gap: 4, marginBottom: 10 }}>
+                <button
+                    type="button"
+                    onClick={() =>
+                        onChange({
+                            type: 'preset',
+                            value: selector.presets[selector.presets.length - 2]?.value ?? selector.presets[0].value,
+                        })
+                    }
+                    style={tabStyle(!isRange)}
+                >
+                    Период
+                </button>
+                <button
+                    type="button"
+                    onClick={() => onChange(isRange ? value : defaultRange)}
+                    style={tabStyle(isRange)}
+                >
+                    Даты
+                </button>
+            </div>
+
+            {/* Preset chips */}
+            {value.type === 'preset' && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {selector.presets.map((p) => {
+                        const active = value.value === p.value;
+                        return (
+                            <button
+                                key={p.value}
+                                type="button"
+                                onClick={() => onChange({ type: 'preset', value: p.value })}
+                                style={{
+                                    padding: '6px 12px',
+                                    background: active ? 'var(--accent)' : 'var(--bg-secondary)',
+                                    color: active ? 'var(--text-inverse)' : 'var(--text-primary)',
+                                    border: '1.5px solid var(--text-primary)',
+                                    borderRadius: 999,
+                                    fontSize: 'var(--fs-sm)',
+                                    fontWeight: 600,
+                                    cursor: 'pointer',
+                                }}
+                            >
+                                {p.label}
+                            </button>
+                        );
+                    })}
+                </div>
+            )}
+
+            {/* Date range inputs */}
+            {value.type === 'range' && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                    <DateInput
+                        label="С"
+                        value={value.from}
+                        onChange={(d) => onChange({ type: 'range', from: d, to: value.to })}
+                    />
+                    <span style={{ color: 'var(--text-muted)' }}>—</span>
+                    <DateInput
+                        label="По"
+                        value={value.to}
+                        onChange={(d) => onChange({ type: 'range', from: value.from, to: d })}
+                    />
+                </div>
+            )}
+        </div>
+    );
+}
+
+function tabStyle(active: boolean): React.CSSProperties {
+    return {
+        padding: '4px 12px',
+        background: active ? 'var(--text-primary)' : 'transparent',
+        color: active ? 'var(--bg-primary)' : 'var(--text-primary)',
+        border: '1.5px solid var(--text-primary)',
+        borderRadius: 8,
+        fontSize: 'var(--fs-xs)',
+        fontWeight: 700,
+        cursor: 'pointer',
+    };
+}
+
+function DateInput({
+    label,
+    value,
+    onChange,
+}: {
+    label: string;
+    value: string;
+    onChange: (v: string) => void;
+}) {
+    return (
+        <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 2 }}>
+            <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)' }}>{label}</span>
+            <input
+                type="date"
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                style={{
+                    padding: '6px 10px',
+                    background: 'var(--bg-secondary)',
+                    border: '1.5px solid var(--text-primary)',
+                    borderRadius: 8,
+                    color: 'var(--text-primary)',
+                    fontSize: 'var(--fs-sm)',
+                    fontWeight: 600,
+                }}
+            />
+        </span>
     );
 }

@@ -44,6 +44,48 @@ def _parse_layers(layers: str | None, default: list[str], allowed: set[str]) -> 
     return parsed or default
 
 
+# Hard cap на multi-value пикеры — backend дублирует UI-лимит чтоб защитить
+# от monster-ZIP'ов даже если кто-то обойдёт UI (curl напрямую).
+MAX_MULTI_VALUES = 6
+
+
+def _cap_list(items: list, name: str) -> list:
+    """Применяет жёсткий cap. При превышении — HTTP 400."""
+    if len(items) > MAX_MULTI_VALUES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Слишком много значений в {name} (макс. {MAX_MULTI_VALUES})",
+        )
+    return items
+
+
+def _date_range_clause(
+    days: int | None,
+    period_from: str | None,
+    period_to: str | None,
+    date_column: str = "trade_date",
+) -> tuple[str, dict]:
+    """
+    Возвращает SQL фрагмент + params dict для фильтрации по диапазону дат.
+
+    Приоритет:
+      1. period_from + period_to → BETWEEN (custom range mode)
+      2. period_from → >= (open-ended)
+      3. days → >= CURRENT_DATE - days (preset mode)
+      4. ничего → '' пустой clause (вся история)
+    """
+    if period_from and period_to:
+        return f"AND {date_column} BETWEEN :_pfrom AND :_pto", {
+            "_pfrom": period_from,
+            "_pto": period_to,
+        }
+    if period_from:
+        return f"AND {date_column} >= :_pfrom", {"_pfrom": period_from}
+    if days:
+        return f"AND {date_column} >= CURRENT_DATE - :_pdays", {"_pdays": days}
+    return "", {}
+
+
 # ════════════════════════════════════════════════════════════════════
 # Heatmap — все акции
 # ════════════════════════════════════════════════════════════════════
@@ -79,7 +121,9 @@ def export_heatmap(
 def export_breadth(
     ema: str = Query("200", description="EMA-период(ы), comma-sep: 50,100,200"),
     universe: str = Query("imoex", description="all|imoex|all_usd|imoex_usd, comma-sep"),
-    days: int = Query(365, ge=1, le=3650),
+    days: int | None = Query(None, ge=1, le=3650),
+    period_from: str | None = Query(None),
+    period_to: str | None = Query(None),
     layers: str | None = Query(None, description="history,stocks"),
     user: User = Depends(require_pro),
     db: Session = Depends(get_db),
@@ -89,7 +133,7 @@ def export_breadth(
       - history: timeseries % акций выше EMA (по дням)
       - stocks: snapshot всех акций с current price, EMA, is_above, diff_pct
     """
-    # Parse multi-values.
+    # Parse multi-values + cap.
     ema_list = []
     for e in ema.split(","):
         try:
@@ -98,26 +142,31 @@ def export_breadth(
                 ema_list.append(v)
         except ValueError:
             pass
+    ema_list = _cap_list(ema_list, "ema")
     if not ema_list:
         raise HTTPException(status_code=400, detail="ema invalid")
 
-    universe_list = [
-        u.strip() for u in universe.split(",")
-        if u.strip() in ("all", "imoex", "all_usd", "imoex_usd")
-    ]
+    universe_list = _cap_list(
+        [u.strip() for u in universe.split(",")
+         if u.strip() in ("all", "imoex", "all_usd", "imoex_usd")],
+        "universe",
+    )
     if not universe_list:
         raise HTTPException(status_code=400, detail="universe invalid")
 
     selected = _parse_layers(layers, ["history"], {"history", "stocks"})
 
+    effective_days = days if (days is not None or period_from) else 365
+    date_clause, date_params = _date_range_clause(effective_days, period_from, period_to)
+
     def history_data(e: int, u: str):
-        rows = db.execute(text("""
+        rows = db.execute(text(f"""
             SELECT trade_date, percent_above, count_above, count_total
             FROM breadth_history
             WHERE ema_period = :ema AND universe = :universe
-              AND trade_date >= CURRENT_DATE - :days
+              {date_clause}
             ORDER BY trade_date ASC
-        """), {"ema": e, "universe": u, "days": days}).mappings().all()
+        """), {"ema": e, "universe": u, **date_params}).mappings().all()
         return [dict(r) for r in rows], ["trade_date", "percent_above",
                                           "count_above", "count_total"]
 
@@ -399,21 +448,29 @@ def export_buffett(
 @router.get("/funds-money.csv")
 def export_funds_money(
     category: str = Query("money_market", description="comma-sep для нескольких"),
-    days: int = Query(365, ge=1, le=3650),
+    days: int | None = Query(None, ge=1, le=3650),
+    period_from: str | None = Query(None),
+    period_to: str | None = Query(None),
     funds: str | None = Query(None, description="Comma-sep tickers фондов"),
     user: User = Depends(require_pro),
     db: Session = Depends(get_db),
 ):
     """NAV history фондов с multi-category support."""
-    cat_list = [
-        c.strip() for c in category.split(",")
-        if c.strip() in ("money_market", "stocks", "bonds", "gold")
-    ]
+    cat_list = _cap_list(
+        [c.strip() for c in category.split(",")
+         if c.strip() in ("money_market", "stocks", "bonds", "gold")],
+        "category",
+    )
     if not cat_list:
         raise HTTPException(status_code=400, detail="category invalid")
 
+    effective_days = days if (days is not None or period_from) else 365
+    date_clause, date_params = _date_range_clause(
+        effective_days, period_from, period_to, date_column="fd.trade_date",
+    )
+
     funds_filter = ""
-    base_params: dict = {"days": days}
+    base_params: dict = {**date_params}
     if funds:
         ticker_list = [t.strip().upper() for t in funds.split(",") if t.strip()]
         if ticker_list:
@@ -428,7 +485,7 @@ def export_funds_money(
             FROM fund_data fd
             JOIN funds f ON f.fund_id = fd.fund_id
             WHERE f.category = :cat
-              AND fd.trade_date >= CURRENT_DATE - :days
+              {date_clause}
               {funds_filter}
             ORDER BY fd.trade_date ASC, f.ticker ASC
         """), {**base_params, "cat": cat}).mappings().all()
@@ -507,7 +564,9 @@ def export_oi(
     instrument: str = Query(..., description="Тикер ИЛИ comma-sep: SR,GZ,MX"),
     clgroup: str = Query("YUR", description="YUR|FIZ, comma-sep для обоих"),
     interval: str = Query("24", description="5/60/24, comma-sep"),
-    days: int = Query(365, ge=1, le=3650),
+    days: int | None = Query(None, ge=1, le=3650),
+    period_from: str | None = Query(None, description="ISO date YYYY-MM-DD (range mode)"),
+    period_to: str | None = Query(None, description="ISO date YYYY-MM-DD (range mode)"),
     user: User = Depends(require_pro),
     db: Session = Depends(get_db),
 ):
@@ -520,12 +579,18 @@ def export_oi(
 
     Колонки: дата + время + open_interest + pos_long/short + участники.
     """
-    # Parse multi-values.
-    inst_list = [i.strip().upper() for i in instrument.split(",") if i.strip()]
+    # Parse multi-values + cap.
+    inst_list = _cap_list(
+        [i.strip().upper() for i in instrument.split(",") if i.strip()],
+        "instrument",
+    )
     if not inst_list:
         raise HTTPException(status_code=400, detail="instrument required")
 
-    cl_list = [c.strip().upper() for c in clgroup.split(",") if c.strip() in ("YUR", "FIZ")]
+    cl_list = _cap_list(
+        [c.strip().upper() for c in clgroup.split(",") if c.strip() in ("YUR", "FIZ")],
+        "clgroup",
+    )
     if not cl_list:
         raise HTTPException(status_code=400, detail="clgroup invalid")
 
@@ -537,11 +602,18 @@ def export_oi(
                 int_list.append(v)
         except ValueError:
             pass
+    int_list = _cap_list(int_list, "interval")
     if not int_list:
         raise HTTPException(status_code=400, detail="interval invalid")
 
+    # Effective days fallback если ни days, ни range не заданы.
+    effective_days = days if (days is not None or period_from) else 365
+    date_clause, date_params = _date_range_clause(
+        effective_days, period_from, period_to, date_column="tradedate",
+    )
+
     def fetch(inst: str, cl: str, iv: int):
-        rows = db.execute(text("""
+        rows = db.execute(text(f"""
             SELECT tradedate AS trade_date,
                    tradetime AS trade_time,
                    pos       AS open_interest,
@@ -549,9 +621,9 @@ def export_oi(
                    interval
             FROM open_interest
             WHERE sectype = :inst AND clgroup = :cl AND interval = :iv
-              AND tradedate >= CURRENT_DATE - :days
+              {date_clause}
             ORDER BY tradedate ASC, tradetime ASC
-        """), {"inst": inst, "cl": cl, "iv": iv, "days": days}).mappings().all()
+        """), {"inst": inst, "cl": cl, "iv": iv, **date_params}).mappings().all()
         return [dict(r) for r in rows], [
             "trade_date", "trade_time", "open_interest",
             "pos_long", "pos_short", "pos_long_num", "pos_short_num", "interval",

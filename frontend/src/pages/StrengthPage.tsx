@@ -19,6 +19,7 @@ import BreadthChart from '../components/strength/BreadthChart';
 import ChartLegend from '../components/chart/ChartLegend';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import CsvExportButton from '../components/export/CsvExportButton';
+import { periodToQuery } from '../utils/csvPeriod';
 import SectorDetail from '../components/strength/SectorDetail';
 import StrengthControls from '../components/strength/StrengthControls';
 import { computeChartTopLineY, getDatePillStyle } from '../components/chart/datePillLayout';
@@ -406,21 +407,25 @@ export default function StrengthPage() {
                                     ],
                                 },
                                 {
-                                    kind: 'number',
-                                    id: 'days',
-                                    label: 'Глубина истории',
-                                    default: PERIOD_DAYS[period],
-                                    min: 30,
-                                    max: 7000,
-                                    suffix: 'дней',
+                                    kind: 'period',
+                                    id: 'period',
+                                    label: 'Период',
+                                    default: { type: 'preset', value: period },
+                                    presets: [
+                                        { value: '6m', label: '6М', days: 180 },
+                                        { value: '1y', label: '1Г', days: 365 },
+                                        { value: '2y', label: '2Г', days: 730 },
+                                        { value: '5y', label: '5Л', days: 1825 },
+                                        { value: 'all', label: 'Всё', days: 7000 },
+                                    ],
                                 },
                             ],
                             params: [],
                             buildUrl: (layers, vals) => {
                                 const emas = (vals.emas as string[] ?? [String(emaPeriod)]).join(',');
                                 const universes = (vals.universes as string[] ?? [universe]).join(',');
-                                const days = vals.days as number ?? PERIOD_DAYS[period];
-                                return `/api/export/breadth.csv?ema=${emas}&universe=${universes}&days=${days}&layers=${layers.join(',')}`;
+                                const periodParam = periodToQuery(vals.period, PERIOD_DAYS[period]);
+                                return `/api/export/breadth.csv?ema=${emas}&universe=${universes}&${periodParam}&layers=${layers.join(',')}`;
                             },
                             buildFilename: () => `strength_${Date.now()}.zip`,
                         })}

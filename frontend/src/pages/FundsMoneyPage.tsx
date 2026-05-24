@@ -30,6 +30,7 @@ import { buildFundsMoneyTour } from '../data/tours/funds-money';
 import FlowsHistogram from '../components/funds/FlowsHistogram';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import CsvExportButton from '../components/export/CsvExportButton';
+import { periodToQuery } from '../utils/csvPeriod';
 import { useTierAccess } from '../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 
@@ -673,13 +674,19 @@ export default function FundsMoneyPage() {
                             options: CATEGORIES.map(c => ({ value: c.key, label: c.name })),
                           },
                           {
-                            kind: 'number',
-                            id: 'days',
-                            label: 'Глубина истории',
-                            default: periodDays[period] ?? 365,
-                            min: 30,
-                            max: 7000,
-                            suffix: 'дней',
+                            kind: 'period',
+                            id: 'period',
+                            label: 'Период',
+                            default: { type: 'preset', value: period },
+                            presets: [
+                              { value: '1m', label: '1М', days: 30 },
+                              { value: '3m', label: '3М', days: 90 },
+                              { value: '6m', label: '6М', days: 180 },
+                              { value: '1y', label: '1Г', days: 365 },
+                              { value: '2y', label: '2Г', days: 730 },
+                              { value: '3y', label: '3Г', days: 1095 },
+                              { value: 'all', label: 'Всё', days: 7000 },
+                            ],
                           },
                         ],
                         params: visibleTickers.length > 0
@@ -687,11 +694,11 @@ export default function FundsMoneyPage() {
                           : [],
                         buildUrl: (_layers, vals) => {
                           const cats = (vals.categories as string[] ?? [category]).join(',');
-                          const days = vals.days as number ?? periodDays[period] ?? 365;
+                          const periodParam = periodToQuery(vals.period, periodDays[period] ?? 365);
                           const fundsParam = visibleTickers.length > 0
                             ? `&funds=${encodeURIComponent(visibleTickers.join(','))}`
                             : '';
-                          return `/api/export/funds-money.csv?category=${cats}&days=${days}${fundsParam}`;
+                          return `/api/export/funds-money.csv?category=${cats}&${periodParam}${fundsParam}`;
                         },
                         buildFilename: () => `funds_${Date.now()}.zip`,
                       };
