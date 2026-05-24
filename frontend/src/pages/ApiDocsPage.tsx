@@ -64,16 +64,25 @@ interface EndpointDef {
     exampleResponse: string;
 }
 
-const ENDPOINTS: EndpointDef[] = [
+// Группы endpoint'ов для навигации — отображаются как секции в sidebar.
+interface EndpointGroup {
+    title: string;
+    endpoints: EndpointDef[];
+}
+
+const ENDPOINT_GROUPS: EndpointGroup[] = [
     {
-        id: 'heatmap',
-        method: 'GET',
-        path: '/api/v1/public/heatmap',
-        title: 'Карта рынка',
-        description:
-            'Снапшот всех акций: цена, изменение за разные периоды (день/неделя/месяц/год), оборот и капитализация. Источник — материализованное представление, обновляется ежедневно.',
-        params: [],
-        exampleResponse: `{
+        title: 'Снимки рынка',
+        endpoints: [
+            {
+                id: 'heatmap',
+                method: 'GET',
+                path: '/api/v1/public/heatmap',
+                title: 'Карта рынка',
+                description:
+                    'Снапшот всех акций: цена, изменение за разные периоды (день/неделя/месяц/год), оборот и капитализация. Источник — материализованное представление, обновляется ежедневно.',
+                params: [],
+                exampleResponse: `{
   "data": [
     {
       "sec_id": "SBER",
@@ -96,32 +105,100 @@ const ENDPOINTS: EndpointDef[] = [
     "as_of": "2026-05-24T08:15:32.451Z"
   }
 }`,
-    },
-    {
-        id: 'breadth',
-        method: 'GET',
-        path: '/api/v1/public/breadth/current',
-        title: 'Сила рынка — текущий снимок',
-        description:
-            'Процент акций торгующихся выше выбранной EMA. Классический индикатор широты рынка — выше 70% = перегрев, ниже 30% = перепроданность.',
-        params: [
-            {
-                name: 'ema',
-                type: 'int',
-                required: false,
-                description: 'Период EMA (от 10 до 500). По умолчанию 200.',
-                defaultValue: '200',
             },
             {
-                name: 'universe',
-                type: 'string',
-                required: false,
-                description: 'Вселенная акций: `imoex` (50 топ), `all` (все), `imoex_usd` или `all_usd` (в долларах).',
-                defaultValue: 'imoex',
-                enum: ['imoex', 'all', 'imoex_usd', 'all_usd'],
+                id: 'stock-quote',
+                method: 'GET',
+                path: '/api/v1/public/stocks/{ticker}/quote',
+                title: 'Котировка одной акции',
+                description:
+                    'Текущая цена + изменение за периоды по одному тикеру. Подмножество `/heatmap` отфильтрованное на сервере — экономит трафик для ботов которые тащат цену по одной бумаге.',
+                params: [
+                    {
+                        name: 'ticker',
+                        type: 'string',
+                        required: true,
+                        description: 'Тикер акции (path-параметр), например `SBER`.',
+                        defaultValue: 'SBER',
+                    },
+                ],
+                exampleResponse: `{
+  "data": {
+    "sec_id": "SBER",
+    "name": "Сбербанк",
+    "sector": "Финансы",
+    "price": 318.45,
+    "prev_close": 315.20,
+    "change_1d": 1.03,
+    "change_1w": 2.15,
+    "change_1m": -0.85,
+    "change_1y": 22.4,
+    "volume_1d": 28453210,
+    "value_1d": 9056782345,
+    "market_cap": 6850000000000
+  },
+  "meta": {
+    "ticker": "SBER",
+    "source": "MOEX (via Frame)",
+    "as_of": "2026-05-24T08:15:32.451Z"
+  }
+}`,
+            },
+            {
+                id: 'instruments',
+                method: 'GET',
+                path: '/api/v1/public/instruments',
+                title: 'Список инструментов',
+                description:
+                    'Все инструменты доступные на Фрейме — акции и фьючерсы с тикерами, sectype и торговыми группами MOEX.',
+                params: [
+                    {
+                        name: 'type',
+                        type: 'string',
+                        required: false,
+                        description: 'Фильтр: `stock` (акции) или `futures` (фьючерсы). По умолчанию — все.',
+                        enum: ['stock', 'futures'],
+                    },
+                ],
+                exampleResponse: `{
+  "data": [
+    {"sec_id": "SBER", "sectype": "SBER", "name": "Сбербанк", "type": "stock", "group": "TQBR"},
+    {"sec_id": "GAZP", "sectype": "GAZP", "name": "Газпром", "type": "stock", "group": "TQBR"},
+    {"sec_id": "SR-6.26", "sectype": "SR", "name": "Сбербанк фьючерс", "type": "futures", "group": "RTSI"}
+  ],
+  "count": 287
+}`,
             },
         ],
-        exampleResponse: `{
+    },
+    {
+        title: 'Сила рынка',
+        endpoints: [
+            {
+                id: 'breadth-current',
+                method: 'GET',
+                path: '/api/v1/public/breadth/current',
+                title: 'Сила рынка — текущий снимок',
+                description:
+                    'Процент акций торгующихся выше выбранной EMA. Классический индикатор широты рынка — выше 70% = перегрев, ниже 30% = перепроданность.',
+                params: [
+                    {
+                        name: 'ema',
+                        type: 'int',
+                        required: false,
+                        description: 'Период EMA (от 10 до 500). По умолчанию 200.',
+                        defaultValue: '200',
+                    },
+                    {
+                        name: 'universe',
+                        type: 'string',
+                        required: false,
+                        description: 'Вселенная акций: `imoex` (50 топ), `all` (все), `imoex_usd` или `all_usd` (в долларах).',
+                        defaultValue: 'imoex',
+                        enum: ['imoex', 'all', 'imoex_usd', 'all_usd'],
+                    },
+                ],
+                exampleResponse: `{
   "data": {
     "trade_date": "2026-05-23",
     "percent_above": 54.2,
@@ -131,57 +208,78 @@ const ENDPOINTS: EndpointDef[] = [
   "ema_period": 200,
   "universe": "imoex"
 }`,
-    },
-    {
-        id: 'instruments',
-        method: 'GET',
-        path: '/api/v1/public/instruments',
-        title: 'Список инструментов',
-        description:
-            'Все инструменты доступные на Фрейме — акции и фьючерсы с тикерами, sectype и торговыми группами MOEX.',
-        params: [
-            {
-                name: 'type',
-                type: 'string',
-                required: false,
-                description: 'Фильтр: `stock` (акции) или `futures` (фьючерсы). По умолчанию — все.',
-                enum: ['stock', 'futures'],
             },
-        ],
-        exampleResponse: `{
+            {
+                id: 'breadth-history',
+                method: 'GET',
+                path: '/api/v1/public/breadth/history',
+                title: 'Сила рынка — история',
+                description:
+                    'Дневной timeseries Силы рынка за указанный период. Каждая точка — % акций выше EMA на эту дату.',
+                params: [
+                    {
+                        name: 'ema',
+                        type: 'int',
+                        required: false,
+                        description: 'Период EMA (10–500). По умолчанию 200.',
+                        defaultValue: '200',
+                    },
+                    {
+                        name: 'universe',
+                        type: 'string',
+                        required: false,
+                        description: 'Вселенная: `imoex`, `all`, `imoex_usd`, `all_usd`.',
+                        defaultValue: 'imoex',
+                        enum: ['imoex', 'all', 'imoex_usd', 'all_usd'],
+                    },
+                    {
+                        name: 'days',
+                        type: 'int',
+                        required: false,
+                        description: 'Глубина истории в днях (1–15000). По умолчанию 365.',
+                        defaultValue: '365',
+                    },
+                ],
+                exampleResponse: `{
   "data": [
-    {"sec_id": "SBER", "sectype": "SBER", "name": "Сбербанк", "type": "stock", "group": "TQBR"},
-    {"sec_id": "GAZP", "sectype": "GAZP", "name": "Газпром", "type": "stock", "group": "TQBR"},
-    {"sec_id": "SR-6.26", "sectype": "SR", "name": "Сбербанк фьючерс", "type": "futures", "group": "RTSI"}
+    {"trade_date": "2025-05-24", "percent_above": 48.2, "count_above": 23, "count_total": 48},
+    {"trade_date": "2025-05-25", "percent_above": 50.0, "count_above": 24, "count_total": 48}
   ],
-  "count": 287
+  "ema_period": 200,
+  "universe": "imoex",
+  "count": 365
 }`,
-    },
-    {
-        id: 'oi',
-        method: 'GET',
-        path: '/api/v1/public/oi/current',
-        title: 'Открытый интерес — последняя точка',
-        description:
-            'Текущий открытый интерес по фьючерсу с разбивкой long/short по клиентским группам — физические или юридические лица.',
-        params: [
-            {
-                name: 'instrument',
-                type: 'string',
-                required: true,
-                description: 'Sectype фьючерса (например `SR` для Сбербанка, `BR` для Brent).',
-                defaultValue: 'SR',
-            },
-            {
-                name: 'clgroup',
-                type: 'string',
-                required: false,
-                description: '`YUR` (юрлица) или `FIZ` (физлица). По умолчанию `YUR`.',
-                defaultValue: 'YUR',
-                enum: ['YUR', 'FIZ'],
             },
         ],
-        exampleResponse: `{
+    },
+    {
+        title: 'Открытый интерес',
+        endpoints: [
+            {
+                id: 'oi-current',
+                method: 'GET',
+                path: '/api/v1/public/oi/current',
+                title: 'ОИ — последняя точка',
+                description:
+                    'Текущий открытый интерес по фьючерсу с разбивкой long/short по клиентским группам — физические или юридические лица.',
+                params: [
+                    {
+                        name: 'instrument',
+                        type: 'string',
+                        required: true,
+                        description: 'Sectype фьючерса (например `SR` для Сбербанка, `BR` для Brent).',
+                        defaultValue: 'SR',
+                    },
+                    {
+                        name: 'clgroup',
+                        type: 'string',
+                        required: false,
+                        description: '`YUR` (юрлица) или `FIZ` (физлица). По умолчанию `YUR`.',
+                        defaultValue: 'YUR',
+                        enum: ['YUR', 'FIZ'],
+                    },
+                ],
+                exampleResponse: `{
   "data": {
     "tradedate": "2026-05-23",
     "tradetime": "23:59:00",
@@ -194,48 +292,77 @@ const ENDPOINTS: EndpointDef[] = [
   "instrument": "SR",
   "clgroup": "YUR"
 }`,
-    },
-    {
-        id: 'funds',
-        method: 'GET',
-        path: '/api/v1/public/funds/categories',
-        title: 'БПИФы — категории и тикеры',
-        description:
-            'Список всех БПИФов которые отслеживает Фрейм, с категорией (денежный рынок, акции, облигации, золото) и подкатегорией.',
-        params: [],
-        exampleResponse: `{
-  "data": [
-    {"ticker": "LQDT", "name": "Ликвидность", "category": "money_market", "subcategory": null},
-    {"ticker": "SBMM", "name": "Сберегательный", "category": "money_market", "subcategory": null},
-    {"ticker": "TMOS", "name": "Тинькофф iMOEX", "category": "stocks", "subcategory": null}
-  ],
-  "count": 42
-}`,
-    },
-    {
-        id: 'seasonality',
-        method: 'GET',
-        path: '/api/v1/public/seasonality',
-        title: 'Сезонность — дневные свечи',
-        description:
-            'Daily-свечи для тикера за указанный период. Полезно для самостоятельного расчёта сезонности, бэктестов и аналитики.',
-        params: [
-            {
-                name: 'ticker',
-                type: 'string',
-                required: true,
-                description: 'Тикер акции (например `SBER`, `GAZP`, `LKOH`).',
-                defaultValue: 'SBER',
             },
             {
-                name: 'days',
-                type: 'int',
-                required: false,
-                description: 'Глубина истории в днях (30–15000). По умолчанию 3650 (10 лет).',
-                defaultValue: '3650',
+                id: 'oi-history',
+                method: 'GET',
+                path: '/api/v1/public/oi/history',
+                title: 'ОИ — история',
+                description:
+                    'Дневная история ОИ по фьючерсу за указанный период. Только daily (interval=24) — intraday данные слишком тяжёлые для programmatic access.',
+                params: [
+                    {
+                        name: 'instrument',
+                        type: 'string',
+                        required: true,
+                        description: 'Sectype фьючерса (`SR`, `GZ`, `MX`, `BR`, ...).',
+                        defaultValue: 'SR',
+                    },
+                    {
+                        name: 'clgroup',
+                        type: 'string',
+                        required: false,
+                        description: '`YUR` или `FIZ`. По умолчанию `YUR`.',
+                        defaultValue: 'YUR',
+                        enum: ['YUR', 'FIZ'],
+                    },
+                    {
+                        name: 'days',
+                        type: 'int',
+                        required: false,
+                        description: 'Глубина истории в днях (1–3650). По умолчанию 365.',
+                        defaultValue: '365',
+                    },
+                ],
+                exampleResponse: `{
+  "data": [
+    {"trade_date": "2025-05-24", "trade_time": "23:59:00", "open_interest": 175820, "pos_long": 84210, "pos_short": 91610, "pos_long_num": 4321, "pos_short_num": 3987},
+    {"trade_date": "2025-05-25", "trade_time": "23:59:00", "open_interest": 178240, "pos_long": 85432, "pos_short": 92808, "pos_long_num": 4380, "pos_short_num": 4011}
+  ],
+  "instrument": "SR",
+  "clgroup": "YUR",
+  "count": 250
+}`,
             },
         ],
-        exampleResponse: `{
+    },
+    {
+        title: 'Свечи и сезонность',
+        endpoints: [
+            {
+                id: 'seasonality',
+                method: 'GET',
+                path: '/api/v1/public/seasonality',
+                title: 'Daily свечи акций',
+                description:
+                    'Daily-свечи для тикера за указанный период. Полезно для самостоятельного расчёта сезонности, бэктестов и аналитики.',
+                params: [
+                    {
+                        name: 'ticker',
+                        type: 'string',
+                        required: true,
+                        description: 'Тикер акции (например `SBER`, `GAZP`, `LKOH`).',
+                        defaultValue: 'SBER',
+                    },
+                    {
+                        name: 'days',
+                        type: 'int',
+                        required: false,
+                        description: 'Глубина истории в днях (30–15000). По умолчанию 3650 (10 лет).',
+                        defaultValue: '3650',
+                    },
+                ],
+                exampleResponse: `{
   "data": [
     {"trade_date": "2016-05-24", "open": 145.5, "high": 147.2, "low": 144.8, "close": 146.1, "volume": 12345678},
     {"trade_date": "2016-05-25", "open": 146.1, "high": 148.5, "low": 145.9, "close": 148.0, "volume": 14523890}
@@ -243,10 +370,213 @@ const ENDPOINTS: EndpointDef[] = [
   "ticker": "SBER",
   "count": 2503
 }`,
+            },
+        ],
+    },
+    {
+        title: 'Индикатор Баффетта',
+        endpoints: [
+            {
+                id: 'buffett-cap-gdp',
+                method: 'GET',
+                path: '/api/v1/public/buffett/cap-gdp',
+                title: 'Кап / ВВП',
+                description:
+                    'Рыночная капитализация MOEX / ВВП TTM × 100. Классический Buffett-индикатор. Cap — данные MOEX, GDP TTM — сумма последних 4 кварталов Росстата с forward-fill.',
+                params: [
+                    {
+                        name: 'days',
+                        type: 'int',
+                        required: false,
+                        description: 'Глубина истории в днях (30–15000). По умолчанию 3650 (10 лет).',
+                        defaultValue: '3650',
+                    },
+                ],
+                exampleResponse: `{
+  "data": [
+    {"trade_date": "2020-05-24", "market_cap": 35200, "gdp_ttm": 109800, "buffett_ratio_pct": 32.0586},
+    {"trade_date": "2020-05-25", "market_cap": 35450, "gdp_ttm": 109800, "buffett_ratio_pct": 32.2861}
+  ],
+  "meta": {
+    "indicator": "cap-gdp",
+    "unit": "ratio_pct",
+    "source_cap": "MOEX",
+    "source_gdp": "Росстат (TTM forward-fill)",
+    "count": 2503
+  }
+}`,
+            },
+            {
+                id: 'buffett-cap-m2',
+                method: 'GET',
+                path: '/api/v1/public/buffett/cap-m2',
+                title: 'Кап / M2',
+                description:
+                    'Отношение рыночной капитализации к денежной массе M2 (ЦБ РФ, monthly forward-fill). Альтернативная версия Buffett-индикатора для рынков с быстро растущей денежной массой.',
+                params: [
+                    {
+                        name: 'days',
+                        type: 'int',
+                        required: false,
+                        description: 'Глубина истории в днях (30–15000). По умолчанию 3650.',
+                        defaultValue: '3650',
+                    },
+                ],
+                exampleResponse: `{
+  "data": [
+    {"trade_date": "2020-05-24", "market_cap": 35200, "m2": 53800, "cap_m2_ratio": 0.654275},
+    {"trade_date": "2020-05-25", "market_cap": 35450, "m2": 53800, "cap_m2_ratio": 0.658921}
+  ],
+  "meta": {
+    "indicator": "cap-m2",
+    "unit": "ratio",
+    "source_cap": "MOEX",
+    "source_m2": "ЦБ РФ (monthly forward-fill)",
+    "count": 2503
+  }
+}`,
+            },
+        ],
+    },
+    {
+        title: 'Фонды (БПИФ)',
+        endpoints: [
+            {
+                id: 'funds-categories',
+                method: 'GET',
+                path: '/api/v1/public/funds/categories',
+                title: 'Все БПИФы — каталог',
+                description:
+                    'Список всех БПИФов которые отслеживает Фрейм, с категорией (денежный рынок, акции, облигации, золото) и подкатегорией.',
+                params: [],
+                exampleResponse: `{
+  "data": [
+    {"ticker": "LQDT", "name": "Ликвидность", "category": "money_market", "subcategory": null},
+    {"ticker": "SBMM", "name": "Сберегательный", "category": "money_market", "subcategory": null},
+    {"ticker": "TMOS", "name": "Тинькофф iMOEX", "category": "stocks", "subcategory": null}
+  ],
+  "count": 42
+}`,
+            },
+            {
+                id: 'fund-detail',
+                method: 'GET',
+                path: '/api/v1/public/funds/{ticker}',
+                title: 'Один фонд — детали',
+                description:
+                    'Метаданные фонда + текущая СЧА и цена пая + доходность за 1м/3м/6м/1г + топ-5 holdings. Если ticker не найден — 404.',
+                params: [
+                    {
+                        name: 'ticker',
+                        type: 'string',
+                        required: true,
+                        description: 'Тикер фонда (path-параметр), например `LQDT`, `SBMM`, `TMOS`.',
+                        defaultValue: 'LQDT',
+                    },
+                ],
+                exampleResponse: `{
+  "data": {
+    "fund_id": 12,
+    "ticker": "LQDT",
+    "name": "Ликвидность",
+    "category": "money_market",
+    "subcategory": null,
+    "uk_id": "VIM",
+    "last_nav": 285340000000.0,
+    "last_pay": 1.7821,
+    "last_date": "2026-05-23",
+    "return_1m": 1.21,
+    "return_3m": 3.65,
+    "return_6m": 7.42,
+    "return_1y": 14.85,
+    "top_holdings": [
+      {"name": "Депозиты на RUSFAR", "weight": 99.5},
+      {"name": "Денежные средства", "weight": 0.5}
+    ]
+  }
+}`,
+            },
+            {
+                id: 'fund-history',
+                method: 'GET',
+                path: '/api/v1/public/funds/{ticker}/history',
+                title: 'Один фонд — daily NAV/pay',
+                description:
+                    'Дневная история СЧА (nav) и цены пая (pay). На основе этого можно посчитать доходность, sharpe, drawdown, любые кастомные метрики и притоки/оттоки (через изменение СЧА с учётом цены пая).',
+                params: [
+                    {
+                        name: 'ticker',
+                        type: 'string',
+                        required: true,
+                        description: 'Тикер фонда (path-параметр).',
+                        defaultValue: 'LQDT',
+                    },
+                    {
+                        name: 'days',
+                        type: 'int',
+                        required: false,
+                        description: 'Глубина истории в днях (1–3650). По умолчанию 365.',
+                        defaultValue: '365',
+                    },
+                ],
+                exampleResponse: `{
+  "data": [
+    {"trade_date": "2025-05-24", "nav": 248530000000.0, "pay": 1.5510},
+    {"trade_date": "2025-05-25", "nav": 249120000000.0, "pay": 1.5528}
+  ],
+  "ticker": "LQDT",
+  "count": 250
+}`,
+            },
+        ],
+    },
+    {
+        title: 'Потоки ЦБ',
+        endpoints: [
+            {
+                id: 'cbr-flows',
+                method: 'GET',
+                path: '/api/v1/public/cbr-flows',
+                title: 'ОРФР — потоки участников',
+                description:
+                    'Данные ЦБ РФ по потокам биржевых торгов: кто покупает (физлица, банки, нерезиденты, фонды, …). Категории зависят от типа инструмента и периода — ЦБ изменяет состав отчётности.',
+                params: [
+                    {
+                        name: 'type',
+                        type: 'string',
+                        required: false,
+                        description: 'Тип инструмента: `stocks` (акции), `ofz` (ОФЗ), `fx` (валюты).',
+                        defaultValue: 'stocks',
+                        enum: ['stocks', 'ofz', 'fx'],
+                    },
+                    {
+                        name: 'years',
+                        type: 'int',
+                        required: false,
+                        description: 'Глубина истории в годах (1–30). По умолчанию 10.',
+                        defaultValue: '10',
+                    },
+                ],
+                exampleResponse: `{
+  "data": [
+    {"period_year": 2024, "period_label": "I квартал", "period_kind": "quarter", "period_end_date": "2024-03-31", "category": "retail", "value": 124.5},
+    {"period_year": 2024, "period_label": "I квартал", "period_kind": "quarter", "period_end_date": "2024-03-31", "category": "banks", "value": -45.2}
+  ],
+  "instrument_type": "stocks",
+  "years": 10,
+  "unit": "млрд руб.",
+  "count": 480
+}`,
+            },
+        ],
     },
 ];
 
-// Все секции на странице — для sidebar TOC.
+// Плоский массив всех endpoint'ов для backward-compat. Используется в EndpointBlock,
+// но сейчас iterate'имся через ENDPOINT_GROUPS.
+const ENDPOINTS: EndpointDef[] = ENDPOINT_GROUPS.flatMap((g) => g.endpoints);
+
+// Все секции на странице — для IntersectionObserver active-tracking.
 const SECTIONS = [
     { id: 'intro', label: 'Введение' },
     { id: 'auth', label: 'Аутентификация' },
@@ -273,14 +603,26 @@ function renderWithBackticks(text: string): React.ReactNode {
     );
 }
 
-/** Построить URL запроса с query-параметрами. Пустые значения пропускаются. */
+/** Построить URL запроса с подстановкой path-плейсхолдеров `{name}` и query-параметрами.
+ *  Параметр становится path-параметром если path содержит `{paramName}` —
+ *  в этом случае значение НЕ попадает в query string. */
 function buildUrl(path: string, params: Record<string, string>): string {
-    const filtered = Object.entries(params).filter(([, v]) => v.trim() !== '');
-    if (filtered.length === 0) return `${BASE_URL}${path}`;
-    const qs = filtered
+    let url = path;
+    const queryEntries: Array<[string, string]> = [];
+    Object.entries(params).forEach(([k, v]) => {
+        if (v.trim() === '') return;
+        const placeholder = `{${k}}`;
+        if (url.includes(placeholder)) {
+            url = url.replace(placeholder, encodeURIComponent(v));
+        } else {
+            queryEntries.push([k, v]);
+        }
+    });
+    // Если path-параметр не задан — оставляем placeholder, чтобы юзер увидел проблему.
+    const qs = queryEntries
         .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
         .join('&');
-    return `${BASE_URL}${path}?${qs}`;
+    return `${BASE_URL}${url}${qs ? `?${qs}` : ''}`;
 }
 
 /** Генерация code-example для языка. */
@@ -626,23 +968,24 @@ interface SidebarProps {
 }
 
 function Sidebar({ active }: SidebarProps) {
-    return (
-        <nav
-            className="api-sidebar"
-            aria-label="Навигация по документации"
+    const groupHeading = (label: string, marginTop = 16) => (
+        <div
+            style={{
+                fontSize: 'var(--fs-2xs)',
+                color: 'var(--text-muted)',
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                marginTop,
+                marginBottom: 8,
+            }}
         >
-            <div
-                style={{
-                    fontSize: 'var(--fs-2xs)',
-                    color: 'var(--text-muted)',
-                    fontWeight: 700,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em',
-                    marginBottom: 8,
-                }}
-            >
-                Документация
-            </div>
+            {label}
+        </div>
+    );
+    return (
+        <nav className="api-sidebar" aria-label="Навигация по документации">
+            {groupHeading('Документация', 0)}
             <a href="#intro" className={`api-toc-link ${active === 'intro' ? 'active' : ''}`}>
                 Введение
             </a>
@@ -655,27 +998,19 @@ function Sidebar({ active }: SidebarProps) {
             <a href="#errors" className={`api-toc-link ${active === 'errors' ? 'active' : ''}`}>
                 Ошибки
             </a>
-            <div
-                style={{
-                    fontSize: 'var(--fs-2xs)',
-                    color: 'var(--text-muted)',
-                    fontWeight: 700,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em',
-                    marginTop: 16,
-                    marginBottom: 8,
-                }}
-            >
-                Эндпоинты
-            </div>
-            {ENDPOINTS.map((ep) => (
-                <a
-                    key={ep.id}
-                    href={`#${ep.id}`}
-                    className={`api-toc-link ${active === ep.id ? 'active' : ''}`}
-                >
-                    {ep.title}
-                </a>
+            {ENDPOINT_GROUPS.map((group) => (
+                <Fragment key={group.title}>
+                    {groupHeading(group.title)}
+                    {group.endpoints.map((ep) => (
+                        <a
+                            key={ep.id}
+                            href={`#${ep.id}`}
+                            className={`api-toc-link ${active === ep.id ? 'active' : ''}`}
+                        >
+                            {ep.title}
+                        </a>
+                    ))}
+                </Fragment>
             ))}
         </nav>
     );
@@ -1095,15 +1430,31 @@ Authorization: Bearer pk_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`}
                         </div>
                     </section>
 
-                    {/* ════ Endpoints ════ */}
-                    {ENDPOINTS.map((ep) => (
-                        <EndpointBlock
-                            key={ep.id}
-                            ep={ep}
-                            apiKey={apiKey}
-                            lang={lang}
-                            onLangChange={setLang}
-                        />
+                    {/* ════ Endpoints — сгруппированы для navigability ════ */}
+                    {ENDPOINT_GROUPS.map((group) => (
+                        <Fragment key={group.title}>
+                            <h2
+                                style={{
+                                    marginTop: 56,
+                                    marginBottom: 0,
+                                    fontSize: 'var(--fs-2xl)',
+                                    fontWeight: 700,
+                                    color: 'var(--text-primary)',
+                                    letterSpacing: '-0.01em',
+                                }}
+                            >
+                                {group.title}
+                            </h2>
+                            {group.endpoints.map((ep) => (
+                                <EndpointBlock
+                                    key={ep.id}
+                                    ep={ep}
+                                    apiKey={apiKey}
+                                    lang={lang}
+                                    onLangChange={setLang}
+                                />
+                            ))}
+                        </Fragment>
                     ))}
 
                     {/* ════ Footer ════ */}
