@@ -242,8 +242,15 @@ async def fetch_cbonds_nav(session, cbonds_id: int, date_from: date, date_to: da
 # СОСТАВ ФОНДОВ (Cbonds API)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-async def fetch_cbonds_holdings(session, parent_fund_id: int) -> List[dict]:
-    """Получить состав фонда из Cbonds API."""
+async def fetch_cbonds_holdings(session, parent_fund_id: int) -> tuple[List[dict], str | None]:
+    """
+    Получить состав фонда из Cbonds API.
+
+    Returns:
+        (holdings, snapshot_date_iso). snapshot_date — дата от УК которую
+        возвращает Cbonds (поле 'date' в item). Может быть None если ответ
+        не содержит дату.
+    """
     url = f"{CBONDS_URL}/m/exchange_traded_funds/structure/global/json/{parent_fund_id}/?lang=rus"
     headers = {"Content-Type": "application/json; charset=UTF-8", "User-Agent": CBONDS_UA}
     body = {"quantity": {"limit": 50, "offset": 0}}
@@ -254,24 +261,47 @@ async def fetch_cbonds_holdings(session, parent_fund_id: int) -> List[dict]:
             # Дедуп по имени (Cbonds может вернуть дубли с пустым name)
             seen = set()
             result = []
+            snapshot_date = None
             for i in items:
                 name = str(i.get("asset_name") or i.get("name") or "Прочее").strip()
                 weight = float(i.get("weight", 0))
+                # Дата snapshot'а от УК — берём из первого item с непустой датой.
+                # У всех items должна быть одна дата (один snapshot).
+                if snapshot_date is None and i.get("date"):
+                    snapshot_date = i["date"][:10]  # YYYY-MM-DD из ISO
                 if weight > 0 and name not in seen:
                     seen.add(name)
                     result.append({"name": name, "weight": weight})
-            return result
+            return result, snapshot_date
     except Exception as e:
         log.warning(f"  Cbonds holdings {parent_fund_id}: {e}")
-        return []
+        return [], None
 
 
-def save_fund_holdings(engine, fund_id: int, holdings: List[dict]) -> int:
-    """Сохранить состав фонда в fund_holdings."""
+def save_fund_holdings(
+    engine,
+    fund_id: int,
+    holdings: List[dict],
+    snapshot_date: str | None = None,
+    source: str = "cbonds",
+) -> int:
+    """
+    Сохранить состав фонда в `fund_holdings` (current snapshot) И
+    в `fund_holdings_history` (append с датой).
+
+    Args:
+        snapshot_date: ISO YYYY-MM-DD дата к которой относится snapshot.
+            Если None — используется CURRENT_DATE (сегодня).
+        source: 'cbonds' / 'vim' / 'pervaya' etc. — для трекинга
+            источника данных в analytics.
+
+    History append идёт через INSERT ... ON CONFLICT DO NOTHING чтобы
+    повторные запуски с тем же snapshot'ом не плодили дубли.
+    """
     if not holdings:
         return 0
     with engine.connect() as conn:
-        # Удаляем старый состав
+        # 1. Current snapshot — DELETE + INSERT, как раньше.
         conn.execute(text("DELETE FROM fund_holdings WHERE fund_id = :fid"), {"fid": fund_id})
         n = 0
         for h in holdings:
@@ -280,6 +310,32 @@ def save_fund_holdings(engine, fund_id: int, holdings: List[dict]) -> int:
                 VALUES (:fid, :name, :weight, NOW())
             """), {"fid": fund_id, "name": h["name"], "weight": h["weight"]})
             n += 1
+
+        # 2. History append — идемпотентно через UNIQUE constraint.
+        # Если snapshot_date не передана — fallback на сегодня (для парсеров
+        # которые не отдают дату).
+        date_clause = ":snap_date" if snapshot_date else "CURRENT_DATE"
+        params_base: dict = {"fid": fund_id, "source": source}
+        if snapshot_date:
+            params_base["snap_date"] = snapshot_date
+
+        for h in holdings:
+            conn.execute(text(f"""
+                INSERT INTO fund_holdings_history
+                    (fund_id, asset_name, weight, positions, amount_rub,
+                     snapshot_date, source, created_at)
+                VALUES
+                    (:fid, :name, :weight, :positions, :amount_rub,
+                     {date_clause}, :source, NOW())
+                ON CONFLICT (fund_id, asset_name, snapshot_date) DO NOTHING
+            """), {
+                **params_base,
+                "name": h["name"],
+                "weight": h["weight"],
+                "positions": h.get("positions"),
+                "amount_rub": h.get("amount_rub"),
+            })
+
         conn.commit()
         return n
 
@@ -308,10 +364,15 @@ async def update_all_holdings(engine) -> int:
             return 0
 
         for fund_id, ticker, parent_id in rows:
-            holdings = await fetch_cbonds_holdings(session, parent_id)
+            holdings, snapshot_date = await fetch_cbonds_holdings(session, parent_id)
             if holdings:
-                saved = save_fund_holdings(engine, fund_id, holdings)
-                log.info(f"  {ticker:12s} fund_id={fund_id:>6d}: {saved} позиций")
+                saved = save_fund_holdings(
+                    engine, fund_id, holdings,
+                    snapshot_date=snapshot_date,
+                    source="cbonds",
+                )
+                snap_info = f" snap={snapshot_date}" if snapshot_date else ""
+                log.info(f"  {ticker:12s} fund_id={fund_id:>6d}: {saved} позиций{snap_info}")
                 total_saved += saved
             else:
                 log.debug(f"  {ticker:12s} fund_id={fund_id:>6d}: нет данных")
@@ -319,6 +380,74 @@ async def update_all_holdings(engine) -> int:
 
     log.info(f"\n✅ Состав ГОТОВО: {total_saved} позиций для {len(rows)} фондов")
     return total_saved
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# СОСТАВ ФОНДОВ — ВИМ (прямой парсинг сайта, daily T+1)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def update_vim_holdings(engine) -> int:
+    """
+    Обновить состав ВИМ-фондов (LQDT, EQMX, GOLD, OBLG, ESGE, CNYM)
+    через прямой парсинг wealthim.ru.
+
+    Преимущество vs Cbonds:
+      - daily (T+1) vs monthly (T-30)
+      - positions (штуки) vs только weight (%)
+
+    Стратегия записи:
+      - source='vim' в history
+      - Для тех же fund_id+snapshot_date ВИМ записи затрут cbonds через
+        ON CONFLICT DO UPDATE (мы upgrade'им: weight остаётся, добавляем
+        positions, source='vim'). Точнее: записи ВИМ и Cbonds могут иметь
+        разные asset_name (форматы отличаются) — поэтому это не conflict,
+        а **дополнение** snapshot'а. UI сможет filter'нуть по source если
+        нужно.
+
+    Возвращает суммарное число загруженных строк.
+    """
+    from Funds.parsers.vim_parser import fetch_vim_holdings, VIM_FUND_SLUGS
+
+    log.info("")
+    log.info("=" * 60)
+    log.info("📊 ОБНОВЛЕНИЕ ВИМ (прямой парсинг wealthim.ru)")
+    log.info("=" * 60)
+
+    # Берём fund_id'ы для всех ВИМ-тикеров.
+    with engine.connect() as conn:
+        rows = conn.execute(text("""
+            SELECT fund_id, ticker FROM funds
+            WHERE ticker = ANY(:tickers)
+        """), {"tickers": list(VIM_FUND_SLUGS.keys())}).fetchall()
+
+    if not rows:
+        log.info("  Нет ВИМ-фондов в БД (проверь tickers в `funds` table)")
+        return 0
+
+    total = 0
+    for fund_id, ticker in rows:
+        try:
+            snap_date, holdings = fetch_vim_holdings(ticker)
+        except Exception as e:
+            log.warning(f"  {ticker:8s}: parser error: {e}")
+            continue
+
+        if not holdings:
+            log.debug(f"  {ticker:8s}: пустой ответ")
+            continue
+
+        saved = save_fund_holdings(
+            engine,
+            fund_id,
+            holdings,
+            snapshot_date=snap_date.isoformat() if snap_date else None,
+            source="vim",
+        )
+        log.info(f"  {ticker:8s} fund_id={fund_id:>6d}: {saved} позиций (snap={snap_date})")
+        total += saved
+
+    log.info(f"\n✅ ВИМ ГОТОВО: {total} позиций для {len(rows)} фондов")
+    return total
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -381,7 +510,16 @@ async def update_all_funds(force: bool = False) -> Dict[int, int]:
             await asyncio.sleep(0.5)  # Не спамим Cbonds
 
     # Состав фондов (раз в день)
+    # 1) Cbonds — все фонды, monthly snapshot, weight only.
     await update_all_holdings(engine)
+    # 2) ВИМ — 6 фондов, daily T+1, с positions (штуки).
+    #    Запускается ПОСЛЕ Cbonds. Из-за разных asset_name форматов это
+    #    дополнение, не overwrite — в UI можно отфильтровать по source.
+    try:
+        update_vim_holdings(engine)
+    except Exception as e:
+        # ВИМ-парсер не должен ломать основной цикл fetch'а NAV.
+        log.warning(f"  ВИМ parser failed: {e}", exc_info=True)
 
     engine.dispose()
 
