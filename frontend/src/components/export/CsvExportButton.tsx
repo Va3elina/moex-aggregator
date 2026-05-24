@@ -55,7 +55,9 @@ export default function CsvExportButton({
             return;
         }
 
-        track('csv_export_click', { indicator });
+        // Используем существующий 'chart_export' event-type с extra payload —
+        // не плодим новый enum-вариант ради subdivision.
+        track('chart_export', { indicator, format: 'csv' });
 
         try {
             const resp = await apiFetch(url);
