@@ -32,6 +32,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
+# Non-root user для API-сервиса (security hardening: если RCE в FastAPI или
+# зависимости, attacker остаётся под uid=1000 — нужен kernel/docker CVE чтобы
+# escape'нуться к root). orchestrator и tg-bot продолжают работать как root
+# через docker-compose override (они batch-процессы без HTTP exposure).
+RUN useradd --system --uid 1000 --no-create-home --shell /usr/sbin/nologin appuser
+
 # Python зависимости
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
@@ -60,4 +66,9 @@ HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
 # Запуск
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+# --workers 3: 4-ядерная VM, 3 worker'a используют 75% CPU (4-й оставляем
+# OS/Postgres/Redis). Каждый worker ~200MB RSS → ~600MB total, безопасно на
+# 4GB RAM. Подтверждено аудитом 2026-05-24.
+# Non-root запуск выставляется через docker-compose `user: 1000:1000` (только
+# для api-сервиса, orchestrator/tg-bot остаются root для backward-compat).
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "3"]

@@ -44,6 +44,11 @@ services:
   api:
     build: .
     restart: always
+    # Security hardening: API-сервис под non-root (appuser создан в Dockerfile).
+    # Если RCE в FastAPI/uvicorn/зависимости → атакующий остаётся uid=1000,
+    # нужен kernel/docker CVE для escape'а к root. orchestrator и tg-bot
+    # остаются root — batch-процессы без HTTP exposure.
+    user: "1000:1000"
     depends_on:
       db:
         condition: service_healthy
