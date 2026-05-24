@@ -92,13 +92,22 @@ def setup_logging():
     ch.setFormatter(console_fmt)
     root.addHandler(ch)
 
-    fh = logging.FileHandler(
-        LOG_DIR / f"funds_{datetime.now():%Y%m%d}.log",
-        encoding='utf-8'
-    )
-    fh.setLevel(logging.DEBUG)
-    fh.setFormatter(detailed_fmt)
-    root.addHandler(fh)
+    # File handler — best-effort. На read-only rootfs (production API
+    # контейнер) пропускаем file logging и работаем только через stdout.
+    # Docker логи всё равно зафиксируют вывод.
+    try:
+        LOG_DIR.mkdir(parents=True, exist_ok=True)
+        fh = logging.FileHandler(
+            LOG_DIR / f"funds_{datetime.now():%Y%m%d}.log",
+            encoding='utf-8'
+        )
+        fh.setLevel(logging.DEBUG)
+        fh.setFormatter(detailed_fmt)
+        root.addHandler(fh)
+    except OSError:
+        # Read-only filesystem (production) — silent skip.
+        # stdout handler уже подключён выше, лог не потеряется.
+        pass
 
     fh_err = logging.FileHandler(
         LOG_DIR / f"funds_errors_{datetime.now():%Y%m%d}.log",
