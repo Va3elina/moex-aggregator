@@ -10,10 +10,12 @@
  *
  * Config-driven — каждая страница декларирует layers + selectors + builders.
  */
-import { useState, useEffect, useMemo } from 'react';
-import { X, Download, FileText, FileArchive, Check } from 'lucide-react';
+import { useState, useEffect, useMemo, lazy, Suspense } from 'react';
+import { X, Download, FileText, FileArchive, Check, Plus } from 'lucide-react';
 import { apiFetch } from '../../services/api';
 import { useAnalytics } from '../../contexts/AnalyticsContext';
+
+const MultiInstrumentSearchModal = lazy(() => import('./MultiInstrumentSearchModal'));
 
 export interface CsvLayer {
     id: string;
@@ -27,7 +29,7 @@ export interface CsvSelectOption {
     label: string;
 }
 
-/** Один из 3 типов селекторов в модалке. */
+/** Один из 4 типов селекторов в модалке. */
 export type CsvSelector =
     | {
         kind: 'select';
@@ -42,7 +44,6 @@ export type CsvSelector =
         label: string;
         options: CsvSelectOption[];
         default: string[];
-        /** Подсказка после selector'а: «Несколько → ZIP с отдельным CSV per item». */
         hint?: string;
     }
     | {
@@ -53,6 +54,18 @@ export type CsvSelector =
         min?: number;
         max?: number;
         suffix?: string;
+    }
+    | {
+        // Picker — открывает MultiInstrumentSearchModal для выбора любого
+        // инструмента из БД (550 шт). В отличие от multiselect (фиксированный
+        // список) — даёт неограниченный выбор + поиск + категории.
+        kind: 'instrument-picker';
+        id: string;
+        label: string;
+        default: string[];
+        hint?: string;
+        filterType?: 'stock' | 'futures' | 'no-futures';
+        pickerTitle?: string;
     };
 
 export interface CsvExportConfig {
@@ -134,7 +147,7 @@ export default function CsvExportModal({ config, onClose }: Props) {
     const totalCombinations = useMemo(() => {
         let count = selectedLayers.size;
         for (const s of config.selectors) {
-            if (s.kind === 'multiselect') {
+            if (s.kind === 'multiselect' || s.kind === 'instrument-picker') {
                 const v = values[s.id];
                 if (Array.isArray(v)) count *= Math.max(1, v.length);
             }
@@ -532,6 +545,17 @@ function SelectorControl({ selector, value, onChange }: SelectorControlProps) {
         );
     }
 
+    if (selector.kind === 'instrument-picker') {
+        const current = Array.isArray(value) ? value : selector.default;
+        return (
+            <InstrumentPickerControl
+                selector={selector}
+                value={current}
+                onChange={onChange}
+            />
+        );
+    }
+
     // number
     return (
         <div>
@@ -570,6 +594,124 @@ function SelectorControl({ selector, value, onChange }: SelectorControlProps) {
                     </span>
                 )}
             </div>
+        </div>
+    );
+}
+
+// ────────────────────────────────────────────────────────────────────
+// InstrumentPickerControl — для 'instrument-picker' kind.
+// Chip-row выбранных + "+ Добавить" button → открывает picker modal.
+// ────────────────────────────────────────────────────────────────────
+
+interface InstrumentPickerProps {
+    selector: Extract<CsvSelector, { kind: 'instrument-picker' }>;
+    value: string[];
+    onChange: (v: string[]) => void;
+}
+
+function InstrumentPickerControl({ selector, value, onChange }: InstrumentPickerProps) {
+    const [pickerOpen, setPickerOpen] = useState(false);
+
+    const removeTicker = (ticker: string) => {
+        onChange(value.filter((t) => t !== ticker));
+    };
+
+    return (
+        <div>
+            <label
+                style={{
+                    display: 'block',
+                    fontSize: 'var(--fs-xs)',
+                    fontWeight: 700,
+                    color: 'var(--text-secondary)',
+                    marginBottom: 6,
+                }}
+            >
+                {selector.label}
+            </label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                {value.map((ticker) => (
+                    <span
+                        key={ticker}
+                        style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            padding: '4px 8px 4px 12px',
+                            background: 'var(--accent)',
+                            color: 'var(--text-inverse)',
+                            border: '1.5px solid var(--text-primary)',
+                            borderRadius: 999,
+                            fontSize: 'var(--fs-sm)',
+                            fontWeight: 600,
+                        }}
+                    >
+                        {ticker}
+                        <button
+                            type="button"
+                            onClick={() => removeTicker(ticker)}
+                            aria-label={`Убрать ${ticker}`}
+                            style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: 'inherit',
+                                cursor: 'pointer',
+                                padding: 0,
+                                display: 'inline-flex',
+                                opacity: 0.85,
+                            }}
+                        >
+                            <X size={12} strokeWidth={2.5} />
+                        </button>
+                    </span>
+                ))}
+                <button
+                    type="button"
+                    onClick={() => setPickerOpen(true)}
+                    style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 4,
+                        padding: '6px 12px',
+                        background: 'var(--bg-secondary)',
+                        color: 'var(--text-primary)',
+                        border: '1.5px dashed var(--text-primary)',
+                        borderRadius: 999,
+                        fontSize: 'var(--fs-sm)',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                    }}
+                >
+                    <Plus size={12} strokeWidth={2.5} />
+                    {value.length === 0 ? 'Выбрать' : 'Изменить'}
+                </button>
+            </div>
+            {selector.hint && (
+                <div
+                    style={{
+                        marginTop: 6,
+                        fontSize: 'var(--fs-2xs)',
+                        color: 'var(--text-muted)',
+                        lineHeight: 1.4,
+                    }}
+                >
+                    {selector.hint}
+                </div>
+            )}
+            {pickerOpen && (
+                <Suspense fallback={null}>
+                    <MultiInstrumentSearchModal
+                        initial={value}
+                        filterType={selector.filterType}
+                        title={selector.pickerTitle ?? 'Выберите инструменты'}
+                        onConfirm={(tickers) => {
+                            onChange(tickers);
+                            setPickerOpen(false);
+                        }}
+                        onClose={() => setPickerOpen(false)}
+                    />
+                </Suspense>
+            )}
         </div>
     );
 }

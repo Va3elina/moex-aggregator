@@ -831,18 +831,13 @@ export default function SeasonalityPage() {
               ],
               selectors: [
                 {
-                  kind: 'multiselect',
+                  kind: 'instrument-picker',
                   id: 'tickers',
                   label: 'Тикеры (можно несколько)',
                   default: [selectedStock],
+                  filterType: 'stock',
+                  pickerTitle: 'Выберите акции для экспорта',
                   hint: 'Несколько → ZIP с отдельным CSV per ticker × layer',
-                  // Топ-10 ликвидных + текущий тикер. Можно расширить — но
-                  // chip-row становится длинной. Юзер выбирает основные.
-                  options: Array.from(new Set([
-                    selectedStock,
-                    'SBER', 'GAZP', 'LKOH', 'GMKN', 'YDEX',
-                    'TATN', 'NVTK', 'SNGS', 'MGNT', 'ROSN',
-                  ])).map(t => ({ value: t, label: t })),
                 },
               ],
               params: [],

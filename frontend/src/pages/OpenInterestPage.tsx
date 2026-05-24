@@ -640,6 +640,15 @@ export default function OpenInterestPage() {
                 }],
                 selectors: [
                   {
+                    kind: 'instrument-picker',
+                    id: 'instruments',
+                    label: 'Инструменты (фьючерсы)',
+                    default: [selectedInstrument],
+                    filterType: 'futures',
+                    pickerTitle: 'Выберите фьючерсы для экспорта',
+                    hint: 'Несколько → ZIP с CSV per инструмент',
+                  },
+                  {
                     kind: 'multiselect',
                     id: 'clgroups',
                     label: 'Категория участников',
@@ -672,16 +681,15 @@ export default function OpenInterestPage() {
                     suffix: 'дней',
                   },
                 ],
-                params: [
-                  { label: 'Инструмент', value: `${instrumentName} (${selectedInstrument})` },
-                ],
+                params: [],
                 buildUrl: (_layers, vals) => {
+                  const insts = (vals.instruments as string[] ?? [selectedInstrument]).join(',');
                   const cls = (vals.clgroups as string[] ?? [clgroup]).join(',');
                   const ints = (vals.intervals as string[] ?? [String(interval)]).join(',');
                   const days = vals.days as number ?? periodDays[period] ?? 365;
-                  return `/api/export/oi.csv?instrument=${encodeURIComponent(selectedInstrument)}&clgroup=${cls}&interval=${ints}&days=${days}`;
+                  return `/api/export/oi.csv?instrument=${encodeURIComponent(insts)}&clgroup=${cls}&interval=${ints}&days=${days}`;
                 },
-                buildFilename: () => `oi_${selectedInstrument}_${Date.now()}.zip`,
+                buildFilename: () => `oi_${Date.now()}.zip`,
               };
             }}
           />
