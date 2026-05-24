@@ -275,9 +275,26 @@ export default function BuffettPage() {
                 {/* Camera + CSV buttons inline, прижаты к правому краю */}
                 <div data-tour="buffett-export" className="ml-auto flex items-center" style={{ gap: 'var(--sp-2)' }}>
                 <CsvExportButton
-                    url={() => `/api/export/buffett.csv?mode=${viewMode}`}
-                    filename={() => `buffett_${viewMode}.csv`}
                     indicator="buffett"
+                    config={() => ({
+                        indicator: 'buffett',
+                        title: 'Экспорт: Индикатор Баффета',
+                        layers: [{
+                            id: 'main',
+                            label: viewMode === 'cap-gdp' ? 'Капитализация / ВВП' : 'Капитализация / M2',
+                            description: viewMode === 'cap-gdp'
+                                ? 'trade_date, market_cap, gdp_ttm, buffett_ratio_pct'
+                                : 'trade_date, market_cap, m2, cap_m2_ratio',
+                            defaultSelected: true,
+                        }],
+                        params: [
+                            { label: 'Режим', value: viewMode === 'cap-gdp' ? 'Кап / ВВП' : 'Кап / M2' },
+                            { label: 'Период (UI)', value: PERIOD_LABELS[period] ?? period },
+                            { label: 'Таймфрейм (UI)', value: timeframe === '1d' ? 'День' : timeframe === '1w' ? 'Неделя' : 'Месяц' },
+                        ],
+                        buildUrl: () => `/api/export/buffett.csv?mode=${viewMode}`,
+                        buildFilename: () => `buffett_${viewMode}.csv`,
+                    })}
                 />
                 <ChartCaptureButton
                     getTargetElement={() => chartAnchorRef.current}

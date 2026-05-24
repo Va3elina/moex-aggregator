@@ -814,9 +814,44 @@ export default function SeasonalityPage() {
         {chartType !== 'test' && (
           <div data-tour="seasonality-export" className="ml-auto flex items-center" style={{ gap: 'var(--sp-2)' }}>
           <CsvExportButton
-            url={() => `/api/export/seasonality.csv?ticker=${encodeURIComponent(selectedStock)}`}
-            filename={() => `seasonality_${selectedStock}.csv`}
             indicator="seasonality"
+            config={() => ({
+              indicator: 'seasonality',
+              title: `Экспорт: Сезонность · ${selectedName}`,
+              layers: [
+                {
+                  id: 'daily',
+                  label: 'Дневные свечи',
+                  description: 'OHLCV + change_pct + декомпозиция (year/month/weekday) для self-pivot в Excel',
+                  defaultSelected: true,
+                },
+                {
+                  id: 'weekday_avg',
+                  label: 'Средняя по дню недели',
+                  description: 'Avg change_pct по Пн-Вс + stdev + размер выборки',
+                },
+                {
+                  id: 'monthly_avg',
+                  label: 'Средняя по месяцам',
+                  description: 'Avg change_pct по Янв-Дек (классическая сезонность)',
+                },
+                {
+                  id: 'monthday_avg',
+                  label: 'Средняя по дню месяца',
+                  description: 'Avg change_pct по 1-31 числу — turn-of-month effect',
+                },
+              ],
+              params: [
+                { label: 'Актив', value: `${selectedName} (${selectedStock})` },
+                { label: 'Режим (UI)', value: MODE_LABELS[mode] ?? mode },
+              ],
+              buildUrl: (layers) =>
+                `/api/export/seasonality.csv?ticker=${encodeURIComponent(selectedStock)}&layers=${layers.join(',')}`,
+              buildFilename: (layers) =>
+                layers.length > 1
+                  ? `seasonality_${selectedStock}.zip`
+                  : `seasonality_${selectedStock}_${layers[0]}.csv`,
+            })}
           />
           <ChartCaptureButton
             getTargetElement={() => chartCardRef.current}

@@ -645,23 +645,38 @@ export default function FundsMoneyPage() {
                     выровнены по правому краю через ml-auto. */}
                 <div data-tour="funds-export" className="ml-auto flex items-center" style={{ gap: 'var(--sp-2)' }}>
                 <CsvExportButton
-                    url={() => {
+                    indicator="funds_money"
+                    config={() => {
                       const periodDays: Record<string, number> = {
                         '1m': 30, '3m': 90, '6m': 180, '1y': 365,
                         '2y': 730, '3y': 1095, 'all': 7000,
                       };
                       const days = periodDays[period] ?? 365;
-                      // Передаём только видимые фонды (accessible - hiddenFunds).
                       const visibleTickers = data?.funds
                         ?.filter(f => !f.tier_locked && !hiddenFunds.has(f.fund_id))
                         ?.map(f => f.ticker) ?? [];
                       const fundsParam = visibleTickers.length > 0
                         ? `&funds=${encodeURIComponent(visibleTickers.join(','))}`
                         : '';
-                      return `/api/export/funds-money.csv?category=${category}&days=${days}${fundsParam}`;
+                      const catName = CATEGORIES.find(c => c.key === category)?.name ?? category;
+                      return {
+                        indicator: 'funds_money',
+                        title: `Экспорт: Деньги в фондах · ${catName}`,
+                        layers: [{
+                          id: 'nav',
+                          label: 'История СЧА фондов',
+                          description: `Daily NAV per fund за выбранный период (видимые фонды: ${visibleTickers.length})`,
+                          defaultSelected: true,
+                        }],
+                        params: [
+                          { label: 'Категория', value: catName },
+                          { label: 'Период', value: PERIOD_LABELS[period] ?? period },
+                          { label: 'Видимых фондов', value: `${visibleTickers.length}` },
+                        ],
+                        buildUrl: () => `/api/export/funds-money.csv?category=${category}&days=${days}${fundsParam}`,
+                        buildFilename: () => `funds_${category}_${period}.csv`,
+                      };
                     }}
-                    filename={() => `funds_${category}_${period}.csv`}
-                    indicator="funds_money"
                 />
                 <ChartCaptureButton
                     getTargetElement={() => chartAnchorRef.current}

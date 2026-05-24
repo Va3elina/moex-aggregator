@@ -623,9 +623,24 @@ export default function HeatmapPage() {
             captureRef = outer paper-card → snapshot включает watermark. */}
         <div data-tour="heatmap-export" className="ml-auto flex items-center gap-2">
         <CsvExportButton
-          url="/api/export/heatmap.csv"
-          filename="heatmap.csv"
           indicator="heatmap"
+          config={() => ({
+            indicator: 'heatmap',
+            title: 'Экспорт: Карта рынка',
+            layers: [{
+              id: 'current',
+              label: 'Снапшот всех акций',
+              description: 'Текущая цена + изменения 1д/1н/1м/1г + market cap + объём по всем акциям MOEX',
+              defaultSelected: true,
+            }],
+            params: [
+              { label: 'Режим', value: mapMode === 'imoex' ? 'IMOEX' : 'Все акции' },
+              { label: 'Размер', value: SIZE_OPTIONS.find(o => o.value === sizeBy)?.label ?? sizeBy },
+              { label: 'Период', value: PERIOD_OPTIONS.find(o => o.value === period)?.label ?? period },
+            ],
+            buildUrl: () => '/api/export/heatmap.csv',
+            buildFilename: () => 'heatmap.csv',
+          })}
         />
         <ChartCaptureButton
           getTargetElement={() => captureRef.current}

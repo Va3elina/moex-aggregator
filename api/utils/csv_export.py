@@ -7,12 +7,16 @@ CSV export helper — общий компонент для всех индика
   - UTF-8 BOM (﻿) перед заголовком — Excel правильно opens кириллицу
     без манипуляций с кодировкой.
   - Content-Disposition: attachment — браузер сразу триггерит download.
+
+При выборе нескольких слоёв (`?layers=A,B`) — endpoint делает ZIP с
+отдельными CSV-файлами per layer.
 """
 import csv
 import io
+import zipfile
 from typing import Iterable, Iterator
 
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 
 
 def _bom() -> str:
@@ -59,6 +63,47 @@ def csv_streaming_response(
         headers={
             "Content-Disposition": f'attachment; filename="{filename}"',
             # Не кэшируем — данные актуальные на момент запроса.
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+def _csv_blob(rows: Iterable[dict], fieldnames: list[str]) -> str:
+    """Собирает CSV целиком в str (для ZIP packaging — нужен seek)."""
+    buffer = io.StringIO()
+    buffer.write(_bom())
+    writer = csv.DictWriter(buffer, fieldnames=fieldnames, extrasaction='ignore')
+    writer.writeheader()
+    for row in rows:
+        writer.writerow(row)
+    return buffer.getvalue()
+
+
+def zip_response(
+    files: dict[str, tuple[Iterable[dict], list[str]]],
+    filename: str,
+) -> Response:
+    """
+    Упаковывает несколько CSV-блобов в один ZIP.
+
+    Args:
+        files: {filename.csv: (rows, fieldnames)}.
+        filename: имя ZIP файла для browser download.
+
+    Streaming не использован — CSV-блоб должен быть весь в памяти для
+    ZIP-archive (zipfile требует seek). Для наших размеров (<10MB total)
+    приемлемо.
+    """
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, mode='w', compression=zipfile.ZIP_DEFLATED) as zf:
+        for name, (rows, fieldnames) in files.items():
+            zf.writestr(name, _csv_blob(rows, fieldnames))
+    buf.seek(0)
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
             "Cache-Control": "no-store",
         },
     )

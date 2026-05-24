@@ -368,9 +368,36 @@ export default function StrengthPage() {
                 trailingSlot={
                     <div className="flex items-center" style={{ gap: 'var(--sp-2)' }}>
                     <CsvExportButton
-                        url={() => `/api/export/breadth.csv?ema=${emaPeriod}&universe=${universe}&days=${PERIOD_DAYS[period]}`}
-                        filename={() => `strength_ema${emaPeriod}_${universe}_${period}.csv`}
                         indicator="strength"
+                        config={() => ({
+                            indicator: 'strength',
+                            title: 'Экспорт: Сила рынка',
+                            layers: [
+                                {
+                                    id: 'history',
+                                    label: 'История Силы рынка',
+                                    description: 'Timeseries % акций выше EMA по дням за выбранный период',
+                                    defaultSelected: true,
+                                },
+                                {
+                                    id: 'stocks',
+                                    label: 'Снапшот акций (сейчас)',
+                                    description: 'Текущая цена + изменения 1д/1н/1м по всем акциям вселенной',
+                                },
+                            ],
+                            params: [
+                                { label: 'EMA', value: `${emaPeriod}` },
+                                { label: 'Вселенная', value: universe === 'imoex' ? 'IMOEX' : universe === 'all' ? 'Все акции' : universe },
+                                { label: 'Период', value: period.toUpperCase() },
+                                { label: 'Валюта', value: currency === 'usd' ? 'USD' : 'RUB' },
+                            ],
+                            buildUrl: (layers) =>
+                                `/api/export/breadth.csv?ema=${emaPeriod}&universe=${universe}&days=${PERIOD_DAYS[period]}&layers=${layers.join(',')}`,
+                            buildFilename: (layers) =>
+                                layers.length > 1
+                                    ? `strength_${emaPeriod}_${universe}.zip`
+                                    : `strength_${layers[0]}_ema${emaPeriod}_${universe}.csv`,
+                        })}
                     />
                     <ChartCaptureButton
                         getTargetElement={() => containerRef.current}

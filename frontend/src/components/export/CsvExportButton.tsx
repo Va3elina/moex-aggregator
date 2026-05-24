@@ -1,55 +1,60 @@
 /**
- * CsvExportButton — кнопка-pill для скачивания CSV с данными индикатора.
+ * CsvExportButton — кнопка-pill для скачивания данных индикатора.
  *
- * Размещается рядом с ChartCaptureButton (Camera) на page-toolbar'е каждого
- * индикатора. Стилистически идентична — 44px pill, paper bg, theme-primary
- * outline.
+ * Click flow:
+ *   - Free/Basic → UpgradeModal (pre-gate, без сетевого запроса).
+ *   - Pro/admin → открывает CsvExportModal где юзер выбирает layers
+ *     (исходные/индикатор/агрегаты) и тогда download.
  *
- * Tier-gating:
- *   - Pro/admin: download срабатывает.
- *   - Free/Basic: при клике показывается UpgradeModal с targetTier='pro'.
+ * Без модалки (legacy режим): если передан url+filename (legacy props),
+ * клик сразу скачивает — для простых случаев / обратной совместимости.
  *
- * Auth: используем apiFetch (через AuthContext автоматически добавит
- * Authorization header). Если backend возвращает 403 (например токен
- * протух) — показываем upgrade modal как fallback.
+ * Lock badge — accent-кружок в правом-верхнем углу для Free/Basic.
  */
+import { useState, lazy, Suspense } from 'react';
 import { Download, Lock } from 'lucide-react';
 import { apiFetch } from '../../services/api';
 import { useCommonFeatures } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../tier/UpgradeModal';
-import { useAnalytics } from '../../contexts/AnalyticsContext';
+import type { CsvExportConfig } from './CsvExportModal';
 
-interface Props {
-    /** URL endpoint. Может быть строкой ИЛИ getter-функцией для lazy evaluation.
-     *  Getter полезен когда URL зависит от текущего state страницы (period,
-     *  ticker, category) — компонент не re-render'ится при каждом изменении
-     *  state'а, но при клике берёт актуальное значение. */
-    url: string | (() => string);
-    /** Имя файла для browser download. Также может быть getter'ом для lazy state. */
-    filename: string | (() => string);
+// Lazy-load модалки — chunk выделяется отдельно.
+const CsvExportModal = lazy(() => import('./CsvExportModal'));
+
+interface PropsWithConfig {
+    /** Config-driven вариант: открывает модалку с выбором layers. */
+    config: () => CsvExportConfig;
     /** Indicator ID для UpgradeModal context. */
     indicator: string;
-    /** Подсказка title (tooltip). По умолчанию "Скачать CSV". */
     title?: string;
-    /** Дополнительные классы. */
     className?: string;
+    url?: never;
+    filename?: never;
 }
 
-export default function CsvExportButton({
-    url,
-    filename,
-    indicator,
-    title = 'Скачать CSV',
-    className = '',
-}: Props) {
+interface PropsLegacy {
+    /** Legacy вариант: прямое скачивание без модалки. */
+    url: string | (() => string);
+    filename: string | (() => string);
+    indicator: string;
+    title?: string;
+    className?: string;
+    config?: never;
+}
+
+type Props = PropsWithConfig | PropsLegacy;
+
+export default function CsvExportButton(props: Props) {
     const common = useCommonFeatures();
     const { showUpgrade } = useUpgradePrompt();
-    const { track } = useAnalytics();
+    const [modalOpen, setModalOpen] = useState(false);
+    const [resolvedConfig, setResolvedConfig] = useState<CsvExportConfig | null>(null);
 
     const locked = !common.csv_export;
+    const title = props.title ?? 'Скачать CSV';
+    const indicator = props.indicator;
 
     const handleClick = async () => {
-        // Pre-gate: если tier не Pro — открываем upgrade modal сразу без запроса.
         if (locked) {
             showUpgrade({
                 tier: 'pro',
@@ -59,13 +64,17 @@ export default function CsvExportButton({
             return;
         }
 
-        // Lazy resolve URL/filename — на момент клика, не render'а.
-        const resolvedUrl = typeof url === 'function' ? url() : url;
-        const resolvedFilename = typeof filename === 'function' ? filename() : filename;
+        // Config-mode: open modal with layer selection.
+        if ('config' in props && props.config) {
+            setResolvedConfig(props.config());
+            setModalOpen(true);
+            return;
+        }
 
-        // Используем существующий 'chart_export' event-type с extra payload —
-        // не плодим новый enum-вариант ради subdivision.
-        track('chart_export', { indicator, format: 'csv' });
+        // Legacy: direct download.
+        const legacyProps = props as PropsLegacy;
+        const resolvedUrl = typeof legacyProps.url === 'function' ? legacyProps.url() : legacyProps.url;
+        const resolvedFilename = typeof legacyProps.filename === 'function' ? legacyProps.filename() : legacyProps.filename;
 
         try {
             const resp = await apiFetch(resolvedUrl);
@@ -78,7 +87,6 @@ export default function CsvExportButton({
                 alert(`Не удалось скачать CSV (статус ${resp.status})`);
                 return;
             }
-
             const blob = await resp.blob();
             const blobUrl = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -96,47 +104,58 @@ export default function CsvExportButton({
     };
 
     return (
-        <button
-            type="button"
-            onClick={handleClick}
-            data-export-ignore="true"
-            className={`editorial-press rounded-full inline-flex items-center justify-center ${className}`}
-            style={{
-                backgroundColor: 'var(--bg-secondary)',
-                border: '2px solid var(--text-primary)',
-                color: 'var(--text-primary)',
-                width: 44,
-                height: 44,
-                opacity: locked ? 0.65 : 1,
-                position: 'relative',
-            }}
-            aria-label={locked ? `${title} (Pro)` : title}
-            title={locked ? `${title} — доступно на тарифе Pro` : title}
-        >
-            <Download size={22} />
-            {locked && (
-                // Lock-badge в правом-верхнем углу. Тот же паттерн что у
-                // locked-chip'ов в Buffett/Strength sheet'ах.
-                <span
-                    style={{
-                        position: 'absolute',
-                        top: -4,
-                        right: -4,
-                        width: 18,
-                        height: 18,
-                        borderRadius: '50%',
-                        background: 'var(--accent)',
-                        color: 'var(--text-inverse)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        border: '1.5px solid var(--text-primary)',
-                    }}
-                    aria-hidden="true"
-                >
-                    <Lock size={10} strokeWidth={2.5} />
-                </span>
+        <>
+            <button
+                type="button"
+                onClick={handleClick}
+                data-export-ignore="true"
+                className={`editorial-press rounded-full inline-flex items-center justify-center ${props.className ?? ''}`}
+                style={{
+                    backgroundColor: 'var(--bg-secondary)',
+                    border: '2px solid var(--text-primary)',
+                    color: 'var(--text-primary)',
+                    width: 44,
+                    height: 44,
+                    opacity: locked ? 0.65 : 1,
+                    position: 'relative',
+                }}
+                aria-label={locked ? `${title} (Pro)` : title}
+                title={locked ? `${title} — доступно на тарифе Pro` : title}
+            >
+                <Download size={22} />
+                {locked && (
+                    <span
+                        style={{
+                            position: 'absolute',
+                            top: -4,
+                            right: -4,
+                            width: 18,
+                            height: 18,
+                            borderRadius: '50%',
+                            background: 'var(--accent)',
+                            color: 'var(--text-inverse)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            border: '1.5px solid var(--text-primary)',
+                        }}
+                        aria-hidden="true"
+                    >
+                        <Lock size={10} strokeWidth={2.5} />
+                    </span>
+                )}
+            </button>
+            {modalOpen && resolvedConfig && (
+                <Suspense fallback={null}>
+                    <CsvExportModal
+                        config={resolvedConfig}
+                        onClose={() => {
+                            setModalOpen(false);
+                            setResolvedConfig(null);
+                        }}
+                    />
+                </Suspense>
             )}
-        </button>
+        </>
     );
 }

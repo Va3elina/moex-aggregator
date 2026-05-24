@@ -377,16 +377,30 @@ export default function CbrFlowsPage() {
           {/* Camera + CSV buttons — экспорт графика в PNG / данных в CSV */}
           <div data-tour="cbr-export" className="shrink-0 ml-auto flex items-center" style={{ gap: 'var(--sp-2)' }}>
           <CsvExportButton
-            url={() => {
-              // Map UI period → years for backend filter.
+            indicator="cbr_flows"
+            config={() => {
               const periodYears: Record<string, number> = {
                 '1y': 1, '2y': 2, '3y': 3, '5y': 5, 'all': 30,
               };
               const years = periodYears[period] ?? 10;
-              return `/api/export/cbr-flows.csv?instrument=${type}&years=${years}`;
+              const instLabel = INSTRUMENT_TABS.find(t => t.key === type)?.label ?? type;
+              return {
+                indicator: 'cbr_flows',
+                title: `Экспорт: Потоки участников · ${instLabel}`,
+                layers: [{
+                  id: 'flows',
+                  label: 'Потоки ОРФР',
+                  description: 'period_year, period_label, category, value (млрд ₽) по типу инструмента',
+                  defaultSelected: true,
+                }],
+                params: [
+                  { label: 'Инструмент', value: instLabel },
+                  { label: 'Глубина', value: years === 30 ? 'Вся история' : `${years} лет` },
+                ],
+                buildUrl: () => `/api/export/cbr-flows.csv?instrument=${type}&years=${years}`,
+                buildFilename: () => `cbr_flows_${type}_${period}.csv`,
+              };
             }}
-            filename={() => `cbr_flows_${type}_${period}.csv`}
-            indicator="cbr_flows"
           />
           <ChartCaptureButton
             getTargetElement={() => chartAnchorRef.current}

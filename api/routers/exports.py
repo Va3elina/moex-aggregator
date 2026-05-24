@@ -26,7 +26,7 @@ from sqlalchemy.orm import Session
 from api.database import get_db
 from api.models import User
 from api.routers.auth import require_pro
-from api.utils.csv_export import csv_streaming_response
+from api.utils.csv_export import csv_streaming_response, zip_response
 
 router = APIRouter(prefix="/api/export", tags=["export"])
 
@@ -34,6 +34,14 @@ router = APIRouter(prefix="/api/export", tags=["export"])
 def _ts() -> str:
     """Timestamp suffix для filename'ов: 20260524_0934."""
     return datetime.now().strftime("%Y%m%d_%H%M")
+
+
+def _parse_layers(layers: str | None, default: list[str], allowed: set[str]) -> list[str]:
+    """Парсит query-param ?layers=A,B,C → list. Невалидные drop. Пустой → default."""
+    if not layers:
+        return default
+    parsed = [l.strip() for l in layers.split(",") if l.strip() in allowed]
+    return parsed or default
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -72,26 +80,66 @@ def export_breadth(
     ema: int = Query(200, ge=10, le=500),
     universe: str = Query("imoex"),
     days: int = Query(365, ge=1, le=3650),
+    layers: str | None = Query(None, description="history,stocks (comma-sep)"),
     user: User = Depends(require_pro),
     db: Session = Depends(get_db),
 ):
-    """Историческая Сила рынка: дата + % выше EMA + count above/total."""
+    """
+    Сила рынка с выбором слоёв:
+      - history: timeseries % акций выше EMA (по дням)
+      - stocks: snapshot всех акций с current price, EMA, is_above, diff_pct
+    """
     if universe not in ("all", "imoex", "all_usd", "imoex_usd"):
         raise HTTPException(status_code=400, detail="universe invalid")
 
-    rows = db.execute(text("""
-        SELECT trade_date, percent_above, count_above, count_total
-        FROM breadth_history
-        WHERE ema_period = :ema AND universe = :universe
-          AND trade_date >= CURRENT_DATE - :days
-        ORDER BY trade_date ASC
-    """), {"ema": ema, "universe": universe, "days": days}).mappings().all()
+    selected = _parse_layers(layers, ["history"], {"history", "stocks"})
 
-    return csv_streaming_response(
-        rows=[dict(r) for r in rows],
-        fieldnames=["trade_date", "percent_above", "count_above", "count_total"],
-        filename=f"strength_ema{ema}_{universe}_{_ts()}.csv",
-    )
+    def history_data():
+        rows = db.execute(text("""
+            SELECT trade_date, percent_above, count_above, count_total
+            FROM breadth_history
+            WHERE ema_period = :ema AND universe = :universe
+              AND trade_date >= CURRENT_DATE - :days
+            ORDER BY trade_date ASC
+        """), {"ema": ema, "universe": universe, "days": days}).mappings().all()
+        return [dict(r) for r in rows], ["trade_date", "percent_above",
+                                          "count_above", "count_total"]
+
+    def stocks_data():
+        # Текущий снапшот через mv_heatmap_stocks (current price) +
+        # вычислить EMA per stock было бы дорого тут — отдаём цены, юзер
+        # сам считает EMA из seasonality CSV-загрузки если хочет.
+        rows = db.execute(text("""
+            SELECT m.sec_id AS ticker, m.name, m.sector,
+                   m.price AS current_price,
+                   m.change_1d, m.change_1w, m.change_1m
+            FROM mv_heatmap_stocks m
+            JOIN instruments i ON i.sectype = m.sec_id
+            WHERE i.type = 'stock' AND i."group" = 'Акции'
+            ORDER BY m.sec_id ASC
+        """)).mappings().all()
+        return [dict(r) for r in rows], [
+            "ticker", "name", "sector", "current_price",
+            "change_1d", "change_1w", "change_1m",
+        ]
+
+    layer_map = {
+        "history": (f"breadth_history_ema{ema}_{universe}.csv", history_data),
+        "stocks": (f"breadth_stocks_snapshot.csv", stocks_data),
+    }
+
+    if len(selected) == 1:
+        name, fn = layer_map[selected[0]]
+        rows, fields = fn()
+        return csv_streaming_response(rows=rows, fieldnames=fields, filename=name)
+
+    # Multi-layer → ZIP.
+    files = {}
+    for layer in selected:
+        name, fn = layer_map[layer]
+        rows, fields = fn()
+        files[name] = (rows, fields)
+    return zip_response(files, filename=f"strength_{ema}_{universe}_{_ts()}.zip")
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -100,27 +148,28 @@ def export_breadth(
 @router.get("/seasonality.csv")
 def export_seasonality(
     ticker: str = Query(..., min_length=1, max_length=20),
+    layers: str | None = Query(None, description="daily,weekday_avg,monthly_avg,monthday_avg"),
     user: User = Depends(require_pro),
     db: Session = Depends(get_db),
 ):
     """
-    Daily history тикера + готовые аггрегации сезонности:
-      - daily: trade_date, open, high, low, close, volume, change_pct,
-               weekday, month, day_of_month, year (для всех видов pivot'ов)
-
-    Юзер может в Excel сам построить pivot по weekday/month/monthday если
-    нужны другие срезы — все исходные колонки даны. Это полнее чем UI
-    (UI показывает только один срез).
+    Сезонность с выбором слоёв:
+      - daily: дневные свечи + декомпозиция (year/month/weekday) + change_pct
+      - weekday_avg: средний дневной change_pct по дню недели (Пн-Вс)
+      - monthly_avg: средний месячный change_pct по месяцу (Янв-Дек)
+      - monthday_avg: средний дневной change_pct по дню месяца (1-31)
     """
     ticker = ticker.strip().upper()
-    rows = db.execute(text("""
+    allowed = {"daily", "weekday_avg", "monthly_avg", "monthday_avg"}
+    selected = _parse_layers(layers, ["daily"], allowed)
+
+    # Базовая выборка свечей — используется во всех слоях.
+    candle_rows = db.execute(text("""
         SELECT begin_time::date AS trade_date,
                open, high, low, close, volume,
-               -- Change % vs previous trading day
                ROUND(((close - LAG(close) OVER (ORDER BY begin_time)) /
                       NULLIF(LAG(close) OVER (ORDER BY begin_time), 0) * 100)::numeric, 4)
                  AS change_pct,
-               -- Time decompositions для self-pivot
                EXTRACT(ISODOW FROM begin_time)::int AS weekday,
                EXTRACT(MONTH  FROM begin_time)::int AS month,
                EXTRACT(DAY    FROM begin_time)::int AS day_of_month,
@@ -130,17 +179,100 @@ def export_seasonality(
           AND close > 0
         ORDER BY begin_time ASC
     """), {"ticker": ticker}).mappings().all()
-    if not rows:
+    if not candle_rows:
         raise HTTPException(status_code=404, detail=f"Нет данных по {ticker}")
 
-    return csv_streaming_response(
-        rows=[dict(r) for r in rows],
-        fieldnames=[
+    candles = [dict(r) for r in candle_rows]
+
+    def daily_data():
+        return candles, [
             "trade_date", "year", "month", "day_of_month", "weekday",
             "open", "high", "low", "close", "volume", "change_pct",
-        ],
-        filename=f"seasonality_{ticker}_{_ts()}.csv",
-    )
+        ]
+
+    def weekday_avg_data():
+        # Aggregation in Python (БД query + Python — проще чем complex SQL).
+        from statistics import mean, stdev
+        buckets: dict[int, list[float]] = {}
+        for c in candles:
+            if c["change_pct"] is None:
+                continue
+            buckets.setdefault(c["weekday"], []).append(float(c["change_pct"]))
+        labels = {1: "Понедельник", 2: "Вторник", 3: "Среда",
+                  4: "Четверг", 5: "Пятница", 6: "Суббота", 7: "Воскресенье"}
+        rows = []
+        for wd in sorted(buckets):
+            vals = buckets[wd]
+            rows.append({
+                "weekday": wd,
+                "weekday_label": labels.get(wd, str(wd)),
+                "avg_change_pct": round(mean(vals), 4),
+                "stdev_change_pct": round(stdev(vals), 4) if len(vals) > 1 else 0,
+                "sample_size": len(vals),
+            })
+        return rows, ["weekday", "weekday_label", "avg_change_pct",
+                       "stdev_change_pct", "sample_size"]
+
+    def monthly_avg_data():
+        from statistics import mean, stdev
+        buckets: dict[int, list[float]] = {}
+        for c in candles:
+            if c["change_pct"] is None:
+                continue
+            buckets.setdefault(c["month"], []).append(float(c["change_pct"]))
+        labels = {1: "Январь", 2: "Февраль", 3: "Март", 4: "Апрель",
+                  5: "Май", 6: "Июнь", 7: "Июль", 8: "Август",
+                  9: "Сентябрь", 10: "Октябрь", 11: "Ноябрь", 12: "Декабрь"}
+        rows = []
+        for m in sorted(buckets):
+            vals = buckets[m]
+            rows.append({
+                "month": m,
+                "month_label": labels.get(m, str(m)),
+                "avg_change_pct": round(mean(vals), 4),
+                "stdev_change_pct": round(stdev(vals), 4) if len(vals) > 1 else 0,
+                "sample_size": len(vals),
+            })
+        return rows, ["month", "month_label", "avg_change_pct",
+                       "stdev_change_pct", "sample_size"]
+
+    def monthday_avg_data():
+        from statistics import mean, stdev
+        buckets: dict[int, list[float]] = {}
+        for c in candles:
+            if c["change_pct"] is None:
+                continue
+            buckets.setdefault(c["day_of_month"], []).append(float(c["change_pct"]))
+        rows = []
+        for d in sorted(buckets):
+            vals = buckets[d]
+            rows.append({
+                "day_of_month": d,
+                "avg_change_pct": round(mean(vals), 4),
+                "stdev_change_pct": round(stdev(vals), 4) if len(vals) > 1 else 0,
+                "sample_size": len(vals),
+            })
+        return rows, ["day_of_month", "avg_change_pct",
+                       "stdev_change_pct", "sample_size"]
+
+    layer_map = {
+        "daily": (f"seasonality_{ticker}_daily.csv", daily_data),
+        "weekday_avg": (f"seasonality_{ticker}_weekday_avg.csv", weekday_avg_data),
+        "monthly_avg": (f"seasonality_{ticker}_monthly_avg.csv", monthly_avg_data),
+        "monthday_avg": (f"seasonality_{ticker}_monthday_avg.csv", monthday_avg_data),
+    }
+
+    if len(selected) == 1:
+        name, fn = layer_map[selected[0]]
+        rows, fields = fn()
+        return csv_streaming_response(rows=rows, fieldnames=fields, filename=name)
+
+    files = {}
+    for layer in selected:
+        name, fn = layer_map[layer]
+        rows, fields = fn()
+        files[name] = (rows, fields)
+    return zip_response(files, filename=f"seasonality_{ticker}_{_ts()}.zip")
 
 
 # ════════════════════════════════════════════════════════════════════
