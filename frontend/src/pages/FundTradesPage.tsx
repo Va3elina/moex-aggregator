@@ -36,17 +36,23 @@ import {
     listFundsWithHistory,
     getFundTradesDetail,
     getFundTradesMovers,
+    getFundIntraday,
     type FundTradesPeriod,
     type FundWithHistory,
     type FundTradesDetail,
     type FundTradesMovers,
     type FundTradeChangeType,
+    type FundIntradayDetail,
+    type FundIntradayEvent,
 } from '../services/api';
 import { useCommonFeatures } from '../contexts/TierFeaturesContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 
-type Tab = 'funds' | 'movers';
+type Tab = 'funds' | 'movers' | 'intraday';
+
+// Тикеры с intraday-данными (только ВИМ-БПИФ)
+const INTRADAY_TICKERS = ['LQDT', 'EQMX', 'GOLD'] as const;
 
 const CATEGORY_LABEL: Record<string, string> = {
     stocks: 'Акции',
@@ -760,10 +766,11 @@ export default function FundTradesPage() {
                     borderBottom: '1px solid var(--border-color)',
                 }}
             >
-                <div style={{ display: 'flex', gap: 6 }}>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                     {([
                         { id: 'funds' as const, label: 'По фондам', icon: Wallet },
-                        { id: 'movers' as const, label: 'Топ движений', icon: Activity },
+                        { id: 'movers' as const, label: 'Месячные движения', icon: Activity },
+                        { id: 'intraday' as const, label: 'Intraday (ВИМ-БПИФ)', icon: ArrowUpRight },
                     ]).map((t) => {
                         const Icon = t.icon;
                         const active = tab === t.id;
@@ -963,6 +970,8 @@ export default function FundTradesPage() {
                 </>
             )}
 
+            {tab === 'intraday' && <IntradayTab />}
+
             {selectedTicker && (
                 <FundDetailModal
                     ticker={selectedTicker}
@@ -971,6 +980,228 @@ export default function FundTradesPage() {
                 />
             )}
         </div>
+    );
+}
+
+// ════════════════════════════════════════════════════════════════════
+// Intraday Tab — события дельт positions по 3 ВИМ-БПИФ (real-time T+15min)
+// ════════════════════════════════════════════════════════════════════
+function IntradayTab() {
+    const [ticker, setTicker] = useState<(typeof INTRADAY_TICKERS)[number]>('EQMX');
+    const [days, setDays] = useState<number>(7);
+    const [data, setData] = useState<FundIntradayDetail | null>(null);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        let cancelled = false;
+        setLoading(true);
+        setError(null);
+        getFundIntraday(ticker, days)
+            .then((d) => { if (!cancelled) setData(d); })
+            .catch((e: Error) => { if (!cancelled) setError(e.message); })
+            .finally(() => { if (!cancelled) setLoading(false); });
+        return () => { cancelled = true; };
+    }, [ticker, days]);
+
+    return (
+        <div>
+            <div
+                style={{
+                    display: 'flex',
+                    gap: 12,
+                    flexWrap: 'wrap',
+                    marginBottom: 16,
+                    alignItems: 'center',
+                }}
+            >
+                <div style={{ display: 'flex', gap: 4 }}>
+                    {INTRADAY_TICKERS.map((t) => (
+                        <button
+                            key={t}
+                            onClick={() => setTicker(t)}
+                            style={{
+                                padding: '6px 14px',
+                                background: ticker === t ? 'var(--accent)' : 'var(--bg-secondary)',
+                                color: ticker === t ? 'var(--text-inverse)' : 'var(--text-primary)',
+                                border: '1.5px solid var(--text-primary)',
+                                borderRadius: 999,
+                                fontSize: 'var(--fs-sm)',
+                                fontWeight: ticker === t ? 700 : 600,
+                                cursor: 'pointer',
+                                fontFamily: 'ui-monospace, monospace',
+                            }}
+                        >
+                            {t}
+                        </button>
+                    ))}
+                </div>
+                <div style={{ display: 'flex', gap: 4, padding: 4, background: 'var(--bg-secondary)', borderRadius: 8 }}>
+                    {[1, 3, 7, 30].map((d) => (
+                        <button
+                            key={d}
+                            onClick={() => setDays(d)}
+                            style={{
+                                padding: '4px 10px',
+                                background: days === d ? 'var(--bg-primary)' : 'transparent',
+                                color: days === d ? 'var(--text-primary)' : 'var(--text-secondary)',
+                                border: days === d
+                                    ? '1px solid color-mix(in srgb, var(--text-primary) 18%, transparent)'
+                                    : '1px solid transparent',
+                                borderRadius: 6,
+                                fontSize: 'var(--fs-xs)',
+                                fontWeight: days === d ? 700 : 600,
+                                cursor: 'pointer',
+                            }}
+                        >
+                            {d} {d === 1 ? 'день' : 'дн'}
+                        </button>
+                    ))}
+                </div>
+                {data && (
+                    <div style={{
+                        marginLeft: 'auto',
+                        fontSize: 'var(--fs-xs)',
+                        color: 'var(--text-muted)',
+                    }}>
+                        Снапшотов: <strong style={{ color: 'var(--text-primary)' }}>{data.snapshots_count}</strong>
+                        {data.latest_timestamp && (
+                            <> · Последний: <strong style={{ color: 'var(--text-primary)' }}>
+                                {new Date(data.latest_timestamp).toLocaleString('ru-RU')}
+                            </strong></>
+                        )}
+                    </div>
+                )}
+            </div>
+
+            {loading && <div style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>Загружаем…</div>}
+            {error && (
+                <div style={{
+                    padding: 12,
+                    background: 'color-mix(in srgb, var(--danger, #ef4444) 10%, transparent)',
+                    border: '1px solid var(--danger, #ef4444)',
+                    borderRadius: 8,
+                    color: 'var(--danger, #ef4444)',
+                    fontSize: 'var(--fs-sm)',
+                }}>{error}</div>
+            )}
+
+            {data && data.events.length === 0 && !loading && (
+                <div
+                    style={{
+                        padding: 32,
+                        textAlign: 'center',
+                        background: 'var(--bg-secondary)',
+                        border: '1.5px dashed var(--border-color)',
+                        borderRadius: 12,
+                    }}
+                >
+                    <ArrowUpRight size={32} style={{ color: 'var(--text-muted)', margin: '0 auto 12px' }} />
+                    <p style={{ fontSize: 'var(--fs-md)', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>
+                        За последние {days} дн событий не было
+                    </p>
+                    <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-secondary)', maxWidth: 520, margin: '0 auto', lineHeight: 1.5 }}>
+                        Парсер ВИМ работает каждые 30 минут в торговое время (10:00-19:00 МСК).
+                        События появляются когда УК реально торгует. {ticker === 'LQDT' && 'Для LQDT (money market) сделок практически не бывает — там 100% денежные средства.'}
+                    </p>
+                </div>
+            )}
+
+            {data && data.events.length > 0 && (
+                <div
+                    style={{
+                        background: 'var(--bg-secondary)',
+                        border: '1.5px solid var(--border-color)',
+                        borderRadius: 10,
+                        overflow: 'hidden',
+                    }}
+                >
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-sm)' }}>
+                        <thead>
+                            <tr>
+                                {['Время', 'Тип', 'Актив', 'Δ штук', 'Сейчас, шт', 'Было, шт'].map((h) => (
+                                    <th
+                                        key={h}
+                                        style={{
+                                            textAlign: 'left',
+                                            padding: '10px 12px',
+                                            color: 'var(--text-muted)',
+                                            fontSize: 'var(--fs-2xs)',
+                                            textTransform: 'uppercase',
+                                            letterSpacing: '0.05em',
+                                            fontWeight: 700,
+                                            borderBottom: '2px solid var(--text-primary)',
+                                            background: 'var(--bg-primary)',
+                                        }}
+                                    >
+                                        {h}
+                                    </th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {data.events.map((e, i) => (
+                                <IntradayRow key={`${e.timestamp}-${e.asset_name}-${i}`} event={e} />
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+        </div>
+    );
+}
+
+function IntradayRow({ event }: { event: FundIntradayEvent }) {
+    const labelByType: Record<FundIntradayEvent['change_type'], string> = {
+        new: 'НОВЫЙ',
+        sold_out: 'ПРОДАН',
+        accumulated: 'ДОКУПИЛИ',
+        reduced: 'СОКРАТИЛИ',
+    };
+    const color = changeColor(event.change_type as FundTradeChangeType);
+    const ts = new Date(event.timestamp);
+    const tsStr = ts.toLocaleString('ru-RU', {
+        day: '2-digit',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+    });
+    const cell: React.CSSProperties = {
+        padding: '8px 12px',
+        borderBottom: '1px solid color-mix(in srgb, var(--border-color) 60%, transparent)',
+        color: 'var(--text-primary)',
+        fontSize: 'var(--fs-sm)',
+    };
+    return (
+        <tr>
+            <td style={{ ...cell, fontFamily: 'ui-monospace, monospace', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                {tsStr}
+            </td>
+            <td style={cell}>
+                <span style={{
+                    padding: '2px 8px',
+                    background: `color-mix(in srgb, ${color} 14%, transparent)`,
+                    color,
+                    fontSize: 'var(--fs-2xs)',
+                    fontWeight: 700,
+                    borderRadius: 4,
+                    letterSpacing: '0.04em',
+                }}>
+                    {labelByType[event.change_type]}
+                </span>
+            </td>
+            <td style={cell}>{event.asset_name}</td>
+            <td style={{ ...cell, fontFamily: 'ui-monospace, monospace', fontWeight: 700, color, textAlign: 'right' }}>
+                {event.delta_positions > 0 ? '+' : ''}
+                {event.delta_positions.toLocaleString('ru-RU')}
+            </td>
+            <td style={{ ...cell, fontFamily: 'ui-monospace, monospace', textAlign: 'right' }}>
+                {event.current_positions !== null ? event.current_positions.toLocaleString('ru-RU') : '—'}
+            </td>
+            <td style={{ ...cell, fontFamily: 'ui-monospace, monospace', textAlign: 'right', color: 'var(--text-muted)' }}>
+                {event.previous_positions !== null ? event.previous_positions.toLocaleString('ru-RU') : '—'}
+            </td>
+        </tr>
     );
 }
 

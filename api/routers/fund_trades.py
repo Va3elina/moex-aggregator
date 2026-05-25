@@ -397,6 +397,125 @@ def top_movers(
     }
 
 
+@router.get("/intraday/{ticker}")
+def fund_intraday_events(
+    ticker: str = Path(..., min_length=1, max_length=20),
+    days: int = Query(7, ge=1, le=30, description="Глубина окна в днях"),
+    user: User = Depends(require_pro),
+    db: Session = Depends(get_db),
+):
+    """
+    Intraday-события по позициям ВИМ-фонда: «когда и что УК торговала».
+
+    Логика:
+      - Берём все snapshot_timestamp за последние N дней
+      - Сравниваем смежные snapshot'ы → находим изменения positions
+      - Возвращаем массив событий с типом (new/sold_out/accumulated/reduced)
+        и точным timestamp
+
+    Доступно только для ВИМ-БПИФ: LQDT, EQMX, GOLD (intraday-парсер
+    собирает данные только для них).
+    """
+    if ticker.upper() not in {t.upper() for t in WHITELIST_TICKERS}:
+        raise HTTPException(status_code=404, detail=f"Fund {ticker} not in beta")
+
+    fund_row = db.execute(text("""
+        SELECT fund_id, ticker, name, category, subcategory
+        FROM funds WHERE UPPER(ticker) = UPPER(:t)
+    """), {"t": ticker}).mappings().first()
+    if not fund_row:
+        raise HTTPException(status_code=404, detail=f"Fund {ticker} not found")
+
+    fund_id = fund_row["fund_id"]
+
+    # Все snapshot_timestamps за окно
+    snaps_rows = db.execute(text("""
+        SELECT DISTINCT snapshot_timestamp
+        FROM fund_holdings_intraday
+        WHERE fund_id = :fid
+          AND snapshot_timestamp >= NOW() - (:days || ' days')::interval
+        ORDER BY snapshot_timestamp ASC
+    """), {"fid": fund_id, "days": days}).fetchall()
+    timestamps = [r[0] for r in snaps_rows]
+
+    if len(timestamps) < 2:
+        # Нечего сравнивать.
+        return {
+            "fund": dict(fund_row),
+            "days": days,
+            "snapshots_count": len(timestamps),
+            "events": [],
+            "latest_timestamp": timestamps[0].isoformat() if timestamps else None,
+        }
+
+    # Diff между соседними snapshot'ами: только positions changes.
+    events_rows = db.execute(text("""
+        WITH ordered_snaps AS (
+            SELECT snapshot_timestamp,
+                   LAG(snapshot_timestamp) OVER (ORDER BY snapshot_timestamp) AS prev_ts
+            FROM (
+                SELECT DISTINCT snapshot_timestamp FROM fund_holdings_intraday
+                WHERE fund_id = :fid
+                  AND snapshot_timestamp >= NOW() - (:days || ' days')::interval
+            ) s
+        ),
+        diff AS (
+            SELECT
+                os.snapshot_timestamp,
+                os.prev_ts,
+                COALESCE(curr.asset_name, prev.asset_name) AS asset_name,
+                curr.positions AS curr_pos,
+                prev.positions AS prev_pos,
+                COALESCE(curr.positions, 0) - COALESCE(prev.positions, 0) AS delta_pos,
+                curr.weight AS curr_weight
+            FROM ordered_snaps os
+            LEFT JOIN fund_holdings_intraday curr
+                ON curr.fund_id = :fid AND curr.snapshot_timestamp = os.snapshot_timestamp
+            FULL OUTER JOIN fund_holdings_intraday prev
+                ON prev.fund_id = :fid AND prev.snapshot_timestamp = os.prev_ts
+                AND prev.asset_name = curr.asset_name
+            WHERE os.prev_ts IS NOT NULL
+        )
+        SELECT * FROM diff
+        WHERE delta_pos <> 0
+           OR (prev_pos IS NULL AND curr_pos IS NOT NULL)
+           OR (curr_pos IS NULL AND prev_pos IS NOT NULL)
+        ORDER BY snapshot_timestamp DESC, ABS(delta_pos) DESC NULLS LAST
+        LIMIT 500
+    """), {"fid": fund_id, "days": days}).mappings().all()
+
+    events = []
+    for r in events_rows:
+        delta = r["delta_pos"]
+        if r["prev_pos"] is None and r["curr_pos"] is not None:
+            change_type = "new"
+        elif r["curr_pos"] is None and r["prev_pos"] is not None:
+            change_type = "sold_out"
+        elif delta > 0:
+            change_type = "accumulated"
+        else:
+            change_type = "reduced"
+
+        events.append({
+            "timestamp": r["snapshot_timestamp"].isoformat(),
+            "asset_name": r["asset_name"],
+            "change_type": change_type,
+            "delta_positions": int(delta) if delta else 0,
+            "current_positions": int(r["curr_pos"]) if r["curr_pos"] else None,
+            "previous_positions": int(r["prev_pos"]) if r["prev_pos"] else None,
+            "current_weight": float(r["curr_weight"]) if r["curr_weight"] is not None else None,
+        })
+
+    return {
+        "fund": dict(fund_row),
+        "days": days,
+        "snapshots_count": len(timestamps),
+        "events": events,
+        "latest_timestamp": timestamps[-1].isoformat(),
+        "earliest_timestamp": timestamps[0].isoformat(),
+    }
+
+
 @router.get("/asset/{asset_name}")
 def asset_buyers(
     asset_name: str = Path(..., min_length=1, max_length=255),
