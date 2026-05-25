@@ -192,9 +192,21 @@ def parse_scha(pdf_bytes: bytes) -> dict:
                     if not row or len(row) < max(cols.values()) + 1:
                         continue
 
+                    # SCHA имеет "column-numbering row" сразу после header'а:
+                    # ['', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', ...].
+                    # Это технический row для контроля формы — пропускаем.
+                    # Эвристика: если все непустые ячейки — это короткие числа 1-20,
+                    # это column numbering row.
+                    non_empty = [c for c in row if c and _norm(c)]
+                    if non_empty and all(
+                        _norm(c).isdigit() and int(_norm(c)) <= 20
+                        for c in non_empty
+                    ):
+                        continue
+
                     # Пропускаем строки "Итого" и пустые.
                     first_cell = _norm(row[0] or "")
-                    if first_cell.startswith("Итог") or not first_cell:
+                    if first_cell.startswith("Итог"):
                         continue
 
                     isin = _parse_isin(row[cols["isin"]] if cols.get("isin") is not None else None)

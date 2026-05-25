@@ -10,6 +10,7 @@ from api.models.subscription import Subscription
 from api.models.subscription_invite import SubscriptionInvite, InviteRedemption
 from api.models.api_key import ApiKey
 from api.models.fund_holdings_history import FundHoldingsHistory
+from api.models.fund_holdings_intraday import FundHoldingsIntraday
 
 __all__ = [
     "Instrument", "Candle", "OpenInterest",
@@ -19,4 +20,5 @@ __all__ = [
     "SubscriptionInvite", "InviteRedemption",
     "ApiKey",
     "FundHoldingsHistory",
+    "FundHoldingsIntraday",
 ]
