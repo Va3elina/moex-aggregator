@@ -712,6 +712,42 @@ export default function FundTradesPage() {
                 </div>
             </header>
 
+            {/* Beta banner — пока показываем только 6 ВИМ-фондов */}
+            <div
+                style={{
+                    padding: '12px 16px',
+                    marginBottom: 20,
+                    background: 'color-mix(in srgb, var(--warning, #f59e0b) 8%, var(--bg-secondary))',
+                    border: '1.5px solid color-mix(in srgb, var(--warning, #f59e0b) 30%, transparent)',
+                    borderRadius: 10,
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: 10,
+                }}
+            >
+                <span
+                    style={{
+                        padding: '2px 8px',
+                        background: 'var(--warning, #f59e0b)',
+                        color: 'var(--text-inverse)',
+                        borderRadius: 4,
+                        fontSize: 'var(--fs-2xs)',
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.04em',
+                        flexShrink: 0,
+                    }}
+                >
+                    Beta
+                </span>
+                <div style={{ flex: 1, fontSize: 'var(--fs-sm)', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                    Сейчас отслеживаем <strong style={{ color: 'var(--text-primary)' }}>6 фондов УК ВИМ</strong>:
+                    LQDT, EQMX, GOLD, ВИМ-Акции, ВИМ-Казначейский, ВИМ-Облигации Рантье.
+                    Тестируем методологию — после стабилизации добавим Первую, Альфу,
+                    Т-Капитал.
+                </div>
+            </div>
+
             {/* Tabs + Period picker */}
             <div
                 style={{

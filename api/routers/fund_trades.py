@@ -17,6 +17,11 @@ Endpoints (все требуют Pro):
 Источники данных в `fund_holdings_history`:
   - 'cbonds' — месячные snapshot'ы из API. Уже работает для ~16 фондов.
   - 'vim' — daily HTML-парсинг сайта ВИМ для LQDT/EQMX/GOLD. WIP.
+  - 'nrd_scha' — НРД ежемесячные SCHA PDF (по форме ЦБ № 0420502).
+
+WHITELIST (beta): сейчас показываем только 6 ВИМ-фондов для тестирования
+методологии. После того как backfill+intraday отлажены — расширим на
+остальные УК (Первая, Альфа, Т-Капитал) через тот же НРД-парсер.
 """
 from datetime import date, timedelta
 
@@ -29,6 +34,19 @@ from api.models import User
 from api.routers.auth import require_pro
 
 router = APIRouter(prefix="/api/fund-trades", tags=["fund-trades"])
+
+
+# Beta whitelist: 6 ВИМ-фондов для тестирования. Остальные не показываем
+# в UI пока не отлажены парсеры. БД может содержать snapshot'ы других
+# фондов — фильтр работает на API-уровне, данные сохраняем.
+WHITELIST_TICKERS = (
+    "LQDT",       # money market
+    "EQMX",       # индекс МосБиржи (БПИФ)
+    "GOLD",       # золото биржевой
+    "OPIF-1003",  # ВИМ - Акции (управляемые)
+    "OPIF-54",    # ВИМ - Казначейский
+    "OPIF-9165",  # ВИМ - Облигации Рантье
+)
 
 
 # Периоды для diff-расчёта (label → days назад).
@@ -55,9 +73,12 @@ def list_funds_with_history(
     db: Session = Depends(get_db),
 ):
     """
-    Список фондов у которых есть хотя бы один snapshot в истории.
-    Возвращает ticker, name, category + last_snapshot_date + snapshot_count
-    чтобы UI мог показать "доступна история N снимков".
+    Список фондов из WHITELIST с history-метаданными.
+
+    Beta-фильтр: возвращаем только 6 ВИМ-фондов (см. WHITELIST_TICKERS).
+    Даже если в БД есть snapshot'ы других фондов — UI их не покажет.
+    EXISTS на history сейчас опущен чтобы whitelist-фонды без snapshot'ов
+    тоже отображались (с count=0) — UI разрулит "пока данных нет".
     """
     rows = db.execute(text("""
         SELECT
@@ -71,11 +92,9 @@ def list_funds_with_history(
             (SELECT COUNT(DISTINCT snapshot_date) FROM fund_holdings_history h
              WHERE h.fund_id = f.fund_id) AS snapshot_count
         FROM funds f
-        WHERE EXISTS (
-            SELECT 1 FROM fund_holdings_history h WHERE h.fund_id = f.fund_id
-        )
+        WHERE f.ticker = ANY(:tickers)
         ORDER BY f.category, f.ticker
-    """)).mappings().all()
+    """), {"tickers": list(WHITELIST_TICKERS)}).mappings().all()
     return {
         "funds": [
             {
@@ -104,6 +123,10 @@ def fund_trades_detail(
 
     Если истории нет (только один snapshot) — diff пустой, current'ы заполнены.
     """
+    # Beta whitelist — другие фонды возвращают 404 (не светим что они в БД).
+    if ticker.upper() not in {t.upper() for t in WHITELIST_TICKERS}:
+        raise HTTPException(status_code=404, detail=f"Fund {ticker} not available in beta")
+
     days = _parse_period(period)
 
     # Найти fund_id по тикеру (case-insensitive).
@@ -272,7 +295,13 @@ def top_movers(
         raise HTTPException(status_code=400, detail="category invalid")
 
     category_filter = "AND f.category = :cat" if category else ""
-    params = {"days": days, "limit": limit}
+    # Beta: whitelist 6 ВИМ-фондов
+    whitelist_filter = "AND f.ticker = ANY(:tickers)"
+    params = {
+        "days": days,
+        "limit": limit,
+        "tickers": list(WHITELIST_TICKERS),
+    }
     if category:
         params["cat"] = category
 
@@ -295,7 +324,7 @@ def top_movers(
                 ) AS prev_date
             FROM funds f
             JOIN fund_holdings_history h ON h.fund_id = f.fund_id
-            WHERE 1=1 {category_filter}
+            WHERE 1=1 {category_filter} {whitelist_filter}
             GROUP BY f.fund_id, f.ticker, f.name
             HAVING MAX(h.snapshot_date) IS NOT NULL
         ),
@@ -401,6 +430,7 @@ def asset_buyers(
             FROM funds f
             JOIN fund_holdings_history h ON h.fund_id = f.fund_id
             WHERE h.asset_name = :asset
+              AND f.ticker = ANY(:tickers)
             GROUP BY f.fund_id, f.ticker, f.name, f.category
         )
         SELECT
@@ -422,7 +452,11 @@ def asset_buyers(
             AND prev.snapshot_date = fp.prev_date
             AND prev.asset_name = :asset
         ORDER BY delta_weight DESC NULLS LAST
-    """), {"asset": asset_name, "days": days}).mappings().all()
+    """), {
+        "asset": asset_name,
+        "days": days,
+        "tickers": list(WHITELIST_TICKERS),
+    }).mappings().all()
 
     if not rows:
         raise HTTPException(
