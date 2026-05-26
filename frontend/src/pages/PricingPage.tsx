@@ -857,7 +857,7 @@ function ComparisonMatrix() {
       ],
     },
     {
-      title: 'Потоки участников биржи',
+      title: 'Поток капитала',
       icon: Banknote,
       rows: [
         ['Задержка данных', '24 часа', 'Real-time', 'Real-time'],

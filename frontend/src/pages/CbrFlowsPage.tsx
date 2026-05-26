@@ -381,7 +381,7 @@ export default function CbrFlowsPage() {
             indicator="cbr_flows"
             config={() => ({
               indicator: 'cbr_flows',
-              title: 'Экспорт: Потоки участников биржи',
+              title: 'Экспорт: Поток капитала',
               layers: [{
                 id: 'flows',
                 label: 'Потоки ОРФР',
@@ -460,7 +460,7 @@ export default function CbrFlowsPage() {
             getTargetElement={() => chartAnchorRef.current}
             filename={`frame-cbr-flows-${type}-${period}`}
             metadata={{
-              title: 'Потоки участников биржи',
+              title: 'Поток капитала',
               asset: data?.instrument_label ?? INSTRUMENT_TABS.find(t => t.key === type)?.label ?? '',
               details: [
                 `Период: ${PERIOD_OPTIONS.find(o => o.key === period)?.label}`,
