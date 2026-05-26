@@ -33,7 +33,7 @@ const ITEMS: RailItem[] = [
   { id: 'buffett',       path: '/buffett',       label: 'Баффет', Icon: Scale },
   { id: 'strength',      path: '/strength',      label: 'Сила',   Icon: Activity },
   { id: 'seasonality',   path: '/seasonality',   label: 'Сезон',  Icon: CalendarDays },
-  { id: 'cbr-flows',     path: '/cbr-flows',     label: 'ЦБ',     Icon: Banknote },
+  { id: 'cbr-flows',     path: '/cbr-flows',     label: 'Капитал',     Icon: Banknote },
   { id: 'funds-catalog', path: '/funds-catalog', label: 'Состав', Icon: LayoutGrid },
 ];
 

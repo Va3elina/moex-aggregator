@@ -1,5 +1,5 @@
 /**
- * CbrFlowsMethodologyPage — методология индикатора «Потоки участников биржи».
+ * CbrFlowsMethodologyPage — методология индикатора «Поток капитала».
  *
  * Источник данных — ежемесячный обзор финансовой стабильности Банка России,
  * раздел «Среднемесячные покупки/продажи акций по категориям участников».
@@ -11,7 +11,7 @@ export default function CbrFlowsMethodologyPage() {
   return (
     <MethodologyWrapper
       icon={Banknote}
-      title="Потоки участников биржи"
+      title="Поток капитала"
       backTo="/cbr-flows"
     >
       <Section title="Что показывает индикатор">

@@ -577,7 +577,7 @@ const ENDPOINT_GROUPS: EndpointGroup[] = [
         ],
     },
     {
-        title: 'Потоки ЦБ',
+        title: 'Поток капитала',
         endpoints: [
             {
                 id: 'cbr-flows',

@@ -26,7 +26,7 @@ Endpoints (catalog):
   GET /api/v1/public/funds/{ticker}               — детали фонда (NAV+pay+returns+holdings)
   GET /api/v1/public/funds/{ticker}/history       — NAV/pay daily history
 
-  ── Потоки ЦБ ──
+  ── Поток капитала ──
   GET /api/v1/public/cbr-flows                    — ОРФР (stocks/ofz/fx)
 
 Rate-limit: 60 req/min per API key (через Redis-counter).

@@ -55,7 +55,7 @@ const INDICATORS: {
   { path: '/strength', title: 'Сила рынка', desc: '% акций выше EMA 50/100/200', icon: Activity },
   { path: '/buffett', title: 'Индикатор Баффетта', desc: 'Капитализация / ВВП + Cap / M2', icon: Scale },
   { path: '/seasonality', title: 'Сезонность', desc: 'Среднее изменение цены по периодам', icon: CalendarDays },
-  { path: '/cbr-flows', title: 'Потоки ЦБ', desc: 'Кто покупает и продаёт по типам активов', icon: Building2 },
+  { path: '/cbr-flows', title: 'Поток капитала', desc: 'Кто покупает и продаёт по типам активов', icon: Building2 },
   // «Состав фондов» — сырой alpha-индикатор, ставим последним.
   { path: '/funds-catalog', title: 'Состав фондов', desc: 'Портфели фондов акций и облигаций', icon: LayoutGrid, badge: 'Alfa тест' },
 ];

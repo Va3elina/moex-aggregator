@@ -19,7 +19,7 @@ const NAV_ITEMS: { path: string; label: string; disabled?: boolean; badge?: stri
   { path: '/buffett', label: 'Индикатор Баффетта' },
   { path: '/strength', label: 'Сила рынка' },
   { path: '/seasonality', label: 'Сезонность' },
-  { path: '/cbr-flows', label: 'Потоки ЦБ' },
+  { path: '/cbr-flows', label: 'Поток капитала' },
   // Smart-money tracking — что покупают/продают БПИФ. Pro-only фича.
   // Помечен Beta — данные накапливаются (Cbonds monthly snapshot).
   { path: '/fund-trades', label: 'Покупки фондов', badge: 'Beta' },

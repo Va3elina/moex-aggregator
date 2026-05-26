@@ -158,7 +158,7 @@ export default function CbrFlowsPage() {
     <div className="max-w-[1408px] mx-auto px-4 md:px-6 py-6 md:py-8 text-theme-primary min-h-screen">
       <PageHeader
         icon={Building2}
-        title="Потоки участников биржи"
+        title="Поток капитала"
         subtitle="Кто покупает и кто продаёт по типам активов — по данным Банка России"
         help={METHODOLOGY.cbrFlows}
         helpLink="/methodology/cbr-flows"

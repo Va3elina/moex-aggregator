@@ -1,5 +1,5 @@
 /**
- * MobileCbrFlowsPage — мобильная версия «Потоки участников биржи».
+ * MobileCbrFlowsPage — мобильная версия «Поток капитала».
  *
  * Phase 3: упрощённая версия:
  *   - Type tabs (Акции / ОФЗ / Валюта) — chip row
@@ -55,7 +55,7 @@ export default function MobileCbrFlowsPage() {
   const tourSteps: TourStep[] = [
     {
       selector: null,
-      title: 'Потоки ЦБ',
+      title: 'Поток капитала',
       body: (
         <>
           <p style={{ marginBottom: 8 }}>
@@ -219,7 +219,7 @@ export default function MobileCbrFlowsPage() {
     >
       <MobilePageHeader
         Icon={Banknote}
-        title="Потоки ЦБ"
+        title="Поток капитала"
         helpLink="/methodology/cbr-flows"
         sourceNote="Источник: Банк России (ОРФР)"
       />
