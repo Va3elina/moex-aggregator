@@ -1,12 +1,12 @@
 /**
- * Подробный тур для «Потоки участников биржи» (6 шагов).
+ * Подробный тур для «Поток капитала» (6 шагов).
  */
 import type { TourStep } from '../../components/onboarding/OnboardingTour';
 
 export const cbrFlowsTourSteps: TourStep[] = [
   {
     selector: null,
-    title: 'Потоки участников биржи',
+    title: 'Поток капитала',
     body: (
       <>
         <p style={{ marginBottom: 8 }}>
