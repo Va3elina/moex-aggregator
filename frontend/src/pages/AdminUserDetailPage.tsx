@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import Card from '../components/Card';
 import Skeleton from '../components/Skeleton';
+import AvatarImg from '../components/AvatarImg';
 import Dropdown from '../components/Dropdown';
 import { useAuth } from '../contexts/AuthContext';
 import { getAdminUserDetail } from '../services/api';
@@ -122,9 +123,7 @@ export default function AdminUserDetailPage() {
                   overflow: 'hidden',
                 }}
               >
-                {data.user.avatar_url
-                  ? <img src={data.user.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  : (data.user.email[0] || '?').toUpperCase()}
+                <AvatarImg url={data.user.avatar_url} fallback={(data.user.email[0] || '?').toUpperCase()} />
               </div>
 
               <div className="flex-1 min-w-0">

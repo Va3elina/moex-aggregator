@@ -23,6 +23,7 @@ import Card from '../components/Card';
 import Skeleton from '../components/Skeleton';
 import Dropdown from '../components/Dropdown';
 import SimpleChart from '../components/SimpleChart';
+import AvatarImg from '../components/AvatarImg';
 import { useAuth } from '../contexts/AuthContext';
 import {
   getAnalyticsStats,
@@ -638,11 +639,7 @@ function UsersBlock({ days }: { days: number }) {
                         overflow: 'hidden',
                       }}
                     >
-                      {u.avatar_url ? (
-                        <img src={u.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      ) : (
-                        (u.email[0] || '?').toUpperCase()
-                      )}
+                      <AvatarImg url={u.avatar_url} fallback={(u.email[0] || '?').toUpperCase()} />
                     </div>
                     <div className="min-w-0 flex-1">
                       <div
