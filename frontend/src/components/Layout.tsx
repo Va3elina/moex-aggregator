@@ -471,7 +471,9 @@ export default function Layout() {
           color: 'var(--text-muted)',
         }}
       >
-        <div className="max-w-7xl mx-auto px-4 md:px-6 flex flex-wrap items-center justify-between gap-x-5 gap-y-2 text-xs">
+        <div className="max-w-7xl mx-auto px-4 md:px-6 flex flex-col gap-2">
+        {/* Top row — основные ссылки */}
+        <div className="flex flex-wrap items-center justify-between gap-x-5 gap-y-2 text-xs">
           <span>© Frame · таймфрейм.рф</span>
           {/* Attribution к индексам MOEX (Strength + FundsMoney используют
               IMOEX/RTSI/RGBI как benchmark). License MOEX требует видимое
@@ -521,6 +523,16 @@ export default function Layout() {
             </svg>
             Telegram
           </a>
+        </div>
+        {/* Bottom row — ИП-реквизиты для trust signal (Yandex Webmaster
+            POSITION_GENERATE_USER_TRUST_BOX). Полный адрес и расчётный счёт
+            живут в /agreement, /offer и /contacts — здесь сокращённая версия. */}
+        <div
+          className="text-[10px] md:text-xs opacity-70"
+          style={{ color: 'var(--text-muted)' }}
+        >
+          ИП Тория А.Р. · ИНН 782627792630 · ОГРНИП 325784700029296
+        </div>
         </div>
       </footer>
     </div>

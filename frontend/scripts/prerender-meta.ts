@@ -115,6 +115,60 @@ function renderRoute(path: string, meta: SeoMeta): string {
         html = html.replace('</head>', `  ${ld}\n</head>`);
     }
 
+    // Article schema для /methodology/* — длинный educational контент,
+    // даёт rich snippet с датой в выдаче Yandex/Google. Дата = время билда.
+    if (path.startsWith('/methodology/') && !meta.noindex) {
+        const article = {
+            '@context': 'https://schema.org',
+            '@type': 'Article',
+            headline: meta.title.split(' | ')[0],
+            description: meta.description,
+            author: {
+                '@type': 'Organization',
+                name: 'Фрейм',
+                url: CANONICAL_HOST + '/',
+            },
+            publisher: {
+                '@type': 'Organization',
+                name: 'Фрейм',
+                logo: {
+                    '@type': 'ImageObject',
+                    url: CANONICAL_HOST + '/logo.svg',
+                },
+            },
+            datePublished: new Date().toISOString().slice(0, 10),
+            dateModified: new Date().toISOString().slice(0, 10),
+            mainEntityOfPage: canonical,
+            inLanguage: 'ru-RU',
+        };
+        const ld = `<script type="application/ld+json">${JSON.stringify(article)}</script>`;
+        html = html.replace('</head>', `  ${ld}\n</head>`);
+    }
+
+    // Product schema для /pricing — Yandex показывает «от 0₽» snippet
+    // в выдаче по запросам типа «аналитика MOEX цена». AggregateOffer
+    // даёт диапазон без commit'а на точные тарифы (они меняются через API).
+    if (path === '/pricing') {
+        const product = {
+            '@context': 'https://schema.org',
+            '@type': 'Product',
+            name: 'Подписка Фрейм',
+            description: meta.description,
+            brand: { '@type': 'Brand', name: 'Фрейм' },
+            url: canonical,
+            offers: {
+                '@type': 'AggregateOffer',
+                offerCount: 3,
+                lowPrice: '0',
+                priceCurrency: 'RUB',
+                availability: 'https://schema.org/InStock',
+                url: canonical,
+            },
+        };
+        const ld = `<script type="application/ld+json">${JSON.stringify(product)}</script>`;
+        html = html.replace('</head>', `  ${ld}\n</head>`);
+    }
+
     return html;
 }
 
