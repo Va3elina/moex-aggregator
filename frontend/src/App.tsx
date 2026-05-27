@@ -1,5 +1,5 @@
 import { useEffect, lazy } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import ResponsiveRoute from './components/ResponsiveRoute';
 import { useIsMobile } from './hooks/useIsMobile';
 import { ThemeProvider } from './contexts/ThemeContext';
@@ -111,42 +111,13 @@ function ConditionalCookieBanner() {
 }
 
 /**
- * EmailSetupGate — редиректит OAuth-юзеров с synthetic email (typeof
- * `*@oauth.local`) на /add-email до тех пор пока не введут реальный email.
- *
- * Зачем: T-Bank по 54-ФЗ должен слать фискальный чек на реальный email при
- * каждой оплате. Без gate'а юзер с email `telegram_X@oauth.local` мог бы
- * оплатить, и чек никуда бы не дошёл — нарушение закона.
- *
- * Whitelist путей (доступны без email): legal-страницы и сам /add-email +
- * OAuth callbacks (юзер находится В ПРОЦЕССЕ авторизации). Без whitelist'а
- * юзер не смог бы прочитать оферту чтобы понять зачем ему email вводить.
+ * Раньше здесь жил EmailSetupGate — глобальный redirect на /add-email для
+ * OAuth-юзеров с synthetic email (`*@oauth.local`). Поведение оказалось
+ * слишком жёстким (юзер мог даже бесплатные индикаторы посмотреть только
+ * после ввода email). Сейчас защита перенесена В МОМЕНТ ОПЛАТЫ:
+ * ConsentModal в PricingPage показывает обязательное email-поле перед
+ * checkout'ом если requires_email_setup=true. Без оплаты email — опциональный.
  */
-const EMAIL_GATE_WHITELIST = [
-  '/add-email',
-  '/privacy',
-  '/agreement',
-  '/offer',
-  '/recurring',
-  '/contacts',
-  '/refund',
-  '/delivery',
-];
-
-function EmailSetupGate() {
-  const { user, isAuthenticated } = useAuth();
-  const loc = useLocation();
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    if (!isAuthenticated || !user?.requires_email_setup) return;
-    if (EMAIL_GATE_WHITELIST.includes(loc.pathname)) return;
-    if (loc.pathname.startsWith('/auth/callback/')) return;
-    navigate('/add-email', { replace: true });
-  }, [isAuthenticated, user?.requires_email_setup, loc.pathname, navigate]);
-
-  return null;
-}
 
 export default function App() {
   return (
@@ -159,7 +130,6 @@ export default function App() {
       <ScrollToTop />
       <AnalyticsPageViewTracker />
       <ConditionalCookieBanner />
-      <EmailSetupGate />
       <RouterErrorBoundary>
         <Routes>
           {/* Auth callback — без Layout */}
