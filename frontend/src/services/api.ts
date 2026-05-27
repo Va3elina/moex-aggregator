@@ -93,6 +93,37 @@ export async function apiFetch(url: string, init?: RequestInit): Promise<Respons
 // ==================== AUTH ====================
 
 /**
+ * Кастомный error с HTTP status code — нужен AddEmailPage чтобы отличить
+ * 409 (email занят другим аккаунтом → подсказать войти через другой провайдер)
+ * от 400/500 (показать generic сообщение).
+ */
+export class ApiError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+    this.name = 'ApiError';
+  }
+}
+
+/**
+ * Парсит error-ответ backend'а с учётом кастомной middleware-обёртки
+ * `{"success":false,"error":{"code":N,"message":"..."}}` (api/middleware.py).
+ * FastAPI default `{detail:"..."}` НЕ возвращается — все HTTPException
+ * проходят через http_exception_handler middleware.
+ */
+async function parseApiError(response: Response, fallback: string): Promise<string> {
+  try {
+    const data = await response.json();
+    if (data?.error?.message && typeof data.error.message === 'string') return data.error.message;
+    if (typeof data?.detail === 'string') return data.detail;
+  } catch {
+    // Response body не JSON
+  }
+  return fallback;
+}
+
+/**
  * Привязка реального email к OAuth-аккаунту (для юзеров с synthetic email
  * вроде telegram_123@oauth.local). После успеха AuthContext'у нужно сделать
  * refreshUser() чтобы подтянуть свежий /me — requires_email_setup станет false.
@@ -104,8 +135,8 @@ export async function addEmail(email: string): Promise<void> {
     body: JSON.stringify({ email }),
   });
   if (!response.ok) {
-    const data = await response.json().catch(() => ({ detail: 'Не удалось привязать email' }));
-    throw new Error(data.detail || 'Не удалось привязать email');
+    const message = await parseApiError(response, 'Не удалось привязать email');
+    throw new ApiError(response.status, message);
   }
 }
 

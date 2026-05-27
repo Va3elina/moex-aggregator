@@ -19,13 +19,14 @@ import { useState, type FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Mail, AlertCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { addEmail } from '../services/api';
+import { addEmail, ApiError } from '../services/api';
 
 export default function AddEmailPage() {
   const { user, refreshUser, logout } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [errorIsConflict, setErrorIsConflict] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   // Защита: если юзер открыл /add-email напрямую, но email уже не synthetic —
@@ -38,6 +39,7 @@ export default function AddEmailPage() {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
+    setErrorIsConflict(false);
     const trimmed = email.trim().toLowerCase();
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmed)) {
       setError('Введите корректный email (например, user@example.com)');
@@ -49,6 +51,8 @@ export default function AddEmailPage() {
       await refreshUser();
       navigate('/', { replace: true });
     } catch (err) {
+      const isConflict = err instanceof ApiError && err.status === 409;
+      setErrorIsConflict(isConflict);
       setError(err instanceof Error ? err.message : 'Не удалось привязать email');
     } finally {
       setSubmitting(false);
@@ -125,7 +129,16 @@ export default function AddEmailPage() {
               }}
             >
               <AlertCircle size={16} className="mt-0.5 flex-shrink-0" />
-              <span>{error}</span>
+              <div>
+                <div>{error}</div>
+                {errorIsConflict && (
+                  <div className="mt-2 text-xs" style={{ color: 'var(--text-secondary)' }}>
+                    Если у вас уже есть аккаунт с этим email — выйдите и войдите
+                    через провайдера, которым вы регистрировались раньше
+                    (Yandex/Google). Мы откроем существующий аккаунт.
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
