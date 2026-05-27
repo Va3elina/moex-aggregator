@@ -39,6 +39,7 @@ from api.schemas.auth import (
     RefreshTokenRequest,
     UserResponse,
     PasswordChange,
+    AddEmailRequest,
 )
 
 # Безопасность
@@ -469,6 +470,18 @@ async def logout(
     return None
 
 
+def is_synthetic_oauth_email(email: str) -> bool:
+    """
+    Returns True если email — placeholder для OAuth-юзера без реального email.
+
+    Создаётся в api/routers/oauth.py:169 как `{provider}_{oauth_id}@oauth.local`
+    для случаев когда провайдер не отдал email (Telegram by design, VK часто).
+    Такие email — несуществующие, на них письма не дойдут, чеки 54-ФЗ от T-Bank
+    тоже. Frontend проверяет этот флаг и редиректит на /add-email.
+    """
+    return email.endswith("@oauth.local")
+
+
 @router.get(
     "/me",
     response_model=UserResponse,
@@ -491,6 +504,74 @@ async def get_me(user: User = Depends(get_current_user), db: Session = Depends(g
         has_password=bool(user.hashed_password),
         oauth_providers=oauth_providers,
         created_at=user.created_at,
+        requires_email_setup=is_synthetic_oauth_email(user.email),
+    )
+
+
+@router.post(
+    "/add-email",
+    response_model=UserResponse,
+    summary="Привязка реального email к OAuth-аккаунту",
+    responses={
+        400: {"description": "Email уже привязан (не synthetic)"},
+        409: {"description": "Email занят другим пользователем"},
+    }
+)
+async def add_email(
+    data: AddEmailRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Привязка реального email для OAuth-юзеров без него (Telegram-всегда, VK-часто).
+
+    Без реального email T-Bank не может выдать фискальный чек по 54-ФЗ,
+    юзер не получит уведомления и password-reset (когда добавим). Frontend
+    редиректит таких юзеров на /add-email до тех пор пока не введут реальный
+    адрес — этот endpoint обрабатывает submit формы.
+
+    Verification email (Phase 2) добавим когда настроим SMTP через Yandex 360 —
+    пока сохраняем без подтверждения, is_verified остаётся False до verification.
+    """
+    if not is_synthetic_oauth_email(user.email):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email уже привязан. Для смены email обратитесь в поддержку.",
+        )
+
+    new_email = data.email.lower().strip()
+
+    # Проверка уникальности — другой юзер мог уже использовать этот адрес
+    existing = db.query(User).filter(User.email == new_email).first()
+    if existing and existing.id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Этот email уже используется другим аккаунтом.",
+        )
+
+    logger.info(
+        f"User {user.id} adding real email (was synthetic): {user.email} → {new_email}",
+        extra={"extra_data": {"event": "email_setup", "user_id": user.id}},
+    )
+
+    user.email = new_email
+    # is_verified остаётся False — verification flow появится в Phase 2 (Yandex 360 SMTP).
+    # До тех пор email сохраняется как «привязан, но не подтверждён».
+    db.commit()
+    db.refresh(user)
+
+    oauth_providers = [user.oauth_provider] if user.oauth_provider else []
+    return UserResponse(
+        id=user.id,
+        email=user.email,
+        display_name=getattr(user, "display_name", None),
+        role=user.role,
+        is_verified=user.is_verified,
+        avatar_url=user.avatar_url,
+        has_password=bool(user.hashed_password),
+        oauth_providers=oauth_providers,
+        created_at=user.created_at,
+        requires_email_setup=False,  # Только что привязали реальный email
     )
 
 

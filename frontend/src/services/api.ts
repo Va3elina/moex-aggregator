@@ -90,6 +90,25 @@ export async function apiFetch(url: string, init?: RequestInit): Promise<Respons
   return response;
 }
 
+// ==================== AUTH ====================
+
+/**
+ * Привязка реального email к OAuth-аккаунту (для юзеров с synthetic email
+ * вроде telegram_123@oauth.local). После успеха AuthContext'у нужно сделать
+ * refreshUser() чтобы подтянуть свежий /me — requires_email_setup станет false.
+ */
+export async function addEmail(email: string): Promise<void> {
+  const response = await apiFetch(`${API_BASE}/api/auth/add-email`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({ detail: 'Не удалось привязать email' }));
+    throw new Error(data.detail || 'Не удалось привязать email');
+  }
+}
+
 // ==================== ИНСТРУМЕНТЫ ====================
 
 export async function getInstruments(

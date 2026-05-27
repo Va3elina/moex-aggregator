@@ -145,6 +145,24 @@ class UserResponse(BaseModel):
     has_password: bool = True
     oauth_providers: list[str] = []
     created_at: datetime
+    # True если email — synthetic placeholder вроде telegram_123@oauth.local
+    # (OAuth-провайдер не дал email и был создан fallback). Frontend
+    # редиректит таких юзеров на /add-email до тех пор пока не введут реальный
+    # email — без него T-Bank не сможет выдать чек по 54-ФЗ.
+    requires_email_setup: bool = False
+
+
+# === ПРИВЯЗКА EMAIL (для OAuth-юзеров без него) ===
+
+class AddEmailRequest(BaseModel):
+    """
+    Запрос на привязку реального email к OAuth-аккаунту.
+
+    Используется юзерами зарегистрировавшимися через Telegram (всегда без email)
+    или VK (часто без email). После Phase 2 фичи добавится verification — пока
+    что просто сохраняем email без подтверждения.
+    """
+    email: EmailStr = Field(..., description="Реальный email пользователя")
 
     class Config:
         from_attributes = True

@@ -204,6 +204,7 @@ export const SEO_META: Record<string, SeoMeta> = {
     // Защита от попадания в выдачу. Помимо noindex meta также Disallowed
     // в robots.txt — defense in depth.
     '/login': { title: 'Вход | Фрейм', description: '', noindex: true },
+    '/add-email': { title: 'Привязка email | Фрейм', description: '', noindex: true },
     '/profile': { title: 'Профиль | Фрейм', description: '', noindex: true },
     '/billing/success': { title: 'Спасибо за подписку | Фрейм', description: '', noindex: true },
     '/billing/fail': { title: 'Оплата не прошла | Фрейм', description: '', noindex: true },

@@ -9,6 +9,10 @@ interface User {
   avatar_url: string | null;
   created_at: string;
   oauth_providers: string[];
+  /** True если email — placeholder `*@oauth.local` (Telegram/VK без реального
+   *  email). Такого юзера App редиректит на /add-email до тех пор пока не
+   *  введёт реальный адрес — иначе T-Bank не выдаст чек по 54-ФЗ. */
+  requires_email_setup?: boolean;
 }
 
 interface AuthContextType {
