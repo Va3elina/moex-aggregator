@@ -287,7 +287,18 @@ if FRONTEND_DIR.exists():
                     headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
                 )
             return FileResponse(file_path)
-        # index.html (SPA fallback) — никогда не кешировать
+        # Pre-rendered HTML per route — кладётся scripts/prerender-meta.ts в postbuild.
+        # dist/<route>/index.html содержит правильные <title>/<meta description>/
+        # canonical/og/twitter/JSON-LD для конкретного URL. Без этого Yandex/Google
+        # видят одинаковый title на всех страницах SPA (duplicate content penalty).
+        if path:
+            prerendered = FRONTEND_DIR / path / "index.html"
+            if prerendered.exists() and prerendered.is_file():
+                return FileResponse(
+                    prerendered,
+                    headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+                )
+        # SPA fallback — dist/index.html (главная + неизвестные routes)
         return FileResponse(
             FRONTEND_DIR / "index.html",
             headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
