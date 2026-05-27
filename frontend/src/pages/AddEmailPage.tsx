@@ -28,6 +28,18 @@ export default function AddEmailPage() {
   const [error, setError] = useState<string | null>(null);
   const [errorIsConflict, setErrorIsConflict] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  /** Logout с навигацией на главную. Без navigate юзер визуально остаётся
+   *  на /add-email после очистки токенов (потому что страница не имеет auth-
+   *  гейта, рендерится для null user'а) — он думает что кнопка не работает,
+   *  кликает повторно, ловит rate-limit на /api/auth/logout. */
+  const handleLogout = async () => {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    await logout();
+    navigate('/', { replace: true });
+  };
 
   // Защита: если юзер открыл /add-email напрямую, но email уже не synthetic —
   // редирект на главную. Иначе можно зациклиться.
@@ -157,11 +169,12 @@ export default function AddEmailPage() {
 
         <button
           type="button"
-          onClick={logout}
-          className="w-full mt-4 py-2 text-sm transition-opacity hover:opacity-70"
+          onClick={handleLogout}
+          disabled={loggingOut}
+          className="w-full mt-4 py-2 text-sm transition-opacity hover:opacity-70 disabled:opacity-50"
           style={{ color: 'var(--text-muted)' }}
         >
-          Выйти из аккаунта
+          {loggingOut ? 'Выходим…' : 'Выйти из аккаунта'}
         </button>
       </div>
     </div>
