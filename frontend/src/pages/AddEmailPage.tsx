@@ -95,13 +95,10 @@ export default function AddEmailPage() {
           </h1>
         </div>
 
-        <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>
-          Вы зашли через {user?.oauth_providers[0] === 'telegram' ? 'Telegram' : 'VK'},
-          и провайдер не передал нам ваш email.
-        </p>
         <p className="text-sm mb-6" style={{ color: 'var(--text-secondary)' }}>
-          Email нужен для отправки чеков по 54-ФЗ при оплате подписки и для
-          восстановления доступа к аккаунту.
+          {user?.oauth_providers[0] === 'telegram' ? 'Через Telegram' : 'Через VK'} мы
+          email не получаем. Оставьте свой — на него придёт чек при оплате и
+          ссылка для восстановления доступа.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
