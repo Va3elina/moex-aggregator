@@ -50,6 +50,7 @@ import AdminUserDetailPage from './pages/AdminUserDetailPage';
 import ApiDocsPage from './pages/ApiDocsPage';
 import FundTradesPage from './pages/FundTradesPage';
 import AddEmailPage from './pages/AddEmailPage';
+import FAQPage from './pages/FAQPage';
 
 // Mobile pages — lazy-loaded, desktop юзеры не качают этот код
 const MobileOpenInterestPage = lazy(() => import('./pages/mobile/MobileOpenInterestPage'));
@@ -236,6 +237,7 @@ export default function App() {
             <Route path="/contacts" element={<ContactsPage />} />
             <Route path="/refund" element={<RefundPage />} />
             <Route path="/delivery" element={<DeliveryPage />} />
+            <Route path="/faq" element={<FAQPage />} />
             {/* /security удалён 2026-05-18, редирект на главную для старых bookmark'ов */}
             <Route path="/security" element={<Navigate to="/" replace />} />
             {/* API docs (Pro tier feature) — публичная страница, доступ без auth */}

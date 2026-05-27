@@ -491,6 +491,9 @@ export default function Layout() {
               © ПАО Московская Биржа
             </a>
           </span>
+          <Link to="/faq" className="transition-opacity hover:opacity-80" style={{ color: 'var(--text-secondary)' }}>
+            FAQ
+          </Link>
           <Link to="/contacts" className="transition-opacity hover:opacity-80" style={{ color: 'var(--text-secondary)' }}>
             Контакты
           </Link>
