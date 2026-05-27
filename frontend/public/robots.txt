@@ -4,11 +4,19 @@
 User-agent: *
 Allow: /
 
-# Служебные/приватные разделы — не индексируем
+# Служебные/приватные разделы — не индексируем.
+# Двойная защита: эти же URL дополнительно помечены <meta name="robots" content="noindex">
+# через scripts/prerender-meta.ts (см. seoMeta.ts) — defense in depth.
 Disallow: /api/
 Disallow: /auth/
 Disallow: /login
+Disallow: /profile
 Disallow: /style-preview
+Disallow: /signal-export
+Disallow: /api-docs
+Disallow: /admin/
+Disallow: /billing/
+Disallow: /fund-trades
 
 # Yandex-специфичные директивы (понимает только YandexBot).
 # Clean-param: отбрасывает UTM/реферальные хвосты — иначе /buffett?utm_source=tg
@@ -18,7 +26,13 @@ Allow: /
 Disallow: /api/
 Disallow: /auth/
 Disallow: /login
+Disallow: /profile
 Disallow: /style-preview
+Disallow: /signal-export
+Disallow: /api-docs
+Disallow: /admin/
+Disallow: /billing/
+Disallow: /fund-trades
 Clean-param: utm_source&utm_medium&utm_campaign&utm_term&utm_content&ref&fbclid&gclid&yclid
 
 # Главное зеркало (для Yandex)

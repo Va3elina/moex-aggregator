@@ -167,13 +167,55 @@ export const SEO_META: Record<string, SeoMeta> = {
         description: 'Какие данные собирает Фрейм, как обрабатывает и хранит. Права пользователей и контакты.',
     },
 
+    // ─── Legal/информационные страницы — индексируем ───────────
+    // Эти страницы есть в sitemap.xml и обязательны для коммерческого сайта
+    // (Yandex проверяет наличие в SEO-чеках, плюс T-Bank требует ссылки на
+    // оферту/соглашение в платёжной форме).
+    '/agreement': {
+        title: 'Пользовательское соглашение | Фрейм',
+        description:
+            'Условия использования сервиса аналитики Московской биржи Фрейм. ИП Тория А.Р.',
+    },
+    '/offer': {
+        title: 'Публичная оферта — договор оказания услуг | Фрейм',
+        description:
+            'Договор возмездного оказания услуг. Тарифы Free/Basic/Pro/Premium. ИП Тория А.Р.',
+    },
+    '/recurring': {
+        title: 'Договор рекуррентных платежей | Фрейм',
+        description:
+            'Условия авто-продления подписки на сервис Фрейм через эквайринг Т-Банка.',
+    },
+    '/contacts': {
+        title: 'Контакты | Фрейм',
+        description: 'Контактные данные сервиса Фрейм. Реквизиты ИП Тория А.Р., email, Telegram.',
+    },
+    '/refund': {
+        title: 'Возврат средств | Фрейм',
+        description: 'Условия и порядок возврата средств за подписку на сервис Фрейм.',
+    },
+    '/delivery': {
+        title: 'Порядок оказания услуг | Фрейм',
+        description:
+            'Как предоставляются услуги аналитики Московской биржи через сервис Фрейм.',
+    },
+
     // ─── Не индексируем ─────────────────────────────────────────
+    // Защита от попадания в выдачу. Помимо noindex meta также Disallowed
+    // в robots.txt — defense in depth.
     '/login': { title: 'Вход | Фрейм', description: '', noindex: true },
     '/profile': { title: 'Профиль | Фрейм', description: '', noindex: true },
     '/billing/success': { title: 'Спасибо за подписку | Фрейм', description: '', noindex: true },
     '/billing/fail': { title: 'Оплата не прошла | Фрейм', description: '', noindex: true },
     '/billing/stub': { title: 'Подписка | Фрейм', description: '', noindex: true },
     '/billing/redeem': { title: 'Активация промо-кода | Фрейм', description: '', noindex: true },
+    // Внутренние инструменты — никогда не индексируем.
+    '/signal-export': { title: 'Signal Export | Фрейм', description: '', noindex: true },
+    '/style-preview': { title: 'Style Preview | Фрейм', description: '', noindex: true },
+    '/api-docs': { title: 'API Документация | Фрейм', description: '', noindex: true },
+    // Beta-фича с whitelist 6 ВИМ-фондов — не пускаем в индекс пока контент
+    // неполный (накапливаем данные через Cbonds monthly snapshot).
+    '/fund-trades': { title: 'Покупки фондов (beta) | Фрейм', description: '', noindex: true },
 }
 
 /**

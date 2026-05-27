@@ -106,8 +106,10 @@ function renderRoute(path: string, meta: SeoMeta): string {
     html = replaceMetaByProperty(html, 'og:title', meta.title);
     html = replaceMetaByName(html, 'twitter:title', meta.title);
 
-    // BreadcrumbList JSON-LD — даёт хлебные крошки в выдаче Google для не-главных страниц
-    if (path !== '/') {
+    // BreadcrumbList JSON-LD — даёт хлебные крошки в выдаче Google для не-главных
+    // публичных страниц. Для noindex (login/profile/billing/*) breadcrumbs не нужны —
+    // эти URL не должны попадать в выдачу вообще.
+    if (path !== '/' && !meta.noindex) {
         const bc = buildBreadcrumb(path, meta, canonical);
         const ld = `<script type="application/ld+json">${JSON.stringify(bc)}</script>`;
         html = html.replace('</head>', `  ${ld}\n</head>`);
@@ -116,8 +118,12 @@ function renderRoute(path: string, meta: SeoMeta): string {
     return html;
 }
 
-const routes = Object.entries(SEO_META).filter(([, meta]) => !meta.noindex);
-console.log(`prerender-meta: ${routes.length} публичных routes`);
+// Генерируем HTML для ВСЕХ routes из SEO_META, включая noindex. Для приватных
+// routes (login/profile/billing/*) HTML содержит <meta name="robots" content="noindex, nofollow">
+// — defense in depth даже если crawler как-то добрался до URL мимо robots.txt.
+const routes = Object.entries(SEO_META);
+const publicCount = routes.filter(([, m]) => !m.noindex).length;
+console.log(`prerender-meta: ${routes.length} routes (${publicCount} публичных, ${routes.length - publicCount} noindex)`);
 
 for (const [path, meta] of routes) {
     const html = renderRoute(path, meta);
