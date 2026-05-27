@@ -1111,10 +1111,12 @@ export interface FundWithHistory {
     fund_id: number;
     ticker: string;
     name: string;
+    uk: string | null;
     category: string;
     subcategory: string | null;
     last_snapshot_date: string | null;
     snapshot_count: number;
+    snapshots_count?: number; // backward compat
 }
 
 export interface FundTradesHolding {
@@ -1239,5 +1241,122 @@ export async function getFundIntraday(
     if (resp.status === 403) throw new Error('Доступно на тарифе Pro');
     if (resp.status === 404) throw new Error(`Фонд ${ticker} не поддерживает intraday`);
     if (!resp.ok) throw new Error('Не удалось загрузить intraday');
+    return resp.json();
+}
+
+// ─── Snapshot review API ────────────────────────────────────────
+
+export interface FundSnapshotItem {
+    snapshot_date: string;
+    asset_count: number;
+}
+
+export interface FundSnapshotsList {
+    ticker: string;
+    fund_name: string;
+    snapshots: FundSnapshotItem[];
+}
+
+export interface FundHoldingRow {
+    asset_name: string;
+    isin: string | null;
+    positions: number | null;
+    amount_rub: number | null;
+    weight: number | null;
+}
+
+export interface FundDiffRow {
+    asset_name: string;
+    isin: string | null;
+    curr_positions: number | null;
+    prev_positions: number | null;
+    curr_amount_rub: number | null;
+    prev_amount_rub: number | null;
+    curr_weight: number | null;
+    prev_weight: number | null;
+    delta_positions: number | null;
+    delta_amount_rub: number | null;
+}
+
+export interface FundSnapshotReview {
+    fund: { ticker: string; name: string; category: string | null };
+    current_snapshot_date: string;
+    previous_snapshot_date: string | null;
+    current_holdings: FundHoldingRow[];
+    added: FundDiffRow[];
+    reduced: FundDiffRow[];
+    new: FundDiffRow[];
+    sold_out: FundDiffRow[];
+    totals: {
+        current_assets: number;
+        previous_assets: number;
+        total_added_rub: number;
+        total_reduced_rub: number;
+        total_new_rub: number;
+        total_sold_out_rub: number;
+    };
+}
+
+export async function getFundSnapshots(ticker: string): Promise<FundSnapshotsList> {
+    const resp = await apiFetch(
+        `${API_BASE}/api/fund-trades/snapshots/${encodeURIComponent(ticker)}`,
+    );
+    if (resp.status === 403) throw new Error('Доступно на тарифе Pro');
+    if (resp.status === 404) throw new Error(`Фонд ${ticker} не найден`);
+    if (!resp.ok) throw new Error('Не удалось загрузить список снапшотов');
+    return resp.json();
+}
+
+export async function getFundSnapshotReview(
+    ticker: string,
+    date?: string,
+): Promise<FundSnapshotReview> {
+    const params = date ? `?date=${date}` : '';
+    const resp = await apiFetch(
+        `${API_BASE}/api/fund-trades/snapshot/${encodeURIComponent(ticker)}${params}`,
+    );
+    if (resp.status === 403) throw new Error('Доступно на тарифе Pro');
+    if (resp.status === 404) throw new Error('Снапшот не найден');
+    if (!resp.ok) throw new Error('Не удалось загрузить обзор снапшота');
+    return resp.json();
+}
+
+// ─── Asset history (drill-down) ─────────────────────────────
+
+export interface AssetHistoryPoint {
+    snapshot_date: string;
+    positions: number | null;
+    amount_rub: number | null;
+    weight: number | null;
+    price_rub: number | null;
+    delta_positions: number | null;
+    delta_amount_rub: number | null;
+}
+
+export interface AssetHistory {
+    fund: { ticker: string; name: string };
+    asset_name: string;
+    isin: string | null;
+    snapshots_count: number;
+    first_seen: string;
+    last_seen: string;
+    timeline: AssetHistoryPoint[];
+}
+
+export async function getAssetHistory(
+    ticker: string,
+    opts: { assetName?: string; isin?: string },
+): Promise<AssetHistory> {
+    const params = new URLSearchParams();
+    if (opts.isin) params.set('isin', opts.isin);
+    else if (opts.assetName) params.set('asset_name', opts.assetName);
+    else throw new Error('asset_name or isin required');
+
+    const resp = await apiFetch(
+        `${API_BASE}/api/fund-trades/asset-history/${encodeURIComponent(ticker)}?${params}`,
+    );
+    if (resp.status === 403) throw new Error('Доступно на тарифе Pro');
+    if (resp.status === 404) throw new Error('История по позиции не найдена');
+    if (!resp.ok) throw new Error('Не удалось загрузить историю');
     return resp.json();
 }

@@ -18,6 +18,7 @@ import io
 import logging
 import sys
 import time
+import urllib.request
 import zipfile
 from pathlib import Path
 
@@ -35,13 +36,62 @@ from Funds.parsers.vim_sdr_listener import (
 )
 
 
-# Цель backfill — 3 БПИФ-фонда у которых есть архив на сайте ВИМ.
-BACKFILL_TICKERS = ["LQDT", "EQMX", "GOLD"]
+# Цель backfill — фонды с реальными holdings:
+#   EQMX — индексный фонд акций (3.75 года истории)
+#   OBLG — БПИФ Российские облигации (bonds)
+# LQDT (cash/REPO) и GOLD (ОМС/REPO) пропускаются — у них нет классических
+# holdings и их monthly SCHA не несёт полезной информации для UI.
+BACKFILL_TICKERS = ["EQMX", "OBLG"]
 
 # Sleep между запросами чтобы не вызвать rate-limit ВИМ.
 SLEEP_BETWEEN_DOWNLOADS = 1.5  # секунды
 
 SOURCE = "vim_sdr"
+
+# In-memory cache для ISIN → SHORTNAME (экономит запросы к MOEX).
+_isin_name_cache: dict[str, str] = {}
+
+
+def resolve_isin_name(isin: str) -> str:
+    """
+    Получает краткое название эмитента по ISIN через MOEX ISS API.
+    Кеширует результат в _isin_name_cache.
+
+    Использует /iss/securities.json?q=ISIN — возвращает traded securities
+    с shortname и name. Берём первый traded=1 результат.
+
+    Не кидает исключения — при ошибке возвращает ISIN как fallback.
+    """
+    if isin in _isin_name_cache:
+        return _isin_name_cache[isin]
+    try:
+        import json
+        url = f"https://iss.moex.com/iss/securities.json?q={isin}&iss.meta=off&limit=5"
+        req = urllib.request.Request(url, headers={"User-Agent": "frame/1.0 backfill"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read())
+        secs = data.get("securities", {})
+        columns = secs.get("columns", [])
+        rows = secs.get("data", [])
+        if columns and rows:
+            isin_col = columns.index("isin") if "isin" in columns else None
+            name_col = columns.index("shortname") if "shortname" in columns else None
+            traded_col = columns.index("is_traded") if "is_traded" in columns else None
+            # Предпочитаем traded=1, потом любой
+            for prefer_traded in (True, False):
+                for row in rows:
+                    if isin_col is not None and row[isin_col] != isin:
+                        continue
+                    if prefer_traded and traded_col is not None and not row[traded_col]:
+                        continue
+                    if name_col is not None and row[name_col]:
+                        name = row[name_col]
+                        _isin_name_cache[isin] = name
+                        return name
+    except Exception:
+        pass
+    _isin_name_cache[isin] = isin  # fallback = ISIN код
+    return isin
 
 
 def setup_logging():
@@ -92,28 +142,49 @@ def existing_snapshot_dates(engine, fund_id: int, source: str = SOURCE) -> set:
     return {r[0] for r in rows}
 
 
-def save_assets(engine, fund_id: int, snapshot_date, assets: list[dict]) -> int:
-    """Сохраняет список assets в fund_holdings_history. ON CONFLICT DO NOTHING."""
+def save_assets(engine, fund_id: int, snapshot_date, assets: list[dict], resolve_names: bool = True) -> int:
+    """
+    Сохраняет список assets в fund_holdings_history. ON CONFLICT DO NOTHING.
+
+    Если resolve_names=True, для активов с placeholder-именем "(name from ISIN)"
+    дозаполняет SHORTNAME через MOEX ISS (с кешем).
+    """
     if not assets:
         return 0
+
+    # Вычислим total NAV для весов.
+    total_nav = sum(a.get("value_rub") or 0 for a in assets)
+
     inserted = 0
     with engine.connect() as conn:
         for a in assets:
-            # weight в SCHA не указан явно, но мы можем посчитать его post-hoc
-            # как value_rub / total_NAV. Для now — оставим NULL и положим
-            # positions + amount_rub. weight можно вычислить SQL'ом потом.
+            name = a["asset_name"]
+            # Дозаполняем имя из MOEX если placeholder.
+            if name in ("(name from ISIN)", "(имя не извлечено)") and a.get("isin"):
+                if resolve_names:
+                    name = resolve_isin_name(a["isin"])
+                else:
+                    name = a["isin"]
+
+            # Вычислим weight как доля от total NAV.
+            weight = None
+            if total_nav > 0 and a.get("value_rub"):
+                weight = round(a["value_rub"] / total_nav * 100, 4)  # в процентах
+
             result = conn.execute(text("""
                 INSERT INTO fund_holdings_history
-                    (fund_id, asset_name, weight, positions, amount_rub,
+                    (fund_id, asset_name, isin, weight, positions, amount_rub,
                      snapshot_date, source, created_at)
                 VALUES
-                    (:fid, :name, NULL, :positions, :amount_rub,
+                    (:fid, :name, :isin, :weight, :positions, :amount_rub,
                      :snap_date, :source, NOW())
                 ON CONFLICT (fund_id, asset_name, snapshot_date) DO NOTHING
                 RETURNING id
             """), {
                 "fid": fund_id,
-                "name": a["asset_name"][:255],
+                "name": name[:255],
+                "isin": a.get("isin"),
+                "weight": weight,
                 "positions": a.get("positions"),
                 "amount_rub": a.get("value_rub"),
                 "snap_date": snapshot_date,

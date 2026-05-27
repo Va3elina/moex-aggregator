@@ -36,23 +36,24 @@ import {
     listFundsWithHistory,
     getFundTradesDetail,
     getFundTradesMovers,
-    getFundIntraday,
+    getFundSnapshots,
+    getFundSnapshotReview,
+    getAssetHistory,
     type FundTradesPeriod,
     type FundWithHistory,
     type FundTradesDetail,
     type FundTradesMovers,
     type FundTradeChangeType,
-    type FundIntradayDetail,
-    type FundIntradayEvent,
+    type FundSnapshotsList,
+    type FundSnapshotReview,
+    type FundDiffRow,
+    type AssetHistory,
 } from '../services/api';
 import { useCommonFeatures } from '../contexts/TierFeaturesContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 
-type Tab = 'funds' | 'movers' | 'intraday';
-
-// Тикеры с intraday-данными (только ВИМ-БПИФ)
-const INTRADAY_TICKERS = ['LQDT', 'EQMX', 'GOLD'] as const;
+type Tab = 'funds' | 'movers' | 'snapshots';
 
 const CATEGORY_LABEL: Record<string, string> = {
     stocks: 'Акции',
@@ -747,10 +748,10 @@ export default function FundTradesPage() {
                     Beta
                 </span>
                 <div style={{ flex: 1, fontSize: 'var(--fs-sm)', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                    Сейчас отслеживаем <strong style={{ color: 'var(--text-primary)' }}>6 фондов УК ВИМ</strong>:
-                    LQDT, EQMX, GOLD, ВИМ-Акции, ВИМ-Казначейский, ВИМ-Облигации Рантье.
-                    Тестируем методологию — после стабилизации добавим Первую, Альфу,
-                    Т-Капитал.
+                    Сейчас отслеживаем <strong style={{ color: 'var(--text-primary)' }}>4 фонда УК ВИМ</strong> с
+                    реальными equity-holdings: EQMX (Индекс МосБиржи), ВИМ-Акции,
+                    ВИМ-Казначейский, ВИМ-Облигации Рантье. Тестируем методологию —
+                    после стабилизации добавим Первую, Альфу, Т-Капитал.
                 </div>
             </div>
 
@@ -769,8 +770,8 @@ export default function FundTradesPage() {
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                     {([
                         { id: 'funds' as const, label: 'По фондам', icon: Wallet },
+                        { id: 'snapshots' as const, label: 'Обзор снапшота', icon: Activity },
                         { id: 'movers' as const, label: 'Месячные движения', icon: Activity },
-                        { id: 'intraday' as const, label: 'Intraday (ВИМ-БПИФ)', icon: ArrowUpRight },
                     ]).map((t) => {
                         const Icon = t.icon;
                         const active = tab === t.id;
@@ -970,7 +971,7 @@ export default function FundTradesPage() {
                 </>
             )}
 
-            {tab === 'intraday' && <IntradayTab />}
+            {tab === 'snapshots' && <SnapshotReviewTab />}
 
             {selectedTicker && (
                 <FundDetailModal
@@ -984,226 +985,826 @@ export default function FundTradesPage() {
 }
 
 // ════════════════════════════════════════════════════════════════════
-// Intraday Tab — события дельт positions по 3 ВИМ-БПИФ (real-time T+15min)
+// Snapshot Review Tab — обзор каждого снапшота: купил/продал/новые/полностью вышел
+// в editorial-стиле «Секторов дня». Сравниваем с предыдущим снапшотом.
 // ════════════════════════════════════════════════════════════════════
-function IntradayTab() {
-    const [ticker, setTicker] = useState<(typeof INTRADAY_TICKERS)[number]>('EQMX');
-    const [days, setDays] = useState<number>(7);
-    const [data, setData] = useState<FundIntradayDetail | null>(null);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
 
-    useEffect(() => {
-        let cancelled = false;
-        setLoading(true);
-        setError(null);
-        getFundIntraday(ticker, days)
-            .then((d) => { if (!cancelled) setData(d); })
-            .catch((e: Error) => { if (!cancelled) setError(e.message); })
-            .finally(() => { if (!cancelled) setLoading(false); });
-        return () => { cancelled = true; };
-    }, [ticker, days]);
+// SNAPSHOT_TICKERS подгружается динамически из API /funds — туда попадают
+// все фонды из whitelist с хотя бы 1 snapshot в fund_holdings_history.
+
+function formatRubShort(amount: number | null): string {
+    if (amount === null || amount === undefined) return '—';
+    const abs = Math.abs(amount);
+    if (abs >= 1e9) return `${(amount / 1e9).toFixed(2)} млрд ₽`;
+    if (abs >= 1e6) return `${(amount / 1e6).toFixed(1)} млн ₽`;
+    if (abs >= 1e3) return `${(amount / 1e3).toFixed(0)} тыс ₽`;
+    return `${amount.toFixed(0)} ₽`;
+}
+
+function formatShares(positions: number | null): string {
+    if (positions === null || positions === undefined) return '—';
+    return positions.toLocaleString('ru-RU');
+}
+
+function formatSnapshotDate(iso: string): string {
+    // 2026-04-30 → "30 апр 2026"
+    const d = new Date(iso);
+    const months = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+    return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+// Horizontal bar — Editorial-стиль как у «Секторов дня».
+// Бар растёт справа от центра (для buys) или слева (для sells).
+// Размер = пропорционально |amount| / max_abs_amount среди всех групп.
+function EditorialBar({
+    label,
+    subLabel,
+    amount,
+    maxAbs,
+    isPositive,
+    onClick,
+}: {
+    label: string;
+    subLabel?: string;
+    amount: number;
+    maxAbs: number;
+    isPositive: boolean;
+    onClick?: () => void;
+}) {
+    const widthPct = maxAbs > 0 ? Math.max(2, Math.abs(amount) / maxAbs * 100) : 2;
+    const color = isPositive ? 'var(--mood-green, #4a9959)' : 'var(--mood-red, #b85645)';
 
     return (
-        <div>
-            <div
-                style={{
-                    display: 'flex',
-                    gap: 12,
-                    flexWrap: 'wrap',
-                    marginBottom: 16,
-                    alignItems: 'center',
-                }}
-            >
-                <div style={{ display: 'flex', gap: 4 }}>
-                    {INTRADAY_TICKERS.map((t) => (
-                        <button
-                            key={t}
-                            onClick={() => setTicker(t)}
-                            style={{
-                                padding: '6px 14px',
-                                background: ticker === t ? 'var(--accent)' : 'var(--bg-secondary)',
-                                color: ticker === t ? 'var(--text-inverse)' : 'var(--text-primary)',
-                                border: '1.5px solid var(--text-primary)',
-                                borderRadius: 999,
-                                fontSize: 'var(--fs-sm)',
-                                fontWeight: ticker === t ? 700 : 600,
-                                cursor: 'pointer',
-                                fontFamily: 'ui-monospace, monospace',
-                            }}
-                        >
-                            {t}
-                        </button>
-                    ))}
-                </div>
-                <div style={{ display: 'flex', gap: 4, padding: 4, background: 'var(--bg-secondary)', borderRadius: 8 }}>
-                    {[1, 3, 7, 30].map((d) => (
-                        <button
-                            key={d}
-                            onClick={() => setDays(d)}
-                            style={{
-                                padding: '4px 10px',
-                                background: days === d ? 'var(--bg-primary)' : 'transparent',
-                                color: days === d ? 'var(--text-primary)' : 'var(--text-secondary)',
-                                border: days === d
-                                    ? '1px solid color-mix(in srgb, var(--text-primary) 18%, transparent)'
-                                    : '1px solid transparent',
-                                borderRadius: 6,
-                                fontSize: 'var(--fs-xs)',
-                                fontWeight: days === d ? 700 : 600,
-                                cursor: 'pointer',
-                            }}
-                        >
-                            {d} {d === 1 ? 'день' : 'дн'}
-                        </button>
-                    ))}
-                </div>
-                {data && (
-                    <div style={{
-                        marginLeft: 'auto',
-                        fontSize: 'var(--fs-xs)',
-                        color: 'var(--text-muted)',
-                    }}>
-                        Снапшотов: <strong style={{ color: 'var(--text-primary)' }}>{data.snapshots_count}</strong>
-                        {data.latest_timestamp && (
-                            <> · Последний: <strong style={{ color: 'var(--text-primary)' }}>
-                                {new Date(data.latest_timestamp).toLocaleString('ru-RU')}
-                            </strong></>
-                        )}
+        <div
+            onClick={onClick}
+            style={{
+                display: 'grid',
+                gridTemplateColumns: '180px 1fr 140px',
+                alignItems: 'center',
+                gap: 12,
+                padding: '8px 0',
+                cursor: onClick ? 'pointer' : 'default',
+                borderBottom: '1px solid var(--border-soft, rgba(0,0,0,0.06))',
+            }}
+        >
+            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-primary)', fontWeight: 500 }}>
+                <div>{label}</div>
+                {subLabel && (
+                    <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-tertiary)', marginTop: 2 }}>
+                        {subLabel}
                     </div>
                 )}
             </div>
-
-            {loading && <div style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>Загружаем…</div>}
-            {error && (
-                <div style={{
-                    padding: 12,
-                    background: 'color-mix(in srgb, var(--danger, #ef4444) 10%, transparent)',
-                    border: '1px solid var(--danger, #ef4444)',
-                    borderRadius: 8,
-                    color: 'var(--danger, #ef4444)',
-                    fontSize: 'var(--fs-sm)',
-                }}>{error}</div>
-            )}
-
-            {data && data.events.length === 0 && !loading && (
+            <div style={{ height: 22, position: 'relative' }}>
                 <div
                     style={{
-                        padding: 32,
-                        textAlign: 'center',
+                        width: `${widthPct}%`,
+                        height: '100%',
+                        background: color,
+                        borderRadius: 2,
+                    }}
+                />
+            </div>
+            <div
+                style={{
+                    fontSize: 'var(--fs-sm)',
+                    textAlign: 'right',
+                    color,
+                    fontWeight: 700,
+                    fontVariantNumeric: 'tabular-nums',
+                }}
+            >
+                {isPositive ? '+' : '−'}{formatRubShort(Math.abs(amount))}
+            </div>
+        </div>
+    );
+}
+
+function SnapshotReviewTab() {
+    const [availableFunds, setAvailableFunds] = useState<FundWithHistory[]>([]);
+    const [ticker, setTicker] = useState<string>('EQMX');
+    const [snapshotsList, setSnapshotsList] = useState<FundSnapshotsList | null>(null);
+    const [selectedDate, setSelectedDate] = useState<string | null>(null);
+    const [review, setReview] = useState<FundSnapshotReview | null>(null);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [drillDown, setDrillDown] = useState<{ asset_name: string; isin: string | null } | null>(null);
+
+    // Load list of funds with history once
+    useEffect(() => {
+        listFundsWithHistory()
+            .then((data) => setAvailableFunds(data.funds.filter(f => (f.snapshot_count || 0) > 0)))
+            .catch(() => {});
+    }, []);
+
+    // Load snapshots list when ticker changes
+    useEffect(() => {
+        let cancel = false;
+        setLoading(true);
+        setError(null);
+        getFundSnapshots(ticker)
+            .then((data) => {
+                if (cancel) return;
+                setSnapshotsList(data);
+                // Default = latest snapshot
+                if (data.snapshots.length > 0) {
+                    setSelectedDate(data.snapshots[0].snapshot_date);
+                } else {
+                    setSelectedDate(null);
+                    setReview(null);
+                }
+            })
+            .catch((e) => !cancel && setError(e.message))
+            .finally(() => !cancel && setLoading(false));
+        return () => { cancel = true; };
+    }, [ticker]);
+
+    // Load review when selectedDate changes
+    useEffect(() => {
+        if (!selectedDate) return;
+        let cancel = false;
+        setLoading(true);
+        setError(null);
+        getFundSnapshotReview(ticker, selectedDate)
+            .then((data) => !cancel && setReview(data))
+            .catch((e) => !cancel && setError(e.message))
+            .finally(() => !cancel && setLoading(false));
+        return () => { cancel = true; };
+    }, [ticker, selectedDate]);
+
+    const maxAbsAmount = useMemo(() => {
+        if (!review) return 0;
+        const allBars = [
+            ...review.added.map(r => r.delta_amount_rub || 0),
+            ...review.reduced.map(r => Math.abs(r.delta_amount_rub || 0)),
+            ...review.new.map(r => r.curr_amount_rub || 0),
+            ...review.sold_out.map(r => r.prev_amount_rub || 0),
+        ];
+        return Math.max(...allBars, 1);
+    }, [review]);
+
+    // Группировка фондов по УК для dropdown
+    const fundsByUk = useMemo(() => {
+        const groups: Record<string, FundWithHistory[]> = {};
+        for (const f of availableFunds) {
+            const uk = f.uk || 'Прочие';
+            if (!groups[uk]) groups[uk] = [];
+            groups[uk].push(f);
+        }
+        return groups;
+    }, [availableFunds]);
+
+    const selectedFund = availableFunds.find(f => f.ticker === ticker);
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+            {/* Ticker selector — dropdown с группировкой по УК */}
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+                <label style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-tertiary)' }}>
+                    Фонд:
+                </label>
+                <select
+                    value={ticker}
+                    onChange={(e) => setTicker(e.target.value)}
+                    style={{
+                        padding: '8px 14px',
                         background: 'var(--bg-secondary)',
-                        border: '1.5px dashed var(--border-color)',
-                        borderRadius: 12,
+                        color: 'var(--text-primary)',
+                        border: '1.5px solid var(--text-primary)',
+                        borderRadius: 8,
+                        fontSize: 'var(--fs-sm)',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        minWidth: 320,
+                        fontFamily: 'inherit',
                     }}
                 >
-                    <ArrowUpRight size={32} style={{ color: 'var(--text-muted)', margin: '0 auto 12px' }} />
-                    <p style={{ fontSize: 'var(--fs-md)', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>
-                        За последние {days} дн событий не было
-                    </p>
-                    <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-secondary)', maxWidth: 520, margin: '0 auto', lineHeight: 1.5 }}>
-                        Парсер ВИМ работает каждые 30 минут в торговое время (10:00-19:00 МСК).
-                        События появляются когда УК реально торгует. {ticker === 'LQDT' && 'Для LQDT (money market) сделок практически не бывает — там 100% денежные средства.'}
-                    </p>
+                    {Object.entries(fundsByUk).map(([uk, funds]) => (
+                        <optgroup key={uk} label={uk}>
+                            {funds.map((f) => (
+                                <option key={f.ticker} value={f.ticker}>
+                                    {f.ticker} — {f.name} ({f.snapshot_count} снап.)
+                                </option>
+                            ))}
+                        </optgroup>
+                    ))}
+                </select>
+                {selectedFund && (
+                    <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-tertiary)' }}>
+                        {selectedFund.uk || 'УК неизвестна'} · {selectedFund.category || ''}
+                    </span>
+                )}
+            </div>
+
+            {/* Snapshots timeline navigation */}
+            {snapshotsList && snapshotsList.snapshots.length > 0 && (
+                <div
+                    style={{
+                        display: 'flex',
+                        gap: 4,
+                        overflowX: 'auto',
+                        padding: '8px 0',
+                        borderTop: '1px solid var(--border-color)',
+                        borderBottom: '1px solid var(--border-color)',
+                    }}
+                >
+                    {snapshotsList.snapshots.map((s) => {
+                        const active = s.snapshot_date === selectedDate;
+                        return (
+                            <button
+                                key={s.snapshot_date}
+                                onClick={() => setSelectedDate(s.snapshot_date)}
+                                title={`${s.snapshot_date} · ${s.asset_count} активов`}
+                                style={{
+                                    padding: '6px 12px',
+                                    background: active ? 'var(--text-primary)' : 'transparent',
+                                    color: active ? 'var(--text-inverse)' : 'var(--text-secondary)',
+                                    border: 'none',
+                                    fontSize: 'var(--fs-xs)',
+                                    fontWeight: active ? 700 : 500,
+                                    fontVariantNumeric: 'tabular-nums',
+                                    cursor: 'pointer',
+                                    whiteSpace: 'nowrap',
+                                    borderRadius: 2,
+                                }}
+                            >
+                                {formatSnapshotDate(s.snapshot_date)}
+                            </button>
+                        );
+                    })}
                 </div>
             )}
 
-            {data && data.events.length > 0 && (
-                <div
+            {loading && (
+                <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-tertiary)' }}>
+                    Загрузка...
+                </div>
+            )}
+            {error && (
+                <div style={{ padding: 16, background: 'var(--bg-secondary)', color: 'var(--mood-red)' }}>
+                    {error}
+                </div>
+            )}
+
+            {/* Review sections */}
+            {!loading && review && (
+                <SnapshotReviewBody
+                    review={review}
+                    maxAbsAmount={maxAbsAmount}
+                    onRowClick={(r) => setDrillDown({ asset_name: r.asset_name, isin: r.isin })}
+                />
+            )}
+
+            {!loading && !error && snapshotsList && snapshotsList.snapshots.length === 0 && (
+                <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-tertiary)' }}>
+                    У {ticker} пока нет исторических снапшотов SCHA. Данные накапливаются с каждым месяцем.
+                </div>
+            )}
+
+            {/* Drill-down modal */}
+            {drillDown && (
+                <AssetHistoryModal
+                    ticker={ticker}
+                    asset_name={drillDown.asset_name}
+                    isin={drillDown.isin}
+                    onClose={() => setDrillDown(null)}
+                />
+            )}
+        </div>
+    );
+}
+
+function SnapshotReviewBody({
+    review,
+    maxAbsAmount,
+    onRowClick,
+}: {
+    review: FundSnapshotReview;
+    maxAbsAmount: number;
+    onRowClick: (r: FundDiffRow) => void;
+}) {
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
+            {/* Header: fund + dates */}
+            <div>
+                <h3
                     style={{
-                        background: 'var(--bg-secondary)',
-                        border: '1.5px solid var(--border-color)',
-                        borderRadius: 10,
-                        overflow: 'hidden',
+                        fontFamily: 'var(--font-serif, Georgia, serif)',
+                        fontSize: 'var(--fs-2xl)',
+                        margin: 0,
+                        marginBottom: 8,
+                        color: 'var(--text-primary)',
                     }}
                 >
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-sm)' }}>
-                        <thead>
-                            <tr>
-                                {['Время', 'Тип', 'Актив', 'Δ штук', 'Сейчас, шт', 'Было, шт'].map((h) => (
-                                    <th
-                                        key={h}
-                                        style={{
-                                            textAlign: 'left',
-                                            padding: '10px 12px',
-                                            color: 'var(--text-muted)',
-                                            fontSize: 'var(--fs-2xs)',
-                                            textTransform: 'uppercase',
-                                            letterSpacing: '0.05em',
-                                            fontWeight: 700,
-                                            borderBottom: '2px solid var(--text-primary)',
-                                            background: 'var(--bg-primary)',
-                                        }}
-                                    >
-                                        {h}
-                                    </th>
-                                ))}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {data.events.map((e, i) => (
-                                <IntradayRow key={`${e.timestamp}-${e.asset_name}-${i}`} event={e} />
-                            ))}
-                        </tbody>
-                    </table>
+                    {review.fund.name}
+                </h3>
+                <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-tertiary)' }}>
+                    Снапшот <strong style={{ color: 'var(--text-primary)' }}>
+                        {formatSnapshotDate(review.current_snapshot_date)}
+                    </strong>
+                    {review.previous_snapshot_date && (
+                        <> · сравниваем с {formatSnapshotDate(review.previous_snapshot_date)}</>
+                    )}
+                    {' · '}{review.totals.current_assets} активов
+                </div>
+            </div>
+
+            {/* No previous snapshot */}
+            {!review.previous_snapshot_date && (
+                <div style={{
+                    padding: 16,
+                    background: 'var(--bg-secondary)',
+                    fontSize: 'var(--fs-sm)',
+                    color: 'var(--text-secondary)',
+                }}>
+                    Это самый ранний снапшот — сравнивать не с чем. Показываем текущий состав.
+                </div>
+            )}
+
+            {/* ДОКУПИЛ */}
+            {review.added.length > 0 && (
+                <SnapshotSection
+                    title="ДОКУПИЛ"
+                    count={review.added.length}
+                    totalRub={review.totals.total_added_rub}
+                    items={review.added}
+                    maxAbs={maxAbsAmount}
+                    isPositive={true}
+                    valueGetter={(r) => r.delta_amount_rub || 0}
+                    subLabelGetter={(r) =>
+                        `+${formatShares(r.delta_positions || 0)} шт` +
+                        (r.curr_weight !== null ? ` · ${r.curr_weight.toFixed(2)}%` : '')
+                    }
+                    onItemClick={onRowClick}
+                />
+            )}
+
+            {/* ПРОДАЛ */}
+            {review.reduced.length > 0 && (
+                <SnapshotSection
+                    title="ПРОДАЛ"
+                    count={review.reduced.length}
+                    totalRub={Math.abs(review.totals.total_reduced_rub)}
+                    items={review.reduced}
+                    maxAbs={maxAbsAmount}
+                    isPositive={false}
+                    valueGetter={(r) => r.delta_amount_rub || 0}
+                    subLabelGetter={(r) =>
+                        `${formatShares(r.delta_positions || 0)} шт` +
+                        (r.curr_weight !== null ? ` · ${r.curr_weight.toFixed(2)}%` : '')
+                    }
+                    onItemClick={onRowClick}
+                />
+            )}
+
+            {/* НОВЫЕ ПОЗИЦИИ */}
+            {review.new.length > 0 && (
+                <SnapshotSection
+                    title="НОВЫЕ ПОЗИЦИИ"
+                    count={review.new.length}
+                    totalRub={review.totals.total_new_rub}
+                    items={review.new}
+                    maxAbs={maxAbsAmount}
+                    isPositive={true}
+                    valueGetter={(r) => r.curr_amount_rub || 0}
+                    subLabelGetter={(r) =>
+                        `${formatShares(r.curr_positions)} шт` +
+                        (r.curr_weight !== null ? ` · ${r.curr_weight.toFixed(2)}%` : '')
+                    }
+                    onItemClick={onRowClick}
+                />
+            )}
+
+            {/* ПОЛНОСТЬЮ ВЫШЕЛ */}
+            {review.sold_out.length > 0 && (
+                <SnapshotSection
+                    title="ПОЛНОСТЬЮ ВЫШЕЛ"
+                    count={review.sold_out.length}
+                    totalRub={review.totals.total_sold_out_rub}
+                    items={review.sold_out}
+                    maxAbs={maxAbsAmount}
+                    isPositive={false}
+                    valueGetter={(r) => -(r.prev_amount_rub || 0)}
+                    subLabelGetter={(r) =>
+                        `было ${formatShares(r.prev_positions)} шт`
+                    }
+                    onItemClick={onRowClick}
+                />
+            )}
+
+            {/* Если без изменений */}
+            {review.previous_snapshot_date &&
+              review.added.length === 0 &&
+              review.reduced.length === 0 &&
+              review.new.length === 0 &&
+              review.sold_out.length === 0 && (
+                <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-tertiary)' }}>
+                    Состав не изменился между снапшотами.
                 </div>
             )}
         </div>
     );
 }
 
-function IntradayRow({ event }: { event: FundIntradayEvent }) {
-    const labelByType: Record<FundIntradayEvent['change_type'], string> = {
-        new: 'НОВЫЙ',
-        sold_out: 'ПРОДАН',
-        accumulated: 'ДОКУПИЛИ',
-        reduced: 'СОКРАТИЛИ',
-    };
-    const color = changeColor(event.change_type as FundTradeChangeType);
-    const ts = new Date(event.timestamp);
-    const tsStr = ts.toLocaleString('ru-RU', {
-        day: '2-digit',
-        month: 'short',
-        hour: '2-digit',
-        minute: '2-digit',
-    });
-    const cell: React.CSSProperties = {
-        padding: '8px 12px',
-        borderBottom: '1px solid color-mix(in srgb, var(--border-color) 60%, transparent)',
-        color: 'var(--text-primary)',
-        fontSize: 'var(--fs-sm)',
-    };
+function SnapshotSection({
+    title,
+    count,
+    totalRub,
+    items,
+    maxAbs,
+    isPositive,
+    valueGetter,
+    subLabelGetter,
+    onItemClick,
+}: {
+    title: string;
+    count: number;
+    totalRub: number;
+    items: FundDiffRow[];
+    maxAbs: number;
+    isPositive: boolean;
+    valueGetter: (r: FundDiffRow) => number;
+    subLabelGetter: (r: FundDiffRow) => string;
+    onItemClick?: (r: FundDiffRow) => void;
+}) {
     return (
-        <tr>
-            <td style={{ ...cell, fontFamily: 'ui-monospace, monospace', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-                {tsStr}
-            </td>
-            <td style={cell}>
-                <span style={{
-                    padding: '2px 8px',
-                    background: `color-mix(in srgb, ${color} 14%, transparent)`,
-                    color,
-                    fontSize: 'var(--fs-2xs)',
-                    fontWeight: 700,
-                    borderRadius: 4,
-                    letterSpacing: '0.04em',
-                }}>
-                    {labelByType[event.change_type]}
+        <div>
+            <div
+                style={{
+                    display: 'flex',
+                    alignItems: 'baseline',
+                    justifyContent: 'space-between',
+                    marginBottom: 12,
+                    borderBottom: '1.5px solid var(--text-primary)',
+                    paddingBottom: 6,
+                }}
+            >
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+                    <span
+                        style={{
+                            fontSize: 'var(--fs-xs)',
+                            fontWeight: 700,
+                            letterSpacing: '0.08em',
+                            color: 'var(--text-primary)',
+                        }}
+                    >
+                        {title}
+                    </span>
+                    <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-tertiary)' }}>
+                        {count} {count === 1 ? 'позиция' : count < 5 ? 'позиции' : 'позиций'}
+                    </span>
+                </div>
+                <span
+                    style={{
+                        fontSize: 'var(--fs-sm)',
+                        fontWeight: 700,
+                        color: isPositive ? 'var(--mood-green)' : 'var(--mood-red)',
+                        fontVariantNumeric: 'tabular-nums',
+                    }}
+                >
+                    {isPositive ? '+' : '−'}{formatRubShort(Math.abs(totalRub))}
                 </span>
-            </td>
-            <td style={cell}>{event.asset_name}</td>
-            <td style={{ ...cell, fontFamily: 'ui-monospace, monospace', fontWeight: 700, color, textAlign: 'right' }}>
-                {event.delta_positions > 0 ? '+' : ''}
-                {event.delta_positions.toLocaleString('ru-RU')}
-            </td>
-            <td style={{ ...cell, fontFamily: 'ui-monospace, monospace', textAlign: 'right' }}>
-                {event.current_positions !== null ? event.current_positions.toLocaleString('ru-RU') : '—'}
-            </td>
-            <td style={{ ...cell, fontFamily: 'ui-monospace, monospace', textAlign: 'right', color: 'var(--text-muted)' }}>
-                {event.previous_positions !== null ? event.previous_positions.toLocaleString('ru-RU') : '—'}
-            </td>
-        </tr>
+            </div>
+            <div>
+                {items.map((r) => (
+                    <EditorialBar
+                        key={`${r.asset_name}-${r.isin || ''}`}
+                        label={r.asset_name}
+                        subLabel={subLabelGetter(r)}
+                        amount={valueGetter(r)}
+                        maxAbs={maxAbs}
+                        isPositive={isPositive}
+                        onClick={onItemClick ? () => onItemClick(r) : undefined}
+                    />
+                ))}
+            </div>
+        </div>
     );
 }
+
+// ════════════════════════════════════════════════════════════════════
+// Asset History Modal — drill-down: график positions по одной позиции в одном фонде
+// ════════════════════════════════════════════════════════════════════
+
+function AssetHistoryModal({
+    ticker,
+    asset_name,
+    isin,
+    onClose,
+}: {
+    ticker: string;
+    asset_name: string;
+    isin: string | null;
+    onClose: () => void;
+}) {
+    const [data, setData] = useState<AssetHistory | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        let cancel = false;
+        setLoading(true);
+        setError(null);
+        getAssetHistory(ticker, isin ? { isin } : { assetName: asset_name })
+            .then((d) => !cancel && setData(d))
+            .catch((e) => !cancel && setError(e.message))
+            .finally(() => !cancel && setLoading(false));
+        return () => { cancel = true; };
+    }, [ticker, asset_name, isin]);
+
+    return (
+        <div
+            onClick={onClose}
+            style={{
+                position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                zIndex: 1000, padding: 16,
+            }}
+        >
+            <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                    background: 'var(--bg-primary)',
+                    maxWidth: 920, width: '100%', maxHeight: '92vh', overflow: 'auto',
+                    border: '1.5px solid var(--text-primary)',
+                    padding: '24px 28px',
+                    boxShadow: '0 16px 60px rgba(0,0,0,0.3)',
+                }}
+            >
+                {/* Header */}
+                <div style={{
+                    display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
+                    marginBottom: 20, paddingBottom: 16,
+                    borderBottom: '1.5px solid var(--text-primary)',
+                }}>
+                    <div>
+                        <h3 style={{
+                            fontFamily: 'var(--font-serif, Georgia, serif)',
+                            fontSize: 'var(--fs-2xl)', margin: 0, marginBottom: 4,
+                            color: 'var(--text-primary)',
+                        }}>
+                            {asset_name}
+                        </h3>
+                        <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-tertiary)' }}>
+                            {ticker} {isin && <span style={{ marginLeft: 8 }}>· {isin}</span>}
+                        </div>
+                    </div>
+                    <button
+                        onClick={onClose}
+                        style={{
+                            border: 'none', background: 'transparent',
+                            fontSize: 24, cursor: 'pointer', color: 'var(--text-tertiary)',
+                            padding: '4px 8px',
+                        }}
+                        aria-label="Закрыть"
+                    >
+                        ×
+                    </button>
+                </div>
+
+                {loading && (
+                    <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-tertiary)' }}>
+                        Загрузка истории...
+                    </div>
+                )}
+                {error && (
+                    <div style={{ padding: 16, color: 'var(--mood-red)' }}>{error}</div>
+                )}
+
+                {data && !loading && <AssetHistoryContent data={data} />}
+            </div>
+        </div>
+    );
+}
+
+function AssetHistoryContent({ data }: { data: AssetHistory }) {
+    // Bounds для графика positions
+    const maxPos = Math.max(...data.timeline.map(p => p.positions || 0));
+    const minPos = Math.min(...data.timeline.filter(p => p.positions !== null).map(p => p.positions!));
+    const range = maxPos - minPos || 1;
+
+    // SVG chart dimensions
+    const W = 800;
+    const H = 260;
+    const padL = 80;
+    const padR = 20;
+    const padT = 20;
+    const padB = 40;
+    const innerW = W - padL - padR;
+    const innerH = H - padT - padB;
+
+    const points = data.timeline.filter(p => p.positions !== null);
+    const xStep = points.length > 1 ? innerW / (points.length - 1) : 0;
+
+    const linePath = points.map((p, i) => {
+        const x = padL + i * xStep;
+        const y = padT + innerH - ((p.positions! - minPos) / range) * innerH;
+        return `${i === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`;
+    }).join(' ');
+
+    // Y-axis ticks (3-5 значений)
+    const yTicks = 4;
+    const tickValues = Array.from({ length: yTicks + 1 }, (_, i) => minPos + (range / yTicks) * i);
+
+    // Доп. цвета: сравнить первое и последнее
+    const firstPos = points[0]?.positions || 0;
+    const lastPos = points[points.length - 1]?.positions || 0;
+    const totalDelta = lastPos - firstPos;
+    const totalDeltaColor = totalDelta >= 0 ? 'var(--mood-green)' : 'var(--mood-red)';
+
+    return (
+        <>
+            {/* Summary */}
+            <div style={{
+                display: 'flex', gap: 32, flexWrap: 'wrap',
+                marginBottom: 20, padding: '12px 0',
+            }}>
+                <SummaryStat
+                    label="ПЕРВЫЙ СНАПШОТ"
+                    value={formatSnapshotDate(data.first_seen)}
+                    sub={`${formatShares(firstPos)} шт`}
+                />
+                <SummaryStat
+                    label="ПОСЛЕДНИЙ СНАПШОТ"
+                    value={formatSnapshotDate(data.last_seen)}
+                    sub={`${formatShares(lastPos)} шт`}
+                />
+                <SummaryStat
+                    label="ИЗМЕНЕНИЕ"
+                    value={`${totalDelta >= 0 ? '+' : ''}${formatShares(totalDelta)} шт`}
+                    sub={`за ${data.snapshots_count} снапшота${data.snapshots_count > 1 ? 'ов' : ''}`}
+                    color={totalDeltaColor}
+                />
+                <SummaryStat
+                    label="ТЕКУЩАЯ ДОЛЯ"
+                    value={points[points.length - 1]?.weight !== null
+                        ? `${points[points.length - 1].weight!.toFixed(2)}%`
+                        : '—'}
+                    sub={formatRubShort(points[points.length - 1]?.amount_rub || null)}
+                />
+            </div>
+
+            {/* SVG Chart */}
+            <div style={{
+                background: 'var(--bg-secondary, rgba(0,0,0,0.02))',
+                padding: '12px 0', borderRadius: 4, marginBottom: 24,
+            }}>
+                <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: 'block' }}>
+                    {/* Y-axis grid + labels */}
+                    {tickValues.map((tv, i) => {
+                        const y = padT + innerH - ((tv - minPos) / range) * innerH;
+                        return (
+                            <g key={i}>
+                                <line
+                                    x1={padL} y1={y} x2={W - padR} y2={y}
+                                    stroke="var(--border-soft, rgba(0,0,0,0.08))"
+                                    strokeDasharray="2,4"
+                                />
+                                <text
+                                    x={padL - 8} y={y + 4}
+                                    textAnchor="end" fontSize="11"
+                                    fill="var(--text-tertiary)"
+                                    fontFamily="ui-monospace, SFMono-Regular, monospace"
+                                >
+                                    {Math.round(tv).toLocaleString('ru-RU')}
+                                </text>
+                            </g>
+                        );
+                    })}
+
+                    {/* X-axis labels (first, middle, last) */}
+                    {points.length > 0 && [0, Math.floor(points.length / 2), points.length - 1].map((idx) => {
+                        const x = padL + idx * xStep;
+                        return (
+                            <text
+                                key={idx}
+                                x={x} y={H - padB / 2 + 12}
+                                textAnchor="middle" fontSize="11"
+                                fill="var(--text-tertiary)"
+                            >
+                                {formatSnapshotDate(points[idx].snapshot_date)}
+                            </text>
+                        );
+                    })}
+
+                    {/* Line */}
+                    <path d={linePath} fill="none" stroke="var(--text-primary)" strokeWidth="2" />
+
+                    {/* Dots — buy/sell highlights */}
+                    {points.map((p, i) => {
+                        const x = padL + i * xStep;
+                        const y = padT + innerH - ((p.positions! - minPos) / range) * innerH;
+                        const delta = p.delta_positions;
+                        const isBuy = delta !== null && delta > 0;
+                        const isSell = delta !== null && delta < 0;
+                        const color = isBuy ? 'var(--mood-green)' : isSell ? 'var(--mood-red)' : 'var(--text-primary)';
+                        const r = isBuy || isSell ? 4 : 2.5;
+                        return (
+                            <circle
+                                key={p.snapshot_date}
+                                cx={x} cy={y} r={r}
+                                fill={color}
+                                stroke="var(--bg-primary)" strokeWidth="1.5"
+                            >
+                                <title>
+                                    {formatSnapshotDate(p.snapshot_date)}: {formatShares(p.positions)} шт
+                                    {delta ? `\nΔ ${delta >= 0 ? '+' : ''}${formatShares(delta)} шт` : ''}
+                                    {p.delta_amount_rub ? `\n${p.delta_amount_rub >= 0 ? '+' : '−'}${formatRubShort(Math.abs(p.delta_amount_rub))}` : ''}
+                                </title>
+                            </circle>
+                        );
+                    })}
+                </svg>
+            </div>
+
+            {/* Table of all snapshots */}
+            <div>
+                <div style={{
+                    fontSize: 'var(--fs-xs)', fontWeight: 700,
+                    letterSpacing: '0.08em', marginBottom: 8,
+                    paddingBottom: 4, borderBottom: '1.5px solid var(--text-primary)',
+                }}>
+                    ВСЕ СНАПШОТЫ
+                </div>
+                <table style={{
+                    width: '100%', borderCollapse: 'collapse',
+                    fontSize: 'var(--fs-sm)', fontVariantNumeric: 'tabular-nums',
+                }}>
+                    <thead>
+                        <tr style={{ color: 'var(--text-tertiary)' }}>
+                            <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 500 }}>Дата</th>
+                            <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: 500 }}>Штук</th>
+                            <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: 500 }}>Δ</th>
+                            <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: 500 }}>На сумму</th>
+                            <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: 500 }}>Цена</th>
+                            <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: 500 }}>Доля</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {[...data.timeline].reverse().map((p) => {
+                            const dColor = !p.delta_positions ? 'var(--text-tertiary)'
+                                : p.delta_positions > 0 ? 'var(--mood-green)' : 'var(--mood-red)';
+                            return (
+                                <tr key={p.snapshot_date} style={{ borderBottom: '1px solid var(--border-soft, rgba(0,0,0,0.05))' }}>
+                                    <td style={{ padding: '6px 8px' }}>{formatSnapshotDate(p.snapshot_date)}</td>
+                                    <td style={{ padding: '6px 8px', textAlign: 'right' }}>{formatShares(p.positions)}</td>
+                                    <td style={{ padding: '6px 8px', textAlign: 'right', color: dColor, fontWeight: 600 }}>
+                                        {p.delta_positions === null ? '—'
+                                            : p.delta_positions === 0 ? '0'
+                                            : `${p.delta_positions > 0 ? '+' : ''}${formatShares(p.delta_positions)}`}
+                                    </td>
+                                    <td style={{ padding: '6px 8px', textAlign: 'right' }}>
+                                        {formatRubShort(p.amount_rub)}
+                                    </td>
+                                    <td style={{ padding: '6px 8px', textAlign: 'right' }}>
+                                        {p.price_rub !== null ? `${p.price_rub.toFixed(2)} ₽` : '—'}
+                                    </td>
+                                    <td style={{ padding: '6px 8px', textAlign: 'right' }}>
+                                        {p.weight !== null ? `${p.weight.toFixed(2)}%` : '—'}
+                                    </td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+            </div>
+        </>
+    );
+}
+
+function SummaryStat({
+    label, value, sub, color,
+}: {
+    label: string;
+    value: string;
+    sub?: string;
+    color?: string;
+}) {
+    return (
+        <div>
+            <div style={{
+                fontSize: 'var(--fs-xs)', fontWeight: 700,
+                letterSpacing: '0.08em', color: 'var(--text-tertiary)',
+                marginBottom: 4,
+            }}>
+                {label}
+            </div>
+            <div style={{
+                fontSize: 'var(--fs-lg)', fontWeight: 700,
+                fontVariantNumeric: 'tabular-nums',
+                color: color || 'var(--text-primary)',
+            }}>
+                {value}
+            </div>
+            {sub && (
+                <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-tertiary)', marginTop: 2 }}>
+                    {sub}
+                </div>
+            )}
+        </div>
+    );
+}
+
 
 function MoversColumn({
     title,

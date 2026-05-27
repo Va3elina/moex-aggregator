@@ -46,6 +46,7 @@ VIM_TICKER_TO_SLUG = {
     "LQDT": ("bpif", "wimfl"),
     "EQMX": ("bpif", "wimfimb"),
     "GOLD": ("bpif", "wimfg"),
+    "OBLG": ("bpif", "wimfrb"),  # БПИФ Российские облигации
     # ОПИФ — slug'и требуют ручной проверки. Дополним когда выяснится.
     "OPIF-1003": ("opif", "wim-fonds-aktsii"),    # ВИМ-Акции
     "OPIF-54": ("opif", "wim-fonds-kaznachey"),   # Казначейский

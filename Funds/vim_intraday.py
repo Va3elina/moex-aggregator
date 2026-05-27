@@ -31,7 +31,10 @@ from Funds.parsers.vim_parser import VIM_FUND_SLUGS, fetch_vim_holdings
 
 
 # Тикеры которые отслеживаем intraday.
-INTRADAY_TICKERS = ["LQDT", "EQMX", "GOLD"]
+# Только EQMX — единственный фонд с equity-holdings.
+# LQDT (money market) и GOLD (золото-ОМС) не имеют классических holdings,
+# у них в /structure/ всегда 1-100 строк REPO/ОМС без реальных торговых событий.
+INTRADAY_TICKERS = ["EQMX"]
 
 # МСК timezone (UTC+3).
 MSK = timezone(timedelta(hours=3))
