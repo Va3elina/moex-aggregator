@@ -560,10 +560,13 @@ function UsersBlock({ days }: { days: number }) {
         >
           <Search size={14} style={{ color: 'var(--text-muted)' }} />
           <input
-            type="text"
+            type="search"
+            name="user_search"
+            id="admin-user-search"
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Поиск по email / имени"
+            autoComplete="off"
             className="flex-1 bg-transparent outline-none"
             style={{
               color: 'var(--text-primary)',
