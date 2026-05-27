@@ -88,10 +88,10 @@ export default function PricingPage() {
   const [period, setPeriod] = useState<'monthly' | 'yearly'>('yearly'); // годовой по умолчанию (выгоднее)
   const [loading, setLoading] = useState(true);
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
-  // recurrent — сохранить карту для авто-продления. Default true (по умолчанию
-  // подписочные сервисы обычно с auto-renewal — Netflix, Spotify тоже).
-  // Юзер может снять галку чтобы заплатить одноразово.
-  const [recurrent, setRecurrent] = useState<boolean>(true);
+  // recurrent — hardcoded true в body /api/billing/checkout (см. confirmCheckout).
+  // Раньше был toggle в ConsentModal, но создавал избыточный UX (юзер мог снять
+  // галку и получить разовый платёж). Сейчас подписка ВСЕГДА с авто-продлением —
+  // стандарт SaaS, снижает churn. Отменить юзер может в /profile.
   const [error, setError] = useState<string | null>(null);
   // billing — реальное состояние подписки user'а (через /api/billing/status).
   // Нужно для блокировки кнопок: с active basic нельзя купить тот же basic
@@ -204,7 +204,7 @@ export default function PricingPage() {
         body: JSON.stringify({
           plan_id: planId,
           return_url: `${window.location.origin}/billing/success`,
-          recurrent,  // сохранить карту для авто-продления?
+          recurrent: true,  // подписка ВСЕГДА с авто-продлением (toggle убран)
         }),
       });
       if (!resp.ok) {
@@ -222,10 +222,10 @@ export default function PricingPage() {
   };
 
   // Можно ли нажать "Подтвердить":
-  //  - всегда: Соглашение+Политика конфиденциальности
-  //  - если выбрано авто-продление: ещё и Договор о рекуррентных платежах
-  //  - если у юзера synthetic email (Telegram/VK без email): ещё и валидный email
-  const consentReady = agreementConsent && (!recurrent || recurringConsent) && emailValid;
+  //  - Соглашение + Privacy
+  //  - Договор о рекуррентных платежах (подписка с авто-продлением ВСЕГДА)
+  //  - валидный email (для synthetic email юзеров)
+  const consentReady = agreementConsent && recurringConsent && emailValid;
 
   if (loading) return (
     <div className="max-w-6xl mx-auto p-8 text-center text-theme-secondary">Загрузка тарифов...</div>
@@ -498,8 +498,6 @@ export default function PricingPage() {
           случайных списаний. */}
       {pendingPlanId && (
         <ConsentModal
-          recurrent={recurrent}
-          onRecurrentChange={setRecurrent}
           agreementConsent={agreementConsent}
           recurringConsent={recurringConsent}
           onAgreementChange={setAgreementConsent}
@@ -521,15 +519,18 @@ export default function PricingPage() {
 /**
  * ConsentModal — модальное окно подтверждения согласий перед оплатой.
  *
- * Два тоггла:
- *   1. Соглашение + Политика конфиденциальности (всегда обязателен)
- *   2. Договор о рекуррентных платежах (обязателен ТОЛЬКО если recurrent=true)
+ * Два consent-чекбокса (оба обязательны):
+ *   1. Соглашение + Политика конфиденциальности
+ *   2. Договор о рекуррентных платежах (подписка с авто-продлением — всегда)
  *
- * Кнопка "Подтвердить" disabled до проставления всех нужных галок.
+ * Toggle auto-renewal убран — подписка ВСЕГДА с авто-продлением. Отменить
+ * юзер может в /profile. Это снижает UX-избыточность (toggle + consent
+ * дублировали друг друга) и матчит SaaS-норму (Netflix/Spotify).
+ *
+ * Email-input показывается только для OAuth-юзеров с synthetic email
+ * (Telegram/VK без real email) — обязателен для T-Bank Receipt по 54-ФЗ.
  */
 function ConsentModal({
-  recurrent,
-  onRecurrentChange,
   agreementConsent,
   recurringConsent,
   onAgreementChange,
@@ -543,8 +544,6 @@ function ConsentModal({
   onEmailChange,
   emailError,
 }: {
-  recurrent: boolean;
-  onRecurrentChange: (v: boolean) => void;
   agreementConsent: boolean;
   recurringConsent: boolean;
   onAgreementChange: (v: boolean) => void;
@@ -553,8 +552,6 @@ function ConsentModal({
   onClose: () => void;
   isLoading: boolean;
   canConfirm: boolean;
-  /** True если у юзера synthetic email (Telegram/VK без real email) —
-   *  показываем email-input наверху модалки и блокируем confirm до ввода. */
   requiresEmail: boolean;
   email: string;
   onEmailChange: (v: string) => void;
@@ -664,72 +661,6 @@ function ConsentModal({
           </div>
         )}
 
-        {/* Тоггл «Авто-продление» — переехал в модалку (раньше торчал
-            отдельной строкой над тарифами, занимал место и сбивал ритм
-            страницы). Default ON: типовое поведение подписочных сервисов. */}
-        <label
-          className="flex items-center justify-between gap-3 cursor-pointer select-none mb-4 p-3 rounded-xl border"
-          style={{
-            borderColor: 'var(--border-color)',
-            background: 'transparent',
-          }}
-        >
-          <span
-            style={{
-              fontSize: 'var(--fs-sm, 13px)',
-              color: 'var(--text-primary)',
-              lineHeight: 1.4,
-            }}
-          >
-            Авто-продление
-            <span
-              style={{
-                display: 'block',
-                fontSize: 'var(--fs-xs, 11px)',
-                color: 'var(--text-muted)',
-                marginTop: 2,
-              }}
-            >
-              Карта сохранится для следующих периодов
-            </span>
-          </span>
-          <span
-            className="relative inline-flex flex-shrink-0"
-            style={{
-              width: 36,
-              height: 20,
-              borderRadius: 999,
-              background: recurrent ? 'var(--accent)' : 'var(--bg-tertiary)',
-              border: `1.5px solid ${recurrent ? 'var(--accent)' : 'var(--border-color)'}`,
-              transition: 'background 0.18s ease, border-color 0.18s ease',
-            }}
-          >
-            <span
-              style={{
-                position: 'absolute',
-                top: 1,
-                left: recurrent ? 17 : 1,
-                width: 14,
-                height: 14,
-                borderRadius: '50%',
-                background: 'var(--bg-primary)',
-                transition: 'left 0.18s ease',
-              }}
-            />
-            <input
-              type="checkbox"
-              checked={recurrent}
-              onChange={(e) => onRecurrentChange(e.target.checked)}
-              style={{
-                position: 'absolute',
-                opacity: 0,
-                inset: 0,
-                cursor: 'pointer',
-              }}
-            />
-          </span>
-        </label>
-
         {/* Toggle 1: Agreement + Privacy */}
         <ConsentRow
           checked={agreementConsent}
@@ -756,25 +687,29 @@ function ConsentModal({
           }
         />
 
-        {/* Toggle 2: Recurring (только если выбрано авто-продление) */}
-        {recurrent && (
-          <ConsentRow
-            checked={recurringConsent}
-            onChange={onRecurringChange}
-            label={
-              <>
-                Я соглашаюсь с условиями{' '}
-                <Link
-                  to="/recurring"
-                  target="_blank"
-                  style={{ color: 'var(--accent)', textDecoration: 'underline' }}
-                >
-                  Договора о регулярных (рекуррентных) платежах
-                </Link>
-              </>
-            }
-          />
-        )}
+        {/* Toggle 2: Recurring — обязателен всегда (auto-renewal убран как
+            отдельный toggle, подписка ВСЕГДА с авто-продлением). */}
+        <ConsentRow
+          checked={recurringConsent}
+          onChange={onRecurringChange}
+          label={
+            <>
+              Я соглашаюсь с авто-продлением подписки и условиями{' '}
+              <Link
+                to="/recurring"
+                target="_blank"
+                style={{ color: 'var(--accent)', textDecoration: 'underline' }}
+              >
+                Договора о регулярных (рекуррентных) платежах
+              </Link>
+              .{' '}
+              <span style={{ color: 'var(--text-muted)' }}>
+                Карта сохранится для следующих периодов, отменить можно в профиле.
+              </span>
+            </>
+          }
+        />
+
 
         {/* Buttons */}
         <div className="flex gap-3 mt-6">
