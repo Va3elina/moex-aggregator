@@ -106,8 +106,12 @@ export default function PricingPage() {
   // pendingPlanId — какой plan был кликнут, ждёт подтверждения юзера.
   // null = модалка закрыта.
   const [pendingPlanId, setPendingPlanId] = useState<string | null>(null);
+  // Единый consent на все 3 документа сразу (Соглашение + Privacy + Recurrent).
+  // Раньше было 2 чекбокса — UX-избыточно для юзеров (один документ-один чекбокс
+  // когда они тематически связаны = noise). Теперь юзер одним кликом
+  // подтверждает информированное согласие со всем legal-stack'ом, ссылки
+  // на каждый документ открываются отдельно в новой вкладке.
   const [agreementConsent, setAgreementConsent] = useState<boolean>(false);
-  const [recurringConsent, setRecurringConsent] = useState<boolean>(false);
 
   // Email-prompt в consent-модалке для юзеров с synthetic email (Telegram/VK
   // без email). T-Bank по 54-ФЗ должен слать чек на реальный адрес — без
@@ -162,7 +166,6 @@ export default function PricingPage() {
     }
     setError(null);
     setAgreementConsent(false);
-    setRecurringConsent(false);
     setPendingPlanId(planId);
   };
 
@@ -170,7 +173,6 @@ export default function PricingPage() {
   const closeConsent = () => {
     setPendingPlanId(null);
     setAgreementConsent(false);
-    setRecurringConsent(false);
     setEmailDraft('');
     setEmailError(null);
   };
@@ -222,10 +224,9 @@ export default function PricingPage() {
   };
 
   // Можно ли нажать "Подтвердить":
-  //  - Соглашение + Privacy
-  //  - Договор о рекуррентных платежах (подписка с авто-продлением ВСЕГДА)
+  //  - единый consent (покрывает Соглашение + Privacy + Договор о рекуррентах)
   //  - валидный email (для synthetic email юзеров)
-  const consentReady = agreementConsent && recurringConsent && emailValid;
+  const consentReady = agreementConsent && emailValid;
 
   if (loading) return (
     <div className="max-w-6xl mx-auto p-8 text-center text-theme-secondary">Загрузка тарифов...</div>
@@ -499,9 +500,7 @@ export default function PricingPage() {
       {pendingPlanId && (
         <ConsentModal
           agreementConsent={agreementConsent}
-          recurringConsent={recurringConsent}
           onAgreementChange={setAgreementConsent}
-          onRecurringChange={setRecurringConsent}
           onConfirm={confirmCheckout}
           onClose={closeConsent}
           isLoading={checkoutLoading === pendingPlanId}
@@ -517,24 +516,24 @@ export default function PricingPage() {
 }
 
 /**
- * ConsentModal — модальное окно подтверждения согласий перед оплатой.
+ * ConsentModal — модальное окно подтверждения согласия перед оплатой.
  *
- * Два consent-чекбокса (оба обязательны):
- *   1. Соглашение + Политика конфиденциальности
- *   2. Договор о рекуррентных платежах (подписка с авто-продлением — всегда)
+ * ОДИН consent-чекбокс покрывает 3 документа:
+ *   • Пользовательское соглашение
+ *   • Политика конфиденциальности
+ *   • Договор о регулярных (рекуррентных) платежах
  *
- * Toggle auto-renewal убран — подписка ВСЕГДА с авто-продлением. Отменить
- * юзер может в /profile. Это снижает UX-избыточность (toggle + consent
- * дублировали друг друга) и матчит SaaS-норму (Netflix/Spotify).
+ * Раньше было 2 чекбокса + toggle auto-renewal — UX-избыточно. Сейчас:
+ * подписка ВСЕГДА с авто-продлением, юзер одним кликом даёт информированное
+ * согласие со всем legal-stack'ом. Каждый документ открывается по ссылке
+ * в новой вкладке для review перед галкой.
  *
  * Email-input показывается только для OAuth-юзеров с synthetic email
  * (Telegram/VK без real email) — обязателен для T-Bank Receipt по 54-ФЗ.
  */
 function ConsentModal({
   agreementConsent,
-  recurringConsent,
   onAgreementChange,
-  onRecurringChange,
   onConfirm,
   onClose,
   isLoading,
@@ -545,9 +544,7 @@ function ConsentModal({
   emailError,
 }: {
   agreementConsent: boolean;
-  recurringConsent: boolean;
   onAgreementChange: (v: boolean) => void;
-  onRecurringChange: (v: boolean) => void;
   onConfirm: () => void;
   onClose: () => void;
   isLoading: boolean;
@@ -661,50 +658,42 @@ function ConsentModal({
           </div>
         )}
 
-        {/* Toggle 1: Agreement + Privacy */}
+        {/* Единый consent на 3 документа — Соглашение, Privacy, Recurrent.
+            Раньше было 2 чекбокса + toggle, сейчас одна галка покрывает весь
+            legal-stack. Юзер review'ит документы по ссылкам (открываются
+            в новых вкладках), ставит галку = информированное согласие. */}
         <ConsentRow
           checked={agreementConsent}
           onChange={onAgreementChange}
           label={
             <>
-              Я принимаю условия{' '}
+              Я согласен с{' '}
               <Link
                 to="/agreement"
                 target="_blank"
                 style={{ color: 'var(--accent)', textDecoration: 'underline' }}
               >
-                Пользовательского соглашения
+                Пользовательским соглашением
               </Link>
-              {' '}и{' '}
+              ,{' '}
               <Link
                 to="/privacy"
                 target="_blank"
                 style={{ color: 'var(--accent)', textDecoration: 'underline' }}
               >
-                Политики конфиденциальности
+                Политикой конфиденциальности
               </Link>
-            </>
-          }
-        />
-
-        {/* Toggle 2: Recurring — обязателен всегда (auto-renewal убран как
-            отдельный toggle, подписка ВСЕГДА с авто-продлением). */}
-        <ConsentRow
-          checked={recurringConsent}
-          onChange={onRecurringChange}
-          label={
-            <>
-              Я соглашаюсь с авто-продлением подписки и условиями{' '}
+              {' '}и{' '}
               <Link
                 to="/recurring"
                 target="_blank"
                 style={{ color: 'var(--accent)', textDecoration: 'underline' }}
               >
-                Договора о регулярных (рекуррентных) платежах
+                Договором о рекуррентных платежах
               </Link>
               .{' '}
               <span style={{ color: 'var(--text-muted)' }}>
-                Карта сохранится для следующих периодов, отменить можно в профиле.
+                Подписка автоматически продлевается, отменить можно в профиле.
               </span>
             </>
           }
