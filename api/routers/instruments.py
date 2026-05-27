@@ -41,14 +41,20 @@ def get_instruments(
 
     rows = db.execute(text(f"""
         SELECT i.sec_id, i.sectype, i.name, i.type, i."group", i.iss_code,
-               COALESCE(v.vol, 0) as daily_volume,
+               COALESCE(v.metric, 0) as daily_volume,
                d.change_pct as day_change_pct
         FROM instruments i
         LEFT JOIN (
-            SELECT sec_id, SUM(volume) as vol
+            -- «Объём» за последний торговый день — выровнен с mv_heatmap_stocks.stats_1d.
+            -- Для акций берём value (рубли), для фьючерсов и прочих — volume (контракты/лоты),
+            -- т.к. ISS не заполняет candles.value для срочного рынка (всегда 0).
+            -- Окно «1 день» включает свечу сегодня + вчера (если today перед открытием).
+            SELECT sec_id,
+                   CASE WHEN SUM(value) > 0 THEN SUM(value)
+                        ELSE SUM(volume) END AS metric
             FROM candles
             WHERE interval = 24
-              AND begin_time >= CURRENT_DATE - INTERVAL '3 days'
+              AND begin_time >= CURRENT_DATE - INTERVAL '1 day'
             GROUP BY sec_id
         ) v ON v.sec_id = i.sec_id
         LEFT JOIN (
