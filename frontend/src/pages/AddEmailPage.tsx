@@ -32,7 +32,8 @@ export default function AddEmailPage() {
   // Защита: если юзер открыл /add-email напрямую, но email уже не synthetic —
   // редирект на главную. Иначе можно зациклиться.
   if (user && !user.requires_email_setup) {
-    navigate('/', { replace: true });
+    // email уже реальный: если не подтверждён — на ввод кода, иначе на главную
+    navigate(user.is_verified ? '/' : '/verify-email', { replace: true });
     return null;
   }
 
@@ -49,7 +50,7 @@ export default function AddEmailPage() {
     try {
       await addEmail(trimmed);
       await refreshUser();
-      navigate('/', { replace: true });
+      navigate('/verify-email', { replace: true });  // дальше — ввод кода из письма
     } catch (err) {
       const isConflict = err instanceof ApiError && err.status === 409;
       setErrorIsConflict(isConflict);

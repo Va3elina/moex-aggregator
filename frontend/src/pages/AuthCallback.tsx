@@ -81,7 +81,9 @@ export default function AuthCallback() {
                     if (!resp.ok) throw new Error(data.error?.message || data.detail || 'Ошибка авторизации');
                     await auth.login({ access_token: data.access_token, refresh_token: data.refresh_token });
                     setStatus('success');
-                    setTimeout(() => navigate('/'), 1000);
+                    // Telegram всегда без email → synthetic → ведём подтвердить почту
+                    const tgSynthetic = (data.user?.email || '').endsWith('@oauth.local');
+                    setTimeout(() => navigate(tgSynthetic ? '/add-email' : '/'), 1000);
                 })
                 .catch((err) => {
                     setStatus('error');
@@ -147,8 +149,9 @@ export default function AuthCallback() {
 
                 setStatus('success');
 
-                // Редирект на главную через секунду
-                setTimeout(() => navigate('/'), 1000);
+                // Synthetic email (VK без email) → /add-email подтвердить почту; иначе на главную
+                const synthetic = (data.user?.email || '').endsWith('@oauth.local');
+                setTimeout(() => navigate(synthetic ? '/add-email' : '/'), 1000);
             })
             .catch((err) => {
                 setStatus('error');

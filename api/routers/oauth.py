@@ -164,14 +164,21 @@ def _find_or_create_oauth_user(
                 db.commit()
                 return existing, False
 
-    # 3. Создаём нового пользователя
+    # 3. Создаём нового пользователя.
+    # is_verified=True ТОЛЬКО если провайдер дал реальный email (Google/Yandex/
+    # VK-с-email) — он уже подтверждён провайдером, код слать не нужно.
+    # Нет email (Telegram всегда, VK часто) → synthetic @oauth.local →
+    # is_verified=False: юзер обязан добавить и подтвердить реальный email
+    # (через /add-email + код из письма) прежде чем сможет оплатить.
+    email_final = email or f"{provider}_{oauth_id}@oauth.local"
+    has_real_email = not email_final.endswith("@oauth.local")
     new_user = User(
-        email=email or f"{provider}_{oauth_id}@oauth.local",
+        email=email_final,
         oauth_provider=provider,
         oauth_id=oauth_id,
         avatar_url=avatar_url,
         display_name=display_name,
-        is_verified=True,  # OAuth пользователи уже верифицированы
+        is_verified=has_real_email,
         is_active=True,
     )
     db.add(new_user)

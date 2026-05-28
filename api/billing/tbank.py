@@ -130,6 +130,12 @@ class TBankProvider:
         if not TBANK_RECEIPT_ENABLED:
             return None
 
+        # Защита: synthetic OAuth email (*@oauth.local) несуществующий — в чек
+        # 54-ФЗ его слать нельзя. Гейт верификации в billing/service.py не пустит
+        # сюда неверифицированного юзера, но дублируем на всякий случай.
+        if email and email.endswith("@oauth.local"):
+            email = None
+
         # Хотя бы один из контактов обязателен — иначе T-Bank вернёт 1010 ошибку.
         if not email and not phone:
             log.warning(

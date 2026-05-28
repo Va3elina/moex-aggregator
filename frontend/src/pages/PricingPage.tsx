@@ -21,7 +21,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { apiFetch, addEmail } from '../services/api';
+import { apiFetch } from '../services/api';
 
 interface PlanVariant {
   plan_id: string;
@@ -82,7 +82,7 @@ interface BillingStatus {
 }
 
 export default function PricingPage() {
-  const { user, isAuthenticated, refreshUser } = useAuth();
+  const { user, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const [data, setData] = useState<PlansResponse | null>(null);
   const [period, setPeriod] = useState<'monthly' | 'yearly'>('yearly'); // годовой по умолчанию (выгоднее)
@@ -113,14 +113,10 @@ export default function PricingPage() {
   // на каждый документ открываются отдельно в новой вкладке.
   const [agreementConsent, setAgreementConsent] = useState<boolean>(false);
 
-  // Email-prompt в consent-модалке для юзеров с synthetic email (Telegram/VK
-  // без email). T-Bank по 54-ФЗ должен слать чек на реальный адрес — без
-  // этого checkout не имеет смысла. EmailSetupGate раньше форсил /add-email
-  // сразу после OAuth, но теперь это требование возникает только при оплате.
-  const requiresEmail = user?.requires_email_setup ?? false;
-  const [emailDraft, setEmailDraft] = useState('');
-  const [emailError, setEmailError] = useState<string | null>(null);
-  const emailValid = !requiresEmail || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(emailDraft.trim());
+  // Email теперь собирается и подтверждается ДО оплаты (сразу после регистрации/
+  // OAuth или в профиле). В чекауте поля email больше нет — вместо этого
+  // handleCheckout не пускает неподтверждённых (см. ниже), а бэкенд дублирует
+  // гейт в billing/service.py (anti-bypass).
 
   // Загружаем план при mount
   useEffect(() => {
@@ -164,6 +160,13 @@ export default function PricingPage() {
       navigate(`/login?next=/pricing`);
       return;
     }
+    // Гейт: оплатить можно только с подтверждённым email. Неподтверждённых ведём
+    // подтверждать — synthetic (Telegram/VK без email) сначала на /add-email,
+    // остальных на /verify-email (ввод кода). Бэкенд дублирует проверку.
+    if (user && !user.is_verified) {
+      navigate(user.requires_email_setup ? '/add-email' : '/verify-email');
+      return;
+    }
     setError(null);
     setAgreementConsent(false);
     setPendingPlanId(planId);
@@ -173,8 +176,6 @@ export default function PricingPage() {
   const closeConsent = () => {
     setPendingPlanId(null);
     setAgreementConsent(false);
-    setEmailDraft('');
-    setEmailError(null);
   };
 
   // Подтверждение: создаём checkout-сессию на бэке и редиректим на pay.tbank.ru
@@ -183,23 +184,7 @@ export default function PricingPage() {
     const planId = pendingPlanId;
     setCheckoutLoading(planId);
     setError(null);
-    setEmailError(null);
     try {
-      // Если у юзера synthetic email (Telegram/VK без real email) — сначала
-      // привязываем введённый в форме email. T-Bank Receipt будет слать чек
-      // на этот адрес, поэтому он обязателен ДО создания checkout-сессии.
-      if (requiresEmail) {
-        try {
-          await addEmail(emailDraft.trim().toLowerCase());
-        } catch (e) {
-          // 409 — email уже занят другим аккаунтом → юзеру понятный сигнал
-          // что нужно либо другой email, либо войти через другой провайдер.
-          setEmailError(e instanceof Error ? e.message : 'Не удалось привязать email');
-          setCheckoutLoading(null);
-          return;  // НЕ закрываем модалку — даём юзеру возможность исправить
-        }
-        await refreshUser();
-      }
       const resp = await apiFetch('/api/billing/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -223,10 +208,9 @@ export default function PricingPage() {
     }
   };
 
-  // Можно ли нажать "Подтвердить":
-  //  - единый consent (покрывает Соглашение + Privacy + Договор о рекуррентах)
-  //  - валидный email (для synthetic email юзеров)
-  const consentReady = agreementConsent && emailValid;
+  // Можно ли нажать "Подтвердить": единый consent (Соглашение + Privacy +
+  // Договор о рекуррентах). Email-валидации тут больше нет — он подтверждён до оплаты.
+  const consentReady = agreementConsent;
 
   if (loading) return (
     <div className="max-w-6xl mx-auto p-8 text-center text-theme-secondary">Загрузка тарифов...</div>
@@ -505,10 +489,6 @@ export default function PricingPage() {
           onClose={closeConsent}
           isLoading={checkoutLoading === pendingPlanId}
           canConfirm={consentReady}
-          requiresEmail={requiresEmail}
-          email={emailDraft}
-          onEmailChange={(v) => { setEmailDraft(v); setEmailError(null); }}
-          emailError={emailError}
         />
       )}
     </div>
@@ -528,8 +508,8 @@ export default function PricingPage() {
  * согласие со всем legal-stack'ом. Каждый документ открывается по ссылке
  * в новой вкладке для review перед галкой.
  *
- * Email-input показывается только для OAuth-юзеров с synthetic email
- * (Telegram/VK без real email) — обязателен для T-Bank Receipt по 54-ФЗ.
+ * Email-поля тут больше нет — email подтверждается ДО оплаты (handleCheckout
+ * не пускает неподтверждённых). Сюда доходят только verified-юзеры.
  */
 function ConsentModal({
   agreementConsent,
@@ -538,10 +518,6 @@ function ConsentModal({
   onClose,
   isLoading,
   canConfirm,
-  requiresEmail,
-  email,
-  onEmailChange,
-  emailError,
 }: {
   agreementConsent: boolean;
   onAgreementChange: (v: boolean) => void;
@@ -549,10 +525,6 @@ function ConsentModal({
   onClose: () => void;
   isLoading: boolean;
   canConfirm: boolean;
-  requiresEmail: boolean;
-  email: string;
-  onEmailChange: (v: string) => void;
-  emailError: string | null;
 }) {
   return (
     <div
@@ -610,53 +582,6 @@ function ConsentModal({
         >
           Перед оплатой подтвердите согласие со следующими условиями:
         </p>
-
-        {/* Email-input для OAuth-юзеров без реального email (Telegram by design,
-            VK часто). T-Bank по 54-ФЗ должен слать чек на реальный адрес,
-            поэтому ввод email обязателен ДО создания checkout-сессии. */}
-        {requiresEmail && (
-          <div className="mb-4">
-            <label
-              htmlFor="checkout-email"
-              className="block mb-1.5"
-              style={{
-                fontSize: 'var(--fs-xs, 12px)',
-                color: 'var(--text-secondary)',
-                fontWeight: 600,
-              }}
-            >
-              Email для чека
-            </label>
-            <input
-              id="checkout-email"
-              name="email"
-              type="email"
-              value={email}
-              onChange={(e) => onEmailChange(e.target.value)}
-              placeholder="ivan@example.com"
-              autoComplete="email"
-              required
-              disabled={isLoading}
-              className="w-full px-3 py-2 rounded-lg border outline-none focus:ring-2"
-              style={{
-                background: 'var(--bg-primary)',
-                color: 'var(--text-primary)',
-                borderColor: emailError ? 'var(--danger, #dc2626)' : 'var(--border-color)',
-                fontSize: 'var(--fs-sm, 13px)',
-              }}
-            />
-            <p
-              className="mt-1.5"
-              style={{
-                fontSize: 'var(--fs-xs, 11px)',
-                color: emailError ? 'var(--danger, #dc2626)' : 'var(--text-muted)',
-                lineHeight: 1.4,
-              }}
-            >
-              {emailError ?? 'На этот адрес придёт чек и ссылка для восстановления доступа.'}
-            </p>
-          </div>
-        )}
 
         {/* Единый consent на 3 документа — Соглашение, Privacy, Recurrent.
             Раньше было 2 чекбокса + toggle, сейчас одна галка покрывает весь

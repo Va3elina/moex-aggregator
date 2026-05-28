@@ -560,19 +560,17 @@ async def get_me(user: User = Depends(get_current_user), db: Session = Depends(g
 )
 async def add_email(
     data: AddEmailRequest,
+    background_tasks: BackgroundTasks,
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """
     Привязка реального email для OAuth-юзеров без него (Telegram-всегда, VK-часто).
 
-    Без реального email T-Bank не может выдать фискальный чек по 54-ФЗ,
-    юзер не получит уведомления и password-reset (когда добавим). Frontend
-    редиректит таких юзеров на /add-email до тех пор пока не введут реальный
-    адрес — этот endpoint обрабатывает submit формы.
-
-    Verification email (Phase 2) добавим когда настроим SMTP через Yandex 360 —
-    пока сохраняем без подтверждения, is_verified остаётся False до verification.
+    Без реального email T-Bank не может выдать фискальный чек по 54-ФЗ.
+    После привязки СРАЗУ шлём код подтверждения (is_verified=False) — юзер
+    подтверждает email на /verify-email. До подтверждения оплатить нельзя
+    (серверный гейт в billing/service.py).
     """
     if not is_synthetic_oauth_email(user.email):
         raise HTTPException(
@@ -596,9 +594,8 @@ async def add_email(
     )
 
     user.email = new_email
-    # is_verified остаётся False — verification flow появится в Phase 2 (Yandex 360 SMTP).
-    # До тех пор email сохраняется как «привязан, но не подтверждён».
-    db.commit()
+    user.is_verified = False  # реальный email привязан, но ещё НЕ подтверждён кодом
+    _issue_email_verification(user, db, background_tasks)  # генерит код + commit + шлёт письмо
     db.refresh(user)
 
     oauth_providers = [user.oauth_provider] if user.oauth_provider else []
@@ -612,7 +609,7 @@ async def add_email(
         has_password=bool(user.hashed_password),
         oauth_providers=oauth_providers,
         created_at=user.created_at,
-        requires_email_setup=False,  # Только что привязали реальный email
+        requires_email_setup=False,  # email уже реальный; теперь нужен код (см. /verify-email)
     )
 
 

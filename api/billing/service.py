@@ -132,6 +132,17 @@ def create_checkout_for_user(
     if getattr(user, "role", None) == "admin":
         raise ValueError("У админа полный доступ — оформление подписок не требуется")
 
+    # === Гейт верификации email (ANTI-BYPASS, серверная проверка из БД) ===
+    # Оплатить можно только с подтверждённым РЕАЛЬНЫМ email: иначе чек 54-ФЗ
+    # уйдёт в никуда, и email юзеру не принадлежит. Фронт прячет кнопку оплаты
+    # при !is_verified, но прямой вызов POST /api/billing/checkout с валидным JWT
+    # закрывается здесь (is_verified читается живьём из user — в JWT его нет,
+    # подделать нельзя). Покрывает: synthetic @oauth.local, неподтверждённый
+    # добавленный email, неподтверждённую регистрацию по почте.
+    user_email = (getattr(user, "email", "") or "")
+    if (not user.is_verified) or user_email.endswith("@oauth.local"):
+        raise ValueError("Подтвердите email перед оплатой")
+
     active_sub = current_subscription(db, user)
     if active_sub and not active_sub.cancelled_at:
         active_plan = get_plan(active_sub.plan_id)

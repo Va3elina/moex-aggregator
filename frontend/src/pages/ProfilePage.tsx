@@ -251,9 +251,10 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        {/* Баннер: email не подтверждён. Только для real-email юзеров с
-            is_verified=false (email+password). OAuth → is_verified=true, не видят. */}
-        {!isOAuthLocal && !user.is_verified && (
+        {/* Баннер email: synthetic (Telegram/VK без email) → указать email;
+            реальный неподтверждённый → подтвердить кодом. OAuth с реальным email
+            (Google/Yandex) → is_verified=true, баннер не видят. */}
+        {!user.is_verified && (
           <div
             className="mt-4 flex items-start gap-3 p-3 rounded-xl"
             style={{
@@ -263,11 +264,19 @@ export default function ProfilePage() {
           >
             <AlertCircle size={18} style={{ color: 'var(--accent)' }} className="mt-0.5 shrink-0" />
             <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-              <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>Email не подтверждён.</span>{' '}
-              Подтвердите адрес, чтобы получать чеки об оплате и уведомления.{' '}
-              <Link to="/verify-email" style={{ color: 'var(--accent)', fontWeight: 600 }}>
-                Подтвердить →
-              </Link>
+              {isOAuthLocal ? (
+                <>
+                  <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>Укажите email.</span>{' '}
+                  Без подтверждённого email нельзя получать чеки и оформить оплату.{' '}
+                  <Link to="/add-email" style={{ color: 'var(--accent)', fontWeight: 600 }}>Указать →</Link>
+                </>
+              ) : (
+                <>
+                  <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>Email не подтверждён.</span>{' '}
+                  Подтвердите адрес, чтобы получать чеки и оформить оплату.{' '}
+                  <Link to="/verify-email" style={{ color: 'var(--accent)', fontWeight: 600 }}>Подтвердить →</Link>
+                </>
+              )}
             </div>
           </div>
         )}
