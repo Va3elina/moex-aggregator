@@ -215,9 +215,15 @@ app.include_router(buffett_router)
 app.include_router(seasonality_router)
 app.include_router(cbr_flows_router)  # ← /api/cbr-flows/* (ОРФР ЦБ — потоки участников)
 app.include_router(csp_report_router)  # ← /api/csp-report (browser violation reports)
-app.include_router(exports_router)  # ← /api/export/*.csv (Pro-only data download)
-app.include_router(api_keys_router)  # ← /api/keys/* (manage personal API keys)
-app.include_router(public_api_router)  # ← /api/v1/public/* (programmatic JSON access)
+# KILL-SWITCH: публичный API + CSV-экспорт скрыты до официального запуска.
+# По умолчанию (PUBLIC_API_CSV_ENABLED не задан) роутеры НЕ монтируются →
+# /api/export/*, /api/keys/*, /api/v1/public/* отдают 404 ДЛЯ ВСЕХ (включая
+# прямые вызовы мимо UI). Вернуть: env PUBLIC_API_CSV_ENABLED=1 + recreate api.
+from api.billing.features import PUBLIC_API_CSV_ENABLED as _API_CSV_ON
+if _API_CSV_ON:
+    app.include_router(exports_router)  # ← /api/export/*.csv (Pro-only data download)
+    app.include_router(api_keys_router)  # ← /api/keys/* (manage personal API keys)
+    app.include_router(public_api_router)  # ← /api/v1/public/* (programmatic JSON access)
 app.include_router(fund_trades_router)  # ← /api/fund-trades/* (диффы holdings БПИФов)
 app.include_router(billing_router)  # ← /api/billing/* (подписки через ЮKassa)
 app.include_router(auth.router, prefix="/api")  # ← НОВОЕ: /api/auth/*

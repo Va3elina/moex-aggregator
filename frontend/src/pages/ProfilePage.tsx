@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import AdminBillingInvites from '../components/AdminBillingInvites';
 import ApiKeysSection from '../components/profile/ApiKeysSection';
+import { API_CSV_ENABLED } from '../config/features';
 
 interface BillingStatus {
   tier: string;
@@ -662,12 +663,13 @@ export default function ProfilePage() {
       </div>
       )}
 
-      {/* ============ Секция: API-ключи (Pro tier) ============
-          Компонент сам обрабатывает tier-gating: для free/basic показывает
-          CTA на upgrade. Для admin/pro — list ключей + create form. */}
-      <div className="rounded-2xl border p-6" style={cardStyle}>
-        <ApiKeysSection />
-      </div>
+      {/* ============ Секция: API-ключи ============
+          KILL-SWITCH: скрыто до официального запуска (config/features.ts). */}
+      {API_CSV_ENABLED && (
+        <div className="rounded-2xl border p-6" style={cardStyle}>
+          <ApiKeysSection />
+        </div>
+      )}
 
       {/* ============ Секция: Конфиденциальность ============ */}
       <PrivacyOptOutSection />

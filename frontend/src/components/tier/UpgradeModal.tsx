@@ -10,6 +10,7 @@
 import { createContext, useCallback, useContext, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Lock } from 'lucide-react';
+import { API_CSV_ENABLED } from '../../config/features';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
 
 interface UpgradePromptProps {
@@ -34,7 +35,10 @@ const TIER_LABELS: Record<string, { ru: string; price: string; desc: string }> =
     pro: {
         ru: 'Pro',
         price: '5 900 ₽/мес',
-        desc: 'Всё из Basic + API, экспорт CSV, TradingView, индикаторы Т-терминала, безлимитные алерты.',
+        // API + экспорт CSV скрыты до запуска (см. config/features.ts) — не упоминаем в тексте замочка
+        desc: API_CSV_ENABLED
+            ? 'Всё из Basic + API, экспорт CSV, TradingView, индикаторы Т-терминала, безлимитные алерты.'
+            : 'Всё из Basic + TradingView, индикаторы Т-терминала, безлимитные алерты.',
     },
 };
 

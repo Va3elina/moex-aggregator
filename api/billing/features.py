@@ -224,6 +224,13 @@ INDICATOR_FEATURES: dict[str, dict[str, dict]] = {
 # Общие фичи (не привязанные к индикатору)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+import os
+# KILL-SWITCH: публичный API + CSV-экспорт скрыты до официального запуска
+# (конкуренты). Когда выключено (default) — csv_export/api_access=False даже
+# для Pro, а роутеры /api/export, /api/keys, /api/v1/public не монтируются (см. main.py).
+# Вернуть: env PUBLIC_API_CSV_ENABLED=1 + фронт config/features.ts API_CSV_ENABLED=true.
+PUBLIC_API_CSV_ENABLED = os.getenv("PUBLIC_API_CSV_ENABLED", "").lower() in ("1", "true", "yes")
+
 COMMON_FEATURES: dict[str, dict] = {
     "free": {
         "watermark_on_export": True,    # PNG с водяным знаком таймфрейм.рф
@@ -241,8 +248,8 @@ COMMON_FEATURES: dict[str, dict] = {
     },
     "pro": {
         "watermark_on_export": False,
-        "csv_export": True,
-        "api_access": True,
+        "csv_export": PUBLIC_API_CSV_ENABLED,   # kill-switch: скрыто до запуска
+        "api_access": PUBLIC_API_CSV_ENABLED,   # kill-switch: скрыто до запуска
         "fund_trades_access": True,     # smart-money tracking — Pro feature
         "telegram_alerts_quota": None,  # unlimited
     },

@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch } from '../services/api';
+import { API_CSV_ENABLED } from '../config/features';
 
 interface PlanVariant {
   plan_id: string;
@@ -815,8 +816,11 @@ function ComparisonMatrix() {
       icon: Settings,
       rows: [
         ['Водяной знак на экспорте', 'Да', '—', '—'],
-        ['Экспорт CSV / Excel', '—', '—', 'Да'],
-        ['API-доступ', '—', '—', 'Да'],
+        // KILL-SWITCH: CSV/API скрыты до запуска (config/features.ts)
+        ...(API_CSV_ENABLED ? [
+          ['Экспорт CSV / Excel', '—', '—', 'Да'],
+          ['API-доступ', '—', '—', 'Да'],
+        ] : []),
         ['Алерты в Telegram', '—', '20 / месяц', 'Безлимит'],
       ],
     },
@@ -1081,8 +1085,8 @@ function getFeaturesList(tier: string): string[] {
         '5-минутные таймфреймы в Открытом интересе',
         'Внутридневная сезонность',
         'Вся история без ограничений',
-        'Экспорт в CSV/Excel',
-        'API-доступ для автоматизации',
+        // KILL-SWITCH: CSV/API скрыты до запуска (config/features.ts)
+        ...(API_CSV_ENABLED ? ['Экспорт в CSV/Excel', 'API-доступ для автоматизации'] : []),
         'Безлимитные Telegram-алерты',
         'Без водяного знака на экспорте',
       ];

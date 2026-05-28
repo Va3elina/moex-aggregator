@@ -134,6 +134,11 @@ services:
       - SMTP_PASSWORD=${SMTP_PASSWORD:-}
       - SMTP_FROM=${SMTP_FROM:-}
       - SMTP_FROM_NAME=${SMTP_FROM_NAME:-Фрейм}
+      # KILL-SWITCH публичного API + CSV-экспорта (скрыто до офиц. запуска).
+      # Пусто/не задано = выключено (роутеры /api/export,/api/keys,/api/v1/public
+      # не монтируются → 404; csv_export/api_access=False даже для Pro).
+      # Включить на запуске: PUBLIC_API_CSV_ENABLED=1 в .env + фронт API_CSV_ENABLED=true.
+      - PUBLIC_API_CSV_ENABLED=${PUBLIC_API_CSV_ENABLED:-}
       # Python не пишет .pyc файлы в /app/api/__pycache__ при импорте
       # модулей. Совместимо с read_only rootfs. Лёгкая просадка на cold
       # import — pyc-кэш отсутствует. Compensated кэш гранулы Python 3.11.
