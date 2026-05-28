@@ -234,6 +234,10 @@ export default function MobileOpenInterestPage() {
 
   // Какие периоды доступны для текущего interval'а
   const allowedPeriods = MAX_PERIODS_BY_INTERVAL[intervalValue] ?? MAX_PERIODS_BY_INTERVAL[24];
+
+  // Какие интервалы реально есть у актива (ISS-only → только дневка [24]).
+  const availableIntervals: number[] = data?.available_intervals ?? [24];
+  const hasInterval = (int: number) => availableIntervals.includes(int);
   const isPeriodAvailable = (p: Period) => allowedPeriods.includes(p);
 
   // Смена interval'а: авто-перенастройка period'а если стал недоступен
@@ -279,6 +283,11 @@ export default function MobileOpenInterestPage() {
         period,
       );
       setData(result);
+      // Новый актив не поддерживает текущий интервал (ISS-only → только дневка) —
+      // сбрасываем на максимальный доступный (как на десктопе).
+      if (result.available_intervals?.length && !result.available_intervals.includes(intervalValue)) {
+        setIntervalValue(Math.max(...result.available_intervals));
+      }
     } catch (err) {
       // Tier 403 → upgrade prompt вместо silent console error
       const msg = err instanceof Error ? err.message : String(err);
@@ -460,7 +469,7 @@ export default function MobileOpenInterestPage() {
             Интервал
           </div>
           <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
-            {[24, 60, 5].map((int) => {
+            {[24, 60, 5].filter((int) => int === 24 || hasInterval(int)).map((int) => {
               const allowed = oiAccess.isLoading || oiAccess.canUseInterval(int);
               return (
                 <button

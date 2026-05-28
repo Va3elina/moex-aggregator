@@ -480,16 +480,20 @@ export default function OpenInterestPage() {
           {/* Таймфрейм + Период */}
           <div data-tour="oi-timerange" className="flex" style={{ gap: 'var(--sp-2)' }}>
           <Dropdown<string>
-            options={[5, 60, 24].map((int): DropdownOption<string> => {
-              const available = displayMode === 'price' || hasInterval(int);
-              const allowedLegacy = isIntervalAllowed(int, isAuthenticated);
-              const allowedTier = oiAccess.isLoading || oiAccess.canUseInterval(int);
-              return {
-                key: String(int),
-                label: INTERVAL_LABELS[int as keyof typeof INTERVAL_LABELS],
-                locked: !allowedLegacy || !allowedTier || !available,
-              };
-            })}
+            options={[5, 60, 24]
+              // Несуществующие у актива таймфреймы убираем ВОВСЕ (не под замок).
+              // ISS-only активы (валютные кроссы, неликвидные) имеют только дневку —
+              // у них 5м/1ч просто нет в open_interest. Дневку (24) держим всегда.
+              .filter((int) => int === 24 || hasInterval(int))
+              .map((int): DropdownOption<string> => {
+                const allowedLegacy = isIntervalAllowed(int, isAuthenticated);
+                const allowedTier = oiAccess.isLoading || oiAccess.canUseInterval(int);
+                return {
+                  key: String(int),
+                  label: INTERVAL_LABELS[int as keyof typeof INTERVAL_LABELS],
+                  locked: !allowedLegacy || !allowedTier,  // несуществующие уже отфильтрованы
+                };
+              })}
             value={String(interval)}
             onChange={(k) => {
               const int = Number(k);
