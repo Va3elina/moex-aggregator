@@ -507,7 +507,7 @@ export default function Layout() {
             Политика обработки данных
           </Link>
           <a
-            href="https://t.me/FrameTool"
+            href="https://t.me/+vbt614-Qq1w1YWYy"
             target="_blank"
             rel="noreferrer noopener"
             className="inline-flex items-center gap-1.5 transition-opacity hover:opacity-80"
