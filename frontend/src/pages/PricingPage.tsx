@@ -817,10 +817,10 @@ function ComparisonMatrix() {
       rows: [
         ['Водяной знак на экспорте', 'Да', '—', '—'],
         // KILL-SWITCH: CSV/API скрыты до запуска (config/features.ts)
-        ...(API_CSV_ENABLED ? [
+        ...(API_CSV_ENABLED ? ([
           ['Экспорт CSV / Excel', '—', '—', 'Да'],
           ['API-доступ', '—', '—', 'Да'],
-        ] : []),
+        ] as [string, string, string, string][]) : []),
         ['Алерты в Telegram', '—', '20 / месяц', 'Безлимит'],
       ],
     },
