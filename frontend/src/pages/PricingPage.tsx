@@ -821,7 +821,6 @@ function ComparisonMatrix() {
           ['Экспорт CSV / Excel', '—', '—', 'Да'],
           ['API-доступ', '—', '—', 'Да'],
         ] as [string, string, string, string][]) : []),
-        ['Алерты в Telegram', '—', '20 / месяц', 'Безлимит'],
       ],
     },
   ];
@@ -1077,7 +1076,6 @@ function getFeaturesList(tier: string): string[] {
         'Долларовый режим в Силе рынка',
         'Капитализация / M2 в индикаторе Баффетта',
         'История до 10 лет, без задержки данных',
-        '20 алертов в Telegram',
       ];
     case 'pro':
       return [
@@ -1087,7 +1085,6 @@ function getFeaturesList(tier: string): string[] {
         'Вся история без ограничений',
         // KILL-SWITCH: CSV/API скрыты до запуска (config/features.ts)
         ...(API_CSV_ENABLED ? ['Экспорт в CSV/Excel', 'API-доступ для автоматизации'] : []),
-        'Безлимитные Telegram-алерты',
         'Без водяного знака на экспорте',
       ];
     default:

@@ -23,11 +23,11 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Download, Loader2, AlertCircle, Pencil } from 'lucide-react';
+import { X, Download, Loader2, AlertCircle, Pencil, Copy, Check } from 'lucide-react';
 import type { ExportModalState, ExportMetadata } from './types';
 import { captureChart } from './captureChart';
 import { composeFramedCanvas } from './composeFramedCanvas';
-import { downloadCanvas } from './downloadCanvas';
+import { downloadCanvas, copyCanvasToClipboard } from './downloadCanvas';
 import ChartPreview from './ChartPreview';
 import AnnotationCanvas, {
     type AnnotationCanvasHandle,
@@ -69,6 +69,9 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
     // через onHistoryChange callback который бампает counter.
     const [historyTick, setHistoryTick] = useState(0);
     const onHistoryChange = () => setHistoryTick((t) => t + 1);
+
+    // Статус копирования в буфер — отдельно от phase (операция быстрая, без spinner-фазы).
+    const [copyStatus, setCopyStatus] = useState<'idle' | 'copying' | 'copied' | 'error'>('idle');
 
     // Mount: start capture
     useEffect(() => {
@@ -199,6 +202,24 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
         } catch (err) {
             const msg = err instanceof Error ? err.message : 'Не удалось скачать файл';
             setState({ phase: 'error', message: msg });
+        }
+    };
+
+    /** Скопировать изображение в буфер обмена. preview → без разметки,
+     *  annotating → composite с разметкой (как и download). Phase не меняем. */
+    const handleCopy = async () => {
+        let canvas: HTMLCanvasElement | null = null;
+        if (state.phase === 'preview') canvas = state.canvas;
+        else if (state.phase === 'annotating') canvas = annotationRef.current?.exportToCanvas() ?? null;
+        if (!canvas) return;
+        setCopyStatus('copying');
+        try {
+            await copyCanvasToClipboard(canvas);
+            setCopyStatus('copied');
+            setTimeout(() => setCopyStatus('idle'), 2000);
+        } catch {
+            setCopyStatus('error');
+            setTimeout(() => setCopyStatus('idle'), 3000);
         }
     };
 
@@ -398,6 +419,28 @@ export default function ExportModal({ targetElement, filename, metadata, exportS
                         >
                             <Pencil size={16} />
                             Рисовать
+                        </button>
+                    )}
+
+                    {/* "Скопировать" — копирует изображение в буфер обмена (preview/annotating) */}
+                    {(state.phase === 'preview' || state.phase === 'annotating') && (
+                        <button
+                            onClick={handleCopy}
+                            disabled={copyStatus === 'copying'}
+                            className="editorial-press rounded-lg px-4 py-2 font-semibold flex items-center gap-2"
+                            style={{
+                                backgroundColor: 'var(--bg-primary)',
+                                border: '1.5px solid var(--text-primary)',
+                                color: copyStatus === 'error' ? 'var(--danger, #dc2626)' : 'var(--text-primary)',
+                                fontSize: 'var(--fs-sm)',
+                            }}
+                            title="Скопировать изображение в буфер обмена"
+                        >
+                            {copyStatus === 'copied' ? <Check size={16} /> : <Copy size={16} />}
+                            {copyStatus === 'copied' ? 'Скопировано'
+                                : copyStatus === 'copying' ? 'Копирую…'
+                                : copyStatus === 'error' ? 'Не вышло'
+                                : 'Скопировать'}
                         </button>
                     )}
 

@@ -51,3 +51,30 @@ export async function downloadCanvas(
         setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
 }
+
+/**
+ * copyCanvasToClipboard — копирует canvas как PNG в системный буфер обмена,
+ * чтобы юзер мог сразу вставить картинку (Ctrl/Cmd+V) в Telegram, чат и т.д.
+ *
+ * Требования: HTTPS + клик (user gesture). Бросает Error при неподдержке
+ * (старый браузер / Firefox без image-write) или отказе — вызывающий
+ * показывает fallback (кнопка «Скачать» рядом всегда доступна).
+ *
+ * ВАЖНО: clipboard.write вызывается синхронно в рамках жеста, а blob
+ * передаётся как Promise внутрь ClipboardItem — иначе Safari считает
+ * user-gesture протухшим после await toBlob(). Chrome принимает оба варианта.
+ */
+export async function copyCanvasToClipboard(canvas: HTMLCanvasElement): Promise<void> {
+    if (typeof ClipboardItem === 'undefined' || !navigator.clipboard?.write) {
+        throw new Error('Браузер не поддерживает копирование изображений');
+    }
+
+    const blobPromise = new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob(
+            (b) => (b ? resolve(b) : reject(new Error('Не удалось создать изображение'))),
+            'image/png',
+        );
+    });
+
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': blobPromise })]);
+}
