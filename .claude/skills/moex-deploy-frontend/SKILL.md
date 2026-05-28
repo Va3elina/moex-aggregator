@@ -43,23 +43,46 @@ git push origin main
 ```bash
 ssh -o IdentitiesOnly=yes -o IdentityAgent=none -o ConnectTimeout=30 \
     -i ~/.ssh/id_ed25519 root@103.88.243.232 \
-  "cd /opt/frame && git pull origin main && \
+  "cd /opt/frame && \
+   git stash push -m deploy-wip && git pull origin main && git stash pop && \
    docker compose build api && \
-   docker compose up -d api && \
-   sleep 10 && \
-   curl -sk 'https://localhost/sw.js' -H 'Host: xn--80aklbnczmv.xn--p1ai' | grep CACHE_NAME | head -1 && \
-   curl -sk 'https://localhost/' -H 'Host: xn--80aklbnczmv.xn--p1ai' | grep -oE 'index-[A-Za-z0-9_-]+\\.js' | head -1"
+   docker compose up -d --force-recreate api && \
+   docker restart frame-nginx-1 && \
+   sleep 8 && \
+   curl -sk 'https://localhost/sw.js' -H 'Host: xn--80aklbnczmv.xn--p1ai' | grep CACHE_NAME | head -1"
 ```
 
-**Время**: `docker compose build api` ~1-2 мин с кешем (если только frontend изменился — пересоберёт только frontend-build stage). Без кеша / при правке Dockerfile ~3-5 мин. Downtime пересоздания контейнера ~30 сек.
+**⚠️ Два обязательных шага, которых легко не заметить (грабли 2026-05-28):**
 
-### Step 3: Локальный test build (опционально)
+1. **`git stash push … && git pull && git stash pop`** — на сервере почти всегда
+   есть незакоммиченный WIP (в `docker-compose.yml` смонтирован volume
+   `manual_scha`, плюс `signals/` research, `requirements.txt`, `backup_db.sh`).
+   Без stash `git pull` падает: *«Your local changes would be overwritten by merge»*.
+   `stash pop` обычно **auto-merge'ит** (мой коммит и WIP — в разных секциях файла);
+   если конфликт — резолвить вручную. Подробнее: `feedback_server_wip_sync.md`.
+2. **`docker restart frame-nginx-1` после `up -d --force-recreate api`** — при
+   recreate api-контейнер получает **новый IP** в docker-network, а nginx
+   кеширует старый upstream-IP → **502 Bad Gateway на ВСЕХ `/api/*`**, пока nginx
+   не перезапустить (5 сек). ВСЕГДА перезапускай nginx после recreate api.
 
-Если хочешь убедиться что TS не падает **до** push'а:
+**Время**: build ~1-2 мин с кешем; без кеша ~3-5 мин. Downtime recreate ~30 сек + nginx restart ~5 сек.
+
+### Step 3: Локальный typecheck ПЕРЕД push (важно — иначе деплой упадёт на build!)
+
+Docker-сборка прерывается, если TS не проходит (`tsc -b && vite build`).
+Проверяй локально ДО push'а:
 ```bash
-cd frontend && npm run build
-# проверяет tsc + vite build + prebuild (sprite) + postbuild (logos cleanup)
+cd frontend && npx tsc -b --force   # честный typecheck, как в Docker (быстрее полного build)
+# или полный: npm run build (tsc -b + vite + prebuild sprite + postbuild logos)
 ```
+
+⚠️ **НЕ используй `npx tsc --noEmit` — это ЛОЖНЫЙ pass (exit 0 на любом коде)!**
+Корневой `tsconfig.json` тут — project-references файл (только `references`, без
+`files`), поэтому `--noEmit` не компилирует НИЧЕГО. Реальную проверку даёт только
+**`tsc -b`** (build mode идёт по ссылкам в `tsconfig.app.json`). Docker гоняет
+именно `tsc -b`. Инцидент 2026-05-28: `--noEmit` дал exit 0, а прод-build упал на
+ошибке типа-кортежа `[string,string,string,string][]` в PricingPage → пришлось
+фиксить и передеплоивать.
 
 ## Verify deployment
 

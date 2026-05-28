@@ -36,12 +36,31 @@ git push origin main
 # 2. Сервер — одной SSH командой
 ssh -o IdentitiesOnly=yes -o IdentityAgent=none -o ConnectTimeout=30 \
     -i ~/.ssh/id_ed25519 root@103.88.243.232 \
-  "cd /opt/frame && git pull origin main && \
+  "cd /opt/frame && \
+   git stash push -m deploy-wip && git pull origin main && git stash pop && \
    docker compose build api && \
-   docker compose up -d api && \
-   sleep 10 && \
+   docker compose up -d --force-recreate api && \
+   docker restart frame-nginx-1 && \
+   sleep 8 && \
    docker exec frame-api-1 python3 -c 'import urllib.request; print(urllib.request.urlopen(\"http://localhost:8000/health\").read().decode())'"
 ```
+
+**⚠️ Два обязательных шага (грабли 2026-05-28, см. moex-deploy-frontend):**
+- **`git stash push … && git pull && git stash pop`** — на сервере есть незакоммиченный
+  WIP (`docker-compose.yml` volume `manual_scha`, `signals/`, `requirements.txt`) →
+  голый `git pull` падает «local changes would be overwritten». `stash pop` обычно auto-merge'ит.
+- **`docker restart frame-nginx-1` после `--force-recreate api`** — recreate даёт
+  контейнеру новый IP, nginx кеширует старый upstream → **502 на всех `/api/*`**.
+  restart nginx (5 сек) чинит. ВСЕГДА после recreate.
+
+**⚠️ Если правка касается `.env` (новый секрет/флаг)** — добавь переменную в
+`docker-compose.yml` (блок `environment:` сервиса `api`, через `${VAR:-default}`),
+впиши значение в `/opt/frame/.env`, и деплой ОБЯЗАТЕЛЬНО с `--force-recreate`
+(env читается только при создании контейнера). Иначе код увидит пустую переменную.
+
+**⚠️ Если правка в OI/Candles/signals/main_orchestrator** — нужен ещё
+`docker compose build orchestrator && up -d --force-recreate orchestrator`
+(отдельный image `frame-orchestrator`, `build api` его НЕ трогает). См. deploy_manual.md.
 
 ### Несколько файлов / новый роутер
 
