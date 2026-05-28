@@ -50,6 +50,7 @@ import AdminUserDetailPage from './pages/AdminUserDetailPage';
 import ApiDocsPage from './pages/ApiDocsPage';
 import FundTradesPage from './pages/FundTradesPage';
 import AddEmailPage from './pages/AddEmailPage';
+import VerifyEmailPage from './pages/VerifyEmailPage';
 import FAQPage from './pages/FAQPage';
 
 // Mobile pages — lazy-loaded, desktop юзеры не качают этот код
@@ -149,6 +150,10 @@ export default function App() {
               с synthetic email (Telegram/VK без email). Без Layout — fullscreen
               форма, dismissible через logout. Гейт реализован в EmailSetupGate. */}
           <Route path="/add-email" element={<AddEmailPage />} />
+
+          {/* Подтверждение email кодом из письма (email+password юзеры).
+              Без Layout — fullscreen форма. Редирект сюда после регистрации. */}
+          <Route path="/verify-email" element={<VerifyEmailPage />} />
 
           {/* Основное приложение */}
           <Route element={<Layout />}>

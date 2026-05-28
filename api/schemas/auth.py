@@ -168,6 +168,21 @@ class AddEmailRequest(BaseModel):
         from_attributes = True
 
 
+# === ПОДТВЕРЖДЕНИЕ EMAIL (код из письма) ===
+
+class VerifyEmailRequest(BaseModel):
+    """Запрос на подтверждение email 6-значным кодом из письма."""
+    code: str = Field(..., description="6-значный код из письма", examples=["123456"])
+
+    @field_validator("code")
+    @classmethod
+    def validate_code(cls, v: str) -> str:
+        v = v.strip()
+        if not (v.isdigit() and len(v) == 6):
+            raise ValueError("Код должен состоять из 6 цифр")
+        return v
+
+
 # === СМЕНА ПАРОЛЯ ===
 
 class PasswordChange(BaseModel):

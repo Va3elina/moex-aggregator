@@ -49,6 +49,14 @@ class User(Base):
     is_active = Column(Boolean, default=True, nullable=False)
     is_verified = Column(Boolean, default=False, nullable=False)
 
+    # === Подтверждение email (Phase 2 — SMTP Yandex 360) ===
+    # Заполняются только для email+password юзеров. OAuth-юзеры приходят с
+    # is_verified=True (провайдер подтвердил) и этих полей не касаются.
+    email_verify_code = Column(String(6), nullable=True)               # 6-значный код
+    email_verify_expires_at = Column(DateTime(timezone=True), nullable=True)  # срок кода (30 мин)
+    email_verify_attempts = Column(Integer, default=0, nullable=False)  # неверные попытки
+    email_verify_sent_at = Column(DateTime(timezone=True), nullable=True)     # время последней отправки (кулдаун)
+
     # === Защита от брутфорса ===
     failed_login_attempts = Column(Integer, default=0, nullable=False)
     locked_until = Column(DateTime(timezone=True), nullable=True)

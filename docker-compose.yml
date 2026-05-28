@@ -125,6 +125,15 @@ services:
       - TBANK_RECEIPT_ENABLED=${TBANK_RECEIPT_ENABLED:-}
       - TBANK_TAXATION=${TBANK_TAXATION:-usn_income}
       - TBANK_VAT=${TBANK_VAT:-none}
+      # Почта (SMTP Yandex 360) — письма-подтверждения email при регистрации.
+      # ВАЖНО: SMTP_USER/SMTP_FROM в PUNYCODE (noreply@xn--80aklbnczmv.xn--p1ai),
+      # не в кириллице — SMTP AUTH/From это ASCII-протокол.
+      - SMTP_HOST=${SMTP_HOST:-smtp.yandex.ru}
+      - SMTP_PORT=${SMTP_PORT:-465}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM=${SMTP_FROM:-}
+      - SMTP_FROM_NAME=${SMTP_FROM_NAME:-Фрейм}
       # Python не пишет .pyc файлы в /app/api/__pycache__ при импорте
       # модулей. Совместимо с read_only rootfs. Лёгкая просадка на cold
       # import — pyc-кэш отсутствует. Compensated кэш гранулы Python 3.11.

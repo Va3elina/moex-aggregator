@@ -3,7 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import {
   LogOut, Lock, Mail, Calendar, Shield, Crown,
-  Check, X as XIcon, Eye, EyeOff, Sparkles, ExternalLink,
+  Check, X as XIcon, Eye, EyeOff, Sparkles, ExternalLink, AlertCircle,
 } from 'lucide-react';
 import AdminBillingInvites from '../components/AdminBillingInvites';
 import ApiKeysSection from '../components/profile/ApiKeysSection';
@@ -250,6 +250,27 @@ export default function ProfilePage() {
             <span>Регистрация: {formatDate(user.created_at)}</span>
           </div>
         </div>
+
+        {/* Баннер: email не подтверждён. Только для real-email юзеров с
+            is_verified=false (email+password). OAuth → is_verified=true, не видят. */}
+        {!isOAuthLocal && !user.is_verified && (
+          <div
+            className="mt-4 flex items-start gap-3 p-3 rounded-xl"
+            style={{
+              backgroundColor: 'color-mix(in srgb, var(--accent) 12%, transparent)',
+              border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)',
+            }}
+          >
+            <AlertCircle size={18} style={{ color: 'var(--accent)' }} className="mt-0.5 shrink-0" />
+            <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+              <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>Email не подтверждён.</span>{' '}
+              Подтвердите адрес, чтобы получать чеки об оплате и уведомления.{' '}
+              <Link to="/verify-email" style={{ color: 'var(--accent)', fontWeight: 600 }}>
+                Подтвердить →
+              </Link>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ============ Секция 2: Подписка ============

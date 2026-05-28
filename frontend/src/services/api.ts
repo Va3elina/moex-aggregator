@@ -140,6 +140,34 @@ export async function addEmail(email: string): Promise<void> {
   }
 }
 
+/**
+ * Подтверждение email 6-значным кодом из письма. После успеха AuthContext'у
+ * нужно refreshUser() — is_verified станет true, баннер в профиле исчезнет.
+ */
+export async function verifyEmail(code: string): Promise<void> {
+  const response = await apiFetch(`${API_BASE}/api/auth/verify-email`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code }),
+  });
+  if (!response.ok) {
+    const message = await parseApiError(response, 'Не удалось подтвердить email');
+    throw new ApiError(response.status, message);
+  }
+}
+
+/** Повторная отправка кода подтверждения. Бэкенд держит кулдаун 60с → 429. */
+export async function resendVerification(): Promise<void> {
+  const response = await apiFetch(`${API_BASE}/api/auth/resend-verification`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  if (!response.ok) {
+    const message = await parseApiError(response, 'Не удалось отправить код');
+    throw new ApiError(response.status, message);
+  }
+}
+
 // ==================== ИНСТРУМЕНТЫ ====================
 
 export async function getInstruments(

@@ -18,12 +18,13 @@ ENDPOINTS:
 - Логирование всех попыток входа
 """
 
-from fastapi import APIRouter, HTTPException, status, Depends, Request
+from fastapi import APIRouter, HTTPException, status, Depends, Request, BackgroundTasks
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 import hashlib
+import secrets
 
 # База данных
 from api.database import get_db
@@ -40,7 +41,11 @@ from api.schemas.auth import (
     UserResponse,
     PasswordChange,
     AddEmailRequest,
+    VerifyEmailRequest,
 )
+
+# Email-сервис (SMTP Yandex 360)
+from api.services.email import send_verification_email
 
 # Безопасность
 from api.security import (
@@ -174,6 +179,37 @@ async def require_pro(user: User = Depends(get_current_user)) -> User:
 
 
 # ============================================================================
+# EMAIL VERIFICATION HELPERS (Phase 2 — SMTP Yandex 360)
+# ============================================================================
+
+EMAIL_VERIFY_TTL_MIN = 30                 # срок жизни кода
+EMAIL_VERIFY_MAX_ATTEMPTS = 5             # неверных попыток до блокировки кода
+EMAIL_VERIFY_RESEND_COOLDOWN_SEC = 60     # пауза между повторными отправками
+
+
+def _generate_verify_code() -> str:
+    """Криптостойкий 6-значный код подтверждения."""
+    return f"{secrets.randbelow(1_000_000):06d}"
+
+
+def _issue_email_verification(user: User, db: Session, background_tasks: BackgroundTasks) -> None:
+    """Генерит новый код, сохраняет в БД, ставит отправку письма в фон (threadpool)."""
+    code = _generate_verify_code()
+    now = datetime.now(timezone.utc)
+    user.email_verify_code = code
+    user.email_verify_expires_at = now + timedelta(minutes=EMAIL_VERIFY_TTL_MIN)
+    user.email_verify_attempts = 0
+    user.email_verify_sent_at = now
+    db.commit()
+    # send_verification_email — sync; BackgroundTasks выполнит её в threadpool
+    # после ответа, не блокируя event loop. Если SMTP не настроен/упал —
+    # функция вернёт False и залогирует, регистрация при этом не падает.
+    background_tasks.add_task(
+        send_verification_email, user.email, code, getattr(user, "display_name", None)
+    )
+
+
+# ============================================================================
 # ENDPOINTS
 # ============================================================================
 
@@ -190,6 +226,7 @@ async def require_pro(user: User = Depends(get_current_user)) -> User:
 async def register(
         data: UserRegister,
         request: Request,
+        background_tasks: BackgroundTasks,
         db: Session = Depends(get_db)
 ):
     """
@@ -240,6 +277,10 @@ async def register(
         f"New user registered: {data.email}",
         extra={"extra_data": {"event": "user_registered", "user_id": user.id}}
     )
+
+    # Шлём код подтверждения email (email+password регистрация).
+    # OAuth-юзеры сюда не попадают — они идут через /api/auth/oauth с is_verified=True.
+    _issue_email_verification(user, db, background_tasks)
 
     return UserResponse(
         id=user.id,
@@ -573,6 +614,110 @@ async def add_email(
         created_at=user.created_at,
         requires_email_setup=False,  # Только что привязали реальный email
     )
+
+
+@router.post(
+    "/verify-email",
+    response_model=UserResponse,
+    summary="Подтверждение email кодом из письма",
+    responses={
+        200: {"description": "Email подтверждён"},
+        400: {"description": "Неверный/истёкший код или уже подтверждён"},
+        429: {"description": "Слишком много попыток"},
+    },
+)
+async def verify_email(
+    data: VerifyEmailRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Подтверждает email пользователя 6-значным кодом из письма."""
+    if user.is_verified:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email уже подтверждён")
+    if is_synthetic_oauth_email(user.email):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Сначала привяжите реальный email")
+    if not user.email_verify_code or not user.email_verify_expires_at:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Код не запрошен. Запросите новый код.")
+
+    now = datetime.now(timezone.utc)
+    expires = user.email_verify_expires_at
+    if expires.tzinfo is None:
+        expires = expires.replace(tzinfo=timezone.utc)
+    if now > expires:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Код истёк. Запросите новый.")
+
+    if user.email_verify_attempts >= EMAIL_VERIFY_MAX_ATTEMPTS:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Слишком много попыток. Запросите новый код.")
+
+    if data.code != user.email_verify_code:
+        user.email_verify_attempts += 1
+        db.commit()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Неверный код")
+
+    # Успех — подтверждаем и очищаем поля кода
+    user.is_verified = True
+    user.email_verify_code = None
+    user.email_verify_expires_at = None
+    user.email_verify_attempts = 0
+    user.email_verify_sent_at = None
+    db.commit()
+    db.refresh(user)
+
+    logger.info(
+        f"Email verified: user {user.id}",
+        extra={"extra_data": {"event": "email_verified", "user_id": user.id}},
+    )
+
+    oauth_providers = [user.oauth_provider] if user.oauth_provider else []
+    return UserResponse(
+        id=user.id,
+        email=user.email,
+        display_name=getattr(user, "display_name", None),
+        role=user.role,
+        is_verified=user.is_verified,
+        avatar_url=user.avatar_url,
+        has_password=bool(user.hashed_password),
+        oauth_providers=oauth_providers,
+        created_at=user.created_at,
+        requires_email_setup=is_synthetic_oauth_email(user.email),
+    )
+
+
+@router.post(
+    "/resend-verification",
+    summary="Повторная отправка кода подтверждения email",
+    responses={
+        200: {"description": "Код отправлен"},
+        400: {"description": "Email уже подтверждён или не привязан реальный"},
+        429: {"description": "Слишком частые запросы (кулдаун 60с)"},
+    },
+)
+async def resend_verification(
+    background_tasks: BackgroundTasks,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Генерит и заново отправляет код подтверждения. Кулдаун 60 сек между отправками."""
+    if user.is_verified:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email уже подтверждён")
+    if is_synthetic_oauth_email(user.email):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Сначала привяжите реальный email")
+
+    now = datetime.now(timezone.utc)
+    if user.email_verify_sent_at:
+        sent = user.email_verify_sent_at
+        if sent.tzinfo is None:
+            sent = sent.replace(tzinfo=timezone.utc)
+        elapsed = (now - sent).total_seconds()
+        if elapsed < EMAIL_VERIFY_RESEND_COOLDOWN_SEC:
+            wait = int(EMAIL_VERIFY_RESEND_COOLDOWN_SEC - elapsed)
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Слишком часто. Подождите {wait} сек.",
+            )
+
+    _issue_email_verification(user, db, background_tasks)
+    return {"success": True, "message": "Код отправлен на ваш email"}
 
 
 @router.get("/guest-limits")

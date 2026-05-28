@@ -5,6 +5,9 @@ interface User {
   email: string;
   display_name: string | null;
   role: string;
+  /** Подтверждён ли email. У email+password юзеров false до ввода кода из письма;
+   *  у OAuth-юзеров true (провайдер подтвердил). Управляет баннером в профиле. */
+  is_verified: boolean;
   has_password: boolean;
   avatar_url: string | null;
   created_at: string;

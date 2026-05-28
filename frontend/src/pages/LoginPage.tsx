@@ -86,7 +86,24 @@ export default function LoginPage() {
                 throw new Error(data.error?.message || data.detail || 'Ошибка');
             }
 
-            // Сохраняем токены через AuthContext
+            if (mode === 'register') {
+                // /register возвращает UserResponse без токенов — логинимся отдельно,
+                // затем ведём на подтверждение email (код уже отправлен письмом при регистрации).
+                const loginResp = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+                const loginData = await loginResp.json();
+                if (!loginResp.ok) {
+                    throw new Error(loginData.error?.message || loginData.detail || 'Регистрация прошла. Войдите, чтобы продолжить.');
+                }
+                await auth.login({ access_token: loginData.access_token, refresh_token: loginData.refresh_token });
+                navigate('/verify-email');
+                return;
+            }
+
+            // Сохраняем токены через AuthContext (login mode)
             await auth.login({ access_token: data.access_token, refresh_token: data.refresh_token });
             navigate('/');
         } catch (err) {
