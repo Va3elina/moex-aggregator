@@ -236,9 +236,9 @@ const SECTIONS: FAQSection[] = [
                     <>
                         Полный список контактов —
                         на <Link to="/contacts" className="underline">странице контактов</Link>.
-                        Самый быстрый канал — <a href="https://t.me/FrameTool" target="_blank"
-                        rel="noreferrer noopener" className="underline">Telegram-канал
-                        @FrameTool</a>, там же публикуем апдейты сервиса и сигналы по индикаторам.
+                        Самый быстрый канал — <a href="https://t.me/+vbt614-Qq1w1YWYy" target="_blank"
+                        rel="noreferrer noopener" className="underline">наш Telegram-канал</a>,
+                        там же публикуем апдейты сервиса и сигналы по индикаторам.
                     </>
                 ),
             },
