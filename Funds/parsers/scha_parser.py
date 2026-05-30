@@ -282,6 +282,13 @@ def _parse_assets_from_tables_rowwise(tables: list, isin_pif: Optional[str] = No
             if not row:
                 continue
             cells = [_norm(c) for c in row]
+            # Пропускаем строки РЕПО/расчётов: там ISIN — это бумага-ЗАЛОГ обратного
+            # РЕПО, а не позиция портфеля (числа в строке — ставка и срок сделки,
+            # не количество/стоимость). Реальная holdings-строка слова «репо»/
+            # «сделк» не содержит.
+            row_text = " ".join(cells).lower()
+            if "репо" in row_text or "сделк" in row_text:
+                continue
             # Найти ISIN-ячейку (внутри может быть пробел от переноса строки).
             isin = None
             for c in cells:
@@ -303,6 +310,11 @@ def _parse_assets_from_tables_rowwise(tables: list, isin_pif: Optional[str] = No
             if len(nums) < 2:
                 continue
             positions, value_rub = nums[-2], nums[-1]
+            # Количество бумаг (акций/облигаций/паёв) ВСЕГДА целое. Дробное в слоте
+            # количества → строка считана неверно (ставка/цена/НКД попали не туда,
+            # напр. остаток РЕПО) → пропускаем. Заодно гарантирует int для bigint-колонки.
+            if positions != int(positions):
+                continue
             # Sanity: одна позиция не может стоить > 500 млрд ₽ (NAV этих фондов
             # < 100 млрд) — значит колонки считаны неверно, пропускаем.
             if value_rub > 5e11:
@@ -314,7 +326,7 @@ def _parse_assets_from_tables_rowwise(tables: list, isin_pif: Optional[str] = No
                 "ogrn": None,
                 "inn": None,
                 "regnum": None,
-                "positions": int(positions) if positions == int(positions) else positions,
+                "positions": int(positions),
                 "value_rub": value_rub,
                 "maturity": None,
             })
