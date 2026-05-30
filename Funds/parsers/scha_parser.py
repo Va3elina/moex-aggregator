@@ -57,6 +57,10 @@ COL_PATTERNS = {
 # Допускаем пробелы в средине (Cbonds иногда форматирует).
 ISIN_PATTERN = re.compile(r"^[A-Z]{2}\w{10}$")
 
+# Дата в ячейке (срок погашения облигаций): 28.02.2029 или 28.02.2029 0:00:00.
+# Нужна чтобы НЕ принять «дату погашения» за числовое значение (количество/стоимость).
+DATE_CELL_PATTERN = re.compile(r"\d{1,2}\.\d{2}\.\d{4}")
+
 
 def _norm(s: Optional[str]) -> str:
     """Normalize cell string for matching."""
@@ -239,14 +243,93 @@ def _parse_assets_from_text(text: str) -> list[dict]:
     return assets
 
 
+def _cell_number(text: Optional[str]) -> Optional[float]:
+    """
+    Парсит ячейку таблицы как число, НО отвергает даты погашения
+    (28.02.2029 / 28.02.2029 0:00:00) — иначе они путаются с количеством.
+    """
+    if not text:
+        return None
+    if DATE_CELL_PATTERN.search(text):
+        return None
+    return _parse_float(text)
+
+
+def _parse_assets_from_tables_rowwise(tables: list, isin_pif: Optional[str] = None) -> list[dict]:
+    """
+    Header-agnostic извлечение строк активов из таблиц — для многостраничного
+    layout формы 0420502 у Первой/Атона (35 стр), где шапка таблицы остаётся на
+    одной странице, а строки данных переносятся на следующие (extract_tables()
+    по-страничный → строки данных приходят БЕЗ шапки, _detect_columns даёт {}).
+
+    Каждая holdings-строка самоописательна: содержит ISIN-ячейку и ≥2 числовых
+    ячейки. Инвариант, проверенный на трёх подразделах (акции, корп. облигации,
+    госбумаги): **количество и стоимость — это два ПОСЛЕДНИХ числовых значения
+    строки** (ОГРН/ИНН/регномер/дата погашения идут раньше; биржа и «уровень
+    иерархии (уровень 1)» — текстовые ячейки в хвосте). Правило устойчиво к
+    перестановке колонок между подразделами (в госбумагах ISIN стоит ПЕРЕД
+    ОГРН/ИНН, в акциях — после).
+
+    `isin_pif` исключается — ISIN пая самого фонда встречается в реквизитах
+    (раздел I) рядом с ОКПО и не является позицией портфеля.
+    """
+    assets: list[dict] = []
+    seen: set[str] = set()
+    for table in tables:
+        if not table:
+            continue
+        for row in table:
+            if not row:
+                continue
+            cells = [_norm(c) for c in row]
+            # Найти ISIN-ячейку (внутри может быть пробел от переноса строки).
+            isin = None
+            for c in cells:
+                compact = re.sub(r"\s+", "", c)
+                if ISIN_PATTERN.match(compact):
+                    isin = compact
+                    break
+            if not isin or isin == isin_pif or isin in seen:
+                continue
+            # Числовые ячейки строки (исключаем даты и любые ячейки с буквами:
+            # названия, «Обыкновенные», «Рыночные котировки (уровень 1)»).
+            nums = []
+            for c in cells:
+                if any(ch.isalpha() for ch in c):
+                    continue
+                v = _cell_number(c)
+                if v is not None and v > 0:
+                    nums.append(v)
+            if len(nums) < 2:
+                continue
+            positions, value_rub = nums[-2], nums[-1]
+            # Sanity: одна позиция не может стоить > 500 млрд ₽ (NAV этих фондов
+            # < 100 млрд) — значит колонки считаны неверно, пропускаем.
+            if value_rub > 5e11:
+                continue
+            seen.add(isin)
+            assets.append({
+                "asset_name": "(name from ISIN)",
+                "isin": isin,
+                "ogrn": None,
+                "inn": None,
+                "regnum": None,
+                "positions": int(positions) if positions == int(positions) else positions,
+                "value_rub": value_rub,
+                "maturity": None,
+            })
+    return assets
+
+
 def parse_scha(pdf_bytes: bytes) -> dict:
     """
     Основная функция парсера.
 
-    Двухэтапный подход:
-      1. Пробуем extract_tables() — корректно работает для ОПИФ (Казначейский).
-      2. Если ничего не нашли (БПИФ-формат с вертикальным текстом) —
-         fallback на text+regex парсинг.
+    Три стратегии (берём ту, что дала больше всего активов):
+      1. extract_tables() с детекцией шапки — ОПИФ (Казначейский), компактный layout.
+      2. extract_tables() row-wise, header-agnostic — многостраничный 35-стр layout
+         Первой/Атона (шапка и данные на разных страницах).
+      3. text+regex fallback — БПИФ ВИМ с вертикальным шрифтом.
 
     Args:
         pdf_bytes: содержимое PDF файла как bytes.
@@ -281,8 +364,9 @@ def parse_scha(pdf_bytes: bytes) -> dict:
         "parser_strategy": None,
     }
 
-    # Аккумулируем full text для fallback-стратегии.
+    # Аккумулируем full text для fallback-стратегии + все таблицы для row-wise.
     full_text_parts: list[str] = []
+    all_tables: list = []
 
     with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
         result["pages"] = len(pdf.pages)
@@ -298,6 +382,13 @@ def parse_scha(pdf_bytes: bytes) -> dict:
                     result["snapshot_date"] = (
                         f"{date_match.group(1)}-{date_match.group(2)}-{date_match.group(3)}"
                     )
+                else:
+                    # DD.MM.YYYY (Первая/Атон): «Отчетная дата ... 31.03.2026».
+                    ddmm = re.search(r"\b(\d{2})\.(\d{2})\.(\d{4})\b", text)
+                    if ddmm:
+                        result["snapshot_date"] = (
+                            f"{ddmm.group(3)}-{ddmm.group(2)}-{ddmm.group(1)}"
+                        )
                 # ISIN пая фонда — 12 символов: RU + 3 digits + A + 6 alphanum.
                 # Например RU000A101EJ5 (EQMX), RU000A1004T8 (Казначейский).
                 isin_match = re.search(r"\bRU\d{3}A[A-Z0-9]{6}\b", text)
@@ -306,6 +397,7 @@ def parse_scha(pdf_bytes: bytes) -> dict:
 
             # Парсим все таблицы на странице.
             tables = page.extract_tables() or []
+            all_tables.extend(tables)
             for table in tables:
                 if len(table) < 2:
                     continue
@@ -369,32 +461,46 @@ def parse_scha(pdf_bytes: bytes) -> dict:
                         "maturity": maturity or None,
                     })
 
-    # Fallback: если extract_tables() ничего не нашёл ИЛИ нашёл мало активов
-    # (< 20 — это признак БПИФ с вертикальным шрифтом где таблицы парсятся
-    # частично), пробуем text+regex стратегию.
+    # Fallback: если extract_tables()+шапка нашёл мало активов (< 20 — признак
+    # либо БПИФ ВИМ с вертикальным шрифтом, либо многостраничного 35-стр layout
+    # Первой/Атона где шапка и данные на разных страницах), пробуем ещё две
+    # стратегии и берём ту, что дала больше всего активов.
     tables_count = len(result["assets"])
     if tables_count < 20:
+        isin_pif = result.get("isin_pif")
+
+        # Стратегия 2: row-wise по таблицам (header-agnostic) — Первая/Атон.
+        rowwise_assets = _parse_assets_from_tables_rowwise(all_tables, isin_pif)
+
+        # Стратегия 3: text+regex — БПИФ ВИМ с вертикальным шрифтом.
         full_text = "\n".join(full_text_parts)
         text_assets = _parse_assets_from_text(full_text)
-        # Из text+regex имя пая фонда может попасть в список activs — отфильтруем.
-        if result.get("isin_pif"):
-            text_assets = [a for a in text_assets if a["isin"] != result["isin_pif"]]
+        if isin_pif:
+            text_assets = [a for a in text_assets if a["isin"] != isin_pif]
 
-        # Если text+regex нашёл больше активов — используем его.
-        if len(text_assets) > tables_count:
-            result["assets"] = text_assets
+        # Берём кандидата с наибольшим числом активов.
+        candidates = [
+            ("tables", result["assets"]),
+            ("tables_rowwise", rowwise_assets),
+            ("text+regex", text_assets),
+        ]
+        best_strategy, best_assets = max(candidates, key=lambda kv: len(kv[1]))
 
-        # Sanity check: для cash-фондов (LQDT/GOLD) ISIN в SCHA фигурируют
-        # только эпизодически (REPO-контрагенты) — не holdings.
-        # Индексные фонды (EQMX) имеют ≥20 позиций.
-        if len(result["assets"]) < 20:
+        # Порог отсечки "cash/repo-only". text+regex шумит на денежных фондах
+        # (LQDT/GOLD — стрэй REPO-ISIN'ы в тексте) → требуем ≥20. Точные табличные
+        # стратегии берут реальные строки holdings → достаточно ≥3: только что
+        # запущенный маленький фонд (SBFR в начале 2024) законно держит 16-18
+        # облигаций; порог ≥3 заодно отсекает «1-asset мусор» от сбоев парсинга.
+        floor = 20 if best_strategy == "text+regex" else 3
+        if len(best_assets) < floor:
             result["assets"] = []
             result["parser_strategy"] = "cash_or_repo_only"
-        elif tables_count == 0:
-            result["parser_strategy"] = "text+regex"
         else:
-            # tables нашёл < 20, text+regex дал ≥20 — используем text+regex
-            result["parser_strategy"] = "text+regex(upgraded from tables)"
+            result["assets"] = best_assets
+            if best_strategy == "tables" or tables_count == 0:
+                result["parser_strategy"] = best_strategy
+            else:
+                result["parser_strategy"] = f"{best_strategy}(upgraded from tables)"
     else:
         result["parser_strategy"] = "tables"
 
