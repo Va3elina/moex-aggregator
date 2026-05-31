@@ -1240,6 +1240,7 @@ export interface FundTradesDetail {
 export interface FundTradesMover {
     asset_name: string;
     total_delta_weight: number;
+    total_delta_amount: number;
     funds_buying: number;
     funds_selling: number;
 }
@@ -1247,6 +1248,10 @@ export interface FundTradesMover {
 export interface FundTradesMovers {
     period: FundTradesPeriod;
     category: string | null;
+    as_of: string | null;
+    manager: string | null;
+    sort: 'weight' | 'amount';
+    available_months: string[];
     top_accumulated: FundTradesMover[];
     top_reduced: FundTradesMover[];
 }
@@ -1273,11 +1278,12 @@ export async function getFundTradesDetail(
 
 export async function getFundTradesMovers(
     period: FundTradesPeriod = '1m',
-    category?: string,
-    limit = 20,
+    opts: { asOf?: string; manager?: string; sort?: 'weight' | 'amount'; limit?: number } = {},
 ): Promise<FundTradesMovers> {
-    const params = new URLSearchParams({ period, limit: String(limit) });
-    if (category) params.set('category', category);
+    const { asOf, manager, sort = 'weight', limit = 20 } = opts;
+    const params = new URLSearchParams({ period, sort, limit: String(limit) });
+    if (asOf) params.set('as_of', asOf);
+    if (manager) params.set('manager', manager);
     const resp = await apiFetch(`${API_BASE}/api/fund-trades/movers?${params}`);
     if (resp.status === 403) throw new Error('Доступно на тарифе Pro');
     if (!resp.ok) throw new Error('Не удалось загрузить топ движений');

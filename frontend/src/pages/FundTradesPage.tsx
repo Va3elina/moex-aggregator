@@ -17,7 +17,7 @@
  *     new=accent, sold_out=muted
  *   - Шаг данных — 1 снапшот в месяц; сравнение всегда «месяц vs предыдущий».
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
 import {
     ArrowUpRight,
@@ -61,6 +61,17 @@ const CATEGORY_LABEL: Record<string, string> = {
     bonds: 'Облигации',
     money_market: 'Денежный рынок',
     gold: 'Золото',
+};
+
+const SELECT_STYLE: CSSProperties = {
+    padding: '6px 10px',
+    background: 'var(--bg-secondary)',
+    color: 'var(--text-primary)',
+    border: '1.5px solid var(--border-color)',
+    borderRadius: 8,
+    fontSize: 'var(--fs-xs)',
+    fontWeight: 600,
+    cursor: 'pointer',
 };
 
 // ════════════════════════════════════════════════════════════════════
@@ -620,6 +631,10 @@ export default function FundTradesPage() {
     const [movers, setMovers] = useState<FundTradesMovers | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    // Заход 2: управление табом «Покупки фондов».
+    const [asOf, setAsOf] = useState<string | undefined>(undefined);    // выбранный месяц (undefined = последний)
+    const [manager, setManager] = useState<string>('');                  // фильтр по УК ('' = все)
+    const [metric, setMetric] = useState<'weight' | 'amount'>('weight'); // % веса | объём ₽
 
     // Load funds list (один раз).
     useEffect(() => {
@@ -631,16 +646,16 @@ export default function FundTradesPage() {
             .finally(() => setLoading(false));
     }, [common.fund_trades_access]);
 
-    // Load movers when tab=movers (или меняется period).
+    // Load movers when tab=movers (или меняются параметры: месяц/УК/метрика).
     useEffect(() => {
         if (!common.fund_trades_access) return;
         if (tab !== 'movers') return;
         setLoading(true);
-        getFundTradesMovers(period)
+        getFundTradesMovers(period, { asOf, manager: manager || undefined, sort: metric })
             .then(setMovers)
             .catch((e: Error) => setError(e.message))
             .finally(() => setLoading(false));
-    }, [tab, period, common.fund_trades_access]);
+    }, [tab, period, asOf, manager, metric, common.fund_trades_access]);
 
     const fundsByCategory = useMemo(() => {
         const groups: Record<string, FundWithHistory[]> = {};
@@ -652,12 +667,21 @@ export default function FundTradesPage() {
         return groups;
     }, [funds]);
 
+    // УК для фильтра «Покупок фондов» — только stock-фонды.
+    const managers = useMemo(() => {
+        const set = new Set<string>();
+        for (const f of funds) {
+            if (f.category === 'stocks' && f.uk) set.add(f.uk);
+        }
+        return Array.from(set).sort();
+    }, [funds]);
+
     if (!common.fund_trades_access) {
         return <LockedView />;
     }
 
     return (
-        <div className="max-w-5xl mx-auto px-4 md:px-6 py-6 md:py-8">
+        <div className="max-w-[1408px] mx-auto px-4 md:px-6 py-6 md:py-8 min-h-screen">
             {/* Header — единый PageHeader как у всех индикаторов
                 (иконка стилизуется через .page-header-icon → выравнивание как везде) */}
             <PageHeader
@@ -860,6 +884,53 @@ export default function FundTradesPage() {
 
             {tab === 'movers' && (
                 <>
+                    {/* Контролы: месяц · УК · метрика (% веса / объём ₽) */}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 16 }}>
+                        {movers && movers.available_months.length > 0 && (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--text-secondary)' }}>
+                                <Calendar size={14} />
+                                <select
+                                    value={asOf ?? movers.available_months[0]}
+                                    onChange={(e) => setAsOf(e.target.value)}
+                                    style={SELECT_STYLE}
+                                >
+                                    {movers.available_months.map((m) => (
+                                        <option key={m} value={m}>{formatSnapshotDate(m)}</option>
+                                    ))}
+                                </select>
+                            </span>
+                        )}
+                        {managers.length > 0 && (
+                            <select value={manager} onChange={(e) => setManager(e.target.value)} style={SELECT_STYLE}>
+                                <option value="">Все УК</option>
+                                {managers.map((uk) => (
+                                    <option key={uk} value={uk}>{uk}</option>
+                                ))}
+                            </select>
+                        )}
+                        <div style={{ marginLeft: 'auto', display: 'flex', gap: 4, padding: 4, background: 'var(--bg-secondary)', borderRadius: 8 }}>
+                            {([['weight', '% веса'], ['amount', 'Объём ₽']] as const).map(([key, lbl]) => (
+                                <button
+                                    key={key}
+                                    onClick={() => setMetric(key)}
+                                    style={{
+                                        padding: '4px 12px',
+                                        background: metric === key ? 'var(--bg-primary)' : 'transparent',
+                                        color: metric === key ? 'var(--text-primary)' : 'var(--text-secondary)',
+                                        border: metric === key
+                                            ? '1px solid color-mix(in srgb, var(--text-primary) 18%, transparent)'
+                                            : '1px solid transparent',
+                                        borderRadius: 6,
+                                        fontSize: 'var(--fs-xs)',
+                                        fontWeight: metric === key ? 700 : 600,
+                                        cursor: 'pointer',
+                                    }}
+                                >
+                                    {lbl}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
                     {loading && !movers && (
                         <div style={{ color: 'var(--text-muted)' }}>Загружаем агрегаты…</div>
                     )}
@@ -877,6 +948,7 @@ export default function FundTradesPage() {
                                 color="var(--success, #2dd478)"
                                 items={movers.top_accumulated}
                                 empty="Накоплений нет"
+                                metric={metric}
                             />
                             <MoversColumn
                                 title="Топ-распродажа"
@@ -885,6 +957,7 @@ export default function FundTradesPage() {
                                 items={movers.top_reduced}
                                 empty="Распродаж нет"
                                 negative
+                                metric={metric}
                             />
                         </div>
                     )}
@@ -1738,6 +1811,7 @@ function MoversColumn({
     items,
     empty,
     negative,
+    metric,
 }: {
     title: string;
     icon: typeof TrendingUp;
@@ -1745,9 +1819,16 @@ function MoversColumn({
     items: FundTradesMovers['top_accumulated'];
     empty: string;
     negative?: boolean;
+    metric: 'weight' | 'amount';
 }) {
-    // Гистограмма: ширина бара ∝ |Δвеса| относительно максимума в колонке.
-    const maxAbs = Math.max(...items.map((m) => Math.abs(m.total_delta_weight)), 0.0001);
+    // Значение по выбранной метрике: % веса (Δвеса) или объём ₽ (Δсуммы).
+    const valOf = (m: FundTradesMovers['top_accumulated'][number]) =>
+        metric === 'amount' ? m.total_delta_amount : m.total_delta_weight;
+    const fmtVal = (v: number) => metric === 'amount'
+        ? `${v > 0 ? '+' : '−'}${formatRubShort(Math.abs(v))}`
+        : `${v > 0 ? '+' : ''}${v.toFixed(2)}%`;
+    // Гистограмма: ширина бара ∝ |значение| относительно максимума в колонке.
+    const maxAbs = Math.max(...items.map((m) => Math.abs(valOf(m))), 0.0001);
     return (
         <div
             style={{
@@ -1784,7 +1865,8 @@ function MoversColumn({
             ) : (
                 <div>
                     {items.map((m, i) => {
-                        const pct = Math.max(2, (Math.abs(m.total_delta_weight) / maxAbs) * 100);
+                        const val = valOf(m);
+                        const pct = Math.max(2, (Math.abs(val) / maxAbs) * 100);
                         return (
                         <div
                             key={m.asset_name}
@@ -1795,7 +1877,7 @@ function MoversColumn({
                                     : '1px dashed color-mix(in srgb, var(--text-primary) 12%, transparent)',
                             }}
                         >
-                            {/* Верх: ранг + имя + Δвеса */}
+                            {/* Верх: ранг + имя + значение (% веса или ₽) */}
                             <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
                                 <span
                                     style={{
@@ -1831,8 +1913,7 @@ function MoversColumn({
                                         flexShrink: 0,
                                     }}
                                 >
-                                    {m.total_delta_weight > 0 ? '+' : ''}
-                                    {m.total_delta_weight.toFixed(2)}%
+                                    {fmtVal(val)}
                                 </span>
                             </div>
                             {/* Низ: гистограмма-бар + счётчик фондов */}
