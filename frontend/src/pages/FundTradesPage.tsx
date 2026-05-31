@@ -1696,13 +1696,13 @@ function AssetHistoryModal({
                     <div style={{ padding: 16, color: 'var(--mood-red)' }}>{error}</div>
                 )}
 
-                {data && !loading && <AssetHistoryContent data={data} />}
+                {data && !loading && <AssetHistoryContent data={data} assetName={asset_name} />}
             </div>
         </div>
     );
 }
 
-function AssetHistoryContent({ data }: { data: AssetHistory }) {
+function AssetHistoryContent({ data, assetName }: { data: AssetHistory; assetName: string }) {
     const points = data.timeline.filter(p => p.positions !== null);
     const firstPos = points[0]?.positions || 0;
     const lastPos = points[points.length - 1]?.positions || 0;
@@ -1711,6 +1711,40 @@ function AssetHistoryContent({ data }: { data: AssetHistory }) {
 
     // Данные для SimpleChart: позиции (штуки) по снапшотам.
     const chartData = points.map(p => ({ time: p.snapshot_date, value: p.positions! }));
+
+    // Сортировка таблицы «Все снапшоты» — кликабельные колонки.
+    const [snapSort, setSnapSort] = useState<'date' | 'positions' | 'delta' | 'amount' | 'price' | 'weight'>('date');
+    const [snapDir, setSnapDir] = useState<'asc' | 'desc'>('desc');
+    const snapColumns = [
+        { key: 'date', label: 'Дата', align: 'left' },
+        { key: 'positions', label: 'Штук', align: 'right' },
+        { key: 'delta', label: 'Δ', align: 'right' },
+        { key: 'amount', label: 'На сумму', align: 'right' },
+        { key: 'price', label: 'Цена', align: 'right' },
+        { key: 'weight', label: 'Доля', align: 'right' },
+    ] as const;
+    const sortedTimeline = useMemo(() => {
+        const num = (v: number | null) => (v == null ? -Infinity : v);
+        const val = (p: AssetHistory['timeline'][number]): string | number => {
+            switch (snapSort) {
+                case 'date': return p.snapshot_date;
+                case 'positions': return num(p.positions);
+                case 'delta': return num(p.delta_positions);
+                case 'amount': return num(p.amount_rub);
+                case 'price': return num(p.price_rub);
+                case 'weight': return num(p.weight);
+            }
+        };
+        return [...data.timeline].sort((a, b) => {
+            const av = val(a), bv = val(b);
+            const cmp = typeof av === 'string' ? av.localeCompare(bv as string) : (av as number) - (bv as number);
+            return snapDir === 'asc' ? cmp : -cmp;
+        });
+    }, [data.timeline, snapSort, snapDir]);
+    const onSnapSort = (key: typeof snapSort) => {
+        if (snapSort === key) setSnapDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+        else { setSnapSort(key); setSnapDir('desc'); }
+    };
 
     return (
         <>
@@ -1748,14 +1782,15 @@ function AssetHistoryContent({ data }: { data: AssetHistory }) {
             <div style={{ marginBottom: 24 }}>
                 <SimpleChart
                     data={chartData}
-                    height={420}
-                    primaryLabel="Позиции, шт"
+                    height={470}
+                    primaryLabel={assetName}
                     legendPosition="top"
                     formatValue={(v) => formatShares(Math.round(v))}
                     formatTime={formatMonthYearShort}
                     tooltipDateFormat={formatMonthYearShort}
+                    clampEdgeLabels
                     showValueHeader={false}
-                    showDownloadButton={false}
+                    showDownloadButton
                 />
             </div>
 
@@ -1773,17 +1808,34 @@ function AssetHistoryContent({ data }: { data: AssetHistory }) {
                     fontSize: 'var(--fs-sm)', fontVariantNumeric: 'tabular-nums',
                 }}>
                     <thead>
-                        <tr style={{ color: 'var(--text-tertiary)' }}>
-                            <th style={{ textAlign: 'left', padding: '6px 8px', fontWeight: 500 }}>Дата</th>
-                            <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: 500 }}>Штук</th>
-                            <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: 500 }}>Δ</th>
-                            <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: 500 }}>На сумму</th>
-                            <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: 500 }}>Цена</th>
-                            <th style={{ textAlign: 'right', padding: '6px 8px', fontWeight: 500 }}>Доля</th>
+                        <tr>
+                            {snapColumns.map((c) => {
+                                const active = snapSort === c.key;
+                                return (
+                                    <th
+                                        key={c.key}
+                                        onClick={() => onSnapSort(c.key)}
+                                        style={{
+                                            textAlign: c.align,
+                                            padding: '6px 8px',
+                                            fontWeight: 600,
+                                            cursor: 'pointer',
+                                            userSelect: 'none',
+                                            whiteSpace: 'nowrap',
+                                            color: active ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                                        }}
+                                    >
+                                        {c.label}
+                                        <span style={{ opacity: active ? 1 : 0.35, marginLeft: 3 }}>
+                                            {active ? (snapDir === 'asc' ? '▲' : '▼') : '⇅'}
+                                        </span>
+                                    </th>
+                                );
+                            })}
                         </tr>
                     </thead>
                     <tbody>
-                        {[...data.timeline].reverse().map((p) => {
+                        {sortedTimeline.map((p) => {
                             const dColor = !p.delta_positions ? 'var(--text-tertiary)'
                                 : p.delta_positions > 0 ? 'var(--mood-green)' : 'var(--mood-red)';
                             return (

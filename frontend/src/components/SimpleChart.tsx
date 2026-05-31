@@ -52,6 +52,9 @@ interface SimpleChartProps {
    *  (+ время, если оно есть). Задаётся, когда тултип должен показывать,
    *  например, только месяц+год (помесячные данные — фонды). */
   tooltipDateFormat?: (time: string) => string;
+  /** Прижать крайние подписи X-оси внутрь (first→start, last→end), чтобы они
+   *  не выходили за ширину графика. Default false (центрированные, как было). */
+  clampEdgeLabels?: boolean;
   loading?: boolean;
   primaryLabel?: string;
   secondaryLabel?: string;
@@ -120,6 +123,7 @@ export default function SimpleChart({
   annotations,
   hideTime = false,
   tooltipDateFormat,
+  clampEdgeLabels = false,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   forecastCount: _forecastCount = 0,
   horizontalLines: _horizontalLines,
@@ -1052,7 +1056,7 @@ export default function SimpleChart({
                   <text
                     x={tick.x}
                     y={chartHeight + 30}
-                    textAnchor="middle"
+                    textAnchor={clampEdgeLabels ? (isFirst ? 'start' : isLast ? 'end' : 'middle') : 'middle'}
                     fill="var(--axis-color, #9CA3B8)"
                     fontSize={tokens.fontX}
                     fontWeight={tokens.fontYWeight}
