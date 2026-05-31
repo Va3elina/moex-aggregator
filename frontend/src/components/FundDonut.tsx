@@ -11,9 +11,12 @@ import { DONUT_COLORS } from '../config/fundConfig';
 export default function FundDonut({
     holdings,
     size = 160,
+    interactive = true,
 }: {
     holdings: { name: string; weight: number }[];
     size?: number;
+    /** false → статичный мини-донат без hover-тултипа (для карточек). */
+    interactive?: boolean;
 }) {
     const [hovered, setHovered] = useState<number | null>(null);
     if (!holdings.length) return null;
@@ -52,14 +55,14 @@ export default function FundDonut({
                         stroke="var(--bg-secondary)"
                         strokeWidth="1.5"
                         opacity={hovered === null || hovered === seg.index ? 1 : 0.4}
-                        onMouseEnter={() => setHovered(seg.index)}
-                        onMouseLeave={() => setHovered(null)}
-                        className="transition-opacity duration-150 cursor-pointer"
+                        onMouseEnter={interactive ? () => setHovered(seg.index) : undefined}
+                        onMouseLeave={interactive ? () => setHovered(null) : undefined}
+                        className={interactive ? 'transition-opacity duration-150 cursor-pointer' : 'transition-opacity duration-150'}
                     />
                 ))}
             </svg>
             {/* Hover tooltip в центре donut */}
-            {hovered !== null && (
+            {interactive && hovered !== null && (
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                     <div className="text-center px-2">
                         <div

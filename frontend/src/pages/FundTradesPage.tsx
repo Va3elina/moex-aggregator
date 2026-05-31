@@ -461,16 +461,6 @@ function FundDetailModal({
                                     >
                                         Текущий состав (топ-30)
                                     </h3>
-                                    {/* Донат топ-холдингов — перенят из бывшего каталога фондов */}
-                                    <div style={{ display: 'flex', justifyContent: 'center', margin: '4px 0 18px' }}>
-                                        <FundDonut
-                                            holdings={data.current_holdings.slice(0, 12).map((h) => ({
-                                                name: h.asset_name,
-                                                weight: (h.weight || 0) / 100,
-                                            }))}
-                                            size={200}
-                                        />
-                                    </div>
                                     <table
                                         style={{
                                             width: '100%',
@@ -839,41 +829,54 @@ export default function FundTradesPage() {
                                             e.currentTarget.style.borderColor = 'var(--border-color)';
                                         }}
                                     >
-                                        <div
-                                            style={{
-                                                fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
-                                                fontSize: 'var(--fs-md)',
-                                                fontWeight: 800,
-                                                color: 'var(--text-primary)',
-                                                marginBottom: 4,
-                                            }}
-                                        >
-                                            {f.ticker}
-                                        </div>
-                                        <div
-                                            style={{
-                                                fontSize: 'var(--fs-xs)',
-                                                color: 'var(--text-secondary)',
-                                                marginBottom: 8,
-                                                lineHeight: 1.4,
-                                                display: '-webkit-box',
-                                                WebkitLineClamp: 2,
-                                                WebkitBoxOrient: 'vertical',
-                                                overflow: 'hidden',
-                                            }}
-                                        >
-                                            {f.name}
-                                        </div>
-                                        <div
-                                            style={{
-                                                display: 'flex',
-                                                justifyContent: 'space-between',
-                                                fontSize: 'var(--fs-2xs)',
-                                                color: 'var(--text-muted)',
-                                            }}
-                                        >
-                                            <span>{f.last_snapshot_date || '—'}</span>
-                                            <span>{f.snapshot_count} snap.</span>
+                                        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div
+                                                    style={{
+                                                        fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+                                                        fontSize: 'var(--fs-md)',
+                                                        fontWeight: 800,
+                                                        color: 'var(--text-primary)',
+                                                        marginBottom: 4,
+                                                    }}
+                                                >
+                                                    {f.ticker}
+                                                </div>
+                                                <div
+                                                    style={{
+                                                        fontSize: 'var(--fs-xs)',
+                                                        color: 'var(--text-secondary)',
+                                                        marginBottom: 8,
+                                                        lineHeight: 1.4,
+                                                        display: '-webkit-box',
+                                                        WebkitLineClamp: 2,
+                                                        WebkitBoxOrient: 'vertical',
+                                                        overflow: 'hidden',
+                                                    }}
+                                                >
+                                                    {f.name}
+                                                </div>
+                                                <div
+                                                    style={{
+                                                        display: 'flex',
+                                                        justifyContent: 'space-between',
+                                                        fontSize: 'var(--fs-2xs)',
+                                                        color: 'var(--text-muted)',
+                                                    }}
+                                                >
+                                                    <span>{f.last_snapshot_date || '—'}</span>
+                                                    <span>{f.snapshot_count} snap.</span>
+                                                </div>
+                                            </div>
+                                            {f.top_holdings && f.top_holdings.length > 0 && (
+                                                <div style={{ flexShrink: 0 }}>
+                                                    <FundDonut
+                                                        holdings={f.top_holdings.map((h) => ({ name: h.name, weight: (h.weight || 0) / 100 }))}
+                                                        size={66}
+                                                        interactive={false}
+                                                    />
+                                                </div>
+                                            )}
                                         </div>
                                     </button>
                                 ))}

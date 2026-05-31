@@ -1195,6 +1195,7 @@ export interface FundWithHistory {
     last_snapshot_date: string | null;
     snapshot_count: number;
     snapshots_count?: number; // backward compat
+    top_holdings?: { name: string; weight: number }[];
 }
 
 export interface FundTradesHolding {
