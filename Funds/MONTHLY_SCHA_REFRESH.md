@@ -51,8 +51,22 @@
 (напр. `otchet-scha-tmos-31-05-2026.PDF`). Тикеры: **TBRU** (Облигации),
 **TMOS** (Индекс МосБиржи), **TOFZ** (ОФЗ).
 
-### 🟢 ВИМ — own-site `wealthim.ru` (Claude curl'ит сам)
-БПИФ EQMX/OBLG (+ intraday). ОПИФ OPIF-1003/OPIF-54 — e-disclosure (card 28433).
+### 🟢 ВИМ — own-site `wealthim.ru` (прямые PDF, Claude curl'ит сам)
+Только акционерные (видимые в фиче):
+| Тикер | Ссылка (own-site reports) |
+|---|---|
+| EQMX (Индекс МосБиржи, БПИФ) | `wealthim.ru/about/disclosure/pif/bpif/wimfimb/reports/` |
+| OPIF-1003 (Фонд Акций, ОПИФ) | `wealthim.ru/about/disclosure/pif/opif/wimfa/documents/reports/` |
+Прямые PDF: `ГГ_ММ_ДД_SCHA_BPIF_IndeksMosBirzhi.pdf` / `..._SCHA_OPIF_Aktsii.pdf`.
+(OPIF-1003=slug `wimfa` подтверждён сверкой; `wimfeqr` = ДРУГОЙ фонд «Рос. эмитенты».)
+
+### 🟢 Альфа — own-site `alfacapital.ru` (раздел «Ежемесячно» = XLSX с позициями)
+| Тикер | Ссылка |
+|---|---|
+| AKME (Управляемые акции, БПИФ) | `alfacapital.ru/disclosure/pifs/bpif_akmrs/monthly` |
+| OPIF-432 (Ликвидные акции, ОПИФ) | `alfacapital.ru/disclosure/pifs/opifa_akliq/monthly` |
+Скачивание: `/disclosure/file/{numeric_id}`. Брать «Справка о СЧА» из «Ежемесячно»
+(дневная = сводка без позиций). Slug AKME = `bpif_akmrs` (истор. тикер AKMRS).
 
 ### 🔴 Атон — НУЖЕН ТВОЙ БРАУЗЕР (e-disclosure, формат XLSX)
 `https://www.e-disclosure.ru/portal/files.aspx?id=12603&type=23`
