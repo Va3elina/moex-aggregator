@@ -47,6 +47,7 @@ import {
     type FundSnapshotsList,
     type FundSnapshotReview,
     type FundDiffRow,
+    type FundTradeDiff,
     type AssetHistory,
 } from '../services/api';
 import { useCommonFeatures } from '../contexts/TierFeaturesContext';
@@ -54,6 +55,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 import PageHeader from '../components/PageHeader';
 import Dropdown from '../components/Dropdown';
+import SimpleChart from '../components/SimpleChart';
 import { UK_LOGOS } from '../config/fundConfig';
 
 type Tab = 'funds' | 'movers' | 'snapshots';
@@ -240,6 +242,7 @@ function FundDetailModal({
     const [data, setData] = useState<FundTradesDetail | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [drillDown, setDrillDown] = useState<{ asset_name: string; isin: string | null } | null>(null);
 
     useEffect(() => {
         let cancelled = false;
@@ -253,6 +256,7 @@ function FundDetailModal({
     }, [ticker, period]);
 
     return (
+        <>
         <div
             onClick={onClose}
             style={{
@@ -339,15 +343,17 @@ function FundDetailModal({
                             <div
                                 style={{
                                     display: 'flex',
-                                    gap: 12,
+                                    gap: 16,
                                     marginBottom: 20,
                                     flexWrap: 'wrap',
+                                    alignItems: 'center',
                                     fontSize: 'var(--fs-sm)',
                                     color: 'var(--text-secondary)',
                                 }}
                             >
+                                <Calendar size={14} style={{ flexShrink: 0, color: 'var(--text-tertiary)' }} />
                                 <span>
-                                    <Calendar size={12} style={{ verticalAlign: '-1px' }} /> Текущий:{' '}
+                                    Текущий:{' '}
                                     <strong style={{ color: 'var(--text-primary)' }}>
                                         {data.current_snapshot_date || '—'}
                                     </strong>
@@ -426,7 +432,10 @@ function FundDetailModal({
                                     >
                                         Изменения позиций
                                     </h3>
-                                    <DiffTable diff={data.diff} />
+                                    <DiffTable
+                                        diff={data.diff}
+                                        onRowClick={(d) => setDrillDown({ asset_name: d.asset_name, isin: d.isin ?? null })}
+                                    />
                                 </>
                             )}
 
@@ -506,10 +515,27 @@ function FundDetailModal({
                 </div>
             </div>
         </div>
+        {drillDown && (
+            <AssetHistoryModal
+                ticker={ticker}
+                asset_name={drillDown.asset_name}
+                isin={drillDown.isin}
+                onClose={() => setDrillDown(null)}
+            />
+        )}
+        </>
     );
 }
 
-function DiffTable({ diff }: { diff: FundTradesDetail['diff'] }) {
+type DiffSortKey = 'name' | 'type' | 'delta' | 'prev' | 'curr';
+
+function DiffTable({
+    diff,
+    onRowClick,
+}: {
+    diff: FundTradesDetail['diff'];
+    onRowClick?: (d: FundTradeDiff) => void;
+}) {
     const labelByType: Record<FundTradeChangeType, string> = {
         new: 'НОВЫЙ',
         sold_out: 'ПРОДАН',
@@ -517,32 +543,86 @@ function DiffTable({ diff }: { diff: FundTradesDetail['diff'] }) {
         reduced: 'СОКРАЩЁН',
         unchanged: '—',
     };
+    const [sortKey, setSortKey] = useState<DiffSortKey | null>(null);
+    const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+
+    const columns: { key: DiffSortKey; label: string; align: 'left' | 'right' }[] = [
+        { key: 'name', label: 'Актив', align: 'left' },
+        { key: 'type', label: 'Тип', align: 'left' },
+        { key: 'delta', label: 'Δ %', align: 'left' },
+        { key: 'prev', label: 'Было', align: 'left' },
+        { key: 'curr', label: 'Стало', align: 'left' },
+    ];
+
+    const sorted = useMemo(() => {
+        if (!sortKey) return diff;
+        const num = (v: number | null) => (v == null ? -Infinity : v);
+        const val = (d: FundTradeDiff): string | number => {
+            switch (sortKey) {
+                case 'name': return d.asset_name;
+                case 'type': return labelByType[d.change_type];
+                case 'delta': return num(d.delta_weight);
+                case 'prev': return num(d.previous_weight);
+                case 'curr': return num(d.current_weight);
+            }
+        };
+        return [...diff].sort((a, b) => {
+            const av = val(a), bv = val(b);
+            const cmp = typeof av === 'string'
+                ? av.localeCompare(bv as string)
+                : (av as number) - (bv as number);
+            return sortDir === 'asc' ? cmp : -cmp;
+        });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [diff, sortKey, sortDir]);
+
+    const onSort = (key: DiffSortKey) => {
+        if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+        else { setSortKey(key); setSortDir('desc'); }
+    };
+
     return (
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-sm)' }}>
             <thead>
                 <tr>
-                    {['Актив', 'Тип', 'Δ %', 'Было', 'Стало'].map((h) => (
-                        <th
-                            key={h}
-                            style={{
-                                textAlign: 'left',
-                                padding: '8px 12px',
-                                color: 'var(--text-muted)',
-                                fontSize: 'var(--fs-2xs)',
-                                textTransform: 'uppercase',
-                                letterSpacing: '0.05em',
-                                fontWeight: 700,
-                                borderBottom: '2px solid var(--text-primary)',
-                            }}
-                        >
-                            {h}
-                        </th>
-                    ))}
+                    {columns.map((c) => {
+                        const activeSort = sortKey === c.key;
+                        return (
+                            <th
+                                key={c.key}
+                                onClick={() => onSort(c.key)}
+                                style={{
+                                    textAlign: c.align,
+                                    padding: '8px 12px',
+                                    color: activeSort ? 'var(--text-primary)' : 'var(--text-muted)',
+                                    fontSize: 'var(--fs-2xs)',
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.05em',
+                                    fontWeight: 700,
+                                    borderBottom: '2px solid var(--text-primary)',
+                                    cursor: 'pointer',
+                                    userSelect: 'none',
+                                    whiteSpace: 'nowrap',
+                                }}
+                            >
+                                {c.label}
+                                <span style={{ opacity: activeSort ? 1 : 0.35, marginLeft: 3 }}>
+                                    {activeSort ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}
+                                </span>
+                            </th>
+                        );
+                    })}
                 </tr>
             </thead>
             <tbody>
-                {diff.map((d) => (
-                    <tr key={d.asset_name}>
+                {sorted.map((d) => (
+                    <tr
+                        key={d.asset_name}
+                        onClick={onRowClick ? () => onRowClick(d) : undefined}
+                        style={{ cursor: onRowClick ? 'pointer' : 'default', transition: 'background-color 120ms' }}
+                        onMouseEnter={onRowClick ? (e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--accent) 9%, transparent)'; } : undefined}
+                        onMouseLeave={onRowClick ? (e) => { e.currentTarget.style.background = 'transparent'; } : undefined}
+                    >
                         <td style={cellStyle()}>{d.asset_name}</td>
                         <td style={cellStyle()}>
                             <span
@@ -1611,39 +1691,14 @@ function AssetHistoryModal({
 }
 
 function AssetHistoryContent({ data }: { data: AssetHistory }) {
-    // Bounds для графика positions
-    const maxPos = Math.max(...data.timeline.map(p => p.positions || 0));
-    const minPos = Math.min(...data.timeline.filter(p => p.positions !== null).map(p => p.positions!));
-    const range = maxPos - minPos || 1;
-
-    // SVG chart dimensions
-    const W = 800;
-    const H = 260;
-    const padL = 80;
-    const padR = 20;
-    const padT = 20;
-    const padB = 40;
-    const innerW = W - padL - padR;
-    const innerH = H - padT - padB;
-
     const points = data.timeline.filter(p => p.positions !== null);
-    const xStep = points.length > 1 ? innerW / (points.length - 1) : 0;
-
-    const linePath = points.map((p, i) => {
-        const x = padL + i * xStep;
-        const y = padT + innerH - ((p.positions! - minPos) / range) * innerH;
-        return `${i === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`;
-    }).join(' ');
-
-    // Y-axis ticks (3-5 значений)
-    const yTicks = 4;
-    const tickValues = Array.from({ length: yTicks + 1 }, (_, i) => minPos + (range / yTicks) * i);
-
-    // Доп. цвета: сравнить первое и последнее
     const firstPos = points[0]?.positions || 0;
     const lastPos = points[points.length - 1]?.positions || 0;
     const totalDelta = lastPos - firstPos;
     const totalDeltaColor = totalDelta >= 0 ? 'var(--mood-green)' : 'var(--mood-red)';
+
+    // Данные для SimpleChart: позиции (штуки) по снапшотам.
+    const chartData = points.map(p => ({ time: p.snapshot_date, value: p.positions! }));
 
     return (
         <>
@@ -1677,77 +1732,17 @@ function AssetHistoryContent({ data }: { data: AssetHistory }) {
                 />
             </div>
 
-            {/* SVG Chart */}
-            <div style={{
-                background: 'var(--bg-secondary, rgba(0,0,0,0.02))',
-                padding: '12px 0', borderRadius: 4, marginBottom: 24,
-            }}>
-                <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: 'block' }}>
-                    {/* Y-axis grid + labels */}
-                    {tickValues.map((tv, i) => {
-                        const y = padT + innerH - ((tv - minPos) / range) * innerH;
-                        return (
-                            <g key={i}>
-                                <line
-                                    x1={padL} y1={y} x2={W - padR} y2={y}
-                                    stroke="var(--border-soft, rgba(0,0,0,0.08))"
-                                    strokeDasharray="2,4"
-                                />
-                                <text
-                                    x={padL - 8} y={y + 4}
-                                    textAnchor="end" fontSize="11"
-                                    fill="var(--text-tertiary)"
-                                    fontFamily="ui-monospace, SFMono-Regular, monospace"
-                                >
-                                    {Math.round(tv).toLocaleString('ru-RU')}
-                                </text>
-                            </g>
-                        );
-                    })}
-
-                    {/* X-axis labels (first, middle, last) */}
-                    {points.length > 0 && [0, Math.floor(points.length / 2), points.length - 1].map((idx) => {
-                        const x = padL + idx * xStep;
-                        return (
-                            <text
-                                key={idx}
-                                x={x} y={H - padB / 2 + 12}
-                                textAnchor="middle" fontSize="11"
-                                fill="var(--text-tertiary)"
-                            >
-                                {formatSnapshotDate(points[idx].snapshot_date)}
-                            </text>
-                        );
-                    })}
-
-                    {/* Line */}
-                    <path d={linePath} fill="none" stroke="var(--text-primary)" strokeWidth="2" />
-
-                    {/* Dots — buy/sell highlights */}
-                    {points.map((p, i) => {
-                        const x = padL + i * xStep;
-                        const y = padT + innerH - ((p.positions! - minPos) / range) * innerH;
-                        const delta = p.delta_positions;
-                        const isBuy = delta !== null && delta > 0;
-                        const isSell = delta !== null && delta < 0;
-                        const color = isBuy ? 'var(--mood-green)' : isSell ? 'var(--mood-red)' : 'var(--text-primary)';
-                        const r = isBuy || isSell ? 4 : 2.5;
-                        return (
-                            <circle
-                                key={p.snapshot_date}
-                                cx={x} cy={y} r={r}
-                                fill={color}
-                                stroke="var(--bg-primary)" strokeWidth="1.5"
-                            >
-                                <title>
-                                    {formatSnapshotDate(p.snapshot_date)}: {formatShares(p.positions)} шт
-                                    {delta ? `\nΔ ${delta >= 0 ? '+' : ''}${formatShares(delta)} шт` : ''}
-                                    {p.delta_amount_rub ? `\n${p.delta_amount_rub >= 0 ? '+' : '−'}${formatRubShort(Math.abs(p.delta_amount_rub))}` : ''}
-                                </title>
-                            </circle>
-                        );
-                    })}
-                </svg>
+            {/* График позиций — SimpleChart (интерактивный, accent-линия + hover/crosshair) */}
+            <div style={{ marginBottom: 24 }}>
+                <SimpleChart
+                    data={chartData}
+                    height={300}
+                    primaryLabel="Позиции, шт"
+                    formatValue={(v) => formatShares(Math.round(v))}
+                    formatTime={(t) => formatMonthYear(t)}
+                    showValueHeader={false}
+                    showDownloadButton={false}
+                />
             </div>
 
             {/* Table of all snapshots */}

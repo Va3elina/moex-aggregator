@@ -1209,6 +1209,7 @@ export type FundTradeChangeType = 'new' | 'sold_out' | 'accumulated' | 'reduced'
 
 export interface FundTradeDiff {
     asset_name: string;
+    isin?: string | null;
     change_type: FundTradeChangeType;
     delta_weight: number | null;
     current_weight: number | null;
