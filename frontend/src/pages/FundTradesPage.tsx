@@ -741,6 +741,7 @@ export default function FundTradesPage() {
                             <button
                                 key={t.id}
                                 onClick={() => setTab(t.id)}
+                                className="editorial-press"
                                 style={{
                                     display: 'inline-flex',
                                     alignItems: 'center',
@@ -748,11 +749,12 @@ export default function FundTradesPage() {
                                     padding: '8px 16px',
                                     background: active ? 'var(--accent)' : 'var(--bg-secondary)',
                                     color: active ? 'var(--text-inverse)' : 'var(--text-primary)',
-                                    border: '1.5px solid var(--text-primary)',
+                                    border: '2px solid var(--text-primary)',
                                     borderRadius: 999,
                                     fontSize: 'var(--fs-sm)',
                                     fontWeight: active ? 700 : 600,
                                     cursor: 'pointer',
+                                    boxShadow: '3px 3px 0 var(--text-primary)',
                                 }}
                             >
                                 <Icon size={14} />
@@ -1188,7 +1190,8 @@ function SnapshotReviewTab() {
                     )}
                     value={ticker}
                     onChange={setTicker}
-                    minWidth={240}
+                    minWidth={280}
+                    menuMaxWidth={480}
                 />
                 {selectedFund && (
                     <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-tertiary)' }}>

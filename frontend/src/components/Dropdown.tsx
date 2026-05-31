@@ -34,6 +34,8 @@ interface DropdownProps<T extends string> {
   placeholder?: string;
   /** Минимальная ширина trigger в px — чтобы dropdowns в ряду были выравнены */
   minWidth?: number;
+  /** maxWidth выпадающего меню в px (default 280) — шире для длинных лейблов. */
+  menuMaxWidth?: number;
   /** className для wrapper'а */
   className?: string;
   /** Фолбэк-handler для клика по locked-опции. Если задан — закрывает popup
@@ -49,6 +51,7 @@ export default function Dropdown<T extends string>({
   onChange,
   placeholder = 'Выбрать',
   minWidth,
+  menuMaxWidth = 280,
   className = '',
   onLockedClick,
 }: DropdownProps<T>) {
@@ -134,7 +137,7 @@ export default function Dropdown<T extends string>({
             border: '2px solid var(--text-primary)',
             boxShadow: 'var(--shadow-hard-chip, 4px 4px 0 var(--text-primary))',
             minWidth: '100%',
-            maxWidth: 280,
+            maxWidth: menuMaxWidth,
           }}
         >
           {visible.map(opt => {
