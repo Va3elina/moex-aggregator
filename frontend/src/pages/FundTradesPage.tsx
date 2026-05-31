@@ -1122,14 +1122,19 @@ function EditorialBar({
     return (
         <div
             onClick={onClick}
+            onMouseEnter={onClick ? (e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--accent) 9%, transparent)'; } : undefined}
+            onMouseLeave={onClick ? (e) => { e.currentTarget.style.background = 'transparent'; } : undefined}
             style={{
                 display: 'grid',
                 gridTemplateColumns: '180px 1fr 140px',
                 alignItems: 'center',
                 gap: 12,
-                padding: '8px 0',
+                padding: '8px 8px',
+                margin: '0 -8px',
+                borderRadius: 6,
                 cursor: onClick ? 'pointer' : 'default',
                 borderBottom: '1px solid var(--border-soft, rgba(0,0,0,0.06))',
+                transition: 'background-color 120ms',
             }}
         >
             <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-primary)', fontWeight: 500 }}>
@@ -1736,10 +1741,15 @@ function AssetHistoryContent({ data }: { data: AssetHistory }) {
             <div style={{ marginBottom: 24 }}>
                 <SimpleChart
                     data={chartData}
-                    height={300}
+                    height={420}
                     primaryLabel="Позиции, шт"
+                    legendPosition="top"
                     formatValue={(v) => formatShares(Math.round(v))}
-                    formatTime={(t) => formatMonthYear(t)}
+                    formatTime={(t) => {
+                        const d = new Date(t);
+                        const mm = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+                        return `${mm[d.getMonth()]} ${d.getFullYear()}`;
+                    }}
                     showValueHeader={false}
                     showDownloadButton={false}
                 />
