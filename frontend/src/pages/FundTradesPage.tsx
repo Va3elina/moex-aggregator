@@ -1439,6 +1439,7 @@ function SnapshotSection({
     subLabelGetter: (r: FundDiffRow) => string;
     onItemClick?: (r: FundDiffRow) => void;
 }) {
+    const [expanded, setExpanded] = useState(false);
     return (
         <div>
             <div
@@ -1478,7 +1479,7 @@ function SnapshotSection({
                 </span>
             </div>
             <div>
-                {items.map((r) => (
+                {(expanded ? items : items.slice(0, 3)).map((r) => (
                     <EditorialBar
                         key={`${r.asset_name}-${r.isin || ''}`}
                         label={r.asset_name}
@@ -1489,6 +1490,25 @@ function SnapshotSection({
                         onClick={onItemClick ? () => onItemClick(r) : undefined}
                     />
                 ))}
+                {items.length > 3 && (
+                    <button
+                        onClick={() => setExpanded((e) => !e)}
+                        className="editorial-press"
+                        style={{
+                            marginTop: 10,
+                            padding: '5px 14px',
+                            background: 'var(--bg-secondary)',
+                            border: '1.5px solid var(--border-color)',
+                            borderRadius: 999,
+                            fontSize: 'var(--fs-xs)',
+                            fontWeight: 600,
+                            color: 'var(--text-secondary)',
+                            cursor: 'pointer',
+                        }}
+                    >
+                        {expanded ? '↑ Свернуть' : `Показать все · ${items.length} ↓`}
+                    </button>
+                )}
             </div>
         </div>
     );
