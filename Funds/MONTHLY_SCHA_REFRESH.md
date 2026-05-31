@@ -50,7 +50,11 @@
 | Тикер | Имя на e-disclosure |
 |---|---|
 | AMGB | АТОН – Длинные ОФЗ |
-| OPIF-63 | АТОН – Российские акции + *(бывш. «Петр Столыпин» — подтвердить)* |
+
+> ⚠️ **OPIF-63 (Петр Столыпин, isin RU000A0JSA15) на карточке НЕТ.** «АТОН –
+> Российские акции +» = **AMRE** (isin RU000A102XX4) — ДРУГОЙ фонд (БПИФ, 2021),
+> у нас не трекается. Ошибочно залитый SCHA AMRE→OPIF-63 удалён. OPIF-63 →
+> cbonds-reconstruct (акции, ~1:1). Файлы AMRE лежат в `funds_organized/Атон/AMRE …`.
 
 ### 🔴 Альфа — e-disclosure card 7203 (БПИФ) + alfacapital.ru (ОПИФ)
 `https://www.e-disclosure.ru/portal/files.aspx?id=7203&type=23`
