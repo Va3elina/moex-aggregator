@@ -1098,6 +1098,13 @@ function formatMonthYear(iso: string): string {
     return `${months[d.getMonth()]} ${d.getFullYear()}`;
 }
 
+// "2025-08-29" → "авг 2025" — компактный месяц+год для оси и тултипа графика.
+function formatMonthYearShort(iso: string): string {
+    const d = new Date(iso);
+    const mm = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+    return `${mm[d.getMonth()]} ${d.getFullYear()}`;
+}
+
 // Horizontal bar — Editorial-стиль как у «Секторов дня».
 // Бар растёт справа от центра (для buys) или слева (для sells).
 // Размер = пропорционально |amount| / max_abs_amount среди всех групп.
@@ -1745,11 +1752,8 @@ function AssetHistoryContent({ data }: { data: AssetHistory }) {
                     primaryLabel="Позиции, шт"
                     legendPosition="top"
                     formatValue={(v) => formatShares(Math.round(v))}
-                    formatTime={(t) => {
-                        const d = new Date(t);
-                        const mm = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
-                        return `${mm[d.getMonth()]} ${d.getFullYear()}`;
-                    }}
+                    formatTime={formatMonthYearShort}
+                    tooltipDateFormat={formatMonthYearShort}
                     showValueHeader={false}
                     showDownloadButton={false}
                 />

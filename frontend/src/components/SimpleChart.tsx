@@ -48,6 +48,10 @@ interface SimpleChartProps {
   formatSecondaryAxis?: (value: number) => string;
   formatThirdValue?: (value: number) => string;
   formatTime?: (time: string) => string;
+  /** Формат даты в hover-тултипе (date pill). Если не задан — день+месяц+год
+   *  (+ время, если оно есть). Задаётся, когда тултип должен показывать,
+   *  например, только месяц+год (помесячные данные — фонды). */
+  tooltipDateFormat?: (time: string) => string;
   loading?: boolean;
   primaryLabel?: string;
   secondaryLabel?: string;
@@ -115,6 +119,7 @@ export default function SimpleChart({
   chartPadding,
   annotations,
   hideTime = false,
+  tooltipDateFormat,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   forecastCount: _forecastCount = 0,
   horizontalLines: _horizontalLines,
@@ -1625,9 +1630,11 @@ export default function SimpleChart({
         const dateStr = d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' });
         const hours = d.getHours();
         const minutes = d.getMinutes();
-        const htmlDateLabel = (!hideTime && (hours !== 0 || minutes !== 0))
-          ? `${dateStr} ${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`
-          : dateStr;
+        const htmlDateLabel = tooltipDateFormat
+          ? tooltipDateFormat(tooltip.time)
+          : (!hideTime && (hours !== 0 || minutes !== 0))
+            ? `${dateStr} ${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`
+            : dateStr;
         const topLineY = computeChartTopLineY({ wrapper: wrap, paddingTop: padding.top });
         return (
           <div
