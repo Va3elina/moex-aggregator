@@ -895,7 +895,7 @@ export default function FundTradesPage() {
                                     style={SELECT_STYLE}
                                 >
                                     {movers.available_months.map((m) => (
-                                        <option key={m} value={m}>{formatSnapshotDate(m)}</option>
+                                        <option key={m} value={m}>{formatMonthYear(m)}</option>
                                     ))}
                                 </select>
                             </span>
@@ -1009,6 +1009,15 @@ function formatSnapshotDate(iso: string): string {
     const d = new Date(iso);
     const months = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
     return `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+// "2026-04-30" → "Апрель 2026" — для month-picker день не показываем
+// (у разных УК конец месяца разный: 27/28/30/31), важен только месяц.
+function formatMonthYear(iso: string): string {
+    const d = new Date(iso);
+    const months = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+                    'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+    return `${months[d.getMonth()]} ${d.getFullYear()}`;
 }
 
 // Horizontal bar — Editorial-стиль как у «Секторов дня».
@@ -1869,7 +1878,7 @@ function MoversColumn({
                         const pct = Math.max(2, (Math.abs(val) / maxAbs) * 100);
                         return (
                         <div
-                            key={m.asset_name}
+                            key={m.akey}
                             style={{
                                 padding: '9px 0',
                                 borderBottom: i === items.length - 1

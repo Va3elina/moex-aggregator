@@ -1238,6 +1238,7 @@ export interface FundTradesDetail {
 }
 
 export interface FundTradesMover {
+    akey: string;
     asset_name: string;
     total_delta_weight: number;
     total_delta_amount: number;

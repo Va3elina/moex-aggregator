@@ -1,5 +1,5 @@
 // Фрейм PWA Service Worker
-const CACHE_NAME = 'frame-v841';
+const CACHE_NAME = 'frame-v842';
 const STATIC_ASSETS = [
     '/',
     '/manifest.json',
