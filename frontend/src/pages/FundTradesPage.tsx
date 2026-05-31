@@ -1188,9 +1188,9 @@ function SnapshotReviewTab() {
                 <div
                     style={{
                         display: 'flex',
-                        gap: 4,
+                        gap: 8,
                         overflowX: 'auto',
-                        padding: '8px 0',
+                        padding: '12px 2px 16px',
                         borderTop: '1px solid var(--border-color)',
                         borderBottom: '1px solid var(--border-color)',
                     }}
@@ -1202,20 +1202,23 @@ function SnapshotReviewTab() {
                                 key={s.snapshot_date}
                                 onClick={() => setSelectedDate(s.snapshot_date)}
                                 title={`${s.snapshot_date} · ${s.asset_count} активов`}
+                                className="editorial-press"
                                 style={{
-                                    padding: '6px 12px',
-                                    background: active ? 'var(--text-primary)' : 'transparent',
+                                    padding: '6px 14px',
+                                    background: active ? 'var(--accent)' : 'var(--bg-secondary)',
                                     color: active ? 'var(--text-inverse)' : 'var(--text-secondary)',
-                                    border: 'none',
+                                    border: '2px solid var(--text-primary)',
                                     fontSize: 'var(--fs-xs)',
-                                    fontWeight: active ? 700 : 500,
+                                    fontWeight: active ? 700 : 600,
                                     fontVariantNumeric: 'tabular-nums',
                                     cursor: 'pointer',
                                     whiteSpace: 'nowrap',
-                                    borderRadius: 2,
+                                    flexShrink: 0,
+                                    borderRadius: 999,
+                                    boxShadow: active ? '3px 3px 0 var(--text-primary)' : 'none',
                                 }}
                             >
-                                {formatSnapshotDate(s.snapshot_date)}
+                                {formatMonthYear(s.snapshot_date)}
                             </button>
                         );
                     })}
@@ -1287,24 +1290,46 @@ function SnapshotReviewBody({
                 </h3>
                 <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-tertiary)' }}>
                     Снапшот <strong style={{ color: 'var(--text-primary)' }}>
-                        {formatSnapshotDate(review.current_snapshot_date)}
+                        {formatMonthYear(review.current_snapshot_date)}
                     </strong>
                     {review.previous_snapshot_date && (
-                        <> · сравниваем с {formatSnapshotDate(review.previous_snapshot_date)}</>
+                        <> · сравниваем с {formatMonthYear(review.previous_snapshot_date)}</>
                     )}
                     {' · '}{review.totals.current_assets} активов
                 </div>
             </div>
 
-            {/* No previous snapshot */}
+            {/* Нет предыдущего снапшота → показываем состав на эту дату */}
             {!review.previous_snapshot_date && (
-                <div style={{
-                    padding: 16,
-                    background: 'var(--bg-secondary)',
-                    fontSize: 'var(--fs-sm)',
-                    color: 'var(--text-secondary)',
-                }}>
-                    Это самый ранний снапшот — сравнивать не с чем. Показываем текущий состав.
+                <div>
+                    <div style={{
+                        padding: 14,
+                        marginBottom: 14,
+                        background: 'var(--bg-secondary)',
+                        borderRadius: 8,
+                        fontSize: 'var(--fs-sm)',
+                        color: 'var(--text-secondary)',
+                    }}>
+                        Самый ранний снапшот — сравнивать не с чем. Состав фонда на эту дату:
+                    </div>
+                    {review.current_holdings.map((h) => (
+                        <div
+                            key={h.isin || h.asset_name}
+                            style={{
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'baseline',
+                                gap: 12,
+                                padding: '7px 0',
+                                borderBottom: '1px solid var(--border-soft, rgba(0,0,0,0.06))',
+                            }}
+                        >
+                            <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-primary)' }}>{h.asset_name}</span>
+                            <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
+                                {h.weight != null ? `${h.weight.toFixed(2)}%` : '—'}
+                            </span>
+                        </div>
+                    ))}
                 </div>
             )}
 
