@@ -22,7 +22,6 @@ import {
   TrendingUp,
   BarChart3,
   Activity,
-  PieChart,
   ArrowRight,
   Layers,
   Database,
@@ -84,15 +83,6 @@ const MONEY_FLOW_INDICATORS: Indicator[] = [
     ctaIcon: <ArrowRight size={CTA_ICON_SIZE} />,
     href: '/funds-money',
     ...v('funds-money'),
-  },
-  {
-    title: 'Состав фондов',
-    desc: 'Какие акции внутри каждого ETF и в какой пропорции. Реальные позиции фондов — без оценок и рейтингов.',
-    icon: <PieChart size={ICON_SIZE} strokeWidth={2} />,
-    ctaIcon: <ArrowRight size={CTA_ICON_SIZE} />,
-    href: '/funds-catalog',
-    badge: 'Alfa тест',
-    ...v('funds-catalog'),
   },
 ];
 

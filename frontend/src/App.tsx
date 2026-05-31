@@ -18,7 +18,6 @@ import FundsMoneyPage from './pages/FundsMoneyPage';
 import StrengthPage from './pages/StrengthPage';
 import BuffettPage from './pages/BuffettPage';
 import SeasonalityPage from './pages/SeasonalityPage';
-import FundsCatalogPage from './pages/FundsCatalogPage';
 import CbrFlowsPage from './pages/CbrFlowsPage';
 import LoginPage from './pages/LoginPage';
 import AuthCallback from './pages/AuthCallback';
@@ -62,7 +61,6 @@ const MobileCbrFlowsPage = lazy(() => import('./pages/mobile/MobileCbrFlowsPage'
 const MobileFundsMoneyPage = lazy(() => import('./pages/mobile/MobileFundsMoneyPage'));
 const MobileSeasonalityPage = lazy(() => import('./pages/mobile/MobileSeasonalityPage'));
 const MobileStrengthPage = lazy(() => import('./pages/mobile/MobileStrengthPage'));
-const MobileFundsCatalogPage = lazy(() => import('./pages/mobile/MobileFundsCatalogPage'));
 const MobileProfilePage = lazy(() => import('./pages/mobile/MobileProfilePage'));
 const MobilePricingPage = lazy(() => import('./pages/mobile/MobilePricingPage'));
 
@@ -179,12 +177,8 @@ export default function App() {
                 desktop={<FundsMoneyPage />}
               />
             } />
-            <Route path="/funds-catalog" element={
-              <ResponsiveRoute
-                mobile={<MobileFundsCatalogPage />}
-                desktop={<FundsCatalogPage />}
-              />
-            } />
+            {/* «Состав фондов» слит в /fund-trades (таб «Состав фондов» + донат). */}
+            <Route path="/funds-catalog" element={<Navigate to="/fund-trades" replace />} />
             <Route path="/buffett" element={
               <ResponsiveRoute
                 mobile={<MobileBuffettPage />}

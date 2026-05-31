@@ -17,7 +17,7 @@
  *     new=accent, sold_out=muted
  *   - Шаг данных — 1 снапшот в месяц; сравнение всегда «месяц vs предыдущий».
  */
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
     ArrowUpRight,
@@ -53,6 +53,8 @@ import { useCommonFeatures } from '../contexts/TierFeaturesContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 import PageHeader from '../components/PageHeader';
+import Dropdown from '../components/Dropdown';
+import FundDonut from '../components/FundDonut';
 
 type Tab = 'funds' | 'movers' | 'snapshots';
 
@@ -61,17 +63,6 @@ const CATEGORY_LABEL: Record<string, string> = {
     bonds: 'Облигации',
     money_market: 'Денежный рынок',
     gold: 'Золото',
-};
-
-const SELECT_STYLE: CSSProperties = {
-    padding: '6px 10px',
-    background: 'var(--bg-secondary)',
-    color: 'var(--text-primary)',
-    border: '1.5px solid var(--border-color)',
-    borderRadius: 8,
-    fontSize: 'var(--fs-xs)',
-    fontWeight: 600,
-    cursor: 'pointer',
 };
 
 // ════════════════════════════════════════════════════════════════════
@@ -470,6 +461,16 @@ function FundDetailModal({
                                     >
                                         Текущий состав (топ-30)
                                     </h3>
+                                    {/* Донат топ-холдингов — перенят из бывшего каталога фондов */}
+                                    <div style={{ display: 'flex', justifyContent: 'center', margin: '4px 0 18px' }}>
+                                        <FundDonut
+                                            holdings={data.current_holdings.slice(0, 12).map((h) => ({
+                                                name: h.asset_name,
+                                                weight: (h.weight || 0) / 100,
+                                            }))}
+                                            size={200}
+                                        />
+                                    </div>
                                     <table
                                         style={{
                                             width: '100%',
@@ -887,26 +888,20 @@ export default function FundTradesPage() {
                     {/* Контролы: месяц · УК · метрика (% веса / объём ₽) */}
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 16 }}>
                         {movers && movers.available_months.length > 0 && (
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--text-secondary)' }}>
-                                <Calendar size={14} />
-                                <select
-                                    value={asOf ?? movers.available_months[0]}
-                                    onChange={(e) => setAsOf(e.target.value)}
-                                    style={SELECT_STYLE}
-                                >
-                                    {movers.available_months.map((m) => (
-                                        <option key={m} value={m}>{formatMonthYear(m)}</option>
-                                    ))}
-                                </select>
-                            </span>
+                            <Dropdown<string>
+                                options={movers.available_months.map((m) => ({ key: m, label: formatMonthYear(m) }))}
+                                value={asOf ?? movers.available_months[0]}
+                                onChange={setAsOf}
+                                minWidth={150}
+                            />
                         )}
                         {managers.length > 0 && (
-                            <select value={manager} onChange={(e) => setManager(e.target.value)} style={SELECT_STYLE}>
-                                <option value="">Все УК</option>
-                                {managers.map((uk) => (
-                                    <option key={uk} value={uk}>{uk}</option>
-                                ))}
-                            </select>
+                            <Dropdown<string>
+                                options={[{ key: '', label: 'Все УК' }, ...managers.map((uk) => ({ key: uk, label: uk }))]}
+                                value={manager}
+                                onChange={setManager}
+                                minWidth={140}
+                            />
                         )}
                         <div style={{ marginLeft: 'auto', display: 'flex', gap: 4, padding: 4, background: 'var(--bg-secondary)', borderRadius: 8 }}>
                             {([['weight', '% веса'], ['amount', 'Объём ₽']] as const).map(([key, lbl]) => (
@@ -1170,32 +1165,14 @@ function SnapshotReviewTab() {
                 <label style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-tertiary)' }}>
                     Фонд:
                 </label>
-                <select
+                <Dropdown<string>
+                    options={Object.entries(fundsByUk).flatMap(([, funds]) =>
+                        funds.map((f) => ({ key: f.ticker, label: `${f.ticker} — ${f.name}` }))
+                    )}
                     value={ticker}
-                    onChange={(e) => setTicker(e.target.value)}
-                    style={{
-                        padding: '8px 14px',
-                        background: 'var(--bg-secondary)',
-                        color: 'var(--text-primary)',
-                        border: '1.5px solid var(--text-primary)',
-                        borderRadius: 8,
-                        fontSize: 'var(--fs-sm)',
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        minWidth: 320,
-                        fontFamily: 'inherit',
-                    }}
-                >
-                    {Object.entries(fundsByUk).map(([uk, funds]) => (
-                        <optgroup key={uk} label={uk}>
-                            {funds.map((f) => (
-                                <option key={f.ticker} value={f.ticker}>
-                                    {f.ticker} — {f.name} ({f.snapshot_count} снап.)
-                                </option>
-                            ))}
-                        </optgroup>
-                    ))}
-                </select>
+                    onChange={setTicker}
+                    minWidth={240}
+                />
                 {selectedFund && (
                     <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-tertiary)' }}>
                         {selectedFund.uk || 'УК неизвестна'} · {selectedFund.category || ''}

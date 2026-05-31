@@ -16,7 +16,6 @@ import {
   Activity,
   CalendarDays,
   Banknote,
-  LayoutGrid,
 } from 'lucide-react';
 
 interface RailItem {
@@ -34,7 +33,6 @@ const ITEMS: RailItem[] = [
   { id: 'strength',      path: '/strength',      label: 'Сила',   Icon: Activity },
   { id: 'seasonality',   path: '/seasonality',   label: 'Сезон',  Icon: CalendarDays },
   { id: 'cbr-flows',     path: '/cbr-flows',     label: 'Капитал',     Icon: Banknote },
-  { id: 'funds-catalog', path: '/funds-catalog', label: 'Состав', Icon: LayoutGrid },
 ];
 
 export default function MobileBottomRail() {

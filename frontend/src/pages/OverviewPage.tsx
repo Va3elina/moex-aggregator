@@ -23,7 +23,6 @@ import {
   Grid3X3,
   BarChart3,
   Wallet,
-  LayoutGrid,
   CalendarDays,
   Search,
   TrendingUp,
@@ -56,8 +55,7 @@ const INDICATORS: {
   { path: '/buffett', title: 'Индикатор Баффетта', desc: 'Капитализация / ВВП + Cap / M2', icon: Scale },
   { path: '/seasonality', title: 'Сезонность', desc: 'Среднее изменение цены по периодам', icon: CalendarDays },
   { path: '/cbr-flows', title: 'Поток капитала', desc: 'Кто покупает и продаёт по типам активов', icon: Building2 },
-  // «Состав фондов» — сырой alpha-индикатор, ставим последним.
-  { path: '/funds-catalog', title: 'Состав фондов', desc: 'Портфели фондов акций и облигаций', icon: LayoutGrid, badge: 'Alfa тест' },
+  { path: '/fund-trades', title: 'Покупки фондов', desc: 'Что фонды акций накапливают и распродают (по СЧА)', icon: TrendingUp, badge: 'Beta' },
 ];
 
 /** Тикеры для quote-tiles сверху страницы. Label = отображаемое имя. */

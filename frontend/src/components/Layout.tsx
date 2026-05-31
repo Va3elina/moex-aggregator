@@ -23,9 +23,6 @@ const NAV_ITEMS: { path: string; label: string; disabled?: boolean; badge?: stri
   // Smart-money tracking — что покупают/продают БПИФ. Pro-only фича.
   // Помечен Beta — данные накапливаются (Cbonds monthly snapshot).
   { path: '/fund-trades', label: 'Покупки фондов', badge: 'Beta' },
-  // «Состав фондов» — в самом конце справа, помечен как Alfa-тест
-  // (сырой индикатор, ждёт доработки методологии и данных).
-  { path: '/funds-catalog', label: 'Состав фондов', badge: 'Alfa тест' },
 ];
 
 export default function Layout() {
