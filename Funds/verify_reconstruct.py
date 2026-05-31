@@ -37,18 +37,20 @@ def main():
         print("─" * 92)
         for fd in funds:
             fid = fd["fund_id"]
-            cdate = conn.execute(text(
-                "SELECT MAX(snapshot_date) FROM fund_holdings_history WHERE fund_id=:f AND source='cbonds_calc'"
-            ), {"f": fid}).scalar()
-            sdate = conn.execute(text("""
-                SELECT snapshot_date FROM fund_holdings_history
-                WHERE fund_id=:f AND source = ANY(:sc) AND snapshot_date BETWEEN :lo AND :hi
-                ORDER BY ABS(snapshot_date - CAST(:c AS date)) LIMIT 1
-            """), {"f": fid, "sc": list(SCHA_SOURCES), "c": cdate,
-                   "lo": cdate - timedelta(days=7), "hi": cdate + timedelta(days=7)}).scalar()
-            if not sdate:
-                print(f"{fd['ticker']:10} {fd['category']:7} {str(cdate):11} {'—':11}  нет SCHA в ±7д")
+            # Лучшая пара дат (cbonds_calc ↔ SCHA) с минимальным разрывом ≤7 дней.
+            pair = conn.execute(text("""
+                SELECT c.d AS cd, s.d AS sd FROM
+                  (SELECT DISTINCT snapshot_date d FROM fund_holdings_history
+                   WHERE fund_id=:f AND source='cbonds_calc') c,
+                  (SELECT DISTINCT snapshot_date d FROM fund_holdings_history
+                   WHERE fund_id=:f AND source = ANY(:sc)) s
+                WHERE ABS(c.d - s.d) <= 7
+                ORDER BY ABS(c.d - s.d) LIMIT 1
+            """), {"f": fid, "sc": list(SCHA_SOURCES)}).first()
+            if not pair:
+                print(f"{fd['ticker']:10} {fd['category']:7} {'—':11} {'—':11}  нет пары дат ≤7д")
                 continue
+            cdate, sdate = pair
 
             rows = conn.execute(text("""
                 WITH c AS (SELECT isin, positions FROM fund_holdings_history
