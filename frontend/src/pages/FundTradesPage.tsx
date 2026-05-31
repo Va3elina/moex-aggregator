@@ -754,7 +754,7 @@ export default function FundTradesPage() {
                                     fontSize: 'var(--fs-sm)',
                                     fontWeight: active ? 700 : 600,
                                     cursor: 'pointer',
-                                    boxShadow: '3px 3px 0 var(--text-primary)',
+                                    boxShadow: active ? '3px 3px 0 var(--text-primary)' : 'none',
                                 }}
                             >
                                 <Icon size={14} />

@@ -138,6 +138,8 @@ export default function Dropdown<T extends string>({
             boxShadow: 'var(--shadow-hard-chip, 4px 4px 0 var(--text-primary))',
             minWidth: '100%',
             maxWidth: menuMaxWidth,
+            maxHeight: '60vh',
+            overflowY: 'auto',
           }}
         >
           {visible.map(opt => {
