@@ -37,6 +37,15 @@
 
 **SAFE** на first-am НЕТ → e-disclosure (ниже), имя **«Первая – Фонд Консервативный»**.
 
+> ⚠️ **ОПИФ Первой — на first-am под ДРУГИМ путём** `/individuals/fund/{slug}` (не `/etf/`),
+> и их **НЕТ на Интерфаксе** (карточка 6731 = только БПИФ/ЗПИФ!). Акционерные ОПИФ:
+> | Тикер | slug (`/individuals/fund/…`) | Имя |
+> |---|---|---|
+> | OPIF-43 | `opif-aktsiy-fond-ros-aktsiy` | Фонд российских акций |
+> | OPIF-8123 | `stock-fund-with-income-payment` | Фонд акций с выплатой дохода |
+> У ОПИФ `isin_pif` в PDF не извлекается → backfill матчит по тикеру из имени файла
+> (`OPIF-43_ГГГГ-ММ-ДД.pdf`). Прочие ОПИФ Первой (облигационные) скрыты (фича = только акции).
+
 ### 🟢 Т-Капитал — own-site (предсказуемый URL, Claude curl'ит сам)
 `https://cdn.t-capital-funds.ru/static/documents/otchet-scha-{ticker}-ДД-ММ-ГГГГ.PDF`
 (напр. `otchet-scha-tmos-31-05-2026.PDF`). Тикеры: **TBRU** (Облигации),
