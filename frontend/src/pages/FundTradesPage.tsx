@@ -987,27 +987,30 @@ export default function FundTradesPage() {
                                 minWidth={140}
                             />
                         )}
-                        <div style={{ marginLeft: 'auto', display: 'flex', gap: 4, padding: 4, background: 'var(--bg-secondary)', borderRadius: 8 }}>
-                            {([['weight', '% веса'], ['amount', 'Объём ₽']] as const).map(([key, lbl]) => (
-                                <button
-                                    key={key}
-                                    onClick={() => setMetric(key)}
-                                    style={{
-                                        padding: '4px 12px',
-                                        background: metric === key ? 'var(--bg-primary)' : 'transparent',
-                                        color: metric === key ? 'var(--text-primary)' : 'var(--text-secondary)',
-                                        border: metric === key
-                                            ? '1px solid color-mix(in srgb, var(--text-primary) 18%, transparent)'
-                                            : '1px solid transparent',
-                                        borderRadius: 6,
-                                        fontSize: 'var(--fs-xs)',
-                                        fontWeight: metric === key ? 700 : 600,
-                                        cursor: 'pointer',
-                                    }}
-                                >
-                                    {lbl}
-                                </button>
-                            ))}
+                        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+                            {([['weight', '% веса'], ['amount', 'Объём ₽']] as const).map(([key, lbl]) => {
+                                const on = metric === key;
+                                return (
+                                    <button
+                                        key={key}
+                                        onClick={() => setMetric(key)}
+                                        className="editorial-press"
+                                        style={{
+                                            padding: '6px 14px',
+                                            background: on ? 'var(--accent)' : 'var(--bg-secondary)',
+                                            color: on ? 'var(--text-inverse)' : 'var(--text-primary)',
+                                            border: '2px solid var(--text-primary)',
+                                            borderRadius: 999,
+                                            fontSize: 'var(--fs-xs)',
+                                            fontWeight: on ? 700 : 600,
+                                            cursor: 'pointer',
+                                            boxShadow: on ? '3px 3px 0 var(--text-primary)' : 'none',
+                                        }}
+                                    >
+                                        {lbl}
+                                    </button>
+                                );
+                            })}
                         </div>
                     </div>
                     {loading && !movers && (
@@ -1081,6 +1084,17 @@ function formatRubShort(amount: number | null): string {
 function formatShares(positions: number | null): string {
     if (positions === null || positions === undefined) return '—';
     return positions.toLocaleString('ru-RU');
+}
+
+// Компактный формат для меток Y-оси графика — полные числа ("5 683 220")
+// не влезают слева и клиппятся, поэтому на оси даём "5,7 млн" / "339 тыс".
+// В тултипе остаётся полное число (formatValue).
+function formatSharesCompact(positions: number): string {
+    const abs = Math.abs(positions);
+    if (abs >= 1e9) return `${(positions / 1e9).toLocaleString('ru-RU', { maximumFractionDigits: 1 })} млрд`;
+    if (abs >= 1e6) return `${(positions / 1e6).toLocaleString('ru-RU', { maximumFractionDigits: 1 })} млн`;
+    if (abs >= 1e3) return `${(positions / 1e3).toLocaleString('ru-RU', { maximumFractionDigits: 0 })} тыс`;
+    return Math.round(positions).toLocaleString('ru-RU');
 }
 
 function formatSnapshotDate(iso: string): string {
@@ -1794,6 +1808,7 @@ function AssetHistoryContent({ data, assetName, ticker }: { data: AssetHistory; 
                         primaryLabel={`${assetName}, шт`}
                         legendPosition="top"
                         formatValue={(v) => formatShares(Math.round(v))}
+                        formatPrimaryAxis={formatSharesCompact}
                         formatTime={formatMonthYearShort}
                         tooltipDateFormat={formatMonthYearShort}
                         clampEdgeLabels
