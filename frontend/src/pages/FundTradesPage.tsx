@@ -361,7 +361,7 @@ function FundDetailModal({
                             </div>
 
                             {/* Summary stats */}
-                            {data.previous_snapshot_date ? (
+                            {data.previous_snapshot_date && (
                                 <div
                                     style={{
                                         display: 'grid',
@@ -410,23 +410,6 @@ function FundDetailModal({
                                             </div>
                                         </div>
                                     ))}
-                                </div>
-                            ) : (
-                                <div
-                                    style={{
-                                        padding: 14,
-                                        marginBottom: 20,
-                                        background: 'color-mix(in srgb, var(--accent) 8%, var(--bg-secondary))',
-                                        border: '1px solid color-mix(in srgb, var(--accent) 25%, transparent)',
-                                        borderRadius: 8,
-                                        fontSize: 'var(--fs-sm)',
-                                        color: 'var(--text-secondary)',
-                                    }}
-                                >
-                                    <strong style={{ color: 'var(--text-primary)' }}>
-                                        Недостаточно истории
-                                    </strong>{' '}
-                                    — для расчёта дельт нужно ≥2 snapshot'а. Подождите следующего обновления.
                                 </div>
                             )}
 
@@ -788,7 +771,7 @@ export default function FundTradesPage() {
                         <div style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>Загружаем фонды…</div>
                     )}
                     {!loading && funds.length === 0 && !error && (
-                        <EmptyState />
+                        <EmptyState message="Фонды не найдены." />
                     )}
                     {Object.entries(fundsByCategory).map(([cat, list]) => (
                         <div key={cat} style={{ marginBottom: 28 }}>
@@ -978,7 +961,7 @@ export default function FundTradesPage() {
                     {movers
                         && movers.top_accumulated.length === 0
                         && movers.top_reduced.length === 0 && (
-                        <EmptyState />
+                        <EmptyState message="Нет заметных движений между этими месяцами." />
                     )}
                 </>
             )}
@@ -1958,7 +1941,7 @@ function MoversColumn({
     );
 }
 
-function EmptyState() {
+function EmptyState({ message }: { message: string }) {
     return (
         <div
             style={{
@@ -1969,13 +1952,9 @@ function EmptyState() {
                 borderRadius: 12,
             }}
         >
-            <Activity size={32} style={{ color: 'var(--text-muted)', margin: '0 auto 12px' }} />
-            <p style={{ fontSize: 'var(--fs-md)', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>
-                История пока копится
-            </p>
-            <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-secondary)', maxWidth: 460, margin: '0 auto', lineHeight: 1.5 }}>
-                Для расчёта движений нужны минимум 2 snapshot'а от каждой УК. Cbonds публикует данные раз в месяц с лагом
-                10-30 дней — первые реальные дельты появятся через месяц.
+            <Activity size={28} style={{ color: 'var(--text-muted)', margin: '0 auto 10px' }} />
+            <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-secondary)', maxWidth: 420, margin: '0 auto', lineHeight: 1.5 }}>
+                {message}
             </p>
         </div>
     );
