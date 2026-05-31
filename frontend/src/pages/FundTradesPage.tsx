@@ -17,7 +17,7 @@
  *     new=accent, sold_out=muted
  *   - Шаг данных — 1 снапшот в месяц; сравнение всегда «месяц vs предыдущий».
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
     ArrowUpRight,
@@ -56,6 +56,7 @@ import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 import PageHeader from '../components/PageHeader';
 import Dropdown from '../components/Dropdown';
 import SimpleChart from '../components/SimpleChart';
+import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import { UK_LOGOS } from '../config/fundConfig';
 
 type Tab = 'funds' | 'movers' | 'snapshots';
@@ -1650,7 +1651,7 @@ function AssetHistoryModal({
                 onClick={(e) => e.stopPropagation()}
                 style={{
                     background: 'var(--bg-primary)',
-                    maxWidth: 920, width: '100%', maxHeight: '92vh', overflow: 'auto',
+                    maxWidth: 1240, width: '100%', maxHeight: '92vh', overflow: 'auto',
                     border: '1.5px solid var(--text-primary)',
                     padding: '24px 28px',
                     boxShadow: '0 16px 60px rgba(0,0,0,0.3)',
@@ -1696,13 +1697,14 @@ function AssetHistoryModal({
                     <div style={{ padding: 16, color: 'var(--mood-red)' }}>{error}</div>
                 )}
 
-                {data && !loading && <AssetHistoryContent data={data} assetName={asset_name} />}
+                {data && !loading && <AssetHistoryContent data={data} assetName={asset_name} ticker={ticker} />}
             </div>
         </div>
     );
 }
 
-function AssetHistoryContent({ data, assetName }: { data: AssetHistory; assetName: string }) {
+function AssetHistoryContent({ data, assetName, ticker }: { data: AssetHistory; assetName: string; ticker: string }) {
+    const chartAnchorRef = useRef<HTMLDivElement>(null);
     const points = data.timeline.filter(p => p.positions !== null);
     const firstPos = points[0]?.positions || 0;
     const lastPos = points[points.length - 1]?.positions || 0;
@@ -1779,19 +1781,40 @@ function AssetHistoryContent({ data, assetName }: { data: AssetHistory; assetNam
             </div>
 
             {/* График позиций — SimpleChart (интерактивный, accent-линия + hover/crosshair) */}
-            <div style={{ marginBottom: 24 }}>
-                <SimpleChart
-                    data={chartData}
-                    height={470}
-                    primaryLabel={assetName}
-                    legendPosition="top"
-                    formatValue={(v) => formatShares(Math.round(v))}
-                    formatTime={formatMonthYearShort}
-                    tooltipDateFormat={formatMonthYearShort}
-                    clampEdgeLabels
-                    showValueHeader={false}
-                    showDownloadButton
-                />
+            <div style={{ position: 'relative', marginBottom: 24 }}>
+                <div style={{ position: 'absolute', top: 10, right: 10, zIndex: 3 }}>
+                    <ChartCaptureButton
+                        getTargetElement={() => chartAnchorRef.current}
+                        filename={`frame-fund-${ticker}`}
+                        metadata={{
+                            title: assetName,
+                            asset: ticker,
+                            details: ['Позиции по снапшотам, шт'],
+                        }}
+                    />
+                </div>
+                <div
+                    ref={chartAnchorRef}
+                    style={{
+                        background: 'var(--bg-secondary)',
+                        border: '1.5px solid var(--border-color)',
+                        borderRadius: 12,
+                        padding: '14px 10px 8px',
+                    }}
+                >
+                    <SimpleChart
+                        data={chartData}
+                        height={470}
+                        primaryLabel={`${assetName}, шт`}
+                        legendPosition="top"
+                        formatValue={(v) => formatShares(Math.round(v))}
+                        formatTime={formatMonthYearShort}
+                        tooltipDateFormat={formatMonthYearShort}
+                        clampEdgeLabels
+                        showValueHeader={false}
+                        showDownloadButton={false}
+                    />
+                </div>
             </div>
 
             {/* Table of all snapshots */}
