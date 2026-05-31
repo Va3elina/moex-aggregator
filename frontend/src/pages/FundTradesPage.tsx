@@ -3,7 +3,8 @@
  *
  * Архитектура:
  *   - Pro-only фича (tier-gated через useCommonFeatures().fund_trades_access).
- *   - Два таба: «По фондам» (карточки) + «Топ движений» (агрегаты).
+ *   - Три таба: «Состав фондов» (карточки) + «Покупки фондов» (консенсус-
+ *     гистограмма across фондов) + «Обзор снапшота» (per-fund помесячно).
  *   - При клике на фонд → детальный diff с current_holdings и изменениями.
  *
  * Источники данных: backend `/api/fund-trades/*`. Snapshot истории строится
@@ -14,12 +15,11 @@
  *   - Card-based layout с иконками категорий
  *   - Diff показывается цветом: accumulated=success, reduced=danger,
  *     new=accent, sold_out=muted
- *   - Period picker (1m/3m/6m/1y) сверху страницы — applies к обоим табам
+ *   - Шаг данных — 1 снапшот в месяц; сравнение всегда «месяц vs предыдущий».
  */
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-    ArrowLeft,
     ArrowUpRight,
     ArrowDownRight,
     PlusCircle,
@@ -52,6 +52,7 @@ import {
 import { useCommonFeatures } from '../contexts/TierFeaturesContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
+import PageHeader from '../components/PageHeader';
 
 type Tab = 'funds' | 'movers' | 'snapshots';
 
@@ -61,13 +62,6 @@ const CATEGORY_LABEL: Record<string, string> = {
     money_market: 'Денежный рынок',
     gold: 'Золото',
 };
-
-const PERIODS: { id: FundTradesPeriod; label: string }[] = [
-    { id: '1m', label: '1 мес' },
-    { id: '3m', label: '3 мес' },
-    { id: '6m', label: '6 мес' },
-    { id: '1y', label: '1 год' },
-];
 
 // ════════════════════════════════════════════════════════════════════
 // Lock screen для non-Pro юзеров
@@ -617,7 +611,9 @@ function cellStyle(): React.CSSProperties {
 export default function FundTradesPage() {
     const common = useCommonFeatures();
     const [tab, setTab] = useState<Tab>('funds');
-    const [period, setPeriod] = useState<FundTradesPeriod>('1m');
+    // Шаг данных — 1 снапшот/месяц. Период фиксирован '1m' (месяц vs предыдущий);
+    // селектор месяца появится в Заходе 2 (нужен backend as_of/available_months).
+    const [period] = useState<FundTradesPeriod>('1m');
     const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
 
     const [funds, setFunds] = useState<FundWithHistory[]>([]);
@@ -662,61 +658,13 @@ export default function FundTradesPage() {
 
     return (
         <div className="max-w-5xl mx-auto px-4 md:px-6 py-6 md:py-8">
-            <Link
-                to="/"
-                style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    color: 'var(--text-secondary)',
-                    fontSize: 'var(--fs-sm)',
-                    marginBottom: 16,
-                    textDecoration: 'none',
-                }}
-            >
-                <ArrowLeft size={14} />На главную
-            </Link>
-
-            {/* Header */}
-            <header className="flex items-center gap-4 mb-6">
-                <div
-                    style={{
-                        width: 48,
-                        height: 48,
-                        borderRadius: 10,
-                        background: 'color-mix(in srgb, var(--accent) 14%, transparent)',
-                        color: 'var(--accent)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                    }}
-                >
-                    <Wallet size={24} strokeWidth={1.8} />
-                </div>
-                <div>
-                    <h1
-                        style={{
-                            fontSize: 'var(--fs-3xl)',
-                            fontWeight: 800,
-                            color: 'var(--text-primary)',
-                            letterSpacing: '-0.015em',
-                            margin: 0,
-                        }}
-                    >
-                        Что покупают фонды
-                    </h1>
-                    <p
-                        style={{
-                            fontSize: 'var(--fs-sm)',
-                            color: 'var(--text-secondary)',
-                            margin: '4px 0 0',
-                        }}
-                    >
-                        Состав портфелей крупных БПИФов — что управляющие компании
-                        накапливают и распродают
-                    </p>
-                </div>
-            </header>
+            {/* Header — единый PageHeader как у всех индикаторов
+                (иконка стилизуется через .page-header-icon → выравнивание как везде) */}
+            <PageHeader
+                icon={Wallet}
+                title="Что покупают фонды"
+                subtitle="Состав портфелей крупных фондов акций — что управляющие компании накапливают и распродают"
+            />
 
             {/* Beta banner — пока показываем только 6 ВИМ-фондов */}
             <div
@@ -754,7 +702,7 @@ export default function FundTradesPage() {
                 </div>
             </div>
 
-            {/* Tabs + Period picker */}
+            {/* Tabs */}
             <div
                 style={{
                     display: 'flex',
@@ -768,9 +716,9 @@ export default function FundTradesPage() {
             >
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                     {([
-                        { id: 'funds' as const, label: 'По фондам', icon: Wallet },
+                        { id: 'funds' as const, label: 'Состав фондов', icon: Wallet },
+                        { id: 'movers' as const, label: 'Покупки фондов', icon: TrendingUp },
                         { id: 'snapshots' as const, label: 'Обзор снапшота', icon: Activity },
-                        { id: 'movers' as const, label: 'Месячные движения', icon: Activity },
                     ]).map((t) => {
                         const Icon = t.icon;
                         const active = tab === t.id;
@@ -797,28 +745,6 @@ export default function FundTradesPage() {
                             </button>
                         );
                     })}
-                </div>
-                <div style={{ marginLeft: 'auto', display: 'flex', gap: 4, padding: 4, background: 'var(--bg-secondary)', borderRadius: 8 }}>
-                    {PERIODS.map((p) => (
-                        <button
-                            key={p.id}
-                            onClick={() => setPeriod(p.id)}
-                            style={{
-                                padding: '4px 10px',
-                                background: period === p.id ? 'var(--bg-primary)' : 'transparent',
-                                color: period === p.id ? 'var(--text-primary)' : 'var(--text-secondary)',
-                                border: period === p.id
-                                    ? '1px solid color-mix(in srgb, var(--text-primary) 18%, transparent)'
-                                    : '1px solid transparent',
-                                borderRadius: 6,
-                                fontSize: 'var(--fs-xs)',
-                                fontWeight: period === p.id ? 700 : 600,
-                                cursor: 'pointer',
-                            }}
-                        >
-                            {p.label}
-                        </button>
-                    ))}
                 </div>
             </div>
 
@@ -1820,6 +1746,8 @@ function MoversColumn({
     empty: string;
     negative?: boolean;
 }) {
+    // Гистограмма: ширина бара ∝ |Δвеса| относительно максимума в колонке.
+    const maxAbs = Math.max(...items.map((m) => Math.abs(m.total_delta_weight)), 0.0001);
     return (
         <div
             style={{
@@ -1855,65 +1783,88 @@ function MoversColumn({
                 <p style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>{empty}</p>
             ) : (
                 <div>
-                    {items.map((m, i) => (
+                    {items.map((m, i) => {
+                        const pct = Math.max(2, (Math.abs(m.total_delta_weight) / maxAbs) * 100);
+                        return (
                         <div
                             key={m.asset_name}
                             style={{
-                                display: 'grid',
-                                gridTemplateColumns: '24px 1fr auto',
-                                gap: 10,
-                                alignItems: 'center',
-                                padding: '8px 0',
+                                padding: '9px 0',
                                 borderBottom: i === items.length - 1
                                     ? 'none'
                                     : '1px dashed color-mix(in srgb, var(--text-primary) 12%, transparent)',
                             }}
                         >
-                            <span
-                                style={{
-                                    fontSize: 'var(--fs-xs)',
-                                    color: 'var(--text-muted)',
-                                    fontFamily: 'ui-monospace, monospace',
-                                }}
-                            >
-                                {i + 1}.
-                            </span>
-                            <div>
-                                <div
+                            {/* Верх: ранг + имя + Δвеса */}
+                            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                                <span
                                     style={{
+                                        fontSize: 'var(--fs-xs)',
+                                        color: 'var(--text-muted)',
+                                        fontFamily: 'ui-monospace, monospace',
+                                        flexShrink: 0,
+                                    }}
+                                >
+                                    {i + 1}.
+                                </span>
+                                <span
+                                    style={{
+                                        flex: 1,
+                                        minWidth: 0,
                                         fontSize: 'var(--fs-sm)',
                                         color: 'var(--text-primary)',
                                         fontWeight: 600,
                                         lineHeight: 1.3,
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap',
                                     }}
                                 >
                                     {m.asset_name}
-                                </div>
+                                </span>
+                                <span
+                                    style={{
+                                        fontFamily: 'ui-monospace, "SF Mono", monospace',
+                                        fontSize: 'var(--fs-sm)',
+                                        fontWeight: 800,
+                                        color,
+                                        flexShrink: 0,
+                                    }}
+                                >
+                                    {m.total_delta_weight > 0 ? '+' : ''}
+                                    {m.total_delta_weight.toFixed(2)}%
+                                </span>
+                            </div>
+                            {/* Низ: гистограмма-бар + счётчик фондов */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5 }}>
                                 <div
+                                    style={{
+                                        flex: 1,
+                                        height: 6,
+                                        background: 'color-mix(in srgb, var(--text-primary) 8%, transparent)',
+                                        borderRadius: 3,
+                                        overflow: 'hidden',
+                                    }}
+                                >
+                                    <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 3 }} />
+                                </div>
+                                <span
                                     style={{
                                         fontSize: 'var(--fs-2xs)',
                                         color: 'var(--text-muted)',
-                                        marginTop: 2,
+                                        flexShrink: 0,
+                                        minWidth: 80,
+                                        textAlign: 'right',
                                     }}
                                 >
                                     {negative
                                         ? `${m.funds_selling} продают`
                                         : `${m.funds_buying} покупают`}
-                                </div>
+                                </span>
                             </div>
-                            <span
-                                style={{
-                                    fontFamily: 'ui-monospace, "SF Mono", monospace',
-                                    fontSize: 'var(--fs-sm)',
-                                    fontWeight: 800,
-                                    color,
-                                }}
-                            >
-                                {m.total_delta_weight > 0 ? '+' : ''}
-                                {m.total_delta_weight.toFixed(2)}%
-                            </span>
                         </div>
-                    ))}
+                        );
+                    })}
                 </div>
             )}
         </div>
