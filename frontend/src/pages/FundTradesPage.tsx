@@ -1781,27 +1781,13 @@ function AssetHistoryContent({ data, assetName, ticker }: { data: AssetHistory; 
             </div>
 
             {/* График позиций — SimpleChart (интерактивный, accent-линия + hover/crosshair) */}
+            {/* Один контейнер — родной SimpleChart (rounded-2xl border bg-primary).
+                chartAnchorRef — голая обёртка-цель для html2canvas (без своей рамки,
+                иначе двойной контейнер). Камера-экспорт абсолютом ВНУТРИ угла
+                контейнера (top/right 16 == SimpleChart top-4/right-4), снаружи
+                chartAnchorRef → в snapshot не попадёт. */}
             <div style={{ position: 'relative', marginBottom: 24 }}>
-                <div style={{ position: 'absolute', top: 10, right: 10, zIndex: 3 }}>
-                    <ChartCaptureButton
-                        getTargetElement={() => chartAnchorRef.current}
-                        filename={`frame-fund-${ticker}`}
-                        metadata={{
-                            title: assetName,
-                            asset: ticker,
-                            details: ['Позиции по снапшотам, шт'],
-                        }}
-                    />
-                </div>
-                <div
-                    ref={chartAnchorRef}
-                    style={{
-                        background: 'var(--bg-secondary)',
-                        border: '1.5px solid var(--border-color)',
-                        borderRadius: 12,
-                        padding: '14px 10px 8px',
-                    }}
-                >
+                <div ref={chartAnchorRef}>
                     <SimpleChart
                         data={chartData}
                         height={470}
@@ -1813,6 +1799,17 @@ function AssetHistoryContent({ data, assetName, ticker }: { data: AssetHistory; 
                         clampEdgeLabels
                         showValueHeader={false}
                         showDownloadButton={false}
+                    />
+                </div>
+                <div data-export-ignore="true" style={{ position: 'absolute', top: 16, right: 16, zIndex: 3 }}>
+                    <ChartCaptureButton
+                        getTargetElement={() => chartAnchorRef.current}
+                        filename={`frame-fund-${ticker}`}
+                        metadata={{
+                            title: assetName,
+                            asset: ticker,
+                            details: ['Позиции по снапшотам, шт'],
+                        }}
                     />
                 </div>
             </div>
