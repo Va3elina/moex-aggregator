@@ -76,13 +76,6 @@ export const SEO_META: Record<string, SeoMeta> = {
         keywords: 'БПИФ, денежные потоки, притоки в фонды, ETF Россия, fund flows',
         breadcrumb: 'Индикаторы',
     },
-    '/funds-catalog': {
-        title: 'Каталог биржевых фондов БПИФ России | Фрейм',
-        description:
-            'Все российские БПИФ со СЧА, расходами, дивидендной политикой и историей доходности. Сравнение фондов в одном месте.',
-        keywords: 'каталог БПИФ, ETF Россия, фонды Мосбиржи, СЧА фонда, расходы фонда',
-        breadcrumb: 'Индикаторы',
-    },
     '/strength': {
         title: 'Сила рынка — market breadth MOEX | Фрейм',
         description:
