@@ -11,6 +11,7 @@
 """
 import sys
 import statistics
+from datetime import timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -41,9 +42,10 @@ def main():
             ), {"f": fid}).scalar()
             sdate = conn.execute(text("""
                 SELECT snapshot_date FROM fund_holdings_history
-                WHERE fund_id=:f AND source = ANY(:sc) AND snapshot_date BETWEEN :c - 7 AND :c + 7
-                ORDER BY ABS(snapshot_date - :c) LIMIT 1
-            """), {"f": fid, "sc": list(SCHA_SOURCES), "c": cdate}).scalar()
+                WHERE fund_id=:f AND source = ANY(:sc) AND snapshot_date BETWEEN :lo AND :hi
+                ORDER BY ABS(snapshot_date - :c::date) LIMIT 1
+            """), {"f": fid, "sc": list(SCHA_SOURCES), "c": cdate,
+                   "lo": cdate - timedelta(days=7), "hi": cdate + timedelta(days=7)}).scalar()
             if not sdate:
                 print(f"{fd['ticker']:10} {fd['category']:7} {str(cdate):11} {'—':11}  нет SCHA в ±7д")
                 continue
