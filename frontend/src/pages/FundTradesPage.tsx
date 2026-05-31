@@ -54,7 +54,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 import PageHeader from '../components/PageHeader';
 import Dropdown from '../components/Dropdown';
-import FundDonut from '../components/FundDonut';
+import { UK_LOGOS } from '../config/fundConfig';
 
 type Tab = 'funds' | 'movers' | 'snapshots';
 
@@ -809,7 +809,9 @@ export default function FundTradesPage() {
                                     gap: 10,
                                 }}
                             >
-                                {list.map((f) => (
+                                {list.map((f) => {
+                                    const uk = f.uk_id != null ? UK_LOGOS[String(f.uk_id)] : null;
+                                    return (
                                     <button
                                         key={f.fund_id}
                                         onClick={() => setSelectedTicker(f.ticker)}
@@ -830,6 +832,26 @@ export default function FundTradesPage() {
                                         }}
                                     >
                                         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                                            {uk && (
+                                                <div
+                                                    title={uk.name}
+                                                    style={{
+                                                        width: 40,
+                                                        height: 40,
+                                                        borderRadius: '50%',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        flexShrink: 0,
+                                                        fontWeight: 900,
+                                                        fontSize: 'var(--fs-lg)',
+                                                        backgroundColor: uk.bg,
+                                                        color: uk.color,
+                                                    }}
+                                                >
+                                                    {uk.letter}
+                                                </div>
+                                            )}
                                             <div style={{ flex: 1, minWidth: 0 }}>
                                                 <div
                                                     style={{
@@ -868,18 +890,10 @@ export default function FundTradesPage() {
                                                     <span>{f.snapshot_count} snap.</span>
                                                 </div>
                                             </div>
-                                            {f.top_holdings && f.top_holdings.length > 0 && (
-                                                <div style={{ flexShrink: 0 }}>
-                                                    <FundDonut
-                                                        holdings={f.top_holdings.map((h) => ({ name: h.name, weight: (h.weight || 0) / 100 }))}
-                                                        size={66}
-                                                        interactive={false}
-                                                    />
-                                                </div>
-                                            )}
                                         </div>
                                     </button>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </div>
                     ))}
