@@ -43,7 +43,7 @@ def main():
             sdate = conn.execute(text("""
                 SELECT snapshot_date FROM fund_holdings_history
                 WHERE fund_id=:f AND source = ANY(:sc) AND snapshot_date BETWEEN :lo AND :hi
-                ORDER BY ABS(snapshot_date - :c::date) LIMIT 1
+                ORDER BY ABS(snapshot_date - CAST(:c AS date)) LIMIT 1
             """), {"f": fid, "sc": list(SCHA_SOURCES), "c": cdate,
                    "lo": cdate - timedelta(days=7), "hi": cdate + timedelta(days=7)}).scalar()
             if not sdate:
