@@ -516,6 +516,22 @@ def parse_scha(pdf_bytes: bytes) -> dict:
     else:
         result["parser_strategy"] = "tables"
 
+    # Глобальный дедуп по ISIN. rowwise/text+regex дедупят сами, но header-based
+    # `tables` — нет: если таблица повторяется на нескольких страницах, строка
+    # задваивается → total_nav в backfill удваивается → Σвесов уезжает (видели
+    # TBRU/TMOS 2024-06-28 = 50%). Страхуемся для всех стратегий.
+    if result["assets"]:
+        seen_isin: set = set()
+        uniq = []
+        for a in result["assets"]:
+            k = a.get("isin")
+            if k and k in seen_isin:
+                continue
+            if k:
+                seen_isin.add(k)
+            uniq.append(a)
+        result["assets"] = uniq
+
     result["total_assets"] = len(result["assets"])
     return result
 
