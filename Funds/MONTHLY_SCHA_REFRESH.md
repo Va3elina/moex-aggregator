@@ -51,14 +51,21 @@
 (напр. `otchet-scha-tmos-31-05-2026.PDF`). Тикеры: **TBRU** (Облигации),
 **TMOS** (Индекс МосБиржи), **TOFZ** (ОФЗ).
 
-### 🟢 ВИМ — own-site `wealthim.ru` (прямые PDF, Claude curl'ит сам)
+### 🟡 ВИМ — own-site `wealthim.ru` (листинг curl'ится, но PDF — через браузер/аттач)
 Только акционерные (видимые в фиче):
 | Тикер | Ссылка (own-site reports) |
 |---|---|
 | EQMX (Индекс МосБиржи, БПИФ) | `wealthim.ru/about/disclosure/pif/bpif/wimfimb/reports/` |
 | OPIF-1003 (Фонд Акций, ОПИФ) | `wealthim.ru/about/disclosure/pif/opif/wimfa/documents/reports/` |
-Прямые PDF: `ГГ_ММ_ДД_SCHA_BPIF_IndeksMosBirzhi.pdf` / `..._SCHA_OPIF_Aktsii.pdf`.
+Имена PDF: `ГГ_ММ_ДД_SCHA_BPIF_IndeksMosBirzhi.pdf` / `..._SCHA_OPIF_Aktsii.pdf`.
 (OPIF-1003=slug `wimfa` подтверждён сверкой; `wimfeqr` = ДРУГОЙ фонд «Рос. эмитенты».)
+
+> ⚠️ **curl листинга `/reports/` отдаёт имена файлов, но прямой GET самого PDF
+> возвращает SPA-shell (~74 КБ HTML), не PDF** (проверено 2026-05-31, хранятся
+> только последние ~9 мес). → качай EQMX/OPIF-1003 PDF в браузере или пришли мне
+> аттачем. **Парсить строго `parse_scha` (rowwise), НЕ старый vim_sdr-скрейпер** —
+> у него баг ×1000 (см. ниже). Заносить как `source='vim_sdr'` (чтобы фича подхватила),
+> но позиции из `parse_scha`.
 
 ### 🟢 Альфа — own-site `alfacapital.ru` (раздел «Ежемесячно» = XLSX с позициями)
 | Тикер | Ссылка |
@@ -110,3 +117,44 @@ AKMB, AKME, OPIF-11259 (БПИФ) · OPIF-33/432/9113 (ОПИФ, own-site monthl
 ## Текущее покрытие (на 2026-05-31): 18 фондов с точным SCHA
 Первая SBMX/SBRB/SBFR/SAFE · Т-Кап TBRU/TMOS/TOFZ · Атон AMGB/OPIF-63 ·
 ВИМ OBLG/OPIF-1003/OPIF-54/EQMX · Альфа AKMB/AKME/OPIF-11259/33/432/9113.
+
+---
+
+## ⚠️ Баг vim_sdr ×1000 в позициях (найден и исправлен 2026-05-31)
+
+**Симптом:** старый импорт `source='vim_sdr'` в EQMX **занижал `positions` ровно
+в 1000×** на копеечных бумагах (Сургут ао/ап, Мосэнерго, ЮГК, Совкомбанк, НЛМК, МКБ).
+Парсер vim_sdr срезал последнюю разрядную группу «000» из чисел вида «47 407 000» →
+хранил «47407». **`value`/`weight`/`Σвесов`=100% — ВЕРНЫ**, баг ТОЛЬКО в `positions`.
+Затрагивал только **short-name-формат** месяцы (имена «Сургнфгз»/«ЯНДЕКС»):
+2025-01/02/03 + 2025-09→2026-04. Long-name месяцы (2023-04→2024-12, 2025-04→08) и
+ранний 2022-08→2023-02 — корректны (спот-чек: Газпром 2024-12 = 129.6₽, полные позиции).
+
+**Почему важно:** фронт показывает `positions` («+X шт», «было X шт», график позиций).
+Сам диф покупок/продаж считается по `weight` → направление/проценты были верны, но
+абсолютные «штуки» врали ×1000.
+
+**Как пофикшено:** хирургический `UPDATE positions` (value/weight не трогал):
+- 3 месяца (есть PDF) — точные позиции из `parse_scha`.
+- 5+3 месяцев без PDF — `positions*1000` где `ratio>300` против эталонной цены
+  по isin из 3 пофикшенных месяцев (`ratio>300` отделяет ×1000-баг от сплита 1:100,
+  который даёт ratio~100; сплиты Транснефть/Норникель были 2024 → пред-сплитовые
+  цены НЕ ложно-флагаются). Итого 29 строк. Остаточных in-index багов: **0**.
+
+**Детектор для повторной проверки** (любой vim_sdr stock-фонд):
+```sql
+WITH eqmx AS (SELECT fund_id FROM funds WHERE ticker='EQMX'),
+ref AS (SELECT h.isin, AVG(h.amount_rub/NULLIF(h.positions,0)) rp FROM fund_holdings_history h, eqmx
+        WHERE h.fund_id=eqmx.fund_id AND h.source='vim_sdr'
+          AND h.snapshot_date IN ('2026-02-27','2026-03-31','2026-04-30') AND h.positions>0 GROUP BY h.isin)
+SELECT f.ticker, t.snapshot_date, t.asset_name, t.positions
+FROM fund_holdings_history t JOIN funds f ON f.fund_id=t.fund_id JOIN ref r ON r.isin=t.isin
+WHERE t.source='vim_sdr' AND t.positions>0
+  AND (t.amount_rub/NULLIF(t.positions,0))/NULLIF(r.rp,0) > 300;  -- 0 строк = чисто
+```
+
+**Остатки (не критично):** orphan-бумаги, вышедшие из индекса до 2026 (напр. РусГидро
+в 2022) — их старый ×1000 НЕ ловится референсом и **в UI невидим** (drill-down
+открывается только по текущим холдингам). OBLG имеет vim_sdr(45 снап) с тем же багом,
+но OBLG — облигации → **скрыт** в фиче. Прочие видимые фонды на `interfax_manual`
+(корректный `parse_scha`). **EQMX был единственным видимым фондом на vim_sdr.**
