@@ -1468,6 +1468,15 @@ function SnapshotReviewBody({
         [...items].sort((a, b) => Math.abs(get(b)) - Math.abs(get(a)));
     const sumBy = (items: FundDiffRow[], get: (r: FundDiffRow) => number) =>
         items.reduce((s, r) => s + get(r), 0);
+    // В режиме «% веса» докупил/продал бакетим по знаку Δдоли (а не по штукам):
+    // иначе бумага с РОСШЕЙ долей, но проданная в штуках (напр. после сплита T —
+    // доля +0.46%, но штук меньше), попала бы в «продал» с неверным знаком.
+    const addedItems = isW
+        ? [...review.added, ...review.reduced].filter((r) => wDelta(r) > 0)
+        : review.added;
+    const reducedItems = isW
+        ? [...review.added, ...review.reduced].filter((r) => wDelta(r) < 0)
+        : review.reduced;
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
@@ -1559,12 +1568,12 @@ function SnapshotReviewBody({
             )}
 
             {/* ДОКУПИЛ */}
-            {review.added.length > 0 && (
+            {addedItems.length > 0 && (
                 <SnapshotSection
                     title="ДОКУПИЛ"
-                    count={review.added.length}
-                    total={isW ? sumBy(review.added, wDelta) : review.totals.total_added_rub}
-                    items={sortByAbs(review.added, isW ? wDelta : aAdded)}
+                    count={addedItems.length}
+                    total={isW ? sumBy(addedItems, wDelta) : review.totals.total_added_rub}
+                    items={sortByAbs(addedItems, isW ? wDelta : aAdded)}
                     maxAbs={maxAbs}
                     isPositive={true}
                     valueGetter={isW ? wDelta : aAdded}
@@ -1578,12 +1587,12 @@ function SnapshotReviewBody({
             )}
 
             {/* ПРОДАЛ */}
-            {review.reduced.length > 0 && (
+            {reducedItems.length > 0 && (
                 <SnapshotSection
                     title="ПРОДАЛ"
-                    count={review.reduced.length}
-                    total={isW ? Math.abs(sumBy(review.reduced, wDelta)) : Math.abs(review.totals.total_reduced_rub)}
-                    items={sortByAbs(review.reduced, isW ? wDelta : aAdded)}
+                    count={reducedItems.length}
+                    total={isW ? Math.abs(sumBy(reducedItems, wDelta)) : Math.abs(review.totals.total_reduced_rub)}
+                    items={sortByAbs(reducedItems, isW ? wDelta : aAdded)}
                     maxAbs={maxAbs}
                     isPositive={false}
                     valueGetter={isW ? wDelta : aAdded}
