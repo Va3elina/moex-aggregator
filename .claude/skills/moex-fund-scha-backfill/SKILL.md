@@ -14,6 +14,20 @@ Cbonds Mobile API (reconstruct), см. `Funds/DATA_SOURCES.md`. Этот ски�
 - Таблица `fund_holdings_history`, unique key **`(fund_id, COALESCE(isin,''), asset_name, snapshot_date, source)`**
   — НЕ по эмитенту (иначе схлопывает выпуски, теряя 30-60% позиций). Не менять обратно!
 
+## 📇 Справочники по УК (per-УК карточки — открой ПЕРЕД backfill'ом)
+Точные URL/слаги/паттерны имён, формат файлов, где лежат количество/стоимость и
+подводные камни — в отдельной карточке на каждую УК (`references/uk-*.md`). Открой
+карточку нужной УК до начала работы.
+
+| УК | uk_id | главный источник | ключевая трудность | карточка |
+|---|---|---|---|---|
+| Первая / Сбер | 34 | first-am.ru (curl) | БПИФ/ОПИФ разные пути; e-disclosure IP-бан | `references/uk-pervaya.md` |
+| Т-Капитал | 3597 | cdn.t-capital-funds.ru (curl) | `(cid:9)` в архивном 2021-формате → «триллион акций» | `references/uk-tkapital.md` |
+| ВИМ | 7 | wealthim.ru (браузер/аттач) | баг ×1000 в positions | `references/uk-vim.md` |
+| Альфа | 5 | alfacapital.ru (monthly XLSX) | дневная справка без позиций | `references/uk-alfa.md` |
+| Атон | 12603 | e-disclosure (браузер) | XBRL multi-sheet XLSX; OPIF-63 ≠ AMRE | `references/uk-aton.md` |
+| Райффайзен | 20 | e-disclosure 37192 | фонды OPIF-281/282 не найдены | `references/uk-raiffeisen.md` |
+
 ## Шаг 1. Определить НУЖНЫЕ фонды (сверка с whitelist)
 НЕ качать всё подряд. Нужны только фонды из `WHITELIST_TICKERS` в
 `api/routers/fund_trades.py` И с торгуемыми позициями:
