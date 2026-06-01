@@ -55,7 +55,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 import PageHeader from '../components/PageHeader';
 import Dropdown from '../components/Dropdown';
-import SimpleChart from '../components/SimpleChart';
+import SimpleChart, { type ChartAnnotation } from '../components/SimpleChart';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import { UK_LOGOS } from '../config/fundConfig';
 
@@ -1097,6 +1097,50 @@ function formatSharesCompact(positions: number): string {
     return Math.round(positions).toLocaleString('ru-RU');
 }
 
+// Детект сплита акций в истории позиций + back-adjustment (как экспирация/ролловер
+// фьючерсов на OI). Сплит: количество ×R, цена ÷R, СТОИМОСТЬ непрерывна (amount ≈ const)
+// — именно это отличает сплит от реальной покупки (там сумма растёт ~×R). Без коррекции
+// один снапшот после сплита «выстреливает» в N× и сплющивает историю. Возвращаем
+// множитель на дату (история домножается до текущего масштаба, последние = raw) +
+// маркеры «Сплит» для SimpleChart.
+function splitAdjustPositions(
+    timeline: AssetHistory['timeline'],
+): { factorByDate: Map<string, number>; annotations: ChartAnnotation[] } {
+    const chrono = [...timeline].sort((a, b) => a.snapshot_date.localeCompare(b.snapshot_date));
+    const factorByDate = new Map<string, number>();
+    const splits: { date: string; ratio: number }[] = [];
+    const splitRatio = (a: AssetHistory['timeline'][number], b: AssetHistory['timeline'][number]): number => {
+        if (!a.positions || !b.positions || !a.price_rub || !b.price_rub) return 0;
+        const posR = b.positions / a.positions;
+        const priceR = a.price_rub / b.price_rub;
+        const amtR = a.amount_rub && b.amount_rub ? b.amount_rub / a.amount_rub : 1;
+        // value непрерывна + кол-во и цена двигаются согласованно (posR ≈ priceR)
+        const ok = Math.abs(amtR - 1) < 0.4 && Math.abs(posR / priceR - 1) < 0.4;
+        if (ok && posR > 1.8 && priceR > 1.8) return posR;     // прямой сплит
+        if (ok && posR < 0.55 && priceR < 0.55) return posR;   // обратный сплит
+        return 0;
+    };
+    let factor = 1;
+    for (let i = chrono.length - 1; i >= 0; i--) {
+        factorByDate.set(chrono[i].snapshot_date, factor);
+        if (i > 0) {
+            const R = splitRatio(chrono[i - 1], chrono[i]);
+            if (R) { splits.push({ date: chrono[i].snapshot_date, ratio: R }); factor *= R; }
+        }
+    }
+    const annotations: ChartAnnotation[] = splits.map((s) => {
+        const n = s.ratio >= 1 ? Math.round(s.ratio) : Math.round(1 / s.ratio);
+        return {
+            time: s.date,
+            label: 'Сплит',
+            description: `Сплит акций ~1:${n}${s.ratio < 1 ? ' (обратный)' : ''} · ${formatMonthYearShort(s.date)}. Кол-во и цена в графике/таблице скорректированы под сплит.`,
+            color: 'var(--accent)',
+            textColor: 'var(--text-inverse)',
+        };
+    });
+    return { factorByDate, annotations };
+}
+
 function formatSnapshotDate(iso: string): string {
     // 2026-04-30 → "30 апр 2026"
     const d = new Date(iso);
@@ -1719,14 +1763,37 @@ function AssetHistoryModal({
 
 function AssetHistoryContent({ data, assetName, ticker }: { data: AssetHistory; assetName: string; ticker: string }) {
     const chartAnchorRef = useRef<HTMLDivElement>(null);
+
+    // Сплит-коррекция: непрерывная серия (история домножена на множитель сплита) +
+    // маркеры «Сплит». Снимает «один снапшот = пик, остальное плоское».
+    const { factorByDate, annotations } = useMemo(() => splitAdjustPositions(data.timeline), [data.timeline]);
+    const adjPos = (p: AssetHistory['timeline'][number]) =>
+        p.positions == null ? null : Math.round(p.positions * (factorByDate.get(p.snapshot_date) ?? 1));
+    // adjusted positions/delta/price по дате (delta — в хронологии; цена = raw/множитель,
+    // сумма/вес остаются raw → adj_pos × adj_price = amount сходится).
+    const adjByDate = useMemo(() => {
+        const chrono = [...data.timeline].sort((a, b) => a.snapshot_date.localeCompare(b.snapshot_date));
+        const m = new Map<string, { pos: number | null; delta: number | null; price: number | null }>();
+        let prev: number | null = null;
+        for (const p of chrono) {
+            const f = factorByDate.get(p.snapshot_date) ?? 1;
+            const pos = p.positions == null ? null : Math.round(p.positions * f);
+            const price = p.price_rub == null ? null : p.price_rub / f;
+            const delta = prev == null || pos == null ? null : pos - prev;
+            m.set(p.snapshot_date, { pos, delta, price });
+            if (pos != null) prev = pos;
+        }
+        return m;
+    }, [data.timeline, factorByDate]);
+
     const points = data.timeline.filter(p => p.positions !== null);
-    const firstPos = points[0]?.positions || 0;
-    const lastPos = points[points.length - 1]?.positions || 0;
+    const firstPos = adjPos(points[0]) ?? 0;
+    const lastPos = adjPos(points[points.length - 1]) ?? 0;
     const totalDelta = lastPos - firstPos;
     const totalDeltaColor = totalDelta >= 0 ? 'var(--mood-green)' : 'var(--mood-red)';
 
-    // Данные для SimpleChart: позиции (штуки) по снапшотам.
-    const chartData = points.map(p => ({ time: p.snapshot_date, value: p.positions! }));
+    // Данные для SimpleChart: скорректированные позиции (штуки) по снапшотам.
+    const chartData = points.map(p => ({ time: p.snapshot_date, value: adjPos(p)! }));
 
     // Сортировка таблицы «Все снапшоты» — кликабельные колонки.
     const [snapSort, setSnapSort] = useState<'date' | 'positions' | 'delta' | 'amount' | 'price' | 'weight'>('date');
@@ -1742,12 +1809,13 @@ function AssetHistoryContent({ data, assetName, ticker }: { data: AssetHistory; 
     const sortedTimeline = useMemo(() => {
         const num = (v: number | null) => (v == null ? -Infinity : v);
         const val = (p: AssetHistory['timeline'][number]): string | number => {
+            const adj = adjByDate.get(p.snapshot_date);
             switch (snapSort) {
                 case 'date': return p.snapshot_date;
-                case 'positions': return num(p.positions);
-                case 'delta': return num(p.delta_positions);
+                case 'positions': return num(adj?.pos ?? p.positions);
+                case 'delta': return num(adj?.delta ?? p.delta_positions);
                 case 'amount': return num(p.amount_rub);
-                case 'price': return num(p.price_rub);
+                case 'price': return num(adj?.price ?? p.price_rub);
                 case 'weight': return num(p.weight);
             }
         };
@@ -1756,7 +1824,7 @@ function AssetHistoryContent({ data, assetName, ticker }: { data: AssetHistory; 
             const cmp = typeof av === 'string' ? av.localeCompare(bv as string) : (av as number) - (bv as number);
             return snapDir === 'asc' ? cmp : -cmp;
         });
-    }, [data.timeline, snapSort, snapDir]);
+    }, [data.timeline, snapSort, snapDir, adjByDate]);
     const onSnapSort = (key: typeof snapSort) => {
         if (snapSort === key) setSnapDir((d) => (d === 'asc' ? 'desc' : 'asc'));
         else { setSnapSort(key); setSnapDir('desc'); }
@@ -1814,6 +1882,7 @@ function AssetHistoryContent({ data, assetName, ticker }: { data: AssetHistory; 
                         clampEdgeLabels
                         showValueHeader={false}
                         showDownloadButton={false}
+                        annotations={annotations}
                     />
                 </div>
                 <div data-export-ignore="true" style={{ position: 'absolute', top: 16, right: 16, zIndex: 3 }}>
@@ -1871,22 +1940,27 @@ function AssetHistoryContent({ data, assetName, ticker }: { data: AssetHistory; 
                     </thead>
                     <tbody>
                         {sortedTimeline.map((p) => {
-                            const dColor = !p.delta_positions ? 'var(--text-tertiary)'
-                                : p.delta_positions > 0 ? 'var(--mood-green)' : 'var(--mood-red)';
+                            // Скорректированные под сплит значения (raw для сумм/веса).
+                            const adj = adjByDate.get(p.snapshot_date);
+                            const apos = adj?.pos ?? p.positions;
+                            const adelta = adj?.delta ?? p.delta_positions;
+                            const aprice = adj?.price ?? p.price_rub;
+                            const dColor = !adelta ? 'var(--text-tertiary)'
+                                : adelta > 0 ? 'var(--mood-green)' : 'var(--mood-red)';
                             return (
                                 <tr key={p.snapshot_date} style={{ borderBottom: '1px solid var(--border-soft, rgba(0,0,0,0.05))' }}>
                                     <td style={{ padding: '6px 8px' }}>{formatSnapshotDate(p.snapshot_date)}</td>
-                                    <td style={{ padding: '6px 8px', textAlign: 'right' }}>{formatShares(p.positions)}</td>
+                                    <td style={{ padding: '6px 8px', textAlign: 'right' }}>{formatShares(apos)}</td>
                                     <td style={{ padding: '6px 8px', textAlign: 'right', color: dColor, fontWeight: 600 }}>
-                                        {p.delta_positions === null ? '—'
-                                            : p.delta_positions === 0 ? '0'
-                                            : `${p.delta_positions > 0 ? '+' : ''}${formatShares(p.delta_positions)}`}
+                                        {adelta === null ? '—'
+                                            : adelta === 0 ? '0'
+                                            : `${adelta > 0 ? '+' : ''}${formatShares(adelta)}`}
                                     </td>
                                     <td style={{ padding: '6px 8px', textAlign: 'right' }}>
                                         {formatRubShort(p.amount_rub)}
                                     </td>
                                     <td style={{ padding: '6px 8px', textAlign: 'right' }}>
-                                        {p.price_rub !== null ? `${p.price_rub.toFixed(2)} ₽` : '—'}
+                                        {aprice !== null ? `${aprice.toFixed(2)} ₽` : '—'}
                                     </td>
                                     <td style={{ padding: '6px 8px', textAlign: 'right' }}>
                                         {p.weight !== null ? `${p.weight.toFixed(2)}%` : '—'}
