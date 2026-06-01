@@ -66,6 +66,12 @@ def _norm(s: Optional[str]) -> str:
     """Normalize cell string for matching."""
     if not s:
         return ""
+    # pdfplumber отдаёт неотображённые глифы как литерал "(cid:N)". В архивном
+    # Т-Капитал 2021-формате это разделитель разрядов (cid:9 = TAB) ВНУТРИ
+    # количества/стоимости: "1(cid:9)069(cid:9)930". Без чистки ячейка содержит
+    # буквы c,i,d → числовой фильтр (any isalpha) отбрасывает её, и ОГРН/ИНН
+    # ошибочно берутся за qty/value (→ «триллионы акций»). Заменяем на пробел.
+    s = re.sub(r"\(cid:\d+\)", " ", s)
     return re.sub(r"\s+", " ", s).strip()
 
 
@@ -90,7 +96,11 @@ def _parse_int(text: Optional[str]) -> Optional[int]:
     """'1 286 800' → 1286800. None если parsing fails."""
     if not text:
         return None
-    cleaned = re.sub(r"[\s\xa0]", "", text)
+    # Вычищаем "(cid:N)" — неотображённый глиф (cid:9=TAB как разделитель разрядов).
+    # КРИТИЧНО: cid:9 содержит цифру 9 → без чистки "1(cid:9)069(cid:9)930"
+    # ниже превратится в 190699930 (буквы c,i,d срежутся, девятки останутся).
+    cleaned = re.sub(r"\(cid:\d+\)", "", text)
+    cleaned = re.sub(r"[\s\xa0]", "", cleaned)
     cleaned = re.sub(r"[^\d\-]", "", cleaned)
     if not cleaned or cleaned in ("-", "—"):
         return None
@@ -104,7 +114,9 @@ def _parse_float(text: Optional[str]) -> Optional[float]:
     """'1 133 194 684,00' → 1133194684.0. Russian decimal comma."""
     if not text:
         return None
-    cleaned = re.sub(r"[\s\xa0]", "", text).replace(",", ".")
+    # Вычищаем "(cid:N)" до удаления пробелов — иначе цифра из cid:9 врежется в число.
+    cleaned = re.sub(r"\(cid:\d+\)", "", text)
+    cleaned = re.sub(r"[\s\xa0]", "", cleaned).replace(",", ".")
     cleaned = re.sub(r"[^\d.\-]", "", cleaned)
     if not cleaned or cleaned in ("-", "—", "."):
         return None
