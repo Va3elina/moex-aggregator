@@ -350,6 +350,11 @@ def _parse_assets_from_tables_rowwise(tables: list, isin_pif: Optional[str] = No
                     if 0.01 <= value_rub / cand <= 500_000:
                         positions = cand
                         break
+            # Заморозка ГДР: если стоимость в СЧА = 0 (после конвертации/делистинга
+            # эмитента бумага обесценена), она исключена из nums (требуем v>0), и
+            # последним числом остаётся КОД СТРАНЫ → реальная стоимость = 0, а не код.
+            if int(value_rub) in _ISO_COUNTRY_CODES:
+                value_rub = 0.0
             # Количество ВСЕГДА целое (дробь → строка считана неверно: ставка/НКД/
             # остаток РЕПО попали в слот) → пропускаем. Гарантирует int для bigint.
             if positions != int(positions):
