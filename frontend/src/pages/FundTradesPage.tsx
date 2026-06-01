@@ -1103,6 +1103,21 @@ function formatSharesCompact(positions: number): string {
 // один снапшот после сплита «выстреливает» в N× и сплющивает историю. Возвращаем
 // множитель на дату (история домножается до текущего масштаба, последние = raw) +
 // маркеры «Сплит» для SimpleChart.
+// Стандартные коэффициенты сплита. Берём ближайший (в лог-шкале) к наблюдаемому,
+// а НЕ сырое отношение количеств — иначе реальная торговля на границе сплита
+// «съедается» в ноль (множитель ровно подгонял бы pre к post). T 1:10: наблюдаем
+// ~10.13 (шум от продажи фонда + движения цены) → берём 10, и Δ показывает реальный сдвиг.
+const SPLIT_RATIOS = [2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20, 25, 30, 40, 50, 100, 150, 200, 500, 1000];
+function nearestSplitRatio(observed: number): number {
+    const cands = observed >= 1 ? SPLIT_RATIOS : SPLIT_RATIOS.map((r) => 1 / r);
+    let best = cands[0], bestD = Infinity;
+    for (const c of cands) {
+        const d = Math.abs(Math.log(observed) - Math.log(c));
+        if (d < bestD) { bestD = d; best = c; }
+    }
+    return best;
+}
+
 function splitAdjustPositions(
     timeline: AssetHistory['timeline'],
 ): { factorByDate: Map<string, number>; annotations: ChartAnnotation[] } {
@@ -1116,8 +1131,10 @@ function splitAdjustPositions(
         const amtR = a.amount_rub && b.amount_rub ? b.amount_rub / a.amount_rub : 1;
         // value непрерывна + кол-во и цена двигаются согласованно (posR ≈ priceR)
         const ok = Math.abs(amtR - 1) < 0.4 && Math.abs(posR / priceR - 1) < 0.4;
-        if (ok && posR > 1.8 && priceR > 1.8) return posR;     // прямой сплит
-        if (ok && posR < 0.55 && priceR < 0.55) return posR;   // обратный сплит
+        // Множитель = ближайший стандартный коэффициент к geomean(posR,priceR)
+        // (geomean балансирует шум от торговли фонда и движения цены).
+        if (ok && posR > 1.8 && priceR > 1.8) return nearestSplitRatio(Math.sqrt(posR * priceR));   // прямой
+        if (ok && posR < 0.55 && priceR < 0.55) return nearestSplitRatio(Math.sqrt(posR * priceR)); // обратный
         return 0;
     };
     let factor = 1;
@@ -1174,6 +1191,7 @@ function EditorialBar({
     maxAbs,
     isPositive,
     onClick,
+    formatValue,
 }: {
     label: string;
     subLabel?: string;
@@ -1181,7 +1199,9 @@ function EditorialBar({
     maxAbs: number;
     isPositive: boolean;
     onClick?: () => void;
+    formatValue?: (absValue: number) => string;
 }) {
+    const fmt = formatValue ?? ((v: number) => formatRubShort(v));
     const widthPct = maxAbs > 0 ? Math.max(2, Math.abs(amount) / maxAbs * 100) : 2;
     const color = isPositive ? 'var(--mood-green, #4a9959)' : 'var(--mood-red, #b85645)';
 
@@ -1230,7 +1250,7 @@ function EditorialBar({
                     fontVariantNumeric: 'tabular-nums',
                 }}
             >
-                {isPositive ? '+' : '−'}{formatRubShort(Math.abs(amount))}
+                {isPositive ? '+' : '−'}{fmt(Math.abs(amount))}
             </div>
         </div>
     );
@@ -1425,6 +1445,30 @@ function SnapshotReviewBody({
     maxAbsAmount: number;
     onRowClick: (r: FundDiffRow) => void;
 }) {
+    // Переключатель метрики (как в «Покупки фондов»): сортировка/бары по объёму ₽ или по доле.
+    const [metric, setMetric] = useState<'amount' | 'weight'>('amount');
+    const isW = metric === 'weight';
+    // value-getters: ₽ (delta/curr/prev amount) и вес (Δдоли / curr / prev).
+    const wDelta = (r: FundDiffRow) => (r.curr_weight ?? 0) - (r.prev_weight ?? 0);
+    const aAdded = (r: FundDiffRow) => r.delta_amount_rub ?? 0;
+    const aNew = (r: FundDiffRow) => r.curr_amount_rub ?? 0;
+    const aSold = (r: FundDiffRow) => -(r.prev_amount_rub ?? 0);
+    const wNew = (r: FundDiffRow) => r.curr_weight ?? 0;
+    const wSold = (r: FundDiffRow) => -(r.prev_weight ?? 0);
+    const maxAbsWeight = useMemo(() => Math.max(
+        0.01,
+        ...review.added.map((r) => Math.abs(wDelta(r))),
+        ...review.reduced.map((r) => Math.abs(wDelta(r))),
+        ...review.new.map((r) => r.curr_weight ?? 0),
+        ...review.sold_out.map((r) => r.prev_weight ?? 0),
+    ), [review]);
+    const maxAbs = isW ? maxAbsWeight : maxAbsAmount;
+    const fmtVal = isW ? (v: number) => `${v.toFixed(2)}%` : (v: number) => formatRubShort(v);
+    const sortByAbs = (items: FundDiffRow[], get: (r: FundDiffRow) => number) =>
+        [...items].sort((a, b) => Math.abs(get(b)) - Math.abs(get(a)));
+    const sumBy = (items: FundDiffRow[], get: (r: FundDiffRow) => number) =>
+        items.reduce((s, r) => s + get(r), 0);
+
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
             {/* Header: fund + dates */}
@@ -1485,16 +1529,46 @@ function SnapshotReviewBody({
                 </div>
             )}
 
+            {/* Переключатель метрики (как в «Покупки фондов») */}
+            {review.previous_snapshot_date && (
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: -16, marginBottom: -8 }}>
+                    {([['amount', 'Объём ₽'], ['weight', '% веса']] as const).map(([key, lbl]) => {
+                        const on = metric === key;
+                        return (
+                            <button
+                                key={key}
+                                onClick={() => setMetric(key)}
+                                className="editorial-press"
+                                style={{
+                                    padding: '6px 14px',
+                                    background: on ? 'var(--accent)' : 'var(--bg-secondary)',
+                                    color: on ? 'var(--text-inverse)' : 'var(--text-primary)',
+                                    border: '2px solid var(--text-primary)',
+                                    borderRadius: 999,
+                                    fontSize: 'var(--fs-xs)',
+                                    fontWeight: on ? 700 : 600,
+                                    cursor: 'pointer',
+                                    boxShadow: on ? '3px 3px 0 var(--text-primary)' : 'none',
+                                }}
+                            >
+                                {lbl}
+                            </button>
+                        );
+                    })}
+                </div>
+            )}
+
             {/* ДОКУПИЛ */}
             {review.added.length > 0 && (
                 <SnapshotSection
                     title="ДОКУПИЛ"
                     count={review.added.length}
-                    totalRub={review.totals.total_added_rub}
-                    items={review.added}
-                    maxAbs={maxAbsAmount}
+                    total={isW ? sumBy(review.added, wDelta) : review.totals.total_added_rub}
+                    items={sortByAbs(review.added, isW ? wDelta : aAdded)}
+                    maxAbs={maxAbs}
                     isPositive={true}
-                    valueGetter={(r) => r.delta_amount_rub || 0}
+                    valueGetter={isW ? wDelta : aAdded}
+                    formatValue={fmtVal}
                     subLabelGetter={(r) =>
                         `+${formatShares(r.delta_positions || 0)} шт` +
                         (r.curr_weight !== null ? ` · ${r.curr_weight.toFixed(2)}%` : '')
@@ -1508,11 +1582,12 @@ function SnapshotReviewBody({
                 <SnapshotSection
                     title="ПРОДАЛ"
                     count={review.reduced.length}
-                    totalRub={Math.abs(review.totals.total_reduced_rub)}
-                    items={review.reduced}
-                    maxAbs={maxAbsAmount}
+                    total={isW ? Math.abs(sumBy(review.reduced, wDelta)) : Math.abs(review.totals.total_reduced_rub)}
+                    items={sortByAbs(review.reduced, isW ? wDelta : aAdded)}
+                    maxAbs={maxAbs}
                     isPositive={false}
-                    valueGetter={(r) => r.delta_amount_rub || 0}
+                    valueGetter={isW ? wDelta : aAdded}
+                    formatValue={fmtVal}
                     subLabelGetter={(r) =>
                         `${formatShares(r.delta_positions || 0)} шт` +
                         (r.curr_weight !== null ? ` · ${r.curr_weight.toFixed(2)}%` : '')
@@ -1526,11 +1601,12 @@ function SnapshotReviewBody({
                 <SnapshotSection
                     title="НОВЫЕ ПОЗИЦИИ"
                     count={review.new.length}
-                    totalRub={review.totals.total_new_rub}
-                    items={review.new}
-                    maxAbs={maxAbsAmount}
+                    total={isW ? sumBy(review.new, wNew) : review.totals.total_new_rub}
+                    items={sortByAbs(review.new, isW ? wNew : aNew)}
+                    maxAbs={maxAbs}
                     isPositive={true}
-                    valueGetter={(r) => r.curr_amount_rub || 0}
+                    valueGetter={isW ? wNew : aNew}
+                    formatValue={fmtVal}
                     subLabelGetter={(r) =>
                         `${formatShares(r.curr_positions)} шт` +
                         (r.curr_weight !== null ? ` · ${r.curr_weight.toFixed(2)}%` : '')
@@ -1544,11 +1620,12 @@ function SnapshotReviewBody({
                 <SnapshotSection
                     title="ПОЛНОСТЬЮ ВЫШЕЛ"
                     count={review.sold_out.length}
-                    totalRub={review.totals.total_sold_out_rub}
-                    items={review.sold_out}
-                    maxAbs={maxAbsAmount}
+                    total={isW ? Math.abs(sumBy(review.sold_out, wSold)) : review.totals.total_sold_out_rub}
+                    items={sortByAbs(review.sold_out, isW ? wSold : aSold)}
+                    maxAbs={maxAbs}
                     isPositive={false}
-                    valueGetter={(r) => -(r.prev_amount_rub || 0)}
+                    valueGetter={isW ? wSold : aSold}
+                    formatValue={fmtVal}
                     subLabelGetter={(r) =>
                         `было ${formatShares(r.prev_positions)} шт`
                     }
@@ -1573,24 +1650,27 @@ function SnapshotReviewBody({
 function SnapshotSection({
     title,
     count,
-    totalRub,
+    total,
     items,
     maxAbs,
     isPositive,
     valueGetter,
     subLabelGetter,
     onItemClick,
+    formatValue,
 }: {
     title: string;
     count: number;
-    totalRub: number;
+    total: number;
     items: FundDiffRow[];
     maxAbs: number;
     isPositive: boolean;
     valueGetter: (r: FundDiffRow) => number;
     subLabelGetter: (r: FundDiffRow) => string;
     onItemClick?: (r: FundDiffRow) => void;
+    formatValue?: (absValue: number) => string;
 }) {
+    const fmt = formatValue ?? ((v: number) => formatRubShort(v));
     const [expanded, setExpanded] = useState(false);
     return (
         <div>
@@ -1627,7 +1707,7 @@ function SnapshotSection({
                         fontVariantNumeric: 'tabular-nums',
                     }}
                 >
-                    {isPositive ? '+' : '−'}{formatRubShort(Math.abs(totalRub))}
+                    {isPositive ? '+' : '−'}{fmt(Math.abs(total))}
                 </span>
             </div>
             <div>
@@ -1640,6 +1720,7 @@ function SnapshotSection({
                         maxAbs={maxAbs}
                         isPositive={isPositive}
                         onClick={onItemClick ? () => onItemClick(r) : undefined}
+                        formatValue={formatValue}
                     />
                 ))}
                 {items.length > 3 && (
