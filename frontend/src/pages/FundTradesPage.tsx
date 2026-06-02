@@ -390,6 +390,7 @@ function FundDetailModal({
                                                 clampEdgeLabels
                                                 showValueHeader={false}
                                                 showDownloadButton={false}
+                                                showNavigator
                                             />
                                         ) : (
                                             <div
