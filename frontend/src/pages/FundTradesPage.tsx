@@ -1050,11 +1050,11 @@ export default function FundTradesPage() {
                                                         fontSize: 'var(--fs-lg)',
                                                         fontWeight: 800,
                                                         fontVariantNumeric: 'tabular-nums',
-                                                        color: returnColor(f.returns?.y1),
+                                                        color: returnColor(bestReturn(f.returns)?.v),
                                                         lineHeight: 1.1,
                                                     }}
                                                 >
-                                                    {formatReturnPct(f.returns?.y1)}
+                                                    {formatReturnPct(bestReturn(f.returns)?.v)}
                                                 </span>
                                                 <span
                                                     style={{
@@ -1064,7 +1064,7 @@ export default function FundTradesPage() {
                                                         letterSpacing: '0.04em',
                                                     }}
                                                 >
-                                                    1 год
+                                                    Доходность · {bestReturn(f.returns)?.period ?? '1 год'}
                                                 </span>
                                             </div>
                                             <span
@@ -1219,6 +1219,20 @@ function formatReturnPct(v: number | null | undefined): string {
 function returnColor(v: number | null | undefined): string {
     if (v === null || v === undefined || v === 0) return 'var(--text-muted)';
     return v > 0 ? 'var(--funds-flow-positive)' : 'var(--funds-flow-negative)';
+}
+
+// Лучшая доступная доходность для плитки: длиннейший период с данными (1г→6м→3м→1м).
+// Новые фонды (<1 года) не имеют y1 → показываем 6м/3м/1м, чтобы метрика была видна,
+// а не «—». На карточке подписываем периодом, чтобы было понятно, за какой срок.
+function bestReturn(
+    r?: { m1: number | null; m3: number | null; m6: number | null; y1: number | null } | null,
+): { v: number; period: string } | null {
+    if (!r) return null;
+    if (r.y1 != null) return { v: r.y1, period: '1 год' };
+    if (r.m6 != null) return { v: r.m6, period: '6 мес' };
+    if (r.m3 != null) return { v: r.m3, period: '3 мес' };
+    if (r.m1 != null) return { v: r.m1, period: '1 мес' };
+    return null;
 }
 
 // Ключ сортировки карточек «Состав фондов».
