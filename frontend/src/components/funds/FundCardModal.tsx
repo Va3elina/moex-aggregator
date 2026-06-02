@@ -24,12 +24,17 @@ export default function FundCardModal({ selectedFund, fundHoldings, holdingsLoad
                 {/* Header */}
                 <div className="flex items-center justify-between p-5" style={{ borderBottom: '1px solid var(--border-color)' }}>
                     <div className="flex items-center gap-3">
-                        {selectedFund.uk_id && UK_LOGOS[selectedFund.uk_id] && (
-                            <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 font-black text-xl"
-                                style={{ backgroundColor: UK_LOGOS[selectedFund.uk_id].bg, color: UK_LOGOS[selectedFund.uk_id].color }}>
-                                {UK_LOGOS[selectedFund.uk_id].letter}
-                            </div>
-                        )}
+                        {selectedFund.uk_id && UK_LOGOS[selectedFund.uk_id] && (() => {
+                            const uk = UK_LOGOS[selectedFund.uk_id!];
+                            return (
+                                <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 font-black text-xl overflow-hidden"
+                                    style={{ backgroundColor: uk.img ? undefined : uk.bg, color: uk.color }}>
+                                    {uk.img
+                                        ? <img src={uk.img} alt={uk.name} className="w-full h-full object-cover" />
+                                        : uk.letter}
+                                </div>
+                            );
+                        })()}
                         <div>
                             <div className="font-bold text-lg">{selectedFund.ticker}</div>
                             <div className="text-sm text-theme-secondary">{selectedFund.name}</div>

@@ -217,9 +217,11 @@ export default function FundsTable({
                                                                 const uk = fund.uk_id ? UK_LOGOS[fund.uk_id] : null;
                                                                 if (uk) {
                                                                     return (
-                                                                        <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-sm"
-                                                                            style={{ backgroundColor: uk.bg, color: uk.color }}>
-                                                                            {uk.letter}
+                                                                        <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-sm overflow-hidden"
+                                                                            style={{ backgroundColor: uk.img ? undefined : uk.bg, color: uk.color }}>
+                                                                            {uk.img
+                                                                                ? <img src={uk.img} alt={uk.name} className="w-full h-full object-cover" />
+                                                                                : uk.letter}
                                                                         </div>
                                                                     );
                                                                 }
