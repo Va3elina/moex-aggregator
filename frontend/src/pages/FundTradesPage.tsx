@@ -524,7 +524,9 @@ function FundDetailModal({
                                             holdings={donutHoldings}
                                             colors={donutColors}
                                             maxSlices={donutHoldings.length}
-                                            size={220}
+                                            size={380}
+                                            outerRadius={90}
+                                            innerRadius={56}
                                             highlightIndex={modalHover == null ? null : (modalHover < topHolds.length ? modalHover : (restWeight > 0 ? topHolds.length : null))}
                                             onHoverChange={(s) => setModalHover(s == null ? null : (s < topHolds.length ? s : null))}
                                             onSliceClick={(i) => {
@@ -1139,9 +1141,9 @@ export default function FundTradesPage() {
                                                         colors={donutColors}
                                                         size={144}
                                                         outerRadius={92}
-                                                        innerRadius={58}
+                                                        innerRadius={62}
                                                         maxSlices={donutHoldings.length}
-                                                        showCenterText={false}
+                                                        showCenterText
                                                         highlightIndex={tileHover?.fund === f.fund_id ? tileHover.idx : null}
                                                         onHoverChange={(i) => setTileHover(i == null ? null : { fund: f.fund_id, idx: i })}
                                                     />
