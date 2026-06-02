@@ -182,6 +182,40 @@ HTTP 200, e-disclosure не нужен!):
 > «Облигации с переменным купоном»=SBFR, «Консерватив»=SAFE(=SBCS, делистнут с
 > own-site — нужен e-disclosure walker). Атон: «Длинные ОФЗ»=AMGB (Cloudflare, TODO).
 
+### Блогерские фонды акций — источники SCHA (2026-06)
+10 стоковых «блогерских» фондов (subcategory «Блогеры» в «Деньгах»/«Покупках»).
+`ticker=ISIN`, `fund_id`=внутренний id investfunds. SCHA-парсер — `parse_scha_xls`
+(single-sheet Альфа: полные имена эмитентов + ISIN + positions + value_rub), source=`interfax_manual`.
+
+**Альфа-Капитал (uk_id=5) — раздел «Авторские»**, URL `alfacapital.ru/disclosure/pifs/{slug}/monthly` (XLSX):
+
+| slug | фонд | ISIN | cbonds_share_id |
+|---|---|---|---|
+| opif-bitkogan | Биткоган | RU000A10BZ69 | 252449 |
+| opif-blackline | Блэк лайн | RU000A10B8Z2 | 234091 |
+| opif-matryoshka | Матрёшка а-ля Рус | RU000A10B917 | 234089 |
+| opif-magsev | Великолепная семёрка | RU000A10B909 | 234059 |
+| opif-long-invest | Долгосрочные инвестиции | RU000A10EBY8 | 338227 |
+| opif-consstratme | Консервативная стратегия на МосБирже | RU000A10D1E0 | 323647 |
+| opif-balancopp | Сбалансированные Возможности | RU000A10D5D3 | 324943 |
+
+**Новые УК (own-site / e-disclosure):**
+
+| УК | фонд | ISIN | cbonds | источник SCHA |
+|---|---|---|---|---|
+| ГЕРОИ | Флагманский | RU000A108AB5 | 220519 | `ih-capital.ru/disclosure` (JS-рендер) |
+| Рекорд Капитал | Алёнка-Капитал | RU000A104M43 | 208777 | `recordcap.ru/component/fund/fund/1` (прямые download-ссылки) |
+| Финам Менеджмент | Поляков Инвестиции | RU000A10ERX6 | 352059 | e-disclosure card **7696** / own-site `fdu.ru` |
+
+⚠️ **Резолв fund_id для этих фондов:** `ticker=ISIN` (не `OPIF-N`), а `parse_scha_xls`
+НЕ извлекает `isin_pif` → `manual_scha_backfill` их НЕ резолвит ни по тикеру, ни по isin_pif.
+Импортить с **явным fund_id** (распарсить локально + сгенерить SQL, образец `/tmp/bitkogan_holdings.sql`:
+`INSERT INTO fund_holdings_history ... weight=value/Σvalue×100`), либо проставить `funds.isin_pif`.
+Показ в «Покупках» гейтится `WHITELIST_TICKERS` в `fund_trades.py` (добавить ISIN-тикеры).
+
+Статус 2026-06: Биткоган (fund_id 7146) — 7 снапшотов (2025-07→2026-04) импортированы.
+Остальные 9 — по мере поступления файлов от Вадима.
+
 ---
 
 ## 5. Полный реестр фондов (на 2026-05-30)
