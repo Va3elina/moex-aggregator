@@ -12,7 +12,7 @@ const FUND_COLORS = [
 
 // Подкатегории, у которых данные (NAV) ещё наливаются — показываем бейдж
 // «Скоро» на заголовке группы. Убрать имя отсюда, когда NAV появится.
-const COMING_SOON_SUBCATS = new Set<string>(['Авторские']);
+const COMING_SOON_SUBCATS = new Set<string>([]);
 
 interface FundsTableProps {
     data: FundsChartResponse | null;

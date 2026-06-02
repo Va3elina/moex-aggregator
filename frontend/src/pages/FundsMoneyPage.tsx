@@ -64,7 +64,7 @@ const CATEGORIES: { key: FundCategory; name: string; genitive: string; icon: Rea
     { key: 'gold', name: 'Золото', genitive: 'золота', icon: Gem, index: 'GLDRUB_TOM' },
     // Раздел «Юань» — пока «Скоро» (NAV юаневых фондов наливается). Когда
     // данные появятся, убрать `comingSoon` → вкладка станет рабочей.
-    { key: 'yuan', name: 'Юань', genitive: 'юаня', icon: JapaneseYen, index: 'RUSFARCNY', comingSoon: true },
+    { key: 'yuan', name: 'Юань', genitive: 'юаня', icon: JapaneseYen, index: 'RUSFARCNY' },
 ];
 
 // Цвета СЧА графика — theme-aware. Primary (СЧА) = accent (рыжий), secondary

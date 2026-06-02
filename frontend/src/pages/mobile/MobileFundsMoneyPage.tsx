@@ -37,7 +37,7 @@ const CATEGORIES: Array<{ key: FundCategory; label: string; comingSoon?: boolean
   { key: 'bonds', label: 'Облигации' },
   { key: 'gold', label: 'Золото' },
   // Раздел «Юань» — пока «Скоро» (NAV юаневых фондов наливается).
-  { key: 'yuan', label: 'Юань', comingSoon: true },
+  { key: 'yuan', label: 'Юань' },
 ];
 
 const PERIODS: Array<{ key: FundPeriod; label: string }> = [
