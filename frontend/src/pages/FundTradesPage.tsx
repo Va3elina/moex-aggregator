@@ -2272,6 +2272,18 @@ function AssetHistoryContent({ data, assetName, ticker }: { data: AssetHistory; 
     // Данные для SimpleChart: скорректированные позиции (штуки) по снапшотам.
     const chartData = points.map(p => ({ time: p.snapshot_date, value: adjPos(p)! }));
 
+    // Единицу (млн шт / тыс шт / шт) выносим в ЛЕГЕНДУ, а на оси Y — голые числа
+    // в этом масштабе (не дублируем «млн» на каждой метке).
+    const yMaxAbs = chartData.reduce((m, d) => Math.max(m, Math.abs(d.value)), 1);
+    const yScale = yMaxAbs >= 1e6 ? 1e6 : yMaxAbs >= 1e3 ? 1e3 : 1;
+    const yUnit = yScale === 1e6 ? 'млн шт' : yScale === 1e3 ? 'тыс шт' : 'шт';
+    const fmtYScaled = (v: number) => {
+        const x = v / yScale;
+        return yScale === 1
+            ? Math.round(x).toLocaleString('ru-RU')
+            : x.toLocaleString('ru-RU', { maximumFractionDigits: Math.abs(x) >= 100 ? 0 : Math.abs(x) >= 10 ? 1 : 2 });
+    };
+
     // Сортировка таблицы «Все снапшоты» — кликабельные колонки.
     const [snapSort, setSnapSort] = useState<'date' | 'positions' | 'delta' | 'amount' | 'price' | 'weight'>('date');
     const [snapDir, setSnapDir] = useState<'asc' | 'desc'>('desc');
@@ -2350,10 +2362,10 @@ function AssetHistoryContent({ data, assetName, ticker }: { data: AssetHistory; 
                     <SimpleChart
                         data={chartData}
                         height={470}
-                        primaryLabel={`${assetName}, шт`}
+                        primaryLabel={`${assetName}, ${yUnit}`}
                         legendPosition="top"
                         formatValue={(v) => formatShares(Math.round(v))}
-                        formatPrimaryAxis={formatSharesCompact}
+                        formatPrimaryAxis={fmtYScaled}
                         formatTime={formatMonthYearShort}
                         tooltipDateFormat={formatMonthYearShort}
                         clampEdgeLabels
