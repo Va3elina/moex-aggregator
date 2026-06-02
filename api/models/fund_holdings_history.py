@@ -14,8 +14,17 @@ FundHoldingsHistory — snapshots состава фондов по датам.
     есть `positions`.
   - 'pervaya', 'tcap', 'alfa' — будущие парсеры основных УК (monthly).
 
-UNIQUE (fund_id, asset_name, snapshot_date) гарантирует идемпотентность —
-повторный INSERT с тем же snapshot'ом игнорируется (ON CONFLICT DO NOTHING).
+UNIQUE (fund_id, COALESCE(isin,''), asset_name, snapshot_date, source) гарантирует
+идемпотентность по конкретному выпуску бумаги, а не по эмитенту. Раньше был ключ
+(fund_id, asset_name, snapshot_date) — он коллапсировал несколько выпусков одного
+эмитента (5 ОФЗ Минфина, 7 серий МТС, ord+pref Сургутнефтегаза) в одну строку,
+теряя 30-60% позиций. ISIN — primary discriminator для выпуска; asset_name — fallback
+для активов без ISIN (фьючерсы, ETF без идентификатора); source — чтобы данные
+разных feed'ов (cbonds vs interfax_manual) не перетирали друг друга.
+
+NB: индекс expression — нельзя выразить через UniqueConstraint в SQLAlchemy, поэтому
+unique_constraint удалён, а unique index создаётся миграцией. Информационный комментарий
+здесь только для документации.
 """
 from sqlalchemy import (
     BigInteger,
@@ -27,7 +36,6 @@ from sqlalchemy import (
     Integer,
     Numeric,
     String,
-    UniqueConstraint,
 )
 from sqlalchemy.sql import func
 
@@ -37,10 +45,10 @@ from api.database import Base
 class FundHoldingsHistory(Base):
     __tablename__ = "fund_holdings_history"
     __table_args__ = (
-        UniqueConstraint(
-            "fund_id", "asset_name", "snapshot_date",
-            name="uq_fund_holdings_history",
-        ),
+        # UNIQUE INDEX uq_fund_holdings_history создаётся как expression index в БД
+        # на (fund_id, COALESCE(isin,''), asset_name, snapshot_date, source).
+        # SQLAlchemy не поддерживает expression в UniqueConstraint — индекс ведётся
+        # через миграцию (см. doc-string выше).
         # Главный access pattern: «возьми последние N snapshots для фонда».
         Index("idx_fhh_fund_date", "fund_id", "snapshot_date"),
         # Для top-movers за период: «все строки за дату X».
