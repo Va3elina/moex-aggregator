@@ -63,6 +63,7 @@ type Tab = 'funds' | 'movers' | 'snapshots';
 
 const CATEGORY_LABEL: Record<string, string> = {
     stocks: 'Акции',
+    'Авторские': 'Авторские',
     bonds: 'Облигации',
     money_market: 'Денежный рынок',
     gold: 'Золото',
@@ -715,7 +716,8 @@ export default function FundTradesPage() {
     const fundsByCategory = useMemo(() => {
         const groups: Record<string, FundWithHistory[]> = {};
         for (const f of funds) {
-            const key = f.category || 'other';
+            // Авторские (блогерские) фонды — отдельной группой, остальные по категории
+            const key = f.subcategory === 'Авторские' ? 'Авторские' : (f.category || 'other');
             if (!groups[key]) groups[key] = [];
             groups[key].push(f);
         }
