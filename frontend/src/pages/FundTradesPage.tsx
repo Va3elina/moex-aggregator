@@ -934,21 +934,21 @@ export default function FundTradesPage() {
                                                     color: active ? 'var(--text-inverse)' : 'var(--text-primary)',
                                                     border: '2px solid var(--text-primary)',
                                                     borderRadius: 999,
-                                                    fontSize: 'var(--fs-xs)',
+                                                    fontSize: 'var(--fs-sm)',
                                                     fontWeight: active ? 700 : 600,
                                                     boxShadow: active ? '3px 3px 0 var(--text-primary)' : 'none',
                                                 }}
                                             >
                                                 <span
                                                     onClick={() => setFundSort('return')}
-                                                    style={{ padding: '6px 8px 6px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                                                    style={{ padding: '8px 10px 8px 18px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
                                                 >
                                                     Доходность
                                                 </span>
                                                 <span
                                                     onClick={() => { setFundSort('return'); setPeriodMenuOpen((o) => !o); }}
                                                     style={{
-                                                        padding: '6px 12px 6px 8px',
+                                                        padding: '8px 16px 8px 10px',
                                                         cursor: 'pointer',
                                                         display: 'flex',
                                                         alignItems: 'center',
@@ -1521,12 +1521,12 @@ const filterLabelStyle = {
 // Совпадает с UkMultiSelect, чтобы пилюли в ряду были однородны.
 function filterPillStyle(active: boolean): CSSProperties {
     return {
-        padding: '6px 14px',
+        padding: '8px 18px',
         background: active ? 'var(--accent)' : 'var(--bg-secondary)',
         color: active ? 'var(--text-inverse)' : 'var(--text-primary)',
         border: '2px solid var(--text-primary)',
         borderRadius: 999,
-        fontSize: 'var(--fs-xs)',
+        fontSize: 'var(--fs-sm)',
         fontWeight: active ? 700 : 600,
         cursor: 'pointer',
         boxShadow: active ? '3px 3px 0 var(--text-primary)' : 'none',
@@ -1764,15 +1764,12 @@ function SnapshotReviewTab() {
     );
     const pickerSelected = useMemo(() => new Set([ticker]), [ticker]);
 
-    const selectedFund = availableFunds.find(f => f.ticker === ticker);
-
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-            {/* Ticker selector — единый FundPicker (single): иерархия УК → фонд (ITEM 5) */}
+            {/* Ticker selector — единый FundPicker (single): иерархия УК → фонд.
+                Кнопка сама показывает аватар УК + «тикер · имя» — отдельная подпись «Фонд:»
+                и суффикс с именем УК убраны как избыточные. */}
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-                <label style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-tertiary)' }}>
-                    Фонд:
-                </label>
                 <FundPicker
                     funds={pickerFunds}
                     mode="single"
@@ -1783,17 +1780,6 @@ function SnapshotReviewTab() {
                     }}
                     minWidth={280}
                 />
-                {/* ITEM 4 — имя УК из UK_LOGOS (если есть) либо поле uk; без «УК неизвестна»/«· stocks». */}
-                {selectedFund && (() => {
-                    const ukName = (selectedFund.uk_id != null
-                        ? UK_LOGOS[String(selectedFund.uk_id)]?.name
-                        : undefined) || selectedFund.uk;
-                    return ukName ? (
-                        <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-tertiary)' }}>
-                            {ukName}
-                        </span>
-                    ) : null;
-                })()}
             </div>
 
             {/* Snapshots timeline navigation */}

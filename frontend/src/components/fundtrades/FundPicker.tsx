@@ -167,6 +167,16 @@ function FundPickerModal({
         onChange(next);
     };
 
+    // Выбрать/снять ВЕСЬ УК (все его фонды) — чекбокс на заголовке группы (multi).
+    const toggleGroup = (g: UkGroup) => {
+        const tickers = g.funds.map((f) => f.ticker);
+        const allOn = tickers.every((t) => selected.has(t));
+        const next = new Set(selected);
+        if (allOn) tickers.forEach((t) => next.delete(t));
+        else tickers.forEach((t) => next.add(t));
+        onChange(next);
+    };
+
     const pickSingle = (ticker: string) => {
         onChange(new Set([ticker]));
         onClose();
@@ -291,36 +301,82 @@ function FundPickerModal({
                     ) : (
                         groups.map((g) => (
                             <div key={g.key}>
-                                {/* Заголовок-группа УК: аватар + имя */}
-                                <div
-                                    style={{
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        gap: 8,
-                                        padding: '10px 14px 6px',
-                                        position: 'sticky',
-                                        top: 0,
-                                        zIndex: 1,
-                                        background: 'var(--bg-secondary)',
-                                        borderBottom: '1px solid color-mix(in srgb, var(--text-primary) 12%, transparent)',
-                                    }}
-                                >
-                                    <UkAvatar ukId={g.ukId} ukName={g.name} size={22} />
-                                    <span
-                                        style={{
-                                            fontSize: 'var(--fs-xs)',
-                                            fontWeight: 800,
-                                            color: 'var(--text-secondary)',
-                                            textTransform: 'uppercase',
-                                            letterSpacing: '0.02em',
-                                            overflow: 'hidden',
-                                            textOverflow: 'ellipsis',
-                                            whiteSpace: 'nowrap',
-                                        }}
-                                    >
-                                        {g.name}
-                                    </span>
-                                </div>
+                                {/* Заголовок-группа УК. В multi — кликабелен: чекбокс выбирает ВЕСЬ УК. */}
+                                {(() => {
+                                    const gTickers = g.funds.map((f) => f.ticker);
+                                    const gOn = gTickers.filter((t) => selected.has(t)).length;
+                                    const gAll = gOn === gTickers.length && gTickers.length > 0;
+                                    const gHover = hover === `__grp__${g.key}`;
+                                    return (
+                                        <div
+                                            onClick={mode === 'multi' ? () => toggleGroup(g) : undefined}
+                                            onMouseEnter={mode === 'multi' ? () => setHover(`__grp__${g.key}`) : undefined}
+                                            onMouseLeave={mode === 'multi' ? () => setHover(null) : undefined}
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: 8,
+                                                padding: '10px 14px 6px',
+                                                position: 'sticky',
+                                                top: 0,
+                                                zIndex: 1,
+                                                background: mode === 'multi' && gHover
+                                                    ? 'color-mix(in srgb, var(--accent) 8%, var(--bg-secondary))'
+                                                    : 'var(--bg-secondary)',
+                                                borderBottom: '1px solid color-mix(in srgb, var(--text-primary) 12%, transparent)',
+                                                cursor: mode === 'multi' ? 'pointer' : 'default',
+                                                transition: 'background 150ms',
+                                            }}
+                                        >
+                                            {mode === 'multi' && (
+                                                <span
+                                                    style={{
+                                                        width: 18,
+                                                        height: 18,
+                                                        flexShrink: 0,
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
+                                                        borderRadius: 4,
+                                                        background: gAll ? 'var(--accent)' : 'transparent',
+                                                        border: `2px solid ${gAll || gOn > 0 ? 'var(--accent)' : 'var(--text-muted)'}`,
+                                                        transition: 'all 150ms',
+                                                    }}
+                                                >
+                                                    {gAll ? (
+                                                        <svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="var(--text-inverse)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                                            <polyline points="2 7 6 11 12 3" />
+                                                        </svg>
+                                                    ) : gOn > 0 ? (
+                                                        <span style={{ width: 8, height: 2, background: 'var(--accent)', borderRadius: 1 }} />
+                                                    ) : null}
+                                                </span>
+                                            )}
+                                            <UkAvatar ukId={g.ukId} ukName={g.name} size={22} />
+                                            <span
+                                                style={{
+                                                    fontSize: 'var(--fs-xs)',
+                                                    fontWeight: 800,
+                                                    color: 'var(--text-secondary)',
+                                                    textTransform: 'uppercase',
+                                                    letterSpacing: '0.02em',
+                                                    overflow: 'hidden',
+                                                    textOverflow: 'ellipsis',
+                                                    whiteSpace: 'nowrap',
+                                                    flex: 1,
+                                                    minWidth: 0,
+                                                }}
+                                            >
+                                                {g.name}
+                                            </span>
+                                            {mode === 'multi' && gOn > 0 && (
+                                                <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', flexShrink: 0, fontWeight: 700 }}>
+                                                    {gOn}/{gTickers.length}
+                                                </span>
+                                            )}
+                                        </div>
+                                    );
+                                })()}
 
                                 {/* Фонды-строки: чекбокс(multi)/радио(single) + тикер + имя */}
                                 {g.funds.map((f) => {
