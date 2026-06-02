@@ -254,8 +254,8 @@ function FundDetailModal({
                     border: '1.5px solid var(--text-primary)',
                     borderRadius: 14,
                     width: '100%',
-                    maxWidth: 900,
-                    maxHeight: '85vh',
+                    maxWidth: 1240,
+                    maxHeight: '92vh',
                     overflow: 'auto',
                     boxShadow: '0 10px 40px rgba(0,0,0,0.3)',
                 }}
@@ -380,7 +380,7 @@ function FundDetailModal({
                                         {chartData.length > 1 ? (
                                             <SimpleChart
                                                 data={chartData}
-                                                height={300}
+                                                height={460}
                                                 primaryLabel="СЧА на пай, ₽"
                                                 legendPosition="top"
                                                 formatValue={(v) => `${v.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ₽`}
@@ -1033,49 +1033,33 @@ export default function FundTradesPage() {
                                             </div>
                                         </div>
 
-                                        {/* Footer: доходность 1г + meta */}
+                                        {/* Footer: Доходность + СЧА — в два ряда (label слева, значение справа) */}
                                         <div
                                             style={{
-                                                display: 'flex',
-                                                alignItems: 'flex-end',
-                                                justifyContent: 'space-between',
                                                 marginTop: 12,
                                                 paddingTop: 10,
                                                 borderTop: '1px solid var(--border-color)',
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                gap: 6,
                                             }}
                                         >
-                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                                                <span
-                                                    style={{
-                                                        fontSize: 'var(--fs-lg)',
-                                                        fontWeight: 800,
-                                                        fontVariantNumeric: 'tabular-nums',
-                                                        color: returnColor(bestReturn(f.returns)?.v),
-                                                        lineHeight: 1.1,
-                                                    }}
-                                                >
-                                                    {formatReturnPct(bestReturn(f.returns)?.v)}
-                                                </span>
-                                                <span
-                                                    style={{
-                                                        fontSize: 'var(--fs-2xs)',
-                                                        color: 'var(--text-muted)',
-                                                        textTransform: 'uppercase',
-                                                        letterSpacing: '0.04em',
-                                                    }}
-                                                >
+                                            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+                                                <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                                                     Доходность · {bestReturn(f.returns)?.period ?? '1 год'}
                                                 </span>
+                                                <span style={{ fontSize: 'var(--fs-md)', fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: returnColor(bestReturn(f.returns)?.v), lineHeight: 1.1 }}>
+                                                    {formatReturnPct(bestReturn(f.returns)?.v)}
+                                                </span>
                                             </div>
-                                            <span
-                                                style={{
-                                                    fontSize: 'var(--fs-2xs)',
-                                                    color: 'var(--text-muted)',
-                                                    fontVariantNumeric: 'tabular-nums',
-                                                }}
-                                            >
-                                                {f.nav_rub != null ? formatRubShort(f.nav_rub) : (f.last_snapshot_date || '—')}
-                                            </span>
+                                            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+                                                <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                                    СЧА
+                                                </span>
+                                                <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: 'var(--text-primary)' }}>
+                                                    {f.nav_rub != null ? formatRubShort(f.nav_rub) : '—'}
+                                                </span>
+                                            </div>
                                         </div>
                                     </button>
                                     );
