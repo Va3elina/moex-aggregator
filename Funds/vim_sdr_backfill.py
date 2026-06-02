@@ -178,7 +178,7 @@ def save_assets(engine, fund_id: int, snapshot_date, assets: list[dict], resolve
                 VALUES
                     (:fid, :name, :isin, :weight, :positions, :amount_rub,
                      :snap_date, :source, NOW())
-                ON CONFLICT (fund_id, asset_name, snapshot_date) DO NOTHING
+                ON CONFLICT (fund_id, (COALESCE(isin,'')), asset_name, snapshot_date, source) DO NOTHING
                 RETURNING id
             """), {
                 "fid": fund_id,

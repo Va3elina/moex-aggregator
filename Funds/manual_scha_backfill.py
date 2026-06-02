@@ -44,6 +44,7 @@ from sqlalchemy import text
 
 from api.database import get_engine
 from Funds.parsers.scha_parser import parse_scha
+from Funds.parsers.scha_xls_parser import parse_scha_xls
 
 SOURCE = "interfax_manual"
 SLEEP_BETWEEN_MOEX = 0.15  # сек между MOEX ISS запросами для резолва имён
@@ -115,7 +116,7 @@ _DATE_PATTERNS = [
 
 # Regex для извлечения ticker из имени файла:
 # OPIF-54_..., OPIF-9165_..., EQMX-... и т.д.
-_TICKER_RE = re.compile(r"\b(OPIF-\d+|[A-Z]{4,6})\b")
+_TICKER_RE = re.compile(r"\b(OPIF-\d+|[A-Z]{4,6})(?=[^A-Z0-9]|$)")
 
 
 def parse_filename(filename: str) -> tuple[str | None, str | None]:
@@ -192,7 +193,7 @@ def save_assets(engine, fund_id: int, snap_date: _date, assets: list[dict], reso
                         (fund_id, asset_name, isin, weight, positions, amount_rub,
                          snapshot_date, source, created_at)
                     VALUES (:fid, :name, :isin, :weight, :positions, :amount, :d, :src, NOW())
-                    ON CONFLICT (fund_id, asset_name, snapshot_date) DO UPDATE SET
+                    ON CONFLICT (fund_id, (COALESCE(isin,'')), asset_name, snapshot_date, source) DO UPDATE SET
                         isin = COALESCE(EXCLUDED.isin, fund_holdings_history.isin),
                         positions = COALESCE(EXCLUDED.positions, fund_holdings_history.positions),
                         amount_rub = COALESCE(EXCLUDED.amount_rub, fund_holdings_history.amount_rub),
@@ -216,7 +217,12 @@ def save_assets(engine, fund_id: int, snap_date: _date, assets: list[dict], reso
 
 
 def process_pdf(engine, pdf_path: Path) -> dict:
-    """Обрабатывает один PDF. Возвращает summary dict."""
+    """Обрабатывает один SCHA-файл (PDF или XLS/XLSX). Возвращает summary dict.
+
+    Определяет формат по расширению:
+      .pdf       → парсер PDF (для ВИМ Инвестиции и УК публикующих PDF)
+      .xls/.xlsx → парсер XLS  (для Альфа-Капитал, Сбер и др.)
+    """
     summary = {
         "file": pdf_path.name,
         "fund_id": None,
@@ -228,10 +234,51 @@ def process_pdf(engine, pdf_path: Path) -> dict:
         "error": None,
     }
 
+    suffix = pdf_path.suffix.lower()
     try:
-        with open(pdf_path, "rb") as f:
-            pdf_bytes = f.read()
-        result = parse_scha(pdf_bytes)
+        if suffix in (".xls", ".xlsx"):
+            result = parse_scha_xls(str(pdf_path))
+        elif suffix == ".zip":
+            # ZIP с e-disclosure содержит SCHA-файл с cp866-кодированным именем.
+            # Внутри может быть XLS/XLSX (Альфа) ИЛИ PDF (Т-Капитал, Сбер и др.).
+            # Распакуем inner-файл и роутим по ЕГО расширению.
+            import zipfile, tempfile
+            with zipfile.ZipFile(pdf_path) as zf:
+                infos = zf.infolist()
+                if not infos:
+                    summary["error"] = "empty zip"
+                    return summary
+                info = infos[0]
+                try:
+                    inner_name = info.filename.encode("cp437").decode("cp866")
+                except (UnicodeDecodeError, UnicodeEncodeError):
+                    inner_name = info.filename
+                low = inner_name.lower()
+                if low.endswith(".xlsx"):
+                    inner_ext = ".xlsx"
+                elif low.endswith(".xls"):
+                    inner_ext = ".xls"
+                else:
+                    inner_ext = ".pdf"
+                inner_bytes = zf.read(info)
+            if inner_ext in (".xls", ".xlsx"):
+                with tempfile.NamedTemporaryFile(delete=False, suffix=inner_ext) as tf:
+                    tf.write(inner_bytes)
+                    tmp_path = tf.name
+                try:
+                    result = parse_scha_xls(tmp_path)
+                finally:
+                    try:
+                        Path(tmp_path).unlink()
+                    except OSError:
+                        pass
+            else:
+                # PDF внутри zip
+                result = parse_scha(inner_bytes)
+        else:
+            with open(pdf_path, "rb") as f:
+                pdf_bytes = f.read()
+            result = parse_scha(pdf_bytes)
     except Exception as e:
         summary["error"] = f"parse failed: {e}"
         return summary
@@ -282,12 +329,13 @@ def main(directory: str):
         log.error(f"Папка {directory} не найдена")
         sys.exit(1)
 
-    pdfs = sorted([p for p in path.iterdir() if p.suffix.lower() == ".pdf"])
+    SCHA_EXTS = (".pdf", ".xls", ".xlsx", ".zip")
+    pdfs = sorted([p for p in path.iterdir() if p.suffix.lower() in SCHA_EXTS])
     if not pdfs:
-        log.warning(f"В папке {directory} нет PDF файлов")
+        log.warning(f"В папке {directory} нет SCHA-файлов (PDF/XLS/XLSX)")
         sys.exit(0)
 
-    log.info(f"Найдено {len(pdfs)} PDF файлов в {directory}")
+    log.info(f"Найдено {len(pdfs)} SCHA-файлов в {directory}")
     engine = get_engine()
 
     stats = {"ok": 0, "skip": 0, "err": 0, "rows": 0}

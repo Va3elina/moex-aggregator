@@ -251,7 +251,7 @@ def reconstruct():
                         (fund_id, asset_name, isin, weight, positions, amount_rub,
                          snapshot_date, source, created_at)
                     VALUES (:fid, :name, :isin, :weight, :positions, :amount, :d, 'cbonds_calc', NOW())
-                    ON CONFLICT (fund_id, asset_name, snapshot_date) DO UPDATE SET
+                    ON CONFLICT (fund_id, (COALESCE(isin,'')), asset_name, snapshot_date, source) DO UPDATE SET
                         isin = EXCLUDED.isin,
                         positions = EXCLUDED.positions,
                         amount_rub = EXCLUDED.amount_rub,

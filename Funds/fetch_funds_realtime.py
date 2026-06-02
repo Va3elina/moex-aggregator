@@ -380,7 +380,7 @@ def save_fund_holdings(
                 VALUES
                     (:fid, :name, :weight, :positions, :amount_rub,
                      {date_clause}, :source, NOW())
-                ON CONFLICT (fund_id, asset_name, snapshot_date) DO NOTHING
+                ON CONFLICT (fund_id, (COALESCE(isin,'')), asset_name, snapshot_date, source) DO NOTHING
             """), {
                 **params_base,
                 "name": h["name"],
