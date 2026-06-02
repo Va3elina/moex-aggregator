@@ -231,6 +231,28 @@ function FundDetailModal({
     // Hover-связь пончик↔таблица состава (индекс позиции в holds).
     const [modalHover, setModalHover] = useState<number | null>(null);
 
+    // Pay-график: точки (СЧА на пай) + дефолтное окно «последний год».
+    // Мемоизируем по data, чтобы hover доната (setModalHover) НЕ пересоздавал
+    // массив → SimpleChart не сбрасывал бы зум навигатора на каждый ре-рендер.
+    const payChartData = useMemo(
+        () => (data?.performance?.timeline ?? [])
+            .filter((p) => p.pay != null)
+            .map((p) => ({ time: p.date, value: p.pay })),
+        [data],
+    );
+    // Дефолтное окно навигатора: первый индекс за последние 12 месяцев. Лечит
+    // диссонанс «линия СЧА вверх за всю историю / доходность за 3 мес вниз» —
+    // по умолчанию виден последний год, остальное доступно перетаскиванием.
+    const payInitialStartIndex = useMemo(() => {
+        if (payChartData.length < 2) return 0;
+        const lastT = payChartData[payChartData.length - 1].time;
+        const cutoff = new Date(lastT);
+        cutoff.setFullYear(cutoff.getFullYear() - 1);
+        const cutoffMs = cutoff.getTime();
+        const idx = payChartData.findIndex((d) => new Date(d.time).getTime() >= cutoffMs);
+        return idx > 0 ? idx : 0;
+    }, [payChartData]);
+
     useEffect(() => {
         let cancelled = false;
         setLoading(true);
@@ -372,9 +394,7 @@ function FundDetailModal({
                             {(() => {
                                 const perf = data.performance;
                                 const ret = perf?.returns ?? listFund?.returns ?? null;
-                                const chartData = (perf?.timeline ?? [])
-                                    .filter((p) => p.pay != null)
-                                    .map((p) => ({ time: p.date, value: p.pay }));
+                                const chartData = payChartData; // мемоизирован выше (стабильная ссылка)
                                 return (
                                     <div style={{ marginBottom: 24 }}>
                                         <h3
@@ -390,6 +410,7 @@ function FundDetailModal({
                                         {chartData.length > 1 ? (
                                             <SimpleChart
                                                 data={chartData}
+                                                initialStartIndex={payInitialStartIndex}
                                                 height={460}
                                                 primaryLabel="СЧА на пай, ₽"
                                                 legendPosition="top"

@@ -66,6 +66,12 @@ interface SimpleChartProps {
   legendPosition?: 'top' | 'bottom';
   showDownloadButton?: boolean;
   showNavigator?: boolean;
+  /** Индекс первого видимого элемента при первом рендере и сбросе (смена data).
+   *  Для дефолтного окна (напр. «последний год») при showNavigator: навигатор
+   *  стартует с этого индекса, пользователь может растянуть назад до полной истории.
+   *  undefined (по умолчанию) → 0 → вся история, как раньше (нулевой эффект на
+   *  существующие вызовы). */
+  initialStartIndex?: number;
   chartPadding?: { left?: number; right?: number };
   annotations?: ChartAnnotation[];
   hideTime?: boolean;
@@ -82,6 +88,10 @@ interface SimpleChartProps {
 const interpolatePoints = morphPts;
 const pointsToPath = ptsToPath;
 const pointsToAreaPath = ptsToArea;
+
+// Клампит стартовый индекс навигатора в [0, len-1]. undefined → 0 (вся история).
+const clampNavStart = (n: number | undefined, len: number) =>
+  n != null && len > 0 ? Math.min(Math.max(0, Math.floor(n)), len - 1) : 0;
 
 export default function SimpleChart({
   data,
@@ -119,6 +129,7 @@ export default function SimpleChart({
   legendPosition = 'bottom',
   showDownloadButton = true,
   showNavigator = false,
+  initialStartIndex,
   chartPadding,
   annotations,
   hideTime = false,
@@ -168,19 +179,23 @@ export default function SimpleChart({
     tooltipLineHeight: Math.round(fluid.fsXs(vw) * (vw < 768 ? 1.5 : 1.7)),
   }), [vw]);
 
-  // Navigator: диапазон видимых данных (индексы в массиве data)
-  const [navRange, setNavRange] = useState<[number, number]>([0, Math.max(0, data.length - 1)]);
+  // Navigator: диапазон видимых данных (индексы в массиве data). Старт с
+  // initialStartIndex (если задан) — дефолтное окно вроде «последнего года».
+  const [navRange, setNavRange] = useState<[number, number]>(
+    [clampNavStart(initialStartIndex, data.length), Math.max(0, data.length - 1)]
+  );
 
   // Отслеживаем ссылку на текущий data — если сменилась, navRange устарел
   const prevDataRef = useRef(data);
 
-  // Сброс навигатора при смене данных (новый период/интервал)
+  // Сброс навигатора при смене данных (новый период/интервал) — снова к
+  // дефолтному окну (initialStartIndex), а не жёстко к 0.
   useEffect(() => {
     if (data !== prevDataRef.current) {
       prevDataRef.current = data;
-      setNavRange([0, Math.max(0, data.length - 1)]);
+      setNavRange([clampNavStart(initialStartIndex, data.length), Math.max(0, data.length - 1)]);
     }
-  }, [data]);
+  }, [data, initialStartIndex]);
 
   // Срез данных по выбранному диапазону навигатора
   const displayData = useMemo(() => {
