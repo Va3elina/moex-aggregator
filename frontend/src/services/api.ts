@@ -1309,12 +1309,16 @@ export async function getFundTradesDetail(
 
 export async function getFundTradesMovers(
     period: FundTradesPeriod = '1m',
-    opts: { asOf?: string; manager?: string; sort?: 'weight' | 'amount'; limit?: number } = {},
+    // `managers` — comma-separated список uk_id (мультиселект УК), напр. "34,5,3597".
+    // `manager` оставлен для обратной совместимости (single uk_id / имя). Пусто = все УК.
+    opts: { asOf?: string; manager?: string; managers?: string; sort?: 'weight' | 'amount'; limit?: number } = {},
 ): Promise<FundTradesMovers> {
-    const { asOf, manager, sort = 'weight', limit = 20 } = opts;
+    const { asOf, manager, managers, sort = 'weight', limit = 20 } = opts;
     const params = new URLSearchParams({ period, sort, limit: String(limit) });
     if (asOf) params.set('as_of', asOf);
-    if (manager) params.set('manager', manager);
+    // Бэкенд читает один query-параметр `manager` (comma-separated uk_id).
+    const managerParam = managers ?? manager;
+    if (managerParam) params.set('manager', managerParam);
     const resp = await apiFetch(`${API_BASE}/api/fund-trades/movers?${params}`);
     if (resp.status === 403) throw new Error('Доступно на тарифе Pro');
     if (!resp.ok) throw new Error('Не удалось загрузить топ движений');

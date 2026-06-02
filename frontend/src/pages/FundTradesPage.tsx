@@ -17,7 +17,7 @@
  *     new=accent, sold_out=muted
  *   - Шаг данных — 1 снапшот в месяц; сравнение всегда «месяц vs предыдущий».
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Link } from 'react-router-dom';
 import {
     Lock,
@@ -55,6 +55,7 @@ import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import { UK_LOGOS, DONUT_COLORS, assetColor } from '../config/fundConfig';
 import Donut from '../components/funds/Donut';
 import CompanyFlowsTab from '../components/fundtrades/CompanyFlowsTab';
+import UkMultiSelect, { type UkOption } from '../components/fundtrades/UkMultiSelect';
 import { useViewportWidth } from '../hooks/useViewportWidth';
 
 type Tab = 'funds' | 'movers' | 'snapshots' | 'company';
@@ -684,8 +685,12 @@ export default function FundTradesPage() {
     const [error, setError] = useState<string | null>(null);
     // Заход 2: управление табом «Покупки фондов».
     const [asOf, setAsOf] = useState<string | undefined>(undefined);    // выбранный месяц (undefined = последний)
-    const [manager, setManager] = useState<string>('');                  // фильтр по УК ('' = все)
+    // ITEM 1 — мультиселект УК (пусто = все). Ключи = uk_id'ы (бэкенд /movers
+    // принимает comma-separated uk_id). Раньше был single `manager: string`.
+    const [managers, setManagers] = useState<Set<string>>(new Set());
     const [metric, setMetric] = useState<'weight' | 'amount'>('weight'); // % веса | объём ₽
+    // ITEM 2 — предвыбранная бумага для перехода movers → «Потоки по компании».
+    const [companyPreset, setCompanyPreset] = useState<{ asset_name: string; isin: string | null } | null>(null);
 
     // Load funds list (один раз).
     useEffect(() => {
@@ -698,28 +703,36 @@ export default function FundTradesPage() {
     }, [common.fund_trades_access]);
 
     // Load movers when tab=movers (или меняются параметры: месяц/УК/метрика).
+    // managers (Set uk_id) → comma-separated строка для бэкенда; пусто = все УК.
+    const managersParam = useMemo(
+        () => Array.from(managers).join(','),
+        [managers],
+    );
     useEffect(() => {
         if (!common.fund_trades_access) return;
         if (tab !== 'movers') return;
         setLoading(true);
-        getFundTradesMovers(period, { asOf, manager: manager || undefined, sort: metric })
+        getFundTradesMovers(period, { asOf, managers: managersParam || undefined, sort: metric })
             .then(setMovers)
             .catch((e: Error) => setError(e.message))
             .finally(() => setLoading(false));
-    }, [tab, period, asOf, manager, metric, common.fund_trades_access]);
+    }, [tab, period, asOf, managersParam, metric, common.fund_trades_access]);
 
-    // Уникальные УК из загруженных фондов (для мультиселекта вкладки «Состав»).
-    // Ключ — uk_id (стабильный), label — uk-имя. Сортируем по имени.
-    const ukOptions = useMemo(() => {
-        const map = new Map<string, string>(); // key → label
+    // Уникальные УК из загруженных фондов — общий список для UkMultiSelect
+    // (вкладки «Состав» И «Покупки фондов»). Ключ — uk_id (стабильнее имени),
+    // name — uk-имя из UK_LOGOS/данных, uk_id — для аватара. Сортируем по имени.
+    const ukOptions = useMemo<UkOption[]>(() => {
+        const map = new Map<string, UkOption>();
         for (const f of funds) {
             const key = ukKey(f);
-            if (!key) continue;
-            if (!map.has(key)) map.set(key, UK_LOGOS[key]?.name || f.uk || key);
+            if (!key || map.has(key)) continue;
+            map.set(key, {
+                key,
+                name: UK_LOGOS[key]?.name || f.uk || key,
+                uk_id: f.uk_id ?? key,
+            });
         }
-        return Array.from(map.entries())
-            .map(([key, label]) => ({ key, label }))
-            .sort((a, b) => a.label.localeCompare(b.label));
+        return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
     }, [funds]);
 
     const fundsByCategory = useMemo(() => {
@@ -750,18 +763,18 @@ export default function FundTradesPage() {
         return groups;
     }, [funds, fundSort, returnPeriod, selectedUks]);
 
-    // УК для фильтра «Покупок фондов» — только stock-фонды.
-    const managers = useMemo(() => {
-        const set = new Set<string>();
-        for (const f of funds) {
-            if (f.category === 'stocks' && f.uk) set.add(f.uk);
-        }
-        return Array.from(set).sort();
-    }, [funds]);
-
     // (A) Колонки сетки плиток по ширине вьюпорта: ≥1024 → 3, ≥640 → 2, иначе 1.
     const vw = useViewportWidth();
     const cols = vw >= 1024 ? 3 : vw >= 640 ? 2 : 1;
+
+    // ITEM 2 — клик по активу в movers → «Потоки по компании» с предвыбранной бумагой.
+    // mover.akey = ISIN (если есть в снапшоте), иначе имя. Если akey похож на ISIN —
+    // передаём как isin, иначе фолбэк на asset_name (CompanyFlowsTab матчит по любому).
+    const openCompanyFlows = (m: FundTradesMovers['top_accumulated'][number]) => {
+        const isin = isIsin(m.akey) ? m.akey : null;
+        setCompanyPreset({ asset_name: m.asset_name, isin });
+        setTab('company');
+    };
 
     if (!common.fund_trades_access) {
         return <LockedView />;
@@ -976,17 +989,7 @@ export default function FundTradesPage() {
                                                 key={s.id}
                                                 onClick={() => setFundSort(s.id)}
                                                 className="editorial-press"
-                                                style={{
-                                                    padding: '6px 14px',
-                                                    background: active ? 'var(--accent)' : 'var(--bg-secondary)',
-                                                    color: active ? 'var(--text-inverse)' : 'var(--text-primary)',
-                                                    border: '2px solid var(--text-primary)',
-                                                    borderRadius: 999,
-                                                    fontSize: 'var(--fs-xs)',
-                                                    fontWeight: active ? 700 : 600,
-                                                    cursor: 'pointer',
-                                                    boxShadow: active ? '3px 3px 0 var(--text-primary)' : 'none',
-                                                }}
+                                                style={filterPillStyle(active)}
                                             >
                                                 {s.label}
                                             </button>
@@ -995,63 +998,15 @@ export default function FundTradesPage() {
                                 </div>
                             </div>
 
-                            {/* (E3) УК — мультиселект чипами (AND). Пусто = все. */}
+                            {/* (E3) УК — мультиселект (UkMultiSelect): «Все УК» / «N из M УК». */}
                             {ukOptions.length > 1 && (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
-                                    <span style={filterLabelStyle}>
-                                        Управляющая компания
-                                        {selectedUks.size > 0 && (
-                                            <button
-                                                onClick={() => setSelectedUks(new Set())}
-                                                style={{
-                                                    marginLeft: 8,
-                                                    background: 'transparent',
-                                                    border: 'none',
-                                                    color: 'var(--accent)',
-                                                    cursor: 'pointer',
-                                                    fontSize: 'var(--fs-2xs)',
-                                                    fontWeight: 700,
-                                                    textTransform: 'none',
-                                                    letterSpacing: 0,
-                                                    padding: 0,
-                                                }}
-                                            >
-                                                сбросить
-                                            </button>
-                                        )}
-                                    </span>
-                                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                                        {ukOptions.map((u) => {
-                                            const active = selectedUks.has(u.key);
-                                            return (
-                                                <button
-                                                    key={u.key}
-                                                    onClick={() => {
-                                                        setSelectedUks((prev) => {
-                                                            const next = new Set(prev);
-                                                            if (next.has(u.key)) next.delete(u.key);
-                                                            else next.add(u.key);
-                                                            return next;
-                                                        });
-                                                    }}
-                                                    className="editorial-press"
-                                                    style={{
-                                                        padding: '6px 12px',
-                                                        background: active ? 'var(--accent)' : 'var(--bg-secondary)',
-                                                        color: active ? 'var(--text-inverse)' : 'var(--text-primary)',
-                                                        border: '2px solid var(--text-primary)',
-                                                        borderRadius: 999,
-                                                        fontSize: 'var(--fs-xs)',
-                                                        fontWeight: active ? 700 : 600,
-                                                        cursor: 'pointer',
-                                                        boxShadow: active ? '3px 3px 0 var(--text-primary)' : 'none',
-                                                    }}
-                                                >
-                                                    {u.label}
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
+                                    <span style={filterLabelStyle}>Управляющая компания</span>
+                                    <UkMultiSelect
+                                        options={ukOptions}
+                                        selected={selectedUks}
+                                        onChange={setSelectedUks}
+                                    />
                                 </div>
                             )}
                         </div>
@@ -1335,7 +1290,7 @@ export default function FundTradesPage() {
 
             {tab === 'movers' && (
                 <>
-                    {/* Контролы: месяц · УК · метрика (% веса / объём ₽) */}
+                    {/* Контролы: месяц · УК (мультиселект) · метрика (% веса / Объём, руб) */}
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 16 }}>
                         {movers && movers.available_months.length > 0 && (
                             <Dropdown<string>
@@ -1345,33 +1300,23 @@ export default function FundTradesPage() {
                                 minWidth={150}
                             />
                         )}
-                        {managers.length > 0 && (
-                            <Dropdown<string>
-                                options={[{ key: '', label: 'Все УК' }, ...managers.map((uk) => ({ key: uk, label: uk }))]}
-                                value={manager}
-                                onChange={setManager}
+                        {ukOptions.length > 1 && (
+                            <UkMultiSelect
+                                options={ukOptions}
+                                selected={managers}
+                                onChange={setManagers}
                                 minWidth={140}
                             />
                         )}
                         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-                            {([['weight', '% веса'], ['amount', 'Объём ₽']] as const).map(([key, lbl]) => {
+                            {([['weight', '% веса'], ['amount', 'Объём, руб']] as const).map(([key, lbl]) => {
                                 const on = metric === key;
                                 return (
                                     <button
                                         key={key}
                                         onClick={() => setMetric(key)}
                                         className="editorial-press"
-                                        style={{
-                                            padding: '6px 14px',
-                                            background: on ? 'var(--accent)' : 'var(--bg-secondary)',
-                                            color: on ? 'var(--text-inverse)' : 'var(--text-primary)',
-                                            border: '2px solid var(--text-primary)',
-                                            borderRadius: 999,
-                                            fontSize: 'var(--fs-xs)',
-                                            fontWeight: on ? 700 : 600,
-                                            cursor: 'pointer',
-                                            boxShadow: on ? '3px 3px 0 var(--text-primary)' : 'none',
-                                        }}
+                                        style={filterPillStyle(on)}
                                     >
                                         {lbl}
                                     </button>
@@ -1397,6 +1342,7 @@ export default function FundTradesPage() {
                                 items={movers.top_accumulated}
                                 empty="Накоплений нет"
                                 metric={metric}
+                                onAssetClick={openCompanyFlows}
                             />
                             <MoversColumn
                                 title="Топ-распродажа"
@@ -1406,6 +1352,7 @@ export default function FundTradesPage() {
                                 empty="Распродаж нет"
                                 negative
                                 metric={metric}
+                                onAssetClick={openCompanyFlows}
                             />
                         </div>
                     )}
@@ -1417,7 +1364,12 @@ export default function FundTradesPage() {
                 </>
             )}
 
-            {tab === 'company' && <CompanyFlowsTab />}
+            {tab === 'company' && (
+                <CompanyFlowsTab
+                    presetAsset={companyPreset}
+                    onPresetConsumed={() => setCompanyPreset(null)}
+                />
+            )}
 
             {tab === 'snapshots' && <SnapshotReviewTab />}
 
@@ -1520,6 +1472,19 @@ function ukKey(f: { uk_id?: number | string | null; uk?: string | null }): strin
     return f.uk || '';
 }
 
+// ISIN-детект для movers.akey (ISIN либо имя бумаги): 12 символов, 2 буквы + 10 алфанумерик.
+function isIsin(s: string | null | undefined): s is string {
+    return !!s && /^[A-Z]{2}[A-Z0-9]{10}$/.test(s);
+}
+
+// ITEM 7 — аватар УК для опции Dropdown (логотип UK_LOGOS по uk_id, иначе буква имени).
+function ukAvatarOf(f: { uk_id?: number | string | null; uk?: string | null }):
+    { img?: string; bg?: string; color?: string; letter?: string } {
+    const logo = f.uk_id != null ? UK_LOGOS[String(f.uk_id)] : undefined;
+    if (logo) return { img: logo.img, bg: logo.bg, color: logo.color, letter: logo.letter };
+    return { letter: (f.uk || '?').trim().charAt(0).toUpperCase() };
+}
+
 // Подпись над контролом фильтра (мелкая, muted, uppercase) — общий стиль.
 const filterLabelStyle = {
     fontSize: 'var(--fs-2xs)',
@@ -1528,6 +1493,25 @@ const filterLabelStyle = {
     letterSpacing: '0.06em',
     color: 'var(--text-muted)',
 } as const;
+
+// ITEM 3 — единый стиль кнопки-фильтра на ВСЕХ вкладках (sort/УК/период/метрика).
+// Один размер (padding 6px 14px), border 2px var(--text-primary), radius 999,
+// active = accent bg + text-inverse + 3px hard-shadow; inactive = bg-secondary.
+// Совпадает с UkMultiSelect, чтобы пилюли в ряду были однородны.
+function filterPillStyle(active: boolean): CSSProperties {
+    return {
+        padding: '6px 14px',
+        background: active ? 'var(--accent)' : 'var(--bg-secondary)',
+        color: active ? 'var(--text-inverse)' : 'var(--text-primary)',
+        border: '2px solid var(--text-primary)',
+        borderRadius: 999,
+        fontSize: 'var(--fs-xs)',
+        fontWeight: active ? 700 : 600,
+        cursor: 'pointer',
+        boxShadow: active ? '3px 3px 0 var(--text-primary)' : 'none',
+        whiteSpace: 'nowrap',
+    };
+}
 
 // Детект сплита акций в истории позиций + back-adjustment (как экспирация/ролловер
 // фьючерсов на OI). Сплит: количество ×R, цена ÷R, СТОИМОСТЬ непрерывна (amount ≈ const)
@@ -1691,6 +1675,8 @@ function EditorialBar({
 function SnapshotReviewTab() {
     const [availableFunds, setAvailableFunds] = useState<FundWithHistory[]>([]);
     const [ticker, setTicker] = useState<string>('EQMX');
+    // ITEM 7 — фильтр УК (мультиселект): сужает список фондов в селекторе. Пусто = все.
+    const [selectedUks, setSelectedUks] = useState<Set<string>>(new Set());
     const [snapshotsList, setSnapshotsList] = useState<FundSnapshotsList | null>(null);
     const [selectedDate, setSelectedDate] = useState<string | null>(null);
     const [review, setReview] = useState<FundSnapshotReview | null>(null);
@@ -1751,29 +1737,67 @@ function SnapshotReviewTab() {
         return Math.max(...allBars, 1);
     }, [review]);
 
-    // Группировка фондов по УК для dropdown
+    // ITEM 7 — список УК для мультиселекта (ключ = uk_id, name + uk_id для аватара).
+    const ukOptions = useMemo<UkOption[]>(() => {
+        const map = new Map<string, UkOption>();
+        for (const f of availableFunds) {
+            const key = ukKey(f);
+            if (!key || map.has(key)) continue;
+            map.set(key, { key, name: UK_LOGOS[key]?.name || f.uk || key, uk_id: f.uk_id ?? key });
+        }
+        return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+    }, [availableFunds]);
+
+    // Фонды после фильтра по УК (пусто = все) — питают селектор и группировку.
+    const filteredFunds = useMemo(
+        () => (selectedUks.size > 0 ? availableFunds.filter(f => selectedUks.has(ukKey(f))) : availableFunds),
+        [availableFunds, selectedUks],
+    );
+
+    // Группировка фондов по УК для dropdown (по отфильтрованному списку).
     const fundsByUk = useMemo(() => {
         const groups: Record<string, FundWithHistory[]> = {};
-        for (const f of availableFunds) {
+        for (const f of filteredFunds) {
             const uk = f.uk || 'Прочие';
             if (!groups[uk]) groups[uk] = [];
             groups[uk].push(f);
         }
         return groups;
-    }, [availableFunds]);
+    }, [filteredFunds]);
 
     const selectedFund = availableFunds.find(f => f.ticker === ticker);
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-            {/* Ticker selector — dropdown с группировкой по УК */}
+            {/* Ticker selector — фильтр УК (мультиселект) + dropdown фонда с лого УК */}
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
                 <label style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-tertiary)' }}>
                     Фонд:
                 </label>
+                {ukOptions.length > 1 && (
+                    <UkMultiSelect
+                        options={ukOptions}
+                        selected={selectedUks}
+                        onChange={(next) => {
+                            setSelectedUks(next);
+                            // Если текущий фонд выпал из фильтра — переключиться на первый доступный.
+                            if (next.size > 0) {
+                                const cur = availableFunds.find(f => f.ticker === ticker);
+                                if (cur && !next.has(ukKey(cur))) {
+                                    const first = availableFunds.find(f => next.has(ukKey(f)));
+                                    if (first) setTicker(first.ticker);
+                                }
+                            }
+                        }}
+                    />
+                )}
                 <Dropdown<string>
                     options={Object.entries(fundsByUk).flatMap(([, funds]) =>
-                        funds.map((f) => ({ key: f.ticker, label: `${f.ticker} — ${f.name}` }))
+                        funds.map((f) => ({
+                            key: f.ticker,
+                            label: `${f.ticker} — ${f.name}`,
+                            avatar: ukAvatarOf(f),
+                        }))
                     )}
                     value={ticker}
                     onChange={setTicker}
@@ -1973,24 +1997,14 @@ function SnapshotReviewBody({
             {/* Переключатель метрики (как в «Покупки фондов») */}
             {review.previous_snapshot_date && (
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: -16, marginBottom: -8 }}>
-                    {([['amount', 'Объём ₽'], ['weight', '% веса']] as const).map(([key, lbl]) => {
+                    {([['amount', 'Объём, руб'], ['weight', '% веса']] as const).map(([key, lbl]) => {
                         const on = metric === key;
                         return (
                             <button
                                 key={key}
                                 onClick={() => setMetric(key)}
                                 className="editorial-press"
-                                style={{
-                                    padding: '6px 14px',
-                                    background: on ? 'var(--accent)' : 'var(--bg-secondary)',
-                                    color: on ? 'var(--text-inverse)' : 'var(--text-primary)',
-                                    border: '2px solid var(--text-primary)',
-                                    borderRadius: 999,
-                                    fontSize: 'var(--fs-xs)',
-                                    fontWeight: on ? 700 : 600,
-                                    cursor: 'pointer',
-                                    boxShadow: on ? '3px 3px 0 var(--text-primary)' : 'none',
-                                }}
+                                style={filterPillStyle(on)}
                             >
                                 {lbl}
                             </button>
@@ -2551,6 +2565,7 @@ function MoversColumn({
     empty,
     negative,
     metric,
+    onAssetClick,
 }: {
     title: string;
     icon: typeof TrendingUp;
@@ -2559,6 +2574,8 @@ function MoversColumn({
     empty: string;
     negative?: boolean;
     metric: 'weight' | 'amount';
+    // ITEM 2 — клик по строке актива открывает «Потоки по компании».
+    onAssetClick?: (m: FundTradesMovers['top_accumulated'][number]) => void;
 }) {
     // Значение по выбранной метрике: % веса (Δвеса) или объём ₽ (Δсуммы).
     const valOf = (m: FundTradesMovers['top_accumulated'][number]) =>
@@ -2606,11 +2623,25 @@ function MoversColumn({
                     {items.map((m, i) => {
                         const val = valOf(m);
                         const pct = Math.max(2, (Math.abs(val) / maxAbs) * 100);
+                        const clickable = !!onAssetClick;
                         return (
                         <div
                             key={m.akey}
+                            onClick={clickable ? () => onAssetClick!(m) : undefined}
+                            onKeyDown={clickable
+                                ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onAssetClick!(m); } }
+                                : undefined}
+                            role={clickable ? 'button' : undefined}
+                            tabIndex={clickable ? 0 : undefined}
+                            title={clickable ? `Потоки по компании: ${m.asset_name}` : undefined}
+                            onMouseEnter={clickable ? (e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--text-primary) 5%, transparent)'; } : undefined}
+                            onMouseLeave={clickable ? (e) => { e.currentTarget.style.background = 'transparent'; } : undefined}
                             style={{
-                                padding: '9px 0',
+                                padding: clickable ? '9px 8px' : '9px 0',
+                                margin: clickable ? '0 -8px' : 0,
+                                borderRadius: clickable ? 8 : 0,
+                                cursor: clickable ? 'pointer' : 'default',
+                                transition: 'background 0.12s ease',
                                 borderBottom: i === items.length - 1
                                     ? 'none'
                                     : '1px dashed color-mix(in srgb, var(--text-primary) 12%, transparent)',

@@ -18,10 +18,35 @@ export interface DropdownOption<T extends string> {
   label: string;
   /** CSS color для маркера слева (палочка/dot). Опционально. */
   color?: string;
+  /** Аватар-кружок слева (логотип УК): картинка либо буква на цветном bg.
+   *  Аддитивно — рендерится только если задан, не влияет на legacy-вызовы. */
+  avatar?: { img?: string; bg?: string; color?: string; letter?: string };
   /** Disabled state — option не кликабелен (premium-only и т.п.) */
   locked?: boolean;
   /** Скрыть из списка (но оставить в типе) */
   hidden?: boolean;
+}
+
+// Кружок-аватар ~20px для dropdown-опций (логотип УК). Картинка перекрывает букву.
+function DropdownAvatar({ a, size = 20 }: { a: NonNullable<DropdownOption<string>['avatar']>; size?: number }) {
+  return (
+    <span
+      className="inline-flex items-center justify-center flex-shrink-0 rounded-full overflow-hidden"
+      style={{
+        width: size,
+        height: size,
+        backgroundColor: a.img ? undefined : (a.bg ?? 'var(--bg-secondary)'),
+        color: a.color ?? 'var(--text-secondary)',
+        fontWeight: 900,
+        fontSize: Math.round(size * 0.5),
+        lineHeight: 1,
+      }}
+    >
+      {a.img
+        ? <img src={a.img} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        : (a.letter ?? '')}
+    </span>
+  );
 }
 
 interface DropdownProps<T extends string> {
@@ -110,6 +135,7 @@ export default function Dropdown<T extends string>({
           transition: 'transform 0.15s ease, box-shadow 0.15s ease',
         }}
       >
+        {current?.avatar && <DropdownAvatar a={current.avatar} />}
         {current?.color && (
           <span
             className="inline-block flex-shrink-0 rounded-full"
@@ -185,6 +211,7 @@ export default function Dropdown<T extends string>({
                   transition: 'background-color 0.12s ease, color 0.12s ease',
                 }}
               >
+                {opt.avatar && <DropdownAvatar a={opt.avatar} />}
                 {opt.color && (
                   <span
                     className="inline-block flex-shrink-0 rounded-full"
