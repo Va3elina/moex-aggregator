@@ -14,6 +14,7 @@ export const CATEGORY_LABELS: Record<string, string> = {
     'stocks': 'Акции',
     'bonds': 'Облигации',
     'gold': 'Золото',
+    'yuan': 'Юань',
 };
 
 // Editorial-friendly палитра — deep desaturated tones, не неон.

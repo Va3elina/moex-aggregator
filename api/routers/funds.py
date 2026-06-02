@@ -29,6 +29,10 @@ CATEGORY_INDEX_MAP = {
     "stocks": {"name": "Акции", "index": "IMOEX", "min_date": "1997-05-26"},
     "bonds": {"name": "Облигации", "index": "RGBITR", "min_date": "1997-03-24"},
     "gold": {"name": "Золото", "index": "GLDRUB_TOM", "min_date": "2022-01-09"},
+    # Юаневые фонды (раздел «Юань»). Бенчмарк — RUSFAR CNY (юаневая ставка
+    # денежного рынка MOEX, board MMIX, история с 2022-09-26). NAV хранится
+    # в ₽ (как и у рублёвых), CNY — в fund_data.nav_cny/pay_cny.
+    "yuan": {"name": "Юань", "index": "RUSFARCNY", "min_date": "2022-09-26"},
 }
 
 
@@ -68,7 +72,7 @@ PERIODS = {
     "all": None
 }
 
-CategoryType = Literal["money_market", "stocks", "bonds", "gold"]
+CategoryType = Literal["money_market", "stocks", "bonds", "gold", "yuan"]
 PeriodType = Literal["1w", "1m", "3m", "6m", "1y", "2y", "3y", "all"]
 
 

@@ -71,6 +71,15 @@ INDICES = {
         "market": "index",
         "board": "SNDX",
     },
+    "RUSFARCNY": {
+        # Юаневая ставка денежного рынка MOEX — бенчмарк раздела «Юань».
+        # Внимание: board MMIX (НЕ SNDX, как у рублёвого RUSFAR3M).
+        "name": "Индекс денежного рынка RUSFAR CNY",
+        "engine": "stock",
+        "market": "index",
+        "board": "MMIX",
+        "start_date": date(2022, 9, 26),  # инцепция RUSFARCNY
+    },
     "GLDRUB_TOM": {
         "name": "Золото (руб/г, спот TOM)",
         "engine": "currency",

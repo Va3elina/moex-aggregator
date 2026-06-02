@@ -270,3 +270,87 @@ HTTP 200, e-disclosure не нужен!):
   берутся за количество/стоимость («триллион акций» на графике). Чистится в
   `_parse_int/_parse_float/_norm` (commit `8a75b6f`). Детали + спот-чек — карточка
   Т-Капитала в скилле `moex-fund-scha-backfill/references/uk-tkapital.md`.
+
+---
+
+## 8. 🆕 Playbook: завести новый фонд (investfunds → cbonds_share_id → БД → NAV)
+
+> Воспроизводимый чек-лист. Один раз вскрыли (2026-06-02, 4 юаневых фонда) —
+> дальше это 5-минутная задача. Для «Деньги в фондах» нужен **только**
+> `cbonds_share_id` (NAV). `cbonds_parent_id` — отдельно, для holdings/«Покупки».
+
+### Шаг 0 — опознать фонд (investfunds.ru)
+Дано: ссылка `investfunds.ru/funds/{N}/` (N — URL-id, НЕ наш fund_id) или название.
+```bash
+curl -sL -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/125 Safari/537.36" \
+  "https://investfunds.ru/funds/13737/" -o /tmp/f.html
+```
+Из HTML (через python `re.sub('<[^>]+>',' ')`, не ugrep — кириллица):
+- **Тикер + ISIN**: строка вида `Тикер AKMC ISIN RU000A10F561`.
+- **УК + внутренний id**: `<Имя фонда> (<УК>), 7781, AKMC` → **`7781` = наш `funds.fund_id`**
+  (наша конвенция = внутренний id investfunds; коллизий с существующими нет).
+- **Категория**: по названию → `money_market` / `bonds` / `stocks` / `gold`.
+- **СЧА**: для юаневых фондов показаны ДВА значения, отношение ≈ курс CNYRUB (~10.5);
+  **большее = ₽, меньшее = ¥**. (Сверка: investfunds «СЧА, RUB» = ровно наш `fund_data.nav`.)
+
+### Шаг 1 — найти `cbonds_share_id` (по ISIN или тикеру)
+Mobile API (`rest2.cbonds.info`) НЕ умеет list/search (`err 100202`). Берём **cbonds.ru
+website** (auth не нужен, не троттлится):
+```python
+import urllib.request, urllib.parse, json
+def cbonds_share_id(q):  # q = ISIN или тикер
+    r = urllib.request.Request("https://cbonds.ru/api/suggest/etf/",
+        data=urllib.parse.quote(q).encode(),
+        headers={"User-Agent":"Mozilla/5.0","Content-Type":"text/plain"}, method="POST")
+    items = json.load(urllib.request.urlopen(r, timeout=25)).get("items", [])
+    return items  # [{ "id": 209499, "ttl": "Ликвидность. Юань", "ticker": "CNYM" }]  id = cbonds_share_id
+```
+**Верификация (обязательно):** `GET https://cbonds.ru/etf/{id}/` → `<title>` =
+«ТИКЕР - Имя, ISIN | Cbonds». ISIN в заголовке должен совпасть с искомым.
+
+### Шаг 2 — `cbonds_parent_id` (для holdings/«Покупки», опционально)
+`suggest` его НЕ отдаёт. Есть в `POST https://cbonds.ru/api/etf/search/` (поле `fund_id`),
+НО дефолт отдаёт только зарубежные ETF (total 2500, id<10000); российские (id 209xxx+)
+за separation-тогглом «Российские», который пока **не вскрыт** (param не `separation`,
+логика в бандле `/js/etfSearch.js`, тело `{filters:{…},quantity:{offset,limit,page}}`).
+TODO. Без parent_id фетчер просто пропускает holdings (фильтр `WHERE cbonds_parent_id IS NOT NULL`).
+
+### Шаг 3 — INSERT в `funds`
+`uk_id`: `5`=Альфа, `7`=ВИМ, `34`=Первая/Сбер, `3597`=Т-Капитал, `aton`=Атон, `20`=Райффайзен.
+`subcategory` группирует в UI (FundsTable рендерит сворачиваемую группу; `null`=плоско).
+`currency`: `'RUB'` (default) или `'CNY'` (юаневые → ещё `fund_data.nav_cny/pay_cny`).
+```sql
+INSERT INTO funds (fund_id, ticker, name, category, subcategory, subcategory_order,
+                   uk_id, cbonds_share_id, currency)
+VALUES (7781,'AKMC','Альфа-Капитал Денежный рынок Юани','money_market','Юаневые',1,'5',352297,'CNY')
+ON CONFLICT (fund_id) DO UPDATE SET ...;   -- PK=fund_id, UNIQUE ticker
+```
+
+### Шаг 4 — налить NAV
+Фетчер для нового фонда (`last_date=None`) сам бэкфилит **3 года** NAV
+(`fetch_funds_realtime.py:544-552`). Источник — cbonds nav-endpoint по `cbonds_share_id`:
+```bash
+docker cp Funds/fetch_funds_realtime.py frame-orchestrator-1:/app/Funds/
+docker exec frame-orchestrator-1 python /app/Funds/fetch_funds_realtime.py --once --force
+docker exec frame-redis-1 sh -c "redis-cli --scan --pattern 'funds*' | xargs -r redis-cli del"
+```
+(Или просто дождаться планового прогона 09:00 МСК.) Проверка: `/api/funds/chart?category=…`.
+
+### ⚠️ Подводные камни
+- **cbonds mobile auth — НЕ долбить.** Серия auth + 403-list пробов → временный блок
+  `err 100202 "no rights to access services"` (auth.login="") на ВСЕ by-id вызовы,
+  и локально, и с прода (блок на аккаунт, не IP; держится мин-часы, ломает и фетчер).
+  Дневной фетчер auth'ится 1×/день — норм. Разведку фондов делать через cbonds.ru website.
+- **Юаневые фонды:** cbonds nav отдаёт **рубли** (= investfunds «СЧА, RUB»). Деривация:
+  `nav_cny = nav / CNYRUB_TOM(date)`, `pay_cny = pay / CNYRUB_TOM(date)` (на проде с 2013).
+  Подтвердить на первом фетче сверкой с эталоном СЧА,₽.
+- **investfunds URL-id ≠ внутренний id ≠ cbonds_share_id** — три разных пространства.
+  Наш `fund_id` = внутренний id investfunds (не URL-id из ссылки).
+
+### Кейс 2026-06-02 — 4 юаневых БПИФ денежного рынка (subcategory «Юаневые»)
+| ticker | fund_id | ISIN | cbonds_share_id | УК (uk_id) |
+|---|---|---|---|---|
+| AKMC | 7781 | RU000A10F561 | 352297 | Альфа (5) |
+| SBCN | 5230 | RU000A105PU9 | 209425 | Первая (34) |
+| CNYM | 5866 | RU000A107D41 | 209499 | ВИМ (7) |
+| AMNY | 6221 | RU000A108P04 | 229549 | Атон (aton) |

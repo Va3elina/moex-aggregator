@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { TrendingUp, DollarSign, Banknote, Gem, Wallet } from 'lucide-react';
+import { TrendingUp, DollarSign, Banknote, Gem, Wallet, JapaneseYen } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import Dropdown, { type DropdownOption } from '../components/Dropdown';
@@ -57,11 +57,14 @@ const AUM_PERIODS: Period[] = ['1m', '6m', '2y', 'all'];
 // `genitive` — родительный падеж для подстановки в шаблоны вида
 // «фонды {genitive}» / «приток в фонды {genitive}». Русское склонение
 // нерегулярное — храним как data, а не вычисляем.
-const CATEGORIES: { key: FundCategory; name: string; genitive: string; icon: React.ElementType; index: string }[] = [
+const CATEGORIES: { key: FundCategory; name: string; genitive: string; icon: React.ElementType; index: string; comingSoon?: boolean }[] = [
     { key: 'money_market', name: 'Денежный рынок', genitive: 'денежного рынка', icon: Banknote, index: 'RUSFAR3M' },
     { key: 'stocks', name: 'Акции', genitive: 'акций', icon: TrendingUp, index: 'IMOEX' },
     { key: 'bonds', name: 'Облигации', genitive: 'облигаций', icon: DollarSign, index: 'RGBITR' },
     { key: 'gold', name: 'Золото', genitive: 'золота', icon: Gem, index: 'GLDRUB_TOM' },
+    // Раздел «Юань» — пока «Скоро» (NAV юаневых фондов наливается). Когда
+    // данные появятся, убрать `comingSoon` → вкладка станет рабочей.
+    { key: 'yuan', name: 'Юань', genitive: 'юаня', icon: JapaneseYen, index: 'RUSFARCNY', comingSoon: true },
 ];
 
 // Цвета СЧА графика — theme-aware. Primary (СЧА) = accent (рыжий), secondary
@@ -492,14 +495,17 @@ export default function FundsMoneyPage() {
             <div className="editorial-frame">
 
             {/* Вкладки категорий — pill-стиль с press-effect, fluid font/padding */}
-            <div data-tour="funds-categories" className="grid grid-cols-2 sm:grid-cols-4 mb-4 md:mb-6" style={{ gap: 'var(--sp-2)' }}>
+            <div data-tour="funds-categories" className="flex flex-wrap mb-4 md:mb-6" style={{ gap: 'var(--sp-2)' }}>
                 {CATEGORIES.map(cat => {
                     const Icon = cat.icon;
                     const isActive = category === cat.key;
+                    const soon = !!cat.comingSoon;
                     return (
                         <button
                             key={cat.key}
-                            onClick={() => setCategory(cat.key)}
+                            onClick={() => { if (!soon) setCategory(cat.key); }}
+                            disabled={soon}
+                            title={soon ? 'Раздел скоро появится' : undefined}
                             className="editorial-press flex items-center font-semibold rounded-full min-w-0"
                             style={{
                                 gap: 'var(--sp-2)',
@@ -509,6 +515,8 @@ export default function FundsMoneyPage() {
                                 color: isActive ? 'var(--text-inverse)' : 'var(--text-primary)',
                                 border: '2px solid var(--text-primary)',
                                 boxShadow: isActive ? 'var(--shadow-hard-chip)' : undefined,
+                                opacity: soon ? 0.55 : undefined,
+                                cursor: soon ? 'not-allowed' : undefined,
                             }}
                         >
                             <Icon className="shrink-0" style={{ width: 'var(--ico-sm)', height: 'var(--ico-sm)' }} />
@@ -518,10 +526,12 @@ export default function FundsMoneyPage() {
                                 style={{
                                     fontSize: 'var(--fs-2xs)',
                                     padding: 'calc(var(--sp-1)) var(--sp-2)',
-                                    background: isActive ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.05)',
+                                    background: soon ? 'var(--accent)' : (isActive ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.05)'),
+                                    color: soon ? 'var(--text-inverse)' : undefined,
+                                    whiteSpace: 'nowrap',
                                 }}
                             >
-                                {cat.index}
+                                {soon ? 'Скоро' : cat.index}
                             </span>
                         </button>
                     );

@@ -31,11 +31,13 @@ import OnboardingTour, { type TourStep } from '../../components/onboarding/Onboa
 
 type ViewMode = 'aum' | 'flows';
 
-const CATEGORIES: Array<{ key: FundCategory; label: string }> = [
+const CATEGORIES: Array<{ key: FundCategory; label: string; comingSoon?: boolean }> = [
   { key: 'money_market', label: 'Деньги' },
   { key: 'stocks', label: 'Акции' },
   { key: 'bonds', label: 'Облигации' },
   { key: 'gold', label: 'Золото' },
+  // Раздел «Юань» — пока «Скоро» (NAV юаневых фондов наливается).
+  { key: 'yuan', label: 'Юань', comingSoon: true },
 ];
 
 const PERIODS: Array<{ key: FundPeriod; label: string }> = [
@@ -447,18 +449,22 @@ export default function MobileFundsMoneyPage() {
               Категория
             </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {CATEGORIES.map((cat) => (
+              {CATEGORIES.map((cat) => {
+                const soon = !!cat.comingSoon;
+                return (
                 <button
                   key={cat.key}
                   className={`fm-chip ${category === cat.key ? 'active' : ''}`}
                   onClick={() => {
-                    setCategory(cat.key);
+                    if (!soon) setCategory(cat.key);
                   }}
-                  style={{ flex: 1, minWidth: 'calc(50% - 4px)', justifyContent: 'center' }}
+                  disabled={soon}
+                  style={{ flex: 1, minWidth: 'calc(50% - 4px)', justifyContent: 'center', opacity: soon ? 0.5 : undefined, cursor: soon ? 'not-allowed' : undefined }}
                 >
-                  {cat.label}
+                  {soon ? `${cat.label} · Скоро` : cat.label}
                 </button>
-              ))}
+                );
+              })}
             </div>
           </div>
 

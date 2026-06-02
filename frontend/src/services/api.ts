@@ -419,7 +419,7 @@ export interface FundsSummaryResponse {
   categories: FundsSummaryCategory[];
 }
 
-export type FundCategory = 'money_market' | 'stocks' | 'bonds' | 'gold';
+export type FundCategory = 'money_market' | 'stocks' | 'bonds' | 'gold' | 'yuan';
 export type FundPeriod = '1w' | '1m' | '3m' | '6m' | '1y' | '2y' | '3y' | 'all';
 
 export async function getFundsChartData(
