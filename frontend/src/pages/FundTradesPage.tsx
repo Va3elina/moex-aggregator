@@ -711,7 +711,7 @@ export default function FundTradesPage() {
         for (const f of funds) {
             const key = ukKey(f);
             if (!key) continue;
-            if (!map.has(key)) map.set(key, f.uk || key);
+            if (!map.has(key)) map.set(key, UK_LOGOS[key]?.name || f.uk || key);
         }
         return Array.from(map.entries())
             .map(([key, label]) => ({ key, label }))
@@ -1204,6 +1204,7 @@ export default function FundTradesPage() {
                                                                 textOverflow: 'ellipsis',
                                                                 whiteSpace: 'nowrap',
                                                                 color: 'var(--text-secondary)',
+                                                                fontWeight: 600,
                                                             }}
                                                         >
                                                             {h.name}
@@ -1240,7 +1241,7 @@ export default function FundTradesPage() {
                                             }}
                                         >
                                             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
-                                                <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                                <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-secondary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                                                     Доходность · {ret?.period ?? RETURN_PERIOD_LABEL[returnPeriod]}
                                                 </span>
                                                 <span style={{ fontSize: 'var(--fs-xl)', fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: returnColor(ret?.v), lineHeight: 1.1 }}>
@@ -1248,7 +1249,7 @@ export default function FundTradesPage() {
                                                 </span>
                                             </div>
                                             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
-                                                <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                                <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-secondary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                                                     СЧА
                                                 </span>
                                                 <span style={{ fontSize: 'var(--fs-md)', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: 'var(--text-primary)' }}>
