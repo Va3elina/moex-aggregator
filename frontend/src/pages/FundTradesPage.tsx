@@ -668,6 +668,8 @@ export default function FundTradesPage() {
     // Фильтры «Состав фондов» — combinable (AND): период доходности + сортировка + УК.
     // Период доходности: показывается на плитках И используется для сортировки по доходности.
     const [returnPeriod, setReturnPeriod] = useState<ReturnPeriodKey>('y1');
+    // Меню выбора периода — встроено в кнопку сортировки «Доходность».
+    const [periodMenuOpen, setPeriodMenuOpen] = useState(false);
     // Сортировка карточек: по доходности (за returnPeriod) / объёму руб / имени.
     const [fundSort, setFundSort] = useState<FundSortKey>('return');
     // Мультиселект УК (пусто = все). Ключ — uk_id (стабильнее имени), fallback на uk.
@@ -891,26 +893,80 @@ export default function FundTradesPage() {
                                 marginBottom: 18,
                             }}
                         >
-                            {/* (E1) Период доходности — dropdown */}
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                <span style={filterLabelStyle}>Период</span>
-                                <Dropdown<ReturnPeriodKey>
-                                    options={(['m1', 'm3', 'm6', 'y1'] as ReturnPeriodKey[]).map((k) => ({
-                                        key: k,
-                                        label: RETURN_PERIOD_LABEL[k],
-                                    }))}
-                                    value={returnPeriod}
-                                    onChange={setReturnPeriod}
-                                    minWidth={120}
-                                />
-                            </div>
-
-                            {/* (E2) Сортировка — сегмент */}
+                            {/* (E) Сортировка — Доходность (с периодом в самой кнопке) · Объём · Имя */}
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                                 <span style={filterLabelStyle}>Сортировка</span>
-                                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                                    {/* Доходность + период в одной пилюле: левая часть — сортировка, правая — период ▾ */}
+                                    {(() => {
+                                        const active = fundSort === 'return';
+                                        return (
+                                            <div
+                                                style={{
+                                                    position: 'relative',
+                                                    display: 'inline-flex',
+                                                    alignItems: 'stretch',
+                                                    background: active ? 'var(--accent)' : 'var(--bg-secondary)',
+                                                    color: active ? 'var(--text-inverse)' : 'var(--text-primary)',
+                                                    border: '2px solid var(--text-primary)',
+                                                    borderRadius: 999,
+                                                    fontSize: 'var(--fs-xs)',
+                                                    fontWeight: active ? 700 : 600,
+                                                    boxShadow: active ? '3px 3px 0 var(--text-primary)' : 'none',
+                                                }}
+                                            >
+                                                <span
+                                                    onClick={() => setFundSort('return')}
+                                                    style={{ padding: '6px 8px 6px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                                                >
+                                                    Доходность
+                                                </span>
+                                                <span
+                                                    onClick={() => { setFundSort('return'); setPeriodMenuOpen((o) => !o); }}
+                                                    style={{
+                                                        padding: '6px 12px 6px 8px',
+                                                        cursor: 'pointer',
+                                                        display: 'flex',
+                                                        alignItems: 'center',
+                                                        gap: 4,
+                                                        borderLeft: active ? '1px solid rgba(255,255,255,0.35)' : '1px solid var(--border-color)',
+                                                    }}
+                                                >
+                                                    {RETURN_PERIOD_LABEL[returnPeriod]}
+                                                    <span style={{ fontSize: '0.75em', opacity: 0.85 }}>▾</span>
+                                                </span>
+                                                {periodMenuOpen && (
+                                                    <>
+                                                        <div onClick={() => setPeriodMenuOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 19 }} />
+                                                        <div
+                                                            style={{
+                                                                position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 20,
+                                                                display: 'flex', flexDirection: 'column', minWidth: 150,
+                                                                background: 'var(--bg-primary)', border: '1.5px solid var(--text-primary)',
+                                                                borderRadius: 10, boxShadow: '3px 3px 0 var(--text-primary)', overflow: 'hidden',
+                                                            }}
+                                                        >
+                                                            {(['m1', 'm3', 'm6', 'y1'] as ReturnPeriodKey[]).map((k) => (
+                                                                <button
+                                                                    key={k}
+                                                                    onClick={() => { setReturnPeriod(k); setFundSort('return'); setPeriodMenuOpen(false); }}
+                                                                    style={{
+                                                                        padding: '9px 14px', textAlign: 'left', cursor: 'pointer',
+                                                                        background: returnPeriod === k ? 'var(--bg-secondary)' : 'transparent',
+                                                                        color: 'var(--text-primary)', border: 'none',
+                                                                        fontSize: 'var(--fs-xs)', fontWeight: returnPeriod === k ? 700 : 500,
+                                                                    }}
+                                                                >
+                                                                    Доходность · {RETURN_PERIOD_LABEL[k]}
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    </>
+                                                )}
+                                            </div>
+                                        );
+                                    })()}
                                     {([
-                                        { id: 'return' as const, label: 'Доходность' },
                                         { id: 'volume' as const, label: 'Объём, руб' },
                                         { id: 'name' as const, label: 'Имя' },
                                     ]).map((s) => {

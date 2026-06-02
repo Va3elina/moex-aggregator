@@ -72,6 +72,10 @@ export default function Donut({
     const activeName = active != null && items[active] ? items[active].name : '';
     const activePct = active != null && items[active] && total > 0
         ? (items[active].weight / total) * 100 : 0;
+    // Размер центрового текста — в единицах viewBox, но обратно пропорционально size,
+    // чтобы РЕНДЕР был постоянным (~px) независимо от размера пончика: на маленьком
+    // пончике плитки (144) текст не съёживается.
+    const cf = (px: number) => ((px * 200) / size).toFixed(1);
 
     return (
         <svg viewBox="0 0 200 200" width={size} height={size} style={{ overflow: 'visible' }}>
@@ -100,20 +104,20 @@ export default function Donut({
             })}
             {showCenterText && active == null && (
                 <>
-                    <text x="100" y="96" textAnchor="middle" fill="var(--text-primary)" fontSize="14" fontWeight="bold">
+                    <text x="100" y="95" textAnchor="middle" fill="var(--text-primary)" fontSize={cf(19)} fontWeight="bold">
                         {segmentCount}
                     </text>
-                    <text x="100" y="112" textAnchor="middle" fill="var(--text-muted)" fontSize="10">
+                    <text x="100" y="116" textAnchor="middle" fill="var(--text-muted)" fontSize={cf(11)}>
                         позиций
                     </text>
                 </>
             )}
             {showCenterText && active != null && items[active] && (
                 <>
-                    <text x="100" y="97" textAnchor="middle" fill="var(--text-primary)" fontSize="11" fontWeight="bold">
+                    <text x="100" y="96" textAnchor="middle" fill="var(--text-primary)" fontSize={cf(13)} fontWeight="bold">
                         {activeName.length > 13 ? activeName.slice(0, 12) + '…' : activeName}
                     </text>
-                    <text x="100" y="114" textAnchor="middle" fill="var(--text-secondary)" fontSize="12" fontWeight="bold">
+                    <text x="100" y="117" textAnchor="middle" fill="var(--text-secondary)" fontSize={cf(15)} fontWeight="bold">
                         {activePct.toFixed(1)}%
                     </text>
                 </>
