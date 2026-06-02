@@ -1216,6 +1216,7 @@ export interface FundWithHistory {
 
 export interface FundTradesHolding {
     asset_name: string;
+    isin: string | null;
     weight: number | null;
     positions: number | null;
     amount_rub: number | null;

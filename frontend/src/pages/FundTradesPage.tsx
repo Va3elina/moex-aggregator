@@ -52,9 +52,10 @@ import PageHeader from '../components/PageHeader';
 import Dropdown from '../components/Dropdown';
 import SimpleChart, { type ChartAnnotation } from '../components/SimpleChart';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
-import { UK_LOGOS, DONUT_COLORS } from '../config/fundConfig';
+import { UK_LOGOS, DONUT_COLORS, assetColor } from '../config/fundConfig';
 import Donut from '../components/funds/Donut';
 import CompanyFlowsTab from '../components/fundtrades/CompanyFlowsTab';
+import { useViewportWidth } from '../hooks/useViewportWidth';
 
 type Tab = 'funds' | 'movers' | 'snapshots' | 'company';
 
@@ -221,6 +222,10 @@ function FundDetailModal({
     const [data, setData] = useState<FundTradesDetail | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    // (G) drill-down на бумагу: «как этот фонд/УК покупал актив» (тот же
+    // AssetHistoryModal, что в «Обзоре снапшота»). Открывается кликом по
+    // сектору пончика ИЛИ по строке списка состава.
+    const [drillDown, setDrillDown] = useState<{ asset_name: string; isin: string | null } | null>(null);
 
     useEffect(() => {
         let cancelled = false;
@@ -234,6 +239,7 @@ function FundDetailModal({
     }, [ticker, period]);
 
     return (
+        <>
         <div
             onClick={onClose}
             style={{
@@ -478,7 +484,31 @@ function FundDetailModal({
                             >
                                 Состав фонда
                             </h3>
-                            {data.current_holdings.length > 0 ? (
+                            {data.current_holdings.length > 0 ? (() => {
+                                // (G) holdings пончика = топ-10 + «Прочее»; colors — параллельный
+                                // массив (фирменный/индекс, «Прочее» серый). maxSlices = длине →
+                                // Donut НЕ агрегирует сам, индекс слайса 1:1 совпадает с массивом,
+                                // поэтому onSliceClick(i) корректно мапится на бумагу.
+                                const holds = data.current_holdings;
+                                const TOP = 10;
+                                const topHolds = holds.slice(0, TOP);
+                                const restWeight = holds.slice(TOP).reduce((s, h) => s + (h.weight ?? 0), 0);
+                                const donutHoldings = [
+                                    ...topHolds.map((h) => ({ name: h.asset_name, weight: (h.weight ?? 0) / 100 })),
+                                    ...(restWeight > 0 ? [{ name: 'Прочее', weight: restWeight / 100 }] : []),
+                                ];
+                                const donutColors = donutHoldings.map((h, i) =>
+                                    h.name === 'Прочее'
+                                        ? 'var(--text-muted)'
+                                        : (assetColor(h.name) ?? DONUT_COLORS[i % DONUT_COLORS.length]),
+                                );
+                                const isSelected = (h: typeof holds[number]) =>
+                                    drillDown != null
+                                    && drillDown.asset_name === h.asset_name
+                                    && (drillDown.isin ?? null) === (h.isin ?? null);
+                                const openAsset = (h: typeof holds[number]) =>
+                                    setDrillDown({ asset_name: h.asset_name, isin: h.isin ?? null });
+                                return (
                                 <div
                                     style={{
                                         display: 'flex',
@@ -489,11 +519,14 @@ function FundDetailModal({
                                 >
                                     <div style={{ flexShrink: 0, margin: '0 auto', lineHeight: 0 }}>
                                         <Donut
-                                            holdings={data.current_holdings.map((h) => ({
-                                                name: h.asset_name,
-                                                weight: (h.weight ?? 0) / 100,
-                                            }))}
-                                            size={180}
+                                            holdings={donutHoldings}
+                                            colors={donutColors}
+                                            maxSlices={donutHoldings.length}
+                                            size={200}
+                                            onSliceClick={(i) => {
+                                                // «Прочее» — последний слайс, если добавлен; клик игнорим.
+                                                if (i < topHolds.length) openAsset(topHolds[i]);
+                                            }}
                                         />
                                     </div>
                                     <div style={{ flex: 1, minWidth: 240 }}>
@@ -529,8 +562,26 @@ function FundDetailModal({
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                {data.current_holdings.slice(0, 30).map((h, i) => (
-                                                    <tr key={h.asset_name}>
+                                                {holds.slice(0, 30).map((h, i) => {
+                                                    const selected = isSelected(h);
+                                                    return (
+                                                    <tr
+                                                        key={h.asset_name}
+                                                        onClick={() => openAsset(h)}
+                                                        style={{
+                                                            cursor: 'pointer',
+                                                            background: selected
+                                                                ? 'color-mix(in srgb, var(--accent) 14%, transparent)'
+                                                                : 'transparent',
+                                                            transition: 'background 100ms',
+                                                        }}
+                                                        onMouseEnter={(e) => {
+                                                            if (!selected) e.currentTarget.style.background = 'var(--bg-secondary)';
+                                                        }}
+                                                        onMouseLeave={(e) => {
+                                                            if (!selected) e.currentTarget.style.background = 'transparent';
+                                                        }}
+                                                    >
                                                         <td style={{
                                                             padding: '7px 12px',
                                                             borderBottom: '1px solid color-mix(in srgb, var(--border-color) 60%, transparent)',
@@ -543,8 +594,10 @@ function FundDetailModal({
                                                                         height: 8,
                                                                         borderRadius: '50%',
                                                                         flexShrink: 0,
-                                                                        backgroundColor: i < 10
-                                                                            ? DONUT_COLORS[i % DONUT_COLORS.length]
+                                                                        // (C) точка = цвет сектора (фирменный/индекс),
+                                                                        // вне топ-10 — серый (как «Прочее» в пончике).
+                                                                        backgroundColor: i < TOP
+                                                                            ? (assetColor(h.asset_name) ?? DONUT_COLORS[i % DONUT_COLORS.length])
                                                                             : 'var(--text-muted)',
                                                                     }}
                                                                 />
@@ -562,12 +615,14 @@ function FundDetailModal({
                                                             {h.weight !== null ? h.weight.toFixed(2) : '—'}
                                                         </td>
                                                     </tr>
-                                                ))}
+                                                    );
+                                                })}
                                             </tbody>
                                         </table>
                                     </div>
                                 </div>
-                            ) : (
+                                );
+                            })() : (
                                 <div
                                     style={{
                                         padding: '24px 16px',
@@ -584,6 +639,19 @@ function FundDetailModal({
                 </div>
             </div>
         </div>
+
+        {/* (G) drill-down: «как этот фонд/УК покупал актив» — тот же
+            AssetHistoryModal, что в «Обзоре снапшота» (та же сигнатура пропсов).
+            z-index выше overlay'я FundDetailModal → ложится сверху. */}
+        {drillDown && (
+            <AssetHistoryModal
+                ticker={ticker}
+                asset_name={drillDown.asset_name}
+                isin={drillDown.isin}
+                onClose={() => setDrillDown(null)}
+            />
+        )}
+        </>
     );
 }
 
@@ -598,8 +666,13 @@ export default function FundTradesPage() {
     // селектор месяца появится в Заходе 2 (нужен backend as_of/available_months).
     const [period] = useState<FundTradesPeriod>('1m');
     const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
-    // Сортировка карточек «Состав фондов»: по доходности 1г (default) / объёму / имени.
+    // Фильтры «Состав фондов» — combinable (AND): период доходности + сортировка + УК.
+    // Период доходности: показывается на плитках И используется для сортировки по доходности.
+    const [returnPeriod, setReturnPeriod] = useState<ReturnPeriodKey>('y1');
+    // Сортировка карточек: по доходности (за returnPeriod) / объёму руб / имени.
     const [fundSort, setFundSort] = useState<FundSortKey>('return');
+    // Мультиселект УК (пусто = все). Ключ — uk_id (стабильнее имени), fallback на uk.
+    const [selectedUks, setSelectedUks] = useState<Set<string>>(new Set());
 
     const [funds, setFunds] = useState<FundWithHistory[]>([]);
     const [movers, setMovers] = useState<FundTradesMovers | null>(null);
@@ -631,19 +704,39 @@ export default function FundTradesPage() {
             .finally(() => setLoading(false));
     }, [tab, period, asOf, manager, metric, common.fund_trades_access]);
 
-    const fundsByCategory = useMemo(() => {
-        const groups: Record<string, FundWithHistory[]> = {};
+    // Уникальные УК из загруженных фондов (для мультиселекта вкладки «Состав»).
+    // Ключ — uk_id (стабильный), label — uk-имя. Сортируем по имени.
+    const ukOptions = useMemo(() => {
+        const map = new Map<string, string>(); // key → label
         for (const f of funds) {
+            const key = ukKey(f);
+            if (!key) continue;
+            if (!map.has(key)) map.set(key, f.uk || key);
+        }
+        return Array.from(map.entries())
+            .map(([key, label]) => ({ key, label }))
+            .sort((a, b) => a.label.localeCompare(b.label));
+    }, [funds]);
+
+    const fundsByCategory = useMemo(() => {
+        // E: combinable AND-фильтры — сначала фильтр по УК, потом группировка+сортировка.
+        const filtered = selectedUks.size > 0
+            ? funds.filter((f) => selectedUks.has(ukKey(f)))
+            : funds;
+
+        const groups: Record<string, FundWithHistory[]> = {};
+        for (const f of filtered) {
             // Авторские (блогерские) фонды — отдельной группой, остальные по категории
             const key = f.subcategory === 'Авторские' ? 'Авторские' : (f.category || 'other');
             if (!groups[key]) groups[key] = [];
             groups[key].push(f);
         }
         // Сортировка внутри группы. null'ы (нет данных) всегда в хвост.
+        // Доходность — за выбранный returnPeriod; объём — nav_rub; имя — ticker A→Z.
         const cmp = (a: FundWithHistory, b: FundWithHistory): number => {
             if (fundSort === 'name') return a.ticker.localeCompare(b.ticker);
-            const av = fundSort === 'return' ? a.returns?.y1 ?? null : a.nav_rub;
-            const bv = fundSort === 'return' ? b.returns?.y1 ?? null : b.nav_rub;
+            const av = fundSort === 'return' ? returnForPeriod(a.returns, returnPeriod) : a.nav_rub;
+            const bv = fundSort === 'return' ? returnForPeriod(b.returns, returnPeriod) : b.nav_rub;
             if (av === null && bv === null) return a.ticker.localeCompare(b.ticker);
             if (av === null) return 1;
             if (bv === null) return -1;
@@ -651,7 +744,7 @@ export default function FundTradesPage() {
         };
         for (const k of Object.keys(groups)) groups[k] = [...groups[k]].sort(cmp);
         return groups;
-    }, [funds, fundSort]);
+    }, [funds, fundSort, returnPeriod, selectedUks]);
 
     // УК для фильтра «Покупок фондов» — только stock-фонды.
     const managers = useMemo(() => {
@@ -661,6 +754,10 @@ export default function FundTradesPage() {
         }
         return Array.from(set).sort();
     }, [funds]);
+
+    // (A) Колонки сетки плиток по ширине вьюпорта: ≥1024 → 3, ≥640 → 2, иначе 1.
+    const vw = useViewportWidth();
+    const cols = vw >= 1024 ? 3 : vw >= 640 ? 2 : 1;
 
     if (!common.fund_trades_access) {
         return <LockedView />;
@@ -781,55 +878,124 @@ export default function FundTradesPage() {
             {/* Tab content */}
             {tab === 'funds' && (
                 <>
-                    {/* Контрол сортировки карточек */}
+                    {/* Фильтры карточек — combinable AND: период · сортировка · УК */}
                     {funds.length > 0 && (
                         <div
                             style={{
                                 display: 'flex',
-                                alignItems: 'center',
-                                gap: 8,
+                                alignItems: 'flex-start',
+                                gap: 18,
                                 flexWrap: 'wrap',
                                 marginBottom: 18,
                             }}
                         >
-                            <span
-                                style={{
-                                    fontSize: 'var(--fs-2xs)',
-                                    fontWeight: 700,
-                                    textTransform: 'uppercase',
-                                    letterSpacing: '0.06em',
-                                    color: 'var(--text-muted)',
-                                }}
-                            >
-                                Сортировка
-                            </span>
-                            {([
-                                { id: 'return' as const, label: 'Доходность 1г' },
-                                { id: 'volume' as const, label: 'Объём' },
-                                { id: 'name' as const, label: 'Имя' },
-                            ]).map((s) => {
-                                const active = fundSort === s.id;
-                                return (
-                                    <button
-                                        key={s.id}
-                                        onClick={() => setFundSort(s.id)}
-                                        className="editorial-press"
-                                        style={{
-                                            padding: '6px 14px',
-                                            background: active ? 'var(--accent)' : 'var(--bg-secondary)',
-                                            color: active ? 'var(--text-inverse)' : 'var(--text-primary)',
-                                            border: '2px solid var(--text-primary)',
-                                            borderRadius: 999,
-                                            fontSize: 'var(--fs-xs)',
-                                            fontWeight: active ? 700 : 600,
-                                            cursor: 'pointer',
-                                            boxShadow: active ? '3px 3px 0 var(--text-primary)' : 'none',
-                                        }}
-                                    >
-                                        {s.label}
-                                    </button>
-                                );
-                            })}
+                            {/* (E1) Период доходности — dropdown */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                <span style={filterLabelStyle}>Период</span>
+                                <Dropdown<ReturnPeriodKey>
+                                    options={(['m1', 'm3', 'm6', 'y1'] as ReturnPeriodKey[]).map((k) => ({
+                                        key: k,
+                                        label: RETURN_PERIOD_LABEL[k],
+                                    }))}
+                                    value={returnPeriod}
+                                    onChange={setReturnPeriod}
+                                    minWidth={120}
+                                />
+                            </div>
+
+                            {/* (E2) Сортировка — сегмент */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                <span style={filterLabelStyle}>Сортировка</span>
+                                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                    {([
+                                        { id: 'return' as const, label: 'Доходность' },
+                                        { id: 'volume' as const, label: 'Объём, руб' },
+                                        { id: 'name' as const, label: 'Имя' },
+                                    ]).map((s) => {
+                                        const active = fundSort === s.id;
+                                        return (
+                                            <button
+                                                key={s.id}
+                                                onClick={() => setFundSort(s.id)}
+                                                className="editorial-press"
+                                                style={{
+                                                    padding: '6px 14px',
+                                                    background: active ? 'var(--accent)' : 'var(--bg-secondary)',
+                                                    color: active ? 'var(--text-inverse)' : 'var(--text-primary)',
+                                                    border: '2px solid var(--text-primary)',
+                                                    borderRadius: 999,
+                                                    fontSize: 'var(--fs-xs)',
+                                                    fontWeight: active ? 700 : 600,
+                                                    cursor: 'pointer',
+                                                    boxShadow: active ? '3px 3px 0 var(--text-primary)' : 'none',
+                                                }}
+                                            >
+                                                {s.label}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            {/* (E3) УК — мультиселект чипами (AND). Пусто = все. */}
+                            {ukOptions.length > 1 && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
+                                    <span style={filterLabelStyle}>
+                                        Управляющая компания
+                                        {selectedUks.size > 0 && (
+                                            <button
+                                                onClick={() => setSelectedUks(new Set())}
+                                                style={{
+                                                    marginLeft: 8,
+                                                    background: 'transparent',
+                                                    border: 'none',
+                                                    color: 'var(--accent)',
+                                                    cursor: 'pointer',
+                                                    fontSize: 'var(--fs-2xs)',
+                                                    fontWeight: 700,
+                                                    textTransform: 'none',
+                                                    letterSpacing: 0,
+                                                    padding: 0,
+                                                }}
+                                            >
+                                                сбросить
+                                            </button>
+                                        )}
+                                    </span>
+                                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                        {ukOptions.map((u) => {
+                                            const active = selectedUks.has(u.key);
+                                            return (
+                                                <button
+                                                    key={u.key}
+                                                    onClick={() => {
+                                                        setSelectedUks((prev) => {
+                                                            const next = new Set(prev);
+                                                            if (next.has(u.key)) next.delete(u.key);
+                                                            else next.add(u.key);
+                                                            return next;
+                                                        });
+                                                    }}
+                                                    className="editorial-press"
+                                                    style={{
+                                                        padding: '6px 12px',
+                                                        background: active ? 'var(--accent)' : 'var(--bg-secondary)',
+                                                        color: active ? 'var(--text-inverse)' : 'var(--text-primary)',
+                                                        border: '2px solid var(--text-primary)',
+                                                        borderRadius: 999,
+                                                        fontSize: 'var(--fs-xs)',
+                                                        fontWeight: active ? 700 : 600,
+                                                        cursor: 'pointer',
+                                                        boxShadow: active ? '3px 3px 0 var(--text-primary)' : 'none',
+                                                    }}
+                                                >
+                                                    {u.label}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
                     {loading && funds.length === 0 && (
@@ -855,24 +1021,44 @@ export default function FundTradesPage() {
                             <div
                                 style={{
                                     display: 'grid',
-                                    gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
-                                    gap: 10,
+                                    gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
+                                    gap: 14,
                                 }}
                             >
                                 {list.map((f) => {
                                     const uk = f.uk_id != null ? UK_LOGOS[String(f.uk_id)] : null;
+                                    // (C) holdings для пончика = топ-10 + «Прочее» (100 − Σтоп), иначе
+                                    // донат нормализует топ как 100% и завышает концентрацию. colors —
+                                    // ПАРАЛЛЕЛЬНЫЙ массив: фирменный цвет бумаги или DONUT_COLORS по индексу,
+                                    // «Прочее» — серый. maxSlices велик → Donut не агрегирует сам.
+                                    const top = f.top_holdings ?? [];
+                                    const sum = top.reduce((s, h) => s + (h.weight || 0), 0);
+                                    const other = 100 - sum;
+                                    const donutHoldings = other > 1
+                                        ? [...top, { name: 'Прочее', weight: other }]
+                                        : top;
+                                    const donutColors = donutHoldings.map((h, i) =>
+                                        h.name === 'Прочее'
+                                            ? 'var(--text-muted)'
+                                            : (assetColor(h.name) ?? DONUT_COLORS[i % DONUT_COLORS.length]),
+                                    );
+                                    const ret = displayReturn(f.returns, returnPeriod);
                                     return (
                                     <button
                                         key={f.fund_id}
                                         onClick={() => setSelectedTicker(f.ticker)}
                                         style={{
-                                            padding: 14,
+                                            padding: 16,
                                             background: 'var(--bg-secondary)',
                                             border: '1.5px solid var(--border-color)',
-                                            borderRadius: 10,
+                                            borderRadius: 12,
                                             textAlign: 'left',
                                             cursor: 'pointer',
                                             transition: 'border-color 120ms, transform 80ms',
+                                            // (B) колоночный flex full-height → все карточки в ряду равны.
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            height: '100%',
                                         }}
                                         onMouseEnter={(e) => {
                                             e.currentTarget.style.borderColor = 'var(--accent)';
@@ -881,14 +1067,14 @@ export default function FundTradesPage() {
                                             e.currentTarget.style.borderColor = 'var(--border-color)';
                                         }}
                                     >
-                                        {/* Header: УК-аватар + тикер + имя */}
+                                        {/* Header: УК-аватар 44px + тикер + имя (2 строки, фикс высота) */}
                                         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
                                             {uk && (
                                                 <div
                                                     title={uk.name}
                                                     style={{
-                                                        width: 40,
-                                                        height: 40,
+                                                        width: 44,
+                                                        height: 44,
                                                         borderRadius: '50%',
                                                         display: 'flex',
                                                         alignItems: 'center',
@@ -913,6 +1099,7 @@ export default function FundTradesPage() {
                                                         fontSize: 'var(--fs-md)',
                                                         fontWeight: 800,
                                                         color: 'var(--text-primary)',
+                                                        lineHeight: 1.2,
                                                         marginBottom: 2,
                                                     }}
                                                 >
@@ -922,11 +1109,13 @@ export default function FundTradesPage() {
                                                     style={{
                                                         fontSize: 'var(--fs-xs)',
                                                         color: 'var(--text-secondary)',
-                                                        lineHeight: 1.4,
+                                                        lineHeight: 1.3,
                                                         display: '-webkit-box',
                                                         WebkitLineClamp: 2,
                                                         WebkitBoxOrient: 'vertical',
                                                         overflow: 'hidden',
+                                                        // (B) фикс под 2 строки — имя никогда не «раздвигает» карточку.
+                                                        minHeight: '2.6em',
                                                     }}
                                                 >
                                                     {f.name}
@@ -934,40 +1123,32 @@ export default function FundTradesPage() {
                                             </div>
                                         </div>
 
-                                        {/* Body: donut состава + топ-5 позиций */}
+                                        {/* Body: пончик (фикс 128) + топ-5 (контейнер фикс под 5 строк) */}
                                         <div
                                             style={{
                                                 display: 'flex',
-                                                gap: 12,
+                                                gap: 14,
                                                 alignItems: 'center',
-                                                marginTop: 12,
+                                                marginTop: 14,
                                             }}
                                         >
-                                            {f.top_holdings && f.top_holdings.length > 0 ? (
+                                            {top.length > 0 ? (
                                                 <div style={{ flexShrink: 0, lineHeight: 0 }}>
                                                     <Donut
-                                                        holdings={(() => {
-                                                            // top_holdings = только топ-10 (бэкенд обрезает);
-                                                            // weight в процентах. Добавляем «Прочее» = 100 − Σтоп,
-                                                            // иначе донат нормализует топ-10 как 100% и завышает
-                                                            // концентрацию фонда.
-                                                            const sum = f.top_holdings.reduce((s, h) => s + (h.weight || 0), 0);
-                                                            const other = 100 - sum;
-                                                            return other > 1
-                                                                ? [...f.top_holdings, { name: 'Прочее', weight: other }]
-                                                                : f.top_holdings;
-                                                        })()}
-                                                        size={84}
-                                                        outerRadius={72}
-                                                        innerRadius={46}
+                                                        holdings={donutHoldings}
+                                                        colors={donutColors}
+                                                        size={128}
+                                                        outerRadius={92}
+                                                        innerRadius={58}
+                                                        maxSlices={donutHoldings.length}
                                                         showCenterText={false}
                                                     />
                                                 </div>
                                             ) : (
                                                 <div
                                                     style={{
-                                                        width: 84,
-                                                        height: 84,
+                                                        width: 128,
+                                                        height: 128,
                                                         flexShrink: 0,
                                                         borderRadius: '50%',
                                                         border: '1.5px dashed var(--border-color)',
@@ -981,24 +1162,38 @@ export default function FundTradesPage() {
                                                     —
                                                 </div>
                                             )}
-                                            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 }}>
-                                                {(f.top_holdings ?? []).slice(0, 5).map((h, i) => (
+                                            <div
+                                                style={{
+                                                    flex: 1,
+                                                    minWidth: 0,
+                                                    display: 'flex',
+                                                    flexDirection: 'column',
+                                                    justifyContent: 'center',
+                                                    gap: 4,
+                                                    // (B) фикс высота под 5 строк — список не «двигает» футер,
+                                                    // даже если позиций <5. 5×20 + 4×4 = 116.
+                                                    minHeight: 116,
+                                                }}
+                                            >
+                                                {top.slice(0, 5).map((h, i) => (
                                                     <div
                                                         key={h.name + i}
                                                         style={{
                                                             display: 'flex',
                                                             alignItems: 'center',
                                                             gap: 6,
+                                                            minHeight: 20,
                                                             fontSize: 'var(--fs-2xs)',
                                                         }}
                                                     >
                                                         <span
                                                             style={{
-                                                                width: 7,
-                                                                height: 7,
+                                                                width: 8,
+                                                                height: 8,
                                                                 borderRadius: '50%',
                                                                 flexShrink: 0,
-                                                                backgroundColor: DONUT_COLORS[i % DONUT_COLORS.length],
+                                                                // (C) точка = цвет сектора пончика (фирменный/индекс).
+                                                                backgroundColor: assetColor(h.name) ?? DONUT_COLORS[i % DONUT_COLORS.length],
                                                             }}
                                                         />
                                                         <span
@@ -1025,7 +1220,7 @@ export default function FundTradesPage() {
                                                         </span>
                                                     </div>
                                                 ))}
-                                                {(!f.top_holdings || f.top_holdings.length === 0) && (
+                                                {top.length === 0 && (
                                                     <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)' }}>
                                                         Состав не публикуется
                                                     </span>
@@ -1033,30 +1228,30 @@ export default function FundTradesPage() {
                                             </div>
                                         </div>
 
-                                        {/* Footer: Доходность + СЧА — в два ряда (label слева, значение справа) */}
+                                        {/* Footer: Доходность + СЧА — прижат вниз (marginTop:auto) у всех плиток */}
                                         <div
                                             style={{
-                                                marginTop: 12,
-                                                paddingTop: 10,
+                                                marginTop: 'auto',
+                                                paddingTop: 12,
                                                 borderTop: '1px solid var(--border-color)',
                                                 display: 'flex',
                                                 flexDirection: 'column',
-                                                gap: 6,
+                                                gap: 8,
                                             }}
                                         >
                                             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
                                                 <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                                                    Доходность · {bestReturn(f.returns)?.period ?? '1 год'}
+                                                    Доходность · {ret?.period ?? RETURN_PERIOD_LABEL[returnPeriod]}
                                                 </span>
-                                                <span style={{ fontSize: 'var(--fs-md)', fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: returnColor(bestReturn(f.returns)?.v), lineHeight: 1.1 }}>
-                                                    {formatReturnPct(bestReturn(f.returns)?.v)}
+                                                <span style={{ fontSize: 'var(--fs-xl)', fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: returnColor(ret?.v), lineHeight: 1.1 }}>
+                                                    {formatReturnPct(ret?.v)}
                                                 </span>
                                             </div>
                                             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
                                                 <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                                                     СЧА
                                                 </span>
-                                                <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: 'var(--text-primary)' }}>
+                                                <span style={{ fontSize: 'var(--fs-md)', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: 'var(--text-primary)' }}>
                                                     {f.nav_rub != null ? formatRubShort(f.nav_rub) : '—'}
                                                 </span>
                                             </div>
@@ -1221,6 +1416,50 @@ function bestReturn(
 
 // Ключ сортировки карточек «Состав фондов».
 type FundSortKey = 'return' | 'volume' | 'name';
+
+// Период доходности для фильтра/плиток. Маппится на поля FundReturns.
+type ReturnPeriodKey = 'm1' | 'm3' | 'm6' | 'y1';
+const RETURN_PERIOD_LABEL: Record<ReturnPeriodKey, string> = {
+    m1: '1 мес',
+    m3: '3 мес',
+    m6: '6 мес',
+    y1: '1 год',
+};
+
+// Сырое значение доходности за выбранный период (или null, если нет данных).
+function returnForPeriod(
+    r: { m1: number | null; m3: number | null; m6: number | null; y1: number | null } | null | undefined,
+    period: ReturnPeriodKey,
+): number | null {
+    if (!r) return null;
+    return r[period] ?? null;
+}
+
+// Доходность для отображения на плитке: выбранный период, а если за него нет
+// данных (новый фонд) — fallback на лучший доступный (bestReturn).
+function displayReturn(
+    r: { m1: number | null; m3: number | null; m6: number | null; y1: number | null } | null | undefined,
+    period: ReturnPeriodKey,
+): { v: number; period: string } | null {
+    const v = returnForPeriod(r, period);
+    if (v != null) return { v, period: RETURN_PERIOD_LABEL[period] };
+    return bestReturn(r);
+}
+
+// Стабильный ключ УК для фильтра-мультиселекта: uk_id, иначе имя, иначе ''.
+function ukKey(f: { uk_id?: number | string | null; uk?: string | null }): string {
+    if (f.uk_id != null && f.uk_id !== '') return String(f.uk_id);
+    return f.uk || '';
+}
+
+// Подпись над контролом фильтра (мелкая, muted, uppercase) — общий стиль.
+const filterLabelStyle = {
+    fontSize: 'var(--fs-2xs)',
+    fontWeight: 700,
+    textTransform: 'uppercase',
+    letterSpacing: '0.06em',
+    color: 'var(--text-muted)',
+} as const;
 
 // Компактный формат для меток Y-оси графика — полные числа ("5 683 220")
 // не влезают слева и клиппятся, поэтому на оси даём "5,7 млн" / "339 тыс".

@@ -9,6 +9,10 @@ interface DonutProps {
     maxSlices?: number;     // default 10; остальное агрегируется в "Прочее"
     showCenterText?: boolean; // default true: число сегментов + "позиций"
     colors?: string[];      // default DONUT_COLORS из fundConfig
+    // Опц. клик по сектору. index — позиция отрисованного слайса (совпадает с
+    // массивом holdings, если maxSlices >= holdings.length, т.е. Donut не
+    // агрегирует «Прочее» сам). Если включён — у path появляется cursor:pointer.
+    onSliceClick?: (index: number) => void;
 }
 
 /**
@@ -28,6 +32,7 @@ export default function Donut({
     maxSlices = 10,
     showCenterText = true,
     colors = DONUT_COLORS,
+    onSliceClick,
 }: DonutProps) {
     const { paths, segmentCount } = useMemo(() => {
         const top = holdings.slice(0, maxSlices);
@@ -60,7 +65,15 @@ export default function Donut({
     return (
         <svg viewBox="0 0 200 200" width={size} height={size}>
             {paths.map((p, i) => (
-                <path key={i} d={p.d} fill={p.color} stroke="var(--bg-primary)" strokeWidth="1.5" />
+                <path
+                    key={i}
+                    d={p.d}
+                    fill={p.color}
+                    stroke="var(--bg-primary)"
+                    strokeWidth="1.5"
+                    onClick={onSliceClick ? () => onSliceClick(i) : undefined}
+                    style={onSliceClick ? { cursor: 'pointer' } : undefined}
+                />
             ))}
             {showCenterText && (
                 <>
