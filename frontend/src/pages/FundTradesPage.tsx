@@ -1473,17 +1473,6 @@ const filterLabelStyle = {
     color: 'var(--text-muted)',
 } as const;
 
-// Компактный формат для меток Y-оси графика — полные числа ("5 683 220")
-// не влезают слева и клиппятся, поэтому на оси даём "5,7 млн" / "339 тыс".
-// В тултипе остаётся полное число (formatValue).
-function formatSharesCompact(positions: number): string {
-    const abs = Math.abs(positions);
-    if (abs >= 1e9) return `${(positions / 1e9).toLocaleString('ru-RU', { maximumFractionDigits: 1 })} млрд`;
-    if (abs >= 1e6) return `${(positions / 1e6).toLocaleString('ru-RU', { maximumFractionDigits: 1 })} млн`;
-    if (abs >= 1e3) return `${(positions / 1e3).toLocaleString('ru-RU', { maximumFractionDigits: 0 })} тыс`;
-    return Math.round(positions).toLocaleString('ru-RU');
-}
-
 // Детект сплита акций в истории позиций + back-adjustment (как экспирация/ролловер
 // фьючерсов на OI). Сплит: количество ×R, цена ÷R, СТОИМОСТЬ непрерывна (amount ≈ const)
 // — именно это отличает сплит от реальной покупки (там сумма растёт ~×R). Без коррекции
