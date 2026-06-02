@@ -56,6 +56,7 @@ import { UK_LOGOS, DONUT_COLORS, assetColor } from '../config/fundConfig';
 import Donut from '../components/funds/Donut';
 import CompanyFlowsTab from '../components/fundtrades/CompanyFlowsTab';
 import UkMultiSelect, { type UkOption } from '../components/fundtrades/UkMultiSelect';
+import FundPicker, { type FundPickerFund } from '../components/fundtrades/FundPicker';
 import { useViewportWidth } from '../hooks/useViewportWidth';
 
 type Tab = 'funds' | 'movers' | 'snapshots' | 'company';
@@ -671,6 +672,8 @@ export default function FundTradesPage() {
     const [returnPeriod, setReturnPeriod] = useState<ReturnPeriodKey>('y1');
     // Меню выбора периода — встроено в кнопку сортировки «Доходность».
     const [periodMenuOpen, setPeriodMenuOpen] = useState(false);
+    // Hover-подсветка строки меню периода (editorial bg-highlight + сдвиг), как в FundPicker/CbrFlows.
+    const [periodMenuHover, setPeriodMenuHover] = useState<ReturnPeriodKey | null>(null);
     // Сортировка карточек: по доходности (за returnPeriod) / объёму руб / имени.
     const [fundSort, setFundSort] = useState<FundSortKey>('return');
     // Мультиселект УК (пусто = все). Ключ — uk_id (стабильнее имени), fallback на uk.
@@ -954,25 +957,42 @@ export default function FundTradesPage() {
                                                         <div
                                                             style={{
                                                                 position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 20,
-                                                                display: 'flex', flexDirection: 'column', minWidth: 150,
+                                                                display: 'flex', flexDirection: 'column', minWidth: 170,
                                                                 background: 'var(--bg-primary)', border: '1.5px solid var(--text-primary)',
                                                                 borderRadius: 10, boxShadow: '3px 3px 0 var(--text-primary)', overflow: 'hidden',
+                                                                color: 'var(--text-primary)',
                                                             }}
                                                         >
-                                                            {(['m1', 'm3', 'm6', 'y1'] as ReturnPeriodKey[]).map((k) => (
-                                                                <button
-                                                                    key={k}
-                                                                    onClick={() => { setReturnPeriod(k); setFundSort('return'); setPeriodMenuOpen(false); }}
-                                                                    style={{
-                                                                        padding: '9px 14px', textAlign: 'left', cursor: 'pointer',
-                                                                        background: returnPeriod === k ? 'var(--bg-secondary)' : 'transparent',
-                                                                        color: 'var(--text-primary)', border: 'none',
-                                                                        fontSize: 'var(--fs-xs)', fontWeight: returnPeriod === k ? 700 : 500,
-                                                                    }}
-                                                                >
-                                                                    Доходность · {RETURN_PERIOD_LABEL[k]}
-                                                                </button>
-                                                            ))}
+                                                            {(['m1', 'm3', 'm6', 'y1'] as ReturnPeriodKey[]).map((k) => {
+                                                                const on = returnPeriod === k;
+                                                                const isHover = periodMenuHover === k;
+                                                                return (
+                                                                    <button
+                                                                        key={k}
+                                                                        onClick={() => { setReturnPeriod(k); setFundSort('return'); setPeriodMenuOpen(false); }}
+                                                                        onMouseEnter={() => setPeriodMenuHover(k)}
+                                                                        onMouseLeave={() => setPeriodMenuHover(null)}
+                                                                        style={{
+                                                                            display: 'flex', alignItems: 'center', gap: 8,
+                                                                            padding: '9px 14px', textAlign: 'left', cursor: 'pointer',
+                                                                            background: on
+                                                                                ? 'var(--bg-secondary)'
+                                                                                : (isHover ? 'color-mix(in srgb, var(--text-primary) 6%, transparent)' : 'transparent'),
+                                                                            color: 'var(--text-primary)', border: 'none',
+                                                                            fontSize: 'var(--fs-xs)', fontWeight: on ? 700 : 500,
+                                                                            whiteSpace: 'nowrap',
+                                                                            transform: isHover ? 'translateX(2px)' : 'translateX(0)',
+                                                                            transition: 'background 150ms, transform 150ms',
+                                                                        }}
+                                                                    >
+                                                                        <span style={{
+                                                                            width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+                                                                            background: on ? 'var(--accent)' : 'transparent',
+                                                                        }} />
+                                                                        Доходность · {RETURN_PERIOD_LABEL[k]}
+                                                                    </button>
+                                                                );
+                                                            })}
                                                         </div>
                                                     </>
                                                 )}
@@ -1477,14 +1497,6 @@ function isIsin(s: string | null | undefined): s is string {
     return !!s && /^[A-Z]{2}[A-Z0-9]{10}$/.test(s);
 }
 
-// ITEM 7 — аватар УК для опции Dropdown (логотип UK_LOGOS по uk_id, иначе буква имени).
-function ukAvatarOf(f: { uk_id?: number | string | null; uk?: string | null }):
-    { img?: string; bg?: string; color?: string; letter?: string } {
-    const logo = f.uk_id != null ? UK_LOGOS[String(f.uk_id)] : undefined;
-    if (logo) return { img: logo.img, bg: logo.bg, color: logo.color, letter: logo.letter };
-    return { letter: (f.uk || '?').trim().charAt(0).toUpperCase() };
-}
-
 // Подпись над контролом фильтра (мелкая, muted, uppercase) — общий стиль.
 const filterLabelStyle = {
     fontSize: 'var(--fs-2xs)',
@@ -1675,8 +1687,6 @@ function EditorialBar({
 function SnapshotReviewTab() {
     const [availableFunds, setAvailableFunds] = useState<FundWithHistory[]>([]);
     const [ticker, setTicker] = useState<string>('EQMX');
-    // ITEM 7 — фильтр УК (мультиселект): сужает список фондов в селекторе. Пусто = все.
-    const [selectedUks, setSelectedUks] = useState<Set<string>>(new Set());
     const [snapshotsList, setSnapshotsList] = useState<FundSnapshotsList | null>(null);
     const [selectedDate, setSelectedDate] = useState<string | null>(null);
     const [review, setReview] = useState<FundSnapshotReview | null>(null);
@@ -1737,78 +1747,44 @@ function SnapshotReviewTab() {
         return Math.max(...allBars, 1);
     }, [review]);
 
-    // ITEM 7 — список УК для мультиселекта (ключ = uk_id, name + uk_id для аватара).
-    const ukOptions = useMemo<UkOption[]>(() => {
-        const map = new Map<string, UkOption>();
-        for (const f of availableFunds) {
-            const key = ukKey(f);
-            if (!key || map.has(key)) continue;
-            map.set(key, { key, name: UK_LOGOS[key]?.name || f.uk || key, uk_id: f.uk_id ?? key });
-        }
-        return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
-    }, [availableFunds]);
-
-    // Фонды после фильтра по УК (пусто = все) — питают селектор и группировку.
-    const filteredFunds = useMemo(
-        () => (selectedUks.size > 0 ? availableFunds.filter(f => selectedUks.has(ukKey(f))) : availableFunds),
-        [availableFunds, selectedUks],
+    // ITEM 5 — единый FundPicker (single): иерархия УК → фонд. Заменяет прежние
+    // UkMultiSelect-фильтр + Dropdown фонда. Группировка по УК — внутри FundPicker.
+    const pickerFunds = useMemo<FundPickerFund[]>(
+        () => availableFunds.map(f => ({ ticker: f.ticker, name: f.name, uk: f.uk, uk_id: f.uk_id })),
+        [availableFunds],
     );
-
-    // Группировка фондов по УК для dropdown (по отфильтрованному списку).
-    const fundsByUk = useMemo(() => {
-        const groups: Record<string, FundWithHistory[]> = {};
-        for (const f of filteredFunds) {
-            const uk = f.uk || 'Прочие';
-            if (!groups[uk]) groups[uk] = [];
-            groups[uk].push(f);
-        }
-        return groups;
-    }, [filteredFunds]);
+    const pickerSelected = useMemo(() => new Set([ticker]), [ticker]);
 
     const selectedFund = availableFunds.find(f => f.ticker === ticker);
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-            {/* Ticker selector — фильтр УК (мультиселект) + dropdown фонда с лого УК */}
+            {/* Ticker selector — единый FundPicker (single): иерархия УК → фонд (ITEM 5) */}
             <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
                 <label style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-tertiary)' }}>
                     Фонд:
                 </label>
-                {ukOptions.length > 1 && (
-                    <UkMultiSelect
-                        options={ukOptions}
-                        selected={selectedUks}
-                        onChange={(next) => {
-                            setSelectedUks(next);
-                            // Если текущий фонд выпал из фильтра — переключиться на первый доступный.
-                            if (next.size > 0) {
-                                const cur = availableFunds.find(f => f.ticker === ticker);
-                                if (cur && !next.has(ukKey(cur))) {
-                                    const first = availableFunds.find(f => next.has(ukKey(f)));
-                                    if (first) setTicker(first.ticker);
-                                }
-                            }
-                        }}
-                    />
-                )}
-                <Dropdown<string>
-                    options={Object.entries(fundsByUk).flatMap(([, funds]) =>
-                        funds.map((f) => ({
-                            key: f.ticker,
-                            label: `${f.ticker} — ${f.name}`,
-                            avatar: ukAvatarOf(f),
-                        }))
-                    )}
-                    value={ticker}
-                    onChange={setTicker}
+                <FundPicker
+                    funds={pickerFunds}
+                    mode="single"
+                    selected={pickerSelected}
+                    onChange={(next) => {
+                        const t = next.values().next().value as string | undefined;
+                        if (t) setTicker(t);
+                    }}
                     minWidth={280}
-                    menuMaxWidth={480}
                 />
-                {selectedFund && (
-                    <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-tertiary)' }}>
-                        {selectedFund.uk || 'УК неизвестна'} · {selectedFund.category || ''}
-                    </span>
-                )}
+                {/* ITEM 4 — имя УК из UK_LOGOS (если есть) либо поле uk; без «УК неизвестна»/«· stocks». */}
+                {selectedFund && (() => {
+                    const ukName = (selectedFund.uk_id != null
+                        ? UK_LOGOS[String(selectedFund.uk_id)]?.name
+                        : undefined) || selectedFund.uk;
+                    return ukName ? (
+                        <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-tertiary)' }}>
+                            {ukName}
+                        </span>
+                    ) : null;
+                })()}
             </div>
 
             {/* Snapshots timeline navigation */}

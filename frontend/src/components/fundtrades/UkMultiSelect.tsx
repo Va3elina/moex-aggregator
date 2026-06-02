@@ -1,9 +1,10 @@
 // Общий мультиселект УК для /fund-trades — аватар (UK_LOGOS) + имя + чекбокс.
 // Кнопка: «Все УК» (пусто) либо «N из M УК». Множественный выбор (toggle в Set).
-// Попап повторяет меню периода «Доходность» в FundTradesPage:
-// fixed-backdrop zIndex 19 + absolute popup zIndex 20, editorial border 1.5px
-// var(--text-primary) + boxShadow '3px 3px 0 var(--text-primary)'. Закрытие по
-// клику вне. Editorial-токены var(--*).
+// Стиль повторяет popover «Категории» в CbrFlowsPage: editorial-карточка
+// (border 2px var(--text-primary) + hard-shadow), header с title + счётчик,
+// RICH-строки (цветной чекбокс 22px + аватар УК + имя) в единой левой сетке,
+// hover-анимация строк (bg highlight + лёгкий сдвиг, transition). Закрытие по
+// клику вне (fixed-backdrop). Editorial-токены var(--*).
 
 import { useState } from 'react';
 import { UK_LOGOS } from '../../config/fundConfig';
@@ -22,9 +23,9 @@ export interface UkMultiSelectProps {
     minWidth?: number;
 }
 
-// Аватар УК ~22px: картинка из UK_LOGOS[...].img либо буква на цветном bg.
+// Аватар УК ~24px: картинка из UK_LOGOS[...].img либо буква на цветном bg.
 // Лого ищем по uk_id (приоритет), затем по key. Нет записи → нейтральный кружок.
-function UkAvatar({ opt, size = 22 }: { opt: UkOption; size?: number }) {
+function UkAvatar({ opt, size = 24 }: { opt: UkOption; size?: number }) {
     const logo = UK_LOGOS[String(opt.uk_id ?? opt.key)] ?? UK_LOGOS[opt.key];
     return (
         <div
@@ -55,6 +56,33 @@ function UkAvatar({ opt, size = 22 }: { opt: UkOption; size?: number }) {
     );
 }
 
+// Цветной чекбокс 22px в стиле CbrFlows: заполненный accent-квадрат с белой
+// галкой когда выбран; пустой контур var(--text-muted) когда нет.
+function CheckBox({ on }: { on: boolean }) {
+    return (
+        <div
+            style={{
+                width: 22,
+                height: 22,
+                flexShrink: 0,
+                borderRadius: 6,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: on ? 'var(--accent)' : 'transparent',
+                border: `2px solid ${on ? 'var(--accent)' : 'var(--text-muted)'}`,
+                transition: 'all 150ms',
+            }}
+        >
+            {on && (
+                <svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="2 7 6 11 12 3" />
+                </svg>
+            )}
+        </div>
+    );
+}
+
 export default function UkMultiSelect({
     options,
     selected,
@@ -63,6 +91,7 @@ export default function UkMultiSelect({
     minWidth = 150,
 }: UkMultiSelectProps) {
     const [open, setOpen] = useState(false);
+    const [hovered, setHovered] = useState<string | null>(null);
 
     const allActive = selected.size === 0;
     const buttonLabel = allActive
@@ -111,53 +140,113 @@ export default function UkMultiSelect({
                     />
                     <div
                         style={{
-                            position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 20,
-                            display: 'flex', flexDirection: 'column', minWidth,
-                            maxHeight: 320, overflowY: 'auto',
-                            background: 'var(--bg-primary)', border: '1.5px solid var(--text-primary)',
-                            borderRadius: 10, boxShadow: '3px 3px 0 var(--text-primary)',
+                            position: 'absolute', top: 'calc(100% + var(--sp-2))', left: 0, zIndex: 20,
+                            minWidth, width: 'max-content', maxWidth: 'min(360px, calc(100vw - 32px))',
+                            maxHeight: '70vh', overflowY: 'auto',
+                            background: 'var(--bg-primary)', border: '2px solid var(--text-primary)',
+                            borderRadius: 16,
+                            boxShadow: 'var(--shadow-hard-card, 6px 6px 0 var(--text-primary))',
                         }}
                     >
-                        {/* «Все УК» — сброс selected в пусто, active если пусто */}
-                        <button
-                            type="button"
-                            onClick={() => { onChange(new Set()); setOpen(false); }}
-                            style={{
-                                display: 'flex', alignItems: 'center', gap: 8,
-                                padding: '9px 14px', textAlign: 'left', cursor: 'pointer',
-                                background: allActive ? 'var(--bg-secondary)' : 'transparent',
-                                color: 'var(--text-primary)', border: 'none',
-                                borderBottom: '1px solid var(--border-color)',
-                                fontSize: 'var(--fs-xs)', fontWeight: allActive ? 700 : 500,
-                                whiteSpace: 'nowrap',
-                            }}
+                        {/* Header popover — title + счётчик выбранных, как в CbrFlows */}
+                        <div
+                            className="flex items-center justify-between border-b border-theme"
+                            style={{ padding: 'var(--sp-3) var(--sp-4)' }}
                         >
-                            <span style={{ width: 16, textAlign: 'center', opacity: allActive ? 1 : 0 }}>✓</span>
-                            {allLabel}
-                        </button>
+                            <span
+                                className="font-bold"
+                                style={{ fontSize: 'var(--fs-base)', color: 'var(--text-primary)' }}
+                            >
+                                {allLabel}
+                            </span>
+                            <span
+                                className="font-mono font-bold"
+                                style={{ fontSize: 'var(--fs-xs)', color: 'var(--accent)' }}
+                            >
+                                {allActive ? options.length : selected.size}/{options.length}
+                            </span>
+                        </div>
 
-                        {options.map((opt) => {
-                            const on = selected.has(opt.key);
-                            return (
-                                <button
-                                    key={opt.key}
-                                    type="button"
-                                    onClick={() => toggle(opt.key)}
+                        {/* Items list — единый left-grid: чекбокс 22px + аватар + имя */}
+                        <div style={{ padding: 'var(--sp-2)' }}>
+                            {/* «Все УК» — сброс selected в пусто, active если пусто */}
+                            <button
+                                type="button"
+                                onClick={() => { onChange(new Set()); setOpen(false); }}
+                                onMouseEnter={() => setHovered('__all__')}
+                                onMouseLeave={() => setHovered(null)}
+                                className="w-full text-left rounded-xl"
+                                style={{
+                                    display: 'flex', alignItems: 'center', gap: 'var(--sp-3)',
+                                    padding: 'var(--sp-3)', marginBottom: 'var(--sp-1)',
+                                    cursor: 'pointer', border: '1.5px solid transparent',
+                                    background: allActive
+                                        ? 'color-mix(in srgb, var(--text-primary) 4%, transparent)'
+                                        : hovered === '__all__'
+                                            ? 'color-mix(in srgb, var(--text-primary) 7%, transparent)'
+                                            : 'transparent',
+                                    borderColor: allActive
+                                        ? 'color-mix(in srgb, var(--text-primary) 12%, transparent)'
+                                        : 'transparent',
+                                    transform: hovered === '__all__' ? 'translateX(2px)' : 'translateX(0)',
+                                    transition: 'all 150ms',
+                                }}
+                            >
+                                <CheckBox on={allActive} />
+                                <span
+                                    className="font-bold"
                                     style={{
-                                        display: 'flex', alignItems: 'center', gap: 8,
-                                        padding: '8px 14px', textAlign: 'left', cursor: 'pointer',
-                                        background: on ? 'var(--bg-secondary)' : 'transparent',
-                                        color: 'var(--text-primary)', border: 'none',
-                                        fontSize: 'var(--fs-xs)', fontWeight: on ? 700 : 500,
+                                        fontSize: 'var(--fs-sm)', color: 'var(--text-primary)',
                                         whiteSpace: 'nowrap',
                                     }}
                                 >
-                                    <span style={{ width: 16, textAlign: 'center', opacity: on ? 1 : 0 }}>✓</span>
-                                    <UkAvatar opt={opt} />
-                                    {opt.name}
-                                </button>
-                            );
-                        })}
+                                    {allLabel}
+                                </span>
+                            </button>
+
+                            {options.map((opt) => {
+                                const on = selected.has(opt.key);
+                                const isHover = hovered === opt.key;
+                                return (
+                                    <button
+                                        key={opt.key}
+                                        type="button"
+                                        onClick={() => toggle(opt.key)}
+                                        onMouseEnter={() => setHovered(opt.key)}
+                                        onMouseLeave={() => setHovered(null)}
+                                        className="w-full text-left rounded-xl"
+                                        style={{
+                                            display: 'flex', alignItems: 'center', gap: 'var(--sp-3)',
+                                            padding: 'var(--sp-3)', marginBottom: 'var(--sp-1)',
+                                            cursor: 'pointer', border: '1.5px solid transparent',
+                                            background: on
+                                                ? 'color-mix(in srgb, var(--text-primary) 4%, transparent)'
+                                                : isHover
+                                                    ? 'color-mix(in srgb, var(--text-primary) 7%, transparent)'
+                                                    : 'transparent',
+                                            borderColor: on
+                                                ? 'color-mix(in srgb, var(--text-primary) 12%, transparent)'
+                                                : 'transparent',
+                                            transform: isHover ? 'translateX(2px)' : 'translateX(0)',
+                                            transition: 'all 150ms',
+                                        }}
+                                    >
+                                        <CheckBox on={on} />
+                                        <UkAvatar opt={opt} />
+                                        <span
+                                            className="font-semibold flex-1 min-w-0 truncate"
+                                            style={{
+                                                fontSize: 'var(--fs-sm)', color: 'var(--text-primary)',
+                                                fontWeight: on ? 700 : 600,
+                                            }}
+                                            title={opt.name}
+                                        >
+                                            {opt.name}
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        </div>
                     </div>
                 </>
             )}

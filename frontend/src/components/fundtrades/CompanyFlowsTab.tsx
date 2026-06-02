@@ -13,8 +13,8 @@
  * типы FundTradeAsset, CompanyFlowsResponse. Их добавляет бэкенд-агент по
  * общему контракту — здесь импортируем строго по контрактным именам.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Search, ChevronDown, TrendingUp } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { ChevronDown, TrendingUp } from 'lucide-react';
 import { UK_LOGOS, DONUT_COLORS, assetTicker, assetColor } from '../../config/fundConfig';
 import {
     listFundTradeAssets,
@@ -25,22 +25,14 @@ import {
 import TickerLogo from '../TickerLogo';
 import ChartLegend from '../chart/ChartLegend';
 import StackedFlowBars, { type StackedSeries } from './StackedFlowBars';
-import UkMultiSelect, { type UkOption } from './UkMultiSelect';
+import AssetPickerModal from './AssetPickerModal';
+import FundPicker, { type FundPickerFund } from './FundPicker';
 
 type Metric = 'amount' | 'weight';
 
-// ITEM 4a — default УК: Первая (34), Альфа-Капитал (5), Т-Капитал (3597).
-// НЕ Авторские (record/geroi). uk_id'ы как строки (ключ селекта = String(uk_id)).
-const DEFAULT_UK_KEYS = ['34', '5', '3597'];
-
-// ITEM 4a — фонды без числового uk_id (Авторские и пр.) группируются под этим
-// ключом. В default не входит → «НЕ Авторские» выполняется само собой.
-const NULL_UK_KEY = '__no_uk__';
-
-// Ключ УК для фильтрации/опций: String(uk_id) либо NULL_UK_KEY.
-function ukKeyOf(ukId: string | number | null | undefined): string {
-    return ukId == null ? NULL_UK_KEY : String(ukId);
-}
+// ITEM 2 — сколько фондов выбрать по умолчанию для свежей бумаги:
+// top-N по суммарному |потоку| (см. computeTopFunds). Пусто-выбор = все фонды.
+const DEFAULT_FUND_COUNT = 3;
 
 // ITEM 4b/5 — логотип бумаги в опции селектора: спрайт по тикеру, иначе
 // цветная точка (assetColor), иначе нейтральная точка.
@@ -62,243 +54,29 @@ function AssetMark({ name, size = 22 }: { name: string; size?: number }) {
     );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Searchable селектор бумаги — editorial pill + popup с текстовым фильтром.
-// Self-contained (shared Dropdown не поддерживает поиск).
-// ─────────────────────────────────────────────────────────────────────────────
-// ITEM 5 — last4 ISIN: различитель для идентичных коротких имён.
-function isinSuffix(isin: string | null): string {
-    return isin ? isin.slice(-4) : '';
-}
-
-function AssetSelector({
-    assets,
-    selectedKey,
-    onSelect,
-    dupNames,
-}: {
-    assets: FundTradeAsset[];
-    selectedKey: string | null;
-    onSelect: (a: FundTradeAsset) => void;
-    dupNames: Set<string>;
-}) {
-    const [open, setOpen] = useState(false);
-    const [query, setQuery] = useState('');
-    const wrapRef = useRef<HTMLDivElement>(null);
-    const inputRef = useRef<HTMLInputElement>(null);
-
-    const selected = useMemo(
-        () => assets.find(a => a.key === selectedKey) ?? null,
-        [assets, selectedKey],
-    );
-
-    // Закрытие по клику вне + ESC.
-    useEffect(() => {
-        if (!open) return;
-        const onClick = (e: MouseEvent) => {
-            if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
-        };
-        const onKey = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') setOpen(false);
-        };
-        document.addEventListener('mousedown', onClick);
-        document.addEventListener('keydown', onKey);
-        return () => {
-            document.removeEventListener('mousedown', onClick);
-            document.removeEventListener('keydown', onKey);
-        };
-    }, [open]);
-
-    // Фокус на поле ввода при открытии.
-    useEffect(() => {
-        if (open) inputRef.current?.focus();
-        else setQuery('');
-    }, [open]);
-
-    const filtered = useMemo(() => {
-        const q = query.trim().toLowerCase();
-        if (!q) return assets;
-        return assets.filter(
-            a =>
-                a.asset_name.toLowerCase().includes(q) ||
-                (a.isin ?? '').toLowerCase().includes(q),
-        );
-    }, [assets, query]);
-
-    return (
-        <div ref={wrapRef} className="frame-dropdown relative inline-block">
-            <button
-                type="button"
-                onClick={() => setOpen(o => !o)}
-                className="frame-dropdown-trigger flex items-center font-semibold rounded-full"
-                style={{
-                    backgroundColor: 'var(--bg-secondary)',
-                    color: 'var(--text-primary)',
-                    border: '2px solid var(--text-primary)',
-                    minWidth: 260,
-                    maxWidth: '100%',
-                    fontSize: 'var(--fs-sm)',
-                    padding: 'var(--sp-2) var(--sp-4)',
-                    gap: 'var(--sp-2)',
-                    transition: 'transform 0.15s ease, box-shadow 0.15s ease',
-                }}
-            >
-                {selected && <AssetMark name={selected.asset_name} />}
-                {selected ? (
-                    <>
-                        {/* ITEM 5 — ellipsis 1 строка + нативный title с полным именем */}
-                        <span
-                            className="flex-1 text-left"
-                            title={selected.asset_name}
-                            style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                        >
-                            {selected.asset_name}
-                        </span>
-                        <span
-                            className="tabular-nums flex-shrink-0"
-                            style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-xs)' }}
-                        >
-                            {selected.funds_count} {pluralFunds(selected.funds_count)}
-                        </span>
-                    </>
-                ) : (
-                    <span className="flex-1 text-left truncate">Выберите бумагу</span>
-                )}
-                <ChevronDown
-                    size={16}
-                    style={{
-                        transition: 'transform 0.2s ease',
-                        transform: open ? 'rotate(180deg)' : 'rotate(0)',
-                        flexShrink: 0,
-                    }}
-                />
-            </button>
-
-            {open && (
-                <div
-                    className="frame-dropdown-menu absolute z-50 mt-1 rounded-xl"
-                    style={{
-                        backgroundColor: 'var(--bg-secondary)',
-                        border: '2px solid var(--text-primary)',
-                        boxShadow: 'var(--shadow-hard-chip, 4px 4px 0 var(--text-primary))',
-                        minWidth: '100%',
-                        width: 340,
-                        maxWidth: '90vw',
-                    }}
-                >
-                    {/* Поле поиска */}
-                    <div
-                        className="flex items-center gap-2"
-                        style={{
-                            padding: 'var(--sp-2) var(--sp-3)',
-                            borderBottom: '1px solid var(--border-color)',
-                        }}
-                    >
-                        <Search size={15} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-                        <input
-                            ref={inputRef}
-                            type="text"
-                            value={query}
-                            onChange={e => setQuery(e.target.value)}
-                            placeholder="Поиск по названию или ISIN…"
-                            className="flex-1 bg-transparent outline-none"
-                            style={{
-                                color: 'var(--text-primary)',
-                                fontSize: 'var(--fs-sm)',
-                            }}
-                        />
-                    </div>
-
-                    {/* Список опций */}
-                    <div style={{ maxHeight: '50vh', overflowY: 'auto', padding: '4px 0' }}>
-                        {filtered.length === 0 ? (
-                            <div
-                                className="text-theme-secondary"
-                                style={{ padding: 'var(--sp-3)', fontSize: 'var(--fs-sm)', textAlign: 'center' }}
-                            >
-                                Ничего не найдено
-                            </div>
-                        ) : (
-                            filtered.map(a => {
-                                const active = a.key === selectedKey;
-                                // ITEM 5 — суффикс last4 ISIN только для бумаг с
-                                // идентичным коротким именем (различитель).
-                                const suffix = dupNames.has(a.asset_name) ? isinSuffix(a.isin) : '';
-                                return (
-                                    <button
-                                        key={a.key}
-                                        type="button"
-                                        onClick={() => {
-                                            onSelect(a);
-                                            setOpen(false);
-                                        }}
-                                        className="frame-dropdown-item w-full text-left flex items-center"
-                                        style={{
-                                            margin: '4px 6px',
-                                            padding: '8px 12px',
-                                            width: 'calc(100% - 12px)',
-                                            borderRadius: 999,
-                                            fontWeight: active ? 800 : 600,
-                                            color: active ? 'var(--text-inverse)' : 'var(--text-primary)',
-                                            backgroundColor: active ? 'var(--accent)' : 'transparent',
-                                            border: active ? '2px solid var(--text-primary)' : '2px solid transparent',
-                                            boxShadow: active
-                                                ? 'var(--shadow-hard-chip, 3px 3px 0 var(--text-primary))'
-                                                : 'none',
-                                            cursor: 'pointer',
-                                            gap: 'var(--sp-2)',
-                                            transition: 'background-color 0.12s ease, color 0.12s ease',
-                                        }}
-                                    >
-                                        <AssetMark name={a.asset_name} />
-                                        {/* ITEM 5 — ellipsis 1 строка + title */}
-                                        <span
-                                            className="flex-1"
-                                            title={a.asset_name}
-                                            style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                                        >
-                                            {a.asset_name}
-                                            {suffix && (
-                                                <span
-                                                    className="tabular-nums"
-                                                    style={{
-                                                        marginLeft: 6,
-                                                        fontSize: 'var(--fs-2xs)',
-                                                        color: active ? 'var(--text-inverse)' : 'var(--text-muted)',
-                                                        opacity: active ? 0.8 : 1,
-                                                    }}
-                                                >
-                                                    …{suffix}
-                                                </span>
-                                            )}
-                                        </span>
-                                        <span
-                                            className="tabular-nums flex-shrink-0"
-                                            style={{
-                                                fontSize: 'var(--fs-2xs)',
-                                                color: active ? 'var(--text-inverse)' : 'var(--text-muted)',
-                                                opacity: active ? 0.9 : 1,
-                                            }}
-                                        >
-                                            {a.funds_count} {pluralFunds(a.funds_count)}
-                                        </span>
-                                    </button>
-                                );
-                            })
-                        )}
-                    </div>
-                </div>
-            )}
-        </div>
-    );
-}
-
 function pluralFunds(n: number): string {
     const mod10 = n % 10;
     const mod100 = n % 100;
     if (mod10 === 1 && mod100 !== 11) return 'фонд';
     if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'фонда';
     return 'фондов';
+}
+
+// ITEM 2 — дефолт-выбор фондов для свежей бумаги: тикеры N фондов с наибольшим
+// суммарным |потоком| (Σ|values|) по этой бумаге. Возвращает Set тикеров.
+// Если фондов ≤ N — берём все (для FundPicker пустой Set = «все», поэтому при
+// ≤ N выгоднее вернуть пусто и не плодить «частичный» выбор → даём пусто).
+function computeTopFunds(
+    funds: { ticker: string; values: (number | null)[] }[],
+    n: number,
+): Set<string> {
+    if (funds.length <= n) return new Set();
+    const scored = funds.map(f => ({
+        ticker: f.ticker,
+        score: f.values.reduce<number>((acc, v) => acc + (v == null ? 0 : Math.abs(v)), 0),
+    }));
+    scored.sort((a, b) => b.score - a.score);
+    return new Set(scored.slice(0, n).map(s => s.ticker));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -322,8 +100,12 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed }: Compa
     const [flowsLoading, setFlowsLoading] = useState(false);
     const [flowsError, setFlowsError] = useState<string | null>(null);
 
-    // ITEM 4a — выбранные УК (ключ = String(uk_id) | NULL_UK_KEY). Пусто = все.
-    const [selectedUks, setSelectedUks] = useState<Set<string>>(() => new Set(DEFAULT_UK_KEYS));
+    // ITEM 3 — открыта ли модалка выбора бумаги.
+    const [pickerOpen, setPickerOpen] = useState(false);
+
+    // ITEM 2 — выбранные КОНКРЕТНЫЕ фонды (ключ = ticker). Пусто = все фонды.
+    // Дефолт пересчитывается на смену бумаги (см. эффект ниже): top-3 по |потоку|.
+    const [selectedFunds, setSelectedFunds] = useState<Set<string>>(() => new Set());
 
     // metric toggle — default ₽ (amount).
     const [metric] = useState<Metric>('amount');
@@ -386,6 +168,9 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed }: Compa
             .then(resp => {
                 if (cancelled) return;
                 setFlows(resp);
+                // ITEM 2 — на смену бумаги пере-выбираем дефолт: top-3 фонда по
+                // суммарному |потоку|. ≤3 фондов → пусто (= все, см. computeTopFunds).
+                setSelectedFunds(computeTopFunds(resp.funds, DEFAULT_FUND_COUNT));
                 setFlowsError(null);
             })
             .catch(err => {
@@ -401,33 +186,18 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed }: Compa
         };
     }, [selectedAsset, metric]);
 
-    // ITEM 5 — короткие имена, встречающиеся у >1 бумаги с разным ISIN: им нужен
-    // различитель (суффикс last4 ISIN) в селекторе.
-    const dupNames = useMemo(() => {
-        const counts = new Map<string, number>();
-        for (const a of assets) counts.set(a.asset_name, (counts.get(a.asset_name) ?? 0) + 1);
-        const dup = new Set<string>();
-        for (const [name, n] of counts) if (n > 1) dup.add(name);
-        return dup;
-    }, [assets]);
-
-    // ITEM 4a — список УК для мультиселекта: из фондов, держащих текущую бумагу.
-    // Дедуп по ukKeyOf(uk_id); имя — из UK_LOGOS либо «Прочие УК» для безымянных.
-    const ukOptions: UkOption[] = useMemo(() => {
+    // ITEM 2 — список фондов для FundPicker (сгруппируется по УК внутри пикера).
+    // uk-имя не передаём — FundPicker берёт его из UK_LOGOS[uk_id] (канон).
+    const fundPickerFunds: FundPickerFund[] = useMemo(() => {
         if (!flows) return [];
-        const seen = new Map<string, UkOption>();
-        for (const f of flows.funds) {
-            const key = ukKeyOf(f.uk_id);
-            if (seen.has(key)) continue;
-            const name = key === NULL_UK_KEY
-                ? 'Прочие УК'
-                : (UK_LOGOS[key]?.name ?? `УК ${key}`);
-            seen.set(key, { key, name, uk_id: f.uk_id ?? undefined });
-        }
-        return Array.from(seen.values());
+        return flows.funds.map(f => ({
+            ticker: f.ticker,
+            name: f.fund_name,
+            uk_id: f.uk_id,
+        }));
     }, [flows]);
 
-    // ITEM 4a — фонды, попадающие в чарты: фильтр по выбранным УК (пусто = все).
+    // ITEM 2 — фонды, попадающие в чарты: фильтр по выбранным тикерам (пусто = все).
     // Цвет фонда привязан к индексу в ПОЛНОМ списке (стабилен при фильтрации).
     const visibleSeries: StackedSeries[] = useMemo(() => {
         if (!flows) return [];
@@ -435,7 +205,7 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed }: Compa
             .map((f, idx) => {
                 const ukColor = f.uk_id != null ? UK_LOGOS[String(f.uk_id)]?.bg : undefined;
                 return {
-                    ukKey: ukKeyOf(f.uk_id),
+                    ticker: f.ticker,
                     series: {
                         label: f.fund_name,
                         color: ukColor ?? DONUT_COLORS[idx % DONUT_COLORS.length],
@@ -443,14 +213,14 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed }: Compa
                     } as StackedSeries,
                 };
             })
-            .filter(x => selectedUks.size === 0 || selectedUks.has(x.ukKey))
+            .filter(x => selectedFunds.size === 0 || selectedFunds.has(x.ticker))
             .map(x => x.series);
-    }, [flows, selectedUks]);
+    }, [flows, selectedFunds]);
 
     // Серии для чарта «Flow по фондам».
     const fundSeries = visibleSeries;
 
-    // Серия для «Суммарный Flow» — сумма по ВИДИМЫМ фондам (учёт UK-фильтра).
+    // Серия для «Суммарный Flow» — сумма по ВИДИМЫМ фондам (учёт фильтра фондов).
     const totalSeries: StackedSeries[] = useMemo(() => {
         if (!flows) return [];
         const monthsLen = flows.months.length;
@@ -540,7 +310,8 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed }: Compa
                 >
                     Потоки по компании
                 </h2>
-                {/* ITEM 4 — селектор бумаги (с лого) + мультиселект УК-фондов */}
+                {/* ITEM 3 — кнопка-триггер бумаги (лого + имя + счётчик) → AssetPickerModal.
+                    ITEM 2 — FundPicker (multi) по конкретным фондам текущей бумаги. */}
                 <div
                     style={{
                         marginTop: 'var(--sp-1)',
@@ -550,16 +321,50 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed }: Compa
                         gap: 'var(--sp-2)',
                     }}
                 >
-                    <AssetSelector
-                        assets={assets}
-                        selectedKey={selectedKey}
-                        onSelect={a => setSelectedKey(a.key)}
-                        dupNames={dupNames}
-                    />
-                    <UkMultiSelect
-                        options={ukOptions}
-                        selected={selectedUks}
-                        onChange={setSelectedUks}
+                    <button
+                        type="button"
+                        onClick={() => setPickerOpen(true)}
+                        className="editorial-press flex items-center font-semibold rounded-full"
+                        style={{
+                            backgroundColor: 'var(--bg-secondary)',
+                            color: 'var(--text-primary)',
+                            border: '2px solid var(--text-primary)',
+                            minWidth: 240,
+                            maxWidth: '100%',
+                            fontSize: 'var(--fs-sm)',
+                            padding: 'var(--sp-2) var(--sp-4)',
+                            gap: 'var(--sp-2)',
+                            cursor: 'pointer',
+                        }}
+                    >
+                        {selectedAsset && <AssetMark name={selectedAsset.asset_name} />}
+                        {selectedAsset ? (
+                            <>
+                                <span
+                                    className="flex-1 text-left"
+                                    title={selectedAsset.asset_name}
+                                    style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                                >
+                                    {selectedAsset.asset_name}
+                                </span>
+                                <span
+                                    className="tabular-nums flex-shrink-0"
+                                    style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-xs)' }}
+                                >
+                                    {selectedAsset.funds_count} {pluralFunds(selectedAsset.funds_count)}
+                                </span>
+                            </>
+                        ) : (
+                            <span className="flex-1 text-left truncate">Выберите бумагу</span>
+                        )}
+                        <ChevronDown size={16} style={{ flexShrink: 0 }} />
+                    </button>
+
+                    <FundPicker
+                        funds={fundPickerFunds}
+                        mode="multi"
+                        selected={selectedFunds}
+                        onChange={setSelectedFunds}
                     />
                 </div>
             </div>
@@ -601,13 +406,13 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed }: Compa
                     />
                 )}
 
-                {/* ITEM 4a — UK-фильтр спрятал все фонды, держащие бумагу */}
+                {/* ITEM 2 — фильтр фондов спрятал все серии */}
                 {flows && flows.funds.length > 0 && fundSeries.length === 0 && (
                     <div
                         className="text-theme-secondary"
                         style={{ fontSize: 'var(--fs-xs)', padding: 'var(--sp-2) 0' }}
                     >
-                        Эту бумагу не держат фонды выбранных УК — расширьте фильтр УК.
+                        Не выбрано ни одного фонда — выберите фонды или «Все фонды».
                     </div>
                 )}
 
@@ -626,6 +431,15 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed }: Compa
                     signColorForSingle
                 />
             </section>
+
+            {/* ITEM 3 — модалка выбора бумаги (assets = текущий список). */}
+            {pickerOpen && (
+                <AssetPickerModal
+                    assets={assets}
+                    onSelect={a => setSelectedKey(a.key)}
+                    onClose={() => setPickerOpen(false)}
+                />
+            )}
         </div>
     );
 }
