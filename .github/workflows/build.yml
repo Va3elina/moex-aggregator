@@ -1,0 +1,46 @@
+name: build-check
+
+# Гейт сборки: на каждый push в main и каждый PR прогоняем ПОЛНУЮ прод-сборку
+# (`npm run build` = tsc -b строгий + vite + prerender). Ловит TS6133 unused и
+# type-ошибки, которых `tsc --noEmit` НЕ видит (из-за них 2 июня прод-деплой молча
+# падал и оставался на старом образе). Красный билд тут = не мёржим/не деплоим.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install deps
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build (tsc -b + vite + prerender)
+        working-directory: frontend
+        run: npm run build
+
+      - name: SW bump check (warning)
+        if: github.event_name == 'push'
+        run: |
+          changed=$(git diff --name-only HEAD~1 HEAD)
+          if echo "$changed" | grep -q '^frontend/src/' && ! echo "$changed" | grep -q '^frontend/public/sw.js$'; then
+            echo "::warning::frontend/src changed but sw.js not bumped - PWA cache will not refresh. Bump CACHE_NAME."
+          fi

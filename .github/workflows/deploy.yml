@@ -1,0 +1,52 @@
+name: deploy-prod
+
+# Деплой на прод: SSH -> git pull + docker build + recreate + nginx + health-check.
+# ПОКА запускается ВРУЧНУЮ (workflow_dispatch) - чтобы протестировать перед авто-режимом.
+#
+# Чтобы включить:
+#   1. Добавить секрет PROD_SSH_KEY (приватный ключ ~/.ssh/id_ed25519) в
+#      Settings -> Secrets and variables -> Actions.
+#   2. Один раз вручную запустить (Run workflow) и убедиться, что деплой+health ОК.
+#   3. ВАЖНО: до первого git-деплоя на проде разово выполнить
+#      `cd /opt/frame && git checkout api/routers/fund_trades.py` - сбросить scp-версию,
+#      чтобы git pull применился чисто (после коммита fund_trades.py в репо).
+#   4. Для авто-деплоя - раскомментировать блок push ниже.
+#
+# Заметка про 4ГБ прод: сборка образа идёт НА проде. Если станет тяжело -
+# перенести build в Actions + push в GHCR, прод только pull (обсудим отдельно).
+
+on:
+  workflow_dispatch:
+  # push:
+  #   branches: [main]
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH deploy
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: 103.88.243.232
+          username: root
+          key: ${{ secrets.PROD_SSH_KEY }}
+          command_timeout: 20m
+          script: |
+            set -e
+            cd /opt/frame
+            git pull origin main
+            docker compose build api
+            docker compose up -d --force-recreate api
+            docker restart frame-nginx-1
+
+      - name: Health + SW check
+        run: |
+          sleep 10
+          code=$(curl -s -o /dev/null -w "%{http_code}" https://xn--80aklbnczmv.xn--p1ai/api/health)
+          echo "health: HTTP $code"
+          test "$code" = "200" || { echo "health failed"; exit 1; }
+          curl -s https://xn--80aklbnczmv.xn--p1ai/sw.js | grep -m1 CACHE_NAME || true
