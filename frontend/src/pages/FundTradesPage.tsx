@@ -914,11 +914,14 @@ export default function FundTradesPage() {
                                                         flexShrink: 0,
                                                         fontWeight: 900,
                                                         fontSize: 'var(--fs-lg)',
-                                                        backgroundColor: uk.bg,
+                                                        overflow: 'hidden',
+                                                        backgroundColor: uk.img ? undefined : uk.bg,
                                                         color: uk.color,
                                                     }}
                                                 >
-                                                    {uk.letter}
+                                                    {uk.img
+                                                        ? <img src={uk.img} alt={uk.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                        : uk.letter}
                                                 </div>
                                             )}
                                             <div style={{ flex: 1, minWidth: 0 }}>
