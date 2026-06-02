@@ -2,15 +2,19 @@
 // СГРУППИРОВАННЫХ ПО УК. Заголовок-группа = аватар УК (UK_LOGOS) + имя УК;
 // под ним фонды-строки: чекбокс(multi)/радио(single) + тикер + короткое имя.
 //
-// Стиль повторяет popover «Категории» из CbrFlowsPage (editorial border 1.5px
-// var(--text-primary) + hard-shadow, rich-строки) и паттерн поповера/аватара из
-// UkMultiSelect: fixed-backdrop zIndex 19 + absolute popup zIndex 20, закрытие
-// по клику вне. Каждая строка с hover-анимацией (bg highlight + лёгкий сдвиг).
+// Триггер-кнопка ОТКРЫВАЕТ МОДАЛЬНОЕ ОКНО (паттерн AssetPickerModal): overlay
+// rgba(0,0,0,.6) клик=закрыть, окно bg-secondary + 2px border var(--text-primary)
+// + hard-shadow, maxWidth ~580, max-h 80vh, скролл, заголовок + X. Внутри окна —
+// поиск (по тикеру/имени), УК-группы и фонды-строки с hover-подсветкой.
 //
-// mode='multi'  (Потоки):   чекбоксы, множественный выбор; кнопка «N фондов» / «Все фонды».
-// mode='single' (Снапшот):  радио, ровно один фонд; кнопка = «тикер · имя» с аватаром УК.
+// mode='multi'  (Потоки):   чекбоксы, множественный выбор; «Все фонды» сверху,
+//                           выбор НЕ закрывает окно (закрытие — «Готово»/X/overlay).
+//                           Кнопка-триггер = «N фондов» / «Все фонды».
+// mode='single' (Снапшот):  радио, ровно один фонд; выбор ЗАКРЫВАЕТ окно.
+//                           Кнопка-триггер = «тикер · имя» с аватаром УК.
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Search, X } from 'lucide-react';
 import { UK_LOGOS } from '../../config/fundConfig';
 
 export interface FundPickerFund {
@@ -106,39 +110,55 @@ function groupByUk(funds: FundPickerFund[]): UkGroup[] {
     return order.map((k) => map.get(k)!);
 }
 
-export default function FundPicker({
+// ── Модальное окно выбора фондов ───────────────────────────────────────────────
+// Структура зеркалит AssetPickerModal (overlay + окно с поиском и списком).
+// Управление выбором через те же selected/onChange; закрытие — onClose.
+function FundPickerModal({
     funds,
     mode,
     selected,
     onChange,
-    buttonLabel,
-    minWidth = 220,
-}: FundPickerProps) {
-    const [open, setOpen] = useState(false);
+    onClose,
+}: {
+    funds: FundPickerFund[];
+    mode: 'multi' | 'single';
+    selected: Set<string>;
+    onChange: (next: Set<string>) => void;
+    onClose: () => void;
+}) {
+    const [searchQuery, setSearchQuery] = useState('');
     const [hover, setHover] = useState<string | null>(null);
 
-    const groups = useMemo(() => groupByUk(funds), [funds]);
-    const total = funds.length;
+    // Autofocus поиска — только на desktop (mouse). На мобиле не дёргаем
+    // клавиатуру, чтобы пользователь сначала увидел список (как AssetPickerModal).
+    const inputRef = useRef<HTMLInputElement>(null);
+    useEffect(() => {
+        const isTouch = window.matchMedia('(hover: none)').matches;
+        if (!isTouch && inputRef.current) inputRef.current.focus();
+    }, []);
+
+    // Esc закрывает окно.
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') onClose();
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [onClose]);
+
     const allActive = mode === 'multi' && selected.size === 0;
 
-    // Выбранный фонд (single) — для метки кнопки с аватаром УК.
-    const selectedFund = useMemo<FundPickerFund | null>(() => {
-        if (mode !== 'single' || selected.size === 0) return null;
-        const t = selected.values().next().value as string | undefined;
-        return funds.find((f) => f.ticker === t) ?? null;
-    }, [mode, selected, funds]);
-
-    // Текст кнопки. Кастомный buttonLabel имеет приоритет в multi.
-    const label = (() => {
-        if (mode === 'single') {
-            if (!selectedFund) return 'Выбрать фонд';
-            return `${selectedFund.ticker} · ${selectedFund.name}`;
-        }
-        if (buttonLabel) return buttonLabel(selected.size, total);
-        return allActive ? 'Все фонды' : `${selected.size} фондов`;
-    })();
-
-    const active = mode === 'single' ? !!selectedFund : !allActive;
+    // Фильтр по тикеру/имени (нечувствителен к регистру). Группировка — после
+    // фильтрации, чтобы пустые УК не показывались.
+    const q = searchQuery.trim().toLowerCase();
+    const filtered = q
+        ? funds.filter(
+            (f) =>
+                f.ticker.toLowerCase().includes(q) ||
+                f.name.toLowerCase().includes(q),
+        )
+        : funds;
+    const groups = useMemo(() => groupByUk(filtered), [filtered]);
 
     const toggleMulti = (ticker: string) => {
         const next = new Set(selected);
@@ -149,119 +169,143 @@ export default function FundPicker({
 
     const pickSingle = (ticker: string) => {
         onChange(new Set([ticker]));
-        setOpen(false);
+        onClose();
     };
 
     return (
-        <div style={{ position: 'relative', display: 'inline-flex' }}>
-            <button
-                type="button"
-                onClick={() => setOpen((o) => !o)}
-                className="editorial-press"
+        <div className="instrument-modal-root fixed inset-0 z-50 flex items-start justify-center p-4 pt-20">
+            {/* Backdrop — solid dim без backdrop-blur (editorial: no glass effects). */}
+            <div
+                className="absolute inset-0"
+                style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
+                onClick={onClose}
+            />
+
+            {/* Окно — bg-secondary + 2px border text-primary + hard shadow. */}
+            <div
+                className="instrument-modal relative w-full rounded-2xl max-h-[80vh] overflow-hidden flex flex-col"
                 style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    padding: '6px 14px',
-                    maxWidth: 280,
-                    background: active ? 'var(--accent)' : 'var(--bg-secondary)',
-                    color: active ? 'var(--text-inverse)' : 'var(--text-primary)',
+                    maxWidth: 580,
+                    backgroundColor: 'var(--bg-secondary)',
                     border: '2px solid var(--text-primary)',
-                    borderRadius: 999,
-                    fontSize: 'var(--fs-xs)',
-                    fontWeight: active ? 700 : 600,
-                    cursor: 'pointer',
-                    boxShadow: active ? '3px 3px 0 var(--text-primary)' : 'none',
-                    whiteSpace: 'nowrap',
+                    boxShadow: 'var(--shadow-hard-chip, 6px 6px 0 var(--text-primary))',
+                    color: 'var(--text-primary)',
                 }}
             >
-                {mode === 'single' && selectedFund && (
-                    <UkAvatar ukId={selectedFund.uk_id} ukName={selectedFund.uk} size={18} />
-                )}
-                <span
-                    style={{
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                    }}
-                >
-                    {label}
-                </span>
-                <span style={{ fontSize: '0.75em', opacity: 0.85, flexShrink: 0 }}>▾</span>
-            </button>
+                {/* Header */}
+                <div className="px-6 pt-6 pb-4">
+                    <div className="flex items-center justify-between mb-6">
+                        <h2 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
+                            Выбор фонда
+                        </h2>
+                        <button
+                            onClick={onClose}
+                            className="instrument-modal-close p-2 rounded-lg transition-colors"
+                            style={{ color: 'var(--text-secondary)' }}
+                            aria-label="Закрыть"
+                        >
+                            <X size={24} />
+                        </button>
+                    </div>
 
-            {open && (
-                <>
-                    {/* fixed-backdrop — закрытие по клику вне (как UkMultiSelect / меню периода) */}
-                    <div
-                        onClick={() => setOpen(false)}
-                        style={{ position: 'fixed', inset: 0, zIndex: 19 }}
-                    />
-                    <div
-                        style={{
-                            position: 'absolute',
-                            top: 'calc(100% + 6px)',
-                            left: 0,
-                            zIndex: 20,
-                            display: 'flex',
-                            flexDirection: 'column',
-                            minWidth,
-                            maxWidth: 'min(360px, calc(100vw - 32px))',
-                            maxHeight: 360,
-                            overflowY: 'auto',
-                            background: 'var(--bg-primary)',
-                            border: '1.5px solid var(--text-primary)',
-                            borderRadius: 10,
-                            boxShadow: '3px 3px 0 var(--text-primary)',
-                        }}
-                    >
-                        {/* «Все фонды» — только в multi, сброс selected в пусто */}
-                        {mode === 'multi' && (
-                            <button
-                                type="button"
-                                onClick={() => { onChange(new Set()); setOpen(false); }}
-                                onMouseEnter={() => setHover('__all__')}
-                                onMouseLeave={() => setHover(null)}
+                    {/* Search */}
+                    <div className="relative">
+                        <Search
+                            size={20}
+                            className="absolute left-4 top-1/2 -translate-y-1/2"
+                            style={{ color: 'var(--text-secondary)' }}
+                        />
+                        <input
+                            ref={inputRef}
+                            type="text"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            placeholder="Поиск по тикеру или имени"
+                            className="instrument-modal-search w-full pl-12 pr-4 py-4 text-base rounded-xl focus:outline-none transition-colors"
+                            style={{
+                                backgroundColor: 'var(--bg-primary)',
+                                color: 'var(--text-primary)',
+                                border: '2px solid var(--text-primary)',
+                            }}
+                        />
+                    </div>
+                </div>
+
+                {/* Results */}
+                <div className="overflow-y-auto flex-1 px-6 styled-scrollbar">
+                    {/* «Все фонды» — только в multi, сброс selected в пусто. Не закрывает окно. */}
+                    {mode === 'multi' && !q && (
+                        <button
+                            type="button"
+                            onClick={() => onChange(new Set())}
+                            onMouseEnter={() => setHover('__all__')}
+                            onMouseLeave={() => setHover(null)}
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 10,
+                                width: '100%',
+                                padding: '12px 14px',
+                                textAlign: 'left',
+                                cursor: 'pointer',
+                                background: allActive
+                                    ? 'var(--bg-primary)'
+                                    : (hover === '__all__' ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'transparent'),
+                                color: 'var(--text-primary)',
+                                border: 'none',
+                                borderBottom: '1px solid color-mix(in srgb, var(--text-primary) 12%, transparent)',
+                                fontSize: 'var(--fs-sm)',
+                                fontWeight: allActive ? 800 : 600,
+                                whiteSpace: 'nowrap',
+                                borderRadius: 8,
+                            }}
+                        >
+                            <span
                                 style={{
+                                    width: 18,
+                                    height: 18,
+                                    flexShrink: 0,
                                     display: 'flex',
                                     alignItems: 'center',
-                                    gap: 8,
-                                    padding: '9px 14px',
-                                    textAlign: 'left',
-                                    cursor: 'pointer',
-                                    background: allActive
-                                        ? 'var(--bg-secondary)'
-                                        : (hover === '__all__' ? 'color-mix(in srgb, var(--text-primary) 6%, transparent)' : 'transparent'),
-                                    color: 'var(--text-primary)',
-                                    border: 'none',
-                                    borderBottom: '1px solid var(--border-color)',
-                                    fontSize: 'var(--fs-xs)',
-                                    fontWeight: allActive ? 700 : 500,
-                                    whiteSpace: 'nowrap',
-                                    transform: hover === '__all__' ? 'translateX(2px)' : 'translateX(0)',
-                                    transition: 'background 150ms, transform 150ms',
+                                    justifyContent: 'center',
+                                    borderRadius: 4,
+                                    background: allActive ? 'var(--accent)' : 'transparent',
+                                    border: `2px solid ${allActive ? 'var(--accent)' : 'var(--text-muted)'}`,
+                                    transition: 'all 150ms',
                                 }}
                             >
-                                <span style={{ width: 16, textAlign: 'center', opacity: allActive ? 1 : 0 }}>✓</span>
-                                Все фонды
-                            </button>
-                        )}
+                                {allActive && (
+                                    <svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="var(--text-inverse)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                        <polyline points="2 7 6 11 12 3" />
+                                    </svg>
+                                )}
+                            </span>
+                            Все фонды
+                        </button>
+                    )}
 
-                        {groups.map((g) => (
+                    {groups.length === 0 ? (
+                        <div className="py-12 text-center" style={{ color: 'var(--text-secondary)' }}>
+                            {funds.length === 0 ? 'Нет фондов' : 'Ничего не найдено'}
+                        </div>
+                    ) : (
+                        groups.map((g) => (
                             <div key={g.key}>
-                                {/* Заголовок-группа УК: аватар + имя (sticky-подобный визуал) */}
+                                {/* Заголовок-группа УК: аватар + имя */}
                                 <div
                                     style={{
                                         display: 'flex',
                                         alignItems: 'center',
                                         gap: 8,
-                                        padding: '8px 14px 6px',
+                                        padding: '10px 14px 6px',
+                                        position: 'sticky',
+                                        top: 0,
+                                        zIndex: 1,
                                         background: 'var(--bg-secondary)',
-                                        borderTop: '1px solid var(--border-color)',
-                                        borderBottom: '1px solid var(--border-color)',
+                                        borderBottom: '1px solid color-mix(in srgb, var(--text-primary) 12%, transparent)',
                                     }}
                                 >
-                                    <UkAvatar ukId={g.ukId} ukName={g.name} size={20} />
+                                    <UkAvatar ukId={g.ukId} ukName={g.name} size={22} />
                                     <span
                                         style={{
                                             fontSize: 'var(--fs-xs)',
@@ -292,28 +336,27 @@ export default function FundPicker({
                                             style={{
                                                 display: 'flex',
                                                 alignItems: 'center',
-                                                gap: 8,
+                                                gap: 12,
                                                 width: '100%',
-                                                padding: '8px 14px',
+                                                padding: '10px 14px',
                                                 textAlign: 'left',
                                                 cursor: 'pointer',
                                                 background: on
-                                                    ? 'var(--bg-secondary)'
-                                                    : (isHover ? 'color-mix(in srgb, var(--text-primary) 6%, transparent)' : 'transparent'),
+                                                    ? 'var(--bg-primary)'
+                                                    : (isHover ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'transparent'),
                                                 color: 'var(--text-primary)',
                                                 border: 'none',
-                                                fontSize: 'var(--fs-xs)',
+                                                fontSize: 'var(--fs-sm)',
                                                 fontWeight: on ? 700 : 500,
                                                 whiteSpace: 'nowrap',
-                                                transform: isHover ? 'translateX(2px)' : 'translateX(0)',
-                                                transition: 'background 150ms, transform 150ms',
+                                                borderRadius: 8,
                                             }}
                                         >
                                             {/* Индикатор выбора: квадрат-чекбокс (multi) / круг-радио (single) */}
                                             <span
                                                 style={{
-                                                    width: 16,
-                                                    height: 16,
+                                                    width: 18,
+                                                    height: 18,
                                                     flexShrink: 0,
                                                     display: 'flex',
                                                     alignItems: 'center',
@@ -325,9 +368,9 @@ export default function FundPicker({
                                                 }}
                                             >
                                                 {on && (mode === 'single'
-                                                    ? <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--text-inverse)' }} />
+                                                    ? <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--text-inverse)' }} />
                                                     : (
-                                                        <svg viewBox="0 0 14 14" width="10" height="10" fill="none" stroke="var(--text-inverse)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                                        <svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="var(--text-inverse)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                                                             <polyline points="2 7 6 11 12 3" />
                                                         </svg>
                                                     ))}
@@ -356,22 +399,121 @@ export default function FundPicker({
                                     );
                                 })}
                             </div>
-                        ))}
+                        ))
+                    )}
+                </div>
 
-                        {groups.length === 0 && (
-                            <div
-                                style={{
-                                    padding: '14px',
-                                    fontSize: 'var(--fs-xs)',
-                                    color: 'var(--text-secondary)',
-                                    textAlign: 'center',
-                                }}
-                            >
-                                Нет фондов
-                            </div>
-                        )}
+                {/* Footer — только multi: «Готово» закрывает окно (выбор уже применён). */}
+                {mode === 'multi' && (
+                    <div
+                        className="px-6 py-4"
+                        style={{ borderTop: '1px solid color-mix(in srgb, var(--text-primary) 12%, transparent)' }}
+                    >
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            className="editorial-press"
+                            style={{
+                                width: '100%',
+                                padding: '12px 18px',
+                                background: 'var(--accent)',
+                                color: 'var(--text-inverse)',
+                                border: '2px solid var(--text-primary)',
+                                borderRadius: 12,
+                                fontSize: 'var(--fs-sm)',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                boxShadow: '3px 3px 0 var(--text-primary)',
+                            }}
+                        >
+                            Готово{allActive ? '' : ` · ${selected.size}`}
+                        </button>
                     </div>
-                </>
+                )}
+            </div>
+        </div>
+    );
+}
+
+export default function FundPicker({
+    funds,
+    mode,
+    selected,
+    onChange,
+    buttonLabel,
+    minWidth = 220,
+}: FundPickerProps) {
+    const [open, setOpen] = useState(false);
+
+    const total = funds.length;
+    const allActive = mode === 'multi' && selected.size === 0;
+
+    // Выбранный фонд (single) — для метки кнопки с аватаром УК.
+    const selectedFund = useMemo<FundPickerFund | null>(() => {
+        if (mode !== 'single' || selected.size === 0) return null;
+        const t = selected.values().next().value as string | undefined;
+        return funds.find((f) => f.ticker === t) ?? null;
+    }, [mode, selected, funds]);
+
+    // Текст кнопки. Кастомный buttonLabel имеет приоритет в multi.
+    const label = (() => {
+        if (mode === 'single') {
+            if (!selectedFund) return 'Выбрать фонд';
+            return `${selectedFund.ticker} · ${selectedFund.name}`;
+        }
+        if (buttonLabel) return buttonLabel(selected.size, total);
+        return allActive ? 'Все фонды' : `${selected.size} фондов`;
+    })();
+
+    const active = mode === 'single' ? !!selectedFund : !allActive;
+
+    return (
+        <div style={{ display: 'inline-flex', minWidth: 0 }}>
+            <button
+                type="button"
+                onClick={() => setOpen(true)}
+                className="editorial-press"
+                style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '8px 18px',
+                    minWidth: mode === 'single' ? minWidth : undefined,
+                    maxWidth: 320,
+                    background: active ? 'var(--accent)' : 'var(--bg-secondary)',
+                    color: active ? 'var(--text-inverse)' : 'var(--text-primary)',
+                    border: '2px solid var(--text-primary)',
+                    borderRadius: 999,
+                    fontSize: 'var(--fs-sm)',
+                    fontWeight: active ? 700 : 600,
+                    cursor: 'pointer',
+                    boxShadow: active ? '3px 3px 0 var(--text-primary)' : 'none',
+                    whiteSpace: 'nowrap',
+                }}
+            >
+                {mode === 'single' && selectedFund && (
+                    <UkAvatar ukId={selectedFund.uk_id} ukName={selectedFund.uk} size={18} />
+                )}
+                <span
+                    style={{
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                    }}
+                >
+                    {label}
+                </span>
+                <span style={{ fontSize: '0.75em', opacity: 0.85, flexShrink: 0 }}>▾</span>
+            </button>
+
+            {open && (
+                <FundPickerModal
+                    funds={funds}
+                    mode={mode}
+                    selected={selected}
+                    onChange={onChange}
+                    onClose={() => setOpen(false)}
+                />
             )}
         </div>
     );

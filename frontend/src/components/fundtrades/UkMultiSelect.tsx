@@ -21,6 +21,9 @@ export interface UkMultiSelectProps {
     onChange: (next: Set<string>) => void;
     allLabel?: string;              // default «Все УК»
     minWidth?: number;
+    // Размер кнопки-триггера: 'sm' (как sort-пилюли, default) | 'md' (крупнее —
+    // чтобы выделить фильтр среди мелких кнопок). Влияет только на padding/fontSize.
+    size?: 'sm' | 'md';
 }
 
 // Аватар УК ~24px: картинка из UK_LOGOS[...].img либо буква на цветном bg.
@@ -89,6 +92,7 @@ export default function UkMultiSelect({
     onChange,
     allLabel = 'Все УК',
     minWidth = 150,
+    size = 'sm',
 }: UkMultiSelectProps) {
     const [open, setOpen] = useState(false);
     const [hovered, setHovered] = useState<string | null>(null);
@@ -115,12 +119,12 @@ export default function UkMultiSelect({
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: 4,
-                    padding: '6px 14px',
+                    padding: size === 'md' ? '8px 18px' : '6px 14px',
                     background: allActive ? 'var(--bg-secondary)' : 'var(--accent)',
                     color: allActive ? 'var(--text-primary)' : 'var(--text-inverse)',
                     border: '2px solid var(--text-primary)',
                     borderRadius: 999,
-                    fontSize: 'var(--fs-xs)',
+                    fontSize: size === 'md' ? 'var(--fs-sm)' : 'var(--fs-xs)',
                     fontWeight: allActive ? 600 : 700,
                     cursor: 'pointer',
                     boxShadow: allActive ? 'none' : '3px 3px 0 var(--text-primary)',

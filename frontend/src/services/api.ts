@@ -1309,14 +1309,17 @@ export async function getFundTradesDetail(
 
 export async function getFundTradesMovers(
     period: FundTradesPeriod = '1m',
-    // `managers` — comma-separated список uk_id (мультиселект УК), напр. "34,5,3597".
+    // `funds` — comma-separated ТИКЕРЫ конкретных фондов (напр. "TMOS,SBMX").
+    //   Приоритет над manager на бэкенде. Пусто = все фонды.
+    // `managers` — comma-separated uk_id (мультиселект УК), напр. "34,5,3597".
     // `manager` оставлен для обратной совместимости (single uk_id / имя). Пусто = все УК.
-    opts: { asOf?: string; manager?: string; managers?: string; sort?: 'weight' | 'amount'; limit?: number } = {},
+    opts: { asOf?: string; funds?: string; manager?: string; managers?: string; sort?: 'weight' | 'amount'; limit?: number } = {},
 ): Promise<FundTradesMovers> {
-    const { asOf, manager, managers, sort = 'weight', limit = 20 } = opts;
+    const { asOf, funds, manager, managers, sort = 'weight', limit = 20 } = opts;
     const params = new URLSearchParams({ period, sort, limit: String(limit) });
     if (asOf) params.set('as_of', asOf);
-    // Бэкенд читает один query-параметр `manager` (comma-separated uk_id).
+    // Бэкенд: `funds` (тикеры фондов) имеет приоритет над `manager` (comma-sep uk_id).
+    if (funds) params.set('funds', funds);
     const managerParam = managers ?? manager;
     if (managerParam) params.set('manager', managerParam);
     const resp = await apiFetch(`${API_BASE}/api/fund-trades/movers?${params}`);

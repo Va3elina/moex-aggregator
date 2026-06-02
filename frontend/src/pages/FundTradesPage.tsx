@@ -688,9 +688,10 @@ export default function FundTradesPage() {
     const [error, setError] = useState<string | null>(null);
     // Заход 2: управление табом «Покупки фондов».
     const [asOf, setAsOf] = useState<string | undefined>(undefined);    // выбранный месяц (undefined = последний)
-    // ITEM 1 — мультиселект УК (пусто = все). Ключи = uk_id'ы (бэкенд /movers
-    // принимает comma-separated uk_id). Раньше был single `manager: string`.
-    const [managers, setManagers] = useState<Set<string>>(new Set());
+    // Мультиселект КОНКРЕТНЫХ фондов (пусто = все). Ключ = ticker; бэкенд /movers
+    // принимает comma-separated тикеры в параметре `funds` (приоритет над manager).
+    // Раньше тут был мультиселект УК (uk_id) — заменён на выбор фондов через FundPicker.
+    const [selectedMoverFunds, setSelectedMoverFunds] = useState<Set<string>>(new Set());
     const [metric, setMetric] = useState<'weight' | 'amount'>('weight'); // % веса | объём ₽
     // ITEM 2 — предвыбранная бумага для перехода movers → «Потоки по компании».
     const [companyPreset, setCompanyPreset] = useState<{ asset_name: string; isin: string | null } | null>(null);
@@ -705,25 +706,25 @@ export default function FundTradesPage() {
             .finally(() => setLoading(false));
     }, [common.fund_trades_access]);
 
-    // Load movers when tab=movers (или меняются параметры: месяц/УК/метрика).
-    // managers (Set uk_id) → comma-separated строка для бэкенда; пусто = все УК.
-    const managersParam = useMemo(
-        () => Array.from(managers).join(','),
-        [managers],
+    // Load movers when tab=movers (или меняются параметры: месяц/фонды/метрика).
+    // selectedMoverFunds (Set ticker) → comma-separated строка для бэкенда; пусто = все фонды.
+    const fundsParam = useMemo(
+        () => Array.from(selectedMoverFunds).join(','),
+        [selectedMoverFunds],
     );
     useEffect(() => {
         if (!common.fund_trades_access) return;
         if (tab !== 'movers') return;
         setLoading(true);
-        getFundTradesMovers(period, { asOf, managers: managersParam || undefined, sort: metric })
+        getFundTradesMovers(period, { asOf, funds: fundsParam || undefined, sort: metric })
             .then(setMovers)
             .catch((e: Error) => setError(e.message))
             .finally(() => setLoading(false));
-    }, [tab, period, asOf, managersParam, metric, common.fund_trades_access]);
+    }, [tab, period, asOf, fundsParam, metric, common.fund_trades_access]);
 
-    // Уникальные УК из загруженных фондов — общий список для UkMultiSelect
-    // (вкладки «Состав» И «Покупки фондов»). Ключ — uk_id (стабильнее имени),
-    // name — uk-имя из UK_LOGOS/данных, uk_id — для аватара. Сортируем по имени.
+    // Уникальные УК из загруженных фондов — список для UkMultiSelect на вкладке
+    // «Состав фондов». Ключ — uk_id (стабильнее имени), name — uk-имя из
+    // UK_LOGOS/данных, uk_id — для аватара. Сортируем по имени.
     const ukOptions = useMemo<UkOption[]>(() => {
         const map = new Map<string, UkOption>();
         for (const f of funds) {
@@ -737,6 +738,13 @@ export default function FundTradesPage() {
         }
         return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
     }, [funds]);
+
+    // Все whitelist-фонды для FundPicker (multi) на вкладке «Покупки фондов».
+    // FundPicker сам группирует по УК; передаём минимум полей ({ticker, name, uk, uk_id}).
+    const moverPickerFunds = useMemo<FundPickerFund[]>(
+        () => funds.map((f) => ({ ticker: f.ticker, name: f.name, uk: f.uk, uk_id: f.uk_id })),
+        [funds],
+    );
 
     const fundsByCategory = useMemo(() => {
         // E: combinable AND-фильтры — сначала фильтр по УК, потом группировка+сортировка.
@@ -1026,6 +1034,7 @@ export default function FundTradesPage() {
                                         options={ukOptions}
                                         selected={selectedUks}
                                         onChange={setSelectedUks}
+                                        size="md"
                                     />
                                 </div>
                             )}
@@ -1310,7 +1319,7 @@ export default function FundTradesPage() {
 
             {tab === 'movers' && (
                 <>
-                    {/* Контролы: месяц · УК (мультиселект) · метрика (% веса / Объём, руб) */}
+                    {/* Контролы: месяц · фонды (FundPicker multi) · метрика (% веса / Объём, руб) */}
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 16 }}>
                         {movers && movers.available_months.length > 0 && (
                             <Dropdown<string>
@@ -1320,12 +1329,12 @@ export default function FundTradesPage() {
                                 minWidth={150}
                             />
                         )}
-                        {ukOptions.length > 1 && (
-                            <UkMultiSelect
-                                options={ukOptions}
-                                selected={managers}
-                                onChange={setManagers}
-                                minWidth={140}
+                        {moverPickerFunds.length > 1 && (
+                            <FundPicker
+                                funds={moverPickerFunds}
+                                mode="multi"
+                                selected={selectedMoverFunds}
+                                onChange={setSelectedMoverFunds}
                             />
                         )}
                         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
