@@ -40,8 +40,14 @@ def load_fund_categories() -> dict:
     """Загрузка категорий фондов из БД. Возвращает структуру аналогичную старой FUND_CATEGORIES."""
     engine = get_engine()
     with engine.connect() as conn:
+        # Фильтр «>=2 точки NAV»: фонд с одной (или нулём) точек СЧА не может
+        # показать ни линию динамики, ни приток/отток (нет «изменения») —
+        # выглядит как мусор. Скрываем такие фонды из «Денег в фондах», пока
+        # фетчер не накопит историю (новый фонд → появится после backfill).
         rows = conn.execute(text(
-            "SELECT fund_id, ticker, name, category, subcategory, uk_id FROM funds ORDER BY category, subcategory_order, ticker"
+            "SELECT fund_id, ticker, name, category, subcategory, uk_id FROM funds f "
+            "WHERE (SELECT count(*) FROM fund_data fd WHERE fd.fund_id = f.fund_id AND fd.nav IS NOT NULL) >= 2 "
+            "ORDER BY category, subcategory_order, ticker"
         )).fetchall()
 
     categories = {}
