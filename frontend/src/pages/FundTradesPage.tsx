@@ -226,6 +226,8 @@ function FundDetailModal({
     // AssetHistoryModal, что в «Обзоре снапшота»). Открывается кликом по
     // сектору пончика ИЛИ по строке списка состава.
     const [drillDown, setDrillDown] = useState<{ asset_name: string; isin: string | null } | null>(null);
+    // Hover-связь пончик↔таблица состава (индекс позиции в holds).
+    const [modalHover, setModalHover] = useState<number | null>(null);
 
     useEffect(() => {
         let cancelled = false;
@@ -490,7 +492,7 @@ function FundDetailModal({
                                 // Donut НЕ агрегирует сам, индекс слайса 1:1 совпадает с массивом,
                                 // поэтому onSliceClick(i) корректно мапится на бумагу.
                                 const holds = data.current_holdings;
-                                const TOP = 10;
+                                const TOP = 14;
                                 const topHolds = holds.slice(0, TOP);
                                 const restWeight = holds.slice(TOP).reduce((s, h) => s + (h.weight ?? 0), 0);
                                 const donutHoldings = [
@@ -522,7 +524,9 @@ function FundDetailModal({
                                             holdings={donutHoldings}
                                             colors={donutColors}
                                             maxSlices={donutHoldings.length}
-                                            size={200}
+                                            size={220}
+                                            highlightIndex={modalHover == null ? null : (modalHover < topHolds.length ? modalHover : (restWeight > 0 ? topHolds.length : null))}
+                                            onHoverChange={(s) => setModalHover(s == null ? null : (s < topHolds.length ? s : null))}
                                             onSliceClick={(i) => {
                                                 // «Прочее» — последний слайс, если добавлен; клик игнорим.
                                                 if (i < topHolds.length) openAsset(topHolds[i]);
@@ -568,18 +572,14 @@ function FundDetailModal({
                                                     <tr
                                                         key={h.asset_name}
                                                         onClick={() => openAsset(h)}
+                                                        onMouseEnter={() => setModalHover(i)}
+                                                        onMouseLeave={() => setModalHover(null)}
                                                         style={{
                                                             cursor: 'pointer',
                                                             background: selected
                                                                 ? 'color-mix(in srgb, var(--accent) 14%, transparent)'
-                                                                : 'transparent',
+                                                                : (modalHover === i ? 'var(--bg-secondary)' : 'transparent'),
                                                             transition: 'background 100ms',
-                                                        }}
-                                                        onMouseEnter={(e) => {
-                                                            if (!selected) e.currentTarget.style.background = 'var(--bg-secondary)';
-                                                        }}
-                                                        onMouseLeave={(e) => {
-                                                            if (!selected) e.currentTarget.style.background = 'transparent';
                                                         }}
                                                     >
                                                         <td style={{
@@ -594,11 +594,8 @@ function FundDetailModal({
                                                                         height: 8,
                                                                         borderRadius: '50%',
                                                                         flexShrink: 0,
-                                                                        // (C) точка = цвет сектора (фирменный/индекс),
-                                                                        // вне топ-10 — серый (как «Прочее» в пончике).
-                                                                        backgroundColor: i < TOP
-                                                                            ? (assetColor(h.asset_name) ?? DONUT_COLORS[i % DONUT_COLORS.length])
-                                                                            : 'var(--text-muted)',
+                                                                        // (C) точка = цвет актива (фирменный/editorial-индекс) у ВСЕХ строк.
+                                                                        backgroundColor: assetColor(h.asset_name) ?? DONUT_COLORS[i % DONUT_COLORS.length],
                                                                     }}
                                                                 />
                                                                 {h.asset_name}
@@ -673,6 +670,9 @@ export default function FundTradesPage() {
     const [fundSort, setFundSort] = useState<FundSortKey>('return');
     // Мультиселект УК (пусто = все). Ключ — uk_id (стабильнее имени), fallback на uk.
     const [selectedUks, setSelectedUks] = useState<Set<string>>(new Set());
+    // Hover-связь пончик↔список на плитке. Ключуем по fund_id (карточки в map, своего
+    // state у каждой нет) + индекс слайса. Наведение на сектор/строку подсвечивает обоих.
+    const [tileHover, setTileHover] = useState<{ fund: number; idx: number } | null>(null);
 
     const [funds, setFunds] = useState<FundWithHistory[]>([]);
     const [movers, setMovers] = useState<FundTradesMovers | null>(null);
@@ -1137,18 +1137,20 @@ export default function FundTradesPage() {
                                                     <Donut
                                                         holdings={donutHoldings}
                                                         colors={donutColors}
-                                                        size={128}
+                                                        size={144}
                                                         outerRadius={92}
                                                         innerRadius={58}
                                                         maxSlices={donutHoldings.length}
                                                         showCenterText={false}
+                                                        highlightIndex={tileHover?.fund === f.fund_id ? tileHover.idx : null}
+                                                        onHoverChange={(i) => setTileHover(i == null ? null : { fund: f.fund_id, idx: i })}
                                                     />
                                                 </div>
                                             ) : (
                                                 <div
                                                     style={{
-                                                        width: 128,
-                                                        height: 128,
+                                                        width: 144,
+                                                        height: 144,
                                                         flexShrink: 0,
                                                         borderRadius: '50%',
                                                         border: '1.5px dashed var(--border-color)',
@@ -1178,12 +1180,19 @@ export default function FundTradesPage() {
                                                 {top.slice(0, 5).map((h, i) => (
                                                     <div
                                                         key={h.name + i}
+                                                        onMouseEnter={() => setTileHover({ fund: f.fund_id, idx: i })}
+                                                        onMouseLeave={() => setTileHover(null)}
                                                         style={{
                                                             display: 'flex',
                                                             alignItems: 'center',
                                                             gap: 6,
                                                             minHeight: 20,
                                                             fontSize: 'var(--fs-2xs)',
+                                                            borderRadius: 5,
+                                                            padding: '0 4px',
+                                                            margin: '0 -4px',
+                                                            background: tileHover?.fund === f.fund_id && tileHover.idx === i ? 'var(--bg-secondary)' : 'transparent',
+                                                            transition: 'background 120ms',
                                                         }}
                                                     >
                                                         <span
