@@ -1185,6 +1185,18 @@ export async function getApiKeyUsage(days = 30): Promise<ApiKeyUsageStats> {
 
 export type FundTradesPeriod = '1m' | '3m' | '6m' | '1y';
 
+export interface FundReturns {
+    m1: number | null;
+    m3: number | null;
+    m6: number | null;
+    y1: number | null;
+}
+
+export interface FundTopHolding {
+    name: string;
+    weight: number;
+}
+
 export interface FundWithHistory {
     fund_id: number;
     ticker: string;
@@ -1196,6 +1208,10 @@ export interface FundWithHistory {
     snapshot_count: number;
     snapshots_count?: number; // backward compat
     uk_id?: number | string | null;
+    nav_rub: number | null;
+    returns: FundReturns;
+    top_holdings: FundTopHolding[];
+    has_distributions?: boolean; // фонд платит доход → returns = полная доходность (с выплатами)
 }
 
 export interface FundTradesHolding {
@@ -1218,6 +1234,16 @@ export interface FundTradeDiff {
     previous_positions: number | null;
 }
 
+export interface FundPerformancePoint {
+    date: string;
+    pay: number;
+}
+
+export interface FundPerformance {
+    timeline: FundPerformancePoint[];
+    returns: FundReturns;
+}
+
 export interface FundTradesDetail {
     fund: {
         fund_id: number;
@@ -1237,6 +1263,7 @@ export interface FundTradesDetail {
         accumulated: number;
         reduced: number;
     };
+    performance?: FundPerformance;
 }
 
 export interface FundTradesMover {
@@ -1445,5 +1472,58 @@ export async function getAssetHistory(
     if (resp.status === 403) throw new Error('Доступно на тарифе Pro');
     if (resp.status === 404) throw new Error('История по позиции не найдена');
     if (!resp.ok) throw new Error('Не удалось загрузить историю');
+    return resp.json();
+}
+
+// ─── Asset selector + company flows ─────────────────────────
+
+export interface FundTradeAsset {
+    key: string;
+    asset_name: string;
+    isin: string | null;
+    funds_count: number;
+    last_amount_rub: number | null;
+}
+
+export interface FundTradeAssetsResponse {
+    assets: FundTradeAsset[];
+}
+
+export interface CompanyFlowFund {
+    ticker: string;
+    fund_name: string;
+    uk_id: string | number | null;
+    values: (number | null)[];
+}
+
+export interface CompanyFlowsResponse {
+    asset_name: string;
+    isin: string | null;
+    metric: string;
+    funds_count: number;
+    months: string[];
+    funds: CompanyFlowFund[];
+    total: (number | null)[];
+}
+
+export async function listFundTradeAssets(): Promise<FundTradeAssetsResponse> {
+    const resp = await apiFetch(`${API_BASE}/api/fund-trades/assets`);
+    if (resp.status === 403) throw new Error('Доступно на тарифе Pro');
+    if (!resp.ok) throw new Error('Не удалось загрузить список бумаг');
+    return resp.json();
+}
+
+export async function getCompanyFlows(
+    opts: { isin?: string; assetName?: string; metric?: 'amount' | 'weight' },
+): Promise<CompanyFlowsResponse> {
+    const params = new URLSearchParams();
+    if (opts.isin) params.set('isin', opts.isin);
+    else if (opts.assetName) params.set('asset_name', opts.assetName);
+    else throw new Error('isin or asset_name required');
+    if (opts.metric) params.set('metric', opts.metric);
+
+    const resp = await apiFetch(`${API_BASE}/api/fund-trades/company-flows?${params}`);
+    if (resp.status === 403) throw new Error('Доступно на тарифе Pro');
+    if (!resp.ok) throw new Error('Не удалось загрузить потоки по компании');
     return resp.json();
 }

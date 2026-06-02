@@ -20,10 +20,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-    ArrowUpRight,
-    ArrowDownRight,
-    PlusCircle,
-    XCircle,
     Lock,
     Sparkles,
     Wallet,
@@ -31,6 +27,7 @@ import {
     TrendingDown,
     Calendar,
     Activity,
+    ArrowLeftRight,
 } from 'lucide-react';
 import {
     listFundsWithHistory,
@@ -43,11 +40,9 @@ import {
     type FundWithHistory,
     type FundTradesDetail,
     type FundTradesMovers,
-    type FundTradeChangeType,
     type FundSnapshotsList,
     type FundSnapshotReview,
     type FundDiffRow,
-    type FundTradeDiff,
     type AssetHistory,
 } from '../services/api';
 import { useCommonFeatures } from '../contexts/TierFeaturesContext';
@@ -57,9 +52,11 @@ import PageHeader from '../components/PageHeader';
 import Dropdown from '../components/Dropdown';
 import SimpleChart, { type ChartAnnotation } from '../components/SimpleChart';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
-import { UK_LOGOS } from '../config/fundConfig';
+import { UK_LOGOS, DONUT_COLORS } from '../config/fundConfig';
+import Donut from '../components/funds/Donut';
+import CompanyFlowsTab from '../components/fundtrades/CompanyFlowsTab';
 
-type Tab = 'funds' | 'movers' | 'snapshots';
+type Tab = 'funds' | 'movers' | 'snapshots' | 'company';
 
 const CATEGORY_LABEL: Record<string, string> = {
     stocks: 'Акции',
@@ -207,44 +204,23 @@ function LockedView() {
 }
 
 // ════════════════════════════════════════════════════════════════════
-// Fund Detail Modal — diff с current_holdings
+// Fund Detail Modal — объём + график доходности + donut состава
 // ════════════════════════════════════════════════════════════════════
-
-function changeColor(type: FundTradeChangeType): string {
-    switch (type) {
-        case 'accumulated': return 'var(--success, #2dd478)';
-        case 'reduced': return 'var(--danger, #ef4444)';
-        case 'new': return 'var(--accent)';
-        case 'sold_out': return 'var(--text-muted)';
-        default: return 'var(--text-secondary)';
-    }
-}
-
-function ChangeIcon({ type }: { type: FundTradeChangeType }) {
-    const color = changeColor(type);
-    const props = { size: 14, color, strokeWidth: 2.5 };
-    switch (type) {
-        case 'accumulated': return <ArrowUpRight {...props} />;
-        case 'reduced': return <ArrowDownRight {...props} />;
-        case 'new': return <PlusCircle {...props} />;
-        case 'sold_out': return <XCircle {...props} />;
-        default: return null;
-    }
-}
 
 function FundDetailModal({
     ticker,
     period,
+    listFund,
     onClose,
 }: {
     ticker: string;
     period: FundTradesPeriod;
+    listFund?: FundWithHistory | null;
     onClose: () => void;
 }) {
     const [data, setData] = useState<FundTradesDetail | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [drillDown, setDrillDown] = useState<{ asset_name: string; isin: string | null } | null>(null);
 
     useEffect(() => {
         let cancelled = false;
@@ -258,7 +234,6 @@ function FundDetailModal({
     }, [ticker, period]);
 
     return (
-        <>
         <div
             onClick={onClose}
             style={{
@@ -341,334 +316,274 @@ function FundDetailModal({
                     {error && <div style={{ color: 'var(--danger, #ef4444)' }}>{error}</div>}
                     {data && !loading && (
                         <>
-                            {/* Snapshot dates */}
-                            <div
-                                style={{
-                                    display: 'flex',
-                                    gap: 16,
-                                    marginBottom: 20,
-                                    flexWrap: 'wrap',
-                                    alignItems: 'center',
-                                    fontSize: 'var(--fs-sm)',
-                                    color: 'var(--text-secondary)',
-                                }}
-                            >
-                                <Calendar size={14} style={{ flexShrink: 0, color: 'var(--text-tertiary)' }} />
-                                <span>
-                                    Текущий:{' '}
-                                    <strong style={{ color: 'var(--text-primary)' }}>
-                                        {data.current_snapshot_date || '—'}
-                                    </strong>
-                                </span>
-                                <span>
-                                    Предыдущий:{' '}
-                                    <strong style={{ color: 'var(--text-primary)' }}>
-                                        {data.previous_snapshot_date || '—'}
-                                    </strong>
-                                </span>
-                            </div>
-
-                            {/* Summary stats */}
-                            {data.previous_snapshot_date && (
+                            {/* (2) Объём — полная СЧА (AUM) крупно */}
+                            <div style={{ marginBottom: 20 }}>
                                 <div
                                     style={{
-                                        display: 'grid',
-                                        gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))',
-                                        gap: 10,
-                                        marginBottom: 24,
+                                        fontSize: 'var(--fs-2xs)',
+                                        color: 'var(--text-muted)',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.06em',
+                                        fontWeight: 700,
+                                        marginBottom: 2,
                                     }}
                                 >
-                                    {[
-                                        { label: 'Новые', count: data.summary.new, type: 'new' as const },
-                                        { label: 'Накоплены', count: data.summary.accumulated, type: 'accumulated' as const },
-                                        { label: 'Сокращены', count: data.summary.reduced, type: 'reduced' as const },
-                                        { label: 'Проданы', count: data.summary.sold_out, type: 'sold_out' as const },
-                                    ].map(({ label, count, type }) => (
-                                        <div
-                                            key={label}
+                                    Объём (СЧА)
+                                </div>
+                                <div
+                                    style={{
+                                        fontSize: 'var(--fs-2xl)',
+                                        fontWeight: 800,
+                                        fontVariantNumeric: 'tabular-nums',
+                                        color: 'var(--text-primary)',
+                                        lineHeight: 1.1,
+                                    }}
+                                >
+                                    {listFund?.nav_rub != null ? formatRubShort(listFund.nav_rub) : '—'}
+                                </div>
+                                {data.current_snapshot_date && (
+                                    <div
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: 5,
+                                            marginTop: 6,
+                                            fontSize: 'var(--fs-2xs)',
+                                            color: 'var(--text-muted)',
+                                        }}
+                                    >
+                                        <Calendar size={12} style={{ flexShrink: 0 }} />
+                                        Состав на {data.current_snapshot_date}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* (3) График доходности (СЧА на пай) + плашки returns */}
+                            {(() => {
+                                const perf = data.performance;
+                                const ret = perf?.returns ?? listFund?.returns ?? null;
+                                const chartData = (perf?.timeline ?? [])
+                                    .filter((p) => p.pay != null)
+                                    .map((p) => ({ time: p.date, value: p.pay }));
+                                return (
+                                    <div style={{ marginBottom: 24 }}>
+                                        <h3
                                             style={{
-                                                padding: 12,
-                                                background: 'var(--bg-secondary)',
-                                                borderRadius: 8,
-                                                border: '1px solid var(--border-color)',
+                                                fontSize: 'var(--fs-md)',
+                                                fontWeight: 700,
+                                                color: 'var(--text-primary)',
+                                                marginBottom: 10,
                                             }}
                                         >
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                                                <ChangeIcon type={type} />
-                                                <span
-                                                    style={{
-                                                        fontSize: 'var(--fs-2xs)',
-                                                        color: 'var(--text-muted)',
-                                                        textTransform: 'uppercase',
-                                                        letterSpacing: '0.04em',
-                                                        fontWeight: 600,
-                                                    }}
-                                                >
-                                                    {label}
-                                                </span>
-                                            </div>
+                                            Доходность пая
+                                        </h3>
+                                        {chartData.length > 1 ? (
+                                            <SimpleChart
+                                                data={chartData}
+                                                height={300}
+                                                primaryLabel="СЧА на пай, ₽"
+                                                legendPosition="top"
+                                                formatValue={(v) => `${v.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ₽`}
+                                                formatPrimaryAxis={(v) => v.toLocaleString('ru-RU', { maximumFractionDigits: v >= 100 ? 0 : 2 })}
+                                                formatTime={formatMonthYearShort}
+                                                tooltipDateFormat={formatMonthYearShort}
+                                                clampEdgeLabels
+                                                showValueHeader={false}
+                                                showDownloadButton={false}
+                                            />
+                                        ) : (
                                             <div
                                                 style={{
-                                                    fontSize: 'var(--fs-xl)',
-                                                    fontWeight: 800,
-                                                    color: changeColor(type),
+                                                    padding: '24px 16px',
+                                                    textAlign: 'center',
+                                                    color: 'var(--text-muted)',
+                                                    fontSize: 'var(--fs-sm)',
+                                                    border: '1px solid var(--border-color)',
+                                                    borderRadius: 10,
+                                                    background: 'var(--bg-secondary)',
                                                 }}
                                             >
-                                                {count}
+                                                Недостаточно истории для графика доходности
                                             </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
+                                        )}
 
-                            {/* Diff table */}
-                            {data.diff.length > 0 && (
-                                <>
-                                    <h3
-                                        style={{
-                                            fontSize: 'var(--fs-md)',
-                                            fontWeight: 700,
-                                            color: 'var(--text-primary)',
-                                            marginBottom: 10,
-                                        }}
-                                    >
-                                        Изменения позиций
-                                    </h3>
-                                    <DiffTable
-                                        diff={data.diff}
-                                        onRowClick={(d) => setDrillDown({ asset_name: d.asset_name, isin: d.isin ?? null })}
-                                    />
-                                </>
-                            )}
-
-                            {/* Current holdings */}
-                            {data.current_holdings.length > 0 && (
-                                <>
-                                    <h3
-                                        style={{
-                                            fontSize: 'var(--fs-md)',
-                                            fontWeight: 700,
-                                            color: 'var(--text-primary)',
-                                            marginTop: 24,
-                                            marginBottom: 10,
-                                        }}
-                                    >
-                                        Текущий состав (топ-30)
-                                    </h3>
-                                    <table
-                                        style={{
-                                            width: '100%',
-                                            borderCollapse: 'collapse',
-                                            fontSize: 'var(--fs-sm)',
-                                        }}
-                                    >
-                                        <thead>
-                                            <tr>
-                                                <th style={{
-                                                    textAlign: 'left',
-                                                    padding: '8px 12px',
-                                                    color: 'var(--text-muted)',
-                                                    fontSize: 'var(--fs-2xs)',
-                                                    textTransform: 'uppercase',
-                                                    letterSpacing: '0.05em',
-                                                    fontWeight: 700,
-                                                    borderBottom: '2px solid var(--text-primary)',
-                                                }}>Актив</th>
-                                                <th style={{
-                                                    textAlign: 'right',
-                                                    padding: '8px 12px',
-                                                    color: 'var(--text-muted)',
-                                                    fontSize: 'var(--fs-2xs)',
-                                                    textTransform: 'uppercase',
-                                                    letterSpacing: '0.05em',
-                                                    fontWeight: 700,
-                                                    borderBottom: '2px solid var(--text-primary)',
-                                                }}>Доля, %</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {data.current_holdings.slice(0, 30).map((h) => (
-                                                <tr key={h.asset_name}>
-                                                    <td style={{
-                                                        padding: '8px 12px',
-                                                        borderBottom: '1px solid color-mix(in srgb, var(--border-color) 60%, transparent)',
-                                                        color: 'var(--text-primary)',
-                                                    }}>
-                                                        {h.asset_name}
-                                                    </td>
-                                                    <td style={{
-                                                        padding: '8px 12px',
-                                                        textAlign: 'right',
-                                                        borderBottom: '1px solid color-mix(in srgb, var(--border-color) 60%, transparent)',
-                                                        fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
-                                                        color: 'var(--text-primary)',
-                                                        fontWeight: 600,
-                                                    }}>
-                                                        {h.weight !== null ? h.weight.toFixed(2) : '—'}
-                                                    </td>
-                                                </tr>
+                                        {/* Плашки returns 1м/3м/6м/1г */}
+                                        <div
+                                            style={{
+                                                display: 'grid',
+                                                gridTemplateColumns: 'repeat(auto-fit, minmax(72px, 1fr))',
+                                                gap: 8,
+                                                marginTop: 12,
+                                            }}
+                                        >
+                                            {[
+                                                { label: '1 мес', v: ret?.m1 },
+                                                { label: '3 мес', v: ret?.m3 },
+                                                { label: '6 мес', v: ret?.m6 },
+                                                { label: '1 год', v: ret?.y1 },
+                                            ].map(({ label, v }) => (
+                                                <div
+                                                    key={label}
+                                                    style={{
+                                                        padding: '10px 12px',
+                                                        background: 'var(--bg-secondary)',
+                                                        borderRadius: 8,
+                                                        border: '1px solid var(--border-color)',
+                                                    }}
+                                                >
+                                                    <div
+                                                        style={{
+                                                            fontSize: 'var(--fs-2xs)',
+                                                            color: 'var(--text-muted)',
+                                                            textTransform: 'uppercase',
+                                                            letterSpacing: '0.04em',
+                                                            fontWeight: 600,
+                                                            marginBottom: 3,
+                                                        }}
+                                                    >
+                                                        {label}
+                                                    </div>
+                                                    <div
+                                                        style={{
+                                                            fontSize: 'var(--fs-md)',
+                                                            fontWeight: 800,
+                                                            fontVariantNumeric: 'tabular-nums',
+                                                            color: returnColor(v),
+                                                        }}
+                                                    >
+                                                        {formatReturnPct(v)}
+                                                    </div>
+                                                </div>
                                             ))}
-                                        </tbody>
-                                    </table>
-                                </>
+                                        </div>
+                                        {listFund?.has_distributions && (
+                                            <div style={{ marginTop: 10, fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', lineHeight: 1.4 }}>
+                                                Доходность — полная, с&nbsp;учётом выплат дохода (по&nbsp;данным Cbonds).
+                                                График показывает цену пая — она снижается в&nbsp;даты выплат.
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })()}
+
+                            {/* (4) Donut состава + список топ-позиций */}
+                            <h3
+                                style={{
+                                    fontSize: 'var(--fs-md)',
+                                    fontWeight: 700,
+                                    color: 'var(--text-primary)',
+                                    marginBottom: 12,
+                                }}
+                            >
+                                Состав фонда
+                            </h3>
+                            {data.current_holdings.length > 0 ? (
+                                <div
+                                    style={{
+                                        display: 'flex',
+                                        gap: 24,
+                                        flexWrap: 'wrap',
+                                        alignItems: 'flex-start',
+                                    }}
+                                >
+                                    <div style={{ flexShrink: 0, margin: '0 auto', lineHeight: 0 }}>
+                                        <Donut
+                                            holdings={data.current_holdings.map((h) => ({
+                                                name: h.asset_name,
+                                                weight: (h.weight ?? 0) / 100,
+                                            }))}
+                                            size={180}
+                                        />
+                                    </div>
+                                    <div style={{ flex: 1, minWidth: 240 }}>
+                                        <table
+                                            style={{
+                                                width: '100%',
+                                                borderCollapse: 'collapse',
+                                                fontSize: 'var(--fs-sm)',
+                                            }}
+                                        >
+                                            <thead>
+                                                <tr>
+                                                    <th style={{
+                                                        textAlign: 'left',
+                                                        padding: '8px 12px',
+                                                        color: 'var(--text-muted)',
+                                                        fontSize: 'var(--fs-2xs)',
+                                                        textTransform: 'uppercase',
+                                                        letterSpacing: '0.05em',
+                                                        fontWeight: 700,
+                                                        borderBottom: '2px solid var(--text-primary)',
+                                                    }}>Актив</th>
+                                                    <th style={{
+                                                        textAlign: 'right',
+                                                        padding: '8px 12px',
+                                                        color: 'var(--text-muted)',
+                                                        fontSize: 'var(--fs-2xs)',
+                                                        textTransform: 'uppercase',
+                                                        letterSpacing: '0.05em',
+                                                        fontWeight: 700,
+                                                        borderBottom: '2px solid var(--text-primary)',
+                                                    }}>Доля, %</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {data.current_holdings.slice(0, 30).map((h, i) => (
+                                                    <tr key={h.asset_name}>
+                                                        <td style={{
+                                                            padding: '7px 12px',
+                                                            borderBottom: '1px solid color-mix(in srgb, var(--border-color) 60%, transparent)',
+                                                            color: 'var(--text-primary)',
+                                                        }}>
+                                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                                                                <span
+                                                                    style={{
+                                                                        width: 8,
+                                                                        height: 8,
+                                                                        borderRadius: '50%',
+                                                                        flexShrink: 0,
+                                                                        backgroundColor: i < 10
+                                                                            ? DONUT_COLORS[i % DONUT_COLORS.length]
+                                                                            : 'var(--text-muted)',
+                                                                    }}
+                                                                />
+                                                                {h.asset_name}
+                                                            </span>
+                                                        </td>
+                                                        <td style={{
+                                                            padding: '7px 12px',
+                                                            textAlign: 'right',
+                                                            borderBottom: '1px solid color-mix(in srgb, var(--border-color) 60%, transparent)',
+                                                            fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+                                                            color: 'var(--text-primary)',
+                                                            fontWeight: 600,
+                                                        }}>
+                                                            {h.weight !== null ? h.weight.toFixed(2) : '—'}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div
+                                    style={{
+                                        padding: '24px 16px',
+                                        textAlign: 'center',
+                                        color: 'var(--text-muted)',
+                                        fontSize: 'var(--fs-sm)',
+                                    }}
+                                >
+                                    Состав не публикуется
+                                </div>
                             )}
                         </>
                     )}
                 </div>
             </div>
         </div>
-        {drillDown && (
-            <AssetHistoryModal
-                ticker={ticker}
-                asset_name={drillDown.asset_name}
-                isin={drillDown.isin}
-                onClose={() => setDrillDown(null)}
-            />
-        )}
-        </>
     );
-}
-
-type DiffSortKey = 'name' | 'type' | 'delta' | 'prev' | 'curr';
-
-function DiffTable({
-    diff,
-    onRowClick,
-}: {
-    diff: FundTradesDetail['diff'];
-    onRowClick?: (d: FundTradeDiff) => void;
-}) {
-    const labelByType: Record<FundTradeChangeType, string> = {
-        new: 'НОВЫЙ',
-        sold_out: 'ПРОДАН',
-        accumulated: 'НАКОПЛЕН',
-        reduced: 'СОКРАЩЁН',
-        unchanged: '—',
-    };
-    const [sortKey, setSortKey] = useState<DiffSortKey | null>(null);
-    const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
-
-    const columns: { key: DiffSortKey; label: string; align: 'left' | 'right' }[] = [
-        { key: 'name', label: 'Актив', align: 'left' },
-        { key: 'type', label: 'Тип', align: 'left' },
-        { key: 'delta', label: 'Δ %', align: 'left' },
-        { key: 'prev', label: 'Было', align: 'left' },
-        { key: 'curr', label: 'Стало', align: 'left' },
-    ];
-
-    const sorted = useMemo(() => {
-        if (!sortKey) return diff;
-        const num = (v: number | null) => (v == null ? -Infinity : v);
-        const val = (d: FundTradeDiff): string | number => {
-            switch (sortKey) {
-                case 'name': return d.asset_name;
-                case 'type': return labelByType[d.change_type];
-                case 'delta': return num(d.delta_weight);
-                case 'prev': return num(d.previous_weight);
-                case 'curr': return num(d.current_weight);
-            }
-        };
-        return [...diff].sort((a, b) => {
-            const av = val(a), bv = val(b);
-            const cmp = typeof av === 'string'
-                ? av.localeCompare(bv as string)
-                : (av as number) - (bv as number);
-            return sortDir === 'asc' ? cmp : -cmp;
-        });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [diff, sortKey, sortDir]);
-
-    const onSort = (key: DiffSortKey) => {
-        if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-        else { setSortKey(key); setSortDir('desc'); }
-    };
-
-    return (
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--fs-sm)' }}>
-            <thead>
-                <tr>
-                    {columns.map((c) => {
-                        const activeSort = sortKey === c.key;
-                        return (
-                            <th
-                                key={c.key}
-                                onClick={() => onSort(c.key)}
-                                style={{
-                                    textAlign: c.align,
-                                    padding: '8px 12px',
-                                    color: activeSort ? 'var(--text-primary)' : 'var(--text-muted)',
-                                    fontSize: 'var(--fs-2xs)',
-                                    textTransform: 'uppercase',
-                                    letterSpacing: '0.05em',
-                                    fontWeight: 700,
-                                    borderBottom: '2px solid var(--text-primary)',
-                                    cursor: 'pointer',
-                                    userSelect: 'none',
-                                    whiteSpace: 'nowrap',
-                                }}
-                            >
-                                {c.label}
-                                <span style={{ opacity: activeSort ? 1 : 0.35, marginLeft: 3 }}>
-                                    {activeSort ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}
-                                </span>
-                            </th>
-                        );
-                    })}
-                </tr>
-            </thead>
-            <tbody>
-                {sorted.map((d) => (
-                    <tr
-                        key={d.asset_name}
-                        onClick={onRowClick ? () => onRowClick(d) : undefined}
-                        style={{ cursor: onRowClick ? 'pointer' : 'default', transition: 'background-color 120ms' }}
-                        onMouseEnter={onRowClick ? (e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--accent) 9%, transparent)'; } : undefined}
-                        onMouseLeave={onRowClick ? (e) => { e.currentTarget.style.background = 'transparent'; } : undefined}
-                    >
-                        <td style={cellStyle()}>{d.asset_name}</td>
-                        <td style={cellStyle()}>
-                            <span
-                                style={{
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: 4,
-                                    padding: '2px 8px',
-                                    background: `color-mix(in srgb, ${changeColor(d.change_type)} 14%, transparent)`,
-                                    color: changeColor(d.change_type),
-                                    fontSize: 'var(--fs-2xs)',
-                                    fontWeight: 700,
-                                    borderRadius: 4,
-                                    letterSpacing: '0.04em',
-                                }}
-                            >
-                                <ChangeIcon type={d.change_type} />
-                                {labelByType[d.change_type]}
-                            </span>
-                        </td>
-                        <td style={{ ...cellStyle(), fontFamily: 'ui-monospace, monospace', fontWeight: 700, color: changeColor(d.change_type) }}>
-                            {d.delta_weight !== null
-                                ? `${d.delta_weight > 0 ? '+' : ''}${d.delta_weight.toFixed(2)}`
-                                : '—'}
-                        </td>
-                        <td style={{ ...cellStyle(), fontFamily: 'ui-monospace, monospace', color: 'var(--text-muted)' }}>
-                            {d.previous_weight !== null ? d.previous_weight.toFixed(2) : '—'}
-                        </td>
-                        <td style={{ ...cellStyle(), fontFamily: 'ui-monospace, monospace', color: 'var(--text-primary)', fontWeight: 600 }}>
-                            {d.current_weight !== null ? d.current_weight.toFixed(2) : '—'}
-                        </td>
-                    </tr>
-                ))}
-            </tbody>
-        </table>
-    );
-}
-
-function cellStyle(): React.CSSProperties {
-    return {
-        padding: '8px 12px',
-        borderBottom: '1px solid color-mix(in srgb, var(--border-color) 60%, transparent)',
-        color: 'var(--text-primary)',
-    };
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -682,6 +597,8 @@ export default function FundTradesPage() {
     // селектор месяца появится в Заходе 2 (нужен backend as_of/available_months).
     const [period] = useState<FundTradesPeriod>('1m');
     const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
+    // Сортировка карточек «Состав фондов»: по доходности 1г (default) / объёму / имени.
+    const [fundSort, setFundSort] = useState<FundSortKey>('return');
 
     const [funds, setFunds] = useState<FundWithHistory[]>([]);
     const [movers, setMovers] = useState<FundTradesMovers | null>(null);
@@ -721,8 +638,19 @@ export default function FundTradesPage() {
             if (!groups[key]) groups[key] = [];
             groups[key].push(f);
         }
+        // Сортировка внутри группы. null'ы (нет данных) всегда в хвост.
+        const cmp = (a: FundWithHistory, b: FundWithHistory): number => {
+            if (fundSort === 'name') return a.ticker.localeCompare(b.ticker);
+            const av = fundSort === 'return' ? a.returns?.y1 ?? null : a.nav_rub;
+            const bv = fundSort === 'return' ? b.returns?.y1 ?? null : b.nav_rub;
+            if (av === null && bv === null) return a.ticker.localeCompare(b.ticker);
+            if (av === null) return 1;
+            if (bv === null) return -1;
+            return bv - av; // DESC
+        };
+        for (const k of Object.keys(groups)) groups[k] = [...groups[k]].sort(cmp);
         return groups;
-    }, [funds]);
+    }, [funds, fundSort]);
 
     // УК для фильтра «Покупок фондов» — только stock-фонды.
     const managers = useMemo(() => {
@@ -800,6 +728,7 @@ export default function FundTradesPage() {
                     {([
                         { id: 'funds' as const, label: 'Состав фондов', icon: Wallet },
                         { id: 'movers' as const, label: 'Покупки фондов', icon: TrendingUp },
+                        { id: 'company' as const, label: 'Потоки по компании', icon: ArrowLeftRight },
                         { id: 'snapshots' as const, label: 'Обзор снапшота', icon: Activity },
                     ]).map((t) => {
                         const Icon = t.icon;
@@ -851,6 +780,57 @@ export default function FundTradesPage() {
             {/* Tab content */}
             {tab === 'funds' && (
                 <>
+                    {/* Контрол сортировки карточек */}
+                    {funds.length > 0 && (
+                        <div
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 8,
+                                flexWrap: 'wrap',
+                                marginBottom: 18,
+                            }}
+                        >
+                            <span
+                                style={{
+                                    fontSize: 'var(--fs-2xs)',
+                                    fontWeight: 700,
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.06em',
+                                    color: 'var(--text-muted)',
+                                }}
+                            >
+                                Сортировка
+                            </span>
+                            {([
+                                { id: 'return' as const, label: 'Доходность 1г' },
+                                { id: 'volume' as const, label: 'Объём' },
+                                { id: 'name' as const, label: 'Имя' },
+                            ]).map((s) => {
+                                const active = fundSort === s.id;
+                                return (
+                                    <button
+                                        key={s.id}
+                                        onClick={() => setFundSort(s.id)}
+                                        className="editorial-press"
+                                        style={{
+                                            padding: '6px 14px',
+                                            background: active ? 'var(--accent)' : 'var(--bg-secondary)',
+                                            color: active ? 'var(--text-inverse)' : 'var(--text-primary)',
+                                            border: '2px solid var(--text-primary)',
+                                            borderRadius: 999,
+                                            fontSize: 'var(--fs-xs)',
+                                            fontWeight: active ? 700 : 600,
+                                            cursor: 'pointer',
+                                            boxShadow: active ? '3px 3px 0 var(--text-primary)' : 'none',
+                                        }}
+                                    >
+                                        {s.label}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
                     {loading && funds.length === 0 && (
                         <div style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>Загружаем фонды…</div>
                     )}
@@ -900,6 +880,7 @@ export default function FundTradesPage() {
                                             e.currentTarget.style.borderColor = 'var(--border-color)';
                                         }}
                                     >
+                                        {/* Header: УК-аватар + тикер + имя */}
                                         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
                                             {uk && (
                                                 <div
@@ -931,7 +912,7 @@ export default function FundTradesPage() {
                                                         fontSize: 'var(--fs-md)',
                                                         fontWeight: 800,
                                                         color: 'var(--text-primary)',
-                                                        marginBottom: 4,
+                                                        marginBottom: 2,
                                                     }}
                                                 >
                                                     {f.ticker}
@@ -940,7 +921,6 @@ export default function FundTradesPage() {
                                                     style={{
                                                         fontSize: 'var(--fs-xs)',
                                                         color: 'var(--text-secondary)',
-                                                        marginBottom: 8,
                                                         lineHeight: 1.4,
                                                         display: '-webkit-box',
                                                         WebkitLineClamp: 2,
@@ -950,18 +930,151 @@ export default function FundTradesPage() {
                                                 >
                                                     {f.name}
                                                 </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Body: donut состава + топ-5 позиций */}
+                                        <div
+                                            style={{
+                                                display: 'flex',
+                                                gap: 12,
+                                                alignItems: 'center',
+                                                marginTop: 12,
+                                            }}
+                                        >
+                                            {f.top_holdings && f.top_holdings.length > 0 ? (
+                                                <div style={{ flexShrink: 0, lineHeight: 0 }}>
+                                                    <Donut
+                                                        holdings={(() => {
+                                                            // top_holdings = только топ-10 (бэкенд обрезает);
+                                                            // weight в процентах. Добавляем «Прочее» = 100 − Σтоп,
+                                                            // иначе донат нормализует топ-10 как 100% и завышает
+                                                            // концентрацию фонда.
+                                                            const sum = f.top_holdings.reduce((s, h) => s + (h.weight || 0), 0);
+                                                            const other = 100 - sum;
+                                                            return other > 1
+                                                                ? [...f.top_holdings, { name: 'Прочее', weight: other }]
+                                                                : f.top_holdings;
+                                                        })()}
+                                                        size={84}
+                                                        outerRadius={72}
+                                                        innerRadius={46}
+                                                        showCenterText={false}
+                                                    />
+                                                </div>
+                                            ) : (
                                                 <div
                                                     style={{
+                                                        width: 84,
+                                                        height: 84,
+                                                        flexShrink: 0,
+                                                        borderRadius: '50%',
+                                                        border: '1.5px dashed var(--border-color)',
                                                         display: 'flex',
-                                                        justifyContent: 'space-between',
-                                                        fontSize: 'var(--fs-2xs)',
+                                                        alignItems: 'center',
+                                                        justifyContent: 'center',
                                                         color: 'var(--text-muted)',
+                                                        fontSize: 'var(--fs-2xl)',
                                                     }}
                                                 >
-                                                    <span>{f.last_snapshot_date || '—'}</span>
-                                                    <span>{f.snapshot_count} snap.</span>
+                                                    —
                                                 </div>
+                                            )}
+                                            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                                {(f.top_holdings ?? []).slice(0, 5).map((h, i) => (
+                                                    <div
+                                                        key={h.name + i}
+                                                        style={{
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: 6,
+                                                            fontSize: 'var(--fs-2xs)',
+                                                        }}
+                                                    >
+                                                        <span
+                                                            style={{
+                                                                width: 7,
+                                                                height: 7,
+                                                                borderRadius: '50%',
+                                                                flexShrink: 0,
+                                                                backgroundColor: DONUT_COLORS[i % DONUT_COLORS.length],
+                                                            }}
+                                                        />
+                                                        <span
+                                                            style={{
+                                                                flex: 1,
+                                                                minWidth: 0,
+                                                                overflow: 'hidden',
+                                                                textOverflow: 'ellipsis',
+                                                                whiteSpace: 'nowrap',
+                                                                color: 'var(--text-secondary)',
+                                                            }}
+                                                        >
+                                                            {h.name}
+                                                        </span>
+                                                        <span
+                                                            style={{
+                                                                flexShrink: 0,
+                                                                fontVariantNumeric: 'tabular-nums',
+                                                                fontWeight: 600,
+                                                                color: 'var(--text-primary)',
+                                                            }}
+                                                        >
+                                                            {h.weight.toFixed(1)}%
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                                {(!f.top_holdings || f.top_holdings.length === 0) && (
+                                                    <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)' }}>
+                                                        Состав не публикуется
+                                                    </span>
+                                                )}
                                             </div>
+                                        </div>
+
+                                        {/* Footer: доходность 1г + meta */}
+                                        <div
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'flex-end',
+                                                justifyContent: 'space-between',
+                                                marginTop: 12,
+                                                paddingTop: 10,
+                                                borderTop: '1px solid var(--border-color)',
+                                            }}
+                                        >
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                                                <span
+                                                    style={{
+                                                        fontSize: 'var(--fs-lg)',
+                                                        fontWeight: 800,
+                                                        fontVariantNumeric: 'tabular-nums',
+                                                        color: returnColor(f.returns?.y1),
+                                                        lineHeight: 1.1,
+                                                    }}
+                                                >
+                                                    {formatReturnPct(f.returns?.y1)}
+                                                </span>
+                                                <span
+                                                    style={{
+                                                        fontSize: 'var(--fs-2xs)',
+                                                        color: 'var(--text-muted)',
+                                                        textTransform: 'uppercase',
+                                                        letterSpacing: '0.04em',
+                                                    }}
+                                                >
+                                                    1 год
+                                                </span>
+                                            </div>
+                                            <span
+                                                style={{
+                                                    fontSize: 'var(--fs-2xs)',
+                                                    color: 'var(--text-muted)',
+                                                    fontVariantNumeric: 'tabular-nums',
+                                                }}
+                                            >
+                                                {f.nav_rub != null ? formatRubShort(f.nav_rub) : (f.last_snapshot_date || '—')}
+                                            </span>
                                         </div>
                                     </button>
                                     );
@@ -1056,12 +1169,15 @@ export default function FundTradesPage() {
                 </>
             )}
 
+            {tab === 'company' && <CompanyFlowsTab />}
+
             {tab === 'snapshots' && <SnapshotReviewTab />}
 
             {selectedTicker && (
                 <FundDetailModal
                     ticker={selectedTicker}
                     period={period}
+                    listFund={funds.find((f) => f.ticker === selectedTicker) ?? null}
                     onClose={() => setSelectedTicker(null)}
                 />
             )}
@@ -1090,6 +1206,22 @@ function formatShares(positions: number | null): string {
     if (positions === null || positions === undefined) return '—';
     return positions.toLocaleString('ru-RU');
 }
+
+// Доходность в %: «+12.3%» / «−4.1%» / «—». Знак «−» — типографский минус.
+function formatReturnPct(v: number | null | undefined): string {
+    if (v === null || v === undefined) return '—';
+    const sign = v > 0 ? '+' : v < 0 ? '−' : '';
+    return `${sign}${Math.abs(v).toFixed(1)}%`;
+}
+
+// Цвет доходности: зелёный для роста, красный для падения, нейтральный для 0/—.
+function returnColor(v: number | null | undefined): string {
+    if (v === null || v === undefined || v === 0) return 'var(--text-muted)';
+    return v > 0 ? 'var(--funds-flow-positive)' : 'var(--funds-flow-negative)';
+}
+
+// Ключ сортировки карточек «Состав фондов».
+type FundSortKey = 'return' | 'volume' | 'name';
 
 // Компактный формат для меток Y-оси графика — полные числа ("5 683 220")
 // не влезают слева и клиппятся, поэтому на оси даём "5,7 млн" / "339 тыс".
