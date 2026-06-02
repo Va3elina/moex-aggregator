@@ -495,7 +495,7 @@ export default function FundsMoneyPage() {
             <div className="editorial-frame">
 
             {/* Вкладки категорий — pill-стиль с press-effect, fluid font/padding */}
-            <div data-tour="funds-categories" className="flex flex-wrap mb-4 md:mb-6" style={{ gap: 'var(--sp-2)' }}>
+            <div data-tour="funds-categories" className="grid mb-4 md:mb-6" style={{ gap: 'var(--sp-2)', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
                 {CATEGORIES.map(cat => {
                     const Icon = cat.icon;
                     const isActive = category === cat.key;
@@ -506,7 +506,7 @@ export default function FundsMoneyPage() {
                             onClick={() => { if (!soon) setCategory(cat.key); }}
                             disabled={soon}
                             title={soon ? 'Раздел скоро появится' : undefined}
-                            className="editorial-press flex items-center font-semibold rounded-full min-w-0"
+                            className="editorial-press flex items-center justify-center font-semibold rounded-full min-w-0"
                             style={{
                                 gap: 'var(--sp-2)',
                                 padding: 'var(--sp-2) var(--sp-3)',
@@ -520,7 +520,7 @@ export default function FundsMoneyPage() {
                             }}
                         >
                             <Icon className="shrink-0" style={{ width: 'var(--ico-sm)', height: 'var(--ico-sm)' }} />
-                            <span className="truncate flex-1 text-left">{cat.name}</span>
+                            <span className="truncate min-w-0">{cat.name}</span>
                             <span
                                 className="rounded-full shrink-0"
                                 style={{
