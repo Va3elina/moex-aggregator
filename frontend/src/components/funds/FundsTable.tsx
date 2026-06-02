@@ -10,6 +10,10 @@ const FUND_COLORS = [
     '#00D9FF', '#FF6B9D', '#FCD34D', '#14B8A6', '#F97316'
 ];
 
+// Подкатегории, у которых данные (NAV) ещё наливаются — показываем бейдж
+// «Скоро» на заголовке группы. Убрать имя отсюда, когда NAV появится.
+const COMING_SOON_SUBCATS = new Set<string>(['Блогеры']);
+
 interface FundsTableProps {
     data: FundsChartResponse | null;
     hiddenFunds: Set<number>;
@@ -143,6 +147,11 @@ export default function FundsTable({
                                                             {subcat}
                                                         </span>
                                                         <span className="text-xs text-theme-secondary">({groupFunds.length})</span>
+                                                        {subcat && COMING_SOON_SUBCATS.has(subcat) && (
+                                                            <span className="rounded-full shrink-0" style={{ fontSize: 'var(--fs-2xs)', padding: 'calc(var(--sp-1)) var(--sp-2)', background: 'var(--accent)', color: 'var(--text-inverse)', fontWeight: 700 }}>
+                                                                Скоро
+                                                            </span>
+                                                        )}
                                                     </div>
                                                 </td>
                                             </tr>
