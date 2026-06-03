@@ -139,19 +139,18 @@ def black76_greeks(
 
     if ot == "call":
         delta = disc * norm.cdf(d1)
+        # Black-76 theta_call = -F*phi(d1)*sigma*exp(-rT)/(2 sqrt(T)) + r * exp(-rT) * (F N(d1) - K N(d2))
+        # NB: second term is +r*C (the discounted forward gain), not -r*C
         theta = (
             -disc * F * pdf_d1 * sigma / (2.0 * sqrtT)
-            + r * disc * (F * norm.cdf(d1) - K * norm.cdf(d2)) * (-1.0)
+            + r * disc * (F * norm.cdf(d1) - K * norm.cdf(d2))
         )
-        # Simplify: theta = -F*phi(d1)*sigma*exp(-rT)/(2 sqrt(T))
-        #                  - r*exp(-rT)*(F N(d1) - K N(d2))
-        # The second term is - r * price.
-        # (Both signs already baked in above.)
     else:
         delta = -disc * norm.cdf(-d1)
+        # theta_put = -F*phi(d1)*sigma*exp(-rT)/(2 sqrt(T)) + r * exp(-rT) * (K N(-d2) - F N(-d1))
         theta = (
             -disc * F * pdf_d1 * sigma / (2.0 * sqrtT)
-            - r * disc * (K * norm.cdf(-d2) - F * norm.cdf(-d1)) * (-1.0)
+            + r * disc * (K * norm.cdf(-d2) - F * norm.cdf(-d1))
         )
 
     return {"delta": delta, "gamma": gamma, "vega": vega, "theta": theta}
