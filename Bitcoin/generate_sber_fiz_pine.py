@@ -50,14 +50,19 @@ strategy("SBER FIZ Strategy — Retail Panic Entry + VRP Risk-Off Exit",
      margin_short=20)
 
 // ============ Параметры ============
-// Стратегия: ВХОД по панике физлиц (FIZ), ВЫХОД по восстановлению FIZ ИЛИ обвалу VRP.
-// Backtest SBER 2020-2026: +293% DD24% PF3.54 (robust train+test).
+// ВХОД: паника физлиц (FIZ). Опц. trend-вход для спокойных лет/2026.
+// ВЫХОД: эйфория физлиц ИЛИ обвал VRP, + стоп-лосс.
+// SBER 2020-2026: FIZ<=1.4 -> +159% DD18% WR72% PF5.25, плюс каждый год.
 grpEntry = "Entry (FIZ retail panic)"
-fizEntry   = input.float(1.6, "LONG: FIZ LSR <= (паника физлиц)", step=0.1, group=grpEntry, tooltip="Физлица в экстремальном шорте = локальное дно. Главный сигнал входа.")
+fizEntry   = input.float(1.4, "LONG: FIZ LSR <= (паника физлиц)", step=0.1, group=grpEntry, tooltip="Главный сигнал. 1.4 = лучший WR/PF. 1.6 = больше сделок.")
+useTrend   = input.bool(false, "Доп. trend-вход (актив в спокойные годы/2026)", group=grpEntry, tooltip="Добавляет вход VRP>=порог + цена>EMA200 + рост за 20д. Даёт сделки в спокойные годы, но снижает WR/PF.")
+trendVrp   = input.float(12.0, "Trend entry: VRP >=", step=1, group=grpEntry)
 
 grpExit = "Exit"
 fizExit    = input.float(3.0, "Exit when FIZ LSR >= (эйфория физлиц)", step=0.1, group=grpExit)
 vrpExit    = input.float(-5.0, "Exit when VRP drops below (risk-off)", step=1, group=grpExit, tooltip="VRP схлопнулся = премия за риск исчезла = режут лосеров.")
+useStop    = input.bool(true, "Stop loss", group=grpExit)
+stopPct    = input.float(8.0, "Stop loss %", step=1, group=grpExit)
 minHold    = input.int(10, "Min hold days", group=grpExit)
 maxHold    = input.int(90, "Max hold days", group=grpExit)
 
@@ -101,9 +106,15 @@ rv = ta.stdev(logRet, 30) * math.sqrt(252) * 100
 // ============ VRP ============
 vrp = atmIV - rv
 
+// ============ Trend context (для опц. trend-входа) ============
+ema200 = ta.ema(close, 200)
+bool mom20 = close > close[20]
+bool trendEntry = useTrend and not na(vrp) and vrp >= trendVrp and close > ema200 and mom20
+
 // ============ Signal ============
-// ВХОД: физлица в панике (FIZ LSR <= порог)
-bool entrySignal = not na(fizLSR) and fizLSR <= fizEntry
+// ВХОД: физлица в панике (FIZ LSR <= порог) ИЛИ опц. trend-вход
+bool fizEntrySig = not na(fizLSR) and fizLSR <= fizEntry
+bool entrySignal = fizEntrySig or trendEntry
 // ВЫХОД: физлица в эйфории ИЛИ VRP схлопнулся
 bool exitSignal  = (not na(fizLSR) and fizLSR >= fizExit) or (not na(vrp) and vrp <= vrpExit)
 
@@ -114,14 +125,16 @@ if strategy.position_size > 0
 else
     barsHeld := 0
 
-bool exitNow = strategy.position_size > 0 and barsHeld >= minHold and (exitSignal or barsHeld >= maxHold)
+// стоп-лосс: цена упала на stopPct% от средней входа (работает с любого бара)
+bool stopHit = useStop and strategy.position_size > 0 and not na(strategy.position_avg_price) and close <= strategy.position_avg_price * (1 - stopPct/100)
+bool exitNow = strategy.position_size > 0 and (stopHit or (barsHeld >= minHold and (exitSignal or barsHeld >= maxHold)))
 
 // ============ Sizing ============
 float posQty = leverage * strategy.equity * 0.99 / close
 
 // ============ Trades ============
 if exitNow
-    strategy.close_all(comment = barsHeld >= maxHold ? "max hold" : "VRP drop")
+    strategy.close_all(comment = stopHit ? "stop" : (barsHeld >= maxHold ? "max hold" : "signal exit"))
 
 if entrySignal and strategy.position_size == 0
     strategy.entry("FIZ Long", strategy.long, qty=posQty)
