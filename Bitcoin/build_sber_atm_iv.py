@@ -47,6 +47,10 @@ def load_chain():
     df['otype'] = pdf['option_type']
     df['expiry_code'] = pdf['expiry_code']
     df['series'] = pdf['series']
+    # Settlement group = same expiry for both calls & puts (call/put-agnostic).
+    # Month code letter differs C vs P, but exp_month is the real month.
+    df['settle_group'] = (pdf['series'] + pdf['exp_month'].astype(str).str.zfill(2)
+                          + pdf['exp_year_digit'].astype(str) + pdf['week'])
     df['TRADEDATE'] = pd.to_datetime(df['TRADEDATE'])
     return df
 
@@ -101,12 +105,12 @@ def build():
         if pd.isna(r):
             r = 0.10
 
-        # Evaluate each expiry_code present this day
+        # Evaluate each settlement group (single expiry, both calls & puts)
         candidates = []
-        for code, grp in day.groupby('expiry_code'):
-            exp_date = exp_map.get(code)
+        for code, grp in day.groupby('settle_group'):
+            # expiry date: look up via any row's expiry_code (calls & puts share expiry)
+            exp_date = exp_map.get(grp['expiry_code'].iloc[0])
             if exp_date is None:
-                # fallback: approximate from month/year via parse of code
                 p = parse_secid(grp['SECID'].iloc[0])
                 if p is None:
                     continue
@@ -160,6 +164,9 @@ def build():
             'expiry_code': code, 'n_strikes': len(common),
         })
 
+    if not results:
+        print("No ATM IV computed — check filters / data.")
+        return pd.DataFrame()
     out = pd.DataFrame(results).sort_values('date')
     out.to_csv(ROOT / 'sber_atm_iv_daily.csv', index=False)
     print(f"\nATM IV built: {len(out)} days")
