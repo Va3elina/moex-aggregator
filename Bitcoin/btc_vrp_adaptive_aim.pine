@@ -26,9 +26,6 @@ maxHoldBear      = input.int(90,  "Bear: max hold",             group=grpExit)
 dvolExitLevel    = input.float(70.0, "LONG exit: DVOL spike",  step=1, group=grpExit)
 shortMaxHold     = input.int(365, "SHORT: max hold safety (days)", group=grpExit)
 
-grpRisk = "Risk / Sizing"
-leverage         = input.float(1.0, "Position size (1.0 = 99% equity, fractions = smaller)", step=0.1, minval=0.1, maxval=1.0, group=grpRisk)
-
 grpDisplay = "Display"
 showVRP          = input.bool(true, "Show VRP/DVOL/RV (data window)", group=grpDisplay)
 showRegime       = input.bool(true, "Color background by regime",      group=grpDisplay)
@@ -104,10 +101,10 @@ bool longExitNow       = longExitDvolSpike or longExitMaxHold
 bool shortExitMaxHold  = inShort and barsHeld >= shortMaxHold
 bool shortExitNow      = shortExitMaxHold
 
-// ============ Position sizing ============
-float posPct = leverage * 99.0
-
 // ============ Trades ============
+// Position sizing: uses default_qty_value=99 (% of equity) from strategy() declaration.
+// For real leverage, set Properties → Margin for long/short in TradingView.
+
 // LONG exit
 if longExitNow
     string reason = longExitDvolSpike ? "DVOL spike" : "max hold"
@@ -122,7 +119,7 @@ if vrpEntrySignal
     if strategy.position_size < 0
         strategy.close_all(comment="long signal - close short")
     if strategy.position_size == 0
-        strategy.entry("VRP Long", strategy.long, qty=posPct)
+        strategy.entry("VRP Long", strategy.long)
 
 // SHORT entry:
 //   1. Bear regime + DVOL <= 35 (tactical)
@@ -130,10 +127,9 @@ if vrpEntrySignal
 bool alwaysInShortEntry = alwaysInMarket and longExitNow
 
 if alwaysInShortEntry
-    // Open short immediately after long exit
-    strategy.entry("AlwaysIn Short", strategy.short, qty=posPct)
+    strategy.entry("AlwaysIn Short", strategy.short)
 else if shortBearSignal and strategy.position_size == 0
-    strategy.entry("Bear Short", strategy.short, qty=posPct)
+    strategy.entry("Bear Short", strategy.short)
 
 // ============ Visualization ============
 bgcolor(showRegime and isBullRegime ? color.new(color.green, 95) : na, title="Bull regime")
@@ -153,10 +149,10 @@ plot(showVRP ? dvol : na, "DVOL", color=dvol >= dvolExitLevel ? color.fuchsia : 
 plot(showVRP ? rv : na, "Realized Vol 30d", color=color.orange, linewidth=1, display=display.data_window)
 
 // ============ Info table ============
-var table info = table.new(position.top_right, 2, 11, bgcolor=color.new(color.black, 80), border_width=1)
+var table info = table.new(position.top_right, 2, 10, bgcolor=color.new(color.black, 80), border_width=1)
 if barstate.islast
     table.cell(info, 0, 0, "BTC ADAPTIVE VRP", text_color=color.white, bgcolor=color.new(color.blue, 50))
-    table.cell(info, 1, 0, "x" + str.tostring(leverage, "#.#") + (alwaysInMarket ? " AIM" : ""), text_color=color.white, bgcolor=color.new(color.blue, 50))
+    table.cell(info, 1, 0, alwaysInMarket ? "AIM ON" : "LONG only", text_color=color.white, bgcolor=color.new(color.blue, 50))
 
     table.cell(info, 0, 1, "Regime", text_color=color.white)
     table.cell(info, 1, 1, isBullRegime ? "BULL" : "BEAR", text_color=isBullRegime ? color.lime : color.red)
@@ -194,6 +190,3 @@ if barstate.islast
 
     table.cell(info, 0, 9, "Equity", text_color=color.white)
     table.cell(info, 1, 9, str.tostring(strategy.equity, "$#,###"), text_color=color.white)
-
-    table.cell(info, 0, 10, "Leverage", text_color=color.white)
-    table.cell(info, 1, 10, "x" + str.tostring(leverage, "#.#"), text_color=leverage > 1 ? color.yellow : color.white)

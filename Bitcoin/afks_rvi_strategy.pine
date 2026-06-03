@@ -22,9 +22,6 @@ minHold          = input.int(14,  "Min hold days",            group=grpExit)
 maxHold          = input.int(90,  "Max hold days (force)",    group=grpExit)
 rviExitLevel     = input.float(60.0, "Exit on RVI spike >=",  step=1, group=grpExit)
 
-grpRisk = "Risk / Sizing"
-leverage         = input.float(1.0, "Position size (1.0 = 99% equity, fractions = smaller)", step=0.1, minval=0.1, maxval=1.0, group=grpRisk)
-
 grpDisplay = "Display"
 showVol          = input.bool(true, "Show RVI/RV/VRP (data window)", group=grpDisplay)
 
@@ -79,16 +76,16 @@ bool exitMinHoldSpike = inLong and barsHeld >= minHold and exitSpike
 bool exitMaxHold      = inLong and barsHeld >= maxHold
 bool exitNow          = exitMinHoldSpike or exitMaxHold
 
-// ============ Position sizing ============
-float posPct = leverage * 99.0
-
 // ============ Trades ============
+// Position sizing: uses default_qty_value=99 (% of equity) from strategy() declaration.
+// For real leverage, set Properties → Margin for long in TradingView.
+
 if exitNow
     string reason = exitMinHoldSpike ? "RVI spike" : "max hold"
     strategy.close_all(comment=reason)
 
 if entrySignal and strategy.position_size == 0
-    strategy.entry("RVI Long", strategy.long, qty=posPct)
+    strategy.entry("RVI Long", strategy.long)
 
 // ============ Visualization ============
 plotshape(entrySignal and strategy.position_size == 0, "Entry",
@@ -103,10 +100,10 @@ plot(showVol ? rv : na, "Realized Vol 30d", color=color.orange, linewidth=1, dis
 plot(showVol ? vrp : na, "VRP", color=vrp >= vrpEntry ? color.fuchsia : color.yellow, linewidth=1, display=display.data_window)
 
 // ============ Info table ============
-var table info = table.new(position.top_right, 2, 9, bgcolor=color.new(color.black, 80), border_width=1)
+var table info = table.new(position.top_right, 2, 8, bgcolor=color.new(color.black, 80), border_width=1)
 if barstate.islast
     table.cell(info, 0, 0, "AFKS RVI", text_color=color.white, bgcolor=color.new(color.blue, 50))
-    table.cell(info, 1, 0, "x" + str.tostring(leverage, "#.#"), text_color=color.white, bgcolor=color.new(color.blue, 50))
+    table.cell(info, 1, 0, useVRP ? "VRP mode" : "RVI mode", text_color=color.white, bgcolor=color.new(color.blue, 50))
 
     table.cell(info, 0, 1, "Mode", text_color=color.white)
     table.cell(info, 1, 1, useVRP ? "VRP >= " + str.tostring(vrpEntry) : "RVI >= " + str.tostring(rviEntry), text_color=color.aqua)
@@ -135,6 +132,3 @@ if barstate.islast
 
     table.cell(info, 0, 7, "Equity", text_color=color.white)
     table.cell(info, 1, 7, str.tostring(strategy.equity, "$#,###"), text_color=color.white)
-
-    table.cell(info, 0, 8, "Leverage", text_color=color.white)
-    table.cell(info, 1, 8, "x" + str.tostring(leverage, "#.#"), text_color=leverage > 1 ? color.yellow : color.white)
