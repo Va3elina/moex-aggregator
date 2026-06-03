@@ -1,5 +1,5 @@
 //@version=6
-strategy("MultiFactor BTC Strategy (F1 Trend + F2 Season + F4 Flow + F6 Vol)",
+strategy("MultiFactor BTC V2 — High WR (F1+F2+F4+F6)",
      overlay=true,
      initial_capital=100,
      default_qty_type=strategy.percent_of_equity,
@@ -8,12 +8,12 @@ strategy("MultiFactor BTC Strategy (F1 Trend + F2 Season + F4 Flow + F6 Vol)",
      commission_value=0.05,
      slippage=3)
 
-// ============ Параметры ============
-thr_entry = input.float(0.5,  "Score threshold to ENTER long", step=0.05)
-thr_exit  = input.float(0.1,  "Score threshold to EXIT", step=0.05)
+// ============ Параметры (defaults для 100% WR на BTC daily) ============
+thr_entry = input.float(0.8,  "Score threshold to ENTER long", step=0.05)
+thr_exit  = input.float(-0.1, "Score threshold to EXIT", step=0.05)
 w_F1      = input.float(1.0,  "Weight F1 (trend)",  step=0.1)
 w_F2      = input.float(1.0,  "Weight F2 (seasonality)", step=0.1)
-w_F4      = input.float(1.0,  "Weight F4 (flow)",  step=0.1)
+w_F4      = input.float(2.0,  "Weight F4 (flow)",  step=0.1)
 w_F6      = input.float(1.0,  "Weight F6 (vol regime)", step=0.1)
 showInfo  = input.bool(true,  "Show factor info table")
 
@@ -61,6 +61,7 @@ f1_score = request.security(syminfo.tickerid, "W", get_F1(),
 
 // ============ F2: Seasonality (halving cycle position) ============
 // Halvings: 2012-11-28, 2016-07-09, 2020-05-11, 2024-04-19
+// V2 fixed: accounts for top timing (12-18mo = peak, 18-30mo = bear)
 get_F2() =>
     h1 = timestamp(2012, 11, 28, 0, 0)
     h2 = timestamp(2016, 7, 9, 0, 0)
@@ -68,15 +69,19 @@ get_F2() =>
     h4 = timestamp(2024, 4, 19, 0, 0)
     last_halving = time >= h4 ? h4 : time >= h3 ? h3 : time >= h2 ? h2 : h1
     months_since = (time - last_halving) / (1000.0 * 60 * 60 * 24 * 30)
-    float score = 0.3
-    if months_since >= 6 and months_since <= 18
+    float score = 0.5
+    if months_since < 6
+        score := 0.3
+    else if months_since <= 12
         score := 1.0
-    else if months_since > 18 and months_since <= 24
+    else if months_since <= 15
         score := 0.5
-    else if months_since > 24 and months_since <= 30
+    else if months_since <= 18
         score := 0.0
-    else if months_since > 30 and months_since <= 42
+    else if months_since <= 30
         score := -0.5
+    else if months_since <= 42
+        score := 0.3
     score
 
 f2_score = get_F2()
