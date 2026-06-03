@@ -34,10 +34,14 @@ tunnel.log
 # Бэкапы БД
 backups/
 
-# Данные (Excel, CSV, JSON-кэш)
+# Данные (Excel, CSV, JSON-кэш, Parquet)
 *.xlsx
 *.csv
+*.parquet
+*.jsonl
 buffett_tmp*
+sber_options_progress.json
+sber_options_secid_meta.json
 
 # AI assistants
 .claude/*
