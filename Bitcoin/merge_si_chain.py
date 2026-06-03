@@ -39,12 +39,12 @@ def merge(files, key_cols, out_name):
 
 def main():
     print("Merging options chain:")
-    opt = merge(['si_options_history.csv', 'si_options_history_part3.csv',
+    opt = merge(['si_options_history.csv', 'si_options_history_part4.csv', 'si_options_history_part3.csv',
                  'si_options_history_part2.csv'],
                 ['TRADEDATE', 'SECID'], 'si_options_history_merged.csv')
 
     print("\nMerging futures:")
-    fut = merge(['si_futures_history.csv', 'si_futures_history_part3.csv',
+    fut = merge(['si_futures_history.csv', 'si_futures_history_part4.csv', 'si_futures_history_part3.csv',
                  'si_futures_history_part2.csv'],
                 ['TRADEDATE', 'SECID'], 'si_futures_history_merged.csv')
 
