@@ -7,7 +7,9 @@ strategy("BTC VRP Adaptive — Bull/Bear regime + Leverage",
      commission_type=strategy.commission.percent,
      commission_value=0.05,
      slippage=3,
-     pyramiding=0)
+     pyramiding=0,
+     margin_long=0,
+     margin_short=0)
 
 // ============ Параметры ============
 grpEntry = "Entry signals"
@@ -115,15 +117,17 @@ if shortExitNow
     reason = shortExitDvolUp ? "DVOL up" : "max hold"
     strategy.close_all(comment=reason)
 
+// Position size as % of equity (99% × leverage multiplier)
+// With margin_long=0, margin_short=0, any size is allowed
+float posPct = leverage * 99.0
+
 // LONG entry (only if no position)
 if vrpEntrySignal and strategy.position_size == 0
-    qty = leverage * strategy.equity * 0.99 / close
-    strategy.entry("VRP Long", strategy.long, qty=qty)
+    strategy.entry("VRP Long", strategy.long, qty=posPct)
 
 // SHORT entry (only in bear, only if no position)
 if shortEntrySignal and strategy.position_size == 0
-    qty = leverage * strategy.equity * 0.99 / close
-    strategy.entry("Bear Short", strategy.short, qty=qty)
+    strategy.entry("Bear Short", strategy.short, qty=posPct)
 
 // ============ Visualization ============
 // Background colors by regime
