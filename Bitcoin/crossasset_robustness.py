@@ -22,7 +22,7 @@ SIGS = [
 
 ASSETS = {
     'SBER': ('sber_option_indicators_daily.csv', 'sber_daily.csv', 'sber_futoi_signals.csv'),
-    'IMOEX': ('imoex_option_indicators_daily.csv', None, 'imoex_futoi_signals.csv'),
+    'IMOEX': ('imoex_option_indicators_daily.csv', None, 'imoex_futoi_history.csv'),
     'GAZP': ('gazp_option_indicators_daily.csv', 'gazp_daily.csv', 'gazp_futoi_signals.csv'),
 }
 
