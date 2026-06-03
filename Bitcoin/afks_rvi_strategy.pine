@@ -7,9 +7,7 @@ strategy("AFKS RVI Strategy — RVI panic spike LONG",
      commission_type=strategy.commission.percent,
      commission_value=0.05,
      slippage=3,
-     pyramiding=0,
-     margin_long=0,
-     margin_short=0)
+     pyramiding=0)
 
 // ============ Параметры ============
 grpMode = "Signal mode"
@@ -25,7 +23,7 @@ maxHold          = input.int(90,  "Max hold days (force)",    group=grpExit)
 rviExitLevel     = input.float(60.0, "Exit on RVI spike >=",  step=1, group=grpExit)
 
 grpRisk = "Risk / Sizing"
-leverage         = input.float(1.0, "LEVERAGE multiplier", step=0.1, minval=0.1, maxval=5.0, group=grpRisk)
+leverage         = input.float(1.0, "Position size (1.0 = 99% equity, fractions = smaller)", step=0.1, minval=0.1, maxval=1.0, group=grpRisk)
 
 grpDisplay = "Display"
 showVol          = input.bool(true, "Show RVI/RV/VRP (data window)", group=grpDisplay)

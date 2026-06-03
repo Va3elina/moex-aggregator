@@ -26,9 +26,7 @@ strategy("{asset} VRP Adaptive — {title_suffix}",
      commission_type=strategy.commission.percent,
      commission_value=0.05,
      slippage=3,
-     pyramiding=0,
-     margin_long=0,
-     margin_short=0)
+     pyramiding=0)
 
 // ============ Параметры ============
 grpStrategy = "Strategy mode"
@@ -48,7 +46,7 @@ dvolExitLevel    = input.float(70.0, "LONG exit: DVOL spike",  step=1, group=grp
 shortMaxHold     = input.int(365, "SHORT: max hold safety (days)", group=grpExit)
 
 grpRisk = "Risk / Sizing"
-leverage         = input.float(1.0, "LEVERAGE multiplier", step=0.1, minval=0.1, maxval=10.0, group=grpRisk)
+leverage         = input.float(1.0, "Position size (1.0 = 99% equity, fractions = smaller)", step=0.1, minval=0.1, maxval=1.0, group=grpRisk)
 
 grpDisplay = "Display"
 showVRP          = input.bool(true, "Show VRP/DVOL/RV (data window)", group=grpDisplay)
