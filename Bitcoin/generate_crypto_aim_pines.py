@@ -45,8 +45,9 @@ maxHoldBull      = input.int(180, "Bull: max hold (force)",     group=grpExit)
 minHoldBear      = input.int(30,  "Bear: min hold days",        group=grpExit)
 maxHoldBear      = input.int(90,  "Bear: max hold",             group=grpExit)
 dvolExitLevel    = input.float(70.0, "LONG exit: DVOL spike",  step=1, group=grpExit)
-shortHoldDays    = input.int(14,  "SHORT: fixed hold days",     group=grpExit)
-shortExitDvol    = input.float(50.0, "SHORT exit: DVOL above", step=1, group=grpExit)
+shortMinHold     = input.int(14,  "SHORT: min hold days",        group=grpExit)
+shortHoldDays    = input.int(60,  "SHORT: max hold days",        group=grpExit)
+shortDvolDrop    = input.float(15.0, "SHORT exit: DVOL drop from peak by", step=1, group=grpExit)
 
 grpRisk = "Risk / Sizing"
 leverage         = input.float(1.0, "LEVERAGE multiplier", step=0.1, minval=0.1, maxval=10.0, group=grpRisk)
@@ -100,19 +101,25 @@ shortBearSignal  = not na(dvol) and dvol <= shortDvolEntry and isBearRegime and 
 var int barsHeld = 0
 var bool inLong = false
 var bool inShort = false
+var float shortDvolPeak = na  // track highest DVOL since short open
 
 if strategy.position_size > 0
     inLong := true
     inShort := false
     barsHeld += 1
+    shortDvolPeak := na
 else if strategy.position_size < 0
     inLong := false
     inShort := true
     barsHeld += 1
+    // update DVOL peak during short
+    if not na(dvol)
+        shortDvolPeak := na(shortDvolPeak) ? dvol : math.max(shortDvolPeak, dvol)
 else
     inLong := false
     inShort := false
     barsHeld := 0
+    shortDvolPeak := na
 
 // ============ Exit logic ============
 int minHoldNow = isBullRegime ? minHoldBull : minHoldBear
@@ -122,9 +129,10 @@ bool longExitDvolSpike = inLong and barsHeld >= minHoldNow and not na(dvol) and 
 bool longExitMaxHold   = inLong and barsHeld >= maxHoldNow
 bool longExitNow       = longExitDvolSpike or longExitMaxHold
 
-bool shortExitDvolUp   = inShort and not na(dvol) and dvol >= shortExitDvol
+// SHORT exits: must hold at least shortMinHold, then exit on DVOL drop from peak (volatility crush) or max hold
+bool shortExitDvolDrop = inShort and barsHeld >= shortMinHold and not na(dvol) and not na(shortDvolPeak) and (shortDvolPeak - dvol) >= shortDvolDrop
 bool shortExitMaxHold  = inShort and barsHeld >= shortHoldDays
-bool shortExitNow      = shortExitDvolUp or shortExitMaxHold
+bool shortExitNow      = shortExitDvolDrop or shortExitMaxHold
 
 // ============ Position sizing ============
 float posPct = leverage * 99.0
@@ -137,7 +145,7 @@ if longExitNow
 
 // SHORT exit
 if shortExitNow
-    string reason = shortExitDvolUp ? "DVOL up" : "max hold"
+    string reason = shortExitDvolDrop ? "DVOL crush" : "max hold"
     strategy.close_all(comment=reason)
 
 // LONG entry (closes any open SHORT first)
