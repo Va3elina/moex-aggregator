@@ -26,7 +26,9 @@ strategy("{asset} VRP Adaptive — {title_suffix}",
      commission_type=strategy.commission.percent,
      commission_value=0.05,
      slippage=3,
-     pyramiding=0)
+     pyramiding=0,
+     margin_long=50,
+     margin_short=50)
 
 // ============ Параметры ============
 grpStrategy = "Strategy mode"

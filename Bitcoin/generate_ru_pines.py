@@ -31,7 +31,8 @@ strategy("{asset} RVI Strategy — {title_suffix}",
      commission_type=strategy.commission.percent,
      commission_value=0.05,
      slippage=3,
-     pyramiding=0)
+     pyramiding=0,
+     margin_long=50)
 
 // ============ Параметры ============
 grpMode = "Signal mode"
