@@ -42,6 +42,8 @@ backups/
 buffett_tmp*
 sber_options_progress.json
 sber_options_secid_meta.json
+.sber_chain_progress.json
+.futoi_progress.json
 
 # AI assistants
 .claude/*
