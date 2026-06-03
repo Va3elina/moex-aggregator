@@ -92,3 +92,7 @@ compare_stocks.py
 cbonds_capture.flow
 scripts/
 *.pdf
+
+# Fetcher checkpoints
+Bitcoin/.*_progress*.json
+*_chain_progress*.json
