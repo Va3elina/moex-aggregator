@@ -24,12 +24,34 @@ Run:
 from __future__ import annotations
 
 import sys
+import time
 from datetime import date
 
 import pandas as pd
 import requests
 
 ISS = "https://iss.moex.com/iss"
+
+
+def _get_json(url: str, tries: int = 3) -> dict:
+    last = None
+    for i in range(tries):
+        try:
+            r = requests.get(url, timeout=30)
+            r.raise_for_status()
+            return r.json()
+        except requests.exceptions.SSLError as e:
+            # Intermittent host clock skew on iss.moex.com - fall back to no-verify.
+            try:
+                r = requests.get(url, timeout=30, verify=False)
+                r.raise_for_status()
+                return r.json()
+            except Exception as e2:
+                last = e2
+        except Exception as e:
+            last = e
+            time.sleep(0.5 * (i + 1))
+    raise RuntimeError(f"Failed {url}: {last}")
 
 
 def fetch_options_chain(asset: str | None = None) -> pd.DataFrame:
@@ -41,14 +63,13 @@ def fetch_options_chain(asset: str | None = None) -> pd.DataFrame:
     rows = []
     md_rows = []
     start = 0
+    sec_cols = md_cols = None
     while True:
         url = (
             f"{ISS}/engines/futures/markets/options/securities.json"
             f"?iss.meta=off&iss.only=securities,marketdata&start={start}"
         )
-        r = requests.get(url, timeout=30)
-        r.raise_for_status()
-        j = r.json()
+        j = _get_json(url)
         sec_cols = j["securities"]["columns"]
         md_cols = j["marketdata"]["columns"]
         sec_data = j["securities"]["data"]

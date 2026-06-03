@@ -40,7 +40,7 @@ UNIVERSE = {
     "SBRF": dict(spot_ticker="SBER", spot_kind="share", mult=100),
     "GAZR": dict(spot_ticker="GAZP", spot_kind="share", mult=100),
     "RTS":  dict(spot_ticker="RTSI", spot_kind="index", mult=100),
-    "MIX":  dict(spot_ticker="IMOEX", spot_kind="index", mult=1),
+    "MIX":  dict(spot_ticker="IMOEX", spot_kind="index", mult=100),
 }
 
 
