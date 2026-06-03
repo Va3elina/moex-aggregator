@@ -190,6 +190,7 @@ if __name__ == "__main__":
     liquid = sorted(
         [(md_by_id[s["SECID"]]["VOLTODAY"] or 0, s) for s in secs
          if md_by_id.get(s["SECID"])],
+        key=lambda x: x[0],
         reverse=True,
     )[:5]
     print(f"Top 5 SBRF options by VOLTODAY:")
