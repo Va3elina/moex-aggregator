@@ -27,8 +27,8 @@ strategy("{asset} VRP Adaptive — {title_suffix}",
      commission_value=0.05,
      slippage=3,
      pyramiding=0,
-     margin_long=50,
-     margin_short=50)
+     margin_long=10,
+     margin_short=10)
 
 // ============ Параметры ============
 grpStrategy = "Strategy mode"
@@ -46,6 +46,9 @@ minHoldBear      = input.int(30,  "Bear: min hold days",        group=grpExit)
 maxHoldBear      = input.int(90,  "Bear: max hold",             group=grpExit)
 dvolExitLevel    = input.float(70.0, "LONG exit: DVOL spike",  step=1, group=grpExit)
 shortMaxHold     = input.int(365, "SHORT: max hold safety (days)", group=grpExit)
+
+grpRisk = "Leverage"
+leverage         = input.float(1.0, "Leverage multiplier (1x..5x)", step=0.1, minval=0.1, maxval=5.0, group=grpRisk, tooltip="1.0 = 99% equity. 2.0 = 198% (2x). Margin buffer allows up to 10x but >5x is unsafe.")
 
 grpDisplay = "Display"
 showVRP          = input.bool(true, "Show VRP/DVOL/RV (data window)", group=grpDisplay)
@@ -123,8 +126,10 @@ bool shortExitMaxHold  = inShort and barsHeld >= shortMaxHold
 bool shortExitNow      = shortExitMaxHold
 
 // ============ Trades ============
-// Position sizing: uses default_qty_value=99 (% of equity) from strategy() declaration.
-// For real leverage, set Properties → Margin for long/short in TradingView.
+// Position sizing in contracts: leverage * 99% of equity / current price.
+// Example: leverage=2, equity=$100, BTC=$60k → qty = 2*100*0.99/60000 = 0.0033 BTC (= $198 exposure = 2x leverage).
+
+float posQty = leverage * strategy.equity * 0.99 / close
 
 // LONG exit
 if longExitNow
@@ -140,7 +145,7 @@ if vrpEntrySignal
     if strategy.position_size < 0
         strategy.close_all(comment="long signal - close short")
     if strategy.position_size == 0
-        strategy.entry("VRP Long", strategy.long)
+        strategy.entry("VRP Long", strategy.long, qty=posQty)
 
 // SHORT entry:
 //   1. Bear regime + DVOL <= 35 (tactical)
@@ -148,9 +153,9 @@ if vrpEntrySignal
 bool alwaysInShortEntry = alwaysInMarket and longExitNow
 
 if alwaysInShortEntry
-    strategy.entry("AlwaysIn Short", strategy.short)
+    strategy.entry("AlwaysIn Short", strategy.short, qty=posQty)
 else if shortBearSignal and strategy.position_size == 0
-    strategy.entry("Bear Short", strategy.short)
+    strategy.entry("Bear Short", strategy.short, qty=posQty)
 
 // ============ Visualization ============
 bgcolor(showRegime and isBullRegime ? color.new(color.green, 95) : na, title="Bull regime")
@@ -173,7 +178,7 @@ plot(showVRP ? rv : na, "Realized Vol 30d", color=color.orange, linewidth=1, dis
 var table info = table.new(position.top_right, 2, 10, bgcolor=color.new(color.black, 80), border_width=1)
 if barstate.islast
     table.cell(info, 0, 0, "{asset} ADAPTIVE VRP", text_color=color.white, bgcolor=color.new(color.blue, 50))
-    table.cell(info, 1, 0, alwaysInMarket ? "AIM ON" : "LONG only", text_color=color.white, bgcolor=color.new(color.blue, 50))
+    table.cell(info, 1, 0, "x" + str.tostring(leverage, "#.#") + (alwaysInMarket ? " AIM" : ""), text_color=color.white, bgcolor=color.new(color.blue, 50))
 
     table.cell(info, 0, 1, "Regime", text_color=color.white)
     table.cell(info, 1, 1, isBullRegime ? "BULL" : "BEAR", text_color=isBullRegime ? color.lime : color.red)

@@ -32,7 +32,7 @@ strategy("{asset} RVI Strategy — {title_suffix}",
      commission_value=0.05,
      slippage=3,
      pyramiding=0,
-     margin_long=50)
+     margin_long=10)
 
 // ============ Параметры ============
 grpMode = "Signal mode"
@@ -46,6 +46,9 @@ grpExit = "Exit rules"
 minHold          = input.int(14,  "Min hold days",            group=grpExit)
 maxHold          = input.int(90,  "Max hold days (force)",    group=grpExit)
 rviExitLevel     = input.float(60.0, "Exit on RVI spike >=",  step=1, group=grpExit)
+
+grpRisk = "Leverage"
+leverage         = input.float(1.0, "Leverage multiplier (1x..5x)", step=0.1, minval=0.1, maxval=5.0, group=grpRisk, tooltip="1.0 = 99% equity. 2.0 = 2x leverage. Margin buffer allows up to 10x.")
 
 grpDisplay = "Display"
 showVol          = input.bool(true, "Show RVI/RV/VRP (data window)", group=grpDisplay)
@@ -102,15 +105,15 @@ bool exitMaxHold      = inLong and barsHeld >= maxHold
 bool exitNow          = exitMinHoldSpike or exitMaxHold
 
 // ============ Trades ============
-// Position sizing: uses default_qty_value=99 (% of equity) from strategy() declaration.
-// For real leverage, set Properties → Margin for long in TradingView.
+// Position sizing in contracts: leverage * 99% of equity / current price.
+float posQty = leverage * strategy.equity * 0.99 / close
 
 if exitNow
     string reason = exitMinHoldSpike ? "RVI spike" : "max hold"
     strategy.close_all(comment=reason)
 
 if entrySignal and strategy.position_size == 0
-    strategy.entry("RVI Long", strategy.long)
+    strategy.entry("RVI Long", strategy.long, qty=posQty)
 
 // ============ Visualization ============
 plotshape(entrySignal and strategy.position_size == 0, "Entry",
@@ -128,7 +131,7 @@ plot(showVol ? vrp : na, "VRP", color=vrp >= vrpEntry ? color.fuchsia : color.ye
 var table info = table.new(position.top_right, 2, 8, bgcolor=color.new(color.black, 80), border_width=1)
 if barstate.islast
     table.cell(info, 0, 0, "{asset} RVI", text_color=color.white, bgcolor=color.new(color.blue, 50))
-    table.cell(info, 1, 0, useVRP ? "VRP mode" : "RVI mode", text_color=color.white, bgcolor=color.new(color.blue, 50))
+    table.cell(info, 1, 0, "x" + str.tostring(leverage, "#.#") + " " + (useVRP ? "VRP" : "RVI"), text_color=color.white, bgcolor=color.new(color.blue, 50))
 
     table.cell(info, 0, 1, "Mode", text_color=color.white)
     table.cell(info, 1, 1, useVRP ? "VRP >= " + str.tostring(vrpEntry) : "RVI >= " + str.tostring(rviEntry), text_color=color.aqua)
