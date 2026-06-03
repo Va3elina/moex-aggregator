@@ -16,6 +16,7 @@ from parse_si_secid import parse_secid
 ROOT = Path(__file__).parent
 OUT = ROOT / 'si_expiry_map.csv'
 INPUT_CSVS = ['si_options_history.csv', 'si_options_history_part2.csv',
+              'si_options_history_part3.csv', 'si_options_history_part4.csv',
               'si_options_history_merged.csv']
 
 
