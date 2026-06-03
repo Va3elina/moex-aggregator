@@ -68,10 +68,16 @@ get_F2() =>
     h4 = timestamp(2024, 4, 19, 0, 0)
     last_halving = time >= h4 ? h4 : time >= h3 ? h3 : time >= h2 ? h2 : h1
     months_since = (time - last_halving) / (1000.0 * 60 * 60 * 24 * 30)
-    months_since >= 6  and months_since <= 18 ?  1.0 :
-       months_since > 18 and months_since <= 24 ?  0.5 :
-       months_since > 24 and months_since <= 30 ?  0.0 :
-       months_since > 30 and months_since <= 42 ? -0.5 :  0.3
+    float score = 0.3
+    if months_since >= 6 and months_since <= 18
+        score := 1.0
+    else if months_since > 18 and months_since <= 24
+        score := 0.5
+    else if months_since > 24 and months_since <= 30
+        score := 0.0
+    else if months_since > 30 and months_since <= 42
+        score := -0.5
+    score
 
 f2_score = get_F2()
 
@@ -90,8 +96,8 @@ f6_score = request.security(syminfo.tickerid, "D", get_F6(),
 
 // ============ Composite score ============
 total_weight = math.abs(w_F1) + math.abs(w_F2) + math.abs(w_F4) + math.abs(w_F6)
-composite = total_weight > 0 ?
-    (f1_score * w_F1 + f2_score * w_F2 + f4_score * w_F4 + f6_score * w_F6) / total_weight : 0.0
+weighted_sum = f1_score * w_F1 + f2_score * w_F2 + f4_score * w_F4 + f6_score * w_F6
+composite = total_weight > 0 ? weighted_sum / total_weight : 0.0
 
 // ============ Trades ============
 if composite > thr_entry and strategy.position_size <= 0
