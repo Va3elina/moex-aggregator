@@ -185,11 +185,20 @@ Quarterly basis > 15% (deep contango) = FOMO peak
 
 ## Что НЕ делать (research dead ends)
 
-- **Pure put/call ratio sentiment** — слишком noisy на крипто (retail dominated)
+- **Open Interest (raw, total OI)** — проверено пользователем, **бесполезный signal сам по себе** (без разбивки по сторонам/участникам). Не использовать как primary signal.
+- **Pure put/call OI ratio** — на крипто noisy (retail dominated). На MOEX отравлен — 80% retail в options OI.
+- **Pure put/call volume ratio** — тот же noise.
 - **Pin risk arbitrage** — требует HFT infrastructure
 - **Cross-exchange basis arb** — execution costs killing
 - **Vega-neutral straddle harvesting** — нужны опционы, а не perps
-- **Calendar spread** — мелкий edge, большая execution complexity
+- **Calendar spread** (для retail size) — мелкий edge, большая execution complexity
+
+### Что РАБОТАЕТ как positioning signal вместо OI
+
+- **MOEX futoi (FIZ vs YUR breakdown)** — реальное разделение institutional vs retail.
+  FIZ long/short ratio extremes = contrarian signal. Доказано +205% за 6 лет на SBER.
+- **futures basis term structure** — economic positioning без noise.
+- **Vol surface skew (Risk Reversal 25d)** — direction sentiment пристойный.
 
 ---
 
