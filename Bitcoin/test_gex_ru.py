@@ -74,9 +74,17 @@ def bs_greeks(S: float, K: float, T: float, sigma: float, r: float = RISK_FREE, 
 
 def analyse(df: pd.DataFrame, asset: str, contract_mult: int = 1) -> dict:
     """Aggregate greeks for one ASSETCODE, picking the nearest expiry that
-    still has >50% of the OI (front-month focus, как делают US dealers)."""
+    still has >50% of the OI (front-month focus, как делают US dealers).
+
+    MOEX gotcha: the same ASSETCODE (e.g. 'SBRF') maps to multiple
+    UNDERLYINGASSET futures (SRM6/SRU6/SRZ6). We pick the one with the most
+    OI on the front expiry — that's the dealer-relevant series.
+    Also: IMP is volatility in PRICE UNITS of the underlying (rubles),
+    annualised. Convert to % via sigma = IMP / spot.
+    """
     sub = df[df["ASSETCODE"] == asset].copy()
     sub = sub[(sub["PREVOPENPOSITION"] > 0) & sub["IMP"].notna() & sub["STRIKE"].notna()]
+    sub = sub[sub["UNDERLYINGTYPE"] == "F"]  # futures-style only
     if sub.empty:
         return {"asset": asset, "ok": False, "reason": "no OI/IV rows"}
 
@@ -85,19 +93,21 @@ def analyse(df: pd.DataFrame, asset: str, contract_mult: int = 1) -> dict:
     if sub.empty:
         return {"asset": asset, "ok": False, "reason": "all expired"}
 
-    # Pick the expiry with the most OI (typical front month for FORTS)
-    oi_by_exp = sub.groupby("LASTTRADEDATE")["PREVOPENPOSITION"].sum().sort_values(ascending=False)
-    front_exp = oi_by_exp.index[0]
-    chain = sub[sub["LASTTRADEDATE"] == front_exp].copy()
+    # Pick the (UNDERLYINGASSET, expiry) pair with the largest OI
+    oi_by_pair = (
+        sub.groupby(["UNDERLYINGASSET", "LASTTRADEDATE"])["PREVOPENPOSITION"].sum().sort_values(ascending=False)
+    )
+    front_ua, front_exp = oi_by_pair.index[0]
+    chain = sub[(sub["UNDERLYINGASSET"] == front_ua) & (sub["LASTTRADEDATE"] == front_exp)].copy()
     spot = float(chain["UNDERLYINGSETTLEPRICE"].dropna().iloc[0])
     T = max((front_exp - today).days, 1) / 365.0
 
-    # Black-Scholes greeks per contract (IMP comes in price units, MOEX
-    # convention is "volatility in points" — for stock options it's
-    # annualised %, divide by 100).
+    # Black-Scholes greeks per contract.
+    # MOEX IMP = annualised volatility expressed in price units of the
+    # underlying. Convert to dimensionless sigma via IMP / spot.
     rows = []
     for _, row in chain.iterrows():
-        sigma = float(row["IMP"]) / 100.0
+        sigma = float(row["IMP"]) / spot
         gamma, vanna, charm = bs_greeks(spot, float(row["STRIKE"]), T, sigma)
         sign = 1 if row["OPTIONTYPE"] == "C" else -1  # dealer convention: short calls, long puts? we use call-put net
         rows.append(
@@ -145,6 +155,7 @@ def analyse(df: pd.DataFrame, asset: str, contract_mult: int = 1) -> dict:
     return {
         "asset": asset,
         "ok": True,
+        "underlying": front_ua,
         "spot": spot,
         "expiry": front_exp.strftime("%Y-%m-%d"),
         "dte": int((front_exp - today).days),
@@ -165,7 +176,7 @@ def print_report(res: dict) -> None:
         print(f"[{res['asset']}] FAIL: {res['reason']}")
         return
     a = res["asset"]
-    print(f"\n=== GEX REPORT  {a}  ===")
+    print(f"\n=== GEX REPORT  {a}  (front futures = {res['underlying']}) ===")
     print(f"  front expiry : {res['expiry']}  (DTE={res['dte']})")
     print(f"  spot         : {res['spot']:.2f}")
     print(f"  strikes      : {res['n_strikes']}")
@@ -199,9 +210,10 @@ def main():
         for a in ["GAZR", "ROSN", "SBRF", "Si", "IMX", "CNY", "MOEX"]:
             r = analyse(df, a)
             if r["ok"]:
+                flip = f"{r['flip_strike']:.2f}" if r['flip_strike'] else 'n/a'
                 print(
-                    f"  {a:6}  spot={r['spot']:>10.2f}  OI={r['total_oi']:>10,}  "
-                    f"netGEX={r['net_gex']:>16,.0f}  flip={r['flip_strike'] if r['flip_strike'] else 'n/a'}"
+                    f"  {a:6} ({r['underlying']:5})  spot={r['spot']:>10.2f}  OI={r['total_oi']:>10,}  "
+                    f"netGEX={r['net_gex']:>18,.0f}  flip={flip}"
                 )
             else:
                 print(f"  {a:6}  -- {r['reason']}")

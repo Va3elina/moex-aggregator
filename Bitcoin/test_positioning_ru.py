@@ -25,32 +25,32 @@ from __future__ import annotations
 
 import sys
 import time
+import warnings
 from datetime import date
 
 import pandas as pd
 import requests
+import urllib3
+
+# MOEX cert occasionally serves a not-yet-valid chain - silence warnings, use verify=False.
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+warnings.filterwarnings("ignore")
 
 ISS = "https://iss.moex.com/iss"
+SESSION = requests.Session()
+SESSION.verify = False
 
 
-def _get_json(url: str, tries: int = 3) -> dict:
+def _get_json(url: str, tries: int = 4) -> dict:
     last = None
     for i in range(tries):
         try:
-            r = requests.get(url, timeout=30)
+            r = SESSION.get(url, timeout=30)
             r.raise_for_status()
             return r.json()
-        except requests.exceptions.SSLError as e:
-            # Intermittent host clock skew on iss.moex.com - fall back to no-verify.
-            try:
-                r = requests.get(url, timeout=30, verify=False)
-                r.raise_for_status()
-                return r.json()
-            except Exception as e2:
-                last = e2
         except Exception as e:
             last = e
-            time.sleep(0.5 * (i + 1))
+            time.sleep(0.7 * (i + 1))
     raise RuntimeError(f"Failed {url}: {last}")
 
 
@@ -64,6 +64,7 @@ def fetch_options_chain(asset: str | None = None) -> pd.DataFrame:
     md_rows = []
     start = 0
     sec_cols = md_cols = None
+    seen_first = None  # guard against MOEX `start` overflow returning page 0 again
     while True:
         url = (
             f"{ISS}/engines/futures/markets/options/securities.json"
@@ -76,6 +77,12 @@ def fetch_options_chain(asset: str | None = None) -> pd.DataFrame:
         md_data = j["marketdata"]["data"]
         if not sec_data:
             break
+        first_secid = sec_data[0][sec_cols.index("SECID")]
+        if start > 0 and first_secid == seen_first:
+            # `start` overflowed - server wrapped to page 0
+            break
+        if start == 0:
+            seen_first = first_secid
         rows.extend(sec_data)
         md_rows.extend(md_data)
         if len(sec_data) < 1000:
@@ -115,12 +122,27 @@ def positioning_report(asset: str) -> None:
         print(f"No options for ASSETCODE={asset}")
         return
 
+    # MOEX runs two parallel chains under the same ASSETCODE:
+    #   UNDERLYINGTYPE='S'  -> European stock options (strike per share, marginal)
+    #   UNDERLYINGTYPE='F'  -> American futures options (strike per contract)
+    # They are NOT comparable - aggregate them separately and pick the deeper one.
+    df["UTYPE"] = df["UNDERLYINGTYPE"].fillna("?")
+    chains = {t: g for t, g in df.groupby("UTYPE") if t in ("S", "F")}
+    if not chains:
+        print("No S/F option chains")
+        return
+    # Pick the one with most total OI
+    chain_type = max(chains, key=lambda t: chains[t]["OPENPOSITION"].sum())
+    label = "STOCK (European, marginal)" if chain_type == "S" else "FUTURES (American)"
+    df = chains[chain_type]
+    print(f"Chain selected    : UNDERLYINGTYPE={chain_type}  ({label})")
+
     # Pick the single most-liquid expiry to make the chain coherent.
     expiry = pick_nearest_expiry(df)
     chain = df[df["LASTDELDATE"] == expiry].copy()
     spot = chain["UNDERLYINGSETTLEPRICE"].dropna().iloc[0]
     underlying = chain["UNDERLYINGASSET"].iloc[0]
-    print(f"Underlying future : {underlying}  settle={spot}")
+    print(f"Underlying        : {underlying}  settle={spot}")
     print(f"Expiry            : {expiry}  ({len(chain)} contracts)")
 
     calls = chain[chain["OPTIONTYPE"] == "C"]
