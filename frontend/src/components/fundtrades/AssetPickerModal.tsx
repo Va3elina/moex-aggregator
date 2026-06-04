@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Search, X, Star, ChevronUp, ChevronDown } from 'lucide-react';
+import { Search, X, Star, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import TickerLogo from '../TickerLogo';
 import { assetTicker, assetColor } from '../../config/fundConfig';
 import { formatCompact } from '../../utils/formatNumber';
@@ -27,6 +27,10 @@ export interface AssetPickerModalProps {
 // Сортировка списка: активная колонка (объём / вес / число фондов) + направление.
 type SortCol = 'volume' | 'weight' | 'funds';
 type SortDir = 'asc' | 'desc';
+
+// Ширины числовых колонок (px) — единый источник для сорт-заголовков И значений,
+// чтобы они гарантированно стояли друг под другом, выровненные по правому краю.
+const COL: Record<SortCol, number> = { volume: 90, weight: 56, funds: 58 };
 
 /**
  * AssetPickerModal — окно выбора бумаги для «Покупок фондов».
@@ -110,31 +114,47 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
   const favoriteAssets = q ? [] : filtered.filter((a) => favorites.includes(a.key));
   const regularAssets = q ? filtered : filtered.filter((a) => !favorites.includes(a.key));
 
-  // Кликабельный заголовок-сортировки. Клик: если колонка уже активна —
-  // переключает направление; иначе делает колонку активной (по убыванию).
-  const renderSortHeader = (col: SortCol, label: string, width: number) => {
+  // Кликабельный заголовок-сортировки. Клик: если колонка активна — меняет
+  // направление; иначе делает её активной (по убыванию). Иконка-индикатор есть
+  // ВСЕГДА (⇅ для неактивных = «можно сортировать», ↑/↓ для активной) + hover —
+  // чтобы было очевидно, что заголовки кликабельны.
+  const renderSortHeader = (col: SortCol, label: string, hint: string) => {
     const active = sortCol === col;
     return (
       <button
         type="button"
+        title={hint}
         onClick={() => {
-          if (active) setSortDir(d => (d === 'desc' ? 'asc' : 'desc'));
+          if (active) setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'));
           else { setSortCol(col); setSortDir('desc'); }
         }}
-        className="flex items-center justify-end uppercase font-semibold transition-colors"
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background = 'color-mix(in srgb, var(--text-primary) 8%, transparent)';
+          if (!active) e.currentTarget.style.color = 'var(--text-primary)';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = 'transparent';
+          e.currentTarget.style.color = active ? 'var(--accent)' : 'var(--text-secondary)';
+        }}
+        className="flex items-center justify-end uppercase font-bold transition-colors"
         style={{
-          gap: 2,
-          width,
-          fontSize: 'var(--fs-2xs)',
-          letterSpacing: '0.06em',
+          gap: 3,
+          width: COL[col],
+          flexShrink: 0,
+          padding: '5px 0',
+          borderRadius: 6,
+          fontSize: 'var(--fs-xs)',
+          letterSpacing: '0.04em',
           color: active ? 'var(--accent)' : 'var(--text-secondary)',
           cursor: 'pointer',
         }}
       >
         {label}
-        {active && (sortDir === 'desc'
-          ? <ChevronDown size={12} />
-          : <ChevronUp size={12} />)}
+        {active
+          ? (sortDir === 'desc'
+              ? <ChevronDown size={13} strokeWidth={2.5} />
+              : <ChevronUp size={13} strokeWidth={2.5} />)
+          : <ChevronsUpDown size={13} style={{ opacity: 0.5 }} />}
       </button>
     );
   };
@@ -178,25 +198,27 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
           {asset.asset_name}
         </span>
 
-        {/* Числовые колонки справа: объём (₽) · вес (%) · фонды — выровнены под сорт-заголовки */}
-        <span
-          className="flex-shrink-0 text-right"
-          style={{ width: 84, fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)' }}
-        >
-          {asset.last_amount_rub != null ? `${formatCompact(asset.last_amount_rub)} ₽` : '—'}
-        </span>
-        <span
-          className="flex-shrink-0 text-right"
-          style={{ width: 64, fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)' }}
-        >
-          {asset.avg_weight_pct != null ? `${asset.avg_weight_pct.toFixed(1)}%` : '—'}
-        </span>
-        <span
-          className="flex-shrink-0 text-right"
-          style={{ width: 64, fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)' }}
-        >
-          {asset.funds_count}
-        </span>
+        {/* Числовые колонки справа (ширины COL — под сорт-заголовками, по правому
+            краю). Активная колонка сортировки — ярче (text-primary, bold). */}
+        {([
+          ['volume', asset.last_amount_rub != null ? `${formatCompact(asset.last_amount_rub)} ₽` : '—'],
+          ['weight', asset.avg_weight_pct != null ? `${asset.avg_weight_pct.toFixed(1)}%` : '—'],
+          ['funds', String(asset.funds_count)],
+        ] as [SortCol, string][]).map(([c, text]) => (
+          <span
+            key={c}
+            className="flex-shrink-0 text-right"
+            style={{
+              width: COL[c],
+              fontSize: 'var(--fs-sm)',
+              fontVariantNumeric: 'tabular-nums',
+              fontWeight: sortCol === c ? 700 : 600,
+              color: sortCol === c ? 'var(--text-primary)' : 'var(--text-secondary)',
+            }}
+          >
+            {text}
+          </span>
+        ))}
 
         {/* Star — toggle избранного, stopPropagation чтобы не выбрать актив */}
         <button
@@ -270,26 +292,32 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
           </div>
         </div>
 
-        {/* Шапка со столбцами — клик по «Объём» / «% в портф.» / «Фонды» сортирует список */}
+        {/* Results — со sticky-шапкой колонок ВНУТРИ скролл-контейнера: общий
+            скроллбар (scrollbar-gutter stable) + одинаковые с строками отступы/
+            gap/ширины → заголовки и значения гарантированно в одной сетке. */}
         <div
-          className="flex items-center pl-9 pr-6 pb-2 mb-3"
-          style={{ borderBottom: '1px solid var(--border-color)' }}
+          className="overflow-y-auto max-h-[calc(80vh-240px)] px-6 pb-6 styled-scrollbar"
+          style={{ scrollbarGutter: 'stable' }}
         >
-          <span
-            className="uppercase font-semibold flex-1"
-            style={{ fontSize: 'var(--fs-2xs)', letterSpacing: '0.06em', color: 'var(--text-secondary)' }}
+          {/* Sticky-шапка колонок — кликабельная сортировка, зеркалит строку списка
+              ([лого-спейсер 24] · gap · [Бумага flex-1] · cols · [звезда-спейсер 36]) */}
+          <div
+            className="sticky top-0 z-10 flex items-center gap-3.5 px-3 pt-1 pb-2.5 mb-2"
+            style={{ backgroundColor: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)' }}
           >
-            Бумага
-          </span>
-          {renderSortHeader('volume', 'Объём', 84)}
-          {renderSortHeader('weight', '% в портф.', 64)}
-          {renderSortHeader('funds', 'Фонды', 64)}
-          {/* spacer под колонку звезды (p-2 + icon 20 = 36px) */}
-          <span style={{ width: 36, flexShrink: 0 }} aria-hidden="true" />
-        </div>
+            <span style={{ width: 24, flexShrink: 0 }} aria-hidden="true" />
+            <span
+              className="flex-1 uppercase font-bold"
+              style={{ fontSize: 'var(--fs-xs)', letterSpacing: '0.04em', color: 'var(--text-secondary)' }}
+            >
+              Бумага
+            </span>
+            {renderSortHeader('volume', 'Объём', 'Суммарный объём бумаги в портфелях фондов, ₽')}
+            {renderSortHeader('weight', 'Вес', 'Средний вес бумаги в портфелях фондов, %')}
+            {renderSortHeader('funds', 'Фонды', 'Сколько фондов держат бумагу')}
+            <span style={{ width: 36, flexShrink: 0 }} aria-hidden="true" />
+          </div>
 
-        {/* Results */}
-        <div className="overflow-y-auto max-h-[calc(80vh-240px)] px-6 pb-6 styled-scrollbar">
           {favoriteAssets.length === 0 && regularAssets.length === 0 ? (
             <div className="py-12 text-center" style={{ color: 'var(--text-secondary)' }}>
               Ничего не найдено
