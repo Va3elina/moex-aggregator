@@ -97,12 +97,22 @@ export default function OpenInterestPage() {
   // useEffect который при первом рендере (или при любом расхождении ticker/name)
   // резолвит имя через /api/instruments/{sec_id} — иначе был баг
   // "Сбербанк [IMOEXF]" в UI-кнопке.
-  const [selectedInstrument, setSelectedInstrument] = useState(
-    searchParams.get('instrument') || 'SR'
-  );
-  const [instrumentName, setInstrumentName] = useState(
-    searchParams.get('instrument') ? '' : 'Сбербанк'  // пустое имя если пришло из URL — будет резолвлено
-  );
+  // Выбранный инструмент персистится в localStorage — чтобы, вернувшись на ОИ,
+  // увидеть последний выбранный, а не дефолтный Сбербанк. Приоритет:
+  // ?instrument= в URL (шаринг/перезагрузка) > localStorage > 'SR'.
+  const [selectedInstrument, setSelectedInstrument] = useState(() => {
+    const fromUrl = searchParams.get('instrument');
+    if (fromUrl) return fromUrl;
+    try { return localStorage.getItem('frame:oi:instrument') || 'SR'; } catch { return 'SR'; }
+  });
+  const [instrumentName, setInstrumentName] = useState(() => {
+    // Имя пусто (→ резолвится эффектом ниже) если инструмент восстановлен из URL
+    // или localStorage; иначе дефолт «Сбербанк».
+    try {
+      const restored = searchParams.get('instrument') || localStorage.getItem('frame:oi:instrument');
+      return restored ? '' : 'Сбербанк';
+    } catch { return 'Сбербанк'; }
+  });
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Синхронизация имени инструмента с тикером.
@@ -125,6 +135,11 @@ export default function OpenInterestPage() {
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedInstrument]);
+
+  // Персист выбранного инструмента (см. init выше — приоритет URL > localStorage).
+  useEffect(() => {
+    try { localStorage.setItem('frame:oi:instrument', selectedInstrument); } catch { /* quota / private */ }
   }, [selectedInstrument]);
 
   // Данные графика

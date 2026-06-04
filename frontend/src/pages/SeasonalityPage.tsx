@@ -65,9 +65,10 @@ export default function SeasonalityPage() {
   const seasonAccess = useTierAccess('seasonality');
   const { showUpgrade } = useUpgradePrompt();
 
-  // Stock selector
-  const [selectedStock, setSelectedStock] = useState<string>('SBER');
-  const [selectedName, setSelectedName] = useState<string>('Сбербанк');
+  // Stock selector — выбранная бумага персистится (вернувшись, видим последнюю,
+  // а не дефолтный Сбер). selectedStock + selectedName ставятся вместе.
+  const [selectedStock, setSelectedStock] = usePersistedState<string>('frame:seasonality:stock', 'SBER');
+  const [selectedName, setSelectedName] = usePersistedState<string>('frame:seasonality:stockName', 'Сбербанк');
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Mode & params (персистятся в localStorage — не сбрасываются на новой сессии)
