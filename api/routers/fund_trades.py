@@ -162,7 +162,9 @@ def _fund_performance(db: Session, fund_id: int) -> dict:
     ret_row = db.execute(text("""
         SELECT fd_last.pay AS last_pay,
                fd_1m.pay AS pay_1m, fd_3m.pay AS pay_3m,
-               fd_6m.pay AS pay_6m, fd_1y.pay AS pay_1y,
+               fd_6m.pay AS pay_6m, fd_1y.pay AS pay_1y, fd_first.pay AS pay_first,
+               (SELECT COALESCE(SUM(amount_per_unit), 0) FROM fund_distributions d
+                WHERE d.fund_id = f.fund_id AND d.record_date <= fd_last.td) AS dist_all,
                (SELECT COALESCE(SUM(amount_per_unit), 0) FROM fund_distributions d
                 WHERE d.fund_id = f.fund_id AND d.record_date > fd_last.td - INTERVAL '1 month'   AND d.record_date <= fd_last.td) AS dist_1m,
                (SELECT COALESCE(SUM(amount_per_unit), 0) FROM fund_distributions d
@@ -192,6 +194,10 @@ def _fund_performance(db: Session, fund_id: int) -> dict:
             SELECT pay FROM fund_data WHERE fund_id = f.fund_id AND pay IS NOT NULL
             AND trade_date <= fd_last.td - INTERVAL '12 months' ORDER BY trade_date DESC LIMIT 1
         ) fd_1y ON true
+        LEFT JOIN LATERAL (
+            SELECT pay FROM fund_data WHERE fund_id = f.fund_id AND pay IS NOT NULL
+            ORDER BY trade_date ASC LIMIT 1
+        ) fd_first ON true
     """), {"fid": fund_id}).mappings().first()
 
     pay_rows = db.execute(text("""
@@ -226,6 +232,7 @@ def _fund_performance(db: Session, fund_id: int) -> dict:
             "m3": _calc_total_return(last_pay, ret_row["pay_3m"], ret_row["dist_3m"]) if ret_row else None,
             "m6": _calc_total_return(last_pay, ret_row["pay_6m"], ret_row["dist_6m"]) if ret_row else None,
             "y1": _calc_total_return(last_pay, ret_row["pay_1y"], ret_row["dist_1y"]) if ret_row else None,
+            "all": _calc_total_return(last_pay, ret_row["pay_first"], ret_row["dist_all"]) if ret_row else None,
         },
     }
 

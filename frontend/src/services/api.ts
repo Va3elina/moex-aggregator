@@ -1200,6 +1200,7 @@ export interface FundReturns {
     m3: number | null;
     m6: number | null;
     y1: number | null;
+    all?: number | null;  // доходность за всё время (с первого дня данных) — есть всегда, даже у молодых фондов
 }
 
 export interface FundTopHolding {

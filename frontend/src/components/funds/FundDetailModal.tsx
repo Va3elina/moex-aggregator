@@ -397,7 +397,10 @@ export default function FundDetailModal({
                                             </div>
                                         )}
 
-                                        {/* Плашки returns 1м/3м/6м/1г */}
+                                        {/* Плашки returns 1м/3м/6м/1г + «за всё время».
+                                            Пустые периоды (фонд младше периода) прячем — иначе
+                                            у молодых фондов сплошные «—». «За всё время» (с первого
+                                            дня данных) есть всегда → заполняет молодые фонды. */}
                                         <div
                                             style={{
                                                 display: 'grid',
@@ -411,7 +414,8 @@ export default function FundDetailModal({
                                                 { label: '3 мес', v: ret?.m3 },
                                                 { label: '6 мес', v: ret?.m6 },
                                                 { label: '1 год', v: ret?.y1 },
-                                            ].map(({ label, v }) => (
+                                                { label: 'Всё время', v: ret?.all },
+                                            ].filter(({ v }) => v != null).map(({ label, v }) => (
                                                 <div
                                                     key={label}
                                                     style={{
