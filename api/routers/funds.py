@@ -431,6 +431,130 @@ async def get_fund_holdings(fund_id: int):
     }
 
 
+@router.get("/detail/{fund_id}")
+async def get_fund_detail(fund_id: int):
+    """
+    ПУБЛИЧНАЯ карточка фонда для «Деньги в фондах» — работает для ВСЕХ категорий.
+
+    В отличие от /api/fund-trades/fund/{ticker} (require_pro + whitelist + только
+    stocks), этот роут открыт (как /api/funds/holdings/{fund_id}) и отдаёт данные
+    для любого фонда. Форма ответа совпадает с FundTradesDetail (фронт-модал один
+    на оба раздела): diff/summary всегда пустые (тут нет snapshot-сравнения),
+    current_holdings заполнены только для stocks/bonds (у gold/money/yuan — []).
+
+    Поля:
+      - fund.nav_rub          — последняя СЧА (fund_data.nav), AUM фонда
+      - current_snapshot_date — дата последнего месячного snapshot (или null)
+      - current_holdings      — состав на эту дату (для не-stock/bonds выйдет [])
+      - performance           — timeline (fund_data.pay+nav) + returns (календарные
+                                месяцы, _fund_performance из fund_trades.py)
+      - has_distributions     — платит ли фонд доход (есть строки fund_distributions)
+    """
+    # Переиспользуем performance-логику и MONTHLY_SOURCES из gated-роутера —
+    # сам fund_trades.py остаётся под require_pro, импортируем только helpers.
+    from api.routers.fund_trades import _fund_performance, MONTHLY_SOURCES
+
+    engine = get_engine()
+    try:
+        with engine.connect() as conn:
+            # Фонд по fund_id. nav_rub = последняя СЧА (fund_data.nav).
+            fund_row = conn.execute(text("""
+                SELECT f.fund_id, f.ticker, f.name, f.category, f.subcategory,
+                       fd_last.nav AS nav_rub
+                FROM funds f
+                LEFT JOIN LATERAL (
+                    SELECT nav FROM fund_data
+                    WHERE fund_id = f.fund_id AND nav IS NOT NULL
+                    ORDER BY trade_date DESC LIMIT 1
+                ) fd_last ON true
+                WHERE f.fund_id = CAST(:fid AS integer)
+            """), {"fid": fund_id}).mappings().first()
+            if not fund_row:
+                raise HTTPException(status_code=404, detail=f"Fund {fund_id} not found")
+
+            # Доходность по nav_per_share (pay) — для всех категорий.
+            performance = _fund_performance(conn, fund_id)
+
+            # nav-серия для timeline (фронт может показать AUM рядом с pay).
+            # Один запрос; мерджим по дате с pay-timeline performance.
+            nav_rows = conn.execute(text("""
+                SELECT trade_date, nav FROM fund_data
+                WHERE fund_id = CAST(:fid AS integer) AND nav IS NOT NULL
+                ORDER BY trade_date ASC
+            """), {"fid": fund_id}).mappings().all()
+            nav_by_date = {r["trade_date"].isoformat(): float(r["nav"]) for r in nav_rows}
+            for pt in performance["timeline"]:
+                pt["nav"] = nav_by_date.get(pt["date"])
+
+            # Последний месячный snapshot (только vim_sdr/interfax_manual —
+            # точные документы). Для категорий без holdings → None.
+            latest_row = conn.execute(text("""
+                SELECT MAX(snapshot_date) AS d FROM fund_holdings_history
+                WHERE fund_id = CAST(:fid AS integer) AND source = ANY(:sources)
+            """), {"fid": fund_id, "sources": list(MONTHLY_SOURCES)}).first()
+            current_date = latest_row[0] if latest_row else None
+
+            current_holdings: list = []
+            if current_date is not None:
+                # Короткое имя по ISIN (как в fund_trades.py): самое короткое
+                # asset_name среди всех фондов/источников.
+                h_rows = conn.execute(text("""
+                    WITH names AS (
+                        SELECT isin, (array_agg(asset_name ORDER BY length(asset_name), asset_name))[1] AS short_name
+                        FROM fund_holdings_history WHERE COALESCE(isin, '') <> '' GROUP BY isin
+                    )
+                    SELECT COALESCE(n.short_name, h.asset_name) AS asset_name,
+                           h.weight, h.positions, h.amount_rub, h.isin
+                    FROM fund_holdings_history h
+                    LEFT JOIN names n ON n.isin = h.isin
+                    WHERE h.fund_id = CAST(:fid AS integer) AND h.snapshot_date = :d
+                      AND h.source = ANY(:sources)
+                    ORDER BY h.weight DESC NULLS LAST
+                """), {"fid": fund_id, "d": current_date, "sources": list(MONTHLY_SOURCES)}).mappings().all()
+                current_holdings = [
+                    {
+                        "asset_name": r["asset_name"],
+                        "isin": r.get("isin"),
+                        "weight": float(r["weight"]) if r["weight"] is not None else None,
+                        "positions": int(r["positions"]) if r["positions"] is not None else None,
+                        "amount_rub": float(r["amount_rub"]) if r["amount_rub"] is not None else None,
+                    }
+                    for r in h_rows
+                ]
+
+            has_dist_row = conn.execute(text("""
+                SELECT EXISTS (
+                    SELECT 1 FROM fund_distributions WHERE fund_id = CAST(:fid AS integer)
+                ) AS has_dist
+            """), {"fid": fund_id}).first()
+            has_distributions = bool(has_dist_row[0]) if has_dist_row else False
+
+        # Форма = FundTradesDetail (diff/summary пустые — снапшот-сравнения тут нет).
+        return {
+            "fund": {
+                "fund_id": fund_row["fund_id"],
+                "ticker": fund_row["ticker"],
+                "name": fund_row["name"],
+                "category": fund_row["category"],
+                "subcategory": fund_row["subcategory"],
+                "nav_rub": float(fund_row["nav_rub"]) if fund_row["nav_rub"] is not None else None,
+            },
+            "period": "1y",
+            "current_snapshot_date": current_date.isoformat() if current_date else None,
+            "previous_snapshot_date": None,
+            "current_holdings": current_holdings,
+            "diff": [],
+            "summary": {"new": 0, "sold_out": 0, "accumulated": 0, "reduced": 0},
+            "performance": performance,
+            "has_distributions": has_distributions,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error(f"Ошибка получения деталей фонда {fund_id}: {e}")
+        raise HTTPException(status_code=500, detail="Ошибка получения данных")
+
+
 @router.get("/categories")
 async def get_categories():
     """Список категорий с фондами"""

@@ -13,6 +13,7 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { getDefaultPeriod } from '../config/accessControl';
 import { useRealtimeData } from '../hooks/useRealtimeData';
+import { usePersistedState } from '../hooks/usePersistedState';
 import type { SyncedDataPoint, ChartPadding } from '../components/strength/chartUtils';
 import IndexChart from '../components/strength/IndexChart';
 import BreadthChart from '../components/strength/BreadthChart';
@@ -63,18 +64,19 @@ const DEFAULT_HEIGHTS = { top: 300, bottomDual: 150, bottomSolo: 450 };
 
 export default function StrengthPage() {
     const { isAuthenticated } = useAuth();
-    const [period, setPeriod] = useState<Period>(getDefaultPeriod('1y', isAuthenticated) as Period);
+    // Настройки отображения персистятся в localStorage — не сбрасываются на новой сессии.
+    const [period, setPeriod] = usePersistedState<Period>('frame:strength:period', getDefaultPeriod('1y', isAuthenticated) as Period);
     // EMA-период: 50 (краткосрок), 100 (среднесрок), 200 (долгосрок, по умолчанию).
     // Все три доступны в pre-compute (breadth_history таблица).
-    const [emaPeriod, setEmaPeriod] = useState<50 | 100 | 200>(EMA_PERIOD);
-    const [chartMode, setChartMode] = useState<ChartMode>('histogram');
-    const [showPrice, setShowPrice] = useState(true);
+    const [emaPeriod, setEmaPeriod] = usePersistedState<50 | 100 | 200>('frame:strength:emaPeriod', EMA_PERIOD);
+    const [chartMode, setChartMode] = usePersistedState<ChartMode>('frame:strength:chartMode', 'histogram');
+    const [showPrice, setShowPrice] = usePersistedState('frame:strength:showPrice', true);
     const [selectedSector, setSelectedSector] = useState('Все');
 
     // Onboarding tour
     const tour = useOnboardingTour('strength');
-    const [currency, setCurrency] = useState<'rub' | 'usd'>('rub');
-    const [universeBase, setUniverseBase] = useState<'all' | 'imoex'>('imoex');
+    const [currency, setCurrency] = usePersistedState<'rub' | 'usd'>('frame:strength:currency', 'rub');
+    const [universeBase, setUniverseBase] = usePersistedState<'all' | 'imoex'>('frame:strength:universeBase', 'imoex');
     // Итоговый universe: добавляем _usd при долларовом режиме
     const universe: BreadthUniverse = currency === 'usd'
         ? `${universeBase}_usd` as BreadthUniverse

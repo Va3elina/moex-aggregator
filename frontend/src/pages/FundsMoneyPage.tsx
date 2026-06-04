@@ -7,10 +7,9 @@ import { METHODOLOGY } from '../data/methodology';
 import {
     getFundsChartData,
     getFundsFlows,
-    getFundHoldings,
+    getFundsDetail,
     type FundsChartResponse,
     type FundsFlowsResponse,
-    type FundHoldingsResponse,
     type FundInfo,
     type FundCategory,
     type FundPeriod,
@@ -23,7 +22,7 @@ import { useRealtimeData } from '../hooks/useRealtimeData';
 import { usePersistedState } from '../hooks/usePersistedState';
 import { useFitToViewport } from '../hooks/useFitToViewport';
 import { useViewportWidth } from '../hooks/useViewportWidth';
-import FundCardModal from '../components/funds/FundCardModal';
+import FundDetailModal from '../components/funds/FundDetailModal';
 import FundsTable from '../components/funds/FundsTable';
 import { useOnboardingTour } from '../hooks/useFirstVisit';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
@@ -135,8 +134,6 @@ export default function FundsMoneyPage() {
     const [data, setData] = useState<FundsChartResponse | null>(null);
     const [flowsData, setFlowsData] = useState<FundsFlowsResponse | null>(null);
     const [selectedFund, setSelectedFund] = useState<FundInfo | null>(null);
-    const [fundHoldings, setFundHoldings] = useState<FundHoldingsResponse | null>(null);
-    const [holdingsLoading, setHoldingsLoading] = useState(false);
     const [hiddenFunds, setHiddenFunds] = useState<Set<number>>(new Set());
     const [collapsedSubcats, setCollapsedSubcats] = useState<Set<string>>(new Set());
     const [navSortDir, setNavSortDir] = useState<'desc' | 'asc'>('desc');
@@ -348,18 +345,11 @@ export default function FundsMoneyPage() {
         });
     };
 
-    const openFundCard = async (fund: FundInfo) => {
+    // Открытие карточки фонда: только выбираем фонд — FundDetailModal грузит
+    // детали сам через loadDetail (getFundsDetail). Drill-down в актив
+    // (состав + клик по бумаге) — только для фондов акций (enableDrilldown).
+    const openFundCard = (fund: FundInfo) => {
         setSelectedFund(fund);
-        setHoldingsLoading(true);
-        setFundHoldings(null);
-        try {
-            const data = await getFundHoldings(fund.fund_id);
-            setFundHoldings(data);
-        } catch {
-            setFundHoldings({ fund_id: fund.fund_id, holdings: [] });
-        } finally {
-            setHoldingsLoading(false);
-        }
     };
 
     const handleFlowMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -829,12 +819,15 @@ export default function FundsMoneyPage() {
             />
             </div>{/* /funds-table */}
 
-            {/* Модальная карточка фонда */}
+            {/* Модальная карточка фонда — общая с «Покупками фондов».
+                enableDrilldown только для фондов акций (состав + клик в актив);
+                для облигаций/золота/денег/юаня — базовая карточка (СЧА + доходность). */}
             {selectedFund && (
-                <FundCardModal
-                    selectedFund={selectedFund}
-                    fundHoldings={fundHoldings}
-                    holdingsLoading={holdingsLoading}
+                <FundDetailModal
+                    ticker={selectedFund.ticker}
+                    loadDetail={() => getFundsDetail(selectedFund.fund_id)}
+                    navRub={selectedFund.data?.[selectedFund.data.length - 1]?.nav ?? null}
+                    enableDrilldown={category === 'stocks'}
                     onClose={() => setSelectedFund(null)}
                 />
             )}

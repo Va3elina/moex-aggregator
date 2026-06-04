@@ -489,6 +489,16 @@ export async function getFundHoldings(fundId: number): Promise<FundHoldingsRespo
   return response.json();
 }
 
+// Публичная карточка фонда для «Деньги в фондах» (все категории). Форма ответа
+// совпадает с FundTradesDetail → переиспользуем тот же модал. diff/summary тут
+// всегда пустые; current_holdings заполнен только для stocks/bonds.
+export async function getFundsDetail(fundId: number): Promise<FundTradesDetail> {
+  const response = await apiFetch(`${API_BASE}/api/funds/detail/${fundId}`);
+  if (response.status === 404) throw new Error('Фонд не найден');
+  if (!response.ok) throw new Error('Не удалось загрузить детали фонда');
+  return response.json();
+}
+
 // ==================== FUND CATALOG ====================
 
 export interface CatalogFund {
@@ -1239,6 +1249,7 @@ export interface FundTradeDiff {
 export interface FundPerformancePoint {
     date: string;
     pay: number;
+    nav?: number | null; // СЧА (AUM) на дату — заполняется в /api/funds/detail
 }
 
 export interface FundPerformance {
@@ -1253,6 +1264,7 @@ export interface FundTradesDetail {
         name: string;
         category: string;
         subcategory: string | null;
+        nav_rub?: number | null; // СЧА (AUM) — заполняется в /api/funds/detail
     };
     period: FundTradesPeriod;
     current_snapshot_date: string | null;
@@ -1266,6 +1278,7 @@ export interface FundTradesDetail {
         reduced: number;
     };
     performance?: FundPerformance;
+    has_distributions?: boolean; // фонд платит доход → returns = полная доходность
 }
 
 export interface FundTradesMover {
