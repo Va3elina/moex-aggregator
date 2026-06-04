@@ -1173,8 +1173,6 @@ export default function FundTradesPage() {
                                                         WebkitLineClamp: 2,
                                                         WebkitBoxOrient: 'vertical',
                                                         overflow: 'hidden',
-                                                        // Имя — главное; резерв под 2 строки чтобы карточки выравнивались.
-                                                        minHeight: '2.4em',
                                                     }}
                                                     title={f.name}
                                                 >
