@@ -64,9 +64,17 @@ export default function FrameLogo({
   // на той же y что центр глифа. "central" = geometric middle of em-box (vs
   // "alphabetic" baseline которая зависит от font metrics → wordmark "торчал"
   // вверх). Identical behavior в browser и в html2canvas.
-  const gap = 11;
+  // Симметрия отступов (Figma): «отступ глиф→текст = отступ контейнер→глиф».
+  // Глиф-контент живёт на x=3..29 внутри своего 32-ед бокса, т.е. левый зазор
+  // (SVG-край x=0 → глиф) = 3 ед. Значит правый зазор (глиф-край x=29 → текст)
+  // тоже должен быть 3 ед → текст стартует на x = 29 + 3 = 32.
+  // gap здесь = зазор поверх границы глиф-бокса (x=32), поэтому gap=0 даёт
+  // ровно 3 ед от края глифа (29) до текста. Было gap=11 (зазор 14 ед).
+  const GLYPH_LEFT_INSET = 3; // x, на котором начинается контент глифа
+  const gap = GLYPH_LEFT_INSET - (32 - 29); // = 0: добиваем правый зазор до 3 ед
+  const textStartX = 32 + gap;
   const textWidth = 110; // bumped с 95 — fontSize 30 (вместо 26) занимает больше
-  const totalWidth = 32 + gap + textWidth;
+  const totalWidth = textStartX + textWidth;
   const renderHeight = size;
   const renderWidth = (totalWidth / 32) * size;
 
@@ -88,7 +96,7 @@ export default function FrameLogo({
         {/* Wordmark — em-box центр на y=16 (центр глифа). FontSize 30 — на
             один шаг больше относительно glyph 32x32 (≈ 94% от glyph height). */}
         <text
-          x={32 + gap}
+          x={textStartX}
           y={16}
           fontFamily="'Archivo', 'Inter', system-ui, sans-serif"
           fontWeight={weight}

@@ -31,6 +31,7 @@ import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import CsvExportButton from '../components/export/CsvExportButton';
 import { periodToQuery } from '../utils/csvPeriod';
 import { useOnboardingTour } from '../hooks/useFirstVisit';
+import { usePersistedState } from '../hooks/usePersistedState';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { cbrFlowsTourSteps } from '../data/tours/cbr-flows';
 import { useTheme } from '../contexts/ThemeContext';
@@ -54,7 +55,8 @@ const PERIOD_OPTIONS: { key: PeriodFilter; label: string; months: number | null 
 
 export default function CbrFlowsPage() {
   const { theme } = useTheme();
-  const [type, setType] = useState<CbrInstrumentType>('stocks');
+  // Тип актива (Акции/ОФЗ/Валюты) персистится в localStorage — не сбрасывается на новой сессии.
+  const [type, setType] = usePersistedState<CbrInstrumentType>('frame:cbr:type', 'stocks');
   const [data, setData] = useState<CbrFlowsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -63,8 +65,8 @@ export default function CbrFlowsPage() {
   // При смене type — сбрасываем (категории различаются для stocks/ofz/fx).
   const [hiddenCategories, setHiddenCategories] = useState<Set<string>>(new Set());
 
-  // Период: 1г / 2г / Всё (default 1г)
-  const [period, setPeriod] = useState<PeriodFilter>('1y');
+  // Период: 1г / 2г / Всё (default 1г) — персистится в localStorage
+  const [period, setPeriod] = usePersistedState<PeriodFilter>('frame:cbr:period', '1y');
 
   // Popover-dropdown с выбором категорий (открывается при клике на кнопку)
   const [categoriesOpen, setCategoriesOpen] = useState(false);

@@ -19,6 +19,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { isIntervalAllowed, isPeriodAllowed, getDefaultPeriod } from '../config/accessControl';
 import { useRealtimeData } from '../hooks/useRealtimeData';
+import { usePersistedState } from '../hooks/usePersistedState';
 import { useFitToViewport } from '../hooks/useFitToViewport';
 import { useOnboardingTour } from '../hooks/useFirstVisit';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
@@ -137,14 +138,14 @@ export default function OpenInterestPage() {
   // на mount (autoOpenedRef guard внутри хука).
   const tour = useOnboardingTour('oi');
 
-  // Настройки
-  const [interval, setIntervalValue] = useState(24);
-  const [clgroup, setClgroup] = useState<'FIZ' | 'YUR'>('YUR');
-  const [displayMode, setDisplayMode] = useState<DisplayMode>('positions');
-  const [oiVariant, setOiVariant] = useState<OIVariant>('net');
-  const [showExpirations, setShowExpirations] = useState(false);
-  const [showPrice, setShowPrice] = useState(true);
-  const [period, setPeriod] = useState<Period>(getDefaultPeriod('6m', isAuthenticated) as Period);
+  // Настройки (персистятся в localStorage по индикатору — не сбрасываются на новой сессии)
+  const [interval, setIntervalValue] = usePersistedState('frame:oi:interval', 24);
+  const [clgroup, setClgroup] = usePersistedState<'FIZ' | 'YUR'>('frame:oi:clgroup', 'YUR');
+  const [displayMode, setDisplayMode] = usePersistedState<DisplayMode>('frame:oi:displayMode', 'positions');
+  const [oiVariant, setOiVariant] = usePersistedState<OIVariant>('frame:oi:oiVariant', 'net');
+  const [showExpirations, setShowExpirations] = usePersistedState('frame:oi:showExpirations', false);
+  const [showPrice, setShowPrice] = usePersistedState('frame:oi:showPrice', true);
+  const [period, setPeriod] = usePersistedState<Period>('frame:oi:period', getDefaultPeriod('6m', isAuthenticated) as Period);
 
   // Фильтрация нерабочих дней и пре-маркета.
   // Алгопак возвращает forward-fill данные за выходные, праздники и

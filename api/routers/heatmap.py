@@ -15,19 +15,12 @@ IMOEX_ISS_URL = "https://iss.moex.com/iss/statistics/engines/stock/markets/index
 router = APIRouter(prefix="/api/heatmap", tags=["heatmap"])
 
 
-@router.get("/stocks")
-async def get_stocks_heatmap(
-    size_by: HeatmapSizeByType = Query("value_1d", description="Размер блока"),
-    color_by: HeatmapColorByType = Query("change_1d", description="Цвет блока"),
-    group_by: HeatmapGroupByType = Query("sector", description="Группировка"),
-    user = Depends(get_current_user_optional),
-):
-    # Free: только режим IMOEX (см. /imoex endpoint); /stocks — для Basic+
-    from api.security.access_control import enforce_tier_limits
-    enforce_tier_limits(user, "heatmap", mode="all")
-    """
-    Возвращает данные для карты рынка из материализованного представления.
-    Параметры валидируются автоматически через Literal типы.
+def build_stocks_heatmap(size_by: str, color_by: str, group_by: str):
+    """Собирает (или достаёт из кеша) данные карты «все акции».
+
+    Вынесено из роута, чтобы прогрев кеша (_warmup_cache) мог наполнить кеш
+    напрямую, минуя tier-проверку (guest-клиент warmup'а получил бы 403).
+    Сам tier-gating остаётся на роуте get_stocks_heatmap.
     """
     from api.cache import get_or_set
 
@@ -102,6 +95,23 @@ async def get_stocks_heatmap(
     }
     get_or_set(cache_key, response, ttl=300)  # 5 мин
     return response
+
+
+@router.get("/stocks")
+async def get_stocks_heatmap(
+    size_by: HeatmapSizeByType = Query("value_1d", description="Размер блока"),
+    color_by: HeatmapColorByType = Query("change_1d", description="Цвет блока"),
+    group_by: HeatmapGroupByType = Query("sector", description="Группировка"),
+    user = Depends(get_current_user_optional),
+):
+    """
+    Возвращает данные для карты рынка из материализованного представления.
+    Параметры валидируются автоматически через Literal типы.
+    """
+    # Free: только режим IMOEX (см. /imoex endpoint); /stocks — для Basic+
+    from api.security.access_control import enforce_tier_limits
+    enforce_tier_limits(user, "heatmap", mode="all")
+    return build_stocks_heatmap(size_by, color_by, group_by)
 
 
 @router.get("/prices")

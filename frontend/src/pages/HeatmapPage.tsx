@@ -14,6 +14,7 @@ import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { heatmapTourSteps } from '../data/tours/heatmap';
 import { useTierAccess } from '../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
+import { usePersistedState } from '../hooks/usePersistedState';
 
 // Опции для фильтров
 const PERIOD_OPTIONS = [
@@ -147,11 +148,13 @@ export default function HeatmapPage() {
   const heatAccess = useTierAccess('heatmap');
   const { showUpgrade } = useUpgradePrompt();
 
-  // Фильтры
-  const [mapMode, setMapMode] = useState<'imoex' | 'all'>('imoex');
+  // Фильтры. mapMode/groupBy персистим в localStorage — чтобы режим карты
+  // («Индекс IMOEX» / «Все акции») и группировка не сбрасывались на новой сессии.
+  // sizeBy/period остаются session-only (по умолчанию market_cap / 1Д).
+  const [mapMode, setMapMode] = usePersistedState<'imoex' | 'all'>('frame:heatmap:mapMode', 'imoex');
   const [sizeBy, setSizeBy] = useState<string>('market_cap');
   const [period, setPeriod] = useState('1d');
-  const [groupBy, setGroupBy] = useState('sector');
+  const [groupBy, setGroupBy] = usePersistedState<string>('frame:heatmap:groupBy', 'sector');
 
   // Onboarding tour
   const tour = useOnboardingTour('heatmap');
@@ -242,6 +245,18 @@ export default function HeatmapPage() {
     }
     setLoading(false);
   }, [mapMode, groupBy, showUpgrade]);
+
+  // Tier-guard для восстановленного режима: если из localStorage пришёл
+  // mapMode='all', но тариф его не разрешает (Free → только IMOEX) — откатываем
+  // на 'imoex'. Иначе Free-юзер залип бы на недоступном 'all' (пустая карта +
+  // 403). Ждём загрузки матрицы тарифа (isLoading), чтобы не сбросить раньше
+  // времени. Срабатывает один раз после гидрации tier-данных.
+  useEffect(() => {
+    if (heatAccess.isLoading) return;
+    if (mapMode === 'all' && !heatAccess.canUseMode('all')) {
+      setMapMode('imoex');
+    }
+  }, [heatAccess.isLoading, mapMode, heatAccess, setMapMode]);
 
   // Первая загрузка + при смене mapMode/groupBy
   useEffect(() => { loadData(); }, [loadData]);

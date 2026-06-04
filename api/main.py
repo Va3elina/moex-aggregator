@@ -165,9 +165,20 @@ async def _warmup_cache():
     """Прогрев кэша при старте — дёргает тяжёлые эндпоинты чтобы пользователи не ждали."""
     import httpx
     await asyncio.sleep(2)  # дать uvicorn полностью подняться
+
+    # Карта «Все акции» (/api/heatmap/stocks) — tier-gated (Basic+), поэтому
+    # прогреть её через HTTP guest-клиентом нельзя (403 до записи в кеш).
+    # Наполняем кеш напрямую через build_stocks_heatmap (минует tier-проверку).
+    # Ключи должны совпадать с фронтом: getHeatmapData('market_cap','change_1d',groupBy).
+    try:
+        from api.routers.heatmap import build_stocks_heatmap
+        for gb in ("sector", "none"):
+            await asyncio.to_thread(build_stocks_heatmap, "market_cap", "change_1d", gb)
+    except Exception as e:
+        logger.warning(f"Heatmap stocks warmup failed: {e}")
+
     urls = [
         "/api/heatmap/imoex?color_by=change_1d&group_by=sector",
-        "/api/heatmap/all?color_by=change_1d&group_by=sector",
         "/api/funds/chart?category=money_market&period=6m",
         "/api/funds/catalog",
         "/api/breadth/current?ema_period=200&universe=imoex",

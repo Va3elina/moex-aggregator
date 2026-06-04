@@ -15,6 +15,7 @@ import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import CsvExportButton from '../components/export/CsvExportButton';
 import type { SeasonalityResponse, SeasonalityMode, PriceChartResponse, YearlySeasonalityResponse } from '../services/api';
 import { useOnboardingTour } from '../hooks/useFirstVisit';
+import { usePersistedState } from '../hooks/usePersistedState';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { seasonalityTourSteps } from '../data/tours/seasonality';
 import { FUND_PALETTE } from '../config/chartTheme';
@@ -69,14 +70,14 @@ export default function SeasonalityPage() {
   const [selectedName, setSelectedName] = useState<string>('Сбербанк');
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // Mode & params
-  const [mode, setMode] = useState<SeasonalityMode>('weekday');
+  // Mode & params (персистятся в localStorage — не сбрасываются на новой сессии)
+  const [mode, setMode] = usePersistedState<SeasonalityMode>('frame:seasonality:mode', 'weekday');
 
   // Onboarding tour
   const tour = useOnboardingTour('seasonality');
-  const [chartType, setChartType] = useState<ChartType>('histogram');
-  const [excludeDividends, setExcludeDividends] = useState(false);
-  const [priceDays, setPriceDays] = useState(365);
+  const [chartType, setChartType] = usePersistedState<ChartType>('frame:seasonality:chartType', 'histogram');
+  const [excludeDividends, setExcludeDividends] = usePersistedState('frame:seasonality:excludeDividends', false);
+  const [priceDays, setPriceDays] = usePersistedState('frame:seasonality:priceDays', 365);
 
   // Smart default: для Free 'histogram' недоступен — переключаемся на 'yearly'.
   // Только при ПЕРВОЙ загрузке матрицы, чтобы не сбрасывать пользовательский
@@ -106,10 +107,10 @@ export default function SeasonalityPage() {
   //   (не нужно hardcode'ить кризисные годы).
   // - showExactYear: траектория конкретного года (одна линия).
   const [compareYears, setCompareYears] = useState<number[]>([]);
-  const [showNoOutliers, setShowNoOutliers] = useState(false);
+  const [showNoOutliers, setShowNoOutliers] = usePersistedState('frame:seasonality:showNoOutliers', false);
   const [showExactYear, setShowExactYear] = useState<number | null>(null);
   // Линия текущего года на годовом графике — можно скрыть тогглом.
-  const [showCurrentYear, setShowCurrentYear] = useState(true);
+  const [showCurrentYear, setShowCurrentYear] = usePersistedState('frame:seasonality:showCurrentYear', true);
   // Доступные годы (для dropdown). Обновляется при смене тикера.
   const [availableYears, setAvailableYears] = useState<number[]>([]);
 

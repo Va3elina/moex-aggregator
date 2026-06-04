@@ -136,11 +136,20 @@ SCRIPTS = {
     'cbr_orfr_flows': BASE_DIR / 'CBR' / 'fetch_orfr_flows.py',
 }
 
-# Материализованные представления
+# Материализованные представления.
+# concurrent=True → REFRESH CONCURRENTLY (не берёт ACCESS EXCLUSIVE lock,
+# читатели продолжают видеть старую версию во время ~10-13с пересборки).
+# Требует UNIQUE-индекс на MV. mv_oi_daily_stats его НЕ имеет → обычный REFRESH.
 MATERIALIZED_VIEWS = {
     'mv_heatmap_stocks': 'Карта рынка акций',
     'mv_oi_daily_stats': 'Статистика OI',
 }
+
+# Какие MV можно обновлять CONCURRENTLY (есть UNIQUE-индекс).
+# mv_heatmap_stocks: UNIQUE INDEX на (sec_id) — см. db/mv_heatmap_stocks.sql.
+# REFRESH CONCURRENTLY ~12.7с раньше блокировал /api/heatmap/stocks на весь
+# этот срок (ACCESS EXCLUSIVE), из-за чего «Все акции» грузились 10-20с.
+CONCURRENT_REFRESH_VIEWS = {'mv_heatmap_stocks'}
 
 # Время дневного обновления всех источников.
 # 19:10 МСК — после закрытия торгов (18:45) + время УК на расчёт NAV.
@@ -295,17 +304,35 @@ def refresh_materialized_views(views: List[str] = None) -> Dict[str, Tuple[bool,
     try:
         engine = create_engine(DB_URL, connect_args={"ssl_context": False})
 
-        with engine.connect() as conn:
+        # AUTOCOMMIT обязателен для REFRESH ... CONCURRENTLY — он не может
+        # выполняться внутри транзакционного блока.
+        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
             for view_name in views:
+                concurrent = view_name in CONCURRENT_REFRESH_VIEWS
                 try:
                     start = datetime.now()
-                    conn.execute(text(f"REFRESH MATERIALIZED VIEW {view_name}"))
-                    conn.commit()
+                    if concurrent:
+                        conn.execute(text(f"REFRESH MATERIALIZED VIEW CONCURRENTLY {view_name}"))
+                    else:
+                        conn.execute(text(f"REFRESH MATERIALIZED VIEW {view_name}"))
                     duration = (datetime.now() - start).total_seconds()
                     results[view_name] = (True, duration)
                     desc = MATERIALIZED_VIEWS.get(view_name, view_name)
-                    log.info(f"    ✅ {desc} ({duration:.1f}с)")
+                    log.info(f"    ✅ {desc} ({duration:.1f}с){' [concurrent]' if concurrent else ''}")
                 except Exception as e:
+                    # Фоллбэк: если CONCURRENTLY не сработал (например пропал
+                    # UNIQUE-индекс после миграции) — пробуем обычный REFRESH,
+                    # чтобы данные хотя бы обновились (ценой блокировки чтения).
+                    if concurrent:
+                        try:
+                            start = datetime.now()
+                            conn.execute(text(f"REFRESH MATERIALIZED VIEW {view_name}"))
+                            duration = (datetime.now() - start).total_seconds()
+                            results[view_name] = (True, duration)
+                            log.warning(f"    ⚠️ {view_name}: CONCURRENTLY не удался ({e}), fallback на обычный REFRESH ({duration:.1f}с)")
+                            continue
+                        except Exception as e2:
+                            e = e2
                     results[view_name] = (False, 0)
                     log.warning(f"    ⚠️ {view_name}: {e}")
 

@@ -42,6 +42,70 @@ function resolveColor(value: string): string {
     return computed || value;
 }
 
+/**
+ * Парсит resolved CSS-цвет (#rgb / #rrggbb / rgb()/rgba()) в перцептивную
+ * яркость 0..1 (WCAG-luma). Для var-цветов передавать уже resolved hex/rgb.
+ * Неизвестный формат → 0.5 (нейтрально).
+ */
+function luminance(color: string): number {
+    let r = 0, g = 0, b = 0;
+    const c = color.trim();
+    const hex = c.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+    if (hex) {
+        let h = hex[1];
+        if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+        r = parseInt(h.slice(0, 2), 16);
+        g = parseInt(h.slice(2, 4), 16);
+        b = parseInt(h.slice(4, 6), 16);
+    } else {
+        const rgb = c.match(/rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/i);
+        if (rgb) {
+            r = +rgb[1]; g = +rgb[2]; b = +rgb[3];
+        } else {
+            return 0.5;
+        }
+    }
+    return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+}
+
+/**
+ * Контрастная окантовка («гало») для нарисованных объектов. Оранжевый accent
+ * и прочие цвета теряются на похожем фоне графика (светлая бумага / тёмные
+ * свечи). fabric.Shadow с НУЛЕВЫМ offset рисует ровный ореол вокруг штриха со
+ * всех сторон → объект читается на ЛЮБОМ фоне.
+ *
+ * Цвет гало адаптивен к самому штриху (не к фону, который заранее неизвестен):
+ * под светлый/яркий ink — тёмный ореол, под тёмный — белый. Так контур всегда
+ * контрастирует с краской объекта, давая чёткую читаемую кромку и на бумаге,
+ * и на свечах.
+ *
+ * blur масштабируется от толщины линии (минимум — чтобы тонкие линии тоже
+ * получали заметный ореол). Shadow сериализуется fabric нативно (toObject /
+ * enlivenObjects) и рендерится в toCanvasElement → переживает undo/redo и
+ * PNG-экспорт без доп. кода.
+ */
+function haloFor(
+    fabric: NonNullable<ReturnType<typeof useFabric>>,
+    strokeColor: string,
+    strokeWidth: number,
+) {
+    const haloColor = luminance(strokeColor) > 0.6 ? 'rgba(0,0,0,0.9)' : 'rgba(255,255,255,0.95)';
+    return new fabric.Shadow({
+        color: haloColor,
+        blur: Math.max(4, strokeWidth * 1.5),
+        offsetX: 0,
+        offsetY: 0,
+        // КРИТИЧНО: фигуры (line/arrow/rect/circle) и штрихи кисти имеют
+        // fill:'transparent' и рисуются ТОЛЬКО stroke'ом. По умолчанию fabric
+        // отбрасывает тень от заливки → для stroke-only объектов гало не
+        // появилось бы вовсе. affectStroke:true заставляет ореол идти от контура.
+        affectStroke: true,
+        // Гало рисуется в координатах объекта, не «прибито» к экрану — чтобы
+        // ореол масштабировался/вращался вместе с фигурой при resize/rotate.
+        nonScaling: false,
+    });
+}
+
 export interface AnnotationCanvasHandle {
     undo: () => void;
     redo: () => void;
@@ -164,10 +228,13 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
             });
             fabricRef.current = fc;
 
-            // Init brush — sane defaults, потом обновляются через отдельный effect
+            // Init brush — sane defaults, потом обновляются через отдельный effect.
+            // shadow на кисти → каждый завершённый штрих (path:created) получает
+            // контрастное гало.
             const brush = new fabric.PencilBrush(fc);
             brush.width = strokeWidth;
             brush.color = resolveColor(color);
+            brush.shadow = haloFor(fabric, resolveColor(color), strokeWidth);
             fc.freeDrawingBrush = brush;
 
             // Стартовый снимок — пустой холст (фон в backgroundImage, не в objects).
@@ -234,14 +301,25 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
                     if (activeObj && activeObj.type === 'i-text') return;
                     const p = fcLocal.getViewportPoint(opt.e);
                     const fontSize = Math.max(14, strokeWidthRef.current * 6);
+                    const c = resolveColor(colorRef.current);
+                    // Текст: shadow-гало + тонкий контур контрастного цвета вокруг
+                    // глифов (stroke) — буквы читаются и на светлой бумаге, и на
+                    // тёмных свечах. paintFirst:'stroke' кладёт обводку ПОД заливку,
+                    // чтобы не «съедать» тонкие штрихи шрифта.
+                    const contour = luminance(c) > 0.6 ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.92)';
                     const text = new fabric.IText('Текст', {
                         left: p.x,
                         top: p.y - fontSize / 2,
-                        fill: resolveColor(colorRef.current),
+                        fill: c,
                         fontSize,
                         fontFamily: 'Inter, "Helvetica Neue", Helvetica, Arial, sans-serif',
                         fontWeight: 600,
                         editable: true,
+                        stroke: contour,
+                        strokeWidth: Math.max(1.5, fontSize * 0.06),
+                        paintFirst: 'stroke',
+                        strokeUniform: true,
+                        shadow: haloFor(fabric, c, strokeWidthRef.current),
                     });
                     fcLocal.add(text);
                     fcLocal.setActiveObject(text);
@@ -268,6 +346,8 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
                     selectable: false,
                     evented: false,
                     strokeUniform: true,
+                    // Контрастное гало вокруг контура фигуры (см. haloFor).
+                    shadow: haloFor(fabric, c, w),
                 };
                 if (toolRef.current === 'line') {
                     activeShape = new fabric.Line([p.x, p.y, p.x, p.y], { ...common, strokeLineCap: 'round' });
@@ -296,6 +376,7 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
                         stroke: c, strokeWidth: w, fill: 'transparent',
                         selectable: false, evented: false, strokeUniform: true,
                         strokeLineCap: 'round', strokeLineJoin: 'round',
+                        shadow: haloFor(fabric, c, w),
                     });
                     fcLocal.add(activeShape);
                 } else if (toolRef.current === 'rectangle') {
@@ -392,22 +473,35 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
             fc.defaultCursor = tool === 'select' ? 'default' : 'crosshair';
             fc.hoverCursor = tool === 'select' ? 'move' : 'crosshair';
             const brush = fc.freeDrawingBrush;
-            if (brush) {
+            if (brush && fabric) {
                 brush.color = resolveColor(color);
                 brush.width = strokeWidth;
+                // Гало для будущих штрихов кисти — пересобрать под новый цвет/толщину.
+                brush.shadow = haloFor(fabric, resolveColor(color), strokeWidth);
             }
 
             // UX-бонус: если есть выделенный объект — применить новый color/width
             // к нему «вживую». Так палитра в toolbar работает не только для
             // будущих фигур, но и для текущей (как в Figma/Excalidraw).
             // i-text использует `fill` (заливка), shapes — `stroke` (контур).
+            // Гало/контур тоже пересобираем — иначе при смене на яркий цвет
+            // ореол останется «не того» контраста.
             const active = fc.getActiveObject();
-            if (active) {
+            if (active && fabric) {
                 const c = resolveColor(color);
                 if (active.type === 'i-text') {
-                    active.set({ fill: c, fontSize: Math.max(14, strokeWidth * 6) });
+                    const fontSize = Math.max(14, strokeWidth * 6);
+                    const contour = luminance(c) > 0.6 ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.92)';
+                    active.set({
+                        fill: c,
+                        fontSize,
+                        stroke: contour,
+                        strokeWidth: Math.max(1.5, fontSize * 0.06),
+                        paintFirst: 'stroke',
+                        shadow: haloFor(fabric, c, strokeWidth),
+                    });
                 } else {
-                    active.set({ stroke: c, strokeWidth });
+                    active.set({ stroke: c, strokeWidth, shadow: haloFor(fabric, c, strokeWidth) });
                 }
                 fc.requestRenderAll();
                 // Перекраска / смена толщины выделенного объекта — шаг истории.
@@ -415,7 +509,7 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
                 // dedup внутри saveSnapshot по равенству снимков.
                 saveSnapshot();
             }
-        }, [tool, color, strokeWidth, saveSnapshot]);
+        }, [tool, color, strokeWidth, saveSnapshot, fabric]);
 
         // Scale-to-fit container: native canvas size остаётся = background
         // (drawing px-perfect), CSS scales display size. ResizeObserver реагирует

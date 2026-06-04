@@ -20,6 +20,7 @@ import SimpleChart from '../components/SimpleChart';
 import { useAuth } from '../contexts/AuthContext';
 import { isPeriodAllowed, getDefaultPeriod } from '../config/accessControl';
 import { useRealtimeData } from '../hooks/useRealtimeData';
+import { usePersistedState } from '../hooks/usePersistedState';
 import { useFitToViewport } from '../hooks/useFitToViewport';
 import { useViewportWidth } from '../hooks/useViewportWidth';
 import FundCardModal from '../components/funds/FundCardModal';
@@ -80,11 +81,12 @@ const easeOutCubic = ANIMATION.easing;
 export default function FundsMoneyPage() {
     const { isAuthenticated } = useAuth();
     const navigate = useNavigate();
-    const [category, setCategory] = useState<FundCategory>('money_market');
-    const [period, setPeriod] = useState<Period>(getDefaultPeriod('6m', isAuthenticated) as Period);
+    // Настройки отображения персистятся в localStorage — не сбрасываются на новой сессии.
+    const [category, setCategory] = usePersistedState<FundCategory>('frame:funds:category', 'money_market');
+    const [period, setPeriod] = usePersistedState<Period>('frame:funds:period', getDefaultPeriod('6m', isAuthenticated) as Period);
     // Default режим — Притоки-Оттоки (более информативно для нового пользователя)
-    const [viewMode, setViewMode] = useState<ViewMode>('flows');
-    const [flowTimeframe, setFlowTimeframeRaw] = useState<FlowTimeframe>('1d');
+    const [viewMode, setViewMode] = usePersistedState<ViewMode>('frame:funds:viewMode', 'flows');
+    const [flowTimeframe, setFlowTimeframeRaw] = usePersistedState<FlowTimeframe>('frame:funds:flowTimeframe', '1d');
     const fundsAccess = useTierAccess('funds_money');
     const { showUpgrade } = useUpgradePrompt();
 
@@ -144,8 +146,8 @@ export default function FundsMoneyPage() {
     // Паттерн как в SeasonalityHistogram (handlePointerMove → setTooltip({x,y})).
     const [flowTooltipPos, setFlowTooltipPos] = useState<{ x: number; y: number } | null>(null);
     const [hoveredAnnotation, setHoveredAnnotation] = useState<string | null>(null); // date key
-    const [showEvents, setShowEvents] = useState(false);
-    const [showIndex, setShowIndex] = useState(true);
+    const [showEvents, setShowEvents] = usePersistedState('frame:funds:showEvents', false);
+    const [showIndex, setShowIndex] = usePersistedState('frame:funds:showIndex', true);
     const [flowNavRange, setFlowNavRange] = useState<[number, number]>([0, 0]);
 
     // Onboarding tour. Steps собираются через factory чтобы тур мог

@@ -18,6 +18,7 @@ import Dropdown, { type DropdownOption } from '../components/Dropdown';
 import { useAuth } from '../contexts/AuthContext';
 import { isPeriodAllowed } from '../config/accessControl';
 import { useRealtimeData } from '../hooks/useRealtimeData';
+import { usePersistedState } from '../hooks/usePersistedState';
 import { useFitToViewport } from '../hooks/useFitToViewport';
 import { useIsMobile } from '../hooks/useIsMobile';
 import { useOnboardingTour } from '../hooks/useFirstVisit';
@@ -39,16 +40,17 @@ export default function BuffettPage() {
     const { isAuthenticated } = useAuth();
     const navigate = useNavigate();
     const isMobile = useIsMobile();
-    const [viewMode, setViewMode] = useState<ViewMode>('cap-gdp');
+    // Настройки отображения персистятся в localStorage — не сбрасываются на новой сессии.
+    const [viewMode, setViewMode] = usePersistedState<ViewMode>('frame:buffett:viewMode', 'cap-gdp');
     const buffAccess = useTierAccess('buffett');
     const { showUpgrade } = useUpgradePrompt();
-    const [period, setPeriod] = useState<BuffettPeriod>('10y');
+    const [period, setPeriod] = usePersistedState<BuffettPeriod>('frame:buffett:period', '10y');
     // Показывать капитализацию (secondary axis) — toggle для пользователя
     // если хочет видеть только ratio Кап/ВВП или Кап/M2 без контекста размера.
-    const [showCap, setShowCap] = useState(true);
+    const [showCap, setShowCap] = usePersistedState('frame:buffett:showCap', true);
     const smooth = false;
-    const [timeframe, setTimeframe] = useState<'1d' | '1w' | '1m'>('1m');
-    const [forecastTarget, setForecastTarget] = useState<number | null>(null);
+    const [timeframe, setTimeframe] = usePersistedState<'1d' | '1w' | '1m'>('frame:buffett:timeframe', '1m');
+    const [forecastTarget, setForecastTarget] = usePersistedState<number | null>('frame:buffett:forecastTarget', null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [capGdpData, setCapGdpData] = useState<BuffettCapGdpResponse | null>(null);
