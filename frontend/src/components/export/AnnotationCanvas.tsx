@@ -69,6 +69,35 @@ function luminance(color: string): number {
 }
 
 /**
+ * Цвет контрастной окантовки — контрастирует ФОН (тему), а НЕ краску.
+ * Светлая тема (editorial-light) → почти чёрный, тёмная → белый.
+ *
+ * Раньше окантовка контрастировала саму краску (luminance(ink)), но оранжевый
+ * accent #FF5C2B имеет luma≈0.48 (< 0.6) → попадал в «тёмную краску» → получал
+ * БЕЛУЮ окантовку, невидимую на светлой бумаге. Фон/тема — надёжный сигнал:
+ * холст лежит поверх скриншота текущей темы, поэтому контраст к теме читается
+ * на обоих фонах.
+ */
+function contrastColor(alpha = 1): string {
+    const t = typeof document !== 'undefined'
+        ? document.documentElement.getAttribute('data-theme')
+        : null;
+    let light: boolean;
+    if (t === 'editorial-light') light = true;
+    else if (t === 'editorial-dark') light = false;
+    else {
+        // Фоллбэк (нет/неизвестный data-theme) — по яркости фона.
+        try {
+            const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg-primary');
+            light = luminance(bg.trim()) > 0.5;
+        } catch {
+            light = false;
+        }
+    }
+    return light ? `rgba(0,0,0,${alpha})` : `rgba(255,255,255,${alpha})`;
+}
+
+/**
  * Контрастная окантовка («гало») для нарисованных объектов. Оранжевый accent
  * и прочие цвета теряются на похожем фоне графика (светлая бумага / тёмные
  * свечи). fabric.Shadow с НУЛЕВЫМ offset рисует ровный ореол вокруг штриха со
@@ -86,13 +115,16 @@ function luminance(color: string): number {
  */
 function haloFor(
     fabric: NonNullable<ReturnType<typeof useFabric>>,
-    strokeColor: string,
+    _strokeColor: string,
     strokeWidth: number,
 ) {
-    const haloColor = luminance(strokeColor) > 0.6 ? 'rgba(0,0,0,0.9)' : 'rgba(255,255,255,0.95)';
+    // Цвет гало — контраст к ТЕМЕ/ФОНУ (см. contrastColor), полностью непрозрачный,
+    // широкий blur → заметная окантовка на любом фоне (раньше был слабый и не того
+    // цвета для оранжевого accent).
+    const haloColor = contrastColor(1);
     return new fabric.Shadow({
         color: haloColor,
-        blur: Math.max(4, strokeWidth * 1.5),
+        blur: Math.max(6, strokeWidth * 2),
         offsetX: 0,
         offsetY: 0,
         // КРИТИЧНО: фигуры (line/arrow/rect/circle) и штрихи кисти имеют
@@ -306,7 +338,7 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
                     // глифов (stroke) — буквы читаются и на светлой бумаге, и на
                     // тёмных свечах. paintFirst:'stroke' кладёт обводку ПОД заливку,
                     // чтобы не «съедать» тонкие штрихи шрифта.
-                    const contour = luminance(c) > 0.6 ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.92)';
+                    const contour = contrastColor(0.95); // контраст к теме, не к краске
                     const text = new fabric.IText('Текст', {
                         left: p.x,
                         top: p.y - fontSize / 2,
@@ -469,6 +501,16 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
             // Marquee selection (drag-rect для multi-select) — только в select mode.
             // В drawing modes отключаем чтобы drag по canvas не создавал selection-rect.
             fc.selection = tool === 'select';
+            // При создании нового элемента (любой tool кроме select) ИГНОРИРУЕМ
+            // существующие объекты как цели клика — иначе клик над/рядом со
+            // стрелкой (её bbox шире визуала) выбирал бы её вместо создания нового
+            // элемента (например текста над стрелкой). skipTargetFind = «не искать
+            // объект под курсором» → клик уходит в наш create-handler.
+            fc.skipTargetFind = tool !== 'select';
+            // В режиме выбора — hit-testing по ПИКСЕЛЯМ (а не по bounding-box) +
+            // небольшой допуск: клик ловит саму линию, а не всю диагональную рамку.
+            fc.perPixelTargetFind = true;
+            fc.targetFindTolerance = 8;
             // Cursor подсказывает: в select — стрелка, в drawing — крест.
             fc.defaultCursor = tool === 'select' ? 'default' : 'crosshair';
             fc.hoverCursor = tool === 'select' ? 'move' : 'crosshair';
@@ -491,7 +533,7 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
                 const c = resolveColor(color);
                 if (active.type === 'i-text') {
                     const fontSize = Math.max(14, strokeWidth * 6);
-                    const contour = luminance(c) > 0.6 ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.92)';
+                    const contour = contrastColor(0.95); // контраст к теме, не к краске
                     active.set({
                         fill: c,
                         fontSize,
