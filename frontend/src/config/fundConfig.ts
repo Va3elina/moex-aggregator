@@ -3,12 +3,12 @@
 // `img` (опц.) — путь к фирменному лого УК (рендерится круглым вместо буквы).
 // letter/bg/color остаются как fallback, если картинка не загрузится.
 export const UK_LOGOS: Record<string, { letter: string; bg: string; color: string; name: string; img?: string }> = {
-    '3597': { letter: 'Т', bg: '#FFDD2D', color: '#000000', name: 'Т-Капитал' },
-    '5':    { letter: 'А', bg: '#EF3124', color: '#FFFFFF', name: 'Альфа-Капитал' },
-    '34':   { letter: 'П', bg: '#21A038', color: '#FFFFFF', name: 'Первая' },
-    '7':    { letter: 'В', bg: '#009FDF', color: '#FFFFFF', name: 'ВИМ' },
-    '20':   { letter: 'Р', bg: '#FEE600', color: '#000000', name: 'Райффайзен' },
-    'aton': { letter: 'A', bg: '#1A3C6E', color: '#FFFFFF', name: 'АТОН' },
+    '3597': { letter: 'Т', bg: '#FFDD2D', color: '#000000', name: 'Т-Капитал',     img: '/uk-logos/tcap.png' },
+    '5':    { letter: 'А', bg: '#EF3124', color: '#FFFFFF', name: 'Альфа-Капитал', img: '/uk-logos/alfa.png' },
+    '34':   { letter: 'П', bg: '#21A038', color: '#FFFFFF', name: 'Первая',        img: '/uk-logos/pervaya.png' },
+    '7':    { letter: 'В', bg: '#009FDF', color: '#FFFFFF', name: 'ВИМ',           img: '/uk-logos/vim.png' },
+    '20':   { letter: 'Р', bg: '#FEE600', color: '#000000', name: 'Райффайзен',    img: '/uk-logos/raif.png' },
+    'aton': { letter: 'A', bg: '#1A3C6E', color: '#FFFFFF', name: 'АТОН',          img: '/uk-logos/aton.png' },
     'record': { letter: 'А', bg: '#294C96', color: '#FFFFFF', name: 'Рекорд Капитал', img: '/uk-logos/alenka.svg' },
     'geroi':  { letter: 'Г', bg: '#6B3FA0', color: '#FFFFFF', name: 'ГЕРОИ', img: '/uk-logos/geroi.png' },
 };
