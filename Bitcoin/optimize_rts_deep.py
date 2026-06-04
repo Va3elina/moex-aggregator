@@ -684,8 +684,26 @@ def main():
         seen.add(key)
         deduped.append(r)
 
+    # Build a more diverse top-50: top-15 by phase 1, then 10/10/10/5 from phases 2/3/4/5.
+    quota = {1: 15, 2: 10, 3: 10, 4: 10, 5: 5}
+    chosen = []
+    seen_sig = {}
+    for ph, q in quota.items():
+        ph_results = [r for r in deduped if r['phase'] == ph]
+        # Within phase: limit to top-3 per signal to avoid 1-signal monopoly
+        per_sig = {}
+        added = 0
+        for r in ph_results:
+            cnt = per_sig.get(r['signal'], 0)
+            if cnt >= 3:
+                continue
+            per_sig[r['signal']] = cnt + 1
+            chosen.append(r)
+            added += 1
+            if added >= q:
+                break
     out = []
-    for r in deduped[:50]:
+    for r in chosen[:50]:
         row = {k: v for k, v in r.items() if k != 'yr'}
         for y in range(2020, 2027):
             row[f'y{y}'] = r['yr'].get(y, np.nan)
@@ -693,7 +711,7 @@ def main():
     df_out = pd.DataFrame(out)
     csv_path = ROOT/'rts_top_strategies.csv'
     df_out.to_csv(csv_path, index=False)
-    print(f"\nSaved top-50 deduped → {csv_path}")
+    print(f"\nSaved top-{len(df_out)} (diversified across phases & signals) → {csv_path}")
 
     # Print true top-10 from deduped global list
     print("\n" + "="*100)
