@@ -30,7 +30,7 @@ type SortDir = 'asc' | 'desc';
 
 // Ширины числовых колонок (px) — единый источник для сорт-заголовков И значений,
 // чтобы они стояли строго друг под другом (выровнены по правому краю).
-const COL: Record<SortCol, number> = { change: 76, volume: 74 };
+const COL: Record<SortCol, number> = { change: 76, volume: 96 };
 
 interface InstrumentSearchModalProps {
   onSelect: (sectype: string, name: string) => void;

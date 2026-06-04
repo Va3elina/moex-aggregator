@@ -30,7 +30,7 @@ type SortDir = 'asc' | 'desc';
 
 // Ширины числовых колонок (px) — единый источник для сорт-заголовков И значений,
 // чтобы они гарантированно стояли друг под другом, выровненные по правому краю.
-const COL: Record<SortCol, number> = { volume: 90, weight: 56, funds: 58 };
+const COL: Record<SortCol, number> = { volume: 110, weight: 56, funds: 66 };
 
 /**
  * AssetPickerModal — окно выбора бумаги для «Покупок фондов».
