@@ -125,17 +125,20 @@ def fit_coefficients(chain_path: Path | None = None,
     parsed_all = parsed_all.dropna()
     df_all["strike"]  = parsed_all.apply(lambda p: p["strike"])
     df_all["otype"]   = parsed_all.apply(lambda p: p["option_type"])
+    # Settle-group: series + month_num + year_digit + week  (calls + puts share)
+    df_all["sg"] = parsed_all.apply(
+        lambda p: f"{p['series']}{p['exp_month']:02d}{p['exp_year_digit']}{p['week']}"
+    )
     df_all["expcode"] = parsed_all.apply(lambda p: p["expiry_code"])
     df_all["TRADEDATE"] = pd.to_datetime(df_all["TRADEDATE"])
 
-    # ---- Forward F per (date, expiry) via put-call parity -------------
+    # ---- Forward F per (date, settle_group) via put-call parity -------
     # Use ALL strikes (liquid + illiquid) to maximize K overlap.
     # cp = C - P = exp(-rT) * (F - K)  →  linear fit
     forward = {}
-    for (d, ec), grp in df_all.groupby(["TRADEDATE", "expcode"]):
+    for (d, sg), grp in df_all.groupby(["TRADEDATE", "sg"]):
         calls = grp[grp["otype"] == "C"].set_index("strike")["SETTLEPRICE"]
         puts  = grp[grp["otype"] == "P"].set_index("strike")["SETTLEPRICE"]
-        # Drop duplicate strikes
         calls = calls[~calls.index.duplicated(keep='first')]
         puts  = puts[~puts.index.duplicated(keep='first')]
         common = sorted(set(calls.index) & set(puts.index))
@@ -145,14 +148,13 @@ def fit_coefficients(chain_path: Path | None = None,
         cp = calls.reindex(common).values - puts.reindex(common).values
         try:
             slope, intercept = np.polyfit(K, cp, 1)
-            # slope ≈ -exp(-rT), intercept ≈ exp(-rT)*F  → F ≈ -intercept/slope
             if abs(slope) < 1e-9:
                 continue
             F = -intercept / slope
         except Exception:
             continue
         if F > 0:
-            forward[(d, ec)] = F
+            forward[(d, sg)] = F
 
     if verbose:
         print(f"[bidask] forwards computed: {len(forward):,}")
@@ -166,19 +168,34 @@ def fit_coefficients(chain_path: Path | None = None,
         _COEFFS = dict(_FALLBACK_COEFFS)
         return _COEFFS
 
-    df["F"] = [forward.get((row.TRADEDATE, row.expcode), np.nan)
+    df["F"] = [forward.get((row.TRADEDATE, row.sg), np.nan)
                for row in df.itertuples()]
     df = df[df["F"].notna() & (df["F"] > 0)]
 
-    # We also need T - join expiry_map
+    # We also need T - join expiry_map. The map uses literal expiry_code
+    # (BA0 etc.) which differs for calls vs puts of the same physical
+    # expiry. Build a merged sg→date map by taking call dates and falling
+    # back to puts if missing.
     em_path = ROOT / "sber_expiry_map.csv"
     if not em_path.exists():
         _COEFFS = dict(_FALLBACK_COEFFS)
         return _COEFFS
     em = pd.read_csv(em_path)
     em["expiry_date"] = pd.to_datetime(em["expiry_date"])
-    em_map = dict(zip(em["expiry_code"], em["expiry_date"]))
-    df["expiry"] = df["expcode"].map(em_map)
+    em_map_lit = dict(zip(em["expiry_code"], em["expiry_date"]))
+    # Convert literal code → sg using parse_secid on rep_secid
+    sg_map = {}
+    for _, row in em.iterrows():
+        rep = row.get("rep_secid")
+        if not isinstance(rep, str):
+            continue
+        p = parse_secid(rep)
+        if p is None:
+            continue
+        sg_key = f"{p['series']}{p['exp_month']:02d}{p['exp_year_digit']}{p['week']}"
+        # Keep one date per sg
+        sg_map.setdefault(sg_key, row["expiry_date"])
+    df["expiry"] = df["sg"].map(sg_map)
     df = df[df["expiry"].notna()]
     df["T"] = (df["expiry"] - df["TRADEDATE"]).dt.days / 365.0
     df = df[(df["T"] > 1/365) & (df["T"] < 1.0)]
