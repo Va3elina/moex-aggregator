@@ -24,7 +24,7 @@ const MODES: { id: Mode; label: string }[] = [
 function initStock(p: string | null): string {
   if (p) return p;
   try {
-    return localStorage.getItem('frame:seasonality:stock') || 'SBER';
+    return localStorage.getItem('frame:embed:seasonality:stock') || 'SBER';
   } catch {
     return 'SBER';
   }
@@ -32,7 +32,7 @@ function initStock(p: string | null): string {
 
 function initMode(): Mode {
   try {
-    return (localStorage.getItem('frame:seasonality:mode') as Mode) || 'weekday';
+    return (localStorage.getItem('frame:embed:seasonality:mode') as Mode) || 'weekday';
   } catch {
     return 'weekday';
   }
@@ -49,10 +49,10 @@ export default function EmbedSeasonality() {
   const [tooltip, setTooltip] = useState<Tip>(null);
 
   useEffect(() => {
-    try { localStorage.setItem('frame:seasonality:stock', stock); } catch { /* quota */ }
+    try { localStorage.setItem('frame:embed:seasonality:stock', stock); } catch { /* quota */ }
   }, [stock]);
   useEffect(() => {
-    try { localStorage.setItem('frame:seasonality:mode', mode); } catch { /* quota */ }
+    try { localStorage.setItem('frame:embed:seasonality:mode', mode); } catch { /* quota */ }
   }, [mode]);
 
   useEffect(() => {

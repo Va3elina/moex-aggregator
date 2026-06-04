@@ -27,7 +27,7 @@ type ClGroup = 'FIZ' | 'YUR';
 function readInitialInstrument(param: string | null): string {
   if (param) return param;
   try {
-    return localStorage.getItem('frame:oi:instrument') || 'SR';
+    return localStorage.getItem('frame:embed:oi:instrument') || 'SR';
   } catch {
     return 'SR';
   }
@@ -35,7 +35,7 @@ function readInitialInstrument(param: string | null): string {
 
 function readInitialClgroup(): ClGroup {
   try {
-    return (localStorage.getItem('frame:oi:clgroup') as ClGroup) || 'YUR';
+    return (localStorage.getItem('frame:embed:oi:clgroup') as ClGroup) || 'YUR';
   } catch {
     return 'YUR';
   }
@@ -58,14 +58,14 @@ export default function EmbedOpenInterest() {
   // Persist выбор (зеркалит сайт вне extension).
   useEffect(() => {
     try {
-      localStorage.setItem('frame:oi:instrument', instrument);
+      localStorage.setItem('frame:embed:oi:instrument', instrument);
     } catch {
       /* quota / private */
     }
   }, [instrument]);
   useEffect(() => {
     try {
-      localStorage.setItem('frame:oi:clgroup', clgroup);
+      localStorage.setItem('frame:embed:oi:clgroup', clgroup);
     } catch {
       /* quota / private */
     }

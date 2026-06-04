@@ -25,7 +25,7 @@ const CATS: { id: Category; label: string }[] = [
 function initCat(p: string | null): Category {
   if (p && CATS.some((c) => c.id === p)) return p as Category;
   try {
-    const s = localStorage.getItem('frame:funds:category');
+    const s = localStorage.getItem('frame:embed:funds:category');
     if (s && CATS.some((c) => c.id === s)) return s as Category;
   } catch { /* ignore */ }
   return 'money_market';
@@ -39,7 +39,7 @@ export default function EmbedFundsMoney() {
   const [status, setStatus] = useState<LoadStatus>('idle');
 
   useEffect(() => {
-    try { localStorage.setItem('frame:funds:category', category); } catch { /* quota */ }
+    try { localStorage.setItem('frame:embed:funds:category', category); } catch { /* quota */ }
   }, [category]);
 
   useEffect(() => {
