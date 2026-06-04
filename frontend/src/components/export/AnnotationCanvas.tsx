@@ -292,6 +292,21 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
             fc.on('object:modified', () => saveSnapshot());
             fc.on('text:editing:exited', () => saveSnapshot());
 
+            // Рамка/маркеры выделения — контраст к теме: дефолтный голубой fabric
+            // почти не виден на светлой бумаге. Чёрные на светлой / белые на тёмной,
+            // залитые непрозрачные маркеры + жирнее рамка → выделение хорошо видно.
+            const selColor = contrastColor(1);
+            fc.on('object:added', (e) => {
+                const o = e.target;
+                if (o) o.set({
+                    borderColor: selColor,
+                    cornerColor: selColor,
+                    transparentCorners: false,
+                    cornerSize: 10,
+                    borderScaleFactor: 2,
+                });
+            });
+
             // Shape drawing handlers (line / arrow / rectangle / circle).
             // Активны только когда toolRef.current ≠ 'pen'. PencilBrush сама
             // обрабатывает pen mode, поэтому handlers просто early-return.
@@ -348,10 +363,11 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
                         fontWeight: 600,
                         editable: true,
                         stroke: contour,
-                        strokeWidth: Math.max(1.5, fontSize * 0.06),
+                        strokeWidth: Math.max(2, fontSize * 0.08),
                         paintFirst: 'stroke',
                         strokeUniform: true,
-                        shadow: haloFor(fabric, c, strokeWidthRef.current),
+                        // Без shadow-гало — для текста чистый контур читается лучше,
+                        // чем размытое гало (выглядело как лишняя «подсветка»).
                     });
                     fcLocal.add(text);
                     fcLocal.setActiveObject(text);
@@ -538,9 +554,8 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
                         fill: c,
                         fontSize,
                         stroke: contour,
-                        strokeWidth: Math.max(1.5, fontSize * 0.06),
+                        strokeWidth: Math.max(2, fontSize * 0.08),
                         paintFirst: 'stroke',
-                        shadow: haloFor(fabric, c, strokeWidth),
                     });
                 } else {
                     active.set({ stroke: c, strokeWidth, shadow: haloFor(fabric, c, strokeWidth) });
