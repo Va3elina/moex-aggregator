@@ -194,12 +194,14 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
           cursor: 'pointer',
         }}
       >
-        {label}
+        {/* Иконка СЛЕВА от текста: текст прижат к правому краю колонки → его
+            правый край совпадает с правым краем чисел под заголовком. */}
         {active
           ? (sortDir === 'desc'
               ? <ChevronDown size={13} strokeWidth={2.5} />
               : <ChevronUp size={13} strokeWidth={2.5} />)
           : <ChevronsUpDown size={13} style={{ opacity: 0.5 }} />}
+        {label}
       </button>
     );
   };

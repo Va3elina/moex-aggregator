@@ -149,12 +149,13 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
           cursor: 'pointer',
         }}
       >
-        {label}
+        {/* Иконка СЛЕВА от текста: правый край текста = правый край чисел ниже. */}
         {active
           ? (sortDir === 'desc'
               ? <ChevronDown size={13} strokeWidth={2.5} />
               : <ChevronUp size={13} strokeWidth={2.5} />)
           : <ChevronsUpDown size={13} style={{ opacity: 0.5 }} />}
+        {label}
       </button>
     );
   };
