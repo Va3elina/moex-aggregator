@@ -1,6 +1,6 @@
 import React from 'react';
 import { Lock } from 'lucide-react';
-import { UK_LOGOS } from '../../config/fundConfig';
+import { resolveFundLogo } from '../../config/fundConfig';
 import type { FundInfo, FundsChartResponse } from '../../services/api';
 import { useUpgradePrompt } from '../tier/UpgradeModal';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
@@ -214,7 +214,7 @@ export default function FundsTable({
                                                     >
                                                         <div className="flex items-center gap-2">
                                                             {(() => {
-                                                                const uk = fund.uk_id ? UK_LOGOS[fund.uk_id] : null;
+                                                                const uk = resolveFundLogo(fund.ticker, fund.uk_id);
                                                                 if (uk) {
                                                                     return (
                                                                         <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-sm overflow-hidden"

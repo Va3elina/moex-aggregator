@@ -1,5 +1,5 @@
 import { X } from 'lucide-react';
-import { UK_LOGOS, DONUT_COLORS } from '../../config/fundConfig';
+import { DONUT_COLORS, resolveFundLogo } from '../../config/fundConfig';
 import type { FundInfo, FundHoldingsResponse } from '../../services/api';
 
 interface FundCardModalProps {
@@ -24,8 +24,9 @@ export default function FundCardModal({ selectedFund, fundHoldings, holdingsLoad
                 {/* Header */}
                 <div className="flex items-center justify-between p-5" style={{ borderBottom: '1px solid var(--border-color)' }}>
                     <div className="flex items-center gap-3">
-                        {selectedFund.uk_id && UK_LOGOS[selectedFund.uk_id] && (() => {
-                            const uk = UK_LOGOS[selectedFund.uk_id!];
+                        {(() => {
+                            const uk = resolveFundLogo(selectedFund.ticker, selectedFund.uk_id);
+                            if (!uk) return null;
                             return (
                                 <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 font-black text-xl overflow-hidden"
                                     style={{ backgroundColor: uk.img ? undefined : uk.bg, color: uk.color }}>

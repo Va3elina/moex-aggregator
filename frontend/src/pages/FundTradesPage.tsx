@@ -52,7 +52,7 @@ import PageHeader from '../components/PageHeader';
 import Dropdown from '../components/Dropdown';
 import SimpleChart, { type ChartAnnotation } from '../components/SimpleChart';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
-import { UK_LOGOS, DONUT_COLORS, assetColor } from '../config/fundConfig';
+import { UK_LOGOS, DONUT_COLORS, assetColor, resolveFundLogo } from '../config/fundConfig';
 import Donut from '../components/funds/Donut';
 import CompanyFlowsTab from '../components/fundtrades/CompanyFlowsTab';
 import UkMultiSelect, { type UkOption } from '../components/fundtrades/UkMultiSelect';
@@ -1094,7 +1094,7 @@ export default function FundTradesPage() {
                                 }}
                             >
                                 {list.map((f) => {
-                                    const uk = f.uk_id != null ? UK_LOGOS[String(f.uk_id)] : null;
+                                    const uk = resolveFundLogo(f.ticker, f.uk_id);
                                     // (C) holdings для пончика = топ-10 + «Прочее» (100 − Σтоп), иначе
                                     // донат нормализует топ как 100% и завышает концентрацию. colors —
                                     // ПАРАЛЛЕЛЬНЫЙ массив: фирменный цвет бумаги или DONUT_COLORS по индексу,

@@ -13,6 +13,37 @@ export const UK_LOGOS: Record<string, { letter: string; bg: string; color: strin
     'geroi':  { letter: 'Г', bg: '#6B3FA0', color: '#FFFFFF', name: 'ГЕРОИ', img: '/uk-logos/geroi.png' },
 };
 
+// Авторские фонды — ФОТО основателя вместо УК-лого (ключ = тикер/ISIN фонда).
+// Аватары взяты с finuslugi.ru (карточки фондов), лежат в public/authors/
+// (грузятся лениво по URL, постбилд чистит только dist/logos — их не трогает).
+export const AUTHOR_LOGOS: Record<string, { name: string; img: string }> = {
+    'RU000A10BZ69': { name: 'Евгений Коган',        img: '/authors/kogan.png' },       // Биткоган
+    'RU000A10EBY8': { name: 'Илья Воробьёв',        img: '/authors/vorobiev.png' },    // Долгосрочные инвестиции
+    'RU000A10B8Z2': { name: 'Назар Щетинин',        img: '/authors/shchetinin.png' },  // Блэк лайн
+    'RU000A10B917': { name: 'Константин Кудрицкий', img: '/authors/vasilich.png' },    // Матрёшка а-ля Рус
+    'RU000A10B909': { name: 'Иван Крейнин',         img: '/authors/kreinin.png' },     // Великолепная семёрка
+    'RU000A10D1E0': { name: 'Игорь Шимко',          img: '/authors/shimko.png' },      // Консервативная стратегия
+    'RU000A10D5D3': { name: 'Алексей Линецкий',     img: '/authors/linecki.png' },     // Сбалансированные Возможности
+};
+
+export type FundLogo = { letter: string; bg: string; color: string; name: string; img?: string };
+
+/**
+ * Лого фонда: для авторских фондов — фото основателя (в форме UK_LOGOS-записи,
+ * drop-in замена `UK_LOGOS[uk_id]`), иначе обычное лого УК. ukKey = uk_id или ключ.
+ * Места рендера, где у фонда есть тикер, должны звать это вместо UK_LOGOS[uk_id].
+ */
+export function resolveFundLogo(
+    ticker?: string | null,
+    ukKey?: string | number | null,
+): FundLogo | undefined {
+    if (ticker && AUTHOR_LOGOS[ticker]) {
+        const a = AUTHOR_LOGOS[ticker];
+        return { letter: a.name.charAt(0), bg: '#1A1D28', color: '#FFFFFF', name: a.name, img: a.img };
+    }
+    return ukKey != null ? UK_LOGOS[String(ukKey)] : undefined;
+}
+
 export const CATEGORY_LABELS: Record<string, string> = {
     'money_market': 'Денежный рынок',
     'stocks': 'Акции',
