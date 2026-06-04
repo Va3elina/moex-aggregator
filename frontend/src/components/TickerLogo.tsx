@@ -16,6 +16,14 @@
  * Если тикера нет в манифесте → fallback circle с инициалами.
  */
 import { useEffect, useState } from 'react';
+import plzlLogo from '../assets/plzl.png';
+
+// Лого вне спрайта (отдельные картинки через Vite-import → бандлятся в dist/assets
+// с content-hash, мимо очистки dist/logos в postbuild). Полюс — новый знак
+// (золотые лепестки); спрайтовый PLZL/raw_054 был старым красно-чёрным.
+const INDIVIDUAL_LOGOS: Record<string, string> = {
+  PLZL: plzlLogo,
+};
 
 interface TickerLogoProps {
   ticker: string;
@@ -105,6 +113,26 @@ export default function TickerLogo({
   const borderRadius = RADIUS_MAP[rounded];
   const initials = ticker.slice(0, 2).toUpperCase();
   const hue = tickerHue(ticker);
+
+  // Отдельное картиночное лого (вне спрайта)? → <img>. Приоритет над спрайтом.
+  const individual = INDIVIDUAL_LOGOS[ticker];
+  if (individual) {
+    return (
+      <div
+        className={`flex-shrink-0 ${className}`}
+        style={{ width: size, height: size, borderRadius, overflow: 'hidden' }}
+        aria-label={ticker}
+      >
+        <img
+          src={individual}
+          alt={ticker}
+          width={size}
+          height={size}
+          style={{ width: size, height: size, objectFit: 'cover', display: 'block' }}
+        />
+      </div>
+    );
+  }
 
   // Тикер в манифесте? → sprite render через background-position
   const coords = manifest?.logos[ticker];

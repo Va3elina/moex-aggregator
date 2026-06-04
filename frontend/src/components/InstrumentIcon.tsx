@@ -177,7 +177,7 @@ export const STOCK_LOGO_OVERRIDE: Record<string, string> = {
   OGKB: 'raw_005',  // ОГК-2
   OZPH: 'raw_086',  // ОзонФарма
   PHOR: 'raw_076',  // ФосАгро
-  PLZL: 'raw_054',  // Полюс
+  PLZL: 'PLZL',     // Полюс — новый знак через INDIVIDUAL_LOGOS в TickerLogo (не спрайт)
   RAGR: 'raw_073',  // Русагро
   RENI: 'raw_037',  // Ренессанс
   RASP: 'raw_072',  // Распадская
