@@ -672,9 +672,20 @@ def main():
         print(f"  {r['phase']:>2} {nm:<48} {stop_s:<4} {str(r['killswitch'])[0]} "
               f"{r['cagr_test']:>+6.1f}% {r['dd_test']:>4.0f}% {r['pnl_2022']:>+5.0f}% {r['pf']:>4.2f} {r['nt']:>4} {r['sharpe']:>4.2f}  {yrline(r['yr'])}")
 
-    # Save top 50 to CSV
+    # Dedupe by (signal, killswitch, lev, rounded metrics) — strategies that
+    # produce identical equity curves with different unused param values.
+    seen = set()
+    deduped = []
+    for r in all_results:
+        key = (r['signal'], r['killswitch'], round(r['lev'],2),
+               round(r['tot_test'],2), round(r['dd_test'],2),
+               round(r['pnl_2022'],2), r['nt'])
+        if key in seen: continue
+        seen.add(key)
+        deduped.append(r)
+
     out = []
-    for r in all_results[:50]:
+    for r in deduped[:50]:
         row = {k: v for k, v in r.items() if k != 'yr'}
         for y in range(2020, 2027):
             row[f'y{y}'] = r['yr'].get(y, np.nan)
@@ -682,7 +693,39 @@ def main():
     df_out = pd.DataFrame(out)
     csv_path = ROOT/'rts_top_strategies.csv'
     df_out.to_csv(csv_path, index=False)
-    print(f"\nSaved top-50 → {csv_path}")
+    print(f"\nSaved top-50 deduped → {csv_path}")
+
+    # Print true top-10 from deduped global list
+    print("\n" + "="*100)
+    print("DEDUPED TOP-10 ACROSS ALL PHASES")
+    print("="*100)
+    print(f"  {'ph':>2} {'config':<48} stop ks lev {'CAGRte':>7} {'DDte':>5} {'2022':>6} {'PF':>5} {'N':>4} {'Shrp':>5}  per-year")
+    for r in deduped[:10]:
+        stop_s = f"{r['stop']*100:.0f}%" if r['stop'] is not None else "none"
+        nm = r['signal'][:47]
+        print(f"  {r['phase']:>2} {nm:<48} {stop_s:<4} {str(r['killswitch'])[0]} {r['lev']:.1f} "
+              f"{r['cagr_test']:>+6.1f}% {r['dd_test']:>4.0f}% {r['pnl_2022']:>+5.0f}% {r['pf']:>4.2f} {r['nt']:>4} {r['sharpe']:>4.2f}  {yrline(r['yr'])}")
+
+    # Topical groups: TOP-5 single-signal and TOP-5 multi-signal
+    print("\n" + "="*100)
+    print("DEDUPED TOP-5 SINGLE-SIGNAL (phase 1)")
+    print("="*100)
+    p1 = [r for r in deduped if r['phase'] == 1][:5]
+    for r in p1:
+        stop_s = f"{r['stop']*100:.0f}%" if r['stop'] is not None else "none"
+        print(f"  {r['signal']:<14} qe={r['qe']} stop={stop_s} lev={r['lev']} ks={r['killswitch']} "
+              f"CAGRte={r['cagr_test']:+.1f}% DDte={r['dd_test']:.0f}% 2022={r['pnl_2022']:+.0f}% PF={r['pf']:.2f} N={r['nt']}")
+
+    print("\n" + "="*100)
+    print("DEDUPED TOP-5 MULTI-SIGNAL (phase 2)")
+    print("="*100)
+    p2 = [r for r in deduped if r['phase'] == 2][:5]
+    for r in p2:
+        stop_s = f"{r['stop']*100:.0f}%" if r['stop'] is not None else "none"
+        print(f"  {r['signal']:<46} stop={stop_s} lev={r['lev']} ks={r['killswitch']} "
+              f"CAGRte={r['cagr_test']:+.1f}% DDte={r['dd_test']:.0f}% 2022={r['pnl_2022']:+.0f}% PF={r['pf']:.2f} N={r['nt']}")
+
+    all_results = deduped  # for the best-overall section below
 
     # Useful summary numbers for the report
     if all_results:
