@@ -59,6 +59,7 @@ import UkMultiSelect, { type UkOption } from '../components/fundtrades/UkMultiSe
 import FundPicker, { type FundPickerFund } from '../components/fundtrades/FundPicker';
 import { useViewportWidth } from '../hooks/useViewportWidth';
 import { useGrowReveal } from '../hooks/useGrowReveal';
+import { usePersistedState } from '../hooks/usePersistedState';
 
 type Tab = 'funds' | 'movers' | 'snapshots' | 'company';
 
@@ -685,20 +686,20 @@ function FundDetailModal({
 
 export default function FundTradesPage() {
     const common = useCommonFeatures();
-    const [tab, setTab] = useState<Tab>('funds');
+    const [tab, setTab] = usePersistedState<Tab>('frame:fundtrades:tab', 'funds');
     // Шаг данных — 1 снапшот/месяц. Период фиксирован '1m' (месяц vs предыдущий);
     // селектор месяца появится в Заходе 2 (нужен backend as_of/available_months).
     const [period] = useState<FundTradesPeriod>('1m');
     const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
     // Фильтры «Состав фондов» — combinable (AND): период доходности + сортировка + УК.
     // Период доходности: показывается на плитках И используется для сортировки по доходности.
-    const [returnPeriod, setReturnPeriod] = useState<ReturnPeriodKey>('y1');
+    const [returnPeriod, setReturnPeriod] = usePersistedState<ReturnPeriodKey>('frame:fundtrades:returnPeriod', 'y1');
     // Меню выбора периода — встроено в кнопку сортировки «Доходность».
     const [periodMenuOpen, setPeriodMenuOpen] = useState(false);
     // Hover-подсветка строки меню периода (editorial bg-highlight + сдвиг), как в FundPicker/CbrFlows.
     const [periodMenuHover, setPeriodMenuHover] = useState<ReturnPeriodKey | null>(null);
     // Сортировка карточек: по доходности (за returnPeriod) / объёму руб / имени.
-    const [fundSort, setFundSort] = useState<FundSortKey>('return');
+    const [fundSort, setFundSort] = usePersistedState<FundSortKey>('frame:fundtrades:fundSort', 'return');
     // Мультиселект УК (пусто = все). Ключ — uk_id (стабильнее имени), fallback на uk.
     const [selectedUks, setSelectedUks] = useState<Set<string>>(new Set());
     // Hover-связь пончик↔список на плитке. Ключуем по fund_id (карточки в map, своего
@@ -715,7 +716,7 @@ export default function FundTradesPage() {
     // принимает comma-separated тикеры в параметре `funds` (приоритет над manager).
     // Раньше тут был мультиселект УК (uk_id) — заменён на выбор фондов через FundPicker.
     const [selectedMoverFunds, setSelectedMoverFunds] = useState<Set<string>>(new Set());
-    const [metric, setMetric] = useState<'weight' | 'amount'>('weight'); // % веса | объём ₽
+    const [metric, setMetric] = usePersistedState<'weight' | 'amount'>('frame:fundtrades:metric', 'weight'); // % веса | объём ₽
     // ITEM 2 — предвыбранная бумага для перехода movers → «Потоки по компании».
     const [companyPreset, setCompanyPreset] = useState<{ asset_name: string; isin: string | null } | null>(null);
 
@@ -1901,7 +1902,7 @@ function SnapshotReviewBody({
     onRowClick: (r: FundDiffRow) => void;
 }) {
     // Переключатель метрики (как в «Покупки фондов»): сортировка/бары по объёму ₽ или по доле.
-    const [metric, setMetric] = useState<'amount' | 'weight'>('amount');
+    const [metric, setMetric] = usePersistedState<'amount' | 'weight'>('frame:fundtrades:snapMetric', 'amount');
     const isW = metric === 'weight';
     // value-getters: ₽ (delta/curr/prev amount) и вес (Δдоли / curr / prev).
     const wDelta = (r: FundDiffRow) => (r.curr_weight ?? 0) - (r.prev_weight ?? 0);
