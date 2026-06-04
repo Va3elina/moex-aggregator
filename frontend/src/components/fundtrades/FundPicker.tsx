@@ -433,23 +433,26 @@ function FundPickerModal({
                                             </span>
                                             <span
                                                 style={{
-                                                    fontFamily: 'var(--font-mono, monospace)',
                                                     fontWeight: 700,
-                                                    flexShrink: 0,
-                                                    color: 'var(--text-primary)',
-                                                }}
-                                            >
-                                                {f.ticker}
-                                            </span>
-                                            <span
-                                                style={{
+                                                    flex: 1,
+                                                    minWidth: 0,
                                                     overflow: 'hidden',
                                                     textOverflow: 'ellipsis',
-                                                    color: 'var(--text-secondary)',
+                                                    color: 'var(--text-primary)',
                                                 }}
                                                 title={f.name}
                                             >
                                                 {f.name}
+                                            </span>
+                                            <span
+                                                style={{
+                                                    fontFamily: 'var(--font-mono, monospace)',
+                                                    fontSize: 'var(--fs-xs)',
+                                                    flexShrink: 0,
+                                                    color: 'var(--text-secondary)',
+                                                }}
+                                            >
+                                                {f.ticker}
                                             </span>
                                         </button>
                                     );

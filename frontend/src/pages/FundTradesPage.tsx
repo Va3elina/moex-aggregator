@@ -316,17 +316,18 @@ function FundDetailModal({
                             color: 'var(--text-primary)',
                         }}
                     >
-                        {data?.fund.ticker || ticker}
-                        {data?.fund.name && (
+                        {data?.fund.name || data?.fund.ticker || ticker}
+                        {data?.fund.name && (data?.fund.ticker || ticker) && (
                             <span
                                 style={{
                                     marginLeft: 10,
                                     fontWeight: 400,
                                     fontSize: 'var(--fs-sm)',
+                                    fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
                                     color: 'var(--text-secondary)',
                                 }}
                             >
-                                {data.fund.name}
+                                {data?.fund.ticker || ticker}
                             </span>
                         )}
                     </h2>
@@ -1163,30 +1164,34 @@ export default function FundTradesPage() {
                                             <div style={{ flex: 1, minWidth: 0 }}>
                                                 <div
                                                     style={{
-                                                        fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
                                                         fontSize: 'var(--fs-md)',
                                                         fontWeight: 800,
                                                         color: 'var(--text-primary)',
                                                         lineHeight: 1.2,
                                                         marginBottom: 2,
-                                                    }}
-                                                >
-                                                    {f.ticker}
-                                                </div>
-                                                <div
-                                                    style={{
-                                                        fontSize: 'var(--fs-xs)',
-                                                        color: 'var(--text-secondary)',
-                                                        lineHeight: 1.3,
                                                         display: '-webkit-box',
                                                         WebkitLineClamp: 2,
                                                         WebkitBoxOrient: 'vertical',
                                                         overflow: 'hidden',
-                                                        // (B) фикс под 2 строки — имя никогда не «раздвигает» карточку.
-                                                        minHeight: '2.6em',
+                                                        // Имя — главное; резерв под 2 строки чтобы карточки выравнивались.
+                                                        minHeight: '2.4em',
                                                     }}
+                                                    title={f.name}
                                                 >
                                                     {f.name}
+                                                </div>
+                                                <div
+                                                    style={{
+                                                        fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+                                                        fontSize: 'var(--fs-xs)',
+                                                        color: 'var(--text-secondary)',
+                                                        lineHeight: 1.3,
+                                                        whiteSpace: 'nowrap',
+                                                        overflow: 'hidden',
+                                                        textOverflow: 'ellipsis',
+                                                    }}
+                                                >
+                                                    {f.ticker}
                                                 </div>
                                             </div>
                                         </div>
