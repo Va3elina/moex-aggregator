@@ -136,7 +136,7 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
           e.currentTarget.style.background = 'transparent';
           e.currentTarget.style.color = active ? 'var(--accent)' : 'var(--text-secondary)';
         }}
-        className="flex items-center justify-end uppercase font-bold transition-colors"
+        className="flex items-center justify-end uppercase font-bold whitespace-nowrap transition-colors"
         style={{
           gap: 3,
           width: COL[col],
@@ -305,7 +305,6 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
             className="sticky top-0 z-10 flex items-center gap-3.5 px-3 pt-1 pb-2.5 mb-2"
             style={{ backgroundColor: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)' }}
           >
-            <span style={{ width: 24, flexShrink: 0 }} aria-hidden="true" />
             <span
               className="flex-1 uppercase font-bold"
               style={{ fontSize: 'var(--fs-xs)', letterSpacing: '0.04em', color: 'var(--text-secondary)' }}
