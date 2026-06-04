@@ -58,6 +58,7 @@ import CompanyFlowsTab from '../components/fundtrades/CompanyFlowsTab';
 import UkMultiSelect, { type UkOption } from '../components/fundtrades/UkMultiSelect';
 import FundPicker, { type FundPickerFund } from '../components/fundtrades/FundPicker';
 import { useViewportWidth } from '../hooks/useViewportWidth';
+import { useGrowReveal } from '../hooks/useGrowReveal';
 
 type Tab = 'funds' | 'movers' | 'snapshots' | 'company';
 
@@ -547,6 +548,7 @@ function FundDetailModal({
                                             holdings={donutHoldings}
                                             colors={donutColors}
                                             maxSlices={donutHoldings.length}
+                                            centerCount={data.current_holdings.length}
                                             size={380}
                                             outerRadius={90}
                                             innerRadius={56}
@@ -852,8 +854,10 @@ export default function FundTradesPage() {
                 </span>
                 <div style={{ flex: 1, fontSize: 'var(--fs-sm)', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
                     Отслеживаем <strong style={{ color: 'var(--text-primary)' }}>фонды акций</strong> УК
-                    Первая, Т-Капитал, ВИМ и Альфа. Состав — строго из официальных Справок о
-                    стоимости чистых активов (форма ЦБ № 0420502, точные позиции от самих УК).
+                    Первая, Т-Капитал, ВИМ и Альфа — как индексные (повторяют индекс МосБиржи), так и
+                    {' '}<strong style={{ color: 'var(--text-primary)' }}>авторские</strong> (управляющие
+                    сами отбирают бумаги). Состав — строго из официальных Справок о стоимости чистых
+                    активов (форма ЦБ № 0420502, точные позиции от самих УК).
                     {' '}<strong style={{ color: 'var(--text-primary)' }}>Методология в тестировании
                     и может измениться.</strong>
                 </div>
@@ -1204,6 +1208,7 @@ export default function FundTradesPage() {
                                                         outerRadius={92}
                                                         innerRadius={62}
                                                         maxSlices={donutHoldings.length}
+                                                        centerCount={f.holdings_count}
                                                         showCenterText
                                                         highlightIndex={tileHover?.fund === f.fund_id ? tileHover.idx : null}
                                                         onHoverChange={(i) => setTileHover(i == null ? null : { fund: f.fund_id, idx: i })}
@@ -1650,6 +1655,7 @@ function EditorialBar({
     isPositive,
     onClick,
     formatValue,
+    progress = 1,
 }: {
     label: string;
     subLabel?: string;
@@ -1658,6 +1664,7 @@ function EditorialBar({
     isPositive: boolean;
     onClick?: () => void;
     formatValue?: (absValue: number) => string;
+    progress?: number;
 }) {
     const fmt = formatValue ?? ((v: number) => formatRubShort(v));
     const widthPct = maxAbs > 0 ? Math.max(2, Math.abs(amount) / maxAbs * 100) : 2;
@@ -1692,7 +1699,7 @@ function EditorialBar({
             <div style={{ height: 22, position: 'relative' }}>
                 <div
                     style={{
-                        width: `${widthPct}%`,
+                        width: `${widthPct * progress}%`,
                         height: '100%',
                         background: color,
                         borderRadius: 2,
@@ -2119,6 +2126,13 @@ function SnapshotSection({
 }) {
     const fmt = formatValue ?? ((v: number) => formatRubShort(v));
     const [expanded, setExpanded] = useState(false);
+    const displayed = expanded ? items : items.slice(0, 3);
+    // Entrance-волна баров: перезапуск при смене состава секции (новый снапшот/
+    // фонд/метрика меняют items+maxAbs) и при разворачивании (новые строки).
+    const reveal = useGrowReveal(
+        displayed.length,
+        `${title}|${displayed.length}|${items[0]?.asset_name ?? ''}|${maxAbs.toFixed(0)}`,
+    );
     return (
         <div>
             <div
@@ -2158,7 +2172,7 @@ function SnapshotSection({
                 </span>
             </div>
             <div>
-                {(expanded ? items : items.slice(0, 3)).map((r) => (
+                {displayed.map((r, i) => (
                     <EditorialBar
                         key={`${r.asset_name}-${r.isin || ''}`}
                         label={r.asset_name}
@@ -2168,6 +2182,7 @@ function SnapshotSection({
                         isPositive={isPositive}
                         onClick={onItemClick ? () => onItemClick(r) : undefined}
                         formatValue={formatValue}
+                        progress={reveal[i] ?? 1}
                     />
                 ))}
                 {items.length > 3 && (
@@ -2577,6 +2592,11 @@ function MoversColumn({
         : `${v > 0 ? '+' : ''}${v.toFixed(2)}%`;
     // Гистограмма: ширина бара ∝ |значение| относительно максимума в колонке.
     const maxAbs = Math.max(...items.map((m) => Math.abs(valOf(m))), 0.0001);
+    // Entrance-волна баров: перезапуск при смене данных/метрики/набора фондов.
+    const reveal = useGrowReveal(
+        items.length,
+        `${title}|${metric}|${items.length}|${items[0]?.akey ?? ''}|${maxAbs.toFixed(0)}`,
+    );
     return (
         <div
             style={{
@@ -2689,7 +2709,7 @@ function MoversColumn({
                                         overflow: 'hidden',
                                     }}
                                 >
-                                    <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 3 }} />
+                                    <div style={{ width: `${pct * (reveal[i] ?? 1)}%`, height: '100%', background: color, borderRadius: 3 }} />
                                 </div>
                                 <span
                                     style={{

@@ -1,15 +1,21 @@
 import { useState, useEffect, useRef } from 'react';
-import { Search, X } from 'lucide-react';
+import { Search, X, Star, ChevronUp, ChevronDown } from 'lucide-react';
 import TickerLogo from '../TickerLogo';
 import { assetTicker, assetColor } from '../../config/fundConfig';
+import { formatCompact } from '../../utils/formatNumber';
 
 // Один актив в списке выбора. `key` — стабильный идентификатор строки
 // (обычно isin || asset_name), `funds_count` — сколько фондов держат бумагу.
+// `last_amount_rub` — суммарный объём в портфелях фондов (₽), `avg_weight_pct` —
+// средний вес бумаги в портфелях (%). Поле avg_weight_pct опционально: бэкенд
+// дополняется им параллельно, до его появления родитель может прислать объект без него.
 export interface AssetPickerAsset {
   key: string;
   asset_name: string;
   isin: string | null;
   funds_count: number;
+  last_amount_rub: number | null;
+  avg_weight_pct?: number | null;
 }
 
 export interface AssetPickerModalProps {
@@ -18,19 +24,35 @@ export interface AssetPickerModalProps {
   onClose: () => void;
 }
 
+// Сортировка списка: активная колонка (объём / вес / число фондов) + направление.
+type SortCol = 'volume' | 'weight' | 'funds';
+type SortDir = 'asc' | 'desc';
+
 /**
  * AssetPickerModal — окно выбора бумаги для «Покупок фондов».
  *
  * Стиль и структура зеркалят InstrumentSearchModal (editorial overlay + окно
- * с поиском и списком), но без tier-lock / сортировок / избранного / категорий
- * и без загрузки из API — активы приходят через props.
+ * с поиском, сорт-заголовками, избранным и списком). Активы приходят через
+ * props (без загрузки из API и без tier-lock).
  *
  * Лого: assetTicker(asset_name) → <TickerLogo> (sprite), иначе цветная точка
- * по assetColor(asset_name). Справа — «N фондов». Длинные имена обрезаются
- * (ellipsis + title). Клик по строке → onSelect(asset) + onClose().
+ * по assetColor(asset_name). Справа — три числовые колонки: объём (₽),
+ * средний вес (%) и «N фондов». Длинные имена обрезаются (ellipsis + title).
+ * Клик по строке → onSelect(asset) + onClose(). Клик по звезде — toggle
+ * избранного (localStorage 'favoriteFundTradeAssets', id = asset.key).
  */
 export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPickerModalProps) {
   const [searchQuery, setSearchQuery] = useState('');
+  const [sortCol, setSortCol] = useState<SortCol>('volume');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
+
+  // Избранные из localStorage. Ключ — отдельное пространство имён для бумаг
+  // фондов (id = asset.key = ISIN/имя), НЕ пересекается с favoriteInstruments
+  // (тикеры фьючерсов на ОИ/Сезонности).
+  const [favorites, setFavorites] = useState<string[]>(() => {
+    const saved = localStorage.getItem('favoriteFundTradeAssets');
+    return saved ? JSON.parse(saved) : [];
+  });
 
   // Autofocus — только на desktop (mouse). На мобиле не дёргаем клавиатуру,
   // чтобы пользователь сначала увидел список (как в InstrumentSearchModal).
@@ -42,6 +64,11 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
     }
   }, []);
 
+  // Сохранение избранных
+  useEffect(() => {
+    localStorage.setItem('favoriteFundTradeAssets', JSON.stringify(favorites));
+  }, [favorites]);
+
   // Esc закрывает окно.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -51,15 +78,71 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
+  const toggleFavorite = (key: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (favorites.includes(key)) {
+      setFavorites(favorites.filter(k => k !== key));
+    } else {
+      setFavorites([...favorites, key]);
+    }
+  };
+
   // Фильтрация по имени (поиск нечувствителен к регистру).
   const q = searchQuery.trim().toLowerCase();
-  const filtered = q
+  const filtered = (q
     ? assets.filter((a) => a.asset_name.toLowerCase().includes(q))
-    : assets;
+    : assets
+  ).slice().sort((a, b) => {
+    const pick = (x: AssetPickerAsset) =>
+      sortCol === 'volume' ? x.last_amount_rub
+      : sortCol === 'weight' ? (x.avg_weight_pct ?? null)
+      : x.funds_count;
+    const av = pick(a);
+    const bv = pick(b);
+    // Активы без значения — всегда в конце, в обе стороны сортировки.
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    return sortDir === 'desc' ? bv - av : av - bv;
+  });
+
+  // При поиске — все бумаги в одном списке (избранные не прячутся).
+  const favoriteAssets = q ? [] : filtered.filter((a) => favorites.includes(a.key));
+  const regularAssets = q ? filtered : filtered.filter((a) => !favorites.includes(a.key));
+
+  // Кликабельный заголовок-сортировки. Клик: если колонка уже активна —
+  // переключает направление; иначе делает колонку активной (по убыванию).
+  const renderSortHeader = (col: SortCol, label: string, width: number) => {
+    const active = sortCol === col;
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          if (active) setSortDir(d => (d === 'desc' ? 'asc' : 'desc'));
+          else { setSortCol(col); setSortDir('desc'); }
+        }}
+        className="flex items-center justify-end uppercase font-semibold transition-colors"
+        style={{
+          gap: 2,
+          width,
+          fontSize: 'var(--fs-2xs)',
+          letterSpacing: '0.06em',
+          color: active ? 'var(--accent)' : 'var(--text-secondary)',
+          cursor: 'pointer',
+        }}
+      >
+        {label}
+        {active && (sortDir === 'desc'
+          ? <ChevronDown size={12} />
+          : <ChevronUp size={12} />)}
+      </button>
+    );
+  };
 
   const renderItem = (asset: AssetPickerAsset) => {
     const ticker = assetTicker(asset.asset_name);
     const color = assetColor(asset.asset_name);
+    const isFavorite = favorites.includes(asset.key);
 
     return (
       <div
@@ -95,13 +178,35 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
           {asset.asset_name}
         </span>
 
-        {/* «N фондов» — справа */}
+        {/* Числовые колонки справа: объём (₽) · вес (%) · фонды — выровнены под сорт-заголовки */}
         <span
-          className="flex-shrink-0"
-          style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}
+          className="flex-shrink-0 text-right"
+          style={{ width: 84, fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)' }}
         >
-          {asset.funds_count} фондов
+          {asset.last_amount_rub != null ? `${formatCompact(asset.last_amount_rub)} ₽` : '—'}
         </span>
+        <span
+          className="flex-shrink-0 text-right"
+          style={{ width: 64, fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)' }}
+        >
+          {asset.avg_weight_pct != null ? `${asset.avg_weight_pct.toFixed(1)}%` : '—'}
+        </span>
+        <span
+          className="flex-shrink-0 text-right"
+          style={{ width: 64, fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)' }}
+        >
+          {asset.funds_count}
+        </span>
+
+        {/* Star — toggle избранного, stopPropagation чтобы не выбрать актив */}
+        <button
+          onClick={(e) => toggleFavorite(asset.key, e)}
+          className="p-2 transition-colors flex-shrink-0"
+          style={{ color: isFavorite ? 'var(--accent)' : 'var(--text-muted)' }}
+          aria-label={isFavorite ? 'Убрать из избранных' : 'Добавить в избранные'}
+        >
+          <Star size={20} fill={isFavorite ? 'currentColor' : 'transparent'} />
+        </button>
       </div>
     );
   };
@@ -165,14 +270,59 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
           </div>
         </div>
 
+        {/* Шапка со столбцами — клик по «Объём» / «% в портф.» / «Фонды» сортирует список */}
+        <div
+          className="flex items-center pl-9 pr-6 pb-2 mb-3"
+          style={{ borderBottom: '1px solid var(--border-color)' }}
+        >
+          <span
+            className="uppercase font-semibold flex-1"
+            style={{ fontSize: 'var(--fs-2xs)', letterSpacing: '0.06em', color: 'var(--text-secondary)' }}
+          >
+            Бумага
+          </span>
+          {renderSortHeader('volume', 'Объём', 84)}
+          {renderSortHeader('weight', '% в портф.', 64)}
+          {renderSortHeader('funds', 'Фонды', 64)}
+          {/* spacer под колонку звезды (p-2 + icon 20 = 36px) */}
+          <span style={{ width: 36, flexShrink: 0 }} aria-hidden="true" />
+        </div>
+
         {/* Results */}
-        <div className="overflow-y-auto max-h-[calc(80vh-180px)] px-6 pb-6 styled-scrollbar">
-          {filtered.length === 0 ? (
+        <div className="overflow-y-auto max-h-[calc(80vh-240px)] px-6 pb-6 styled-scrollbar">
+          {favoriteAssets.length === 0 && regularAssets.length === 0 ? (
             <div className="py-12 text-center" style={{ color: 'var(--text-secondary)' }}>
               Ничего не найдено
             </div>
           ) : (
-            <div className="instrument-list">{filtered.map(renderItem)}</div>
+            <>
+              {/* Favorites */}
+              {favoriteAssets.length > 0 && !q && (
+                <div className="mb-6">
+                  <h3
+                    className="text-xs font-semibold uppercase tracking-wider mb-4 pl-3"
+                    style={{ color: 'var(--text-secondary)' }}
+                  >
+                    Избранные
+                  </h3>
+                  <div className="instrument-list">
+                    {favoriteAssets.map(renderItem)}
+                  </div>
+                </div>
+              )}
+
+              {/* Divider */}
+              {!q && favoriteAssets.length > 0 && regularAssets.length > 0 && (
+                <div className="h-px mb-6" style={{ backgroundColor: 'var(--text-primary)', opacity: 0.15 }} />
+              )}
+
+              {/* Regular */}
+              {regularAssets.length > 0 && (
+                <div className="instrument-list">
+                  {regularAssets.map(renderItem)}
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

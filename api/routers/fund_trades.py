@@ -260,6 +260,12 @@ def list_funds_with_history(
              WHERE h.fund_id = f.fund_id AND h.source = ANY(:sources)) AS last_snapshot_date,
             (SELECT COUNT(DISTINCT snapshot_date) FROM fund_holdings_history h
              WHERE h.fund_id = f.fund_id AND h.source = ANY(:sources)) AS snapshot_count,
+            (SELECT COUNT(DISTINCT COALESCE(NULLIF(h.isin, ''), h.asset_name))
+             FROM fund_holdings_history h
+             WHERE h.fund_id = f.fund_id AND h.source = ANY(:sources)
+               AND h.snapshot_date = (SELECT MAX(h2.snapshot_date) FROM fund_holdings_history h2
+                                      WHERE h2.fund_id = f.fund_id AND h2.source = ANY(:sources))
+            ) AS holdings_count,
             fd_last.nav AS nav_rub,
             fd_last.pay AS last_pay,
             fd_1m.pay AS pay_1m,
@@ -353,6 +359,7 @@ def list_funds_with_history(
             "last_snapshot_date": r["last_snapshot_date"].isoformat()
             if r["last_snapshot_date"] else None,
             "snapshot_count": r["snapshot_count"],
+            "holdings_count": int(r["holdings_count"]) if r["holdings_count"] is not None else 0,
             "nav_rub": float(r["nav_rub"]) if r["nav_rub"] is not None else None,
             "returns": {
                 "m1": _calc_total_return(last_pay, r["pay_1m"], r["dist_1m"]),
@@ -1383,7 +1390,7 @@ def list_fund_trade_assets(
     """
     rows = db.execute(text("""
         WITH scoped AS (
-            SELECT h.fund_id, h.snapshot_date, h.asset_name, h.isin, h.amount_rub,
+            SELECT h.fund_id, h.snapshot_date, h.asset_name, h.isin, h.amount_rub, h.weight,
                    COALESCE(NULLIF(h.isin, ''), h.asset_name) AS mkey
             FROM fund_holdings_history h
             JOIN funds f ON f.fund_id = h.fund_id
@@ -1397,18 +1404,19 @@ def list_fund_trade_assets(
         ),
         last_per_fund AS (
             -- последний snapshot ЭТОЙ бумаги В каждом фонде (где она есть).
-            SELECT DISTINCT ON (mkey, fund_id) mkey, fund_id, amount_rub
+            SELECT DISTINCT ON (mkey, fund_id) mkey, fund_id, amount_rub, weight
             FROM scoped
             ORDER BY mkey, fund_id, snapshot_date DESC
         ),
         agg AS (
             SELECT mkey,
                    COUNT(DISTINCT fund_id) AS funds_count,
-                   SUM(amount_rub) AS last_amount_rub
+                   SUM(amount_rub) AS last_amount_rub,
+                   AVG(weight) AS avg_weight_pct
             FROM last_per_fund GROUP BY mkey
         )
         SELECT a.mkey AS key, n.short_name AS asset_name, n.isin,
-               a.funds_count, a.last_amount_rub
+               a.funds_count, a.last_amount_rub, a.avg_weight_pct
         FROM agg a JOIN names n ON n.mkey = a.mkey
         ORDER BY a.funds_count DESC, a.last_amount_rub DESC NULLS LAST, n.short_name
     """), {"tickers": list(WHITELIST_TICKERS), "sources": list(MONTHLY_SOURCES)}).mappings().all()
@@ -1421,6 +1429,7 @@ def list_fund_trade_assets(
                 "isin": r["isin"],
                 "funds_count": int(r["funds_count"]),
                 "last_amount_rub": float(r["last_amount_rub"]) if r["last_amount_rub"] is not None else None,
+                "avg_weight_pct": float(r["avg_weight_pct"]) if r["avg_weight_pct"] is not None else None,
             }
             for r in rows
         ],

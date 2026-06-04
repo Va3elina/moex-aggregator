@@ -1206,6 +1206,7 @@ export interface FundWithHistory {
     subcategory: string | null;
     last_snapshot_date: string | null;
     snapshot_count: number;
+    holdings_count: number;
     snapshots_count?: number; // backward compat
     uk_id?: number | string | null;
     nav_rub: number | null;
@@ -1491,6 +1492,7 @@ export interface FundTradeAsset {
     isin: string | null;
     funds_count: number;
     last_amount_rub: number | null;
+    avg_weight_pct: number | null;
 }
 
 export interface FundTradeAssetsResponse {

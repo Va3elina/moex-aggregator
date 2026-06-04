@@ -16,6 +16,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { GRID } from '../../config/chartTheme';
 import { useIsMobile } from '../../hooks/useIsMobile';
+import { useGrowReveal } from '../../hooks/useGrowReveal';
 import { ChartTooltip, TooltipRow } from '../chart';
 
 export interface StackedSeries {
@@ -38,6 +39,9 @@ interface StackedFlowBarsProps {
     /** Если true и серия одна — красить сегмент по знаку (зелёный + / красный −).
      *  Для «Суммарный Flow». */
     signColorForSingle?: boolean;
+    /** Перезапуск entrance-волны (grow-from-zero): меняй при смене бумаги /
+     *  набора фондов. См. useGrowReveal — ключ ОБЯЗАН ловить и смену count. */
+    animTrigger?: string;
 }
 
 const POSITIVE_COLOR = 'var(--funds-flow-positive)';
@@ -64,6 +68,7 @@ export default function StackedFlowBars({
     formatValue = defaultFormatValue,
     formatMonth = defaultFormatMonth,
     signColorForSingle = false,
+    animTrigger,
 }: StackedFlowBarsProps) {
     const isMobile = useIsMobile();
     const containerRef = useRef<HTMLDivElement>(null);
@@ -72,6 +77,12 @@ export default function StackedFlowBars({
     const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
 
     const isSingleSigned = signColorForSingle && series.length === 1;
+
+    // ── Entrance-волна «grow-from-zero» слева-направо (как в гистограмме ЦБ).
+    //    animKey ловит и явный animTrigger, и первую загрузку ([]→данные) через
+    //    длину months + крайние даты — иначе волна не сыграет при первом открытии. ──
+    const animKey = `${animTrigger ?? ''}|${months.length}|${months[0] ?? ''}|${months[months.length - 1] ?? ''}`;
+    const reveal = useGrowReveal(months.length, animKey);
 
     // ── Геометрия: для каждого месяца считаем сумму положительных и отрицательных
     //    сегментов (divergent), плюс глобальные max(pos) / max(|neg|) для шкалы. ──
@@ -263,11 +274,15 @@ export default function StackedFlowBars({
                                     const opacity = hovered == null ? 1 : isHovered ? 1 : 0.35;
                                     const x = i * barWidthPct + barWidthPct * 0.15;
                                     const w = barWidthPct * 0.7;
+                                    // Entrance-прогресс этого периода (grow-from-zero у midY).
+                                    // progress=0 → бар нулевой высоты; 1 → полный. И высота,
+                                    // и смещение стека масштабируются — стек остаётся корректным.
+                                    const progress = reveal[i] ?? 1;
 
                                     // Положительный стек — растёт вверх от midY.
                                     let cumPos = 0;
                                     const posRects = layout.posStacks[i].map((seg, si) => {
-                                        const segH = Math.max((seg.value / layout.maxAbs) * halfH, minSegH);
+                                        const segH = Math.max((seg.value / layout.maxAbs) * halfH, minSegH) * progress;
                                         const yTop = midY - cumPos - segH;
                                         cumPos += segH;
                                         return (
@@ -288,7 +303,7 @@ export default function StackedFlowBars({
                                     // Отрицательный стек — растёт вниз от midY.
                                     let cumNeg = 0;
                                     const negRects = layout.negStacks[i].map((seg, si) => {
-                                        const segH = Math.max((Math.abs(seg.value) / layout.maxAbs) * halfH, minSegH);
+                                        const segH = Math.max((Math.abs(seg.value) / layout.maxAbs) * halfH, minSegH) * progress;
                                         const yTop = midY + cumNeg;
                                         cumNeg += segH;
                                         return (

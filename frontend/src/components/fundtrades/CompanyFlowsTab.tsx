@@ -240,6 +240,10 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed }: Compa
         [fundSeries],
     );
 
+    // Триггер entrance-волны стек-баров: перезапуск при смене бумаги ИЛИ набора
+    // фондов/УК (StackedFlowBars сам домешивает длину months для первой загрузки).
+    const animTrigger = `${selectedAsset?.key ?? ''}|${[...selectedFunds].sort().join(',')}`;
+
     // ── Рендер ──
     if (assetsLoading) {
         return (
@@ -416,7 +420,7 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed }: Compa
                     </div>
                 )}
 
-                <StackedFlowBars months={flows?.months ?? []} series={fundSeries} height={340} />
+                <StackedFlowBars months={flows?.months ?? []} series={fundSeries} height={340} animTrigger={animTrigger} />
             </section>
 
             {/* Чарт 2: Суммарный Flow */}
@@ -429,6 +433,7 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed }: Compa
                     series={totalSeries}
                     height={280}
                     signColorForSingle
+                    animTrigger={animTrigger}
                 />
             </section>
 

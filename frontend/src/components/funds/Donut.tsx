@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { DONUT_COLORS } from '../../config/fundConfig';
+import { useGrowReveal } from '../../hooks/useGrowReveal';
 
 interface DonutProps {
     holdings: { name: string; weight: number }[];  // weight в любых единицах — нормируется
@@ -8,6 +9,9 @@ interface DonutProps {
     innerRadius?: number;   // default 45
     maxSlices?: number;     // default 10; остальное агрегируется в "Прочее"
     showCenterText?: boolean; // default true: число сегментов + "позиций"
+    // Реальное число позиций фонда для центра (а не число отрисованных слайсов).
+    // Тайл передаёт [топ-10, Прочее] → segmentCount был бы 11; centerCount фиксит это.
+    centerCount?: number;
     colors?: string[];      // default DONUT_COLORS из fundConfig
     // Опц. клик по сектору. index — позиция отрисованного слайса (= holdings, если
     // maxSlices >= holdings.length). Включает cursor:pointer.
@@ -32,6 +36,7 @@ export default function Donut({
     innerRadius = 45,
     maxSlices = 10,
     showCenterText = true,
+    centerCount,
     colors = DONUT_COLORS,
     onSliceClick,
     highlightIndex = null,
@@ -68,6 +73,12 @@ export default function Donut({
         return { paths: built, items, total, segmentCount: holdings.length };
     }, [holdings, outerRadius, innerRadius, maxSlices, colors]);
 
+    // Entrance-reveal: проявление слайсов при mount/смене состава (НЕ при hover).
+    // Ключ зависит ТОЛЬКО от состава → hover/returnPeriod (не меняющие holdings) не
+    // перезапускают анимацию.
+    const animKey = `${holdings.length}|${holdings[0]?.name ?? ''}|${total.toFixed(1)}`;
+    const reveal = useGrowReveal(paths.length, animKey);
+
     const setH = (i: number | null) => { setHover(i); onHoverChange?.(i); };
     const activeName = active != null && items[active] ? items[active].name : '';
     const activePct = active != null && items[active] && total > 0
@@ -79,33 +90,42 @@ export default function Donut({
 
     return (
         <svg viewBox="0 0 200 200" width={size} height={size} style={{ overflow: 'visible' }}>
-            {paths.map((p, i) => {
-                const on = active === i;
-                const dim = active != null && active !== i;
-                const off = on ? 7 : 0; // «выдвижение» наружу по биссектрисе
-                return (
-                    <path
-                        key={i}
-                        d={p.d}
-                        fill={p.color}
-                        stroke="var(--bg-primary)"
-                        strokeWidth={on ? 2 : 1.5}
-                        transform={off ? `translate(${(p.mx * off).toFixed(2)} ${(p.my * off).toFixed(2)})` : undefined}
-                        opacity={dim ? 0.4 : 1}
-                        onMouseEnter={interactive ? () => setH(i) : undefined}
-                        onMouseLeave={interactive ? () => setH(null) : undefined}
-                        onClick={onSliceClick ? () => onSliceClick(i) : undefined}
-                        style={{
-                            cursor: onSliceClick ? 'pointer' : 'default',
-                            transition: 'transform 140ms ease, opacity 140ms ease, stroke-width 140ms ease',
-                        }}
-                    />
-                );
-            })}
+            <g
+                style={{
+                    transformBox: 'view-box',
+                    transformOrigin: '100px 100px',
+                    transform: `scale(${(0.92 + 0.08 * (reveal[reveal.length - 1] ?? 1)).toFixed(3)})`,
+                }}
+            >
+                {paths.map((p, i) => {
+                    const on = active === i;
+                    const dim = active != null && active !== i;
+                    const off = on ? 7 : 0; // «выдвижение» наружу по биссектрисе
+                    const p0 = reveal[i] ?? 1; // entrance-progress слайса i
+                    return (
+                        <path
+                            key={i}
+                            d={p.d}
+                            fill={p.color}
+                            stroke="var(--bg-primary)"
+                            strokeWidth={on ? 2 : 1.5}
+                            transform={off ? `translate(${(p.mx * off).toFixed(2)} ${(p.my * off).toFixed(2)})` : undefined}
+                            opacity={(dim ? 0.4 : 1) * p0}
+                            onMouseEnter={interactive ? () => setH(i) : undefined}
+                            onMouseLeave={interactive ? () => setH(null) : undefined}
+                            onClick={onSliceClick ? () => onSliceClick(i) : undefined}
+                            style={{
+                                cursor: onSliceClick ? 'pointer' : 'default',
+                                transition: 'transform 140ms ease, opacity 140ms ease, stroke-width 140ms ease',
+                            }}
+                        />
+                    );
+                })}
+            </g>
             {showCenterText && active == null && (
                 <>
                     <text x="100" y="95" textAnchor="middle" fill="var(--text-primary)" fontSize={cf(19)} fontWeight="bold">
-                        {segmentCount}
+                        {centerCount ?? segmentCount}
                     </text>
                     <text x="100" y="116" textAnchor="middle" fill="var(--text-muted)" fontSize={cf(11)}>
                         позиций
