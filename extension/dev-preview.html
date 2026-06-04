@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <title>Фрейм widget — dev preview</title>
+  <style>
+    html, body { margin: 0; height: 100%; }
+    body { background: #0b0d12; color: #39414f; font-family: monospace; }
+    .term { padding: 18px; font-size: 12px; line-height: 1.8; }
+    .term b { color: #5b6678; }
+  </style>
+</head>
+<body>
+  <!-- Заглушка «терминала» под плавающим окном. Открой через локальный сервер,
+       чтобы iframe embed-роута грузился same-origin (без CSP-проблем):
+         cd extension && python3 -m http.server 8910  →  localhost:8910/dev-preview.html
+       Перед этим подними фронт Фрейма на :5173 и поправь EMBED_BASE ниже при нужде. -->
+  <div class="term">
+    <b>[ заглушка терминала Т-Инвестиции ]</b><br />
+    График · Стакан · Заявки · Сделки · Портфель · Новости …<br />
+    (плавающее окно Фрейма — справа сверху)
+  </div>
+  <script>window.FRAME_WIDGET_EMBED_BASE = 'http://localhost:5173';</script>
+  <script src="src/widget.js"></script>
+  <script>window.FrameWidget && window.FrameWidget.mount(document.body);</script>
+</body>
+</html>

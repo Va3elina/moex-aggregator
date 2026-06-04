@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "Фрейм — индикаторы в терминале",
+  "version": "0.1.0",
+  "description": "Аналитические индикаторы Фрейм (таймфрейм.рф) плавающим окном поверх торгового терминала Т-Инвестиций.",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://*.tbank.ru/*",
+    "https://*.tinkoff.ru/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.tbank.ru/terminal/*",
+        "https://*.tbank.ru/invest/web-terminal/*",
+        "https://*.tinkoff.ru/invest-terminal/*"
+      ],
+      "js": ["src/widget.js", "src/content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "src/popup.html",
+    "default_title": "Фрейм"
+  }
+}

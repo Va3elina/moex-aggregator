@@ -37,6 +37,7 @@ import SeasonalityMethodologyPage from './pages/methodology/SeasonalityMethodolo
 import CbrFlowsMethodologyPage from './pages/methodology/CbrFlowsMethodologyPage';
 import StylePreviewPage from './pages/StylePreviewPage';
 import SignalExportPage from './pages/SignalExportPage';
+import EmbedPage from './pages/embed/EmbedPage';
 import PrivacyPage from './pages/PrivacyPage';
 import AgreementPage from './pages/legal/AgreementPage';
 import OfferPage from './pages/legal/OfferPage';
@@ -107,7 +108,7 @@ function ScrollToTop() {
  */
 function ConditionalCookieBanner() {
   const loc = useLocation();
-  if (loc.pathname.startsWith('/signal-export')) return null;
+  if (loc.pathname.startsWith('/signal-export') || loc.pathname.startsWith('/embed')) return null;
   return <CookieConsentBanner />;
 }
 
@@ -144,6 +145,11 @@ export default function App() {
 
           {/* Headless-render для signal-engine — без Layout (только chart+frame) */}
           <Route path="/signal-export" element={<SignalExportPage />} />
+
+          {/* Embed-роуты для встраивания индикаторов в терминал Т-Инвестиций
+              (расширение) и как shareable-ссылки на «голый» график. Без Layout.
+              План: .claude/TERMINAL_EXTENSION_PLAN.md */}
+          <Route path="/embed/:indicator" element={<EmbedPage />} />
 
           {/* Привязка реального email — обязательная страница для OAuth-юзеров
               с synthetic email (Telegram/VK без email). Без Layout — fullscreen

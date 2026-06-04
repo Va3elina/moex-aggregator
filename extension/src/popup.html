@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Фрейм</title>
+  <style>
+    :root { --bg:#0E0E10; --panel:#17161A; --text:#F5F1E8; --dim:#9A958C; --accent:#FF5C2B; --border:#F5F1E8; }
+    * { box-sizing: border-box; }
+    body {
+      width: 260px; margin: 0; padding: 16px;
+      background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+    }
+    .hd { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); }
+    .logo { font-weight: 800; font-size: 16px; letter-spacing: -0.01em; }
+    p { margin: 0 0 10px; font-size: 12.5px; line-height: 1.5; color: var(--dim); }
+    .btn {
+      display: block; text-align: center; text-decoration: none;
+      padding: 9px 12px; margin-top: 6px;
+      background: var(--accent); color: #fff; font-weight: 700; font-size: 13px;
+      border: 2px solid var(--border); border-radius: 3px; box-shadow: 3px 3px 0 rgba(0,0,0,0.5);
+    }
+    .ver { margin-top: 14px; font-size: 10px; color: var(--dim); opacity: 0.7; }
+  </style>
+</head>
+<body>
+  <div class="hd"><span class="dot"></span><span class="logo">Фрейм</span></div>
+  <p>Индикаторы Фрейм плавающим окном поверх терминала Т-Инвестиций.</p>
+  <p>Откройте торговый терминал — окно появится автоматически. Перетаскивайте за шапку, переключайте вкладки.</p>
+  <a class="btn" href="https://xn--80aklbnczmv.xn--p1ai" target="_blank" rel="noopener noreferrer">Открыть таймфрейм.рф</a>
+  <p class="ver">v0.1.0 · авторизация и синк с терминалом — в разработке</p>
+  <script src="popup.js"></script>
+</body>
+</html>
