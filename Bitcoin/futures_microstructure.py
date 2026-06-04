@@ -67,9 +67,12 @@ def daily_curve(f):
     return pd.DataFrame(rows).set_index('date').sort_index()
 
 
-def build_signals(asset, fut_csv, prefix, spot_csv, spot_col='close', spot_scale=1.0):
+def build_signals(asset, fut_csv, prefix, spot_csv, spot_col='close', spot_scale=1.0, fut_scale=1.0):
     f = build_futures_curve(fut_csv, prefix)
     curve = daily_curve(f)
+    # scale futures prices to spot units
+    for c in ['front_px','front_open','next_px']:
+        if c in curve.columns: curve[c] = curve[c] / fut_scale
     spot = pd.read_csv(ROOT/spot_csv, parse_dates=['date']).set_index('date')[spot_col]
     df = curve.copy()
     df['spot'] = spot.reindex(df.index).ffill() * spot_scale
@@ -164,16 +167,19 @@ def analyze(asset, df):
 
 
 def main():
-    # spot_scale: Si futures in points (×1000 of rub/usd); RTS index points
+    # fut_scale: divide futures price to match spot units.
+    #   SBER/GAZP futures = kopecks×100 of stock (1 contract = 100 shares) -> /100
+    #   Si: si_daily 'close' is futures points already -> spot=close, basis~0; use rub_per_usd spot, fut/1000
+    #   RTS: index points, spot rts_daily 'close' also index -> /1.0
     configs = [
-        ('SBER', 'sber_futures_history.csv', 'SR', 'sber_daily.csv', 'close', 1.0),
-        ('GAZP', 'gazp_futures_history.csv', 'GZ', 'gazp_daily.csv', 'close', 1.0),
-        ('Si',   'si_futures_history.csv',   'Si', 'si_daily.csv', 'close', 1.0),
-        ('RTS',  'rts_futures_history.csv',  'RI', 'rts_daily.csv', 'close', 1.0),
+        ('SBER', 'sber_futures_history_merged.csv', 'SR', 'sber_daily.csv', 'close', 1.0, 100.0),
+        ('GAZP', 'gazp_futures_history_merged.csv', 'GZ', 'gazp_daily.csv', 'close', 1.0, 100.0),
+        ('Si',   'si_futures_history_merged.csv',   'Si', 'si_daily.csv', 'rub_per_usd', 1.0, 1000.0),
+        ('RTS',  'rts_futures_history_merged.csv',  'RI', 'rts_daily.csv', 'close', 1.0, 1.0),
     ]
-    for asset, fc, pfx, sc, scol, scale in configs:
+    for asset, fc, pfx, sc, scol, scale, fut_scale in configs:
         try:
-            df = build_signals(asset, fc, pfx, sc, scol, scale)
+            df = build_signals(asset, fc, pfx, sc, scol, scale, fut_scale)
             analyze(asset, df)
             df.to_csv(ROOT/f'{asset.lower()}_microstructure.csv')
         except Exception as e:
