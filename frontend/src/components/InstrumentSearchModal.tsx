@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Search, X, Star, Lock, ChevronUp, ChevronDown } from 'lucide-react';
+import { Search, X, Star, Lock, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import InstrumentIcon from './InstrumentIcon';
 import { formatCompact } from '../utils/formatNumber';
 import { useAnalytics } from '../contexts/AnalyticsContext';
@@ -27,6 +27,10 @@ const CATEGORY_FILTERS = [
 // Сортировка списка: активная колонка (изменение / объём) + направление.
 type SortCol = 'change' | 'volume';
 type SortDir = 'asc' | 'desc';
+
+// Ширины числовых колонок (px) — единый источник для сорт-заголовков И значений,
+// чтобы они стояли строго друг под другом (выровнены по правому краю).
+const COL: Record<SortCol, number> = { change: 62, volume: 74 };
 
 interface InstrumentSearchModalProps {
   onSelect: (sectype: string, name: string) => void;
@@ -156,30 +160,46 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
     }
   };
 
-  // Кликабельный заголовок-сортировки. Клик: если колонка уже активна —
-  // переключает направление; иначе делает колонку активной (по убыванию).
-  const renderSortHeader = (col: SortCol, label: string) => {
+  // Кликабельный заголовок-сортировки. Иконка-индикатор ВСЕГДА (⇅ для неактивных —
+  // «можно сортировать», ↑/↓ для активной) + hover-подсветка — очевидно, что
+  // заголовки кликабельны. Ширина = COL[col] → значения стоят строго под ними.
+  const renderSortHeader = (col: SortCol, label: string, hint: string) => {
     const active = sortCol === col;
     return (
       <button
         type="button"
+        title={hint}
         onClick={() => {
-          if (active) setSortDir(d => (d === 'desc' ? 'asc' : 'desc'));
+          if (active) setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'));
           else { setSortCol(col); setSortDir('desc'); }
         }}
-        className="flex items-center uppercase font-semibold transition-colors"
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background = 'color-mix(in srgb, var(--text-primary) 8%, transparent)';
+          if (!active) e.currentTarget.style.color = 'var(--text-primary)';
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = 'transparent';
+          e.currentTarget.style.color = active ? 'var(--accent)' : 'var(--text-secondary)';
+        }}
+        className="flex items-center justify-end uppercase font-bold transition-colors"
         style={{
-          gap: 2,
-          fontSize: 'var(--fs-2xs)',
-          letterSpacing: '0.06em',
+          gap: 3,
+          width: COL[col],
+          flexShrink: 0,
+          padding: '5px 0',
+          borderRadius: 6,
+          fontSize: 'var(--fs-xs)',
+          letterSpacing: '0.04em',
           color: active ? 'var(--accent)' : 'var(--text-secondary)',
           cursor: 'pointer',
         }}
       >
         {label}
-        {active && (sortDir === 'desc'
-          ? <ChevronDown size={12} />
-          : <ChevronUp size={12} />)}
+        {active
+          ? (sortDir === 'desc'
+              ? <ChevronDown size={13} strokeWidth={2.5} />
+              : <ChevronUp size={13} strokeWidth={2.5} />)
+          : <ChevronsUpDown size={13} style={{ opacity: 0.5 }} />}
       </button>
     );
   };
@@ -223,58 +243,67 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
           ? `Доступно на тарифе ${requiredTier === 'basic' ? 'Basic' : 'Pro'}`
           : undefined}
       >
-        {/* Затемнённая часть — иконка + тикер + название. opacity 0.45 если заблокирован. */}
-        <div
-          className="flex items-center gap-3.5 flex-1 min-w-0"
-          style={{
-            opacity: accessible ? 1 : 0.45,
-            filter: accessible ? undefined : 'grayscale(0.5)',
-          }}
+        {/* Иконка (32) — отдельный flex-child, зеркалит спейсер в шапке */}
+        <span
+          style={{ flexShrink: 0, lineHeight: 0, opacity: accessible ? 1 : 0.45, filter: accessible ? undefined : 'grayscale(0.5)' }}
         >
           <InstrumentIcon sectype={inst.sectype} size={32} />
-          <span className="font-bold flex-shrink-0 mr-1.5" style={{ fontSize: 'var(--fs-sm)' }}>{inst.sectype}</span>
-          <span className="truncate flex-1" style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-xs)' }}>{inst.name}</span>
-        </div>
+        </span>
 
-        {/* Изменение за торговый день + объём (дневной ТФ) */}
+        {/* Актив: тикер + название (flex-1) */}
         <div
-          className="flex-shrink-0 text-right leading-tight"
-          style={{ opacity: accessible ? 1 : 0.45, minWidth: 72 }}
+          className="flex items-baseline gap-1.5 flex-1 min-w-0"
+          style={{ opacity: accessible ? 1 : 0.45 }}
         >
-          {inst.day_change_pct != null && (
-            <div
-              style={{
-                fontSize: 'var(--fs-xs)',
-                fontWeight: 600,
-                color: inst.day_change_pct >= 0
-                  ? 'var(--funds-flow-positive)'
-                  : 'var(--funds-flow-negative)',
-              }}
-            >
-              {inst.day_change_pct >= 0 ? '+' : ''}{inst.day_change_pct.toFixed(2)}%
-            </div>
-          )}
-          {inst.daily_volume ? (
-            <div style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)' }}>
-              {formatCompact(inst.daily_volume)}
-            </div>
-          ) : null}
+          <span className="font-bold flex-shrink-0" style={{ fontSize: 'var(--fs-sm)' }}>{inst.sectype}</span>
+          <span className="truncate" style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-xs)' }}>{inst.name}</span>
         </div>
 
-        {/* Lock icon если заблокирован — между названием и звёздочкой */}
-        {!accessible && (
-          <Lock
-            size={16}
-            strokeWidth={2.2}
-            style={{ color: 'var(--text-muted)', flexShrink: 0 }}
-            aria-label="Доступно на повышенном тарифе"
-          />
-        )}
+        {/* Изм. % — семантический цвет (зелёный/красный). Активная колонка bold. */}
+        <span
+          className="flex-shrink-0 text-right"
+          style={{
+            width: COL.change,
+            fontSize: 'var(--fs-sm)',
+            fontVariantNumeric: 'tabular-nums',
+            fontWeight: sortCol === 'change' ? 700 : 600,
+            opacity: accessible ? 1 : 0.45,
+            color: inst.day_change_pct == null
+              ? 'var(--text-muted)'
+              : inst.day_change_pct >= 0 ? 'var(--funds-flow-positive)' : 'var(--funds-flow-negative)',
+          }}
+        >
+          {inst.day_change_pct != null ? `${inst.day_change_pct >= 0 ? '+' : ''}${inst.day_change_pct.toFixed(2)}%` : '—'}
+        </span>
+
+        {/* Объём — нейтральный; активная колонка ярче (text-primary bold) */}
+        <span
+          className="flex-shrink-0 text-right"
+          style={{
+            width: COL.volume,
+            fontSize: 'var(--fs-sm)',
+            fontVariantNumeric: 'tabular-nums',
+            fontWeight: sortCol === 'volume' ? 700 : 600,
+            opacity: accessible ? 1 : 0.45,
+            color: inst.daily_volume
+              ? (sortCol === 'volume' ? 'var(--text-primary)' : 'var(--text-secondary)')
+              : 'var(--text-muted)',
+          }}
+        >
+          {inst.daily_volume ? formatCompact(inst.daily_volume) : '—'}
+        </span>
+
+        {/* Lock-слот (фикс. 18px — звезда не смещается между заблок./доступными) */}
+        <span style={{ width: 18, flexShrink: 0, display: 'flex', justifyContent: 'center' }}>
+          {!accessible && (
+            <Lock size={15} strokeWidth={2.2} style={{ color: 'var(--text-muted)' }} aria-label="Доступно на повышенном тарифе" />
+          )}
+        </span>
 
         {/* Star — всегда кликабельна (можно добавить в избранное даже заблок. актив) */}
         <button
           onClick={(e) => toggleFavorite(inst.sectype, e)}
-          className="p-2 transition-colors"
+          className="p-2 transition-colors flex-shrink-0"
           style={{ color: isFavorite ? 'var(--accent)' : 'var(--text-muted)' }}
           aria-label={isFavorite ? 'Убрать из избранных' : 'Добавить в избранные'}
         >
@@ -365,25 +394,33 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
           )}
         </div>
 
-        {/* Шапка со столбцами — клик по «Изм. %» / «Объём» сортирует список */}
+        {/* Results — sticky-шапка колонок ВНУТРИ скролла: общий скроллбар
+            (scrollbar-gutter stable) + одинаковые с строками отступы/gap/ширины
+            → заголовки и значения гарантированно в одной сетке. */}
         <div
-          className="flex items-center pl-9 pr-6 pb-2 mb-3"
-          style={{ borderBottom: '1px solid var(--border-color)' }}
+          className="overflow-y-auto max-h-[calc(78vh-220px)] px-6 pb-6 styled-scrollbar"
+          style={{ scrollbarGutter: 'stable' }}
         >
-          <span
-            className="uppercase font-semibold"
-            style={{ fontSize: 'var(--fs-2xs)', letterSpacing: '0.06em', color: 'var(--text-secondary)' }}
-          >
-            Актив
-          </span>
-          <div className="ml-auto flex items-center" style={{ gap: 'var(--sp-4)', paddingRight: 48 }}>
-            {renderSortHeader('change', 'Изм. %')}
-            {renderSortHeader('volume', 'Объём')}
-          </div>
-        </div>
-
-        {/* Results */}
-        <div className="overflow-y-auto max-h-[calc(78vh-220px)] px-6 pb-6 styled-scrollbar">
+          {/* Sticky-шапка — кликабельная сортировка, зеркалит строку списка
+              ([иконка 32]·gap·[Актив flex-1]·[Изм.]·[Объём]·[lock 18]·[звезда 36]) */}
+          {!loading && (
+            <div
+              className="sticky top-0 z-10 flex items-center gap-3.5 px-3 pt-1 pb-2.5 mb-2"
+              style={{ backgroundColor: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)' }}
+            >
+              <span style={{ width: 32, flexShrink: 0 }} aria-hidden="true" />
+              <span
+                className="flex-1 uppercase font-bold"
+                style={{ fontSize: 'var(--fs-xs)', letterSpacing: '0.04em', color: 'var(--text-secondary)' }}
+              >
+                Актив
+              </span>
+              {renderSortHeader('change', 'Изм. %', 'Изменение цены за торговый день, %')}
+              {renderSortHeader('volume', 'Объём', 'Объём торгов за день, ₽')}
+              <span style={{ width: 18, flexShrink: 0 }} aria-hidden="true" />
+              <span style={{ width: 36, flexShrink: 0 }} aria-hidden="true" />
+            </div>
+          )}
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <div
