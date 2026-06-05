@@ -16,15 +16,16 @@ import {
     type ExtensionTokenInfo,
     type ExtensionTokenCreated,
 } from '../../services/api';
-import { useCommonFeatures } from '../../contexts/TierFeaturesContext';
+import { useAuth } from '../../contexts/AuthContext';
 import { useUpgradePrompt } from '../tier/UpgradeModal';
 
 const UPGRADE = { tier: 'pro' as const, featureName: 'Расширение для терминала', indicator: 'api_access' };
 
 export default function ExtensionTokenSection() {
-    const common = useCommonFeatures();
+    const { user } = useAuth();
     const { showUpgrade } = useUpgradePrompt();
-    const isPro = !!common.api_access; // api_access PRO-gated → прокси «is PRO»
+    // PRO или ADMIN — как на бэкенде (require_pro: role in [pro, admin]).
+    const isPro = user?.role === 'pro' || user?.role === 'admin';
 
     const [tokens, setTokens] = useState<ExtensionTokenInfo[]>([]);
     const [loading, setLoading] = useState(true);
