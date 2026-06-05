@@ -450,7 +450,7 @@ export default function MobileHeatmapPage() {
                       fill="#fff"
                       fontSize={tk}
                       fontWeight={800}
-                      style={{ textShadow: '0 1px 2px rgba(0,0,0,0.7)', letterSpacing: '-0.02em' }}
+                      style={{ letterSpacing: '-0.02em' }}
                     >
                       {r.id}
                     </text>
@@ -465,7 +465,6 @@ export default function MobileHeatmapPage() {
                       fontSize={pct}
                       fontWeight={600}
                       opacity={0.92}
-                      style={{ textShadow: '0 1px 2px rgba(0,0,0,0.7)' }}
                     >
                       {formatPercent(change)}
                     </text>

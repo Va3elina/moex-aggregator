@@ -541,7 +541,6 @@ export default function HeatmapPage() {
             clipPath={`url(#${clipId})`}
             {...(tickerNeedsCompress ? { textLength: tickerMaxWidth, lengthAdjust: 'spacingAndGlyphs' as const } : {})}
             style={{
-              textShadow: '0 2px 8px rgba(0,0,0,0.8), 0 1px 3px rgba(0,0,0,0.9)',
               letterSpacing: '-0.02em',
               transition: 'font-size 0.3s ease',
             }}
@@ -560,9 +559,6 @@ export default function HeatmapPage() {
             fontWeight="700"
             clipPath={`url(#${clipId})`}
             {...(percentNeedsCompress ? { textLength: percentMaxWidth, lengthAdjust: 'spacingAndGlyphs' as const } : {})}
-            style={{
-              textShadow: '0 2px 6px rgba(0,0,0,0.8), 0 1px 2px rgba(0,0,0,0.9)'
-            }}
           >
             {formatPercent(change)}
           </text>

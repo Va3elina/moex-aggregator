@@ -375,6 +375,9 @@ export interface FundInfo {
    *  whitelist'овые с данными, остальные приходят с tier_locked=true и
    *  пустым data). Frontend рендерит их затемнёнными в FundsTable. */
   tier_locked?: boolean;
+  /** Доходность фонда (для сортировки в «Деньги в фондах»). y1 — за 1 год по
+   *  pay (СЧА на пай) + выплаты; null если истории < года. */
+  returns?: { y1: number | null } | null;
 }
 
 export interface FundHolding {

@@ -30,9 +30,11 @@ CATEGORY_INDEX_MAP = {
     "bonds": {"name": "Облигации", "index": "RGBITR", "min_date": "1997-03-24"},
     "gold": {"name": "Золото", "index": "GLDRUB_TOM", "min_date": "2022-01-09"},
     # Юаневые фонды (раздел «Юань»). Бенчмарк — RUSFAR CNY (юаневая ставка
-    # денежного рынка MOEX, board MMIX, история с 2022-09-26). NAV хранится
-    # в ₽ (как и у рублёвых), CNY — в fund_data.nav_cny/pay_cny.
-    "yuan": {"name": "Юань", "index": "RUSFARCNY", "min_date": "2022-09-26"},
+    # денежного рынка MOEX, board MMIX). NAV хранится в ₽ (как и у рублёвых),
+    # CNY — в fund_data.nav_cny/pay_cny. min_date=2024-07: до этого юаневая
+    # ликвидность на MOEX была мала/нестабильна — часть фондов имеет точки
+    # с 2023, но осмысленный ряд начинается с лета-2024.
+    "yuan": {"name": "Юань", "index": "RUSFARCNY", "min_date": "2024-07-01"},
 }
 
 
@@ -195,6 +197,35 @@ async def get_funds_chart(
                             "date": row[1].isoformat(),
                             "nav": float(row[2]) if row[2] else None
                         })
+
+            # === Доходность за 1 год (y1) по pay (СЧА на пай), календарные 12 мес
+            # + выплаты дохода (total return) — для сортировки в «Деньги в фондах».
+            # Тот же расчёт, что в /fund-trades/funds → совпадает с investfunds.
+            if accessible_fund_ids:
+                y1_query = text("""
+                    WITH last_pay AS (
+                        SELECT DISTINCT ON (fund_id) fund_id, pay, trade_date AS td
+                        FROM fund_data
+                        WHERE fund_id = ANY(:fund_ids) AND pay IS NOT NULL
+                        ORDER BY fund_id, trade_date DESC
+                    )
+                    SELECT lp.fund_id, lp.pay AS last_pay,
+                        (SELECT pay FROM fund_data fd WHERE fd.fund_id = lp.fund_id
+                           AND fd.pay IS NOT NULL AND fd.trade_date <= lp.td - INTERVAL '12 months'
+                         ORDER BY fd.trade_date DESC LIMIT 1) AS pay_1y,
+                        (SELECT COALESCE(SUM(amount_per_unit), 0) FROM fund_distributions d
+                         WHERE d.fund_id = lp.fund_id
+                           AND d.record_date > lp.td - INTERVAL '12 months'
+                           AND d.record_date <= lp.td) AS dist_1y
+                    FROM last_pay lp
+                """)
+                for r in conn.execute(y1_query, {"fund_ids": accessible_fund_ids}).fetchall():
+                    fid, last_pay, pay_1y, dist_1y = r[0], r[1], r[2], r[3]
+                    y1 = None
+                    if last_pay is not None and pay_1y is not None and float(pay_1y) > 0:
+                        y1 = round((float(last_pay) + float(dist_1y or 0) - float(pay_1y)) / float(pay_1y) * 100, 2)
+                    if fid in funds_data:
+                        funds_data[fid]["returns"] = {"y1": y1}
 
             # === Суммарная СЧА — только по accessible фондам ===
             total_result = []
