@@ -2,22 +2,22 @@
  * EmbedPage — chromeless обёртка для встраивания индикаторов FRAME в iframe.
  *
  * Назначение: расширение для терминала Т-Инвестиций вставляет
- *   <iframe src="таймфрейм.рф/embed/oi?instrument=SR&theme=editorial-dark&token=...">
- * Работает и как самостоятельная shareable-ссылка на «голый» график.
+ *   <iframe src="таймфрейм.рф/embed/oi?instrument=SR&theme=editorial-dark&token=ext_…">
  *
- * URL: /embed/:indicator?instrument=SR&theme=editorial-dark&token=...&clgroup=FIZ&period=6m
+ * Гейтинг (только PRO): ?token=ext_… обменивается на короткий JWT через
+ * /api/extension/exchange (PRO проверяется вживую). JWT кладётся в localStorage,
+ * дальше все embed-компоненты работают штатным apiFetch. Нет/невалиден токен → замок.
+ * Таймер переобмена держит JWT свежим (refresh у embed нет).
  *
  * - Без Layout/nav/footer — заполняет весь iframe (100vw×100vh), резиновый.
- * - Тема форсится из ?theme= (как /signal-export). Не восстанавливаем — embed
- *   живёт в своём iframe-документе, чужой темы тут нет.
- * - ?token= — короткоживущий embed-токен (валидация в Phase auth; сейчас стаб).
- * - :indicator выбирает конкретный embed-компонент.
+ * - Тема форсится из ?theme=.
  *
  * НЕ в навигации сайта. План: .claude/TERMINAL_EXTENSION_PLAN.md
  */
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useTheme, type ThemeId } from '../../contexts/ThemeContext';
+import { exchangeExtensionToken } from '../../services/api';
 import EmbedOpenInterest from './EmbedOpenInterest';
 import EmbedBuffett from './EmbedBuffett';
 import EmbedCbrFlows from './EmbedCbrFlows';
@@ -27,40 +27,72 @@ import EmbedStrength from './EmbedStrength';
 import EmbedFundTrades from './EmbedFundTrades';
 
 const DEFAULT_THEME = 'editorial-dark';
+const SITE = 'https://xn--80aklbnczmv.xn--p1ai'; // таймфрейм.рф
+
+type AuthState = 'loading' | 'ok' | 'locked';
 
 export default function EmbedPage() {
   const { indicator } = useParams<{ indicator: string }>();
   const [params] = useSearchParams();
   const theme = params.get('theme') || DEFAULT_THEME;
+  const token = params.get('token');
   const { setTheme } = useTheme();
+  const [auth, setAuth] = useState<AuthState>('loading');
 
-  // Синхронизируем тему контекста (не только data-theme) — bespoke-компоненты
-  // читают тему через useTheme() (напр. getCategoryColor в Потоках ЦБ).
+  // Синхронизируем тему контекста (bespoke-компоненты читают её через useTheme()).
   useEffect(() => {
     if (theme === 'editorial-light' || theme === 'editorial-dark') {
       setTheme(theme as ThemeId);
     }
   }, [theme, setTheme]);
 
-  // TODO(auth): валидировать params.get('token') — embed только для платных
-  // подписчиков FRAME. Пока стаб: рендерим без проверки. Подключим в Phase auth
-  // вместе с popup-логином расширения.
+  // Гейт: обмен ext-токена на JWT. Нет/невалиден → замок.
+  useEffect(() => {
+    let cancelled = false;
+    let timer: number | undefined;
+    if (!token) {
+      setAuth('locked');
+      return;
+    }
+    setAuth('loading');
+    const run = async (t: string) => {
+      try {
+        const res = await exchangeExtensionToken(t);
+        if (cancelled) return;
+        try { localStorage.setItem('access_token', res.access_token); } catch { /* partitioned/quota */ }
+        setAuth('ok');
+        // Переобмен за 2 мин до истечения — держим JWT свежим без refresh.
+        timer = window.setTimeout(() => run(t), Math.max(60, res.expires_in - 120) * 1000);
+      } catch {
+        if (cancelled) return;
+        try { localStorage.removeItem('access_token'); } catch { /* ignore */ }
+        setAuth('locked');
+      }
+    };
+    run(token);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [token]);
 
   return (
     <div
       data-embed-root={indicator || 'unknown'}
+      data-embed-auth={auth}
       style={{
         width: '100vw',
         height: '100vh',
         background: 'var(--bg-base)',
         color: 'var(--text-primary)',
         overflow: 'hidden',
-        fontFamily:
-          '-apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif',
         boxSizing: 'border-box',
       }}
     >
-      {renderIndicator(indicator)}
+      {auth === 'loading' && <EmbedCenter text="Загрузка…" />}
+      {auth === 'locked' && <EmbedLocked />}
+      {auth === 'ok' && renderIndicator(indicator)}
     </div>
   );
 }
@@ -81,10 +113,72 @@ function renderIndicator(indicator: string | undefined) {
       return <EmbedStrength />;
     case 'fund-trades':
       return <EmbedFundTrades />;
-    // Остальные подключаются по мере готовности embed-компонентов.
     default:
       return <EmbedPlaceholder name={indicator} />;
   }
+}
+
+function EmbedCenter({ text }: { text: string }) {
+  return (
+    <div
+      style={{
+        width: '100%',
+        height: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: 'var(--text-secondary)',
+        fontSize: 14,
+      }}
+    >
+      {text}
+    </div>
+  );
+}
+
+function EmbedLocked() {
+  return (
+    <div
+      style={{
+        width: '100%',
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 10,
+        textAlign: 'center',
+        padding: 24,
+        boxSizing: 'border-box',
+      }}
+    >
+      <div style={{ fontSize: 30, lineHeight: 1 }}>🔒</div>
+      <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>
+        Индикаторы под замком
+      </div>
+      <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', maxWidth: 300, lineHeight: 1.5 }}>
+        Вставьте PRO-токен в popup расширения «Фрейм». Сгенерировать токен можно в личном
+        кабинете на таймфрейм.рф — нужен тариф&nbsp;Pro.
+      </div>
+      <a
+        href={`${SITE}/profile`}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{
+          marginTop: 4,
+          padding: '7px 14px',
+          background: 'var(--accent, #FF5C2B)',
+          color: '#fff',
+          fontWeight: 700,
+          fontSize: 12.5,
+          borderRadius: 6,
+          textDecoration: 'none',
+        }}
+      >
+        Открыть личный кабинет
+      </a>
+    </div>
+  );
 }
 
 function EmbedPlaceholder({ name }: { name?: string }) {
@@ -103,12 +197,8 @@ function EmbedPlaceholder({ name }: { name?: string }) {
         padding: 24,
       }}
     >
-      <div style={{ fontSize: 15, fontWeight: 600 }}>
-        Индикатор {name ? `«${name}»` : ''} скоро
-      </div>
-      <div style={{ fontSize: 12, opacity: 0.7 }}>
-        embed-компонент в разработке
-      </div>
+      <div style={{ fontSize: 15, fontWeight: 600 }}>Индикатор {name ? `«${name}»` : ''} скоро</div>
+      <div style={{ fontSize: 12, opacity: 0.7 }}>embed-компонент в разработке</div>
     </div>
   );
 }

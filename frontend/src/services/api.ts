@@ -1208,6 +1208,29 @@ export async function revokeExtensionToken(id: number): Promise<void> {
     if (!resp.ok && resp.status !== 204) throw new Error('Не удалось отозвать токен');
 }
 
+export interface ExtensionExchange {
+    access_token: string;
+    token_type: string;
+    expires_in: number;
+    role: string;
+}
+/** Обмен ext-токена на короткий JWT (для embed внутри расширения).
+ *  Публичный эндпоинт — без apiFetch (валидирует токен сам). */
+export async function exchangeExtensionToken(token: string): Promise<ExtensionExchange> {
+    const resp = await fetch(`${API_BASE}/api/extension/exchange`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token }),
+    });
+    if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}));
+        throw new Error(
+            data?.detail || (resp.status === 403 ? 'Токен требует активную подписку PRO' : 'Недействительный токен'),
+        );
+    }
+    return resp.json();
+}
+
 export interface ApiKeyUsageStats {
     days: number;
     total: number;
