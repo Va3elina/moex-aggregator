@@ -236,7 +236,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
       <div
         key={inst.sectype}
         onClick={handleClick}
-        className="instrument-item flex items-center gap-3.5 px-3 py-2.5 rounded-lg transition-colors"
+        className="instrument-item flex items-center gap-3.5 px-3 py-2 rounded-lg transition-colors"
         style={{
           color: 'var(--text-primary)',
           cursor: accessible ? 'pointer' : 'not-allowed',
@@ -249,7 +249,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
         <span
           style={{ flexShrink: 0, lineHeight: 0, opacity: accessible ? 1 : 0.45, filter: accessible ? undefined : 'grayscale(0.5)' }}
         >
-          <InstrumentIcon sectype={inst.sectype} size={32} />
+          <InstrumentIcon sectype={inst.sectype} size={28} />
         </span>
 
         {/* Актив: тикер + название (flex-1) */}
@@ -316,7 +316,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
   };
 
   return (
-    <div className="instrument-modal-root fixed inset-0 z-50 flex items-start justify-center p-4 pt-20">
+    <div className="instrument-modal-root fixed inset-0 z-50 flex items-start justify-center p-4 pt-16">
       {/* Backdrop — solid dim без backdrop-blur (editorial: no glass effects). */}
       <div
         className="absolute inset-0"
@@ -327,7 +327,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
       {/* Modal — editorial pill в светлой / glass в dark, через CSS-overrides.
           Базово: bg-secondary + 2px border + hard shadow. */}
       <div
-        className="instrument-modal relative w-full max-w-xl rounded-2xl max-h-[78vh] overflow-hidden"
+        className="instrument-modal relative w-full max-w-xl rounded-2xl max-h-[85vh] overflow-hidden flex flex-col"
         style={{
           backgroundColor: 'var(--bg-secondary)',
           border: '2px solid var(--text-primary)',
@@ -335,25 +335,26 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
           color: 'var(--text-primary)',
         }}
       >
-        {/* Header */}
-        <div className="px-6 pt-6 pb-4">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>Выбор актива</h2>
+        {/* Header — заголовок «Выбор актива» убран (поиск самоочевиден), осталась
+            только кнопка закрытия + компактный поиск, чтобы освободить место под
+            список активов. */}
+        <div className="px-6 pt-3 pb-3 flex-shrink-0">
+          <div className="flex items-center justify-end mb-1.5">
             <button
               onClick={onClose}
-              className="instrument-modal-close p-2 rounded-lg transition-colors"
+              className="instrument-modal-close p-2 -mr-2 rounded-lg transition-colors"
               style={{ color: 'var(--text-secondary)' }}
               aria-label="Закрыть"
             >
-              <X size={24} />
+              <X size={22} />
             </button>
           </div>
 
           {/* Search — outline 2px text-primary в editorial / accent в dark */}
           <div className="relative">
             <Search
-              size={20}
-              className="absolute left-4 top-1/2 -translate-y-1/2"
+              size={18}
+              className="absolute left-3.5 top-1/2 -translate-y-1/2"
               style={{ color: 'var(--text-secondary)' }}
             />
             <input
@@ -362,7 +363,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Поиск актива"
-              className="instrument-modal-search w-full pl-12 pr-4 py-4 text-base rounded-xl focus:outline-none transition-colors"
+              className="instrument-modal-search w-full pl-11 pr-4 py-2.5 text-sm rounded-xl focus:outline-none transition-colors"
               style={{
                 backgroundColor: 'var(--bg-primary)',
                 color: 'var(--text-primary)',
@@ -373,7 +374,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
 
           {/* Категории — chip pills */}
           {!onlyGroups && (
-          <div className="flex gap-2 mt-5 flex-wrap">
+          <div className="flex gap-2 mt-3 flex-wrap">
             {CATEGORY_FILTERS.map(cat => {
               const active = categoryFilter === cat.key;
               return (
@@ -400,7 +401,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
             (scrollbar-gutter stable) + одинаковые с строками отступы/gap/ширины
             → заголовки и значения гарантированно в одной сетке. */}
         <div
-          className="overflow-y-auto max-h-[calc(78vh-220px)] px-6 pb-6 styled-scrollbar"
+          className="flex-1 min-h-0 overflow-y-auto px-6 pb-6 styled-scrollbar"
           style={{ scrollbarGutter: 'stable' }}
         >
           {/* Sticky-шапка — кликабельная сортировка, зеркалит строку списка
@@ -436,9 +437,9 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
             <>
               {/* Favorites */}
               {favoriteInstruments.length > 0 && searchQuery === '' && (
-                <div className="mb-6">
+                <div className="mb-3">
                   <h3
-                    className="text-xs font-semibold uppercase tracking-wider mb-4 pl-3"
+                    className="text-xs font-semibold uppercase tracking-wider mb-2 pl-3"
                     style={{ color: 'var(--text-secondary)' }}
                   >
                     Избранные
@@ -451,7 +452,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
 
               {/* Divider */}
               {searchQuery === '' && favoriteInstruments.length > 0 && regularInstruments.length > 0 && (
-                <div className="h-px mb-6" style={{ backgroundColor: 'var(--text-primary)', opacity: 0.15 }} />
+                <div className="h-px mb-4" style={{ backgroundColor: 'var(--text-primary)', opacity: 0.15 }} />
               )}
 
               {/* Regular */}

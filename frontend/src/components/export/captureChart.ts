@@ -51,6 +51,15 @@ export async function captureChart(
                 el.classList.contains('chart-tooltip-overlay')
             );
         },
+        // onclone: удаляем hover-UI (crosshair-линия, dimming, точки, date-pill,
+        // карточка значений) из КЛОНА перед растеризацией. Нужно отдельно от
+        // ignoreElements, потому что эти элементы живут ВНУТРИ chart-<svg> —
+        // html2canvas сериализует svg целиком и per-element ignoreElements туда
+        // не достаёт. Баг: «нажать экспорт и быстро навести курсор» → crosshair
+        // попадал в снимок. Помечены классом chart-hover-ui в SimpleChart.
+        onclone: (clonedDoc) => {
+            clonedDoc.querySelectorAll('.chart-hover-ui').forEach((el) => el.remove());
+        },
     });
 
     if (signal?.aborted) {

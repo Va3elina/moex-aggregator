@@ -1247,7 +1247,7 @@ export default function SimpleChart({
                   height={chartHeight}
                   fill="var(--text-primary)"
                   opacity="0.08"
-                  className="transition-opacity duration-150"
+                  className="chart-hover-ui transition-opacity duration-150"
                 />
               )}
             </g>
@@ -1255,7 +1255,7 @@ export default function SimpleChart({
             {/* Вертикальная линия и точки курсора — theme-aware
                 (text-primary хорошо виден на любом фоне, не сливается с линиями) */}
             {tooltip.visible && (
-              <>
+              <g className="chart-hover-ui">
                 <line
                   x1={tooltip.x - padding.left}
                   y1={0}
@@ -1300,7 +1300,7 @@ export default function SimpleChart({
                     strokeWidth="2"
                   />
                 )}
-              </>
+              </g>
             )}
           </g>
 
@@ -1337,6 +1337,7 @@ export default function SimpleChart({
 
                 {/* Карточка значений рядом с курсором */}
                 <foreignObject
+                  className="chart-hover-ui"
                   x={cardX}
                   y={Math.min(Math.max(tooltip.primaryY - cardHeight / 2, padding.top), padding.top + chartHeight - cardHeight)}
                   width={cardWidth}
@@ -1657,7 +1658,7 @@ export default function SimpleChart({
         const topLineY = computeChartTopLineY({ wrapper: wrap, paddingTop: padding.top });
         return (
           <div
-            className="absolute z-20 pointer-events-none"
+            className="chart-hover-ui absolute z-20 pointer-events-none"
             style={getDatePillStyle(wrap.offsetLeft + tooltip.x, topLineY)}
           >
             <span className={`${TOOLTIP.dateClass} whitespace-nowrap`} style={TOOLTIP.dateStyle}>
