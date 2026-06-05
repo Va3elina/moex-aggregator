@@ -3,6 +3,7 @@ API для карты рынка (Heatmap) — стиль TradingView
 С валидацией входных данных
 """
 import httpx
+import logging
 from fastapi import APIRouter, Query, HTTPException, Depends
 from sqlalchemy import text
 
@@ -12,7 +13,41 @@ from api.schemas.validators import HeatmapSizeByType, HeatmapColorByType, Heatma
 
 IMOEX_ISS_URL = "https://iss.moex.com/iss/statistics/engines/stock/markets/index/analytics/IMOEX.json?limit=100"
 
+logger = logging.getLogger("moex_api")
+
 router = APIRouter(prefix="/api/heatmap", tags=["heatmap"])
+
+
+def _persist_imoex_weights(weights: dict) -> None:
+    """Сохранить веса IMOEX в БД (imoex_weights) — durable fallback на случай
+    недоступности ISS (блок сети MOEX при просрочке Algopack-подписки, тех.работы
+    ISS). Веса индекса меняются раз в квартал → stale-копия полностью допустима."""
+    if not weights:
+        return
+    try:
+        with get_engine().begin() as conn:
+            conn.execute(text(
+                "CREATE TABLE IF NOT EXISTS imoex_weights ("
+                "ticker text PRIMARY KEY, weight double precision NOT NULL, "
+                "updated_at timestamptz DEFAULT now())"
+            ))
+            conn.execute(text("DELETE FROM imoex_weights"))
+            conn.execute(
+                text("INSERT INTO imoex_weights(ticker, weight) VALUES (:t, :w)"),
+                [{"t": str(t), "w": float(w)} for t, w in weights.items()],
+            )
+    except Exception as e:
+        logger.warning(f"persist IMOEX weights failed: {type(e).__name__}: {e}")
+
+
+def _load_imoex_weights_fallback() -> dict:
+    """Последние сохранённые веса IMOEX из БД (stale-on-error для карты рынка)."""
+    try:
+        with get_engine().connect() as conn:
+            rows = conn.execute(text("SELECT ticker, weight FROM imoex_weights")).fetchall()
+        return {r[0]: float(r[1]) for r in rows}
+    except Exception:
+        return {}
 
 
 def build_stocks_heatmap(size_by: str, color_by: str, group_by: str):
@@ -174,16 +209,29 @@ async def get_imoex_heatmap(
     weights_cache_key = "imoex_weights"
     weights = get_or_set(weights_cache_key)
     if weights is None:
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get(IMOEX_ISS_URL)
-            resp.raise_for_status()
-            data = resp.json()
-        cols = data["analytics"]["columns"]
-        rows_data = data["analytics"]["data"]
-        idx_ticker = cols.index("ticker")
-        idx_weight = cols.index("weight")
-        weights = {row[idx_ticker]: float(row[idx_weight]) for row in rows_data}
-        get_or_set(weights_cache_key, weights, ttl=3600)
+        # ISS может быть недоступен (блок сети MOEX при просрочке Algopack-подписки,
+        # тех.работы ISS) → карта НЕ должна падать 500. Пробуем ISS; при ошибке —
+        # последние веса из БД (imoex_weights). 503 только если и БД-фоллбэк пуст.
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                resp = await client.get(IMOEX_ISS_URL)
+                resp.raise_for_status()
+                data = resp.json()
+            cols = data["analytics"]["columns"]
+            rows_data = data["analytics"]["data"]
+            idx_ticker = cols.index("ticker")
+            idx_weight = cols.index("weight")
+            weights = {row[idx_ticker]: float(row[idx_weight]) for row in rows_data}
+            get_or_set(weights_cache_key, weights, ttl=3600)
+            _persist_imoex_weights(weights)
+        except Exception as e:
+            weights = _load_imoex_weights_fallback()
+            if not weights:
+                raise HTTPException(status_code=503, detail="IMOEX веса временно недоступны")
+            logger.warning(
+                f"IMOEX weights via ISS failed ({type(e).__name__}) — fallback на БД "
+                f"({len(weights)} бумаг)"
+            )
 
     # Берём данные акций из mv_heatmap_stocks
     engine = get_engine()
