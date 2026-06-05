@@ -19,11 +19,14 @@ DROP MATERIALIZED VIEW IF EXISTS mv_heatmap_stocks;
 
 CREATE MATERIALIZED VIEW mv_heatmap_stocks AS
 WITH known_splits AS (
-    -- secid, split_date, ratio (сколько новых акций на 1 старую)
-    -- Применяется ТОЛЬКО к close < split_date (retroactive adjustment)
-    SELECT 'T'::varchar     AS secid, '2026-04-02'::date AS split_date, 10.0::numeric AS ratio
-    UNION ALL
-    SELECT 'SFIN'::varchar, '2025-12-25'::date, 1.93::numeric
+    -- secid, split_date, ratio (сколько новых акций на 1 старую).
+    -- Применяется ТОЛЬКО к close < split_date (retroactive adjustment).
+    -- ⚠️ ТОЛЬКО для секций, чьи дневные свечи ЕЩЁ СЫРЫЕ (не переимпортированы
+    -- ISS-адъюстнутыми). Если свечи уже адъюстнуты — сюда НЕ добавлять, иначе
+    -- ДВОЙНАЯ коррекция: T (1:10, 2026-04) был тут ПРИ адъюстнутых свечах →
+    -- change_1y давал +811% вместо −9% (close делился на 10 дважды). Убран 2026-06.
+    -- SFIN остаётся: его свечи СЫРЫЕ (разрыв 1828→947 на 2025-12-25 виден в БД).
+    SELECT 'SFIN'::varchar AS secid, '2025-12-25'::date AS split_date, 1.93::numeric AS ratio
 ),
 ranked_daily AS (
     SELECT secid, open, close, begin_time,
