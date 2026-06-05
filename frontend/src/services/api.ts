@@ -1176,6 +1176,38 @@ export async function revokeApiKey(id: number): Promise<void> {
     if (!resp.ok && resp.status !== 204) throw new Error('Не удалось отозвать ключ');
 }
 
+// ─── Extension tokens (расширение для терминала Т-Инвестиций) ───────────────
+export interface ExtensionTokenInfo {
+    id: number;
+    name: string | null;
+    token_prefix: string;
+    created_at: string;
+    last_used_at: string | null;
+}
+export interface ExtensionTokenCreated {
+    id: number;
+    token: string;        // показывается ОДИН раз
+    token_prefix: string;
+}
+export async function listExtensionTokens(): Promise<ExtensionTokenInfo[]> {
+    const resp = await apiFetch(`${API_BASE}/api/extension/token`);
+    if (!resp.ok) throw new Error('Не удалось загрузить токены');
+    return resp.json();
+}
+export async function createExtensionToken(): Promise<ExtensionTokenCreated> {
+    const resp = await apiFetch(`${API_BASE}/api/extension/token`, { method: 'POST' });
+    if (resp.status === 403) {
+        const data = await resp.json().catch(() => ({}));
+        throw new Error(data?.detail || data?.error?.message || 'Токен доступен только на тарифе Pro');
+    }
+    if (!resp.ok) throw new Error('Не удалось сгенерировать токен');
+    return resp.json();
+}
+export async function revokeExtensionToken(id: number): Promise<void> {
+    const resp = await apiFetch(`${API_BASE}/api/extension/token/${id}`, { method: 'DELETE' });
+    if (!resp.ok && resp.status !== 204) throw new Error('Не удалось отозвать токен');
+}
+
 export interface ApiKeyUsageStats {
     days: number;
     total: number;
