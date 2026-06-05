@@ -1,10 +1,13 @@
 /**
- * EmbedStrength — виджет «Сила рынка» (% акций выше EMA). EMA и период — в
- * drawer'е настроек. Переиспользует BreadthChart; universe=imoex (free).
+ * EmbedStrength — виджет «Сила рынка». Полноценный: сверху линия индекса IMOEX
+ * (IndexChart), снизу гистограмма breadth (% акций выше EMA) — как на странице.
+ * EMA и период — в drawer'е настроек. universe=imoex (free).
  */
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import IndexChart from '../../components/strength/IndexChart';
 import BreadthChart from '../../components/strength/BreadthChart';
+import type { ChartPadding } from '../../components/strength/chartUtils';
 import { getBreadthHistory } from '../../services/api';
 import { EmbedMsg } from './embedUi';
 import { useEmbedSettings, EmbedShell, DrawerSection, SegGroup } from './EmbedSettings';
@@ -26,6 +29,10 @@ const PERIODS: { id: Period; label: string }[] = [
   { id: 'all', label: 'Всё' },
 ];
 
+// Общий padding для обоих графиков → их X-оси совпадают по пикселям.
+const PAD: ChartPadding = { left: 54, right: 54, top: 6, bottom: 20 };
+const LEGEND_H = 18;
+
 function daysForPeriod(period: Period): number {
   switch (period) {
     case '6m': return 182;
@@ -38,6 +45,25 @@ function daysForPeriod(period: Period): number {
 
 function readLS(key: string, fallback: string): string {
   try { return localStorage.getItem(key) || fallback; } catch { return fallback; }
+}
+
+function MiniLegend({ text }: { text: string }) {
+  return (
+    <div
+      style={{
+        flexShrink: 0,
+        height: LEGEND_H,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: 11,
+        fontWeight: 700,
+        color: 'var(--text-secondary)',
+      }}
+    >
+      {text}
+    </div>
+  );
 }
 
 export default function EmbedStrength() {
@@ -73,18 +99,23 @@ export default function EmbedStrength() {
     return () => { cancelled = true; };
   }, [ema, period]);
 
+  // Измеряем контейнер и делим высоту между индексом (55%) и breadth (45%).
   const boxRef = useRef<HTMLDivElement>(null);
-  const [chartH, setChartH] = useState(280);
+  const [boxH, setBoxH] = useState(420);
   useEffect(() => {
     const el = boxRef.current;
     if (!el) return;
     const ro = new ResizeObserver((entries) => {
       const h = entries[0]?.contentRect.height;
-      if (h && h > 0) setChartH(Math.round(h));
+      if (h && h > 0) setBoxH(Math.round(h));
     });
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  const avail = Math.max(160, boxH - LEGEND_H * 2);
+  const indexH = Math.round(avail * 0.55);
+  const breadthH = avail - indexH;
 
   return (
     <EmbedShell
@@ -102,19 +133,27 @@ export default function EmbedStrength() {
         </>
       }
     >
-      <div ref={boxRef} style={{ flex: 1, position: 'relative', minHeight: 0 }}>
-        {status === 'ok' && synced.length > 0 && (
-          <BreadthChart
-            syncedData={synced}
-            hoverIndex={null}
-            height={chartH}
-            mode="histogram"
-            padding={{ left: 48, right: 16, top: 8, bottom: 22 }}
-          />
+      <div ref={boxRef} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
+        {status === 'ok' && synced.length > 0 ? (
+          <>
+            <MiniLegend text="Индекс МосБиржи (IMOEX)" />
+            <IndexChart syncedData={synced} hoverIndex={null} height={indexH} padding={PAD} />
+            <MiniLegend text={`% акций выше EMA${ema}`} />
+            <BreadthChart
+              syncedData={synced}
+              hoverIndex={null}
+              height={breadthH}
+              mode="histogram"
+              padding={PAD}
+            />
+          </>
+        ) : (
+          <>
+            {status === 'loading' && <EmbedMsg text="Загрузка…" />}
+            {status === 'empty' && <EmbedMsg text="Нет данных" />}
+            {status === 'error' && <EmbedMsg text="Ошибка загрузки" />}
+          </>
         )}
-        {status === 'loading' && <EmbedMsg text="Загрузка…" />}
-        {status === 'empty' && <EmbedMsg text="Нет данных" />}
-        {status === 'error' && <EmbedMsg text="Ошибка загрузки" />}
       </div>
     </EmbedShell>
   );

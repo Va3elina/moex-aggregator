@@ -28,6 +28,19 @@
   var DEFAULT_THEME = 'editorial-dark';
   var KEY_PANELS = 'framePanels'; // [{id,x,y,w,h,theme}]
 
+  // Стартовый размер панели по индикатору — чтобы график+оси влезали сразу,
+  // без ручного ресайза (фидбек Вадима «нужно развернуть чтобы было видно всё»).
+  var SIZES = {
+    'oi':          { w: 640, h: 580 },
+    'seasonality': { w: 600, h: 520 },
+    'buffett':     { w: 660, h: 560 },
+    'strength':    { w: 600, h: 620 }, // два графика (IMOEX + breadth) — выше
+    'funds-money': { w: 660, h: 560 },
+    'cbr-flows':   { w: 660, h: 580 },
+    'fund-trades': { w: 560, h: 560 }
+  };
+  var DEFAULT_SIZE = { w: 620, h: 560 };
+
   function lsGet(key) {
     return new Promise(function (res) {
       try {
@@ -143,7 +156,8 @@
     function spawnPanel(id, saved) {
       var ind = INDICATORS.find(function (x) { return x.id === id; });
       if (!ind) return;
-      var st = saved || { id: id, x: null, y: null, w: 470, h: 400, theme: DEFAULT_THEME };
+      var sz = SIZES[id] || DEFAULT_SIZE;
+      var st = saved || { id: id, x: null, y: null, w: sz.w, h: sz.h, theme: DEFAULT_THEME };
       st.id = id;
       clampPanel(st);
 
