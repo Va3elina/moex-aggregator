@@ -1,14 +1,14 @@
 /**
  * EmbedFundsMoney — виджет «Фонды» (рыночный). Headline — суммарная СЧА (AUM)
- * через SimpleChart + индекс на вторичной оси. Контрол категории внутри.
- * Режим flows (FlowsHistogram) сильно завязан на состояние страницы — в виджет
- * v1 не тащим; для компактного окна AUM достаточно.
+ * через SimpleChart + индекс на вторичной оси. Категория и период — в drawer'е.
+ * Режим flows сильно завязан на состояние страницы — в виджет v1 не тащим.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import SimpleChart from '../../components/SimpleChart';
-import { getFundsChartData } from '../../services/api';
-import { EmbedMsg, embedColumn, embedHeader, segBtn } from './embedUi';
+import { getFundsChartData, type FundPeriod } from '../../services/api';
+import { EmbedMsg } from './embedUi';
+import { useEmbedSettings, EmbedShell, DrawerSection, SegGroup } from './EmbedSettings';
 
 type Category = 'money_market' | 'stocks' | 'bonds' | 'gold' | 'yuan';
 type LoadStatus = 'idle' | 'loading' | 'ok' | 'empty' | 'error';
@@ -21,6 +21,14 @@ const CATS: { id: Category; label: string }[] = [
   { id: 'gold', label: 'Золото' },
   { id: 'yuan', label: 'Юань' },
 ];
+const PERIODS: { id: FundPeriod; label: string }[] = [
+  { id: '3m', label: '3М' },
+  { id: '6m', label: '6М' },
+  { id: '1y', label: '1Г' },
+  { id: '2y', label: '2Г' },
+  { id: '3y', label: '3Г' },
+  { id: 'all', label: 'Всё' },
+];
 
 function initCat(p: string | null): Category {
   if (p && CATS.some((c) => c.id === p)) return p as Category;
@@ -31,21 +39,26 @@ function initCat(p: string | null): Category {
   return 'money_market';
 }
 
+function readLS(key: string, fallback: string): string {
+  try { return localStorage.getItem(key) || fallback; } catch { return fallback; }
+}
+
 export default function EmbedFundsMoney() {
   const [params] = useSearchParams();
+  const settings = useEmbedSettings();
+
   const [category, setCategory] = useState<Category>(() => initCat(params.get('category')));
-  const period = params.get('period') || '1y';
+  const [period, setPeriod] = useState<FundPeriod>(() => (params.get('period') || readLS('frame:embed:funds:period', '1y')) as FundPeriod);
   const [data, setData] = useState<FundsResp | null>(null);
   const [status, setStatus] = useState<LoadStatus>('idle');
 
-  useEffect(() => {
-    try { localStorage.setItem('frame:embed:funds:category', category); } catch { /* quota */ }
-  }, [category]);
+  useEffect(() => { try { localStorage.setItem('frame:embed:funds:category', category); } catch { /* quota */ } }, [category]);
+  useEffect(() => { try { localStorage.setItem('frame:embed:funds:period', period); } catch { /* quota */ } }, [period]);
 
   useEffect(() => {
     let cancelled = false;
     setStatus('loading');
-    getFundsChartData(category, period as Parameters<typeof getFundsChartData>[1])
+    getFundsChartData(category, period)
       .then((res) => {
         if (cancelled) return;
         setData(res);
@@ -82,19 +95,24 @@ export default function EmbedFundsMoney() {
   );
 
   const fmtNav = (v: number) => (category === 'gold' || category === 'stocks' ? v.toFixed(2) : v.toFixed(0));
+  const catLabel = CATS.find((c) => c.id === category)?.label || '';
 
   return (
-    <div style={embedColumn}>
-      <div style={embedHeader}>
-        <span style={{ fontWeight: 700, fontSize: 14 }}>Фонды</span>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-          {CATS.map((c) => (
-            <button key={c.id} style={segBtn(category === c.id)} onClick={() => setCategory(c.id)}>
-              {c.label}
-            </button>
-          ))}
-        </div>
-      </div>
+    <EmbedShell
+      settings={settings}
+      title="Фонды"
+      subtitle={catLabel}
+      drawer={
+        <>
+          <DrawerSection label="Категория">
+            <SegGroup value={category} options={CATS} onChange={(v) => setCategory(v)} />
+          </DrawerSection>
+          <DrawerSection label="Период">
+            <SegGroup value={period} options={PERIODS} onChange={(v) => setPeriod(v)} />
+          </DrawerSection>
+        </>
+      }
+    >
       <div ref={boxRef} style={{ flex: 1, position: 'relative', minHeight: 0 }}>
         {status === 'ok' && chartData.length > 0 && (
           <SimpleChart
@@ -120,6 +138,6 @@ export default function EmbedFundsMoney() {
         {status === 'empty' && <EmbedMsg text="Нет данных" />}
         {status === 'error' && <EmbedMsg text="Ошибка загрузки" />}
       </div>
-    </div>
+    </EmbedShell>
   );
 }

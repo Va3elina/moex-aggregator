@@ -1,26 +1,44 @@
 /**
  * EmbedFundTrades — виджет «Сделки фондов» (рыночный). Headline — консенсус-движения
- * за месяц: две компактные колонки «Покупают» (top_accumulated) / «Продают»
- * (top_reduced) с горизонтальными барами по Δвеса. Полный 4-таб экран — на сайте.
+ * за период: две колонки «Покупают» (top_accumulated) / «Продают» (top_reduced) с
+ * горизонтальными барами по Δвеса. Окно периода — в drawer'е настроек.
+ * Полный 4-таб экран — на сайте.
  */
 import { useEffect, useState } from 'react';
-import { getFundTradesMovers, type FundTradesMover } from '../../services/api';
-import { EmbedMsg, embedColumn, embedHeader } from './embedUi';
+import { getFundTradesMovers, type FundTradesMover, type FundTradesPeriod } from '../../services/api';
+import { EmbedMsg } from './embedUi';
+import { useEmbedSettings, EmbedShell, DrawerSection, SegGroup } from './EmbedSettings';
 
 type LoadStatus = 'idle' | 'loading' | 'ok' | 'empty' | 'error';
 
 const POS = 'var(--funds-flow-positive, #4A9268)';
 const NEG = 'var(--funds-flow-negative, #C0504D)';
 
+const PERIODS: { id: FundTradesPeriod; label: string }[] = [
+  { id: '1m', label: 'Месяц' },
+  { id: '3m', label: '3 месяца' },
+  { id: '6m', label: 'Полгода' },
+  { id: '1y', label: 'Год' },
+];
+const P_SHORT: Record<FundTradesPeriod, string> = { '1m': 'за месяц', '3m': 'за 3 мес', '6m': 'за полгода', '1y': 'за год' };
+
+function readLS(key: string, fallback: string): string {
+  try { return localStorage.getItem(key) || fallback; } catch { return fallback; }
+}
+
 export default function EmbedFundTrades() {
+  const settings = useEmbedSettings();
+  const [period, setPeriod] = useState<FundTradesPeriod>(() => readLS('frame:embed:fundtrades:period', '1m') as FundTradesPeriod);
   const [acc, setAcc] = useState<FundTradesMover[]>([]);
   const [red, setRed] = useState<FundTradesMover[]>([]);
   const [status, setStatus] = useState<LoadStatus>('idle');
 
+  useEffect(() => { try { localStorage.setItem('frame:embed:fundtrades:period', period); } catch { /* quota */ } }, [period]);
+
   useEffect(() => {
     let cancelled = false;
     setStatus('loading');
-    getFundTradesMovers('1m', { sort: 'weight', limit: 8 })
+    getFundTradesMovers(period, { sort: 'weight', limit: 8 })
       .then((res) => {
         if (cancelled) return;
         const a = res?.top_accumulated ?? [];
@@ -35,14 +53,19 @@ export default function EmbedFundTrades() {
         setStatus('error');
       });
     return () => { cancelled = true; };
-  }, []);
+  }, [period]);
 
   return (
-    <div style={embedColumn}>
-      <div style={embedHeader}>
-        <span style={{ fontWeight: 700, fontSize: 14 }}>Сделки фондов</span>
-        <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>консенсус за месяц · Δвеса</span>
-      </div>
+    <EmbedShell
+      settings={settings}
+      title="Сделки фондов"
+      subtitle={`консенсус ${P_SHORT[period]} · Δвеса`}
+      drawer={
+        <DrawerSection label="Окно периода">
+          <SegGroup value={period} options={PERIODS} onChange={(v) => setPeriod(v)} />
+        </DrawerSection>
+      }
+    >
       <div style={{ flex: 1, minHeight: 0, overflow: 'auto', display: 'flex', gap: 12, position: 'relative' }}>
         {status === 'ok' ? (
           <>
@@ -57,7 +80,7 @@ export default function EmbedFundTrades() {
           </>
         )}
       </div>
-    </div>
+    </EmbedShell>
   );
 }
 
@@ -83,28 +106,14 @@ function MoverCol({ title, color, items }: { title: string; color: string; items
         return (
           <div key={m.akey} style={{ marginBottom: 6 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, fontSize: 11 }}>
-              <span
-                style={{
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  color: 'var(--text-primary)',
-                }}
-              >
+              <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--text-primary)' }}>
                 {m.asset_name}
               </span>
               <span style={{ color, fontWeight: 600, flexShrink: 0 }}>
                 {(v > 0 ? '+' : '') + v.toFixed(2)}%
               </span>
             </div>
-            <div
-              style={{
-                height: 4,
-                background: 'var(--border-color, rgba(128,128,128,0.18))',
-                borderRadius: 2,
-                marginTop: 2,
-              }}
-            >
+            <div style={{ height: 4, background: 'var(--border-color, rgba(128,128,128,0.18))', borderRadius: 2, marginTop: 2 }}>
               <div style={{ height: '100%', width: `${pct}%`, background: color, borderRadius: 2 }} />
             </div>
           </div>

@@ -149,10 +149,11 @@
 
       var dot = h('span', { class: 'fw-dot' });
       var title = h('span', { class: 'fw-title', text: 'Фрейм · ' + ind.label });
+      var bGear = h('button', { class: 'fw-btn', 'data-a': 'settings', title: 'Настройки', text: '⚙︎' });
       var bPop = h('button', { class: 'fw-btn', 'data-a': 'pop', title: 'Открыть в новом окне', text: '⤢' });
       var bTheme = h('button', { class: 'fw-btn', 'data-a': 'theme', title: 'Тема', text: '◐' });
       var bClose = h('button', { class: 'fw-btn', 'data-a': 'close', title: 'Закрыть', text: '×' });
-      var ctrls = h('span', { class: 'fw-ctrls' }, [bPop, bTheme, bClose]);
+      var ctrls = h('span', { class: 'fw-ctrls' }, [bGear, bPop, bTheme, bClose]);
       var head = h('div', { class: 'fw-head' }, [dot, title, ctrls]);
       var iframe = h('iframe', { class: 'fw-iframe', title: 'Фрейм · ' + ind.label });
       var body = h('div', { class: 'fw-body' }, [iframe]);
@@ -170,6 +171,10 @@
         var b = e.target.closest('.fw-btn'); if (!b) return;
         var a = b.getAttribute('data-a');
         if (a === 'close') { removePanel(panel); }
+        else if (a === 'settings') {
+          // Тоггл drawer'а настроек ВНУТРИ iframe (embed слушает postMessage).
+          try { iframe.contentWindow.postMessage({ source: 'frame-ext', type: 'toggle-settings' }, EMBED_BASE); } catch (er) { /* iframe ещё грузится */ }
+        }
         else if (a === 'theme') { st.theme = st.theme === 'editorial-dark' ? 'editorial-light' : 'editorial-dark'; el.setAttribute('data-theme', st.theme); reload(); persist(); }
         else if (a === 'pop') { window.open(embedUrl(st.id, st.theme), '_blank', 'width=560,height=460'); }
       });

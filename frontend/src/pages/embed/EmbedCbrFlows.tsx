@@ -1,12 +1,14 @@
 /**
  * EmbedCbrFlows — виджет «Потоки ЦБ» (рыночный, тикер не нужен).
- * Переиспользует StackedBidirectionalHistogram. Контрол типа инструмента внутри.
+ * Тип инструмента (акции / ОФЗ / валюта) — в drawer'е настроек.
+ * Переиспользует StackedBidirectionalHistogram.
  */
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import StackedBidirectionalHistogram from '../../components/cbr/StackedBidirectionalHistogram';
 import { getCbrFlows } from '../../services/api';
-import { EmbedMsg, embedColumn, embedHeader, segBtn } from './embedUi';
+import { EmbedMsg } from './embedUi';
+import { useEmbedSettings, EmbedShell, DrawerSection, SegGroup } from './EmbedSettings';
 
 type CbrType = 'stocks' | 'ofz' | 'fx';
 type LoadStatus = 'idle' | 'loading' | 'ok' | 'empty' | 'error';
@@ -20,6 +22,7 @@ const TYPES: { id: CbrType; label: string }[] = [
 
 export default function EmbedCbrFlows() {
   const [params] = useSearchParams();
+  const settings = useEmbedSettings();
   const [type, setType] = useState<CbrType>((params.get('type') as CbrType) || 'stocks');
   const [data, setData] = useState<CbrResp | null>(null);
   const [status, setStatus] = useState<LoadStatus>('idle');
@@ -38,9 +41,7 @@ export default function EmbedCbrFlows() {
         console.error('embed/cbr-flows load failed:', err);
         setStatus('error');
       });
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [type]);
 
   const boxRef = useRef<HTMLDivElement>(null);
@@ -56,18 +57,19 @@ export default function EmbedCbrFlows() {
     return () => ro.disconnect();
   }, []);
 
+  const typeLabel = TYPES.find((t) => t.id === type)?.label || '';
+
   return (
-    <div style={embedColumn}>
-      <div style={embedHeader}>
-        <span style={{ fontWeight: 700, fontSize: 14 }}>Потоки ЦБ</span>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
-          {TYPES.map((t) => (
-            <button key={t.id} style={segBtn(type === t.id)} onClick={() => setType(t.id)}>
-              {t.label}
-            </button>
-          ))}
-        </div>
-      </div>
+    <EmbedShell
+      settings={settings}
+      title="Потоки ЦБ"
+      subtitle={typeLabel}
+      drawer={
+        <DrawerSection label="Тип инструмента">
+          <SegGroup value={type} options={TYPES} onChange={(v) => setType(v)} />
+        </DrawerSection>
+      }
+    >
       <div ref={boxRef} style={{ flex: 1, position: 'relative', minHeight: 0 }}>
         {status === 'ok' && data && (
           <StackedBidirectionalHistogram
@@ -83,6 +85,6 @@ export default function EmbedCbrFlows() {
         {status === 'empty' && <EmbedMsg text="Нет данных" />}
         {status === 'error' && <EmbedMsg text="Ошибка загрузки" />}
       </div>
-    </div>
+    </EmbedShell>
   );
 }
