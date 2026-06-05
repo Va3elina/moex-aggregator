@@ -1,10 +1,10 @@
-/* Фрейм content script — монтирует окно (свёрнутым) и вживляет кнопку-вызов
- * в тулбар терминала рядом с «Виджеты» (как «T+» у Trading Tools).
+/* Фрейм content script — вживляет кнопку «F» в тулбар терминала рядом с «Виджеты»
+ * (как «T+» у Trading Tools). Клик по «F» → выпадающий список индикаторов (логика
+ * меню/панелей — в widget.js).
  *
  * Терминал — React-SPA: тулбар появляется асинхронно и перерисовывается, выбрасывая
  * чужеродные узлы. Поэтому: (1) ищем кнопку по ТЕКСТУ (классы минифицированы и
  * нестабильны), (2) повторяем попытки + наблюдаем MutationObserver'ом и ре-инжектим.
- * Если «Виджеты» не нашлась — окно всё равно доступно через плавающую пилюлю (fallback).
  */
 (function () {
   'use strict';
@@ -51,9 +51,11 @@
     if (document.getElementById(BTN_ID)) return true; // уже стоит
     var wbtn = findWidgetsButton();
     if (!wbtn || !wbtn.parentElement) return false;
-    var btn = makeTermButton(function () { if (api) api.toggle(); });
+    var btn = makeTermButton(function () {
+      // клик по «F» → выпадающий список индикаторов, заякоренный под кнопкой
+      if (api) api.openMenuAt(btn.getBoundingClientRect());
+    });
     wbtn.parentElement.insertBefore(btn, wbtn); // слева от «Виджеты»
-    if (api) api.setPillEnabled(false); // кнопка есть → плавающую пилюлю прячем
     return true;
   }
 
