@@ -54,6 +54,19 @@
     }
   };
 
+  // Глобальный ext-токен (его кладёт popup расширения в chrome.storage.local.frameToken).
+  function getExtToken() {
+    return new Promise(function (res) {
+      try {
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+          chrome.storage.local.get(['frameToken'], function (o) { res((o && o.frameToken) || null); });
+          return;
+        }
+      } catch (e) { /* нет chrome API */ }
+      try { res(localStorage.getItem('fw:frameToken')); } catch (e) { res(null); }
+    });
+  }
+
   var CSS = [
     ':host{all:initial}',
     '.fw-root,.fw-root *,.fw-launcher{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif}',
@@ -115,10 +128,11 @@
     var sub = h('span', { class: 'fw-sub' });
     var title = h('span', { class: 'fw-title' }, ['Фрейм', sub]);
     var dot = h('span', { class: 'fw-dot' });
+    var btnPop = h('button', { class: 'fw-btn', 'data-act': 'popout', title: 'Открыть в новом окне', text: '⤢' });
     var btnTheme = h('button', { class: 'fw-btn', 'data-act': 'theme', title: 'Сменить тему', text: '◐' });
     var btnCollapse = h('button', { class: 'fw-btn', 'data-act': 'collapse', title: 'Свернуть', text: '–' });
     var btnClose = h('button', { class: 'fw-btn', 'data-act': 'close', title: 'Закрыть', text: '×' });
-    var ctrls = h('span', { class: 'fw-ctrls' }, [btnTheme, btnCollapse, btnClose]);
+    var ctrls = h('span', { class: 'fw-ctrls' }, [btnPop, btnTheme, btnCollapse, btnClose]);
     var head = h('div', { class: 'fw-head' }, [dot, title, ctrls]);
 
     // ── tabs ──
@@ -146,6 +160,7 @@
 
     var state = Object.assign({}, DEFAULTS);
     var pillEnabled = true; // плавающая пилюля-лаунчер; гасим, если есть кнопка в тулбаре терминала
+    var extToken = null; // ext-токен из popup расширения (прокидываем в iframe)
 
     function clamp() {
       var vw = window.innerWidth, vh = window.innerHeight;
@@ -167,8 +182,12 @@
       root.style.left = state.x + 'px';
       root.style.top = state.y + 'px';
     }
+    function embedUrl(tab) {
+      return EMBED_BASE + '/embed/' + tab + '?theme=' + state.theme +
+        (extToken ? '&token=' + encodeURIComponent(extToken) : '');
+    }
     function loadIframe() {
-      iframe.src = EMBED_BASE + '/embed/' + state.tab + '?theme=' + state.theme;
+      iframe.src = embedUrl(state.tab);
       var t = TABS.find(function (x) { return x.id === state.tab; });
       sub.textContent = t ? ('· ' + t.label) : '';
     }
@@ -198,7 +217,8 @@
     ctrls.addEventListener('click', function (e) {
       var b = e.target.closest('.fw-btn'); if (!b) return;
       var act = b.getAttribute('data-act');
-      if (act === 'theme') { state.theme = state.theme === 'editorial-dark' ? 'editorial-light' : 'editorial-dark'; applyTheme(); loadIframe(); persist(); }
+      if (act === 'popout') { window.open(embedUrl(state.tab), '_blank', 'width=560,height=460'); }
+      else if (act === 'theme') { state.theme = state.theme === 'editorial-dark' ? 'editorial-light' : 'editorial-dark'; applyTheme(); loadIframe(); persist(); }
       else if (act === 'collapse') { state.collapsed = !state.collapsed; applyLayout(); persist(); }
       else if (act === 'close') { state.closed = true; applyClosed(); persist(); }
     });
@@ -233,7 +253,22 @@
       isOpen: function () { return !state.closed; },
       setPillEnabled: function (v) { pillEnabled = !!v; applyClosed(); }
     };
-    store.get().then(function (saved) { if (saved) state = Object.assign(state, saved); applyAll(); });
+    Promise.all([store.get(), getExtToken()]).then(function (arr) {
+      if (arr[0]) state = Object.assign(state, arr[0]);
+      extToken = arr[1];
+      applyAll();
+    });
+    // Реакция на смену токена в popup — на лету перезагрузить активный iframe.
+    try {
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged) {
+        chrome.storage.onChanged.addListener(function (changes, area) {
+          if (area === 'local' && changes.frameToken) {
+            extToken = changes.frameToken.newValue || null;
+            loadIframe();
+          }
+        });
+      }
+    } catch (e) { /* нет chrome API */ }
     return api;
   }
 
