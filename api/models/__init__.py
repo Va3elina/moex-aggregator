@@ -9,6 +9,7 @@ from api.models.payment_method import UserPaymentMethod
 from api.models.subscription import Subscription
 from api.models.subscription_invite import SubscriptionInvite, InviteRedemption
 from api.models.api_key import ApiKey
+from api.models.extension_token import ExtensionToken
 from api.models.fund_holdings_history import FundHoldingsHistory
 from api.models.fund_holdings_intraday import FundHoldingsIntraday
 
@@ -19,6 +20,7 @@ __all__ = [
     "Subscription",
     "SubscriptionInvite", "InviteRedemption",
     "ApiKey",
+    "ExtensionToken",
     "FundHoldingsHistory",
     "FundHoldingsIntraday",
 ]
