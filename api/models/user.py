@@ -48,6 +48,8 @@ class User(Base):
 
     is_active = Column(Boolean, default=True, nullable=False)
     is_verified = Column(Boolean, default=False, nullable=False)
+    # Одноразовая retention-скидка при отмене автопродления — использована?
+    retention_used = Column(Boolean, default=False, nullable=False, server_default="false")
 
     # === Подтверждение email (Phase 2 — SMTP Yandex 360) ===
     # Заполняются только для email+password юзеров. OAuth-юзеры приходят с

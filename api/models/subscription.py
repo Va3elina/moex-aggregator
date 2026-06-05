@@ -68,7 +68,8 @@ class Subscription(Base):
     tier = Column(String(16), nullable=False)              # 'basic' / 'pro' / 'premium' — уровень доступа
     period = Column(String(16), nullable=False)            # 'monthly' / 'yearly' — период оплаты
     plan_id = Column(String(32), nullable=False)           # 'pro_monthly' — связка tier+period (SKU)
-    amount = Column(Numeric(10, 2), nullable=False)        # сумма в рублях
+    amount = Column(Numeric(10, 2), nullable=False)        # сумма в рублях (фактически списанная, уже со скидкой)
+    discount_pct = Column(Integer, nullable=False, default=0, server_default="0")  # retention-скидка %, к рекуррентному списанию (одноразовая)
     currency = Column(String(3), default="RUB", nullable=False)
 
     # === Lifecycle ===

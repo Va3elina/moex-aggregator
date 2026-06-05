@@ -15,6 +15,7 @@
 """
 import logging
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 
 from sqlalchemy import or_ as sa_or_
 from sqlalchemy.orm import Session
@@ -470,7 +471,10 @@ def renew_expiring_subs(db: Session, hours_window: int = 24) -> dict:
             continue
 
         try:
-            result = charge_recurrent(db, user, sub.plan_id, pm)
+            # Переносим retention-скидку истекающей подписки на это (одно)
+            # продление. Новая запись внутри charge_recurrent создаётся с
+            # discount_pct=0 → следующее продление уже по полной цене.
+            result = charge_recurrent(db, user, sub.plan_id, pm, discount_pct=sub.discount_pct or 0)
             if result.get("ok"):
                 summary["renewed"] += 1
                 log.info(
@@ -722,6 +726,7 @@ def charge_recurrent(
     user: User,
     plan_id: str,
     payment_method: UserPaymentMethod,
+    discount_pct: int = 0,
 ) -> dict:
     """
     Списать с сохранённой карты по plan_id — auto-renewal flow.
@@ -750,6 +755,15 @@ def charge_recurrent(
     if not plan:
         raise ValueError(f"Unknown plan_id: {plan_id}")
 
+    # Retention-скидка: применяется к ЭТОМУ списанию (1 период). discount_pct
+    # приходит из истекающей подписки; новая запись ниже создаётся с
+    # discount_pct=0 (default) → скидка одноразовая, дальше полная цена.
+    # T-Bank принимает любую сумму >0, чек 54-ФЗ бьётся на эту же сумму
+    # (tbank.charge → _build_receipt(amount)).
+    effective_amount = plan.amount
+    if discount_pct and 0 < discount_pct < 100:
+        effective_amount = (plan.amount * (100 - discount_pct) / 100).quantize(Decimal("0.01"))
+
     provider = get_payment_provider()
     if not hasattr(provider, "charge"):
         raise RuntimeError(f"Provider {provider.name} не поддерживает рекурренты")
@@ -760,7 +774,7 @@ def charge_recurrent(
         tier=plan.tier,
         period=plan.period,
         plan_id=plan.plan_id,
-        amount=plan.amount,
+        amount=effective_amount,
         currency="RUB",
         status="pending",
         payment_method_id=payment_method.id,
@@ -776,9 +790,9 @@ def charge_recurrent(
     # Receipt вернёт 309 «expected.receipt». Берём из user.email.
     try:
         result = provider.charge(  # type: ignore[attr-defined]
-            amount=plan.amount,
+            amount=effective_amount,
             currency="RUB",
-            description=f"{plan.title} — auto-renewal user #{user.id}",
+            description=f"{plan.title} — auto-renewal user #{user.id}" + (f" (скидка {discount_pct}%)" if discount_pct else ""),
             rebill_id=payment_method.rebill_id,
             customer_key=payment_method.customer_key or str(user.id),
             customer_email=user.email,

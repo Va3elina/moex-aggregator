@@ -66,6 +66,7 @@ class StatusResponse(BaseModel):
     started_at: str | None = None
     expires_at: str | None = None
     cancelled_at: str | None = None      # NULL → активна и продлится, NOT NULL → отменена, доступ до expires_at
+    retention_eligible: bool = False     # можно ли предложить retention-скидку 40% (active + автопродление + не использована)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -126,6 +127,15 @@ async def my_status(
     Вернёт текущий tier пользователя + активную подписку (если есть).
     """
     sub = billing_service.current_subscription(db, user)
+    # Retention-оффер доступен только если: подписка активна, не отменена, есть
+    # автопродление (payment_method_id) и скидку ещё не использовали.
+    retention_eligible = bool(
+        sub is not None
+        and sub.status == "active"
+        and sub.cancelled_at is None
+        and sub.payment_method_id is not None
+        and not getattr(user, "retention_used", False)
+    )
     return StatusResponse(
         tier=user_tier(user),
         is_active=sub is not None,
@@ -134,6 +144,7 @@ async def my_status(
         started_at=sub.started_at.isoformat() if sub and sub.started_at else None,
         expires_at=sub.expires_at.isoformat() if sub and sub.expires_at else None,
         cancelled_at=sub.cancelled_at.isoformat() if sub and sub.cancelled_at else None,
+        retention_eligible=retention_eligible,
     )
 
 
@@ -307,6 +318,50 @@ async def cancel(
         "cancelled_at": sub.cancelled_at.isoformat(),
         "expires_at": sub.expires_at.isoformat() if sub.expires_at else None,
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  4b. POST /retention/accept — скидка 40% вместо отмены (1 раз на аккаунт)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+RETENTION_DISCOUNT_PCT = 40  # скидка на 1 следующее продление при отказе от отмены
+
+
+class RetentionRequest(BaseModel):
+    subscription_id: int
+
+
+@router.post("/retention/accept")
+async def retention_accept(
+    body: RetentionRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Принять retention-предложение вместо отмены: скидка 40% на СЛЕДУЮЩЕЕ продление.
+    Подписка НЕ отменяется (cancelled_at не ставится) — остаётся активной и
+    продлится со скидкой. Одноразово на аккаунт (user.retention_used). Скидка
+    применяется в charge_recurrent при ближайшем рекуррентном списании.
+    """
+    if getattr(user, "retention_used", False):
+        raise HTTPException(400, "Скидка уже была использована ранее")
+    sub = db.query(Subscription).filter(
+        Subscription.id == body.subscription_id,
+        Subscription.user_id == user.id,
+    ).first()
+    if not sub:
+        raise HTTPException(404, "Подписка не найдена")
+    if sub.status != "active" or sub.cancelled_at is not None:
+        raise HTTPException(400, "Скидка доступна только для активной неотменённой подписки")
+    if sub.payment_method_id is None:
+        raise HTTPException(400, "Нет автопродления — скидку не к чему применить")
+
+    sub.discount_pct = RETENTION_DISCOUNT_PCT
+    user.retention_used = True
+    db.commit()
+    log.info("User #%s accepted retention: %d%% off next renewal of sub #%s",
+             user.id, RETENTION_DISCOUNT_PCT, sub.id)
+    return {"ok": True, "discount_pct": RETENTION_DISCOUNT_PCT, "subscription_id": sub.id}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

@@ -18,6 +18,7 @@ interface BillingStatus {
   started_at: string | null;
   expires_at: string | null;
   cancelled_at: string | null;  // NULL → активна, NOT NULL → отменена (доступ до expires_at)
+  retention_eligible?: boolean; // можно предложить retention-скидку 40% вместо отмены
 }
 
 interface HistoryItem {
@@ -105,6 +106,7 @@ export default function ProfilePage() {
   // Real subscription status — fetch'аем при mount, заменяет hardcoded "Бесплатный план"
   const [billing, setBilling] = useState<BillingStatus | null>(null);
   const [cancelLoading, setCancelLoading] = useState(false);
+  const [showRetention, setShowRetention] = useState(false);  // модалка retention-оффера
 
   // История платежей — последние N подписок любого статуса
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -132,11 +134,16 @@ export default function ProfilePage() {
   }, []);
 
   // Cancel или Resume — обе ручки идут через те же args, разные endpoints
-  const handleSubAction = async (action: 'cancel' | 'resume') => {
+  const handleSubAction = async (action: 'cancel' | 'resume', opts?: { force?: boolean }) => {
     if (!billing?.subscription_id) return;
-    if (action === 'cancel' && !window.confirm(
-      'Отменить подписку?\n\nАвто-продление будет отключено, но доступ к Pro-функциям останется до конца оплаченного периода.'
-    )) return;
+    if (action === 'cancel' && !opts?.force) {
+      // Интерсепт: если доступна retention-скидка — показываем оффер 40% вместо
+      // отмены. «Всё равно отменить» в модалке зовёт с force=true.
+      if (billing.retention_eligible) { setShowRetention(true); return; }
+      if (!window.confirm(
+        'Отменить подписку?\n\nАвто-продление будет отключено, но доступ к Pro-функциям останется до конца оплаченного периода.'
+      )) return;
+    }
     setCancelLoading(true);
     try {
       await fetch(`/api/billing/${action}`, {
@@ -150,6 +157,27 @@ export default function ProfilePage() {
       fetchBilling();
     } finally {
       setCancelLoading(false);
+      setShowRetention(false);
+    }
+  };
+
+  // Принять retention-оффер: скидка 40% на следующее продление вместо отмены.
+  const acceptRetentionOffer = async () => {
+    if (!billing?.subscription_id) return;
+    setCancelLoading(true);
+    try {
+      await fetch('/api/billing/retention/accept', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('access_token')}`,
+        },
+        body: JSON.stringify({ subscription_id: billing.subscription_id }),
+      });
+      fetchBilling();
+    } finally {
+      setCancelLoading(false);
+      setShowRetention(false);
     }
   };
 
@@ -427,6 +455,54 @@ export default function ProfilePage() {
                 </button>
               )}
             </div>
+
+            {/* Retention-оффер: скидка 40% вместо отмены автопродления (1 раз на аккаунт) */}
+            {showRetention && billing?.subscription_id && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true">
+                <div className="absolute inset-0" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }} onClick={() => !cancelLoading && setShowRetention(false)} />
+                <div
+                  className="relative w-full max-w-sm rounded-2xl p-6"
+                  style={{
+                    backgroundColor: 'var(--bg-secondary)',
+                    border: '2px solid var(--text-primary)',
+                    boxShadow: 'var(--shadow-hard-chip, 6px 6px 0 var(--text-primary))',
+                    color: 'var(--text-primary)',
+                  }}
+                >
+                  <div className="text-center">
+                    <div className="text-3xl font-extrabold mb-1" style={{ color: 'var(--accent)' }}>−40%</div>
+                    <h3 className="text-lg font-bold mb-2">Останьтесь со скидкой</h3>
+                    <p className="text-sm mb-5" style={{ color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                      Не уходите — следующее продление со&nbsp;скидкой <b style={{ color: 'var(--text-primary)' }}>40%</b>. Подписка
+                      останется активной, дальше — по&nbsp;обычной цене. Предложение одноразовое.
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-2.5">
+                    <button
+                      onClick={acceptRetentionOffer}
+                      disabled={cancelLoading}
+                      className="w-full px-4 py-3 rounded-full text-sm font-bold transition-opacity hover:opacity-90 disabled:opacity-50"
+                      style={{
+                        backgroundColor: 'var(--accent)',
+                        color: 'var(--text-inverse)',
+                        border: '2px solid var(--text-primary)',
+                        boxShadow: 'var(--shadow-hard-chip, 3px 3px 0 var(--text-primary))',
+                      }}
+                    >
+                      {cancelLoading ? 'Применяем…' : 'Получить скидку 40%'}
+                    </button>
+                    <button
+                      onClick={() => handleSubAction('cancel', { force: true })}
+                      disabled={cancelLoading}
+                      className="w-full px-4 py-2.5 rounded-full text-sm font-medium transition-opacity hover:opacity-80 disabled:opacity-50"
+                      style={{ backgroundColor: 'transparent', color: 'var(--text-muted)' }}
+                    >
+                      Всё равно отменить
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </>
         ) : (
           // === Free user — features list + CTA ===
