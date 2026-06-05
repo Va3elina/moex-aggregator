@@ -213,7 +213,7 @@ async def get_imoex_heatmap(
         # тех.работы ISS) → карта НЕ должна падать 500. Пробуем ISS; при ошибке —
         # последние веса из БД (imoex_weights). 503 только если и БД-фоллбэк пуст.
         try:
-            async with httpx.AsyncClient(timeout=15) as client:
+            async with httpx.AsyncClient(timeout=5) as client:
                 resp = await client.get(IMOEX_ISS_URL)
                 resp.raise_for_status()
                 data = resp.json()
@@ -228,6 +228,10 @@ async def get_imoex_heatmap(
             weights = _load_imoex_weights_fallback()
             if not weights:
                 raise HTTPException(status_code=503, detail="IMOEX веса временно недоступны")
+            # Кэшируем фоллбэк-веса на 10 мин: пока сеть до MOEX закрыта, не дёргаем
+            # ISS (и не ждём таймаут) на каждом запросе. Через 10 мин — повторная
+            # проба ISS, подхватит свежие веса как только MOEX вернёт доступ.
+            get_or_set(weights_cache_key, weights, ttl=600)
             logger.warning(
                 f"IMOEX weights via ISS failed ({type(e).__name__}) — fallback на БД "
                 f"({len(weights)} бумаг)"
