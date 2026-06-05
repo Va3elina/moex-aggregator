@@ -168,9 +168,20 @@ export interface UseTierAccessResult {
 
 export function useTierAccess(indicator: string): UseTierAccessResult {
     const matrix = useContext(TierFeaturesContext);
-    const { user } = useAuth();
+    const { user, loading: authLoading } = useAuth();
 
     const tier = useMemo(() => normalizeTier(user?.role), [user?.role]);
+
+    // Tier недостоверен, пока не разрешены ОБА источника: matrix (фичи) и auth (роль).
+    // matrix===null — матрица ещё грузится. authLoading — AuthContext грузит /me.
+    // (hasToken && !user) — критичный кейс: токен есть, но user не подгрузился,
+    // например /me временно упал на старте (AuthContext.loadUser ловит сетевую
+    // ошибку и всё равно снимает loading) → tier падал в 'guest' и Pro-юзер видел
+    // замки до перезагрузки. Все потребители трактуют isLoading=true как «не
+    // блокировать», поэтому достоверный tier раскроет реальные замки, а недогруз —
+    // нет. Лучше на миг не запереть, чем запереть платника.
+    const hasToken = typeof window !== 'undefined' && !!localStorage.getItem('access_token');
+    const tierLoading = matrix === null || authLoading || (hasToken && !user);
 
     const limits = useMemo<IndicatorLimits>(() => {
         if (!matrix) return {};
@@ -215,7 +226,7 @@ export function useTierAccess(indicator: string): UseTierAccessResult {
     return {
         tier,
         limits,
-        isLoading: matrix === null,
+        isLoading: tierLoading,
         canAccessAsset: (asset) => checkOnTier(effectiveTierForLimits(tier), { asset }),
         canUseInterval: (interval) => checkOnTier(effectiveTierForLimits(tier), { interval }),
         canUseTimeframe: (tf) => checkOnTier(effectiveTierForLimits(tier), { timeframe: tf }),
