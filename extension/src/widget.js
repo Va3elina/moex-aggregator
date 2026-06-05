@@ -28,7 +28,7 @@
     { id: 'fund-trades',  label: 'Сделки',     group: 'market' }
   ];
 
-  var DEFAULTS = { x: null, y: null, w: 520, h: 430, tab: 'oi', theme: 'editorial-dark', collapsed: false, closed: false };
+  var DEFAULTS = { x: null, y: null, w: 520, h: 430, tab: 'oi', theme: 'editorial-dark', collapsed: false, closed: true };
   var KEY = 'frameWidgetState';
 
   // Хранилище: chrome.storage.local (в расширении) или localStorage (в dev-preview).
@@ -145,6 +145,7 @@
     pageRoot.appendChild(host);
 
     var state = Object.assign({}, DEFAULTS);
+    var pillEnabled = true; // плавающая пилюля-лаунчер; гасим, если есть кнопка в тулбаре терминала
 
     function clamp() {
       var vw = window.innerWidth, vh = window.innerHeight;
@@ -156,6 +157,16 @@
       state.y = Math.max(6, Math.min(state.y, vh - 44));
     }
     function persist() { store.set(state); }
+    // Прилипание к краям вьюпорта при отпускании drag/resize.
+    function snapToEdges() {
+      var T = 24, vw = window.innerWidth, vh = window.innerHeight;
+      if (state.x <= T) state.x = 6;
+      else if (state.x + state.w >= vw - T) state.x = Math.max(6, vw - state.w - 6);
+      if (state.y <= T) state.y = 6;
+      else if (state.y + state.h >= vh - T) state.y = Math.max(6, vh - state.h - 6);
+      root.style.left = state.x + 'px';
+      root.style.top = state.y + 'px';
+    }
     function loadIframe() {
       iframe.src = EMBED_BASE + '/embed/' + state.tab + '?theme=' + state.theme;
       var t = TABS.find(function (x) { return x.id === state.tab; });
@@ -176,7 +187,7 @@
     }
     function applyClosed() {
       root.style.display = state.closed ? 'none' : 'flex';
-      launcher.style.display = state.closed ? 'flex' : 'none';
+      launcher.style.display = (state.closed && pillEnabled) ? 'flex' : 'none';
     }
     function applyAll() { clamp(); applyTheme(); applyTabs(); applyLayout(); applyClosed(); loadIframe(); }
 
@@ -199,7 +210,7 @@
       var sx = e.clientX, sy = e.clientY, ox = state.x, oy = state.y;
       try { head.setPointerCapture(e.pointerId); } catch (er) {}
       function mv(ev) { state.x = ox + (ev.clientX - sx); state.y = oy + (ev.clientY - sy); clamp(); root.style.left = state.x + 'px'; root.style.top = state.y + 'px'; }
-      function up() { head.removeEventListener('pointermove', mv); head.removeEventListener('pointerup', up); persist(); }
+      function up() { head.removeEventListener('pointermove', mv); head.removeEventListener('pointerup', up); snapToEdges(); persist(); }
       head.addEventListener('pointermove', mv); head.addEventListener('pointerup', up);
     });
 
@@ -209,13 +220,21 @@
       var sx = e.clientX, sy = e.clientY, ow = state.w, oh = state.h;
       try { resize.setPointerCapture(e.pointerId); } catch (er) {}
       function mv(ev) { state.w = ow + (ev.clientX - sx); state.h = oh + (ev.clientY - sy); clamp(); root.style.width = state.w + 'px'; root.style.height = state.h + 'px'; }
-      function up() { resize.removeEventListener('pointermove', mv); resize.removeEventListener('pointerup', up); persist(); }
+      function up() { resize.removeEventListener('pointermove', mv); resize.removeEventListener('pointerup', up); snapToEdges(); persist(); }
       resize.addEventListener('pointermove', mv); resize.addEventListener('pointerup', up);
     });
 
     window.addEventListener('resize', function () { clamp(); applyLayout(); });
 
+    var api = {
+      open: function () { state.closed = false; applyClosed(); persist(); },
+      close: function () { state.closed = true; applyClosed(); persist(); },
+      toggle: function () { state.closed = !state.closed; applyClosed(); persist(); },
+      isOpen: function () { return !state.closed; },
+      setPillEnabled: function (v) { pillEnabled = !!v; applyClosed(); }
+    };
     store.get().then(function (saved) { if (saved) state = Object.assign(state, saved); applyAll(); });
+    return api;
   }
 
   window.FrameWidget = { mount: mount, TABS: TABS };
