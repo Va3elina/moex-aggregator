@@ -949,6 +949,7 @@ export default function SeasonalityPage() {
               monthlySeries={monthlySeries}
               seriesMeta={seriesMeta}
               periodLabel={histogramPeriodLabel}
+              niceXLabels={mode === 'monthday'}
             />
           )
         ) : chartType === 'price' ? (

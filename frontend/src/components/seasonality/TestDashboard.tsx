@@ -239,6 +239,7 @@ export default function TestDashboard({
                   monthlySeries={testHistSeries[m]}
                   seriesMeta={seriesMeta}
                   compact
+                  niceXLabels={m === 'monthday'}
                 />
               )}
             </div>
@@ -447,6 +448,7 @@ function ExpandedChartModal({
                 setTooltip={(t) => setHistTooltips(prev => ({ ...prev, [view]: t }))}
                 monthlySeries={histSeries[view]}
                 seriesMeta={seriesMeta}
+                niceXLabels={view === 'monthday'}
               />
             ) : (
               <div className="h-full flex items-center justify-center text-theme-muted">Нет данных</div>

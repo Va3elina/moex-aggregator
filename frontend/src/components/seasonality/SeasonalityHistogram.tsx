@@ -35,6 +35,11 @@ interface SeasonalityHistogramProps {
   /** Описание выбранного периода для single-mode легенды (например «С 2008 г.»).
    *  В multi-mode игнорируется (там периоды видны как метки серий seriesMeta). */
   periodLabel?: string;
+  /** Числовая ось X (дни месяца): подписи по КРУГЛЫМ значениям (5,10,15…/10,20,30)
+   *  + первый день, а не по равномерному индексу (давал 1,6,11,16…). Включать
+   *  ТОЛЬКО для mode='monthday' — у остальных режимов метки нечисловые (часы/дни
+   *  недели/месяцы), там дефолтная индекс-логика. */
+  niceXLabels?: boolean;
 }
 
 // Параметры волны из единого конфига — совпадают с FlowsHistogram.
@@ -53,6 +58,7 @@ export default function SeasonalityHistogram({
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   compact: _compact = false,
   periodLabel,
+  niceXLabels = false,
 }: SeasonalityHistogramProps) {
   const vw = useViewportWidth();
   const axisFs = axisFontSize(vw);
@@ -414,7 +420,16 @@ export default function SeasonalityHistogram({
           // Раньше был "|| i === bars.length - 1" force-last-bar — но при
           // step=2 на 12 месяцах это давало Nov(10) AND Dec(11) рядом
           // (overlap). Теперь только step-aligned, без force.
-          const showLabel = step === 1 || i % step === 0;
+          //
+          // niceXLabels (mode='monthday'): подписи по КРУГЛЫМ значениям дня —
+          // step снапается к ближайшему «приятному» 5/10 (узкий экран → 10), и
+          // метка показывается, когда сам день кратен niceStep (5,10,15… либо
+          // 10,20,30) + первый день. Даёт 1,5,10,15,20,25,30 вместо 1,6,11,16…
+          // Дефолт (все прочие оси: даты/часы/месяцы) — без изменений.
+          const niceStep = step <= 5 ? 5 : 10;
+          const showLabel = niceXLabels
+            ? (i === 0 || Number(bar.label) % niceStep === 0)
+            : (step === 1 || i % step === 0);
           return (
             <span key={bar.key} className="text-center" style={{ width: `${100 / bars.length}%` }}>
               {showLabel ? bar.label : ''}
