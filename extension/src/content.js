@@ -17,19 +17,20 @@
     btn.id = BTN_ID;
     btn.type = 'button';
     btn.title = 'Фрейм — индикаторы';
-    // Стиль под тёмный тулбар терминала (кнопка живёт в ИХ DOM, не в Shadow).
+    // Минимал: квадрат с буквой «F» под сетку тулбара терминала (как «T+»).
+    // Живёт в ИХ DOM, не в Shadow — стилизуем инлайном.
+    var BORDER = 'rgba(245,241,232,0.28)';
     btn.style.cssText = [
-      'display:inline-flex', 'align-items:center', 'gap:6px',
-      'height:28px', 'padding:0 10px', 'margin:0 4px',
-      'background:transparent', 'color:#F5F1E8',
-      'border:1px solid rgba(245,241,232,0.28)', 'border-radius:6px',
-      'font:600 12px/1 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif',
-      'cursor:pointer', 'white-space:nowrap', 'box-sizing:border-box'
+      'display:inline-flex', 'align-items:center', 'justify-content:center',
+      'width:28px', 'height:28px', 'padding:0', 'margin:0 4px',
+      'background:transparent', 'color:#FF5C2B',
+      'border:1px solid ' + BORDER, 'border-radius:6px',
+      'font:800 15px/1 Georgia,"Times New Roman",serif',
+      'cursor:pointer', 'box-sizing:border-box', 'flex:0 0 auto'
     ].join(';');
-    var dot = document.createElement('span');
-    dot.style.cssText = 'width:8px;height:8px;border-radius:50%;background:#FF5C2B;flex:0 0 auto';
-    btn.appendChild(dot);
-    btn.appendChild(document.createTextNode('Фрейм'));
+    btn.textContent = 'F';
+    btn.addEventListener('mouseenter', function () { btn.style.borderColor = 'rgba(245,241,232,0.6)'; });
+    btn.addEventListener('mouseleave', function () { btn.style.borderColor = BORDER; });
     btn.addEventListener('click', function (e) {
       e.preventDefault();
       e.stopPropagation();
