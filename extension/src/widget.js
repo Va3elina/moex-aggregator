@@ -153,6 +153,37 @@
       st.y = Math.max(6, Math.min(st.y, vh - 44));
     }
 
+    var SNAP = 18, MARGIN = 6;
+    // Магнитное прилипание к краям окна терминала при перетаскивании (как TT).
+    // Притягиваем И собственный край панели, И края соседних панелей (док-стек).
+    function snapMove(st, self) {
+      var vw = window.innerWidth, vh = window.innerHeight;
+      var L = [MARGIN], R = [vw - MARGIN], T = [MARGIN], B = [vh - MARGIN];
+      panels.forEach(function (p) {
+        if (p.state === self) return;
+        var s = p.state;
+        L.push(s.x, s.x + s.w); R.push(s.x, s.x + s.w);
+        T.push(s.y, s.y + s.h); B.push(s.y, s.y + s.h);
+      });
+      // левый край панели → к L; правый край → к R
+      L.forEach(function (v) { if (Math.abs(st.x - v) <= SNAP) st.x = v; });
+      R.forEach(function (v) { if (Math.abs((st.x + st.w) - v) <= SNAP) st.x = v - st.w; });
+      T.forEach(function (v) { if (Math.abs(st.y - v) <= SNAP) st.y = v; });
+      B.forEach(function (v) { if (Math.abs((st.y + st.h) - v) <= SNAP) st.y = v - st.h; });
+    }
+    // Прилипание правого/нижнего края при ресайзе.
+    function snapResize(st) {
+      var vw = window.innerWidth, vh = window.innerHeight;
+      if (Math.abs((st.x + st.w) - (vw - MARGIN)) <= SNAP) st.w = vw - MARGIN - st.x;
+      if (Math.abs((st.y + st.h) - (vh - MARGIN)) <= SNAP) st.h = vh - MARGIN - st.y;
+      panels.forEach(function (p) {
+        if (p.state === st) return;
+        var s = p.state;
+        [s.x, s.x + s.w].forEach(function (v) { if (Math.abs((st.x + st.w) - v) <= SNAP) st.w = v - st.x; });
+        [s.y, s.y + s.h].forEach(function (v) { if (Math.abs((st.y + st.h) - v) <= SNAP) st.h = v - st.y; });
+      });
+    }
+
     function spawnPanel(id, saved) {
       var ind = INDICATORS.find(function (x) { return x.id === id; });
       if (!ind) return;
@@ -197,7 +228,7 @@
         if (e.target.closest('.fw-btn')) return;
         var sx = e.clientX, sy = e.clientY, ox = st.x, oy = st.y;
         try { head.setPointerCapture(e.pointerId); } catch (er) {}
-        function mv(ev) { st.x = ox + (ev.clientX - sx); st.y = oy + (ev.clientY - sy); clampPanel(st); el.style.left = st.x + 'px'; el.style.top = st.y + 'px'; }
+        function mv(ev) { st.x = ox + (ev.clientX - sx); st.y = oy + (ev.clientY - sy); clampPanel(st); snapMove(st, st); el.style.left = st.x + 'px'; el.style.top = st.y + 'px'; }
         function up() { head.removeEventListener('pointermove', mv); head.removeEventListener('pointerup', up); persist(); }
         head.addEventListener('pointermove', mv); head.addEventListener('pointerup', up);
       });
@@ -205,7 +236,7 @@
         e.preventDefault();
         var sx = e.clientX, sy = e.clientY, ow = st.w, oh = st.h;
         try { resize.setPointerCapture(e.pointerId); } catch (er) {}
-        function mv(ev) { st.w = ow + (ev.clientX - sx); st.h = oh + (ev.clientY - sy); clampPanel(st); el.style.width = st.w + 'px'; el.style.height = st.h + 'px'; }
+        function mv(ev) { st.w = ow + (ev.clientX - sx); st.h = oh + (ev.clientY - sy); clampPanel(st); snapResize(st); el.style.width = st.w + 'px'; el.style.height = st.h + 'px'; }
         function up() { resize.removeEventListener('pointermove', mv); resize.removeEventListener('pointerup', up); persist(); }
         resize.addEventListener('pointermove', mv); resize.addEventListener('pointerup', up);
       });
