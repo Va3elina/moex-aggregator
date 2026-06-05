@@ -154,34 +154,68 @@
     }
 
     var SNAP = 18, MARGIN = 6;
-    // Магнитное прилипание к краям окна терминала при перетаскивании (как TT).
-    // Притягиваем И собственный край панели, И края соседних панелей (док-стек).
-    function snapMove(st, self) {
-      var vw = window.innerWidth, vh = window.innerHeight;
-      var L = [MARGIN], R = [vw - MARGIN], T = [MARGIN], B = [vh - MARGIN];
+
+    // Снап-окружение терминала: «внутреннее поле» (контейнер виджетов, БЕЗ верхних
+    // тулбаров и нижнего статус-бара) + прямоугольники чужих виджетов терминала.
+    // Наши панели в shadow DOM → .react-draggable = только виджеты терминала.
+    // Классы хешированы (`...widgetsWrap-1ff99`) → матчим по подстроке.
+    function getSnapEnv() {
+      var field = null, widgets = [];
+      try {
+        var fEl = document.querySelector('[class*="widgetsWrap"]') ||
+                  document.querySelector('[class*="Space-styles-cut"]');
+        if (fEl) {
+          var fr = fEl.getBoundingClientRect();
+          field = {
+            left: Math.max(0, fr.left), right: Math.min(window.innerWidth, fr.right),
+            top: Math.max(0, fr.top), bottom: Math.min(window.innerHeight, fr.bottom)
+          };
+        }
+        var nodes = document.querySelectorAll('.react-draggable');
+        for (var i = 0; i < nodes.length; i++) {
+          var r = nodes[i].getBoundingClientRect();
+          if (r.width > 120 && r.height > 80) widgets.push({ left: r.left, right: r.right, top: r.top, bottom: r.bottom });
+        }
+      } catch (e) { /* терминал перерисовался — fallback на окно */ }
+      if (!field) field = { left: MARGIN, right: window.innerWidth - MARGIN, top: MARGIN, bottom: window.innerHeight - MARGIN };
+      return { field: field, widgets: widgets };
+    }
+
+    // Магнит при перетаскивании: к внутреннему полю, к краям виджетов терминала и
+    // к соседним нашим панелям (env кешируется на старте drag для стабильности).
+    function snapMove(st, self, env) {
+      env = env || getSnapEnv();
+      var f = env.field;
+      var L = [f.left], R = [f.right], T = [f.top], B = [f.bottom];
+      env.widgets.forEach(function (w) {
+        L.push(w.left, w.right); R.push(w.left, w.right);
+        T.push(w.top, w.bottom); B.push(w.top, w.bottom);
+      });
       panels.forEach(function (p) {
         if (p.state === self) return;
         var s = p.state;
         L.push(s.x, s.x + s.w); R.push(s.x, s.x + s.w);
         T.push(s.y, s.y + s.h); B.push(s.y, s.y + s.h);
       });
-      // левый край панели → к L; правый край → к R
       L.forEach(function (v) { if (Math.abs(st.x - v) <= SNAP) st.x = v; });
       R.forEach(function (v) { if (Math.abs((st.x + st.w) - v) <= SNAP) st.x = v - st.w; });
       T.forEach(function (v) { if (Math.abs(st.y - v) <= SNAP) st.y = v; });
       B.forEach(function (v) { if (Math.abs((st.y + st.h) - v) <= SNAP) st.y = v - st.h; });
     }
-    // Прилипание правого/нижнего края при ресайзе.
-    function snapResize(st) {
-      var vw = window.innerWidth, vh = window.innerHeight;
-      if (Math.abs((st.x + st.w) - (vw - MARGIN)) <= SNAP) st.w = vw - MARGIN - st.x;
-      if (Math.abs((st.y + st.h) - (vh - MARGIN)) <= SNAP) st.h = vh - MARGIN - st.y;
+
+    // Магнит при ресайзе: правый/нижний край → к полю, виджетам и нашим панелям.
+    function snapResize(st, env) {
+      env = env || getSnapEnv();
+      var f = env.field;
+      var R = [f.right], B = [f.bottom];
+      env.widgets.forEach(function (w) { R.push(w.left, w.right); B.push(w.top, w.bottom); });
       panels.forEach(function (p) {
         if (p.state === st) return;
         var s = p.state;
-        [s.x, s.x + s.w].forEach(function (v) { if (Math.abs((st.x + st.w) - v) <= SNAP) st.w = v - st.x; });
-        [s.y, s.y + s.h].forEach(function (v) { if (Math.abs((st.y + st.h) - v) <= SNAP) st.h = v - st.y; });
+        R.push(s.x, s.x + s.w); B.push(s.y, s.y + s.h);
       });
+      R.forEach(function (v) { if (Math.abs((st.x + st.w) - v) <= SNAP) st.w = v - st.x; });
+      B.forEach(function (v) { if (Math.abs((st.y + st.h) - v) <= SNAP) st.h = v - st.y; });
     }
 
     function spawnPanel(id, saved) {
@@ -227,16 +261,18 @@
       head.addEventListener('pointerdown', function (e) {
         if (e.target.closest('.fw-btn')) return;
         var sx = e.clientX, sy = e.clientY, ox = st.x, oy = st.y;
+        var env = getSnapEnv(); // снимок виджетов/поля терминала на старте drag
         try { head.setPointerCapture(e.pointerId); } catch (er) {}
-        function mv(ev) { st.x = ox + (ev.clientX - sx); st.y = oy + (ev.clientY - sy); clampPanel(st); snapMove(st, st); el.style.left = st.x + 'px'; el.style.top = st.y + 'px'; }
+        function mv(ev) { st.x = ox + (ev.clientX - sx); st.y = oy + (ev.clientY - sy); clampPanel(st); snapMove(st, st, env); el.style.left = st.x + 'px'; el.style.top = st.y + 'px'; }
         function up() { head.removeEventListener('pointermove', mv); head.removeEventListener('pointerup', up); persist(); }
         head.addEventListener('pointermove', mv); head.addEventListener('pointerup', up);
       });
       resize.addEventListener('pointerdown', function (e) {
         e.preventDefault();
         var sx = e.clientX, sy = e.clientY, ow = st.w, oh = st.h;
+        var env = getSnapEnv(); // снимок виджетов/поля терминала на старте resize
         try { resize.setPointerCapture(e.pointerId); } catch (er) {}
-        function mv(ev) { st.w = ow + (ev.clientX - sx); st.h = oh + (ev.clientY - sy); clampPanel(st); snapResize(st); el.style.width = st.w + 'px'; el.style.height = st.h + 'px'; }
+        function mv(ev) { st.w = ow + (ev.clientX - sx); st.h = oh + (ev.clientY - sy); clampPanel(st); snapResize(st, env); el.style.width = st.w + 'px'; el.style.height = st.h + 'px'; }
         function up() { resize.removeEventListener('pointermove', mv); resize.removeEventListener('pointerup', up); persist(); }
         resize.addEventListener('pointermove', mv); resize.addEventListener('pointerup', up);
       });
