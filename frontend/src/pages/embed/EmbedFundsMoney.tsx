@@ -19,7 +19,6 @@ import {
   type FlowTimeframe,
   type FundsFlowsResponse,
 } from '../../services/api';
-import { ANIMATION } from '../../config/chartTheme';
 import { EmbedMsg } from './embedUi';
 import { useEmbedSettings, EmbedShell, DrawerSection, SegGroup, ToggleRow } from './EmbedSettings';
 
@@ -27,8 +26,6 @@ type Category = FundCategory;
 type ViewMode = 'aum' | 'flows';
 type LoadStatus = 'idle' | 'loading' | 'ok' | 'empty' | 'error';
 type FundsResp = Awaited<ReturnType<typeof getFundsChartData>>;
-
-const easeOutCubic = ANIMATION.easing;
 
 const CATS: { id: Category; label: string }[] = [
   { id: 'money_market', label: 'Денежный' },
@@ -102,7 +99,6 @@ export default function EmbedFundsMoney() {
   const [hoveredAnnotation, setHoveredAnnotation] = useState<string | null>(null);
   const flowChartRef = useRef<SVGSVGElement>(null);
   const flowContainerRef = useRef<HTMLDivElement>(null);
-  const barsAnimRef = useRef<number | null>(null);
 
   // Persist
   useEffect(() => { try { localStorage.setItem('frame:embed:funds:category', category); } catch { /* quota */ } }, [category]);
@@ -157,50 +153,20 @@ export default function EmbedFundsMoney() {
     }
   }, [flowsData]);
 
-  // rAF-волна баров (порт со страницы): всегда из нуля + каскад слева направо.
+  // Бары гистограммы: ставим ФИНАЛЬНЫЕ значения сразу (без rAF-волны).
+  // Проверено в браузере: в iframe-контексте flowsData приходил несколько раз
+  // (повторные fetch'и), rAF-эффект перезапускался и анимация зависала на 1-м
+  // кадре → большинство баров оставались на нуле и схлопывались к левому краю.
+  // Статичные бары надёжнее: данные важнее косметической волны.
   useEffect(() => {
-    if (viewMode !== 'flows') {
-      if (barsAnimRef.current) cancelAnimationFrame(barsAnimRef.current);
+    if (viewMode !== 'flows' || !flowsData?.flows?.length) {
       setAnimatedBarsIn([]);
       setAnimatedBarsOut([]);
       return;
     }
-    if (!flowsData?.flows?.length) {
-      setAnimatedBarsIn([]);
-      setAnimatedBarsOut([]);
-      return;
-    }
-
-    if (barsAnimRef.current) cancelAnimationFrame(barsAnimRef.current);
-
-    const targetFlows = flowsData.flows.map((f) => f.flow);
-    const totalDuration = ANIMATION.waveDuration;
-    const staggerDelay = ANIMATION.waveStagger;
-    let startTime: number | null = null;
-
-    const animate = (timestamp: number) => {
-      if (!startTime) startTime = timestamp;
-      const elapsed = timestamp - startTime;
-
-      const flows = targetFlows.map((v, i) => {
-        const barDelay = (i / targetFlows.length) * staggerDelay;
-        const barElapsed = Math.max(0, elapsed - barDelay);
-        const t = Math.min(barElapsed / (totalDuration - staggerDelay), 1);
-        return v * easeOutCubic(t);
-      });
-
-      setAnimatedBarsIn(flows.map((v) => Math.max(0, v)));
-      setAnimatedBarsOut(flows.map((v) => Math.min(0, v)));
-
-      if (elapsed < totalDuration) {
-        barsAnimRef.current = requestAnimationFrame(animate);
-      }
-    };
-
-    barsAnimRef.current = requestAnimationFrame(animate);
-    return () => {
-      if (barsAnimRef.current) cancelAnimationFrame(barsAnimRef.current);
-    };
+    const target = flowsData.flows.map((f) => f.flow);
+    setAnimatedBarsIn(target.map((v) => Math.max(0, v)));
+    setAnimatedBarsOut(target.map((v) => Math.min(0, v)));
   }, [flowsData, viewMode]);
 
   // handleFlowMouseMove — порт: измеряем РЕАЛЬНУЮ геометрию SVG (не CSS-vars).
