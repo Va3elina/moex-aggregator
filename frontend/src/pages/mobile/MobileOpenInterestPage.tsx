@@ -348,6 +348,10 @@ export default function MobileOpenInterestPage() {
         color: 'var(--chart-line-1, #5DA3E9)',
         label: instrumentName,
         axis: 'left' as const,
+        // Цена = baseline x-оси (как десктоп: OI выравнивается к свечам).
+        // Без этого у инструментов с длинной историей OI (GMKN) цена
+        // растягивалась по таймстемпам OI → плоские ступени / разрыв линии.
+        isBaseline: true,
         formatValue: (v: number) => v.toFixed(0),
       },
       ...(oiData.length > 0

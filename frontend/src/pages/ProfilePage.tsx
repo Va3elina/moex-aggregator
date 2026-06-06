@@ -662,11 +662,10 @@ export default function ProfilePage() {
           Безопасность
         </h2>
 
-        {/* Смена пароля */}
-        <div className="mb-6 pt-1">
-            <h3 className="text-sm font-medium mb-3" style={{ color: 'var(--text-secondary)' }}>
-              Смена пароля
-            </h3>
+        {/* Форма смены пароля — единственный контент секции, поэтому без
+            отдельного подзаголовка: заголовок «Безопасность» + плейсхолдеры
+            полей самодостаточны (раньше «Смена пароля» липло к инпуту). */}
+        <div className="mb-2">
             <form onSubmit={handlePasswordChange} className="space-y-3">
               <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'var(--text-muted)' }} />

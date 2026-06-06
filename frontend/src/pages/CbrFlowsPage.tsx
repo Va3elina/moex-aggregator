@@ -15,7 +15,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { LineChart, Landmark, DollarSign, Building2, ChevronDown, Users } from 'lucide-react';
+import { LineChart, Landmark, DollarSign, Building2, ChevronDown, Users, Lock } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { METHODOLOGY } from '../data/methodology';
 import {
@@ -35,6 +35,8 @@ import { usePersistedState } from '../hooks/usePersistedState';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { cbrFlowsTourSteps } from '../data/tours/cbr-flows';
 import { useTheme } from '../contexts/ThemeContext';
+import { useTierAccess } from '../contexts/TierFeaturesContext';
+import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 
 const INSTRUMENT_TABS: Array<{
   key: CbrInstrumentType;
@@ -46,10 +48,14 @@ const INSTRUMENT_TABS: Array<{
   { key: 'fx',     label: 'Валюты', Icon: DollarSign },
 ];
 
-type PeriodFilter = '1y' | '2y' | 'all';
+type PeriodFilter = '6m' | '1y' | 'all';
+// Данные ОРФР помесячные (~11 точек). Ключи совпадают с PERIOD_DAYS в
+// TierFeaturesContext ('6m'→180, '1y'→365, 'all'→∞), поэтому «Всё» (безлимит)
+// запирается для free (matrix cbr_flows free=365). 6м реально сужает выборку,
+// 1г = вся текущая история. (Было 1Г/2Г/Всё — 2г не отличался от 1г: данных <2 лет.)
 const PERIOD_OPTIONS: { key: PeriodFilter; label: string; months: number | null }[] = [
+  { key: '6m', label: '6М', months: 6 },
   { key: '1y', label: '1Г', months: 12 },
-  { key: '2y', label: '2Г', months: 24 },
   { key: 'all', label: 'Всё', months: null },
 ];
 
@@ -67,6 +73,11 @@ export default function CbrFlowsPage() {
 
   // Период: 1г / 2г / Всё (default 1г) — персистится в localStorage
   const [period, setPeriod] = usePersistedState<PeriodFilter>('frame:cbr:period', '1y');
+  // Tier-gating периодов (зеркало мобилки): «Всё» (безлимит истории) под
+  // замком для free — matrix cbr_flows free = 365 дней. canUsePeriod читает
+  // ту же матрицу что и backend-enforcement.
+  const cbrAccess = useTierAccess('cbr_flows');
+  const { showUpgrade } = useUpgradePrompt();
 
   // Popover-dropdown с выбором категорий (открывается при клике на кнопку)
   const [categoriesOpen, setCategoriesOpen] = useState(false);
@@ -352,26 +363,40 @@ export default function CbrFlowsPage() {
             )}
           </div>
 
-          {/* === Период chips (6М / 2Г / Всё) === */}
+          {/* === Период chips (6М / 1Г / Всё) — «Всё» под замком для free === */}
           <div data-tour="cbr-period" className="flex items-center" style={{ gap: 'var(--sp-1)' }}>
             {PERIOD_OPTIONS.map((opt) => {
               const isActive = period === opt.key;
+              const allowed = cbrAccess.isLoading || cbrAccess.canUsePeriod(opt.key);
               return (
                 <button
                   key={opt.key}
-                  onClick={() => setPeriod(opt.key)}
-                  className="editorial-press font-semibold rounded-full"
+                  onClick={() => {
+                    if (!allowed) {
+                      const tier = cbrAccess.requiredTierFor({ period: opt.key });
+                      if (tier) {
+                        showUpgrade({ tier, featureName: `период «${opt.label}»`, indicator: 'cbr_flows' });
+                      }
+                      return;
+                    }
+                    setPeriod(opt.key);
+                  }}
+                  className="editorial-press font-semibold rounded-full inline-flex items-center justify-center"
                   style={{
                     padding: 'var(--sp-2) var(--sp-3)',
                     fontSize: 'var(--fs-sm)',
                     minWidth: '48px',
+                    gap: 'var(--sp-1)',
                     backgroundColor: isActive ? 'var(--accent)' : 'var(--bg-secondary)',
                     color: isActive ? 'var(--text-inverse)' : 'var(--text-primary)',
                     border: '2px solid var(--text-primary)',
                     boxShadow: isActive ? 'var(--shadow-hard-chip)' : undefined,
+                    opacity: allowed ? 1 : 0.5,
                   }}
+                  aria-disabled={!allowed}
                 >
                   {opt.label}
+                  {!allowed && <Lock size={12} strokeWidth={2.2} />}
                 </button>
               );
             })}

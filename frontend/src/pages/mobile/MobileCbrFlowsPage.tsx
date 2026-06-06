@@ -8,7 +8,7 @@
  *   - Hidden categories через sheet — Phase 4
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Banknote, Landmark, DollarSign, Building2 } from 'lucide-react';
+import { Banknote, Landmark, DollarSign, Building2, Lock } from 'lucide-react';
 import MobileLayout from '../../components/mobile/MobileLayout';
 import MobilePageHeader from '../../components/mobile/MobilePageHeader';
 import MobileSheet from '../../components/mobile/MobileSheet';
@@ -21,11 +21,13 @@ import {
   type CbrFlowsResponse,
   type CbrFlowsPeriod,
 } from '../../services/api';
+import { useTierAccess } from '../../contexts/TierFeaturesContext';
+import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
 import { useOnboardingTour } from '../../hooks/useFirstVisit';
 import OnboardingTour from '../../components/onboarding/OnboardingTour';
 import type { TourStep } from '../../components/onboarding/OnboardingTour';
 
-type PeriodFilter = '1y' | '2y' | 'all';
+type PeriodFilter = '6m' | '1y' | 'all';
 
 const TYPE_TABS: Array<{ key: CbrInstrumentType; label: string; Icon: typeof Banknote }> = [
   { key: 'stocks', label: 'Акции', Icon: Building2 },
@@ -34,8 +36,12 @@ const TYPE_TABS: Array<{ key: CbrInstrumentType; label: string; Icon: typeof Ban
 ];
 
 const PERIOD_OPTIONS: Array<{ key: PeriodFilter; label: string; months: number | null }> = [
+  // Данные помесячные (~11 точек). 6м даёт реальное сужение, 1г = вся текущая
+  // история, «Всё» семантически = безлимит истории (premium). Ключи совпадают
+  // с PERIOD_DAYS в TierFeaturesContext: '6m'→180, '1y'→365, 'all'→∞ —
+  // поэтому canUsePeriod('all') запирает «Всё» для free (matrix free=365).
+  { key: '6m', label: '6М', months: 6 },
   { key: '1y', label: '1Г', months: 12 },
-  { key: '2y', label: '2Г', months: 24 },
   { key: 'all', label: 'Всё', months: null },
 ];
 
@@ -49,6 +55,12 @@ export default function MobileCbrFlowsPage() {
   const [optionsSheetOpen, setOptionsSheetOpen] = useState(false);
   // Hidden categories — match desktop pattern (Set, exclude from stack).
   const [hiddenCategories, setHiddenCategories] = useState<Set<string>>(new Set());
+
+  // Tier-gating периодов: free = до 365 дней (matrix cbr_flows), «Всё»
+  // (безлимит) под замком. canUsePeriod читает ту же матрицу что и backend;
+  // зеркалит десктоп и паттерн других индикаторов (Buffett).
+  const cbrAccess = useTierAccess('cbr_flows');
+  const { showUpgrade } = useUpgradePrompt();
 
   const tour = useOnboardingTour('cbr-flows');
   // Единый паттерн тура: Intro → Кнопки → Время → Опции (с демо) → Чтение → End
@@ -254,19 +266,44 @@ export default function MobileCbrFlowsPage() {
         title="Период"
       >
         <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {PERIOD_OPTIONS.map((opt) => (
-            <button
-              key={opt.key}
-              className={`fm-chip ${period === opt.key ? 'active' : ''}`}
-              onClick={() => {
-                setPeriod(opt.key);
-                setTimeSheetOpen(false);
-              }}
-              style={{ justifyContent: 'flex-start', padding: '14px 16px' }}
-            >
-              {opt.label}
-            </button>
-          ))}
+          {PERIOD_OPTIONS.map((opt) => {
+            // «Всё» (безлимит истории) под замком для free/guest — backend
+            // усёк бы данные. Тап показывает upgrade вместо тихого no-op.
+            const allowed = cbrAccess.isLoading || cbrAccess.canUsePeriod(opt.key);
+            return (
+              <button
+                key={opt.key}
+                className={`fm-chip ${period === opt.key ? 'active' : ''}`}
+                onClick={() => {
+                  if (!allowed) {
+                    const tier = cbrAccess.requiredTierFor({ period: opt.key });
+                    if (tier) {
+                      showUpgrade({
+                        tier,
+                        featureName: `период «${opt.label}»`,
+                        indicator: 'cbr_flows',
+                      });
+                    }
+                    setTimeSheetOpen(false);
+                    return;
+                  }
+                  setPeriod(opt.key);
+                  setTimeSheetOpen(false);
+                }}
+                style={{
+                  justifyContent: 'flex-start',
+                  padding: '14px 16px',
+                  opacity: allowed ? 1 : 0.5,
+                }}
+                aria-disabled={!allowed}
+              >
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  {opt.label}
+                  {!allowed && <Lock size={12} strokeWidth={2.2} />}
+                </span>
+              </button>
+            );
+          })}
         </div>
       </MobileSheet>
 

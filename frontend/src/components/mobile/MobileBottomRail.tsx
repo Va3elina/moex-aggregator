@@ -16,6 +16,7 @@ import {
   Activity,
   CalendarDays,
   Banknote,
+  ShoppingBag,
 } from 'lucide-react';
 
 interface RailItem {
@@ -29,6 +30,7 @@ const ITEMS: RailItem[] = [
   { id: 'heatmap',       path: '/heatmap',       label: 'Карта',  Icon: Grid3X3 },
   { id: 'oi',            path: '/oi',            label: 'ОИ',     Icon: BarChart3 },
   { id: 'funds-money',   path: '/funds-money',   label: 'Фонды',  Icon: Wallet },
+  { id: 'fund-trades',   path: '/fund-trades',   label: 'Покупки', Icon: ShoppingBag },
   { id: 'buffett',       path: '/buffett',       label: 'Баффет', Icon: Scale },
   { id: 'strength',      path: '/strength',      label: 'Сила',   Icon: Activity },
   { id: 'seasonality',   path: '/seasonality',   label: 'Сезон',  Icon: CalendarDays },

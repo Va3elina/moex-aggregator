@@ -49,6 +49,14 @@ export interface MobileChartSeries {
   /** Скрыть current-value pill на оси (для секций где pill misleading,
    *  например yearly average которая accumulated за весь год). */
   hidePill?: boolean;
+  /** Принудительно сделать эту серию baseline для X-оси (alignSeriesToPrimary).
+   *  По умолчанию baseline = самая длинная серия — это верно для seasonality
+   *  (median должен занимать всю ширину). Но для ОИ baseline ОБЯЗАН быть цена
+   *  (как на десктопе: OI выравнивается к свечам), даже если у инструмента
+   *  история OI длиннее цены — иначе цену «растягивают» по таймстемпам OI и она
+   *  рисуется плоскими ступенями / разрывами (баг GMKN). Если флаг стоит хотя бы
+   *  на одной серии — она и есть baseline; иначе fallback на «самую длинную». */
+  isBaseline?: boolean;
 }
 
 interface MobileChartProps {
@@ -248,13 +256,18 @@ function formatTimeForDisplay(time: string): string {
 function alignSeriesToPrimary(series: MobileChartSeries[]): MobileChartSeries[] {
   if (series.length < 2) return series;
 
-  // Baseline = longest series. Обрабатывает оба случая:
-  //   - OI: longest = price (series[0]) — поведение как раньше
-  //   - Seasonality yearly: longest = median (series[N-1]) — текущий год
-  //     остаётся короче, не достраивается в будущее
-  let baselineIdx = 0;
-  for (let i = 1; i < series.length; i++) {
-    if (series[i].data.length > series[baselineIdx].data.length) baselineIdx = i;
+  // Baseline: явный (series.isBaseline) имеет приоритет — это домен-знание
+  // страницы. ОИ ставит isBaseline на цену, чтобы x-ось всегда была свечами
+  // (как десктоп), даже когда история OI у инструмента длиннее цены.
+  //   - OI: baseline = price (явный флаг) — цена не растягивается/не рвётся
+  //   - Seasonality yearly: флага нет → fallback на «самую длинную» (median),
+  //     текущий год остаётся короче и не достраивается в будущее
+  let baselineIdx = series.findIndex((s) => s.isBaseline);
+  if (baselineIdx < 0) {
+    baselineIdx = 0;
+    for (let i = 1; i < series.length; i++) {
+      if (series[i].data.length > series[baselineIdx].data.length) baselineIdx = i;
+    }
   }
   const baseline = series[baselineIdx];
   if (!baseline || baseline.data.length < 2) return series;
