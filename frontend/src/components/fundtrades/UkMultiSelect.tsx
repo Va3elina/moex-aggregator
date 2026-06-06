@@ -8,6 +8,7 @@
 
 import { useState } from 'react';
 import { UK_LOGOS } from '../../config/fundConfig';
+import { useViewportWidth } from '../../hooks/useViewportWidth';
 
 export interface UkOption {
     key: string;
@@ -96,6 +97,11 @@ export default function UkMultiSelect({
 }: UkMultiSelectProps) {
     const [open, setOpen] = useState(false);
     const [hovered, setHovered] = useState<string | null>(null);
+    // На мобиле absolute-дропдаун (top:100%) уезжал за низ экрана — кнопка
+    // стоит у дна ⚙️-sheet'а. Рендерим как фикс-панель поверх sheet'а (z-index
+    // 101), как модалка FundPicker. `.fm-sheet` без постоянного transform →
+    // position:fixed корректно цепляется к viewport.
+    const isMobile = useViewportWidth() < 768;
 
     const allActive = selected.size === 0;
     const buttonLabel = allActive
@@ -137,20 +143,36 @@ export default function UkMultiSelect({
 
             {open && (
                 <>
-                    {/* fixed-backdrop — закрытие по клику вне (как меню периода) */}
+                    {/* Backdrop — закрытие по клику вне. Мобила: полупрозрачный
+                        ПОВЕРХ sheet'а; десктоп: прозрачный catcher. */}
                     <div
                         onClick={() => setOpen(false)}
-                        style={{ position: 'fixed', inset: 0, zIndex: 19 }}
+                        style={{
+                            position: 'fixed', inset: 0,
+                            zIndex: isMobile ? 110 : 19,
+                            background: isMobile ? 'rgba(0,0,0,0.5)' : 'transparent',
+                        }}
                     />
                     <div
-                        style={{
-                            position: 'absolute', top: 'calc(100% + var(--sp-2))', left: 0, zIndex: 20,
-                            minWidth, width: 'max-content', maxWidth: 'min(360px, calc(100vw - 32px))',
-                            maxHeight: '70vh', overflowY: 'auto',
-                            background: 'var(--bg-primary)', border: '2px solid var(--text-primary)',
-                            borderRadius: 16,
-                            boxShadow: 'var(--shadow-hard-card, 6px 6px 0 var(--text-primary))',
-                        }}
+                        style={
+                            isMobile
+                                ? {
+                                      // Фикс-панель снизу, поверх ⚙️-sheet'а (.fm-sheet z-index 101).
+                                      position: 'fixed', left: 12, right: 12, bottom: 16, zIndex: 111,
+                                      maxHeight: '70vh', overflowY: 'auto',
+                                      background: 'var(--bg-primary)', border: '2px solid var(--text-primary)',
+                                      borderRadius: 16,
+                                      boxShadow: 'var(--shadow-hard-card, 6px 6px 0 var(--text-primary))',
+                                  }
+                                : {
+                                      position: 'absolute', top: 'calc(100% + var(--sp-2))', left: 0, zIndex: 20,
+                                      minWidth, width: 'max-content', maxWidth: 'min(360px, calc(100vw - 32px))',
+                                      maxHeight: '70vh', overflowY: 'auto',
+                                      background: 'var(--bg-primary)', border: '2px solid var(--text-primary)',
+                                      borderRadius: 16,
+                                      boxShadow: 'var(--shadow-hard-card, 6px 6px 0 var(--text-primary))',
+                                  }
+                        }
                     >
                         {/* Header popover — title + счётчик выбранных, как в CbrFlows */}
                         <div
