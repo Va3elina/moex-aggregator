@@ -89,3 +89,4 @@ scripts/__pycache__/
 *.pdf
 frontend/.claude/
 extension/store/build/
+extension/store/screenshots/*.png
