@@ -6,7 +6,7 @@
  *
  * При смене страницы скроллит к активному элементу автоматически.
  */
-import { useEffect, useRef } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   Grid3X3,
@@ -41,21 +41,26 @@ export default function MobileBottomRail() {
   const location = useLocation();
   const railRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll активного элемента в центр view'а.
-  useEffect(() => {
+  // Позиционируем активный элемент в зоне видимости рейла.
+  // useLayoutEffect + МГНОВЕННЫЙ scrollLeft (НЕ smooth) — критично: рейл
+  // живёт внутри MobileLayout КАЖДОЙ страницы и ремаунтится на каждой
+  // навигации с scrollLeft=0. Со smooth + обычным useEffect юзер видел рейл
+  // сначала прижатым влево, потом он анимированно уезжал к правым пунктам
+  // (Сезон/Капитал) — это и был «дёргается» (только правый край: левые уже
+  // видны при scrollLeft=0). Теперь позиция ставится ДО первого paint —
+  // активный пункт просто сразу на месте, без анимации и рывка.
+  useLayoutEffect(() => {
     const rail = railRef.current;
     const active = rail?.querySelector('.fm-rail-item.active') as HTMLElement | null;
     if (!rail || !active) return;
-    // Уже полностью видно → не трогаем скролл. Без этого крайние элементы
-    // (особенно правый край) дёргались: target уходил за maxScroll, и iOS
-    // Safari отыгрывал rubber-band «бьётся неприятно».
     const itemLeft = active.offsetLeft;
     const itemRight = itemLeft + active.clientWidth;
+    // Уже полностью видно → не трогаем.
     if (itemLeft >= rail.scrollLeft && itemRight <= rail.scrollLeft + rail.clientWidth) return;
-    // Центрируем, но жёстко клампим в [0, maxScroll] — оба края, не только 0.
+    // Центрируем, кламп в [0, maxScroll], мгновенно.
     const maxScroll = rail.scrollWidth - rail.clientWidth;
     const target = itemLeft - rail.clientWidth / 2 + active.clientWidth / 2;
-    rail.scrollTo({ left: Math.max(0, Math.min(target, maxScroll)), behavior: 'smooth' });
+    rail.scrollLeft = Math.max(0, Math.min(target, maxScroll));
   }, [location.pathname]);
 
   return (
