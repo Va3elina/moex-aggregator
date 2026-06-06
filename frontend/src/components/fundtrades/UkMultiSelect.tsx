@@ -9,6 +9,7 @@
 import { useState } from 'react';
 import { UK_LOGOS } from '../../config/fundConfig';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
+import { X } from 'lucide-react';
 
 export interface UkOption {
     key: string;
@@ -174,10 +175,17 @@ export default function UkMultiSelect({
                                   }
                         }
                     >
-                        {/* Header popover — title + счётчик выбранных, как в CbrFlows */}
+                        {/* Header popover — title + счётчик; на мобиле + кнопка ✕
+                            (закрытие не только по backdrop'у) + sticky, чтобы X
+                            оставался виден при скролле списка. */}
                         <div
                             className="flex items-center justify-between border-b border-theme"
-                            style={{ padding: 'var(--sp-3) var(--sp-4)' }}
+                            style={{
+                                padding: 'var(--sp-3) var(--sp-4)',
+                                position: isMobile ? 'sticky' : undefined,
+                                top: isMobile ? 0 : undefined,
+                                background: 'var(--bg-primary)',
+                            }}
                         >
                             <span
                                 className="font-bold"
@@ -185,12 +193,32 @@ export default function UkMultiSelect({
                             >
                                 {allLabel}
                             </span>
-                            <span
-                                className="font-mono font-bold"
-                                style={{ fontSize: 'var(--fs-xs)', color: 'var(--accent)' }}
-                            >
-                                {allActive ? options.length : selected.size}/{options.length}
-                            </span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-3)' }}>
+                                <span
+                                    className="font-mono font-bold"
+                                    style={{ fontSize: 'var(--fs-xs)', color: 'var(--accent)' }}
+                                >
+                                    {allActive ? options.length : selected.size}/{options.length}
+                                </span>
+                                {isMobile && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setOpen(false)}
+                                        aria-label="Закрыть"
+                                        style={{
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            width: 30, height: 30, flexShrink: 0,
+                                            borderRadius: 8,
+                                            border: '1.5px solid var(--text-primary)',
+                                            background: 'var(--bg-secondary)',
+                                            color: 'var(--text-primary)',
+                                            cursor: 'pointer',
+                                        }}
+                                    >
+                                        <X size={16} strokeWidth={2.4} />
+                                    </button>
+                                )}
+                            </div>
                         </div>
 
                         {/* Items list — единый left-grid: чекбокс 22px + аватар + имя */}
