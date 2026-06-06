@@ -3,6 +3,7 @@ import { Search, X, Star, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-
 import TickerLogo from '../TickerLogo';
 import { assetTicker, assetColor } from '../../config/fundConfig';
 import { formatCompact } from '../../utils/formatNumber';
+import { useViewportWidth } from '../../hooks/useViewportWidth';
 
 // Один актив в списке выбора. `key` — стабильный идентификатор строки
 // (обычно isin || asset_name), `funds_count` — сколько фондов держат бумагу.
@@ -60,6 +61,8 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
 
   // Autofocus — только на desktop (mouse). На мобиле не дёргаем клавиатуру,
   // чтобы пользователь сначала увидел список (как в InstrumentSearchModal).
+  // На мобиле ✕ — заметная кнопка с обводкой (как панель УК). Десктоп прежний.
+  const isMobile = useViewportWidth() < 768;
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     // Надёжная детекция тача (см. FundPicker): одна '(hover: none)' ненадёжна.
@@ -264,11 +267,16 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
             </h2>
             <button
               onClick={onClose}
-              className="instrument-modal-close p-2 rounded-lg transition-colors"
-              style={{ color: 'var(--text-secondary)' }}
+              className="instrument-modal-close transition-colors"
+              style={isMobile ? {
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                width: 34, height: 34, flexShrink: 0, borderRadius: 8,
+                border: '1.5px solid var(--text-primary)',
+                background: 'var(--bg-primary)', color: 'var(--text-primary)',
+              } : { color: 'var(--text-secondary)', padding: 8, borderRadius: 8 }}
               aria-label="Закрыть"
             >
-              <X size={24} />
+              <X size={isMobile ? 18 : 24} strokeWidth={isMobile ? 2.4 : 2} />
             </button>
           </div>
 

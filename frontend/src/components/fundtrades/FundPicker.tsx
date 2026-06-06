@@ -16,6 +16,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Search, X } from 'lucide-react';
 import { UK_LOGOS } from '../../config/fundConfig';
+import { useViewportWidth } from '../../hooks/useViewportWidth';
 
 export interface FundPickerFund {
     ticker: string;
@@ -128,6 +129,9 @@ function FundPickerModal({
 }) {
     const [searchQuery, setSearchQuery] = useState('');
     const [hover, setHover] = useState<string | null>(null);
+    // На мобиле делаем ✕ заметной кнопкой с обводкой (как панель УК) — бледный
+    // text-secondary X терялся. Десктоп — прежний минималистичный X.
+    const isMobile = useViewportWidth() < 768;
 
     // Autofocus поиска — только на desktop (mouse). На мобиле не дёргаем
     // клавиатуру, чтобы пользователь сначала увидел список (как AssetPickerModal).
@@ -213,11 +217,16 @@ function FundPickerModal({
                         </h2>
                         <button
                             onClick={onClose}
-                            className="instrument-modal-close p-2 rounded-lg transition-colors"
-                            style={{ color: 'var(--text-secondary)' }}
+                            className="instrument-modal-close transition-colors"
+                            style={isMobile ? {
+                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                width: 34, height: 34, flexShrink: 0, borderRadius: 8,
+                                border: '1.5px solid var(--text-primary)',
+                                background: 'var(--bg-primary)', color: 'var(--text-primary)',
+                            } : { color: 'var(--text-secondary)', padding: 8, borderRadius: 8 }}
                             aria-label="Закрыть"
                         >
-                            <X size={24} />
+                            <X size={isMobile ? 18 : 24} strokeWidth={isMobile ? 2.4 : 2} />
                         </button>
                     </div>
 
