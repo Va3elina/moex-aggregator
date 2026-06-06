@@ -475,8 +475,20 @@ function MobileCbrHistogram({
     return max;
   }, [periods, categories]);
 
-  // Smart X-label step
-  const labelStep = Math.max(1, Math.ceil(periods.length / 5));
+  // X-axis ticks — равномерно распределённые ПО ВСЕЙ ширине (как в десктопном
+  // StackedBidirectionalHistogram и MobileChart.xTicks). Берём ≤5 индексов
+  // через round(i*(N-1)/(count-1)): первый = 0, последний = N-1 → крайние
+  // метки на левом и правом краю, остальные равномерно между ними.
+  // Раньше брались каждые labelStep индексов (0, step, 2*step …) и каждая
+  // позиционировалась по ЦЕНТРУ своего слота — последний индекс не доходил
+  // до правого края, поэтому метки «съезжали» влево, а справа зиял пробел.
+  const xTickIndices = useMemo(() => {
+    const count = Math.min(5, periods.length);
+    if (count < 2) return periods.length > 0 ? [0] : [];
+    return Array.from({ length: count }, (_, i) =>
+      Math.min(Math.round((i * (periods.length - 1)) / (count - 1)), periods.length - 1),
+    );
+  }, [periods.length]);
 
   // Unified формат: всегда месяц-год (через end_date period'а).
   // Quarters автоматически конвертятся: Q1=март, Q2=июнь, Q3=сент, Q4=дек.
@@ -601,19 +613,22 @@ function MobileCbrHistogram({
           );
         })()}
 
-        {/* X-axis labels: только indices кратные labelStep — равномерная сетка.
-            Anchor 'start' на первом, 'middle' для остальных. Не дублируем
-            последний если он не на step — это создавало неравный gap. */}
-        {periods.map((p, i) => {
-          if (i % labelStep !== 0) return null;
-          const isFirst = i === 0;
-          const anchor: 'start' | 'middle' = isFirst ? 'start' : 'middle';
-          const x = isFirst
-            ? padX
-            : padX + i * slotW + slotW / 2;
+        {/* X-axis labels: равномерно распределены по всей ширине (xTickIndices).
+            Позиция = доля индекса в полном диапазоне * innerW, поэтому первый
+            тик прижат к левому краю (anchor 'start'), последний — к правому
+            (anchor 'end'), остальные центрированы. Это убирает «съезд» меток
+            влево с пустотой справа. */}
+        {xTickIndices.map((idx, ti) => {
+          const p = periods[idx];
+          if (!p) return null;
+          const isFirst = ti === 0;
+          const isLast = ti === xTickIndices.length - 1;
+          const anchor: 'start' | 'middle' | 'end' = isFirst ? 'start' : isLast ? 'end' : 'middle';
+          const ratio = periods.length > 1 ? idx / (periods.length - 1) : 0;
+          const x = padX + ratio * innerW;
           return (
             <text
-              key={`xl-${i}`}
+              key={`xl-${idx}`}
               x={x}
               y={H - 6}
               fontSize={9}

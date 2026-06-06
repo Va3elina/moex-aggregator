@@ -15,12 +15,18 @@ import { useEffect, useState } from 'react';
 import { X, Smartphone, Share, Plus } from 'lucide-react';
 import FrameLogo from '../FrameLogo';
 import { usePWAInstall } from '../../hooks/usePWAInstall';
+import { useAnalytics } from '../../contexts/AnalyticsContext';
 
 const DISMISS_STORAGE_KEY = 'frame_pwa_install_dismissed_v1';
-const SHOW_DELAY_MS = 5000;
+// Промо install'а должно вылезать ПОСЛЕДНИМ — после cookie-баннера и онбординг-
+// тура. На первом визите всё валилось кучей и перекрывало друг друга. Поэтому
+// (а) ждём пока юзер закроет cookie-consent (consent ≠ null), и только тогда
+// (б) запускаем таймер; задержка достаточно велика, чтобы не наложиться на тур.
+const SHOW_DELAY_MS = 12000;
 
 export default function MobilePWABanner() {
   const { canInstall, canInstallIOS, promptInstall } = usePWAInstall();
+  const { consent } = useAnalytics();
   const [visible, setVisible] = useState(false);
   const [dismissed, setDismissed] = useState<boolean>(() => {
     if (typeof window === 'undefined') return true;
@@ -31,12 +37,15 @@ export default function MobilePWABanner() {
     }
   });
 
-  // Auto-show через 5 сек после mount, если можно установить
+  // Auto-show после паузы, если можно установить. Не стартуем пока cookie-
+  // consent не дан/отклонён (consent === null → баннер ещё висит) — иначе
+  // install-промо наложится на cookie + тур. Эффект реагирует на consent.
   useEffect(() => {
     if (dismissed || (!canInstall && !canInstallIOS)) return;
+    if (consent === null) return;
     const t = setTimeout(() => setVisible(true), SHOW_DELAY_MS);
     return () => clearTimeout(t);
-  }, [canInstall, canInstallIOS, dismissed]);
+  }, [canInstall, canInstallIOS, dismissed, consent]);
 
   function markDismissed() {
     setVisible(false);

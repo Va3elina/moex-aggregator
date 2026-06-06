@@ -29,6 +29,7 @@
  *   resetSeen: для разработки/тестирования — сбросить флаг
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useAnalytics } from '../contexts/AnalyticsContext';
 
 const STORAGE_PREFIX = 'frame_tour_seen_v4:';
 
@@ -81,6 +82,14 @@ export function useFirstVisit(indicatorKey: string) {
  *      если false → close session-only, при следующем заходе тур опять
  *      покажется (новый mount → autoOpenedRef сбросится).
  *
+ * COOKIE-CONSENT GATE: тур НЕ открывается пока юзер не дал/отклонил cookie-
+ * consent (`consent === null` → cookie-banner ещё висит). Иначе на первом
+ * визите (особенно мобилка) тур, cookie-баннер и PWA-промо вылезали кучей и
+ * перекрывали друг друга. Эффект реактивен на `consent`: как только юзер
+ * жмёт «Принять»/«Только необходимые» (consent ≠ null) — стартует таймер тура.
+ * В private-mode/без provider'а readConsent даёт null НО setConsent всё равно
+ * двигает React-state, поэтому путь «закрыл cookie → пошёл тур» работает.
+ *
  * Page usage (1 строка вместо 8):
  *   const tour = useOnboardingTour('oi');
  *   <OnboardingTour open={tour.open} onClose={tour.close} steps={...} />
@@ -90,11 +99,12 @@ export function useOnboardingTour(
   options?: { gatedBy?: string },
 ) {
   const { isFirstVisit, markAsSeen } = useFirstVisit(indicatorKey);
+  const { consent } = useAnalytics();
   const [open, setOpen] = useState(false);
   const autoOpenedRef = useRef(false);
 
   useEffect(() => {
-    // Gating: per-page туры не показываются пока юзер не прошёл вводный
+    // Gate #1: per-page туры не показываются пока юзер не прошёл вводный
     // (mobile-intro). Это избегает stacking'а двух модалок на первом
     // визите мобилки. Если gatedBy не задан — gate не активен.
     if (options?.gatedBy) {
@@ -106,12 +116,16 @@ export function useOnboardingTour(
         // localStorage недоступен → не блокируем, открываем как обычно
       }
     }
+    // Gate #2: cookie-consent. Пока consent === null — cookie-баннер ещё
+    // открыт; не запускаем тур, чтобы не было наложения. Реагируем на смену
+    // consent → таймер стартует сразу после закрытия баннера.
+    if (consent === null) return;
     if (isFirstVisit && !autoOpenedRef.current) {
       autoOpenedRef.current = true;
       const t = setTimeout(() => setOpen(true), 800);
       return () => clearTimeout(t);
     }
-  }, [isFirstVisit, options?.gatedBy]);
+  }, [isFirstVisit, options?.gatedBy, consent]);
 
   const close = useCallback(
     (markSeen: boolean) => {

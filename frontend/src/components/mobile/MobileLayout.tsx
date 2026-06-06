@@ -235,8 +235,8 @@ export default function MobileLayout({
         </button>
       )}
 
-      {/* PWA install banner — показывается автоматически после 5 сек,
-          если приложение можно установить и юзер не dismiss'ил */}
+      {/* PWA install banner — показывается последним (после cookie-consent и
+          онбординг-тура), если приложение можно установить и юзер не dismiss'ил */}
       {!isFullscreen && <MobilePWABanner />}
     </div>
   );

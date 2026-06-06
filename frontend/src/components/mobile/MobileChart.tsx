@@ -15,14 +15,29 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 
+/**
+ * Одна точка серии. `gap: true` — заглушка в зоне без реальных данных
+ * (см. alignSeriesToPrimary). В таких точках линия разрывается.
+ */
+export interface ChartPoint {
+  time: string;
+  value: number;
+  displayTime?: string;
+  gap?: boolean;
+}
+
 export interface MobileChartSeries {
   /** Точки данных. Должно быть >= 2 точек.
    *  - `time` используется для X-позиционирования (alignment, downsampling).
    *  - `displayTime` (опционально) — реальная дата для tooltip/labels.
    *    Используется когда `time` синтетический (например seasonality yearly
    *    где time = синтетическая дата td-mapping'а, а displayTime = реальная
-   *    дата торгового дня "2026-05-19"). */
-  data: Array<{ time: string; value: number; displayTime?: string }>;
+   *    дата торгового дня "2026-05-19").
+   *  - `gap` (внутренний, выставляется alignSeriesToPrimary) — точка-заглушка
+   *    в зоне, где у серии НЕТ реальных данных (до её первого значения на
+   *    общем baseline). Линия в таких точках РАЗРЫВАЕТСЯ, а не держит flat
+   *    значение. См. ChartPoint / pathFor. */
+  data: ChartPoint[];
   /** Цвет линии (var(--*)). */
   color: string;
   /** Подпись для tooltip'а / legend'а. */
@@ -89,7 +104,7 @@ const Y_TICK_POSITIONS = [0.1, 0.3, 0.5, 0.7, 0.9];
  *
  * Reference: Sveinn Steinarsson, MSc thesis 2013 (University of Iceland).
  */
-function lttbDownsample<T extends { time: string; value: number }>(
+function lttbDownsample<T extends { time: string; value: number; gap?: boolean }>(
   data: T[],
   threshold: number,
 ): T[] {
@@ -151,7 +166,7 @@ function lttbDownsample<T extends { time: string; value: number }>(
  * плавный тренд. Тейлдеры именно так смотрят OI — через MA-сглаженный
  * график, а не raw daily ticks.
  */
-function smaSmooth<T extends { time: string; value: number }>(
+function smaSmooth<T extends { time: string; value: number; gap?: boolean }>(
   data: T[],
   window: number,
 ): T[] {
@@ -159,11 +174,22 @@ function smaSmooth<T extends { time: string; value: number }>(
   const half = Math.floor(window / 2);
   const result: T[] = [];
   for (let i = 0; i < data.length; i++) {
+    // Gap-точку оставляем как есть — она не рисуется, усреднять её незачем,
+    // и она не должна «заражать» соседей своим placeholder-значением.
+    if (data[i].gap) {
+      result.push(data[i]);
+      continue;
+    }
     const start = Math.max(0, i - half);
     const end = Math.min(data.length, i + half + 1);
     let sum = 0;
-    for (let j = start; j < end; j++) sum += data[j].value;
-    result.push({ ...data[i], value: sum / (end - start) });
+    let count = 0;
+    for (let j = start; j < end; j++) {
+      if (data[j].gap) continue; // не усредняем с заглушками
+      sum += data[j].value;
+      count += 1;
+    }
+    result.push({ ...data[i], value: count > 0 ? sum / count : data[i].value });
   }
   return result;
 }
@@ -255,9 +281,8 @@ function alignSeriesToPrimary(series: MobileChartSeries[]): MobileChartSeries[] 
     // фактических данных secondary серии.
     const sLastTime = s.data[s.data.length - 1].time;
     const firstValue = s.data[0].value;
-    const firstDisplay = s.data[0].displayTime;
 
-    const aligned: { time: string; value: number; displayTime?: string }[] = [];
+    const aligned: ChartPoint[] = [];
     let lastValue: number | null = null;
     let lastDisplay: string | undefined = undefined;
     for (const bp of baseline.data) {
@@ -271,12 +296,25 @@ function alignSeriesToPrimary(series: MobileChartSeries[]): MobileChartSeries[] 
         lastValue = v;
         lastDisplay = displayMap.get(k);
       }
-      // Backward-fill: до первого match используем первое значение secondary
-      // (защита от обрыва слева).
+      if (lastValue === null) {
+        // ДО первого реального значения серии: данных нет → РАЗРЫВ линии,
+        // а не горизонтальное удержание firstValue. Раньше тут пушился
+        // firstValue (carry-forward) — это рисовало плоское плато слева и
+        // вертикальный обрыв на стыке с реальными данными (баг: у цены,
+        // когда её история короче OI, линия «стояла на месте»). gap=true →
+        // pathFor пропускает точку и стартует новый сегмент. Значение всё
+        // равно ставим (firstValue) чтобы не ломать fit()/range, но оно не
+        // рисуется и не показывается в tooltip/pill.
+        aligned.push({ time: bp.time, value: firstValue, gap: true });
+        continue;
+      }
+      // Внутри диапазона серии: carry-forward последнего известного значения
+      // (заполняем редкие пропуски дат, чтобы линии заканчивались на одной
+      // x-координате).
       aligned.push({
         time: bp.time,
-        value: lastValue ?? firstValue,
-        displayTime: lastDisplay ?? firstDisplay,
+        value: lastValue,
+        displayTime: lastDisplay,
       });
     }
     return { ...s, data: aligned };
@@ -500,14 +538,17 @@ export default function MobileChart({
   // вычисляются как взвешенная разница соседних точек. Tension 0.5 —
   // стандарт для финансовых графиков (no artificial overshoot на swing'ах).
   // На <3 точках падаем к простому M-L pattern.
-  const pathFor = (data: { value: number }[], range: { min: number; span: number } | null) => {
-    if (data.length < 2) return '';
-    if (data.length === 2) {
-      const [a, b] = data;
-      return `M${xAt(0).toFixed(1)},${yAt(a.value, range).toFixed(1)} L${xAt(1).toFixed(1)},${yAt(b.value, range).toFixed(1)}`;
+  //
+  // Gap-точки (gap=true — зона без реальных данных, см. alignSeriesToPrimary)
+  // РАЗРЫВАЮТ линию: путь строится по непрерывным рунам не-gap точек, каждый
+  // рун начинается своим M. Так короткая серия (напр. цена короче OI) рисуется
+  // только там, где у неё есть данные, без плоского плато слева.
+  const buildSmoothPath = (pts: { x: number; y: number }[]): string => {
+    if (pts.length === 0) return '';
+    if (pts.length === 1) return ''; // одиночная точка — линию не рисуем
+    if (pts.length === 2) {
+      return `M${pts[0].x.toFixed(1)},${pts[0].y.toFixed(1)} L${pts[1].x.toFixed(1)},${pts[1].y.toFixed(1)}`;
     }
-
-    const pts = data.map((d, i) => ({ x: xAt(i), y: yAt(d.value, range) }));
     const tension = 0.5;
     let path = `M${pts[0].x.toFixed(1)},${pts[0].y.toFixed(1)}`;
     for (let i = 0; i < pts.length - 1; i++) {
@@ -522,6 +563,31 @@ export default function MobileChart({
       path += ` C${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`;
     }
     return path;
+  };
+
+  const pathFor = (data: ChartPoint[], range: { min: number; span: number } | null) => {
+    if (data.length < 2) return '';
+    // Быстрый путь: нет ни одной gap-точки → один непрерывный сегмент (общий
+    // случай — обе серии одинаковой длины, никаких разрывов).
+    if (!data.some((d) => d.gap)) {
+      const pts = data.map((d, i) => ({ x: xAt(i), y: yAt(d.value, range) }));
+      return buildSmoothPath(pts);
+    }
+    // Разбиваем на непрерывные руны не-gap точек, сохраняя реальный индекс i
+    // для корректной x-координаты. Каждый рун — отдельный subpath.
+    const segments: string[] = [];
+    let run: { x: number; y: number }[] = [];
+    const flush = () => {
+      const seg = buildSmoothPath(run);
+      if (seg) segments.push(seg);
+      run = [];
+    };
+    data.forEach((d, i) => {
+      if (d.gap) { flush(); return; }
+      run.push({ x: xAt(i), y: yAt(d.value, range) });
+    });
+    flush();
+    return segments.join(' ');
   };
 
   // Long-press handlers
@@ -803,7 +869,8 @@ export default function MobileChart({
               // Skip если idx за пределами этой series — не clamp
               if (crosshair.idx >= s.data.length) return null;
               const point = s.data[crosshair.idx];
-              if (!point) return null;
+              // Gap-точка (зона без данных) — dot не рисуем, реального значения тут нет.
+              if (!point || point.gap) return null;
               const x = xAt(crosshair.idx);
               const y = yAt(point.value, range);
               return (
@@ -929,10 +996,12 @@ function TooltipCard({ x, chartW, series, idx }: TooltipCardProps) {
   //      показываться, а не avg synthetic дата для того же idx ("26.06.26").
   //   2. Если ни одна серия не покрывает (краевой случай) — берём самую
   //      длинную (она всегда имеет какую-то точку).
-  const refSeries = series.find((s) => idx < s.data.length) ?? series.reduce(
-    (acc, s) => (s.data.length > acc.data.length ? s : acc),
-    series[0],
-  );
+  // Предпочитаем серию, у которой на этом idx есть РЕАЛЬНАЯ точка (не gap) —
+  // её дата корректна. Затем любую покрывающую idx. Иначе самую длинную.
+  const refSeries =
+    series.find((s) => idx < s.data.length && !s.data[idx]?.gap) ??
+    series.find((s) => idx < s.data.length) ??
+    series.reduce((acc, s) => (s.data.length > acc.data.length ? s : acc), series[0]);
   const refPoint = refSeries?.data[Math.min(idx, refSeries.data.length - 1)];
   // Формат даты с учётом intraday: для 5мин/1ч timestamps с ненулевым временем
   // (e.g. "2026-05-12T08:00:00") показываем "12.05 08:00". Для daily — "12.05.26".
@@ -964,10 +1033,11 @@ function TooltipCard({ x, chartW, series, idx }: TooltipCardProps) {
         // Skip серии где idx за пределами data — не clamp'аем к last point,
         // иначе tooltip "висит" на последнем известном значении когда юзер
         // навёлся на дату для которой данных нет (например yearly current
-        // year ещё не дошёл до этого td).
+        // year ещё не дошёл до этого td). Gap-точку тоже скипаем — это зона
+        // без реальных данных серии (цена короче OI слева).
         if (idx >= s.data.length) return null;
         const point = s.data[idx];
-        if (!point) return null;
+        if (!point || point.gap) return null;
         const value = s.formatValue ? s.formatValue(point.value) : point.value.toFixed(2);
         return (
           <div

@@ -657,13 +657,13 @@ export default function ProfilePage() {
           форма смены пароля. */}
       {user.has_password && (
       <div className="rounded-2xl border p-6" style={cardStyle}>
-        <h2 className="text-lg font-semibold mb-4 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+        <h2 className="text-lg font-semibold mb-5 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
           <Shield size={20} style={{ color: 'var(--text-muted)' }} />
           Безопасность
         </h2>
 
         {/* Смена пароля */}
-        <div className="mb-6">
+        <div className="mb-6 pt-1">
             <h3 className="text-sm font-medium mb-3" style={{ color: 'var(--text-secondary)' }}>
               Смена пароля
             </h3>
