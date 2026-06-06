@@ -1,0 +1,95 @@
+name: Publish extension (Chrome Web Store)
+
+# Заливает расширение «Фрейм» в Chrome Web Store через официальный CWS API.
+# Триггеры:
+#   • тег ext-v*   → git tag ext-v0.6.0 && git push origin ext-v0.6.0
+#   • вручную      → вкладка Actions → Run workflow
+#
+# Нужны секреты репозитория (Settings → Secrets and variables → Actions):
+#   CWS_EXTENSION_ID   — ID расширения (из URL дашборда после первой публикации)
+#   CWS_CLIENT_ID      — OAuth client_id (Google Cloud Console)
+#   CWS_CLIENT_SECRET  — OAuth client_secret
+#   CWS_REFRESH_TOKEN  — refresh_token (получить один раз, см. PUBLISH_CHECKLIST.md)
+#
+# Чистый curl (без сторонних actions — у workflow доступ к publish-секретам).
+# Все секреты передаются через env (а не инлайном в run) — безопасный паттерн.
+
+on:
+  push:
+    tags: ['ext-v*']
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Опубликовать сразу (false = только залить черновик)'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-extension
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Package extension → zip
+        run: bash extension/store/package.sh
+
+      - name: Resolve zip path
+        id: zip
+        run: echo "path=$(ls extension/store/build/frame-extension-v*.zip | head -1)" >> "$GITHUB_OUTPUT"
+
+      - name: Get OAuth access token
+        id: token
+        env:
+          CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+        run: |
+          set -euo pipefail
+          ACCESS_TOKEN=$(curl -fsS -X POST https://oauth2.googleapis.com/token \
+            -d client_id="$CLIENT_ID" \
+            -d client_secret="$CLIENT_SECRET" \
+            -d refresh_token="$REFRESH_TOKEN" \
+            -d grant_type=refresh_token \
+            | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
+          echo "::add-mask::$ACCESS_TOKEN"
+          echo "token=$ACCESS_TOKEN" >> "$GITHUB_OUTPUT"
+
+      - name: Upload new package
+        env:
+          ACCESS_TOKEN: ${{ steps.token.outputs.token }}
+          EXT_ID: ${{ secrets.CWS_EXTENSION_ID }}
+          ZIP_PATH: ${{ steps.zip.outputs.path }}
+        run: |
+          set -euo pipefail
+          RESP=$(curl -fsS -X PUT \
+            -H "Authorization: Bearer $ACCESS_TOKEN" \
+            -H "x-goog-api-version: 2" \
+            -T "$ZIP_PATH" \
+            "https://www.googleapis.com/upload/chromewebstore/v1.1/items/$EXT_ID?uploadType=media")
+          echo "$RESP"
+          echo "$RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); st=d.get('uploadState'); print('uploadState:', st); sys.exit(0 if st in ('SUCCESS','IN_PROGRESS') else 1)"
+
+      - name: Publish (отправить на ревью)
+        if: ${{ github.event_name == 'push' || inputs.publish }}
+        env:
+          ACCESS_TOKEN: ${{ steps.token.outputs.token }}
+          EXT_ID: ${{ secrets.CWS_EXTENSION_ID }}
+        run: |
+          set -euo pipefail
+          RESP=$(curl -fsS -X POST \
+            -H "Authorization: Bearer $ACCESS_TOKEN" \
+            -H "x-goog-api-version: 2" \
+            -H "Content-Length: 0" \
+            "https://www.googleapis.com/chromewebstore/v1.1/items/$EXT_ID/publish")
+          echo "$RESP"
+          echo "$RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); s=d.get('status',[]); print('status:', s); sys.exit(0 if 'OK' in s else 1)"
+
+      - name: Готово
+        run: echo "Залито в Chrome Web Store. Дальше — авто-ревью Google, затем авто-раскатка пользователям."
