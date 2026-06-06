@@ -62,7 +62,9 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
   // чтобы пользователь сначала увидел список (как в InstrumentSearchModal).
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
-    const isTouch = window.matchMedia('(hover: none)').matches;
+    // Надёжная детекция тача (см. FundPicker): одна '(hover: none)' ненадёжна.
+    const isTouch = window.matchMedia('(hover: none), (pointer: coarse)').matches
+      || (navigator.maxTouchPoints ?? 0) > 0;
     if (!isTouch && inputRef.current) {
       inputRef.current.focus();
     }

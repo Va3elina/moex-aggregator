@@ -29,6 +29,7 @@ import SimpleChart, { type ChartAnnotation } from '../SimpleChart';
 import ChartCaptureButton from '../export/ChartCaptureButton';
 import { DONUT_COLORS, assetColor } from '../../config/fundConfig';
 import Donut from './Donut';
+import { useViewportWidth } from '../../hooks/useViewportWidth';
 
 // ════════════════════════════════════════════════════════════════════
 // Shared formatters (экспортируются — переиспользуются в FundTradesPage)
@@ -219,6 +220,12 @@ export default function FundDetailModal({
         | (FundTradesDetail['fund'] & { nav_rub?: number | null; has_distributions?: boolean })
         | undefined;
     const navValue = detailFund?.nav_rub ?? navRub ?? null;
+    // Мобильная адаптация. Модал шарится с десктопом («Деньги в фондах»),
+    // поэтому размеры реактивные: на мобиле пончик ужимаем под ширину экрана
+    // (иначе size:380 вылезал за правый край), график ниже, паддинги меньше,
+    // высота в dvh (iOS не режет верх/низ динамическим тулбаром).
+    const vw = useViewportWidth();
+    const isMobile = vw < 768;
     const hasDist = detailFund?.has_distributions ?? hasDistributions ?? false;
 
     return (
@@ -233,7 +240,7 @@ export default function FundDetailModal({
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                padding: 16,
+                padding: isMobile ? 8 : 16,
             }}
         >
             <div
@@ -244,7 +251,7 @@ export default function FundDetailModal({
                     borderRadius: 14,
                     width: '100%',
                     maxWidth: 1240,
-                    maxHeight: '92vh',
+                    maxHeight: isMobile ? '94dvh' : '92vh',
                     overflow: 'auto',
                     boxShadow: '0 10px 40px rgba(0,0,0,0.3)',
                 }}
@@ -301,7 +308,7 @@ export default function FundDetailModal({
                     </button>
                 </div>
 
-                <div style={{ padding: 20 }}>
+                <div style={{ padding: isMobile ? 12 : 20 }}>
                     {loading && <div style={{ color: 'var(--text-muted)' }}>Загружаем…</div>}
                     {error && <div style={{ color: 'var(--danger, #ef4444)' }}>{error}</div>}
                     {data && !loading && (
@@ -369,7 +376,7 @@ export default function FundDetailModal({
                                             <SimpleChart
                                                 data={chartData}
                                                 initialStartIndex={payInitialStartIndex}
-                                                height={460}
+                                                height={isMobile ? 280 : 460}
                                                 primaryLabel="СЧА на пай, ₽"
                                                 legendPosition="top"
                                                 formatValue={(v) => `${v.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ₽`}
@@ -501,7 +508,7 @@ export default function FundDetailModal({
                                         <div
                                             style={{
                                                 display: 'flex',
-                                                gap: 24,
+                                                gap: isMobile ? 14 : 24,
                                                 flexWrap: 'wrap',
                                                 alignItems: 'flex-start',
                                             }}
@@ -512,7 +519,7 @@ export default function FundDetailModal({
                                                     colors={donutColors}
                                                     maxSlices={donutHoldings.length}
                                                     centerCount={data.current_holdings.length}
-                                                    size={380}
+                                                    size={isMobile ? Math.min(330, vw - 80) : 380}
                                                     outerRadius={90}
                                                     innerRadius={56}
                                                     highlightIndex={modalHover == null ? null : (modalHover < topHolds.length ? modalHover : (restWeight > 0 ? topHolds.length : null))}

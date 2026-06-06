@@ -256,6 +256,23 @@
   padding-bottom: 80px;
 }
 
+/* Списочные страницы (фонд-трейд) — СОБСТВЕННЫЙ вертикальный скролл внутри
+   залоченного .fm-main. .fm-main под чарт-страницы (overflow:hidden, чарт
+   фиксирован); списки/карточки выше viewport'а нужно скроллить отдельно,
+   иначе контент режется и затекает в щель над нижним рейлом.
+   min-height:0 ОБЯЗАТЕЛЕН — иначе flex-child не сжимается и overflow молчит. */
+.fm-ft-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  /* Боковые отступы как у заголовка (.fm-pageheader) — иначе карточки/списки
+     лезут в края экрана и выглядят «обрезанными слева и справа». */
+  padding-left: clamp(10px, 3.4vw, 14px);
+  padding-right: clamp(10px, 3.4vw, 14px);
+}
+
 /* ========== Page Actions Bar — fixed между chart и BottomRail ========== */
 .fm-page-actions {
   position: fixed;

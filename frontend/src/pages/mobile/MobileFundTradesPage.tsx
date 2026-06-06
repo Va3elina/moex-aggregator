@@ -424,16 +424,14 @@ export default function MobileFundTradesPage() {
       title: 'Кнопки управления',
       body: (
         <>
-          <p style={{ marginBottom: 6 }}>Снизу — 3 кнопки:</p>
-          <p style={{ marginBottom: 4 }}>
-            <strong>Актив</strong> — выбор фонда (или бумаги в Потоках)
-          </p>
+          <p style={{ marginBottom: 6 }}>Снизу — 2 кнопки:</p>
           <p style={{ marginBottom: 4 }}>
             <strong>Время</strong> — период доходности, месяц снапшота
           </p>
           <p>
             <strong>Опции</strong> — режим (Состав / Движения / Снапшот /
-            Потоки), метрика, сортировка, выбор УК
+            Потоки), метрика, сортировка, выбор УК. Карточка фонда —
+            тап по плитке в списке.
           </p>
         </>
       ),
@@ -484,12 +482,14 @@ export default function MobileFundTradesPage() {
 
   // ── action-rail summaries ──
   const selectedFund = funds.find((f) => f.ticker === selectedTicker) ?? null;
-  // Какие кнопки рейла активны для текущего режима.
-  // - funds:   ⭐(нет — выбор фонда = tap по плитке) 🕐(период доходности) ⚙️(всё)
-  //   ⭐ всё же даём как быстрый доступ к выбору фонда через FundPicker → открывает модал.
-  // - movers:  🕐(месяц) ⚙️(метрика+фонды) — актив не нужен.
-  // - snapshots: ⭐(фонд) ⚙️(метрика внутри тела) — время = таймлайн в теле.
-  // - company: актив/фонды живут внутри CompanyFlowsTab → рейл только ⚙️ (режим).
+  // Какие кнопки рейла активны. ⭐ Актив НЕ используется ни в одном режиме
+  // фонд-трейда: «Состав» — список фондов (карточка = tap по плитке, фильтр
+  // УК + сортировка живут в ⚙️ Опции, как на десктопе); в Снапшоте/Потоках
+  // выбор фонда и бумаги — в теле раздела. Поэтому рейл = 🕐 Время + ⚙️ Опции.
+  // - funds:     🕐(период доходности) ⚙️(сортировка + УК-фильтр)
+  // - movers:    🕐(месяц) ⚙️(метрика + выбор фондов)
+  // - snapshots: ⚙️(режим); фонд/дата/метрика — в теле
+  // - company:   ⚙️(режим); бумага/фонды — в теле CompanyFlowsTab
   const timeSummary = (() => {
     if (tab === 'funds') return `Доходность · ${RETURN_PERIOD_LABEL[returnPeriod]}`;
     if (tab === 'movers') return asOf ? formatMonthYear(asOf) : (movers?.available_months[0] ? formatMonthYear(movers.available_months[0]) : 'Месяц');
@@ -504,16 +504,8 @@ export default function MobileFundTradesPage() {
     }
     return base;
   })();
-  const assetSummary = tab === 'snapshots'
-    ? undefined // снапшот ведёт собственный пикер в теле
-    : (selectedFund ? selectedFund.name : 'Фонд');
-
   return (
     <MobileLayout
-      onAssetClick={tab === 'funds' ? () => setAssetSheetOpen(true) : undefined}
-      assetLabel={tab === 'funds' ? assetSummary : undefined}
-      assetTicker={tab === 'funds' ? selectedFund?.ticker : undefined}
-      assetTourId="ft-asset"
       onTimeClick={timeSummary ? () => setTimeSheetOpen(true) : undefined}
       timeSummary={timeSummary}
       timeTourId="ft-time"
@@ -555,7 +547,13 @@ export default function MobileFundTradesPage() {
         </div>
       )}
 
-      {/* ── Tab content ── */}
+      {/* ── Tab content — СОБСТВЕННЫЙ вертикальный скролл-контейнер. ──
+          .fm-main залочен (overflow:hidden, под чарт-страницы, где чарт
+          фиксирован в viewport). Фонд-трейд — это списки/несколько графиков,
+          им нужен свой скролл: иначе контент режется (было видно «только 2
+          фонда», обрезанный снапшот/потоки) и затекает в щель над нижним
+          рейлом. */}
+      <div className="fm-ft-scroll">
       {tab === 'funds' && (
         <FundsTab
           fundsByCategory={fundsByCategory}
@@ -587,6 +585,7 @@ export default function MobileFundTradesPage() {
       )}
 
       {tab === 'snapshots' && <SnapshotReviewTab />}
+      </div>
 
       {/* ── ⭐ Актив sheet (только funds): FundPicker single → выбирает фонд ──
           В режиме funds выбор фонда = открыть детальную карточку. FundPicker

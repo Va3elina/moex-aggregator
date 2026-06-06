@@ -41,14 +41,21 @@ export default function MobileBottomRail() {
   const location = useLocation();
   const railRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll активного элемента в центр view'а
+  // Auto-scroll активного элемента в центр view'а.
   useEffect(() => {
     const rail = railRef.current;
     const active = rail?.querySelector('.fm-rail-item.active') as HTMLElement | null;
-    if (rail && active) {
-      const target = active.offsetLeft - rail.clientWidth / 2 + active.clientWidth / 2;
-      rail.scrollTo({ left: Math.max(0, target), behavior: 'smooth' });
-    }
+    if (!rail || !active) return;
+    // Уже полностью видно → не трогаем скролл. Без этого крайние элементы
+    // (особенно правый край) дёргались: target уходил за maxScroll, и iOS
+    // Safari отыгрывал rubber-band «бьётся неприятно».
+    const itemLeft = active.offsetLeft;
+    const itemRight = itemLeft + active.clientWidth;
+    if (itemLeft >= rail.scrollLeft && itemRight <= rail.scrollLeft + rail.clientWidth) return;
+    // Центрируем, но жёстко клампим в [0, maxScroll] — оба края, не только 0.
+    const maxScroll = rail.scrollWidth - rail.clientWidth;
+    const target = itemLeft - rail.clientWidth / 2 + active.clientWidth / 2;
+    rail.scrollTo({ left: Math.max(0, Math.min(target, maxScroll)), behavior: 'smooth' });
   }, [location.pathname]);
 
   return (
