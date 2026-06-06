@@ -60,6 +60,7 @@ const MobileHeatmapPage = lazy(() => import('./pages/mobile/MobileHeatmapPage'))
 const MobileBuffettPage = lazy(() => import('./pages/mobile/MobileBuffettPage'));
 const MobileCbrFlowsPage = lazy(() => import('./pages/mobile/MobileCbrFlowsPage'));
 const MobileFundsMoneyPage = lazy(() => import('./pages/mobile/MobileFundsMoneyPage'));
+const MobileFundTradesPage = lazy(() => import('./pages/mobile/MobileFundTradesPage'));
 const MobileSeasonalityPage = lazy(() => import('./pages/mobile/MobileSeasonalityPage'));
 const MobileStrengthPage = lazy(() => import('./pages/mobile/MobileStrengthPage'));
 const MobileProfilePage = lazy(() => import('./pages/mobile/MobileProfilePage'));
@@ -249,7 +250,12 @@ export default function App() {
             {/* API docs — KILL-SWITCH: скрыто до официального запуска (config/features.ts) */}
             {API_CSV_ENABLED && <Route path="/api-docs" element={<ApiDocsPage />} />}
             {/* Fund trades (Pro tier) — что покупают/продают БПИФы */}
-            <Route path="/fund-trades" element={<FundTradesPage />} />
+            <Route path="/fund-trades" element={
+              <ResponsiveRoute
+                mobile={<MobileFundTradesPage />}
+                desktop={<FundTradesPage />}
+              />
+            } />
             {/* Admin */}
             <Route path="/admin/stats" element={<AdminStatsPage />} />
             <Route path="/admin/users/:userId" element={<AdminUserDetailPage />} />
