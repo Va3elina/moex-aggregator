@@ -21,7 +21,7 @@ from sqlalchemy import or_ as sa_or_
 from sqlalchemy.orm import Session
 
 from api.billing.factory import get_payment_provider
-from api.billing.plans import TIER_LEVELS, get_plan
+from api.billing.plans import TIER_LEVELS, get_plan, monthly_fallback
 from api.billing.provider import WebhookEvent
 from api.models.payment_method import UserPaymentMethod
 from api.models.subscription import Subscription
@@ -264,6 +264,28 @@ def activate_from_webhook(db: Session, event: WebhookEvent) -> Subscription | No
         log.info("activate_from_webhook: already active (idempotent) sub=%s", sub.id)
         return sub  # идемпотентно
 
+    # Guard 2 (анти-double-charge для card-1): НЕ реанимировать поздним
+    # webhook'ом failed-попытку, если юзер уже перешёл на более новую активную
+    # подписку того же tier (напр. годовой провалился по NSF → списан месячный
+    # того же уровня). Активировать обе = двойное списание. При таймауте без
+    # fallback (нет более новой active того же tier) реанимация остаётся
+    # корректной — гард срабатывает ТОЛЬКО при наличии superseding-подписки.
+    if sub.status == "failed":
+        superseded_by = db.query(Subscription).filter(
+            Subscription.user_id == sub.user_id,
+            Subscription.tier == sub.tier,
+            Subscription.id != sub.id,
+            Subscription.status == "active",
+            Subscription.created_at > sub.created_at,
+        ).first()
+        if superseded_by:
+            log.warning(
+                "activate_from_webhook: skip late reactivation of failed sub=%s "
+                "— superseded by newer active sub=%s (same tier=%s)",
+                sub.id, superseded_by.id, sub.tier,
+            )
+            return None
+
     # Double-check с провайдером
     if not _verify_with_provider(sub):
         log.warning("activate_from_webhook: verification failed for sub=%s", sub.id)
@@ -437,18 +459,22 @@ def renew_expiring_subs(db: Session, hours_window: int = 24) -> dict:
     for sub in expiring:
         summary["checked"] += 1
 
-        # Проверка дублей: уже создана renewal sub в прошлом запуске?
+        # Guard 1 (анти-double-charge): дедуп по TIER, а не по plan_id. После
+        # card-1 fallback follow-up имеет ДРУГОЙ plan_id (tier_monthly вместо
+        # tier_yearly) — матч по plan_id его бы не увидел → крон списал бы год
+        # ПОВЕРХ уже успешного месяца. Любая более новая pending/active подписка
+        # того же tier = «этот уровень уже продлили» → skip.
         existing_renewal = db.query(Subscription).filter(
             Subscription.user_id == sub.user_id,
-            Subscription.plan_id == sub.plan_id,
+            Subscription.tier == sub.tier,
             Subscription.id != sub.id,
             Subscription.status.in_(("pending", "active")),
             Subscription.created_at > sub.created_at,
         ).first()
         if existing_renewal:
             log.info(
-                "renew: sub_%s skip — already has follow-up sub_%s",
-                sub.id, existing_renewal.id,
+                "renew: sub_%s skip — already has follow-up sub_%s (tier=%s)",
+                sub.id, existing_renewal.id, sub.tier,
             )
             summary["skipped"] += 1
             continue
@@ -470,23 +496,57 @@ def renew_expiring_subs(db: Session, hours_window: int = 24) -> dict:
             summary["skipped"] += 1
             continue
 
+        # Card-1: если годовой уже окончательно провалился по NSF (fallback_done)
+        # — списываем МЕСЯЧНЫЙ план того же tier, а не годовой. Retention-скидку,
+        # рассчитанную под годовую цену, на месяц НЕ переносим (discount=0).
+        charge_plan_id = sub.plan_id
+        charge_discount = sub.discount_pct or 0
+        if sub.fallback_done:
+            fb = monthly_fallback(sub.plan_id)
+            if fb:
+                charge_plan_id = fb.plan_id
+                charge_discount = 0
+
         try:
-            # Переносим retention-скидку истекающей подписки на это (одно)
-            # продление. Новая запись внутри charge_recurrent создаётся с
-            # discount_pct=0 → следующее продление уже по полной цене.
-            result = charge_recurrent(db, user, sub.plan_id, pm, discount_pct=sub.discount_pct or 0)
+            # discount: retention-скидка истекающей подписки переносится на это
+            # (одно) продление; новая запись внутри charge_recurrent создаётся с
+            # discount_pct=0 → дальше полная цена.
+            result = charge_recurrent(db, user, charge_plan_id, pm, discount_pct=charge_discount)
             if result.get("ok"):
                 summary["renewed"] += 1
                 log.info(
-                    "renew: sub_%s OK → new sub_%s for user_%s plan=%s",
-                    sub.id, result.get("subscription_id"), user.id, sub.plan_id,
+                    "renew: sub_%s OK → new sub_%s for user_%s plan=%s%s",
+                    sub.id, result.get("subscription_id"), user.id, charge_plan_id,
+                    " (monthly fallback)" if sub.fallback_done else "",
                 )
             else:
                 summary["failed"] += 1
-                log.warning(
-                    "renew: sub_%s FAILED user_%s: %s",
-                    sub.id, user.id, result.get("message"),
-                )
+                kind = result.get("failure_kind")
+                err32 = (str(result.get("error_code"))[:32]
+                         if result.get("error_code") is not None else None)
+                # Card-1 (N=1): ПЕРВЫЙ NSF-отказ ГОДОВОГО → переключаем подписку на
+                # месячный того же tier. Сам месячный спишется на СЛЕДУЮЩЕМ цикле
+                # крона (см. charge_plan_id выше) — renew работает в 24ч-окне,
+                # попыток (раз в час) хватает. fallback_done ставим ДО любого
+                # месячного списания: терминальный маркер, чтобы (а) renew больше
+                # не дёргал год, (б) поздний webhook по годовому PaymentId не
+                # реанимировал годовую подписку (см. activate_from_webhook).
+                if (kind == "nsf" and not sub.fallback_done
+                        and sub.period == "yearly" and monthly_fallback(sub.plan_id)):
+                    sub.fallback_done = True
+                    sub.renewal_last_error = err32
+                    db.commit()
+                    log.warning(
+                        "renew: sub_%s yearly NSF (code=%s) → switch to monthly fallback (next cycle)",
+                        sub.id, result.get("error_code"),
+                    )
+                else:
+                    sub.renewal_last_error = err32
+                    db.commit()
+                    log.warning(
+                        "renew: sub_%s FAILED user_%s kind=%s: %s",
+                        sub.id, user.id, kind, result.get("message"),
+                    )
         except Exception as e:
             summary["failed"] += 1
             log.error("renew: sub_%s exception: %s", sub.id, e, exc_info=True)
@@ -812,6 +872,9 @@ def charge_recurrent(
             "status": "failed",
             "subscription_id": sub.id,
             "message": str(e),
+            # Сетевой/Init-фейл/таймаут — структурированного кода нет, деньги
+            # МОГЛИ уйти. НЕ 'nsf' → card-1 fallback НЕ срабатывает (безопасно).
+            "failure_kind": "unknown",
         }
 
     sub.yk_payment_id = result["payment_id"]
@@ -852,6 +915,8 @@ def charge_recurrent(
             "payment_id": result.get("payment_id"),
             "message": result.get("message", "Списание отклонено банком"),
             "error_code": result.get("error_code"),
+            # 'nsf' (недостаточно средств) → card-1 fallback; иначе 'other'.
+            "failure_kind": result.get("failure_kind", "other"),
         }
 
 

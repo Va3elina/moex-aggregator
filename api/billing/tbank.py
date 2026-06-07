@@ -59,6 +59,25 @@ TBANK_TAXATION = os.getenv("TBANK_TAXATION", "usn_income").strip()
 #   - ОСН → 'vat20' (или 'vat10' для льготных категорий)
 TBANK_VAT = os.getenv("TBANK_VAT", "none").strip()
 
+# Коды отказа эмитента «недостаточно средств» (NSF) — единственные, при которых
+# имеет смысл списать МЕНЬШУЮ месячную сумму (card-1 fallback годовой→месячный).
+# Источник: developer.tbank.ru/eacq/intro/errors/error-codes (сверено 2026-06-07).
+# КОНСЕРВАТИВНО: только явные insufficient-funds. Прочие отказы (карта истекла/
+# заблокирована, лимит, «повторите позже», generic-decline) НЕ считаем NSF —
+# для них месячный fallback не поможет, поведение остаётся прежним (без fallback).
+TBANK_NSF_CODES = {"103", "116", "1051", "5060"}
+
+
+def classify_charge_failure(error_code: Any) -> str:
+    """Классификация отказа Charge для card-1 fallback.
+    'nsf'   — недостаточно средств (можно попробовать меньшую месячную сумму);
+    'other' — всё прочее (терминальный отказ / retry-later / неизвестный код) →
+              fallback НЕ делаем (безопасный дефолт)."""
+    if error_code is not None and str(error_code).strip() in TBANK_NSF_CODES:
+        return "nsf"
+    return "other"
+
+
 # Маппинг T-Bank Status → наш контракт event_type
 _STATUS_MAP = {
     "CONFIRMED": "payment.succeeded",
@@ -564,6 +583,9 @@ class TBankProvider:
         if not success:
             result["message"] = charge_data.get("Message", "T-Bank Charge rejected")
             result["error_code"] = charge_data.get("ErrorCode")
+            # Классификация для card-1 fallback: 'nsf' (недостаточно средств,
+            # можно попробовать месячный) vs 'other' (без fallback).
+            result["failure_kind"] = classify_charge_failure(charge_data.get("ErrorCode"))
             log.warning(
                 "TBank.charge: REJECTED pid=%s status=%s code=%s msg=%s",
                 payment_id, status,

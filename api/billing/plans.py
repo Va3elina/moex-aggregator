@@ -93,6 +93,16 @@ def get_plan(plan_id: str) -> Plan | None:
     return PLANS.get(plan_id)
 
 
+def monthly_fallback(plan_id: str) -> Plan | None:
+    """Для ГОДОВОГО плана вернуть МЕСЯЧНЫЙ того же tier (card-1 fallback при NSF).
+    Для не-годовых планов, отсутствующих планов или tier'ов без месячной пары
+    (напр. устаревший premium) → None (тогда fallback не делаем)."""
+    p = PLANS.get(plan_id)
+    if not p or p.period != "yearly":
+        return None
+    return PLANS.get(f"{p.tier}_monthly")
+
+
 def list_public_plans() -> list[Plan]:
     """Все планы для Pricing-страницы (в порядке tier → period)."""
     return list(PLANS.values())

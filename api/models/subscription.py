@@ -13,6 +13,7 @@ from sqlalchemy import (
     String,
     Numeric,
     DateTime,
+    Boolean,
     ForeignKey,
     Index,
 )
@@ -77,6 +78,13 @@ class Subscription(Base):
     started_at = Column(DateTime(timezone=True), nullable=True)   # когда включился Pro
     expires_at = Column(DateTime(timezone=True), nullable=True)   # когда заканчивается
     cancelled_at = Column(DateTime(timezone=True), nullable=True)
+
+    # === Card-1: fallback годовой→месячный при недостатке средств (NSF) ===
+    # fallback_done: годовой рекуррент провалился по NSF и заменён месячным того
+    #   же tier → renew_expiring_subs списывает МЕСЯЧНЫЙ план (не годовой).
+    # renewal_last_error: последний T-Bank ErrorCode провала продления (диагностика).
+    fallback_done = Column(Boolean, nullable=False, default=False, server_default="false")
+    renewal_last_error = Column(String(32), nullable=True)
 
     # === Провайдер реквизиты ===
     # yk_payment_id — id платежа у провайдера (T-Bank PaymentId или ЮKassa id),
