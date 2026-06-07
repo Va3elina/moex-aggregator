@@ -72,6 +72,15 @@ export default function FundsTable({
                     </span>
                 </div>
             </div>
+            {data?.category === 'yuan' && (
+                <div className="text-theme-secondary" style={{
+                    fontSize: 'var(--fs-xs)', padding: 'var(--sp-2) var(--sp-4)',
+                    borderBottom: '1px solid var(--border-color)',
+                    background: 'color-mix(in srgb, var(--accent) 5%, transparent)',
+                }}>
+                    Доходность юаневых фондов — в&nbsp;рублях (включает курс CNY/RUB), поэтому бывает около нуля.
+                </div>
+            )}
             <div className="overflow-x-auto">
                 <table className="w-full" style={{ fontSize: 'var(--fs-sm)' }}>
                     <thead>
