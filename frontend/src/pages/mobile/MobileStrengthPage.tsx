@@ -12,6 +12,7 @@ import { Activity, ChevronDown, ChevronRight, LayoutGrid, Lock } from 'lucide-re
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
 import { handleTierError } from '../../utils/tierError';
+import { usePersistedState } from '../../hooks/usePersistedState';
 import MobileLayout from '../../components/mobile/MobileLayout';
 import MobilePageHeader from '../../components/mobile/MobilePageHeader';
 import MobileSheet from '../../components/mobile/MobileSheet';
@@ -58,10 +59,14 @@ const CLASSIFICATION_LABELS: Record<string, { label: string; color: string }> = 
 };
 
 export default function MobileStrengthPage() {
-  const [emaPeriod, setEmaPeriod] = useState<50 | 100 | 200>(200);
-  const [period, setPeriod] = useState<Period>('1y');
-  const [universeBase, setUniverseBase] = useState<UniverseBase>('imoex');
-  const [currency, setCurrency] = useState<Currency>('rub');
+  // Шарим desktop-ключи strength: enum'ы (Period/emaPeriod/UniverseBase/Currency)
+  // побайтово идентичны desktop, дефолты совпадают, onClick-гейты не дают free
+  // записать платные значения ('usd'/'all'/'5y'). chartMode/showPrice у mobile
+  // нет — их desktop-ключи не трогаем.
+  const [emaPeriod, setEmaPeriod] = usePersistedState<50 | 100 | 200>('frame:strength:emaPeriod', 200);
+  const [period, setPeriod] = usePersistedState<Period>('frame:strength:period', '1y');
+  const [universeBase, setUniverseBase] = usePersistedState<UniverseBase>('frame:strength:universeBase', 'imoex');
+  const [currency, setCurrency] = usePersistedState<Currency>('frame:strength:currency', 'rub');
   const strengthAccess = useTierAccess('strength');
   const { showUpgrade } = useUpgradePrompt();
   const [current, setCurrent] = useState<BreadthCurrentResponse | null>(null);

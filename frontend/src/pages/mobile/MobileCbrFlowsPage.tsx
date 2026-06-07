@@ -24,6 +24,7 @@ import {
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
 import { useOnboardingTour } from '../../hooks/useFirstVisit';
+import { usePersistedState } from '../../hooks/usePersistedState';
 import OnboardingTour from '../../components/onboarding/OnboardingTour';
 import type { TourStep } from '../../components/onboarding/OnboardingTour';
 
@@ -46,8 +47,12 @@ const PERIOD_OPTIONS: Array<{ key: PeriodFilter; label: string; months: number |
 ];
 
 export default function MobileCbrFlowsPage() {
-  const [type, setType] = useState<CbrInstrumentType>('stocks');
-  const [period, setPeriod] = useState<PeriodFilter>('1y');
+  // Шарим desktop-ключи: enum'ы CbrInstrumentType и PeriodFilter побайтово
+  // идентичны desktop (CbrFlowsPage), дефолты совпадают ('stocks'/'1y'), а
+  // onClick-гейт периода не даёт free-юзеру записать платное 'all'. → выбор
+  // переживает reload и консистентен с desktop в том же браузере.
+  const [type, setType] = usePersistedState<CbrInstrumentType>('frame:cbr:type', 'stocks');
+  const [period, setPeriod] = usePersistedState<PeriodFilter>('frame:cbr:period', '1y');
   const [data, setData] = useState<CbrFlowsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
