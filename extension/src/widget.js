@@ -181,41 +181,48 @@
       return { field: field, widgets: widgets };
     }
 
-    // Магнит при перетаскивании: к внутреннему полю, к краям виджетов терминала и
-    // к соседним нашим панелям (env кешируется на старте drag для стабильности).
+    // Магнит при перетаскивании. ВЕРТИКАЛЬ (верх/низ) — ТОЛЬКО к краям виджетов
+    // терминала и соседних панелей. Верх/низ «поля» (widgetsWrap) — это тулбар-
+    // вкладки сверху и статус-бар снизу; виджеты часто стоят НИЖЕ верха поля, и
+    // тогда панель липла на ~20px выше шапки виджета (фидбек Вадима «не та шапка»).
+    // ГОРИЗОНТАЛЬ — стороны поля (стенки экрана) + виджеты/панели. Из всех целей в
+    // радиусе SNAP берём БЛИЖАЙШУЮ. env кешируется на старте drag.
     function snapMove(st, self, env) {
       env = env || getSnapEnv();
       var f = env.field;
-      var L = [f.left], R = [f.right], T = [f.top], B = [f.bottom];
-      env.widgets.forEach(function (w) {
-        L.push(w.left, w.right); R.push(w.left, w.right);
-        T.push(w.top, w.bottom); B.push(w.top, w.bottom);
+      var xs = [f.left, f.right]; // цели для левого/правого края панели
+      var ys = [];                // цели для верхнего/нижнего края (без краёв поля)
+      function add(L, R, T, B) { xs.push(L, R); ys.push(T, B); }
+      env.widgets.forEach(function (w) { add(w.left, w.right, w.top, w.bottom); });
+      panels.forEach(function (p) { if (p.state !== self) { var s = p.state; add(s.x, s.x + s.w, s.y, s.y + s.h); } });
+      var bx = null, bdx = SNAP + 1;
+      xs.forEach(function (v) {
+        var dl = Math.abs(st.x - v);          if (dl <= SNAP && dl < bdx) { bx = v; bdx = dl; }
+        var dr = Math.abs((st.x + st.w) - v); if (dr <= SNAP && dr < bdx) { bx = v - st.w; bdx = dr; }
       });
-      panels.forEach(function (p) {
-        if (p.state === self) return;
-        var s = p.state;
-        L.push(s.x, s.x + s.w); R.push(s.x, s.x + s.w);
-        T.push(s.y, s.y + s.h); B.push(s.y, s.y + s.h);
+      if (bx !== null) st.x = bx;
+      var by = null, bdy = SNAP + 1;
+      ys.forEach(function (v) {
+        var dt = Math.abs(st.y - v);          if (dt <= SNAP && dt < bdy) { by = v; bdy = dt; }
+        var db = Math.abs((st.y + st.h) - v); if (db <= SNAP && db < bdy) { by = v - st.h; bdy = db; }
       });
-      L.forEach(function (v) { if (Math.abs(st.x - v) <= SNAP) st.x = v; });
-      R.forEach(function (v) { if (Math.abs((st.x + st.w) - v) <= SNAP) st.x = v - st.w; });
-      T.forEach(function (v) { if (Math.abs(st.y - v) <= SNAP) st.y = v; });
-      B.forEach(function (v) { if (Math.abs((st.y + st.h) - v) <= SNAP) st.y = v - st.h; });
+      if (by !== null) st.y = by;
     }
 
-    // Магнит при ресайзе: правый/нижний край → к полю, виджетам и нашим панелям.
+    // Магнит при ресайзе: правый край → стенка поля + края виджетов/панелей;
+    // нижний край → только виджеты/панели (низ поля = статус-бар, к нему не липнем).
     function snapResize(st, env) {
       env = env || getSnapEnv();
       var f = env.field;
-      var R = [f.right], B = [f.bottom];
-      env.widgets.forEach(function (w) { R.push(w.left, w.right); B.push(w.top, w.bottom); });
-      panels.forEach(function (p) {
-        if (p.state === st) return;
-        var s = p.state;
-        R.push(s.x, s.x + s.w); B.push(s.y, s.y + s.h);
-      });
-      R.forEach(function (v) { if (Math.abs((st.x + st.w) - v) <= SNAP) st.w = v - st.x; });
-      B.forEach(function (v) { if (Math.abs((st.y + st.h) - v) <= SNAP) st.h = v - st.y; });
+      var xs = [f.right], ys = [];
+      env.widgets.forEach(function (w) { xs.push(w.left, w.right); ys.push(w.top, w.bottom); });
+      panels.forEach(function (p) { if (p.state !== st) { var s = p.state; xs.push(s.x, s.x + s.w); ys.push(s.y, s.y + s.h); } });
+      var br = null, bdr = SNAP + 1;
+      xs.forEach(function (v) { var d = Math.abs((st.x + st.w) - v); if (d <= SNAP && d < bdr) { br = v; bdr = d; } });
+      if (br !== null) st.w = br - st.x;
+      var bb = null, bdb = SNAP + 1;
+      ys.forEach(function (v) { var d = Math.abs((st.y + st.h) - v); if (d <= SNAP && d < bdb) { bb = v; bdb = d; } });
+      if (bb !== null) st.h = bb - st.y;
     }
 
     function spawnPanel(id, saved) {

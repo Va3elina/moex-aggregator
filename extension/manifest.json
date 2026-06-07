@@ -1,11 +1,18 @@
 {
   "manifest_version": 3,
   "name": "Фрейм — индикаторы в терминале",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Аналитические индикаторы Фрейм (таймфрейм.рф) плавающим окном поверх торгового терминала Т-Инвестиций.",
   "homepage_url": "https://xn--80aklbnczmv.xn--p1ai",
-  "icons": { "16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png" },
-  "permissions": ["storage", "declarativeNetRequest"],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "permissions": [
+    "storage",
+    "declarativeNetRequest"
+  ],
   "host_permissions": [
     "https://*.tbank.ru/*",
     "https://*.tinkoff.ru/*"
@@ -17,18 +24,29 @@
         "https://*.tbank.ru/invest/web-terminal/*",
         "https://*.tinkoff.ru/invest-terminal/*"
       ],
-      "js": ["src/widget.js", "src/content.js"],
+      "js": [
+        "src/widget.js",
+        "src/content.js"
+      ],
       "run_at": "document_idle"
     }
   ],
   "declarative_net_request": {
     "rule_resources": [
-      { "id": "csp_relax", "enabled": true, "path": "rules.json" }
+      {
+        "id": "csp_relax",
+        "enabled": true,
+        "path": "rules.json"
+      }
     ]
   },
   "action": {
     "default_popup": "src/popup.html",
     "default_title": "Фрейм",
-    "default_icon": { "16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png" }
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
   }
 }
