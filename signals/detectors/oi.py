@@ -91,6 +91,33 @@ def _detect_oi_anomaly(
     )
 
 
+def compute_oi_z(
+    sectype: str,
+    clgroup: str,
+    as_of_date: Optional[date] = None,
+) -> Optional[tuple[float, int, int]]:
+    """Сырой z-score дневного Δ чистой позиции (БЕЗ порога) — для пользовательских
+    алертов «OI z > X». Возвращает (z, last_diff, current_net) или None если мало
+    истории / нулевой std. Та же математика что в _detect_oi_anomaly, но без гейта."""
+    points = get_oi_daily(sectype, clgroup, days=config.LOOKBACK_DAYS + 1, as_of_date=as_of_date)
+    if len(points) < config.MIN_HISTORY_DAYS:
+        return None
+    nets = [p.net for p in points]
+    diffs = [nets[i] - nets[i - 1] for i in range(1, len(nets))]
+    if len(diffs) < 2:
+        return None
+    last_diff = diffs[-1]
+    historical = diffs[:-1]
+    if len(historical) < 2:
+        return None
+    mean_d = statistics.fmean(historical)
+    stdev_d = statistics.stdev(historical)
+    if stdev_d == 0:
+        return None
+    z = (last_diff - mean_d) / stdev_d
+    return (round(z, 2), last_diff, points[-1].net)
+
+
 def detect_all_oi(as_of_date: Optional[date] = None) -> List[OISignalCandidate]:
     """Прогон по всем тикерам × обе группы (FIZ, YUR).
 
