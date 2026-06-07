@@ -82,7 +82,7 @@ def format_msg(a: Alert, value: float, ctx: dict) -> str:
 
 
 def run_once() -> dict:
-    summary = {"checked": 0, "fired": 0, "skipped": 0, "errors": 0}
+    summary = {"checked": 0, "fired": 0, "skipped": 0, "unlinked": 0, "errors": 0}
     db = SessionLocal()
     try:
         alerts = db.query(Alert).filter(Alert.status == "active").all()
@@ -101,12 +101,23 @@ def run_once() -> dict:
                 prev = float(a.last_value) if a.last_value is not None else None
                 if eval_op(a.op, value, prev, float(a.threshold)):
                     text = format_msg(a, value, ctx or {})
-                    if send_message(user.telegram_chat_id, text):
+                    result = send_message(user.telegram_chat_id, text)
+                    if result == "ok":
                         db.add(AlertFire(alert_id=a.id, value=value, message_text=text))
                         a.last_fired_at = now
                         if a.mode == "once":
                             a.status = "fired"
                         summary["fired"] += 1
+                    elif result == "blocked":
+                        # юзер забанил бота / чат мёртв → авто-отвязка, чтобы не
+                        # долбить впустую. Алерт остаётся, но без chat_id eval его
+                        # скипнет до повторной привязки на сайте.
+                        user.telegram_chat_id = None
+                        user.telegram_username = None
+                        user.telegram_linked_at = None
+                        summary["unlinked"] += 1
+                        print(f"[alerts_run] user {user.id} blocked bot → auto-unlinked")
+                    # 'error' → не помечаем сработавшим, повтор на следующем цикле
                 a.last_value = value
             except Exception as e:
                 summary["errors"] += 1

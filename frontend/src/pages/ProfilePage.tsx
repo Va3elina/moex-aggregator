@@ -8,6 +8,7 @@ import {
 import AdminBillingInvites from '../components/AdminBillingInvites';
 import ApiKeysSection from '../components/profile/ApiKeysSection';
 import ExtensionTokenSection from '../components/profile/ExtensionTokenSection';
+import TelegramAlertsSection from '../components/profile/TelegramAlertsSection';
 import { API_CSV_ENABLED } from '../config/features';
 
 interface BillingStatus {
@@ -748,6 +749,11 @@ export default function ProfilePage() {
           <ApiKeysSection />
         </div>
       )}
+
+      {/* ============ Секция: Telegram-алерты ============ */}
+      <div className="rounded-2xl border p-6" style={cardStyle}>
+        <TelegramAlertsSection />
+      </div>
 
       {/* ============ Секция: Расширение для терминала ============ */}
       <div className="rounded-2xl border p-6" style={cardStyle}>

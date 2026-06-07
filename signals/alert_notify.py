@@ -15,8 +15,9 @@ def _redact(s) -> str:
     return str(s).replace(_TOKEN, "<REDACTED>")
 
 
-def send_message(chat_id, text: str) -> bool:
-    """True если ушло. Не бросает (логирует ошибку с redact)."""
+def send_message(chat_id, text: str) -> str:
+    """'ok' — ушло; 'blocked' — юзер забанил бота / чат мёртв (→ авто-отвязка
+    в eval-loop); 'error' — временная ошибка (повтор позже). Не бросает."""
     try:
         resp = requests.post(
             f"{_API}/sendMessage",
@@ -28,10 +29,18 @@ def send_message(chat_id, text: str) -> bool:
             },
             timeout=15,
         )
-        if not resp.json().get("ok"):
-            print(f"[alert_notify] telegram not ok: {_redact(resp.text)}")
-            return False
-        return True
+        data = resp.json()
+        if data.get("ok"):
+            return "ok"
+        desc = str(data.get("description", "")).lower()
+        code = data.get("error_code")
+        # Терминальные: бот заблокирован / чат не найден / юзер деактивирован →
+        # доставить уже невозможно, eval-loop авто-отвяжет (chat_id=NULL).
+        if code == 403 or "blocked" in desc or "deactivated" in desc \
+                or "chat not found" in desc or "user is deactivated" in desc:
+            return "blocked"
+        print(f"[alert_notify] telegram not ok: {_redact(resp.text)}")
+        return "error"
     except requests.RequestException as e:
         print(f"[alert_notify] send error: {_redact(e)}")
-        return False
+        return "error"
