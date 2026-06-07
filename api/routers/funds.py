@@ -198,43 +198,10 @@ async def get_funds_chart(
                             "nav": float(row[2]) if row[2] else None
                         })
 
-            # === Доходность m1/m3/m6/y1 по pay (СЧА на пай) + выплаты (total return).
-            # Та же методология и те же хелперы, что в /fund-trades/funds → совпадает
-            # с investfunds. Все 4 периода (а не только y1), чтобы молодые фонды (<1 года)
-            # показывали лучший доступный период (m6/m3/m1) вместо «—» — как в «Покупках».
-            # _guard_returns скрывает доходность фондов с битыми выплатами в источнике.
-            if accessible_fund_ids:
-                from api.routers.fund_trades import _calc_total_return, _guard_returns
-                ret_query = text("""
-                    WITH last_pay AS (
-                        SELECT DISTINCT ON (fund_id) fund_id, pay AS last_pay, trade_date AS td
-                        FROM fund_data
-                        WHERE fund_id = ANY(:fund_ids) AND pay IS NOT NULL
-                        ORDER BY fund_id, trade_date DESC
-                    )
-                    SELECT lp.fund_id, lp.last_pay,
-                        (SELECT pay FROM fund_data fd WHERE fd.fund_id=lp.fund_id AND fd.pay IS NOT NULL AND fd.trade_date <= lp.td - INTERVAL '1 month'   ORDER BY fd.trade_date DESC LIMIT 1) AS pay_1m,
-                        (SELECT pay FROM fund_data fd WHERE fd.fund_id=lp.fund_id AND fd.pay IS NOT NULL AND fd.trade_date <= lp.td - INTERVAL '3 months'  ORDER BY fd.trade_date DESC LIMIT 1) AS pay_3m,
-                        (SELECT pay FROM fund_data fd WHERE fd.fund_id=lp.fund_id AND fd.pay IS NOT NULL AND fd.trade_date <= lp.td - INTERVAL '6 months'  ORDER BY fd.trade_date DESC LIMIT 1) AS pay_6m,
-                        (SELECT pay FROM fund_data fd WHERE fd.fund_id=lp.fund_id AND fd.pay IS NOT NULL AND fd.trade_date <= lp.td - INTERVAL '12 months' ORDER BY fd.trade_date DESC LIMIT 1) AS pay_1y,
-                        (SELECT COALESCE(SUM(amount_per_unit),0) FROM fund_distributions d WHERE d.fund_id=lp.fund_id AND d.record_date > lp.td - INTERVAL '1 month'   AND d.record_date <= lp.td) AS dist_1m,
-                        (SELECT COALESCE(SUM(amount_per_unit),0) FROM fund_distributions d WHERE d.fund_id=lp.fund_id AND d.record_date > lp.td - INTERVAL '3 months'  AND d.record_date <= lp.td) AS dist_3m,
-                        (SELECT COALESCE(SUM(amount_per_unit),0) FROM fund_distributions d WHERE d.fund_id=lp.fund_id AND d.record_date > lp.td - INTERVAL '6 months'  AND d.record_date <= lp.td) AS dist_6m,
-                        (SELECT COALESCE(SUM(amount_per_unit),0) FROM fund_distributions d WHERE d.fund_id=lp.fund_id AND d.record_date > lp.td - INTERVAL '12 months' AND d.record_date <= lp.td) AS dist_1y
-                    FROM last_pay lp
-                """)
-                for r in conn.execute(ret_query, {"fund_ids": accessible_fund_ids}).mappings():
-                    fid = r["fund_id"]
-                    if fid not in funds_data:
-                        continue
-                    lastp = r["last_pay"]
-                    rets = {
-                        "m1": _calc_total_return(lastp, r["pay_1m"], r["dist_1m"]),
-                        "m3": _calc_total_return(lastp, r["pay_3m"], r["dist_3m"]),
-                        "m6": _calc_total_return(lastp, r["pay_6m"], r["dist_6m"]),
-                        "y1": _calc_total_return(lastp, r["pay_1y"], r["dist_1y"]),
-                    }
-                    funds_data[fid]["returns"] = _guard_returns(funds_data[fid]["ticker"], rets)
+            # Доходность в «Деньги фондов» НЕ показываем (это метрика «Покупок/Состава
+            # фондов»; здесь индикатор про деньги/потоки = СЧА). Поэтому returns тут не
+            # считаем — фронт (FundsTable) их не использует. Доходность пая по-прежнему
+            # доступна в детальной карточке фонда (/funds/detail → _fund_performance).
 
             # === Суммарная СЧА — только по accessible фондам ===
             total_result = []

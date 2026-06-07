@@ -14,18 +14,6 @@ const FUND_COLORS = [
 // «Скоро» на заголовке группы. Убрать имя отсюда, когда NAV появится.
 const COMING_SOON_SUBCATS = new Set<string>([]);
 
-// Лучшая доступная доходность: длиннейший период с данными (1г→6м→3м→1м).
-// Совпадает с «Покупки фондов» (bestReturn) — молодые фонды (<1 года) показывают
-// 6м/3м/1м с подписью периода вместо «—». null = совсем нет истории / битые данные.
-function bestReturn(r?: FundInfo['returns']): { v: number; label: string } | null {
-    if (!r) return null;
-    if (r.y1 != null) return { v: r.y1, label: '1г' };
-    if (r.m6 != null) return { v: r.m6, label: '6м' };
-    if (r.m3 != null) return { v: r.m3, label: '3м' };
-    if (r.m1 != null) return { v: r.m1, label: '1м' };
-    return null;
-}
-
 interface FundsTableProps {
     data: FundsChartResponse | null;
     hiddenFunds: Set<number>;
@@ -53,13 +41,9 @@ export default function FundsTable({
 }: FundsTableProps) {
     const { showUpgrade } = useUpgradePrompt();
     const fundsAccess = useTierAccess('funds_money');
-    // Колонка сортировки: СЧА (nav) или доходность за 1 год (y1). Направление —
-    // общий navSortDir. Клик по активной колонке инвертирует, по другой — desc.
-    const [sortKey, setSortKey] = React.useState<'nav' | 'y1'>('nav');
-    const toggleSort = (key: 'nav' | 'y1') => {
-        if (sortKey === key) onSetNavSortDir(d => d === 'desc' ? 'asc' : 'desc');
-        else { setSortKey(key); onSetNavSortDir('desc'); }
-    };
+    // Сортировка только по СЧА (nav) — доходность в «Деньги фондов» не показываем
+    // (это метрика «Покупок/Состава фондов»). Клик по заголовку инвертирует направление.
+    const toggleNavSort = () => onSetNavSortDir(d => d === 'desc' ? 'asc' : 'desc');
 
     return (
         <div className="mt-6 rounded-2xl overflow-hidden editorial-frame" style={{ background: 'var(--bg-secondary)', padding: 0 }}>
@@ -72,15 +56,6 @@ export default function FundsTable({
                     </span>
                 </div>
             </div>
-            {data?.category === 'yuan' && (
-                <div className="text-theme-secondary" style={{
-                    fontSize: 'var(--fs-xs)', padding: 'var(--sp-2) var(--sp-4)',
-                    borderBottom: '1px solid var(--border-color)',
-                    background: 'color-mix(in srgb, var(--accent) 5%, transparent)',
-                }}>
-                    Доходность юаневых фондов — в&nbsp;рублях (включает курс CNY/RUB), поэтому бывает около нуля.
-                </div>
-            )}
             <div className="overflow-x-auto">
                 <table className="w-full" style={{ fontSize: 'var(--fs-sm)' }}>
                     <thead>
@@ -90,21 +65,11 @@ export default function FundsTable({
                             <th className="px-4 py-3 font-medium">Название</th>
                             <th className="px-4 py-3 font-medium text-right">
                                 <button
-                                    onClick={() => toggleSort('nav')}
+                                    onClick={toggleNavSort}
                                     className="inline-flex items-center gap-1 hover:text-theme-primary transition-colors"
                                 >
                                     СЧА
-                                    {sortKey === 'nav' && <span className="text-xs">{navSortDir === 'desc' ? '↓' : '↑'}</span>}
-                                </button>
-                            </th>
-                            <th className="px-4 py-3 font-medium text-right whitespace-nowrap">
-                                <button
-                                    onClick={() => toggleSort('y1')}
-                                    className="inline-flex items-center gap-1 hover:text-theme-primary transition-colors"
-                                    title="Доходность по СЧА на пай (с учётом выплат дохода). За 1 год; для молодых фондов — за лучший доступный период (6м/3м/1м, период подписан)."
-                                >
-                                    Доходность
-                                    {sortKey === 'y1' && <span className="text-xs">{navSortDir === 'desc' ? '↓' : '↑'}</span>}
+                                    <span className="text-xs">{navSortDir === 'desc' ? '↓' : '↑'}</span>
                                 </button>
                             </th>
                             <th className="px-4 py-3 font-medium text-right">Дата</th>
@@ -124,16 +89,6 @@ export default function FundsTable({
                             subcatMap.forEach((funds, subcat) => groups.push({
                                 subcat,
                                 funds: [...funds].sort((a, b) => {
-                                    if (sortKey === 'y1') {
-                                        // Сортировка по лучшей доступной доходности (как в «Покупках»).
-                                        const ya = bestReturn(a.returns)?.v ?? null;
-                                        const yb = bestReturn(b.returns)?.v ?? null;
-                                        // фонды совсем без доходности — всегда в конце
-                                        if (ya == null && yb == null) return 0;
-                                        if (ya == null) return 1;
-                                        if (yb == null) return -1;
-                                        return navSortDir === 'desc' ? yb - ya : ya - yb;
-                                    }
                                     const navA = a.data[a.data.length - 1]?.nav ?? 0;
                                     const navB = b.data[b.data.length - 1]?.nav ?? 0;
                                     return navSortDir === 'desc' ? navB - navA : navA - navB;
@@ -188,7 +143,7 @@ export default function FundsTable({
                                                         />
                                                     </div>
                                                 </td>
-                                                <td colSpan={5} className="px-4 py-3 cursor-pointer select-none" onClick={toggleCollapse}>
+                                                <td colSpan={4} className="px-4 py-3 cursor-pointer select-none" onClick={toggleCollapse}>
                                                     <div className="flex items-center gap-2">
                                                         <span className="text-[10px] text-theme-secondary transition-transform duration-200" style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>▼</span>
                                                         <span className="text-sm font-bold text-theme-primary">
@@ -290,23 +245,6 @@ export default function FundsTable({
                                                     <td className="px-4 py-3 text-right font-mono">
                                                         {isLocked ? '—' : (lastData?.nav ? `${(lastData.nav / 1e9).toFixed(2)} млрд ₽` : '—')}
                                                     </td>
-                                                    {(() => {
-                                                        const br = isLocked ? null : bestReturn(fund.returns);
-                                                        return (
-                                                            <td className="px-4 py-3 text-right font-mono whitespace-nowrap" style={{
-                                                                color: br ? (br.v >= 0 ? 'var(--funds-flow-positive)' : 'var(--funds-flow-negative)') : undefined,
-                                                            }}>
-                                                                {isLocked || !br ? '—' : (
-                                                                    <>
-                                                                        {br.v >= 0 ? '+' : ''}{br.v.toFixed(1)}%
-                                                                        {br.label !== '1г' && (
-                                                                            <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)', marginLeft: 3 }}>{br.label}</span>
-                                                                        )}
-                                                                    </>
-                                                                )}
-                                                            </td>
-                                                        );
-                                                    })()}
                                                     <td className="px-4 py-3 text-right text-theme-secondary">
                                                         {isLocked ? '—' : (lastData?.date || '—')}
                                                     </td>
