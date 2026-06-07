@@ -1,0 +1,139 @@
+//@version=6
+indicator("НКЦ Fear · Доллар США/RUB (ставка риска)", overlay=false)
+
+// Ставка рыночного риска (% от цены) по данным НКЦ/MOEX ISS для: Доллар США/RUB.
+// Ступенчатый ряд: значение держится до следующей даты-перелома.
+// Сгенерировано из дневной выгрузки RiskRates/build_indicators.py.
+riskRate() =>
+    float r = 10.0    // с 2014-12-26
+    if time >= timestamp(2015,1,5,0,0)
+        r := 20.0
+    if time >= timestamp(2015,1,15,0,0)
+        r := 12.0
+    if time >= timestamp(2015,4,1,0,0)
+        r := 11.0
+    if time >= timestamp(2015,4,30,0,0)
+        r := 14.0
+    if time >= timestamp(2015,5,6,0,0)
+        r := 11.0
+    if time >= timestamp(2015,6,8,0,0)
+        r := 9.0
+    if time >= timestamp(2015,10,20,0,0)
+        r := 8.0
+    if time >= timestamp(2015,12,28,0,0)
+        r := 10.0
+    if time >= timestamp(2015,12,30,0,0)
+        r := 11.5
+    if time >= timestamp(2016,1,12,0,0)
+        r := 8.0
+    if time >= timestamp(2016,1,22,0,0)
+        r := 9.0
+    if time >= timestamp(2016,4,14,0,0)
+        r := 8.0
+    if time >= timestamp(2016,4,27,0,0)
+        r := 10.0
+    if time >= timestamp(2016,4,29,0,0)
+        r := 12.0
+    if time >= timestamp(2016,5,5,0,0)
+        r := 10.0
+    if time >= timestamp(2016,5,11,0,0)
+        r := 8.0
+    if time >= timestamp(2016,9,20,0,0)
+        r := 7.0
+    if time >= timestamp(2016,12,29,0,0)
+        r := 8.0
+    if time >= timestamp(2017,1,9,0,0)
+        r := 6.0
+    if time >= timestamp(2017,5,5,0,0)
+        r := 7.5
+    if time >= timestamp(2017,5,11,0,0)
+        r := 6.0
+    if time >= timestamp(2017,12,28,0,0)
+        r := 7.5
+    if time >= timestamp(2018,1,10,0,0)
+        r := 6.0
+    if time >= timestamp(2018,4,12,0,0)
+        r := 10.0
+    if time >= timestamp(2018,5,21,0,0)
+        r := 8.0
+    if time >= timestamp(2018,7,17,0,0)
+        r := 6.0
+    if time >= timestamp(2018,12,27,0,0)
+        r := 8.0
+    if time >= timestamp(2019,1,10,0,0)
+        r := 6.0
+    if time >= timestamp(2019,12,27,0,0)
+        r := 8.0
+    if time >= timestamp(2020,1,10,0,0)
+        r := 6.0
+    if time >= timestamp(2020,3,11,0,0)
+        r := 10.0
+    if time >= timestamp(2020,3,20,0,0)
+        r := 15.0
+    if time >= timestamp(2020,4,7,0,0)
+        r := 12.5
+    if time >= timestamp(2020,4,16,0,0)
+        r := 10.0
+    if time >= timestamp(2020,5,13,0,0)
+        r := 8.0
+    if time >= timestamp(2020,6,10,0,0)
+        r := 6.0
+    if time >= timestamp(2020,11,2,0,0)
+        r := 7.5
+    if time >= timestamp(2020,11,6,0,0)
+        r := 6.0
+    if time >= timestamp(2020,12,29,0,0)
+        r := 7.5
+    if time >= timestamp(2021,1,11,0,0)
+        r := 6.0
+    if time >= timestamp(2021,4,30,0,0)
+        r := 7.5
+    if time >= timestamp(2021,5,5,0,0)
+        r := 6.0
+    if time >= timestamp(2021,11,17,0,0)
+        r := 6.5
+    if time >= timestamp(2021,11,18,0,0)
+        r := 7.0
+    if time >= timestamp(2021,11,19,0,0)
+        r := 7.5
+    if time >= timestamp(2021,12,9,0,0)
+        r := 6.0
+    if time >= timestamp(2021,12,29,0,0)
+        r := 7.5
+    if time >= timestamp(2022,1,11,0,0)
+        r := 6.0
+    if time >= timestamp(2022,1,17,0,0)
+        r := 6.5
+    if time >= timestamp(2022,1,18,0,0)
+        r := 7.0
+    if time >= timestamp(2022,1,19,0,0)
+        r := 7.5
+    if time >= timestamp(2022,2,25,0,0)
+        r := 15.0
+    if time >= timestamp(2022,5,24,0,0)
+        r := 12.5
+    if time >= timestamp(2022,5,25,0,0)
+        r := 10.0
+    if time >= timestamp(2022,8,5,0,0)
+        r := 15.0
+    if time >= timestamp(2022,9,20,0,0)
+        r := 10.0
+    if time >= timestamp(2022,10,3,0,0)
+        r := 15.0
+    r
+
+rr = riskRate()
+greedLvl = 8.8   // <= покой/жадность
+fearLvl  = 14.4    // >= повышенный страх
+
+plot(rr, "Ставка риска, %", color=color.new(color.red,0), linewidth=2, style=plot.style_stepline)
+hline(greedLvl, "Жадность", color=color.new(color.green,40), linestyle=hline.style_dashed)
+hline(fearLvl,  "Страх",    color=color.new(color.red,40),   linestyle=hline.style_dashed)
+bgcolor(rr >= fearLvl ? color.new(color.red,88) : rr <= greedLvl ? color.new(color.green,90) : na)
+
+// Смена режима: НКЦ снизил ставку после пика страха (часто = разрядка/вход),
+// или повысил с низов (риск-офф нарастает).
+cut  = rr < rr[1]
+hike = rr > rr[1]
+plotshape(cut  and rr[1] >= fearLvl, "Разрядка",  shape.triangleup,   location.bottom, color.new(color.green,0), size=size.tiny)
+plotshape(hike and rr[1] <= greedLvl,"Рост риска", shape.triangledown, location.top,    color.new(color.red,0),   size=size.tiny)

@@ -1,0 +1,97 @@
+//@version=6
+indicator("НКЦ Fear · Газпром (ставка риска)", overlay=false)
+
+// Ставка рыночного риска (% от цены) по данным НКЦ/MOEX ISS для: Газпром.
+// Ступенчатый ряд: значение держится до следующей даты-перелома.
+// Сгенерировано из дневной выгрузки RiskRates/build_indicators.py.
+riskRate() =>
+    float r = 17.0    // с 2018-05-22
+    if time >= timestamp(2019,1,4,0,0)
+        r := 22.0
+    if time >= timestamp(2019,1,11,0,0)
+        r := 17.0
+    if time >= timestamp(2019,5,15,0,0)
+        r := 23.375
+    if time >= timestamp(2019,5,16,0,0)
+        r := 17.0
+    if time >= timestamp(2019,12,30,0,0)
+        r := 21.0
+    if time >= timestamp(2020,1,13,0,0)
+        r := 17.0
+    if time >= timestamp(2020,3,2,0,0)
+        r := 20.0
+    if time >= timestamp(2020,3,11,0,0)
+        r := 25.0
+    if time >= timestamp(2020,5,14,0,0)
+        r := 20.0
+    if time >= timestamp(2020,6,11,0,0)
+        r := 17.0
+    if time >= timestamp(2020,11,3,0,0)
+        r := 21.0
+    if time >= timestamp(2020,11,9,0,0)
+        r := 17.0
+    if time >= timestamp(2020,12,30,0,0)
+        r := 20.0
+    if time >= timestamp(2021,1,12,0,0)
+        r := 17.0
+    if time >= timestamp(2021,5,12,0,0)
+        r := 14.0
+    if time >= timestamp(2021,11,25,0,0)
+        r := 15.0
+    if time >= timestamp(2021,11,26,0,0)
+        r := 16.0
+    if time >= timestamp(2021,11,29,0,0)
+        r := 17.0
+    if time >= timestamp(2021,12,30,0,0)
+        r := 20.0
+    if time >= timestamp(2022,1,12,0,0)
+        r := 17.0
+    if time >= timestamp(2022,1,21,0,0)
+        r := 18.0
+    if time >= timestamp(2022,1,24,0,0)
+        r := 19.0
+    if time >= timestamp(2022,2,22,0,0)
+        r := 23.75
+    if time >= timestamp(2022,2,23,0,0)
+        r := 19.0
+    if time >= timestamp(2022,2,25,0,0)
+        r := 40.0
+    if time >= timestamp(2022,2,28,0,0)
+        r := 45.0
+    if time >= timestamp(2022,3,1,0,0)
+        r := 40.0
+    if time >= timestamp(2022,5,25,0,0)
+        r := 35.0
+    if time >= timestamp(2022,5,26,0,0)
+        r := 30.0
+    if time >= timestamp(2022,7,28,0,0)
+        r := 25.0
+    if time >= timestamp(2022,12,6,0,0)
+        r := 20.0
+    if time >= timestamp(2022,12,30,0,0)
+        r := 23.0
+    if time >= timestamp(2023,1,11,0,0)
+        r := 20.0
+    if time >= timestamp(2023,12,11,0,0)
+        r := 17.0
+    if time >= timestamp(2023,12,11,0,0)
+        r := 20.0
+    if time >= timestamp(2023,12,12,0,0)
+        r := 17.0
+    r
+
+rr = riskRate()
+greedLvl = 20.2   // <= покой/жадность
+fearLvl  = 32.6    // >= повышенный страх
+
+plot(rr, "Ставка риска, %", color=color.new(color.red,0), linewidth=2, style=plot.style_stepline)
+hline(greedLvl, "Жадность", color=color.new(color.green,40), linestyle=hline.style_dashed)
+hline(fearLvl,  "Страх",    color=color.new(color.red,40),   linestyle=hline.style_dashed)
+bgcolor(rr >= fearLvl ? color.new(color.red,88) : rr <= greedLvl ? color.new(color.green,90) : na)
+
+// Смена режима: НКЦ снизил ставку после пика страха (часто = разрядка/вход),
+// или повысил с низов (риск-офф нарастает).
+cut  = rr < rr[1]
+hike = rr > rr[1]
+plotshape(cut  and rr[1] >= fearLvl, "Разрядка",  shape.triangleup,   location.bottom, color.new(color.green,0), size=size.tiny)
+plotshape(hike and rr[1] <= greedLvl,"Рост риска", shape.triangledown, location.top,    color.new(color.red,0),   size=size.tiny)

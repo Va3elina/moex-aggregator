@@ -1,0 +1,89 @@
+//@version=6
+indicator("НКЦ Fear · Газ (Henry Hub) (ставка риска)", overlay=false)
+
+// Ставка рыночного риска (% от цены) по данным НКЦ/MOEX ISS для: Газ (Henry Hub).
+// Ступенчатый ряд: значение держится до следующей даты-перелома.
+// Сгенерировано из дневной выгрузки RiskRates/build_indicators.py.
+riskRate() =>
+    float r = 18.0    // с 2020-02-03
+    if time >= timestamp(2020,6,30,0,0)
+        r := 20.25
+    if time >= timestamp(2020,7,2,0,0)
+        r := 18.0
+    if time >= timestamp(2020,8,4,0,0)
+        r := 20.25
+    if time >= timestamp(2020,8,5,0,0)
+        r := 18.0
+    if time >= timestamp(2020,9,18,0,0)
+        r := 20.25
+    if time >= timestamp(2020,9,21,0,0)
+        r := 18.0
+    if time >= timestamp(2020,9,22,0,0)
+        r := 20.25
+    if time >= timestamp(2020,9,23,0,0)
+        r := 18.0
+    if time >= timestamp(2020,9,24,0,0)
+        r := 22.5
+    if time >= timestamp(2020,9,25,0,0)
+        r := 18.0
+    if time >= timestamp(2020,10,5,0,0)
+        r := 20.0
+    if time >= timestamp(2020,12,30,0,0)
+        r := 25.0
+    if time >= timestamp(2021,1,12,0,0)
+        r := 20.0
+    if time >= timestamp(2021,12,30,0,0)
+        r := 24.0
+    if time >= timestamp(2022,1,12,0,0)
+        r := 20.0
+    if time >= timestamp(2022,1,31,0,0)
+        r := 22.5
+    if time >= timestamp(2022,2,1,0,0)
+        r := 20.0
+    if time >= timestamp(2022,4,29,0,0)
+        r := 24.0
+    if time >= timestamp(2022,5,13,0,0)
+        r := 20.0
+    if time >= timestamp(2022,6,15,0,0)
+        r := 22.5
+    if time >= timestamp(2022,6,16,0,0)
+        r := 20.0
+    if time >= timestamp(2022,7,8,0,0)
+        r := 22.5
+    if time >= timestamp(2022,7,11,0,0)
+        r := 20.0
+    if time >= timestamp(2022,12,30,0,0)
+        r := 22.0
+    if time >= timestamp(2023,1,11,0,0)
+        r := 19.0
+    if time >= timestamp(2023,2,24,0,0)
+        r := 21.375
+    if time >= timestamp(2023,2,27,0,0)
+        r := 19.0
+    if time >= timestamp(2023,12,27,0,0)
+        r := 23.0
+    if time >= timestamp(2024,1,8,0,0)
+        r := 19.0
+    if time >= timestamp(2024,1,8,0,0)
+        r := 23.0
+    if time >= timestamp(2024,1,9,0,0)
+        r := 19.0
+    if time >= timestamp(2026,1,21,0,0)
+        r := 24.0
+    r
+
+rr = riskRate()
+greedLvl = 19.4   // <= покой/жадность
+fearLvl  = 22.2    // >= повышенный страх
+
+plot(rr, "Ставка риска, %", color=color.new(color.red,0), linewidth=2, style=plot.style_stepline)
+hline(greedLvl, "Жадность", color=color.new(color.green,40), linestyle=hline.style_dashed)
+hline(fearLvl,  "Страх",    color=color.new(color.red,40),   linestyle=hline.style_dashed)
+bgcolor(rr >= fearLvl ? color.new(color.red,88) : rr <= greedLvl ? color.new(color.green,90) : na)
+
+// Смена режима: НКЦ снизил ставку после пика страха (часто = разрядка/вход),
+// или повысил с низов (риск-офф нарастает).
+cut  = rr < rr[1]
+hike = rr > rr[1]
+plotshape(cut  and rr[1] >= fearLvl, "Разрядка",  shape.triangleup,   location.bottom, color.new(color.green,0), size=size.tiny)
+plotshape(hike and rr[1] <= greedLvl,"Рост риска", shape.triangledown, location.top,    color.new(color.red,0),   size=size.tiny)
