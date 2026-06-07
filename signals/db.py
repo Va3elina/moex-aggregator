@@ -99,6 +99,34 @@ def get_candles_continuous(sectype: str, days: int) -> List[CandlePoint]:
     return [CandlePoint(begin_time=r[0], close=float(r[1])) for r in rows]
 
 
+def get_latest_price(sectype: str) -> Optional[tuple]:
+    """Самая свежая цена sectype — intraday, когда актив ликвиден.
+
+    Берём свечу с НАИБОЛЕЕ свежим begin_time среди интервалов 5/60/24 (внутри одного
+    begin_time — с макс. объёмом = фронт-контракт). Во время сессии это 5-мин свеча
+    (цена «сейчас»); у неликвидных активов 5м/60м может не быть → откатывается на
+    дневную (вчерашнее закрытие). Возвращает (close, begin_time, interval) или None.
+
+    interval в ответе нужен вызывающему: 5/60 → intraday, 24 → дневная (EOD) —
+    чтобы предупредить, что у актива нет внутридневных данных.
+    """
+    with SessionLocal() as session:
+        row = session.execute(
+            text("""
+                SELECT close, begin_time, interval
+                FROM candles
+                WHERE secid LIKE :prefix AND type = 'futures'
+                  AND interval IN (5, 60, 24) AND close > 0
+                ORDER BY begin_time DESC, volume DESC NULLS LAST
+                LIMIT 1
+            """),
+            {"prefix": f"{sectype}%"},
+        ).fetchone()
+    if not row:
+        return None
+    return float(row[0]), row[1], int(row[2])
+
+
 def get_asset_name(sectype: str) -> Optional[str]:
     """Human-readable название инструмента (None если нет в instruments)."""
     with SessionLocal() as session:

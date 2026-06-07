@@ -25,7 +25,7 @@ if "@db:" in _db:
 
 from api.database import SessionLocal               # noqa: E402
 from api.models import User, Alert, AlertFire        # noqa: E402
-from signals.db import get_candles_continuous        # noqa: E402
+from signals.db import get_latest_price              # noqa: E402
 from signals.detectors.oi import compute_oi_z        # noqa: E402
 from signals.alert_notify import send_message        # noqa: E402
 
@@ -50,10 +50,12 @@ def eval_op(op: str, value: float, prev, threshold: float) -> bool:
 def compute_value(a: Alert):
     """(value, ctx) или (None, None). ctx — доп. данные для текста уведомления."""
     if a.indicator == "price":
-        candles = get_candles_continuous(a.asset, days=10)
-        if not candles:
+        # Самая свежая цена (intraday по 5м/60м, EOD по дневной у неликвидных).
+        r = get_latest_price(a.asset)
+        if not r:
             return None, None
-        return float(candles[-1].close), {}
+        close, ts, interval = r
+        return close, {"interval": interval, "price_ts": ts}
     if a.indicator == "oi_zscore":
         r = compute_oi_z(a.asset, a.clgroup or "FIZ")
         if not r:
@@ -69,8 +71,10 @@ def format_msg(a: Alert, value: float, ctx: dict) -> str:
     thr = float(a.threshold)
     if a.indicator == "price":
         word = _OP_PRICE.get(a.op, a.op)
+        eod = "\n<i>(дневная свеча — у актива нет внутридневных данных)</i>" \
+            if ctx.get("interval") == 24 else ""
         return (f"🔔 <b>{name} · {a.asset}</b>\n"
-                f"Цена {word} {thr:g} ₽ → сейчас {value:g} ₽\n{link}")
+                f"Цена {word} {thr:g} ₽ → сейчас {value:g} ₽{eod}\n{link}")
     if a.indicator == "oi_zscore":
         clg = "физлица" if (a.clgroup or "FIZ") == "FIZ" else "юрлица"
         diff = ctx.get("last_diff", 0)
