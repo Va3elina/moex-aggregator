@@ -11,6 +11,7 @@ from api.models.subscription_invite import SubscriptionInvite, InviteRedemption
 from api.models.api_key import ApiKey
 from api.models.extension_token import ExtensionToken
 from api.models.telegram_link_token import TelegramLinkToken
+from api.models.alert import Alert, AlertFire
 from api.models.fund_holdings_history import FundHoldingsHistory
 from api.models.fund_holdings_intraday import FundHoldingsIntraday
 
@@ -23,6 +24,7 @@ __all__ = [
     "ApiKey",
     "ExtensionToken",
     "TelegramLinkToken",
+    "Alert", "AlertFire",
     "FundHoldingsHistory",
     "FundHoldingsIntraday",
 ]

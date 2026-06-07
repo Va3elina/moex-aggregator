@@ -1609,3 +1609,61 @@ export async function getCompanyFlows(
     if (!resp.ok) throw new Error('Не удалось загрузить потоки по компании');
     return resp.json();
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// Telegram alert-bot (привязка + алерты). Бэкенд: /api/alerts/*
+// ════════════════════════════════════════════════════════════════════════════
+export interface TelegramLinkInfo { deep_link: string; token: string; expires_at: string; }
+export interface TelegramStatusInfo { linked: boolean; username: string | null; }
+export interface AlertInfo {
+    id: number; indicator: string; asset: string; asset_name: string | null;
+    metric: string; clgroup: string | null; op: string; threshold: number;
+    mode: string; status: string; last_fired_at: string | null; created_at: string | null;
+}
+export interface AlertCreatePayload {
+    indicator: string; asset: string; asset_name?: string; metric: string;
+    clgroup?: string | null; op: string; threshold: number;
+    mode?: string; cooldown_hours?: number;
+}
+
+export async function getTelegramStatus(): Promise<TelegramStatusInfo> {
+    const resp = await apiFetch(`${API_BASE}/api/alerts/telegram/status`);
+    if (!resp.ok) throw new Error('Не удалось получить статус Telegram');
+    return resp.json();
+}
+export async function createTelegramLink(): Promise<TelegramLinkInfo> {
+    const resp = await apiFetch(`${API_BASE}/api/alerts/telegram/link`, { method: 'POST' });
+    if (!resp.ok) throw new Error('Не удалось создать ссылку привязки');
+    return resp.json();
+}
+export async function unlinkTelegram(): Promise<void> {
+    const resp = await apiFetch(`${API_BASE}/api/alerts/telegram`, { method: 'DELETE' });
+    if (!resp.ok && resp.status !== 204) throw new Error('Не удалось отвязать Telegram');
+}
+export async function listAlerts(): Promise<AlertInfo[]> {
+    const resp = await apiFetch(`${API_BASE}/api/alerts`);
+    if (!resp.ok) throw new Error('Не удалось загрузить алерты');
+    return resp.json();
+}
+export async function createAlert(payload: AlertCreatePayload): Promise<AlertInfo> {
+    const resp = await apiFetch(`${API_BASE}/api/alerts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    });
+    if (resp.status === 403) {
+        const d = await resp.json().catch(() => ({}));
+        throw new Error(d?.detail || d?.error?.message || 'Алерты доступны на тарифе Basic и Pro');
+    }
+    if (!resp.ok) throw new Error('Не удалось создать алерт');
+    return resp.json();
+}
+export async function deleteAlert(id: number): Promise<void> {
+    const resp = await apiFetch(`${API_BASE}/api/alerts/${id}`, { method: 'DELETE' });
+    if (!resp.ok && resp.status !== 204) throw new Error('Не удалось удалить алерт');
+}
+export async function setAlertStatus(id: number, status: 'active' | 'paused'): Promise<AlertInfo> {
+    const resp = await apiFetch(`${API_BASE}/api/alerts/${id}?status=${status}`, { method: 'PATCH' });
+    if (!resp.ok) throw new Error('Не удалось изменить алерт');
+    return resp.json();
+}

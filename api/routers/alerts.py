@@ -16,14 +16,18 @@ import os
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from api.database import get_db
-from api.models import User
+from api.models import User, Alert
 from api.models.telegram_link_token import TelegramLinkToken
 from api.routers.auth import get_current_user
+from api.billing.tiers import user_tier
+from api.billing.features import get_common_features
 
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
 
@@ -78,5 +82,124 @@ def unlink_telegram(
     user.telegram_chat_id = None
     user.telegram_username = None
     user.telegram_linked_at = None
+    db.commit()
+    return {"ok": True}
+
+
+# ─── Алерты (CRUD) ──────────────────────────────────────────────────────────
+# Квота по тарифу (features.py telegram_alerts_quota): free=0, basic=20, pro=∞(None).
+# Гейт на СОЗДАНИИ: 0 → апгрейд до Basic; лимит достигнут → апгрейд до Pro.
+# 403-сообщения содержат «тарифе»+«Basic/Pro» (под фронтовый tierError.ts).
+
+class AlertCreate(BaseModel):
+    indicator: str                       # 'price' | 'oi_zscore'
+    asset: str
+    asset_name: Optional[str] = None
+    metric: str                          # 'close' | 'zscore'
+    clgroup: Optional[str] = None        # OI: 'FIZ'|'YUR'
+    op: str                              # 'gt'|'lt'|'cross_up'|'cross_down'
+    threshold: float
+    mode: str = "once"                   # 'once'|'repeat'
+    cooldown_hours: int = Field(default=24, ge=1, le=720)
+
+
+class AlertOut(BaseModel):
+    id: int
+    indicator: str
+    asset: str
+    asset_name: Optional[str] = None
+    metric: str
+    clgroup: Optional[str] = None
+    op: str
+    threshold: float
+    mode: str
+    status: str
+    last_fired_at: Optional[str] = None
+    created_at: Optional[str] = None
+
+
+def _to_out(a: Alert) -> AlertOut:
+    return AlertOut(
+        id=a.id, indicator=a.indicator, asset=a.asset, asset_name=a.asset_name,
+        metric=a.metric, clgroup=a.clgroup, op=a.op, threshold=float(a.threshold),
+        mode=a.mode, status=a.status,
+        last_fired_at=a.last_fired_at.isoformat() if a.last_fired_at else None,
+        created_at=a.created_at.isoformat() if a.created_at else None,
+    )
+
+
+@router.get("", response_model=list[AlertOut])
+def list_alerts(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    rows = db.query(Alert).filter(Alert.user_id == user.id).order_by(Alert.created_at.desc()).all()
+    return [_to_out(a) for a in rows]
+
+
+@router.post("", response_model=AlertOut)
+def create_alert(
+    body: AlertCreate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    quota = get_common_features(user_tier(user)).get("telegram_alerts_quota", 0)
+    if quota == 0:
+        raise HTTPException(status_code=403, detail="Алерты доступны на тарифе Basic и Pro")
+    if isinstance(quota, int):  # не None (безлимит) → проверяем лимит
+        used = db.query(Alert).filter(Alert.user_id == user.id).count()
+        if used >= quota:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Достигнут лимит {quota} алертов на вашем тарифе — перейдите на Pro для безлимита",
+            )
+    if body.op not in ("gt", "lt", "cross_up", "cross_down"):
+        raise HTTPException(status_code=422, detail="Некорректное условие")
+    if body.mode not in ("once", "repeat"):
+        raise HTTPException(status_code=422, detail="Некорректный режим")
+
+    alert = Alert(
+        user_id=user.id,
+        indicator=body.indicator,
+        asset=body.asset,
+        asset_name=body.asset_name,
+        metric=body.metric,
+        clgroup=body.clgroup,
+        op=body.op,
+        threshold=body.threshold,
+        mode=body.mode,
+        cooldown_hours=body.cooldown_hours,
+        status="active",
+    )
+    db.add(alert)
+    db.commit()
+    db.refresh(alert)
+    return _to_out(alert)
+
+
+@router.patch("/{alert_id}", response_model=AlertOut)
+def update_alert(
+    alert_id: int,
+    status: Optional[str] = None,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    a = db.query(Alert).filter(Alert.id == alert_id, Alert.user_id == user.id).first()
+    if not a:
+        raise HTTPException(status_code=404, detail="Алерт не найден")
+    if status in ("active", "paused"):
+        a.status = status
+    db.commit()
+    db.refresh(a)
+    return _to_out(a)
+
+
+@router.delete("/{alert_id}")
+def delete_alert(
+    alert_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    a = db.query(Alert).filter(Alert.id == alert_id, Alert.user_id == user.id).first()
+    if not a:
+        raise HTTPException(status_code=404, detail="Алерт не найден")
+    db.delete(a)
     db.commit()
     return {"ok": True}

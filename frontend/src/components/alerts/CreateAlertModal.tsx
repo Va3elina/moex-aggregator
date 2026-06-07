@@ -1,0 +1,197 @@
+/**
+ * CreateAlertModal — создание алерта по текущему активу + привязка Telegram.
+ * Если Telegram не привязан → шаг «Подключить» (deep-link t.me/<bot>?start=,
+ * poll статуса). Если привязан → форма (метрика/условие/порог) → POST /api/alerts.
+ * Inline-styles + CSS-vars (как UpgradeModal — переживает portal/тему).
+ */
+import { useEffect, useState, type CSSProperties } from 'react';
+import { Bell, X, Check, ExternalLink } from 'lucide-react';
+import {
+    getTelegramStatus, createTelegramLink, createAlert,
+    type AlertCreatePayload,
+} from '../../services/api';
+
+export interface AlertMetricOption {
+    key: string;
+    label: string;
+    indicator: string;   // 'price' | 'oi_zscore'
+    metric: string;      // 'close' | 'zscore'
+    clgroup?: string;    // OI: 'FIZ' | 'YUR'
+    ops: { value: string; label: string }[];
+    unit?: string;       // '₽' | 'σ'
+    defaultThreshold?: number;
+    hint?: string;
+}
+
+interface Props {
+    indicator: string;
+    asset: string;
+    assetName?: string;
+    metrics: AlertMetricOption[];
+    onClose: () => void;
+}
+
+const overlay: CSSProperties = {
+    position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.5)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+};
+const card: CSSProperties = {
+    background: 'var(--bg-primary)', border: '2px solid var(--text-primary)',
+    boxShadow: '5px 5px 0 0 var(--text-primary)', borderRadius: 16, padding: 24,
+    width: '100%', maxWidth: 420, maxHeight: '90vh', overflowY: 'auto',
+};
+const field: CSSProperties = {
+    width: '100%', padding: '10px 12px', borderRadius: 10,
+    border: '2px solid var(--text-primary)', background: 'var(--bg-secondary)',
+    color: 'var(--text-primary)', fontSize: 'var(--fs-sm)',
+};
+const primaryBtn: CSSProperties = {
+    ...field, background: 'var(--accent)', color: 'var(--text-inverse)',
+    cursor: 'pointer', fontWeight: 600, textAlign: 'center',
+};
+
+export default function CreateAlertModal({ asset, assetName, metrics, onClose }: Props) {
+    const [linked, setLinked] = useState<boolean | null>(null);  // null = загрузка
+    const [linkUrl, setLinkUrl] = useState<string | null>(null);
+    const [metricKey, setMetricKey] = useState(metrics[0]?.key ?? '');
+    const metric = metrics.find((m) => m.key === metricKey) ?? metrics[0];
+    const [op, setOp] = useState(metric?.ops[0]?.value ?? 'cross_up');
+    const [threshold, setThreshold] = useState<string>(
+        metric?.defaultThreshold != null ? String(metric.defaultThreshold) : '',
+    );
+    const [busy, setBusy] = useState(false);
+    const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+    const [created, setCreated] = useState(false);
+
+    useEffect(() => {
+        getTelegramStatus().then((s) => setLinked(s.linked)).catch(() => setLinked(false));
+    }, []);
+
+    // смена метрики → сброс условия + дефолтного порога
+    useEffect(() => {
+        if (!metric) return;
+        setOp(metric.ops[0]?.value ?? 'cross_up');
+        setThreshold(metric.defaultThreshold != null ? String(metric.defaultThreshold) : '');
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [metricKey]);
+
+    // poll статуса после генерации ссылки (юзер жмёт Start в боте)
+    useEffect(() => {
+        if (!linkUrl || linked) return;
+        const t = setInterval(async () => {
+            try {
+                const s = await getTelegramStatus();
+                if (s.linked) { setLinked(true); clearInterval(t); }
+            } catch { /* ignore */ }
+        }, 3000);
+        return () => clearInterval(t);
+    }, [linkUrl, linked]);
+
+    const handleConnect = async () => {
+        setBusy(true); setMsg(null);
+        try {
+            const { deep_link } = await createTelegramLink();
+            setLinkUrl(deep_link);
+            window.open(deep_link, '_blank');
+        } catch (e) {
+            setMsg({ type: 'err', text: (e as Error).message });
+        } finally { setBusy(false); }
+    };
+
+    const handleCreate = async () => {
+        if (!metric) return;
+        const th = parseFloat(threshold.replace(',', '.'));
+        if (Number.isNaN(th)) { setMsg({ type: 'err', text: 'Введите числовой порог' }); return; }
+        setBusy(true); setMsg(null);
+        try {
+            const payload: AlertCreatePayload = {
+                indicator: metric.indicator, asset, asset_name: assetName,
+                metric: metric.metric, clgroup: metric.clgroup ?? null,
+                op, threshold: th, mode: 'once',
+            };
+            await createAlert(payload);
+            setCreated(true);
+        } catch (e) {
+            setMsg({ type: 'err', text: (e as Error).message });
+        } finally { setBusy(false); }
+    };
+
+    return (
+        <div style={overlay} onClick={onClose}>
+            <div style={card} onClick={(e) => e.stopPropagation()}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 'var(--fs-lg)' }}>
+                        <Bell size={20} style={{ color: 'var(--accent)' }} /> Новый алерт
+                    </span>
+                    <button onClick={onClose} aria-label="Закрыть" style={{ color: 'var(--text-secondary)' }}><X size={20} /></button>
+                </div>
+
+                {created ? (
+                    <div style={{ textAlign: 'center', padding: '12px 0' }}>
+                        <Check size={40} style={{ color: 'var(--accent)', margin: '0 auto 8px', display: 'block' }} />
+                        <div style={{ fontWeight: 600, marginBottom: 4 }}>Алерт создан</div>
+                        <div style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)', marginBottom: 16 }}>
+                            Уведомление придёт в Telegram (@framesignalbot).
+                        </div>
+                        <button onClick={onClose} className="editorial-press" style={{ ...primaryBtn, width: 'auto', padding: '10px 24px', margin: '0 auto', display: 'inline-block' }}>Готово</button>
+                    </div>
+                ) : linked === null ? (
+                    <div style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '20px 0' }}>Загрузка…</div>
+                ) : !linked ? (
+                    <div>
+                        <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)', marginBottom: 16, lineHeight: 1.5 }}>
+                            Чтобы получать алерты, подключите Telegram: нажмите кнопку, в боте нажмите <b>Start</b>, затем вернитесь сюда.
+                        </p>
+                        {linkUrl ? (
+                            <>
+                                <a href={linkUrl} target="_blank" rel="noreferrer" className="editorial-press"
+                                    style={{ ...primaryBtn, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, textDecoration: 'none', marginBottom: 8 }}>
+                                    <ExternalLink size={16} /> Открыть @framesignalbot
+                                </a>
+                                <div style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-xs)', textAlign: 'center' }}>Ждём подключения…</div>
+                            </>
+                        ) : (
+                            <button disabled={busy} onClick={handleConnect} className="editorial-press" style={primaryBtn}>
+                                {busy ? '…' : 'Подключить Telegram'}
+                            </button>
+                        )}
+                    </div>
+                ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        <div style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)' }}>
+                            Актив: <b style={{ color: 'var(--text-primary)' }}>{assetName || asset}</b>
+                        </div>
+                        <label style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>Метрика
+                            <select value={metricKey} onChange={(e) => setMetricKey(e.target.value)} style={{ ...field, marginTop: 4 }}>
+                                {metrics.map((m) => <option key={m.key} value={m.key}>{m.label}</option>)}
+                            </select>
+                        </label>
+                        <label style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>Условие
+                            <select value={op} onChange={(e) => setOp(e.target.value)} style={{ ...field, marginTop: 4 }}>
+                                {metric?.ops.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                            </select>
+                        </label>
+                        <label style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>
+                            Порог {metric?.unit ? `(${metric.unit})` : ''}
+                            <input type="text" inputMode="decimal" value={threshold}
+                                onChange={(e) => setThreshold(e.target.value)}
+                                placeholder={metric?.unit === 'σ' ? '2.5' : '0'} style={{ ...field, marginTop: 4 }} />
+                        </label>
+                        {metric?.hint && (
+                            <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)', lineHeight: 1.4 }}>{metric.hint}</div>
+                        )}
+                        <button disabled={busy} onClick={handleCreate} className="editorial-press" style={primaryBtn}>
+                            {busy ? 'Создаём…' : 'Создать алерт'}
+                        </button>
+                    </div>
+                )}
+
+                {msg && (
+                    <div style={{ marginTop: 12, fontSize: 'var(--fs-sm)', color: msg.type === 'ok' ? 'var(--accent)' : 'var(--funds-flow-negative, #FF7A5C)' }}>
+                        {msg.text}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}

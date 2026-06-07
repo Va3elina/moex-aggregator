@@ -27,6 +27,7 @@ import { oiTourSteps } from '../data/tours/oi';
 import { formatPrice } from '../utils/formatNumber';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 import { oiTierResolver } from '../utils/tierError';
+import AlertBellButton from '../components/alerts/AlertBellButton';
 import { useTierAccess } from '../contexts/TierFeaturesContext';
 
 type DisplayMode = 'price' | 'positions' | 'participants';
@@ -712,6 +713,29 @@ export default function OpenInterestPage() {
                 clgroup === 'FIZ' ? 'Физлица' : 'Юрлица',
               ].filter(Boolean),
             }}
+          />
+          <AlertBellButton
+            indicator="open_interest"
+            asset={selectedInstrument}
+            assetName={instrumentName || selectedInstrument}
+            metrics={[
+              {
+                key: 'price', label: 'Цена', indicator: 'price', metric: 'close', unit: '₽',
+                ops: [
+                  { value: 'cross_up', label: '↑ пересечёт' },
+                  { value: 'cross_down', label: '↓ пересечёт' },
+                  { value: 'gt', label: 'станет выше' },
+                  { value: 'lt', label: 'станет ниже' },
+                ],
+              },
+              {
+                key: 'oi_z',
+                label: `OI: аномалия (${clgroup === 'FIZ' ? 'физлица' : 'юрлица'}, z-score)`,
+                indicator: 'oi_zscore', metric: 'zscore', clgroup, unit: 'σ', defaultThreshold: 2.5,
+                ops: [{ value: 'gt', label: 'превысит' }],
+                hint: 'z = на сколько σ дневное изменение чистой позиции отклонилось от нормы. 2 — заметно, 3 — экстремально.',
+              },
+            ]}
           />
           </div>
         </div>
