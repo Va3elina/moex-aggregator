@@ -91,6 +91,7 @@
     '.fw-head{display:flex;align-items:center;gap:8px;padding:7px 9px;background:var(--w-panel);border-bottom:1.5px solid var(--w-border);cursor:move;user-select:none;flex:0 0 auto}',
     '.fw-dot{width:9px;height:9px;border-radius:50%;background:var(--w-accent);flex:0 0 auto}',
     '.fw-title{font-weight:800;font-size:13px;letter-spacing:-0.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+    '.fw-beta{font-size:8px;font-weight:800;letter-spacing:0.08em;line-height:1;color:var(--w-accent);border:1px solid var(--w-accent);border-radius:3px;padding:2px 4px;flex:0 0 auto}',
     '.fw-ctrls{margin-left:auto;display:flex;gap:4px;flex:0 0 auto}',
     '.fw-btn{width:22px;height:22px;display:flex;align-items:center;justify-content:center;border:1px solid var(--w-soft);background:transparent;color:var(--w-text);border-radius:3px;cursor:pointer;font-size:14px;line-height:1;padding:0}',
     '.fw-btn:hover{border-color:var(--w-border)}',
@@ -235,12 +236,13 @@
 
       var dot = h('span', { class: 'fw-dot' });
       var title = h('span', { class: 'fw-title', text: 'Фрейм · ' + ind.label });
+      var beta = h('span', { class: 'fw-beta', title: 'Расширение в бете', text: 'BETA' });
       var bGear = h('button', { class: 'fw-btn', 'data-a': 'settings', title: 'Настройки', text: '⚙︎' });
       var bPop = h('button', { class: 'fw-btn', 'data-a': 'pop', title: 'Открыть в новом окне', text: '⤢' });
       var bTheme = h('button', { class: 'fw-btn', 'data-a': 'theme', title: 'Тема', text: '◐' });
       var bClose = h('button', { class: 'fw-btn', 'data-a': 'close', title: 'Закрыть', text: '×' });
       var ctrls = h('span', { class: 'fw-ctrls' }, [bGear, bPop, bTheme, bClose]);
-      var head = h('div', { class: 'fw-head' }, [dot, title, ctrls]);
+      var head = h('div', { class: 'fw-head' }, [dot, title, beta, ctrls]);
       var iframe = h('iframe', { class: 'fw-iframe', title: 'Фрейм · ' + ind.label });
       var body = h('div', { class: 'fw-body' }, [iframe]);
       var resize = h('div', { class: 'fw-resize' });
