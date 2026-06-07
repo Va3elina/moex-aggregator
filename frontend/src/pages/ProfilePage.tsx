@@ -657,7 +657,7 @@ export default function ProfilePage() {
           форма смены пароля. */}
       {user.has_password && (
       <div className="rounded-2xl border p-6" style={cardStyle}>
-        <h2 className="text-lg font-semibold mb-8 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+        <h2 className="text-lg font-semibold mb-12 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
           <Shield size={20} style={{ color: 'var(--text-muted)' }} />
           Безопасность
         </h2>
