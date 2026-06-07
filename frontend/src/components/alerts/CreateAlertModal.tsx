@@ -5,10 +5,10 @@
  * Inline-styles + CSS-vars (как UpgradeModal — переживает portal/тему).
  */
 import { useEffect, useState, type CSSProperties } from 'react';
-import { Bell, X, Check, ExternalLink } from 'lucide-react';
+import { Bell, X, Check, ExternalLink, Info } from 'lucide-react';
 import {
-    getTelegramStatus, createTelegramLink, createAlert,
-    type AlertCreatePayload,
+    getTelegramStatus, createTelegramLink, createAlert, getAlertContext,
+    type AlertCreatePayload, type AlertContext,
 } from '../../services/api';
 import MessengerChoice from './MessengerChoice';
 
@@ -51,7 +51,11 @@ const primaryBtn: CSSProperties = {
     cursor: 'pointer', fontWeight: 600, textAlign: 'center',
 };
 
-export default function CreateAlertModal({ asset, assetName, metrics, onClose }: Props) {
+// Форматирование рублёвой цены для шапки «Сейчас: …» (1 234,5).
+const fmtRub = (v: number): string =>
+    v.toLocaleString('ru-RU', { maximumFractionDigits: 2 });
+
+export default function CreateAlertModal({ indicator, asset, assetName, metrics, onClose }: Props) {
     const [linked, setLinked] = useState<boolean | null>(null);  // null = загрузка
     const [linkUrl, setLinkUrl] = useState<string | null>(null);
     const [metricKey, setMetricKey] = useState(metrics[0]?.key ?? '');
@@ -60,6 +64,8 @@ export default function CreateAlertModal({ asset, assetName, metrics, onClose }:
     const [threshold, setThreshold] = useState<string>(
         metric?.defaultThreshold != null ? String(metric.defaultThreshold) : '',
     );
+    const [mode, setMode] = useState<'once' | 'repeat'>('once');
+    const [context, setContext] = useState<AlertContext | null>(null);
     const [busy, setBusy] = useState(false);
     const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
     const [created, setCreated] = useState(false);
@@ -67,6 +73,22 @@ export default function CreateAlertModal({ asset, assetName, metrics, onClose }:
     useEffect(() => {
         getTelegramStatus().then((s) => setLinked(s.linked)).catch(() => setLinked(false));
     }, []);
+
+    // Контекст (свежая цена + intraday-доступность) — грузим когда форма доступна
+    // (Telegram привязан). clgroup нужен для oi-метрик; берём из выбранной метрики,
+    // иначе дефолт FIZ. Перезапрашиваем при смене актива/clgroup.
+    const ctxClgroup = metric?.clgroup ?? 'FIZ';
+    useEffect(() => {
+        if (linked !== true) return;
+        let cancelled = false;
+        getAlertContext(indicator, asset, ctxClgroup)
+            .then((c) => { if (!cancelled) setContext(c); })
+            .catch(() => { if (!cancelled) setContext(null); });
+        return () => { cancelled = true; };
+    }, [linked, indicator, asset, ctxClgroup]);
+
+    const price = context?.price;
+    const hasPrice = price?.value != null;
 
     // смена метрики → сброс условия + дефолтного порога
     useEffect(() => {
@@ -108,7 +130,8 @@ export default function CreateAlertModal({ asset, assetName, metrics, onClose }:
             const payload: AlertCreatePayload = {
                 indicator: metric.indicator, asset, asset_name: assetName,
                 metric: metric.metric, clgroup: metric.clgroup ?? null,
-                op, threshold: th, mode: 'once',
+                op, threshold: th, mode,
+                ...(mode === 'repeat' ? { cooldown_hours: 24 } : {}),
             };
             await createAlert(payload);
             setCreated(true);
@@ -164,6 +187,11 @@ export default function CreateAlertModal({ asset, assetName, metrics, onClose }:
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                         <div style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)' }}>
                             Актив: <b style={{ color: 'var(--text-primary)' }}>{assetName || asset}</b>
+                            {hasPrice && (
+                                <>
+                                    {' · '}Сейчас: <b style={{ color: 'var(--text-primary)' }}>{fmtRub(price!.value!)} руб</b>
+                                </>
+                            )}
                         </div>
                         <label style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>Метрика
                             <select value={metricKey} onChange={(e) => setMetricKey(e.target.value)} style={{ ...field, marginTop: 4 }}>
@@ -179,11 +207,50 @@ export default function CreateAlertModal({ asset, assetName, metrics, onClose }:
                             Порог {metric?.unit ? `(${metric.unit})` : ''}
                             <input type="text" inputMode="decimal" value={threshold}
                                 onChange={(e) => setThreshold(e.target.value)}
-                                placeholder={metric?.unit === 'σ' ? '2.5' : '0'} style={{ ...field, marginTop: 4 }} />
+                                placeholder={
+                                    metric?.indicator === 'price' && hasPrice ? fmtRub(price!.value!)
+                                        : metric?.unit === 'σ' ? '2.5' : '0'
+                                } style={{ ...field, marginTop: 4 }} />
                         </label>
+
+                        {/* Режим срабатывания */}
+                        <label style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>Режим
+                            <select value={mode} onChange={(e) => setMode(e.target.value as 'once' | 'repeat')} style={{ ...field, marginTop: 4 }}>
+                                <option value="once">Уведомить один раз</option>
+                                <option value="repeat">Каждый раз</option>
+                            </select>
+                        </label>
+
                         {metric?.hint && (
                             <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)', lineHeight: 1.4 }}>{metric.hint}</div>
                         )}
+
+                        {/* Цена без внутридневных данных — проверка раз в день */}
+                        {metric?.indicator === 'price' && context && price?.intraday === false && (
+                            <div style={{
+                                display: 'flex', alignItems: 'flex-start', gap: 8,
+                                fontSize: 'var(--fs-xs)', lineHeight: 1.4,
+                                color: 'var(--text-primary)', background: 'var(--bg-secondary)',
+                                border: '2px solid var(--text-primary)', borderRadius: 10,
+                                padding: '8px 10px',
+                            }}>
+                                <Info size={16} style={{ flex: '0 0 auto', marginTop: 1, color: 'var(--accent)' }} />
+                                <span>У этого актива нет внутридневных данных — проверка раз в день после закрытия.</span>
+                            </div>
+                        )}
+
+                        {/* OI-аномалия обновляется раз в день */}
+                        {metric?.indicator === 'oi_zscore' && (
+                            <div style={{
+                                display: 'flex', alignItems: 'flex-start', gap: 8,
+                                fontSize: 'var(--fs-xs)', lineHeight: 1.4,
+                                color: 'var(--text-secondary)',
+                            }}>
+                                <Info size={16} style={{ flex: '0 0 auto', marginTop: 1, color: 'var(--accent)' }} />
+                                <span>Аномалия OI обновляется раз в день после публикации позиций МосБиржи.</span>
+                            </div>
+                        )}
+
                         <button disabled={busy} onClick={handleCreate} className="editorial-press" style={primaryBtn}>
                             {busy ? 'Создаём…' : 'Создать алерт'}
                         </button>

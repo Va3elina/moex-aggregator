@@ -18,8 +18,9 @@ from datetime import datetime, timedelta, timezone
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from api.database import get_db
@@ -86,18 +87,78 @@ def unlink_telegram(
     return {"ok": True}
 
 
+# ─── Контекст для окна создания (текущая цена + intraday-доступность) ────────
+# Лёгкий read-эндпоинт: фронт подтягивает свежую цену фьючерса, чтобы показать
+# «Сейчас: <value> руб», задать placeholder порога и решить, есть ли у актива
+# внутридневные данные (intraday) — от этого зависит частота проверки алерта.
+
+class AlertPriceContext(BaseModel):
+    value: Optional[float] = None
+    ts: Optional[str] = None
+    interval: Optional[int] = None
+    intraday: bool = False
+
+
+class AlertContextOut(BaseModel):
+    price: AlertPriceContext
+
+
+@router.get("/context", response_model=AlertContextOut)
+def alert_context(
+    indicator: str = Query(...),
+    asset: str = Query(...),
+    clgroup: str = Query("FIZ"),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Свежайшая цена фьючерса для окна создания алерта.
+
+    Быстрый индексный запрос (sec_id IN (...), НЕ secid LIKE — тот даёт Seq-Scan
+    по 8ГБ candles). Окно begin_time >= now()-14д ложится на индекс
+    idx_candles_sec_interval_time. interval ∈ {5,60} → intraday=true.
+    """
+    row = db.execute(
+        text("""
+            SELECT close, begin_time, interval
+            FROM candles
+            WHERE sec_id IN (SELECT sec_id FROM instruments
+                             WHERE sectype = :asset AND type = 'futures')
+              AND interval IN (5, 60, 24)
+              AND close > 0
+              AND begin_time >= now() - interval '14 days'
+            ORDER BY begin_time DESC, volume DESC NULLS LAST
+            LIMIT 1
+        """),
+        {"asset": asset},
+    ).first()
+
+    if row is None:
+        return AlertContextOut(price=AlertPriceContext())
+
+    close, begin_time, interval = row[0], row[1], row[2]
+    interval = int(interval) if interval is not None else None
+    return AlertContextOut(price=AlertPriceContext(
+        value=float(close) if close is not None else None,
+        ts=begin_time.isoformat() if begin_time is not None else None,
+        interval=interval,
+        intraday=interval in (5, 60),
+    ))
+
+
 # ─── Алерты (CRUD) ──────────────────────────────────────────────────────────
 # Квота по тарифу (features.py telegram_alerts_quota): free=0, basic=20, pro=∞(None).
 # Гейт на СОЗДАНИИ: 0 → апгрейд до Basic; лимит достигнут → апгрейд до Pro.
 # 403-сообщения содержат «тарифе»+«Basic/Pro» (под фронтовый tierError.ts).
 
 class AlertCreate(BaseModel):
-    indicator: str                       # 'price' | 'oi_zscore'
-    asset: str
-    asset_name: Optional[str] = None
-    metric: str                          # 'close' | 'zscore'
-    clgroup: Optional[str] = None        # OI: 'FIZ'|'YUR'
-    op: str                              # 'gt'|'lt'|'cross_up'|'cross_down'
+    # max_length зеркалит лимиты колонок БД — иначе длинная строка даёт 500
+    # (Postgres DataError) вместо чистого 422.
+    indicator: str = Field(max_length=24)        # 'price' | 'oi_zscore'
+    asset: str = Field(max_length=20)
+    asset_name: Optional[str] = Field(default=None, max_length=128)
+    metric: str = Field(max_length=24)           # 'close' | 'zscore'
+    clgroup: Optional[str] = Field(default=None, max_length=3)   # OI: 'FIZ'|'YUR'
+    op: str = Field(max_length=16)               # 'gt'|'lt'|'cross_up'|'cross_down'
     threshold: float
     mode: str = "once"                   # 'once'|'repeat'
     cooldown_hours: int = Field(default=24, ge=1, le=720)

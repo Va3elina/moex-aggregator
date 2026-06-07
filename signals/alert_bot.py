@@ -9,8 +9,11 @@ DB: используем общий api.database.SessionLocal. На хосте D
 (docker-network) — переопределяем на 127.0.0.1 ДО импорта api.database (как делает
 signals/run.sh через sed, только in-process т.к. процесс долгоживущий).
 
-Команды: /start <token> — привязка; /alerts, /stop, /help — заглушки (Phase 2/3).
+Команды: /start <token> — привязка; /menu — меню; /alerts /stop /resume /help.
+Phase B: inline-навигация (меню → список → карточка → пауза/возобновить/удалить)
+через callback_query + editMessageText (правим то же сообщение).
 """
+import json
 import os
 import time
 from datetime import datetime, timezone
@@ -31,12 +34,32 @@ from api.database import SessionLocal  # noqa: E402  (импорт ПОСЛЕ DB
 BOT_TOKEN = os.environ["ALERT_BOT_TOKEN"]
 API_BASE = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
+SITE = "https://xn--80aklbnczmv.xn--p1ai"  # punycode таймфрейм.рф (надёжно в TG)
+
 HELP_TEXT = (
     "🔔 <b>Frame Signal</b> — алерты по рынку MOEX.\n\n"
-    "Параметры алертов задаются на сайте таймфрейм.рф (Личный кабинет → Алерты),\n"
-    "а уведомления приходят сюда.\n\n"
-    "Команды: /alerts — список · /stop — пауза · /help — помощь."
+    "Новые алерты создаются на сайте таймфрейм.рф (Личный кабинет → Алерты),\n"
+    "а уведомления приходят сюда. Управлять уже созданными можно прямо тут.\n\n"
+    "Команды:\n"
+    "/menu — меню · /alerts — список\n"
+    "/stop — пауза всех · /resume — возобновить всех\n"
+    "/help — помощь"
 )
+
+# ── ярлыки операторов/метрик/статусов для карточек (зеркало alerts_run.py) ──
+_OP_PRICE = {"cross_up": "↑ пересекла", "cross_down": "↓ пересекла",
+             "gt": "выше", "lt": "ниже"}
+_OP_SHORT = {"cross_up": "↑✕", "cross_down": "↓✕", "gt": ">", "lt": "<"}
+_STATUS_DOT = {"active": "🟢", "paused": "⏸", "fired": "✅"}
+_STATUS_WORD = {"active": "активен", "paused": "на паузе", "fired": "сработал (once)"}
+
+
+def _num(v) -> str:
+    """Аккуратный вывод числа: целое без .0, дробное компактно (как :g)."""
+    try:
+        return f"{float(v):g}"
+    except (TypeError, ValueError):
+        return str(v)
 
 
 def _redact(s) -> str:
@@ -58,6 +81,54 @@ def send(chat_id, text_msg: str) -> None:
         )
     except requests.RequestException as e:
         print(f"[alert_bot] send error: {_redact(e)}")
+
+
+def send_kb(chat_id, text_msg: str, inline_keyboard: list) -> None:
+    """sendMessage с inline-клавиатурой (новое сообщение)."""
+    try:
+        requests.post(
+            f"{API_BASE}/sendMessage",
+            json={
+                "chat_id": chat_id,
+                "text": text_msg,
+                "parse_mode": "HTML",
+                "disable_web_page_preview": True,
+                "reply_markup": {"inline_keyboard": inline_keyboard},
+            },
+            timeout=15,
+        )
+    except requests.RequestException as e:
+        print(f"[alert_bot] send_kb error: {_redact(e)}")
+
+
+def edit_kb(chat_id, message_id, text_msg: str, inline_keyboard: list) -> None:
+    """editMessageText — правим то же сообщение (in-place навигация)."""
+    try:
+        requests.post(
+            f"{API_BASE}/editMessageText",
+            json={
+                "chat_id": chat_id,
+                "message_id": message_id,
+                "text": text_msg,
+                "parse_mode": "HTML",
+                "disable_web_page_preview": True,
+                "reply_markup": {"inline_keyboard": inline_keyboard},
+            },
+            timeout=15,
+        )
+    except requests.RequestException as e:
+        print(f"[alert_bot] edit_kb error: {_redact(e)}")
+
+
+def answer_cb(callback_query_id, text_msg: str = "") -> None:
+    """answerCallbackQuery — обязателен на каждый тап (убирает «часики»)."""
+    try:
+        data = {"callback_query_id": callback_query_id}
+        if text_msg:
+            data["text"] = text_msg
+        requests.post(f"{API_BASE}/answerCallbackQuery", data=data, timeout=15)
+    except requests.RequestException as e:
+        print(f"[alert_bot] answer_cb error: {_redact(e)}")
 
 
 def link_account(token: str, chat_id: int, username) -> bool:
@@ -95,7 +166,279 @@ def link_account(token: str, chat_id: int, username) -> bool:
         db.close()
 
 
+# ── DB helpers (host-side, через text() как остальной файл) ─────────────────
+def _user_id_by_chat(db, chat_id: int):
+    row = db.execute(
+        text("SELECT id FROM users WHERE telegram_chat_id = :c"),
+        {"c": chat_id},
+    ).fetchone()
+    return row[0] if row else None
+
+
+def _list_alerts(db, user_id: int):
+    """Все алерты юзера (свежие сверху), включая 'fired' (сработавшие once) —
+    чтобы их можно было найти в боте и нажать «Возобновить»/«Удалить» (иначе
+    fired-алерт был бы недостижим из бот-навигации)."""
+    return db.execute(
+        text("SELECT id, indicator, asset, asset_name, metric, clgroup, op, "
+             "threshold, mode, status, last_value, last_fired_at "
+             "FROM alerts WHERE user_id = :u AND status IN ('active','paused','fired') "
+             "ORDER BY created_at DESC, id DESC"),
+        {"u": user_id},
+    ).fetchall()
+
+
+def _get_alert(db, user_id: int, alert_id: int):
+    return db.execute(
+        text("SELECT id, indicator, asset, asset_name, metric, clgroup, op, "
+             "threshold, mode, status, last_value, last_fired_at "
+             "FROM alerts WHERE id = :a AND user_id = :u"),
+        {"a": alert_id, "u": user_id},
+    ).fetchone()
+
+
+# ── текстовые форматтеры карточек ───────────────────────────────────────────
+def _alert_unit(indicator: str) -> str:
+    return "σ" if indicator == "oi_zscore" else "₽"
+
+
+def _alert_short_line(a) -> str:
+    """Одна строка для кнопки списка: статус + актив + op + порог (+группа для OI)."""
+    _, indicator, asset, _name, _metric, clgroup, op, threshold = a[:8]
+    status = a[9]
+    dot = _STATUS_DOT.get(status, "•")
+    opn = _OP_SHORT.get(op, op)
+    unit = _alert_unit(indicator)
+    grp = ""
+    if indicator == "oi_zscore":
+        grp = " физ" if (clgroup or "FIZ") == "FIZ" else " юр"
+    return f"{dot} {asset}{grp} {opn} {_num(threshold)}{unit}"
+
+
+def _alert_card_text(a) -> str:
+    """Подробная карточка алерта (HTML)."""
+    (_id, indicator, asset, asset_name, _metric, clgroup, op,
+     threshold, mode, status, last_value, last_fired_at) = a
+    name = asset_name or asset
+    unit = _alert_unit(indicator)
+    head = "Открытый интерес" if indicator == "oi_zscore" else "Цена фьючерса"
+
+    if indicator == "oi_zscore":
+        clg = "физлица" if (clgroup or "FIZ") == "FIZ" else "юрлица"
+        word = _OP_PRICE.get(op, op)
+        cond = f"z-score ({clg}) {word} {_num(threshold)}{unit}"
+    else:
+        word = _OP_PRICE.get(op, op)
+        cond = f"цена {word} {_num(threshold)} {unit}"
+
+    mode_word = "однократно" if mode == "once" else "повторно"
+    lines = [
+        f"🔔 <b>{name} · {asset}</b>",
+        f"<i>{head}</i>",
+        "",
+        f"Условие: {cond}",
+        f"Режим: {mode_word}",
+        f"Статус: {_STATUS_DOT.get(status, '•')} {_STATUS_WORD.get(status, status)}",
+    ]
+    if last_value is not None:
+        lines.append(f"Последнее значение: {_num(last_value)}{unit}")
+    if last_fired_at is not None:
+        lines.append(f"Срабатывал: {last_fired_at:%d.%m.%Y %H:%M} UTC")
+    return "\n".join(lines)
+
+
+# ── view-builders: (text, inline_keyboard) ──────────────────────────────────
+def _view_menu():
+    txt = (
+        "👋 <b>Frame Signal</b>\n\n"
+        "Здесь приходят алерты по рынку MOEX и можно ими управлять.\n"
+        "Новые создаются на сайте — в Личном кабинете."
+    )
+    kb = [
+        [{"text": "📋 Мои алерты", "callback_data": "la"}],
+        [{"text": "❓ Помощь", "callback_data": "help"}],
+        [{"text": "🌐 Открыть Фрейм", "url": SITE}],
+    ]
+    return txt, kb
+
+
+def _view_list(db, user_id: int):
+    rows = _list_alerts(db, user_id)
+    if not rows:
+        txt = (
+            "У вас пока нет активных алертов.\n\n"
+            "Создайте первый на сайте: Личный кабинет → Алерты."
+        )
+        kb = [
+            [{"text": "🌐 Открыть Фрейм", "url": SITE}],
+            [{"text": "← Меню", "callback_data": "m"}],
+        ]
+        return txt, kb
+    txt = f"📋 <b>Ваши алерты</b> ({len(rows)})\n\nВыберите, чтобы открыть карточку:"
+    kb = [[{"text": _alert_short_line(r), "callback_data": f"v:{r[0]}"}] for r in rows]
+    kb.append([{"text": "← Меню", "callback_data": "m"}])
+    return txt, kb
+
+
+def _view_card(db, user_id: int, alert_id: int):
+    a = _get_alert(db, user_id, alert_id)
+    if not a:
+        return ("Алерт не найден — возможно, он был удалён.",
+                [[{"text": "← К списку", "callback_data": "la"}]])
+    status = a[9]
+    if status == "active":
+        toggle = {"text": "⏸ Поставить на паузу", "callback_data": f"p:{alert_id}"}
+    else:  # paused | fired
+        toggle = {"text": "▶️ Возобновить", "callback_data": f"r:{alert_id}"}
+    kb = [
+        [toggle],
+        [{"text": "🗑 Удалить", "callback_data": f"dq:{alert_id}"}],
+        [{"text": "← К списку", "callback_data": "la"}],
+    ]
+    return _alert_card_text(a), kb
+
+
+def _view_delete_confirm(db, user_id: int, alert_id: int):
+    a = _get_alert(db, user_id, alert_id)
+    if not a:
+        return ("Алерт не найден — возможно, он уже удалён.",
+                [[{"text": "← К списку", "callback_data": "la"}]])
+    name = a[3] or a[2]
+    txt = f"Удалить алерт «<b>{name} · {a[2]}</b>»?\nЭто действие необратимо."
+    kb = [
+        [{"text": "🗑 Да, удалить", "callback_data": f"dx:{alert_id}"}],
+        [{"text": "← Отмена", "callback_data": f"v:{alert_id}"}],
+    ]
+    return txt, kb
+
+
+# ── мутации статуса (возвращают True/False) ─────────────────────────────────
+def _set_status(db, user_id: int, alert_id: int, new_status: str) -> bool:
+    res = db.execute(
+        text("UPDATE alerts SET status = :s WHERE id = :a AND user_id = :u"),
+        {"s": new_status, "a": alert_id, "u": user_id},
+    )
+    db.commit()
+    return (res.rowcount or 0) > 0
+
+
+def _resume_alert(db, user_id: int, alert_id: int) -> bool:
+    """paused → active; для once в статусе fired — тоже снова active."""
+    res = db.execute(
+        text("UPDATE alerts SET status = 'active' "
+             "WHERE id = :a AND user_id = :u AND status IN ('paused','fired')"),
+        {"a": alert_id, "u": user_id},
+    )
+    db.commit()
+    return (res.rowcount or 0) > 0
+
+
+def _delete_alert(db, user_id: int, alert_id: int) -> bool:
+    res = db.execute(
+        text("DELETE FROM alerts WHERE id = :a AND user_id = :u"),
+        {"a": alert_id, "u": user_id},
+    )
+    db.commit()
+    return (res.rowcount or 0) > 0
+
+
+def _bulk_status(db, user_id: int, from_status: str, to_status: str) -> int:
+    res = db.execute(
+        text("UPDATE alerts SET status = :to WHERE user_id = :u AND status = :frm"),
+        {"to": to_status, "frm": from_status, "u": user_id},
+    )
+    db.commit()
+    return res.rowcount or 0
+
+
+# ── callback_query dispatcher ───────────────────────────────────────────────
+def process_callback(cb: dict) -> None:
+    cb_id = cb.get("id")
+    data = (cb.get("data") or "").strip()
+    msg = cb.get("message") or {}
+    chat = msg.get("chat") or {}
+    chat_id = chat.get("id")
+    message_id = msg.get("message_id")
+    if chat_id is None or message_id is None:
+        if cb_id:
+            answer_cb(cb_id)
+        return
+
+    db = SessionLocal()
+    try:
+        # help / m не требуют привязки — отдаём сразу
+        if data == "help":
+            edit_kb(chat_id, message_id, HELP_TEXT,
+                    [[{"text": "← Меню", "callback_data": "m"}]])
+            answer_cb(cb_id)
+            return
+        if data == "m":
+            txt, kb = _view_menu()
+            edit_kb(chat_id, message_id, txt, kb)
+            answer_cb(cb_id)
+            return
+
+        user_id = _user_id_by_chat(db, chat_id)
+        if not user_id:
+            edit_kb(chat_id, message_id,
+                    "Аккаунт не привязан. Откройте сайт → Личный кабинет → "
+                    "«Подключить Telegram».",
+                    [[{"text": "🌐 Открыть Фрейм", "url": SITE}]])
+            answer_cb(cb_id)
+            return
+
+        if data == "la":
+            txt, kb = _view_list(db, user_id)
+            edit_kb(chat_id, message_id, txt, kb)
+            answer_cb(cb_id)
+            return
+
+        # параметризованные: <op>:<id>
+        op, _, raw_id = data.partition(":")
+        try:
+            alert_id = int(raw_id)
+        except ValueError:
+            answer_cb(cb_id)
+            return
+
+        if op == "v":
+            txt, kb = _view_card(db, user_id, alert_id)
+            edit_kb(chat_id, message_id, txt, kb)
+            answer_cb(cb_id)
+        elif op == "p":
+            ok = _set_status(db, user_id, alert_id, "paused")
+            txt, kb = _view_card(db, user_id, alert_id)
+            edit_kb(chat_id, message_id, txt, kb)
+            answer_cb(cb_id, "На паузе ⏸" if ok else "Не найдено")
+        elif op == "r":
+            ok = _resume_alert(db, user_id, alert_id)
+            txt, kb = _view_card(db, user_id, alert_id)
+            edit_kb(chat_id, message_id, txt, kb)
+            answer_cb(cb_id, "Активен 🟢" if ok else "Не найдено")
+        elif op == "dq":
+            txt, kb = _view_delete_confirm(db, user_id, alert_id)
+            edit_kb(chat_id, message_id, txt, kb)
+            answer_cb(cb_id)
+        elif op == "dx":
+            ok = _delete_alert(db, user_id, alert_id)
+            txt, kb = _view_list(db, user_id)
+            edit_kb(chat_id, message_id, txt, kb)
+            answer_cb(cb_id, "Удалено 🗑" if ok else "Не найдено")
+        else:
+            answer_cb(cb_id)
+    except Exception as e:
+        db.rollback()
+        print(f"[alert_bot] callback error: {_redact(e)}")
+        if cb_id:
+            answer_cb(cb_id, "Ошибка, попробуйте ещё раз")
+    finally:
+        db.close()
+
+
 def process_update(update: dict) -> None:
+    if update.get("callback_query"):
+        process_callback(update["callback_query"])
+        return
     msg = update.get("message")
     if not msg:
         return
@@ -103,25 +446,85 @@ def process_update(update: dict) -> None:
     username = msg["chat"].get("username")
     txt = (msg.get("text") or "").strip()
 
-    if txt.startswith("/start"):
-        parts = txt.split(maxsplit=1)
-        if len(parts) == 2 and parts[1].strip():
-            ok = link_account(parts[1].strip(), chat_id, username)
-            send(chat_id,
-                 "✅ Аккаунт Фрейм подключён. Алерты будут приходить сюда.\n"
-                 "Настроить — на сайте таймфрейм.рф (ЛК → Алерты)." if ok else
-                 "⚠️ Ссылка недействительна или истекла.\n"
-                 "Сгенерируйте новую на сайте: ЛК → Подключить Telegram.")
+    parts = txt.split(maxsplit=1)
+    # /menu@framesignalbot → /menu (в группах TG добавляет @botname)
+    cmd = parts[0].split("@", 1)[0].lower() if parts else ""
+
+    if cmd == "/start":
+        arg = parts[1].strip() if len(parts) == 2 else ""
+        if arg:
+            ok = link_account(arg, chat_id, username)
+            if ok:
+                txt_menu, kb = _view_menu()
+                send_kb(chat_id,
+                        "✅ Аккаунт Фрейм подключён. Алерты будут приходить сюда.\n\n"
+                        + txt_menu, kb)
+            else:
+                send(chat_id,
+                     "⚠️ Ссылка недействительна или истекла.\n"
+                     "Сгенерируйте новую на сайте: ЛК → Подключить Telegram.")
         else:
-            send(chat_id,
-                 "Чтобы подключить алерты — откройте таймфрейм.рф → Личный кабинет → "
-                 "«Подключить Telegram» и перейдите по кнопке.")
-    elif txt == "/help":
-        send(chat_id, HELP_TEXT)
-    elif txt == "/alerts":
-        send(chat_id, "Список и управление алертами — на сайте (ЛК → Алерты). Скоро — и здесь.")
-    elif txt == "/stop":
-        send(chat_id, "Поставить алерты на паузу можно на сайте (ЛК → Алерты). Скоро — и здесь.")
+            # /start без токена — приветственное меню
+            txt_menu, kb = _view_menu()
+            send_kb(chat_id, txt_menu, kb)
+    elif cmd == "/menu":
+        txt_menu, kb = _view_menu()
+        send_kb(chat_id, txt_menu, kb)
+    elif cmd == "/help":
+        send_kb(chat_id, HELP_TEXT, [[{"text": "← Меню", "callback_data": "m"}]])
+    elif cmd == "/alerts":
+        db = SessionLocal()
+        try:
+            user_id = _user_id_by_chat(db, chat_id)
+            if not user_id:
+                send_kb(chat_id,
+                        "Аккаунт не привязан. Откройте сайт → Личный кабинет → "
+                        "«Подключить Telegram».",
+                        [[{"text": "🌐 Открыть Фрейм", "url": SITE}]])
+            else:
+                txt_list, kb = _view_list(db, user_id)
+                send_kb(chat_id, txt_list, kb)
+        finally:
+            db.close()
+    elif cmd == "/stop":
+        db = SessionLocal()
+        try:
+            user_id = _user_id_by_chat(db, chat_id)
+            if not user_id:
+                send(chat_id, "Аккаунт не привязан — нечего ставить на паузу.")
+            else:
+                n = _bulk_status(db, user_id, "active", "paused")
+                if n:
+                    send_kb(chat_id,
+                            f"⏸ Поставил на паузу: {n}.\n"
+                            "Вернуть всё в строй — командой /resume.",
+                            [[{"text": "📋 Мои алерты", "callback_data": "la"}]])
+                else:
+                    send(chat_id, "Активных алертов не было — пауза не нужна.")
+        finally:
+            db.close()
+    elif cmd == "/resume":
+        db = SessionLocal()
+        try:
+            user_id = _user_id_by_chat(db, chat_id)
+            if not user_id:
+                send(chat_id, "Аккаунт не привязан — нечего возобновлять.")
+            else:
+                # paused И fired (сработавшие once) → active — единообразно с
+                # кнопкой «Возобновить» в карточке (_resume_alert).
+                res = db.execute(
+                    text("UPDATE alerts SET status = 'active' WHERE user_id = :u "
+                         "AND status IN ('paused','fired')"),
+                    {"u": user_id})
+                db.commit()
+                n = res.rowcount or 0
+                if n:
+                    send_kb(chat_id, f"🟢 Снова активны: {n}.",
+                            [[{"text": "📋 Мои алерты", "callback_data": "la"}]])
+                else:
+                    send(chat_id, "Не было алертов на паузе или сработавших.")
+        finally:
+            db.close()
 
 
 def main() -> None:
@@ -129,7 +532,9 @@ def main() -> None:
     offset = None
     while True:
         try:
-            params = {"timeout": 30, "allowed_updates": ["message"]}
+            # allowed_updates — JSON-массив (требование Telegram для GET-параметра).
+            params = {"timeout": 30,
+                      "allowed_updates": json.dumps(["message", "callback_query"])}
             if offset:
                 params["offset"] = offset
             resp = requests.get(f"{API_BASE}/getUpdates", params=params, timeout=35)

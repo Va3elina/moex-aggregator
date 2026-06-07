@@ -65,6 +65,22 @@ def compute_value(a: Alert):
     return None, None
 
 
+def build_keyboard(a: Alert) -> dict:
+    """inline_keyboard для пуша. callback_data по общему контракту (<=64б):
+    p:<id> пауза, r:<id> возобновить, dx:<id> удалить.
+    Строка 1 — ссылка на график; строка 2 — действия (once → 'Включить снова',
+    repeat → 'Пауза'), + 'Удалить'."""
+    open_btn = {"text": "📈 Открыть график",
+                "url": f"{SITE}/oi?instrument={a.asset}"}
+    if a.mode == "once":
+        # после срабатывания once-алерт станет status='fired' → нужно r:<id>
+        action_btn = {"text": "🔔 Включить снова", "callback_data": f"r:{a.id}"}
+    else:
+        action_btn = {"text": "⏸ Пауза", "callback_data": f"p:{a.id}"}
+    delete_btn = {"text": "🗑 Удалить", "callback_data": f"dx:{a.id}"}
+    return {"inline_keyboard": [[open_btn], [action_btn, delete_btn]]}
+
+
 def format_msg(a: Alert, value: float, ctx: dict) -> str:
     name = a.asset_name or a.asset
     link = f'<a href="{SITE}/oi?instrument={a.asset}">открыть график →</a>'
@@ -91,13 +107,16 @@ def run_once() -> dict:
     try:
         alerts = db.query(Alert).filter(Alert.status == "active").all()
         now = datetime.now(timezone.utc)
+        # Префетч юзеров одним запросом (а не по одному на алерт).
+        uids = {a.user_id for a in alerts}
+        users = {u.id: u for u in db.query(User).filter(User.id.in_(uids)).all()} if uids else {}
         # Дедуп: значение метрики считаем ОДИН раз на (indicator, asset, clgroup) за
         # проход — 50 алертов на SR-цену = 1 запрос, а не 50. Держит нагрузку низкой.
         value_cache: dict = {}
         for a in alerts:
             summary["checked"] += 1
             try:
-                user = db.query(User).filter(User.id == a.user_id).first()
+                user = users.get(a.user_id)
                 if not user or not user.telegram_chat_id:
                     summary["skipped"] += 1   # не привязан Telegram — доставить некуда
                     continue
@@ -110,10 +129,19 @@ def run_once() -> dict:
                 if value is None:
                     summary["skipped"] += 1
                     continue
+                # Cooldown для mode='repeat': не чаще раза в cooldown_hours. last_value
+                # обновляем (трекаем prev для cross), но НЕ шлём, пока кулдаун не вышел.
+                if a.mode == "repeat" and a.last_fired_at is not None:
+                    elapsed = (now - a.last_fired_at).total_seconds()
+                    if elapsed < (a.cooldown_hours or 24) * 3600:
+                        a.last_value = value
+                        continue
                 prev = float(a.last_value) if a.last_value is not None else None
+                send_failed = False
                 if eval_op(a.op, value, prev, float(a.threshold)):
                     text = format_msg(a, value, ctx or {})
-                    result = send_message(user.telegram_chat_id, text)
+                    result = send_message(user.telegram_chat_id, text,
+                                          reply_markup=build_keyboard(a))
                     if result == "ok":
                         db.add(AlertFire(alert_id=a.id, value=value, message_text=text))
                         a.last_fired_at = now
@@ -128,9 +156,14 @@ def run_once() -> dict:
                         user.telegram_username = None
                         user.telegram_linked_at = None
                         summary["unlinked"] += 1
+                        send_failed = True
                         print(f"[alerts_run] user {user.id} blocked bot → auto-unlinked")
-                    # 'error' → не помечаем сработавшим, повтор на следующем цикле
-                a.last_value = value
+                    else:  # 'error' — временная ошибка отправки
+                        send_failed = True
+                # last_value НЕ двигаем при неудачной отправке — иначе cross_up/down
+                # не пере-сработает (prev уже за порогом). При успехе/без срабатывания — двигаем.
+                if not send_failed:
+                    a.last_value = value
             except Exception as e:
                 summary["errors"] += 1
                 print(f"[alerts_run] alert {a.id} error: {e}")

@@ -3,6 +3,7 @@
 sendMessage с динамическим chat_id. Санитизация ALERT_BOT_TOKEN в логах.
 ENV: ALERT_BOT_TOKEN.
 """
+import json
 import os
 
 import requests
@@ -15,18 +16,22 @@ def _redact(s) -> str:
     return str(s).replace(_TOKEN, "<REDACTED>")
 
 
-def send_message(chat_id, text: str) -> str:
+def send_message(chat_id, text: str, reply_markup=None) -> str:
     """'ok' — ушло; 'blocked' — юзер забанил бота / чат мёртв (→ авто-отвязка
-    в eval-loop); 'error' — временная ошибка (повтор позже). Не бросает."""
+    в eval-loop); 'error' — временная ошибка (повтор позже). Не бросает.
+    reply_markup (опц.) — dict inline_keyboard, уходит как JSON в sendMessage."""
     try:
+        payload = {
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True,
+        }
+        if reply_markup is not None:
+            payload["reply_markup"] = json.dumps(reply_markup)
         resp = requests.post(
             f"{_API}/sendMessage",
-            data={
-                "chat_id": chat_id,
-                "text": text,
-                "parse_mode": "HTML",
-                "disable_web_page_preview": True,
-            },
+            data=payload,
             timeout=15,
         )
         data = resp.json()
