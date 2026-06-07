@@ -703,13 +703,19 @@ export function AssetHistoryModal({
                     background: 'var(--bg-primary)',
                     maxWidth: 1240, width: '100%', maxHeight: isMobile ? '94dvh' : '92vh', overflow: 'auto',
                     border: '1.5px solid var(--text-primary)',
-                    padding: isMobile ? '16px 12px' : '24px 28px',
+                    /* Верхний паддинг убран — он переехал внутрь sticky-шапки,
+                       чтобы шапка липла к самому верху без зазора. */
+                    padding: isMobile ? '0 12px 16px' : '0 28px 24px',
                     boxShadow: '0 16px 60px rgba(0,0,0,0.3)',
                 }}
             >
-                {/* Header */}
+                {/* Header — sticky: закреплён сверху, при скролле стоит на месте
+                    (вместе с кнопкой закрыть). bg перекрывает уезжающий контент. */}
                 <div style={{
                     display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
+                    position: 'sticky', top: 0, zIndex: 5,
+                    background: 'var(--bg-primary)',
+                    paddingTop: isMobile ? 16 : 24,
                     marginBottom: 20, paddingBottom: 16,
                     borderBottom: '1.5px solid var(--text-primary)',
                 }}>
