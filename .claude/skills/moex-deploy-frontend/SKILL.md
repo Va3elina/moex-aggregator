@@ -22,18 +22,16 @@ Frontend source (`frontend/src/*`, `sw.js`, etc.) — в git. `frontend/dist/` �
 ## ⚠️ Critical Rules
 
 1. **Билд на сервере, не на Mac.** Через `docker compose build api` — Dockerfile multi-stage запустит `npm run build` ВНУТРИ image. Источник истины — git.
-2. **Bump SW cache version в `frontend/public/sw.js`** перед commit'ом — иначе users увидят cached старую версию.
+2. **SW cache version — АВТОМАТИЧЕСКИ** (с ab14d93, 07.06.2026): postbuild (`scripts/prerender-meta.ts`) подставляет `frame-<sha1(имена dist/assets)[:8]>` в плейсхолдер `__SW_VERSION__` в `public/sw.js`. **Руками НЕ бампить.**
 3. **Path в container**: `/app/frontend/dist/` — baked в image, не editable через docker cp (точнее можно, но эфемерно).
 4. **SSH preamble** см. ниже: `IdentitiesOnly=yes -o IdentityAgent=none -i ~/.ssh/id_ed25519` — иначе fail2ban банит на 24ч.
 
 ## Standard Deploy Sequence
 
-### Step 1: Локально — bump SW + commit + push
+### Step 1: Локально — commit + push (SW бампить НЕ нужно, авто на build)
 
 ```bash
-# 1. Edit frontend/public/sw.js: const CACHE_NAME = 'frame-vNNN+1';
-# 2. Commit + push
-git add frontend/public/sw.js frontend/src/...  # все изменённые
+git add frontend/src/...  # изменённые файлы. sw.js трогать НЕ нужно
 git commit -m "fix(scope): описание"
 git push origin main
 ```
@@ -87,7 +85,7 @@ cd frontend && npx tsc -b --force   # честный typecheck, как в Docker
 ## Verify deployment
 
 После Step 2 ассертим:
-- SW версия в response совпадает с локальным `sw.js`
+- SW версия = `frame-<hash>` (авто, хэш от dist/assets) — изменилась при реальной правке фронта
 - Frontend hash (`index-XXX.js`) изменился (cache busting)
 - `docker exec frame-api-1 python3 -c 'import urllib.request; print(urllib.request.urlopen("http://localhost:8000/health").read().decode())'` → `{"status":"ok","database":"ok"}`
 
