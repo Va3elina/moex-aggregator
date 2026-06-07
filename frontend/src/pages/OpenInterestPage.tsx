@@ -28,6 +28,7 @@ import { formatPrice } from '../utils/formatNumber';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 import { oiTierResolver } from '../utils/tierError';
 import AlertBellButton from '../components/alerts/AlertBellButton';
+import { ALERTS_ENABLED } from '../config/alertsConfig';
 import { useTierAccess } from '../contexts/TierFeaturesContext';
 
 type DisplayMode = 'price' | 'positions' | 'participants';
@@ -714,6 +715,7 @@ export default function OpenInterestPage() {
               ].filter(Boolean),
             }}
           />
+          {ALERTS_ENABLED && (
           <AlertBellButton
             indicator="open_interest"
             asset={selectedInstrument}
@@ -744,6 +746,7 @@ export default function OpenInterestPage() {
               },
             ]}
           />
+          )}
           </div>
         </div>
       </div>

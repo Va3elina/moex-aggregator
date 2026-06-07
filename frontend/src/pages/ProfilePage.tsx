@@ -9,6 +9,7 @@ import AdminBillingInvites from '../components/AdminBillingInvites';
 import ApiKeysSection from '../components/profile/ApiKeysSection';
 import ExtensionTokenSection from '../components/profile/ExtensionTokenSection';
 import TelegramAlertsSection from '../components/profile/TelegramAlertsSection';
+import { ALERTS_ENABLED } from '../config/alertsConfig';
 import { API_CSV_ENABLED } from '../config/features';
 
 interface BillingStatus {
@@ -751,9 +752,12 @@ export default function ProfilePage() {
       )}
 
       {/* ============ Секция: Telegram-алерты ============ */}
-      <div className="rounded-2xl border p-6" style={cardStyle}>
-        <TelegramAlertsSection />
-      </div>
+      {/* ВРЕМЕННО скрыто (ALERTS_ENABLED): доставка в Telegram не работает (IPv6 хоста). */}
+      {ALERTS_ENABLED && (
+        <div className="rounded-2xl border p-6" style={cardStyle}>
+          <TelegramAlertsSection />
+        </div>
+      )}
 
       {/* ============ Секция: Расширение для терминала ============ */}
       <div className="rounded-2xl border p-6" style={cardStyle}>
