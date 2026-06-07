@@ -45,21 +45,29 @@ def get_instruments(
                d.change_pct as day_change_pct
         FROM instruments i
         LEFT JOIN (
-            -- «Объём» за последний торговый день — выровнен с mv_heatmap_stocks.stats_1d.
-            -- Для акций берём value (рубли), для фьючерсов и прочих — volume (контракты/лоты),
-            -- т.к. ISS не заполняет candles.value для срочного рынка (всегда 0).
-            -- Окно «1 день» включает свечу сегодня + вчера (если today перед открытием).
-            SELECT sec_id,
-                   CASE WHEN SUM(value) > 0 THEN SUM(value)
-                        ELSE SUM(volume) END AS metric
+            -- «Объём» за последний ТОРГОВЫЙ (будний) день. Раньше было окно
+            -- CURRENT_DATE-1day, но в выходной оно не ловило пятницу (фьючерсы
+            -- в выходные не торгуются) → объём показывался «—». Теперь берём
+            -- последнюю ДНЕВНУЮ свечу буднего дня (DOW 1-5) per инструмент:
+            -- фьючи → пятница, акции → пятница (weekend-сессии MOEX в этой
+            -- колонке игнорируем, консистентно с change_pct ниже и с
+            -- mv_heatmap_stocks DOW 1-5). Holiday-устойчиво: если в пятницу-
+            -- праздник свечи нет — DISTINCT ON возьмёт предыдущий будний день.
+            -- value (₽) для акций, volume (контракты) для срочного (value=0).
+            SELECT DISTINCT ON (sec_id) sec_id,
+                   CASE WHEN value > 0 THEN value ELSE volume END AS metric
             FROM candles
             WHERE interval = 24
-              AND begin_time >= CURRENT_DATE - INTERVAL '1 day'
-            GROUP BY sec_id
+              AND begin_time >= CURRENT_DATE - INTERVAL '14 days'
+              AND EXTRACT(DOW FROM begin_time) BETWEEN 1 AND 5
+            ORDER BY sec_id, begin_time DESC
         ) v ON v.sec_id = i.sec_id
         LEFT JOIN (
-            -- Изменение цены за последний торговый день (дневной ТФ):
-            -- последняя дневная свеча против предыдущей.
+            -- Изменение цены за последний ТОРГОВЫЙ (будний) день: последняя
+            -- дневная свеча буднего дня против предыдущей будней. Фильтр DOW 1-5
+            -- — no-op в торговый день (сегодня будни), а в выходной даёт
+            -- пятница-vs-четверг, а не тонкую weekend-сессию (Вс-vs-Сб). Это
+            -- держит ИЗМ.% и ОБЪЁМ на ОДНОМ дне («последний торговый день»).
             SELECT sec_id,
                    (close - prev_close) / NULLIF(prev_close, 0) * 100.0 AS change_pct
             FROM (
@@ -69,6 +77,7 @@ def get_instruments(
                 FROM candles
                 WHERE interval = 24
                   AND begin_time >= CURRENT_DATE - INTERVAL '14 days'
+                  AND EXTRACT(DOW FROM begin_time) BETWEEN 1 AND 5
                   AND close > 0
             ) c
             WHERE rn = 1
