@@ -22,7 +22,7 @@
  *
  * Стиль: editorial-press (2px border + hard shadow + accent кнопки).
  */
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 
@@ -68,7 +68,6 @@ export default function OnboardingTour({
   const [stepIndex, setStepIndex] = useState(0);
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
   const [viewport, setViewport] = useState({ w: typeof window !== 'undefined' ? window.innerWidth : 1024, h: typeof window !== 'undefined' ? window.innerHeight : 768 });
-  const overlayRef = useRef<HTMLDivElement>(null);
 
   const isMobile = viewport.w < 768;
   const step = steps[stepIndex];
@@ -95,6 +94,17 @@ export default function OnboardingTour({
     if (open) {
       setStepIndex(0);
     }
+  }, [open]);
+
+  // Пока тур открыт — помечаем <html data-tour-active>. Это поднимает открытый
+  // мобильный bottom-sheet НАД тёмным слоем тура (см. mobile.css
+  // [data-tour-active] .fm-sheet{z-index:10000}). Иначе оверлей тура (z<10000)
+  // перекрывал панель → она оставалась тёмной и было непонятно, что подсвечено.
+  useEffect(() => {
+    if (!open) return;
+    const root = document.documentElement;
+    root.setAttribute('data-tour-active', '');
+    return () => root.removeAttribute('data-tour-active');
   }, [open]);
 
   // Find target element + scroll into view + measure rect
@@ -200,17 +210,17 @@ export default function OnboardingTour({
     : null;
 
   return (
-    <div
-      ref={overlayRef}
-      className="fixed inset-0 z-[9999]"
-      style={{ pointerEvents: 'auto' }}
-    >
-      {/* SVG backdrop with cutout around target element */}
+    <>
+      {/* Тёмный слой со spotlight-вырезом. zIndex 9998 — НИЖЕ открытого
+          мобильного sheet'а ([data-tour-active] .fm-sheet:10000 в mobile.css),
+          чтобы панель была подсвечена ПОВЕРХ затемнения, а не скрыта под ним.
+          pointerEvents:auto — блокирует клики по странице за оверлеем (как
+          раньше делал wrapper); sheet (10000) и tooltip (10002) выше → кликабельны. */}
       <svg
         width={viewport.w}
         height={viewport.h}
-        className="absolute inset-0"
-        style={{ pointerEvents: 'none' }}
+        className="fixed inset-0"
+        style={{ zIndex: 9998, pointerEvents: 'auto' }}
       >
         <defs>
           <mask id="tour-spotlight-mask">
@@ -258,12 +268,13 @@ export default function OnboardingTour({
           CSS-анимация tourFadeIn (fade-in + лёгкий translate-up). */}
       <div
         key={stepIndex}
-        className="absolute"
+        className="fixed"
         style={{
           left: tooltipPos.x,
           top: tooltipPos.y,
           width: isMobile ? `calc(100vw - ${TOOLTIP_MOBILE_PADDING * 2}px)` : TOOLTIP_WIDTH,
           maxWidth: TOOLTIP_WIDTH,
+          zIndex: 10002,
           background: 'var(--bg-primary)',
           border: '2px solid var(--text-primary)',
           boxShadow: '5px 5px 0 0 var(--text-primary)',
@@ -369,7 +380,7 @@ export default function OnboardingTour({
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
 

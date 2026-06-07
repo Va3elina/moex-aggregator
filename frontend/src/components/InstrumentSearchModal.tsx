@@ -131,9 +131,19 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
     const existing = acc.find(i => i.sectype === inst.sectype);
     if (!existing) {
       acc.push(inst);
-    } else if ((inst.daily_volume || 0) > (existing.daily_volume || 0)) {
-      // Берём запись с бОльшим объёмом (актуальный контракт)
-      acc[acc.indexOf(existing)] = inst;
+    } else {
+      // Выбираем «актуальный» контракт серии (для фьючерсов H/M/U/Z на один
+      // sectype). Раньше тай-брейк был ТОЛЬКО по daily_volume — но в выходной
+      // объём у всех фьючей = 0, и `0 > 0` никогда не срабатывало → выживал
+      // ПЕРВЫЙ в ответе API (истёкший контракт без day_change_pct → «—»).
+      // Теперь приоритет у строки, где ЕСТЬ дневное изменение (активный
+      // контракт всегда имеет свечу), и лишь при равенстве — по объёму.
+      const instHasChange = inst.day_change_pct != null;
+      const existingHasChange = existing.day_change_pct != null;
+      const instWins = instHasChange !== existingHasChange
+        ? instHasChange
+        : (inst.daily_volume || 0) > (existing.daily_volume || 0);
+      if (instWins) acc[acc.indexOf(existing)] = inst;
     }
     return acc;
   }, [] as Instrument[])

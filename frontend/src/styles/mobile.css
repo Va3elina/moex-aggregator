@@ -797,6 +797,14 @@
   padding-bottom: env(safe-area-inset-bottom, 0);
 }
 
+/* Во время онбординг-тура поднимаем открытый sheet НАД тёмным слоем тура
+   (SVG z-index:9998), но НИЖЕ его tooltip'а (z-index:10002) — панель
+   подсвечена поверх затемнения, а кнопки «Далее/Назад» остаются кликабельны.
+   Дефолтный z-index (101) для обычного использования НЕ меняется. */
+[data-tour-active] .fm-sheet {
+  z-index: 10000;
+}
+
 .fm-sheet-handle {
   width: 36px;
   height: 4px;
