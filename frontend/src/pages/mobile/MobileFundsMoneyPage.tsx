@@ -26,6 +26,7 @@ import {
   type FlowTimeframe,
 } from '../../services/api';
 import MobileSheet from '../../components/mobile/MobileSheet';
+import { resolveFundLogo } from '../../config/fundConfig';
 import { useOnboardingTour } from '../../hooks/useFirstVisit';
 import OnboardingTour, { type TourStep } from '../../components/onboarding/OnboardingTour';
 
@@ -594,6 +595,7 @@ export default function MobileFundsMoneyPage() {
             // тира backend всё равно отдаст подходящий 403, но мы предотвращаем
             // запрос — показываем modal заранее.
             const requiredTier: 'basic' | 'pro' = fundsAccess.requiredTierFor({ asset: f.ticker }) ?? 'basic';
+            const logo = resolveFundLogo(f.ticker, f.uk_id);
             return (
               <button
                 key={f.fund_id}
@@ -620,13 +622,32 @@ export default function MobileFundsMoneyPage() {
                 }}
                 aria-disabled={locked}
               >
-                <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}>
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 13 }}>
-                    {f.ticker}
-                    {locked && <Lock size={11} strokeWidth={2.2} />}
+                <span style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                  {/* Лого фонда (УК/автор) — как в десктоп FundsTable */}
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      width: 28, height: 28, flexShrink: 0, borderRadius: '50%', overflow: 'hidden',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontWeight: 900, fontSize: 12, lineHeight: 1,
+                      backgroundColor: logo ? (logo.img ? undefined : logo.bg) : 'var(--bg-secondary)',
+                      color: logo ? logo.color : 'var(--text-secondary)',
+                    }}
+                  >
+                    {logo
+                      ? (logo.img
+                          ? <img src={logo.img} alt={logo.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          : logo.letter)
+                      : (f.ticker.charAt(0) || '?')}
                   </span>
-                  <span style={{ fontSize: 11, color: 'var(--text-muted)', textAlign: 'left' }}>
-                    {f.name}
+                  <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, minWidth: 0 }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 13 }}>
+                      {f.ticker}
+                      {locked && <Lock size={11} strokeWidth={2.2} />}
+                    </span>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)', textAlign: 'left', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 190 }}>
+                      {f.name}
+                    </span>
                   </span>
                 </span>
                 <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
