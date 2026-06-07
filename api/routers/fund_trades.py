@@ -92,6 +92,25 @@ WHITELIST_TICKERS = (
 )
 
 
+# Фонды, у которых данные о выплатах в ИСТОЧНИКЕ (Cbonds) повреждены → total-return
+# считается неверно. Показываем «—» вместо вводящего в заблуждение числа (на финансовом
+# продукте честнее скрыть, чем сфабриковать). Re-fetch НЕ помогает — баг на стороне Cbonds.
+#   OPIF-9113 (Альфа-Капитал «Облигации с выплатой дохода»): с 07.2025 Cbonds публикует
+#   выплаты в ~10–100× меньше реальных (0.2–2.4 ₽ вместо ~30–44 ₽/квартал — подтверждено
+#   live-фетчем 2026-06-07). Фонд платит ~15%/год (NAV/пай ~flat 1005→1028 + рост AUM
+#   3.5→30 млрд ₽), но total-return выходит +1.6% вместо ~+18%. Убрать тикер, когда
+#   Cbonds починит данные или подтянем выплаты из другого источника.
+RETURNS_UNRELIABLE_TICKERS = frozenset({"OPIF-9113"})
+
+
+def _guard_returns(ticker, returns: dict) -> dict:
+    """Если у фонда выплаты в источнике повреждены — доходность недостоверна → все
+    периоды в None (фронт покажет «—»). Иначе returns без изменений."""
+    if ticker in RETURNS_UNRELIABLE_TICKERS:
+        return {k: None for k in returns}
+    return returns
+
+
 # Источники данных для /fund-trades.
 #
 # MONTHLY_SOURCES — для diff'ов между снапшотами фонда.
@@ -225,16 +244,17 @@ def _fund_performance(db: Session, fund_id: int) -> dict:
     ]
 
     last_pay = ret_row["last_pay"] if ret_row else None
-    return {
-        "timeline": timeline,
-        "returns": {
-            "m1": _calc_total_return(last_pay, ret_row["pay_1m"], ret_row["dist_1m"]) if ret_row else None,
-            "m3": _calc_total_return(last_pay, ret_row["pay_3m"], ret_row["dist_3m"]) if ret_row else None,
-            "m6": _calc_total_return(last_pay, ret_row["pay_6m"], ret_row["dist_6m"]) if ret_row else None,
-            "y1": _calc_total_return(last_pay, ret_row["pay_1y"], ret_row["dist_1y"]) if ret_row else None,
-            "all": _calc_total_return(last_pay, ret_row["pay_first"], ret_row["dist_all"]) if ret_row else None,
-        },
+    returns = {
+        "m1": _calc_total_return(last_pay, ret_row["pay_1m"], ret_row["dist_1m"]) if ret_row else None,
+        "m3": _calc_total_return(last_pay, ret_row["pay_3m"], ret_row["dist_3m"]) if ret_row else None,
+        "m6": _calc_total_return(last_pay, ret_row["pay_6m"], ret_row["dist_6m"]) if ret_row else None,
+        "y1": _calc_total_return(last_pay, ret_row["pay_1y"], ret_row["dist_1y"]) if ret_row else None,
+        "all": _calc_total_return(last_pay, ret_row["pay_first"], ret_row["dist_all"]) if ret_row else None,
     }
+    # Guard: у фондов с битыми выплатами в источнике доходность недостоверна → «—».
+    tic = db.execute(text("SELECT ticker FROM funds WHERE fund_id = :fid"),
+                     {"fid": fund_id}).scalar()
+    return {"timeline": timeline, "returns": _guard_returns(tic, returns)}
 
 
 @router.get("/funds")
@@ -368,12 +388,12 @@ def list_funds_with_history(
             "snapshot_count": r["snapshot_count"],
             "holdings_count": int(r["holdings_count"]) if r["holdings_count"] is not None else 0,
             "nav_rub": float(r["nav_rub"]) if r["nav_rub"] is not None else None,
-            "returns": {
+            "returns": _guard_returns(r["ticker"], {
                 "m1": _calc_total_return(last_pay, r["pay_1m"], r["dist_1m"]),
                 "m3": _calc_total_return(last_pay, r["pay_3m"], r["dist_3m"]),
                 "m6": _calc_total_return(last_pay, r["pay_6m"], r["dist_6m"]),
                 "y1": _calc_total_return(last_pay, r["pay_1y"], r["dist_1y"]),
-            },
+            }),
             "top_holdings": holdings_map.get(r["fund_id"], []),
             "has_distributions": bool(r["has_distributions"]),
         })

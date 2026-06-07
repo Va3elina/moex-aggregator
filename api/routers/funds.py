@@ -219,12 +219,17 @@ async def get_funds_chart(
                            AND d.record_date <= lp.td) AS dist_1y
                     FROM last_pay lp
                 """)
+                # Фонды с битыми выплатами в источнике (Cbonds) → доходность
+                # недостоверна, показываем «—» вместо вводящего в заблуждение числа.
+                from api.routers.fund_trades import RETURNS_UNRELIABLE_TICKERS
                 for r in conn.execute(y1_query, {"fund_ids": accessible_fund_ids}).fetchall():
                     fid, last_pay, pay_1y, dist_1y = r[0], r[1], r[2], r[3]
                     y1 = None
                     if last_pay is not None and pay_1y is not None and float(pay_1y) > 0:
                         y1 = round((float(last_pay) + float(dist_1y or 0) - float(pay_1y)) / float(pay_1y) * 100, 2)
                     if fid in funds_data:
+                        if funds_data[fid]["ticker"] in RETURNS_UNRELIABLE_TICKERS:
+                            y1 = None
                         funds_data[fid]["returns"] = {"y1": y1}
 
             # === Суммарная СЧА — только по accessible фондам ===
