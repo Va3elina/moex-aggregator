@@ -91,6 +91,9 @@ def run_once() -> dict:
     try:
         alerts = db.query(Alert).filter(Alert.status == "active").all()
         now = datetime.now(timezone.utc)
+        # Дедуп: значение метрики считаем ОДИН раз на (indicator, asset, clgroup) за
+        # проход — 50 алертов на SR-цену = 1 запрос, а не 50. Держит нагрузку низкой.
+        value_cache: dict = {}
         for a in alerts:
             summary["checked"] += 1
             try:
@@ -98,7 +101,12 @@ def run_once() -> dict:
                 if not user or not user.telegram_chat_id:
                     summary["skipped"] += 1   # не привязан Telegram — доставить некуда
                     continue
-                value, ctx = compute_value(a)
+                ck = (a.indicator, a.asset, a.clgroup or "")
+                if ck in value_cache:
+                    value, ctx = value_cache[ck]
+                else:
+                    value, ctx = compute_value(a)
+                    value_cache[ck] = (value, ctx)
                 if value is None:
                     summary["skipped"] += 1
                     continue

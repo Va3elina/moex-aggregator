@@ -105,22 +105,30 @@ def get_latest_price(sectype: str) -> Optional[tuple]:
     Берём свечу с НАИБОЛЕЕ свежим begin_time среди интервалов 5/60/24 (внутри одного
     begin_time — с макс. объёмом = фронт-контракт). Во время сессии это 5-мин свеча
     (цена «сейчас»); у неликвидных активов 5м/60м может не быть → откатывается на
-    дневную (вчерашнее закрытие). Возвращает (close, begin_time, interval) или None.
+    дневную. Возвращает (close, begin_time, interval) или None (нет свежих данных).
 
-    interval в ответе нужен вызывающему: 5/60 → intraday, 24 → дневная (EOD) —
-    чтобы предупредить, что у актива нет внутридневных данных.
+    interval в ответе: 5/60 → intraday, 24 → дневная (EOD) — чтобы предупредить,
+    что у актива нет внутридневных данных.
+
+    ⚡ Производительность: резолвим sec_id через крошечную instruments + окно
+    `begin_time >= now()-14д`. Тогда запрос ложится на индекс
+    idx_candles_sec_interval_time (sec_id, interval, begin_time) → ~2 мс вместо
+    12-130 с (наивный `secid LIKE` делал Seq Scan по 23М строк / 8 ГБ). Окно 14 дней
+    переживает новогодние каникулы; если последняя свеча старше — актив «мёртв» → None.
     """
     with SessionLocal() as session:
         row = session.execute(
             text("""
                 SELECT close, begin_time, interval
                 FROM candles
-                WHERE secid LIKE :prefix AND type = 'futures'
+                WHERE sec_id IN (SELECT sec_id FROM instruments
+                                 WHERE sectype = :sectype AND type = 'futures')
                   AND interval IN (5, 60, 24) AND close > 0
+                  AND begin_time >= now() - interval '14 days'
                 ORDER BY begin_time DESC, volume DESC NULLS LAST
                 LIMIT 1
             """),
-            {"prefix": f"{sectype}%"},
+            {"sectype": sectype},
         ).fetchone()
     if not row:
         return None
