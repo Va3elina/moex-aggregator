@@ -7,7 +7,7 @@
  *  - tier-aware: Free (quota 0) → upgrade на Basic.
  * Рендерится внутри карточки ProfilePage (как ExtensionTokenSection).
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type CSSProperties } from 'react';
 import { Bell, ExternalLink, Send, Trash2, Pause, Play, AlertTriangle } from 'lucide-react';
 import {
     getTelegramStatus, createTelegramLink, unlinkTelegram,
@@ -30,6 +30,19 @@ const BellGlyph = () => (
         <Bell size={11} strokeWidth={2.2} />
     </span>
 );
+
+// Editorial-чип для текстовых действий (Переподключить/Отвязать/назад) — даёт
+// press-анимацию (translate+hard-shadow) и ≥36px тач-таргет, как везде в проекте.
+const chipBtn: CSSProperties = {
+    padding: '7px 12px', borderRadius: 8, border: '1.5px solid var(--text-primary)',
+    background: 'var(--bg-primary)', fontSize: 'var(--fs-sm)', lineHeight: 1.2,
+};
+// Квадратная icon-кнопка 36×36 для pause/resume/delete в списке алертов.
+const iconBtn: CSSProperties = {
+    width: 36, height: 36, borderRadius: 8, border: '1.5px solid var(--text-primary)',
+    background: 'var(--bg-primary)', display: 'inline-flex',
+    alignItems: 'center', justifyContent: 'center',
+};
 
 const OP_LABEL: Record<string, string> = {
     gt: 'выше', lt: 'ниже', cross_up: '↑ пересечёт', cross_down: '↓ пересечёт',
@@ -109,7 +122,7 @@ export default function TelegramAlertsSection() {
 
     return (
         <div>
-            <h2 className="text-lg font-bold mb-1" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <h2 className="text-lg font-bold mb-1" style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)' }}>
                 <Bell size={18} style={{ color: link }} /> Алерты в мессенджере
             </h2>
             <p style={{ color: sub, fontSize: 'var(--fs-sm)', marginBottom: 16 }}>
@@ -125,7 +138,7 @@ export default function TelegramAlertsSection() {
             ) : (
                 <>
                     {/* ── Статус Telegram ── */}
-                    <div className="rounded-xl p-4 mb-4" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)' }}>
+                    <div className="rounded-xl p-4 mb-4" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)' }}>
                         {linked === null ? (
                             <span style={{ color: sub }}>Загрузка…</span>
                         ) : linked ? (
@@ -134,9 +147,9 @@ export default function TelegramAlertsSection() {
                                     <Send size={16} style={{ color: link }} />
                                     <span>Подключён: <b>Telegram</b>{username ? ` · @${username}` : ''}</span>
                                 </span>
-                                <span style={{ display: 'flex', gap: 8 }}>
-                                    <button onClick={handleConnect} disabled={busy} title="Сменить чат или мессенджер" style={{ color: link, fontSize: 'var(--fs-sm)' }}>Переподключить</button>
-                                    <button onClick={handleUnlink} disabled={busy} style={{ color: sub, fontSize: 'var(--fs-sm)' }}>Отвязать</button>
+                                <span style={{ display: 'flex', gap: 'var(--sp-2)' }}>
+                                    <button onClick={handleConnect} disabled={busy} title="Сменить чат или мессенджер" className="editorial-press" style={{ ...chipBtn, color: link }}>Переподключить</button>
+                                    <button onClick={handleUnlink} disabled={busy} className="editorial-press" style={{ ...chipBtn, color: sub }}>Отвязать</button>
                                 </span>
                             </div>
                         ) : linkUrl ? (
@@ -146,7 +159,7 @@ export default function TelegramAlertsSection() {
                                     <ExternalLink size={15} /> Открыть @framesignalbot
                                 </a>
                                 <div style={{ color: sub, fontSize: 'var(--fs-xs)', marginTop: 6 }}>Нажмите Start в боте — статус обновится сам.</div>
-                                <button onClick={() => setLinkUrl(null)} style={{ color: sub, fontSize: 'var(--fs-xs)', marginTop: 6 }}>← выбрать другой мессенджер</button>
+                                <button onClick={() => setLinkUrl(null)} className="editorial-press" style={{ ...chipBtn, color: sub, fontSize: 'var(--fs-xs)', marginTop: 'var(--sp-2)' }}>← выбрать другой мессенджер</button>
                             </div>
                         ) : (
                             <div>
@@ -169,7 +182,7 @@ export default function TelegramAlertsSection() {
                     ) : (
                         <ul style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                             {alerts.map((a) => (
-                                <li key={a.id} className="rounded-xl p-3" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                                <li key={a.id} className="rounded-xl p-3" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--sp-2)' }}>
                                     <div style={{ minWidth: 0 }}>
                                         <div style={{ fontWeight: 600, fontSize: 'var(--fs-sm)' }}>{a.asset_name || a.asset}</div>
                                         <div style={{ color: sub, fontSize: 'var(--fs-xs)' }}>
@@ -177,13 +190,13 @@ export default function TelegramAlertsSection() {
                                             {' · '}<span style={{ color: a.status === 'active' ? link : sub }}>{STATUS_LABEL[a.status] || a.status}</span>
                                         </div>
                                     </div>
-                                    <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
+                                    <div style={{ display: 'flex', gap: 'var(--sp-2)', flexShrink: 0 }}>
                                         {a.status !== 'fired' && (
-                                            <button onClick={() => toggle(a)} title={a.status === 'active' ? 'Пауза' : 'Возобновить'} style={{ color: sub }}>
+                                            <button onClick={() => toggle(a)} title={a.status === 'active' ? 'Пауза' : 'Возобновить'} aria-label={a.status === 'active' ? 'Пауза' : 'Возобновить'} className="editorial-press" style={{ ...iconBtn, color: sub }}>
                                                 {a.status === 'active' ? <Pause size={16} /> : <Play size={16} />}
                                             </button>
                                         )}
-                                        <button onClick={() => remove(a)} title="Удалить" style={{ color: 'var(--funds-flow-negative, #FF7A5C)' }}><Trash2 size={16} /></button>
+                                        <button onClick={() => remove(a)} title="Удалить" aria-label="Удалить алерт" className="editorial-press" style={{ ...iconBtn, color: 'var(--funds-flow-negative, #FF7A5C)' }}><Trash2 size={16} /></button>
                                     </div>
                                 </li>
                             ))}

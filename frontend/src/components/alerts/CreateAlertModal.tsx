@@ -34,7 +34,7 @@ interface Props {
 
 const overlay: CSSProperties = {
     position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.5)',
-    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'var(--sp-4)',
 };
 const card: CSSProperties = {
     background: 'var(--bg-primary)', border: '2px solid var(--text-primary)',
@@ -124,7 +124,7 @@ export default function CreateAlertModal({ asset, assetName, metrics, onClose }:
                     <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 'var(--fs-lg)' }}>
                         <Bell size={20} style={{ color: 'var(--accent)' }} /> Новый алерт
                     </span>
-                    <button onClick={onClose} aria-label="Закрыть" style={{ color: 'var(--text-secondary)' }}><X size={20} /></button>
+                    <button onClick={onClose} aria-label="Закрыть" className="editorial-press" style={{ color: 'var(--text-secondary)', width: 36, height: 36, borderRadius: 8, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><X size={20} /></button>
                 </div>
 
                 {created ? (

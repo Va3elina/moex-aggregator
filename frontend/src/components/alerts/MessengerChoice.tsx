@@ -16,12 +16,12 @@ interface Props {
 }
 
 const grid: CSSProperties = {
-    display: 'flex', gap: 10, flexWrap: 'wrap',
+    display: 'flex', gap: 'var(--sp-3)', flexWrap: 'wrap',
 };
 const cardBase: CSSProperties = {
-    flex: '1 1 130px', minWidth: 130, borderRadius: 12, padding: '14px 12px',
+    flex: '1 1 130px', minWidth: 130, borderRadius: 12, padding: 'var(--sp-4) var(--sp-3)',
     border: '2px solid var(--text-primary)', textAlign: 'center',
-    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
+    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--sp-2)',
 };
 const badge: CSSProperties = {
     fontSize: 'var(--fs-xs)', fontWeight: 700, padding: '1px 8px', borderRadius: 999,
