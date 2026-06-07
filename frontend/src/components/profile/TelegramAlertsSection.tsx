@@ -18,6 +18,19 @@ import { useCommonFeatures } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../tier/UpgradeModal';
 import MessengerChoice from '../alerts/MessengerChoice';
 
+/** Inline-глиф колокольчика — повторяет кнопку-колокол с индикаторов (Bell в обведённом
+ *  кружке), чтобы текст «кнопкой …» указывал на реальный контрол, а не на эмодзи. */
+const BellGlyph = () => (
+    <span style={{
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        width: 18, height: 18, borderRadius: '50%', margin: '0 2px',
+        border: '1.5px solid var(--text-primary)', background: 'var(--bg-secondary)',
+        color: 'var(--text-primary)', verticalAlign: '-4px',
+    }} aria-label="колокол алертов">
+        <Bell size={11} strokeWidth={2.2} />
+    </span>
+);
+
 const OP_LABEL: Record<string, string> = {
     gt: 'выше', lt: 'ниже', cross_up: '↑ пересечёт', cross_down: '↓ пересечёт',
 };
@@ -100,7 +113,7 @@ export default function TelegramAlertsSection() {
                 <Bell size={18} style={{ color: link }} /> Алерты в мессенджере
             </h2>
             <p style={{ color: sub, fontSize: 'var(--fs-sm)', marginBottom: 16 }}>
-                Уведомления при достижении уровней (цена, аномалии OI). Создаются с индикаторов кнопкой 🔔.
+                Уведомления при достижении уровней (цена, аномалии OI). Создаются с индикаторов кнопкой<BellGlyph />.
                 Сейчас доступен Telegram, мессенджер&nbsp;МАКС — в&nbsp;разработке.
             </p>
 
@@ -151,7 +164,7 @@ export default function TelegramAlertsSection() {
                     {/* ── Список алертов ── */}
                     {alerts.length === 0 ? (
                         <div style={{ color: sub, fontSize: 'var(--fs-sm)' }}>
-                            Пока нет алертов. Создайте кнопкой 🔔 на индикаторе (сейчас — «Открытый интерес»).
+                            Пока нет алертов. Создайте кнопкой<BellGlyph /> на индикаторе (сейчас — «Открытый интерес»).
                         </div>
                     ) : (
                         <ul style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

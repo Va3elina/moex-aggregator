@@ -1,5 +1,5 @@
 /**
- * AlertBellButton — 🔔 рядом с 📷 (ChartCaptureButton) в controls-row индикатора.
+ * AlertBellButton — кнопка-колокол рядом с камерой (ChartCaptureButton) в controls-row индикатора.
  * Открывает CreateAlertModal для текущего актива. Стиль 1:1 с ChartCaptureButton
  * (44×44 pill, bg-secondary, 2px border, editorial-press).
  */
