@@ -33,6 +33,7 @@ import CsvExportButton from '../components/export/CsvExportButton';
 import { periodToQuery } from '../utils/csvPeriod';
 import { useTierAccess } from '../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
+import { handleTierError } from '../utils/tierError';
 
 // Режимы отображения
 type ViewMode = 'aum' | 'flows';
@@ -178,16 +179,12 @@ export default function FundsMoneyPage() {
             const result = await getFundsChartData(category, period as FundPeriod);
             setData(result);
         } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            if (msg.includes('тарифе') || msg.includes('недоступ')) {
-                const requiredTier: 'basic' | 'pro' = msg.includes('Pro') ? 'pro' : 'basic';
-                showUpgrade({
-                    tier: requiredTier,
-                    featureName: 'индикатор «Деньги в фондах»',
-                    indicator: 'funds_money',
-                });
-                setError(null);
-            } else {
+            if (!handleTierError(err, {
+                showUpgrade,
+                indicator: 'funds_money',
+                featureName: 'индикатор «Деньги в фондах»',
+                onTier: () => setError(null),
+            })) {
                 setError('Ошибка загрузки данных');
             }
             console.error(err);

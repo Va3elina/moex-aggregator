@@ -11,6 +11,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Wallet, Lock } from 'lucide-react';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
+import { handleTierError } from '../../utils/tierError';
 import MobileLayout from '../../components/mobile/MobileLayout';
 import MobilePageHeader from '../../components/mobile/MobilePageHeader';
 import MobileChart from '../../components/mobile/MobileChart';
@@ -230,15 +231,11 @@ export default function MobileFundsMoneyPage() {
         }
       } catch (err) {
         console.error('Ошибка funds:', err);
-        const msg = err instanceof Error ? err.message : String(err);
-        if (msg.includes('тарифе') || msg.includes('недоступ')) {
-          const requiredTier: 'basic' | 'pro' = msg.includes('Pro') ? 'pro' : 'basic';
-          showUpgrade({
-            tier: requiredTier,
-            featureName: flowTimeframe === '1d' ? 'дневной таймфрейм' : 'индикатор «Деньги в фондах»',
-            indicator: 'funds_money',
-          });
-        }
+        handleTierError(err, {
+          showUpgrade,
+          indicator: 'funds_money',
+          featureName: flowTimeframe === '1d' ? 'дневной таймфрейм' : 'индикатор «Деньги в фондах»',
+        });
       } finally {
         setLoading(false);
       }

@@ -23,6 +23,7 @@ import { useAnalytics } from '../contexts/AnalyticsContext';
 import { displayTicker } from '../utils/displayTicker';
 import { useTierAccess } from '../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
+import { handleTierError as handleTierErrorUtil } from '../utils/tierError';
 
 const MODE_LABELS: Record<SeasonalityMode, string> = {
   intraday: 'Внутри дня',
@@ -171,16 +172,13 @@ export default function SeasonalityPage() {
 
   // Хелпер для catch-блоков: tier-related msg → upgrade modal, иначе — setError.
   // Возвращает true если был tier-error (caller не делает setError повторно).
-  const handleTierError = useCallback((e: unknown, featureName: string): boolean => {
-    const msg = e instanceof Error ? e.message : String(e);
-    if (msg.includes('тарифе') || msg.includes('недоступ')) {
-      const requiredTier: 'basic' | 'pro' = msg.includes('Pro') ? 'pro' : 'basic';
-      showUpgrade({ tier: requiredTier, featureName, indicator: 'seasonality' });
-      setError(null);
-      return true;
-    }
-    return false;
-  }, [showUpgrade]);
+  const handleTierError = useCallback((e: unknown, featureName: string): boolean =>
+    handleTierErrorUtil(e, {
+      showUpgrade,
+      indicator: 'seasonality',
+      featureName,
+      onTier: () => setError(null),
+    }), [showUpgrade]);
 
   // Test-режим: yearly сверху + 4 гистограммы 2×2. Общие фильтры,
   // каждая гистограмма имеет свой tooltip (чтобы hover в одной не мигал другие).

@@ -26,6 +26,7 @@ import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { oiTourSteps } from '../data/tours/oi';
 import { formatPrice } from '../utils/formatNumber';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
+import { handleTierError, oiTierResolver } from '../utils/tierError';
 import { useTierAccess } from '../contexts/TierFeaturesContext';
 
 type DisplayMode = 'price' | 'positions' | 'participants';
@@ -268,20 +269,13 @@ export default function OpenInterestPage() {
       }
     } catch (err) {
       // Tier-related 403 → показываем upgrade prompt, а не destructive ошибку
-      const msg = err instanceof Error ? err.message : String(err);
-      const tierLimited = msg.includes('тарифе') || msg.includes('недоступ');
-      if (tierLimited) {
-        // Определяем какой tier нужен — пробуем угадать по deny reason
-        const requiredTier: 'basic' | 'pro' =
-          msg.includes('5мин') ? 'pro' :
-          msg.includes('Pro') ? 'pro' : 'basic';
-        showUpgrade({
-          tier: requiredTier,
-          featureName: msg.replace(/^.*?: /, ''),
-          indicator: 'open_interest',
-        });
-        setError(null);  // не показываем destructive error
-      } else {
+      if (!handleTierError(err, {
+        showUpgrade,
+        indicator: 'open_interest',
+        featureName: (msg) => msg.replace(/^.*?: /, ''),
+        tierResolver: oiTierResolver,
+        onTier: () => setError(null),  // не показываем destructive error
+      })) {
         setError('Ошибка загрузки данных');
         console.error(err);
       }

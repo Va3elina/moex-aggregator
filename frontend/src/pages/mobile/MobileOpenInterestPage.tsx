@@ -21,6 +21,7 @@ import MobileSheet from '../../components/mobile/MobileSheet';
 import MobileAssetSearch from '../../components/mobile/MobileAssetSearch';
 import { getChartData } from '../../services/api';
 import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
+import { handleTierError, oiTierResolver } from '../../utils/tierError';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
 import { Lock } from 'lucide-react';
 import type { ChartResponse } from '../../types';
@@ -290,16 +291,12 @@ export default function MobileOpenInterestPage() {
       }
     } catch (err) {
       // Tier 403 → upgrade prompt вместо silent console error
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes('тарифе') || msg.includes('недоступ')) {
-        const requiredTier: 'basic' | 'pro' =
-          msg.includes('5мин') || msg.includes('Pro') ? 'pro' : 'basic';
-        showUpgrade({
-          tier: requiredTier,
-          featureName: msg.replace(/^.*?: /, ''),
-          indicator: 'open_interest',
-        });
-      } else {
+      if (!handleTierError(err, {
+        showUpgrade,
+        indicator: 'open_interest',
+        featureName: (msg) => msg.replace(/^.*?: /, ''),
+        tierResolver: oiTierResolver,
+      })) {
         console.error('Ошибка загрузки OI:', err);
       }
     } finally {

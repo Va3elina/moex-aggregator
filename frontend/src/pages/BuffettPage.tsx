@@ -26,6 +26,7 @@ import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { buffettTourSteps } from '../data/tours/buffett';
 import { useTierAccess } from '../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
+import { handleTierError } from '../utils/tierError';
 
 type ViewMode = 'cap-gdp' | 'cap-m2';
 
@@ -87,15 +88,12 @@ export default function BuffettPage() {
                 return;
             }
             // Tier-related 403 → upgrade modal, не destructive error
-            if (msg.includes('тарифе') || msg.includes('недоступ')) {
-                const requiredTier: 'basic' | 'pro' = msg.includes('Pro') ? 'pro' : 'basic';
-                showUpgrade({
-                    tier: requiredTier,
-                    featureName: viewMode === 'cap-m2' ? 'режим «Кап / M2»' : 'индикатор Баффетта',
-                    indicator: 'buffett',
-                });
-                setError(null);
-            } else {
+            if (!handleTierError(err, {
+                showUpgrade,
+                indicator: 'buffett',
+                featureName: viewMode === 'cap-m2' ? 'режим «Кап / M2»' : 'индикатор Баффетта',
+                onTier: () => setError(null),
+            })) {
                 setError('Ошибка загрузки данных');
             }
             console.error(err);

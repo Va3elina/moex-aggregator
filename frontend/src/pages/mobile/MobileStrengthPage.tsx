@@ -11,6 +11,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Activity, ChevronDown, ChevronRight, LayoutGrid, Lock } from 'lucide-react';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
+import { handleTierError } from '../../utils/tierError';
 import MobileLayout from '../../components/mobile/MobileLayout';
 import MobilePageHeader from '../../components/mobile/MobilePageHeader';
 import MobileSheet from '../../components/mobile/MobileSheet';
@@ -226,16 +227,12 @@ export default function MobileStrengthPage() {
         setHistory(hist);
       } catch (err) {
         console.error('Ошибка strength:', err);
-        const msg = err instanceof Error ? err.message : String(err);
-        if (msg.includes('тарифе') || msg.includes('недоступ')) {
-          const requiredTier: 'basic' | 'pro' = msg.includes('Pro') ? 'pro' : 'basic';
-          showUpgrade({
-            tier: requiredTier,
-            featureName: universeBase === 'all' ? 'вселенная «100 акций»' :
-              currency === 'usd' ? 'долларовый режим' : 'индикатор «Сила рынка»',
-            indicator: 'strength',
-          });
-        }
+        handleTierError(err, {
+          showUpgrade,
+          indicator: 'strength',
+          featureName: universeBase === 'all' ? 'вселенная «100 акций»' :
+            currency === 'usd' ? 'долларовый режим' : 'индикатор «Сила рынка»',
+        });
       } finally {
         setLoading(false);
       }

@@ -14,6 +14,7 @@ import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { heatmapTourSteps } from '../data/tours/heatmap';
 import { useTierAccess } from '../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
+import { handleTierError } from '../utils/tierError';
 import { usePersistedState } from '../hooks/usePersistedState';
 
 // Опции для фильтров
@@ -233,15 +234,11 @@ export default function HeatmapPage() {
       hasDataRef.current = true;
     } catch (error) {
       console.error('Error loading heatmap:', error);
-      const msg = error instanceof Error ? error.message : String(error);
-      if (msg.includes('тарифе') || msg.includes('недоступ')) {
-        const requiredTier: 'basic' | 'pro' = msg.includes('Pro') ? 'pro' : 'basic';
-        showUpgrade({
-          tier: requiredTier,
-          featureName: 'режим «Все акции»',
-          indicator: 'heatmap',
-        });
-      }
+      handleTierError(error, {
+        showUpgrade,
+        indicator: 'heatmap',
+        featureName: 'режим «Все акции»',
+      });
     }
     setLoading(false);
   }, [mapMode, groupBy, showUpgrade]);

@@ -11,6 +11,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { CalendarDays, Lock } from 'lucide-react';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
+import { handleTierError } from '../../utils/tierError';
 import MobileLayout from '../../components/mobile/MobileLayout';
 import MobilePageHeader from '../../components/mobile/MobilePageHeader';
 import MobileAssetSearch from '../../components/mobile/MobileAssetSearch';
@@ -292,16 +293,12 @@ export default function MobileSeasonalityPage() {
         }
       } catch (err) {
         console.error('Ошибка seasonality:', err);
-        const msg = err instanceof Error ? err.message : String(err);
-        if (msg.includes('тарифе') || msg.includes('недоступ')) {
-          const requiredTier: 'basic' | 'pro' = msg.includes('Pro') ? 'pro' : 'basic';
-          showUpgrade({
-            tier: requiredTier,
-            featureName: mode === 'intraday' ? 'режим «Внутри дня»' :
-              histogramLocked ? 'режим «Сезонность»' : `актив ${selectedStock}`,
-            indicator: 'seasonality',
-          });
-        }
+        handleTierError(err, {
+          showUpgrade,
+          indicator: 'seasonality',
+          featureName: mode === 'intraday' ? 'режим «Внутри дня»' :
+            histogramLocked ? 'режим «Сезонность»' : `актив ${selectedStock}`,
+        });
       } finally {
         setLoading(false);
       }

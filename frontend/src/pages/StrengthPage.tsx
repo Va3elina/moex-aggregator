@@ -28,6 +28,7 @@ import { useOnboardingTour } from '../hooks/useFirstVisit';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { strengthTourSteps } from '../data/tours/strength';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
+import { handleTierError } from '../utils/tierError';
 
 type Period = '6m' | '1y' | '2y' | '5y' | 'all';
 type ChartMode = 'line' | 'histogram';
@@ -147,17 +148,13 @@ export default function StrengthPage() {
             setCurrent(currentData);
             setHistory(historyData);
         } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            if (msg.includes('тарифе') || msg.includes('недоступ')) {
-                const requiredTier: 'basic' | 'pro' = msg.includes('Pro') ? 'pro' : 'basic';
-                showUpgrade({
-                    tier: requiredTier,
-                    featureName: universeBase === 'all' ? 'вселенная «100 акций»' :
-                        currency === 'usd' ? 'долларовый режим' : 'индикатор «Сила рынка»',
-                    indicator: 'strength',
-                });
-                setError(null);
-            } else {
+            if (!handleTierError(err, {
+                showUpgrade,
+                indicator: 'strength',
+                featureName: universeBase === 'all' ? 'вселенная «100 акций»' :
+                    currency === 'usd' ? 'долларовый режим' : 'индикатор «Сила рынка»',
+                onTier: () => setError(null),
+            })) {
                 setError('Не удалось загрузить данные');
             }
             console.error(err);

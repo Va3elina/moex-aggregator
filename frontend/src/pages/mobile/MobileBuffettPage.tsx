@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Scale, Lock } from 'lucide-react';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
+import { handleTierError } from '../../utils/tierError';
 import MobileLayout from '../../components/mobile/MobileLayout';
 import MobilePageHeader from '../../components/mobile/MobilePageHeader';
 import MobileChart from '../../components/mobile/MobileChart';
@@ -189,14 +190,11 @@ export default function MobileBuffettPage() {
           return;
         }
         // Ограничение режима (Кап / M2) или иной tier-отказ.
-        if (msg.includes('тарифе') || msg.includes('недоступ')) {
-          const requiredTier: 'basic' | 'pro' = msg.includes('Pro') ? 'pro' : 'basic';
-          showUpgrade({
-            tier: requiredTier,
-            featureName: viewMode === 'cap-m2' ? 'режим «Кап / M2»' : 'индикатор Баффетта',
-            indicator: 'buffett',
-          });
-        }
+        handleTierError(err, {
+          showUpgrade,
+          indicator: 'buffett',
+          featureName: viewMode === 'cap-m2' ? 'режим «Кап / M2»' : 'индикатор Баффетта',
+        });
       } finally {
         setLoading(false);
       }
