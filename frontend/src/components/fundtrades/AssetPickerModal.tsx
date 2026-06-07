@@ -206,11 +206,13 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
 
         {/* Числовые колонки справа (ширины COL — под сорт-заголовками, по правому
             краю). Активная колонка сортировки — ярче (text-primary, bold). */}
-        {([
+        {/* Мобила: показываем только «Объём ₽» — три колонки (110+56+66) не влезали,
+            имя сжималось в ноль и текст уезжал вправо. */}
+        {(([
           ['volume', asset.last_amount_rub != null ? `${formatCompact(asset.last_amount_rub)} ₽` : '—'],
           ['weight', asset.avg_weight_pct != null ? `${asset.avg_weight_pct.toFixed(1)}%` : '—'],
           ['funds', String(asset.funds_count)],
-        ] as [SortCol, string][]).map(([c, text]) => (
+        ] as [SortCol, string][]).filter(([c]) => !isMobile || c === 'volume')).map(([c, text]) => (
           <span
             key={c}
             className="flex-shrink-0 text-right"
@@ -323,8 +325,8 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
               Бумага
             </span>
             {renderSortHeader('volume', 'Объём', 'Суммарный объём бумаги в портфелях фондов, ₽')}
-            {renderSortHeader('weight', 'Вес', 'Средний вес бумаги в портфелях фондов, %')}
-            {renderSortHeader('funds', 'Фонды', 'Сколько фондов держат бумагу')}
+            {!isMobile && renderSortHeader('weight', 'Вес', 'Средний вес бумаги в портфелях фондов, %')}
+            {!isMobile && renderSortHeader('funds', 'Фонды', 'Сколько фондов держат бумагу')}
             <span style={{ width: 36, flexShrink: 0 }} aria-hidden="true" />
           </div>
 

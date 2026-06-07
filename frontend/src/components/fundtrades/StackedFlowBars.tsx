@@ -151,7 +151,7 @@ export default function StackedFlowBars({
     }, [months.length, isMobile]);
 
     // ── Hover: определить индекс месяца по X, сохранить позицию для тултипа. ──
-    const handleMove = (clientX: number, clientY: number) => {
+    const handleMove = (clientX: number, _clientY: number) => {
         const plot = plotRef.current;
         const cont = containerRef.current;
         if (!plot || !cont) return;
@@ -165,8 +165,10 @@ export default function StackedFlowBars({
         }
         const idx = Math.min(months.length - 1, Math.max(0, Math.floor((rel / plotRect.width) * months.length)));
         setHovered(idx);
-        // Позиция тултипа в координатах контейнера.
-        setTooltipPos({ x: clientX - contRect.left, y: clientY - contRect.top });
+        // Тултип — ПО ВЕРХУ графика (не под пальцем): x совмещаем с центром столбца
+        // (как пунктирный курсор), y=0 → ChartTooltip пинит карточку к верху (top≈4).
+        const barCenterX = (plotRect.left - contRect.left) + ((idx + 0.5) / months.length) * plotRect.width;
+        setTooltipPos({ x: barCenterX, y: 0 });
     };
 
     const clearHover = () => {
