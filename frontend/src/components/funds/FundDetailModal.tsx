@@ -372,11 +372,14 @@ export default function FundDetailModal({
                                         >
                                             Доходность пая
                                         </h3>
+                                        {/* Мобила: график во всю ширину карточки (компенсируем
+                                            боковой паддинг тела −12) — «по шире», + выше («по больше»). */}
+                                        <div style={{ marginLeft: isMobile ? -12 : 0, marginRight: isMobile ? -12 : 0 }}>
                                         {chartData.length > 1 ? (
                                             <SimpleChart
                                                 data={chartData}
                                                 initialStartIndex={payInitialStartIndex}
-                                                height={isMobile ? 280 : 460}
+                                                height={isMobile ? 340 : 460}
                                                 primaryLabel="СЧА на пай, ₽"
                                                 legendPosition="top"
                                                 formatValue={(v) => `${v.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ₽`}
@@ -386,7 +389,7 @@ export default function FundDetailModal({
                                                 clampEdgeLabels
                                                 showValueHeader={false}
                                                 showDownloadButton={false}
-                                                showNavigator
+                                                showNavigator={!isMobile}
                                             />
                                         ) : (
                                             <div
@@ -403,6 +406,7 @@ export default function FundDetailModal({
                                                 Недостаточно истории для графика доходности
                                             </div>
                                         )}
+                                        </div>
 
                                         {/* Плашки returns 1м/3м/6м/1г + «за всё время».
                                             Пустые периоды (фонд младше периода) прячем — иначе
@@ -670,6 +674,7 @@ export function AssetHistoryModal({
     const [data, setData] = useState<AssetHistory | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const isMobile = useViewportWidth() < 768;
 
     useEffect(() => {
         let cancel = false;
@@ -688,16 +693,16 @@ export function AssetHistoryModal({
             style={{
                 position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                zIndex: 1000, padding: 16,
+                zIndex: 1000, padding: isMobile ? 8 : 16,
             }}
         >
             <div
                 onClick={(e) => e.stopPropagation()}
                 style={{
                     background: 'var(--bg-primary)',
-                    maxWidth: 1240, width: '100%', maxHeight: '92vh', overflow: 'auto',
+                    maxWidth: 1240, width: '100%', maxHeight: isMobile ? '94dvh' : '92vh', overflow: 'auto',
                     border: '1.5px solid var(--text-primary)',
-                    padding: '24px 28px',
+                    padding: isMobile ? '16px 12px' : '24px 28px',
                     boxShadow: '0 16px 60px rgba(0,0,0,0.3)',
                 }}
             >
@@ -749,6 +754,7 @@ export function AssetHistoryModal({
 
 function AssetHistoryContent({ data, assetName, ticker }: { data: AssetHistory; assetName: string; ticker: string }) {
     const chartAnchorRef = useRef<HTMLDivElement>(null);
+    const isMobile = useViewportWidth() < 768;
 
     // Сплит-коррекция: непрерывная серия (история домножена на множитель сплита) +
     // маркеры «Сплит». Снимает «один снапшот = пик, остальное плоское».
@@ -866,7 +872,7 @@ function AssetHistoryContent({ data, assetName, ticker }: { data: AssetHistory; 
                 иначе двойной контейнер). Камера-экспорт абсолютом ВНУТРИ угла
                 контейнера (top/right 16 == SimpleChart top-4/right-4), снаружи
                 chartAnchorRef → в snapshot не попадёт. */}
-            <div style={{ position: 'relative', marginBottom: 24 }}>
+            <div style={{ position: 'relative', marginBottom: 24, marginLeft: isMobile ? -12 : 0, marginRight: isMobile ? -12 : 0 }}>
                 <div ref={chartAnchorRef}>
                     <SimpleChart
                         data={chartData}
@@ -883,6 +889,8 @@ function AssetHistoryContent({ data, assetName, ticker }: { data: AssetHistory; 
                         annotations={annotations}
                     />
                 </div>
+                {/* Камера-экспорт — только десктоп: на мобиле убрана (рудимент). */}
+                {!isMobile && (
                 <div data-export-ignore="true" style={{ position: 'absolute', top: 16, right: 16, zIndex: 3 }}>
                     <ChartCaptureButton
                         getTargetElement={() => chartAnchorRef.current}
@@ -894,6 +902,7 @@ function AssetHistoryContent({ data, assetName, ticker }: { data: AssetHistory; 
                         }}
                     />
                 </div>
+                )}
             </div>
 
             {/* Table of all snapshots */}
