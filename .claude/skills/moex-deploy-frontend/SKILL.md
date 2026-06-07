@@ -45,7 +45,6 @@ ssh -o IdentitiesOnly=yes -o IdentityAgent=none -o ConnectTimeout=30 \
    git stash push -m deploy-wip && git pull origin main && git stash pop && \
    docker compose build api && \
    docker compose up -d --force-recreate api && \
-   docker restart frame-nginx-1 && \
    sleep 8 && \
    curl -sk 'https://localhost/sw.js' -H 'Host: xn--80aklbnczmv.xn--p1ai' | grep CACHE_NAME | head -1"
 ```
@@ -58,12 +57,18 @@ ssh -o IdentitiesOnly=yes -o IdentityAgent=none -o ConnectTimeout=30 \
    Без stash `git pull` падает: *«Your local changes would be overwritten by merge»*.
    `stash pop` обычно **auto-merge'ит** (мой коммит и WIP — в разных секциях файла);
    если конфликт — резолвить вручную. Подробнее: `feedback_server_wip_sync.md`.
-2. **`docker restart frame-nginx-1` после `up -d --force-recreate api`** — при
-   recreate api-контейнер получает **новый IP** в docker-network, а nginx
-   кеширует старый upstream-IP → **502 Bad Gateway на ВСЕХ `/api/*`**, пока nginx
-   не перезапустить (5 сек). ВСЕГДА перезапускай nginx после recreate api.
+2. **nginx restart БОЛЬШЕ НЕ НУЖЕН** (с c40017f, 07.06.2026). Раньше при recreate
+   api получал новый docker-IP, а nginx кешировал старый upstream-IP → **502 на
+   всех `/api/*`** пока не `docker restart frame-nginx-1`. Теперь `default.conf`
+   использует `resolver 127.0.0.11 valid=10s ipv6=off` + `set $api_upstream api`
+   + `proxy_pass http://$api_upstream:8000` → nginx сам ре-резолвит новый IP за
+   **≤10с без рестарта** (проверено: recreate api без рестарта → `/health`
+   восстановился за ~4с). Рестарт/reload nginx нужен ТОЛЬКО когда меняется САМ
+   `nginx/conf.d/default.conf` (тогда: `docker exec frame-nginx-1 nginx -t &&
+   docker exec frame-nginx-1 nginx -s reload`, без `docker restart`).
 
-**Время**: build ~1-2 мин с кешем; без кеша ~3-5 мин. Downtime recreate ~30 сек + nginx restart ~5 сек.
+**Время**: build ~1-2 мин с кешем; без кеша ~3-5 мин. Downtime recreate ~30 сек
+(nginx сам подхватит новый IP за ≤10с, рестарт не нужен).
 
 ### Step 3: Локальный typecheck ПЕРЕД push (важно — иначе деплой упадёт на build!)
 
