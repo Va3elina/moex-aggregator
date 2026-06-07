@@ -12,7 +12,7 @@ import {
 } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 import { getDefaultPeriod } from '../config/accessControl';
-import { useRealtimeData } from '../hooks/useRealtimeData';
+import { useIndicatorData } from '../hooks/useIndicatorData';
 import { usePersistedState } from '../hooks/usePersistedState';
 import type { SyncedDataPoint, ChartPadding } from '../components/strength/chartUtils';
 import IndexChart from '../components/strength/IndexChart';
@@ -28,7 +28,6 @@ import { useOnboardingTour } from '../hooks/useFirstVisit';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { strengthTourSteps } from '../data/tours/strength';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
-import { handleTierError } from '../utils/tierError';
 
 type Period = '6m' | '1y' | '2y' | '5y' | 'all';
 type ChartMode = 'line' | 'histogram';
@@ -83,11 +82,32 @@ export default function StrengthPage() {
         ? `${universeBase}_usd` as BreadthUniverse
         : universeBase;
 
-    const [current, setCurrent] = useState<BreadthCurrentResponse | null>(null);
-    const [history, setHistory] = useState<BreadthHistoryResponse | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
     const { showUpgrade } = useUpgradePrompt();
+
+    // Данные через useIndicatorData: 2 параллельных fetch → единый объект
+    // {current, history}; ниже разворачиваем в прежние имена (consumers не трогаем).
+    // SSE ['daily','breadth'], tier-403 как было. loading=true на каждом старте
+    // (хук всегда ставит) → даёт «Обновление…» при смене периода/EMA/валюты.
+    const { data, loading, error } = useIndicatorData<{ current: BreadthCurrentResponse; history: BreadthHistoryResponse }>({
+        fetcher: async () => {
+            const [c, h] = await Promise.all([
+                getBreadthCurrent(emaPeriod, universe),
+                getBreadthHistory(emaPeriod, PERIOD_DAYS[period], universe),
+            ]);
+            return { current: c, history: h };
+        },
+        deps: [emaPeriod, period, universe, universeBase, currency],
+        channels: ['daily', 'breadth'],
+        errorMessage: 'Не удалось загрузить данные',
+        tier: {
+            showUpgrade,
+            indicator: 'strength',
+            featureName: universeBase === 'all' ? 'вселенная «100 акций»' :
+                currency === 'usd' ? 'долларовый режим' : 'индикатор «Сила рынка»',
+        },
+    });
+    const current = data?.current ?? null;
+    const history = data?.history ?? null;
 
     // Синхронизированный hover между графиками
     const [hoverIndex, setHoverIndex] = useState<number | null>(null);
@@ -134,39 +154,6 @@ export default function StrengthPage() {
         return () => window.removeEventListener('resize', readTokens);
     }, []);
 
-    const loadData = useCallback(async () => {
-        // ВСЕГДА выставляем loading=true при старте fetch'а — даёт визуальный
-        // индикатор «Обновление...» при смене периода/EMA/валюты. Full-loader
-        // (loading && !current) не сработает потому что данные ещё не сброшены.
-        setLoading(true);
-        setError(null);
-        try {
-            const [currentData, historyData] = await Promise.all([
-                getBreadthCurrent(emaPeriod, universe),
-                getBreadthHistory(emaPeriod, PERIOD_DAYS[period], universe)
-            ]);
-            setCurrent(currentData);
-            setHistory(historyData);
-        } catch (err) {
-            if (!handleTierError(err, {
-                showUpgrade,
-                indicator: 'strength',
-                featureName: universeBase === 'all' ? 'вселенная «100 акций»' :
-                    currency === 'usd' ? 'долларовый режим' : 'индикатор «Сила рынка»',
-                onTier: () => setError(null),
-            })) {
-                setError('Не удалось загрузить данные');
-            }
-            console.error(err);
-        } finally {
-            setLoading(false);
-        }
-    }, [emaPeriod, period, universe, universeBase, currency, showUpgrade]);
-
-    useEffect(() => { loadData(); }, [loadData]);
-
-    // SSE: автоматическое обновление при новых данных
-    useRealtimeData(['daily', 'breadth'], loadData);
 
     // Лейбл верхнего графика (price chart). Всегда показывает индекс, который
     // фактически отрисован: IMOEX в рублях или RTS в долларах. От universeBase
