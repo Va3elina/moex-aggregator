@@ -240,7 +240,7 @@ export default function FundDetailModal({
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                padding: isMobile ? 8 : 16,
+                padding: isMobile ? 4 : 16,
             }}
         >
             <div
@@ -387,6 +387,7 @@ export default function FundDetailModal({
                                                 formatTime={formatMonthYearShort}
                                                 tooltipDateFormat={formatMonthYearShort}
                                                 clampEdgeLabels
+                                                mobilePadRight={isMobile ? 14 : undefined}
                                                 showValueHeader={false}
                                                 showDownloadButton={false}
                                                 showNavigator={!isMobile}
@@ -693,7 +694,7 @@ export function AssetHistoryModal({
             style={{
                 position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                zIndex: 1000, padding: isMobile ? 8 : 16,
+                zIndex: 1000, padding: isMobile ? 4 : 16,
             }}
         >
             <div
@@ -884,6 +885,7 @@ function AssetHistoryContent({ data, assetName, ticker }: { data: AssetHistory; 
                         formatTime={formatMonthYearShort}
                         tooltipDateFormat={formatMonthYearShort}
                         clampEdgeLabels
+                        mobilePadRight={isMobile ? 14 : undefined}
                         showValueHeader={false}
                         showDownloadButton={false}
                         annotations={annotations}

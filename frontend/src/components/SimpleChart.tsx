@@ -73,6 +73,10 @@ interface SimpleChartProps {
    *  существующие вызовы). */
   initialStartIndex?: number;
   chartPadding?: { left?: number; right?: number };
+  /** Мобила: явный правый отступ графика (px). Для single-axis графиков правый
+   *  гуттер по умолчанию резервирует ширину Y-лейбла впустую (оси справа нет).
+   *  С clampEdgeLabels можно ужать до ~14 — линия станет заметно шире. */
+  mobilePadRight?: number;
   annotations?: ChartAnnotation[];
   hideTime?: boolean;
   forecastCount?: number; // reserved for future use
@@ -131,6 +135,7 @@ export default function SimpleChart({
   showNavigator = false,
   initialStartIndex,
   chartPadding,
+  mobilePadRight,
   annotations,
   hideTime = false,
   tooltipDateFormat,
@@ -339,7 +344,7 @@ export default function SimpleChart({
         left: Math.max(40, labelMax),
         right: showSecondary
           ? Math.max(44, labelMax + 4)
-          : Math.max(36, labelMax - 4),
+          : (mobilePadRight ?? Math.max(36, labelMax - 4)),
       };
     }
     return {
