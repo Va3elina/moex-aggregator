@@ -30,6 +30,7 @@ import { useRealtimeData } from '../../hooks/useRealtimeData';
 import { getDefaultPeriod } from '../../config/accessControl';
 import { useOnboardingTour } from '../../hooks/useFirstVisit';
 import OnboardingTour, { type TourStep } from '../../components/onboarding/OnboardingTour';
+import { usePersistedState } from '../../hooks/usePersistedState';
 
 type Period = '1d' | '1w' | '1m' | '3m' | '6m' | '1y' | '2y' | '5y' | 'all';
 type OIVariant = 'oi' | 'long' | 'short' | 'both' | 'net';
@@ -95,11 +96,14 @@ export default function MobileOpenInterestPage() {
   // State
   const [selectedInstrument, setSelectedInstrument] = useState('SR');
   const [instrumentName, setInstrumentName] = useState('Сбербанк');
-  const [period, setPeriod] = useState<Period>(getDefaultPeriod('6m', isAuthenticated) as Period);
-  const [intervalValue, setIntervalValue] = useState(24);
-  const [clgroup, setClgroup] = useState<'FIZ' | 'YUR'>('YUR');
-  const [oiVariant, setOiVariant] = useState<OIVariant>('net');
-  const [displayMode, setDisplayMode] = useState<DisplayMode>('positions');
+  // Шарим desktop-ключи OI (enum'ы побайтово идентичны, формат JSON совместим;
+  // instrument — ИСКЛЮЧЕНИЕ, см. ниже). displayMode → отдельный mobile-ключ
+  // (у desktop 3-е значение 'price', которого нет в mobile-UI).
+  const [period, setPeriod] = usePersistedState<Period>('frame:oi:period', getDefaultPeriod('6m', isAuthenticated) as Period);
+  const [intervalValue, setIntervalValue] = usePersistedState('frame:oi:interval', 24);
+  const [clgroup, setClgroup] = usePersistedState<'FIZ' | 'YUR'>('frame:oi:clgroup', 'YUR');
+  const [oiVariant, setOiVariant] = usePersistedState<OIVariant>('frame:oi:oiVariant', 'net');
+  const [displayMode, setDisplayMode] = usePersistedState<DisplayMode>('frame:oi:mobileDisplayMode', 'positions');
   const [data, setData] = useState<ChartResponse | null>(null);
   const [loading, setLoading] = useState(true);
 

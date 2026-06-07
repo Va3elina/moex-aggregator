@@ -16,6 +16,7 @@ import { Grid3X3, Lock } from 'lucide-react';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
 import { handleTierError } from '../../utils/tierError';
+import { usePersistedState } from '../../hooks/usePersistedState';
 import MobileLayout from '../../components/mobile/MobileLayout';
 import MobilePageHeader from '../../components/mobile/MobilePageHeader';
 import MobileSheet from '../../components/mobile/MobileSheet';
@@ -82,12 +83,15 @@ export default function MobileHeatmapPage() {
   const [sectors, setSectors] = useState<HeatmapSector[]>([]);
   const [loading, setLoading] = useState(true);
   const [containerSize, setContainerSize] = useState({ w: 360, h: 500 });
-  const [period, setPeriod] = useState<Period>('1d');
-  const [universe, setUniverse] = useState<Universe>('imoex');
+  // universe/groupBy шарят desktop-ключи (наборы значений совпадают). period/
+  // sizeBy desktop НЕ персистит → отдельные mobile-ключи. universe='all' (платный)
+  // на restore защищён tier-rollback-эффектом ниже (как на desktop).
+  const [period, setPeriod] = usePersistedState<Period>('frame:heatmap:mobilePeriod', '1d');
+  const [universe, setUniverse] = usePersistedState<Universe>('frame:heatmap:mapMode', 'imoex');
   const heatAccess = useTierAccess('heatmap');
   const { showUpgrade } = useUpgradePrompt();
-  const [groupBy, setGroupBy] = useState<GroupBy>('sector');
-  const [sizeBy, setSizeBy] = useState<SizeBy>('market_cap');
+  const [groupBy, setGroupBy] = usePersistedState<GroupBy>('frame:heatmap:groupBy', 'sector');
+  const [sizeBy, setSizeBy] = usePersistedState<SizeBy>('frame:heatmap:mobileSizeBy', 'market_cap');
   const [selectedStock, setSelectedStock] = useState<HeatmapStock | null>(null);
 
   const [timeSheetOpen, setTimeSheetOpen] = useState(false);
@@ -251,6 +255,18 @@ export default function MobileHeatmapPage() {
     },
     [universe, groupBy, showUpgrade],
   );
+
+  // Tier-guard для восстановленного universe (зеркалит desktop HeatmapPage):
+  // если из localStorage пришёл 'all' (платный), а тариф не позволяет —
+  // откатываем на 'imoex'. Без этого free-юзер, выбравший «Все акции» на
+  // desktop, при заходе на mobile упирался бы в 403/upgrade-modal вместо карты.
+  // Ждём загрузки матрицы тарифа (isLoading), чтобы не сбросить раньше времени.
+  useEffect(() => {
+    if (heatAccess.isLoading) return;
+    if (universe === 'all' && !heatAccess.canUseMode('all')) {
+      setUniverse('imoex');
+    }
+  }, [heatAccess.isLoading, universe, heatAccess, setUniverse]);
 
   useEffect(() => { void load(); }, [load]);
   useRealtimeData(['5min', 'mv_refresh'], () => { void load(); });

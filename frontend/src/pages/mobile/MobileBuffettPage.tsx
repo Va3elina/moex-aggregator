@@ -8,6 +8,7 @@ import { Scale, Lock } from 'lucide-react';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
 import { handleTierError } from '../../utils/tierError';
+import { usePersistedState } from '../../hooks/usePersistedState';
 import MobileLayout from '../../components/mobile/MobileLayout';
 import MobilePageHeader from '../../components/mobile/MobilePageHeader';
 import MobileChart from '../../components/mobile/MobileChart';
@@ -32,15 +33,18 @@ const PERIOD_LABELS: Partial<Record<BuffettPeriod, string>> = {
 };
 
 export default function MobileBuffettPage() {
-  const [viewMode, setViewMode] = useState<ViewMode>('cap-gdp');
+  // Шарим desktop viewMode/timeframe (наборы совпадают). period → отдельный
+  // mobilePeriod: desktop frame:buffett:period может содержать '1y' (403-fallback
+  // setPeriod('1y')), которого нет в mobile-чипах {5y,10y,20y,all}.
+  const [viewMode, setViewMode] = usePersistedState<ViewMode>('frame:buffett:viewMode', 'cap-gdp');
   const buffAccess = useTierAccess('buffett');
   const { showUpgrade } = useUpgradePrompt();
-  const [period, setPeriod] = useState<BuffettPeriod>('10y');
+  const [period, setPeriod] = usePersistedState<BuffettPeriod>('frame:buffett:mobilePeriod', '10y');
   // Последний период, по которому данные успешно загрузились. «Вся история»
   // (all) недоступна Free/Гостю → backend отдаёт 403 → откатываемся сюда.
   const lastGoodPeriod = useRef<BuffettPeriod>('10y');
   // Таймфрейм аггрегации: день/неделя/месяц. По умолчанию месяц.
-  const [timeframe, setTimeframe] = useState<'1d' | '1w' | '1m'>('1m');
+  const [timeframe, setTimeframe] = usePersistedState<'1d' | '1w' | '1m'>('frame:buffett:timeframe', '1m');
   const [capGdpData, setCapGdpData] = useState<BuffettCapGdpResponse | null>(null);
   const [capM2Data, setCapM2Data] = useState<BuffettRatioResponse | null>(null);
   const [loading, setLoading] = useState(true);

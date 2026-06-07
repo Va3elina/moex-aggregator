@@ -28,6 +28,7 @@ import {
 } from '../../services/api';
 import { useOnboardingTour } from '../../hooks/useFirstVisit';
 import OnboardingTour from '../../components/onboarding/OnboardingTour';
+import { usePersistedState } from '../../hooks/usePersistedState';
 import type { TourStep } from '../../components/onboarding/OnboardingTour';
 
 // Mobile mode: 4 API modes + локальный 'yearly' который дёргает отдельный endpoint
@@ -62,9 +63,13 @@ const COMPARE_COLORS = [
 ];
 
 export default function MobileSeasonalityPage() {
-  const [selectedStock, setSelectedStock] = useState('SBER');
-  const [selectedName, setSelectedName] = useState('Сбербанк');
-  const [mode, setMode] = useState<MobileMode>('monthly');
+  // Шарим desktop-ключи stock/stockName/excludeDividends/showCurrentYear (enum'ы
+  // совпадают). mode → отдельный mobileMode (mobile MobileMode шире: +'yearly';
+  // desktop держит mode+chartType раздельно). aggType → отдельный mobileAggType
+  // (на desktop нет такого ключа — там boolean showNoOutliers, формат несовместим).
+  const [selectedStock, setSelectedStock] = usePersistedState<string>('frame:seasonality:stock', 'SBER');
+  const [selectedName, setSelectedName] = usePersistedState<string>('frame:seasonality:stockName', 'Сбербанк');
+  const [mode, setMode] = usePersistedState<MobileMode>('frame:seasonality:mobileMode', 'monthly');
   // Smart default: для Free histogram-режимы недоступны → 'yearly'
   const defaultSwitchedRef = useRef(false);
   const seasonAccess = useTierAccess('seasonality');
@@ -72,10 +77,10 @@ export default function MobileSeasonalityPage() {
   // Для Free yearly — единственный доступный режим
   const histogramLocked = !seasonAccess.isLoading && !seasonAccess.canUseMode('histogram');
   // Phase-4 фильтры:
-  const [excludeDividends, setExcludeDividends] = useState(false);
-  const [aggType, setAggType] = useState<'avg' | 'median'>('avg');
+  const [excludeDividends, setExcludeDividends] = usePersistedState('frame:seasonality:excludeDividends', false);
+  const [aggType, setAggType] = usePersistedState<'avg' | 'median'>('frame:seasonality:mobileAggType', 'avg');
   // Линия текущего года на годовом графике — можно скрыть тогглом.
-  const [showCurrentYear, setShowCurrentYear] = useState(true);
+  const [showCurrentYear, setShowCurrentYear] = usePersistedState('frame:seasonality:showCurrentYear', true);
 
   const [data, setData] = useState<SeasonalityResponse | null>(null);
   const [yearlyData, setYearlyData] = useState<YearlySeasonalityResponse | null>(null);

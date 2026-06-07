@@ -12,6 +12,7 @@ import { Wallet, Lock } from 'lucide-react';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
 import { handleTierError } from '../../utils/tierError';
+import { usePersistedState } from '../../hooks/usePersistedState';
 import MobileLayout from '../../components/mobile/MobileLayout';
 import MobilePageHeader from '../../components/mobile/MobilePageHeader';
 import MobileChart from '../../components/mobile/MobileChart';
@@ -50,12 +51,15 @@ const PERIODS: Array<{ key: FundPeriod; label: string }> = [
 ];
 
 export default function MobileFundsMoneyPage() {
-  const [category, setCategory] = useState<FundCategory>('money_market');
-  const [period, setPeriod] = useState<FundPeriod>('6m');
+  // Шарим desktop-ключи category/viewMode/flowTimeframe (записываемые наборы
+  // совпадают). period → отдельный mobilePeriod: desktop frame:funds:period
+  // реально пишет 3m/1y/3y (clamp FLOW_MIN_PERIODS), которых нет в mobile-чипах.
+  const [category, setCategory] = usePersistedState<FundCategory>('frame:funds:category', 'money_market');
+  const [period, setPeriod] = usePersistedState<FundPeriod>('frame:funds:mobilePeriod', '6m');
   // По умолчанию — Притоки-Оттоки: даёт юзеру сразу actionable signal
   // (приток/отток денег за день/неделю/месяц), а не статичный график СЧА.
-  const [viewMode, setViewMode] = useState<ViewMode>('flows');
-  const [flowTimeframe, setFlowTimeframe] = useState<FlowTimeframe>('1w');
+  const [viewMode, setViewMode] = usePersistedState<ViewMode>('frame:funds:viewMode', 'flows');
+  const [flowTimeframe, setFlowTimeframe] = usePersistedState<FlowTimeframe>('frame:funds:flowTimeframe', '1w');
   const fundsAccess = useTierAccess('funds_money');
   const { showUpgrade } = useUpgradePrompt();
   const [data, setData] = useState<FundsChartResponse | null>(null);
