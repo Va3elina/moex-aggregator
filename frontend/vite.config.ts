@@ -4,6 +4,18 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  build: {
+    rollupOptions: {
+      output: {
+        // Стабильный вендорный чанк: react/react-dom/react-router-dom меняются
+        // редко → браузер кэширует их между деплоями (раньше любая правка кода
+        // меняла хэш всего entry-бандла ~1.6MB, юзер перекачивал его целиком).
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+        },
+      },
+    },
+  },
   server: {
     host: '127.0.0.1',
     port: 5173,

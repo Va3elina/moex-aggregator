@@ -16,7 +16,7 @@
  *    чем на 7 одновременных длинных video downloads.
  */
 import { useEffect, useRef, useState } from 'react';
-import Hls from 'hls.js';
+import type HlsType from 'hls.js';
 
 interface Props {
   /** URL HLS playlist (.m3u8) */
@@ -63,27 +63,31 @@ export default function HlsVideo({
       return;
     }
 
-    // Modern browsers — hls.js
-    if (Hls.isSupported()) {
-      const hls = new Hls({
-        enableWorker: true,
-        // Низкая задержка стартового сегмента — критично для лендинга
-        lowLatencyMode: false,
-        backBufferLength: 30,
-      });
-      hls.loadSource(hlsSrc);
-      hls.attachMedia(video);
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+    // Modern browsers — hls.js грузим ДИНАМИЧЕСКИ (отдельный чанк ~500KB, НЕ в
+    // entry-бандле): только когда видео реально въехало в viewport (inView).
+    let hls: HlsType | null = null;
+    let cancelled = false;
+    void import('hls.js').then(({ default: Hls }) => {
+      if (cancelled || !videoRef.current) return;
+      if (Hls.isSupported()) {
+        hls = new Hls({
+          enableWorker: true,
+          // Низкая задержка стартового сегмента — критично для лендинга
+          lowLatencyMode: false,
+          backBufferLength: 30,
+        });
+        hls.loadSource(hlsSrc);
+        hls.attachMedia(video);
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          video.play().catch(() => {});
+        });
+      } else if (mp4Src) {
+        // Last resort — direct mp4 (очень старые браузеры)
+        video.src = mp4Src;
         video.play().catch(() => {});
-      });
-      return () => hls.destroy();
-    }
-
-    // Last resort — direct mp4
-    if (mp4Src) {
-      video.src = mp4Src;
-      video.play().catch(() => {});
-    }
+      }
+    });
+    return () => { cancelled = true; if (hls) hls.destroy(); };
   }, [inView, hlsSrc, mp4Src]);
 
   return (

@@ -9,6 +9,8 @@
     "build": "tsc -b && vite build",
     "postbuild": "bash -c 'find dist/logos -type f \\( -name \"*.png\" ! -name \"sprite.png\" \\) -delete && find dist/logos -type f \\( -name \"*.svg\" -o -name \"*.webp\" \\) -delete; ls dist/logos | head' && tsx scripts/prerender-meta.ts",
     "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "typecheck": "tsc -b",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -18,7 +20,6 @@
     "fabric": "^6.9.1",
     "hls.js": "^1.6.16",
     "html2canvas": "^1.4.1",
-    "lightweight-charts": "^5.0.9",
     "lucide-react": "^0.562.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",

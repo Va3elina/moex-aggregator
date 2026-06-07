@@ -23,7 +23,8 @@
  * dist/<path>/index.html и отдаёт его, иначе fallback на dist/index.html.
  */
 
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SEO_META, CANONICAL_HOST } from '../src/config/seoMeta';
@@ -191,4 +192,26 @@ for (const [path, meta] of routes) {
         console.log(`  ✓ ${path} → dist${path}/index.html`);
     }
 }
+// ── Авто-версия Service Worker ───────────────────────────────────────────
+// CACHE_NAME раньше бампился руками (frame-vNNN, ~366 коммитов истории). Теперь —
+// хэш от имён файлов dist/assets (Vite content-hash'ит их → имена меняются только
+// при реальной правке фронта). Бампится автоматически и ровно когда нужно.
+try {
+    const swPath = resolve(DIST, 'sw.js');
+    const assetsDir = resolve(DIST, 'assets');
+    if (existsSync(swPath) && existsSync(assetsDir)) {
+        const names = readdirSync(assetsDir).sort().join('|');
+        const version = `frame-${createHash('sha1').update(names).digest('hex').slice(0, 8)}`;
+        const sw = readFileSync(swPath, 'utf-8');
+        if (sw.includes('__SW_VERSION__')) {
+            writeFileSync(swPath, sw.replace(/__SW_VERSION__/g, version));
+            console.log(`prerender-meta: SW CACHE_NAME → ${version}`);
+        } else {
+            console.warn('prerender-meta: ⚠ __SW_VERSION__ не найден в dist/sw.js — SW не пере-версионирован');
+        }
+    }
+} catch (e) {
+    console.warn('prerender-meta: ⚠ SW versioning skipped:', e);
+}
+
 console.log(`prerender-meta: готово`);

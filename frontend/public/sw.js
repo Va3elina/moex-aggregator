@@ -1,5 +1,9 @@
 // Фрейм PWA Service Worker
-const CACHE_NAME = 'frame-v936';
+// CACHE_NAME подставляется автоматически на build (postbuild → prerender-meta.ts):
+// плейсхолдер заменяется на 'frame-<hash8>' от имён файлов dist/assets. Руками НЕ
+// бампить. Fallback: если плейсхолдер не заменился — это валидная строка (SW
+// работает, кэш просто не инвалидируется до следующего билда).
+const CACHE_NAME = '__SW_VERSION__';
 const STATIC_ASSETS = [
     '/',
     '/manifest.json',
