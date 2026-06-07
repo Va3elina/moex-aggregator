@@ -3,7 +3,7 @@
 Модель пользователя для базы данных.
 """
 
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, UniqueConstraint
+from sqlalchemy import Column, Integer, BigInteger, String, Boolean, DateTime, Text, UniqueConstraint
 from sqlalchemy.sql import func
 from enum import Enum
 
@@ -41,6 +41,13 @@ class User(Base):
     # === OAuth ===
     oauth_provider = Column(String(20), nullable=True)  # "google", "telegram", "vk"
     oauth_id = Column(String(255), nullable=True)         # ID у провайдера
+
+    # === Telegram alert-bot (привязка чата для пуш-алертов) ===
+    # telegram_chat_id — приватный chat с alert-ботом (== telegram user id);
+    # ставится host-side ботом при /start <link_token>. NULL → не привязан.
+    telegram_chat_id = Column(BigInteger, nullable=True, index=True)
+    telegram_username = Column(String(64), nullable=True)
+    telegram_linked_at = Column(DateTime(timezone=True), nullable=True)
 
     # === Роль и доступ ===
     # Используем String вместо SQLEnum для совместимости с существующим enum в БД

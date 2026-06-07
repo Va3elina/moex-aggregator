@@ -42,6 +42,7 @@ from api.routers import oauth  # ← OAuth (Google, VK, Telegram)
 from api.routers import events  # ← SSE real-time events
 from api.routers import analytics  # ← Custom analytics: POST /event + GET /stats
 from api.routers import extension  # ← /api/extension/* (токены для расширения терминала)
+from api.routers import alerts  # ← /api/alerts/* (Telegram alert-bot: привязка + алерты)
 
 # Логирование
 from api.logger import setup_logging, get_logger
@@ -243,6 +244,7 @@ app.include_router(oauth.router, prefix="/api")  # ← OAuth: /api/auth/oauth/*
 app.include_router(events.router)  # ← SSE: /api/events/*
 app.include_router(analytics.router)  # ← Analytics: /api/analytics/*
 app.include_router(extension.router)  # ← /api/extension/* (ext-токены: генерация/обмен)
+app.include_router(alerts.router)  # ← /api/alerts/* (Telegram alert-bot: привязка Telegram)
 
 # ═══════════════════════════════════════════════════════════════
 # Служебные эндпоинты
