@@ -4,21 +4,26 @@
  * Выносит повторяющийся boilerplate индикатор-страниц: триада loading/error/data
  * + loadData(useCallback по deps) + автозапуск useEffect + опц. SSE-подписка
  * (useRealtimeData) + опц. tier-403 разбор (handleTierError). Это РОВНО та логика,
- * что дублировалась на 7 desktop-страницах.
+ * что дублировалась на desktop-страницах индикаторов.
  *
  * Что хук НЕ делает (остаётся в странице): chart-useMemo (chartData/oiData/align),
  * holiday-фильтр, usePersistedState-контролы, chartAnchorRef/useFitToViewport,
  * любые производные снимки. Хук отдаёт РОВНО ту data-ссылку, что вернул fetcher
  * (без обёртки/spread) — иначе SimpleChart лишний раз перезапустит анимацию.
  *
- * Bit-identical-контракт (критично для пилота OI): onSuccess вызывается СИНХРОННО
- * сразу после setData(result) в том же async-теле → setData и любые setState внутри
- * onSuccess (напр. setDataInterval) попадают в ОДИН React-18 batch. Так производный
- * снимок (dataInterval) остаётся атомарным с data — точно как было в инлайн-loadData.
+ * Bit-identical-контракт: onSuccess вызывается СИНХРОННО сразу после setData(result)
+ * в том же async-теле → setData и любые setState внутри onSuccess (напр.
+ * setDataInterval) попадают в ОДИН React-18 batch. Так производный снимок остаётся
+ * атомарным с data — точно как было в инлайн-loadData.
+ *
+ * NB про console.error: хук логирует только non-tier-ошибки (tier-403 ожидаем —
+ * не шумим). На разных страницах инлайн-логика логировала по-разному (OI —
+ * non-tier; Strength/Funds — всегда; CbrFlows — никогда) — это dev-only сайд-эффект,
+ * НЕ видимый пользователю; user-visible state (data/loading/error/modal) идентичен.
  *
  * Mobile/embed НЕ используют этот хук (другая state-модель + by-design другой рендер).
  */
-import { useCallback, useEffect, useState, type DependencyList } from 'react';
+import { useCallback, useEffect, useRef, useState, type DependencyList } from 'react';
 import { useRealtimeData } from './useRealtimeData';
 import { handleTierError, type UpgradeTier } from '../utils/tierError';
 
@@ -40,12 +45,16 @@ export interface UseIndicatorDataOptions<T> {
     debounceMs?: number;
     /** Если false — fetcher не вызывается (напр. OI: `!!selectedInstrument`). */
     enabled?: boolean;
-    /** Текст non-tier ошибки (по умолчанию 'Ошибка загрузки данных'). */
-    errorMessage?: string;
+    /** Текст non-tier ошибки: строка ИЛИ функция от пойманной ошибки (напр. CbrFlows
+     *  показывал `e?.message`). По умолчанию 'Ошибка загрузки данных'. */
+    errorMessage?: string | ((err: unknown) => string);
     /** СИНХРОННЫЙ колбэк сразу после setData (один batch). Для производных снимков. */
     onSuccess?: (data: T) => void;
     /** Если задан — tier-403 в catch идёт через handleTierError (caller-агностичный util). */
     tier?: TierConfig;
+    /** Опт-ин защита от гонки: устаревший (не последний) ответ НЕ пишет state
+     *  (reqId-guard, эквивалент cancelled-флага CbrFlows). Default off → как было у OI. */
+    guardStale?: boolean;
 }
 
 export interface UseIndicatorDataResult<T> {
@@ -58,33 +67,43 @@ export interface UseIndicatorDataResult<T> {
 export function useIndicatorData<T>(opts: UseIndicatorDataOptions<T>): UseIndicatorDataResult<T> {
     const {
         fetcher, deps, channels, debounceMs, enabled = true,
-        errorMessage = 'Ошибка загрузки данных', onSuccess, tier,
+        errorMessage, onSuccess, tier, guardStale = false,
     } = opts;
 
     const [data, setData] = useState<T | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const reqIdRef = useRef(0);
+
+    const resolveError = (err: unknown): string =>
+        typeof errorMessage === 'function' ? errorMessage(err)
+            : (errorMessage ?? 'Ошибка загрузки данных');
 
     const reload = useCallback(async () => {
         if (enabled === false) return;
+        const myId = ++reqIdRef.current;
+        const isStale = () => guardStale && myId !== reqIdRef.current;
         try {
             setLoading(true);
             setError(null);
             const result = await fetcher();
+            if (isStale()) return;
             setData(result);
             // СИНХРОННО в том же async-теле → один React-18 batch с setData.
             onSuccess?.(result);
         } catch (err) {
+            if (isStale()) return;
             // tier задан и это tier-ошибка → upgrade-modal (onTier гасит error-state);
-            // иначе destructive error + лог. Поведение идентично инлайн-catch.
+            // иначе destructive error + лог.
             if (tier && handleTierError(err, { ...tier, onTier: () => setError(null) })) {
                 /* tier-обработан */
             } else {
-                setError(errorMessage);
+                setError(resolveError(err));
                 console.error(err);
             }
         } finally {
-            setLoading(false);
+            // Устаревший ответ не трогает loading (новый reload уже выставил true).
+            if (!isStale()) setLoading(false);
         }
         // deps управляют пересозданием loadData — намеренно, как инлайн useCallback.
         // eslint-disable-next-line react-hooks/exhaustive-deps

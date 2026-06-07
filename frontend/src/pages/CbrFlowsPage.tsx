@@ -32,6 +32,7 @@ import CsvExportButton from '../components/export/CsvExportButton';
 import { periodToQuery } from '../utils/csvPeriod';
 import { useOnboardingTour } from '../hooks/useFirstVisit';
 import { usePersistedState } from '../hooks/usePersistedState';
+import { useIndicatorData } from '../hooks/useIndicatorData';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { cbrFlowsTourSteps } from '../data/tours/cbr-flows';
 import { useTheme } from '../contexts/ThemeContext';
@@ -63,9 +64,15 @@ export default function CbrFlowsPage() {
   const { theme } = useTheme();
   // Тип актива (Акции/ОФЗ/Валюты) персистится в localStorage — не сбрасывается на новой сессии.
   const [type, setType] = usePersistedState<CbrInstrumentType>('frame:cbr:type', 'stocks');
-  const [data, setData] = useState<CbrFlowsResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // Данные грузятся через useIndicatorData. guardStale=true сохраняет прежний
+  // cancelled-guard от гонки при быстрой смене типа; errorMessage воспроизводит
+  // прежний raw `e?.message ?? …`. Без SSE и без tier (период гейтится в onClick).
+  const { data, loading, error } = useIndicatorData<CbrFlowsResponse>({
+    fetcher: () => getCbrFlows(type),
+    deps: [type],
+    guardStale: true,
+    errorMessage: (e) => (e as { message?: string } | null)?.message ?? 'Не удалось загрузить данные',
+  });
 
   // Категории-фильтр: какие категории скрыты из графика.
   // При смене type — сбрасываем (категории различаются для stocks/ofz/fx).
@@ -115,24 +122,6 @@ export default function CbrFlowsPage() {
     max: 640,
     bottomBuffer: 96,
   });
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    getCbrFlows(type)
-      .then((res) => {
-        if (cancelled) return;
-        setData(res);
-        setLoading(false);
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        setError(e?.message ?? 'Не удалось загрузить данные');
-        setLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, [type]);
 
   // Reset hidden при смене типа актива
   useEffect(() => {
