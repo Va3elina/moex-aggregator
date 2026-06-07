@@ -4,7 +4,7 @@
  * (44×44 pill, bg-secondary, 2px border, editorial-press).
  */
 import { useState } from 'react';
-import { Bell } from 'lucide-react';
+import { Bell, Lock } from 'lucide-react';
 import CreateAlertModal, { type AlertMetricOption } from './CreateAlertModal';
 import { useCommonFeatures } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../tier/UpgradeModal';
@@ -21,11 +21,12 @@ export default function AlertBellButton({ indicator, asset, assetName, metrics, 
     const [open, setOpen] = useState(false);
     const quota = useCommonFeatures().telegram_alerts_quota;  // 0 / число / null(∞)
     const { showUpgrade } = useUpgradePrompt();
+    const locked = quota === 0;  // Free/guest — алерты на Basic+
 
     const handleClick = () => {
-        if (quota === 0) {
-            // Free/guest — алерты на Basic+; ведём на апгрейд вместо формы.
-            showUpgrade({ tier: 'basic', featureName: 'Telegram-алерты', indicator: 'alerts' });
+        if (locked) {
+            // Замочек уже виден; клик объясняет почему и ведёт на апгрейд.
+            showUpgrade({ tier: 'basic', featureName: 'Алерты в мессенджере', indicator: 'alerts' });
             return;
         }
         setOpen(true);
@@ -33,23 +34,43 @@ export default function AlertBellButton({ indicator, asset, assetName, metrics, 
 
     return (
         <>
-            <button
-                type="button"
-                data-export-ignore="true"
-                onClick={handleClick}
-                className={`editorial-press rounded-full inline-flex items-center justify-center ${className}`}
-                style={{
-                    backgroundColor: 'var(--bg-secondary)',
-                    border: '2px solid var(--text-primary)',
-                    color: 'var(--text-primary)',
-                    width: 44,
-                    height: 44,
-                }}
-                aria-label="Создать алерт"
-                title="Создать алерт в Telegram"
-            >
-                <Bell size={22} />
-            </button>
+            <span className={`relative inline-flex ${className}`} style={{ flex: '0 0 auto' }}>
+                <button
+                    type="button"
+                    data-export-ignore="true"
+                    onClick={handleClick}
+                    className="editorial-press rounded-full inline-flex items-center justify-center"
+                    style={{
+                        backgroundColor: 'var(--bg-secondary)',
+                        border: '2px solid var(--text-primary)',
+                        color: 'var(--text-primary)',
+                        width: 44,
+                        height: 44,
+                        opacity: locked ? 0.78 : 1,
+                    }}
+                    aria-label={locked ? 'Алерты — доступно на тарифе Basic и Pro' : 'Создать алерт'}
+                    title={locked
+                        ? 'Алерты в мессенджере — на тарифе Basic и Pro. Нажмите, чтобы улучшить.'
+                        : 'Создать алерт в мессенджере'}
+                >
+                    <Bell size={22} />
+                </button>
+                {locked && (
+                    <span
+                        aria-hidden="true"
+                        data-export-ignore="true"
+                        style={{
+                            position: 'absolute', right: -3, bottom: -3,
+                            width: 18, height: 18, borderRadius: '50%',
+                            background: 'var(--bg-primary)', border: '2px solid var(--text-primary)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            color: 'var(--text-primary)', pointerEvents: 'none',
+                        }}
+                    >
+                        <Lock size={10} strokeWidth={2.6} />
+                    </span>
+                )}
+            </span>
             {open && (
                 <CreateAlertModal
                     indicator={indicator}

@@ -10,6 +10,7 @@ import {
     getTelegramStatus, createTelegramLink, createAlert,
     type AlertCreatePayload,
 } from '../../services/api';
+import MessengerChoice from './MessengerChoice';
 
 export interface AlertMetricOption {
     key: string;
@@ -139,11 +140,11 @@ export default function CreateAlertModal({ asset, assetName, metrics, onClose }:
                     <div style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '20px 0' }}>Загрузка…</div>
                 ) : !linked ? (
                     <div>
-                        <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)', marginBottom: 16, lineHeight: 1.5 }}>
-                            Чтобы получать алерты, подключите Telegram: нажмите кнопку, в боте нажмите <b>Start</b>, затем вернитесь сюда.
-                        </p>
                         {linkUrl ? (
                             <>
+                                <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)', marginBottom: 12, lineHeight: 1.5 }}>
+                                    Откройте бота, нажмите <b>Start</b> — и вернитесь сюда. Статус обновится сам.
+                                </p>
                                 <a href={linkUrl} target="_blank" rel="noreferrer" className="editorial-press"
                                     style={{ ...primaryBtn, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, textDecoration: 'none', marginBottom: 8 }}>
                                     <ExternalLink size={16} /> Открыть @framesignalbot
@@ -151,9 +152,12 @@ export default function CreateAlertModal({ asset, assetName, metrics, onClose }:
                                 <div style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-xs)', textAlign: 'center' }}>Ждём подключения…</div>
                             </>
                         ) : (
-                            <button disabled={busy} onClick={handleConnect} className="editorial-press" style={primaryBtn}>
-                                {busy ? '…' : 'Подключить Telegram'}
-                            </button>
+                            <>
+                                <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)', marginBottom: 16, lineHeight: 1.5 }}>
+                                    Чтобы получать алерты, подключите мессенджер. После этого все ваши алерты будут приходить туда.
+                                </p>
+                                <MessengerChoice onTelegram={handleConnect} busy={busy} />
+                            </>
                         )}
                     </div>
                 ) : (

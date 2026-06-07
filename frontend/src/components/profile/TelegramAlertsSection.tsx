@@ -8,7 +8,7 @@
  * Рендерится внутри карточки ProfilePage (как ExtensionTokenSection).
  */
 import { useCallback, useEffect, useState } from 'react';
-import { Bell, ExternalLink, Check, Trash2, Pause, Play, AlertTriangle } from 'lucide-react';
+import { Bell, ExternalLink, Send, Trash2, Pause, Play, AlertTriangle } from 'lucide-react';
 import {
     getTelegramStatus, createTelegramLink, unlinkTelegram,
     listAlerts, deleteAlert, setAlertStatus,
@@ -16,6 +16,7 @@ import {
 } from '../../services/api';
 import { useCommonFeatures } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../tier/UpgradeModal';
+import MessengerChoice from '../alerts/MessengerChoice';
 
 const OP_LABEL: Record<string, string> = {
     gt: 'выше', lt: 'ниже', cross_up: '↑ пересечёт', cross_down: '↓ пересечёт',
@@ -96,14 +97,15 @@ export default function TelegramAlertsSection() {
     return (
         <div>
             <h2 className="text-lg font-bold mb-1" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Bell size={18} style={{ color: link }} /> Telegram-алерты
+                <Bell size={18} style={{ color: link }} /> Алерты в мессенджере
             </h2>
             <p style={{ color: sub, fontSize: 'var(--fs-sm)', marginBottom: 16 }}>
                 Уведомления при достижении уровней (цена, аномалии OI). Создаются с индикаторов кнопкой 🔔.
+                Сейчас доступен Telegram, мессенджер&nbsp;МАКС — в&nbsp;разработке.
             </p>
 
             {quota === 0 ? (
-                <button onClick={() => showUpgrade({ tier: 'basic', featureName: 'Telegram-алерты', indicator: 'alerts' })}
+                <button onClick={() => showUpgrade({ tier: 'basic', featureName: 'Алерты в мессенджере', indicator: 'alerts' })}
                     className="editorial-press" style={{ padding: '10px 16px', borderRadius: 10, border: '2px solid var(--text-primary)', background: 'var(--accent)', color: 'var(--text-inverse)', fontWeight: 600 }}>
                     Доступно на Basic и Pro — улучшить тариф
                 </button>
@@ -116,11 +118,11 @@ export default function TelegramAlertsSection() {
                         ) : linked ? (
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
                                 <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                    <Check size={18} style={{ color: link }} />
-                                    Подключён{username ? ` · @${username}` : ''}
+                                    <Send size={16} style={{ color: link }} />
+                                    <span>Подключён: <b>Telegram</b>{username ? ` · @${username}` : ''}</span>
                                 </span>
                                 <span style={{ display: 'flex', gap: 8 }}>
-                                    <button onClick={handleConnect} disabled={busy} style={{ color: link, fontSize: 'var(--fs-sm)' }}>Переподключить</button>
+                                    <button onClick={handleConnect} disabled={busy} title="Сменить чат или мессенджер" style={{ color: link, fontSize: 'var(--fs-sm)' }}>Переподключить</button>
                                     <button onClick={handleUnlink} disabled={busy} style={{ color: sub, fontSize: 'var(--fs-sm)' }}>Отвязать</button>
                                 </span>
                             </div>
@@ -131,19 +133,17 @@ export default function TelegramAlertsSection() {
                                     <ExternalLink size={15} /> Открыть @framesignalbot
                                 </a>
                                 <div style={{ color: sub, fontSize: 'var(--fs-xs)', marginTop: 6 }}>Нажмите Start в боте — статус обновится сам.</div>
+                                <button onClick={() => setLinkUrl(null)} style={{ color: sub, fontSize: 'var(--fs-xs)', marginTop: 6 }}>← выбрать другой мессенджер</button>
                             </div>
                         ) : (
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-                                <span style={{ color: sub }}>Telegram не подключён.</span>
-                                <button onClick={handleConnect} disabled={busy} className="editorial-press"
-                                    style={{ padding: '8px 14px', borderRadius: 10, border: '2px solid var(--text-primary)', background: 'var(--accent)', color: 'var(--text-inverse)', fontWeight: 600 }}>
-                                    {busy ? '…' : 'Подключить Telegram'}
-                                </button>
+                            <div>
+                                <div style={{ color: sub, marginBottom: 12 }}>Мессенджер не подключён.</div>
+                                <MessengerChoice onTelegram={handleConnect} busy={busy} title={null} />
                             </div>
                         )}
                         {linked === false && activeCount > 0 && (
                             <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--funds-flow-negative, #FF7A5C)', fontSize: 'var(--fs-xs)', marginTop: 8 }}>
-                                <AlertTriangle size={14} /> {activeCount} активных алертов не придут, пока не подключите Telegram.
+                                <AlertTriangle size={14} /> {activeCount} активных алертов не придут, пока не подключите мессенджер.
                             </div>
                         )}
                     </div>
