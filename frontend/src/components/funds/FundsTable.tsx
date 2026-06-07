@@ -14,6 +14,18 @@ const FUND_COLORS = [
 // «Скоро» на заголовке группы. Убрать имя отсюда, когда NAV появится.
 const COMING_SOON_SUBCATS = new Set<string>([]);
 
+// Лучшая доступная доходность: длиннейший период с данными (1г→6м→3м→1м).
+// Совпадает с «Покупки фондов» (bestReturn) — молодые фонды (<1 года) показывают
+// 6м/3м/1м с подписью периода вместо «—». null = совсем нет истории / битые данные.
+function bestReturn(r?: FundInfo['returns']): { v: number; label: string } | null {
+    if (!r) return null;
+    if (r.y1 != null) return { v: r.y1, label: '1г' };
+    if (r.m6 != null) return { v: r.m6, label: '6м' };
+    if (r.m3 != null) return { v: r.m3, label: '3м' };
+    if (r.m1 != null) return { v: r.m1, label: '1м' };
+    return null;
+}
+
 interface FundsTableProps {
     data: FundsChartResponse | null;
     hiddenFunds: Set<number>;
@@ -80,9 +92,9 @@ export default function FundsTable({
                                 <button
                                     onClick={() => toggleSort('y1')}
                                     className="inline-flex items-center gap-1 hover:text-theme-primary transition-colors"
-                                    title="Доходность за 1 год (СЧА на пай, с учётом выплат дохода)"
+                                    title="Доходность по СЧА на пай (с учётом выплат дохода). За 1 год; для молодых фондов — за лучший доступный период (6м/3м/1м, период подписан)."
                                 >
-                                    Доходн. 1г
+                                    Доходность
                                     {sortKey === 'y1' && <span className="text-xs">{navSortDir === 'desc' ? '↓' : '↑'}</span>}
                                 </button>
                             </th>
@@ -104,8 +116,10 @@ export default function FundsTable({
                                 subcat,
                                 funds: [...funds].sort((a, b) => {
                                     if (sortKey === 'y1') {
-                                        const ya = a.returns?.y1, yb = b.returns?.y1;
-                                        // фонды без y1 (история < года) — всегда в конце
+                                        // Сортировка по лучшей доступной доходности (как в «Покупках»).
+                                        const ya = bestReturn(a.returns)?.v ?? null;
+                                        const yb = bestReturn(b.returns)?.v ?? null;
+                                        // фонды совсем без доходности — всегда в конце
                                         if (ya == null && yb == null) return 0;
                                         if (ya == null) return 1;
                                         if (yb == null) return -1;
@@ -267,13 +281,23 @@ export default function FundsTable({
                                                     <td className="px-4 py-3 text-right font-mono">
                                                         {isLocked ? '—' : (lastData?.nav ? `${(lastData.nav / 1e9).toFixed(2)} млрд ₽` : '—')}
                                                     </td>
-                                                    <td className="px-4 py-3 text-right font-mono" style={{
-                                                        color: (!isLocked && fund.returns?.y1 != null)
-                                                            ? (fund.returns.y1 >= 0 ? 'var(--funds-flow-positive)' : 'var(--funds-flow-negative)')
-                                                            : undefined,
-                                                    }}>
-                                                        {isLocked ? '—' : (fund.returns?.y1 != null ? `${fund.returns.y1 >= 0 ? '+' : ''}${fund.returns.y1.toFixed(1)}%` : '—')}
-                                                    </td>
+                                                    {(() => {
+                                                        const br = isLocked ? null : bestReturn(fund.returns);
+                                                        return (
+                                                            <td className="px-4 py-3 text-right font-mono whitespace-nowrap" style={{
+                                                                color: br ? (br.v >= 0 ? 'var(--funds-flow-positive)' : 'var(--funds-flow-negative)') : undefined,
+                                                            }}>
+                                                                {isLocked || !br ? '—' : (
+                                                                    <>
+                                                                        {br.v >= 0 ? '+' : ''}{br.v.toFixed(1)}%
+                                                                        {br.label !== '1г' && (
+                                                                            <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)', marginLeft: 3 }}>{br.label}</span>
+                                                                        )}
+                                                                    </>
+                                                                )}
+                                                            </td>
+                                                        );
+                                                    })()}
                                                     <td className="px-4 py-3 text-right text-theme-secondary">
                                                         {isLocked ? '—' : (lastData?.date || '—')}
                                                     </td>
