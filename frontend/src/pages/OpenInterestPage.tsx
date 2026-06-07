@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { ChevronDown, BarChart3 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
@@ -18,7 +18,7 @@ import { PERIOD_LABELS as ALL_PERIOD_LABELS, INTERVAL_LABELS } from '../config/c
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { isIntervalAllowed, isPeriodAllowed, getDefaultPeriod } from '../config/accessControl';
-import { useRealtimeData } from '../hooks/useRealtimeData';
+import { useIndicatorData } from '../hooks/useIndicatorData';
 import { usePersistedState } from '../hooks/usePersistedState';
 import { useFitToViewport } from '../hooks/useFitToViewport';
 import { useOnboardingTour } from '../hooks/useFirstVisit';
@@ -26,7 +26,7 @@ import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { oiTourSteps } from '../data/tours/oi';
 import { formatPrice } from '../utils/formatNumber';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
-import { handleTierError, oiTierResolver } from '../utils/tierError';
+import { oiTierResolver } from '../utils/tierError';
 import { useTierAccess } from '../contexts/TierFeaturesContext';
 
 type DisplayMode = 'price' | 'positions' | 'participants';
@@ -143,10 +143,8 @@ export default function OpenInterestPage() {
     try { localStorage.setItem('frame:oi:instrument', selectedInstrument); } catch { /* quota / private */ }
   }, [selectedInstrument]);
 
-  // Данные графика
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [data, setData] = useState<ChartResponse | null>(null);
+  // Данные графика грузятся через useIndicatorData (ниже, после контролов —
+  // фетчеру нужны interval/clgroup/showOi/period).
   // Интервал, для которого загружены текущие данные — обновляется атомарно с data
   const [dataInterval, setDataInterval] = useState(24);
 
@@ -162,6 +160,33 @@ export default function OpenInterestPage() {
   const [showExpirations, setShowExpirations] = usePersistedState('frame:oi:showExpirations', false);
   const [showPrice, setShowPrice] = usePersistedState('frame:oi:showPrice', true);
   const [period, setPeriod] = usePersistedState<Period>('frame:oi:period', getDefaultPeriod('6m', isAuthenticated) as Period);
+
+  // showOi: в режиме 'price' открытый интерес не запрашиваем. Поднято сюда из
+  // прежнего места ниже — нужно фетчеру useIndicatorData.
+  const showOi = displayMode !== 'price';
+
+  // Загрузка данных графика — generic-хук (вынесен из инлайн-loadData, поведение
+  // идентично). onSuccess СИНХРОННО ставит dataInterval в одном React-18 batch с
+  // data — атомарность производных filteredData/alignToCandles сохранена.
+  const { data, loading, error } = useIndicatorData<ChartResponse>({
+    fetcher: () => getChartData(selectedInstrument, selectedInstrument, 'futures', interval, clgroup, showOi, period),
+    deps: [selectedInstrument, interval, clgroup, showOi, period],
+    enabled: !!selectedInstrument,
+    channels: ['5min', 'hourly'],
+    tier: {
+      showUpgrade,
+      indicator: 'open_interest',
+      featureName: (msg) => msg.replace(/^.*?: /, ''),
+      tierResolver: oiTierResolver,
+    },
+    onSuccess: (result) => {
+      setDataInterval(interval); // обновляем вместе с data (React 18 batches)
+      if (result.available_intervals?.length > 0 &&
+        !result.available_intervals.includes(interval)) {
+        setIntervalValue(Math.max(...result.available_intervals));
+      }
+    },
+  });
 
   // Фильтрация нерабочих дней и пре-маркета.
   // Алгопак возвращает forward-fill данные за выходные, праздники и
@@ -212,7 +237,6 @@ export default function OpenInterestPage() {
 
   const availableIntervals = filteredData?.available_intervals || [24];
   const hasInterval = (int: number) => availableIntervals.includes(int);
-  const showOi = displayMode !== 'price';
 
   // Ограничения периодов для интервалов (для производительности)
   // 5мин: макс 1 месяц, 1час: макс 6 месяцев, 1день: все
@@ -244,50 +268,6 @@ export default function OpenInterestPage() {
     }
   };
 
-  // Загрузка данных графика
-  const loadData = useCallback(async () => {
-    if (!selectedInstrument) return;
-
-    try {
-      setLoading(true);
-      setError(null);
-      const result = await getChartData(
-        selectedInstrument,
-        selectedInstrument,
-        'futures',
-        interval,
-        clgroup,
-        showOi,
-        period
-      );
-      setData(result);
-      setDataInterval(interval); // обновляем вместе с data (React 18 batches)
-
-      if (result.available_intervals?.length > 0 &&
-        !result.available_intervals.includes(interval)) {
-        setIntervalValue(Math.max(...result.available_intervals));
-      }
-    } catch (err) {
-      // Tier-related 403 → показываем upgrade prompt, а не destructive ошибку
-      if (!handleTierError(err, {
-        showUpgrade,
-        indicator: 'open_interest',
-        featureName: (msg) => msg.replace(/^.*?: /, ''),
-        tierResolver: oiTierResolver,
-        onTier: () => setError(null),  // не показываем destructive error
-      })) {
-        setError('Ошибка загрузки данных');
-        console.error(err);
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedInstrument, interval, clgroup, showOi, period]);
-
-  useEffect(() => { loadData(); }, [loadData]);
-
-  // SSE: автоматическое обновление при новых данных
-  useRealtimeData(['5min', 'hourly'], loadData);
 
   // Выбор инструмента из модалки
   const handleSelectInstrument = (sectype: string, name: string) => {
