@@ -144,10 +144,17 @@ export default function StackedFlowBars({
 
     const barWidthPct = 100 / Math.max(months.length, 1);
 
-    // Прорежение подписей X: чтобы даты не накладывались.
-    const xTickEvery = useMemo(() => {
+    // Подписи X — РОВНО через равные промежутки: count меток равномерно от первой
+    // до последней. Раньше было «каждая N-я + принудительно последняя» — это давало
+    // кривой (укороченный) зазор у правого края, когда N-1 не кратно шагу.
+    const xTickIndices = useMemo(() => {
+        const N = months.length;
+        if (N <= 1) return new Set<number>(N === 1 ? [0] : []);
         const maxTicks = isMobile ? 4 : 8;
-        return Math.max(1, Math.ceil(months.length / maxTicks));
+        const count = Math.min(N, maxTicks);
+        const set = new Set<number>();
+        for (let j = 0; j < count; j++) set.add(Math.round((j * (N - 1)) / (count - 1)));
+        return set;
     }, [months.length, isMobile]);
 
     // ── Hover: определить индекс месяца по X, сохранить позицию для тултипа. ──
@@ -363,7 +370,7 @@ export default function StackedFlowBars({
                         }}
                     >
                         {months.map((m, i) => {
-                            if (i % xTickEvery !== 0 && i !== months.length - 1) return null;
+                            if (!xTickIndices.has(i)) return null;
                             const cx = i * barWidthPct + barWidthPct / 2;
                             return (
                                 <span
