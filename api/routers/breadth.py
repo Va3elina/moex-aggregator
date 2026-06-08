@@ -406,41 +406,44 @@ async def get_breadth_history(
 
     # Tier-ограничения: universe whitelist + max_history_days
     enforce_tier_limits(user, "strength", universe=universe, days=days)
-    cache_key = f"breadth:history:{ema_period}:{days}:{universe}"
-    cached = get_or_set(cache_key)
-    if cached is not None:
-        return cached
-
     start_time = time.time()
-    log.info(f"REQUEST: /breadth/history ema={ema_period}, days={days}, universe={universe}")
-
     engine = get_engine()
     date_from = date.today() - timedelta(days=days)
 
-    # Оба варианта читаются из pre-computed таблицы breadth_history
-    with engine.connect() as conn:
-        rows = conn.execute(text("""
-            SELECT trade_date, percent_above, count_above, count_total
-            FROM breadth_history
-            WHERE ema_period = :ema_period
-              AND universe = :universe
-              AND trade_date >= :date_from
-            ORDER BY trade_date
-        """), {"ema_period": ema_period, "universe": universe, "date_from": date_from}).fetchall()
+    # Кэшируем ТОЛЬКО историю широты (EOD-стабильна, расчёт тяжелее). Индекс-линию
+    # НЕ кладём в кэш — тянем свежей из index_data ниже. Иначе залипший кэш держал
+    # индекс позади свежего index_data, а syncedData на фронте обрезает чарт до
+    # ОБЩИХ дат широты+индекса → весь чарт «застревал» на дате кэша (тот самый
+    # рассинхрон: «индекс не обновляется»).
+    cache_key = f"breadth:histdata:{ema_period}:{days}:{universe}"
+    history = get_or_set(cache_key)
+    if history is None:
+        log.info(f"REQUEST: /breadth/history ema={ema_period}, days={days}, universe={universe}")
+        with engine.connect() as conn:
+            rows = conn.execute(text("""
+                SELECT trade_date, percent_above, count_above, count_total
+                FROM breadth_history
+                WHERE ema_period = :ema_period
+                  AND universe = :universe
+                  AND trade_date >= :date_from
+                ORDER BY trade_date
+            """), {"ema_period": ema_period, "universe": universe, "date_from": date_from}).fetchall()
+        history = [
+            {
+                "date": str(row[0]),
+                "percent_above": float(row[1]),
+                "count_above": int(row[2]),
+                "count_total": int(row[3]),
+            }
+            for row in rows
+        ]
+        ttl = 1800 if universe == "imoex" else 3600
+        get_or_set(cache_key, history, ttl=ttl)
 
-    history = [
-        {
-            "date": str(row[0]),
-            "percent_above": float(row[1]),
-            "count_above": int(row[2]),
-            "count_total": int(row[3]),
-        }
-        for row in rows
-    ]
-
-    # ── 2. Индекс для наложения: IMOEX (₽) или RTSI ($) ────────
+    # ── Индекс-наложение ВСЕГДА свежий (IMOEX ₽ / RTSI $), БЕЗ кэша ──
     overlay_secid = "RTSI" if is_usd else "IMOEX"
     imoex_data = []
+    imoex_by_date: dict[str, float] = {}
     try:
         with engine.connect() as conn:
             imoex_rows = conn.execute(text("""
@@ -451,12 +454,7 @@ async def get_breadth_history(
                   AND close IS NOT NULL
                 ORDER BY trade_date
             """), {"secid": overlay_secid, "date_from": date_from}).fetchall()
-
         imoex_by_date = {str(row[0]): float(row[1]) for row in imoex_rows if row[1]}
-        for point in history:
-            if point["date"] in imoex_by_date:
-                point["imoex"] = imoex_by_date[point["date"]]
-
         imoex_data = [
             {"date": str(row[0]), "close": float(row[1])}
             for row in imoex_rows if row[1]
@@ -464,16 +462,17 @@ async def get_breadth_history(
     except Exception as e:
         log.error(f"Error fetching {overlay_secid}: {e}")
 
+    # data с индексом, НЕ мутируя кэшированную history (иначе испортим кэш).
+    data_out = [
+        ({**p, "imoex": imoex_by_date[p["date"]]} if p["date"] in imoex_by_date else p)
+        for p in history
+    ]
+
     duration = time.time() - start_time
     log.info(f"DONE: /breadth/history {len(history)} points, {duration:.2f}s")
-
-    result = {
+    return {
         "ema_period": ema_period,
         "universe": universe,
-        "data": history,
+        "data": data_out,
         "imoex": imoex_data,
     }
-    # IMOEX на лету — кешируем 30 мин (тяжёлый запрос), all — 1 час
-    ttl = 1800 if universe == "imoex" else 3600
-    get_or_set(cache_key, result, ttl=ttl)
-    return result
