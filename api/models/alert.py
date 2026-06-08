@@ -6,7 +6,7 @@
 (signals/alerts_run.py, Phase 3) проверяет → бот шлёт пуш. Квота по тарифу
 (features.py telegram_alerts_quota): free=0, basic=20, pro=∞.
 """
-from sqlalchemy import Column, Integer, String, Numeric, DateTime, ForeignKey, Index
+from sqlalchemy import Column, Integer, String, Numeric, DateTime, Date, ForeignKey, Index
 from sqlalchemy.sql import func
 
 from api.database import Base
@@ -33,6 +33,9 @@ class Alert(Base):
 
     last_value = Column(Numeric(20, 6), nullable=True)   # prev-снимок для cross
     last_fired_at = Column(DateTime(timezone=True), nullable=True)
+    # Дата ДАННЫХ, на которой алерт сработал в последний раз (для дневных
+    # OI-метрик): не пере-выстреливать тот же торговый день. NULL = ещё не срабатывал.
+    last_fired_date = Column(Date, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     __table_args__ = (

@@ -73,18 +73,19 @@ def compute_value(a: Alert):
         r = compute_position_atr(a.asset, "FIZ" if neutral else clg)
         if not r:
             return None, None
-        ratio, last_diff, current_net, direction = r
+        ratio, last_diff, current_net, direction, sig_date = r
         return float(ratio), {"last_diff": last_diff, "current_net": current_net,
-                              "direction": direction, "neutral": neutral}
+                              "direction": direction, "neutral": neutral,
+                              "signal_date": sig_date}
     if a.indicator == "oi_participants":
         # «Резко изменилось число участников» — ATR14 по числу участников (npart).
         # FIZ/YUR — независимые счётчики (НЕ зеркальны), самостоятельные сигналы.
         r = compute_participants_atr(a.asset, a.clgroup or "FIZ")
         if not r:
             return None, None
-        ratio, last_diff, current_npart, direction = r
+        ratio, last_diff, current_npart, direction, sig_date = r
         return float(ratio), {"last_diff": last_diff, "current_npart": current_npart,
-                              "direction": direction}
+                              "direction": direction, "signal_date": sig_date}
     return None, None
 
 
@@ -173,6 +174,17 @@ def run_once() -> dict:
                 if value is None:
                     summary["skipped"] += 1
                     continue
+                # Гейт «новый торговый день» для дневных OI-метрик: данные
+                # обновляются раз в день (лаг + выходные). Не пере-выстреливаем
+                # ОДНУ И ТУ ЖЕ дату данных — иначе застрявший дневной экстремум
+                # долбил бы каждые cooldown_hours, пока не придут новые. У цены
+                # (intraday) signal_date нет → её это не трогает.
+                sig_date = (ctx or {}).get("signal_date")
+                if sig_date is not None and a.last_fired_date is not None \
+                        and sig_date <= a.last_fired_date:
+                    a.last_value = value
+                    summary["skipped"] += 1
+                    continue
                 # Cooldown для mode='repeat': не чаще раза в cooldown_hours. last_value
                 # обновляем (трекаем prev для cross), но НЕ шлём, пока кулдаун не вышел.
                 if a.mode == "repeat" and a.last_fired_at is not None:
@@ -189,6 +201,8 @@ def run_once() -> dict:
                     if result == "ok":
                         db.add(AlertFire(alert_id=a.id, value=value, message_text=text))
                         a.last_fired_at = now
+                        if sig_date is not None:
+                            a.last_fired_date = sig_date   # гейт «новый день»
                         if a.mode == "once":
                             a.status = "fired"
                         summary["fired"] += 1

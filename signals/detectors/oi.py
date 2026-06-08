@@ -158,7 +158,9 @@ def compute_position_atr(
     if atr <= 0 or atr < ATR_FLOOR_REL * max(abs(net), 1):
         return None
     ratio = last / atr
-    return (round(ratio, 2), last_signed, net, "up" if last_signed > 0 else "down")
+    # 5-й элемент — дата последнего дневного значения (для гейта «новый день»
+    # в alerts_run: не пере-выстреливать тот же торговый день).
+    return (round(ratio, 2), last_signed, net, "up" if last_signed > 0 else "down", pts[-1][0])
 
 
 def compute_participants_atr(
@@ -201,7 +203,8 @@ def compute_participants_atr(
     if atr <= 0 or atr < ATR_FLOOR_REL * max(npart_now, 1):
         return None
     ratio = last / atr
-    return (round(ratio, 2), last_signed, npart_now, "up" if last_signed > 0 else "down")
+    # 5-й элемент — дата последнего дневного значения (гейт «новый день»).
+    return (round(ratio, 2), last_signed, npart_now, "up" if last_signed > 0 else "down", pts[-1][0])
 
 
 def detect_all_oi(as_of_date: Optional[date] = None) -> List[OISignalCandidate]:
