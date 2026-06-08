@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Search, X, Star, Lock, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
+import { Search, X, Star, Lock, ChevronUp, ChevronDown, ChevronsUpDown, Check } from 'lucide-react';
 import InstrumentIcon from './InstrumentIcon';
 import { formatCompact } from '../utils/formatNumber';
 import { useAnalytics } from '../contexts/AnalyticsContext';
@@ -41,13 +41,25 @@ interface InstrumentSearchModalProps {
   /** Если задан — для каждого инструмента проверяем доступность по tier'у.
    *  Заблокированные затемняются + lock icon + клик открывает UpgradeModal. */
   indicator?: string;
+  /** Режим множественного выбора. При true клик по инструменту не закрывает
+   *  модалку, а переключает его в наборе выбранных (через onToggleSelect).
+   *  У выбранных — галочка. Внизу появляется кнопка «Готово (N)» → onDone. */
+  multiSelect?: boolean;
+  /** Список выбранных sectype (контролируется родителем). */
+  selectedSectypes?: string[];
+  /** Переключить выбор инструмента (добавить/убрать). */
+  onToggleSelect?: (sectype: string, name: string) => void;
+  /** Завершить множественный выбор. */
+  onDone?: () => void;
 }
 
 
 // InstrumentIcon + INSTRUMENT_ICONS + FUT_TO_STOCK перенесены в
 // отдельный модуль ./InstrumentIcon.tsx, общий для всех страниц.
 
-export default function InstrumentSearchModal({ onSelect, onClose, filterType, excludeType, onlyGroups, indicator }: InstrumentSearchModalProps) {
+export default function InstrumentSearchModal({ onSelect, onClose, filterType, excludeType, onlyGroups, indicator, multiSelect = false, selectedSectypes, onToggleSelect, onDone }: InstrumentSearchModalProps) {
+  // Набор выбранных в multi-режиме — Set для O(1) проверки в renderItem.
+  const selectedSet = new Set(selectedSectypes || []);
   const [searchQuery, setSearchQuery] = useState('');
   const [instruments, setInstruments] = useState<Instrument[]>([]);
   const [loading, setLoading] = useState(true);
@@ -170,6 +182,42 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
     }
   };
 
+  // Multi-режим: добавить в выбор все активы из текущего отфильтрованного
+  // (видимого) списка — uniqueInstruments уже учитывает поиск/категорию.
+  // Заблокированные по тарифу пропускаем. Уже выбранные не дёргаем (onToggle
+  // переключает, поэтому вызываем только для НЕвыбранных).
+  const selectAllVisible = () => {
+    if (!multiSelect) return;
+    uniqueInstruments.forEach((inst) => {
+      const accessible = !indicator || tierAccess.isLoading
+        ? true
+        : tierAccess.canAccessAsset(inst.sectype);
+      if (accessible && !selectedSet.has(inst.sectype)) {
+        onToggleSelect?.(inst.sectype, inst.name);
+      }
+    });
+  };
+
+  // Multi-режим: добавить в выбор все избранные (по favoriteInstruments из
+  // localStorage). Берём из всего загруженного списка, не из отфильтрованного,
+  // чтобы фильтр по категории/поиску не урезал избранные. `instruments` может
+  // содержать дубли sectype (разные контракты серии) — дедуплицируем через
+  // seen, иначе двойной toggle отменит сам себя.
+  const selectAllFavorites = () => {
+    if (!multiSelect) return;
+    const seen = new Set<string>();
+    instruments.forEach((inst) => {
+      if (!favorites.includes(inst.sectype) || seen.has(inst.sectype)) return;
+      seen.add(inst.sectype);
+      const accessible = !indicator || tierAccess.isLoading
+        ? true
+        : tierAccess.canAccessAsset(inst.sectype);
+      if (accessible && !selectedSet.has(inst.sectype)) {
+        onToggleSelect?.(inst.sectype, inst.name);
+      }
+    });
+  };
+
   // Кликабельный заголовок-сортировки. Иконка-индикатор ВСЕГДА (⇅ для неактивных —
   // «можно сортировать», ↑/↓ для активной) + hover-подсветка — очевидно, что
   // заголовки кликабельны. Ширина = COL[col] → значения стоят строго под ними.
@@ -219,6 +267,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
   // Один render для items — переиспользуется в favorites и regular списках.
   const renderItem = (inst: Instrument) => {
     const isFavorite = favorites.includes(inst.sectype);
+    const isSelected = multiSelect && selectedSet.has(inst.sectype);
 
     // Tier-gating: проверяем доступ к активу. Если indicator не задан или
     // матрица ещё грузится → считаем accessible (graceful fallback).
@@ -228,18 +277,25 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
     const requiredTier = !accessible ? tierAccess.requiredTierFor({ asset: inst.sectype }) : null;
 
     const handleClick = () => {
-      if (accessible) {
-        handleSelect(inst.sectype, inst.name);
-      } else if (requiredTier && indicator) {
-        // Закрываем instrument-модалку и открываем UpgradeModal — иначе
-        // получается две full-screen модалки наложенных друг на друга.
-        onClose();
-        showUpgrade({
-          tier: requiredTier,
-          featureName: `актив ${inst.name} (${inst.sectype})`,
-          indicator,
-        });
+      if (!accessible) {
+        if (requiredTier && indicator) {
+          // Закрываем instrument-модалку и открываем UpgradeModal — иначе
+          // получается две full-screen модалки наложенных друг на друга.
+          onClose();
+          showUpgrade({
+            tier: requiredTier,
+            featureName: `актив ${inst.name} (${inst.sectype})`,
+            indicator,
+          });
+        }
+        return;
       }
+      // Multi-режим: клик НЕ закрывает модалку, а переключает выбор.
+      if (multiSelect) {
+        onToggleSelect?.(inst.sectype, inst.name);
+        return;
+      }
+      handleSelect(inst.sectype, inst.name);
     };
 
     return (
@@ -250,11 +306,36 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
         style={{
           color: 'var(--text-primary)',
           cursor: accessible ? 'pointer' : 'not-allowed',
+          backgroundColor: isSelected
+            ? 'color-mix(in srgb, var(--accent) 14%, transparent)'
+            : undefined,
         }}
         title={!accessible && requiredTier
           ? `Доступно на тарифе ${requiredTier === 'basic' ? 'Basic' : 'Pro'}`
           : undefined}
       >
+        {/* Чекбокс-слот (только multi-режим): галочка у выбранных активов. */}
+        {multiSelect && (
+          <span
+            style={{
+              width: 22,
+              height: 22,
+              flexShrink: 0,
+              borderRadius: 6,
+              border: '2px solid var(--text-primary)',
+              backgroundColor: isSelected ? 'var(--accent)' : 'transparent',
+              color: 'var(--text-inverse)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              opacity: accessible ? 1 : 0.45,
+            }}
+            aria-hidden="true"
+          >
+            {isSelected && <Check size={15} strokeWidth={3} />}
+          </span>
+        )}
+
         {/* Иконка (32) — отдельный flex-child, зеркалит спейсер в шапке */}
         <span
           style={{ flexShrink: 0, lineHeight: 0, opacity: accessible ? 1 : 0.45, filter: accessible ? undefined : 'grayscale(0.5)' }}
@@ -349,7 +430,15 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
             только кнопка закрытия + компактный поиск, чтобы освободить место под
             список активов. */}
         <div className="px-6 pt-3 pb-3 flex-shrink-0">
-          <div className="flex items-center justify-end mb-1.5">
+          <div className={`flex items-center ${multiSelect ? 'justify-between' : 'justify-end'} mb-1.5`}>
+            {multiSelect && (
+              <h2
+                className="font-bold"
+                style={{ fontSize: 'var(--fs-lg)', color: 'var(--text-primary)' }}
+              >
+                Выбрать активы
+              </h2>
+            )}
             <button
               onClick={onClose}
               className="instrument-modal-close p-2 -mr-2 rounded-lg transition-colors"
@@ -405,6 +494,41 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
             })}
           </div>
           )}
+
+          {/* Multi-режим: массовые действия — выбрать весь видимый список или
+              все избранные. Editorial-кнопки (2px border, токены, press). */}
+          {multiSelect && (
+            <div className="flex gap-2 mt-3 flex-wrap">
+              <button
+                type="button"
+                onClick={selectAllVisible}
+                className="editorial-press px-3.5 py-2 font-semibold rounded-full transition-colors"
+                style={{
+                  backgroundColor: 'var(--bg-secondary)',
+                  color: 'var(--text-primary)',
+                  border: '2px solid var(--text-primary)',
+                  fontSize: 'var(--fs-xs)',
+                }}
+              >
+                Выбрать все
+              </button>
+              <button
+                type="button"
+                onClick={selectAllFavorites}
+                className="editorial-press px-3.5 py-2 font-semibold rounded-full transition-colors inline-flex items-center"
+                style={{
+                  backgroundColor: 'var(--bg-secondary)',
+                  color: 'var(--text-primary)',
+                  border: '2px solid var(--text-primary)',
+                  fontSize: 'var(--fs-xs)',
+                  gap: 'var(--sp-1)',
+                }}
+              >
+                <Star size={14} fill="currentColor" style={{ color: 'var(--accent)' }} />
+                Все избранные
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Results — sticky-шапка колонок ВНУТРИ скролла: общий скроллбар
@@ -421,6 +545,8 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
               className="sticky top-0 z-10 flex items-center gap-3.5 px-3 pt-1 pb-2.5 mb-2"
               style={{ backgroundColor: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)' }}
             >
+              {/* Чекбокс-спейсер — зеркалит чекбокс в строке (multi-режим) */}
+              {multiSelect && <span style={{ width: 22, flexShrink: 0 }} aria-hidden="true" />}
               <span
                 className="flex-1 uppercase font-bold"
                 style={{ fontSize: 'var(--fs-xs)', letterSpacing: '0.04em', color: 'var(--text-secondary)' }}
@@ -478,6 +604,29 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
             </>
           )}
         </div>
+
+        {/* Footer (только multi-режим): «Готово (N)» закрывает выбор через onDone. */}
+        {multiSelect && (
+          <div
+            className="flex-shrink-0 px-6 py-4"
+            style={{ borderTop: '2px solid var(--text-primary)', backgroundColor: 'var(--bg-secondary)' }}
+          >
+            <button
+              type="button"
+              onClick={() => onDone?.()}
+              className="editorial-press w-full py-3 font-bold rounded-xl transition-colors"
+              style={{
+                backgroundColor: 'var(--accent)',
+                color: 'var(--text-inverse)',
+                border: '2px solid var(--text-primary)',
+                boxShadow: 'var(--shadow-hard-chip, 4px 4px 0 var(--text-primary))',
+                fontSize: 'var(--fs-base)',
+              }}
+            >
+              Готово ({selectedSet.size})
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
