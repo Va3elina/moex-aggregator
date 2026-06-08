@@ -24,6 +24,7 @@ from signals.db import get_asset_name
 
 ATR_N = 14          # окно ATR (классический дефолт)
 MIN_PART = 50
+MIN_REL = 0.02      # guard материальности: |Δ|/|net| ≥ 2% (отсев мёртвой базы / закрытий рынка)
 K2, K3 = 2.0, 3.0   # пороги «во сколько раз больше обычного»
 
 
@@ -63,6 +64,9 @@ def run():
                         continue
                     day_idx = i + 1   # adiff[i] = nets[i+1]-nets[i]
                     if npart[day_idx] < MIN_PART:
+                        continue
+                    # guard материальности: движение существенно относительно позиции
+                    if adiff[i] / max(abs(nets[day_idx]), 1) < MIN_REL:
                         continue
                     ratio = adiff[i] / atr
                     agg["days"] += 1
