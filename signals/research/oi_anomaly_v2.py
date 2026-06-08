@@ -146,13 +146,15 @@ def run():
                         continue
                     agg["days"] += 1
                     fired_old = m["old"] is not None and abs(m["old"]) >= Z
-                    # новые механизмы + guard материальности (отсев мусора на неликвиде)
+                    # новые механизмы + guard: материальность движения (|move|/|net|)
+                    # И ликвидность (≥MIN_PART участников = «толпа», иначе шум на мёртвом активе).
+                    liquid = m["npart"] >= MIN_PART
                     fired_rob = (m["robust"] is not None and abs(m["robust"]) >= Z
-                                 and m["rel1"] >= MIN_REL)
+                                 and m["rel1"] >= MIN_REL and liquid)
                     fired_multi = (m["multi"] is not None and abs(m["multi"]) >= Z
-                                   and m["relm"] >= MIN_REL)
+                                   and m["relm"] >= MIN_REL and liquid)
                     fired_conc = (m["conc"] is not None and abs(m["conc"]) >= Z
-                                  and m["rel1"] >= MIN_REL and m["npart"] >= MIN_PART)
+                                  and m["rel1"] >= MIN_REL and liquid)
                     agg["old"] += fired_old
                     agg["robust"] += fired_rob
                     agg["multi"] += fired_multi
@@ -161,7 +163,7 @@ def run():
                     if (fired_multi or fired_conc) and not fired_old:
                         new_only.append((abs(m["multi"] or 0), sectype, clg, m["date"],
                                          m["old"], m["robust"], m["multi"], m["multi_h"],
-                                         m["conc"], m["last_diff"]))
+                                         m["conc"], m["last_diff"], m["net"], m["npart"]))
     # отчёт
     d = agg["days"] or 1
     print(f"\n=== Бэктест OI-аномалий: {agg['days']} (актив×день) точек, порог {Z}σ ===")
@@ -171,10 +173,12 @@ def run():
     print(f"  CONC   (концентрация)      сигналов: {agg['conc']:5}  ({100*agg['conc']/d:.2f}%)")
     print(f"\n=== Топ-15 «новое поймало, старое пропустило» (по |multi z|) ===")
     new_only.sort(reverse=True)
-    for _, s, g, dt, oz, rz, mz, mh, cz, ld in new_only[:15]:
+    for _, s, g, dt, oz, rz, mz, mh, cz, ld, net, npt in new_only[:15]:
         oz_s = f"{oz:+.1f}" if oz is not None else "  —"
-        print(f"  {s:6}/{g}  {dt}  old z={oz_s}  robust={rz:+.1f}  "
-              f"multi={mz:+.1f}(@{mh}д)  conc={('%.1f'%cz) if cz is not None else '—':>5}  Δ={ld:+,}")
+        rz_s = f"{rz:+.1f}" if rz is not None else "  —"
+        print(f"  {s:6}/{g}  {dt}  old={oz_s}  rob={rz_s}  "
+              f"multi={mz:+.1f}(@{mh}д)  conc={('%+.1f'%cz) if cz is not None else '  —':>5}  "
+              f"Δ1д={ld:+,}  net={net:+,}  уч={npt}")
     print(f"\n  Всего «новых» катчей (multi|conc, мимо old): {len(new_only)}")
 
 
