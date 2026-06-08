@@ -1,24 +1,25 @@
 name: deploy-prod
 
-# Деплой на прод: SSH -> git pull + docker build + recreate + nginx + health-check.
-# ПОКА запускается ВРУЧНУЮ (workflow_dispatch) - чтобы протестировать перед авто-режимом.
+# Авто-деплой на прод: после успешного build-check (push в main) →
+# SSH → git pull + build api (+orchestrator/alert-bot при изменении их кода) +
+# recreate + health-check. nginx НЕ трогаем (resolver-фикс c40017f сам ре-резолвит api).
 #
-# Чтобы включить:
-#   1. Добавить секрет PROD_SSH_KEY (приватный ключ ~/.ssh/id_ed25519) в
-#      Settings -> Secrets and variables -> Actions.
-#   2. Один раз вручную запустить (Run workflow) и убедиться, что деплой+health ОК.
-#   3. ВАЖНО: до первого git-деплоя на проде разово выполнить
-#      `cd /opt/frame && git checkout api/routers/fund_trades.py` - сбросить scp-версию,
-#      чтобы git pull применился чисто (после коммита fund_trades.py в репо).
-#   4. Для авто-деплоя - раскомментировать блок push ниже.
+# Предусловия (выполнены 2026-06-08):
+#   • Секрет PROD_SSH_KEY (приватный ключ) добавлен в Settings → Secrets → Actions.
+#   • /opt/frame приведён к ЧИСТОМУ checkout (git status пуст) — pull fast-forward без stash.
 #
-# Заметка про 4ГБ прод: сборка образа идёт НА проде. Если станет тяжело -
-# перенести build в Actions + push в GHCR, прод только pull (обсудим отдельно).
+# Деплой идёт ТОЛЬКО на зелёный build-check (битый фронт-билд не выкатывается).
+# workflow_dispatch оставлен для ручного запуска.
+#
+# Заметка про 4ГБ прод: сборка образа идёт НА проде (с кешем — быстро). Если станет
+# тяжело — перенести build в Actions + push в GHCR, прод только pull.
 
 on:
   workflow_dispatch:
-  # push:
-  #   branches: [main]
+  workflow_run:
+    workflows: ["build-check"]
+    types: [completed]
+    branches: [main]
 
 concurrency:
   group: deploy-prod
@@ -26,6 +27,8 @@ concurrency:
 
 jobs:
   deploy:
+    # Только если build-check прошёл (или ручной запуск).
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - name: SSH deploy
@@ -38,15 +41,35 @@ jobs:
           script: |
             set -e
             cd /opt/frame
+            before=$(git rev-parse HEAD)
             git pull origin main
+            after=$(git rev-parse HEAD)
+            changed=$(git diff --name-only "$before" "$after")
+            echo "=== Changed files ==="; echo "$changed"
+
+            # api всегда (запекает frontend dist + Python код api)
             docker compose build api
             docker compose up -d --force-recreate api
-            docker restart frame-nginx-1
+
+            # orchestrator — ОТДЕЛЬНЫЙ image; пересобираем только если менялся его код
+            if echo "$changed" | grep -qE '^(OI/|Funds/|Candles/|Macro/|Commodity/|main_orchestrator\.py|requirements\.txt|Dockerfile$)'; then
+              echo "=== Orchestrator code changed -> rebuild ==="
+              docker compose build orchestrator
+              docker compose up -d --force-recreate orchestrator
+            fi
+
+            # alert-bot — host-side systemd; рестарт только если менялся его код
+            if echo "$changed" | grep -qE '^signals/alert_bot\.py$'; then
+              echo "=== alert_bot changed -> systemctl restart ==="
+              systemctl restart frame-alert-bot
+            fi
+
+            echo "=== HEAD на проде: $(git rev-parse --short HEAD) ==="
 
       - name: Health + SW check
         run: |
-          sleep 10
+          sleep 12   # даём resolver-фиксу nginx ре-резолвить новый IP api
           code=$(curl -s -o /dev/null -w "%{http_code}" https://xn--80aklbnczmv.xn--p1ai/api/health)
           echo "health: HTTP $code"
           test "$code" = "200" || { echo "health failed"; exit 1; }
-          curl -s https://xn--80aklbnczmv.xn--p1ai/sw.js | grep -m1 CACHE_NAME || true
+          curl -s https://xn--80aklbnczmv.xn--p1ai/sw.js | grep -m1 frame- || true
