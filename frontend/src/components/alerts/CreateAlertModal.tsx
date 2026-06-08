@@ -7,10 +7,9 @@
  * Inline-styles + CSS-vars (как UpgradeModal — переживает portal/тему).
  */
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
-import { Bell, X, Check, ExternalLink, Info, Plus } from 'lucide-react';
+import { Bell, X, Check, ExternalLink, Info, Search } from 'lucide-react';
 import {
     getTelegramStatus, createTelegramLink, createAlert, getAlertContext,
-    getInstruments,
     type AlertCreatePayload, type AlertContext,
 } from '../../services/api';
 import MessengerChoice from './MessengerChoice';
@@ -77,27 +76,13 @@ const SIGNAL_LEVELS: SignalLevel[] = [
     { key: 'strong', label: 'Сильное', mult: 3, freq: 'раз в 2–3 недели' },
     { key: 'extreme', label: 'Экстремальное', mult: 5, freq: 'раз в 2 месяца' },
 ];
-const PRESETS: { key: string; label: string; group?: string }[] = [
-    { key: 'fav', label: 'Избранное' },
-    { key: 'Акции', label: 'Акции', group: 'Акции' },
-    { key: 'Сырьё', label: 'Сырьё', group: 'Сырьё' },
-    { key: 'Валюта', label: 'Валюта', group: 'Валюта' },
-    { key: 'Индексы', label: 'Индексы', group: 'Индексы' },
-];
 
-// Чип выбранного актива (тикер + крестик) и пресет-кнопка — общий editorial-стиль.
+// Чип выбранного актива (тикер + крестик) — editorial-стиль.
 const chipStyle: CSSProperties = {
     display: 'inline-flex', alignItems: 'center', gap: 6,
     padding: '5px 8px 5px 12px', borderRadius: 999,
     border: '2px solid var(--text-primary)', background: 'var(--bg-secondary)',
     color: 'var(--text-primary)', fontSize: 'var(--fs-xs)', fontWeight: 600,
-};
-const ghostBtn: CSSProperties = {
-    display: 'inline-flex', alignItems: 'center', gap: 4,
-    padding: '6px 12px', borderRadius: 999,
-    border: '2px dashed var(--text-secondary)', background: 'transparent',
-    color: 'var(--text-secondary)', fontSize: 'var(--fs-xs)', fontWeight: 600,
-    cursor: 'pointer',
 };
 
 export default function CreateAlertModal({ indicator, asset, assetName, metrics, onClose }: Props) {
@@ -125,8 +110,6 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
         () => ({ [asset]: assetName || asset }),
     );
     const [pickerOpen, setPickerOpen] = useState(false);
-    // Справочник фьючерсов (имена + группы) для пресетов «Акции/Сырьё/…».
-    const [futures, setFutures] = useState<{ sectype: string; name: string; group: string | null }[]>([]);
 
     // ── Уровень сигнала (только oi_move) ────────────────────────────────────
     const [levelKey, setLevelKey] = useState('strong');       // default «Сильное»
@@ -136,18 +119,6 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
 
     useEffect(() => {
         getTelegramStatus().then((s) => setLinked(s.linked)).catch(() => setLinked(false));
-    }, []);
-
-    // Справочник фьючерсов — грузим один раз (имена/секторы для чипов и пресетов).
-    useEffect(() => {
-        let cancelled = false;
-        getInstruments('futures')
-            .then((r) => {
-                if (cancelled) return;
-                setFutures(r.instruments.map((i) => ({ sectype: i.sectype, name: i.name, group: i.group })));
-            })
-            .catch(() => { if (!cancelled) setFutures([]); });
-        return () => { cancelled = true; };
     }, []);
 
     // Контекст (свежая цена + intraday-доступность) — грузим когда форма доступна
@@ -218,25 +189,6 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
         setSelected((prev) => {
             const next = { ...prev };
             delete next[sectype];
-            return next;
-        });
-    };
-    // Пресет добавляет НАБОР в текущий выбор (не заменяет). «Избранное» — из
-    // localStorage; группы — фильтр справочника фьючерсов по group.
-    const addPreset = (preset: typeof PRESETS[number]) => {
-        let add: { sectype: string; name: string }[];
-        if (preset.key === 'fav') {
-            let favs: string[] = [];
-            try { favs = JSON.parse(localStorage.getItem('favoriteInstruments') || '[]'); } catch { favs = []; }
-            const favSet = new Set(favs);
-            add = futures.filter((f) => favSet.has(f.sectype)).map((f) => ({ sectype: f.sectype, name: f.name }));
-        } else {
-            add = futures.filter((f) => f.group === preset.group).map((f) => ({ sectype: f.sectype, name: f.name }));
-        }
-        if (add.length === 0) return;
-        setSelected((prev) => {
-            const next = { ...prev };
-            for (const a of add) next[a.sectype] = a.name;
             return next;
         });
     };
@@ -369,46 +321,41 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
                         {isOiMove ? (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                                 <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>Активы</div>
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                                    {selectedList.map((a) => (
-                                        <span key={a.sectype} style={chipStyle}>
-                                            {a.sectype}
-                                            <button
-                                                onClick={() => removeAsset(a.sectype)}
-                                                aria-label={`Убрать ${a.sectype}`}
-                                                className="editorial-press"
-                                                style={{
-                                                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                                                    width: 18, height: 18, borderRadius: 999,
-                                                    color: 'var(--text-secondary)',
-                                                }}
-                                            >
-                                                <X size={13} />
-                                            </button>
-                                        </span>
-                                    ))}
-                                    <button onClick={() => setPickerOpen(true)} className="editorial-press" style={ghostBtn}>
-                                        <Plus size={13} /> добавить
-                                    </button>
-                                </div>
-                                {/* Пресеты — добавляют набор в выбор */}
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                                    {PRESETS.map((p) => (
-                                        <button
-                                            key={p.key}
-                                            onClick={() => addPreset(p)}
-                                            className="editorial-press"
-                                            style={{
-                                                padding: '4px 10px', borderRadius: 999,
-                                                border: '2px solid var(--text-primary)', background: 'var(--bg-primary)',
-                                                color: 'var(--text-primary)', fontSize: 'var(--fs-xs)', fontWeight: 600,
-                                                cursor: 'pointer',
-                                            }}
-                                        >
-                                            {p.label}
-                                        </button>
-                                    ))}
-                                </div>
+                                {selectedList.length > 0 && (
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                        {selectedList.map((a) => (
+                                            <span key={a.sectype} style={chipStyle}>
+                                                {a.sectype}
+                                                <button
+                                                    onClick={() => removeAsset(a.sectype)}
+                                                    aria-label={`Убрать ${a.sectype}`}
+                                                    className="editorial-press"
+                                                    style={{
+                                                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                                        width: 18, height: 18, borderRadius: 999,
+                                                        color: 'var(--text-secondary)',
+                                                    }}
+                                                >
+                                                    <X size={13} />
+                                                </button>
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
+                                {/* Открыть привычный пикер активов (поиск + секторы + избранное) */}
+                                <button
+                                    onClick={() => setPickerOpen(true)}
+                                    className="editorial-press"
+                                    style={{
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                                        width: '100%', padding: '10px 12px', borderRadius: 10,
+                                        border: '2px solid var(--text-primary)', background: 'var(--bg-secondary)',
+                                        color: 'var(--text-primary)', fontSize: 'var(--fs-sm)', fontWeight: 600,
+                                        cursor: 'pointer',
+                                    }}
+                                >
+                                    <Search size={16} /> Выбрать активы
+                                </button>
                             </div>
                         ) : (
                             <div style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)' }}>
@@ -606,6 +553,7 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
                     onClick={(e) => e.stopPropagation()}
                 >
                     <InstrumentSearchModal
+                        indicator="open_interest"
                         filterType="futures"
                         multiSelect
                         selectedSectypes={selectedSectypes}

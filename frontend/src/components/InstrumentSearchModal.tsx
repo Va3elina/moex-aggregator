@@ -510,7 +510,13 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
                   fontSize: 'var(--fs-xs)',
                 }}
               >
-                Выбрать все
+                {/* При активной категории — контекстная подпись «весь сектор»,
+                    чтобы было очевидно, что добавится именно текущий сектор. */}
+                {categoryFilter !== 'all'
+                  ? `Выбрать весь сектор: «${
+                      CATEGORY_FILTERS.find((c) => c.key === categoryFilter)?.label ?? categoryFilter
+                    }»`
+                  : 'Выбрать все'}
               </button>
               <button
                 type="button"

@@ -722,15 +722,6 @@ export default function OpenInterestPage() {
             assetName={instrumentName || selectedInstrument}
             metrics={[
               {
-                key: 'price', label: 'Цена', indicator: 'price', metric: 'close', unit: '₽',
-                ops: [
-                  { value: 'cross_up', label: '↑ пересечёт' },
-                  { value: 'cross_down', label: '↓ пересечёт' },
-                  { value: 'gt', label: 'станет выше' },
-                  { value: 'lt', label: 'станет ниже' },
-                ],
-              },
-              {
                 key: 'move_fiz',
                 label: 'Резкое движение позиции (физлица)',
                 indicator: 'oi_move', metric: 'atr', clgroup: 'FIZ', unit: '×', defaultThreshold: 3,
