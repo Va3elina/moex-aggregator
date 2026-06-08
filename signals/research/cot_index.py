@@ -84,98 +84,86 @@ def load_price(conn, sectype):
     return {d: c for d, (c, _) in best.items()}
 
 
+import statistics as st
+from signals.db import get_asset_name
+
+
+def asset_edge(s_oi, price, W, H=20):
+    """Per-asset контрарность физлиц (WillCo, окно W, forward H дней).
+    edge = ср.fwd(лоу≤20) − ср.fwd(хай≥80). >0 = контрарность работает
+    (толпа в шорте → цена растёт сильнее, в лонге → слабее)."""
+    dates = [x[0] for x in s_oi]
+    tot = [x[3] for x in s_oi]
+    willf = [s_oi[i][1] / tot[i] if tot[i] else 0 for i in range(len(s_oi))]
+    idx = cot_index(willf, W)
+    hi_r, lo_r = [], []
+    for i in range(len(s_oi) - H):
+        p0 = price.get(dates[i]); pf = price.get(dates[i + H])
+        if not p0 or not pf:
+            continue
+        v = idx[i]
+        if v is None:
+            continue
+        ret = (pf - p0) / p0 * 100
+        if v >= EXTREME_HI:
+            hi_r.append(ret)
+        elif v <= EXTREME_LO:
+            lo_r.append(ret)
+    fh = st.fmean(hi_r) if hi_r else None
+    fl = st.fmean(lo_r) if lo_r else None
+    edge = (fl - fh) if (fh is not None and fl is not None) else None
+    return edge, fh, fl, len(hi_r), len(lo_r)
+
+
 def run():
     engine = create_engine(os.environ["DB_URL"], connect_args={"ssl_context": False})
-    freq = defaultdict(lambda: defaultdict(int))   # freq[window][grp_var] = extremes
-    total_pts = defaultdict(int)
-    # контрарность: суммируем forward-returns по бакетам
-    fwd = defaultdict(lambda: defaultdict(list))   # fwd[grp][bucket] -> list of returns @ H=20
-
     from signals import config
+    rows = []
     with engine.connect() as conn:
         for sectype in config.OI_ASSETS:
             try:
                 s = load_oi(conn, sectype)
             except Exception as e:
-                print(f"[skip oi] {sectype}: {e}")
+                print(f"[skip] {sectype}: {e}")
                 continue
-            if len(s) < 260:
+            if len(s) <= 760 + 20:    # нужно ≥3 года истории + горизонт
                 continue
-            net_f = [x[1] for x in s]
-            net_y = [x[2] for x in s]
-            tot = [x[3] for x in s]
-            willf = [net_f[i] / tot[i] if tot[i] else 0 for i in range(len(s))]
-            wily = [net_y[i] / tot[i] if tot[i] else 0 for i in range(len(s))]
-
-            # частота экстремумов по окнам/вариантам
-            for wn, W in WINDOWS.items():
-                if len(s) <= W:
-                    continue
-                for name, vals in (("FIZ-std", net_f), ("YUR-std", net_y),
-                                   ("FIZ-will", willf), ("YUR-will", wily)):
-                    idx = cot_index(vals, W)
-                    for v in idx:
-                        if v is None:
-                            continue
-                        total_pts[(wn, name)] += 1
-                        if v >= EXTREME_HI or v <= EXTREME_LO:
-                            freq[wn][name] += 1
-
-    # контрарность — отдельно по ликвидным (нужна цена)
-    with engine.connect() as conn:
-        for sectype in LIQUID:
             try:
-                s = load_oi(conn, sectype)
                 price = load_price(conn, sectype)
-            except Exception as e:
-                print(f"[skip val] {sectype}: {e}")
+            except Exception:
+                price = {}
+            if not price:
                 continue
-            if len(s) <= PRIMARY_W + max(FWD):
+            e2 = asset_edge(s, price, 500)
+            e3 = asset_edge(s, price, 750)
+            if e3[0] is None or (e3[3] + e3[4]) < 40:   # мало экстремум-дней → пропуск
                 continue
-            dates = [x[0] for x in s]
-            idx_f = cot_index([x[1] for x in s], PRIMARY_W)
-            idx_y = cot_index([x[2] for x in s], PRIMARY_W)
-            for i in range(len(s) - max(FWD)):
-                p0 = price.get(dates[i])
-                if not p0:
-                    continue
-                pf = price.get(dates[i + 20])
-                if not pf:
-                    continue
-                ret = (pf - p0) / p0 * 100
-                for grp, idx in (("FIZ", idx_f), ("YUR", idx_y)):
-                    v = idx[i]
-                    if v is None:
-                        continue
-                    if v >= EXTREME_HI:
-                        fwd[grp]["хай(≥80)"].append(ret)
-                    elif v <= EXTREME_LO:
-                        fwd[grp]["лоу(≤20)"].append(ret)
-                    else:
-                        fwd[grp]["норма"].append(ret)
+            rows.append((sectype, get_asset_name(sectype) or "", e2, e3))
 
-    # отчёт
-    print("\n=== Частота экстремумов COT-индекса (≥80 или ≤20), % дней ===")
-    print(f"{'окно':6} {'FIZ-std':>9} {'YUR-std':>9} {'FIZ-will':>9} {'YUR-will':>9}")
-    for wn in WINDOWS:
-        cells = []
-        for name in ("FIZ-std", "YUR-std", "FIZ-will", "YUR-will"):
-            tp = total_pts[(wn, name)]
-            cells.append(f"{100*freq[wn][name]/tp:.1f}%" if tp else "—")
-        print(f"{wn:6} {cells[0]:>9} {cells[1]:>9} {cells[2]:>9} {cells[3]:>9}")
-
-    print(f"\n=== Контрарность: forward-доходность цены через 20 дн (окно {PRIMARY_W}д, {len(LIQUID)} ликв.) ===")
-    print(f"{'группа/бакет':18} {'ср.fwd%':>9} {'медиана%':>9} {'дней':>7}  трактовка")
-    import statistics as st
-    for grp in ("FIZ", "YUR"):
-        for bucket in ("хай(≥80)", "норма", "лоу(≤20)"):
-            xs = fwd[grp][bucket]
-            if not xs:
-                continue
-            m = st.fmean(xs); md = st.median(xs)
-            print(f"  {grp}/{bucket:12} {m:>+8.2f} {md:>+8.2f} {len(xs):>7}")
-    print("\n  Контрарность физлиц = на хай(≥80) ждём ср.fwd < 0, на лоу(≤20) > 0.")
-    print("  Подтверждение юрлиц = на хай(≥80) ждём ср.fwd > 0, на лоу(≤20) < 0.")
+    # ранжируем по edge_3г
+    rows.sort(key=lambda r: (r[3][0] if r[3][0] is not None else -999), reverse=True)
+    print(f"\n=== Контрарность физлиц per-asset (WillCo, fwd 20д). "
+          f"edge = ср.fwd(лоу≤20) − ср.fwd(хай≥80) ===")
+    print("   edge>0 → контрарность РАБОТАЕТ (толпа в шорте растёт, в лонге падает)")
+    print("   edge<0 → ОБРАТНО (толпа права / momentum)\n")
+    print(f"{'тикер':8}{'имя':22}{'edge2г':>8}{'edge3г':>8}{'fwd хай':>8}{'fwd лоу':>8}{'n хай/лоу':>11}")
+    work2 = work3 = 0
+    for sec, nm, e2, e3 in rows:
+        ed2 = f"{e2[0]:+.2f}" if e2[0] is not None else "—"
+        ed3 = f"{e3[0]:+.2f}" if e3[0] is not None else "—"
+        fh = f"{e3[2]:+.2f}" if e3[2] is not None else "—"
+        fl = f"{e3[1]:+.2f}" if e3[1] is not None else "—"
+        if e2[0] is not None and e2[0] > 0:
+            work2 += 1
+        if e3[0] is not None and e3[0] > 0:
+            work3 += 1
+        print(f"{sec:8}{nm[:21]:22}{ed2:>8}{ed3:>8}{fh:>8}{fl:>8}{str(e3[3])+'/'+str(e3[4]):>11}")
+    n = len(rows)
+    print(f"\n  Контрарность РАБОТАЕТ (edge>0): окно 2г — {work2}/{n}, окно 3г — {work3}/{n} бумаг.")
+    edges3 = [r[3][0] for r in rows if r[3][0] is not None]
+    if edges3:
+        print(f"  Медианный edge (3г): {st.median(edges3):+.2f} п.п.;  "
+              f"среднее: {st.fmean(edges3):+.2f} п.п.")
 
 
 if __name__ == "__main__":
