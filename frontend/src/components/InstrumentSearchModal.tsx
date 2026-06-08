@@ -409,7 +409,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
   };
 
   return (
-    <div className="instrument-modal-root fixed inset-0 z-50 flex items-start justify-center p-4 pt-16">
+    <div className="instrument-modal-root fixed inset-0 z-50 flex items-start justify-center p-4 pt-8 sm:pt-10">
       {/* Backdrop — solid dim без backdrop-blur (editorial: no glass effects). */}
       <div
         className="absolute inset-0"
@@ -420,7 +420,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
       {/* Modal — editorial pill в светлой / glass в dark, через CSS-overrides.
           Базово: bg-secondary + 2px border + hard shadow. */}
       <div
-        className="instrument-modal relative w-full max-w-xl rounded-2xl max-h-[85vh] overflow-hidden flex flex-col"
+        className="instrument-modal relative w-full max-w-xl rounded-2xl max-h-[90vh] overflow-hidden flex flex-col"
         style={{
           backgroundColor: 'var(--bg-secondary)',
           border: '2px solid var(--text-primary)',
@@ -486,7 +486,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
                   style={{
                     backgroundColor: active ? 'var(--accent)' : 'var(--bg-secondary)',
                     color: active ? 'var(--text-inverse)' : 'var(--text-primary)',
-                    border: '2px solid var(--text-primary)',
+                    border: `2px solid ${active ? 'var(--accent)' : 'var(--text-primary)'}`,
                     boxShadow: active ? 'var(--shadow-hard-chip, 3px 3px 0 var(--text-primary))' : undefined,
                   }}
                 >

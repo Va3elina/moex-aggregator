@@ -77,13 +77,16 @@ const SIGNAL_LEVELS: SignalLevel[] = [
     { key: 'extreme', label: 'Экстремальное', mult: 5, freq: 'раз в 2 месяца' },
 ];
 
-// Чип выбранного актива (тикер + крестик) — editorial-стиль.
-const chipStyle: CSSProperties = {
-    display: 'inline-flex', alignItems: 'center', gap: 6,
-    padding: '5px 8px 5px 12px', borderRadius: 999,
-    border: '2px solid var(--text-primary)', background: 'var(--bg-secondary)',
-    color: 'var(--text-primary)', fontSize: 'var(--fs-xs)', fontWeight: 600,
-};
+// Сегмент-пилл переключателя (уровень сигнала / режим) — editorial-стиль.
+// active = целиком оранжевый (accent fill + inverse text), иначе бордер.
+const pill = (active: boolean): CSSProperties => ({
+    display: 'flex', alignItems: 'center', gap: 10,
+    padding: '8px 12px', borderRadius: 10, cursor: 'pointer',
+    border: `2px solid ${active ? 'var(--accent)' : 'var(--text-primary)'}`,
+    background: active ? 'var(--accent)' : 'var(--bg-secondary)',
+    color: active ? 'var(--text-inverse)' : 'var(--text-primary)',
+    textAlign: 'left', width: '100%',
+});
 
 export default function CreateAlertModal({ indicator, asset, assetName, metrics, onClose }: Props) {
     const [linked, setLinked] = useState<boolean | null>(null);  // null = загрузка
@@ -183,13 +186,6 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
                 return next;
             }
             return { ...prev, [sectype]: name };
-        });
-    };
-    const removeAsset = (sectype: string) => {
-        setSelected((prev) => {
-            const next = { ...prev };
-            delete next[sectype];
-            return next;
         });
     };
 
@@ -317,45 +313,31 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
                     </div>
                 ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                        {/* ── ВЫБОР АКТИВОВ ──────────────────────────────────── */}
+                        {/* ── ВЫБОР АКТИВОВ (oi_move) — всегда первым в форме ── */}
                         {isOiMove ? (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                                 <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>Активы</div>
-                                {selectedList.length > 0 && (
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                                        {selectedList.map((a) => (
-                                            <span key={a.sectype} style={chipStyle}>
-                                                {a.sectype}
-                                                <button
-                                                    onClick={() => removeAsset(a.sectype)}
-                                                    aria-label={`Убрать ${a.sectype}`}
-                                                    className="editorial-press"
-                                                    style={{
-                                                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                                                        width: 18, height: 18, borderRadius: 999,
-                                                        color: 'var(--text-secondary)',
-                                                    }}
-                                                >
-                                                    <X size={13} />
-                                                </button>
-                                            </span>
-                                        ))}
-                                    </div>
-                                )}
-                                {/* Открыть привычный пикер активов (поиск + секторы + избранное) */}
+                                {/* Заметная full-width кнопка пикера (поиск + секторы + избранное).
+                                    Тикеры выбранных НЕ перечисляем — только счётчик ниже. */}
                                 <button
                                     onClick={() => setPickerOpen(true)}
                                     className="editorial-press"
                                     style={{
                                         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                                        width: '100%', padding: '10px 12px', borderRadius: 10,
+                                        width: '100%', padding: '12px 14px', borderRadius: 10,
                                         border: '2px solid var(--text-primary)', background: 'var(--bg-secondary)',
-                                        color: 'var(--text-primary)', fontSize: 'var(--fs-sm)', fontWeight: 600,
+                                        color: 'var(--text-primary)', fontSize: 'var(--fs-sm)', fontWeight: 700,
                                         cursor: 'pointer',
                                     }}
                                 >
-                                    <Search size={16} /> Выбрать активы
+                                    <Search size={18} /> Выбрать активы
                                 </button>
+                                <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>
+                                    Выбрано:{' '}
+                                    <b style={{ color: 'var(--text-primary)' }}>
+                                        {selectedList.length} {assetsWord(selectedList.length)}
+                                    </b>
+                                </div>
                             </div>
                         ) : (
                             <div style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)' }}>
@@ -383,53 +365,44 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
                                     {SIGNAL_LEVELS.map((l) => {
                                         const checked = levelKey === l.key;
                                         return (
-                                            <label key={l.key} style={{
-                                                display: 'flex', alignItems: 'center', gap: 10,
-                                                padding: '8px 10px', borderRadius: 10, cursor: 'pointer',
-                                                border: '2px solid var(--text-primary)',
-                                                background: checked ? 'var(--bg-secondary)' : 'var(--bg-primary)',
-                                                boxShadow: checked ? '3px 3px 0 0 var(--text-primary)' : undefined,
-                                            }}>
-                                                <input
-                                                    type="radio" name="oi-level" value={l.key}
-                                                    checked={checked} onChange={() => setLevelKey(l.key)}
-                                                    style={{ accentColor: 'var(--accent)', width: 16, height: 16, flex: '0 0 auto' }}
-                                                />
+                                            <button
+                                                key={l.key}
+                                                type="button"
+                                                onClick={() => setLevelKey(l.key)}
+                                                className="editorial-press"
+                                                style={pill(checked)}
+                                            >
                                                 <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                                                    <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                                    <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 700 }}>
                                                         {l.label}
-                                                        <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}> · {l.mult}×</span>
+                                                        <span style={{ fontWeight: 600, opacity: 0.85 }}> · {l.mult}×</span>
                                                     </span>
-                                                    <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>{l.freq}</span>
+                                                    <span style={{ fontSize: 'var(--fs-xs)', opacity: checked ? 0.85 : 1, color: checked ? 'var(--text-inverse)' : 'var(--text-secondary)' }}>{l.freq}</span>
                                                 </span>
-                                            </label>
+                                            </button>
                                         );
                                     })}
-                                    {/* Своё значение */}
-                                    <label style={{
-                                        display: 'flex', alignItems: 'center', gap: 10,
-                                        padding: '8px 10px', borderRadius: 10, cursor: 'pointer',
-                                        border: '2px solid var(--text-primary)',
-                                        background: isCustomLevel ? 'var(--bg-secondary)' : 'var(--bg-primary)',
-                                        boxShadow: isCustomLevel ? '3px 3px 0 0 var(--text-primary)' : undefined,
-                                    }}>
-                                        <input
-                                            type="radio" name="oi-level" value="custom"
-                                            checked={isCustomLevel} onChange={() => setLevelKey('custom')}
-                                            style={{ accentColor: 'var(--accent)', width: 16, height: 16, flex: '0 0 auto' }}
-                                        />
-                                        <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>Своё значение</span>
-                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 'auto' }}>
-                                            <input
-                                                type="text" inputMode="decimal" value={customMult}
-                                                onChange={(e) => { setCustomMult(e.target.value); setLevelKey('custom'); }}
-                                                onFocus={() => setLevelKey('custom')}
-                                                placeholder="4"
-                                                style={{ ...field, width: 64, padding: '6px 8px', textAlign: 'right' }}
-                                            />
-                                            <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-secondary)' }}>×</span>
-                                        </span>
-                                    </label>
+                                    {/* Своё значение — пилл + числовой ввод × раскрывается при выборе */}
+                                    <button
+                                        type="button"
+                                        onClick={() => setLevelKey('custom')}
+                                        className="editorial-press"
+                                        style={pill(isCustomLevel)}
+                                    >
+                                        <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 700 }}>Своё значение</span>
+                                        {isCustomLevel && (
+                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 'auto' }}>
+                                                <input
+                                                    type="text" inputMode="decimal" value={customMult}
+                                                    onChange={(e) => { setCustomMult(e.target.value); setLevelKey('custom'); }}
+                                                    onClick={(e) => { e.stopPropagation(); setLevelKey('custom'); }}
+                                                    placeholder="4"
+                                                    style={{ ...field, width: 64, padding: '6px 8px', textAlign: 'right' }}
+                                                />
+                                                <span style={{ fontSize: 'var(--fs-sm)' }}>×</span>
+                                            </span>
+                                        )}
+                                    </button>
                                 </div>
                             </div>
                         ) : (
@@ -451,13 +424,29 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
                             </>
                         )}
 
-                        {/* Режим срабатывания */}
-                        <label style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>Режим
-                            <select value={mode} onChange={(e) => setMode(e.target.value as 'once' | 'repeat')} style={{ ...field, marginTop: 4 }}>
-                                <option value="once">Уведомить один раз</option>
-                                <option value="repeat">Каждый раз</option>
-                            </select>
-                        </label>
+                        {/* Режим срабатывания — переключатель (активный = оранжевый) */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>Режим</div>
+                            <div style={{ display: 'flex', gap: 6 }}>
+                                {([
+                                    { value: 'once', label: 'Один раз' },
+                                    { value: 'repeat', label: 'Каждый раз' },
+                                ] as const).map((m) => {
+                                    const checked = mode === m.value;
+                                    return (
+                                        <button
+                                            key={m.value}
+                                            type="button"
+                                            onClick={() => setMode(m.value)}
+                                            className="editorial-press"
+                                            style={{ ...pill(checked), justifyContent: 'center', fontSize: 'var(--fs-sm)', fontWeight: 700 }}
+                                        >
+                                            {m.label}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
 
                         {/* ── ТЕКСТ ФОРМУЛЫ (oi_move) ─────────────────────────── */}
                         {isOiMove && (
