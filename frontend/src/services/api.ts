@@ -1676,6 +1676,22 @@ export async function createAlert(payload: AlertCreatePayload): Promise<AlertInf
     if (!resp.ok) throw new Error('Не удалось создать алерт');
     return resp.json();
 }
+export interface AlertBatchResult { created: number; skipped: number; errors: string[]; }
+// Пакетное создание (группа активов) — ОДИН запрос вместо N, иначе N
+// параллельных POST'ов пробивают nginx rate-limit (burst=20) → часть 503.
+export async function createAlertsBatch(alerts: AlertCreatePayload[]): Promise<AlertBatchResult> {
+    const resp = await apiFetch(`${API_BASE}/api/alerts/batch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ alerts }),
+    });
+    if (resp.status === 403) {
+        const d = await resp.json().catch(() => ({}));
+        throw new Error(d?.detail || d?.error?.message || 'Алерты доступны на тарифе Basic и Pro');
+    }
+    if (!resp.ok) throw new Error('Не удалось создать алерты');
+    return resp.json();
+}
 export async function deleteAlert(id: number): Promise<void> {
     const resp = await apiFetch(`${API_BASE}/api/alerts/${id}`, { method: 'DELETE' });
     if (!resp.ok && resp.status !== 204) throw new Error('Не удалось удалить алерт');

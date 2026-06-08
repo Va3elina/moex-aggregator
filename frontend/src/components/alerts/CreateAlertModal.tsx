@@ -9,7 +9,7 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { Bell, X, Check, ExternalLink, Info, Search } from 'lucide-react';
 import {
-    getTelegramStatus, createTelegramLink, createAlert, getAlertContext,
+    getTelegramStatus, createTelegramLink, createAlert, createAlertsBatch, getAlertContext,
     type AlertCreatePayload, type AlertContext,
 } from '../../services/api';
 import MessengerChoice from './MessengerChoice';
@@ -240,39 +240,33 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
         if (selectedList.length === 0) { setMsg({ type: 'err', text: 'Выберите хотя бы один актив' }); return; }
         const oiOp = metric.ops[0]?.value ?? 'gt';
         setBusy(true); setMsg(null);
-        const errors: string[] = [];
-        let ok = 0;
-        // Параллельно (по одному запросу на актив), но ошибки ловим per-promise,
-        // чтобы один отказ не валил всю пачку. setBusy(false) — в finally, иначе
-        // неожиданное исключение навсегда заблокирует кнопку.
+        // ОДИН batch-запрос на всю группу — иначе N параллельных POST'ов бьются
+        // о nginx rate-limit (burst=20) и часть падает с 503. Квота на бэке
+        // проверяется один раз, ошибки по активам возвращаются списком.
         try {
-            const results = await Promise.all(selectedList.map(async (a) => {
-                try {
-                    const payload: AlertCreatePayload = {
-                        indicator: metric.indicator, asset: a.sectype, asset_name: a.name,
-                        metric: metric.metric, clgroup: metric.clgroup ?? null,
-                        op: oiOp, threshold: mult, mode,
-                        ...(mode === 'repeat' ? { cooldown_hours: 24 } : {}),
-                    };
-                    await createAlert(payload);
-                    return true;
-                } catch (e) {
-                    errors.push(`${a.sectype}: ${(e as Error).message}`);
-                    return false;
-                }
+            const payloads: AlertCreatePayload[] = selectedList.map((a) => ({
+                indicator: metric.indicator, asset: a.sectype, asset_name: a.name,
+                metric: metric.metric, clgroup: metric.clgroup ?? null,
+                op: oiOp, threshold: mult, mode,
+                ...(mode === 'repeat' ? { cooldown_hours: 24 } : {}),
             }));
-            ok = results.filter(Boolean).length;
+            const res = await createAlertsBatch(payloads);
+            if (res.created > 0) {
+                setCreatedCount(res.created);
+                setCreated(true);
+                const notes: string[] = [];
+                if (res.skipped > 0) notes.push(`${res.skipped} уже были`);
+                if (res.errors.length) notes.push(`не удалось ${res.errors.length}: ${res.errors[0]}`);
+                if (notes.length) setMsg({ type: 'err', text: notes.join('; ') });
+            } else if (res.skipped > 0) {
+                setMsg({ type: 'ok', text: 'Эти алерты уже созданы' });
+            } else {
+                setMsg({ type: 'err', text: res.errors[0] || 'Не удалось создать алерты' });
+            }
+        } catch (e) {
+            setMsg({ type: 'err', text: (e as Error).message });
         } finally {
             setBusy(false);
-        }
-        if (ok > 0) {
-            setCreatedCount(ok);
-            setCreated(true);
-            if (errors.length) {
-                setMsg({ type: 'err', text: `Не удалось создать ${errors.length}: ${errors[0]}` });
-            }
-        } else {
-            setMsg({ type: 'err', text: errors[0] || 'Не удалось создать алерты' });
         }
     };
 

@@ -190,6 +190,20 @@ def _to_out(a: Alert) -> AlertOut:
     )
 
 
+# Валидация значений (op/mode/indicator/clgroup) — общая для одиночного и
+# пакетного создания. Возвращает текст ошибки или None если всё ок.
+def _validate_alert_body(b: AlertCreate) -> Optional[str]:
+    if b.op not in ("gt", "lt", "cross_up", "cross_down"):
+        return "некорректное условие"
+    if b.mode not in ("once", "repeat"):
+        return "некорректный режим"
+    if b.indicator not in ("price", "oi_zscore", "oi_move", "oi_participants"):
+        return "неизвестный индикатор"
+    if b.clgroup not in (None, "FIZ", "YUR", "ALL"):
+        return "некорректная группа участников"
+    return None
+
+
 @router.get("", response_model=list[AlertOut])
 def list_alerts(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     rows = db.query(Alert).filter(Alert.user_id == user.id).order_by(Alert.created_at.desc()).all()
@@ -212,17 +226,9 @@ def create_alert(
                 status_code=403,
                 detail=f"Достигнут лимит {quota} алертов на вашем тарифе — перейдите на Pro для безлимита",
             )
-    if body.op not in ("gt", "lt", "cross_up", "cross_down"):
-        raise HTTPException(status_code=422, detail="Некорректное условие")
-    if body.mode not in ("once", "repeat"):
-        raise HTTPException(status_code=422, detail="Некорректный режим")
-    # Whitelist indicator/clgroup — иначе опечатка (oi_participnts, clgroup FOO)
-    # сохранится в БД, eval-loop её молча пропустит (None,None) и алерт никогда
-    # не сработает и не удалится.
-    if body.indicator not in ("price", "oi_zscore", "oi_move", "oi_participants"):
-        raise HTTPException(status_code=422, detail="Неизвестный индикатор")
-    if body.clgroup not in (None, "FIZ", "YUR", "ALL"):
-        raise HTTPException(status_code=422, detail="Некорректная группа участников")
+    err = _validate_alert_body(body)
+    if err:
+        raise HTTPException(status_code=422, detail=err.capitalize())
 
     alert = Alert(
         user_id=user.id,
@@ -241,6 +247,66 @@ def create_alert(
     db.commit()
     db.refresh(alert)
     return _to_out(alert)
+
+
+class AlertBatchCreate(BaseModel):
+    # Пакетное создание (группа активов) — ОДИН HTTP-запрос вместо N, иначе
+    # N параллельных POST'ов бьются о nginx rate-limit (burst=20) и часть
+    # падает с 503. Квота проверяется один раз — без гонки счётчика.
+    alerts: list[AlertCreate] = Field(min_length=1, max_length=200)
+
+
+class AlertBatchResult(BaseModel):
+    created: int
+    skipped: int = 0      # пропущено как дубли уже существующих
+    errors: list[str]
+
+
+def _alert_key(indicator, asset, clgroup, metric, op, threshold):
+    return (indicator, asset, clgroup or "", metric, op, round(float(threshold), 6))
+
+
+@router.post("/batch", response_model=AlertBatchResult)
+def create_alerts_batch(
+    body: AlertBatchCreate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    quota = get_common_features(user_tier(user)).get("telegram_alerts_quota", 0)
+    if quota == 0:
+        raise HTTPException(status_code=403, detail="Алерты доступны на тарифе Basic и Pro")
+    existing = db.query(Alert).filter(Alert.user_id == user.id).all()
+    used = len(existing)
+    # remaining=None → безлимит (Pro). Иначе сколько ещё можно создать.
+    remaining = None if quota is None else max(0, quota - used)
+    # Дедуп: повторный «Создать» на той же группе не плодит дубли.
+    seen = {_alert_key(x.indicator, x.asset, x.clgroup, x.metric, x.op, x.threshold) for x in existing}
+
+    created = 0
+    skipped = 0
+    errors: list[str] = []
+    for a in body.alerts:
+        err = _validate_alert_body(a)
+        if err:
+            errors.append(f"{a.asset}: {err}")
+            continue
+        k = _alert_key(a.indicator, a.asset, a.clgroup, a.metric, a.op, a.threshold)
+        if k in seen:
+            skipped += 1
+            continue
+        if remaining is not None and created >= remaining:
+            errors.append(f"{a.asset}: достигнут лимит {quota} алертов (Pro — безлимит)")
+            continue
+        db.add(Alert(
+            user_id=user.id,
+            indicator=a.indicator, asset=a.asset, asset_name=a.asset_name,
+            metric=a.metric, clgroup=a.clgroup, op=a.op, threshold=a.threshold,
+            mode=a.mode, cooldown_hours=a.cooldown_hours, status="active",
+        ))
+        seen.add(k)
+        created += 1
+    db.commit()
+    return AlertBatchResult(created=created, skipped=skipped, errors=errors)
 
 
 @router.patch("/{alert_id}", response_model=AlertOut)
