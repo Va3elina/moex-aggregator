@@ -209,7 +209,7 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
                                 onChange={(e) => setThreshold(e.target.value)}
                                 placeholder={
                                     metric?.indicator === 'price' && hasPrice ? fmtRub(price!.value!)
-                                        : metric?.unit === 'σ' ? '2.5' : '0'
+                                        : metric?.unit === 'σ' ? '2.5' : metric?.unit === '×' ? '3' : '0'
                                 } style={{ ...field, marginTop: 4 }} />
                         </label>
 
@@ -240,14 +240,14 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
                         )}
 
                         {/* OI-аномалия обновляется раз в день */}
-                        {metric?.indicator === 'oi_zscore' && (
+                        {metric?.indicator !== 'price' && (
                             <div style={{
                                 display: 'flex', alignItems: 'flex-start', gap: 8,
                                 fontSize: 'var(--fs-xs)', lineHeight: 1.4,
                                 color: 'var(--text-secondary)',
                             }}>
                                 <Info size={16} style={{ flex: '0 0 auto', marginTop: 1, color: 'var(--accent)' }} />
-                                <span>Аномалия OI обновляется раз в день после публикации позиций МосБиржи.</span>
+                                <span>Позиции МосБиржи обновляются раз в день. Это описание движения, а не прогноз цены.</span>
                             </div>
                         )}
 
