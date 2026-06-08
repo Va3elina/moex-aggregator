@@ -25,6 +25,8 @@ MIN_HIST = config.MIN_HISTORY_DAYS       # 30
 Z = config.Z_THRESHOLD                   # 2.5
 TEST_DAYS = 180                          # сколько последних торговых дней прогоняем на каждый актив
 HORIZONS = (1, 3, 5)
+MIN_REL = 0.02                           # guard материальности: |move|/|net| ≥ 2% (отсев мусора на неликвиде)
+MIN_PART = 50                            # для концентрации: минимум участников, иначе per-participant шумит
 
 
 def _median(xs):
@@ -87,13 +89,17 @@ def metrics_at(series, t):
     diffs1 = [nets[i] - nets[i - 1] for i in range(1, len(nets))]
     if len(diffs1) < 2:
         return None
-    res = {"date": window[-1][0], "last_diff": diffs1[-1]}
+    net_now = nets[-1]
+    res = {"date": window[-1][0], "last_diff": diffs1[-1],
+           "net": net_now, "npart": nparts[-1]}
     res["old"] = old_z(diffs1[-1], diffs1[:-1])
     res["robust"] = robust_z(diffs1[-1], diffs1[:-1])
+    res["rel1"] = abs(diffs1[-1]) / max(abs(net_now), 1)   # материальность 1д-движения
 
     # --- мульти-горизонт (robust на 1/3/5 дней), берём max|z| ---
     best = None
     best_h = None
+    best_diff = 0
     for h in HORIZONS:
         if len(nets) <= h + MIN_HIST:
             continue
@@ -102,8 +108,9 @@ def metrics_at(series, t):
             continue
         zz = robust_z(hdiffs[-1], hdiffs[:-1])
         if zz is not None and (best is None or abs(zz) > abs(best)):
-            best, best_h = zz, h
+            best, best_h, best_diff = zz, h, hdiffs[-1]
     res["multi"], res["multi_h"] = best, best_h
+    res["relm"] = abs(best_diff) / max(abs(net_now), 1)    # материальность move на лучшем горизонте
 
     # --- концентрация: позиция на участника ---
     pp = [nets[i] / nparts[i] if nparts[i] else None for i in range(len(nets))]
@@ -139,9 +146,13 @@ def run():
                         continue
                     agg["days"] += 1
                     fired_old = m["old"] is not None and abs(m["old"]) >= Z
-                    fired_rob = m["robust"] is not None and abs(m["robust"]) >= Z
-                    fired_multi = m["multi"] is not None and abs(m["multi"]) >= Z
-                    fired_conc = m["conc"] is not None and abs(m["conc"]) >= Z
+                    # новые механизмы + guard материальности (отсев мусора на неликвиде)
+                    fired_rob = (m["robust"] is not None and abs(m["robust"]) >= Z
+                                 and m["rel1"] >= MIN_REL)
+                    fired_multi = (m["multi"] is not None and abs(m["multi"]) >= Z
+                                   and m["relm"] >= MIN_REL)
+                    fired_conc = (m["conc"] is not None and abs(m["conc"]) >= Z
+                                  and m["rel1"] >= MIN_REL and m["npart"] >= MIN_PART)
                     agg["old"] += fired_old
                     agg["robust"] += fired_rob
                     agg["multi"] += fired_multi
