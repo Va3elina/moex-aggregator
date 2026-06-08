@@ -82,9 +82,13 @@ const SIGNAL_LEVELS: SignalLevel[] = [
 const pill = (active: boolean): CSSProperties => ({
     display: 'flex', alignItems: 'center', gap: 10,
     padding: '8px 12px', borderRadius: 10, cursor: 'pointer',
-    border: `2px solid ${active ? 'var(--accent)' : 'var(--text-primary)'}`,
+    border: '2px solid var(--text-primary)',
     background: active ? 'var(--accent)' : 'var(--bg-secondary)',
     color: active ? 'var(--text-inverse)' : 'var(--text-primary)',
+    // Выбранное «приподнимается» фирменной жёсткой тенью (как карточка 5px 5px),
+    // невыбранное — заподлицо. Это и есть «тень выбора».
+    boxShadow: active ? '3px 3px 0 0 var(--text-primary)' : 'none',
+    transition: 'box-shadow 0.12s, background 0.12s',
     textAlign: 'left', width: '100%',
 });
 
