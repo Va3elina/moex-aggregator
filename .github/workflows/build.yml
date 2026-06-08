@@ -33,6 +33,15 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      # prebuild (package.json) запускает python3 scripts/build-sprite.py,
+      # который импортит PIL (собирает sprite.png из лого). На раннере (node-only)
+      # Pillow нет → ставим. В Docker это делает apk add py3-pillow.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Pillow (для prebuild build-sprite.py)
+        run: pip install pillow
+
       - name: Build (tsc -b + vite + prerender)
         working-directory: frontend
         run: npm run build
