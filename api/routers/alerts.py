@@ -336,6 +336,18 @@ def update_alert(
     return _to_out(a)
 
 
+@router.delete("")
+def delete_all_alerts(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Удалить ВСЕ алерты пользователя — массовая очистка (если случайно создал
+    группу из 100). Возвращает число удалённых."""
+    n = db.query(Alert).filter(Alert.user_id == user.id).delete(synchronize_session=False)
+    db.commit()
+    return {"deleted": int(n)}
+
+
 @router.delete("/{alert_id}")
 def delete_alert(
     alert_id: int,

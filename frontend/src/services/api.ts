@@ -1699,6 +1699,12 @@ export async function deleteAlert(id: number): Promise<void> {
     const resp = await apiFetch(`${API_BASE}/api/alerts/${id}`, { method: 'DELETE' });
     if (!resp.ok && resp.status !== 204) throw new Error('Не удалось удалить алерт');
 }
+// Массовое удаление всех алертов пользователя (если случайно создал группу из 100).
+export async function deleteAllAlerts(): Promise<{ deleted: number }> {
+    const resp = await apiFetch(`${API_BASE}/api/alerts`, { method: 'DELETE' });
+    if (!resp.ok) throw new Error('Не удалось удалить алерты');
+    return resp.json();
+}
 export async function setAlertStatus(id: number, status: 'active' | 'paused'): Promise<AlertInfo> {
     const resp = await apiFetch(`${API_BASE}/api/alerts/${id}?status=${status}`, { method: 'PATCH' });
     if (!resp.ok) throw new Error('Не удалось изменить алерт');

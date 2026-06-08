@@ -11,7 +11,7 @@ import { useCallback, useEffect, useState, type CSSProperties } from 'react';
 import { Bell, ExternalLink, Send, Trash2, Pause, Play, AlertTriangle } from 'lucide-react';
 import {
     getTelegramStatus, createTelegramLink, unlinkTelegram,
-    listAlerts, deleteAlert, setAlertStatus,
+    listAlerts, deleteAlert, deleteAllAlerts, setAlertStatus,
     type AlertInfo,
 } from '../../services/api';
 import { useCommonFeatures } from '../../contexts/TierFeaturesContext';
@@ -115,6 +115,12 @@ export default function TelegramAlertsSection() {
         try { await deleteAlert(a.id); refresh(); }
         catch (e) { setMsg({ type: 'err', text: (e as Error).message }); }
     };
+    // Массовое удаление — на случай, если случайно создал группу из десятков алертов.
+    const removeAll = async () => {
+        if (!window.confirm(`Удалить ВСЕ ${alerts.length} алертов? Это необратимо.`)) return;
+        try { const r = await deleteAllAlerts(); refresh(); setMsg({ type: 'ok', text: `Удалено ${r.deleted}` }); }
+        catch (e) { setMsg({ type: 'err', text: (e as Error).message }); }
+    };
 
     const activeCount = alerts.filter((a) => a.status === 'active').length;
     const link = 'var(--accent)';
@@ -180,6 +186,7 @@ export default function TelegramAlertsSection() {
                             Пока нет алертов. Создайте кнопкой<BellGlyph /> на индикаторе (сейчас — «Открытый интерес»).
                         </div>
                     ) : (
+                        <>
                         <ul style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                             {alerts.map((a) => (
                                 <li key={a.id} className="rounded-xl p-3" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--sp-2)' }}>
@@ -201,6 +208,12 @@ export default function TelegramAlertsSection() {
                                 </li>
                             ))}
                         </ul>
+                        {alerts.length > 1 && (
+                            <button onClick={removeAll} className="editorial-press" style={{ marginTop: 'var(--sp-2)', alignSelf: 'flex-start', background: 'transparent', border: 'none', color: 'var(--funds-flow-negative, #FF7A5C)', fontSize: 'var(--fs-xs)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, padding: 0 }}>
+                                <Trash2 size={14} /> Удалить все ({alerts.length})
+                            </button>
+                        )}
+                        </>
                     )}
                 </>
             )}

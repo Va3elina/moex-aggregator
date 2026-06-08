@@ -307,6 +307,8 @@ def _view_list(db, user_id: int):
         return txt, kb
     txt = f"📋 <b>Ваши алерты</b> ({len(rows)})\n\nВыберите, чтобы открыть карточку:"
     kb = [[{"text": _alert_short_line(r), "callback_data": f"v:{r[0]}"}] for r in rows]
+    if len(rows) > 1:
+        kb.append([{"text": f"🗑 Удалить все ({len(rows)})", "callback_data": "dall"}])
     kb.append([{"text": "← Меню", "callback_data": "m"}])
     return txt, kb
 
@@ -373,6 +375,29 @@ def _delete_alert(db, user_id: int, alert_id: int) -> bool:
     return (res.rowcount or 0) > 0
 
 
+def _view_delete_all_confirm(db, user_id: int):
+    n = db.execute(
+        text("SELECT count(*) FROM alerts WHERE user_id = :u"), {"u": user_id}
+    ).scalar() or 0
+    if n == 0:
+        return ("У вас нет алертов.", [[{"text": "← Меню", "callback_data": "m"}]])
+    txt = (f"Удалить <b>ВСЕ {n} алертов</b>?\n"
+           f"Действие необратимо — удалятся все, и активные, и сработавшие.")
+    kb = [
+        [{"text": f"🗑 Да, удалить все ({n})", "callback_data": "dallx"}],
+        [{"text": "← Отмена", "callback_data": "la"}],
+    ]
+    return txt, kb
+
+
+def _delete_all_alerts(db, user_id: int) -> int:
+    res = db.execute(
+        text("DELETE FROM alerts WHERE user_id = :u"), {"u": user_id},
+    )
+    db.commit()
+    return res.rowcount or 0
+
+
 def _bulk_status(db, user_id: int, from_status: str, to_status: str) -> int:
     res = db.execute(
         text("UPDATE alerts SET status = :to WHERE user_id = :u AND status = :frm"),
@@ -422,6 +447,17 @@ def process_callback(cb: dict) -> None:
             txt, kb = _view_list(db, user_id)
             edit_kb(chat_id, message_id, txt, kb)
             answer_cb(cb_id)
+            return
+        if data == "dall":
+            txt, kb = _view_delete_all_confirm(db, user_id)
+            edit_kb(chat_id, message_id, txt, kb)
+            answer_cb(cb_id)
+            return
+        if data == "dallx":
+            n = _delete_all_alerts(db, user_id)
+            txt, kb = _view_list(db, user_id)
+            edit_kb(chat_id, message_id, txt, kb)
+            answer_cb(cb_id, f"Удалено {n} 🗑")
             return
 
         # параметризованные: <op>:<id>
