@@ -558,6 +558,7 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
                         multiSelect
                         selectedSectypes={selectedSectypes}
                         onToggleSelect={toggleAsset}
+                        onClearAll={() => setSelected({})}
                         onDone={() => setPickerOpen(false)}
                         onSelect={() => { /* multiSelect: не используется */ }}
                         onClose={() => setPickerOpen(false)}

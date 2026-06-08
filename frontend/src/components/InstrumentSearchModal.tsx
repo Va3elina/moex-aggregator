@@ -51,13 +51,15 @@ interface InstrumentSearchModalProps {
   onToggleSelect?: (sectype: string, name: string) => void;
   /** Завершить множественный выбор. */
   onDone?: () => void;
+  /** Снять весь выбор (очистить набор) — для кнопки «Снять выбор». */
+  onClearAll?: () => void;
 }
 
 
 // InstrumentIcon + INSTRUMENT_ICONS + FUT_TO_STOCK перенесены в
 // отдельный модуль ./InstrumentIcon.tsx, общий для всех страниц.
 
-export default function InstrumentSearchModal({ onSelect, onClose, filterType, excludeType, onlyGroups, indicator, multiSelect = false, selectedSectypes, onToggleSelect, onDone }: InstrumentSearchModalProps) {
+export default function InstrumentSearchModal({ onSelect, onClose, filterType, excludeType, onlyGroups, indicator, multiSelect = false, selectedSectypes, onToggleSelect, onDone, onClearAll }: InstrumentSearchModalProps) {
   // Набор выбранных в multi-режиме — Set для O(1) проверки в renderItem.
   const selectedSet = new Set(selectedSectypes || []);
   const [searchQuery, setSearchQuery] = useState('');
@@ -533,6 +535,25 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
                 <Star size={14} fill="currentColor" style={{ color: 'var(--accent)' }} />
                 Все избранные
               </button>
+              {/* Снять весь выбор — иначе после «Выбрать все» (100+ активов)
+                  не убрать руками по одному. Появляется только когда есть что снимать. */}
+              {selectedSet.size > 0 && (
+                <button
+                  type="button"
+                  onClick={() => onClearAll?.()}
+                  className="editorial-press px-3.5 py-2 font-semibold rounded-full transition-colors inline-flex items-center"
+                  style={{
+                    backgroundColor: 'var(--bg-secondary)',
+                    color: 'var(--text-secondary)',
+                    border: '2px solid var(--border-color)',
+                    fontSize: 'var(--fs-xs)',
+                    gap: 'var(--sp-1)',
+                  }}
+                >
+                  <X size={14} />
+                  Снять выбор ({selectedSet.size})
+                </button>
+              )}
             </div>
           )}
         </div>
