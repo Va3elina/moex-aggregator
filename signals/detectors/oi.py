@@ -21,7 +21,7 @@ from datetime import date
 from typing import Optional, List
 
 from signals import config
-from signals.db import get_oi_daily, get_asset_name
+from signals.db import get_oi_daily, get_asset_name, get_position_series
 
 
 @dataclass(frozen=True)
@@ -116,6 +116,49 @@ def compute_oi_z(
         return None
     z = (last_diff - mean_d) / stdev_d
     return (round(z, 2), last_diff, points[-1].net)
+
+
+# Параметры детектора «резкое движение позиции» (ATR). Подобраны по бэктесту:
+# окно 14 (≈ z 30д, но устойчивее и узнаваемее «ATR14»); guard'ы против шума на
+# мёртвой базе / неликвиде. См. signals/research/oi_atr*.py.
+ATR_WINDOW = 14
+ATR_MIN_PART = 50            # ликвидность: «толпа», иначе шум
+ATR_MIN_REL = 0.02          # материальность: |Δ|/|net| ≥ 2%
+ATR_FLOOR_REL = 0.001       # ATR ≥ 0.1%·|net|, иначе позиция «заморожена»
+
+
+def compute_position_atr(
+    sectype: str,
+    clgroup: str,
+    as_of_date: Optional[date] = None,
+) -> Optional[tuple]:
+    """ATR-резкость последнего дневного изменения позиции — для алертов «резкое
+    движение». ratio = |Δ_последний| / ATR(14), где ATR = среднее |дневных Δ| за 14
+    дней ДО последнего. «Во сколько раз движение больше обычного».
+
+    Возвращает (ratio, last_diff, current_net, direction) или None (мало истории /
+    неликвид / immaterial / замороженная база). direction: 'up'(нарастили)/'down'."""
+    pts = get_position_series(sectype, clgroup, days=ATR_WINDOW + 30, as_of_date=as_of_date)
+    if len(pts) < ATR_WINDOW + 3:
+        return None
+    nets = [p[1] for p in pts]
+    npart_now = pts[-1][2]
+    diffs = [abs(nets[i] - nets[i - 1]) for i in range(1, len(nets))]
+    if len(diffs) < ATR_WINDOW + 1:
+        return None
+    last_signed = nets[-1] - nets[-2]
+    last = abs(last_signed)
+    net = nets[-1]
+    # guard'ы: ликвидность, материальность, ATR-floor (как в бэктесте)
+    if npart_now < ATR_MIN_PART:
+        return None
+    if last / max(abs(net), 1) < ATR_MIN_REL:
+        return None
+    atr = statistics.fmean(diffs[-(ATR_WINDOW + 1):-1])   # ATR за 14 дней ДО последнего
+    if atr <= 0 or atr < ATR_FLOOR_REL * max(abs(net), 1):
+        return None
+    ratio = last / atr
+    return (round(ratio, 2), last_signed, net, "up" if last_signed > 0 else "down")
 
 
 def detect_all_oi(as_of_date: Optional[date] = None) -> List[OISignalCandidate]:

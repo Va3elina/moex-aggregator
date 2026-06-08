@@ -26,7 +26,7 @@ if "@db:" in _db:
 from api.database import SessionLocal               # noqa: E402
 from api.models import User, Alert, AlertFire        # noqa: E402
 from signals.db import get_latest_price              # noqa: E402
-from signals.detectors.oi import compute_oi_z        # noqa: E402
+from signals.detectors.oi import compute_oi_z, compute_position_atr  # noqa: E402
 from signals.alert_notify import send_message        # noqa: E402
 
 SITE = "https://xn--80aklbnczmv.xn--p1ai"  # punycode таймфрейм.рф (надёжно в TG)
@@ -62,6 +62,14 @@ def compute_value(a: Alert):
             return None, None
         z, last_diff, current_net = r
         return float(z), {"last_diff": last_diff, "current_net": current_net}
+    if a.indicator == "oi_move":
+        # «Резкое движение позиции» — во сколько раз дневной сдвиг больше обычного (ATR14).
+        r = compute_position_atr(a.asset, a.clgroup or "FIZ")
+        if not r:
+            return None, None
+        ratio, last_diff, current_net, direction = r
+        return float(ratio), {"last_diff": last_diff, "current_net": current_net,
+                              "direction": direction}
     return None, None
 
 
@@ -98,6 +106,13 @@ def format_msg(a: Alert, value: float, ctx: dict) -> str:
         return (f"🔔 <b>{name} · {a.asset}</b> — Открытый интерес\n"
                 f"Аномалия позиций ({clg}): z = {value:+g}σ (порог {thr:g})\n"
                 f"Δ чистой позиции за день: {diff:+,} контрактов {arrow}\n{link}")
+    if a.indicator == "oi_move":
+        clg = "Физлица" if (a.clgroup or "FIZ") == "FIZ" else "Юрлица"
+        diff = ctx.get("last_diff", 0)
+        word = "резко нарастили" if ctx.get("direction") == "up" else "резко сократили"
+        return (f"🔔 <b>{name} · {a.asset}</b> — Открытый интерес\n"
+                f"{clg} {word} позицию: в {value:g}× больше обычного (порог {thr:g}×)\n"
+                f"Δ за день: {diff:+,} контрактов\n{link}")
     return f"🔔 {name}: алерт сработал"
 
 

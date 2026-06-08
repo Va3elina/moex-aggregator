@@ -64,6 +64,34 @@ def get_oi_daily(
     ]
 
 
+def get_position_series(sectype: str, clgroup: str, days: int,
+                        as_of_date: Optional[date] = None) -> List[tuple]:
+    """Дневной ряд (date, net, npart) для ATR-детектора «резкого движения позиции».
+    net = pos_long + pos_short (pos_short отрицательный); npart = число участников
+    (pos_long_num + pos_short_num) — для guard'а ликвидности."""
+    end = as_of_date or date.today()
+    cutoff = end - timedelta(days=days)
+    with SessionLocal() as session:
+        rows = (
+            session.query(OpenInterest)
+            .filter(
+                OpenInterest.sectype == sectype,
+                OpenInterest.clgroup == clgroup,
+                OpenInterest.interval == 24,
+                OpenInterest.tradedate >= cutoff,
+                OpenInterest.tradedate <= end,
+            )
+            .order_by(OpenInterest.tradedate.asc())
+            .all()
+        )
+    return [
+        (r.tradedate,
+         (r.pos_long or 0) + (r.pos_short or 0),
+         (r.pos_long_num or 0) + (r.pos_short_num or 0))
+        for r in rows
+    ]
+
+
 def get_candles_continuous(sectype: str, days: int) -> List[CandlePoint]:
     """Continuous daily price series, склеенная из всех контрактов sectype.
 
