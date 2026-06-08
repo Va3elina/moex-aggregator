@@ -216,6 +216,13 @@ def create_alert(
         raise HTTPException(status_code=422, detail="Некорректное условие")
     if body.mode not in ("once", "repeat"):
         raise HTTPException(status_code=422, detail="Некорректный режим")
+    # Whitelist indicator/clgroup — иначе опечатка (oi_participnts, clgroup FOO)
+    # сохранится в БД, eval-loop её молча пропустит (None,None) и алерт никогда
+    # не сработает и не удалится.
+    if body.indicator not in ("price", "oi_zscore", "oi_move", "oi_participants"):
+        raise HTTPException(status_code=422, detail="Неизвестный индикатор")
+    if body.clgroup not in (None, "FIZ", "YUR", "ALL"):
+        raise HTTPException(status_code=422, detail="Некорректная группа участников")
 
     alert = Alert(
         user_id=user.id,

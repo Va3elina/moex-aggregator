@@ -26,7 +26,9 @@ if "@db:" in _db:
 from api.database import SessionLocal               # noqa: E402
 from api.models import User, Alert, AlertFire        # noqa: E402
 from signals.db import get_latest_price              # noqa: E402
-from signals.detectors.oi import compute_oi_z, compute_position_atr  # noqa: E402
+from signals.detectors.oi import (  # noqa: E402
+    compute_oi_z, compute_position_atr, compute_participants_atr,
+)
 from signals.alert_notify import send_message        # noqa: E402
 
 SITE = "https://xn--80aklbnczmv.xn--p1ai"  # punycode таймфрейм.рф (надёжно в TG)
@@ -64,11 +66,24 @@ def compute_value(a: Alert):
         return float(z), {"last_diff": last_diff, "current_net": current_net}
     if a.indicator == "oi_move":
         # «Резкое движение позиции» — во сколько раз дневной сдвиг больше обычного (ATR14).
-        r = compute_position_atr(a.asset, a.clgroup or "FIZ")
+        # clgroup ALL: net зеркален (физ net = −юр net), считаем по FIZ как источнику
+        # net, но текст нейтральный («Позиции», без субъекта физ/юр) — флаг neutral.
+        clg = a.clgroup or "FIZ"
+        neutral = clg == "ALL"
+        r = compute_position_atr(a.asset, "FIZ" if neutral else clg)
         if not r:
             return None, None
         ratio, last_diff, current_net, direction = r
         return float(ratio), {"last_diff": last_diff, "current_net": current_net,
+                              "direction": direction, "neutral": neutral}
+    if a.indicator == "oi_participants":
+        # «Резко изменилось число участников» — ATR14 по числу участников (npart).
+        # FIZ/YUR — независимые счётчики (НЕ зеркальны), самостоятельные сигналы.
+        r = compute_participants_atr(a.asset, a.clgroup or "FIZ")
+        if not r:
+            return None, None
+        ratio, last_diff, current_npart, direction = r
+        return float(ratio), {"last_diff": last_diff, "current_npart": current_npart,
                               "direction": direction}
     return None, None
 
@@ -107,12 +122,26 @@ def format_msg(a: Alert, value: float, ctx: dict) -> str:
                 f"Аномалия позиций ({clg}): z = {value:+g}σ (порог {thr:g})\n"
                 f"Δ чистой позиции за день: {diff:+,} контрактов {arrow}\n{link}")
     if a.indicator == "oi_move":
-        clg = "Физлица" if (a.clgroup or "FIZ") == "FIZ" else "Юрлица"
         diff = ctx.get("last_diff", 0)
+        if ctx.get("neutral"):
+            # clgroup ALL — нейтральный текст, без субъекта физ/юр в роли действующего.
+            return (f"🔔 <b>{name} · {a.asset}</b> — Открытый интерес\n"
+                    f"Позиции по {a.asset} резко сдвинулись: "
+                    f"в {value:g}× больше обычного (порог {thr:g}×)\n"
+                    f"Δ за день: {diff:+,} контрактов\n{link}")
+        clg = "Физлица" if (a.clgroup or "FIZ") == "FIZ" else "Юрлица"
         word = "резко нарастили" if ctx.get("direction") == "up" else "резко сократили"
         return (f"🔔 <b>{name} · {a.asset}</b> — Открытый интерес\n"
                 f"{clg} {word} позицию: в {value:g}× больше обычного (порог {thr:g}×)\n"
                 f"Δ за день: {diff:+,} контрактов\n{link}")
+    if a.indicator == "oi_participants":
+        clg = "физлица" if (a.clgroup or "FIZ") == "FIZ" else "юрлица"
+        diff = ctx.get("last_diff", 0)
+        verb = "Прибавилось" if ctx.get("direction") == "up" else "Убыло"
+        return (f"🔔 <b>{name} · {a.asset}</b> — Открытый интерес\n"
+                f"Резко изменилось число участников ({clg}) по {a.asset}: "
+                f"в {value:g}× больше обычного (порог {thr:g}×)\n"
+                f"{verb}: {diff:+,} участников\n{link}")
     return f"🔔 {name}: алерт сработал"
 
 

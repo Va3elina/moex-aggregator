@@ -93,7 +93,14 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
     const [linkUrl, setLinkUrl] = useState<string | null>(null);
     const [metricKey, setMetricKey] = useState(metrics[0]?.key ?? '');
     const metric = metrics.find((m) => m.key === metricKey) ?? metrics[0];
-    const isOiMove = metric?.indicator === 'oi_move';
+    // Тир-UI (ступени множителя ATR / мульти-выбор активов / формула резкости)
+    // включается для всех «во сколько раз больше обычного» метрик: движение
+    // позиции (oi_move) И изменение числа участников (oi_participants). Признак —
+    // unit «×». Цена (₽) остаётся на старой числовой-порог ветке.
+    const isTierMetric =
+        metric?.unit === '×' ||
+        metric?.indicator === 'oi_move' ||
+        metric?.indicator === 'oi_participants';
 
     const [op, setOp] = useState(metric?.ops[0]?.value ?? 'cross_up');
     // price → числовой порог в ₽; oi_move → не используется (порог = множитель ступени).
@@ -202,7 +209,7 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
         if (!metric) return;
 
         // ── price: один актив, числовой порог в ₽ (старое поведение) ─────────
-        if (!isOiMove) {
+        if (!isTierMetric) {
             const th = parseFloat(threshold.replace(',', '.'));
             if (Number.isNaN(th)) { setMsg({ type: 'err', text: 'Введите числовой порог' }); return; }
             setBusy(true); setMsg(null);
@@ -222,7 +229,8 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
             return;
         }
 
-        // ── oi_move: N активов × ступень → N алертов ─────────────────────────
+        // ── тир-метрика: N активов × ступень → N алертов ─────────────────────
+        // clgroup уходит как есть (ALL/FIZ/YUR) — payload строится из полей метрики.
         const mult = resolvedMult();
         if (mult == null || mult <= 0) { setMsg({ type: 'err', text: 'Укажите множитель уровня' }); return; }
         if (selectedList.length === 0) { setMsg({ type: 'err', text: 'Выберите хотя бы один актив' }); return; }
@@ -313,8 +321,8 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
                     </div>
                 ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                        {/* ── ВЫБОР АКТИВОВ (oi_move) — всегда первым в форме ── */}
-                        {isOiMove ? (
+                        {/* ── ВЫБОР АКТИВОВ (тир-метрика) — всегда первым в форме ── */}
+                        {isTierMetric ? (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                                 <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>Активы</div>
                                 {/* Заметная full-width кнопка пикера (поиск + секторы + избранное).
@@ -357,8 +365,8 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
                             </select>
                         </label>
 
-                        {/* ── УРОВЕНЬ СИГНАЛА (oi_move) / УСЛОВИЕ+ПОРОГ (price) ─ */}
-                        {isOiMove ? (
+                        {/* ── УРОВЕНЬ СИГНАЛА (тир-метрика) / УСЛОВИЕ+ПОРОГ (price) ─ */}
+                        {isTierMetric ? (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                                 <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>Уровень сигнала</div>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -448,26 +456,25 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
                             </div>
                         </div>
 
-                        {/* ── ТЕКСТ ФОРМУЛЫ (oi_move) ─────────────────────────── */}
-                        {isOiMove && (
+                        {/* ── ТЕКСТ ФОРМУЛЫ (тир-метрика) ─────────────────────── */}
+                        {isTierMetric && (
                             <div style={{
                                 borderTop: '1px solid var(--border-color)', paddingTop: 12,
                                 fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)', lineHeight: 1.5,
                             }}>
                                 <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
-                                    Как считается резкость движения
+                                    Как считается резкость
                                 </div>
-                                Берётся чистая позиция выбранной группы (физические или юридические лица)
-                                и её изменение за день. Это изменение делится на средний дневной шаг позиции
-                                за последние 14 торговых дней. Получается «во сколько раз сегодняшнее движение
-                                больше обычного»: 1 — обычный день, 3 — втрое сильнее обычного. Уровни
-                                откалиброваны по частоте на ликвидных бумагах: «Заметное» случается примерно
-                                раз в неделю, «Сильное» — раз в две-три недели, «Экстремальное» — раз в два месяца.
-                                Алерт описывает движение позиций, а не прогноз цены.
+                                Берётся отслеживаемая величина и её изменение за день. Это изменение делится
+                                на средний дневной шаг за последние 14 торговых дней. Получается «во сколько
+                                раз сегодняшнее движение больше обычного»: 1 — обычный день, 3 — втрое
+                                сильнее обычного. Уровни откалиброваны по частоте на ликвидных бумагах:
+                                «Заметное» случается примерно раз в неделю, «Сильное» — раз в две-три недели,
+                                «Экстремальное» — раз в два месяца. Алерт описывает само движение, а не прогноз цены.
                             </div>
                         )}
 
-                        {metric?.hint && !isOiMove && (
+                        {metric?.hint && !isTierMetric && (
                             <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)', lineHeight: 1.4 }}>{metric.hint}</div>
                         )}
 
@@ -486,7 +493,7 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
                         )}
 
                         {/* OI-аномалия обновляется раз в день */}
-                        {isOiMove && (
+                        {isTierMetric && (
                             <div style={{
                                 display: 'flex', alignItems: 'flex-start', gap: 8,
                                 fontSize: 'var(--fs-xs)', lineHeight: 1.4,
@@ -497,8 +504,8 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
                             </div>
                         )}
 
-                        {/* Сводка для oi_move: N актив(ов) × <уровень> = N алертов */}
-                        {isOiMove && (
+                        {/* Сводка для тир-метрики: N актив(ов) × <уровень> = N алертов */}
+                        {isTierMetric && (
                             <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>
                                 <b style={{ color: 'var(--text-primary)' }}>{selectedList.length}</b> {assetsWord(selectedList.length)}
                                 {' × '}
@@ -511,14 +518,14 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
                         )}
 
                         <button
-                            disabled={busy || (isOiMove && selectedList.length === 0)}
+                            disabled={busy || (isTierMetric && selectedList.length === 0)}
                             onClick={handleCreate}
                             className="editorial-press"
                             style={primaryBtn}
                         >
                             {busy
                                 ? 'Создаём…'
-                                : isOiMove
+                                : isTierMetric
                                     ? `Создать ${selectedList.length} ${alertsWord(selectedList.length)}`
                                     : 'Создать алерт'}
                         </button>

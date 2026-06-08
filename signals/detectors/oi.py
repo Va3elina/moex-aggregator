@@ -161,6 +161,49 @@ def compute_position_atr(
     return (round(ratio, 2), last_signed, net, "up" if last_signed > 0 else "down")
 
 
+def compute_participants_atr(
+    sectype: str,
+    clgroup: str,
+    as_of_date: Optional[date] = None,
+) -> Optional[tuple]:
+    """ATR-резкость последнего дневного изменения ЧИСЛА УЧАСТНИКОВ — для алертов
+    «резко изменилось число участников». Полная калька compute_position_atr, но ряд
+    берётся по npart (число участников = 3-й элемент get_position_series), а не по net.
+
+    ratio = |Δnpart_последний| / ATR(14), где ATR = среднее |дневных Δnpart| за 14 дней
+    ДО последнего. «Во сколько раз изменение числа участников больше обычного».
+
+    Guard'ы те же по смыслу (база — само npart, а не net): ликвидность
+    (npart_now ≥ ATR_MIN_PART), материальность (|Δnpart|/max(npart,1) ≥ ATR_MIN_REL),
+    ATR-floor (ATR ≥ ATR_FLOOR_REL·npart) — ловушка «мёртвой базы» сохранена.
+
+    npart — НЕ зеркальное число (FIZ и YUR — независимые положительные счётчики),
+    поэтому part_fiz и part_yur — самостоятельные сигналы (в отличие от net).
+
+    Возвращает (ratio, last_signed_diff, current_npart, direction) или None.
+    direction: 'up' (участников прибавилось) / 'down' (убыло)."""
+    pts = get_position_series(sectype, clgroup, days=ATR_WINDOW + 30, as_of_date=as_of_date)
+    if len(pts) < ATR_WINDOW + 3:
+        return None
+    nparts = [p[2] for p in pts]
+    npart_now = nparts[-1]
+    diffs = [abs(nparts[i] - nparts[i - 1]) for i in range(1, len(nparts))]
+    if len(diffs) < ATR_WINDOW + 1:
+        return None
+    last_signed = nparts[-1] - nparts[-2]
+    last = abs(last_signed)
+    # guard'ы: ликвидность, материальность, ATR-floor — база = само npart
+    if npart_now < ATR_MIN_PART:
+        return None
+    if last / max(npart_now, 1) < ATR_MIN_REL:
+        return None
+    atr = statistics.fmean(diffs[-(ATR_WINDOW + 1):-1])   # ATR за 14 дней ДО последнего
+    if atr <= 0 or atr < ATR_FLOOR_REL * max(npart_now, 1):
+        return None
+    ratio = last / atr
+    return (round(ratio, 2), last_signed, npart_now, "up" if last_signed > 0 else "down")
+
+
 def detect_all_oi(as_of_date: Optional[date] = None) -> List[OISignalCandidate]:
     """Прогон по всем тикерам × обе группы (FIZ, YUR).
 
