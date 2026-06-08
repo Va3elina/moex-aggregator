@@ -64,6 +64,7 @@ INDICES = {
         "engine": "stock",
         "market": "index",
         "board": "SNDX",
+        "use_candles": True,  # history лагает T+1 → candles (real-time, как RVI/USD)
     },
     "RUSFAR3M": {
         "name": "Индекс денежного рынка RUSFAR 3M",
@@ -86,6 +87,7 @@ INDICES = {
         "market": "selt",
         "board": "CETS",
         "filter_board": True,
+        "use_candles": True,  # history лагает T+1 → candles (real-time, как USD)
     },
     "MCFTR": {
         "name": "Индекс полной доходности МосБиржи",
@@ -107,6 +109,7 @@ INDICES = {
         "engine": "stock",
         "market": "index",
         "board": "SNDX",
+        "use_candles": True,  # history лагает T+1 → candles (real-time, как RVI)
         "start_date": date(2002, 12, 30),
     },
     "RVI": {
@@ -144,6 +147,7 @@ INDICES = {
         "market": "selt",
         "board": "CETS",
         "filter_board": True,
+        "use_candles": True,  # history лагает T+1 → candles (real-time, как USD)
         # ISS отдаёт непрерывную историю CNYRUB_TOM с 15.04.2013 — достаточно
         # для годовой сезонности. До 2022 объёмы малые, но close-и валидны.
         "start_date": date(2013, 4, 15),
