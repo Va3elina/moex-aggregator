@@ -28,7 +28,9 @@ def get_instruments(
     """Получить список всех инструментов, отсортированных по объёму торгов"""
     from sqlalchemy import text
 
-    filters = []
+    # NOT i.hidden — всегда: скрытые (делистнутые) инструменты не показываем
+    # в каталоге/пикере, но строки и данные остаются (обратимо).
+    filters = ["NOT i.hidden"]
     params = {}
     if type:
         filters.append("i.type = :type")
@@ -37,7 +39,7 @@ def get_instruments(
         filters.append("i.\"group\" = :group")
         params["group"] = group.strip()[:100]
 
-    where_clause = "WHERE " + " AND ".join(filters) if filters else ""
+    where_clause = "WHERE " + " AND ".join(filters)
 
     rows = db.execute(text(f"""
         SELECT i.sec_id, i.sectype, i.name, i.type, i."group", i.iss_code,
@@ -122,8 +124,10 @@ def search_instruments(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    # ORM автоматически экранирует параметры в ilike
+    # ORM автоматически экранирует параметры в ilike. hidden — не показываем
+    # скрытые (делистнутые) инструменты и в поиске тоже.
     query = db.query(Instrument).filter(
+        Instrument.hidden.is_(False),
         (Instrument.name.ilike(f"%{q}%")) |
         (Instrument.sectype.ilike(f"%{q}%")) |
         (Instrument.sec_id.ilike(f"%{q}%"))

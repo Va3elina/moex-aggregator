@@ -1,7 +1,7 @@
 """
 Модель таблицы instruments
 """
-from sqlalchemy import Column, String
+from sqlalchemy import Column, String, Boolean
 from api.database import Base
 
 
@@ -22,6 +22,9 @@ class Instrument(Base):
     type = Column(String(32))                       # "futures" или "stock"
     group = Column("group", String(50))             # "Валюта", "Акции", "Индексы"
     iss_code = Column(String(20))                   # Код ISS API: "USDRUBTOM"
+    # Скрыт из каталога/пикера (делистнутый/мёртвый актив), но данные
+    # (OI/свечи) сохранены. «Убрать, но не удалить». Обратимо: hidden=false.
+    hidden = Column(Boolean, nullable=False, default=False, server_default="false")
 
     def __repr__(self):
         return f"<Instrument(sec_id='{self.sec_id}', name='{self.name}', type='{self.type}')>"
