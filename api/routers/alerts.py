@@ -163,6 +163,7 @@ class AlertCreate(BaseModel):
     threshold: float
     mode: str = "once"                   # 'once'|'repeat'
     cooldown_hours: int = Field(default=24, ge=1, le=720)
+    timeframe: str = Field(default="1d", max_length=4)   # '5m'|'1h'|'1d' (OI-метрики)
 
 
 class AlertOut(BaseModel):
@@ -176,6 +177,7 @@ class AlertOut(BaseModel):
     threshold: float
     mode: str
     status: str
+    timeframe: str = "1d"
     last_fired_at: Optional[str] = None
     created_at: Optional[str] = None
 
@@ -184,7 +186,7 @@ def _to_out(a: Alert) -> AlertOut:
     return AlertOut(
         id=a.id, indicator=a.indicator, asset=a.asset, asset_name=a.asset_name,
         metric=a.metric, clgroup=a.clgroup, op=a.op, threshold=float(a.threshold),
-        mode=a.mode, status=a.status,
+        mode=a.mode, status=a.status, timeframe=getattr(a, "timeframe", "1d") or "1d",
         last_fired_at=a.last_fired_at.isoformat() if a.last_fired_at else None,
         created_at=a.created_at.isoformat() if a.created_at else None,
     )
@@ -201,6 +203,8 @@ def _validate_alert_body(b: AlertCreate) -> Optional[str]:
         return "неизвестный индикатор"
     if b.clgroup not in (None, "FIZ", "YUR", "ALL"):
         return "некорректная группа участников"
+    if b.timeframe not in ("5m", "1h", "1d"):
+        return "некорректный таймфрейм"
     return None
 
 
@@ -241,6 +245,7 @@ def create_alert(
         threshold=body.threshold,
         mode=body.mode,
         cooldown_hours=body.cooldown_hours,
+        timeframe=body.timeframe,
         status="active",
     )
     db.add(alert)
@@ -262,8 +267,11 @@ class AlertBatchResult(BaseModel):
     errors: list[str]
 
 
-def _alert_key(indicator, asset, clgroup, metric, op, threshold):
-    return (indicator, asset, clgroup or "", metric, op, round(float(threshold), 6))
+def _alert_key(indicator, asset, clgroup, metric, op, threshold, timeframe="1d"):
+    # timeframe в ключе: 1d и 5m/1h на один актив — РАЗНЫЕ алерты (разный источник
+    # «net сейчас»), не дубли. Дефолт '1d' для существующих строк без таймфрейма.
+    return (indicator, asset, clgroup or "", metric, op,
+            round(float(threshold), 6), timeframe or "1d")
 
 
 @router.post("/batch", response_model=AlertBatchResult)
@@ -280,7 +288,8 @@ def create_alerts_batch(
     # remaining=None → безлимит (Pro). Иначе сколько ещё можно создать.
     remaining = None if quota is None else max(0, quota - used)
     # Дедуп: повторный «Создать» на той же группе не плодит дубли.
-    seen = {_alert_key(x.indicator, x.asset, x.clgroup, x.metric, x.op, x.threshold) for x in existing}
+    seen = {_alert_key(x.indicator, x.asset, x.clgroup, x.metric, x.op, x.threshold,
+                       getattr(x, "timeframe", "1d")) for x in existing}
 
     created = 0
     skipped = 0
@@ -290,7 +299,7 @@ def create_alerts_batch(
         if err:
             errors.append(f"{a.asset}: {err}")
             continue
-        k = _alert_key(a.indicator, a.asset, a.clgroup, a.metric, a.op, a.threshold)
+        k = _alert_key(a.indicator, a.asset, a.clgroup, a.metric, a.op, a.threshold, a.timeframe)
         if k in seen:
             skipped += 1
             continue
@@ -301,7 +310,8 @@ def create_alerts_batch(
             user_id=user.id,
             indicator=a.indicator, asset=a.asset, asset_name=a.asset_name,
             metric=a.metric, clgroup=a.clgroup, op=a.op, threshold=a.threshold,
-            mode=a.mode, cooldown_hours=a.cooldown_hours, status="active",
+            mode=a.mode, cooldown_hours=a.cooldown_hours, timeframe=a.timeframe,
+            status="active",
         ))
         seen.add(k)
         created += 1

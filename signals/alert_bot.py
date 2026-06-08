@@ -55,6 +55,8 @@ _OP_PRICE = {"cross_up": "↑ пересекла", "cross_down": "↓ перес
 _OP_SHORT = {"cross_up": "↑✕", "cross_down": "↓✕", "gt": ">", "lt": "<"}
 _STATUS_DOT = {"active": "🟢", "paused": "⏸", "fired": "✅"}
 _STATUS_WORD = {"active": "активен", "paused": "на паузе", "fired": "сработал (once)"}
+# Таймфрейм OI-алерта (раннее срабатывание дневного сигнала по интрадей-бару).
+_TF_LABEL = {"5m": "5 мин", "1h": "1 час", "1d": "день"}
 
 
 def _num(v) -> str:
@@ -184,7 +186,7 @@ def _list_alerts(db, user_id: int):
     fired-алерт был бы недостижим из бот-навигации)."""
     return db.execute(
         text("SELECT id, indicator, asset, asset_name, metric, clgroup, op, "
-             "threshold, mode, status, last_value, last_fired_at "
+             "threshold, mode, status, last_value, last_fired_at, timeframe "
              "FROM alerts WHERE user_id = :u AND status IN ('active','paused','fired') "
              "ORDER BY created_at DESC, id DESC"),
         {"u": user_id},
@@ -194,7 +196,7 @@ def _list_alerts(db, user_id: int):
 def _get_alert(db, user_id: int, alert_id: int):
     return db.execute(
         text("SELECT id, indicator, asset, asset_name, metric, clgroup, op, "
-             "threshold, mode, status, last_value, last_fired_at "
+             "threshold, mode, status, last_value, last_fired_at, timeframe "
              "FROM alerts WHERE id = :a AND user_id = :u"),
         {"a": alert_id, "u": user_id},
     ).fetchone()
@@ -210,9 +212,11 @@ def _alert_unit(indicator: str) -> str:
 
 
 def _alert_short_line(a) -> str:
-    """Одна строка для кнопки списка: статус + актив + op + порог (+группа для OI)."""
+    """Одна строка для кнопки списка: статус + актив + op + порог (+группа для OI,
+    +таймфрейм для интрадей OI-алертов)."""
     _, indicator, asset, _name, _metric, clgroup, op, threshold = a[:8]
     status = a[9]
+    timeframe = (a[12] if len(a) > 12 else None) or "1d"
     dot = _STATUS_DOT.get(status, "•")
     opn = _OP_SHORT.get(op, op)
     unit = _alert_unit(indicator)
@@ -223,13 +227,18 @@ def _alert_short_line(a) -> str:
         grp = {"FIZ": " движ·физ", "YUR": " движ·юр"}.get(clgroup or "ALL", " движ")
     elif indicator == "oi_participants":
         grp = " уч·физ" if (clgroup or "FIZ") == "FIZ" else " уч·юр"
-    return f"{dot} {asset}{grp} {opn} {_num(threshold)}{unit}"
+    # Таймфрейм показываем только для интрадей OI-алертов (1d — поведение по умолчанию).
+    tf = ""
+    if indicator in ("oi_move", "oi_participants") and timeframe != "1d":
+        tf = f" · {_TF_LABEL.get(timeframe, timeframe)}"
+    return f"{dot} {asset}{grp} {opn} {_num(threshold)}{unit}{tf}"
 
 
 def _alert_card_text(a) -> str:
     """Подробная карточка алерта (HTML)."""
     (_id, indicator, asset, asset_name, _metric, clgroup, op,
-     threshold, mode, status, last_value, last_fired_at) = a
+     threshold, mode, status, last_value, last_fired_at, timeframe) = a
+    timeframe = timeframe or "1d"
     name = asset_name or asset
     unit = _alert_unit(indicator)
 
@@ -258,6 +267,10 @@ def _alert_card_text(a) -> str:
         f"Режим: {mode_word}",
         f"Статус: {_STATUS_DOT.get(status, '•')} {_STATUS_WORD.get(status, status)}",
     ]
+    # Таймфрейм — только для OI-метрик (у цены он не применяется). Показываем
+    # всегда: 'день' для дневной публикации, '5 мин'/'1 час' для раннего сигнала.
+    if indicator in ("oi_move", "oi_participants"):
+        lines.append(f"Таймфрейм: {_TF_LABEL.get(timeframe, timeframe)}")
     if last_value is not None:
         lines.append(f"Последнее значение: {_num(last_value)}{unit}")
     if last_fired_at is not None:

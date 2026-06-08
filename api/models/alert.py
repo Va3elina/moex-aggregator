@@ -23,6 +23,10 @@ class Alert(Base):
     asset_name = Column(String(120), nullable=True)
     metric = Column(String(24), nullable=False)       # price: 'close'; oi: 'zscore'
     clgroup = Column(String(3), nullable=True)        # OI: 'FIZ'|'YUR'
+    # Таймфрейм источника «net/npart сейчас» для OI-метрик: '5m'/'1h' — раннее
+    # срабатывание дневного сигнала по последнему внутридневному бару; '1d' —
+    # дневная публикация (дефолт, текущее поведение). Цена этим не пользуется.
+    timeframe = Column(String(4), nullable=False, default="1d", server_default="1d")
 
     op = Column(String(12), nullable=False)           # 'gt'|'lt'|'cross_up'|'cross_down'
     threshold = Column(Numeric(20, 6), nullable=False)

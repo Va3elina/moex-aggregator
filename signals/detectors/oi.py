@@ -131,14 +131,22 @@ def compute_position_atr(
     sectype: str,
     clgroup: str,
     as_of_date: Optional[date] = None,
+    interval: int = 24,
 ) -> Optional[tuple]:
     """ATR-резкость последнего дневного изменения позиции — для алертов «резкое
     движение». ratio = |Δ_последний| / ATR(14), где ATR = среднее |дневных Δ| за 14
     дней ДО последнего. «Во сколько раз движение больше обычного».
 
+    `interval` — таймфрейм источника «net сейчас» (24=дневная публикация; 5/60=
+    последний внутридневной бар). Прокидывается в get_position_series: математика
+    ATR (по day-over-day diffs закрытий дней), guard'ы и signal_date=pts[-1][0]
+    идентичны — для интрадей pts[-1] = сегодняшний бегущий день, поэтому
+    last_signed = net_сейчас − вчерашнее_закрытие выходит автоматически.
+
     Возвращает (ratio, last_diff, current_net, direction) или None (мало истории /
     неликвид / immaterial / замороженная база). direction: 'up'(нарастили)/'down'."""
-    pts = get_position_series(sectype, clgroup, days=ATR_WINDOW + 30, as_of_date=as_of_date)
+    pts = get_position_series(sectype, clgroup, days=ATR_WINDOW + 30,
+                              as_of_date=as_of_date, interval=interval)
     if len(pts) < ATR_WINDOW + 3:
         return None
     nets = [p[1] for p in pts]
@@ -167,6 +175,7 @@ def compute_participants_atr(
     sectype: str,
     clgroup: str,
     as_of_date: Optional[date] = None,
+    interval: int = 24,
 ) -> Optional[tuple]:
     """ATR-резкость последнего дневного изменения ЧИСЛА УЧАСТНИКОВ — для алертов
     «резко изменилось число участников». Полная калька compute_position_atr, но ряд
@@ -182,9 +191,14 @@ def compute_participants_atr(
     npart — НЕ зеркальное число (FIZ и YUR — независимые положительные счётчики),
     поэтому part_fiz и part_yur — самостоятельные сигналы (в отличие от net).
 
+    `interval` — таймфрейм источника «npart сейчас» (24=дневная публикация; 5/60=
+    последний внутридневной бар), прокидывается в get_position_series. Математика
+    и signal_date=pts[-1][0] без изменений.
+
     Возвращает (ratio, last_signed_diff, current_npart, direction) или None.
     direction: 'up' (участников прибавилось) / 'down' (убыло)."""
-    pts = get_position_series(sectype, clgroup, days=ATR_WINDOW + 30, as_of_date=as_of_date)
+    pts = get_position_series(sectype, clgroup, days=ATR_WINDOW + 30,
+                              as_of_date=as_of_date, interval=interval)
     if len(pts) < ATR_WINDOW + 3:
         return None
     nparts = [p[2] for p in pts]

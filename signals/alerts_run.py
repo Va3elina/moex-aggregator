@@ -36,6 +36,11 @@ SITE = "https://xn--80aklbnczmv.xn--p1ai"  # punycode таймфрейм.рф (�
 _OP_PRICE = {"cross_up": "↑ пересекла", "cross_down": "↓ пересекла",
              "gt": "выше", "lt": "ниже"}
 
+# Таймфрейм алерта → interval бара-источника «net/npart сейчас». 1d — текущее
+# поведение (дневная публикация); 5m/1h — раннее срабатывание ТОГО ЖЕ дневного
+# сигнала по последнему внутридневному бару (свежесть ≤5мин / ≤1ч).
+_TF_INTERVAL = {"5m": 5, "1h": 60, "1d": 24}
+
 
 def eval_op(op: str, value: float, prev, threshold: float) -> bool:
     if op == "gt":
@@ -68,9 +73,12 @@ def compute_value(a: Alert):
         # «Резкое движение позиции» — во сколько раз дневной сдвиг больше обычного (ATR14).
         # clgroup ALL: net зеркален (физ net = −юр net), считаем по FIZ как источнику
         # net, но текст нейтральный («Позиции», без субъекта физ/юр) — флаг neutral.
+        # interval по таймфрейму алерта: 1d=дневная публикация, 5m/1h=ранний сигнал
+        # по последнему внутридневному бару (тот же дневной сигнал, свежий источник).
         clg = a.clgroup or "FIZ"
         neutral = clg == "ALL"
-        r = compute_position_atr(a.asset, "FIZ" if neutral else clg)
+        interval = _TF_INTERVAL.get(a.timeframe or "1d", 24)
+        r = compute_position_atr(a.asset, "FIZ" if neutral else clg, interval=interval)
         if not r:
             return None, None
         ratio, last_diff, current_net, direction, sig_date = r
@@ -80,7 +88,8 @@ def compute_value(a: Alert):
     if a.indicator == "oi_participants":
         # «Резко изменилось число участников» — ATR14 по числу участников (npart).
         # FIZ/YUR — независимые счётчики (НЕ зеркальны), самостоятельные сигналы.
-        r = compute_participants_atr(a.asset, a.clgroup or "FIZ")
+        interval = _TF_INTERVAL.get(a.timeframe or "1d", 24)
+        r = compute_participants_atr(a.asset, a.clgroup or "FIZ", interval=interval)
         if not r:
             return None, None
         ratio, last_diff, current_npart, direction, sig_date = r
@@ -109,6 +118,12 @@ def format_msg(a: Alert, value: float, ctx: dict) -> str:
     name = a.asset_name or a.asset
     link = f'<a href="{SITE}/oi?instrument={a.asset}">открыть график →</a>'
     thr = float(a.threshold)
+    # Таймфрейм-пометка для OI-сигналов: при 5m/1h уточняем, что net взят из
+    # внутридневного бара (иначе при разных ТФ на один актив — путаница). И
+    # «Δ за день» для интрадей неточно → «Δ с прошлого закрытия».
+    tf = a.timeframe or "1d"
+    tf_note = {"5m": " · данные 5-мин", "1h": " · данные часовые"}.get(tf, "")
+    diff_label = "Δ за день" if tf == "1d" else "Δ с прошлого закрытия"
     if a.indicator == "price":
         word = _OP_PRICE.get(a.op, a.op)
         eod = "\n<i>(дневная свеча — у актива нет внутридневных данных)</i>" \
@@ -126,20 +141,20 @@ def format_msg(a: Alert, value: float, ctx: dict) -> str:
         diff = ctx.get("last_diff", 0)
         if ctx.get("neutral"):
             # clgroup ALL — нейтральный текст, без субъекта физ/юр в роли действующего.
-            return (f"🔔 <b>{name} · {a.asset}</b> — Открытый интерес\n"
+            return (f"🔔 <b>{name} · {a.asset}</b> — Открытый интерес{tf_note}\n"
                     f"Позиции по {a.asset} резко сдвинулись: "
                     f"в {value:g}× больше обычного (порог {thr:g}×)\n"
-                    f"Δ за день: {diff:+,} контрактов\n{link}")
+                    f"{diff_label}: {diff:+,} контрактов\n{link}")
         clg = "Физлица" if (a.clgroup or "FIZ") == "FIZ" else "Юрлица"
         word = "резко нарастили" if ctx.get("direction") == "up" else "резко сократили"
-        return (f"🔔 <b>{name} · {a.asset}</b> — Открытый интерес\n"
+        return (f"🔔 <b>{name} · {a.asset}</b> — Открытый интерес{tf_note}\n"
                 f"{clg} {word} позицию: в {value:g}× больше обычного (порог {thr:g}×)\n"
-                f"Δ за день: {diff:+,} контрактов\n{link}")
+                f"{diff_label}: {diff:+,} контрактов\n{link}")
     if a.indicator == "oi_participants":
         clg = "физлица" if (a.clgroup or "FIZ") == "FIZ" else "юрлица"
         diff = ctx.get("last_diff", 0)
         verb = "Прибавилось" if ctx.get("direction") == "up" else "Убыло"
-        return (f"🔔 <b>{name} · {a.asset}</b> — Открытый интерес\n"
+        return (f"🔔 <b>{name} · {a.asset}</b> — Открытый интерес{tf_note}\n"
                 f"Резко изменилось число участников ({clg}) по {a.asset}: "
                 f"в {value:g}× больше обычного (порог {thr:g}×)\n"
                 f"{verb}: {diff:+,} участников\n{link}")
@@ -155,8 +170,10 @@ def run_once() -> dict:
         # Префетч юзеров одним запросом (а не по одному на алерт).
         uids = {a.user_id for a in alerts}
         users = {u.id: u for u in db.query(User).filter(User.id.in_(uids)).all()} if uids else {}
-        # Дедуп: значение метрики считаем ОДИН раз на (indicator, asset, clgroup) за
-        # проход — 50 алертов на SR-цену = 1 запрос, а не 50. Держит нагрузку низкой.
+        # Дедуп: значение метрики считаем ОДИН раз на (indicator, asset, clgroup,
+        # timeframe) за проход — 50 алертов на SR-цену = 1 запрос, а не 50. timeframe
+        # в ключе обязателен: 1d и 5m на один актив дают РАЗНЫЕ значения (дневное
+        # закрытие vs бегущий внутридневной бар) — иначе перепутались бы.
         value_cache: dict = {}
         for a in alerts:
             summary["checked"] += 1
@@ -165,7 +182,7 @@ def run_once() -> dict:
                 if not user or not user.telegram_chat_id:
                     summary["skipped"] += 1   # не привязан Telegram — доставить некуда
                     continue
-                ck = (a.indicator, a.asset, a.clgroup or "")
+                ck = (a.indicator, a.asset, a.clgroup or "", a.timeframe or "1d")
                 if ck in value_cache:
                     value, ctx = value_cache[ck]
                 else:

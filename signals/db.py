@@ -65,29 +65,45 @@ def get_oi_daily(
 
 
 def get_position_series(sectype: str, clgroup: str, days: int,
-                        as_of_date: Optional[date] = None) -> List[tuple]:
+                        as_of_date: Optional[date] = None,
+                        interval: int = 24) -> List[tuple]:
     """Дневной ряд (date, net, npart) для ATR-детектора «резкого движения позиции».
     net = pos_long + pos_short (pos_short отрицательный); npart = число участников
-    (pos_long_num + pos_short_num) — для guard'а ликвидности."""
+    (pos_long_num + pos_short_num) — для guard'а ликвидности.
+
+    `interval` — таймфрейм источника бара:
+      24 → дневная публикация (одна точка/день — текущее поведение);
+      5/60 → внутридневные бары. Берём ПОСЛЕДНИЙ бар каждого дня (закрытие дня)
+      через DISTINCT ON (tradedate) … ORDER BY tradetime DESC. Для прошлых дней это
+      их EOD-значение; для СЕГОДНЯ (незакрытый день) последний элемент = бегущий
+      внутридневной бар → даёт «net сейчас» для раннего срабатывания дневного сигнала.
+      Итог отсортирован по tradedate ASC (как и при interval=24)."""
     end = as_of_date or date.today()
     cutoff = end - timedelta(days=days)
     with SessionLocal() as session:
-        rows = (
-            session.query(OpenInterest)
-            .filter(
-                OpenInterest.sectype == sectype,
-                OpenInterest.clgroup == clgroup,
-                OpenInterest.interval == 24,
-                OpenInterest.tradedate >= cutoff,
-                OpenInterest.tradedate <= end,
-            )
-            .order_by(OpenInterest.tradedate.asc())
-            .all()
-        )
+        rows = session.execute(
+            text("""
+                SELECT tradedate,
+                       (pos_long + pos_short) AS net,
+                       (pos_long_num + pos_short_num) AS npart
+                FROM (
+                    SELECT DISTINCT ON (tradedate)
+                        tradedate, pos_long, pos_short, pos_long_num, pos_short_num
+                    FROM open_interest
+                    WHERE sectype = :sectype
+                      AND clgroup = :clgroup
+                      AND interval = :interval
+                      AND tradedate >= :cutoff
+                      AND tradedate <= :end
+                    ORDER BY tradedate, tradetime DESC
+                ) t
+                ORDER BY tradedate ASC
+            """),
+            {"sectype": sectype, "clgroup": clgroup, "interval": interval,
+             "cutoff": cutoff, "end": end},
+        ).fetchall()
     return [
-        (r.tradedate,
-         (r.pos_long or 0) + (r.pos_short or 0),
-         (r.pos_long_num or 0) + (r.pos_short_num or 0))
+        (r[0], (r[1] or 0), (r[2] or 0))
         for r in rows
     ]
 

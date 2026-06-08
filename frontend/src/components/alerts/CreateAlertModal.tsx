@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { Bell, X, Check, ExternalLink, Info, Search } from 'lucide-react';
 import {
     getTelegramStatus, createTelegramLink, createAlert, createAlertsBatch, getAlertContext,
+    getIntradayAssets,
     type AlertCreatePayload, type AlertContext,
 } from '../../services/api';
 import MessengerChoice from './MessengerChoice';
@@ -77,6 +78,16 @@ const SIGNAL_LEVELS: SignalLevel[] = [
     { key: 'extreme', label: 'Экстремальное', mult: 5, freq: 'раз в 2 месяца' },
 ];
 
+// Таймфрейм раннего срабатывания дневного сигнала. Один и тот же дневной сигнал,
+// но net_сейчас берётся из последнего бара выбранного интервала: 5м / 1ч ловят
+// дневной сдвиг раньше (доступны у ликвидных активов), 1д — публикация раз в день.
+type TfOption = { key: string; label: string };
+const TIMEFRAMES: TfOption[] = [
+    { key: '5m', label: '5 мин' },
+    { key: '1h', label: '1 час' },
+    { key: '1d', label: '1 день' },
+];
+
 // Сегмент-пилл переключателя (уровень сигнала / режим) — editorial-стиль.
 // active = целиком оранжевый (accent fill + inverse text), иначе бордер.
 const pill = (active: boolean): CSSProperties => ({
@@ -130,6 +141,19 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
     const [customMult, setCustomMult] = useState('');          // ввод для «Своё значение»
     const isCustomLevel = levelKey === 'custom';
     const activeLevel = SIGNAL_LEVELS.find((l) => l.key === levelKey);
+
+    // ── Таймфрейм раннего срабатывания (тир-метрика) ────────────────────────
+    // Дефолт '1d'. Внутридневные ('5m'/'1h') доступны только у ликвидных активов
+    // (есть в intradaySet). Набор грузим один раз — как в InstrumentSearchModal.
+    const [timeframe, setTimeframe] = useState('1d');
+    const [intradaySet, setIntradaySet] = useState<Set<string>>(new Set());
+    useEffect(() => {
+        let cancelled = false;
+        getIntradayAssets()
+            .then((list) => { if (!cancelled) setIntradaySet(new Set(list)); })
+            .catch(() => { /* пустой набор — внутридневные пиллы недоступны */ });
+        return () => { cancelled = true; };
+    }, []);
 
     useEffect(() => {
         getTelegramStatus().then((s) => setLinked(s.linked)).catch(() => setLinked(false));
@@ -188,6 +212,19 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
         [selected],
     );
     const selectedSectypes = useMemo(() => Object.keys(selected), [selected]);
+
+    // Есть ли среди выбранных хотя бы один ликвидный (внутридневной) актив —
+    // от этого зависит, доступны ли пиллы «5 мин»/«1 час».
+    const hasIntradaySelected = useMemo(
+        () => selectedSectypes.some((s) => intradaySet.has(s)),
+        [selectedSectypes, intradaySet],
+    );
+
+    // Если внутридневные стали недоступны (все выбранные — дневные-only), а был
+    // выбран 5м/1ч — откатываем на 1д, чтобы не отправить недоступный таймфрейм.
+    useEffect(() => {
+        if (!hasIntradaySelected && timeframe !== '1d') setTimeframe('1d');
+    }, [hasIntradaySelected, timeframe]);
 
     const toggleAsset = (sectype: string, name: string) => {
         setSelected((prev) => {
@@ -248,6 +285,9 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
                 indicator: metric.indicator, asset: a.sectype, asset_name: a.name,
                 metric: metric.metric, clgroup: metric.clgroup ?? null,
                 op: oiOp, threshold: mult, mode,
+                // Внутридневной таймфрейм — только ликвидным активам; дневным-only
+                // всегда '1d', даже если в селекторе выбран 5м/1ч.
+                timeframe: (intradaySet.has(a.sectype) && timeframe !== '1d') ? timeframe : '1d',
                 ...(mode === 'repeat' ? { cooldown_hours: 24 } : {}),
             }));
             const res = await createAlertsBatch(payloads);
@@ -430,6 +470,43 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
                             </>
                         )}
 
+                        {/* ── ТАЙМФРЕЙМ (тир-метрика) — когда проверять сигнал ── */}
+                        {/* Тот же дневной сигнал; 5м/1ч ловят дневной сдвиг раньше по
+                            внутридневным данным (только ликвидные активы). Дефолт 1д. */}
+                        {isTierMetric && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>Когда проверять</div>
+                                <div style={{ display: 'flex', gap: 6 }}>
+                                    {TIMEFRAMES.map((tf) => {
+                                        const intraday = tf.key !== '1d';
+                                        const disabled = intraday && !hasIntradaySelected;
+                                        const checked = timeframe === tf.key;
+                                        return (
+                                            <button
+                                                key={tf.key}
+                                                type="button"
+                                                disabled={disabled}
+                                                onClick={() => { if (!disabled) setTimeframe(tf.key); }}
+                                                className="editorial-press"
+                                                style={{
+                                                    ...pill(checked),
+                                                    justifyContent: 'center',
+                                                    fontSize: 'var(--fs-sm)', fontWeight: 700,
+                                                    ...(disabled ? { opacity: 0.5, cursor: 'not-allowed' } : {}),
+                                                }}
+                                            >
+                                                {tf.label}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                                <div style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                                    5 мин и 1 час ловят дневной сдвиг раньше — доступны у ликвидных активов
+                                    (с бейджем). У остальных всегда раз в день.
+                                </div>
+                            </div>
+                        )}
+
                         {/* Режим срабатывания — переключатель (активный = оранжевый) */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                             <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>Режим</div>
@@ -499,8 +576,8 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
                             }}>
                                 <Info size={16} style={{ flex: '0 0 auto', marginTop: 1, color: 'var(--accent)' }} />
                                 <span>
-                                    Сейчас алерты считаются на дневных данных — сигнал раз в день.
-                                    Внутридневной режим (5-минутные и часовые сигналы, у ликвидных активов) — скоро.
+                                    Для ликвидных активов можно ловить дневной сдвиг раньше — по часовым
+                                    или 5-минутным данным (таймфрейм выше). У остальных — раз в день.
                                     Это описание движения, а не прогноз цены.
                                 </span>
                             </div>

@@ -1625,6 +1625,9 @@ export interface AlertCreatePayload {
     indicator: string; asset: string; asset_name?: string; metric: string;
     clgroup?: string | null; op: string; threshold: number;
     mode?: string; cooldown_hours?: number;
+    // Таймфрейм раннего срабатывания дневного сигнала: '5m' | '1h' | '1d'
+    // (по умолчанию '1d'). Внутридневные доступны только у ликвидных активов.
+    timeframe?: string;
 }
 
 export interface AlertContext {
