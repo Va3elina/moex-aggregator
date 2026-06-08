@@ -33,8 +33,9 @@ from api.billing.features import get_common_features
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
 
 LINK_TOKEN_TTL_MIN = 10
-# @username бота (без @). Берётся из .env при деплое; для deep-link t.me/<username>.
-ALERT_BOT_USERNAME = os.getenv("ALERT_BOT_USERNAME", "")
+# @username бота (без @) для deep-link t.me/<username>. Дефолт = реальный бот
+# (публичный стабильный факт, не секрет); env ALERT_BOT_USERNAME может переопределить.
+ALERT_BOT_USERNAME = os.getenv("ALERT_BOT_USERNAME", "framesignalbot")
 
 
 class LinkResponse(BaseModel):
@@ -59,7 +60,7 @@ def create_link(
     expires = datetime.now(timezone.utc) + timedelta(minutes=LINK_TOKEN_TTL_MIN)
     db.add(TelegramLinkToken(token=token, user_id=user.id, expires_at=expires))
     db.commit()
-    bot = ALERT_BOT_USERNAME or "BOT_USERNAME"
+    bot = ALERT_BOT_USERNAME or "framesignalbot"
     return LinkResponse(
         deep_link=f"https://t.me/{bot}?start={token}",
         token=token,
