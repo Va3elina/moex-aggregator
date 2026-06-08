@@ -22,10 +22,12 @@ from sqlalchemy import create_engine, text
 from signals import config
 from signals.db import get_asset_name
 
-ATR_N = 14          # окно ATR (классический дефолт)
+ATR_WINDOWS = [5, 14, 30]   # «обычный шаг» за: неделю / 3 недели / месяц
+TIERS = [2.0, 3.0, 5.0]     # уровни: заметно / сильно / экстремально
 MIN_PART = 50
-MIN_REL = 0.02      # guard материальности: |Δ|/|net| ≥ 2% (отсев мёртвой базы / закрытий рынка)
-K2, K3 = 2.0, 3.0   # пороги «во сколько раз больше обычного»
+MIN_REL = 0.02              # |Δ|/|net| ≥ 2%
+GAP_MAX = 5                 # пропуск дня после разрыва >5 дней (закрытие рынка → артефакт)
+ATR_FLOOR_REL = 0.001       # ATR ≥ 0.1% позиции, иначе «заморожено» → ratio бессмыслен
 
 
 def load(conn, sectype, clgroup):
@@ -42,9 +44,10 @@ def load(conn, sectype, clgroup):
 
 def run():
     engine = create_engine(os.environ["DB_URL"], connect_args={"ssl_context": False})
-    agg = defaultdict(int)
-    per_asset = defaultdict(lambda: [0, 0, 0])   # sectype -> [days, n2, n3]
-    examples = []
+    Wmax = max(ATR_WINDOWS)
+    days_per_w = defaultdict(int)              # W -> сколько валидных (день,актив) точек
+    hits = defaultdict(int)                    # (W, tier) -> срабатываний
+    examples = []                              # для окна 14
     with engine.connect() as conn:
         for sectype in config.OI_ASSETS:
             for clg in ("FIZ", "YUR"):
@@ -52,45 +55,46 @@ def run():
                     s = load(conn, sectype, clg)
                 except Exception:
                     continue
-                if len(s) < ATR_N + 60:
+                if len(s) < Wmax + 60:
                     continue
+                dates = [x[0] for x in s]
                 nets = [x[1] for x in s]
                 npart = [x[2] for x in s]
                 adiff = [abs(nets[i] - nets[i - 1]) for i in range(1, len(nets))]
-                # ratio для дня i (в индексах adiff): ATR = mean(adiff[i-N..i-1])
-                for i in range(ATR_N, len(adiff)):
-                    atr = st.fmean(adiff[i - ATR_N:i])
-                    if atr <= 0:
-                        continue
-                    day_idx = i + 1   # adiff[i] = nets[i+1]-nets[i]
+                for i in range(Wmax, len(adiff)):
+                    day_idx = i + 1                       # adiff[i] = nets[i+1]-nets[i]
                     if npart[day_idx] < MIN_PART:
                         continue
-                    # guard материальности: движение существенно относительно позиции
-                    if adiff[i] / max(abs(nets[day_idx]), 1) < MIN_REL:
-                        continue
-                    ratio = adiff[i] / atr
-                    agg["days"] += 1
-                    per_asset[sectype][0] += 1
-                    if ratio >= K2:
-                        agg["n2"] += 1; per_asset[sectype][1] += 1
-                    if ratio >= K3:
-                        agg["n3"] += 1; per_asset[sectype][2] += 1
-                    examples.append((ratio, sectype, clg, s[day_idx][0],
-                                     nets[day_idx] - nets[day_idx - 1], nets[day_idx]))
+                    if (dates[day_idx] - dates[day_idx - 1]).days > GAP_MAX:
+                        continue                          # разрыв (закрытие рынка) → артефакт
+                    net = nets[day_idx]
+                    if adiff[i] / max(abs(net), 1) < MIN_REL:
+                        continue                          # immaterial
+                    for W in ATR_WINDOWS:
+                        atr = st.fmean(adiff[i - W:i])
+                        if atr < ATR_FLOOR_REL * max(abs(net), 1) or atr <= 0:
+                            continue                      # «заморожено» — ratio бессмыслен
+                        ratio = adiff[i] / atr
+                        days_per_w[W] += 1
+                        for t in TIERS:
+                            if ratio >= t:
+                                hits[(W, t)] += 1
+                        if W == 14:
+                            examples.append((ratio, sectype, clg, dates[day_idx],
+                                             nets[day_idx] - nets[day_idx - 1], net))
 
-    d = agg["days"] or 1
-    print(f"\n=== ATR-аномалии позиций (ATR={ATR_N}д, liquidity≥{MIN_PART}уч), {agg['days']} точек ===")
-    print(f"  ratio ≥ {K2:.0f}× обычного: {agg['n2']:5} ({100*agg['n2']/d:.1f}% дней)")
-    print(f"  ratio ≥ {K3:.0f}× обычного: {agg['n3']:5} ({100*agg['n3']/d:.1f}% дней)")
-    print(f"\n=== Топ-15 самых резких движений (ratio) ===")
+    print("\n=== Сетка: частота срабатываний ATR-аномалии (% дней) ===")
+    hdr = "  ".join(f"≥{int(t)}×" for t in TIERS)
+    print(f"{'ATR-окно':12}{'точек':>9}   {hdr}")
+    for W in ATR_WINDOWS:
+        dp = days_per_w[W] or 1
+        cells = "  ".join(f"{100*hits[(W,t)]/dp:5.1f}%" for t in TIERS)
+        print(f"{str(W)+'д':12}{days_per_w[W]:>9}   {cells}")
+    print("\n  Идея уровней: ≥2× «заметно» · ≥3× «сильно» · ≥5× «экстремально».")
+    print(f"\n=== Топ-15 резких движений (окно 14д, с guard'ами — закрытия отсеяны) ===")
     examples.sort(reverse=True)
     for r, s, g, dt, dn, net in examples[:15]:
         print(f"  {s:6}/{g} {dt}  {r:5.1f}× обычного   Δ={dn:+,}  net={net:+,}  ({get_asset_name(s) or ''})")
-    # стабильность частоты по ликвидным
-    print(f"\n=== Частота ≥{K3:.0f}× по бумагам (топ-12 по активности) ===")
-    liq = sorted(per_asset.items(), key=lambda kv: kv[1][0], reverse=True)[:12]
-    for sec, (days, n2, n3) in liq:
-        print(f"  {sec:6} {get_asset_name(sec) or '':20} ≥2×: {100*n2/days:4.1f}%   ≥3×: {100*n3/days:4.1f}%")
 
 
 if __name__ == "__main__":
