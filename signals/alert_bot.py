@@ -202,7 +202,11 @@ def _get_alert(db, user_id: int, alert_id: int):
 
 # ── текстовые форматтеры карточек ───────────────────────────────────────────
 def _alert_unit(indicator: str) -> str:
-    return "σ" if indicator == "oi_zscore" else "₽"
+    if indicator == "oi_zscore":
+        return "σ"
+    if indicator in ("oi_move", "oi_participants"):
+        return "×"        # множитель ATR «во сколько раз больше обычного»
+    return "₽"
 
 
 def _alert_short_line(a) -> str:
@@ -215,6 +219,10 @@ def _alert_short_line(a) -> str:
     grp = ""
     if indicator == "oi_zscore":
         grp = " физ" if (clgroup or "FIZ") == "FIZ" else " юр"
+    elif indicator == "oi_move":
+        grp = {"FIZ": " движ·физ", "YUR": " движ·юр"}.get(clgroup or "ALL", " движ")
+    elif indicator == "oi_participants":
+        grp = " уч·физ" if (clgroup or "FIZ") == "FIZ" else " уч·юр"
     return f"{dot} {asset}{grp} {opn} {_num(threshold)}{unit}"
 
 
@@ -224,15 +232,22 @@ def _alert_card_text(a) -> str:
      threshold, mode, status, last_value, last_fired_at) = a
     name = asset_name or asset
     unit = _alert_unit(indicator)
-    head = "Открытый интерес" if indicator == "oi_zscore" else "Цена фьючерса"
 
     if indicator == "oi_zscore":
+        head = "Открытый интерес"
         clg = "физлица" if (clgroup or "FIZ") == "FIZ" else "юрлица"
-        word = _OP_PRICE.get(op, op)
-        cond = f"z-score ({clg}) {word} {_num(threshold)}{unit}"
+        cond = f"z-score ({clg}) {_OP_PRICE.get(op, op)} {_num(threshold)}{unit}"
+    elif indicator == "oi_move":
+        head = "Резкое движение позиции"
+        clg = {"FIZ": "физлица", "YUR": "юрлица"}.get(clgroup or "ALL", "в целом")
+        cond = f"движение позиции ({clg}) больше обычного в {_num(threshold)}{unit}"
+    elif indicator == "oi_participants":
+        head = "Резкое изменение числа участников"
+        clg = "физлица" if (clgroup or "FIZ") == "FIZ" else "юрлица"
+        cond = f"число участников ({clg}) меняется резче обычного в {_num(threshold)}{unit}"
     else:
-        word = _OP_PRICE.get(op, op)
-        cond = f"цена {word} {_num(threshold)} {unit}"
+        head = "Цена фьючерса"
+        cond = f"цена {_OP_PRICE.get(op, op)} {_num(threshold)} {unit}"
 
     mode_word = "однократно" if mode == "once" else "повторно"
     lines = [
