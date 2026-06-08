@@ -3,6 +3,7 @@ API endpoints для открытого интереса
 С валидацией входных данных
 """
 from fastapi import APIRouter, Depends, Query, HTTPException
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from datetime import datetime, date
 
@@ -14,6 +15,35 @@ from api.routers.auth import get_current_user_optional
 from api.security.access_control import enforce_tier_limits, get_effective_end_date
 
 router = APIRouter(prefix="/api/openinterest", tags=["open_interest"])
+
+# Отдельный лёгкий роутер под /api/oi/* — справочные ручки про доступность
+# внутридневных данных. Не путать с /api/openinterest/* (выдача рядов позиций).
+oi_router = APIRouter(prefix="/api/oi", tags=["open_interest"])
+
+
+@oi_router.get("/intraday-assets")
+def get_intraday_assets(db: Session = Depends(get_db)):
+    """
+    Список sectype, у которых ЕСТЬ свежие внутридневные данные позиций
+    (open_interest interval=5 за последние 14 дней).
+
+    Это «активы, поддерживающие внутридневные сигналы» — используется фронтом
+    для бейджа «intraday» в пикере инструментов. ВАЖНО: реальный внутридневной
+    ДЕТЕКТОР сигналов пока не готов (алерты считаются по дневным данным), поэтому
+    это лишь пометка о потенциальной поддержке, а не функциональный таймфрейм.
+
+    Лёгкий индексный DISTINCT-запрос по первичному ключу (interval, tradedate).
+    """
+    rows = db.execute(text(
+        """
+        SELECT DISTINCT sectype
+        FROM open_interest
+        WHERE interval = 5
+          AND tradedate >= CURRENT_DATE - INTERVAL '14 days'
+        ORDER BY sectype
+        """
+    )).all()
+    return {"sectypes": [r[0] for r in rows]}
 
 
 @router.get("/{sectype}", response_model=OpenInterestListResponse)

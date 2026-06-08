@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
-import { Search, X, Star, Lock, ChevronUp, ChevronDown, ChevronsUpDown, Check } from 'lucide-react';
+import { Search, X, Star, Lock, ChevronUp, ChevronDown, ChevronsUpDown, Check, Zap } from 'lucide-react';
 import InstrumentIcon from './InstrumentIcon';
 import { formatCompact } from '../utils/formatNumber';
+import { getIntradayAssets } from '../services/api';
 import { useAnalytics } from '../contexts/AnalyticsContext';
 import { useTierAccess } from '../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from './tier/UpgradeModal';
@@ -120,6 +121,18 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
       }
     }
     load();
+  }, []);
+
+  // Набор sectype с доступными внутридневными данными позиций (5м/1ч) — грузим
+  // один раз. У таких активов показываем компактный бейдж «intraday» рядом с
+  // тикером. При ошибке набор пуст → бейджи просто не появляются.
+  const [intradaySet, setIntradaySet] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    let cancelled = false;
+    getIntradayAssets()
+      .then((list) => { if (!cancelled) setIntradaySet(new Set(list)); })
+      .catch(() => { /* пустой набор — бейджи не показываются */ });
+    return () => { cancelled = true; };
   }, []);
 
   // Фильтрация по поиску и категории
@@ -351,6 +364,29 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
           style={{ opacity: accessible ? 1 : 0.45 }}
         >
           <span className="font-bold flex-shrink-0" style={{ fontSize: 'var(--fs-sm)' }}>{inst.sectype}</span>
+          {/* Бейдж «intraday» — у активов со свежими внутридневными данными
+              позиций (5м/1ч). Молнией намекаем на «быстрее», подпись поясняет. */}
+          {intradaySet.has(inst.sectype) && (
+            <span
+              className="flex-shrink-0 inline-flex items-center"
+              title="Есть внутридневные данные позиций (5-минутные и часовые) — внутридневной режим сигналов скоро"
+              style={{
+                gap: 2,
+                padding: '1px 5px',
+                borderRadius: 999,
+                border: '1px solid var(--accent)',
+                background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
+                color: 'var(--accent)',
+                fontSize: 'var(--fs-2xs)',
+                fontWeight: 700,
+                lineHeight: 1.2,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <Zap size={12} strokeWidth={2.5} />
+              5м·1ч
+            </span>
+          )}
           <span className="truncate" style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-xs)' }}>{inst.name}</span>
         </div>
 

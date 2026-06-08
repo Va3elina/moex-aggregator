@@ -22,6 +22,7 @@ from api.routers import (
     instruments_router,
     candles_router,
     open_interest_router,
+    oi_router,
     chart_router,
     heatmap_router,
     funds_router,
@@ -219,6 +220,7 @@ async def shutdown_event():
 app.include_router(instruments_router)
 app.include_router(candles_router)
 app.include_router(open_interest_router)
+app.include_router(oi_router)  # ← /api/oi/* (справка: внутридневная доступность)
 app.include_router(chart_router)
 app.include_router(stats.router)
 app.include_router(heatmap_router)

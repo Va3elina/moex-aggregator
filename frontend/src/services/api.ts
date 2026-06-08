@@ -1701,3 +1701,17 @@ export async function setAlertStatus(id: number, status: 'active' | 'paused'): P
     if (!resp.ok) throw new Error('Не удалось изменить алерт');
     return resp.json();
 }
+
+// Список sectype, у которых есть свежие внутридневные данные позиций
+// (open_interest interval=5). Используется в InstrumentSearchModal для бейджа
+// «intraday». При любой ошибке — пустой массив (бейджи просто не показываются).
+export async function getIntradayAssets(): Promise<string[]> {
+    try {
+        const resp = await fetch(`${API_BASE}/api/oi/intraday-assets`);
+        if (!resp.ok) return [];
+        const data = await resp.json();
+        return data.sectypes ?? [];
+    } catch {
+        return [];
+    }
+}

@@ -490,7 +490,7 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
                             </div>
                         )}
 
-                        {/* OI-аномалия обновляется раз в день */}
+                        {/* Таймфреймы алертов — честно про intraday vs дневной */}
                         {isTierMetric && (
                             <div style={{
                                 display: 'flex', alignItems: 'flex-start', gap: 8,
@@ -498,7 +498,11 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
                                 color: 'var(--text-secondary)',
                             }}>
                                 <Info size={16} style={{ flex: '0 0 auto', marginTop: 1, color: 'var(--accent)' }} />
-                                <span>Позиции МосБиржи обновляются раз в день. Это описание движения, а не прогноз цены.</span>
+                                <span>
+                                    Сейчас алерты считаются на дневных данных — сигнал раз в день.
+                                    Внутридневной режим (5-минутные и часовые сигналы, у ликвидных активов) — скоро.
+                                    Это описание движения, а не прогноз цены.
+                                </span>
                             </div>
                         )}
 
