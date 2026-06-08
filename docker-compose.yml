@@ -77,6 +77,8 @@ services:
       # /app/logs — runtime logs от api/logger.py. Named volume чтобы пережить
       # docker compose down (если хочется debug-archive логов через docker cp).
       - api_logs:/app/logs
+      # Manual SCHA PDF — пользователь складывает PDF
+      - ./data/manual_scha:/data/manual_scha:ro
     # TODO security hardening: запуск под non-root + read_only rootfs.
     # Первая попытка (commit 231411a) сломала prod — api/logger.py создаёт
     # /app/logs при импорте, COPY → root owner → uid=1000 PermissionError.

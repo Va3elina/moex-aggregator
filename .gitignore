@@ -90,3 +90,11 @@ scripts/__pycache__/
 frontend/.claude/
 extension/store/build/
 extension/store/screenshots/*.png
+
+# Рантайм-данные (manual SCHA PDF через docker volume, signal scratch) — не код
+data/
+signals/data/
+# Бэкап-копии файлов (создаются при правках на сервере как .bak)
+*.bak
+# Стухший ручной SW (реальный — frontend/public/sw.js с __SW_VERSION__)
+frontend/src/pages/sw.js

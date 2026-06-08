@@ -1,51 +1,171 @@
 #!/bin/bash
-set -eu
+set -euo pipefail
 
-BACKUP_DIR="/tmp/backups"
-DATE=$(date +%Y%m%d_%H%M%S)
-BACKUP_FILE="$BACKUP_DIR/moex_db_$DATE.sql.gz"
-BOT_TOKEN="${BOT_TOKEN:?BOT_TOKEN env var is required}"
-CHAT_ID="${ADMIN_CHAT_ID:?ADMIN_CHAT_ID env var is required}"
+# ─────────────────────────────────────────────────────────────
+# Бэкап PostgreSQL для Фрейм (таймфрейм.рф).
+# Запускается cron'ом каждый день в 03:00 МСК.
+#
+# Архитектура:
+#   1) pg_dump через docker exec → gzip → GPG AES-256 → .sql.gz.gpg
+#   2) split на части по 48 МБ (под Telegram bot API limit 50 МБ)
+#   3) sendDocument каждой части в Telegram (с caption «N/M»)
+#   4) Если все части ушли → удалить старые дампы (retention=1)
+#   5) Если упало на отправке → оставить старый дамп как safety net
+#
+# Шифрование: симметричный AES-256 с passphrase из BACKUP_GPG_PASSPHRASE
+# в .env. Без passphrase backup НЕ ВОССТАНОВИТЬ — храни passphrase в
+# password manager + физическая копия (на случай потери .env).
+#
+# Restore (если когда-то понадобится):
+#   1) Скачать все .part_* из Telegram (вручную через клиент, не через bot).
+#   2) cat moex_db_YYYYMMDD_HHMM.sql.gz.gpg.part_* > moex_db.sql.gz.gpg
+#   3) gpg --batch --pinentry-mode loopback --passphrase 'PASSPHRASE' \
+#          --decrypt moex_db.sql.gz.gpg > moex_db.sql.gz
+#   4) gunzip moex_db.sql.gz
+#   5) psql -U postgres -d moex_db < moex_db.sql
+# ─────────────────────────────────────────────────────────────
 
-mkdir -p "$BACKUP_DIR"
+BACKUP_DIR="/opt/frame/backups/dumps"
+CONTAINER="frame-db-1"
+DB_NAME="moex_db"
+DB_USER="postgres"
+SPLIT_SIZE="48M"  # под Telegram bot API лимит 50 МБ
 
-send_file() {
-  local file="$1"
-  local caption="$2"
-  curl -s -F "chat_id=$CHAT_ID" \
-    -F "document=@$file" \
-    -F "caption=$caption" \
-    "https://api.telegram.org/bot$BOT_TOKEN/sendDocument" > /dev/null
+# Загрузить env (BOT_TOKEN, ADMIN_CHAT_ID, BACKUP_GPG_PASSPHRASE)
+if [ -f /opt/frame/.env ]; then
+  set -a
+  # shellcheck disable=SC1091
+  source /opt/frame/.env
+  set +a
+fi
+
+log() {
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
 }
 
 send_msg() {
-  curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
-    -d "chat_id=$CHAT_ID" -d "text=$1" > /dev/null
+  if [ -n "${BOT_TOKEN:-}" ] && [ -n "${ADMIN_CHAT_ID:-}" ]; then
+    curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+      -d "chat_id=${ADMIN_CHAT_ID}" \
+      -d "text=$1" \
+      -d "parse_mode=Markdown" > /dev/null || true
+  fi
 }
 
-# 1. Dump DB (подключаемся к db по сети — работает и из контейнера, и с хоста)
-echo "-> Dumping DB..."
-# Извлекаем пароль из DB_URL (формат: postgresql://user:pass@host:port/db)
-DB_PASS=$(echo "${DB_URL:-}" | sed -n 's|.*://[^:]*:\([^@]*\)@.*|\1|p')
-PGPASSWORD="${DB_PASS:-${POSTGRES_PASSWORD:-postgres}}" pg_dump -h db -U postgres moex_db | gzip > "$BACKUP_FILE" 2>&1 || {
-  send_msg "❌ Ошибка бэкапа: pg_dump failed"
+send_doc() {
+  local file="$1"
+  local caption="$2"
+  curl -s -F "chat_id=${ADMIN_CHAT_ID}" \
+    -F "document=@${file}" \
+    -F "caption=${caption}" \
+    "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument"
+}
+
+# ─── Проверка credentials ───
+if [ -z "${BOT_TOKEN:-}" ] || [ -z "${ADMIN_CHAT_ID:-}" ]; then
+  log "ERROR: BOT_TOKEN или ADMIN_CHAT_ID не заданы в /opt/frame/.env"
   exit 1
-}
-DB_SIZE=$(du -h "$BACKUP_FILE" | cut -f1)
-
-# Telegram лимит 50MB для файлов
-FILE_BYTES=$(stat -c%s "$BACKUP_FILE" 2>/dev/null || stat -f%z "$BACKUP_FILE" 2>/dev/null)
-if [ "$FILE_BYTES" -gt 50000000 ]; then
-  send_msg "⚠️ Бэкап слишком большой для Telegram ($DB_SIZE). Сохранён на сервере: $BACKUP_FILE"
-else
-  send_file "$BACKUP_FILE" "💾 DB backup moex_db
-Size: $DB_SIZE
-Date: $(date '+%d.%m.%Y %H:%M')"
 fi
 
-# .env НЕ отправляем — содержит секреты, нельзя передавать через Telegram
+if [ -z "${BACKUP_GPG_PASSPHRASE:-}" ]; then
+  log "ERROR: BACKUP_GPG_PASSPHRASE не задан в /opt/frame/.env — backup не зашифрован, отказ"
+  send_msg "❌ *Frame backup failed*: BACKUP_GPG_PASSPHRASE not set"
+  exit 1
+fi
 
-# Чистим старые бэкапы (оставляем 2 последних)
-ls -t "$BACKUP_DIR"/*.sql.gz 2>/dev/null | tail -n +3 | xargs -r rm --
+DATE=$(date +%Y%m%d_%H%M)
+BASENAME="moex_db_${DATE}.sql.gz.gpg"
+BACKUP_FILE="$BACKUP_DIR/$BASENAME"
 
-echo "Done: DB=$DB_SIZE"
+mkdir -p "$BACKUP_DIR"
+
+log "Starting encrypted backup of $DB_NAME from $CONTAINER..."
+
+# ─── 1) Проверка БД ───
+if ! docker exec "$CONTAINER" pg_isready -U "$DB_USER" -d "$DB_NAME" -q 2>/dev/null; then
+  log "ERROR: container $CONTAINER or DB not ready"
+  send_msg "❌ *Frame backup failed*: DB not ready"
+  exit 1
+fi
+
+# ─── 2) Дамп → gzip → GPG → .tmp файл ───
+# Pipeline: pg_dump → gzip → gpg AES256. set -o pipefail ловит любой crash.
+# GPG 2.x: --batch --pinentry-mode loopback нужен чтобы взять passphrase
+# из CLI а не из TTY (которого в cron-job нет).
+log "Dumping + encrypting..."
+if ! docker exec "$CONTAINER" pg_dump -U "$DB_USER" --no-owner --no-acl "$DB_NAME" 2>/dev/null \
+     | gzip \
+     | gpg --batch --yes --pinentry-mode loopback \
+           --symmetric --cipher-algo AES256 \
+           --passphrase "$BACKUP_GPG_PASSPHRASE" \
+           --output "$BACKUP_FILE.tmp"; then
+  rm -f "$BACKUP_FILE.tmp"
+  log "ERROR: pg_dump/gzip/gpg pipeline failed"
+  send_msg "❌ *Frame backup failed*: pg_dump/gzip/gpg error"
+  exit 1
+fi
+
+SIZE_BYTES=$(stat -c%s "$BACKUP_FILE.tmp")
+if [ "$SIZE_BYTES" -lt 10000000 ]; then
+  rm -f "$BACKUP_FILE.tmp"
+  log "ERROR: backup too small ($SIZE_BYTES bytes)"
+  send_msg "❌ *Frame backup failed*: dump too small (\`${SIZE_BYTES}\` bytes)"
+  exit 1
+fi
+
+# Atomic rename — после этой точки дамп считается готовым
+mv "$BACKUP_FILE.tmp" "$BACKUP_FILE"
+SIZE_HUMAN=$(du -h "$BACKUP_FILE" | cut -f1)
+log "Encrypted backup OK: $BACKUP_FILE ($SIZE_HUMAN)"
+
+# ─── 3) Split на части ≤48 МБ ───
+log "Splitting into chunks of $SPLIT_SIZE..."
+split -b "$SPLIT_SIZE" "$BACKUP_FILE" "$BACKUP_FILE.part_"
+mapfile -t PARTS < <(ls "$BACKUP_FILE".part_*)
+TOTAL=${#PARTS[@]}
+log "Created $TOTAL parts"
+
+# ─── 4) Отправка частей в Telegram ───
+log "Sending parts to Telegram..."
+ALL_OK=true
+LAST_N=0
+for i in "${!PARTS[@]}"; do
+  N=$((i + 1))
+  LAST_N=$N
+  PART="${PARTS[$i]}"
+  PART_SIZE=$(du -h "$PART" | cut -f1)
+  CAPTION="🔐 ${BASENAME} — часть ${N}/${TOTAL} (${PART_SIZE})"
+  RESP=$(send_doc "$PART" "$CAPTION" || echo '{"ok":false}')
+  if ! echo "$RESP" | grep -q '"ok":true'; then
+    log "ERROR sending part $N/$TOTAL: $RESP"
+    ALL_OK=false
+    break
+  fi
+  log "  ✓ Sent part $N/$TOTAL ($PART_SIZE)"
+  sleep 1
+done
+
+# ─── 5) Cleanup частей (всегда) ───
+rm -f "$BACKUP_FILE".part_*
+
+# ─── 6) Финал ───
+if $ALL_OK; then
+  # Retention=1: удалить все старые дампы кроме текущего
+  find "$BACKUP_DIR" -maxdepth 1 -name "moex_db_*.sql.gz*" -not -name "$BASENAME" -delete
+  log "Retention: removed previous dumps (kept only $BASENAME)"
+  send_msg "✅ *Frame backup OK (encrypted)*
+Все \`${TOTAL}\` частей отправлены.
+Размер: \`${SIZE_HUMAN}\` (AES-256 + gzip)
+Дата: \`$(date '+%d.%m.%Y %H:%M')\`
+
+_Restore см. в backup_db.sh — нужна passphrase из BACKUP_GPG_PASSPHRASE_"
+else
+  log "WARNING: only $((LAST_N-1))/$TOTAL parts delivered; keeping all dumps as safety net"
+  send_msg "⚠️ *Frame backup PARTIAL*
+Доставлено \`$((LAST_N-1))/${TOTAL}\` частей.
+Дамп на сервере: \`${BACKUP_FILE}\` (\`${SIZE_HUMAN}\`)
+Старые дампы оставлены как safety."
+  exit 1
+fi
+
+log "Done."
