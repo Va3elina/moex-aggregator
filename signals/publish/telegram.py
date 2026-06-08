@@ -4,12 +4,17 @@
 а inline-preview важен для канала. Caption limit 1024 chars, наши ~150.
 """
 from __future__ import annotations
+import os
 from pathlib import Path
 from typing import Optional, Tuple
 
 import requests
 
 from signals import config
+
+# TELEGRAM_API_ROOT — релей (Cloudflare Worker) для обхода РКН без зависимости от IPv6.
+# Дефолт = прямой Telegram (поведение не меняется, пока env не задан на проде).
+_API_ROOT = os.environ.get("TELEGRAM_API_ROOT", "https://api.telegram.org")
 
 
 def send_signal_post(
@@ -24,7 +29,7 @@ def send_signal_post(
         - ok=True  → message_id заполнен, error_text=None
         - ok=False → message_id=None, error_text содержит описание
     """
-    url = f"https://api.telegram.org/bot{config.BOT_TOKEN}/sendPhoto"
+    url = f"{_API_ROOT}/bot{config.BOT_TOKEN}/sendPhoto"
     try:
         with image_path.open("rb") as f:
             resp = requests.post(

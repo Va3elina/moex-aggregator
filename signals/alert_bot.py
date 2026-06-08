@@ -32,7 +32,10 @@ from sqlalchemy import text  # noqa: E402
 from api.database import SessionLocal  # noqa: E402  (импорт ПОСЛЕ DB_URL override)
 
 BOT_TOKEN = os.environ["ALERT_BOT_TOKEN"]
-API_BASE = f"https://api.telegram.org/bot{BOT_TOKEN}"
+# TELEGRAM_API_ROOT — релей (Cloudflare Worker) для обхода РКН без зависимости от IPv6
+# хоста. Дефолт = прямой Telegram (поведение не меняется, пока env не задан на проде).
+API_ROOT = os.environ.get("TELEGRAM_API_ROOT", "https://api.telegram.org")
+API_BASE = f"{API_ROOT}/bot{BOT_TOKEN}"
 
 SITE = "https://xn--80aklbnczmv.xn--p1ai"  # punycode таймфрейм.рф (надёжно в TG)
 

@@ -9,7 +9,10 @@ import os
 import requests
 
 _TOKEN = os.environ["ALERT_BOT_TOKEN"]
-_API = f"https://api.telegram.org/bot{_TOKEN}"
+# TELEGRAM_API_ROOT — релей (Cloudflare Worker) для обхода РКН без зависимости от IPv6.
+# Дефолт = прямой Telegram (поведение не меняется, пока env не задан на проде).
+_API_ROOT = os.environ.get("TELEGRAM_API_ROOT", "https://api.telegram.org")
+_API = f"{_API_ROOT}/bot{_TOKEN}"
 
 
 def _redact(s) -> str:
