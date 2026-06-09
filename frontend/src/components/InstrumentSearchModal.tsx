@@ -468,45 +468,47 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
             только кнопка закрытия + компактный поиск, чтобы освободить место под
             список активов. */}
         <div className="px-6 pt-3 pb-3 flex-shrink-0">
-          <div className={`flex items-center ${multiSelect ? 'justify-between' : 'justify-end'} mb-1.5`}>
+          {/* Поиск + «×» в одном ряду. Раньше «×» жил в отдельной строке сверху,
+              из-за чего над поиском оставался пустой gap. Теперь поиск тянется
+              (flex-1), «×» прижат справа → список активов получает эту высоту. */}
+          <div className="flex items-center gap-3">
             {multiSelect && (
               <h2
-                className="font-bold"
+                className="font-bold whitespace-nowrap"
                 style={{ fontSize: 'var(--fs-lg)', color: 'var(--text-primary)' }}
               >
                 Выбрать активы
               </h2>
             )}
+            {/* Search — outline 2px text-primary в editorial / accent в dark */}
+            <div className="relative flex-1 min-w-0">
+              <Search
+                size={18}
+                className="absolute left-3.5 top-1/2 -translate-y-1/2"
+                style={{ color: 'var(--text-secondary)' }}
+              />
+              <input
+                ref={inputRef}
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Поиск актива"
+                className="instrument-modal-search w-full pl-11 pr-4 py-2.5 text-sm rounded-xl focus:outline-none transition-colors"
+                style={{
+                  backgroundColor: 'var(--bg-primary)',
+                  color: 'var(--text-primary)',
+                  border: '2px solid var(--text-primary)',
+                }}
+              />
+            </div>
             <button
               onClick={onClose}
-              className="instrument-modal-close p-2 -mr-2 rounded-lg transition-colors"
+              className="instrument-modal-close p-2 -mr-2 rounded-lg transition-colors flex-shrink-0"
               style={{ color: 'var(--text-secondary)' }}
               aria-label="Закрыть"
             >
               <X size={22} />
             </button>
-          </div>
-
-          {/* Search — outline 2px text-primary в editorial / accent в dark */}
-          <div className="relative">
-            <Search
-              size={18}
-              className="absolute left-3.5 top-1/2 -translate-y-1/2"
-              style={{ color: 'var(--text-secondary)' }}
-            />
-            <input
-              ref={inputRef}
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Поиск актива"
-              className="instrument-modal-search w-full pl-11 pr-4 py-2.5 text-sm rounded-xl focus:outline-none transition-colors"
-              style={{
-                backgroundColor: 'var(--bg-primary)',
-                color: 'var(--text-primary)',
-                border: '2px solid var(--text-primary)',
-              }}
-            />
           </div>
 
           {/* Категории — chip pills */}
