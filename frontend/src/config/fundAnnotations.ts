@@ -15,36 +15,12 @@ export interface FundAnnotation {
 export const FUND_ANNOTATIONS: FundAnnotation[] = [
     // === АКЦИИ ===
     {
-        date: '2021-05-06',
-        category: 'stocks',
-        ticker: 'OPIF-281',
-        ukId: '20',
-        type: 'merger',
-        description: 'Слияние: активы фонда Райффайзен присоединены к «Райффайзен - Акции» (+4.6 млрд, NAV +90%)',
-    },
-    {
-        date: '2024-08-06',
-        category: 'stocks',
-        ticker: 'OPIF-282',
-        ukId: '20',
-        type: 'merger',
-        description: 'Слияние: активы фонда Райффайзен присоединены к «Компании роста» (+2.9 млрд, NAV +71%)',
-    },
-    {
         date: '2025-06-06',
         category: 'stocks',
         ticker: 'OPIF-1003',
         ukId: '7',
         type: 'merger',
         description: 'Присоединение фонда ВИМ к «ВИМ - Акции» (+3.3 млрд, NAV +37%)',
-    },
-    {
-        date: '2026-01-27',
-        category: 'stocks',
-        ticker: 'OPIF-282',
-        ukId: '20',
-        type: 'merger',
-        description: 'Слияние: активы фонда Райффайзен присоединены к «Компании роста» (+7.5 млрд, NAV +164%)',
     },
 
     // === ЗОЛОТО ===
