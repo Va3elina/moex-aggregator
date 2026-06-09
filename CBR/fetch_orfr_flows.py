@@ -24,15 +24,21 @@
 методология, потребует правок фронта/методологии).
 
 Каждый новый XLSX содержит весь архив — поэтому ingest стратегия:
-скачать последний XLSX, upsert все строки (PK overwrite на повторе).
+взять XLSX, upsert все строки (PK overwrite на повторе, idempotent).
 
-Запуск:
-  python3 -m CBR.fetch_orfr_flows           # обычный
-  python3 -m CBR.fetch_orfr_flows --once    # alias
+⚠️ РЕЖИМ — РУЧНОЙ. Авто-расписание убрано из main_orchestrator.py:
+cbr.ru таймаутит с прод-сервера, а формат отчёта нестабилен. Файл присылается
+вручную и грузится через --xlsx. Авто-скачивание (без --xlsx) оставлено как
+fallback, но не запускается по расписанию.
+
+Запуск (ручной ингест присланного файла — основной путь):
+  python3 -m CBR.fetch_orfr_flows --xlsx /tmp/ORFR_2026-5.xlsx
+  python3 -m CBR.fetch_orfr_flows --xlsx FILE --dry-run   # проверить парсинг
 
 CLI flags:
-  --xlsx PATH    использовать локальный XLSX вместо скачивания (debug)
+  --xlsx PATH    взять локальный XLSX (основной режим; файл от пользователя)
   --dry-run      не писать в БД, только парсить и вывести summary
+  (без --xlsx)   fallback: скачать свежий XLSX с cbr.ru (может таймаутить)
 """
 
 import argparse

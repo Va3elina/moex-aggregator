@@ -129,11 +129,11 @@ SCRIPTS = {
     'dividends_daily': BASE_DIR / 'Candles' / 'fetch_dividends.py',
     # Сырьевые товары (Yahoo Finance: BRENT/GOLD/SILVER/...) — для seasonality
     'commodity_daily': BASE_DIR / 'Commodity' / 'fetch_commodity_realtime.py',
-    # ОРФР ЦБ (Обзор рисков финансовых рынков) — потоки участников на бирже
-    # по категориям (нерезиденты/НФО/СЗКО/физлица/...). XLSX скачивается с
-    # cbr.ru/analytics/finstab/orfr/, парсятся листы рис. 32 (акции),
-    # рис. 14 (ОФЗ), рис. 8 (валюты). Ежемесячный отчёт ЦБ.
-    'cbr_orfr_flows': BASE_DIR / 'CBR' / 'fetch_orfr_flows.py',
+    # ОРФР ЦБ (cbr_orfr_flows) убран из расписания: cbr.ru таймаутит с сервера,
+    # формат отчёта нестабилен (ЦБ переименовывает листы). Перешли на ручной
+    # ингест — файл присылается вручную, грузится через
+    #   python3 -m CBR.fetch_orfr_flows --xlsx <path>
+    # (скрипт CBR/fetch_orfr_flows.py остаётся как ручной инструмент).
 }
 
 # Материализованные представления.
@@ -173,12 +173,7 @@ FUNDS_EARLY_UPDATE_MINUTE = 30
 COMMODITY_UPDATE_HOUR = 8
 COMMODITY_UPDATE_MINUTE = 0
 
-# ОРФР ЦБ — обзор выходит примерно 10-15 числа каждого месяца.
-# Запускаем раз в день в 11:30 МСК: новые данные подхватятся в день
-# публикации, в остальные дни upsert не меняет уже актуальные строки
-# (idempotent через ON CONFLICT). Дёшево по ресурсам, ~5 сек.
-CBR_ORFR_UPDATE_HOUR = 11
-CBR_ORFR_UPDATE_MINUTE = 30
+# ОРФР ЦБ — авто-расписание убрано (ручной ингест через --xlsx, см. SCRIPTS).
 
 # Буферы (секунды после закрытия интервала)
 BUFFER_5MIN = 10  # После закрытия 5-минутки
@@ -199,7 +194,6 @@ TIMEOUTS = {
     'breadth_daily': 600,  # 10 минут (полный пересчёт ~2 мин)
     'dividends_daily': 900,  # 15 минут (много HTTP-запросов к ISS)
     'commodity_daily': 600,  # 10 минут (9 тикеров × Yahoo HTTP, обычно <1 мин)
-    'cbr_orfr_flows': 300,   # 5 минут (HTTP + XLSX parse + ~200 upsert)
 }
 
 # Директория логов
@@ -425,7 +419,6 @@ class MainOrchestrator:
         self.last_daily_update = None
         self.last_funds_early_update = None  # ранний funds-only прогон в 14:30
         self.last_commodity_update = None    # commodity daily — 08:00 МСК после US close
-        self.last_cbr_orfr_update = None     # ОРФР ЦБ ежедневная попытка — 11:30 МСК
         self.last_weekend_catchup = None
         self.last_billing_hourly = None      # billing renewal + expire — раз в час
 
@@ -754,24 +747,6 @@ class MainOrchestrator:
         else:
             self.stats['errors'] += 1
             log.error(f"    ✗ Commodity Daily: {msg}")
-
-        return success
-
-    async def run_cbr_orfr_update(self) -> bool:
-        """ОРФР ЦБ — потоки участников на бирже. Idempotent upsert."""
-        log.info("  🏛️  CBR ORFR Flows...")
-        self.stats.setdefault('cbr_orfr_runs', 0)
-        self.stats.setdefault('cbr_orfr_success', 0)
-        self.stats['cbr_orfr_runs'] += 1
-
-        success, msg, dur = await run_script('cbr_orfr_flows', [])
-
-        if success:
-            self.stats['cbr_orfr_success'] += 1
-            log.info(f"    ✓ CBR ORFR ({dur:.1f}с)")
-        else:
-            self.stats['errors'] += 1
-            log.error(f"    ✗ CBR ORFR: {msg}")
 
         return success
 
@@ -1108,18 +1083,6 @@ class MainOrchestrator:
                     log.info(f"⏰ [{now:%H:%M:%S} МСК] Commodity update...")
                     await self.run_commodity_update()
                     self.last_commodity_update = slot_day
-
-                # === ОРФР ЦБ (11:30 МСК, ежедневно) ===
-                # ЦБ публикует ежемесячный обзор примерно 10-15 числа. Запускаем
-                # ежедневно — в день публикации подхватятся новые данные, в
-                # остальные дни idempotent upsert не меняет уже актуальные строки.
-                # Включая выходные — пусть будет на случай задержки публикации.
-                if (slot_day != self.last_cbr_orfr_update and
-                        now.hour == CBR_ORFR_UPDATE_HOUR and
-                        now.minute >= CBR_ORFR_UPDATE_MINUTE):
-                    log.info(f"⏰ [{now:%H:%M:%S} МСК] CBR ORFR update...")
-                    await self.run_cbr_orfr_update()
-                    self.last_cbr_orfr_update = slot_day
 
                 # === Дневное обновление (в 19:10, только в торговые дни) ===
                 if (slot_day != self.last_daily_update and
