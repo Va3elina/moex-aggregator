@@ -26,6 +26,7 @@ from datetime import datetime, timedelta, date
 from typing import Optional, Dict, List
 import logging
 import sys
+import json
 from pathlib import Path
 import argparse
 
@@ -393,8 +394,12 @@ def save_fund_holdings(
         return n
 
 
-async def update_all_holdings(engine) -> int:
-    """Обновить состав всех фондов через Cbonds API."""
+async def update_all_holdings(engine, session) -> int:
+    """Обновить состав всех фондов через Cbonds API.
+
+    Использует УЖЕ авторизованную `session` (общий логин с update_all_funds) —
+    раньше функция логинилась повторно, и каждый logout=1-вход приближал
+    rate-limit Cbonds «limited rights». Один прогон = один вход."""
     log.info("")
     log.info("=" * 60)
     log.info("📊 ОБНОВЛЕНИЕ СОСТАВА ФОНДОВ (Cbonds API)")
@@ -411,25 +416,20 @@ async def update_all_holdings(engine) -> int:
         return 0
 
     total_saved = 0
-    async with aiohttp.ClientSession(cookie_jar=aiohttp.CookieJar()) as session:
-        if not await cbonds_auth(session):
-            log.error("  Пропуск: не удалось авторизоваться")
-            return 0
-
-        for fund_id, ticker, parent_id in rows:
-            holdings, snapshot_date = await fetch_cbonds_holdings(session, parent_id)
-            if holdings:
-                saved = save_fund_holdings(
-                    engine, fund_id, holdings,
-                    snapshot_date=snapshot_date,
-                    source="cbonds",
-                )
-                snap_info = f" snap={snapshot_date}" if snapshot_date else ""
-                log.info(f"  {ticker:12s} fund_id={fund_id:>6d}: {saved} позиций{snap_info}")
-                total_saved += saved
-            else:
-                log.debug(f"  {ticker:12s} fund_id={fund_id:>6d}: нет данных")
-            await asyncio.sleep(0.3)
+    for fund_id, ticker, parent_id in rows:
+        holdings, snapshot_date = await fetch_cbonds_holdings(session, parent_id)
+        if holdings:
+            saved = save_fund_holdings(
+                engine, fund_id, holdings,
+                snapshot_date=snapshot_date,
+                source="cbonds",
+            )
+            snap_info = f" snap={snapshot_date}" if snapshot_date else ""
+            log.info(f"  {ticker:12s} fund_id={fund_id:>6d}: {saved} позиций{snap_info}")
+            total_saved += saved
+        else:
+            log.debug(f"  {ticker:12s} fund_id={fund_id:>6d}: нет данных")
+        await asyncio.sleep(0.3)
 
     log.info(f"\n✅ Состав ГОТОВО: {total_saved} позиций для {len(rows)} фондов")
     return total_saved
@@ -530,7 +530,7 @@ async def update_all_funds(force: bool = False) -> Dict[int, int]:
     async with aiohttp.ClientSession(cookie_jar=aiohttp.CookieJar()) as session:
         if not await cbonds_auth(session):
             log.error("  Пропуск: не удалось авторизоваться в Cbonds")
-            return results
+            return None  # сигнал «auth не прошла» → демон не закрывает день, повтор по cooldown
 
         for fund in funds:
             fund_id = fund["fund_id"]
@@ -562,9 +562,9 @@ async def update_all_funds(force: bool = False) -> Dict[int, int]:
 
             await asyncio.sleep(0.5)  # Не спамим Cbonds
 
-    # Состав фондов (раз в день)
-    # 1) Cbonds — все фонды, monthly snapshot, weight only.
-    await update_all_holdings(engine)
+        # 1) Состав фондов Cbonds — В ТОЙ ЖЕ session (без повторного логина).
+        await update_all_holdings(engine, session)
+
     # 2) ВИМ — 6 фондов, daily T+1, с positions (штуки).
     #    Запускается ПОСЛЕ Cbonds. Из-за разных asset_name форматов это
     #    дополнение, не overwrite — в UI можно отфильтровать по source.
@@ -588,29 +588,67 @@ async def update_all_funds(force: bool = False) -> Dict[int, int]:
 # ДЕМОН
 # ═══════════════════════════════════════════════════════════════════════════════
 
+# Файл состояния в /app/logs (named volume — переживает рестарт контейнера).
+# Хранит дату последнего УСПЕШНОГО обновления и время последней ПОПЫТКИ. Благодаря
+# этому перезапуск демона watchdog'ом НЕ триггерит повторный логин в Cbonds, если
+# день уже закрыт, а при throttle попытки идут не чаще RETRY_COOLDOWN — это и
+# устраняет churn логинов, который ловил rate-limit «limited rights».
+STATE_FILE = Path(__file__).parent.parent / "logs" / "funds_state.json"
+RETRY_COOLDOWN = timedelta(minutes=30)
+
+
+def _read_state():
+    """→ (last_success_date | None, last_attempt_datetime | None)."""
+    try:
+        d = json.loads(STATE_FILE.read_text())
+        ls = date.fromisoformat(d["last_success"]) if d.get("last_success") else None
+        la = datetime.fromisoformat(d["last_attempt"]) if d.get("last_attempt") else None
+        return ls, la
+    except Exception:
+        return None, None
+
+
+def _write_state(last_success, last_attempt):
+    try:
+        STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        STATE_FILE.write_text(json.dumps({
+            "last_success": last_success.isoformat() if last_success else None,
+            "last_attempt": last_attempt.isoformat() if last_attempt else None,
+        }))
+    except Exception as e:
+        log.warning(f"  Не удалось записать state {STATE_FILE}: {e}")
+
+
 async def run_daemon():
     """Запуск в режиме демона"""
     log.info("🚀 Запуск демона обновления фондов")
     log.info(f"  Расписание: {UPDATE_HOUR:02d}:{UPDATE_MINUTE:02d} МСК")
 
-    last_update_date = None
+    last_update_date, last_attempt = _read_state()
+    log.info(f"  Состояние: last_success={last_update_date} last_attempt={last_attempt}")
 
     while True:
         now = get_moscow_time()
         today = now.date()
-
-        # Проверяем расписание
         is_trade_day, reason = is_trading_day(today)
 
-        if is_trade_day:
-            if now.hour >= UPDATE_HOUR and now.minute >= UPDATE_MINUTE:
-                if last_update_date != today:
-                    log.info(f"⏰ [{now:%H:%M:%S} МСК] Запуск обновления...")
-                    try:
-                        await update_all_funds(force=False)
+        if is_trade_day and now.hour >= UPDATE_HOUR and last_update_date != today:
+            # Не чаще RETRY_COOLDOWN — иначе при throttle демон (и его рестарты)
+            # долбят логинами и сами поддерживают «limited rights».
+            if last_attempt is None or (now - last_attempt) >= RETRY_COOLDOWN:
+                log.info(f"⏰ [{now:%H:%M:%S} МСК] Запуск обновления...")
+                last_attempt = now
+                _write_state(last_update_date, last_attempt)  # фиксируем попытку ДО запуска (переживёт рестарт)
+                try:
+                    res = await update_all_funds(force=False)
+                    if res is not None:  # авторизация прошла → день закрыт
                         last_update_date = today
-                    except Exception as e:
-                        log.error(f"Ошибка обновления: {e}")
+                        _write_state(last_update_date, last_attempt)
+                        log.info(f"  ✅ День закрыт: {today}")
+                    else:
+                        log.warning("  Cbonds auth не прошла — повтор после cooldown")
+                except Exception as e:
+                    log.error(f"Ошибка обновления: {e}")
 
         await asyncio.sleep(60)
 
