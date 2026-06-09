@@ -32,6 +32,7 @@ from api.schemas.validators import (
 )
 from api.routers.auth import get_current_user_optional
 from api.security.access_control import enforce_tier_limits, get_effective_end_date
+from api.services.chart_live import append_live_points
 
 router = APIRouter(prefix='/api/chart', tags=['chart'])
 
@@ -491,6 +492,16 @@ def get_chart_data(
         "available_intervals": available_intervals,
         "contract_switches": contract_switches,
     }
+
+    # Дописываем «живую» точку с текущим значением (см. api/services/chart_live.py):
+    # на дневном/часовом ТФ последняя закрытая свеча отстаёт от текущего момента,
+    # поэтому добавляем свежую 5-минутную котировку и net-позицию как live-точку.
+    # Только для актуального запроса без ограничения по дате: Free-тариф получает
+    # OI с задержкой 24ч (date_to подменён на effective_end выше) — для него
+    # live-точку НЕ добавляем, иначе реалтайм утечёт мимо tier-гейта. Исторические
+    # запросы (date_from/date_to заданы явно) тоже без live-точки.
+    if date_from is None and date_to is None:
+        append_live_points(db, response)
 
     get_or_set(cache_key, response, ttl=DEFAULT_TTL)
     return response
