@@ -42,10 +42,19 @@ jobs:
             set -e
             cd /opt/frame
             before=$(git rev-parse HEAD)
-            git pull origin main
+            # reset --hard, НЕ pull: деплой-таргет = ЧИСТЫЙ checkout origin/main.
+            # Если кто-то случайно scp'ил/правил файл на проде, git pull падал бы
+            # ("local changes would be overwritten ... Aborting"). reset --hard
+            # форсит чистое состояние (легитимные правки давно закоммичены).
+            git fetch origin main
+            git reset --hard origin/main
             after=$(git rev-parse HEAD)
             changed=$(git diff --name-only "$before" "$after")
             echo "=== Changed files ==="; echo "$changed"
+
+            # Убрать висячие renamed-контейнеры от прерванного предыдущего recreate
+            # (иначе "container name ..._frame-api-1 already in use" → деплой падал).
+            docker rm -f $(docker ps -aq --filter 'name=_frame-api-1') 2>/dev/null || true
 
             # api всегда (запекает frontend dist + Python код api)
             docker compose build api
@@ -54,6 +63,7 @@ jobs:
             # orchestrator — ОТДЕЛЬНЫЙ image; пересобираем только если менялся его код
             if echo "$changed" | grep -qE '^(OI/|Funds/|Candles/|Macro/|Commodity/|main_orchestrator\.py|requirements\.txt|Dockerfile$)'; then
               echo "=== Orchestrator code changed -> rebuild ==="
+              docker rm -f $(docker ps -aq --filter 'name=_frame-orchestrator-1') 2>/dev/null || true
               docker compose build orchestrator
               docker compose up -d --force-recreate orchestrator
             fi
