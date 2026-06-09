@@ -377,6 +377,40 @@ def _parse_assets_from_tables_rowwise(tables: list, isin_pif: Optional[str] = No
     return assets
 
 
+def _find_gross_assets_text(full_text: str) -> Optional[float]:
+    """
+    «Раздел 3. Подраздел 10. Общая стоимость активов» → стоимость на ТЕКУЩУЮ
+    отчётную дату (float, ₽). Знаменатель для доли (как у investfunds), включает
+    деньги/прочие активы — в отличие от Σ(value_rub) по одним лишь бумагам.
+
+    Два PDF-формата (число где-то в окне после маркера):
+      ВИМ:           «…Общая стоимость активов (сумма строк 01+…) 13 608 698 493,21»
+                     (число на той же строке-маркере)
+      Первая/Т-Кап:  «Подраздел 10. Общая стоимость активов» → ниже «Значение 19 281 690 534,19»
+                     (число на отдельной строке «Значение»)
+    От строки-маркера сканируем вперёд до ~6 строк (или до следующего «Раздел N»),
+    берём первое «большое» (>1e6) число с запятой-копейками. None если секции нет.
+    """
+    num_re = re.compile(r"\d[\d \xa0.]*,\d{2}")
+    razdel_re = re.compile(r"раздел\s+(?:iv|v|iii|\d)\b", re.I)
+    lines = full_text.splitlines()
+    for idx, line in enumerate(lines):
+        if "общая стоимость активов" not in line.lower():
+            continue
+        for j in range(idx, min(idx + 7, len(lines))):
+            if j > idx and razdel_re.search(lines[j]):
+                break  # дошли до следующего раздела без значения
+            for m in num_re.finditer(lines[j]):
+                s = m.group().replace("\xa0", "").replace(" ", "").replace(".", "").replace(",", ".")
+                try:
+                    n = float(s)
+                except ValueError:
+                    continue
+                if n > 1e6:
+                    return n
+    return None
+
+
 def parse_scha(pdf_bytes: bytes) -> dict:
     """
     Основная функция парсера.
@@ -416,6 +450,7 @@ def parse_scha(pdf_bytes: bytes) -> dict:
         "isin_pif": None,
         "assets": [],
         "total_assets": 0,
+        "gross_assets_rub": None,
         "pages": 0,
         "parser_strategy": None,
     }
@@ -577,6 +612,7 @@ def parse_scha(pdf_bytes: bytes) -> dict:
         result["assets"] = uniq
 
     result["total_assets"] = len(result["assets"])
+    result["gross_assets_rub"] = _find_gross_assets_text("\n".join(full_text_parts))
     return result
 
 

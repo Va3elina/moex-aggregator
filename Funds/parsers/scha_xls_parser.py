@@ -375,6 +375,39 @@ def _parse_xls_rowwise(sheets: dict, isin_pif=None) -> list[dict]:
     return assets
 
 
+def _find_gross_assets(df: pd.DataFrame) -> Optional[float]:
+    """
+    «Раздел 3. Подраздел 10. Общая стоимость активов» → стоимость на ТЕКУЩУЮ
+    отчётную дату (float, ₽). Это знаменатель для доли (как у investfunds),
+    а НЕ Σ(value_rub) по бумагам — последняя не включает деньги/прочие активы.
+
+    Раскладка (форма 0420502): строка-заголовок «…Подраздел 10. Общая стоимость
+    активов», ниже шапка колонки, затем строка «Значение» с числом. Берём ПЕРВОЕ
+    число > 1e6 в строке «Значение» (первая колонка = текущая дата; «1» —
+    индекс колонки, отсекаем порогом). None если секции нет (старый формат).
+    """
+    marker = None
+    for i in range(len(df)):
+        joined = " ".join("" if pd.isna(v) else str(v) for v in df.iloc[i].values).lower()
+        if "общая стоимость активов" in joined:
+            marker = i
+            break
+    if marker is None:
+        return None
+    for i in range(marker + 1, min(marker + 12, len(df))):
+        cells = df.iloc[i].values
+        joined = " ".join("" if pd.isna(v) else str(v) for v in cells).lower()
+        # Дошли до следующего раздела без «Значения» — выходим.
+        if "раздел" in joined and "значение" not in joined:
+            break
+        if "значение" in joined:
+            for v in cells:
+                n = _norm_number(v)
+                if n is not None and n > 1e6:
+                    return n
+    return None
+
+
 def parse_scha_xls(xls_bytes_or_path) -> dict:
     """
     Парсит XLS/XLSX файл СЧА.
@@ -409,6 +442,7 @@ def parse_scha_xls(xls_bytes_or_path) -> dict:
         "isin_pif": None,
         "assets": [],
         "total_assets": 0,
+        "gross_assets_rub": None,
         "sections_parsed": 0,
         "parser_strategy": "xls",
     }
@@ -456,9 +490,20 @@ def parse_scha_xls(xls_bytes_or_path) -> dict:
     # 2b. Стратегия B — multi-sheet row-wise (Атон XBRL-Excel: расшифровки на
     #     отдельных листах `…Rasshifr_Akt/Ob_*`).
     rowwise_assets = []
-    # Атон-листы расшифровок начинаются с номера: «22; sr_…Rasshifr…» (новый формат)
-    # или «22 0420502Справк…» (старый). Альфа = один лист без числового префикса.
-    rasshifr = [n for n in names if "asshifr" in n or re.match(r"^\s*\d+[;\s]", str(n))]
+    # Берём ТОЛЬКО расшифровки АКТИВОВ формы 0420502 (листы «…Rasshifr_Akt_P*»).
+    # Широкий числовой-префикс фильтр раньше затягивал лишние листы: «…0420503_R4_2»
+    # (ДРУГАЯ форма 0420503, Раздел 4) давал фантомные +1.3 млрд → Σ активов
+    # превышала «Общую стоимость активов» (Подраздел 10) у OPIF-63 (двойной счёт).
+    akt = [n for n in names if re.search(r"Rasshifr_Akt", str(n), re.I)]
+    if akt:
+        rasshifr = akt
+    else:
+        # Старый формат (2021) без «Rasshifr_Akt» в имени листа — fallback на числовой
+        # префикс, но исключаем форму 0420503 и Раздел 4/обязательства (не активы).
+        rasshifr = [n for n in names
+                    if ("asshifr" in n.lower() or re.match(r"^\s*\d+[;\s]", str(n)))
+                    and "0420503" not in str(n)
+                    and not re.search(r"(_R4|_Ob)", str(n), re.I)]
     if rasshifr:
         sheets = {}
         for n in rasshifr:
@@ -479,6 +524,20 @@ def parse_scha_xls(xls_bytes_or_path) -> dict:
         result["sections_parsed"] = len(sections)
 
     result["total_assets"] = len(result["assets"])
+
+    # Подраздел 10 «Общая стоимость активов» — знаменатель доли. Сначала на листе 0
+    # (Альфа/Сбер single-sheet), затем фолбэк на прочие листы (Атон XBRL multi-sheet).
+    gross = _find_gross_assets(df)
+    if gross is None:
+        for n in names[1:]:
+            try:
+                gross = _find_gross_assets(xl.parse(n, header=None))
+            except Exception:
+                continue
+            if gross is not None:
+                break
+    result["gross_assets_rub"] = gross
+
     return result
 
 

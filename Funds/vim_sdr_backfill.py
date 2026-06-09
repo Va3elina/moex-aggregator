@@ -142,9 +142,15 @@ def existing_snapshot_dates(engine, fund_id: int, source: str = SOURCE) -> set:
     return {r[0] for r in rows}
 
 
-def save_assets(engine, fund_id: int, snapshot_date, assets: list[dict], resolve_names: bool = True) -> int:
+def save_assets(engine, fund_id: int, snapshot_date, assets: list[dict],
+                gross_assets: float | None = None, resolve_names: bool = True) -> int:
     """
     Сохраняет список assets в fund_holdings_history. ON CONFLICT DO NOTHING.
+
+    Знаменатель доли — `gross_assets` («Подраздел 10. Общая стоимость активов»,
+    совпадает с investfunds; включает деньги/прочие активы), с фолбэком на
+    Σ(value_rub) по бумагам, если форма не отдала эту строку. Исторические
+    weight'ы пересчитываются отдельным скриптом (recompute_weights_gross.py).
 
     Если resolve_names=True, для активов с placeholder-именем "(name from ISIN)"
     дозаполняет SHORTNAME через MOEX ISS (с кешем).
@@ -152,8 +158,8 @@ def save_assets(engine, fund_id: int, snapshot_date, assets: list[dict], resolve
     if not assets:
         return 0
 
-    # Вычислим total NAV для весов.
-    total_nav = sum(a.get("value_rub") or 0 for a in assets)
+    sec_sum = sum(a.get("value_rub") or 0 for a in assets)
+    denom = gross_assets if (gross_assets and gross_assets > 0) else sec_sum
 
     inserted = 0
     with engine.connect() as conn:
@@ -166,10 +172,10 @@ def save_assets(engine, fund_id: int, snapshot_date, assets: list[dict], resolve
                 else:
                     name = a["isin"]
 
-            # Вычислим weight как доля от total NAV.
+            # Вычислим weight как долю от общей стоимости активов (gross).
             weight = None
-            if total_nav > 0 and a.get("value_rub"):
-                weight = round(a["value_rub"] / total_nav * 100, 4)  # в процентах
+            if denom > 0 and a.get("value_rub"):
+                weight = round(a["value_rub"] / denom * 100, 4)  # в процентах
 
             result = conn.execute(text("""
                 INSERT INTO fund_holdings_history
@@ -269,7 +275,8 @@ def backfill_ticker(engine, ticker: str) -> dict:
             from datetime import date as _date
             scha_date = _date.fromisoformat(scha_date)
 
-        inserted = save_assets(engine, fund_id, scha_date, result["assets"])
+        inserted = save_assets(engine, fund_id, scha_date, result["assets"],
+                               gross_assets=result.get("gross_assets_rub"))
         stats["inserted"] += inserted
         log.info(
             f"    parsed {len(result['assets'])} активов, "

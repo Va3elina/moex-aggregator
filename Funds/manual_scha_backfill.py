@@ -167,12 +167,20 @@ def find_fund_id(engine, isin_pif: str | None, ticker: str | None) -> tuple[int 
     return None, ""
 
 
-def save_assets(engine, fund_id: int, snap_date: _date, assets: list[dict], resolve_names: bool = True) -> int:
-    """Сохраняет позиции с резолвом имён через MOEX ISS."""
+def save_assets(engine, fund_id: int, snap_date: _date, assets: list[dict],
+                gross_assets: float | None = None, resolve_names: bool = True) -> int:
+    """Сохраняет позиции с резолвом имён через MOEX ISS.
+
+    Знаменатель доли — `gross_assets` («Раздел 3. Подраздел 10. Общая стоимость
+    активов» из формы), что совпадает с investfunds и включает деньги/прочие активы.
+    Фолбэк на Σ(value_rub) по бумагам, если форма не отдала Подраздел 10 (старые
+    форматы) — тогда доли суммируются в 100% по бумагам (прежнее поведение).
+    """
     if not assets:
         return 0
 
-    total_nav = sum(a.get("value_rub") or 0 for a in assets)
+    sec_sum = sum(a.get("value_rub") or 0 for a in assets)
+    denom = gross_assets if (gross_assets and gross_assets > 0) else sec_sum
     inserted = 0
     with engine.connect() as conn:
         for a in assets:
@@ -184,8 +192,8 @@ def save_assets(engine, fund_id: int, snap_date: _date, assets: list[dict], reso
                 time.sleep(SLEEP_BETWEEN_MOEX)
 
             weight = None
-            if total_nav > 0 and a.get("value_rub"):
-                weight = round(a["value_rub"] / total_nav * 100, 4)
+            if denom > 0 and a.get("value_rub"):
+                weight = round(a["value_rub"] / denom * 100, 4)
 
             result = conn.execute(
                 text("""
@@ -216,13 +224,54 @@ def save_assets(engine, fund_id: int, snap_date: _date, assets: list[dict], reso
     return inserted
 
 
-def process_pdf(engine, pdf_path: Path) -> dict:
-    """Обрабатывает один SCHA-файл (PDF или XLS/XLSX). Возвращает summary dict.
+def parse_any(pdf_path: Path) -> dict:
+    """Роутит SCHA-файл по расширению в нужный парсер; возвращает result-dict.
 
-    Определяет формат по расширению:
-      .pdf       → парсер PDF (для ВИМ Инвестиции и УК публикующих PDF)
-      .xls/.xlsx → парсер XLS  (для Альфа-Капитал, Сбер и др.)
+      .pdf        → парсер PDF (ВИМ, Первая, и др. публикующие PDF)
+      .xls/.xlsx  → парсер XLS (Альфа, Атон, Сбер и др.)
+      .zip        → распаковываем inner-файл (cp866-имя) и роутим по ЕГО расширению
+                    (Т-Капитал, e-disclosure). Бросает исключение при ошибке чтения.
     """
+    suffix = pdf_path.suffix.lower()
+    if suffix in (".xls", ".xlsx"):
+        return parse_scha_xls(str(pdf_path))
+    if suffix == ".zip":
+        import zipfile, tempfile
+        with zipfile.ZipFile(pdf_path) as zf:
+            infos = zf.infolist()
+            if not infos:
+                raise ValueError("empty zip")
+            info = infos[0]
+            try:
+                inner_name = info.filename.encode("cp437").decode("cp866")
+            except (UnicodeDecodeError, UnicodeEncodeError):
+                inner_name = info.filename
+            low = inner_name.lower()
+            if low.endswith(".xlsx"):
+                inner_ext = ".xlsx"
+            elif low.endswith(".xls"):
+                inner_ext = ".xls"
+            else:
+                inner_ext = ".pdf"
+            inner_bytes = zf.read(info)
+        if inner_ext in (".xls", ".xlsx"):
+            with tempfile.NamedTemporaryFile(delete=False, suffix=inner_ext) as tf:
+                tf.write(inner_bytes)
+                tmp_path = tf.name
+            try:
+                return parse_scha_xls(tmp_path)
+            finally:
+                try:
+                    Path(tmp_path).unlink()
+                except OSError:
+                    pass
+        return parse_scha(inner_bytes)
+    with open(pdf_path, "rb") as f:
+        return parse_scha(f.read())
+
+
+def process_pdf(engine, pdf_path: Path) -> dict:
+    """Обрабатывает один SCHA-файл (PDF или XLS/XLSX). Возвращает summary dict."""
     summary = {
         "file": pdf_path.name,
         "fund_id": None,
@@ -230,55 +279,13 @@ def process_pdf(engine, pdf_path: Path) -> dict:
         "snapshot_date": None,
         "parser_strategy": None,
         "total_assets": 0,
+        "gross_assets_rub": None,
         "inserted": 0,
         "error": None,
     }
 
-    suffix = pdf_path.suffix.lower()
     try:
-        if suffix in (".xls", ".xlsx"):
-            result = parse_scha_xls(str(pdf_path))
-        elif suffix == ".zip":
-            # ZIP с e-disclosure содержит SCHA-файл с cp866-кодированным именем.
-            # Внутри может быть XLS/XLSX (Альфа) ИЛИ PDF (Т-Капитал, Сбер и др.).
-            # Распакуем inner-файл и роутим по ЕГО расширению.
-            import zipfile, tempfile
-            with zipfile.ZipFile(pdf_path) as zf:
-                infos = zf.infolist()
-                if not infos:
-                    summary["error"] = "empty zip"
-                    return summary
-                info = infos[0]
-                try:
-                    inner_name = info.filename.encode("cp437").decode("cp866")
-                except (UnicodeDecodeError, UnicodeEncodeError):
-                    inner_name = info.filename
-                low = inner_name.lower()
-                if low.endswith(".xlsx"):
-                    inner_ext = ".xlsx"
-                elif low.endswith(".xls"):
-                    inner_ext = ".xls"
-                else:
-                    inner_ext = ".pdf"
-                inner_bytes = zf.read(info)
-            if inner_ext in (".xls", ".xlsx"):
-                with tempfile.NamedTemporaryFile(delete=False, suffix=inner_ext) as tf:
-                    tf.write(inner_bytes)
-                    tmp_path = tf.name
-                try:
-                    result = parse_scha_xls(tmp_path)
-                finally:
-                    try:
-                        Path(tmp_path).unlink()
-                    except OSError:
-                        pass
-            else:
-                # PDF внутри zip
-                result = parse_scha(inner_bytes)
-        else:
-            with open(pdf_path, "rb") as f:
-                pdf_bytes = f.read()
-            result = parse_scha(pdf_bytes)
+        result = parse_any(pdf_path)
     except Exception as e:
         summary["error"] = f"parse failed: {e}"
         return summary
@@ -318,7 +325,11 @@ def process_pdf(engine, pdf_path: Path) -> dict:
         summary["error"] = f"no assets parsed (strategy={summary['parser_strategy']})"
         return summary
 
-    summary["inserted"] = save_assets(engine, fund_id, snap_date, result["assets"])
+    summary["gross_assets_rub"] = result.get("gross_assets_rub")
+    summary["inserted"] = save_assets(
+        engine, fund_id, snap_date, result["assets"],
+        gross_assets=result.get("gross_assets_rub"),
+    )
     return summary
 
 
@@ -354,9 +365,11 @@ def main(directory: str):
                      f"assets={s['total_assets']} inserted=0 (уже было в БД?)")
             stats["skip"] += 1
         else:
+            gross = s.get("gross_assets_rub")
+            gross_str = f"gross={gross/1e9:.3f}млрд" if gross else "gross=FALLBACK(Σбумаги)"
             log.info(f"  ✅ fund_id={s['fund_id']} match={s['match']} "
                      f"date={s['snapshot_date']} strategy={s['parser_strategy']} "
-                     f"assets={s['total_assets']} inserted={s['inserted']}")
+                     f"assets={s['total_assets']} {gross_str} inserted={s['inserted']}")
             stats["ok"] += 1
             stats["rows"] += s["inserted"]
 
