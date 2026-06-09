@@ -5,10 +5,23 @@
 Источник: https://cbr.ru/analytics/finstab/orfr/
 Формат: ежемесячные XLSX с фигурами по разделам обзора финансовой стабильности.
 
-Парсит три листа:
-  "рис. 32" — Акции, 7 категорий, кварталы+последний месяц, ~2 года
-  "рис. 14" — ОФЗ,   7 категорий, кварталы+последний месяц, ~2 года
-  "рис. 8"  — Валюты, 5 категорий, только месяцы, ~9 месяцев
+Парсит листы «по категориям участников» (вторичные биржевые торги):
+  "РА По участникам" — Акции, 7 категорий, кварталы+последние месяцы
+  "РО По участникам" — ОФЗ,   7 категорий, кварталы+последние месяцы
+
+⚠️ ЦБ периодически переименовывает листы. До выпуска ORFR_2026-5 (май-2026)
+имена были «рис. 32 / рис. 14 / рис. 8»; в мае-2026 ЦБ перешёл на семантические
+имена («РА По участникам» = Рынок Акций, «РО По участникам» = Рынок ОФЗ) и
+полностью переструктурировал отчёт (43 листа вместо ~10). resolve_sheet_name()
+поэтому ищет лист сперва по точному имени, затем по regex заголовка (title_re) —
+чтобы следующее переименование не «заморозило» индикатор без алерта.
+
+⚠️ Валюты (старый "рис. 8", 5 категорий по участникам) с мая-2026 БОЛЬШЕ НЕ
+публикуются в ОРФР в этом виде — ЦБ заменил единый лист участников на отдельные
+одно-рядные серии (РВ Продажи/Покупки нефинансовых, РВ Покупки населением,
+РВ продажи 29 экспортеров). instrument_type='fx' заморожен на апреле-2026; новые
+данные не загружаются. Если решим возродить fx — remap на новые РВ-листы (другая
+методология, потребует правок фронта/методологии).
 
 Каждый новый XLSX содержит весь архив — поэтому ingest стратегия:
 скачать последний XLSX, upsert все строки (PK overwrite на повторе).
@@ -74,21 +87,22 @@ EXCLUDED_BY_TYPE: dict[str, set[str]] = {
 }
 
 # Конфиг листов: какие парсим и под каким instrument_type сохраняем.
+#   sheet     — точное имя листа (актуальное на момент правки)
+#   title_re  — regex по заголовку листа (row 0); fallback если ЦБ переименует
+#               лист. Заголовок описывает данные и меняется реже имени.
+# fx убран: ЦБ прекратил публикацию валют по категориям участников (см. docstring).
 SHEETS_CONFIG = [
     {
-        "sheet": "рис. 32",
+        "sheet": "РА По участникам",
         "instrument_type": "stocks",
         "label": "Акции",
+        "title_re": r"покупки/продажи\s+акций\s+по\s+категориям\s+участник",
     },
     {
-        "sheet": "рис. 14",
+        "sheet": "РО По участникам",
         "instrument_type": "ofz",
         "label": "ОФЗ",
-    },
-    {
-        "sheet": "рис. 8",
-        "instrument_type": "fx",
-        "label": "Валюты",
+        "title_re": r"покупки/продажи\s+ОФЗ\s+по\s+категориям\s+участник",
     },
 ]
 
@@ -173,6 +187,32 @@ def _month_end(year: int, month: int) -> date:
         return date(year, 12, 31)
     first_next = date(year, month + 1, 1)
     return first_next - timedelta(days=1)
+
+
+def resolve_sheet_name(wb, cfg: dict) -> Optional[str]:
+    """Находит реальное имя листа: сперва точное cfg['sheet'], затем по regex
+    заголовка (cfg['title_re']) в первых 3 строках.
+
+    ЦБ периодически переименовывает листы (рис.N → семантические имена в
+    мае-2026). Точное имя — быстрый путь; title_re — устойчивость к будущим
+    переименованиям, чтобы фетчер не «замораживал» индикатор молча.
+    """
+    if cfg["sheet"] in wb.sheetnames:
+        return cfg["sheet"]
+    title_re = cfg.get("title_re")
+    if not title_re:
+        return None
+    pat = re.compile(title_re, re.IGNORECASE)
+    for name in wb.sheetnames:
+        ws = wb[name]
+        for row in ws.iter_rows(min_row=1, max_row=3, values_only=True):
+            for cell in row:
+                if isinstance(cell, str) and pat.search(cell):
+                    log.warning(
+                        f"Лист {cfg['sheet']!r} не найден — matched по заголовку: {name!r}"
+                    )
+                    return name
+    return None
 
 
 def parse_sheet(wb, sheet_name: str, source_file: str, instrument_type: str) -> Iterable[dict]:
@@ -338,7 +378,15 @@ def run(xlsx_path: Optional[str] = None, dry_run: bool = False) -> int:
     # 3) Парсим листы
     all_rows: dict[str, list[dict]] = {}
     for cfg in SHEETS_CONFIG:
-        rows = list(parse_sheet(wb, cfg["sheet"], source_file, cfg["instrument_type"]))
+        sheet_name = resolve_sheet_name(wb, cfg)
+        if not sheet_name:
+            log.warning(
+                f"  → {cfg['label']:8s} ({cfg['instrument_type']}): лист не найден "
+                f"(ни по имени {cfg['sheet']!r}, ни по заголовку) — пропуск"
+            )
+            all_rows[cfg["instrument_type"]] = []
+            continue
+        rows = list(parse_sheet(wb, sheet_name, source_file, cfg["instrument_type"]))
         all_rows[cfg["instrument_type"]] = rows
         log.info(f"  → {cfg['label']:8s} ({cfg['instrument_type']}): {len(rows)} rows")
 
