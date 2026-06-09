@@ -12,6 +12,9 @@ import TickerLogo from './TickerLogo';
 // Текстовые badge'и для тех инструментов где НЕТ файла-лого.
 // Если потом докинем лого — удаляем оттуда соответствующую запись.
 export const INSTRUMENT_ICONS: Record<string, { icon: string; bg: string; color: string }> = {
+  // Крипто (нет лого в стикерпаке) — биткоин-фьючерсы IBIT (IB) и индекс МосБиржи (BT)
+  IB: { icon: '₿', bg: '#F7931A', color: '#fff' },
+  BT: { icon: '₿', bg: '#F7931A', color: '#fff' },
   // Узкие индексы (нет лого в стикерпаке)
   CS: { icon: 'ИП', bg: '#9333EA', color: '#fff' },
   FN: { icon: 'ИФ', bg: '#1E40AF', color: '#fff' },

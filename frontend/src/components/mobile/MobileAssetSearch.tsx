@@ -44,6 +44,7 @@ const CATEGORY_CHIPS_FUTURES_FIRST = [
   { key: 'Валюта', label: 'Валюта' },
   { key: 'Индексы', label: 'Индексы' },
   { key: 'Сырьё', label: 'Сырьё' },
+  { key: 'Крипто', label: 'Крипто' },
 ];
 const CATEGORY_CHIPS_NO_FUTURES = [
   { key: 'all', label: 'Все' },
