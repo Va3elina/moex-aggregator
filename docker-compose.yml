@@ -114,6 +114,10 @@ services:
       - YANDEX_CLIENT_SECRET=${YANDEX_CLIENT_SECRET:-}
       - YANDEX_REDIRECT_URI=https://xn--80aklbnczmv.xn--p1ai/auth/callback/yandex
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      # Cbonds (ПИФ-данные: СЧА/пай/состав через fetch_funds_realtime.py).
+      # Без этих vars демон шлёт пустые креды → Cbonds «limited rights» → данные встают.
+      - CBONDS_LOGIN=${CBONDS_LOGIN:-}
+      - CBONDS_PASSWORD=${CBONDS_PASSWORD:-}
       - REDIS_URL=redis://redis:6379/0
       # Billing: T-Bank (единственный провайдер с 2026-05-13).
       # YooKassa удалена — см. .env.example для T-Bank credentials.
@@ -166,6 +170,9 @@ services:
       - DB_URL=postgresql+pg8000://${DB_USER:-postgres}:${DB_PASSWORD}@db:5432/${DB_NAME:-moex_db}
       - DB_URL_ASYNC=postgresql://postgres:${DB_PASSWORD}@db:5432/${DB_NAME:-moex_db}
       - ALGOPACK_API_KEY=${ALGOPACK_API_KEY}
+      # Cbonds — оркестратор запускает fetch_funds_realtime.py --once дважды в день.
+      - CBONDS_LOGIN=${CBONDS_LOGIN:-}
+      - CBONDS_PASSWORD=${CBONDS_PASSWORD:-}
     command: ["python", "main_orchestrator.py"]
     healthcheck:
       test: ["CMD-SHELL", "test -f /proc/1/cmdline"]
