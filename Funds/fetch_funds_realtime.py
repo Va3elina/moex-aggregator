@@ -59,9 +59,14 @@ except ImportError:
 UPDATE_HOUR = 9
 UPDATE_MINUTE = 0
 
-# Директория логов
-LOG_DIR = Path(__file__).parent / "logs"
-LOG_DIR.mkdir(exist_ok=True)
+# Директория логов — /app/logs (named volume, writable на read-only rootfs прод-контейнера).
+# Раньше было Funds/logs → read-only → файловый лог демона молча терялся (а detached
+# `docker exec -d` ещё и глотает stdout). Теперь лог демона персистится в volume.
+LOG_DIR = Path(__file__).parent.parent / "logs"
+try:
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+except OSError:
+    pass
 
 # Cbonds API
 CBONDS_URL = "https://rest2.cbonds.info"
