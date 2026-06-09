@@ -566,18 +566,19 @@ function renderRow(inst: Instrument, ctx: RowContext) {
                     minWidth: 0,
                 }}
             >
-                <span style={{ fontWeight: 700, fontSize: 'var(--fs-sm)' }}>{inst.sectype}</span>
                 <span
                     style={{
-                        color: 'var(--text-secondary)',
-                        fontSize: 'var(--fs-xs)',
+                        fontWeight: 700,
+                        fontSize: 'var(--fs-sm)',
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap',
+                        minWidth: 0,
                     }}
                 >
                     {inst.name}
                 </span>
+                <span style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-xs)', flexShrink: 0 }}>{inst.sectype}</span>
             </div>
 
             {(inst.day_change_pct != null || inst.daily_volume) && (

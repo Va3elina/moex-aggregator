@@ -363,9 +363,10 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
           className="flex items-baseline gap-1.5 flex-1 min-w-0"
           style={{ opacity: accessible ? 1 : 0.45 }}
         >
-          <span className="font-bold flex-shrink-0" style={{ fontSize: 'var(--fs-sm)' }}>{inst.sectype}</span>
-          {/* Бейдж «intraday» — у активов со свежими внутридневными данными
-              позиций (5м/1ч). Молнией намекаем на «быстрее», подпись поясняет. */}
+          {/* Название — основное (bold, fs-sm), тикер — вторичный (приглушённый,
+              мельче). Бейдж «intraday» (5м/1ч) — метка внутридневных данных, трейлингом. */}
+          <span className="font-bold truncate" style={{ fontSize: 'var(--fs-sm)' }}>{inst.name}</span>
+          <span className="flex-shrink-0" style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-xs)' }}>{inst.sectype}</span>
           {intradaySet.has(inst.sectype) && (
             <span
               className="flex-shrink-0 inline-flex items-center"
@@ -387,7 +388,6 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
               5м·1ч
             </span>
           )}
-          <span className="truncate" style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-xs)' }}>{inst.name}</span>
         </div>
 
         {/* Изм. % — семантический цвет (зелёный/красный). Активная колонка bold. */}
@@ -397,7 +397,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
             width: COL.change,
             fontSize: 'var(--fs-sm)',
             fontVariantNumeric: 'tabular-nums',
-            fontWeight: sortCol === 'change' ? 700 : 600,
+            fontWeight: 600,
             opacity: accessible ? 1 : 0.45,
             color: inst.day_change_pct == null
               ? 'var(--text-muted)'
@@ -414,7 +414,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
             width: COL.volume,
             fontSize: 'var(--fs-sm)',
             fontVariantNumeric: 'tabular-nums',
-            fontWeight: sortCol === 'volume' ? 700 : 600,
+            fontWeight: 600,
             opacity: accessible ? 1 : 0.45,
             color: inst.daily_volume
               ? (sortCol === 'volume' ? 'var(--text-primary)' : 'var(--text-secondary)')
