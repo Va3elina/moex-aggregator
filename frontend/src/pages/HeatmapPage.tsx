@@ -655,9 +655,11 @@ export default function HeatmapPage() {
           getTargetElement={() => captureRef.current}
           filename={`frame-heatmap-${mapMode}-${period}-${groupBy}`}
           metadata={{
+            // Главный заголовок скриншота — всегда «Карта рынка». Режим
+            // (Индекс IMOEX / Все акции) уходит первым тегом в подзаголовок.
             title: 'Карта рынка',
-            asset: mapMode === 'imoex' ? 'Индекс IMOEX' : 'Все акции',
             details: [
+              mapMode === 'imoex' ? 'Индекс IMOEX' : 'Все акции',
               SIZE_OPTIONS.find(o => o.value === sizeBy)?.label ?? sizeBy,
               PERIOD_OPTIONS.find(o => o.value === period)?.label ?? period,
               GROUP_OPTIONS.find(o => o.value === groupBy)?.label ?? groupBy,

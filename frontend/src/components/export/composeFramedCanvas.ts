@@ -14,16 +14,17 @@
 
 import type { FrameOptions } from './types';
 
-const DEFAULT_PADDING = 24;
+const DEFAULT_PADDING = 18;
 const SITE_URL = 'таймфрейм.рф';
 
 // Layout constants — все в LOGICAL pixels (умножаются на DPR в конце).
 // Single-column header hierarchy: primary (asset/title) → subtitle (context).
-// HEADER_HEIGHT = primary(28) + gap(6) + subtitle(15) ≈ 49 → 56 (с air).
-const HEADER_HEIGHT = 56;
-const HEADER_GAP = 8; // gap между header и chart
-const FOOTER_HEIGHT = 28;
-const FOOTER_GAP = 10;
+// HEADER_HEIGHT = primary(28) + gap(6) + subtitle(15) ≈ 49 → 50 (минимум air).
+// Поля/хедер/футер ужаты, чтобы сам график занимал больше площади кадра.
+const HEADER_HEIGHT = 50;
+const HEADER_GAP = 6; // gap между header и chart
+const FOOTER_HEIGHT = 24;
+const FOOTER_GAP = 8;
 
 const PRIMARY_FONT_SIZE = 28;
 const SUBTITLE_FONT_SIZE = 15;

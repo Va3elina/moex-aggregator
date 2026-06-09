@@ -306,11 +306,9 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
                     const p = fcLocal.getViewportPoint(opt.e);
                     const fontSize = Math.max(14, strokeWidthRef.current * 6);
                     const c = resolveColor(colorRef.current);
-                    // Текст: тонкий контур контрастного цвета вокруг
-                    // глифов (stroke) — буквы читаются и на светлой бумаге, и на
-                    // тёмных свечах. paintFirst:'stroke' кладёт обводку ПОД заливку,
-                    // чтобы не «съедать» тонкие штрихи шрифта.
-                    const contour = contrastColor(0.95); // контраст к теме, не к краске
+                    // Текст без обводки: пользователь просил убрать чёрную
+                    // окантовку глифов. Рисуем чистой заливкой выбранного цвета —
+                    // ни stroke-контура, ни shadow-гало.
                     const text = new fabric.IText('Текст', {
                         left: p.x,
                         top: p.y - fontSize / 2,
@@ -319,12 +317,6 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
                         fontFamily: 'Inter, "Helvetica Neue", Helvetica, Arial, sans-serif',
                         fontWeight: 600,
                         editable: true,
-                        stroke: contour,
-                        strokeWidth: Math.max(2, fontSize * 0.08),
-                        paintFirst: 'stroke',
-                        strokeUniform: true,
-                        // Без shadow-гало — для текста чистый контур читается лучше,
-                        // чем размытое гало (выглядело как лишняя «подсветка»).
                     });
                     fcLocal.add(text);
                     fcLocal.setActiveObject(text);
@@ -436,9 +428,14 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
                     && (active as InstanceType<typeof fabric.IText>).isEditing;
 
                 if ((e.ctrlKey || e.metaKey) && !editingText) {
+                    // e.code — физическая клавиша (раскладко-независимо). На русской
+                    // раскладке e.key для Z это 'я', для Y это 'н' — сравнение по
+                    // e.key ломало Ctrl+Z/Ctrl+Y. e.key оставляем фоллбэком.
                     const key = e.key.toLowerCase();
-                    if (key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); return; }
-                    if ((key === 'z' && e.shiftKey) || key === 'y') { e.preventDefault(); redo(); return; }
+                    const isZ = e.code === 'KeyZ' || key === 'z';
+                    const isY = e.code === 'KeyY' || key === 'y';
+                    if (isZ && !e.shiftKey) { e.preventDefault(); undo(); return; }
+                    if ((isZ && e.shiftKey) || isY) { e.preventDefault(); redo(); return; }
                 }
 
                 if (e.key !== 'Delete' && e.key !== 'Backspace') return;
@@ -500,13 +497,13 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
                 const c = resolveColor(color);
                 if (active.type === 'i-text') {
                     const fontSize = Math.max(14, strokeWidth * 6);
-                    const contour = contrastColor(0.95); // контраст к теме, не к краске
+                    // Чистая заливка без обводки (см. создание текста выше).
+                    // stroke:null очищает контур, если объект пришёл из старого снимка.
                     active.set({
                         fill: c,
                         fontSize,
-                        stroke: contour,
-                        strokeWidth: Math.max(2, fontSize * 0.08),
-                        paintFirst: 'stroke',
+                        stroke: null,
+                        strokeWidth: 0,
                     });
                 } else {
                     active.set({ stroke: c, strokeWidth });
