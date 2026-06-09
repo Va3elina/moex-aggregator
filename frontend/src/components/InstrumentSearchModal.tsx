@@ -472,14 +472,6 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
               из-за чего над поиском оставался пустой gap. Теперь поиск тянется
               (flex-1), «×» прижат справа → список активов получает эту высоту. */}
           <div className="flex items-center gap-3">
-            {multiSelect && (
-              <h2
-                className="font-bold whitespace-nowrap"
-                style={{ fontSize: 'var(--fs-lg)', color: 'var(--text-primary)' }}
-              >
-                Выбрать активы
-              </h2>
-            )}
             {/* Search — outline 2px text-primary в editorial / accent в dark */}
             <div className="relative flex-1 min-w-0">
               <Search
