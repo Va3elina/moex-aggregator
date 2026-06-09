@@ -364,33 +364,30 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
           style={{ opacity: accessible ? 1 : 0.45 }}
         >
           {/* Название — основное (bold, fs-sm), тикер — вторичный (приглушённый,
-              мельче). Бейдж «intraday» (5м/1ч) — метка внутридневных данных, трейлингом. */}
+              мельче). Бейдж intraday — нейтральный кружок с молнией, пояснение в
+              тултипе на ховере (длинная подпись «5м·1ч» убрана). */}
           <span className="font-bold truncate" style={{ fontSize: 'var(--fs-sm)' }}>{inst.name}</span>
           <span className="flex-shrink-0" style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-xs)' }}>{inst.sectype}</span>
           {intradaySet.has(inst.sectype) && (
             <span
-              className="flex-shrink-0 inline-flex items-center"
+              className="flex-shrink-0 inline-flex items-center justify-center"
               title="Есть внутридневные данные позиций (5-минутные и часовые) — внутридневной режим сигналов скоро"
               style={{
-                gap: 2,
-                padding: '1px 5px',
+                width: 18,
+                height: 18,
                 borderRadius: 999,
-                border: '1px solid var(--accent)',
-                background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
-                color: 'var(--accent)',
-                fontSize: 'var(--fs-2xs)',
-                fontWeight: 700,
-                lineHeight: 1.2,
-                whiteSpace: 'nowrap',
+                border: '1px solid var(--text-muted)',
+                color: 'var(--text-secondary)',
+                alignSelf: 'center',
+                cursor: 'help',
               }}
             >
-              <Zap size={12} strokeWidth={2.5} />
-              5м·1ч
+              <Zap size={11} strokeWidth={2.5} />
             </span>
           )}
         </div>
 
-        {/* Изм. % — семантический цвет (зелёный/красный). Активная колонка bold. */}
+        {/* Изм. % — семантический цвет (зелёный/красный), постоянный вид. */}
         <span
           className="flex-shrink-0 text-right"
           style={{
@@ -407,7 +404,8 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
           {inst.day_change_pct != null ? `${inst.day_change_pct >= 0 ? '+' : ''}${inst.day_change_pct.toFixed(2)}%` : '—'}
         </span>
 
-        {/* Объём — нейтральный; активная колонка ярче (text-primary bold) */}
+        {/* Объём — нейтральный, постоянный вид: значения НЕ меняют вес/цвет при
+            смене сортировки (активная колонка обозначена только в шапке). */}
         <span
           className="flex-shrink-0 text-right"
           style={{
@@ -416,9 +414,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
             fontVariantNumeric: 'tabular-nums',
             fontWeight: 600,
             opacity: accessible ? 1 : 0.45,
-            color: inst.daily_volume
-              ? (sortCol === 'volume' ? 'var(--text-primary)' : 'var(--text-secondary)')
-              : 'var(--text-muted)',
+            color: inst.daily_volume ? 'var(--text-secondary)' : 'var(--text-muted)',
           }}
         >
           {inst.daily_volume ? formatCompact(inst.daily_volume) : '—'}
