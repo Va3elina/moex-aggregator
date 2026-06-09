@@ -6,7 +6,9 @@ name: deploy-prod
 #
 # Предусловия (выполнены 2026-06-08):
 #   • Секрет PROD_SSH_KEY (приватный ключ) добавлен в Settings → Secrets → Actions.
-#   • /opt/frame приведён к ЧИСТОМУ checkout (git status пуст) — pull fast-forward без stash.
+#   • /opt/frame — деплой-таргет: рабочее дерево принудительно синхронизируется с
+#     origin/main через fetch + reset --hard (любые локальные правки на сервере
+#     затираются). Это самовосстановление: грязное дерево больше не валит деплой.
 #
 # Деплой идёт ТОЛЬКО на зелёный build-check (битый фронт-билд не выкатывается).
 # workflow_dispatch оставлен для ручного запуска.
@@ -42,7 +44,11 @@ jobs:
             set -e
             cd /opt/frame
             before=$(git rev-parse HEAD)
-            git pull origin main
+            # Деплой-таргет: жёстко синхронизируемся с origin/main. reset --hard
+            # отрабатывает при любом состоянии дерева (в т.ч. с локальными правками
+            # на сервере) — git pull здесь падал на "local changes would be overwritten".
+            git fetch origin main
+            git reset --hard FETCH_HEAD
             after=$(git rev-parse HEAD)
             changed=$(git diff --name-only "$before" "$after")
             echo "=== Changed files ==="; echo "$changed"
