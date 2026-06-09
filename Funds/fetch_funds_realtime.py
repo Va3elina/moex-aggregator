@@ -65,8 +65,8 @@ LOG_DIR.mkdir(exist_ok=True)
 # Cbonds API
 CBONDS_URL = "https://rest2.cbonds.info"
 CBONDS_UA = "Cbonds.K/3.0.8 (ru.cbonds.cbonds; build:636; Android 9) OkHttp/4.12.0"
-CBONDS_LOGIN = os.getenv("CBONDS_LOGIN", "ermolaeffvadick@yandex.ru")
-CBONDS_PASSWORD = os.getenv("CBONDS_PASSWORD", "Qwghty56")
+CBONDS_LOGIN = os.getenv("CBONDS_LOGIN")
+CBONDS_PASSWORD = os.getenv("CBONDS_PASSWORD")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

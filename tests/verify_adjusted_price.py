@@ -24,7 +24,7 @@ import pandas as pd
 SECID = "SBER"
 DAYS_BACK = 7300  # ~20 лет
 
-DB_URL = os.getenv("DB_URL", "postgresql+pg8000://postgres:1803@postgres:5432/moex_db")
+DB_URL = os.getenv("DB_URL")
 
 
 def load_data(engine, secid: str, days: int):

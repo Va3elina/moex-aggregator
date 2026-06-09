@@ -51,7 +51,7 @@ from dotenv import load_dotenv
 import os
 
 load_dotenv()
-DB_URL = os.getenv("DB_URL", "postgresql+pg8000://postgres:1803@localhost:5432/moex_db")
+DB_URL = os.getenv("DB_URL")
 
 # === Импорт календаря MOEX ===
 try:

@@ -312,9 +312,8 @@ mitmdump -r capture.flow --set flow_detail=4 -n 2>&1 | grep "rest2.cbonds"
 
 ### Учётные данные
 
-- **Login:** ermolaeffvadick@yandex.ru
-- **Password:** Qwghty56
-- **User ID:** 948191
+Хранятся в `.env` (не коммитятся): `CBONDS_LOGIN`, `CBONDS_PASSWORD`.
+См. `.env.example` для списка переменных.
 
 ---
 

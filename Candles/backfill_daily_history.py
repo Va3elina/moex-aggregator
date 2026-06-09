@@ -27,7 +27,7 @@ from sqlalchemy import create_engine, text
 PROJECT_DIR = Path(__file__).parent.parent
 load_dotenv(PROJECT_DIR / ".env")
 
-DB_URL = os.getenv("DB_URL", "postgresql+pg8000://postgres:1803@localhost:5432/moex_db")
+DB_URL = os.getenv("DB_URL")
 
 # ISS — публичный API, не требует авторизации.
 # Возвращает полные дневные свечи (все сессии за сутки).

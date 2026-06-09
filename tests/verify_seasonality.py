@@ -21,7 +21,7 @@ from collections import defaultdict
 from sqlalchemy import create_engine, text
 
 SECID = "SBER"
-DB_URL = os.getenv("DB_URL", "postgresql+pg8000://postgres:1803@postgres:5432/moex_db")
+DB_URL = os.getenv("DB_URL")
 API_BASE = "http://localhost:8000"
 
 

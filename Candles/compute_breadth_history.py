@@ -33,7 +33,7 @@ import os
 sys.path.insert(0, str(Path(__file__).parent.parent))
 load_dotenv(Path(__file__).parent.parent / ".env")
 
-DB_URL = os.getenv("DB_URL", "postgresql+pg8000://postgres:1803@localhost:5432/moex_db")
+DB_URL = os.getenv("DB_URL")
 
 logging.basicConfig(
     level=logging.INFO,

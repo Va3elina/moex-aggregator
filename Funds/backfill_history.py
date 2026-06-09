@@ -16,9 +16,9 @@ from datetime import datetime, date, timedelta
 from collections import defaultdict
 
 # --- Настройки ---
-DB_URL = os.environ.get("DB_URL", "postgresql://postgres:1803@localhost:5432/moex_db")
-CBONDS_LOGIN = os.environ.get("CBONDS_LOGIN", "ermolaeffvadick@yandex.ru")
-CBONDS_PASSWORD = os.environ.get("CBONDS_PASSWORD", "Qwghty56")
+DB_URL = os.environ.get("DB_URL")
+CBONDS_LOGIN = os.environ.get("CBONDS_LOGIN")
+CBONDS_PASSWORD = os.environ.get("CBONDS_PASSWORD")
 CBONDS_UA = "Cbonds.K/3.0.8 (ru.cbonds.cbonds; build:636; Android 9) OkHttp/4.12.0"
 CBONDS_BASE = "https://rest2.cbonds.info"
 
