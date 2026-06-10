@@ -291,6 +291,20 @@ def activate_from_webhook(db: Session, event: WebhookEvent) -> Subscription | No
         log.warning("activate_from_webhook: verification failed for sub=%s", sub.id)
         return None
 
+    # Сверка суммы: webhook должен принести ровно ту сумму, что мы выставили в
+    # подписке (sub.amount уже учитывает retention-скидку). Подпись Token и так
+    # покрывает Amount, так что это defense-in-depth — ловит рассинхрон сумм /
+    # манипуляцию на стороне эквайера, не даёт активировать подписку, оплаченную
+    # на другую сумму. Допуск 1 коп. на float-погрешность.
+    if event.amount is not None and sub.amount is not None:
+        if abs(float(event.amount) - float(sub.amount)) > 0.01:
+            log.warning(
+                "activate_from_webhook: amount mismatch sub=%s — ожидали %.2f, "
+                "webhook принёс %.2f. НЕ активирую.",
+                sub.id, float(sub.amount), float(event.amount),
+            )
+            return None
+
     # Активируем
     plan = get_plan(sub.plan_id)
     now = datetime.now(timezone.utc)

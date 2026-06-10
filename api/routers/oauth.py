@@ -542,7 +542,8 @@ async def telegram_oauth_callback(
             hashlib.sha256,
         ).hexdigest()
 
-        if expected_hash != data.hash:
+        # compare_digest — constant-time сравнение HMAC (без утечки через тайминг).
+        if not hmac.compare_digest(expected_hash, data.hash):
             log.warning(f"Telegram auth: invalid hash for user {data.id}")
             raise HTTPException(400, "Невалидная подпись Telegram")
 

@@ -25,6 +25,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import logging
 import os
@@ -345,9 +346,11 @@ class TBankProvider:
             log.warning("TBank.parse_webhook: no Token in body")
             return None
 
-        # Считаем ожидаемый Token из остальных полей
+        # Считаем ожидаемый Token из остальных полей.
+        # compare_digest — constant-time, чтобы не утекать инфу о подписи через
+        # тайминг побайтового сравнения (стандартный hardening для HMAC-проверок).
         expected = self._make_token(data)
-        if received_token != expected:
+        if not hmac.compare_digest(received_token, expected):
             log.warning(
                 "TBank.parse_webhook: Token mismatch — likely fake/replay attack"
             )
