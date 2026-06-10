@@ -1,4 +1,4 @@
-import { useEffect, lazy } from 'react';
+import { useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import ResponsiveRoute from './components/ResponsiveRoute';
 import { useIsMobile } from './hooks/useIsMobile';
@@ -17,12 +17,10 @@ import HeatmapPage from './pages/HeatmapPage';
 import FundsMoneyPage from './pages/FundsMoneyPage';
 import StrengthPage from './pages/StrengthPage';
 import BuffettPage from './pages/BuffettPage';
-import SeasonalityPage from './pages/SeasonalityPage';
 import CbrFlowsPage from './pages/CbrFlowsPage';
 import LoginPage from './pages/LoginPage';
 import AuthCallback from './pages/AuthCallback';
 import ProfilePage from './pages/ProfilePage';
-import PricingPage from './pages/PricingPage';
 import BillingSuccessPage from './pages/BillingSuccessPage';
 import BillingFailPage from './pages/BillingFailPage';
 import BillingStubPage from './pages/BillingStubPage';
@@ -35,8 +33,6 @@ import BuffettMethodologyPage from './pages/methodology/BuffettMethodologyPage';
 import StrengthMethodologyPage from './pages/methodology/StrengthMethodologyPage';
 import SeasonalityMethodologyPage from './pages/methodology/SeasonalityMethodologyPage';
 import CbrFlowsMethodologyPage from './pages/methodology/CbrFlowsMethodologyPage';
-import StylePreviewPage from './pages/StylePreviewPage';
-import SignalExportPage from './pages/SignalExportPage';
 import EmbedPage from './pages/embed/EmbedPage';
 import PrivacyPage from './pages/PrivacyPage';
 import AgreementPage from './pages/legal/AgreementPage';
@@ -45,10 +41,6 @@ import RecurringPage from './pages/legal/RecurringPage';
 import ContactsPage from './pages/ContactsPage';
 import RefundPage from './pages/RefundPage';
 import DeliveryPage from './pages/DeliveryPage';
-import AdminStatsPage from './pages/AdminStatsPage';
-import AdminUserDetailPage from './pages/AdminUserDetailPage';
-import ApiDocsPage from './pages/ApiDocsPage';
-import FundTradesPage from './pages/FundTradesPage';
 import AddEmailPage from './pages/AddEmailPage';
 import VerifyEmailPage from './pages/VerifyEmailPage';
 import FAQPage from './pages/FAQPage';
@@ -65,6 +57,19 @@ const MobileSeasonalityPage = lazy(() => import('./pages/mobile/MobileSeasonalit
 const MobileStrengthPage = lazy(() => import('./pages/mobile/MobileStrengthPage'));
 const MobileProfilePage = lazy(() => import('./pages/mobile/MobileProfilePage'));
 const MobilePricingPage = lazy(() => import('./pages/mobile/MobilePricingPage'));
+
+// Тяжёлые/редкие desktop-страницы — code-split через lazy(), чтобы не тянуть их
+// в монолитный главный чанк (был 1.11MB). Гость на лендинге больше не качает код
+// ApiDocs/FundTrades/Seasonality/Admin/StylePreview. Грузятся по требованию под
+// общим <Suspense> ниже (а пары с мобилкой — ещё и под Suspense в ResponsiveRoute).
+const SeasonalityPage = lazy(() => import('./pages/SeasonalityPage'));
+const PricingPage = lazy(() => import('./pages/PricingPage'));
+const FundTradesPage = lazy(() => import('./pages/FundTradesPage'));
+const ApiDocsPage = lazy(() => import('./pages/ApiDocsPage'));
+const AdminStatsPage = lazy(() => import('./pages/AdminStatsPage'));
+const AdminUserDetailPage = lazy(() => import('./pages/AdminUserDetailPage'));
+const StylePreviewPage = lazy(() => import('./pages/StylePreviewPage'));
+const SignalExportPage = lazy(() => import('./pages/SignalExportPage'));
 
 /** "/" conditional: auth → Overview, guest → Landing.
     Loading state → Overview как fallback (быстрее, avoids flash). */
@@ -134,6 +139,7 @@ export default function App() {
       <AnalyticsPageViewTracker />
       <ConditionalCookieBanner />
       <RouterErrorBoundary>
+        <Suspense fallback={<div style={{ minHeight: '100vh', background: 'var(--bg-primary)' }} />}>
         <Routes>
           {/* Auth callback — без Layout */}
           <Route path="/auth/callback/google" element={<AuthCallback />} />
@@ -261,6 +267,7 @@ export default function App() {
             <Route path="/admin/users/:userId" element={<AdminUserDetailPage />} />
           </Route>
         </Routes>
+        </Suspense>
       </RouterErrorBoundary>
       </AnalyticsProvider>
       </UpgradePromptProvider>

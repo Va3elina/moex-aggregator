@@ -218,12 +218,18 @@ export default function HeatmapPage() {
 
   // Загрузка данных — не зависит от colorBy/sizeBy (все метрики приходят в одном ответе)
   const hasDataRef = useRef(false);
+  // Stale-guard: при быстром переключении mapMode/groupBy медленный ранний ответ
+  // мог перезаписать свежий. reqId фиксирует «последний» запрос.
+  const reqIdRef = useRef(0);
   const loadData = useCallback(async () => {
+    const reqId = ++reqIdRef.current;
+    const isStale = () => reqId !== reqIdRef.current;
     if (!hasDataRef.current) setLoading(true);
     try {
       const data = mapMode === 'imoex'
         ? await getHeatmapImoex('change_1d', groupBy)
         : await getHeatmapData('market_cap', 'change_1d', groupBy);
+      if (isStale()) return;
       setSectors(data.sectors);
       setAllStocks(data.stocks);
       // Кэшируем prev_close для real-time пересчёта
@@ -233,6 +239,7 @@ export default function HeatmapPage() {
       setLastUpdate(data.updated_at || new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }));
       hasDataRef.current = true;
     } catch (error) {
+      if (isStale()) return;
       console.error('Error loading heatmap:', error);
       handleTierError(error, {
         showUpgrade,
@@ -240,7 +247,7 @@ export default function HeatmapPage() {
         featureName: 'режим «Все акции»',
       });
     }
-    setLoading(false);
+    if (!isStale()) setLoading(false);
   }, [mapMode, groupBy, showUpgrade]);
 
   // Tier-guard для восстановленного режима: если из localStorage пришёл

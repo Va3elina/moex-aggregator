@@ -68,19 +68,29 @@ export default function BuffettPage() {
         bottomBuffer: 96,
     });
 
+    // Stale-guard: при быстром переключении period/mode медленный ранний ответ
+    // мог перезаписать свежий. reqId фиксирует «последний» запрос — устаревший
+    // не применяет setState (тот же паттерн, что в эталонном useIndicatorData).
+    const reqIdRef = useRef(0);
+
     // Загрузка данных
     const loadData = useCallback(async () => {
+        const reqId = ++reqIdRef.current;
+        const isStale = () => reqId !== reqIdRef.current;
         try {
             setLoading(true);
             setError(null);
             if (viewMode === 'cap-gdp') {
                 const result = await getBuffettCapGdp(period, smooth, timeframe);
+                if (isStale()) return;
                 setCapGdpData(result);
             } else {
                 const result = await getBuffettCapM2(period, smooth, timeframe);
+                if (isStale()) return;
                 setCapM2Data(result);
             }
         } catch (err: unknown) {
+            if (isStale()) return;
             const msg = err instanceof Error ? err.message : '';
             // При 403 (гость или протухший токен) — фолбэк на 1y
             if (msg.includes('авторизац') && period !== '1y') {
@@ -98,7 +108,7 @@ export default function BuffettPage() {
             }
             console.error(err);
         } finally {
-            setLoading(false);
+            if (!isStale()) setLoading(false);
         }
     }, [period, smooth, viewMode, timeframe, showUpgrade]);
 

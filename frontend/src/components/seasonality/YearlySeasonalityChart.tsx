@@ -87,6 +87,13 @@ export default function YearlySeasonalityChart({
   const vw = useViewportWidth();
   const pillFontPx = axisFontSize(vw);
 
+  // ВСЕ хуки должны вызываться безусловно ДО любого раннего return — иначе при
+  // переключении yearlyData пусто↔непусто число хуков между рендерами меняется
+  // и React падает (rules-of-hooks). navData раньше был useMemo НИЖЕ guard'а.
+  const navData = useMemo(() =>
+    (yearlyData?.average ?? []).map(p => ({ time: String(p.td), value: p.avg_pct })),
+    [yearlyData]);
+
   if (!yearlyData || yearlyData.average.length === 0) {
     return (
       <div className="flex items-center justify-center" style={{ height: chartHeight, color: 'var(--text-muted)' }}>Нет данных</div>
@@ -111,11 +118,6 @@ export default function YearlySeasonalityChart({
   // вклад в Y-шкалу и строки тултипа. Легенда гейтится отдельно (ниже).
   const cur = showCurrentYear ? yearlyData.current : [];
   const fullMaxTD = yearlyData.max_trading_days || 252;
-
-  // Navigator data (для миниатюры внизу) — базовая серия
-  const navData = useMemo(() =>
-    baseAvg.map(p => ({ time: String(p.td), value: p.avg_pct })),
-    [baseAvg]);
 
   // Visible range: если навигатор активен, фильтруем по td
   const navStart = navRange ? navRange[0] : 0;

@@ -70,12 +70,6 @@ export default function SeasonalityPriceChart({
     return { min: min - range * 0.05, max: max + range * 0.05 };
   }, [pricePoints]);
 
-  if (pricePoints.length === 0) {
-    return (
-      <div className="flex items-center justify-center" style={{ height: chartHeight, color: 'var(--text-muted)' }}>Нет данных</div>
-    );
-  }
-
   // Padding from CSS tokens (with fallback)
   const PL = cssVar('--chart-pad-left', PADDING.left), PR = cssVar('--chart-pad-right-single', PADDING.rightSingle), PT = PADDING.top, PB = 60;
   const hasAdj = pricePoints.some(p => p.close !== p.adjusted);
@@ -149,6 +143,17 @@ export default function SeasonalityPriceChart({
     return () => { if (animRef.current) cancelAnimationFrame(animRef.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetRaw, targetAdj, priceData]);
+
+  // Ранний выход ПОСЛЕ всех хуков (targetRaw/targetAdj/useLayoutEffect выше) —
+  // иначе при пустых данных число хуков между рендерами менялось и React падал
+  // (rules-of-hooks). Все хуки выше безопасны на пустом массиве: useMemo→[],
+  // эффект гейтит `if (!targetRaw.length)`.
+  if (pricePoints.length === 0) {
+    return (
+      <div className="flex items-center justify-center" style={{ height: chartHeight, color: 'var(--text-muted)' }}>Нет данных</div>
+    );
+  }
+
   const yTicks = Array.from({ length: 5 }, (_, i) => {
     const val = priceMinMax.min + ((priceMinMax.max - priceMinMax.min) * i) / 4;
     return { value: val, pct: scY(val) * 100 };

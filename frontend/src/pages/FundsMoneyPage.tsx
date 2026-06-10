@@ -172,13 +172,20 @@ export default function FundsMoneyPage() {
     useEffect(() => { setHiddenFunds(new Set()); }, [category]);
 
     // Загрузка данных
+    // Stale-guard: при быстром переключении категории/периода медленный ранний
+    // ответ мог перезаписать свежий. reqId фиксирует «последний» запрос.
+    const reqIdRef = useRef(0);
     const loadData = useCallback(async () => {
+        const reqId = ++reqIdRef.current;
+        const isStale = () => reqId !== reqIdRef.current;
         try {
             setLoading(true);
             setError(null);
             const result = await getFundsChartData(category, period as FundPeriod);
+            if (isStale()) return;
             setData(result);
         } catch (err) {
+            if (isStale()) return;
             if (!handleTierError(err, {
                 showUpgrade,
                 indicator: 'funds_money',
@@ -189,7 +196,7 @@ export default function FundsMoneyPage() {
             }
             console.error(err);
         } finally {
-            setLoading(false);
+            if (!isStale()) setLoading(false);
         }
     }, [category, period, showUpgrade]);
 

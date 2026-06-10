@@ -57,6 +57,46 @@ async function ensureFreshToken(): Promise<string | null> {
   return refreshPromise;
 }
 
+/** Дефолтный таймаут запроса (мс). Тяжёлые холодные эндпоинты (OI-чарт редкого
+ * фьючерса, heatmap) укладываются в пару секунд после фиксов; 20с — потолок,
+ * за которым висящий запрос точно стоит оборвать, чтобы не крутить спиннер
+ * вечно. nginx upstream timeout — 60с, мы обрываем раньше и показываем ошибку. */
+const DEFAULT_TIMEOUT_MS = 20000;
+
+/** Ошибка таймаута — отличима от AbortError (отмена устаревшего запроса
+ * stale-guard'ом) и от сетевых ошибок, чтобы UI показал «превышено время». */
+export class TimeoutError extends Error {
+  constructor(msg = 'Превышено время ожидания ответа сервера') {
+    super(msg);
+    this.name = 'TimeoutError';
+  }
+}
+
+/**
+ * fetch с таймаутом через AbortController. Пробрасывает (форвардит) внешний
+ * signal вызывающего (stale-guard / отмена при переключении актива): аборт
+ * любого из двух обрывает запрос. Таймаут-аборт превращается в TimeoutError,
+ * пользовательский аборт — остаётся AbortError.
+ */
+function fetchWithTimeout(url: string, init?: RequestInit, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const callerSignal = init?.signal;
+  if (callerSignal) {
+    if (callerSignal.aborted) controller.abort();
+    else callerSignal.addEventListener('abort', () => controller.abort(), { once: true });
+  }
+  return fetch(url, { ...init, signal: controller.signal })
+    .catch((err) => {
+      // Оборвал таймер, а не вызывающий → это таймаут, а не отмена.
+      if (controller.signal.aborted && !callerSignal?.aborted) {
+        throw new TimeoutError();
+      }
+      throw err;
+    })
+    .finally(() => clearTimeout(timer));
+}
+
 /**
  * Обёртка над fetch с авторизацией и проактивным refresh.
  */
@@ -66,7 +106,7 @@ export async function apiFetch(url: string, init?: RequestInit): Promise<Respons
   if (token) headers['Authorization'] = `Bearer ${token}`;
   if (init?.headers) Object.assign(headers, init.headers);
 
-  let response = await fetch(url, { ...init, headers });
+  let response = await fetchWithTimeout(url, { ...init, headers });
 
   // Если всё равно 401 — пробуем refresh и retry
   if (response.status === 401 && token) {
@@ -75,7 +115,7 @@ export async function apiFetch(url: string, init?: RequestInit): Promise<Respons
     if (newToken) {
       const retryHeaders: Record<string, string> = { Authorization: `Bearer ${newToken}` };
       if (init?.headers) Object.assign(retryHeaders, init.headers);
-      response = await fetch(url, { ...init, headers: retryHeaders });
+      response = await fetchWithTimeout(url, { ...init, headers: retryHeaders });
     }
   }
 
