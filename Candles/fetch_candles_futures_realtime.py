@@ -793,6 +793,18 @@ class CandlesUpdater:
         if df.empty:
             return 0, 0
 
+        # Фантомные строки (все OHLC пустые) отбрасываем ДО fillna — иначе они
+        # превратятся в нули и с DO UPDATE затёрли бы хорошую свечу нулями
+        # (паттерн из спот-фетчера, b4dd859).
+        ohlc_cols = [c for c in ['open', 'close', 'high', 'low'] if c in df.columns]
+        if ohlc_cols:
+            mask = df[ohlc_cols].isna().all(axis=1)
+            if mask.any():
+                log.info(f"  Пропущено фантомных свечей (все OHLC пустые): {int(mask.sum())}")
+                df = df[~mask].copy()
+            if df.empty:
+                return 0, 0
+
         for col in ['value', 'volume', 'open', 'close', 'high', 'low']:
             if col in df.columns:
                 df[col] = df[col].fillna(0)
@@ -812,12 +824,35 @@ class CandlesUpdater:
 
             records = [tuple(x) for x in df[columns].to_numpy()]
 
+            # Дневные — безусловный DO UPDATE: свеча текущего дня растёт в течение
+            # дня; прежний DO NOTHING замораживал её на первом утреннем снапшоте
+            # (с ноя-2025 до 60% дневных свечей фьючерсов имели close на ~09:00
+            # вместо закрытия → битые графики/ролловер). Интрадей — обновляем
+            # только при росте volume: защита финальной свечи от перезаписи
+            # частичным повторным фетчем. Паттерн = спот-фетчер (b4dd859).
+            interval_val = int(df['interval'].iloc[0]) if not df.empty else 0
+            if interval_val == 24:
+                upsert_suffix = """
+                               ON CONFLICT (secid, begin_time, interval, type) DO UPDATE SET
+                                   open = EXCLUDED.open, close = EXCLUDED.close,
+                                   high = EXCLUDED.high, low = EXCLUDED.low,
+                                   value = EXCLUDED.value, volume = EXCLUDED.volume,
+                                   end_time = EXCLUDED.end_time
+                               """
+            else:
+                upsert_suffix = """
+                               ON CONFLICT (secid, begin_time, interval, type) DO UPDATE SET
+                                   open = EXCLUDED.open, close = EXCLUDED.close,
+                                   high = EXCLUDED.high, low = EXCLUDED.low,
+                                   value = EXCLUDED.value, volume = EXCLUDED.volume,
+                                   end_time = EXCLUDED.end_time
+                               WHERE EXCLUDED.volume > candles.volume
+                               """
             insert_query = """
                            INSERT INTO candles (secid, begin_time, interval, type, end_time,
                                                 open, close, high, low, value, volume, sec_id)
-                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, \
-                                   %s) ON CONFLICT (secid, begin_time, interval, type) DO NOTHING
-                           """
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                           """ + upsert_suffix
 
             inserted = 0
             BATCH_SIZE = 500
@@ -832,7 +867,7 @@ class CandlesUpdater:
                         INSERT INTO candles (secid, begin_time, interval, type, end_time,
                                              open, close, high, low, value, volume, sec_id)
                         VALUES {placeholders}
-                        ON CONFLICT (secid, begin_time, interval, type) DO NOTHING
+                        {upsert_suffix}
                     """, flat_values)
                     inserted += cursor.rowcount
                     raw_conn.commit()
@@ -897,8 +932,11 @@ class CandlesUpdater:
                 df_1min['sec_id'] = sec_id
                 df_5min = aggregate_to_5min(df_1min)
 
+                # >= (не >): последний сохранённый бар мог быть частичным на
+                # момент прошлого фетча — пересохраняем его, volume-guard в
+                # save_candles обновит только если данных стало больше.
                 if not df_5min.empty and last_time:
-                    df_5min = df_5min[df_5min['begin_time'] > last_time]
+                    df_5min = df_5min[df_5min['begin_time'] >= last_time]
 
                 if df_5min.empty:
                     return 0, 0
@@ -948,8 +986,10 @@ class CandlesUpdater:
 
                 df['sec_id'] = sec_id
 
+                # >= : часовой бар растёт в течение часа — пересохраняем
+                # последний, volume-guard защищает от регресса.
                 if last_time:
-                    df = df[df['begin_time'] > last_time]
+                    df = df[df['begin_time'] >= last_time]
 
                 if df.empty:
                     return 0, 0
@@ -999,8 +1039,14 @@ class CandlesUpdater:
 
                 df['sec_id'] = sec_id
 
+                # >= КРИТИЧНО (фикс заморозки): дневная свеча текущего дня
+                # (begin_time = дата 00:00) растёт весь день. Прежний фильтр
+                # `>` выкидывал её из каждого повторного фетча → свеча навсегда
+                # оставалась утренним снапшотом (DO NOTHING усугублял). Теперь
+                # пересохраняем день с last_time включительно — DO UPDATE в
+                # save_candles дополняет её до полной.
                 if last_time:
-                    df = df[df['begin_time'] > last_time]
+                    df = df[df['begin_time'] >= last_time]
 
                 if df.empty:
                     return 0, 0

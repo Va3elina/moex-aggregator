@@ -15,6 +15,11 @@
 Usage:
   python Candles/backfill_futures_candles.py FROM TILL SECID [SECID ...]
   напр.  python Candles/backfill_futures_candles.py 2025-11-01 2026-06-09 BTZ5 BTF6 BTG6
+
+  --intervals 24,60  — ограничить интервалы (без 5: пропускает тяжёлую догрузку
+  1-минуток). Для массового ремонта дневных/часовых свечей по сотням контрактов
+  (инцидент DO NOTHING-заморозки, июнь 2026) 1-минутки за месяцы — это сотни
+  запросов на контракт к ISS, риск бана IP. По умолчанию — как раньше: 24,60,5.
 """
 import sys
 import os
@@ -99,16 +104,22 @@ def agg5(minrows):
 
 
 def main():
-    if len(sys.argv) < 4:
-        print("usage: backfill_futures_candles.py FROM TILL SECID [SECID ...]")
+    args = sys.argv[1:]
+    intervals = (24, 60, 5)
+    if "--intervals" in args:
+        i = args.index("--intervals")
+        intervals = tuple(int(x) for x in args[i + 1].split(","))
+        args = args[:i] + args[i + 2:]
+    if len(args) < 3:
+        print("usage: backfill_futures_candles.py [--intervals 24,60] FROM TILL SECID [SECID ...]")
         sys.exit(1)
-    frm, till, contracts = sys.argv[1], sys.argv[2], sys.argv[3:]
+    frm, till, contracts = args[0], args[1], args[2:]
     eng = create_engine(os.environ["DB_URL"], connect_args={"ssl_context": False})
     grand = 0
     for secid in contracts:
         sec_id = secid[:-1]
         with eng.begin() as conn:
-            for iv in (24, 60):
+            for iv in (i for i in (24, 60) if i in intervals):
                 rows = fetch(secid, iv, frm, till)
                 n = 0
                 for r in rows:
@@ -120,12 +131,13 @@ def main():
                     n += 1
                 grand += n
                 print("%s iv=%-2d: %d" % (secid, iv, n), flush=True)
-            five = agg5(fetch(secid, 1, frm, till))
-            for o, c, h, l, val, vol, b, e in five:
-                conn.execute(UP, {"secid": secid, "sec_id": sec_id, "o": o, "c": c, "h": h,
-                                  "l": l, "v": val, "vol": vol, "b": b, "e": e, "iv": 5})
-            grand += len(five)
-            print("%s iv=5 : %d" % (secid, len(five)), flush=True)
+            if 5 in intervals:
+                five = agg5(fetch(secid, 1, frm, till))
+                for o, c, h, l, val, vol, b, e in five:
+                    conn.execute(UP, {"secid": secid, "sec_id": sec_id, "o": o, "c": c, "h": h,
+                                      "l": l, "v": val, "vol": vol, "b": b, "e": e, "iv": 5})
+                grand += len(five)
+                print("%s iv=5 : %d" % (secid, len(five)), flush=True)
     print("TOTAL upserted:", grand)
 
 
