@@ -175,10 +175,23 @@ def get_chart_data(
         oi_end = work_end
         log.info(f"[2-4] fast path: {(time.time()-t0)*1000:.0f} мс | {work_start} - {work_end}")
     else:
-        # Full path: запрашиваем точные границы из БД
+        # Full path: запрашиваем точные границы из БД.
+        # НЕ заменять на MIN/MAX + sec_id = ANY(...): планировщик не умеет
+        # пер-элементный спуск по (sec_id, interval, begin_time) и уходит в скан
+        # индекса (interval, begin_time) с начала истории — для недавно
+        # листингованных активов (TB, IB, BT) это 40-60 сек. LATERAL по каждому
+        # контракту = один спуск по индексу, миллисекунды.
         bounds_row = db.execute(text("""
-            SELECT MIN(begin_time), MAX(begin_time) FROM candles
-            WHERE sec_id = ANY(:sec_ids) AND interval = :interval
+            SELECT MIN(b.lo), MAX(b.hi)
+            FROM unnest(:sec_ids) AS s(sid)
+            CROSS JOIN LATERAL (
+                SELECT (SELECT begin_time FROM candles
+                        WHERE sec_id = s.sid AND interval = :interval
+                        ORDER BY begin_time ASC LIMIT 1) AS lo,
+                       (SELECT begin_time FROM candles
+                        WHERE sec_id = s.sid AND interval = :interval
+                        ORDER BY begin_time DESC LIMIT 1) AS hi
+            ) b
         """), {"sec_ids": sec_ids, "interval": interval}).fetchone()
 
         c_start = bounds_row[0] if bounds_row else None

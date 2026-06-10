@@ -86,11 +86,23 @@ def append_live_points(db, response: dict) -> bool:
         # 1. Самая свежая 5-минутная свеча активного контракта.
         #    volume > 0 отсекает zero-fill артефакты агрегации; при равном
         #    времени берём контракт с большим объёмом (активный при ролловере).
+        #    LATERAL по каждому контракту вместо sec_id = ANY(...): глобальный
+        #    ORDER BY + LIMIT 1 с ANY заставляет планировщик вычитать ВСЕ
+        #    5-минутки актива с диска и сортировать (2-18 сек на холодных
+        #    страницах). Спуск по индексу с конца на каждый контракт — мс.
+        #    volume DESC внутри LATERAL: на один begin_time может быть две
+        #    датированные серии одного перпетуала (TBH5/TBH6) — берём активную.
         row = db.execute(text("""
-            SELECT begin_time, close, volume
-            FROM candles
-            WHERE sec_id = ANY(:sec_ids) AND interval = 5 AND close > 0 AND volume > 0
-            ORDER BY begin_time DESC, volume DESC
+            SELECT c.begin_time, c.close, c.volume
+            FROM unnest(:sec_ids) AS s(sid)
+            CROSS JOIN LATERAL (
+                SELECT begin_time, close, volume
+                FROM candles
+                WHERE sec_id = s.sid AND interval = 5 AND close > 0 AND volume > 0
+                ORDER BY begin_time DESC, volume DESC
+                LIMIT 1
+            ) c
+            ORDER BY c.begin_time DESC, c.volume DESC
             LIMIT 1
         """), {"sec_ids": sec_ids}).fetchone()
 
