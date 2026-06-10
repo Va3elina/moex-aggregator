@@ -111,6 +111,22 @@ export default function AuthCallback() {
         }
         sessionStorage.setItem(storageKey, '1');
 
+        // Yandex CSRF: state, который Yandex вернул в redirect, должен совпасть
+        // с тем, что мы сохранили при инициации входа В ЭТОМ браузере. Несовпадение
+        // = login-CSRF / чужой redirect → прерываем. (Сервер дополнительно гасит
+        // one-time state в Redis.)
+        if (provider === 'yandex') {
+            const returnedState = searchParams.get('state') || '';
+            const storedState = localStorage.getItem('yandex_oauth_state') || '';
+            localStorage.removeItem('yandex_oauth_state');
+            if (!storedState || !returnedState || storedState !== returnedState) {
+                setStatus('error');
+                setErrorMsg('Проверка безопасности не пройдена (CSRF). Начните вход заново.');
+                sessionStorage.removeItem(storageKey);
+                return;
+            }
+        }
+
         // Собираем payload — VK ID PKCE: code_verifier и device_id.
         // Читаем из localStorage (а не sessionStorage) потому что VK на iPhone
         // открывает auth в новой tab, и sessionStorage между ними isolated.
@@ -125,6 +141,8 @@ export default function AuthCallback() {
             || sessionStorage.getItem('vk_code_verifier')
             || '';
         if (codeVerifier) payload.code_verifier = codeVerifier;
+        const yandexState = searchParams.get('state') || '';
+        if (provider === 'yandex' && yandexState) payload.state = yandexState;
         // Очищаем оба storage чтобы не накапливать stale verifier'ы
         localStorage.removeItem('vk_code_verifier');
         localStorage.removeItem('vk_device_id');

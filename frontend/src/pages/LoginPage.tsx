@@ -141,6 +141,13 @@ export default function LoginPage() {
                 if (data.device_id) {
                     localStorage.setItem('vk_device_id', data.device_id);
                 }
+                // Yandex CSRF: сохраняем выданный state. На callback сверим с тем,
+                // что Yandex вернёт в redirect — привязка к этому браузеру (защита
+                // от login-CSRF). localStorage, а не sessionStorage — на случай
+                // открытия auth в новой вкладке (как у VK).
+                if (data.state) {
+                    localStorage.setItem('yandex_oauth_state', data.state);
+                }
                 window.location.href = data.url;
             } else {
                 setError(data.detail || 'OAuth не настроен');

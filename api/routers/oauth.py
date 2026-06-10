@@ -72,6 +72,7 @@ class OAuthCodeRequest(BaseModel):
     code: str
     device_id: Optional[str] = None  # VK ID requires device_id
     code_verifier: Optional[str] = None  # VK ID PKCE
+    state: Optional[str] = None  # CSRF-токен (Yandex): фронт возвращает то, что выдал /url
 
 
 class TelegramAuthRequest(BaseModel):
@@ -91,6 +92,7 @@ class OAuthURLResponse(BaseModel):
     provider: str
     code_verifier: Optional[str] = None  # VK PKCE: фронт сохраняет и отправляет при обмене
     device_id: Optional[str] = None  # VK ID: фронт сохраняет и отправляет при обмене
+    state: Optional[str] = None  # Yandex CSRF: фронт сохраняет, сверяет с echo и шлёт на callback
 
 
 class OAuthTokenResponse(BaseModel):
@@ -224,25 +226,54 @@ def _check_configured(provider: str, *keys: str):
             )
 
 
+# ── OAuth state (CSRF) для Yandex ───────────────────────────────────────────
+# Yandex (в отличие от VK) не использует PKCE → нужен state против login-CSRF /
+# account-fixation. Двойная защита: (1) фронт сохраняет выданный state и сверяет
+# с тем, что Yandex вернул в redirect — привязка к браузеру, который начал вход;
+# (2) сервер кладёт state в Redis (TTL 10мин, one-time) — отсекает подделку и
+# повтор. Redis-зависимость МЯГКАЯ: если Redis недоступен на callback, вход НЕ
+# падает (клиентская привязка уже защищает от CSRF) — только логируем.
+_STATE_TTL = 600
+
+
+def _issue_oauth_state(provider: str) -> str:
+    import secrets
+    from api.cache import set_cache
+    state = secrets.token_urlsafe(32)
+    try:
+        set_cache(f"oauth:state:{provider}:{state}", "1", ttl=_STATE_TTL)
+    except Exception as e:  # Redis недоступен — деградируем до клиентской привязки
+        log.warning(f"oauth state: не удалось сохранить в Redis: {e}")
+    return state
+
+
+def _consume_oauth_state(provider: str, state: Optional[str]) -> None:
+    """Сверяет и гасит one-time state. 400 если отсутствует/неизвестен.
+    Если Redis недоступен — пропускаем (клиентская привязка на фронте уже сверила)."""
+    if not state:
+        raise HTTPException(400, "Отсутствует CSRF-токен (state)")
+    try:
+        from api.cache import _get_redis
+        r = _get_redis()
+        key = f"oauth:state:{provider}:{state}"
+        if r.delete(key) == 0:
+            raise HTTPException(400, "Недействительный или истёкший CSRF-токен")
+    except HTTPException:
+        raise
+    except Exception as e:
+        # Redis-сбой ≠ ошибка авторизации: не валим вход, фронт уже сверил state.
+        log.warning(f"oauth state: Redis недоступен на проверке, пропускаю: {e}")
+
+
 # ============================================================================
 # ENDPOINTS — URL для редиректа
 # ============================================================================
 
 @router.get("/google/url")
 async def google_auth_url():
-    """Получить URL для авторизации через Google."""
-    _check_configured("Google", GOOGLE_CLIENT_ID, GOOGLE_REDIRECT_URI)
-
-    url = (
-        "https://accounts.google.com/o/oauth2/v2/auth?"
-        f"client_id={GOOGLE_CLIENT_ID}"
-        f"&redirect_uri={GOOGLE_REDIRECT_URI}"
-        "&response_type=code"
-        "&scope=openid%20email%20profile"
-        "&access_type=offline"
-        "&prompt=consent"
-    )
-    return OAuthURLResponse(url=url, provider="google")
+    """Google-вход отключён (убран из провайдеров). Закрыто, чтобы заряженный
+    но неиспользуемый Authorization-Code-Flow без state не оставался доступным."""
+    raise HTTPException(status_code=410, detail="Вход через Google отключён")
 
 
 @router.get("/vk/url")
@@ -284,17 +315,19 @@ async def vk_auth_url():
 
 @router.get("/yandex/url")
 async def yandex_auth_url():
-    """Получить URL для авторизации через Яндекс."""
+    """Получить URL для авторизации через Яндекс (с CSRF-state)."""
     _check_configured("Yandex", YANDEX_CLIENT_ID, YANDEX_REDIRECT_URI)
 
+    state = _issue_oauth_state("yandex")
     url = (
         "https://oauth.yandex.ru/authorize?"
         f"client_id={YANDEX_CLIENT_ID}"
         f"&redirect_uri={YANDEX_REDIRECT_URI}"
         "&response_type=code"
+        f"&state={state}"
         "&force_confirm=yes"
     )
-    return OAuthURLResponse(url=url, provider="yandex")
+    return OAuthURLResponse(url=url, provider="yandex", state=state)
 
 
 # ============================================================================
@@ -302,67 +335,10 @@ async def yandex_auth_url():
 # ============================================================================
 
 @router.post("/google")
-async def google_oauth_callback(
-    data: OAuthCodeRequest,
-    db: Session = Depends(get_db),
-):
-    """
-    Обмен Google authorization code на JWT.
-
-    Frontend получает code после редиректа от Google
-    и отправляет его сюда.
-    """
-    _check_configured("Google", GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET)
-
-    try:
-        # 1. Обмениваем code на access_token
-        async with httpx.AsyncClient() as client:
-            token_resp = await client.post(
-                "https://oauth2.googleapis.com/token",
-                data={
-                    "code": data.code,
-                    "client_id": GOOGLE_CLIENT_ID,
-                    "client_secret": GOOGLE_CLIENT_SECRET,
-                    "redirect_uri": GOOGLE_REDIRECT_URI,
-                    "grant_type": "authorization_code",
-                },
-            )
-
-        if token_resp.status_code != 200:
-            log.error(f"Google token error: {token_resp.text}")
-            raise HTTPException(400, "Не удалось получить токен от Google")
-
-        token_data = token_resp.json()
-        access_token = token_data.get("access_token")
-
-        # 2. Получаем профиль пользователя
-        async with httpx.AsyncClient() as client:
-            profile_resp = await client.get(
-                "https://www.googleapis.com/oauth2/v2/userinfo",
-                headers={"Authorization": f"Bearer {access_token}"},
-            )
-
-        if profile_resp.status_code != 200:
-            raise HTTPException(400, "Не удалось получить профиль от Google")
-
-        profile = profile_resp.json()
-
-        # 3. Создаём/находим пользователя
-        user, is_new = _find_or_create_oauth_user(
-            db=db,
-            provider="google",
-            oauth_id=str(profile["id"]),
-            email=profile.get("email"),
-            avatar_url=profile.get("picture"),
-        )
-
-        return _make_token_response(user, is_new, db)
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        log.error(f"Google OAuth error: {e}", exc_info=True)
-        raise HTTPException(500, "Ошибка авторизации через Google")
+async def google_oauth_callback(data: OAuthCodeRequest, db: Session = Depends(get_db)):
+    """Google-вход отключён. Эндпоинт оставлен, чтобы старые редиректы не падали
+    500, но обмен кода больше не выполняется (раньше — без state-проверки)."""
+    raise HTTPException(status_code=410, detail="Вход через Google отключён")
 
 
 @router.post("/vk")
@@ -458,6 +434,9 @@ async def yandex_oauth_callback(
     Обмен Yandex authorization code на JWT.
     """
     _check_configured("Yandex", YANDEX_CLIENT_ID, YANDEX_CLIENT_SECRET)
+
+    # 0. CSRF: сверяем и гасим state ДО обмена кода (raise 400 при невалидном).
+    _consume_oauth_state("yandex", data.state)
 
     try:
         # 1. Обмениваем code на access_token
