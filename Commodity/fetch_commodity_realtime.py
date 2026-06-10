@@ -488,20 +488,40 @@ def main():
 
     total_rows = 0
     failed = []
+    yahoo_attempted = 0
+    yahoo_success = 0
+    consecutive_fail = 0
+    CIRCUIT_BREAK = 3  # подряд пустых Yahoo-тикеров → считаем источник недоступным
     start_time = time.time()
 
     for secid in secids_to_process:
         if secid not in COMMODITIES:
             log.error(f"Неизвестный secid: {secid}. Известные: {list(COMMODITIES.keys())}")
             continue
+        # Circuit-breaker: каждый недоступный тикер висит до таймаута (~30с).
+        # Если Yahoo заблокирован целиком (Москва/ДЦ-бан), без брейка прогон зря
+        # ждёт 10×30с = 5 минут. После CIRCUIT_BREAK подряд пустых — прекращаем
+        # дёргать Yahoo и идём к MOEX-continuous; guard ниже всё равно сработает.
+        if consecutive_fail >= CIRCUIT_BREAK:
+            log.error(
+                f"Circuit-breaker: {consecutive_fail} Yahoo-тикеров подряд пустые "
+                f"→ источник недоступен, пропускаю остальные ({secid}…)."
+            )
+            break
+        yahoo_attempted += 1
         try:
             rows = process_commodity(engine, secid, COMMODITIES[secid], mode)
             total_rows += rows
             if rows == 0:
                 failed.append(secid)
+                consecutive_fail += 1
+            else:
+                yahoo_success += 1
+                consecutive_fail = 0
         except Exception as e:
             log.error(f"  {secid}: FAILED — {e}", exc_info=True)
             failed.append(secid)
+            consecutive_fail += 1
 
     # === MOEX continuous series (TTF, Nickel) ===
     # Строятся из existing candles в БД, не требуют HTTP запросов наружу.
@@ -521,8 +541,21 @@ def main():
     log.info(f"=== Готово: {total_rows} строк, {len(failed)} ошибок/пустых, {duration:.1f}s ===")
     if failed:
         log.warning(f"Empty/failed tickers: {failed}")
-    # Не падаем если только некоторые тикеры пустые — orchestrator не должен ретраить
-    # каждые 5 минут из-за одного отсутствующего commodity.
+
+    # Молли-гард видимости: одиночный пустой тикер (биржевой выходной по
+    # конкретному инструменту) — не повод падать. Но если ВСЕ Yahoo-тикеры
+    # пустые при непустом запуске без --secid — это системный сбой (Yahoo
+    # недоступен / заблокирован), и раньше скрипт всё равно выходил с кодом 0,
+    # рапортуя оркестратору «✓ Commodity Daily». Теперь возвращаем ненулевой
+    # код → оркестратор логирует ✗ и инкрементит errors (он запускает commodity
+    # раз в день в 08:00, а не каждые 5 минут, так что ретрай-шторма не будет).
+    if not args.secid and yahoo_attempted > 0 and yahoo_success == 0:
+        log.error(
+            f"СИСТЕМНЫЙ СБОЙ: ни один Yahoo-тикер не отдал данные "
+            f"({yahoo_attempted} попыток) — источник недоступен (сеть/блокировка). "
+            f"Exit 1 для видимости оркестратору."
+        )
+        sys.exit(1)
 
 
 if __name__ == "__main__":
