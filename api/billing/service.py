@@ -308,6 +308,27 @@ def activate_from_webhook(db: Session, event: WebhookEvent) -> Subscription | No
 
     db.flush()
 
+    # Апгрейд гасит авто-продление старых подписок НИЖЕ нового tier'а: иначе
+    # старая basic с payment_method_id остаётся active+не-cancelled, а дедуп в
+    # renew_expiring_subs матчит только ТОТ ЖЕ tier → крон продолжил бы
+    # списывать basic параллельно с pro (двойная оплата). Оплаченный период
+    # они дослуживают (expires_at не трогаем) — выключается только продление.
+    new_level = TIER_LEVELS.get(sub.tier, 0)
+    lower_subs = db.query(Subscription).filter(
+        Subscription.user_id == sub.user_id,
+        Subscription.id != sub.id,
+        Subscription.status == "active",
+        Subscription.cancelled_at.is_(None),
+    ).all()
+    for old_sub in lower_subs:
+        if TIER_LEVELS.get(old_sub.tier, 0) < new_level:
+            old_sub.cancelled_at = now
+            log.info(
+                "activate_from_webhook: upgrade to %s — отключено авто-продление "
+                "нижней подписки #%s (tier=%s, дослужит до %s)",
+                sub.tier, old_sub.id, old_sub.tier, old_sub.expires_at,
+            )
+
     # Поднимаем роль user'а если нужно
     user = db.query(User).filter(User.id == sub.user_id).first()
     if user:
@@ -442,11 +463,17 @@ def renew_expiring_subs(db: Session, hours_window: int = 24) -> dict:
     now = datetime.now(timezone.utc)
     cutoff = now + timedelta(hours=hours_window)
 
+    # Grace 48ч НАЗАД: если крон простоял >24ч (рестарт сервера, недоступность
+    # T-Bank), подписка успевает истечь и expire_overdue (он идёт ПЕРЕД renew в
+    # оркестраторе) переводит её в expired — строгий фильтр status='active'
+    # оставлял клиента с валидной картой без единой попытки списания. Включаем
+    # недавно-expired: Guard 1 ниже защищает от двойного продления.
+    grace = now - timedelta(hours=48)
     expiring = db.query(Subscription).filter(
-        Subscription.status == "active",
+        Subscription.status.in_(("active", "expired")),
         Subscription.cancelled_at.is_(None),
         Subscription.payment_method_id.isnot(None),
-        Subscription.expires_at > now,
+        Subscription.expires_at > grace,
         Subscription.expires_at < cutoff,
     ).all()
 
@@ -820,9 +847,14 @@ def charge_recurrent(
     # discount_pct=0 (default) → скидка одноразовая, дальше полная цена.
     # T-Bank принимает любую сумму >0, чек 54-ФЗ бьётся на эту же сумму
     # (tbank.charge → _build_receipt(amount)).
+    # plan.amount — float (plans.py), у float нет .quantize(): без конверсии в
+    # Decimal первое же продление с retention-скидкой падало AttributeError →
+    # клиент не списывался и молча терял доступ.
     effective_amount = plan.amount
     if discount_pct and 0 < discount_pct < 100:
-        effective_amount = (plan.amount * (100 - discount_pct) / 100).quantize(Decimal("0.01"))
+        effective_amount = (
+            Decimal(str(plan.amount)) * (100 - discount_pct) / 100
+        ).quantize(Decimal("0.01"))
 
     provider = get_payment_provider()
     if not hasattr(provider, "charge"):
