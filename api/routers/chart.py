@@ -183,7 +183,7 @@ def get_chart_data(
         # контракту = один спуск по индексу, миллисекунды.
         bounds_row = db.execute(text("""
             SELECT MIN(b.lo), MAX(b.hi)
-            FROM unnest(:sec_ids) AS s(sid)
+            FROM unnest(CAST(:sec_ids AS text[])) AS s(sid)
             CROSS JOIN LATERAL (
                 SELECT (SELECT begin_time FROM candles
                         WHERE sec_id = s.sid AND interval = :interval

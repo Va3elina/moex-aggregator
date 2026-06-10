@@ -94,7 +94,7 @@ def append_live_points(db, response: dict) -> bool:
         #    датированные серии одного перпетуала (TBH5/TBH6) — берём активную.
         row = db.execute(text("""
             SELECT c.begin_time, c.close, c.volume
-            FROM unnest(:sec_ids) AS s(sid)
+            FROM unnest(CAST(:sec_ids AS text[])) AS s(sid)
             CROSS JOIN LATERAL (
                 SELECT begin_time, close, volume
                 FROM candles
