@@ -78,13 +78,19 @@ logger = get_logger()
 # Создание приложения
 # ═══════════════════════════════════════════════════════════════
 
+# Swagger/ReDoc/OpenAPI выключены по умолчанию (fail-safe): на проде они раскрывали
+# всю карту API анонимно (включая admin/billing-эндпоинты) — лишняя разведка.
+# Включаются ТОЛЬКО явным ENABLE_API_DOCS=1 (локальная разработка). Прод флаг не
+# ставит → /api/docs, /api/redoc, /api/openapi.json отдают 404.
+_DOCS_ENABLED = os.getenv("ENABLE_API_DOCS", "").strip().lower() in ("1", "true", "yes", "on")
+
 app = FastAPI(
     title="Фрейм API",
     description="API аналитики Московской биржи: инструменты, свечи, открытый интерес",
     version="1.0.0",
-    docs_url="/api/docs",
-    redoc_url="/api/redoc",
-    openapi_url="/api/openapi.json",
+    docs_url="/api/docs" if _DOCS_ENABLED else None,
+    redoc_url="/api/redoc" if _DOCS_ENABLED else None,
+    openapi_url="/api/openapi.json" if _DOCS_ENABLED else None,
 )
 
 # ═══════════════════════════════════════════════════════════════
