@@ -159,15 +159,26 @@ async def get_heatmap_prices():
     if cached is not None:
         return cached
 
+    # LATERAL по списку акций из mv_heatmap_stocks (96 строк) вместо
+    # DISTINCT ON по всей таблице 5-мин свечей. Прежний вариант с
+    # `begin_time::date = CURRENT_DATE` (и даже range-предикат) читал ВСЕ
+    # сегодняшние бары всех акций (~10k строк) с heap-fetch по холодным
+    # страницам → 45с и регулярные 504. Здесь — 96 индексных seek'ов по
+    # idx_candles_stock_daily_secid_time, по одному на акцию: ~50мс.
+    # Семантика та же: акция без свечи за сегодня просто отсутствует в ответе.
     engine = get_engine()
     with engine.connect() as conn:
         rows = conn.execute(text("""
-            SELECT DISTINCT ON (secid) secid, close
-            FROM candles
-            WHERE type = 'stock' AND interval = 5
-              AND begin_time::date = CURRENT_DATE
-              AND close > 0
-            ORDER BY secid, begin_time DESC
+            SELECT m.sec_id, c.close
+            FROM mv_heatmap_stocks m
+            CROSS JOIN LATERAL (
+                SELECT close FROM candles
+                WHERE secid = m.sec_id AND type = 'stock' AND interval = 5
+                  AND begin_time >= date_trunc('day', now())
+                  AND close > 0
+                ORDER BY begin_time DESC
+                LIMIT 1
+            ) c
         """)).fetchall()
 
     result = {row[0]: round(float(row[1]), 2) for row in rows}

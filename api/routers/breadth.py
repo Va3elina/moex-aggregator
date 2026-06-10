@@ -289,6 +289,37 @@ async def get_current_breadth(
         rate_from = date.today() - timedelta(days=ema_period * 2 + 200)
         usd_rates = _load_usd_rates(engine, rate_from)
 
+    # Окно прогрева EMA. Теоретически при N точках первая точка весит ~13%,
+    # но на практике акции не делают экстремальных скачков и при 2×N+100 дней
+    # точность ~0.1% (проверено эмпирически на SBER). Должно совпадать с
+    # warmup в compute_breadth_history.py.
+    warmup_limit = ema_period * 2 + 100
+
+    # Один bulk-запрос вместо N+1 (раньше — отдельный connection + SELECT на
+    # каждый из ~200 тикеров → под нагрузкой выедало пул 15+15 и держало
+    # соединения секундами). LATERAL по списку тикеров: на каждый — индексный
+    # seek + LIMIT по idx_candles_stock_daily_secid_time, без скана всей истории.
+    # Свежие свечи первыми, в SQL разворачиваем в ascending для расчёта EMA.
+    tickers = [e["ticker"] for e in stock_entries]
+    prices_by_ticker: dict[str, list[tuple]] = {}
+    if tickers:
+        with engine.connect() as conn:
+            bulk_rows = conn.execute(text("""
+                SELECT u.secid, c.d, c.close
+                FROM unnest(CAST(:tickers AS text[])) AS u(secid)
+                CROSS JOIN LATERAL (
+                    SELECT begin_time::date AS d, close
+                    FROM candles
+                    WHERE secid = u.secid AND interval = 24 AND type = 'stock'
+                      AND close > 0
+                    ORDER BY begin_time DESC
+                    LIMIT :limit
+                ) c
+                ORDER BY u.secid, c.d
+            """), {"tickers": tickers, "limit": warmup_limit}).fetchall()
+        for secid, d, close in bulk_rows:
+            prices_by_ticker.setdefault(secid, []).append((d, float(close)))
+
     stocks_data = []
     count_above = 0
 
@@ -296,29 +327,10 @@ async def get_current_breadth(
         ticker = entry["ticker"]
         sector = entry["sector"]
         try:
-            # Окно прогрева EMA. Теоретически при N точках первая точка весит
-            # ~13%, но на практике акции не делают экстремальных скачков и при
-            # 2×N+100 дней точность ~0.1% (проверено эмпирически на SBER).
-            # Должно совпадать с warmup в compute_breadth_history.py.
-            warmup_limit = ema_period * 2 + 100
-            query = text("""
-                SELECT begin_time::date as date, close
-                FROM candles
-                WHERE secid = :ticker
-                  AND interval = 24
-                  AND type = 'stock'
-                ORDER BY begin_time DESC
-                LIMIT :limit
-            """)
-            with engine.connect() as conn:
-                result = conn.execute(query, {"ticker": ticker, "limit": warmup_limit})
-                rows = result.fetchall()
-
-            if len(rows) < ema_period:
+            # Свечи уже отфильтрованы (close > 0) и отсортированы по дате в bulk-запросе.
+            raw_prices = prices_by_ticker.get(ticker, [])
+            if len(raw_prices) < ema_period:
                 continue
-
-            rows = list(reversed(rows))
-            raw_prices = [(r[0], float(r[1])) for r in rows if r[1]]
 
             # Split-adjustment: pre-split цены делим на ratio. Без этого
             # T (split 1:10 на 2026-04-02) выглядит как oversold —

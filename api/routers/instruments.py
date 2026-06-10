@@ -27,6 +27,16 @@ def get_instruments(
 ):
     """Получить список всех инструментов, отсортированных по объёму торгов"""
     from sqlalchemy import text
+    from api.cache import get_or_set
+
+    # Кэш: запрос делает два оконных подзапроса по candles (DISTINCT ON + LAG/
+    # ROW_NUMBER за 14 дней) → 2.3с на холодных страницах, а пикер дёргается
+    # почти на каждом заходе. Данные меняются раз в день на EOD, поэтому TTL
+    # 5 минут полностью безопасен. Ключ учитывает оба фильтра.
+    cache_key = f"instruments:{type or 'all'}:{(group or 'all')[:100]}"
+    cached = get_or_set(cache_key)
+    if cached is not None:
+        return cached
 
     # NOT i.hidden — всегда: скрытые (делистнутые) инструменты не показываем
     # в каталоге/пикере, но строки и данные остаются (обратимо).
@@ -98,10 +108,12 @@ def get_instruments(
         for r in rows
     ]
 
-    return InstrumentListResponse(
+    response = InstrumentListResponse(
         count=len(instruments),
         instruments=instruments
     )
+    get_or_set(cache_key, response.model_dump(), ttl=300)
+    return response
 
 
 @router.get("/groups")
