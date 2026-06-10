@@ -43,9 +43,15 @@ log() {
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
 }
 
+# curl -6: форсируем IPv6 на Telegram. Из московского ДЦ IPv4-маршрут до
+# api.telegram.org мёртв (таймаут), а IPv6 работает. Без -6 curl по Happy Eyeballs
+# иногда выбирал IPv4 → часть частей бэкапа доставлялась, часть падала с
+# {"ok":false} (фолбэк при curl-фейле) и висла по 2 мин/часть. --max-time 90
+# страхует если IPv6 тоже заблокируют (Москва): часть быстро падает, локальный
+# дамп остаётся (offsite — best-effort). Если IPv6 отрубят — менять источник.
 send_msg() {
   if [ -n "${BOT_TOKEN:-}" ] && [ -n "${ADMIN_CHAT_ID:-}" ]; then
-    curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+    curl -6 -s --max-time 30 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
       -d "chat_id=${ADMIN_CHAT_ID}" \
       -d "text=$1" \
       -d "parse_mode=Markdown" > /dev/null || true
@@ -55,7 +61,7 @@ send_msg() {
 send_doc() {
   local file="$1"
   local caption="$2"
-  curl -s -F "chat_id=${ADMIN_CHAT_ID}" \
+  curl -6 -s --max-time 90 -F "chat_id=${ADMIN_CHAT_ID}" \
     -F "document=@${file}" \
     -F "caption=${caption}" \
     "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument"
