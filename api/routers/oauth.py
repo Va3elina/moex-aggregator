@@ -189,9 +189,16 @@ def _find_or_create_oauth_user(
     return new_user, True
 
 
-def _make_token_response(user: User, is_new: bool) -> dict:
-    """Формирует ответ с JWT токенами."""
+def _make_token_response(user: User, is_new: bool, db=None) -> dict:
+    """Формирует ответ с JWT токенами.
+
+    db передаётся чтобы персистить refresh-токен при выдаче — иначе logout не
+    может его отозвать и токен реиграется 7 дней (аудит 10.06)."""
     token_pair = create_token_pair(user_id=user.id, role=user.role or "user")
+    if db is not None:
+        from api.routers.auth import persist_refresh_token
+        persist_refresh_token(db, user.id, token_pair.refresh_token)
+        db.commit()
     return {
         "access_token": token_pair.access_token,
         "refresh_token": token_pair.refresh_token,
@@ -349,7 +356,7 @@ async def google_oauth_callback(
             avatar_url=profile.get("picture"),
         )
 
-        return _make_token_response(user, is_new)
+        return _make_token_response(user, is_new, db)
 
     except HTTPException:
         raise
@@ -433,7 +440,7 @@ async def vk_oauth_callback(
             display_name=display_name,
         )
 
-        return _make_token_response(user, is_new)
+        return _make_token_response(user, is_new, db)
 
     except HTTPException:
         raise
@@ -502,7 +509,7 @@ async def yandex_oauth_callback(
             display_name=profile.get("display_name"),
         )
 
-        return _make_token_response(user, is_new)
+        return _make_token_response(user, is_new, db)
 
     except HTTPException:
         raise
@@ -571,7 +578,7 @@ async def telegram_oauth_callback(
             display_name=tg_display,
         )
 
-        return _make_token_response(user, is_new)
+        return _make_token_response(user, is_new, db)
 
     except HTTPException:
         raise

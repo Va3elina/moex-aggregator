@@ -293,6 +293,28 @@ async def register(
     )
 
 
+def persist_refresh_token(
+        db: Session,
+        user_id: int,
+        refresh_token: str,
+        request: Request | None = None,
+) -> None:
+    """Сохраняет hash refresh-токена при ВЫДАЧЕ (login/OAuth — как /refresh).
+
+    Без записи logout не может отозвать токен (отзыв идёт по строкам
+    RefreshToken), а сам токен можно реиграть все 7 дней жизни. После того как
+    все живые сессии пройдут ротацию (~7 дней с деплоя), /refresh должен начать
+    ТРЕБОВАТЬ наличие строки (unknown → 401) — см. TODO в refresh_tokens.
+    Вызывающий коммитит сам (login делает db.commit() ниже)."""
+    db.add(RefreshToken(
+        user_id=user_id,
+        token_hash=hashlib.sha256(refresh_token.encode()).hexdigest(),
+        expires_at=datetime.now(timezone.utc) + timedelta(days=7),
+        ip_address=get_client_ip(request) if request else None,
+        user_agent=(request.headers.get("user-agent", "")[:500] if request else ""),
+    ))
+
+
 @router.post(
     "/login",
     response_model=TokenResponse,
@@ -401,6 +423,8 @@ async def login(
 
     # Создаём токены
     tokens = create_token_pair(user.id, user.role)
+    persist_refresh_token(db, user.id, tokens.refresh_token, request)
+    db.commit()
 
     return TokenResponse(
         access_token=tokens.access_token,
@@ -432,6 +456,11 @@ async def refresh_tokens(
     # Проверяем, не отозван ли токен
     token_hash = hashlib.sha256(data.refresh_token.encode()).hexdigest()
     stored = db.query(RefreshToken).filter(RefreshToken.token_hash == token_hash).first()
+    # TODO(2026-06-18, шаг 3b плана FIX_PLAN_2026-06-11): после 7 дней с деплоя
+    # persist_refresh_token (login/OAuth теперь пишут строку при выдаче) —
+    # ТРЕБОВАТЬ stored is not None: `if stored is None or stored.is_revoked: 401`.
+    # Раньше нельзя: токены сессий, выданных до деплоя, не в БД — был бы
+    # массовый разлогин. Сейчас неизвестный токен проходит без проверки отзыва.
     if stored and stored.is_revoked:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

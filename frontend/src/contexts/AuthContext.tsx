@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
+import { apiFetch } from '../services/api';
 
 interface User {
   id: number;
@@ -29,53 +30,11 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-function isTokenExpiringSoon(token: string): boolean {
-  try {
-    const payload = JSON.parse(atob(token.split('.')[1]));
-    const exp = payload.exp * 1000; // ms
-    return exp - Date.now() < 60_000; // меньше 1 минуты до истечения
-  } catch {
-    return true;
-  }
-}
-
-async function tryRefreshToken(): Promise<string | null> {
-  const refreshToken = localStorage.getItem('refresh_token');
-  if (!refreshToken) return null;
-
-  try {
-    const resp = await fetch('/api/auth/refresh', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refresh_token: refreshToken }),
-    });
-    if (resp.ok) {
-      const tokens = await resp.json();
-      localStorage.setItem('access_token', tokens.access_token);
-      localStorage.setItem('refresh_token', tokens.refresh_token);
-      return tokens.access_token;
-    }
-  } catch { /* ignore */ }
-  return null;
-}
-
-async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
-  let token = localStorage.getItem('access_token');
-
-  // Проактивный refresh если токен скоро протухнет
-  if (token && isTokenExpiringSoon(token)) {
-    const newToken = await tryRefreshToken();
-    if (newToken) token = newToken;
-  }
-
-  return fetch(url, {
-    ...options,
-    headers: {
-      ...options.headers,
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-  });
-}
+// Auth-запросы идут через единый apiFetch (services/api.ts): там мьютекс
+// refresh'а (refreshPromise) и 401-retry. Прежняя локальная копия
+// tryRefreshToken/fetchWithAuth БЕЗ мьютекса давала гонку: параллельные
+// /refresh с одним refresh-токеном → первый ротацией отзывал токен, второй
+// получал 401 → ложный logout (аудит 10.06).
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -88,15 +47,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const loadUser = useCallback(async () => {
-    const token = localStorage.getItem('access_token');
-    if (!token) {
+    // Достаточно refresh-токена: apiFetch (ensureFreshToken) умеет получить
+    // свежий access по нему, даже если access уже удалён/протух.
+    if (!localStorage.getItem('access_token') && !localStorage.getItem('refresh_token')) {
       setUser(null);
       setLoading(false);
       return;
     }
 
     try {
-      const resp = await fetchWithAuth('/api/auth/me');
+      // apiFetch сам делает проактивный refresh (с мьютексом) и 401-retry.
+      const resp = await apiFetch('/api/auth/me');
 
       if (resp.ok) {
         const data = await resp.json();
@@ -105,32 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (resp.status === 401) {
-        // Try refresh
-        const refreshToken = localStorage.getItem('refresh_token');
-        if (!refreshToken) {
-          clearTokens();
-          return;
-        }
-
-        const refreshResp = await fetch('/api/auth/refresh', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ refresh_token: refreshToken }),
-        });
-
-        if (refreshResp.ok) {
-          const tokens = await refreshResp.json();
-          localStorage.setItem('access_token', tokens.access_token);
-          localStorage.setItem('refresh_token', tokens.refresh_token);
-
-          const retryResp = await fetchWithAuth('/api/auth/me');
-          if (retryResp.ok) {
-            const data = await retryResp.json();
-            setUser(data);
-            return;
-          }
-        }
-
+        // refresh внутри apiFetch уже не помог — сессия мертва.
         clearTokens();
       }
     } catch {
@@ -153,7 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     try {
-      await fetchWithAuth('/api/auth/logout', { method: 'POST' });
+      await apiFetch('/api/auth/logout', { method: 'POST' });
     } catch {
       // ignore
     }

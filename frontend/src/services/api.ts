@@ -29,8 +29,12 @@ let refreshPromise: Promise<string | null> | null = null;
 
 async function ensureFreshToken(): Promise<string | null> {
   const token = localStorage.getItem('access_token');
-  if (!token) return null;
-  if (!isTokenExpiringSoon(token)) return token;
+  // НЕ выходим при отсутствии access_token: 401-retry в apiFetch сначала
+  // удаляет протухший access и зовёт нас за новым — ранний return null делал
+  // retry мёртвым кодом (401 не восстанавливался). Если есть refresh_token —
+  // рефрешим по нему; access не нужен.
+  if (token && !isTokenExpiringSoon(token)) return token;
+  if (!token && !localStorage.getItem('refresh_token')) return null;
 
   // Если refresh уже идёт — ждём его
   if (refreshPromise) return refreshPromise;
