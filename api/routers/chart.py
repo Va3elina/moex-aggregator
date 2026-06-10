@@ -424,6 +424,11 @@ def get_chart_data(
     # ролловер-гэп ликвидного фьючерса не дают >2x за бар — сплит и
     # пере-спецификация дают. Идём с конца (свежие цены — якорь, не трогаем),
     # накапливаем множитель и применяем к более старым свечам.
+    # Детекция ТОЛЬКО внутри одного контракта (sec_id совпадает у соседних
+    # свечей): пере-спецификация при сплите меняет цену внутри контракта, а
+    # >2x скачок НА СТЫКЕ ролловера у неликвидных серий — это разница уровней
+    # контрактов, не сплит. Без этого ограничения одна ложная детекция на
+    # стыке домножала (×2+) всю старую историю графика.
     SPLIT_RATIO_THRESHOLD = 2.0
     n_c = len(sorted_candles)
     price_mult = [1.0] * n_c
@@ -431,7 +436,8 @@ def get_chart_data(
     for i in range(n_c - 1, 0, -1):
         prev_close = float(sorted_candles[i - 1][4] or 0)
         cur_close = float(sorted_candles[i][4] or 0)
-        if prev_close > 0 and cur_close > 0:
+        same_contract = sorted_candles[i - 1][6] == sorted_candles[i][6]
+        if same_contract and prev_close > 0 and cur_close > 0:
             ratio = cur_close / prev_close
             if ratio >= SPLIT_RATIO_THRESHOLD or ratio <= 1.0 / SPLIT_RATIO_THRESHOLD:
                 adj_factor *= ratio

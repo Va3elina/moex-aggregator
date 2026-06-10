@@ -504,7 +504,11 @@ async def update_indices(force: bool = False) -> Dict[str, int]:
     engine = get_engine()
     create_tables(engine)
     results = {}
-    today = date.today()
+    fetched_total = 0
+    # МСК, не UTC: контейнер живёт в UTC, с 00:00 до 03:00 МСК date.today()
+    # отставал на день → till не включал свежий торговый день (см. аналогичный
+    # фикс в OI/fetch_oi_daily_realtime.py).
+    today = get_moscow_time().date()
 
     log.info("=" * 60)
     log.info("📊 ЗАГРУЗКА ИНДЕКСОВ MOEX")
@@ -525,6 +529,7 @@ async def update_indices(force: bool = False) -> Dict[str, int]:
                 log.info(f"  Нет данных, загрузка с {start}")
 
             records = await fetch_index_full(session, secid, info, start, today)
+            fetched_total += len(records)
             log.info(f"  Получено: {len(records)} записей")
 
             saved = save_to_db(engine, secid, records)
@@ -545,6 +550,18 @@ async def update_indices(force: bool = False) -> Dict[str, int]:
     for secid, count in results.items():
         log.info(f"  {secid}: {count}")
     log.info("=" * 60)
+
+    # Guard видимости (как в Commodity): инкремент идёт с overlap last-3 дня,
+    # поэтому живой ISS возвращает >0 записей даже в выходной («0 новых
+    # сохранено» — норма, «0 ПОЛУЧЕНО по всем индексам» — источник недоступен).
+    # Раньше тотальный провал ISS завершался кодом 0 и оркестратор рапортовал
+    # «✓ Indices Daily» — IMOEX/USD/золото тихо устаревали. В daemon-режиме
+    # run_daemon ловит исключение и ретраит по расписанию.
+    if results and fetched_total == 0:
+        raise RuntimeError(
+            f"ISS вернул 0 записей по всем {len(results)} индексам — "
+            "источник недоступен (сеть/блокировка)."
+        )
 
     return results
 

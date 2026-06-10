@@ -390,7 +390,9 @@ async def get_funds_catalog():
             holdings_map[r[0]].append({"name": r[1], "weight": float(r[2])})
 
     def calc_return(last, prev):
-        if last and prev and float(prev) > 0:
+        # is not None, не truthiness: last == 0.0 — валидное значение,
+        # truthiness давал None вместо реальной доходности.
+        if last is not None and prev is not None and float(prev) > 0:
             return round((float(last) - float(prev)) / float(prev) * 100, 2)
         return None
 

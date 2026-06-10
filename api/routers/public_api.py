@@ -904,7 +904,9 @@ def public_fund_detail(
         raise HTTPException(status_code=404, detail=f"fund {ticker} not found")
 
     def calc_return(last, prev):
-        if last and prev and float(prev) > 0:
+        # is not None, не truthiness: last == 0.0 — валидное значение
+        # (паевая цена/выплата может быть нулевой), truthiness давал None.
+        if last is not None and prev is not None and float(prev) > 0:
             return round((float(last) - float(prev)) / float(prev) * 100, 2)
         return None
 

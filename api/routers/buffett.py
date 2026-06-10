@@ -81,6 +81,23 @@ def _ema(values: list[float], span: int) -> list[float]:
     return result
 
 
+def _ema_warmup_days(timeframe: str, span: int) -> int:
+    """Дней истории для прогрева EMA(span) ПЕРЕД запрошенным периодом.
+
+    _ema сидится первой точкой окна: без прогрева левый край сглаженной кривой —
+    артефакт холодного старта, и значение на одной и той же дате зависело от
+    выбранного периода (1y vs 3y давали разные числа). 3×span точек достаточно
+    (вес первой точки < 5%). timeframe определяет «дней на точку»."""
+    unit = {"1d": 1, "1w": 7}.get(timeframe, 30)
+    return span * unit * 3
+
+
+def _trim_to_period(data_points: list[dict], date_from_req) -> list[dict]:
+    """Обрезает warmup-буфер: наружу уходит только запрошенный период."""
+    cut = date_from_req.isoformat()
+    return [p for p in data_points if p["date"] >= cut]
+
+
 @router.get("/cap-gdp")
 async def get_buffett_cap_gdp(
     period: PeriodType = Query("3y", description="Период"),
@@ -99,7 +116,9 @@ async def get_buffett_cap_gdp(
     engine = get_engine()
 
     days = PERIODS.get(period)
-    date_from = date.today() - timedelta(days=days) if days else date(1997, 1, 1)
+    date_from_req = date.today() - timedelta(days=days) if days else date(1997, 1, 1)
+    date_from = (date_from_req - timedelta(days=_ema_warmup_days(timeframe, 12))
+                 if days else date_from_req)
 
     with engine.connect() as conn:
         # 1. Полная капитализация рынка РФ (млрд руб)
@@ -193,6 +212,9 @@ async def get_buffett_cap_gdp(
         for point in data_points:
             point["buffett"] = point["buffett_raw"]
 
+    if days:
+        data_points = _trim_to_period(data_points, date_from_req)
+
     duration = time.time() - start_time
     log.info(f"GET /buffett/cap-gdp period={period} smooth={smooth} -> {len(data_points)} points, {duration:.2f}s")
 
@@ -216,7 +238,10 @@ async def get_buffett_mcftr_m2(
     engine = get_engine()
 
     days = PERIODS.get(period)
-    date_from = date.today() - timedelta(days=days) if days else date(2000, 1, 1)
+    date_from_req = date.today() - timedelta(days=days) if days else date(2000, 1, 1)
+    # EMA(60) на дневных → прогрев 180 дней
+    date_from = (date_from_req - timedelta(days=_ema_warmup_days("1d", 60))
+                 if days else date_from_req)
 
     with engine.connect() as conn:
         # 1. MCFTR close
@@ -269,6 +294,9 @@ async def get_buffett_mcftr_m2(
             point["ratio_raw"] = point["ratio"]
             point["ratio"] = round(smoothed[i], 6)
 
+    if days:
+        data_points = _trim_to_period(data_points, date_from_req)
+
     duration = time.time() - start_time
     log.info(f"GET /buffett/mcftr-m2 period={period} smooth={smooth} -> {len(data_points)} points, {duration:.2f}s")
 
@@ -293,7 +321,9 @@ async def get_buffett_cap_m2(
     engine = get_engine()
 
     days = PERIODS.get(period)
-    date_from = date.today() - timedelta(days=days) if days else date(1997, 1, 1)
+    date_from_req = date.today() - timedelta(days=days) if days else date(1997, 1, 1)
+    date_from = (date_from_req - timedelta(days=_ema_warmup_days(timeframe, 12))
+                 if days else date_from_req)
 
     with engine.connect() as conn:
         cap_rows = conn.execute(text("""
@@ -371,6 +401,9 @@ async def get_buffett_cap_m2(
         for i, point in enumerate(data_points):
             point["ratio_raw"] = point["ratio"]
             point["ratio"] = round(smoothed[i], 4)
+
+    if days:
+        data_points = _trim_to_period(data_points, date_from_req)
 
     duration = time.time() - start_time
     log.info(f"GET /buffett/cap-m2 period={period} smooth={smooth} tf={timeframe} -> {len(data_points)} points, {duration:.2f}s")

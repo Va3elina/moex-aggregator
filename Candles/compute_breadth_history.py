@@ -57,6 +57,7 @@ EXCLUDED = {
 # api/routers/breadth.py — там же актуальный список тикеров.
 KNOWN_SPLITS: dict[str, tuple[date, float]] = {
     'BELU': (date(2024, 8, 22), 8.0),  # НоваБев Групп — split 1:8 (ISS не adjusts)
+    'SFIN': (date(2025, 12, 25), 1.93),  # ЭсЭфАй — ISS не adjusts (пров. 10.06.2026)
 }
 
 IMOEX_ISS_URL = "https://iss.moex.com/iss/statistics/engines/stock/markets/index/analytics/IMOEX.json?limit=100"

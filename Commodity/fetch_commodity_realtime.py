@@ -27,7 +27,15 @@ import argparse
 import logging
 import sys
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
+
+# Контейнер живёт в UTC: с 00:00 до 03:00 МСК date.today() (UTC) отстаёт на
+# день. Для границ загрузки используем московскую дату.
+_MSK = timezone(timedelta(hours=3))
+
+
+def _msk_today() -> date:
+    return datetime.now(_MSK).date()
 from pathlib import Path
 
 import pandas as pd
@@ -287,7 +295,7 @@ def fetch_yahoo(ticker: str, start: date, end: date | None = None) -> pd.DataFra
     Возвращает DataFrame с columns: Date, Open, High, Low, Close, Volume
     (приведено к плоскому виду — yfinance иногда даёт MultiIndex columns).
     """
-    end = end or (date.today() + timedelta(days=1))  # +1 чтобы включить today
+    end = end or (_msk_today() + timedelta(days=1))  # +1 чтобы включить today
     log.info(f"  Yahoo fetch {ticker} [{start} → {end}]...")
 
     try:
