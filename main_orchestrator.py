@@ -421,6 +421,7 @@ class MainOrchestrator:
         self.last_commodity_update = None    # commodity daily — 08:00 МСК после US close
         self.last_weekend_catchup = None
         self.last_billing_hourly = None      # billing renewal + expire — раз в час
+        self.last_expire_quarter = None      # лёгкий expire-only — каждые 15 мин
 
         self.stats = {
             'start_time': datetime.now(),
@@ -555,6 +556,38 @@ class MainOrchestrator:
         log.info(f"  ⏱️ Цикл завершён за {total_duration:.1f}с")
 
         return results
+
+    async def run_expire_only(self) -> int:
+        """Лёгкий expire-only проход (каждые 15 мин, без T-Bank renewal).
+
+        Tier-gating читает users.role, которую sync_user_role обновляет, а
+        expire_overdue понижает у истёкших подписок. Раньше это шло только в
+        часовом billing-job → между истечением подписки и кроном юзер до часа
+        сохранял платную роль. expire_overdue — дешёвый UPDATE и ИДЕМПОТЕНТЕН,
+        гасит ТОЛЬКО реально истёкшие (expires_at < now) → безопасно гонять
+        чаще, окно устаревшей роли сжимается с ≤60 до ≤15 мин. Auto-renewal
+        (T-Bank HTTP) остаётся часовым — его учащать не нужно."""
+        try:
+            from api.database import SessionLocal
+            from api.billing.service import expire_overdue
+        except Exception as e:
+            log.error("expire-only: import failed: %s", e)
+            return 0
+
+        def _do():
+            db = SessionLocal()
+            try:
+                return expire_overdue(db)
+            finally:
+                db.close()
+        try:
+            n = await asyncio.to_thread(_do)
+            if n:
+                log.info("  💳 expire-only: погашено %d истёкших подписок", n)
+            return n
+        except Exception as e:
+            log.error("expire-only failed: %s", e, exc_info=True)
+            return 0
 
     async def run_billing_hourly(self) -> dict:
         """Billing hourly job: expire overdue + auto-renewal через T-Bank Charge.
@@ -1023,6 +1056,14 @@ class MainOrchestrator:
                 if slot_hour != self.last_billing_hourly and now.minute < 2:
                     await self.run_billing_hourly()
                     self.last_billing_hourly = slot_hour
+
+                # === Лёгкий expire-only каждые 15 мин (сжать окно tier-gating) ===
+                # На :00 покрывается часовым billing-job выше, поэтому здесь — на
+                # :15/:30/:45 (now.minute >= 2 отсекает повтор сразу после часового).
+                quarter_slot = (now.hour, now.minute // 15)
+                if quarter_slot != self.last_expire_quarter and now.minute >= 2:
+                    await self.run_expire_only()
+                    self.last_expire_quarter = quarter_slot
 
                 # === Выходной / праздник ===
                 if not is_trade_day:
