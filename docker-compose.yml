@@ -31,9 +31,12 @@ services:
   redis:
     image: redis:7-alpine
     restart: always
-    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    # requirepass: defense-in-depth — Redis не торчит наружу (только docker-сеть),
+    # но без пароля любой контейнер в сети имел бы полный доступ к кэшу/стейту.
+    # Пароль из .env (REDIS_PASSWORD), не хардкод. Healthcheck аутентифицируется.
+    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru", "--requirepass", "${REDIS_PASSWORD}"]
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "--no-auth-warning", "ping"]
       interval: 10s
       timeout: 3s
       retries: 3
@@ -118,7 +121,7 @@ services:
       # Без этих vars демон шлёт пустые креды → Cbonds «limited rights» → данные встают.
       - CBONDS_LOGIN=${CBONDS_LOGIN:-}
       - CBONDS_PASSWORD=${CBONDS_PASSWORD:-}
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379/0
       # Billing: T-Bank (единственный провайдер с 2026-05-13).
       # YooKassa удалена — см. .env.example для T-Bank credentials.
       - TBANK_TERMINAL_KEY=${TBANK_TERMINAL_KEY:-}
