@@ -272,47 +272,63 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         client_ip = self._get_client_ip(request)
         limit = self._get_limit_for_path(path)
 
-        async with self.lock:
-            now = time.time()
-            minute_ago = now - 60
+        # Счётчик в Redis (общий для всех gunicorn-воркеров): прежний in-memory
+        # defaultdict считал НА КАЖДЫЙ воркер отдельно → реальный лимит был ×3
+        # (workers=3). Fixed-window: ключ на минутный бакет, INCR + EXPIRE(60).
+        # fail-OPEN: если Redis недоступен — пропускаем (nginx limit_req на 80/443
+        # остаётся жёстким backstop'ом; класть сайт из-за моргнувшего Redis нельзя).
+        # auth-пути НАМЕРЕННО не fail-closed — иначе блинк Redis ронял бы все логины.
+        now = time.time()
+        over_limit = False
+        retry_after = 60
+        remaining = limit
+        try:
+            import redis as _redis_mod
+            from api.cache import _get_redis
+            r = _get_redis()
+            bucket = int(now // 60)
+            rkey = f"ratelimit:{client_ip}:{limit}:{bucket}"
+            count = r.incr(rkey)
+            if count == 1:
+                r.expire(rkey, 60)
+            if count > limit:
+                over_limit = True
+                ttl = r.ttl(rkey)
+                retry_after = ttl if isinstance(ttl, int) and ttl > 0 else 60
+            else:
+                remaining = max(0, limit - count)
+        except (_redis_mod.RedisError, ConnectionError, OSError) as e:
+            logger.warning(f"RateLimit: Redis недоступен, fail-open: {e}")
+            remaining = limit  # пропускаем запрос
 
-            key = f"{client_ip}:{limit}"
-            self.requests[key] = [t for t in self.requests[key] if t > minute_ago]
-
-            if len(self.requests[key]) >= limit:
-                retry_after = int(60 - (now - self.requests[key][0]))
-
-                logger.warning(
-                    f"Rate limit exceeded for {client_ip} on {path}",
-                    extra={
-                        "extra_data": {
-                            "type": "rate_limit",
-                            "client_ip": client_ip,
-                            "path": path,
-                            "limit": limit,
-                        }
+        if over_limit:
+            logger.warning(
+                f"Rate limit exceeded for {client_ip} on {path}",
+                extra={
+                    "extra_data": {
+                        "type": "rate_limit",
+                        "client_ip": client_ip,
+                        "path": path,
+                        "limit": limit,
                     }
-                )
-
-                return JSONResponse(
-                    status_code=429,
-                    content={
-                        "success": False,
-                        "error": {
-                            "code": 429,
-                            "message": "Слишком много запросов. Попробуйте позже.",
-                            "retry_after": retry_after
-                        }
-                    },
-                    headers={
-                        "Retry-After": str(retry_after),
-                        "X-RateLimit-Limit": str(limit),
-                        "X-RateLimit-Remaining": "0",
+                }
+            )
+            return JSONResponse(
+                status_code=429,
+                content={
+                    "success": False,
+                    "error": {
+                        "code": 429,
+                        "message": "Слишком много запросов. Попробуйте позже.",
+                        "retry_after": retry_after
                     }
-                )
-
-            self.requests[key].append(now)
-            remaining = limit - len(self.requests[key])
+                },
+                headers={
+                    "Retry-After": str(retry_after),
+                    "X-RateLimit-Limit": str(limit),
+                    "X-RateLimit-Remaining": "0",
+                }
+            )
 
         response = await call_next(request)
         # /api/v1/public/* устанавливает свои X-RateLimit-* headers через
