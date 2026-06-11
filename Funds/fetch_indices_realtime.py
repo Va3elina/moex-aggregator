@@ -124,6 +124,21 @@ INDICES = {
         "use_candles": True,
         "start_date": date(2013, 11, 18),
     },
+    # ── Отраслевые индексы МосБиржи (board SNDX) — секторные бенчмарки для
+    #    event-study (дивиденды, ЦБ-заседания, редомициляция): сравнение бумаги
+    #    с ЕЁ сектором, а не только с широким IMOEX. История с ~2008. MOEXTL
+    #    (телеком) НЕ добавлен — ISS его больше не отдаёт (сектор расформирован).
+    "MOEXOG":  {"name": "Сектор Нефть и газ",        "engine": "stock", "market": "index", "board": "SNDX", "start_date": date(2008, 1, 1)},
+    "MOEXFN":  {"name": "Сектор Финансы",            "engine": "stock", "market": "index", "board": "SNDX", "start_date": date(2008, 1, 1)},
+    "MOEXMM":  {"name": "Сектор Металлы и добыча",   "engine": "stock", "market": "index", "board": "SNDX", "start_date": date(2008, 1, 1)},
+    "MOEXCN":  {"name": "Сектор Потребительский",    "engine": "stock", "market": "index", "board": "SNDX", "start_date": date(2008, 1, 1)},
+    "MOEXEU":  {"name": "Сектор Электроэнергетика",  "engine": "stock", "market": "index", "board": "SNDX", "start_date": date(2008, 1, 1)},
+    "MOEXCH":  {"name": "Сектор Химия и нефтехимия", "engine": "stock", "market": "index", "board": "SNDX", "start_date": date(2008, 1, 1)},
+    "MOEXTN":  {"name": "Сектор Транспорт",          "engine": "stock", "market": "index", "board": "SNDX", "start_date": date(2008, 1, 1)},
+    "MOEXRE":  {"name": "Сектор Строители",          "engine": "stock", "market": "index", "board": "SNDX", "start_date": date(2008, 1, 1)},
+    "MOEXIT":  {"name": "Сектор IT",                 "engine": "stock", "market": "index", "board": "SNDX", "start_date": date(2020, 1, 1)},
+    "MOEXINN": {"name": "Индекс инноваций",          "engine": "stock", "market": "index", "board": "SNDX", "start_date": date(2018, 1, 1)},
+
     "USD000UTSTOM": {
         "name": "Доллар/Рубль (спот TOM)",
         "engine": "currency",
