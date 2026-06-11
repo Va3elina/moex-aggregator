@@ -2,10 +2,12 @@
 """
 Загрузка цен сырьевых товаров (commodity) для индикатора Сезонность.
 
-Источник:    Yahoo Finance через yfinance + curl_cffi (Chrome TLS impersonation).
-             Прямой yfinance с datacenter IP блокируется Yahoo (empty body /
-             YFTzMissingError). curl_cffi эмулирует TLS-handshake реального Chrome,
-             Yahoo это не отличает от обычного браузера и отдаёт CSV.
+Источник:    Yahoo Finance, публичный chart-API /v8/finance/chart/<ticker>
+             (голый GET, crumb/cookie не нужны). Из дата-центра в РФ прямой Yahoo
+             недоступен (IPv4 мёртв, РКН), поэтому ходим через релей Cloudflare
+             Worker — тот же паттерн, что для Telegram (signals/relay/cf-worker.js).
+             COMMODITY_API_ROOT=https://<worker>.workers.dev/<RELAY_SECRET>/yahoo
+             (дефолт — прямой Yahoo; локально/где доступен — работает без env).
 Назначение:  index_data таблица (тот же tabular layout что у IMOEX, GLDRUB_TOM)
 Тикеры:      внутренние secid'ы (BRENT, GOLD) маппятся на Yahoo (BZ=F, GC=F)
 
@@ -16,10 +18,7 @@
 - --backfill:                  fetch full history с COMMODITIES[*].start_date
 - --secid TICKER:              только один тикер (для отладки)
 
-Зависимости (должны быть pip install'ом в контейнере):
-- yfinance >= 1.3.0
-- curl_cffi >= 0.7
-- pandas (уже в requirements.txt)
+Зависимости: только pandas + stdlib (urllib/json). yfinance/curl_cffi больше НЕ нужны.
 """
 from __future__ import annotations
 
@@ -43,13 +42,21 @@ from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
 import os
 
-# yfinance + curl_cffi — обязательны для прохождения через Yahoo блок datacenter IP.
-try:
-    import yfinance as yf
-    from curl_cffi import requests as cf_requests
-except ImportError as e:
-    print(f"FATAL: missing dependency ({e}). Run: pip install yfinance curl_cffi", file=sys.stderr)
-    sys.exit(1)
+import json
+import urllib.request
+import urllib.error
+
+# Yahoo тянем голым GET к публичному chart-API (crumb/cookie не нужны), поэтому
+# yfinance/curl_cffi БОЛЬШЕ НЕ НУЖНЫ. Из дата-центра в РФ прямой Yahoo недоступен
+# (IPv4 мёртв, РКН), поэтому ходим через релей Cloudflare Worker — тот же паттерн,
+# что для Telegram (signals/relay/cf-worker.js):
+#   COMMODITY_API_ROOT = https://<worker>.workers.dev/<RELAY_SECRET>/yahoo
+# Дефолт — прямой Yahoo (локально / где Yahoo доступен — работает без env).
+COMMODITY_API_ROOT = os.environ.get(
+    "COMMODITY_API_ROOT", "https://query1.finance.yahoo.com"
+).rstrip("/")
+_YAHOO_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+             "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 load_dotenv(Path(__file__).parent.parent / ".env")
@@ -275,54 +282,69 @@ def upsert_prices(engine, secid: str, df: pd.DataFrame) -> int:
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# YAHOO FETCH (через curl_cffi для bypass datacenter IP блока)
+# YAHOO FETCH (chart-API голым GET через релей COMMODITY_API_ROOT)
 # ════════════════════════════════════════════════════════════════════════════
 
-# Singleton session — переиспользуется между тикерами (cookies, TLS state).
-_session = None
-
-
-def get_session():
-    global _session
-    if _session is None:
-        _session = cf_requests.Session(impersonate="chrome")
-    return _session
-
-
 def fetch_yahoo(ticker: str, start: date, end: date | None = None) -> pd.DataFrame:
-    """Скачивает дневные OHLC через yfinance + curl_cffi Chrome impersonation.
+    """Дневные OHLC из Yahoo chart-API. Columns: Date, Open, High, Low, Close, Volume.
 
-    Возвращает DataFrame с columns: Date, Open, High, Low, Close, Volume
-    (приведено к плоскому виду — yfinance иногда даёт MultiIndex columns).
+    Публичный эндпоинт /v8/finance/chart/<ticker>?period1&period2&interval=1d —
+    crumb/cookie НЕ нужны. URL строится от COMMODITY_API_ROOT (на проде — релей CF,
+    локально — прямой Yahoo). UA выставляет релей-воркер; ставим и здесь на случай
+    прямого доступа (без UA Yahoo отдаёт 429).
     """
     end = end or (_msk_today() + timedelta(days=1))  # +1 чтобы включить today
+    p1 = int(datetime(start.year, start.month, start.day, tzinfo=timezone.utc).timestamp())
+    p2 = int(datetime(end.year, end.month, end.day, tzinfo=timezone.utc).timestamp())
+    url = (f"{COMMODITY_API_ROOT}/v8/finance/chart/{ticker}"
+           f"?period1={p1}&period2={p2}&interval=1d")
     log.info(f"  Yahoo fetch {ticker} [{start} → {end}]...")
 
     try:
-        t = yf.Ticker(ticker, session=get_session())
-        df = t.history(
-            start=start.isoformat(),
-            end=end.isoformat(),
-            auto_adjust=False,
-            actions=False,
-        )
+        req = urllib.request.Request(
+            url, headers={"User-Agent": _YAHOO_UA, "Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            payload = json.loads(r.read().decode("utf-8"))
     except Exception as e:
-        log.error(f"  {ticker}: yfinance error: {e}")
+        log.error(f"  {ticker}: chart-API error: {e}")
         return pd.DataFrame()
 
-    if df is None or df.empty:
+    chart = payload.get("chart") or {}
+    if chart.get("error"):
+        log.warning(f"  {ticker}: Yahoo error {chart['error']}")
+        return pd.DataFrame()
+    results = chart.get("result") or []
+    if not results:
         log.warning(f"  {ticker}: пустой ответ от Yahoo")
         return pd.DataFrame()
 
-    # yfinance иногда возвращает MultiIndex columns ([(Open, ticker), ...]).
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
+    res = results[0]
+    ts = res.get("timestamp") or []
+    gmtoffset = int((res.get("meta") or {}).get("gmtoffset") or 0)  # сек, биржевой tz
+    quote = ((res.get("indicators") or {}).get("quote") or [{}])[0]
+    opens = quote.get("open") or []
+    highs = quote.get("high") or []
+    lows = quote.get("low") or []
+    closes = quote.get("close") or []
+    vols = quote.get("volume") or []
 
-    # df.index = DatetimeIndex (с tz). Преобразуем в плоский 'Date' column.
-    df = df.reset_index()
-    if "Date" not in df.columns and "Datetime" in df.columns:
-        df = df.rename(columns={"Datetime": "Date"})
-    return df
+    rows = []
+    for i, t in enumerate(ts):
+        c = closes[i] if i < len(closes) else None
+        if c is None:
+            continue  # день без закрытия (праздник/halt) — пропускаем
+        # Дата бара в биржевом tz (gmtoffset), не UTC — иначе US-сессия у границы
+        # суток съезжала бы на день.
+        bar_date = datetime.fromtimestamp(t + gmtoffset, tz=timezone.utc).date()
+        rows.append({
+            "Date": bar_date.isoformat(),
+            "Open": opens[i] if i < len(opens) else None,
+            "High": highs[i] if i < len(highs) else None,
+            "Low": lows[i] if i < len(lows) else None,
+            "Close": c,
+            "Volume": vols[i] if i < len(vols) else 0,
+        })
+    return pd.DataFrame(rows)
 
 
 # ════════════════════════════════════════════════════════════════════════════

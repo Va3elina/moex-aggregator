@@ -1,41 +1,51 @@
-# Telegram-релей через Cloudflare Worker
+# Релей через Cloudflare Worker (Telegram + Yahoo)
 
-Обход блокировки Telegram РКН **без VPN и без зависимости от IPv6 хоста**.
-Хост Фрейма ходит в Worker по обычному HTTPS (не заблокирован), Worker форвардит в Telegram.
+Обход блокировки РКН **без VPN и без зависимости от IPv6 хоста**.
+Хост/контейнер Фрейма ходит в Worker по обычному HTTPS (не заблокирован), Worker
+форвардит в апстрим. Один воркер обслуживает ДВА сервиса, маршрут по пути:
 
 ```
-[хост Фрейма, РФ] --HTTPS--> [Cloudflare Worker, вне РФ] --HTTPS--> [api.telegram.org]
-   (alert_bot, eval-loop пуши, канал signal-engine)
+[Фрейм, РФ] --HTTPS--> [Cloudflare Worker, вне РФ] --+--> api.telegram.org         (бот/каналы/пуши)
+                                                     +--> query1.finance.yahoo.com (сырьё/сезонность)
 ```
 
-## Деплой Worker (делает Вадим под своим Cloudflare-аккаунтом)
+- `/<secret>/bot<TOKEN>/<method>` → Telegram (как раньше).
+- `/<secret>/yahoo/<path>`        → Yahoo chart-API (воркер сам ставит браузерный UA).
 
-1. **Cloudflare** → бесплатный аккаунт, если нет: <https://dash.cloudflare.com>.
-2. **Workers & Pages → Create → Create Worker** → имя `frame-tg-relay` → **Deploy** (создастся hello-world).
-3. **Edit code** → удали шаблон, вставь содержимое `cf-worker.js` (рядом) → **Deploy**.
-4. **Settings → Variables and Secrets → Add** →
-   - Name: `RELAY_SECRET`
-   - Type: **Secret** (encrypted)
-   - Value: случайная строка. Можно эту: `2daa4ac1f624c27d63ee265bde547bad`
-     (или свою: `openssl rand -hex 16`)
-   → **Deploy**.
-5. Скопируй URL воркера: `https://frame-tg-relay.<твой-сабдомен>.workers.dev`.
-6. **Пришли мне:** URL воркера + значение `RELAY_SECRET`.
+> Yahoo из дата-центра в РФ недоступен по IPv4 вообще (не только Telegram-блок) —
+> поэтому commodity-фетчер тоже идёт через релей.
+
+## Деплой / ОБНОВЛЕНИЕ Worker (делает Вадим под своим Cloudflare-аккаунтом)
+
+Воркер `frame-tg-relay` уже задеплоен (для Telegram). Чтобы добавить Yahoo —
+**просто обнови его код**:
+
+1. **Cloudflare** → <https://dash.cloudflare.com> → **Workers & Pages** → `frame-tg-relay`.
+   *(Если воркера ещё нет: Create → Create Worker → имя `frame-tg-relay` → Deploy.)*
+2. **Edit code** → выдели всё, удали, вставь актуальное содержимое `cf-worker.js`
+   (рядом) → **Deploy**. Telegram-путь не меняется — обратная совместимость.
+3. `RELAY_SECRET` (Settings → Variables and Secrets) — **уже есть**, ничего не трогай.
+   *(Если ставишь с нуля: Add → Name `RELAY_SECRET`, Type Secret, Value
+   `2daa4ac1f624c27d63ee265bde547bad` или `openssl rand -hex 16` → Deploy.)*
+4. **Скажи мне: «воркер обновлён»** — URL и секрет я уже знаю из `TELEGRAM_API_ROOT`.
 
 ## Что делаю я после этого
 
-В `/opt/frame/.env` на проде добавлю:
+В `/opt/frame/.env` на проде добавлю (URL/секрет = как у TELEGRAM_API_ROOT + `/yahoo`):
 ```
-TELEGRAM_API_ROOT=https://frame-tg-relay.<сабдомен>.workers.dev/<RELAY_SECRET>
+COMMODITY_API_ROOT=https://frame-tg-relay.<сабдомен>.workers.dev/<RELAY_SECRET>/yahoo
 ```
-→ перезапущу `frame-alert-bot`, eval-loop и канал подхватят на следующем запуске.
-Весь Telegram-трафик пойдёт через релей. От IPv6 хоста больше не зависим.
+→ пересоберу `frame-orchestrator` (фетчер в его образе), прогоню backfill сырья,
+проверю что все 10 тикеров (Brent/Gold/Silver/… ) снова обновляются глобальными
+данными Yahoo. От IPv6 не зависим.
 
 ## Проверка (после настройки)
 
 ```bash
-# с хоста — должен вернуть {"ok":true,...}, НЕ форсируя IPv6:
+# Telegram (как было) — {"ok":true,...}:
 curl -s "https://frame-tg-relay.<сабдомен>.workers.dev/<RELAY_SECRET>/bot<TOKEN>/getMe"
+# Yahoo через релей — JSON с {"chart":{"result":[...]}}:
+curl -s "https://frame-tg-relay.<сабдомен>.workers.dev/<RELAY_SECRET>/yahoo/v8/finance/chart/GC=F?range=5d&interval=1d" | head -c 120
 ```
 
 ## Если `workers.dev` начнёт тормозить (РКН иногда придушивает)

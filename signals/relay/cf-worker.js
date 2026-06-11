@@ -1,27 +1,34 @@
 /**
- * Cloudflare Worker — прозрачный релей к api.telegram.org.
+ * Cloudflare Worker — прозрачный релей для обхода РКН (без VPN, без IPv6 хоста).
  *
- * Зачем: хост Фрейма в РФ (Timeweb), РКН блокирует IPv4 Telegram. Вместо того чтобы
- * зависеть от хрупкого IPv6 хоста, хост ходит СЮДА по обычному незаблокированному HTTPS,
- * а Worker (на сети Cloudflare, вне РФ) форвардит запрос в Telegram. Обход без VPN:
- * хост вообще не коннектится к Telegram напрямую — только к релею (паттерн «как почта»,
- * store-and-forward через посредника). Работает и для бота (getUpdates long-poll),
- * и для пушей (sendMessage), и для канала signal-engine (sendPhoto).
+ * Обслуживает ДВА апстрима, маршрут по первому сегменту пути после секрета:
+ *   /<secret>/bot<TOKEN>/<method>  → api.telegram.org   (Telegram-бот/каналы/пуши)
+ *   /<secret>/yahoo/<path>         → query1.finance.yahoo.com (сырьё для сезонности)
+ *
+ * Зачем: хост/контейнер Фрейма в РФ (Timeweb). РКН блокирует IPv4 Telegram, а Yahoo
+ * Finance недоступен из дата-центра вообще (IPv4 мёртв). Вместо хрупкого IPv6 — ходим
+ * СЮДА по обычному незаблокированному HTTPS, Worker (сеть Cloudflare, вне РФ) форвардит
+ * в апстрим. Store-and-forward через посредника, как почта.
  *
  * Защита от открытого релея: первый сегмент пути = секрет (env RELAY_SECRET).
- *   URL:    https://<worker>.workers.dev/<RELAY_SECRET>/bot<TOKEN>/<method>?<query>
- *   на проде: TELEGRAM_API_ROOT = https://<worker>.workers.dev/<RELAY_SECRET>
- *   (код Фрейма строит f"{TELEGRAM_API_ROOT}/bot{TOKEN}/<method>")
+ *   Telegram: TELEGRAM_API_ROOT  = https://<worker>.workers.dev/<RELAY_SECRET>
+ *   Yahoo:    COMMODITY_API_ROOT = https://<worker>.workers.dev/<RELAY_SECRET>/yahoo
  *
  * Деплой: см. README.md рядом.
  */
 
 const TELEGRAM = "https://api.telegram.org";
+const YAHOO = "https://query1.finance.yahoo.com";
+// Yahoo отдаёт 429 на запросы без браузерного User-Agent — выставляем его на стороне
+// воркера, чтобы апстрим видел «браузер», а не голый fetch.
+const YAHOO_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+  "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    // pathname = "/<secret>/bot<token>/<method>/..."
+    // pathname = "/<secret>/<upstream-or-bot...>/..."
     const parts = url.pathname.split("/");
     const secret = parts[1] || "";
 
@@ -30,13 +37,23 @@ export default {
       return new Response("forbidden", { status: 403 });
     }
 
-    // Остаток после секрета: /bot<token>/<method>
-    const rest = "/" + parts.slice(2).join("/");
-    const target = TELEGRAM + rest + url.search;
-
-    // Чистые заголовки: пробрасываем только content-type (для POST / sendPhoto);
-    // Host выставит сам fetch по target. CF-* и Host из входящего НЕ тащим.
     const headers = new Headers();
+    let target;
+
+    if (parts[2] === "yahoo") {
+      // /<secret>/yahoo/<path> → Yahoo. Остаток после "yahoo".
+      const rest = "/" + parts.slice(3).join("/");
+      target = YAHOO + rest + url.search;
+      headers.set("user-agent", YAHOO_UA);
+      headers.set("accept", "application/json");
+    } else {
+      // /<secret>/bot<token>/<method> → Telegram (как было; обратная совместимость).
+      const rest = "/" + parts.slice(2).join("/");
+      target = TELEGRAM + rest + url.search;
+    }
+
+    // Чистые заголовки: для POST/sendPhoto пробрасываем content-type; Host выставит
+    // сам fetch по target. CF-* и Host из входящего НЕ тащим.
     const ct = request.headers.get("content-type");
     if (ct) headers.set("content-type", ct);
 
@@ -49,7 +66,7 @@ export default {
     };
 
     const resp = await fetch(target, init);
-    // Возвращаем ответ Telegram как есть (статус + тело).
+    // Возвращаем ответ апстрима как есть (статус + тело).
     return new Response(resp.body, {
       status: resp.status,
       statusText: resp.statusText,
