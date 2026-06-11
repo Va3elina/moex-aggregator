@@ -98,9 +98,14 @@ def redeem_invite(db: Session, user: User, token: str) -> Subscription:
     Raises RedeemError с понятным сообщением если токен невалидный / истёк /
     исчерпан / отозван.
     """
+    # with_for_update: блокируем строку инвайта на время транзакции, чтобы
+    # параллельные redeem'ы одного multi-use токена сериализовались. Без этого
+    # два одновременных запроса оба проходили проверку uses_count < max_uses и
+    # оба инкрементили → лимит можно было превысить. Идемпотентность (один юзер
+    # повторно) защищена отдельно ниже, тут — про РАЗНЫХ юзеров в гонке.
     invite = db.query(SubscriptionInvite).filter(
         SubscriptionInvite.token == token
-    ).first()
+    ).with_for_update().first()
 
     if not invite:
         raise RedeemError("Ссылка недействительна")
