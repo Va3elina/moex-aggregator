@@ -176,6 +176,9 @@ services:
       # Cbonds — оркестратор запускает fetch_funds_realtime.py --once дважды в день.
       - CBONDS_LOGIN=${CBONDS_LOGIN:-}
       - CBONDS_PASSWORD=${CBONDS_PASSWORD:-}
+      # Yahoo через Cloudflare Worker-релей (РКН блокирует прямой Yahoo). Пусто =
+      # прямой Yahoo (дефолт в fetch_commodity_realtime.py). См. signals/relay/.
+      - COMMODITY_API_ROOT=${COMMODITY_API_ROOT:-}
     command: ["python", "main_orchestrator.py"]
     healthcheck:
       test: ["CMD-SHELL", "test -f /proc/1/cmdline"]
