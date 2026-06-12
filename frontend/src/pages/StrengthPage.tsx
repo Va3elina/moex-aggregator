@@ -20,6 +20,7 @@ import BreadthChart from '../components/strength/BreadthChart';
 import ChartLegend from '../components/chart/ChartLegend';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import CsvExportButton from '../components/export/CsvExportButton';
+import LayersButton from '../components/LayersButton';
 import { periodToQuery } from '../utils/csvPeriod';
 import SectorDetail from '../components/strength/SectorDetail';
 import StrengthControls from '../components/strength/StrengthControls';
@@ -346,14 +347,18 @@ export default function StrengthPage() {
                 onCurrencyChange={setCurrency}
                 emaPeriod={emaPeriod}
                 onEmaPeriodChange={setEmaPeriod}
-                showPrice={showPrice}
-                onShowPriceChange={setShowPrice}
                 stocksAbove={stocksAbove}
                 stocksTotal={stocksTotal}
                 classInfo={classInfo}
                 hasCurrent={!!current}
                 trailingSlot={
                     <div className="flex items-center" style={{ gap: 'var(--sp-2)' }}>
+                    <LayersButton
+                        tourId="strength-layers"
+                        layers={[
+                            { key: 'price', label: 'Индекс', hint: priceChartLabel, checked: showPrice, onChange: setShowPrice },
+                        ]}
+                    />
                     <CsvExportButton
                         indicator="strength"
                         config={() => ({

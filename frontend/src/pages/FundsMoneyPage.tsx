@@ -3,6 +3,8 @@ import { TrendingUp, DollarSign, Banknote, Gem, Wallet, JapaneseYen } from 'luci
 import { useNavigate } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import Dropdown, { type DropdownOption } from '../components/Dropdown';
+import SegmentedControl from '../components/SegmentedControl';
+import LayersButton from '../components/LayersButton';
 import { METHODOLOGY } from '../data/methodology';
 import {
     getFundsChartData,
@@ -577,10 +579,10 @@ export default function FundsMoneyPage() {
                 />
                 </div>
 
-                {/* Таймфрейм для flows */}
+                {/* Таймфрейм для flows — плитки (как на OI) */}
                 {viewMode === 'flows' && (
                     <div data-tour="funds-flow-timeframe">
-                    <Dropdown<FlowTimeframe>
+                    <SegmentedControl<FlowTimeframe>
                         options={[
                             {
                                 key: '1d',
@@ -607,50 +609,16 @@ export default function FundsMoneyPage() {
                     </div>
                 )}
 
-                {/* Тоггл событий */}
-                {viewMode === 'flows' && (
-                    <button
-                        data-tour="funds-events"
-                        onClick={() => setShowEvents(!showEvents)}
-                        className="editorial-press font-semibold rounded-full"
-                        style={{
-                            backgroundColor: showEvents ? 'var(--accent)' : 'var(--bg-secondary)',
-                            color: showEvents ? 'var(--text-inverse)' : 'var(--text-primary)',
-                            border: '2px solid var(--text-primary)',
-                            boxShadow: showEvents ? 'var(--shadow-hard-chip)' : undefined,
-                            fontSize: 'var(--fs-sm)',
-                            padding: 'var(--sp-2) var(--sp-4)',
-                        }}
-                    >
-                        События
-                    </button>
-                )}
-
-                {/* Индекс — toggle для скрытия secondary линии с IMOEX/RTSI/MCFTR.
-                    Доступен только в AUM режиме (в flows нет index overlay).
-                    Активный (orange) = показан, inactive = скрыт — зеркальный
-                    паттерн с "Капитализация" в Buffett. */}
-                {viewMode === 'aum' && (
-                    <button
-                        data-tour="funds-index-toggle"
-                        onClick={() => setShowIndex(!showIndex)}
-                        className="editorial-press font-semibold rounded-full"
-                        style={{
-                            backgroundColor: showIndex ? 'var(--accent)' : 'var(--bg-secondary)',
-                            color: showIndex ? 'var(--text-inverse)' : 'var(--text-primary)',
-                            border: '2px solid var(--text-primary)',
-                            boxShadow: showIndex ? 'var(--shadow-hard-chip)' : undefined,
-                            fontSize: 'var(--fs-sm)',
-                            padding: 'var(--sp-2) var(--sp-4)',
-                        }}
-                    >
-                        Индекс
-                    </button>
-                )}
-
-                {/* Camera + CSV buttons — на одном уровне с dropdowns/buttons,
-                    выровнены по правому краю через ml-auto. */}
+                {/* Слои + Camera + CSV — правый кластер через ml-auto. Тумблеры
+                    слоёв (События в flows, Индекс в aum) убраны из ряда в модалку
+                    «Слои», содержимое зависит от режима (паттерн OI). */}
                 <div data-tour="funds-export" className="ml-auto flex items-center" style={{ gap: 'var(--sp-2)' }}>
+                <LayersButton
+                    tourId="funds-layers"
+                    layers={viewMode === 'flows'
+                        ? [{ key: 'events', label: 'События', hint: 'Метки крупных событий фондов', checked: showEvents, onChange: setShowEvents }]
+                        : [{ key: 'index', label: 'Индекс', hint: `Линия ${currentCategory?.index ?? 'индекса'} на второй оси`, checked: showIndex, onChange: setShowIndex }]}
+                />
                 <CsvExportButton
                     indicator="funds_money"
                     config={() => {

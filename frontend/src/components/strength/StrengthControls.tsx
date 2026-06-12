@@ -30,8 +30,6 @@ interface StrengthControlsProps {
     onCurrencyChange: (currency: 'rub' | 'usd') => void;
     emaPeriod: EmaPeriod;
     onEmaPeriodChange: (ema: EmaPeriod) => void;
-    showPrice: boolean;
-    onShowPriceChange: (show: boolean) => void;
     stocksAbove: number;
     stocksTotal: number;
     classInfo: { label: string; color: string; bg: string };
@@ -52,8 +50,6 @@ export default function StrengthControls({
     onCurrencyChange,
     emaPeriod,
     onEmaPeriodChange,
-    showPrice,
-    onShowPriceChange,
     stocksAbove,
     stocksTotal,
     classInfo,
@@ -154,25 +150,8 @@ export default function StrengthControls({
                 onChange={(k) => onEmaPeriodChange(Number(k) as EmaPeriod)}
             />
 
-            {/* Тоггл показа верхнего графика — editorial-press chip.
-                Метка = индекс, который рисуется сверху (IMOEX в ₽ / RTS в $).
-                Верхний график — всегда индекс и НЕ зависит от вселенной
-                breadth-метрики (universeBase), поэтому метка считается только
-                по валюте. Не возвращать ветку на universeBase. */}
-            <button
-                onClick={() => onShowPriceChange(!showPrice)}
-                className="editorial-press font-semibold rounded-full"
-                style={{
-                    backgroundColor: showPrice ? 'var(--accent)' : 'var(--bg-secondary)',
-                    color: showPrice ? 'var(--text-inverse)' : 'var(--text-primary)',
-                    border: '2px solid var(--text-primary)',
-                    boxShadow: showPrice ? 'var(--shadow-hard-chip)' : undefined,
-                    fontSize: 'var(--fs-sm)',
-                    padding: 'var(--sp-2) var(--sp-4)',
-                }}
-            >
-                {currency === 'usd' ? 'RTS' : 'IMOEX'}
-            </button>
+            {/* Тумблер верхнего графика (индекса) переехал в модалку «Слои»
+                справа (LayersButton в trailingSlot на странице) — паттерн OI. */}
 
             {/* Status + counter.
                 visibility: hidden пока нет данных — чтобы место было зарезервировано

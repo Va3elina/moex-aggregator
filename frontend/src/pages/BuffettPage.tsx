@@ -15,6 +15,8 @@ import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import CsvExportButton from '../components/export/CsvExportButton';
 import { periodToQuery } from '../utils/csvPeriod';
 import Dropdown, { type DropdownOption } from '../components/Dropdown';
+import SegmentedControl from '../components/SegmentedControl';
+import LayersButton from '../components/LayersButton';
 import { useAuth } from '../contexts/AuthContext';
 import { isPeriodAllowed } from '../config/accessControl';
 import { useRealtimeData } from '../hooks/useRealtimeData';
@@ -234,10 +236,10 @@ export default function BuffettPage() {
                 />
                 </div>
 
-                {/* Таймфрейм — для cap-gdp и cap-m2 */}
+                {/* Таймфрейм — плитки (как на OI). cap-gdp и cap-m2 оба используют. */}
                 {(viewMode === 'cap-gdp' || viewMode === 'cap-m2') && (
                     <div data-tour="buffett-timeframe">
-                    <Dropdown<'1d' | '1w' | '1m'>
+                    <SegmentedControl<'1d' | '1w' | '1m'>
                         options={[
                             { key: '1d', label: '1Д' },
                             { key: '1w', label: '1Н' },
@@ -266,25 +268,15 @@ export default function BuffettPage() {
                     </div>
                 )}
 
-                {/* Toggle капитализации (secondary axis) — chip pattern из Strength */}
-                <button
-                    data-tour="buffett-cap-toggle"
-                    onClick={() => setShowCap(!showCap)}
-                    className="editorial-press font-semibold rounded-full"
-                    style={{
-                        backgroundColor: showCap ? 'var(--accent)' : 'var(--bg-secondary)',
-                        color: showCap ? 'var(--text-inverse)' : 'var(--text-primary)',
-                        border: '2px solid var(--text-primary)',
-                        boxShadow: showCap ? 'var(--shadow-hard-chip)' : undefined,
-                        fontSize: 'var(--fs-sm)',
-                        padding: 'var(--sp-2) var(--sp-3)',
-                    }}
-                >
-                    Капитализация
-                </button>
-
-                {/* Camera + CSV buttons inline, прижаты к правому краю */}
+                {/* Слои + Camera + CSV — правый кластер через ml-auto. Тумблер
+                    капитализации убран из ряда в модалку «Слои» (паттерн OI). */}
                 <div data-tour="buffett-export" className="ml-auto flex items-center" style={{ gap: 'var(--sp-2)' }}>
+                <LayersButton
+                    tourId="buffett-layers"
+                    layers={[
+                        { key: 'cap', label: 'Капитализация', hint: 'Линия капитализации на второй оси', checked: showCap, onChange: setShowCap },
+                    ]}
+                />
                 <CsvExportButton
                     indicator="buffett"
                     config={() => ({
