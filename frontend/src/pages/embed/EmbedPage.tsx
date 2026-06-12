@@ -14,7 +14,7 @@
  *
  * НЕ в навигации сайта. План: .claude/TERMINAL_EXTENSION_PLAN.md
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { useTheme, type ThemeId } from '../../contexts/ThemeContext';
 import { exchangeExtensionToken } from '../../services/api';
@@ -35,7 +35,16 @@ export default function EmbedPage() {
   const { indicator } = useParams<{ indicator: string }>();
   const [params] = useSearchParams();
   const theme = params.get('theme') || DEFAULT_THEME;
-  const token = params.get('token');
+  // Токен из fragment (#token=) — расширение шлёт его так, чтобы не светить
+  // в access-логах/Referer. Фолбэк на query (?token=) — обратная совместимость
+  // со старыми установленными версиями расширения и shareable-ссылками.
+  const token = useMemo(() => {
+    try {
+      const fromHash = new URLSearchParams(window.location.hash.replace(/^#/, '')).get('token');
+      if (fromHash) return fromHash;
+    } catch { /* ignore */ }
+    return params.get('token');
+  }, [params]);
   const { setTheme } = useTheme();
   const [auth, setAuth] = useState<AuthState>('loading');
 

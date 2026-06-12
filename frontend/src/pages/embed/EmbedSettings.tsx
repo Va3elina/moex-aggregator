@@ -29,6 +29,11 @@ export function useEmbedSettings() {
 
   useEffect(() => {
     function onMsg(e: MessageEvent) {
+      // Принимаем команду ТОЛЬКО от прямого родительского окна (хост-страница
+      // терминала, где живёт content-script расширения). e.source браузер
+      // проставляет сам — подделать нельзя. Origin не проверяем: расширение
+      // шлёт от имени терминала (tbank/tinkoff/yandex), origin варьируется.
+      if (e.source !== window.parent || e.source === window) return;
       const d = e.data;
       if (d && d.source === 'frame-ext' && d.type === 'toggle-settings') {
         setOpen((v) => !v);
