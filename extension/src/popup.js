@@ -45,5 +45,11 @@
   document.getElementById('clear').addEventListener('click', clear);
   input.addEventListener('keydown', function (e) { if (e.key === 'Enter') save(); });
 
+  // Версия — из manifest (единый источник правды, без рассинхрона в футере).
+  try {
+    var verEl = document.getElementById('ver');
+    if (verEl) verEl.textContent = 'v' + chrome.runtime.getManifest().version + ' ·';
+  } catch (e) { /* нет chrome API */ }
+
   load();
 })();

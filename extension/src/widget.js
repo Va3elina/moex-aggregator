@@ -142,7 +142,10 @@
 
     function persist() { lsSet(KEY_PANELS, panels.map(function (p) { return p.state; })); }
     function embedUrl(id, theme) {
-      return EMBED_BASE + '/embed/' + id + '?theme=' + theme + (extToken ? '&token=' + encodeURIComponent(extToken) : '');
+      // Токен — во fragment (#token=), НЕ в query: fragment не уходит на сервер
+      // (нет в access-логах таймфрейм.рф) и не попадает в Referer. embed читает
+      // его из location.hash (EmbedPage.tsx).
+      return EMBED_BASE + '/embed/' + id + '?theme=' + theme + (extToken ? '#token=' + encodeURIComponent(extToken) : '');
     }
     function clampPanel(st) {
       var vw = window.innerWidth, vh = window.innerHeight;
@@ -273,8 +276,8 @@
         var env = getSnapEnv(); // снимок виджетов/поля терминала на старте drag
         try { head.setPointerCapture(e.pointerId); } catch (er) {}
         function mv(ev) { st.x = ox + (ev.clientX - sx); st.y = oy + (ev.clientY - sy); clampPanel(st); snapMove(st, st, env); el.style.left = st.x + 'px'; el.style.top = st.y + 'px'; }
-        function up() { head.removeEventListener('pointermove', mv); head.removeEventListener('pointerup', up); persist(); }
-        head.addEventListener('pointermove', mv); head.addEventListener('pointerup', up);
+        function up() { head.removeEventListener('pointermove', mv); head.removeEventListener('pointerup', up); head.removeEventListener('pointercancel', up); persist(); }
+        head.addEventListener('pointermove', mv); head.addEventListener('pointerup', up); head.addEventListener('pointercancel', up);
       });
       resize.addEventListener('pointerdown', function (e) {
         e.preventDefault();
@@ -282,12 +285,12 @@
         var env = getSnapEnv(); // снимок виджетов/поля терминала на старте resize
         try { resize.setPointerCapture(e.pointerId); } catch (er) {}
         function mv(ev) { st.w = ow + (ev.clientX - sx); st.h = oh + (ev.clientY - sy); clampPanel(st); snapResize(st, env); el.style.width = st.w + 'px'; el.style.height = st.h + 'px'; }
-        function up() { resize.removeEventListener('pointermove', mv); resize.removeEventListener('pointerup', up); persist(); }
-        resize.addEventListener('pointermove', mv); resize.addEventListener('pointerup', up);
+        function up() { resize.removeEventListener('pointermove', mv); resize.removeEventListener('pointerup', up); resize.removeEventListener('pointercancel', up); persist(); }
+        resize.addEventListener('pointermove', mv); resize.addEventListener('pointerup', up); resize.addEventListener('pointercancel', up);
       });
 
       shadow.appendChild(el);
-      var panel = { id: id, el: el, state: st, reload: reload };
+      var panel = { id: id, el: el, state: st, reload: reload, applyLayout: applyLayout };
       panels.push(panel);
       return panel;
     }
@@ -324,6 +327,17 @@
     }, true);
 
     function reloadAll() { panels.forEach(function (p) { p.reload(); }); }
+
+    // Resize окна (свернул терминал / поворот) → вернуть уехавшие за вьюпорт
+    // панели обратно. Дебаунс, чтобы не дёргать на каждый промежуточный пиксель.
+    var resizeTimer = null;
+    window.addEventListener('resize', function () {
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(function () {
+        resizeTimer = null;
+        panels.forEach(function (p) { clampPanel(p.state); p.applyLayout(); });
+      }, 150);
+    });
 
     // Загрузка токена + восстановление панелей.
     Promise.all([getExtToken(), lsGet(KEY_PANELS)]).then(function (arr) {
