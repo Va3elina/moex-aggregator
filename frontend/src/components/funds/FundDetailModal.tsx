@@ -301,7 +301,8 @@ export default function FundDetailModal({
                             color: 'var(--text-secondary)',
                             cursor: 'pointer',
                             fontSize: 20,
-                            padding: 4,
+                            padding: 12,
+                            margin: -8,
                         }}
                     >
                         ✕

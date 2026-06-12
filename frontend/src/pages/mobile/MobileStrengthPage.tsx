@@ -376,7 +376,7 @@ export default function MobileStrengthPage() {
               }}
             >
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-                <span style={{ fontSize: 26, fontWeight: 800, color: 'var(--accent)', lineHeight: 1 }}>
+                <span style={{ fontSize: 'var(--fs-3xl)', fontWeight: 800, color: 'var(--accent)', lineHeight: 1 }}>
                   {current.percent_above.toFixed(0)}%
                 </span>
                 <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>
@@ -407,7 +407,7 @@ export default function MobileStrengthPage() {
           <div>
             <div
               style={{
-                fontSize: 11,
+                fontSize: 'var(--fs-xs)',
                 fontWeight: 800,
                 color: 'var(--text-secondary)',
                 letterSpacing: '0.06em',
@@ -435,7 +435,7 @@ export default function MobileStrengthPage() {
           <div>
             <div
               style={{
-                fontSize: 11,
+                fontSize: 'var(--fs-xs)',
                 fontWeight: 800,
                 color: 'var(--text-secondary)',
                 letterSpacing: '0.06em',
@@ -492,7 +492,7 @@ export default function MobileStrengthPage() {
           <div>
             <div
               style={{
-                fontSize: 11,
+                fontSize: 'var(--fs-xs)',
                 fontWeight: 800,
                 color: 'var(--text-secondary)',
                 letterSpacing: '0.06em',
@@ -573,8 +573,8 @@ export default function MobileStrengthPage() {
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <LayoutGrid size={16} color="var(--accent)" strokeWidth={2.5} />
-                <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: '0.02em' }}>
+                <LayoutGrid size={18} color="var(--accent)" strokeWidth={2.5} />
+                <span style={{ fontSize: 'var(--fs-base)', fontWeight: 800, letterSpacing: '0.02em' }}>
                   Сектора
                 </span>
                 <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>
@@ -643,7 +643,7 @@ export default function MobileStrengthPage() {
                     <span
                       style={{
                         fontWeight: 700,
-                        fontSize: 13,
+                        fontSize: 'var(--fs-base)',
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap',
@@ -683,7 +683,7 @@ export default function MobileStrengthPage() {
                     <span
                       className="mono"
                       style={{
-                        fontSize: 12,
+                        fontSize: 'var(--fs-sm)',
                         fontWeight: 700,
                         minWidth: 32,
                         textAlign: 'right',
@@ -742,7 +742,7 @@ export default function MobileStrengthPage() {
                           >
                             <span
                               className="mono"
-                              style={{ fontWeight: 700, fontSize: 12 }}
+                              style={{ fontWeight: 700, fontSize: 'var(--fs-sm)' }}
                             >
                               {stock.ticker}
                             </span>
@@ -765,7 +765,7 @@ export default function MobileStrengthPage() {
                           >
                             <span
                               style={{
-                                fontSize: 10,
+                                fontSize: 'var(--fs-xs)',
                                 fontWeight: 800,
                                 padding: '2px 6px',
                                 borderRadius: 4,
@@ -785,7 +785,7 @@ export default function MobileStrengthPage() {
                             <span
                               className="mono"
                               style={{
-                                fontSize: 11,
+                                fontSize: 'var(--fs-xs)',
                                 fontWeight: 600,
                                 minWidth: 54,
                                 textAlign: 'right',
@@ -1147,7 +1147,7 @@ function StrengthDualChart({
               cy={yPrice(data[crosshair].price)}
               r={4}
               fill="var(--chart-line-1, #5DA3E9)"
-              stroke="var(--bg-secondary)"
+              stroke="var(--bg-primary)"
               strokeWidth={2}
               pointerEvents="none"
             />

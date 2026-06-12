@@ -470,7 +470,7 @@ export default function MobileOpenInterestPage() {
         title="Время"
       >
         <div style={{ padding: 16 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+          <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
             Интервал
           </div>
           <div style={{ display: 'flex', gap: 6, marginBottom: 16 }}>
@@ -507,13 +507,13 @@ export default function MobileOpenInterestPage() {
                   title={!allowed ? 'Доступно на повышенном тарифе' : undefined}
                 >
                   {INTERVAL_LABELS[int]}
-                  {!allowed && <Lock size={11} strokeWidth={2.2} />}
+                  {!allowed && <Lock size={12} strokeWidth={2.2} />}
                 </button>
               );
             })}
           </div>
 
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+          <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
             Период
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -570,7 +570,7 @@ export default function MobileOpenInterestPage() {
         title="Опции"
       >
         <div style={{ padding: 16 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+          <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
             Тип данных
           </div>
           <div style={{ display: 'flex', gap: 6, marginBottom: 20 }}>
@@ -589,7 +589,7 @@ export default function MobileOpenInterestPage() {
             ))}
           </div>
 
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+          <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
             Что показать на графике
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 20 }}>
@@ -617,7 +617,7 @@ export default function MobileOpenInterestPage() {
             ))}
           </div>
 
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+          <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
             Категория участников
           </div>
           <div style={{ display: 'flex', gap: 6 }}>

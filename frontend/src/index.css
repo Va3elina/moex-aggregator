@@ -129,6 +129,9 @@
   /* Funds flow colors — fallback для не-editorial тем (вернутся к ярким) */
   --funds-flow-positive: #2EE59D;
   --funds-flow-negative: #FF4D4D;
+  /* fund-trades buy/sell (mid-tone, работают в обеих editorial-темах) */
+  --mood-green: #4a9959;
+  --mood-red: #b85645;
   --bg-primary: #0B0D0F;
   --bg-secondary: #131518;
   --bg-tertiary: #1B1E21;
@@ -1509,6 +1512,7 @@ body {
 #root {
   background-color: var(--bg-primary);
   min-height: 100vh;
+  min-height: 100dvh;
 }
 
 /* SVG-текст (оси, метки) — моноширинные цифры для стабильной ширины лейблов

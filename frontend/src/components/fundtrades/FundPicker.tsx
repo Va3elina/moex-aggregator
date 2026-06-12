@@ -220,7 +220,7 @@ function FundPickerModal({
                             className="instrument-modal-close transition-colors"
                             style={isMobile ? {
                                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                                width: 34, height: 34, flexShrink: 0, borderRadius: 8,
+                                width: 44, height: 44, flexShrink: 0, borderRadius: 8,
                                 border: '1.5px solid var(--text-primary)',
                                 background: 'var(--bg-primary)', color: 'var(--text-primary)',
                             } : { color: 'var(--text-secondary)', padding: 8, borderRadius: 8 }}

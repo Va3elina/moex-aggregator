@@ -14,6 +14,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
+import { axisFontSize } from '../chart/chartTypography';
 
 /**
  * Одна точка серии. `gap: true` — заглушка в зоне без реальных данных
@@ -349,6 +350,7 @@ export default function MobileChart({
 
   const wrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(360);
+  const axisFs = axisFontSize(width);
   const [measuredHeight, setMeasuredHeight] = useState(260);
   // measured — стал ли известен реальный размер контейнера (первый колбэк
   // ResizeObserver). Line-drawing анимация не должна стартовать до этого:
@@ -800,7 +802,7 @@ export default function MobileChart({
               key={`yl-${i}`}
               x={PAD_X + 4}
               y={PAD_TOP + innerH * t + 3}
-              fontSize={9}
+              fontSize={axisFs}
               fontWeight={600}
               fill="color-mix(in srgb, var(--text-primary) 55%, transparent)"
               style={{ pointerEvents: 'none' }}
@@ -816,7 +818,7 @@ export default function MobileChart({
               key={`yr-${i}`}
               x={PAD_X + innerW - 4}
               y={PAD_TOP + innerH * t + 3}
-              fontSize={9}
+              fontSize={axisFs}
               fontWeight={600}
               fill="color-mix(in srgb, var(--text-primary) 55%, transparent)"
               textAnchor="end"
@@ -845,6 +847,7 @@ export default function MobileChart({
               text={text}
               color={leftSeries[0].color}
               anchor="start"
+              fontSize={axisFs}
             />
           );
         })()}
@@ -860,6 +863,7 @@ export default function MobileChart({
               text={text}
               color={rightSeries[0].color}
               anchor="end"
+              fontSize={axisFs}
             />
           );
         })()}
@@ -893,7 +897,7 @@ export default function MobileChart({
                   cy={y}
                   r={4}
                   fill={s.color}
-                  stroke="var(--bg-secondary)"
+                  stroke="var(--bg-primary)"
                   strokeWidth={2}
                 />
               );
@@ -920,7 +924,7 @@ export default function MobileChart({
                   key={`xl-${idx}`}
                   x={x}
                   y={height - 16}
-                  fontSize={10}
+                  fontSize={axisFs}
                   fontWeight={600}
                   fill="var(--text-secondary)"
                   textAnchor={anchor}
@@ -961,13 +965,14 @@ interface PillLabelProps {
   text: string;
   color: string;
   anchor?: 'start' | 'end';
+  fontSize?: number;
 }
 
-function PillLabel({ x, y, text, color, anchor = 'end' }: PillLabelProps) {
-  const charW = 5.5;
+function PillLabel({ x, y, text, color, anchor = 'end', fontSize = 10 }: PillLabelProps) {
+  const fontY = fontSize;
+  const charW = fontY * 0.55;
   const padX = 4;
   const padY = 2;
-  const fontY = 10;
   const w = text.length * charW + padX * 2;
   const h = fontY + padY * 2;
   const pillX = anchor === 'end' ? x - w - 2 : x + 2;
@@ -1032,14 +1037,14 @@ function TooltipCard({ x, chartW, series, idx }: TooltipCardProps) {
     border: '1.5px solid var(--text-primary)',
     borderRadius: 8,
     padding: '6px 9px',
-    fontSize: 11,
+    fontSize: 'var(--fs-xs)',
     boxShadow: '3px 3px 0 var(--text-primary)',
     pointerEvents: 'none',
   };
 
   return (
     <div style={style}>
-      <div style={{ color: 'var(--text-secondary)', fontSize: 9, marginBottom: 4, fontWeight: 600 }}>
+      <div style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-2xs)', marginBottom: 4, fontWeight: 600 }}>
         {date}
       </div>
       {series.map((s, i) => {

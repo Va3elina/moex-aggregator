@@ -237,21 +237,21 @@ export default function MobileFlowsHistogram({ flows }: MobileFlowsHistogramProp
             background: 'var(--bg-primary)',
             border: '1.5px solid var(--text-primary)',
             borderRadius: 8,
-            fontSize: 11,
+            fontSize: 'var(--fs-xs)',
             pointerEvents: 'none',
             display: 'flex',
             flexDirection: 'column',
             gap: 3,
           }}
         >
-          <div style={{ fontSize: 9.5, color: 'var(--text-secondary)', fontWeight: 600, letterSpacing: '0.02em' }}>
+          <div style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-secondary)', fontWeight: 600, letterSpacing: '0.02em' }}>
             {fmtDate(hovered.period_start)} — {fmtDate(hovered.period_end)}
           </div>
           {/* Минималистичный: только нетто и процент изменения СЧА */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
             <span
               className="mono"
-              style={{ color: hovered.flow >= 0 ? COLOR_IN : COLOR_OUT, fontWeight: 800, fontSize: 13 }}
+              style={{ color: hovered.flow >= 0 ? COLOR_IN : COLOR_OUT, fontWeight: 800, fontSize: 'var(--fs-base)' }}
             >
               {hovered.flow >= 0 ? '+' : ''}{fmtBillions(hovered.flow)} ₽
             </span>
@@ -260,7 +260,7 @@ export default function MobileFlowsHistogram({ flows }: MobileFlowsHistogramProp
               style={{
                 color: hovered.flow_pct >= 0 ? COLOR_IN : COLOR_OUT,
                 fontWeight: 700,
-                fontSize: 11,
+                fontSize: 'var(--fs-xs)',
               }}
             >
               {hovered.flow_pct >= 0 ? '+' : ''}{hovered.flow_pct.toFixed(2)}%

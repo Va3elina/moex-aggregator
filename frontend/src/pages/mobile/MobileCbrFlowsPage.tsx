@@ -321,7 +321,7 @@ export default function MobileCbrFlowsPage() {
         <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 18 }}>
           {/* Тип инструмента */}
           <div>
-            <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+            <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
               Тип инструмента
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -347,10 +347,10 @@ export default function MobileCbrFlowsPage() {
           {data && data.categories.length > 0 && (
             <div>
               <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
-                <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                   Категории
                 </div>
-                <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600 }}>
+                <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', fontWeight: 600 }}>
                   {visibleCategories.length}/{data.categories.length}
                 </div>
               </div>
@@ -427,11 +427,11 @@ function CategoryToggleRow({
             flexShrink: 0,
           }}
         />
-        <span style={{ fontSize: 12, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {label}
         </span>
       </div>
-      <span style={{ fontSize: 10, fontWeight: 700, color: visible ? 'var(--accent)' : 'var(--text-muted)' }}>
+      <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 700, color: visible ? 'var(--accent)' : 'var(--text-muted)' }}>
         {visible ? '●' : '○'}
       </span>
     </button>
@@ -706,7 +706,7 @@ function MobileCbrHistogram({
               background: 'var(--bg-primary)',
               border: '1.5px solid var(--text-primary)',
               borderRadius: 8,
-              fontSize: 11,
+              fontSize: 'var(--fs-xs)',
               pointerEvents: 'none',
               display: 'flex',
               flexDirection: 'column',
@@ -720,7 +720,7 @@ function MobileCbrHistogram({
                 ? `${p.label} ${p.year}`
                 : ed.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
               return (
-                <div style={{ fontSize: 10, color: 'var(--text-secondary)', fontWeight: 700, marginBottom: 2, textTransform: 'capitalize' }}>
+                <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)', fontWeight: 700, marginBottom: 2, textTransform: 'capitalize' }}>
                   {dateStr}
                 </div>
               );
@@ -729,7 +729,7 @@ function MobileCbrHistogram({
               <div key={cat} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, minWidth: 0, flex: 1 }}>
                   <span style={{ width: 7, height: 7, borderRadius: 99, background: getCategoryColor(cat, theme), flexShrink: 0 }} />
-                  <span style={{ fontSize: 10, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {cat}
                   </span>
                 </span>
@@ -738,7 +738,7 @@ function MobileCbrHistogram({
                   style={{
                     color: v >= 0 ? 'var(--funds-flow-positive, #5BD49C)' : 'var(--funds-flow-negative, #FF7A5C)',
                     fontWeight: 800,
-                    fontSize: 11,
+                    fontSize: 'var(--fs-xs)',
                     flexShrink: 0,
                   }}
                 >

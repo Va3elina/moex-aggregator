@@ -32,6 +32,7 @@ export default function CookieConsentBanner() {
         borderColor: 'var(--text-primary)',
         borderTopWidth: '1.5px',
         boxShadow: '0 -4px 16px rgba(0,0,0,0.12)',
+        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
       }}
     >
       <div className="max-w-7xl mx-auto px-4 md:px-6 py-3 md:py-4 flex flex-col md:flex-row items-start md:items-center" style={{ gap: 'var(--sp-3)' }}>

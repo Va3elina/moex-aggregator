@@ -136,7 +136,7 @@ function formatMonthYear(iso: string): string {
 
 // Заголовок секции опций (uppercase, muted).
 const SHEET_SECTION_LABEL = {
-  fontSize: 11,
+  fontSize: 'var(--fs-xs)',
   fontWeight: 800,
   color: 'var(--text-secondary)',
   textTransform: 'uppercase' as const,
@@ -1693,7 +1693,7 @@ function SnapshotBar({
 }) {
   const fmt = formatValue ?? ((v: number) => formatRubShort(v));
   const widthPct = maxAbs > 0 ? Math.max(2, (Math.abs(amount) / maxAbs) * 100) : 2;
-  const color = isPositive ? 'var(--mood-green, #4a9959)' : 'var(--mood-red, #b85645)';
+  const color = isPositive ? 'var(--mood-green)' : 'var(--mood-red)';
   return (
     <div
       onClick={onClick}

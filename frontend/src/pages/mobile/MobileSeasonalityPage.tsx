@@ -471,7 +471,7 @@ export default function MobileSeasonalityPage() {
           {/* Top-level toggle: Гистограмма (bars) vs Годовая (line chart).
               Это разные chart-типы — не объединяем в один список. */}
           <div>
-            <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+            <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
               Тип графика
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
@@ -519,7 +519,7 @@ export default function MobileSeasonalityPage() {
           {/* Группировка показывается только в гистограммном режиме */}
           {mode !== 'yearly' && (
             <div>
-              <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+              <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
                 Группировка
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -547,7 +547,7 @@ export default function MobileSeasonalityPage() {
             <>
               <div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                     Период с года
                   </div>
                   <div style={{ fontSize: 10, fontWeight: 600, color: limitReached ? 'var(--accent)' : 'var(--text-muted)' }}>
@@ -588,7 +588,7 @@ export default function MobileSeasonalityPage() {
               </div>
 
               <div>
-                <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
+                <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>
                   Конкретный год
                 </div>
                 <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 10 }}>
@@ -627,8 +627,12 @@ export default function MobileSeasonalityPage() {
                     onClick={() => { setCompareYears([]); setExactYears([]); }}
                     style={{
                       marginTop: 12,
-                      padding: '6px 12px',
-                      fontSize: 10,
+                      padding: '6px 16px',
+                      minHeight: 44,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: 'var(--fs-xs)',
                       fontWeight: 600,
                       background: 'transparent',
                       border: '1px solid color-mix(in srgb, var(--text-primary) 30%, transparent)',
@@ -713,7 +717,7 @@ function ToggleRow({
       }}
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: 1 }}>
-        <span style={{ fontWeight: 700, fontSize: 13 }}>{label}</span>
+        <span style={{ fontWeight: 700, fontSize: 'var(--fs-base)' }}>{label}</span>
         {hint && (
           <span style={{ fontSize: 10, color: 'var(--text-muted)', lineHeight: 1.3 }}>
             {hint}

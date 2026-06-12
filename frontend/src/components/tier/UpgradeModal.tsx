@@ -148,7 +148,7 @@ function UpgradeDialog({ tier, featureName, onClose }: UpgradePromptProps & { on
                         />
                     </div>
                     <h2 style={{
-                        fontSize: isMobile ? 18 : 22,
+                        fontSize: 'var(--fs-xl)',
                         fontWeight: 700, margin: 0,
                     }}>
                         Доступно на тарифе {label.ru}
@@ -159,7 +159,7 @@ function UpgradeDialog({ tier, featureName, onClose }: UpgradePromptProps & { on
                     <p style={{
                         color: 'var(--text-secondary, #666)',
                         marginBottom: 12,
-                        fontSize: isMobile ? 14 : 15,
+                        fontSize: 'var(--fs-base)',
                     }}>
                         Чтобы использовать «{featureName}», нужен тариф {label.ru} или выше.
                     </p>
@@ -177,14 +177,14 @@ function UpgradeDialog({ tier, featureName, onClose }: UpgradePromptProps & { on
                     }}
                 >
                     <div style={{
-                        fontWeight: 700, fontSize: 18,
+                        fontWeight: 700, fontSize: 'var(--fs-xl)',
                         color: 'var(--accent, #FF5C2B)', marginBottom: 4,
                     }}>
                         {label.price}
                     </div>
                     <div style={{
                         color: 'var(--text-secondary, #666)',
-                        fontSize: 14, lineHeight: 1.5,
+                        fontSize: 'var(--fs-base)', lineHeight: 1.5,
                     }}>
                         {label.desc}
                     </div>
@@ -198,6 +198,7 @@ function UpgradeDialog({ tier, featureName, onClose }: UpgradePromptProps & { on
                 }}>
                     <button
                         onClick={onClose}
+                        className="editorial-press"
                         style={{
                             padding: '12px 20px',
                             borderRadius: 8,
@@ -205,7 +206,7 @@ function UpgradeDialog({ tier, featureName, onClose }: UpgradePromptProps & { on
                             background: 'transparent',
                             color: 'var(--text-primary, #1a1a1a)',
                             cursor: 'pointer',
-                            fontSize: 14,
+                            fontSize: 'var(--fs-base)',
                             fontWeight: 600,
                             minHeight: 44,  // mobile touch target
                         }}
@@ -215,13 +216,14 @@ function UpgradeDialog({ tier, featureName, onClose }: UpgradePromptProps & { on
                     <Link
                         to="/pricing"
                         onClick={onClose}
+                        className="editorial-press"
                         style={{
                             padding: '12px 20px',
                             borderRadius: 8,
                             background: 'var(--accent, #FF5C2B)',
                             color: 'white',
                             textDecoration: 'none',
-                            fontSize: 14,
+                            fontSize: 'var(--fs-base)',
                             fontWeight: 600,
                             display: 'inline-flex',
                             alignItems: 'center',

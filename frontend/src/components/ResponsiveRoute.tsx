@@ -29,7 +29,7 @@ export default function ResponsiveRoute({
 
   if (isMobile) {
     return (
-      <Suspense fallback={fallback ?? <div style={{ minHeight: '100vh', background: 'var(--bg-primary)' }} />}>
+      <Suspense fallback={fallback ?? <div style={{ minHeight: '100dvh', background: 'var(--bg-primary)' }} />}>
         {mobile}
       </Suspense>
     );

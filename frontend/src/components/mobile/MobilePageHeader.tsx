@@ -47,7 +47,7 @@ export default function MobilePageHeader({
         </h1>
         {subtitle && <p className="fm-pageheader-subtitle">{subtitle}</p>}
         {sourceNote && (
-          <p style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-2xs)', marginTop: 2 }}>
+          <p style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-2xs)', marginTop: 'var(--sp-1)' }}>
             {sourceNote}
           </p>
         )}

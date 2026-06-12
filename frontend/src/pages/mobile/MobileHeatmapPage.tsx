@@ -525,10 +525,10 @@ export default function MobileHeatmapPage() {
         {selectedStock && (
           <div style={{ padding: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-              <span className="mono" style={{ fontSize: 13, color: 'var(--text-secondary)', letterSpacing: '0.04em', fontWeight: 600 }}>
+              <span className="mono" style={{ fontSize: 'var(--fs-base)', color: 'var(--text-secondary)', letterSpacing: '0.04em', fontWeight: 600 }}>
                 {selectedStock.secId} · {selectedStock.sector}
               </span>
-              <span style={{ fontSize: 18, fontWeight: 800 }}>
+              <span style={{ fontSize: 'var(--fs-xl)', fontWeight: 800 }}>
                 {formatNumber(selectedStock.price, 2)} ₽
               </span>
             </div>
@@ -546,10 +546,10 @@ export default function MobileHeatmapPage() {
                       borderRadius: 8,
                     }}
                   >
-                    <div style={{ fontSize: 10, color: 'var(--text-secondary)', fontWeight: 600, marginBottom: 2 }}>{label}</div>
+                    <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)', fontWeight: 600, marginBottom: 2 }}>{label}</div>
                     <div
                       style={{
-                        fontSize: 14,
+                        fontSize: 'var(--fs-base)',
                         fontWeight: 800,
                         color: v >= 0 ? 'var(--funds-flow-positive)' : 'var(--funds-flow-negative)',
                       }}
@@ -604,7 +604,7 @@ export default function MobileHeatmapPage() {
         <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 20 }}>
           {/* Universe: IMOEX vs все акции */}
           <div>
-            <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+            <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
               Что показать
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
@@ -645,11 +645,11 @@ export default function MobileHeatmapPage() {
                     }}
                     aria-disabled={!allowed}
                   >
-                    <div style={{ fontSize: 13, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    <div style={{ fontSize: 'var(--fs-base)', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                       {opt.label}
-                      {!allowed && <Lock size={11} strokeWidth={2.2} />}
+                      {!allowed && <Lock size={12} strokeWidth={2.2} />}
                     </div>
-                    <div style={{ fontSize: 10, opacity: 0.7, marginTop: 2 }}>{opt.hint}</div>
+                    <div style={{ fontSize: 'var(--fs-xs)', opacity: 0.7, marginTop: 2 }}>{opt.hint}</div>
                   </button>
                 );
               })}
@@ -658,7 +658,7 @@ export default function MobileHeatmapPage() {
 
           {/* SizeBy: market_cap / volume */}
           <div>
-            <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+            <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
               Размер плиток
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
@@ -681,8 +681,8 @@ export default function MobileHeatmapPage() {
                     textAlign: 'center',
                   }}
                 >
-                  <div style={{ fontSize: 12, fontWeight: 700 }}>{opt.label}</div>
-                  <div style={{ fontSize: 9, opacity: 0.7, marginTop: 2 }}>{opt.hint}</div>
+                  <div style={{ fontSize: 'var(--fs-base)', fontWeight: 700 }}>{opt.label}</div>
+                  <div style={{ fontSize: 'var(--fs-xs)', opacity: 0.7, marginTop: 2 }}>{opt.hint}</div>
                 </button>
               ))}
             </div>
@@ -690,7 +690,7 @@ export default function MobileHeatmapPage() {
 
           {/* GroupBy: sector / none */}
           <div>
-            <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+            <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
               Группировка
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
@@ -713,8 +713,8 @@ export default function MobileHeatmapPage() {
                     textAlign: 'center',
                   }}
                 >
-                  <div style={{ fontSize: 12, fontWeight: 700 }}>{opt.label}</div>
-                  <div style={{ fontSize: 9, opacity: 0.7, marginTop: 2 }}>{opt.hint}</div>
+                  <div style={{ fontSize: 'var(--fs-base)', fontWeight: 700 }}>{opt.label}</div>
+                  <div style={{ fontSize: 'var(--fs-xs)', opacity: 0.7, marginTop: 2 }}>{opt.hint}</div>
                 </button>
               ))}
             </div>

@@ -25,7 +25,7 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  font-size: 14px;
+  font-size: var(--fs-base);
   -webkit-font-smoothing: antialiased;
   letter-spacing: -0.01em;
   /* Safe-area под notch + home indicator */
@@ -104,7 +104,7 @@
   border-radius: 999px;
   color: var(--text-primary);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-weight: 700;
   letter-spacing: -0.01em;
   cursor: pointer;
@@ -131,6 +131,14 @@
   cursor: pointer;
   flex-shrink: 0;
   transition: opacity 150ms ease;
+  /* Tap-area 44px без изменения визуала (28 + 2×8) */
+  position: relative;
+}
+
+.fm-icon-btn::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
 }
 
 .fm-icon-btn:hover { opacity: 0.7; }
@@ -159,7 +167,7 @@
   background: var(--accent);
   color: var(--text-inverse);
   font-weight: 800;
-  font-size: 14px;
+  font-size: var(--fs-base);
   font-family: var(--font-body, 'Inter');
 }
 
@@ -214,11 +222,19 @@
   place-items: center;
   border: 1.5px solid var(--text-primary);
   border-radius: 999px;
-  font-size: 9px;
+  font-size: var(--fs-2xs);
   font-weight: 800;
   background: transparent;
   color: var(--text-primary);
   cursor: pointer;
+  /* Tap-area 44px (16 + 2×14) */
+  position: relative;
+}
+
+.fm-help::after {
+  content: '';
+  position: absolute;
+  inset: -14px;
 }
 
 /* ========== Editorial Frame ========== */
@@ -309,7 +325,7 @@
   border: 1.5px solid transparent;
   border-radius: 10px;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 700;
   letter-spacing: -0.01em;
   cursor: pointer;
@@ -377,6 +393,13 @@
   border-radius: 999px;
   color: var(--text-secondary);
   cursor: pointer;
+  /* Tap-area 44px (28 + 2×8) */
+}
+
+.fm-pwa-close::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
 }
 
 .fm-pwa-header {
@@ -399,7 +422,7 @@
 }
 
 .fm-pwa-title {
-  font-size: 15px;
+  font-size: var(--fs-lg);
   font-weight: 800;
   color: var(--text-primary);
   margin: 0 0 3px;
@@ -407,7 +430,7 @@
 }
 
 .fm-pwa-subtitle {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--text-secondary);
   margin: 0;
   line-height: 1.35;
@@ -429,7 +452,7 @@
   border: 1.5px solid var(--text-primary);
   border-radius: 10px;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-weight: 700;
   color: var(--text-primary);
   cursor: pointer;
@@ -464,7 +487,7 @@
   background: var(--bg-secondary);
   border: 1px solid color-mix(in srgb, var(--text-primary) 15%, transparent);
   border-radius: 8px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-weight: 600;
   color: var(--text-primary);
 }
@@ -478,7 +501,7 @@
   background: var(--text-primary);
   color: var(--bg-primary);
   border-radius: 999px;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 800;
 }
 
@@ -516,7 +539,7 @@
 /* ========== Pull-to-refresh indicator ========== */
 .fm-pull-indicator {
   position: fixed;
-  top: 8px;
+  top: calc(8px + env(safe-area-inset-top, 0px));
   left: 50%;
   z-index: 30;
   width: 40px;
@@ -556,8 +579,8 @@
   right: 14px;
   bottom: calc(14px + env(safe-area-inset-bottom, 0));
   z-index: 50;
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   display: grid;
   place-items: center;
   background: var(--bg-secondary);
@@ -786,6 +809,7 @@
   left: 0;
   right: 0;
   max-height: 90vh;
+  max-height: 90dvh;
   background: var(--bg-primary);
   border-top: 2px solid var(--text-primary);
   border-radius: 16px 16px 0 0;
@@ -871,11 +895,11 @@
     padding: 3px 10px;
   }
 
-  /* Action кнопки: компактные — 32px высоты, 9px шрифт. */
+  /* Action кнопки: компактные — 36px высоты, 9px шрифт. */
   .fm-page-action {
     gap: 1px;
     padding: 3px 5px;
-    min-height: 32px;
+    min-height: 36px;
     font-size: 9px;
   }
   .fm-page-action .fm-rail-ico {

@@ -223,7 +223,7 @@ export default function MobileAssetSearch({
         >
           <InstrumentIcon sectype={inst.sectype} size={36} />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, lineHeight: 1.15 }}>{inst.name}</div>
+            <div style={{ fontSize: 'var(--fs-base)', fontWeight: 700, lineHeight: 1.15 }}>{inst.name}</div>
             <div
               className="mono"
               style={{
@@ -248,19 +248,23 @@ export default function MobileAssetSearch({
           />
         )}
 
-        <span
-          role="button"
+        <button
+          type="button"
           onClick={(e) => toggleFavorite(inst.sectype, e)}
           style={{
-            padding: 8,
+            padding: 13,
+            margin: -5,
             color: isFav ? 'var(--accent)' : 'var(--text-muted)',
             display: 'inline-grid',
             placeItems: 'center',
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
           }}
           aria-label={isFav ? 'Убрать из избранных' : 'Добавить в избранные'}
         >
           <Star size={18} fill={isFav ? 'currentColor' : 'transparent'} strokeWidth={2} />
-        </span>
+        </button>
       </button>
     );
   };
@@ -299,9 +303,9 @@ export default function MobileAssetSearch({
               padding: '10px 12px 10px 38px',
               border: '1.5px solid var(--text-primary)',
               borderRadius: 10,
-              background: 'var(--bg-secondary)',
+              background: 'var(--bg-primary)',
               color: 'var(--text-primary)',
-              fontSize: 14,
+              fontSize: 'var(--fs-base)',
               fontWeight: 500,
               outline: 'none',
             }}
@@ -312,12 +316,13 @@ export default function MobileAssetSearch({
           onClick={onClose}
           style={{
             fontWeight: 700,
-            fontSize: 14,
+            fontSize: 'var(--fs-base)',
             background: 'none',
             border: 'none',
             color: 'var(--text-primary)',
             cursor: 'pointer',
-            padding: 4,
+            padding: '14px 10px',
+            margin: '-10px -6px',
           }}
         >
           Отмена

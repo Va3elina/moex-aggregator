@@ -447,7 +447,7 @@ export default function MobileFundsMoneyPage() {
         <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 20 }}>
           {/* Категория */}
           <div>
-            <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+            <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
               Категория
             </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -472,7 +472,7 @@ export default function MobileFundsMoneyPage() {
 
           {/* Режим */}
           <div>
-            <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+            <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
               Что показать
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
@@ -492,7 +492,7 @@ export default function MobileFundsMoneyPage() {
           {/* Таймфрейм для притоков */}
           {viewMode === 'flows' && (
             <div>
-              <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+              <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
                 Период притоков
               </div>
               <div style={{ display: 'flex', gap: 6 }}>
@@ -550,7 +550,7 @@ export default function MobileFundsMoneyPage() {
               style={{ justifyContent: 'space-between', padding: '14px 16px' }}
             >
               <span>Фонды</span>
-              <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>
+              <span style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-base)' }}>
                 {accessibleFunds.length - hiddenFunds.size}/{accessibleFunds.length}
               </span>
             </button>
@@ -630,7 +630,7 @@ export default function MobileFundsMoneyPage() {
                     style={{
                       width: 28, height: 28, flexShrink: 0, borderRadius: '50%', overflow: 'hidden',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontWeight: 900, fontSize: 12, lineHeight: 1,
+                      fontWeight: 900, fontSize: 'var(--fs-sm)', lineHeight: 1,
                       backgroundColor: logo ? (logo.img ? undefined : logo.bg) : 'var(--bg-secondary)',
                       color: logo ? logo.color : 'var(--text-secondary)',
                     }}
@@ -642,17 +642,17 @@ export default function MobileFundsMoneyPage() {
                       : (f.ticker.charAt(0) || '?')}
                   </span>
                   <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, minWidth: 0 }}>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 13 }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 'var(--fs-base)' }}>
                       {f.ticker}
                       {locked && <Lock size={11} strokeWidth={2.2} />}
                     </span>
-                    <span style={{ fontSize: 11, color: 'var(--text-muted)', textAlign: 'left', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 190 }}>
+                    <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', textAlign: 'left', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 190 }}>
                       {f.name}
                     </span>
                   </span>
                 </span>
                 <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-                  <span style={{ fontSize: 12, fontWeight: 600 }}>
+                  <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600 }}>
                     {locked
                       ? '—'
                       : lastNav ? (lastNav / 1e9).toFixed(1) + ' млрд' : '—'}

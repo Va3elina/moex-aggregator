@@ -231,7 +231,7 @@ export default function PricingPage() {
 
       {/* Баннер STUB-режима — показываем только если провайдер 'stub' */}
       {data.provider === 'stub' && (
-        <div className="mb-6 mx-auto max-w-3xl rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-300">
+        <div className="mb-6 mx-auto max-w-3xl rounded-xl border border-[color-mix(in_srgb,var(--warning)_40%,transparent)] bg-[color-mix(in_srgb,var(--warning)_10%,transparent)] px-4 py-3 text-sm text-[var(--warning)]">
           ⚙️ <strong>Тестовый режим:</strong> эквайринг ещё не подключён, платежи не спишутся.
         </div>
       )}
@@ -446,7 +446,7 @@ export default function PricingPage() {
 
       {/* Ошибка checkout */}
       {error && (
-        <div className="mt-6 mx-auto max-w-xl rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-300 text-center">
+        <div className="mt-6 mx-auto max-w-xl rounded-xl border border-[color-mix(in_srgb,var(--danger)_40%,transparent)] bg-[color-mix(in_srgb,var(--danger)_10%,transparent)] px-4 py-3 text-sm text-[var(--danger)] text-center">
           {error}
         </div>
       )}
@@ -530,7 +530,7 @@ function ConsentModal({
   return (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center px-4 py-6"
-      style={{ background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)' }}
+      style={{ background: 'rgba(0,0,0,0.65)' }}
       onClick={onClose}
       role="dialog"
       aria-modal="true"

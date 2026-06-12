@@ -182,16 +182,16 @@ export default function LoginPage() {
 
             {/* Модальное окно */}
             <div
-                className="relative w-full max-w-md backdrop-blur-2xl border rounded-2xl p-6 md:p-8 shadow-2xl max-h-[90vh] overflow-y-auto"
+                className="relative w-full max-w-md border rounded-2xl p-6 md:p-8 shadow-2xl max-h-[90vh] overflow-y-auto"
                 style={{
-                    backgroundColor: 'var(--glass-bg)',
+                    backgroundColor: 'var(--bg-secondary)',
                     borderColor: 'var(--border-color)',
                 }}
             >
                 {/* Кнопка закрытия */}
                 <button
                     onClick={handleClose}
-                    className="absolute top-4 right-4 p-1.5 rounded-lg transition-all hover:bg-white/10"
+                    className="absolute top-4 right-4 p-2.5 -m-1 rounded-lg transition-all hover:bg-[color-mix(in_srgb,var(--text-primary)_10%,transparent)]"
                     style={{ color: 'var(--text-muted)' }}
                 >
                     <X size={20} />
@@ -297,7 +297,7 @@ export default function LoginPage() {
                             <button
                                 type="button"
                                 onClick={() => setShowPassword(!showPassword)}
-                                className="absolute right-3 top-1/2 -translate-y-1/2 transition-colors hover:opacity-80"
+                                className="absolute right-0.5 top-1/2 -translate-y-1/2 p-3.5 transition-colors hover:opacity-80"
                                 style={{ color: 'var(--text-muted)' }}
                             >
                                 {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}

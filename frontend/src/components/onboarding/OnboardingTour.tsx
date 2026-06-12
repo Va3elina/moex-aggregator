@@ -311,7 +311,7 @@ export default function OnboardingTour({
             onClick={handleClose}
             className="text-theme-secondary hover:text-theme-primary transition-colors"
             aria-label="Закрыть тур"
-            style={{ padding: 4 }}
+            style={{ padding: 14, margin: -10 }}
           >
             <X size={16} />
           </button>

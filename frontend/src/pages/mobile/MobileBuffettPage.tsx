@@ -322,7 +322,7 @@ export default function MobileBuffettPage() {
         <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 20 }}>
           {/* Версия индикатора */}
           <div>
-            <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+            <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
               Версия индикатора
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -356,7 +356,7 @@ export default function MobileBuffettPage() {
                       border: '1.5px solid var(--text-primary)',
                       borderRadius: 10,
                       fontWeight: 700,
-                      fontSize: 13,
+                      fontSize: 'var(--fs-base)',
                       cursor: allowed ? 'pointer' : 'not-allowed',
                       opacity: allowed ? 1 : 0.5,
                       position: 'relative',
@@ -367,7 +367,7 @@ export default function MobileBuffettPage() {
                       {label}
                       {!allowed && <Lock size={12} strokeWidth={2.2} />}
                     </div>
-                    <div style={{ fontSize: 10, fontWeight: 500, opacity: 0.8, marginTop: 3, lineHeight: 1.3 }}>
+                    <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 500, opacity: 0.8, marginTop: 3, lineHeight: 1.3 }}>
                       {m === 'cap-gdp' ? 'Классика. Сравнение с экономикой.' : 'Альтернатива. Сравнение с денежной массой.'}
                     </div>
                   </button>
@@ -387,7 +387,7 @@ export default function MobileBuffettPage() {
         <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 18 }}>
           {/* Таймфрейм аггрегации — день / неделя / месяц */}
           <div>
-            <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+            <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
               Таймфрейм
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
@@ -406,7 +406,7 @@ export default function MobileBuffettPage() {
 
           {/* Период истории */}
           <div>
-            <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+            <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
               Период
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
