@@ -1,5 +1,5 @@
 /**
- * MobileOpenInterestPage — мобильная версия индикатора «Открытый интерес».
+ * MobileOpenInterestPage — мобильная версия индикатора «Открытые позиции».
  *
  * Архитектура (отличается от десктопа):
  *   - TopBar + PageHeader + Editorial Frame + BottomRail (MobileLayout)
@@ -7,7 +7,7 @@
  *   - Asset/Period/Options открывают slide-up Sheet'ы
  *
  * Phase 2 — упрощённая версия:
- *   - Тип данных «Позиции» / «Участники», 5 вариантов ОИ
+ *   - Тип данных «Объём позиций» / «Число трейдеров», 5 вариантов ОИ
  *   - Период через sheet (1д/1н/1м/3м/6м/1г/2г/5л/Всё)
  *   - Один график: цена + net OI
  *   - Экспирации, толкование тура — Phase 4
@@ -43,7 +43,7 @@ const OI_VARIANTS: OIVariant[] = ['oi', 'long', 'short', 'both', 'net'];
 function variantLabel(v: OIVariant, mode: DisplayMode): string {
   const pos = mode === 'positions';
   switch (v) {
-    case 'oi':    return 'Открытый интерес';
+    case 'oi':    return 'Открытые позиции';
     case 'long':  return pos ? 'Покупки' : 'Покупатели';
     case 'short': return pos ? 'Продажи' : 'Продавцы';
     case 'both':  return pos ? 'Покупки + Продажи' : 'Покупатели + Продавцы';
@@ -125,7 +125,7 @@ export default function MobileOpenInterestPage() {
   const tourSteps: TourStep[] = [
     {
       selector: null,
-      title: 'Открытый интерес',
+      title: 'Открытые позиции',
       body: (
         <>
           <p style={{ marginBottom: 8 }}>
@@ -150,7 +150,7 @@ export default function MobileOpenInterestPage() {
             <strong>Время</strong> — период и интервал
           </p>
           <p style={{ marginBottom: 4 }}>
-            <strong>Опции</strong> — вариант ОИ и категория участников
+            <strong>Опции</strong> — вариант позиций и категория участников
           </p>
           <p>
             <strong>Экран</strong> — развернуть график на весь экран
@@ -182,7 +182,7 @@ export default function MobileOpenInterestPage() {
     },
     {
       selector: null,
-      title: 'Варианты ОИ и категории',
+      title: 'Варианты позиций и категории',
       align: 'top',
       body: (
         <>
@@ -190,11 +190,11 @@ export default function MobileOpenInterestPage() {
             Открыл кнопку <strong>«Опции»</strong>. Внутри:
           </p>
           <p style={{ marginBottom: 4 }}>
-            <strong>Тип данных:</strong> «Позиции» — объём в контрактах,
-            «Участники» — количество участников торгов.
+            <strong>Тип данных:</strong> «Объём позиций» — сколько контрактов
+            куплено или продано, «Число трейдеров» — сколько человек держит позиции.
           </p>
           <p style={{ marginBottom: 4 }}>
-            <strong>Вариант ОИ:</strong> общий (long+short), покупки, продажи,
+            <strong>Вариант позиций:</strong> общий (long+short), покупки, продажи,
             чистая позиция (long−short), обе линии вместе.
           </p>
           <p>
@@ -213,7 +213,7 @@ export default function MobileOpenInterestPage() {
         <>
           <p style={{ marginBottom: 6 }}>
             Голубая линия — цена фьючерса (левая ось). Цветная — выбранный
-            вариант ОИ (правая ось, в тысячах контрактов).
+            вариант позиций (правая ось, в тысячах контрактов).
           </p>
           <p>
             <strong>Коснись и удерживай палец</strong> — появится перекрестье
@@ -231,7 +231,7 @@ export default function MobileOpenInterestPage() {
       body: (
         <p>
           Нажми <strong>?</strong> рядом с заголовком — подробная методология
-          и сценарии трактовки ОИ.
+          и сценарии трактовки открытых позиций.
         </p>
       ),
     },
@@ -382,11 +382,11 @@ export default function MobileOpenInterestPage() {
 
   const timeLabel = `${PERIOD_LABELS[period]} · ${INTERVAL_LABELS[intervalValue] ?? intervalValue + 'ч'}`;
   // Summary в кнопке «Опции» (aria-label/title) — три chunks, чтобы юзер
-  // понимал текущий displayMode (Позиции/Участники), variant и категорию
+  // понимал текущий displayMode (Объём позиций/Число трейдеров), variant и категорию
   // участников без открытия sheet'а. Раньше displayMode был только косвенно
   // (через variantLabel: «Покупки» vs «Покупатели»), что не помогало
   // юзерам понять «где же переключатель Позиции/Участники».
-  const modeShort = displayMode === 'positions' ? 'Поз.' : 'Уч.';
+  const modeShort = displayMode === 'positions' ? 'Объём' : 'Трейдеры';
   const optionsLabel = `${modeShort} · ${variantLabel(oiVariant, displayMode)} · ${clgroup === 'YUR' ? 'Юр' : 'Физ'}`;
 
   return (
@@ -407,7 +407,7 @@ export default function MobileOpenInterestPage() {
     >
       <MobilePageHeader
         Icon={BarChart3}
-        title="Открытый интерес"
+        title="Открытые позиции"
         subtitle={`${instrumentName} · ${timeLabel}`}
         helpLink="/methodology/oi"
       />
@@ -449,7 +449,7 @@ export default function MobileOpenInterestPage() {
         </div>
       </div>
 
-      {/* Sheet: выбор актива. Открытый интерес существует только по
+      {/* Sheet: выбор актива. Открытые позиции существуют только по
           фьючерсам — filterType="futures" ограничивает список фьючерсами
           FORTS (паритет с десктопным InstrumentSearchModal). */}
       <MobileAssetSearch
@@ -574,7 +574,7 @@ export default function MobileOpenInterestPage() {
             Тип данных
           </div>
           <div style={{ display: 'flex', gap: 6, marginBottom: 20 }}>
-            {([['positions', 'Позиции'], ['participants', 'Участники']] as const).map(([m, label]) => (
+            {([['positions', 'Объём позиций'], ['participants', 'Число трейдеров']] as const).map(([m, label]) => (
               <button
                 key={m}
                 className={`fm-chip ${displayMode === m ? 'active' : ''}`}

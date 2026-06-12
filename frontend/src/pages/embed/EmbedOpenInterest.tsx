@@ -3,7 +3,7 @@
  *
  * Контролы (актив-фьючерс / таймфрейм / период / группа / режим / вариант ОИ /
  * цена / экспирации) — в drawer'е настроек (шестерёнка в заголовке панели).
- * Шапка виджета — только название + «Открытый интерес», чтобы график получал
+ * Шапка виджета — только название + «Открытые позиции», чтобы график получал
  * максимум места в узкой панели.
  *
  * Это chromeless full-PRO зеркало OpenInterestPage: серии ОИ
@@ -267,7 +267,7 @@ export default function EmbedOpenInterest() {
   const labels = useMemo(() => {
     const isPositions = displayMode === 'positions';
     switch (oiVariant) {
-      case 'oi': return { secondary: 'Открытый интерес', third: '' };
+      case 'oi': return { secondary: 'Открытые позиции', third: '' };
       case 'long': return { secondary: isPositions ? 'Покупки' : 'Покупатели', third: '' };
       case 'short': return { secondary: isPositions ? 'Продажи' : 'Продавцы', third: '' };
       case 'both': return {
@@ -284,7 +284,7 @@ export default function EmbedOpenInterest() {
   const variantOpts = useMemo(() => {
     const isPositions = displayMode === 'positions';
     return [
-      { id: 'oi' as OIVariant, label: 'Открытый интерес' },
+      { id: 'oi' as OIVariant, label: 'Открытые позиции' },
       { id: 'long' as OIVariant, label: isPositions ? 'Покупки' : 'Покупатели' },
       { id: 'short' as OIVariant, label: isPositions ? 'Продажи' : 'Продавцы' },
       { id: 'both' as OIVariant, label: isPositions ? 'Покупки + Продажи' : 'Покупатели + Продавцы' },
@@ -312,7 +312,7 @@ export default function EmbedOpenInterest() {
     <EmbedShell
       settings={settings}
       title={displayName}
-      subtitle="Открытый интерес"
+      subtitle="Открытые позиции"
       drawer={
         <>
           <DrawerSection label="Актив (фьючерс)">
@@ -339,7 +339,7 @@ export default function EmbedOpenInterest() {
           <DrawerSection label="Режим">
             <SegGroup<DisplayMode>
               value={displayMode}
-              options={[{ id: 'positions', label: 'Позиции' }, { id: 'participants', label: 'Участники' }]}
+              options={[{ id: 'positions', label: 'Объём позиций' }, { id: 'participants', label: 'Число трейдеров' }]}
               onChange={setDisplayMode}
             />
           </DrawerSection>
@@ -382,7 +382,7 @@ export default function EmbedOpenInterest() {
         )}
         {status === 'loading' && <EmbedMsg text="Загрузка…" />}
         {status === 'empty' && (
-          <EmbedMsg text={instrument ? 'Нет данных ОИ по этому инструменту' : 'Инструмент не выбран'} />
+          <EmbedMsg text={instrument ? 'Нет данных по этому инструменту' : 'Инструмент не выбран'} />
         )}
         {status === 'error' && <EmbedMsg text="Ошибка загрузки" />}
       </div>

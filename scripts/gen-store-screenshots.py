@@ -263,7 +263,7 @@ def shot_settings():
     section('ТАЙМФРЕЙМ', [('5 мин', False), ('1 час', False), ('1 день', True)])
     section('ПЕРИОД', [('1Д', False), ('1Н', False), ('1М', False), ('3М', False), ('6М', True), ('1Г', False), ('2Г', False), ('5Л', False), ('Всё', False)])
     section('ГРУППА УЧАСТНИКОВ', [('Физлица', False), ('Юрлица', True)])
-    section('РЕЖИМ', [('Позиции', True), ('Участники', False)])
+    section('РЕЖИМ', [('Объём позиций', True), ('Число трейдеров', False)])
     text(d, (cx, cy), 'ПОКАЗАТЕЛЬ', font(SANS, s(11)), DIM)
     chip_row(d, cx, cy + 22, [('Открытый интерес', False), ('Покупки', False), ('Продажи', False), ('Покупки + Продажи', False)])
     chip_row(d, cx, cy + 22 + 44, [('Чистая позиция', True)])

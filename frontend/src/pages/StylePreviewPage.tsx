@@ -1,7 +1,7 @@
 /**
  * StylePreviewPage — песочница для нового editorial-дизайна.
  *
- * Воспроизводит структуру `/oi` (Открытый интерес) в editorial / brutalist
+ * Воспроизводит структуру `/oi` (Открытые позиции) в editorial / brutalist
  * стиле, портированном с design_handoff_frame_redesign/page.jsx.
  *
  * Управление:
@@ -310,7 +310,7 @@ function EditorialChart({ theme, accent }: { theme: EditorialTheme; accent: stri
         </span>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
           <span style={{ width: 10, height: 10, borderRadius: '50%', background: theme.lineB }} />
-          Открытый интерес
+          Открытые позиции
         </span>
       </div>
 
@@ -455,7 +455,7 @@ export default function StylePreviewPage() {
   const [period, setPeriod] = useState<string>('6М');
   const [interval, setIntervalVal] = useState<string>('1д');
   const [mode, setMode] = useState<string>('Позиции');
-  const [oiVariant, setOiVariant] = useState<string>('Открытый интерес');
+  const [oiVariant, setOiVariant] = useState<string>('Открытые позиции');
   const [clgroup, setClgroup] = useState<string>('Физлица');
 
   const theme = THEMES[themeName];
@@ -463,7 +463,7 @@ export default function StylePreviewPage() {
 
   const navItems = [
     'Карта рынка',
-    'Открытый интерес',
+    'Открытые позиции',
     'Деньги в фондах',
     'Состав фондов',
     'Сила рынка',
@@ -472,8 +472,8 @@ export default function StylePreviewPage() {
 
   const periods = ['1Д', '1Н', '1М', '3М', '6М', '1Г', '2Г', '5Л', 'Всё'];
   const intervals = ['5м', '1ч', '1д'];
-  const modes = ['Только цена', 'Позиции', 'Участники'];
-  const oiVariants = ['Открытый интерес', 'Покупки', 'Продажи', 'Покупки + Продажи', 'Чистая позиция', 'Экспирации'];
+  const modes = ['Только цена', 'Объём позиций', 'Число трейдеров'];
+  const oiVariants = ['Открытые позиции', 'Покупки', 'Продажи', 'Покупки + Продажи', 'Чистая позиция', 'Экспирации'];
 
   const kpis = [
     { k: 'Σ длинных', v: '273 269', d: '+4,2%', up: true as boolean | null },
@@ -599,7 +599,7 @@ export default function StylePreviewPage() {
 
         <nav style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
           {navItems.map((label) => (
-            <NavLinkBtn key={label} theme={theme} accent={accent} active={label === 'Открытый интерес'}>
+            <NavLinkBtn key={label} theme={theme} accent={accent} active={label === 'Открытые позиции'}>
               {label}
             </NavLinkBtn>
           ))}
@@ -679,7 +679,7 @@ export default function StylePreviewPage() {
               color: theme.text,
             }}
           >
-            Открытый интерес
+            Открытые позиции
           </h1>
         </div>
         <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>

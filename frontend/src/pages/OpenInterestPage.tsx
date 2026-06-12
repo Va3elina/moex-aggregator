@@ -396,7 +396,7 @@ export default function OpenInterestPage() {
   const getLabels = () => {
     const isPositions = displayMode === 'positions';
     switch (oiVariant) {
-      case 'oi': return { secondary: 'Открытый интерес', third: '' };
+      case 'oi': return { secondary: 'Открытые позиции', third: '' };
       case 'long': return { secondary: isPositions ? 'Покупки' : 'Покупатели', third: '' };
       case 'short': return { secondary: isPositions ? 'Продажи' : 'Продавцы', third: '' };
       case 'both': return {
@@ -415,7 +415,7 @@ export default function OpenInterestPage() {
       <div ref={headerRef}>
         <PageHeader
           icon={BarChart3}
-          title="Открытый интерес"
+          title="Открытые позиции"
           subtitle="Анализ позиций участников по фьючерсам MOEX"
           help={METHODOLOGY.oi}
           helpLink="/methodology/oi"
@@ -551,8 +551,8 @@ export default function OpenInterestPage() {
           <div data-tour="oi-display-mode">
             <Dropdown<DisplayMode>
               options={[
-                { key: 'positions', label: 'Позиции' },
-                { key: 'participants', label: 'Участники' },
+                { key: 'positions', label: 'Объём позиций' },
+                { key: 'participants', label: 'Число трейдеров' },
               ]}
               value={displayMode}
               onChange={setDisplayMode}
@@ -564,7 +564,7 @@ export default function OpenInterestPage() {
             <div data-tour="oi-variant">
             <Dropdown<OIVariant>
               options={[
-                { key: 'oi',    label: 'Открытый интерес',                                                     color: 'var(--oi-amber)' },
+                { key: 'oi',    label: 'Открытые позиции',                                                     color: 'var(--oi-amber)' },
                 { key: 'long',  label: displayMode === 'positions' ? 'Покупки' : 'Покупатели',                 color: 'var(--oi-green)' },
                 { key: 'short', label: displayMode === 'positions' ? 'Продажи' : 'Продавцы',                   color: 'var(--oi-red)' },
                 { key: 'both',  label: displayMode === 'positions' ? 'Покупки + Продажи' : 'Покупатели + Продавцы', color: 'var(--oi-purple)' },
@@ -628,7 +628,7 @@ export default function OpenInterestPage() {
               };
               return {
                 indicator: 'open_interest',
-                title: `Экспорт: Открытый интерес · ${instrumentName}`,
+                title: `Экспорт: Открытые позиции · ${instrumentName}`,
                 layers: [{
                   id: 'oi',
                   label: 'История позиций',
@@ -700,9 +700,9 @@ export default function OpenInterestPage() {
             filename={`frame-oi-${selectedInstrument.toLowerCase()}-${interval}-${displayMode}`}
             metadata={{
               // displayMode сразу в title — попадает в первую строку subtitle
-              // экспорта («Открытый интерес — Позиции · 1 час · ...»), сразу
+              // экспорта («Открытые позиции — Объём позиций · 1 час · ...»), сразу
               // видно режим без копания в tag-list.
-              title: `Открытый интерес — ${displayMode === 'price' ? 'Цена' : displayMode === 'positions' ? 'Позиции' : 'Участники'}`,
+              title: `Открытые позиции — ${displayMode === 'price' ? 'Цена' : displayMode === 'positions' ? 'Объём позиций' : 'Число трейдеров'}`,
               // Не фолбэчим на ticker — иначе при ещё-не-загрузившемся instrumentName
               // получим asset=ticker и дубликат в header. composeFramedCanvas сам
               // сделает primary fallback на title если asset undefined.
@@ -749,14 +749,14 @@ export default function OpenInterestPage() {
                 // Участники НЕ зеркальны: счётчики физ и юр независимы (оба
                 // положительные) → самостоятельный сигнал, не дубликат part_yur.
                 key: 'part_fiz',
-                label: 'Резкое изменение числа участников — физлица',
+                label: 'Резкое изменение числа трейдеров — физлица',
                 indicator: 'oi_participants', metric: 'atr', clgroup: 'FIZ', unit: '×', defaultThreshold: 3,
                 ops: [{ value: 'gt', label: 'превысит' }],
                 hint: 'Сработает, когда число физлиц-участников изменится за день резче обычного — во столько-то раз больше среднего дневного шага за 14 дней (ATR). 2× — заметно, 3× — сильно, 5× — экстремально. Обновляется раз в день после публикации позиций МосБиржи; это описание движения, не прогноз цены.',
               },
               {
                 key: 'part_yur',
-                label: 'Резкое изменение числа участников — юрлица',
+                label: 'Резкое изменение числа трейдеров — юрлица',
                 indicator: 'oi_participants', metric: 'atr', clgroup: 'YUR', unit: '×', defaultThreshold: 3,
                 ops: [{ value: 'gt', label: 'превысит' }],
                 hint: 'Сработает, когда число юрлиц-участников изменится за день резче обычного — во столько-то раз больше среднего дневного шага за 14 дней (ATR). 2× — заметно, 3× — сильно, 5× — экстремально. Обновляется раз в день после публикации позиций МосБиржи; это описание движения, не прогноз цены.',
@@ -841,7 +841,7 @@ export default function OpenInterestPage() {
           <div className="flex items-start" style={{ gap: 'var(--sp-3)' }}>
             <span className="legend-dot mt-1.5" style={{ backgroundColor: COLORS.amber }} />
             <div>
-              <span className="font-medium" style={{ color: COLORS.amber }}>Открытый интерес</span>
+              <span className="font-medium" style={{ color: COLORS.amber }}>Открытые позиции</span>
               <span className="text-theme-secondary"> — сумма позиций на покупку и на продажу</span>
             </div>
           </div>
@@ -874,8 +874,8 @@ export default function OpenInterestPage() {
           <div className="pt-3 border-t border-theme mt-4">
             <div className="text-theme-secondary">
               <span className="font-medium text-theme-primary">Режимы:</span>{' '}
-              <span style={{ color: COLORS.primary }}>Позиции</span> — объём в контрактах,{' '}
-              <span style={{ color: COLORS.primary }}>Участники</span> — количество участников торгов
+              <span style={{ color: COLORS.primary }}>Объём позиций</span> — сколько контрактов куплено или продано,{' '}
+              <span style={{ color: COLORS.primary }}>Число трейдеров</span> — сколько человек или компаний держит позиции
             </div>
           </div>
         </div>
