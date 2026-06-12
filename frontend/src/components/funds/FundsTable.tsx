@@ -1,6 +1,6 @@
 import React from 'react';
 import { ArrowDown, ArrowUp, Lock } from 'lucide-react';
-import { resolveFundLogo } from '../../config/fundConfig';
+import { resolveFundLogo, stripUkName } from '../../config/fundConfig';
 import type { FundInfo, FundsChartResponse } from '../../services/api';
 import { useUpgradePrompt } from '../tier/UpgradeModal';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
@@ -296,7 +296,7 @@ export default function FundsTable({
                                                                         style={{ backgroundColor: FUND_COLORS[colorIdx % FUND_COLORS.length] }} />
                                                                 );
                                                             })()}
-                                                            <span className="font-medium">{fund.name}</span>
+                                                            <span className="font-medium" title={fund.name}>{stripUkName(fund.name, fund.uk_id)}</span>
                                                         </div>
                                                     </td>
                                                     <td

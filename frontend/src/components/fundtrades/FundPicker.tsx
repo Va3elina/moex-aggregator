@@ -15,7 +15,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Search, X } from 'lucide-react';
-import { UK_LOGOS } from '../../config/fundConfig';
+import { UK_LOGOS, stripUkName } from '../../config/fundConfig';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
 
 export interface FundPickerFund {
@@ -454,7 +454,7 @@ function FundPickerModal({
                                                 }}
                                                 title={f.name}
                                             >
-                                                {f.name}
+                                                {stripUkName(f.name, g.ukId)}
                                             </span>
                                             <span
                                                 style={{

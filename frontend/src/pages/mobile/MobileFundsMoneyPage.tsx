@@ -28,7 +28,7 @@ import {
   type FlowTimeframe,
 } from '../../services/api';
 import MobileSheet from '../../components/mobile/MobileSheet';
-import { resolveFundLogo } from '../../config/fundConfig';
+import { resolveFundLogo, stripUkName } from '../../config/fundConfig';
 import { useOnboardingTour } from '../../hooks/useFirstVisit';
 import OnboardingTour, { type TourStep } from '../../components/onboarding/OnboardingTour';
 
@@ -646,8 +646,8 @@ export default function MobileFundsMoneyPage() {
                       {f.ticker}
                       {locked && <Lock size={11} strokeWidth={2.2} />}
                     </span>
-                    <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', textAlign: 'left', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 190 }}>
-                      {f.name}
+                    <span title={f.name} style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', textAlign: 'left', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 190 }}>
+                      {stripUkName(f.name, f.uk_id)}
                     </span>
                   </span>
                 </span>

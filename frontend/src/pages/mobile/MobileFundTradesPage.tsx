@@ -45,7 +45,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
 import { usePersistedState } from '../../hooks/usePersistedState';
 import { useGrowReveal } from '../../hooks/useGrowReveal';
-import { UK_LOGOS, DONUT_COLORS, assetColor, resolveFundLogo } from '../../config/fundConfig';
+import { UK_LOGOS, DONUT_COLORS, assetColor, resolveFundLogo, stripUkName } from '../../config/fundConfig';
 import Donut from '../../components/funds/Donut';
 import FundDetailModal, {
   AssetHistoryModal,
@@ -944,8 +944,9 @@ function FundTile({
               WebkitBoxOrient: 'vertical',
               overflow: 'hidden',
             }}
+            title={f.name}
           >
-            {f.name}
+            {stripUkName(f.name, f.uk_id)}
           </div>
           <div
             style={{

@@ -43,6 +43,42 @@ export function resolveFundLogo(
     return ukKey != null ? UK_LOGOS[String(ukKey)] : undefined;
 }
 
+// Легаси/вариативные написания имени УК, встречающиеся в начале названия фонда
+// (УК переименовывались, в данных встречаются старые формы). Ключ — uk_id, как в
+// UK_LOGOS; каноничное имя из UK_LOGOS[uk_id].name добавляется автоматически.
+const UK_NAME_ALIASES: Record<string, string[]> = {
+    '34':   ['Сбер Управление Активами', 'Сбер'],   // «Первая» — бывш. Сбер
+    '7':    ['ВТБ Капитал', 'ВТБ'],                 // «ВИМ» — бывш. ВТБ Капитал
+    '3597': ['Тинькофф Капитал', 'Тинькофф'],       // «Т-Капитал» — бывш. Тинькофф
+};
+
+/**
+ * Срезает ведущее имя УК (и следующий за ним разделитель) из названия фонда —
+ * в списках иконка УК уже показывает компанию, и префикс «Первая — …», «АТОН …»
+ * лишь дублируется при прокрутке. No-op, если префикса нет (ETF-имена вроде
+ * «Ликвидность», авторские фонды, чужие УК). Полное имя стоит оставлять в title
+ * и в заголовках детальных карточек — там фонд один и дублирования нет.
+ *
+ * Матч регистронезависимый («Атон - Петр Столыпин» vs «АТОН …»), имя срезается
+ * целиком (важно для «Т-Капитал»/«Альфа-Капитал» с дефисом внутри), длиннейший
+ * алиас проверяется первым. Если после среза пусто — возвращаем оригинал.
+ */
+export function stripUkName(name: string, ukKey?: string | number | null): string {
+    if (!name || ukKey == null) return name;
+    const key = String(ukKey);
+    const aliases = [UK_LOGOS[key]?.name, ...(UK_NAME_ALIASES[key] ?? [])]
+        .filter(Boolean)
+        .sort((a, b) => (b as string).length - (a as string).length) as string[];
+    const lower = name.toLowerCase();
+    for (const a of aliases) {
+        if (lower.startsWith(a.toLowerCase())) {
+            const stripped = name.slice(a.length).replace(/^[\s\-–—·:.]+/, '').trim();
+            if (stripped) return stripped;
+        }
+    }
+    return name;
+}
+
 export const CATEGORY_LABELS: Record<string, string> = {
     'money_market': 'Денежный рынок',
     'stocks': 'Акции',

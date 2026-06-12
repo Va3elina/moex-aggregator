@@ -46,7 +46,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 import PageHeader from '../components/PageHeader';
 import Dropdown from '../components/Dropdown';
-import { UK_LOGOS, DONUT_COLORS, assetColor, resolveFundLogo } from '../config/fundConfig';
+import { UK_LOGOS, DONUT_COLORS, assetColor, resolveFundLogo, stripUkName } from '../config/fundConfig';
 import Donut from '../components/funds/Donut';
 import CompanyFlowsTab from '../components/fundtrades/CompanyFlowsTab';
 import UkMultiSelect, { type UkOption } from '../components/fundtrades/UkMultiSelect';
@@ -709,7 +709,7 @@ export default function FundTradesPage() {
                                                     }}
                                                     title={f.name}
                                                 >
-                                                    {f.name}
+                                                    {stripUkName(f.name, f.uk_id)}
                                                 </div>
                                                 <div
                                                     style={{
