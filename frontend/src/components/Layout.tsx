@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useSSE } from '../hooks/useSSE';
@@ -11,6 +11,16 @@ import Logo from './Logo';
 import FrameLogo from './FrameLogo';
 import ThemeToggle from './ThemeToggle';
 import PageSEO from './PageSEO';
+import MobileFallbackChrome from './mobile/MobileFallbackChrome';
+
+/* Маршруты с собственной мобильной версией (ResponsiveRoute → Mobile*Page
+   с MobileLayout): им chrome не нужен — рисуют свой. Остальные маршруты
+   на мобиле получают MobileFallbackChrome (top-bar + «Назад» + скролл).
+   При добавлении новой mobile-страницы — дополнить список. */
+const MOBILE_READY_PATHS = new Set([
+  '/', '/oi', '/heatmap', '/funds-money', '/buffett', '/strength',
+  '/seasonality', '/cbr-flows', '/profile', '/pricing', '/fund-trades',
+]);
 
 const NAV_ITEMS: { path: string; label: string; disabled?: boolean; badge?: string }[] = [
   { path: '/heatmap', label: 'Карта рынка' },
@@ -31,6 +41,7 @@ export default function Layout() {
   const { user, isAuthenticated } = useAuth();
   const { connected } = useSSE();
   const navigate = useNavigate();
+  const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const isMobileViewport = useIsMobile();
   const vw = useViewportWidth();
@@ -44,16 +55,28 @@ export default function Layout() {
   // На ≥1280 (xl) — нормальные размеры.
   const isCompactHeader = vw >= 1024 && vw < 1280;
 
-  // На мобиле страницы используют MobileLayout (TopBar + Main + BottomRail),
-  // десктопный chrome не нужен. Рендерим только Outlet — страница сама
-  // рисует свой layout. Используется только для тех routes которые имеют
-  // mobile-версию (через ResponsiveRoute). Остальные показывают desktop
-  // layout даже на мобиле (как fallback пока не сделали mobile-версию).
+  // На мобиле страницы с mobile-версией используют MobileLayout
+  // (TopBar + Main + BottomRail) — им рендерим только Outlet, страница
+  // сама рисует свой layout. Маршруты БЕЗ mobile-версии (login, legal,
+  // billing, methodology, …) показывают десктопную вёрстку — заворачиваем
+  // её в облегчённый MobileFallbackChrome (top-bar + «Назад»), иначе на
+  // них нет никакой навигации (аудит 2026-06-12).
   if (isMobileViewport) {
+    const pathname = location.pathname.replace(/\/+$/, '') || '/';
+    if (MOBILE_READY_PATHS.has(pathname)) {
+      return (
+        <>
+          <PageSEO />
+          <Outlet />
+        </>
+      );
+    }
     return (
       <>
         <PageSEO />
-        <Outlet />
+        <MobileFallbackChrome>
+          <Outlet />
+        </MobileFallbackChrome>
       </>
     );
   }

@@ -29,6 +29,7 @@
   --fs-xs:  clamp(10px, 0.5vw + 0.45rem, 12.5px); /* small labels, secondary */
   --fs-sm:  clamp(11px, 0.5vw + 0.55rem, 14px);   /* button text, body labels */
   --fs-base:clamp(13px, 0.55vw + 0.65rem, 16px);  /* default body */
+  --fs-md:  clamp(13px, 0.57vw + 0.7rem, 15px);   /* section h3, fund names */
   --fs-lg:  clamp(14px, 0.6vw + 0.75rem, 18px);   /* subtitles, h4 */
   --fs-xl:  clamp(18px, 1vw + 0.9rem, 22px);      /* h3 */
   --fs-2xl: clamp(20px, 1.5vw + 1rem, 28px);      /* h2 */

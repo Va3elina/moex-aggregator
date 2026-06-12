@@ -30,6 +30,7 @@ import ChartCaptureButton from '../export/ChartCaptureButton';
 import { DONUT_COLORS, assetColor } from '../../config/fundConfig';
 import Donut from './Donut';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
+import { useViewportHeight } from '../../hooks/useViewportHeight';
 
 // ════════════════════════════════════════════════════════════════════
 // Shared formatters (экспортируются — переиспользуются в FundTradesPage)
@@ -225,6 +226,7 @@ export default function FundDetailModal({
     // (иначе size:380 вылезал за правый край), график ниже, паддинги меньше,
     // высота в dvh (iOS не режет верх/низ динамическим тулбаром).
     const vw = useViewportWidth();
+    const vh = useViewportHeight();
     const isMobile = vw < 768;
     const hasDist = detailFund?.has_distributions ?? hasDistributions ?? false;
 
@@ -380,7 +382,7 @@ export default function FundDetailModal({
                                             <SimpleChart
                                                 data={chartData}
                                                 initialStartIndex={payInitialStartIndex}
-                                                height={isMobile ? 340 : 460}
+                                                height={Math.max(220, Math.min(isMobile ? 340 : 460, vh - 240))}
                                                 primaryLabel="СЧА на пай, ₽"
                                                 legendPosition="top"
                                                 formatValue={(v) => `${v.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ₽`}
@@ -763,6 +765,7 @@ export function AssetHistoryModal({
 function AssetHistoryContent({ data, assetName, ticker }: { data: AssetHistory; assetName: string; ticker: string }) {
     const chartAnchorRef = useRef<HTMLDivElement>(null);
     const isMobile = useViewportWidth() < 768;
+    const vh = useViewportHeight();
 
     // Сплит-коррекция: непрерывная серия (история домножена на множитель сплита) +
     // маркеры «Сплит». Снимает «один снапшот = пик, остальное плоское».
@@ -884,7 +887,7 @@ function AssetHistoryContent({ data, assetName, ticker }: { data: AssetHistory; 
                 <div ref={chartAnchorRef}>
                     <SimpleChart
                         data={chartData}
-                        height={470}
+                        height={Math.max(220, Math.min(470, vh - 220))}
                         primaryLabel={`${assetName}, ${yUnit}`}
                         legendPosition="top"
                         formatValue={(v) => formatShares(Math.round(v))}

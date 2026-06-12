@@ -25,6 +25,7 @@ import {
 import TickerLogo from '../TickerLogo';
 import ChartLegend from '../chart/ChartLegend';
 import StackedFlowBars, { type StackedSeries } from './StackedFlowBars';
+import { useViewportHeight } from '../../hooks/useViewportHeight';
 import AssetPickerModal from './AssetPickerModal';
 import FundPicker, { type FundPickerFund } from './FundPicker';
 
@@ -91,6 +92,7 @@ export interface CompanyFlowsTabProps {
 }
 
 export default function CompanyFlowsTab({ presetAsset, onPresetConsumed }: CompanyFlowsTabProps = {}) {
+    const vh = useViewportHeight();
     const [assets, setAssets] = useState<FundTradeAsset[]>([]);
     const [assetsLoading, setAssetsLoading] = useState(true);
     const [assetsError, setAssetsError] = useState<string | null>(null);
@@ -420,7 +422,7 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed }: Compa
                     </div>
                 )}
 
-                <StackedFlowBars months={flows?.months ?? []} series={fundSeries} height={340} animTrigger={animTrigger} />
+                <StackedFlowBars months={flows?.months ?? []} series={fundSeries} height={Math.max(200, Math.min(340, vh - 280))} animTrigger={animTrigger} />
             </section>
 
             {/* Чарт 2: Суммарный Flow */}
@@ -431,7 +433,7 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed }: Compa
                 <StackedFlowBars
                     months={flows?.months ?? []}
                     series={totalSeries}
-                    height={280}
+                    height={Math.max(160, Math.min(280, vh - 340))}
                     signColorForSingle
                     animTrigger={animTrigger}
                 />

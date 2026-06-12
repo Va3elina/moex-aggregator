@@ -272,6 +272,16 @@
   padding-bottom: 80px;
 }
 
+/* Фолбэк-chrome (MobileFallbackChrome) для маршрутов без мобильной
+   версии: десктопная страница под мобильным top-bar'ом. В отличие от
+   .fm-main здесь нужен обычный скролл — контент длиннее viewport'а. */
+.fm-fallback-main {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 /* Списочные страницы (фонд-трейд) — СОБСТВЕННЫЙ вертикальный скролл внутри
    залоченного .fm-main. .fm-main под чарт-страницы (overflow:hidden, чарт
    фиксирован); списки/карточки выше viewport'а нужно скроллить отдельно,

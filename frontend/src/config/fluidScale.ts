@@ -31,6 +31,7 @@ export const fluid = {
   fsXs:   (vw: number) => cl(10, 0.5 * vw / 100 + 0.45 * REM, 12.5),
   fsSm:   (vw: number) => cl(11, 0.5 * vw / 100 + 0.55 * REM, 14),
   fsBase: (vw: number) => cl(13, 0.55 * vw / 100 + 0.65 * REM, 16),
+  fsMd:   (vw: number) => cl(13, 0.57 * vw / 100 + 0.7 * REM,  15),
   fsLg:   (vw: number) => cl(14, 0.6 * vw / 100 + 0.75 * REM, 18),
   fsXl:   (vw: number) => cl(18, 1.0 * vw / 100 + 0.9 * REM,  22),
   fs2xl:  (vw: number) => cl(20, 1.5 * vw / 100 + 1.0 * REM,  28),
