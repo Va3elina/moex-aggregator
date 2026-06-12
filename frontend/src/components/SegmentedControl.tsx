@@ -40,10 +40,15 @@ export default function SegmentedControl<T extends string>({
   return (
     <div
       role="group"
-      className={`frame-segmented inline-flex items-stretch rounded-full overflow-hidden ${className}`}
+      className={`frame-segmented rounded-full overflow-hidden ${className}`}
       style={{
         backgroundColor: 'var(--bg-secondary)',
         border: '2px solid var(--text-primary)',
+        // Равные колонки (по самому широкому лейблу), иначе «5м» шире «1д»
+        // и контрол выглядит несимметрично.
+        display: 'inline-grid',
+        gridAutoFlow: 'column',
+        gridAutoColumns: '1fr',
       }}
     >
       {options.map((opt, i) => {

@@ -8,6 +8,7 @@
  * блокируется на время показа. zIndex 9999 — как у UpgradeModal/CreateAlertModal.
  */
 import { useEffect, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
 interface CenteredModalShellProps {
@@ -40,7 +41,11 @@ export default function CenteredModalShell({
 
   if (!open) return null;
 
-  return (
+  // Portal в body обязателен: шелл вызывают из глубины тулбаров, а обёртки
+  // editorial-разметки создают stacking/transform-контексты — position:fixed
+  // внутри них привязывается к предку и оверлей открывается перекрытым или
+  // невидимым. Тот же паттерн у ExportModal (см. ChartCaptureButton).
+  return createPortal(
     <div
       className="fixed inset-0 flex items-center justify-center p-4"
       style={{ zIndex: 9999, background: 'rgba(0,0,0,0.5)' }}
@@ -78,6 +83,7 @@ export default function CenteredModalShell({
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
