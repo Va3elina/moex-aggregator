@@ -35,7 +35,7 @@ interface SimpleChartProps {
   showSecondary?: boolean;
   showThird?: boolean;
   /** Скрыть основную линию + левую ось. Используется в индикаторах где primary —
-   *  «вспомогательный» в user mental model (Открытый интерес: primary=цена,
+   *  «вспомогательный» в user mental model (Открытые позиции: primary=цена,
    *  юзер воспринимает OI главным). При false: primary line/dots/y-axis/tooltip-line
    *  не рисуются; secondary остаётся в полном объёме. */
   showPrimary?: boolean;

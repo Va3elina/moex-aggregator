@@ -86,7 +86,7 @@ _DOCS_ENABLED = os.getenv("ENABLE_API_DOCS", "").strip().lower() in ("1", "true"
 
 app = FastAPI(
     title="Фрейм API",
-    description="API аналитики Московской биржи: инструменты, свечи, открытый интерес",
+    description="API аналитики Московской биржи: инструменты, свечи, открытые позиции",
     version="1.0.0",
     docs_url="/api/docs" if _DOCS_ENABLED else None,
     redoc_url="/api/redoc" if _DOCS_ENABLED else None,

@@ -30,7 +30,7 @@ export type ExportModalState =
 
 /** Метаданные для рендера header/footer экспорт-фрейма. */
 export interface ExportMetadata {
-    /** Заголовок (имя индикатора), e.g. "Открытый интерес" */
+    /** Заголовок (имя индикатора), e.g. "Открытые позиции" */
     title: string;
     /** Имя актива/инструмента, e.g. "Сбербанк" */
     asset?: string;

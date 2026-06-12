@@ -183,7 +183,7 @@ export default function TelegramAlertsSection() {
                     {/* ── Список алертов ── */}
                     {alerts.length === 0 ? (
                         <div style={{ color: sub, fontSize: 'var(--fs-sm)' }}>
-                            Пока нет алертов. Создайте кнопкой<BellGlyph /> на индикаторе (сейчас — «Открытый интерес»).
+                            Пока нет алертов. Создайте кнопкой<BellGlyph /> на индикаторе (сейчас — «Открытые позиции»).
                         </div>
                     ) : (
                         <>

@@ -71,7 +71,7 @@ export function HeatmapPreview() {
   );
 }
 
-/** 3. Открытый интерес — price + OI bars */
+/** 3. Открытые позиции — price + OI bars */
 export function OpenInterestPreview() {
   // Price line points
   const pricePts = [50, 55, 48, 52, 60, 65, 58, 62, 70, 68, 72, 78, 74, 80, 85];
@@ -85,7 +85,7 @@ export function OpenInterestPreview() {
   }).join(' ');
 
   return (
-    <SvgFrame label="Открытый интерес">
+    <SvgFrame label="Открытые позиции">
       {/* Grid */}
       {[0, 1, 2, 3].map(i => (
         <line key={i} x1="20" y1={50 + i * 30} x2={380} y2={50 + i * 30} stroke={C_GRID} strokeWidth="1" />

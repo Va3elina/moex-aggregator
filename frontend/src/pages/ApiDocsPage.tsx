@@ -264,7 +264,7 @@ const ENDPOINT_GROUPS: EndpointGroup[] = [
         ],
     },
     {
-        title: 'Открытый интерес',
+        title: 'Открытые позиции',
         endpoints: [
             {
                 id: 'oi-current',
@@ -272,7 +272,7 @@ const ENDPOINT_GROUPS: EndpointGroup[] = [
                 path: '/api/v1/public/oi/current',
                 title: 'ОИ — последняя точка',
                 description:
-                    'Текущий открытый интерес по фьючерсу с разбивкой long/short по клиентским группам — физические или юридические лица.',
+                    'Текущие открытые позиции по фьючерсу с разбивкой long/short по клиентским группам — физические или юридические лица.',
                 params: [
                     {
                         name: 'instrument',

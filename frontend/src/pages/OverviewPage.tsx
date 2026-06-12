@@ -49,7 +49,7 @@ const INDICATORS: {
   badge?: string;
 }[] = [
   { path: '/heatmap', title: 'Карта рынка', desc: 'Акции MOEX по секторам, размер = капитализация', icon: Grid3X3 },
-  { path: '/oi', title: 'Открытый интерес', desc: 'Позиции участников по фьючерсам Мосбиржи', icon: BarChart3 },
+  { path: '/oi', title: 'Открытые позиции', desc: 'Позиции участников по фьючерсам Мосбиржи', icon: BarChart3 },
   { path: '/funds-money', title: 'Деньги в фондах', desc: 'Динамика СЧА и притоки-оттоки фондов', icon: Wallet },
   { path: '/strength', title: 'Сила рынка', desc: '% акций выше EMA 50/100/200', icon: Activity },
   { path: '/buffett', title: 'Индикатор Баффетта', desc: 'Капитализация / ВВП + Cap / M2', icon: Scale },

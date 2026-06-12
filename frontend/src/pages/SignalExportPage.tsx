@@ -158,7 +158,7 @@ export default function SignalExportPage() {
             marginTop: 6,
           }}
         >
-          Открытый интерес · 1Д · {periodLabel} · {groupLabel} · Позиции
+          Открытые позиции · 1Д · {periodLabel} · {groupLabel} · Позиции
         </div>
       </div>
 

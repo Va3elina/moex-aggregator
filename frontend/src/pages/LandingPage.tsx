@@ -69,7 +69,7 @@ const SENTIMENT_INDICATORS: Indicator[] = [
 // Группа 2: Куда идут реальные деньги
 const MONEY_FLOW_INDICATORS: Indicator[] = [
   {
-    title: 'Открытый интерес',
+    title: 'Открытые позиции',
     desc: 'Позиции участников по фьючерсам с 2007 года. Разбивка физики/юрики/нерезиденты — где деньги на самом деле.',
     icon: <BarChart3 size={ICON_SIZE} strokeWidth={2} />,
     ctaIcon: <ArrowRight size={CTA_ICON_SIZE} />,

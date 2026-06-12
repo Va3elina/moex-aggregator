@@ -24,7 +24,7 @@ const MOBILE_READY_PATHS = new Set([
 
 const NAV_ITEMS: { path: string; label: string; disabled?: boolean; badge?: string }[] = [
   { path: '/heatmap', label: 'Карта рынка' },
-  { path: '/oi', label: 'Открытый интерес' },
+  { path: '/oi', label: 'Открытые позиции' },
   { path: '/funds-money', label: 'Деньги в фондах' },
   { path: '/buffett', label: 'Индикатор Баффетта' },
   { path: '/strength', label: 'Сила рынка' },
