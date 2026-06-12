@@ -43,7 +43,7 @@ const OI_VARIANTS: OIVariant[] = ['oi', 'long', 'short', 'both', 'net'];
 function variantLabel(v: OIVariant, mode: DisplayMode): string {
   const pos = mode === 'positions';
   switch (v) {
-    case 'oi':    return 'Открытые позиции';
+    case 'oi':    return 'Открытый интерес';
     case 'long':  return pos ? 'Покупки' : 'Покупатели';
     case 'short': return pos ? 'Продажи' : 'Продавцы';
     case 'both':  return pos ? 'Покупки + Продажи' : 'Покупатели + Продавцы';

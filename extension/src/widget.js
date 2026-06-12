@@ -16,7 +16,7 @@
   var EMBED_BASE = window.FRAME_WIDGET_EMBED_BASE || 'https://xn--80aklbnczmv.xn--p1ai';
 
   var INDICATORS = [
-    { id: 'oi', label: 'Открытый интерес', group: 'instrument' },
+    { id: 'oi', label: 'Открытые позиции', group: 'instrument' },
     { id: 'seasonality', label: 'Сезонность', group: 'instrument' },
     { id: 'buffett', label: 'Индикатор Баффетта', group: 'market' },
     { id: 'strength', label: 'Сила рынка', group: 'market' },

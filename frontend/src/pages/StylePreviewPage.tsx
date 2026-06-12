@@ -455,7 +455,7 @@ export default function StylePreviewPage() {
   const [period, setPeriod] = useState<string>('6М');
   const [interval, setIntervalVal] = useState<string>('1д');
   const [mode, setMode] = useState<string>('Позиции');
-  const [oiVariant, setOiVariant] = useState<string>('Открытые позиции');
+  const [oiVariant, setOiVariant] = useState<string>('Открытый интерес');
   const [clgroup, setClgroup] = useState<string>('Физлица');
 
   const theme = THEMES[themeName];
@@ -473,7 +473,7 @@ export default function StylePreviewPage() {
   const periods = ['1Д', '1Н', '1М', '3М', '6М', '1Г', '2Г', '5Л', 'Всё'];
   const intervals = ['5м', '1ч', '1д'];
   const modes = ['Только цена', 'Объём позиций', 'Число трейдеров'];
-  const oiVariants = ['Открытые позиции', 'Покупки', 'Продажи', 'Покупки + Продажи', 'Чистая позиция', 'Экспирации'];
+  const oiVariants = ['Открытый интерес', 'Покупки', 'Продажи', 'Покупки + Продажи', 'Чистая позиция', 'Экспирации'];
 
   const kpis = [
     { k: 'Σ длинных', v: '273 269', d: '+4,2%', up: true as boolean | null },

@@ -195,7 +195,7 @@ def render_signal_chart(
     _legend(fig, name)
     clgroup_ru = "Физлица" if clgroup == "FIZ" else "Юрлица"
     _header_block(fig, name, sectype,
-                  f"Открытый интерес · 1Д · 6M · {clgroup_ru} · Состояние на сигнал")
+                  f"Открытые позиции · 1Д · 6M · {clgroup_ru} · Состояние на сигнал")
     _footer_block(fig, _date_ru(signal_date))
 
     fig.savefig(output_path, dpi=DPI, facecolor=BG)
@@ -281,7 +281,7 @@ def render_result_chart(
     direction_ru = "рост" if direction == "bull" else "падение"
     _header_block(
         fig, name, sectype,
-        f"Открытый интерес · {clgroup_ru} · Прогноз был на {direction_ru} от {_date_ru(signal_date)}"
+        f"Открытые позиции · {clgroup_ru} · Прогноз был на {direction_ru} от {_date_ru(signal_date)}"
     )
     _footer_block(fig, f"Результат на {_date_ru(result_date)}")
 

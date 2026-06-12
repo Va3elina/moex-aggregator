@@ -134,27 +134,27 @@ def format_msg(a: Alert, value: float, ctx: dict) -> str:
         clg = "физлица" if (a.clgroup or "FIZ") == "FIZ" else "юрлица"
         diff = ctx.get("last_diff", 0)
         arrow = "↑" if diff > 0 else "↓"
-        return (f"🔔 <b>{name} · {a.asset}</b> — Открытый интерес\n"
+        return (f"🔔 <b>{name} · {a.asset}</b> — Открытые позиции\n"
                 f"Аномалия позиций ({clg}): z = {value:+g}σ (порог {thr:g})\n"
                 f"Δ чистой позиции за день: {diff:+,} контрактов {arrow}\n{link}")
     if a.indicator == "oi_move":
         diff = ctx.get("last_diff", 0)
         if ctx.get("neutral"):
             # clgroup ALL — нейтральный текст, без субъекта физ/юр в роли действующего.
-            return (f"🔔 <b>{name} · {a.asset}</b> — Открытый интерес{tf_note}\n"
+            return (f"🔔 <b>{name} · {a.asset}</b> — Открытые позиции{tf_note}\n"
                     f"Позиции по {a.asset} резко сдвинулись: "
                     f"в {value:g}× больше обычного (порог {thr:g}×)\n"
                     f"{diff_label}: {diff:+,} контрактов\n{link}")
         clg = "Физлица" if (a.clgroup or "FIZ") == "FIZ" else "Юрлица"
         word = "резко нарастили" if ctx.get("direction") == "up" else "резко сократили"
-        return (f"🔔 <b>{name} · {a.asset}</b> — Открытый интерес{tf_note}\n"
+        return (f"🔔 <b>{name} · {a.asset}</b> — Открытые позиции{tf_note}\n"
                 f"{clg} {word} позицию: в {value:g}× больше обычного (порог {thr:g}×)\n"
                 f"{diff_label}: {diff:+,} контрактов\n{link}")
     if a.indicator == "oi_participants":
         clg = "физлица" if (a.clgroup or "FIZ") == "FIZ" else "юрлица"
         diff = ctx.get("last_diff", 0)
         verb = "Прибавилось" if ctx.get("direction") == "up" else "Убыло"
-        return (f"🔔 <b>{name} · {a.asset}</b> — Открытый интерес{tf_note}\n"
+        return (f"🔔 <b>{name} · {a.asset}</b> — Открытые позиции{tf_note}\n"
                 f"Резко изменилось число участников ({clg}) по {a.asset}: "
                 f"в {value:g}× больше обычного (порог {thr:g}×)\n"
                 f"{verb}: {diff:+,} участников\n{link}")

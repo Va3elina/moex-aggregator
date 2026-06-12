@@ -3,7 +3,7 @@
 (значения/формы взяты с живого терминала). Editorial-палитра, ровно 1280×800,
 RGB без альфа-канала. Приватно: без баланса счёта.
 
-  01-oi.png        — панель «Открытый интерес» (Нефть Brent): цена + чистая позиция
+  01-oi.png        — панель «Открытые позиции» (Нефть Brent): цена + чистая позиция
   02-settings.png  — drawer настроек ОИ (таймфрейм/период/группа/режим/показатель)
   03-strength.png  — панель «Сила рынка»: индекс IMOEX + breadth-гистограмма
 
@@ -135,7 +135,7 @@ def watermark(d, x, y):
     text(d, (x + 22, y), 'FRAME', font(SANS, s(15)), (245, 241, 232, 40))
 
 
-# ─────────────────────────── 01 — Открытый интерес ───────────────────────────
+# ─────────────────────────── 01 — Открытые позиции ───────────────────────────
 def shot_oi():
     img, d = new()
     px, py, pw, ph = 120, 70, 1040, 660
@@ -154,11 +154,11 @@ def shot_oi():
         cx += 12
         base += random.uniform(-6, 6)
 
-    head_h = panel_frame(d, px, py, pw, ph, 'Фрейм · Открытый интерес')
+    head_h = panel_frame(d, px, py, pw, ph, 'Фрейм · Открытые позиции')
     # подзаголовок
     text(d, (px + 22, py + head_h + 14), 'Нефть Brent', font(SANS, s(15)), TEXT)
     tw = d.textlength('Нефть Brent', font=font(SANS, s(15))) / SS
-    text(d, (px + 30 + tw, py + head_h + 16), 'Открытый интерес', font(SANS_R, s(12)), DIM)
+    text(d, (px + 30 + tw, py + head_h + 16), 'Открытые позиции', font(SANS_R, s(12)), DIM)
 
     # область графика
     gx, gy = px + 70, py + head_h + 78
@@ -239,7 +239,7 @@ def chip_row(d, x, y, items):
 def shot_settings():
     img, d = new()
     px, py, pw, ph = 200, 60, 880, 680
-    head_h = panel_frame(d, px, py, pw, ph, 'Фрейм · Открытый интерес')
+    head_h = panel_frame(d, px, py, pw, ph, 'Фрейм · Открытые позиции')
     # шапка drawer
     dy = py + head_h
     d.rectangle([s(px) + s(2), s(dy), s(px + pw) - s(2), s(dy + 52)], fill=PANEL)
@@ -247,7 +247,7 @@ def shot_settings():
     text(d, (px + 22, dy + 16), '⚙', font(SANS, s(17)), ACCENT)
     text(d, (px + 50, dy + 15), 'Настройки', font(SANS, s(15)), TEXT)
     tw = d.textlength('Настройки', font=font(SANS, s(15))) / SS
-    text(d, (px + 62 + tw, dy + 17), '· Открытый интерес', font(SANS_R, s(12)), DIM)
+    text(d, (px + 62 + tw, dy + 17), '· Открытые позиции', font(SANS_R, s(12)), DIM)
     d.rounded_rectangle([s(px + pw - 44), s(dy + 14), s(px + pw - 20), s(dy + 38)], radius=s(4), outline=SOFT, width=s(1))
     text(d, (px + pw - 32, dy + 15), '×', font(SANS_R, s(14)), DIM, anchor='ma')
 

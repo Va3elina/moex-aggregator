@@ -267,7 +267,7 @@ export default function EmbedOpenInterest() {
   const labels = useMemo(() => {
     const isPositions = displayMode === 'positions';
     switch (oiVariant) {
-      case 'oi': return { secondary: 'Открытые позиции', third: '' };
+      case 'oi': return { secondary: 'Открытый интерес', third: '' };
       case 'long': return { secondary: isPositions ? 'Покупки' : 'Покупатели', third: '' };
       case 'short': return { secondary: isPositions ? 'Продажи' : 'Продавцы', third: '' };
       case 'both': return {
@@ -284,7 +284,7 @@ export default function EmbedOpenInterest() {
   const variantOpts = useMemo(() => {
     const isPositions = displayMode === 'positions';
     return [
-      { id: 'oi' as OIVariant, label: 'Открытые позиции' },
+      { id: 'oi' as OIVariant, label: 'Открытый интерес' },
       { id: 'long' as OIVariant, label: isPositions ? 'Покупки' : 'Покупатели' },
       { id: 'short' as OIVariant, label: isPositions ? 'Продажи' : 'Продавцы' },
       { id: 'both' as OIVariant, label: isPositions ? 'Покупки + Продажи' : 'Покупатели + Продавцы' },

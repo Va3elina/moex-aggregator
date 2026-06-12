@@ -396,7 +396,7 @@ export default function OpenInterestPage() {
   const getLabels = () => {
     const isPositions = displayMode === 'positions';
     switch (oiVariant) {
-      case 'oi': return { secondary: 'Открытые позиции', third: '' };
+      case 'oi': return { secondary: 'Открытый интерес', third: '' };
       case 'long': return { secondary: isPositions ? 'Покупки' : 'Покупатели', third: '' };
       case 'short': return { secondary: isPositions ? 'Продажи' : 'Продавцы', third: '' };
       case 'both': return {
@@ -564,7 +564,7 @@ export default function OpenInterestPage() {
             <div data-tour="oi-variant">
             <Dropdown<OIVariant>
               options={[
-                { key: 'oi',    label: 'Открытые позиции',                                                     color: 'var(--oi-amber)' },
+                { key: 'oi',    label: 'Открытый интерес',                                                     color: 'var(--oi-amber)' },
                 { key: 'long',  label: displayMode === 'positions' ? 'Покупки' : 'Покупатели',                 color: 'var(--oi-green)' },
                 { key: 'short', label: displayMode === 'positions' ? 'Продажи' : 'Продавцы',                   color: 'var(--oi-red)' },
                 { key: 'both',  label: displayMode === 'positions' ? 'Покупки + Продажи' : 'Покупатели + Продавцы', color: 'var(--oi-purple)' },
@@ -841,7 +841,7 @@ export default function OpenInterestPage() {
           <div className="flex items-start" style={{ gap: 'var(--sp-3)' }}>
             <span className="legend-dot mt-1.5" style={{ backgroundColor: COLORS.amber }} />
             <div>
-              <span className="font-medium" style={{ color: COLORS.amber }}>Открытые позиции</span>
+              <span className="font-medium" style={{ color: COLORS.amber }}>Открытый интерес</span>
               <span className="text-theme-secondary"> — сумма позиций на покупку и на продажу</span>
             </div>
           </div>

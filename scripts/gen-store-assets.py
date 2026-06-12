@@ -102,7 +102,7 @@ def make_marquee():
     sf = font(SANS, int(34 * SS))
     d.text((int(274 * SS), int(238 * SS)), 'Индикаторы прямо в терминале', font=sf, fill=CREAM)
     sf2 = font(SANS_REG, int(28 * SS))
-    d.text((int(274 * SS), int(290 * SS)), 'Т-Инвестиций — открытый интерес, сезонность,', font=sf2, fill=DIM)
+    d.text((int(274 * SS), int(290 * SS)), 'Т-Инвестиций — открытые позиции, сезонность,', font=sf2, fill=DIM)
     d.text((int(274 * SS), int(326 * SS)), 'потоки фондов и ещё 4 индикатора', font=sf2, fill=DIM)
     # кромка снизу
     d.rectangle([0, H - 10 * SS, W, H], fill=PUMPKIN)
@@ -120,7 +120,7 @@ def make_hero():
     s = int(64 * SS)
     logo(d, pad + int(28 * SS), pad + int(24 * SS), s)
     tf = font(SERIF, int(34 * SS))
-    d.text((pad + int(110 * SS), pad + int(38 * SS)), 'Фрейм · Открытый интерес', font=tf, fill=CREAM)
+    d.text((pad + int(110 * SS), pad + int(38 * SS)), 'Фрейм · Открытые позиции', font=tf, fill=CREAM)
     sf = font(SANS_REG, int(22 * SS))
     d.text((pad + int(30 * SS), H - pad - int(60 * SS)), 'таймфрейм.рф', font=sf, fill=DIM)
     return img.resize((1280, 800), Image.LANCZOS)

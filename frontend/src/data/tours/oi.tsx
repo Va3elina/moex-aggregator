@@ -108,7 +108,7 @@ export const oiTourSteps: TourStep[] = [
       <>
         <p style={{ marginBottom: 8 }}>Пять вариантов цветной линии на графике:</p>
         <ul style={{ paddingLeft: 18, fontSize: 13 }}>
-          <li><span style={{ color: 'var(--oi-amber)' }}>●</span> <strong>Открытые позиции</strong> — суммарно все позиции</li>
+          <li><span style={{ color: 'var(--oi-amber)' }}>●</span> <strong>Открытый интерес</strong> — суммарно все позиции</li>
           <li><span style={{ color: 'var(--oi-green)' }}>●</span> <strong>Покупки</strong> — только длинные (ставка на рост)</li>
           <li><span style={{ color: 'var(--oi-red)' }}>●</span> <strong>Продажи</strong> — только короткие (ставка на падение)</li>
           <li><strong>Покупки + Продажи</strong> — обе серии вместе для визуального сравнения</li>

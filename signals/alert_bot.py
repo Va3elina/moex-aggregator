@@ -243,7 +243,7 @@ def _alert_card_text(a) -> str:
     unit = _alert_unit(indicator)
 
     if indicator == "oi_zscore":
-        head = "Открытый интерес"
+        head = "Открытые позиции"
         clg = "физлица" if (clgroup or "FIZ") == "FIZ" else "юрлица"
         cond = f"z-score ({clg}) {_OP_PRICE.get(op, op)} {_num(threshold)}{unit}"
     elif indicator == "oi_move":
