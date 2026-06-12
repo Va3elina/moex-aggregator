@@ -91,8 +91,9 @@ frontend/.claude/
 extension/store/build/
 extension/store/screenshots/*.png
 
-# Рантайм-данные (manual SCHA PDF через docker volume, signal scratch) — не код
-data/
+# Рантайм-данные (manual SCHA PDF через docker volume, signal scratch) — не код.
+# Якорь от корня обязателен: голое data/ игнорило и frontend/src/data (туры, методология)
+/data/
 signals/data/
 # Бэкап-копии файлов (создаются при правках на сервере как .bak)
 *.bak
