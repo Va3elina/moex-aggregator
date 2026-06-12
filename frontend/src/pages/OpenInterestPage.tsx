@@ -14,6 +14,8 @@ import CsvExportButton from '../components/export/CsvExportButton';
 import { periodToQuery } from '../utils/csvPeriod';
 import InstrumentSearchModal from '../components/InstrumentSearchModal';
 import Dropdown, { type DropdownOption } from '../components/Dropdown';
+import SegmentedControl from '../components/SegmentedControl';
+import LayersButton from '../components/LayersButton';
 import { PERIOD_LABELS as ALL_PERIOD_LABELS, INTERVAL_LABELS } from '../config/chartConfig';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -428,10 +430,10 @@ export default function OpenInterestPage() {
           плоской, как раньше. */}
       <div className="editorial-frame">
 
-      {/* Контролы — все режимы через Dropdown'ы для экономии места.
-          Asset + FIZ/YUR + Interval + Period + DisplayMode + OI variant + Экспирации
-          в одну строку (на узких экранах wraps). Стиль editorial pill через
-          Dropdown компонент. Camera button — в конце строки через ml-auto. */}
+      {/* Контролы в одну строку (на узких экранах wraps), editorial pill-стиль.
+          Asset + FIZ/YUR + Interval (плитки) + Period + DisplayMode + OI variant.
+          Низкочастотные тумблеры слоёв (Цена/Экспирации) — за иконкой «Слои»
+          справа, рядом с камерой и колоколом (ml-auto кластер). */}
       <div ref={controlsRef} className="mb-4 md:mb-6">
         <div className="flex flex-wrap items-center gap-2 md:gap-3">
           {/* Селектор инструмента — открывает модалку */}
@@ -471,13 +473,15 @@ export default function OpenInterestPage() {
 
           {/* Таймфрейм + Период */}
           <div data-tour="oi-timerange" className="flex" style={{ gap: 'var(--sp-2)' }}>
-          <Dropdown<string>
+          {/* Таймфрейм — плитки, не Dropdown: переключается часто, нужен один
+              клик и видимый активный сегмент (решение 2026-06-12). */}
+          <SegmentedControl<string>
             options={[5, 60, 24]
               // Несуществующие у актива таймфреймы убираем ВОВСЕ (не под замок).
               // ISS-only активы (валютные кроссы, неликвидные) имеют только дневку —
               // у них 5м/1ч просто нет в open_interest. Дневку (24) держим всегда.
               .filter((int) => int === 24 || hasInterval(int))
-              .map((int): DropdownOption<string> => {
+              .map((int) => {
                 const allowedLegacy = isIntervalAllowed(int, isAuthenticated);
                 const allowedTier = oiAccess.isLoading || oiAccess.canUseInterval(int);
                 return {
@@ -576,49 +580,21 @@ export default function OpenInterestPage() {
             </div>
           )}
 
-          {/* Экспирации — отдельный toggle (boolean state, не входит в OI variants) */}
-          {displayMode !== 'price' && (
-            <button
-              data-tour="oi-expirations"
-              onClick={() => setShowExpirations(!showExpirations)}
-              className="editorial-press font-semibold rounded-full"
-              style={{
-                backgroundColor: showExpirations ? 'var(--accent)' : 'var(--bg-secondary)',
-                color: showExpirations ? 'var(--text-inverse)' : 'var(--text-primary)',
-                border: '2px solid var(--text-primary)',
-                boxShadow: showExpirations ? 'var(--shadow-hard-chip)' : undefined,
-                fontSize: 'var(--fs-sm)',
-                padding: 'var(--sp-2) var(--sp-4)',
-              }}
-            >
-              Экспирации
-            </button>
-          )}
-
-          {/* Цена — toggle для скрытия линии цены инструмента (spot). Доступна
-              только если displayMode !== 'price' (иначе кроме цены ничего нет).
-              Зеркальный паттерн "Капитализация" в Buffett: пользователь хочет
-              максимизировать видимость OI/позиций без отвлекающей price-линии. */}
-          {displayMode !== 'price' && (
-            <button
-              data-tour="oi-price-toggle"
-              onClick={() => setShowPrice(!showPrice)}
-              className="editorial-press font-semibold rounded-full"
-              style={{
-                backgroundColor: showPrice ? 'var(--accent)' : 'var(--bg-secondary)',
-                color: showPrice ? 'var(--text-inverse)' : 'var(--text-primary)',
-                border: '2px solid var(--text-primary)',
-                boxShadow: showPrice ? 'var(--shadow-hard-chip)' : undefined,
-                fontSize: 'var(--fs-sm)',
-                padding: 'var(--sp-2) var(--sp-4)',
-              }}
-            >
-              Цена
-            </button>
-          )}
-
           {/* Camera + CSV buttons inline, прижаты к правому краю */}
           <div data-tour="oi-export" className="ml-auto flex items-center" style={{ gap: 'var(--sp-2)' }}>
+          {/* Слои (Цена/Экспирации) — низкочастотные тумблеры вида: спрятаны за
+              иконкой-стопкой, настройка в модалке поверх экрана, без бейджа
+              состояния (решение 2026-06-12). В legacy-режиме 'price' слоёв нет —
+              кнопка скрыта (как раньше сами тумблеры). */}
+          {displayMode !== 'price' && (
+            <LayersButton
+              tourId="oi-layers"
+              layers={[
+                { key: 'price', label: 'Цена', hint: 'Линия цены фьючерса', checked: showPrice, onChange: setShowPrice },
+                { key: 'expirations', label: 'Экспирации', hint: 'Метки смены контракта', checked: showExpirations, onChange: setShowExpirations },
+              ]}
+            />
+          )}
           <CsvExportButton
             indicator="open_interest"
             config={() => {
