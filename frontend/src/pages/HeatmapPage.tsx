@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Grid3X3 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import Dropdown, { type DropdownOption } from '../components/Dropdown';
+import AdaptiveSegmented from '../components/AdaptiveSegmented';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import CsvExportButton from '../components/export/CsvExportButton';
 import ChartWatermark from '../components/ChartWatermark';
@@ -16,6 +17,7 @@ import { useTierAccess } from '../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 import { handleTierError } from '../utils/tierError';
 import { usePersistedState } from '../hooks/usePersistedState';
+import { useElementWidth } from '../hooks/useElementWidth';
 
 // Опции для фильтров
 const PERIOD_OPTIONS = [
@@ -136,6 +138,10 @@ export default function HeatmapPage() {
   const containerRef = useRef<HTMLDivElement>(null);
   // Outer paper-card ref — used for capture (включает watermark в snapshot)
   const captureRef = useRef<HTMLDivElement>(null);
+  // Toolbar ref — меряем доступную ширину ряда контролов, чтобы решить,
+  // показывать «размер» и «период» горизонтальными сегментами или свернуть
+  // в Dropdown (см. compactControls ниже).
+  const toolbarRef = useRef<HTMLDivElement>(null);
   const [sectors, setSectors] = useState<HeatmapSector[]>([]);
   const [allStocks, setAllStocks] = useState<HeatmapStock[]>([]);
   const [loading, setLoading] = useState(true);
@@ -164,6 +170,17 @@ export default function HeatmapPage() {
   const periodConfig = PERIOD_OPTIONS.find(p => p.value === period) || PERIOD_OPTIONS[0];
   const colorBy = periodConfig.color;
   const volumeKey = periodConfig.volume;
+
+  // Адаптивный тулбар: размер (Капитализация/Оборот) и период показываем
+  // горизонтальными сегментами, пока ряду хватает ширины; на узких десктоп/
+  // планшетных окнах сворачиваем их в Dropdown, чтобы контролы не переносились
+  // на вторую строку. Порог ~ суммарная «развёрнутая» ширина ряда (два
+  // Dropdown'а + два сегмента + кнопки экспорта). Меряем реальную ширину
+  // контейнера, а не viewport — она зависит ещё и от sidebar'а/паддингов.
+  // width===0 (до первого замера) → не compact, чтобы не мигать на первом кадре.
+  const SEGMENTED_MIN_WIDTH = 860;
+  const toolbarWidth = useElementWidth(toolbarRef);
+  const compactControls = toolbarWidth > 0 && toolbarWidth < SEGMENTED_MIN_WIDTH;
 
   // Тултип
   const [tooltip, setTooltip] = useState<{
@@ -585,8 +602,11 @@ export default function HeatmapPage() {
           1.5px outline + hard-shadow (как на OI page). */}
       <div className="editorial-frame">
 
-      {/* Контролы — Dropdown'ы. Camera button — в конце через ml-auto. */}
-      <div className="flex flex-wrap mb-4 md:mb-6 items-center" style={{ gap: 'var(--sp-2)' }}>
+      {/* Контролы. mapMode и группировка — Dropdown; размер (Капитализация/
+          Оборот) и период — адаптивные сегменты: горизонтально пока ряду хватает
+          ширины, иначе сворачиваются в Dropdown (compactControls). Camera/CSV —
+          в конце через ml-auto. */}
+      <div ref={toolbarRef} className="flex flex-wrap mb-4 md:mb-6 items-center" style={{ gap: 'var(--sp-2)' }}>
         <div data-tour="heatmap-map-mode">
         <Dropdown<'imoex' | 'all'>
           options={[
@@ -612,25 +632,29 @@ export default function HeatmapPage() {
         />
         </div>
 
-        <div data-tour="heatmap-size" className="flex" style={{ gap: 'var(--sp-2)' }}>
-        <Dropdown<string>
-          options={SIZE_OPTIONS.map((o): DropdownOption<string> => ({ key: o.value, label: o.label }))}
-          value={sizeBy}
-          onChange={setSizeBy}
-        />
-
+        {/* Группировка (Dropdown) + размер плитки (адаптивный сегмент справа от
+            неё). Оба под одним data-tour="heatmap-size" — тур описывает их вместе. */}
+        <div data-tour="heatmap-size" className="flex items-center" style={{ gap: 'var(--sp-2)' }}>
         <Dropdown<string>
           options={GROUP_OPTIONS.map((o): DropdownOption<string> => ({ key: o.value, label: o.label }))}
           value={groupBy}
           onChange={setGroupBy}
         />
+
+        <AdaptiveSegmented<string>
+          options={SIZE_OPTIONS.map((o) => ({ key: o.value, label: o.label }))}
+          value={sizeBy}
+          onChange={setSizeBy}
+          collapsed={compactControls}
+        />
         </div>
 
         <div data-tour="heatmap-period">
-        <Dropdown<string>
-          options={PERIOD_OPTIONS.map((o): DropdownOption<string> => ({ key: o.value, label: o.label }))}
+        <AdaptiveSegmented<string>
+          options={PERIOD_OPTIONS.map((o) => ({ key: o.value, label: o.label }))}
           value={period}
           onChange={setPeriod}
+          collapsed={compactControls}
         />
         </div>
 
