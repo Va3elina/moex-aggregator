@@ -318,7 +318,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
       <div
         key={inst.sectype}
         onClick={handleClick}
-        className="instrument-item flex items-center gap-3.5 px-3 py-1.5 rounded-lg transition-colors"
+        className="instrument-item flex items-center gap-3 px-3 py-1 rounded-lg transition-colors"
         style={{
           color: 'var(--text-primary)',
           cursor: accessible ? 'pointer' : 'not-allowed',
@@ -431,11 +431,11 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
         {/* Star — всегда кликабельна (можно добавить в избранное даже заблок. актив) */}
         <button
           onClick={(e) => toggleFavorite(inst.sectype, e)}
-          className="p-2 transition-colors flex-shrink-0"
+          className="p-1.5 transition-colors flex-shrink-0"
           style={{ color: isFavorite ? 'var(--accent)' : 'var(--text-muted)' }}
           aria-label={isFavorite ? 'Убрать из избранных' : 'Добавить в избранные'}
         >
-          <Star size={20} fill={isFavorite ? 'currentColor' : 'transparent'} />
+          <Star size={16} fill={isFavorite ? 'currentColor' : 'transparent'} />
         </button>
       </div>
     );
@@ -593,10 +593,10 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
           style={{ scrollbarGutter: 'stable' }}
         >
           {/* Sticky-шапка — кликабельная сортировка, зеркалит строку списка
-              ([иконка 32]·gap·[Актив flex-1]·[Изм.]·[Объём]·[lock 18]·[звезда 36]) */}
+              ([иконка 28]·gap·[Актив flex-1]·[Изм.]·[Объём]·[lock 18]·[звезда 28]) */}
           {!loading && (
             <div
-              className="sticky top-0 z-10 flex items-center gap-3.5 px-3 pt-1 pb-2.5 mb-2"
+              className="sticky top-0 z-10 flex items-center gap-3 px-3 pt-1 pb-2 mb-1.5"
               style={{ backgroundColor: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)' }}
             >
               {/* Чекбокс-спейсер — зеркалит чекбокс в строке (multi-режим) */}
@@ -608,7 +608,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
               {renderSortHeader('change', 'Изм. %', 'Изменение цены за торговый день, %')}
               {renderSortHeader('volume', 'Объём', 'Объём торгов за день, ₽')}
               <span style={{ width: 18, flexShrink: 0 }} aria-hidden="true" />
-              <span style={{ width: 36, flexShrink: 0 }} aria-hidden="true" />
+              <span style={{ width: 28, flexShrink: 0 }} aria-hidden="true" />
             </div>
           )}
           {loading ? (
@@ -625,9 +625,9 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
             <>
               {/* Favorites */}
               {favoriteInstruments.length > 0 && searchQuery === '' && (
-                <div className="mb-3">
+                <div className="mb-2">
                   <h3
-                    className="text-xs font-semibold uppercase tracking-wider mb-2 pl-3"
+                    className="text-xs font-semibold uppercase tracking-wider mb-1.5 pl-3"
                     style={{ color: 'var(--text-secondary)' }}
                   >
                     Избранные
@@ -649,9 +649,9 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
                 <>
                   {searchQuery === '' && favoriteInstruments.length > 0 && regularInstruments.length > 0 && (
                     <>
-                      <div className="h-px mb-3" style={{ backgroundColor: 'var(--border-color)' }} />
+                      <div className="h-px mb-2" style={{ backgroundColor: 'var(--border-color)' }} />
                       <h3
-                        className="text-xs font-semibold uppercase tracking-wider mb-2 pl-3"
+                        className="text-xs font-semibold uppercase tracking-wider mb-1.5 pl-3"
                         style={{ color: 'var(--text-secondary)' }}
                       >
                         Остальные
