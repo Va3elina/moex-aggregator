@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CbrFlowsPeriod } from '../../services/api';
 import { getCategoryColor } from './cbrPalette';
+import { getCategoryShortLabel } from './cbrCategoryInfo';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
 import ChartLegend, { type ChartLegendItem } from '../chart/ChartLegend';
@@ -171,7 +172,7 @@ export default function StackedBidirectionalHistogram({
   );
 
   const legendItems = useMemo<ChartLegendItem[]>(
-    () => categories.map((cat) => ({ color: getCategoryColor(cat, theme), label: cat })),
+    () => categories.map((cat) => ({ color: getCategoryColor(cat, theme), label: getCategoryShortLabel(cat) })),
     [categories, theme],
   );
 
