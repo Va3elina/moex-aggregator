@@ -474,20 +474,25 @@ export default function OpenInterestPage() {
           {/* Таймфрейм + Период */}
           <div data-tour="oi-timerange" className="flex" style={{ gap: 'var(--sp-2)' }}>
           {/* Таймфрейм — плитки, не Dropdown: переключается часто, нужен один
-              клик и видимый активный сегмент (решение 2026-06-12). */}
+              клик и видимый активный сегмент (решение 2026-06-12).
+              Все три сегмента показываем ВСЕГДА. Если у актива нет внутридневных
+              данных (ISS-only: крипта, неликвидные кроссы — только дневка), 5м/1ч
+              не выкидываем, а помечаем disabled (серые + тултип, без замочка),
+              иначе контрол схлопывался в одну странную кнопку «1д». Дневка (24)
+              есть всегда. Замочек (locked) — отдельно, только тарифный гейт. */}
           <SegmentedControl<string>
-            options={[5, 60, 24]
-              // Несуществующие у актива таймфреймы убираем ВОВСЕ (не под замок).
-              // ISS-only активы (валютные кроссы, неликвидные) имеют только дневку —
-              // у них 5м/1ч просто нет в open_interest. Дневку (24) держим всегда.
-              .filter((int) => int === 24 || hasInterval(int))
-              .map((int) => {
+            options={[5, 60, 24].map((int) => {
+                const available = int === 24 || hasInterval(int);
                 const allowedLegacy = isIntervalAllowed(int, isAuthenticated);
                 const allowedTier = oiAccess.isLoading || oiAccess.canUseInterval(int);
                 return {
                   key: String(int),
                   label: INTERVAL_LABELS[int as keyof typeof INTERVAL_LABELS],
-                  locked: !allowedLegacy || !allowedTier,  // несуществующие уже отфильтрованы
+                  // Нет данных → серый + тултип, без замочка и без апгрейда.
+                  disabled: !available,
+                  title: !available ? 'У этого инструмента нет данных в этом таймфрейме' : undefined,
+                  // Тарифный лок — только когда данные есть.
+                  locked: available && (!allowedLegacy || !allowedTier),
                 };
               })}
             value={String(interval)}

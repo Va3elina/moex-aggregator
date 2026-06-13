@@ -6,9 +6,14 @@
  * Визуально — один pill с внутренними перегородками (рамка как у
  * Dropdown-trigger), активный сегмент = accent + inverse text.
  *
- * locked-опции: видимы с замочком, клик уходит в onLockedClick (UpgradeModal /
- * login-gate) — паритет с DropdownOption.locked. Несуществующие у актива
- * значения сюда не передавать вовсе (фильтровать на странице, как для Dropdown).
+ * Два вида недоступности (важно различать — это РАЗНЫЕ причины):
+ *  - locked: данные есть, но закрыты тарифом/гостевым гейтом → серый + замочек,
+ *    клик уходит в onLockedClick (UpgradeModal / login). Это «улучшай тариф».
+ *  - disabled: данных в этом таймфрейме у инструмента просто НЕТ (ISS-only
+ *    активы, крипта — только дневка) → серый, БЕЗ замочка, не кликается,
+ *    причину объясняет тултип (title). Замочек тут вводил бы в заблуждение,
+ *    будто можно «разблокировать». Так контрол всегда из 3 сегментов, без
+ *    схлопывания в одну странную кнопку.
  */
 import { Lock } from 'lucide-react';
 
@@ -17,7 +22,9 @@ export interface SegmentOption<T extends string> {
   label: string;
   /** Не кликабелен по тарифу/гостевому гейту — рисуем замочек */
   locked?: boolean;
-  /** title-подсказка на сегменте (полное имя для короткого лейбла) */
+  /** Данных нет у инструмента — серый, без замочка, не кликается (см. title) */
+  disabled?: boolean;
+  /** title-подсказка на сегменте (полное имя / причина недоступности) */
   title?: string;
 }
 
@@ -53,13 +60,16 @@ export default function SegmentedControl<T extends string>({
     >
       {options.map((opt, i) => {
         const active = opt.key === value;
+        const muted = opt.locked || opt.disabled;
         return (
           <button
             key={opt.key}
             type="button"
             title={opt.title}
             aria-pressed={active}
+            aria-disabled={opt.disabled || undefined}
             onClick={() => {
+              if (opt.disabled) return;           // данных нет — глухо
               if (opt.locked) { onLockedClick?.(opt.key); return; }
               if (!active) onChange(opt.key);
             }}
@@ -70,19 +80,21 @@ export default function SegmentedControl<T extends string>({
               gap: 4,
               borderLeft: i > 0 ? '2px solid var(--text-primary)' : 'none',
               backgroundColor: active ? 'var(--accent)' : 'transparent',
-              color: opt.locked
+              color: muted
                 ? 'var(--text-muted)'
                 : active
                   ? 'var(--text-inverse)'
                   : 'var(--text-primary)',
-              opacity: opt.locked ? 0.55 : 1,
-              cursor: opt.locked ? 'not-allowed' : 'pointer',
+              opacity: muted ? 0.5 : 1,
+              cursor: muted ? 'not-allowed' : 'pointer',
               whiteSpace: 'nowrap',
               transition: 'background-color 0.12s ease, color 0.12s ease',
             }}
           >
             {opt.label}
-            {opt.locked && <Lock size={11} className="flex-shrink-0" />}
+            {/* Замочек только для тарифного лока. У «нет данных» замка нет —
+                иначе читается как «можно разблокировать». */}
+            {opt.locked && !opt.disabled && <Lock size={11} className="flex-shrink-0" />}
           </button>
         );
       })}
