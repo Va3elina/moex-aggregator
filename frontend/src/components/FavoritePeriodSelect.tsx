@@ -1,21 +1,26 @@
 /**
  * FavoritePeriodSelect — селектор периода в стиле TradingView.
  *
- * Избранные периоды (со звёздочкой) показаны горизонтальным рядом сегментов,
- * а стрелка — ПОСЛЕДНИЙ сегмент той же пилюли (примыкает справа через
- * разделитель, без отступа). Стрелка раскрывает поповер со ВСЕМ списком:
- * клик по строке выбирает период, клик по звезде — добавляет/убирает из
- * избранного. Текущее значение всегда видно в ряду, даже если не в избранном.
+ * Избранные периоды показаны горизонтальным рядом сегментов (фиксированный
+ * канонический порядок — не двигаются при смене периода), стрелка — последний
+ * сегмент той же пилюли. Стрелка раскрывает поповер со ВСЕМ списком: клик по
+ * строке выбирает период, клик по звезде — добавляет/убирает из избранного.
  *
- * Тариф: locked-период рисует замочек, клик уходит в onLockedClick (как в
- * Dropdown). Избранное живёт у родителя (persist в localStorage).
+ * Выбранный период подсвечивается accent-ом. Если он НЕ в избранном — добавляем
+ * его в конец ряда (чтобы выбор был виден), не трогая порядок избранных.
+ * Сегменты по ширине содержимого → добавление хвостового чипа не «расталкивает»
+ * избранные.
  *
- * Тестируется на индикаторе OI; компонент generic — переносим на другие
- * индикаторы по тому же контракту.
+ * Звезда избранного — ЗОЛОТАЯ (отдельный цвет), чтобы не сливаться с accent-ом
+ * подсветки выбора. Тариф: locked-период рисует замочек, клик → onLockedClick.
+ * Избранное живёт у родителя (persist в localStorage).
  */
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, Star, Lock } from 'lucide-react';
 import { type DropdownOption } from './Dropdown';
+
+// Золото для избранного — отличается от --accent (подсветка выбора), не сливается.
+const FAVORITE_COLOR = '#F5A623';
 
 interface FavoritePeriodSelectProps<T extends string> {
   /** ВСЕ опции в каноническом порядке (для поповера и порядка ряда). */
@@ -60,27 +65,31 @@ export default function FavoritePeriodSelect<T extends string>({
   }, [open]);
 
   const favSet = new Set<T>(favorites);
-  // Ряд = избранные + текущее значение (если не в избранном), в каноническом
-  // порядке. Так активный период всегда виден. Если совсем пусто — показываем
-  // хотя бы текущее.
-  const rowOptions = options.filter((o) => favSet.has(o.key) || o.key === value);
-  const shown = rowOptions.length > 0 ? rowOptions : options.filter((o) => o.key === value);
+  // Избранные в каноническом порядке (СТАБИЛЬНЫ). Текущее значение, если не в
+  // избранном, добавляем В КОНЕЦ — выбор виден, а порядок избранных не плывёт.
+  const favOrdered = options.filter((o) => favSet.has(o.key));
+  const valueOpt = options.find((o) => o.key === value);
+  const shown = favSet.has(value)
+    ? favOrdered
+    : valueOpt
+      ? [...favOrdered, valueOpt]
+      : favOrdered;
 
   return (
     <div
       ref={wrapRef}
       className={`relative inline-flex items-center ${className}`}
     >
-      {/* Единая пилюля: избранные сегменты + стрелка последним сегментом.
-          inline-grid с равными колонками лейблов (1fr) и auto-колонкой стрелки. */}
+      {/* Единая пилюля: сегменты по ширине содержимого + стрелка последним
+          сегментом. inline-flex (а не grid 1fr) — чтобы появление хвостового
+          чипа не сжимало/не сдвигало избранные. */}
       <div
         role="group"
         className="frame-segmented rounded-full overflow-hidden"
         style={{
           backgroundColor: 'var(--bg-secondary)',
           border: '2px solid var(--text-primary)',
-          display: 'inline-grid',
-          gridTemplateColumns: `repeat(${shown.length}, minmax(0, 1fr)) auto`,
+          display: 'inline-flex',
         }}
       >
         {shown.map((opt, i) => {
@@ -119,7 +128,7 @@ export default function FavoritePeriodSelect<T extends string>({
           );
         })}
 
-        {/* Стрелка — последний сегмент пилюли, тот же разделитель слева. */}
+        {/* Стрелка — последний сегмент пилюли. */}
         <button
           type="button"
           aria-label="Все периоды"
@@ -128,7 +137,7 @@ export default function FavoritePeriodSelect<T extends string>({
           className="frame-segmented-item inline-flex items-center justify-center"
           style={{
             padding: 'var(--sp-2) var(--sp-3)',
-            borderLeft: '2px solid var(--text-primary)',
+            borderLeft: shown.length > 0 ? '2px solid var(--text-primary)' : 'none',
             backgroundColor: open ? 'var(--accent)' : 'transparent',
             color: open ? 'var(--text-inverse)' : 'var(--text-primary)',
             cursor: 'pointer',
@@ -154,8 +163,7 @@ export default function FavoritePeriodSelect<T extends string>({
             backgroundColor: 'var(--bg-secondary)',
             border: '2px solid var(--text-primary)',
             boxShadow: 'var(--shadow-hard-chip, 4px 4px 0 var(--text-primary))',
-            // Ширина по содержимому (самый широкий лейбл + звезда), а не фикс 220 —
-            // иначе коробка широкая и звёзды улетают вправо.
+            // Ширина по содержимому (самый широкий лейбл + звезда), без пустого места.
             width: 'max-content',
             maxHeight: '60vh',
             overflowY: 'auto',
@@ -168,15 +176,10 @@ export default function FavoritePeriodSelect<T extends string>({
               <div
                 key={opt.key}
                 className="flex items-center"
-                style={{
-                  margin: '2px 6px',
-                  borderRadius: 999,
-                  // Подсветка активного периода обнимает ВЕСЬ ряд, включая звезду.
-                  backgroundColor: active ? 'var(--accent)' : 'transparent',
-                  border: active ? '2px solid var(--text-primary)' : '2px solid transparent',
-                  boxShadow: active ? 'var(--shadow-hard-chip, 3px 3px 0 var(--text-primary))' : 'none',
-                }}
+                style={{ margin: '2px 6px', gap: 'var(--sp-1)' }}
               >
+                {/* Подсветка выбора — только на лейбле (НЕ на звезде), иначе
+                    цвет звезды сливался с accent-ом. */}
                 <button
                   type="button"
                   disabled={opt.locked && !onLockedClick}
@@ -192,14 +195,16 @@ export default function FavoritePeriodSelect<T extends string>({
                   className="flex-1 text-left text-sm flex items-center gap-2"
                   style={{
                     padding: '8px 12px',
+                    borderRadius: 999,
                     fontWeight: active ? 800 : 600,
                     color: opt.locked
                       ? 'var(--text-muted)'
                       : active
                         ? 'var(--text-inverse)'
                         : 'var(--text-primary)',
-                    backgroundColor: 'transparent',
-                    border: 'none',
+                    backgroundColor: active ? 'var(--accent)' : 'transparent',
+                    border: active ? '2px solid var(--text-primary)' : '2px solid transparent',
+                    boxShadow: active ? 'var(--shadow-hard-chip, 3px 3px 0 var(--text-primary))' : 'none',
                     cursor: opt.locked ? 'not-allowed' : 'pointer',
                     opacity: opt.locked ? 0.6 : 1,
                     whiteSpace: 'nowrap',
@@ -208,8 +213,8 @@ export default function FavoritePeriodSelect<T extends string>({
                   <span className="flex-1">{opt.label}</span>
                   {opt.locked && <Lock size={12} className="flex-shrink-0" />}
                 </button>
-                {/* Звезда — добавить/убрать из избранного. На активном ряду
-                    (accent bg) красим в inverse, чтобы была видна на оранжевом. */}
+                {/* Звезда — золотая (избранное), на нейтральном фоне поповера.
+                    Цвет отдельный от accent → не сливается с подсветкой выбора. */}
                 <button
                   type="button"
                   aria-label={isFav ? 'Убрать из избранного' : 'Добавить в избранное'}
@@ -218,16 +223,11 @@ export default function FavoritePeriodSelect<T extends string>({
                   className="inline-flex items-center justify-center rounded-full flex-shrink-0"
                   style={{
                     padding: 6,
-                    marginRight: 6,
                     cursor: 'pointer',
-                    color: active
-                      ? 'var(--text-inverse)'
-                      : isFav
-                        ? 'var(--accent)'
-                        : 'var(--text-muted)',
+                    color: isFav ? FAVORITE_COLOR : 'var(--text-muted)',
                   }}
                 >
-                  <Star size={16} fill={isFav ? 'currentColor' : 'none'} strokeWidth={2} />
+                  <Star size={16} fill={isFav ? FAVORITE_COLOR : 'none'} strokeWidth={2} />
                 </button>
               </div>
             );
