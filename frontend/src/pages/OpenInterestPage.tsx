@@ -570,11 +570,10 @@ export default function OpenInterestPage() {
           />
           </div>{/* /oi-timerange */}
 
-          {/* FIZ/YUR — горизонтальный переключатель (2 значения, дропдаун
-              избыточен). Порядок: после периода. */}
+          {/* FIZ/YUR — выпадающий список (по запросу: как было раньше). Порядок: после периода. */}
           {displayMode !== 'price' && (
             <div data-tour="oi-clgroup">
-            <SegmentedControl<'FIZ' | 'YUR'>
+            <Dropdown<'FIZ' | 'YUR'>
               options={[
                 { key: 'FIZ', label: 'Физлица' },
                 { key: 'YUR', label: 'Юрлица' },
@@ -585,9 +584,9 @@ export default function OpenInterestPage() {
             </div>
           )}
 
-          {/* Режим отображения — тоже горизонтальный переключатель (2 значения) */}
+          {/* Режим отображения — выпадающий список (Объём позиций / Число трейдеров) */}
           <div data-tour="oi-display-mode">
-            <SegmentedControl<DisplayMode>
+            <Dropdown<DisplayMode>
               options={[
                 { key: 'positions', label: 'Объём позиций' },
                 { key: 'participants', label: 'Число трейдеров' },
