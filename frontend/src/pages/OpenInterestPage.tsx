@@ -15,6 +15,7 @@ import { periodToQuery } from '../utils/csvPeriod';
 import InstrumentSearchModal from '../components/InstrumentSearchModal';
 import Dropdown, { type DropdownOption } from '../components/Dropdown';
 import SegmentedControl from '../components/SegmentedControl';
+import FavoritePeriodSelect from '../components/FavoritePeriodSelect';
 import LayersButton from '../components/LayersButton';
 import ChartActionsMenu from '../components/ChartActionsMenu';
 import { PERIOD_LABELS as ALL_PERIOD_LABELS, INTERVAL_LABELS } from '../config/chartConfig';
@@ -162,6 +163,12 @@ export default function OpenInterestPage() {
   const [showExpirations, setShowExpirations] = usePersistedState('frame:oi:showExpirations', false);
   const [showPrice, setShowPrice] = usePersistedState('frame:oi:showPrice', true);
   const [period, setPeriod] = usePersistedState<Period>('frame:oi:period', getDefaultPeriod('1y', isAuthenticated) as Period);
+  // Избранные периоды (TradingView-стиль): показываются горизонтальным рядом,
+  // остальные — за стрелкой со звёздочками. Тест FavoritePeriodSelect на OI.
+  const [periodFavorites, setPeriodFavorites] = usePersistedState<Period[]>('frame:oi:periodFavorites', ['1d', '1m', '1y', 'all']);
+  const togglePeriodFavorite = (p: Period) => {
+    setPeriodFavorites(periodFavorites.includes(p) ? periodFavorites.filter((x) => x !== p) : [...periodFavorites, p]);
+  };
 
   // showOi: в режиме 'price' открытый интерес не запрашиваем. Поднято сюда из
   // прежнего места ниже — нужно фетчеру useIndicatorData.
@@ -514,8 +521,8 @@ export default function OpenInterestPage() {
             }}
           />
 
-          {/* Период */}
-          <Dropdown<Period>
+          {/* Период — TradingView-стиль: избранные в ряд + стрелка со звёздами */}
+          <FavoritePeriodSelect<Period>
             options={(Object.keys(PERIOD_LABELS) as Period[]).map((p): DropdownOption<Period> => {
               const allowed = isPeriodAllowed(p, isAuthenticated);
               return {
@@ -528,6 +535,8 @@ export default function OpenInterestPage() {
               };
             })}
             value={period}
+            favorites={periodFavorites}
+            onToggleFavorite={togglePeriodFavorite}
             onChange={(p) => {
               // Период не влезает в текущий ТФ (напр. 6М/1Г на 5м) → переключаем
               // на самый детальный ТФ, который его поддерживает (есть у инструмента
