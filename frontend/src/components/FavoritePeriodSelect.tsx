@@ -154,7 +154,9 @@ export default function FavoritePeriodSelect<T extends string>({
             backgroundColor: 'var(--bg-secondary)',
             border: '2px solid var(--text-primary)',
             boxShadow: 'var(--shadow-hard-chip, 4px 4px 0 var(--text-primary))',
-            minWidth: 220,
+            // Ширина по содержимому (самый широкий лейбл + звезда), а не фикс 220 —
+            // иначе коробка широкая и звёзды улетают вправо.
+            width: 'max-content',
             maxHeight: '60vh',
             overflowY: 'auto',
           }}
