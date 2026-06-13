@@ -440,36 +440,27 @@ export default function OpenInterestPage() {
           <button
             data-tour="oi-instrument"
             onClick={() => setIsModalOpen(true)}
+            title={instrumentName}
             className="widget-flat font-medium transition-colors flex items-center hover:opacity-90"
             style={{
               color: 'var(--text-primary)',
               fontSize: 'var(--fs-sm)',
               padding: 'var(--sp-2) var(--sp-4)',
               gap: 'var(--sp-3)',
-              minWidth: 'clamp(140px, 30vw, 200px)',
+              // Длинные имена («Биткоин (Индекс МосБиржи)») НЕ растягивают кнопку:
+              // ширина ограничена maxWidth, имя обрезается многоточием (ellipsis
+              // ниже + minWidth:0 на flex-обёртке). Полное имя — в title на ховере.
+              minWidth: 'clamp(140px, 22vw, 170px)',
+              maxWidth: 220,
             }}
           >
             <InstrumentIcon sectype={selectedInstrument} size={24} rounded="full" eager />
-            <div className="flex-1 text-left">
-              <div className="font-medium">{instrumentName}</div>
+            <div className="flex-1 text-left" style={{ minWidth: 0 }}>
+              <div className="font-medium" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{instrumentName}</div>
               <div className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)' }}>{selectedInstrument}</div>
             </div>
-            <ChevronDown size={14} className="text-theme-secondary" />
+            <ChevronDown size={14} className="text-theme-secondary flex-shrink-0" />
           </button>
-
-          {/* FIZ/YUR — только если displayMode !== price */}
-          {displayMode !== 'price' && (
-            <div data-tour="oi-clgroup">
-            <Dropdown<'FIZ' | 'YUR'>
-              options={[
-                { key: 'FIZ', label: 'Физлица' },
-                { key: 'YUR', label: 'Юрлица' },
-              ]}
-              value={clgroup}
-              onChange={setClgroup}
-            />
-            </div>
-          )}
 
           {/* Таймфрейм + Период */}
           <div data-tour="oi-timerange" className="flex" style={{ gap: 'var(--sp-2)' }}>
@@ -556,9 +547,24 @@ export default function OpenInterestPage() {
           />
           </div>{/* /oi-timerange */}
 
-          {/* Режим отображения */}
+          {/* FIZ/YUR — горизонтальный переключатель (2 значения, дропдаун
+              избыточен). Порядок: после периода. */}
+          {displayMode !== 'price' && (
+            <div data-tour="oi-clgroup">
+            <SegmentedControl<'FIZ' | 'YUR'>
+              options={[
+                { key: 'FIZ', label: 'Физлица' },
+                { key: 'YUR', label: 'Юрлица' },
+              ]}
+              value={clgroup}
+              onChange={setClgroup}
+            />
+            </div>
+          )}
+
+          {/* Режим отображения — тоже горизонтальный переключатель (2 значения) */}
           <div data-tour="oi-display-mode">
-            <Dropdown<DisplayMode>
+            <SegmentedControl<DisplayMode>
               options={[
                 { key: 'positions', label: 'Объём позиций' },
                 { key: 'participants', label: 'Число трейдеров' },
