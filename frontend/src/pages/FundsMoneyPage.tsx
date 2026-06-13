@@ -51,8 +51,10 @@ const PERIOD_LABELS: Record<Period, string> = {
     'all': 'Всё'
 };
 
-// Периоды для режима СЧА (ограниченный набор)
-const AUM_PERIODS: Period[] = ['1m', 'all'];
+// Видимый набор периодов: 1М / 1Г / 3Г / Всё (унификация). 5Л у фондов нет —
+// глубина данных БПИФов меньше пяти лет. Используется и для СЧА, и как фильтр
+// списка периода.
+const AUM_PERIODS: Period[] = ['1m', '1y', '3y', 'all'];
 
 // Категории
 // `genitive` — родительный падеж для подстановки в шаблоны вида
@@ -102,7 +104,7 @@ export default function FundsMoneyPage() {
     const FLOW_MIN_PERIODS: Record<FlowTimeframe, Period[]> = {
         '1d': ['1m', '1y', '3y', 'all'],
         '1w': ['1y', '3y', 'all'],
-        '1m': ['3y', 'all'],
+        '1m': ['1y', '3y', 'all'],
         '3m': ['3y', 'all'],
         '1y': ['3y', 'all'],
     };
@@ -543,10 +545,24 @@ export default function FundsMoneyPage() {
                         .map((p): DropdownOption<Period> => ({
                             key: p,
                             label: PERIOD_LABELS[p],
-                            locked: !isPeriodAllowed(p, isAuthenticated) || !isFlowPeriodAvailable(p),
+                            locked: !isPeriodAllowed(p, isAuthenticated),
                         }))}
                     value={period}
-                    onChange={setPeriod}
+                    onChange={(p) => {
+                        // Период не влезает в текущий ТФ потоков → авто-переключаем
+                        // на самый крупный ТФ, который его поддерживает и открыт по
+                        // тарифу (без замочка-обманки, как на OI). Если ни один не
+                        // открыт (нужен дневной, а он по тарифу) — апселл.
+                        if (viewMode === 'flows' && !isFlowPeriodAvailable(p)) {
+                            const tf = (['1m', '1w', '1d'] as FlowTimeframe[]).find(t =>
+                                (FLOW_MIN_PERIODS[t] ?? []).includes(p)
+                                && (fundsAccess.isLoading || fundsAccess.canUseTimeframe(t)));
+                            if (tf) { setFlowTimeframeRaw(tf); setPeriod(p); return; }
+                            const tier = fundsAccess.requiredTierFor({ timeframe: '1d' });
+                            if (tier) { showUpgrade({ tier, featureName: 'дневной таймфрейм', indicator: 'funds_money' }); return; }
+                        }
+                        setPeriod(p);
+                    }}
                     onLockedClick={(p) => {
                         // Tier-блокировка → upgrade modal; иначе legacy guest gate → /login.
                         // Locked только из-за !isFlowPeriodAvailable (нет данных) — ничего.
@@ -562,9 +578,9 @@ export default function FundsMoneyPage() {
                 />
                 </div>
 
-                {/* Режим: СЧА / Притоки-оттоки */}
+                {/* Режим: СЧА / Притоки-оттоки — горизонтальный переключатель */}
                 <div data-tour="funds-view-mode">
-                <Dropdown<ViewMode>
+                <SegmentedControl<ViewMode>
                     options={[
                         { key: 'aum',   label: 'СЧА' },
                         { key: 'flows', label: 'Притоки-Оттоки' },
@@ -584,12 +600,12 @@ export default function FundsMoneyPage() {
                         options={[
                             {
                                 key: '1d',
-                                label: 'День',
+                                label: '1д',
                                 // Free → только 1w/1m, дневной заблокирован
                                 locked: !fundsAccess.isLoading && !fundsAccess.canUseTimeframe('1d'),
                             },
-                            { key: '1w', label: 'Неделя' },
-                            { key: '1m', label: 'Месяц' },
+                            { key: '1w', label: '1н' },
+                            { key: '1m', label: '1м' },
                         ]}
                         value={flowTimeframe}
                         onChange={setFlowTimeframe}

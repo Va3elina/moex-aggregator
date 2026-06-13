@@ -3,7 +3,7 @@
  *
  * Phase 3 упрощённая версия:
  *   - Category chips (Денежный рынок / Акции / Облигации / Золото)
- *   - Period chips (1М/Всё)
+ *   - Period chips (1М/1Г/3Г/Всё)
  *   - Chart с суммарной СЧА категории + индексом-эталоном
  *   - Притоки-Оттоки и таблица фондов — Phase 4
  */
@@ -45,6 +45,8 @@ const CATEGORIES: Array<{ key: FundCategory; label: string; comingSoon?: boolean
 
 const PERIODS: Array<{ key: FundPeriod; label: string }> = [
   { key: '1m', label: '1М' },
+  { key: '1y', label: '1Г' },
+  { key: '3y', label: '3Г' },
   { key: 'all', label: 'Всё' },
 ];
 
@@ -396,7 +398,7 @@ export default function MobileFundsMoneyPage() {
       >
         <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
           {PERIODS.map((p) => {
-            // Глубокие периоды (Всё) для гостя/Free под замком: backend
+            // Глубокие периоды (3Г/Всё) для гостя/Free под замком: backend
             // ответит 403. canUsePeriod читает ту же матрицу тарифов.
             const allowed = fundsAccess.isLoading || fundsAccess.canUsePeriod(p.key);
             return (
