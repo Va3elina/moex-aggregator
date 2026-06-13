@@ -34,7 +34,7 @@ type ChartData = Awaited<ReturnType<typeof getChartData>>;
 type OiPoint = ChartData['open_interest'][number];
 type LoadStatus = 'idle' | 'loading' | 'ok' | 'empty' | 'error';
 type ClGroup = 'FIZ' | 'YUR';
-type Period = '1d' | '1w' | '1m' | '3m' | '6m' | '1y' | '2y' | '5y' | 'all';
+type Period = '1d' | '1w' | '1m' | '1y' | '5y' | 'all';
 // Режим/вариант ОИ — зеркалит OpenInterestPage, но без 'price' (embed всегда
 // показывает серию ОИ; price-only режим заменён тумблером «Цена»).
 type DisplayMode = 'positions' | 'participants';
@@ -49,16 +49,16 @@ const TF_OPTS: { id: number; label: string }[] = [
 ];
 
 const P_LABEL: Record<Period, string> = {
-  '1d': '1Д', '1w': '1Н', '1m': '1М', '3m': '3М', '6m': '6М',
-  '1y': '1Г', '2y': '2Г', '5y': '5Л', 'all': 'Всё',
+  '1d': '1Д', '1w': '1Н', '1m': '1М',
+  '1y': '1Г', '5y': '5Л', 'all': 'Всё',
 };
 
 // Допустимые периоды для интервала (зеркалит OpenInterestPage
-// MAX_PERIODS_BY_INTERVAL: 5мин→макс 1М, 1час→макс 6М, 1день→всё включая 1Д).
+// MAX_PERIODS_BY_INTERVAL: 5мин/1час→макс 1М, 1день→всё включая 1Д).
 const ALLOWED: Record<number, Period[]> = {
   5: ['1d', '1w', '1m'],
-  60: ['1d', '1w', '1m', '3m', '6m'],
-  24: ['1d', '1w', '1m', '3m', '6m', '1y', '2y', '5y', 'all'],
+  60: ['1d', '1w', '1m'],
+  24: ['1d', '1w', '1m', '1y', '5y', 'all'],
 };
 
 // Цвета ОИ — все через CSS-var (адаптируются к теме внутри iframe).
@@ -90,7 +90,7 @@ export default function EmbedOpenInterest() {
   const [instrumentName, setInstrumentName] = useState<string>(params.get('name') || '');
   const [clgroup, setClgroup] = useState<ClGroup>(() => readLS('frame:embed:oi:clgroup', 'YUR') as ClGroup);
   const [interval, setIntervalValue] = useState<number>(() => Number(readLS('frame:embed:oi:interval', '24')) || 24);
-  const [period, setPeriod] = useState<Period>(() => (params.get('period') || readLS('frame:embed:oi:period', '6m')) as Period);
+  const [period, setPeriod] = useState<Period>(() => (params.get('period') || readLS('frame:embed:oi:period', '1y')) as Period);
   const [displayMode, setDisplayMode] = useState<DisplayMode>(() => readLS('frame:embed:oi:displayMode', 'positions') as DisplayMode);
   const [oiVariant, setOiVariant] = useState<OIVariant>(() => readLS('frame:embed:oi:oiVariant', 'net') as OIVariant);
   const [showPrice, setShowPrice] = useState<boolean>(() => readLS('frame:embed:oi:showPrice', 'true') === 'true');

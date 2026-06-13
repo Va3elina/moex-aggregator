@@ -31,22 +31,18 @@ import { formatNumber } from '../../utils/formatNumber';
 
 const EMA_PERIODS = [50, 100, 200] as const;
 
-type Period = '6m' | '1y' | '2y' | '5y' | 'all';
+type Period = '1y' | '5y' | 'all';
 type UniverseBase = 'all' | 'imoex';
 type Currency = 'rub' | 'usd';
 
 const PERIOD_LABELS: Record<Period, string> = {
-  '6m': '6 месяцев',
   '1y': '1 год',
-  '2y': '2 года',
   '5y': '5 лет',
   'all': 'Вся история',
 };
 
 const PERIOD_DAYS: Record<Period, number> = {
-  '6m': 183,
   '1y': 365,
-  '2y': 730,
   '5y': 1825,
   'all': 3650,
 };
@@ -109,7 +105,7 @@ export default function MobileStrengthPage() {
         <>
           <p style={{ marginBottom: 6 }}>Снизу — 3 кнопки:</p>
           <p style={{ marginBottom: 4 }}>
-            <strong>Время</strong> — глубина истории (6М/1Г/2Г/5Л/Всё)
+            <strong>Время</strong> — глубина истории (1Г/5Л/Всё)
           </p>
           <p style={{ marginBottom: 4 }}>
             <strong>Опции</strong> — EMA-период, вселенная (Все/IMOEX), валюта
@@ -132,7 +128,7 @@ export default function MobileStrengthPage() {
             Открыл для тебя кнопку <strong>«Время»</strong>:
           </p>
           <p>
-            <strong>6М / 1Г / 2Г / 5Л / Всё</strong> — глубина истории. На
+            <strong>1Г / 5Л / Всё</strong> — глубина истории. На
             длинных периодах виден контекст (где был рынок раньше), на коротких —
             актуальная динамика.
           </p>
@@ -313,7 +309,7 @@ export default function MobileStrengthPage() {
       >
         <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
           {(Object.keys(PERIOD_LABELS) as Period[]).map((p) => {
-            // Глубокие периоды (2Г/5Л/Всё) для гостя/Free под замком —
+            // Глубокие периоды (5Л/Всё) для гостя/Free под замком —
             // backend ответит 403. canUsePeriod читает матрицу тарифов.
             const allowed = strengthAccess.isLoading || strengthAccess.canUsePeriod(p);
             return (

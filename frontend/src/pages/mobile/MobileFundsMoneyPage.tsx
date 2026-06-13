@@ -3,7 +3,7 @@
  *
  * Phase 3 упрощённая версия:
  *   - Category chips (Денежный рынок / Акции / Облигации / Золото)
- *   - Period chips (1М/6М/2Г/Всё)
+ *   - Period chips (1М/Всё)
  *   - Chart с суммарной СЧА категории + индексом-эталоном
  *   - Притоки-Оттоки и таблица фондов — Phase 4
  */
@@ -45,8 +45,6 @@ const CATEGORIES: Array<{ key: FundCategory; label: string; comingSoon?: boolean
 
 const PERIODS: Array<{ key: FundPeriod; label: string }> = [
   { key: '1m', label: '1М' },
-  { key: '6m', label: '6М' },
-  { key: '2y', label: '2Г' },
   { key: 'all', label: 'Всё' },
 ];
 
@@ -55,7 +53,7 @@ export default function MobileFundsMoneyPage() {
   // совпадают). period → отдельный mobilePeriod: desktop frame:funds:period
   // реально пишет 3m/1y/3y (clamp FLOW_MIN_PERIODS), которых нет в mobile-чипах.
   const [category, setCategory] = usePersistedState<FundCategory>('frame:funds:category', 'money_market');
-  const [period, setPeriod] = usePersistedState<FundPeriod>('frame:funds:mobilePeriod', '6m');
+  const [period, setPeriod] = usePersistedState<FundPeriod>('frame:funds:mobilePeriod', '1m');
   // По умолчанию — Притоки-Оттоки: даёт юзеру сразу actionable signal
   // (приток/отток денег за день/неделю/месяц), а не статичный график СЧА.
   const [viewMode, setViewMode] = usePersistedState<ViewMode>('frame:funds:viewMode', 'flows');
@@ -398,7 +396,7 @@ export default function MobileFundsMoneyPage() {
       >
         <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
           {PERIODS.map((p) => {
-            // Глубокие периоды (2Г/Всё) для гостя/Free под замком: backend
+            // Глубокие периоды (Всё) для гостя/Free под замком: backend
             // ответит 403. canUsePeriod читает ту же матрицу тарифов.
             const allowed = fundsAccess.isLoading || fundsAccess.canUsePeriod(p.key);
             return (

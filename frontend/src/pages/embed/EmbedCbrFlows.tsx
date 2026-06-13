@@ -1,7 +1,7 @@
 /**
  * EmbedCbrFlows — виджет «Потоки ЦБ» (рыночный, тикер не нужен).
  * Полный паритет со страницей /cbr-flows: тип инструмента (акции / ОФЗ / валюты),
- * период (1Г / 2Г / Всё) и фильтр категорий участников — всё в drawer'е настроек.
+ * период (1Г / Всё) и фильтр категорий участников — всё в drawer'е настроек.
  * Переиспользует StackedBidirectionalHistogram.
  *
  * getCbrFlows(type) — единственный fetch-триггер. Период и категории — клиентская
@@ -18,7 +18,7 @@ import { EmbedMsg } from './embedUi';
 import { useEmbedSettings, EmbedShell, DrawerSection, SegGroup, Checklist } from './EmbedSettings';
 
 type CbrType = 'stocks' | 'ofz' | 'fx';
-type PeriodFilter = '1y' | '2y' | 'all';
+type PeriodFilter = '1y' | 'all';
 type LoadStatus = 'idle' | 'loading' | 'ok' | 'empty' | 'error';
 type CbrResp = Awaited<ReturnType<typeof getCbrFlows>>;
 
@@ -30,7 +30,6 @@ const TYPES: { id: CbrType; label: string }[] = [
 
 const PERIODS: { id: PeriodFilter; label: string; months: number | null }[] = [
   { id: '1y', label: '1Г', months: 12 },
-  { id: '2y', label: '2Г', months: 24 },
   { id: 'all', label: 'Всё', months: null },
 ];
 

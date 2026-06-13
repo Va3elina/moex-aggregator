@@ -47,11 +47,9 @@ const NEG = 'var(--funds-flow-negative, #C0504D)';
 
 const PERIODS: { id: FundTradesPeriod; label: string }[] = [
   { id: '1m', label: 'Месяц' },
-  { id: '3m', label: '3 месяца' },
-  { id: '6m', label: 'Полгода' },
   { id: '1y', label: 'Год' },
 ];
-const P_SHORT: Record<FundTradesPeriod, string> = { '1m': 'за месяц', '3m': 'за 3 мес', '6m': 'за полгода', '1y': 'за год' };
+const P_SHORT: Record<FundTradesPeriod, string> = { '1m': 'за месяц', '1y': 'за год' };
 
 const TABS: { id: EmbedTab; label: string }[] = [
   { id: 'movers', label: 'Покупки' },

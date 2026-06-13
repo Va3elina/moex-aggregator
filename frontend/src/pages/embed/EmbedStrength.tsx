@@ -16,7 +16,7 @@ import { useEmbedSettings, EmbedShell, DrawerSection, SegGroup, ToggleRow } from
 
 type LoadStatus = 'idle' | 'loading' | 'ok' | 'empty' | 'error';
 type Synced = { time: string; breadth: number; imoex: number }[];
-type Period = '6m' | '1y' | '2y' | '5y' | 'all';
+type Period = '1y' | '5y' | 'all';
 type ChartMode = 'line' | 'histogram';
 type Ema = 50 | 100 | 200;
 type UniverseBase = 'imoex' | 'all';
@@ -28,9 +28,7 @@ const EMAS: { id: Ema; label: string }[] = [
   { id: 200, label: 'EMA 200' },
 ];
 const PERIODS: { id: Period; label: string }[] = [
-  { id: '6m', label: '6М' },
   { id: '1y', label: '1Г' },
-  { id: '2y', label: '2Г' },
   { id: '5y', label: '5Л' },
   { id: 'all', label: 'Всё' },
 ];
@@ -52,8 +50,6 @@ const LEGEND_H = 18;
 // Значения дней зеркалят PERIOD_DAYS на StrengthPage — паритет диапазонов.
 function daysForPeriod(period: Period): number {
   switch (period) {
-    case '6m': return 180;
-    case '2y': return 730;
     case '5y': return 1825;
     case 'all': return 7000;
     default: return 365;

@@ -31,13 +31,11 @@ import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { strengthTourSteps } from '../data/tours/strength';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 
-type Period = '6m' | '1y' | '2y' | '5y' | 'all';
+type Period = '1y' | '5y' | 'all';
 type ChartMode = 'line' | 'histogram';
 
 const PERIOD_DAYS: Record<Period, number> = {
-    '6m': 180,
     '1y': 365,
-    '2y': 730,
     '5y': 1825,
     'all': 7000
 };
@@ -404,9 +402,7 @@ export default function StrengthPage() {
                                     label: 'Период',
                                     default: { type: 'preset', value: period },
                                     presets: [
-                                        { value: '6m', label: '6М', days: 180 },
                                         { value: '1y', label: '1Г', days: 365 },
-                                        { value: '2y', label: '2Г', days: 730 },
                                         { value: '5y', label: '5Л', days: 1825 },
                                         { value: 'all', label: 'Всё', days: 7000 },
                                     ],
@@ -430,9 +426,7 @@ export default function StrengthPage() {
                             asset: priceChartLabel,
                             details: [
                                 `EMA${emaPeriod}`,
-                                period === '6m' ? '6 месяцев' :
                                 period === '1y' ? '1 год' :
-                                period === '2y' ? '2 года' :
                                 period === '5y' ? '5 лет' : 'Всё',
                                 currency === 'usd' ? 'USD' : 'RUB',
                                 chartMode === 'histogram' ? 'Гистограмма' : 'Линия',

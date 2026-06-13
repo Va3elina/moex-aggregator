@@ -36,16 +36,13 @@ import { useTierAccess } from '../contexts/TierFeaturesContext';
 
 type DisplayMode = 'price' | 'positions' | 'participants';
 type OIVariant = 'oi' | 'long' | 'short' | 'both' | 'net';
-type Period = '1d' | '1w' | '1m' | '3m' | '6m' | '1y' | '2y' | '5y' | 'all';
+type Period = '1d' | '1w' | '1m' | '1y' | '5y' | 'all';
 
 const PERIOD_LABELS: Record<Period, string> = {
   '1d':  ALL_PERIOD_LABELS['1d'],
   '1w':  ALL_PERIOD_LABELS['1w'],
   '1m':  ALL_PERIOD_LABELS['1m'],
-  '3m':  ALL_PERIOD_LABELS['3m'],
-  '6m':  ALL_PERIOD_LABELS['6m'],
   '1y':  ALL_PERIOD_LABELS['1y'],
-  '2y':  ALL_PERIOD_LABELS['2y'],
   '5y':  ALL_PERIOD_LABELS['5y'],
   'all': ALL_PERIOD_LABELS['all'],
 };
@@ -164,7 +161,7 @@ export default function OpenInterestPage() {
   const [oiVariant, setOiVariant] = usePersistedState<OIVariant>('frame:oi:oiVariant', 'net');
   const [showExpirations, setShowExpirations] = usePersistedState('frame:oi:showExpirations', false);
   const [showPrice, setShowPrice] = usePersistedState('frame:oi:showPrice', true);
-  const [period, setPeriod] = usePersistedState<Period>('frame:oi:period', getDefaultPeriod('6m', isAuthenticated) as Period);
+  const [period, setPeriod] = usePersistedState<Period>('frame:oi:period', getDefaultPeriod('1y', isAuthenticated) as Period);
 
   // showOi: в режиме 'price' открытый интерес не запрашиваем. Поднято сюда из
   // прежнего места ниже — нужно фетчеру useIndicatorData.
@@ -247,8 +244,8 @@ export default function OpenInterestPage() {
   // 5мин: макс 1 месяц, 1час: макс 6 месяцев, 1день: все
   const MAX_PERIODS_BY_INTERVAL: Record<number, Period[]> = {
     5: ['1d', '1w', '1m'],
-    60: ['1d', '1w', '1m', '3m', '6m'],
-    24: ['1d', '1w', '1m', '3m', '6m', '1y', '2y', '5y', 'all']
+    60: ['1d', '1w', '1m'],
+    24: ['1d', '1w', '1m', '1y', '5y', 'all']
   };
 
   const isPeriodAvailable = (p: Period): boolean => {
@@ -677,10 +674,7 @@ export default function OpenInterestPage() {
                     default: { type: 'preset', value: period },
                     presets: [
                       { value: '1m', label: '1М', days: 30 },
-                      { value: '3m', label: '3М', days: 90 },
-                      { value: '6m', label: '6М', days: 180 },
                       { value: '1y', label: '1Г', days: 365 },
-                      { value: '2y', label: '2Г', days: 730 },
                       { value: 'all', label: 'Всё', days: 7000 },
                     ],
                   },

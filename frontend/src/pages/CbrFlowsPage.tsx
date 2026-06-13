@@ -50,13 +50,12 @@ const INSTRUMENT_TABS: Array<{
   { key: 'fx',     label: 'Валюты', Icon: DollarSign },
 ];
 
-type PeriodFilter = '6m' | '1y' | 'all';
+type PeriodFilter = '1y' | 'all';
 // Данные ОРФР помесячные (~11 точек). Ключи совпадают с PERIOD_DAYS в
 // TierFeaturesContext ('6m'→180, '1y'→365, 'all'→∞), поэтому «Всё» (безлимит)
 // запирается для free (matrix cbr_flows free=365). 6м реально сужает выборку,
 // 1г = вся текущая история. (Было 1Г/2Г/Всё — 2г не отличался от 1г: данных <2 лет.)
 const PERIOD_OPTIONS: { key: PeriodFilter; label: string; months: number | null }[] = [
-  { key: '6m', label: '6М', months: 6 },
   { key: '1y', label: '1Г', months: 12 },
   { key: 'all', label: 'Всё', months: null },
 ];
@@ -353,7 +352,7 @@ export default function CbrFlowsPage() {
             )}
           </div>
 
-          {/* === Период chips (6М / 1Г / Всё) — «Всё» под замком для free === */}
+          {/* === Период chips (1Г / Всё) — «Всё» под замком для free === */}
           <div data-tour="cbr-period" className="flex items-center" style={{ gap: 'var(--sp-1)' }}>
             {PERIOD_OPTIONS.map((opt) => {
               const isActive = period === opt.key;
@@ -445,7 +444,6 @@ export default function CbrFlowsPage() {
                   default: { type: 'preset', value: period },
                   presets: [
                     { value: '1y', label: '1Г', days: 365 },
-                    { value: '2y', label: '2Г', days: 730 },
                     { value: '3y', label: '3Г', days: 1095 },
                     { value: '5y', label: '5Л', days: 1825 },
                     { value: 'all', label: 'Всё', days: 11000 },

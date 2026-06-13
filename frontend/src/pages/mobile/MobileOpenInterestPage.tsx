@@ -32,7 +32,7 @@ import { useOnboardingTour } from '../../hooks/useFirstVisit';
 import OnboardingTour, { type TourStep } from '../../components/onboarding/OnboardingTour';
 import { usePersistedState } from '../../hooks/usePersistedState';
 
-type Period = '1d' | '1w' | '1m' | '3m' | '6m' | '1y' | '2y' | '5y' | 'all';
+type Period = '1d' | '1w' | '1m' | '1y' | '5y' | 'all';
 type OIVariant = 'oi' | 'long' | 'short' | 'both' | 'net';
 type DisplayMode = 'positions' | 'participants';
 
@@ -63,10 +63,7 @@ const PERIOD_LABELS: Record<Period, string> = {
   '1d': '1 день',
   '1w': '1 неделя',
   '1m': '1 месяц',
-  '3m': '3 месяца',
-  '6m': '6 месяцев',
   '1y': '1 год',
-  '2y': '2 года',
   '5y': '5 лет',
   'all': 'Вся история',
 };
@@ -84,8 +81,8 @@ const INTERVAL_LABELS: Record<number, string> = {
 //   - 1д:   все периоды (1д не имеет смысла — переключаем на 1н)
 const MAX_PERIODS_BY_INTERVAL: Record<number, Period[]> = {
   5: ['1d', '1w', '1m'],
-  60: ['1d', '1w', '1m', '3m', '6m'],
-  24: ['1w', '1m', '3m', '6m', '1y', '2y', '5y', 'all'],
+  60: ['1d', '1w', '1m'],
+  24: ['1w', '1m', '1y', '5y', 'all'],
 };
 
 export default function MobileOpenInterestPage() {
@@ -99,7 +96,7 @@ export default function MobileOpenInterestPage() {
   // Шарим desktop-ключи OI (enum'ы побайтово идентичны, формат JSON совместим;
   // instrument — ИСКЛЮЧЕНИЕ, см. ниже). displayMode → отдельный mobile-ключ
   // (у desktop 3-е значение 'price', которого нет в mobile-UI).
-  const [period, setPeriod] = usePersistedState<Period>('frame:oi:period', getDefaultPeriod('6m', isAuthenticated) as Period);
+  const [period, setPeriod] = usePersistedState<Period>('frame:oi:period', getDefaultPeriod('1y', isAuthenticated) as Period);
   const [intervalValue, setIntervalValue] = usePersistedState('frame:oi:interval', 24);
   const [clgroup, setClgroup] = usePersistedState<'FIZ' | 'YUR'>('frame:oi:clgroup', 'YUR');
   const [oiVariant, setOiVariant] = usePersistedState<OIVariant>('frame:oi:oiVariant', 'net');
@@ -174,7 +171,7 @@ export default function MobileOpenInterestPage() {
             1 час (до 6 месяцев) / 1 день (вся история)
           </p>
           <p>
-            <strong>Период</strong> — глубина истории: 1М / 6М / 1Г / Всё
+            <strong>Период</strong> — глубина истории: 1М / 1Г / Всё
           </p>
         </>
       ),

@@ -34,8 +34,6 @@ const MODE_LABELS: Record<SeasonalityMode, string> = {
 };
 
 const PRICE_PERIODS = [
-  { label: '3М', days: 90 },
-  { label: '6М', days: 180 },
   { label: '1Г', days: 365 },
   { label: '3Г', days: 1095 },
   { label: '5Л', days: 1825 },

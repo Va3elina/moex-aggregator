@@ -281,7 +281,7 @@ export async function getChartData(
   interval: number,
   clgroup: string,
   showOi: boolean = true,
-  period: string = '6m'
+  period: string = '1y'
 ): Promise<ChartResponse> {
   const params = new URLSearchParams({
     sectype,
@@ -468,11 +468,11 @@ export interface FundsSummaryResponse {
 }
 
 export type FundCategory = 'money_market' | 'stocks' | 'bonds' | 'gold' | 'yuan';
-export type FundPeriod = '1w' | '1m' | '3m' | '6m' | '1y' | '2y' | '3y' | 'all';
+export type FundPeriod = '1w' | '1m' | '1y' | '3y' | 'all';
 
 export async function getFundsChartData(
   category: FundCategory,
-  period: FundPeriod = '6m'
+  period: FundPeriod = '1y'
 ): Promise<FundsChartResponse> {
   const params = new URLSearchParams({
     category,
@@ -1296,7 +1296,7 @@ export async function getApiKeyUsage(days = 30): Promise<ApiKeyUsageStats> {
 // Fund Trades — отслеживание покупок/продаж в БПИФах (Pro tier)
 // ════════════════════════════════════════════════════════════════════════════
 
-export type FundTradesPeriod = '1m' | '3m' | '6m' | '1y';
+export type FundTradesPeriod = '1m' | '1y';
 
 export interface FundReturns {
     m1: number | null;
@@ -1414,7 +1414,7 @@ export async function listFundsWithHistory(): Promise<{ funds: FundWithHistory[]
 
 export async function getFundTradesDetail(
     ticker: string,
-    period: FundTradesPeriod = '3m',
+    period: FundTradesPeriod = '1m',
 ): Promise<FundTradesDetail> {
     const resp = await apiFetch(
         `${API_BASE}/api/fund-trades/fund/${encodeURIComponent(ticker)}?period=${period}`,

@@ -5,14 +5,12 @@ import Dropdown, { type DropdownOption } from '../Dropdown';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../tier/UpgradeModal';
 
-type Period = '6m' | '1y' | '2y' | '5y' | 'all';
+type Period = '1y' | '5y' | 'all';
 type ChartMode = 'line' | 'histogram';
 type EmaPeriod = 50 | 100 | 200;
 
 const PERIOD_LABELS: Record<Period, string> = {
-    '6m': '6М',
     '1y': '1Г',
-    '2y': '2Г',
     '5y': '5Л',
     'all': 'Всё',
 };

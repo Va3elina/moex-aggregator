@@ -43,10 +43,7 @@ const CAT_GENITIVE: Record<Category, string> = {
   yuan: 'юаня',
 };
 const PERIODS: { id: FundPeriod; label: string }[] = [
-  { id: '3m', label: '3М' },
-  { id: '6m', label: '6М' },
   { id: '1y', label: '1Г' },
-  { id: '2y', label: '2Г' },
   { id: '3y', label: '3Г' },
   { id: 'all', label: 'Всё' },
 ];

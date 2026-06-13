@@ -42,20 +42,17 @@ import { handleTierError } from '../utils/tierError';
 type ViewMode = 'aum' | 'flows';
 
 // Периоды
-type Period = '1m' | '3m' | '6m' | '1y' | '2y' | '3y' | 'all';
+type Period = '1m' | '1y' | '3y' | 'all';
 
 const PERIOD_LABELS: Record<Period, string> = {
     '1m': '1М',
-    '3m': '3М',
-    '6m': '6М',
     '1y': '1Г',
-    '2y': '2Г',
     '3y': '3Г',
     'all': 'Всё'
 };
 
 // Периоды для режима СЧА (ограниченный набор)
-const AUM_PERIODS: Period[] = ['1m', '6m', '2y', 'all'];
+const AUM_PERIODS: Period[] = ['1m', 'all'];
 
 // Категории
 // `genitive` — родительный падеж для подстановки в шаблоны вида
@@ -86,7 +83,7 @@ export default function FundsMoneyPage() {
     const navigate = useNavigate();
     // Настройки отображения персистятся в localStorage — не сбрасываются на новой сессии.
     const [category, setCategory] = usePersistedState<FundCategory>('frame:funds:category', 'money_market');
-    const [period, setPeriod] = usePersistedState<Period>('frame:funds:period', getDefaultPeriod('6m', isAuthenticated) as Period);
+    const [period, setPeriod] = usePersistedState<Period>('frame:funds:period', getDefaultPeriod('1y', isAuthenticated) as Period);
     // Default режим — Притоки-Оттоки (более информативно для нового пользователя)
     const [viewMode, setViewMode] = usePersistedState<ViewMode>('frame:funds:viewMode', 'flows');
     const [flowTimeframe, setFlowTimeframeRaw] = usePersistedState<FlowTimeframe>('frame:funds:flowTimeframe', '1d');
@@ -103,10 +100,10 @@ export default function FundsMoneyPage() {
 
     // Ограничения периодов для flow таймфреймов (как на ОИ)
     const FLOW_MIN_PERIODS: Record<FlowTimeframe, Period[]> = {
-        '1d': ['1m', '3m', '6m', '1y', '2y', '3y', 'all'],
-        '1w': ['6m', '1y', '2y', '3y', 'all'],
-        '1m': ['2y', '3y', 'all'],
-        '3m': ['2y', '3y', 'all'],
+        '1d': ['1m', '1y', '3y', 'all'],
+        '1w': ['1y', '3y', 'all'],
+        '1m': ['3y', 'all'],
+        '3m': ['3y', 'all'],
         '1y': ['3y', 'all'],
     };
 
@@ -575,7 +572,7 @@ export default function FundsMoneyPage() {
                     value={viewMode}
                     onChange={(m) => {
                         setViewMode(m);
-                        if (m === 'aum' && !AUM_PERIODS.includes(period)) setPeriod('6m');
+                        if (m === 'aum' && !AUM_PERIODS.includes(period)) setPeriod('1m');
                     }}
                 />
                 </div>
@@ -665,10 +662,7 @@ export default function FundsMoneyPage() {
                             default: { type: 'preset', value: period },
                             presets: [
                               { value: '1m', label: '1М', days: 30 },
-                              { value: '3m', label: '3М', days: 90 },
-                              { value: '6m', label: '6М', days: 180 },
                               { value: '1y', label: '1Г', days: 365 },
-                              { value: '2y', label: '2Г', days: 730 },
                               { value: '3y', label: '3Г', days: 1095 },
                               { value: 'all', label: 'Всё', days: 7000 },
                             ],

@@ -28,7 +28,7 @@ import { usePersistedState } from '../../hooks/usePersistedState';
 import OnboardingTour from '../../components/onboarding/OnboardingTour';
 import type { TourStep } from '../../components/onboarding/OnboardingTour';
 
-type PeriodFilter = '6m' | '1y' | 'all';
+type PeriodFilter = '1y' | 'all';
 
 const TYPE_TABS: Array<{ key: CbrInstrumentType; label: string; Icon: typeof Banknote }> = [
   { key: 'stocks', label: 'Акции', Icon: Building2 },
@@ -41,7 +41,6 @@ const PERIOD_OPTIONS: Array<{ key: PeriodFilter; label: string; months: number |
   // история, «Всё» семантически = безлимит истории (premium). Ключи совпадают
   // с PERIOD_DAYS в TierFeaturesContext: '6m'→180, '1y'→365, 'all'→∞ —
   // поэтому canUsePeriod('all') запирает «Всё» для free (matrix free=365).
-  { key: '6m', label: '6М', months: 6 },
   { key: '1y', label: '1Г', months: 12 },
   { key: 'all', label: 'Всё', months: null },
 ];
@@ -92,7 +91,7 @@ export default function MobileCbrFlowsPage() {
         <>
           <p style={{ marginBottom: 6 }}>Снизу — 3 кнопки:</p>
           <p style={{ marginBottom: 4 }}>
-            <strong>Время</strong> — глубина истории (1Г/2Г/Всё)
+            <strong>Время</strong> — глубина истории (1Г/Всё)
           </p>
           <p style={{ marginBottom: 4 }}>
             <strong>Опции</strong> — тип инструмента (Акции/ОФЗ/Валюта)
@@ -116,7 +115,7 @@ export default function MobileCbrFlowsPage() {
             Открыл для тебя кнопку <strong>«Время»</strong>:
           </p>
           <p>
-            <strong>1Г / 2Г / Всё</strong> — глубина истории помесячно.
+            <strong>1Г / Всё</strong> — глубина истории помесячно.
             На длинных периодах виден исторический контекст потоков.
           </p>
         </>
