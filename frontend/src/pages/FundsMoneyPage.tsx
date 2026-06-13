@@ -538,7 +538,7 @@ export default function FundsMoneyPage() {
 
             {/* Контролы */}
             <div className="flex flex-wrap mb-4 md:mb-6" style={{ gap: 'var(--sp-2)' }}>
-                <div data-tour="funds-period">
+                <div data-tour="funds-period" style={{ order: 3 }}>
                 <Dropdown<Period>
                     options={(Object.keys(PERIOD_LABELS) as Period[])
                         .filter(p => AUM_PERIODS.includes(p))
@@ -579,7 +579,7 @@ export default function FundsMoneyPage() {
                 </div>
 
                 {/* Режим: СЧА / Притоки-оттоки — горизонтальный переключатель */}
-                <div data-tour="funds-view-mode">
+                <div data-tour="funds-view-mode" style={{ order: 1 }}>
                 <SegmentedControl<ViewMode>
                     options={[
                         { key: 'aum',   label: 'СЧА' },
@@ -588,14 +588,21 @@ export default function FundsMoneyPage() {
                     value={viewMode}
                     onChange={(m) => {
                         setViewMode(m);
-                        if (m === 'aum' && !AUM_PERIODS.includes(period)) setPeriod('1m');
+                        if (m === 'aum') {
+                            if (!AUM_PERIODS.includes(period)) setPeriod('1m');
+                        } else if (!(FLOW_MIN_PERIODS[flowTimeframe] ?? []).includes(period)) {
+                            // Возврат в потоки: текущий период не влезает в текущий ТФ
+                            // (напр. 1М на месячном ТФ) → поднимаем до минимально
+                            // допустимого, иначе на графике один столбец.
+                            setPeriod((FLOW_MIN_PERIODS[flowTimeframe] ?? ['all'])[0]);
+                        }
                     }}
                 />
                 </div>
 
                 {/* Таймфрейм для flows — плитки (как на OI) */}
                 {viewMode === 'flows' && (
-                    <div data-tour="funds-flow-timeframe">
+                    <div data-tour="funds-flow-timeframe" style={{ order: 2 }}>
                     <SegmentedControl<FlowTimeframe>
                         options={[
                             {
