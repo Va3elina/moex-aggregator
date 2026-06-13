@@ -16,6 +16,7 @@ import InstrumentSearchModal from '../components/InstrumentSearchModal';
 import Dropdown, { type DropdownOption } from '../components/Dropdown';
 import SegmentedControl from '../components/SegmentedControl';
 import LayersButton from '../components/LayersButton';
+import ChartActionsMenu from '../components/ChartActionsMenu';
 import { PERIOD_LABELS as ALL_PERIOD_LABELS, INTERVAL_LABELS } from '../config/chartConfig';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -591,12 +592,10 @@ export default function OpenInterestPage() {
             </div>
           )}
 
-          {/* Camera + CSV buttons inline, прижаты к правому краю */}
-          <div data-tour="oi-export" className="ml-auto flex items-center" style={{ gap: 'var(--sp-2)' }}>
-          {/* Слои (Цена/Экспирации) — низкочастотные тумблеры вида: спрятаны за
-              иконкой-стопкой, настройка в модалке поверх экрана, без бейджа
-              состояния (решение 2026-06-12). В legacy-режиме 'price' слоёв нет —
-              кнопка скрыта (как раньше сами тумблеры). */}
+          {/* Действия (Слои/Скриншот/CSV/Алерт) свёрнуты в kebab «⋮». JSX тут,
+              в строке контролов (рядом со state), но через portal монтируется
+              в угол графика (containerRef=chartAnchorRef) — ряд свободен. */}
+          <ChartActionsMenu containerRef={chartAnchorRef} tourId="oi-export">
           {displayMode !== 'price' && (
             <LayersButton
               tourId="oi-layers"
@@ -751,7 +750,7 @@ export default function OpenInterestPage() {
             ]}
           />
           )}
-          </div>
+          </ChartActionsMenu>
         </div>
       </div>
 
@@ -766,7 +765,7 @@ export default function OpenInterestPage() {
           border + hard shadow в editorial). Обёртка убрана чтобы не было
           двойной рамки. chartAnchorRef нужен хуку useFitToViewport для
           расчёта высоты графика «остаток до низа viewport». */}
-      <div ref={chartAnchorRef} data-tour="oi-chart">
+      <div ref={chartAnchorRef} data-tour="oi-chart" style={{ position: 'relative' }}>
       <SimpleChart
         data={chartData}
         secondaryData={oiData}
