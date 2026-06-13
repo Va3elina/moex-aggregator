@@ -318,7 +318,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
       <div
         key={inst.sectype}
         onClick={handleClick}
-        className="instrument-item flex items-center gap-3.5 px-3 py-2 rounded-lg transition-colors"
+        className="instrument-item flex items-center gap-3.5 px-3 py-1.5 rounded-lg transition-colors"
         style={{
           color: 'var(--text-primary)',
           cursor: accessible ? 'pointer' : 'not-allowed',
@@ -601,12 +601,10 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
             >
               {/* Чекбокс-спейсер — зеркалит чекбокс в строке (multi-режим) */}
               {multiSelect && <span style={{ width: 22, flexShrink: 0 }} aria-hidden="true" />}
-              <span
-                className="flex-1 uppercase font-bold"
-                style={{ fontSize: 'var(--fs-xs)', letterSpacing: '0.04em', color: 'var(--text-secondary)' }}
-              >
-                Актив
-              </span>
+              {/* Подпись «Актив» убрана — строка-шапка нужна только под сортировку
+                  (Изм./Объём). Слева — растягивающийся спейсер, чтобы контролы
+                  сортировки оставались выровнены по колонкам строк. */}
+              <span className="flex-1" aria-hidden="true" />
               {renderSortHeader('change', 'Изм. %', 'Изменение цены за торговый день, %')}
               {renderSortHeader('volume', 'Объём', 'Объём торгов за день, ₽')}
               <span style={{ width: 18, flexShrink: 0 }} aria-hidden="true" />
@@ -640,20 +638,30 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
                 </div>
               )}
 
-              {/* Divider */}
-              {searchQuery === '' && favoriteInstruments.length > 0 && regularInstruments.length > 0 && (
-                <div className="h-px mb-4" style={{ backgroundColor: 'var(--text-primary)', opacity: 0.15 }} />
-              )}
-
-              {/* Regular */}
+              {/* Regular — со своей подписью-секцией «Остальные», когда есть
+                  избранные: две явно разделённые зоны (Избранные сверху, остальные
+                  ниже) через разделитель + заголовок, а не еле заметную линию. */}
               {regularInstruments.length === 0 && favoriteInstruments.length === 0 ? (
                 <div className="py-12 text-center" style={{ color: 'var(--text-secondary)' }}>
                   Ничего не найдено
                 </div>
               ) : (
-                <div className="instrument-list">
-                  {regularInstruments.map(renderItem)}
-                </div>
+                <>
+                  {searchQuery === '' && favoriteInstruments.length > 0 && regularInstruments.length > 0 && (
+                    <>
+                      <div className="h-px mb-3" style={{ backgroundColor: 'var(--border-color)' }} />
+                      <h3
+                        className="text-xs font-semibold uppercase tracking-wider mb-2 pl-3"
+                        style={{ color: 'var(--text-secondary)' }}
+                      >
+                        Остальные
+                      </h3>
+                    </>
+                  )}
+                  <div className="instrument-list">
+                    {regularInstruments.map(renderItem)}
+                  </div>
+                </>
               )}
             </>
           )}
