@@ -13,6 +13,7 @@ import YearlySeasonalityChart from '../components/seasonality/YearlySeasonalityC
 import TestDashboard from '../components/seasonality/TestDashboard';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import CsvExportButton from '../components/export/CsvExportButton';
+import ChartActionsMenu from '../components/ChartActionsMenu';
 import type { SeasonalityResponse, SeasonalityMode, PriceChartResponse, YearlySeasonalityResponse } from '../services/api';
 import { useOnboardingTour } from '../hooks/useFirstVisit';
 import { usePersistedState } from '../hooks/usePersistedState';
@@ -810,9 +811,11 @@ export default function SeasonalityPage() {
           </div>
         )}
 
-        {/* Camera + CSV buttons — справа после всех фильтров, скрыт в test mode. */}
+        {/* Действия (Скриншот/CSV) свёрнуты в kebab «⋮» в углу графика (паттерн OI).
+            Через portal монтируется в chart-card (containerRef=chartCardRef).
+            Скрыт в test mode (там свой дашборд). */}
         {chartType !== 'test' && (
-          <div data-tour="seasonality-export" className="ml-auto flex items-center" style={{ gap: 'var(--sp-2)' }}>
+          <ChartActionsMenu containerRef={chartCardRef} tourId="seasonality-export">
           <CsvExportButton
             indicator="seasonality"
             config={() => ({
@@ -873,7 +876,7 @@ export default function SeasonalityPage() {
               ].filter(Boolean) as string[],
             }}
           />
-          </div>
+          </ChartActionsMenu>
         )}
       </div>
 
@@ -909,7 +912,7 @@ export default function SeasonalityPage() {
         {/* Спиннер обновления — paper-style без glass */}
         {loading && (bars.length > 0 || priceData || yearlyData) && (
           <div
-            className="absolute top-4 right-4 z-20 flex items-center rounded-lg border border-theme shadow-md"
+            className="absolute top-4 left-4 z-20 flex items-center rounded-lg border border-theme shadow-md"
             style={{
               background: 'var(--bg-primary)',
               padding: 'var(--sp-2) var(--sp-3)',

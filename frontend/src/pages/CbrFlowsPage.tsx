@@ -29,6 +29,7 @@ import { getCategoryColor } from '../components/cbr/cbrPalette';
 import { getCategoryInfo, getCategoryShortLabel } from '../components/cbr/cbrCategoryInfo';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import CsvExportButton from '../components/export/CsvExportButton';
+import ChartActionsMenu from '../components/ChartActionsMenu';
 import { periodToQuery } from '../utils/csvPeriod';
 import { useOnboardingTour } from '../hooks/useFirstVisit';
 import { usePersistedState } from '../hooks/usePersistedState';
@@ -391,8 +392,9 @@ export default function CbrFlowsPage() {
             })}
           </div>
 
-          {/* Camera + CSV buttons — экспорт графика в PNG / данных в CSV */}
-          <div data-tour="cbr-export" className="shrink-0 ml-auto flex items-center" style={{ gap: 'var(--sp-2)' }}>
+          {/* Действия (Скриншот/CSV) свёрнуты в kebab «⋮» в углу графика (паттерн OI).
+              Через portal монтируется в обёртку графика (containerRef=chartAnchorRef). */}
+          <ChartActionsMenu containerRef={chartAnchorRef} tourId="cbr-export">
           <CsvExportButton
             indicator="cbr_flows"
             config={() => ({
@@ -491,7 +493,7 @@ export default function CbrFlowsPage() {
               ].filter(Boolean) as string[],
             }}
           />
-          </div>
+          </ChartActionsMenu>
         </div>
 
         {/* === Inner paper-card вокруг графика ===
@@ -503,6 +505,8 @@ export default function CbrFlowsPage() {
           data-tour="cbr-chart"
           className="rounded-2xl"
           style={{
+            // position:relative — точка монтирования для portal kebab'а действий.
+            position: 'relative',
             background: 'var(--bg-primary)',
             border: '1.5px solid var(--text-primary)',
             // padding-bottom 12 — gap между year labels и rounded paper-card edge.

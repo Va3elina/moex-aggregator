@@ -89,15 +89,17 @@ export const seasonalityTourSteps: TourStep[] = [
   },
   {
     selector: '[data-tour="seasonality-export"]',
-    title: 'Экспорт графика',
+    title: 'Действия с графиком',
     body: (
       <>
         <p>
-          Сохраняет текущий вид с подписями (актив, режим, фильтры) в PNG.
+          Кнопка <strong>«⋮»</strong> в правом верхнем углу графика: скриншот
+          текущего вида в PNG с подписями (актив, режим, фильтры) и экспорт
+          данных в CSV.
         </p>
       </>
     ),
-    position: 'bottom',
+    position: 'left',
   },
   {
     selector: '[data-tour="seasonality-chart"]',

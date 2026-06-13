@@ -80,16 +80,17 @@ export const cbrFlowsTourSteps: TourStep[] = [
   },
   {
     selector: '[data-tour="cbr-export"]',
-    title: 'Экспорт графика',
+    title: 'Действия с графиком',
     body: (
       <>
         <p>
-          Сохраняет текущий вид в PNG с подписями. Источник данных (Банк
-          России) добавляется автоматически.
+          Кнопка <strong>«⋮»</strong> в правом верхнем углу графика: скриншот
+          текущего вида в PNG (источник, Банк России, добавляется
+          автоматически) и экспорт данных в CSV.
         </p>
       </>
     ),
-    position: 'bottom',
+    position: 'left',
   },
   {
     selector: '[data-tour="cbr-chart"]',
