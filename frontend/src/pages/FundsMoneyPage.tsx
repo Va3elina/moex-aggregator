@@ -492,8 +492,15 @@ export default function FundsMoneyPage() {
                 Категории получают editorial-press effect (translate + 4×4 hard shadow). */}
             <div className="editorial-frame">
 
-            {/* Вкладки категорий — pill-стиль с press-effect, fluid font/padding */}
-            <div data-tour="funds-categories" className="grid mb-4 md:mb-6" style={{ gap: 'var(--sp-2)', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
+            {/* Тулбар индикатора — единая строка, грамматика как на OI: слева
+                якорь выбора фонда («что смотрим»), справа группа контролов графика
+                («как смотрим»). На узких экранах группа контролов переносится
+                целиком (flex-wrap), не смешиваясь с категориями. */}
+            <div className="flex flex-wrap items-center mb-4 md:mb-6" style={{ gap: 'var(--sp-2)' }}>
+
+            {/* Якорь: вкладки категорий — pill-стиль с press-effect, fluid font/padding.
+                flex:1 grow заполняет свободное место и отжимает контролы к правому краю. */}
+            <div data-tour="funds-categories" className="flex flex-wrap items-center" style={{ gap: 'var(--sp-2)', flex: '1 1 auto', minWidth: 0 }}>
                 {CATEGORIES.map(cat => {
                     const Icon = cat.icon;
                     const isActive = category === cat.key;
@@ -536,8 +543,10 @@ export default function FundsMoneyPage() {
                 })}
             </div>
 
-            {/* Контролы */}
-            <div className="flex flex-wrap mb-4 md:mb-6" style={{ gap: 'var(--sp-2)' }}>
+            {/* Контролы графика — отдельной группой справа от якоря категорий.
+                Внутренний порядок задаётся `order`: режим (1) → таймфрейм (2) →
+                период (3). Действия свёрнуты в kebab «⋮» (portal в угол графика). */}
+            <div className="flex flex-wrap items-center" style={{ gap: 'var(--sp-2)' }}>
                 <div data-tour="funds-period" style={{ order: 3 }}>
                 <Dropdown<Period>
                     options={(Object.keys(PERIOD_LABELS) as Period[])
@@ -731,7 +740,9 @@ export default function FundsMoneyPage() {
                     }}
                 />
                 </ChartActionsMenu>
-            </div>
+            </div>{/* /контролы графика */}
+
+            </div>{/* /тулбар индикатора */}
 
             {/* График — стабильная обёртка (ref+position:relative+--chart-height
                 не пересоздаются при смене режима aum↔flows), иначе portal kebab'а
