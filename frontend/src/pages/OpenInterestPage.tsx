@@ -520,17 +520,33 @@ export default function OpenInterestPage() {
           {/* Период */}
           <Dropdown<Period>
             options={(Object.keys(PERIOD_LABELS) as Period[]).map((p): DropdownOption<Period> => {
-              const available = isPeriodAvailable(p);
               const allowed = isPeriodAllowed(p, isAuthenticated);
               return {
                 key: p,
                 label: PERIOD_LABELS[p],
-                locked: !allowed || !available,
+                // Замочек только за тариф/гостевой гейт. Техническое ограничение
+                // 5м (длинные периоды) НЕ локаем — период кликабелен и сам
+                // переключит таймфрейм (см. onChange).
+                locked: !allowed,
               };
             })}
             value={period}
             onChange={(p) => {
-              if (p === '1d' && interval === 24) setIntervalValue(60);
+              // Период не влезает в текущий ТФ (напр. 6М/1Г на 5м) → переключаем
+              // на самый детальный ТФ, который его поддерживает (есть у инструмента
+              // + открыт по тарифу). Длинный период доступен, просто меняется
+              // таймфрейм — без замочка-обманки. Зеркалит мобильную версию.
+              if (!isPeriodAvailable(p)) {
+                const target = [5, 60, 24].find((int) =>
+                  (MAX_PERIODS_BY_INTERVAL[int] ?? []).includes(p)
+                  && hasInterval(int)
+                  && (oiAccess.isLoading || oiAccess.canUseInterval(int))
+                  && isIntervalAllowed(int, isAuthenticated)
+                ) ?? 24;
+                if (target !== interval) setIntervalValue(target);
+              } else if (p === '1d' && interval === 24) {
+                setIntervalValue(60);
+              }
               setPeriod(p);
             }}
             onLockedClick={(p) => {
