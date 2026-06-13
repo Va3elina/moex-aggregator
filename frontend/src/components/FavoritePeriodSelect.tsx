@@ -1,11 +1,11 @@
 /**
  * FavoritePeriodSelect — селектор периода в стиле TradingView.
  *
- * Избранные периоды (со звёздочкой) показаны горизонтальным рядом сегментов
- * (переиспользуем SegmentedControl). Стрелка справа раскрывает поповер со ВСЕМ
- * списком периодов: клик по строке выбирает период, клик по звезде —
- * добавляет/убирает из избранного. Текущее значение всегда видно в ряду, даже
- * если оно не в избранном (показываем его дополнительно).
+ * Избранные периоды (со звёздочкой) показаны горизонтальным рядом сегментов,
+ * а стрелка — ПОСЛЕДНИЙ сегмент той же пилюли (примыкает справа через
+ * разделитель, без отступа). Стрелка раскрывает поповер со ВСЕМ списком:
+ * клик по строке выбирает период, клик по звезде — добавляет/убирает из
+ * избранного. Текущее значение всегда видно в ряду, даже если не в избранном.
  *
  * Тариф: locked-период рисует замочек, клик уходит в onLockedClick (как в
  * Dropdown). Избранное живёт у родителя (persist в localStorage).
@@ -15,7 +15,6 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, Star, Lock } from 'lucide-react';
-import SegmentedControl from './SegmentedControl';
 import { type DropdownOption } from './Dropdown';
 
 interface FavoritePeriodSelectProps<T extends string> {
@@ -71,42 +70,80 @@ export default function FavoritePeriodSelect<T extends string>({
     <div
       ref={wrapRef}
       className={`relative inline-flex items-center ${className}`}
-      style={{ gap: 'var(--sp-2)' }}
     >
-      {shown.length > 0 && (
-        <SegmentedControl<T>
-          options={shown.map((o) => ({ key: o.key, label: o.label, locked: o.locked }))}
-          value={value}
-          onChange={onChange}
-          onLockedClick={onLockedClick}
-        />
-      )}
-
-      {/* Стрелка — раскрыть полный список периодов */}
-      <button
-        type="button"
-        aria-label="Все периоды"
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
-        className="frame-dropdown-trigger inline-flex items-center justify-center font-semibold rounded-full"
+      {/* Единая пилюля: избранные сегменты + стрелка последним сегментом.
+          inline-grid с равными колонками лейблов (1fr) и auto-колонкой стрелки. */}
+      <div
+        role="group"
+        className="frame-segmented rounded-full overflow-hidden"
         style={{
           backgroundColor: 'var(--bg-secondary)',
-          color: 'var(--text-primary)',
           border: '2px solid var(--text-primary)',
-          fontSize: 'var(--fs-sm)',
-          padding: 'var(--sp-2) var(--sp-3)',
-          cursor: 'pointer',
-          transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+          display: 'inline-grid',
+          gridTemplateColumns: `repeat(${shown.length}, minmax(0, 1fr)) auto`,
         }}
       >
-        <ChevronDown
-          size={16}
+        {shown.map((opt, i) => {
+          const active = opt.key === value;
+          const muted = opt.locked;
+          return (
+            <button
+              key={opt.key}
+              type="button"
+              aria-pressed={active}
+              onClick={() => {
+                if (opt.locked) { onLockedClick?.(opt.key); return; }
+                if (!active) onChange(opt.key);
+              }}
+              className="frame-segmented-item font-semibold inline-flex items-center justify-center"
+              style={{
+                fontSize: 'var(--fs-sm)',
+                padding: 'var(--sp-2) var(--sp-3)',
+                gap: 4,
+                borderLeft: i > 0 ? '2px solid var(--text-primary)' : 'none',
+                backgroundColor: active ? 'var(--accent)' : 'transparent',
+                color: muted
+                  ? 'var(--text-muted)'
+                  : active
+                    ? 'var(--text-inverse)'
+                    : 'var(--text-primary)',
+                opacity: muted ? 0.5 : 1,
+                cursor: muted ? 'not-allowed' : 'pointer',
+                whiteSpace: 'nowrap',
+                transition: 'background-color 0.12s ease, color 0.12s ease',
+              }}
+            >
+              {opt.label}
+              {opt.locked && <Lock size={11} className="flex-shrink-0" />}
+            </button>
+          );
+        })}
+
+        {/* Стрелка — последний сегмент пилюли, тот же разделитель слева. */}
+        <button
+          type="button"
+          aria-label="Все периоды"
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+          className="frame-segmented-item inline-flex items-center justify-center"
           style={{
-            transition: 'transform 0.2s ease',
-            transform: open ? 'rotate(180deg)' : 'rotate(0)',
+            padding: 'var(--sp-2) var(--sp-3)',
+            borderLeft: '2px solid var(--text-primary)',
+            backgroundColor: open ? 'var(--accent)' : 'transparent',
+            color: open ? 'var(--text-inverse)' : 'var(--text-primary)',
+            cursor: 'pointer',
+            transition: 'background-color 0.12s ease, color 0.12s ease',
           }}
-        />
-      </button>
+        >
+          <ChevronDown
+            size={16}
+            style={{
+              transition: 'transform 0.2s ease',
+              transform: open ? 'rotate(180deg)' : 'rotate(0)',
+            }}
+          />
+        </button>
+      </div>
 
       {open && (
         <div
