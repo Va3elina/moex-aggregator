@@ -62,6 +62,11 @@ export default function ChartActionsMenu({ children, containerRef, tourId }: Cha
       ref={ref}
       data-tour={tourId}
       data-export-ignore="true"
+      // Гасим всплытие мыши: на графиках с hover-перекрестьем (Сила рынка) меню
+      // живёт ВНУТРИ контейнера графика → без этого наведение на kebab дёргало бы
+      // crosshair. Outside-click это не ломает: клики ВНЕ меню до document доходят.
+      onMouseDown={(e) => e.stopPropagation()}
+      onMouseMove={(e) => e.stopPropagation()}
       style={{ position: 'absolute', top: 'var(--sp-2)', right: 'var(--sp-2)', zIndex: 20 }}
     >
       <button

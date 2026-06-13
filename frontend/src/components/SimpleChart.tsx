@@ -912,7 +912,7 @@ export default function SimpleChart({
 
       {/* Маленький индикатор загрузки поверх графика — paper-style без glass */}
       {loading && (
-        <div className={`absolute top-4 ${allowHistogram && showDownloadButton ? 'right-[8rem]' : allowHistogram || showDownloadButton ? 'right-[5rem]' : 'right-4'} z-10 flex items-center rounded-lg border border-theme shadow-md`} style={{ background: 'var(--bg-primary)', padding: 'var(--sp-2) var(--sp-3)', gap: 'var(--sp-2)' }}>
+        <div className="absolute top-4 left-4 z-10 flex items-center rounded-lg border border-theme shadow-md" style={{ background: 'var(--bg-primary)', padding: 'var(--sp-2) var(--sp-3)', gap: 'var(--sp-2)' }}>
           <div className="w-4 h-4 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
           <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-xs)' }}>Обновление...</span>
         </div>

@@ -21,6 +21,7 @@ import ChartLegend from '../components/chart/ChartLegend';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import CsvExportButton from '../components/export/CsvExportButton';
 import LayersButton from '../components/LayersButton';
+import ChartActionsMenu from '../components/ChartActionsMenu';
 import { periodToQuery } from '../utils/csvPeriod';
 import SectorDetail from '../components/strength/SectorDetail';
 import StrengthControls from '../components/strength/StrengthControls';
@@ -352,7 +353,7 @@ export default function StrengthPage() {
                 classInfo={classInfo}
                 hasCurrent={!!current}
                 trailingSlot={
-                    <div className="flex items-center" style={{ gap: 'var(--sp-2)' }}>
+                    <ChartActionsMenu containerRef={containerRef} tourId="strength-layers">
                     <LayersButton
                         tourId="strength-layers"
                         layers={[
@@ -438,7 +439,7 @@ export default function StrengthPage() {
                             ].filter(Boolean),
                         }}
                     />
-                    </div>
+                    </ChartActionsMenu>
                 }
             />
             </div>{/* /strength-controls */}
@@ -483,7 +484,7 @@ export default function StrengthPage() {
                     {/* Индикатор обновления данных — paper-style без glass */}
                     {loading && syncedData.length > 0 && (
                         <div
-                            className="absolute top-3 right-4 z-20 flex items-center rounded-lg border border-theme shadow-md"
+                            className="absolute top-3 left-4 z-20 flex items-center rounded-lg border border-theme shadow-md"
                             style={{
                                 background: 'var(--bg-primary)',
                                 padding: 'var(--sp-2) var(--sp-3)',

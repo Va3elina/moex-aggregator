@@ -5,6 +5,7 @@ import PageHeader from '../components/PageHeader';
 import Dropdown, { type DropdownOption } from '../components/Dropdown';
 import SegmentedControl from '../components/SegmentedControl';
 import LayersButton from '../components/LayersButton';
+import ChartActionsMenu from '../components/ChartActionsMenu';
 import { METHODOLOGY } from '../data/methodology';
 import {
     getFundsChartData,
@@ -609,10 +610,10 @@ export default function FundsMoneyPage() {
                     </div>
                 )}
 
-                {/* Слои + Camera + CSV — правый кластер через ml-auto. Тумблеры
-                    слоёв (События в flows, Индекс в aum) убраны из ряда в модалку
-                    «Слои», содержимое зависит от режима (паттерн OI). */}
-                <div data-tour="funds-export" className="ml-auto flex items-center" style={{ gap: 'var(--sp-2)' }}>
+                {/* Действия (Слои/Скриншот/CSV) свёрнуты в kebab «⋮» в углу графика
+                    (паттерн OI). Через portal монтируется в обёртку графика
+                    (containerRef=chartAnchorRef). Слои зависят от режима. */}
+                <ChartActionsMenu containerRef={chartAnchorRef} tourId="funds-export">
                 <LayersButton
                     tourId="funds-layers"
                     layers={viewMode === 'flows'
@@ -712,10 +713,13 @@ export default function FundsMoneyPage() {
                         return { '--chart-pad-left': 'calc(var(--chart-pad-right-single) - 12px)' };
                     }}
                 />
-                </div>
+                </ChartActionsMenu>
             </div>
 
-            {/* График */}
+            {/* График — стабильная обёртка (ref+position:relative+--chart-height
+                не пересоздаются при смене режима aum↔flows), иначе portal kebab'а
+                терял бы host. */}
+            <div ref={chartAnchorRef} data-tour="funds-chart" style={{ position: 'relative', ['--chart-height' as string]: `${chartHeight}px` }}>
             {error ? (
                 <div className="flex items-center justify-center" style={{ height: chartHeight }}>
                     <div className="text-theme-danger text-center">
@@ -724,7 +728,7 @@ export default function FundsMoneyPage() {
                     </div>
                 </div>
             ) : viewMode === 'aum' ? (
-                <div ref={chartAnchorRef} data-tour="funds-chart">
+                <div>
                     <SimpleChart
                         data={aggregatedData.chartData}
                         secondaryData={indexData}
@@ -746,7 +750,7 @@ export default function FundsMoneyPage() {
                     />
                 </div>
             ) : (
-            <div ref={chartAnchorRef} data-tour="funds-chart" style={{ ['--chart-height' as string]: `${chartHeight}px` }}>
+            <div>
             <FlowsHistogram
                         flowsData={flowsData}
                         noFundsSelected={noFundsSelected}
@@ -772,6 +776,7 @@ export default function FundsMoneyPage() {
                     />
             </div>
             )}
+            </div>{/* /funds-chart — стабильная обёртка */}
 
             </div>{/* /editorial-frame */}
 

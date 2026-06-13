@@ -17,6 +17,7 @@ import { periodToQuery } from '../utils/csvPeriod';
 import Dropdown, { type DropdownOption } from '../components/Dropdown';
 import SegmentedControl from '../components/SegmentedControl';
 import LayersButton from '../components/LayersButton';
+import ChartActionsMenu from '../components/ChartActionsMenu';
 import { useAuth } from '../contexts/AuthContext';
 import { isPeriodAllowed } from '../config/accessControl';
 import { useRealtimeData } from '../hooks/useRealtimeData';
@@ -268,9 +269,10 @@ export default function BuffettPage() {
                     </div>
                 )}
 
-                {/* Слои + Camera + CSV — правый кластер через ml-auto. Тумблер
-                    капитализации убран из ряда в модалку «Слои» (паттерн OI). */}
-                <div data-tour="buffett-export" className="ml-auto flex items-center" style={{ gap: 'var(--sp-2)' }}>
+                {/* Действия (Слои/Скриншот/CSV) свёрнуты в kebab «⋮» в углу графика
+                    (паттерн OI). JSX тут, но через portal монтируется в обёртку
+                    графика (containerRef=chartAnchorRef). */}
+                <ChartActionsMenu containerRef={chartAnchorRef} tourId="buffett-export">
                 <LayersButton
                     tourId="buffett-layers"
                     layers={[
@@ -354,11 +356,13 @@ export default function BuffettPage() {
                         ].filter(Boolean),
                     }}
                 />
-                </div>
+                </ChartActionsMenu>
 
             </div>
 
-            {/* График */}
+            {/* График — стабильная обёртка: ref+position:relative не пересоздаются
+                при смене режима (cap-gdp↔cap-m2), иначе portal kebab'а терял бы host. */}
+            <div ref={chartAnchorRef} data-tour="buffett-chart" style={{ position: 'relative' }}>
             {error ? (
                 <div className="flex items-center justify-center" style={{ height: chartHeight }}>
                     <div className="text-theme-danger text-center">
@@ -367,7 +371,7 @@ export default function BuffettPage() {
                     </div>
                 </div>
             ) : viewMode === 'cap-gdp' ? (
-                <div ref={chartAnchorRef} data-tour="buffett-chart">
+                <div>
                 {/* Swap осей: главное значение (Кап/ВВП) на ПРАВОЙ оси —
                     TradingView-style. Cap на ЛЕВОЙ. Цвет accent-orange сохранён
                     за ratio через swap primaryColor/secondaryColor.
@@ -403,7 +407,7 @@ export default function BuffettPage() {
                 />
                 </div>
             ) : (
-                <div ref={chartAnchorRef} data-tour="buffett-chart">
+                <div>
                 <SimpleChart
                     data={capM2ChartData.secondary}
                     secondaryData={capM2ChartData.primary}
@@ -429,6 +433,7 @@ export default function BuffettPage() {
                 />
                 </div>
             )}
+            </div>{/* /buffett-chart — стабильная обёртка */}
 
             </div>{/* /editorial-frame */}
 
