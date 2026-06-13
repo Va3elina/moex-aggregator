@@ -496,46 +496,52 @@ export default function FundsMoneyPage() {
                 якорь выбора фонда («что смотрим»), справа группа контролов графика
                 («как смотрим»). На узких экранах группа контролов переносится
                 целиком (flex-wrap), не смешиваясь с категориями. */}
-            <div className="flex flex-wrap items-center mb-4 md:mb-6" style={{ gap: 'var(--sp-2)' }}>
+            <div className="flex flex-wrap items-center mb-4 md:mb-6" style={{ gap: 'var(--sp-4)' }}>
 
-            {/* Якорь: вкладки категорий — pill-стиль с press-effect, fluid font/padding.
-                flex:1 grow заполняет свободное место и отжимает контролы к правому краю. */}
-            <div data-tour="funds-categories" className="flex flex-wrap items-center" style={{ gap: 'var(--sp-2)', flex: '1 1 auto', minWidth: 0 }}>
-                {CATEGORIES.map(cat => {
-                    const Icon = cat.icon;
+            {/* Якорь: выбор фонда — компактный joined-сегмент в том же дизайн-коде,
+                что СЧА/Притоки и таймфрейм (рамка 2px text-primary, активный = accent),
+                но с двухстрочной ячейкой имя + тикер. Узкий, помещается в одну строку
+                с группой контролов справа. flex:0 0 auto — не растягивается.
+                Иконки убраны ради компактности (имена+тикеры дают идентификацию). */}
+            <div
+                data-tour="funds-categories"
+                role="group"
+                className="frame-segmented rounded-full"
+                style={{
+                    display: 'inline-flex',
+                    flex: '0 0 auto',
+                    minWidth: 0,
+                    backgroundColor: 'var(--bg-secondary)',
+                    border: '2px solid var(--text-primary)',
+                    overflow: 'hidden',
+                }}
+            >
+                {CATEGORIES.map((cat, i) => {
                     const isActive = category === cat.key;
                     const soon = !!cat.comingSoon;
                     return (
                         <button
                             key={cat.key}
+                            type="button"
                             onClick={() => { if (!soon) setCategory(cat.key); }}
                             disabled={soon}
-                            title={soon ? 'Раздел скоро появится' : undefined}
-                            className="editorial-press flex items-center justify-center font-semibold rounded-full min-w-0"
+                            aria-pressed={isActive}
+                            title={soon ? 'Раздел скоро появится' : cat.name}
+                            className="font-semibold inline-flex flex-col items-center justify-center"
                             style={{
-                                gap: 'var(--sp-2)',
-                                padding: 'var(--sp-2) var(--sp-3)',
-                                fontSize: 'var(--fs-sm)',
-                                backgroundColor: isActive ? 'var(--accent)' : 'var(--bg-secondary)',
+                                padding: 'var(--sp-1) var(--sp-3)',
+                                borderLeft: i > 0 ? '2px solid var(--text-primary)' : 'none',
+                                backgroundColor: isActive ? 'var(--accent)' : 'transparent',
                                 color: isActive ? 'var(--text-inverse)' : 'var(--text-primary)',
-                                border: '2px solid var(--text-primary)',
-                                boxShadow: isActive ? 'var(--shadow-hard-chip)' : undefined,
-                                opacity: soon ? 0.55 : undefined,
-                                cursor: soon ? 'not-allowed' : undefined,
+                                opacity: soon ? 0.5 : 1,
+                                cursor: soon ? 'not-allowed' : 'pointer',
+                                lineHeight: 1.15,
+                                whiteSpace: 'nowrap',
+                                transition: 'background-color 0.12s ease, color 0.12s ease',
                             }}
                         >
-                            <Icon className="shrink-0" style={{ width: 'var(--ico-sm)', height: 'var(--ico-sm)' }} />
-                            <span className="truncate min-w-0">{cat.name}</span>
-                            <span
-                                className="rounded-full shrink-0"
-                                style={{
-                                    fontSize: 'var(--fs-2xs)',
-                                    padding: 'calc(var(--sp-1)) var(--sp-2)',
-                                    background: soon ? 'var(--accent)' : (isActive ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.05)'),
-                                    color: soon ? 'var(--text-inverse)' : undefined,
-                                    whiteSpace: 'nowrap',
-                                }}
-                            >
+                            <span style={{ fontSize: 'var(--fs-sm)' }}>{cat.name}</span>
+                            <span style={{ fontSize: 'var(--fs-2xs)', opacity: 0.7, letterSpacing: '0.02em' }}>
                                 {soon ? 'Скоро' : cat.index}
                             </span>
                         </button>
