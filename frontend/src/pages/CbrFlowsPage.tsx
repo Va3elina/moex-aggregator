@@ -476,9 +476,12 @@ export default function CbrFlowsPage() {
             getTargetElement={() => chartAnchorRef.current}
             filename={`frame-cbr-flows-${type}-${period}`}
             metadata={{
+              // asset намеренно НЕ задаём: в шапке экспорта primary = asset ?? title,
+              // и для «Потока капитала» главным заголовком должен быть сам индикатор,
+              // а тип актива (Акции/ОФЗ/Валюта) уходит в подзаголовок.
               title: 'Поток капитала',
-              asset: data?.instrument_label ?? INSTRUMENT_TABS.find(t => t.key === type)?.label ?? '',
               details: [
+                data?.instrument_label ?? INSTRUMENT_TABS.find(t => t.key === type)?.label ?? '',
                 `Период: ${PERIOD_OPTIONS.find(o => o.key === period)?.label}`,
                 'Источник: Банк России · ОРФР',
                 // `data.source` (имя XLSX-файла) намеренно убрано — не информативно
