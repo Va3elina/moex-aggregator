@@ -30,6 +30,7 @@ import { getCategoryInfo, getCategoryShortLabel } from '../components/cbr/cbrCat
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import CsvExportButton from '../components/export/CsvExportButton';
 import ChartActionsMenu from '../components/ChartActionsMenu';
+import ChartTabs from '../components/ChartTabs';
 import { periodToQuery } from '../utils/csvPeriod';
 import { useOnboardingTour } from '../hooks/useFirstVisit';
 import { usePersistedState } from '../hooks/usePersistedState';
@@ -167,40 +168,16 @@ export default function CbrFlowsPage() {
         sourceNote="Источник: Банк России (ОРФР)"
       />
 
-      <div className="editorial-frame">
-        {/* === Row 1: 3 chip'а типа активов (grid-cols-3, равные ширины) === */}
-        <div
-          data-tour="cbr-type"
-          className="grid grid-cols-3 mb-3 md:mb-4"
-          style={{ gap: 'var(--sp-2)' }}
-        >
-          {INSTRUMENT_TABS.map((t) => {
-            const isActive = type === t.key;
-            const Icon = t.Icon;
-            return (
-              <button
-                key={t.key}
-                onClick={() => setType(t.key)}
-                className="editorial-press flex items-center justify-center font-semibold rounded-full min-w-0"
-                style={{
-                  gap: 'var(--sp-2)',
-                  padding: 'var(--sp-2) var(--sp-3)',
-                  fontSize: 'var(--fs-sm)',
-                  backgroundColor: isActive ? 'var(--accent)' : 'var(--bg-secondary)',
-                  color: isActive ? 'var(--text-inverse)' : 'var(--text-primary)',
-                  border: '2px solid var(--text-primary)',
-                  boxShadow: isActive ? 'var(--shadow-hard-chip)' : undefined,
-                }}
-              >
-                <Icon
-                  className="shrink-0"
-                  style={{ width: 'var(--ico-sm)', height: 'var(--ico-sm)' }}
-                />
-                <span className="truncate">{t.label}</span>
-              </button>
-            );
-          })}
-        </div>
+      {/* Вкладки типа актива — приклеены к верхней кромке панели. Активная
+          сливается с панелью, неактивные затемнены. Категории/период — внутри. */}
+      <ChartTabs<CbrInstrumentType>
+        tourId="cbr-type"
+        value={type}
+        onChange={setType}
+        items={INSTRUMENT_TABS.map((t) => ({ key: t.key, label: t.label, Icon: t.Icon }))}
+      />
+
+      <div className="editorial-frame has-tabs">
 
         {/* === Row 2: Категории + Период chips слева, camera button справа === */}
         <div

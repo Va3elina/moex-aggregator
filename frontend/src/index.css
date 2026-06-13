@@ -1137,6 +1137,74 @@
   }
 }
 
+/* === Chart tabs — вкладки выбора над графиком (folder-tabs) ===
+   Приклеены к верхней кромке `.editorial-frame.has-tabs`. Активная вкладка
+   сливается с панелью (та же поверхность, нижняя граница цвета панели);
+   неактивные затемнены и отделены границей. Без accent — он зарезервирован
+   за контролами отображения внутри панели. Theme-aware через токены. */
+.chart-tabs {
+  display: flex;
+  gap: var(--sp-1);
+  position: relative;
+  z-index: 2;
+}
+.chart-tab {
+  flex: 1 1 0;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  padding: 10px var(--sp-3);
+  font-family: inherit;
+  font-weight: 600;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--text-primary) 8%, var(--bg-secondary));
+  border: 2px solid var(--text-primary);
+  border-top-left-radius: 14px;
+  border-top-right-radius: 14px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 120ms, background 120ms;
+}
+.chart-tab:not(.is-active):hover {
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--text-primary) 13%, var(--bg-secondary));
+}
+.chart-tab.is-active {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border-bottom-color: var(--bg-secondary);
+}
+.chart-tab:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.chart-tab .ct-ico {
+  width: var(--ico-sm);
+  height: var(--ico-sm);
+  flex-shrink: 0;
+}
+.chart-tab .ct-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chart-tab .ct-sub {
+  font-size: var(--fs-2xs);
+  opacity: 0.72;
+  letter-spacing: 0.02em;
+}
+/* Панель под вкладками: поднимаем на 2px, чтобы вкладки сели на её верхнюю
+   границу; верхние углы выпрямляем (их «закрывают» вкладки). */
+.editorial-frame.has-tabs {
+  margin-top: -2px;
+  position: relative;
+  z-index: 1;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
 /* === OI variant palette ===
    Шесть вариантов в нижнем ряду OI-кнопок имели hardcoded неон (#FFB020,
    #2EE59D, ...). В editorial — приглушённая «статная» палитра без неона,

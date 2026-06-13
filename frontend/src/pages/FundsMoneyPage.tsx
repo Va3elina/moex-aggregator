@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import Dropdown, { type DropdownOption } from '../components/Dropdown';
 import SegmentedControl from '../components/SegmentedControl';
+import ChartTabs from '../components/ChartTabs';
 import LayersButton from '../components/LayersButton';
 import ChartActionsMenu from '../components/ChartActionsMenu';
 import { METHODOLOGY } from '../data/methodology';
@@ -488,53 +489,25 @@ export default function FundsMoneyPage() {
                 sourceNote="Индексы (IMOEX, RGBI, IMOEX2, GLDRUB): ПАО Московская Биржа"
             />
 
-            {/* Editorial frame — обнимает категории + controls + chart в один контейнер.
-                Категории получают editorial-press effect (translate + 4×4 hard shadow). */}
-            <div className="editorial-frame">
+            {/* Вкладки выбора фонда — приклеены к верхней кромке editorial-frame.
+                Активная сливается с панелью, неактивные затемнены. Контролы
+                графика живут внутри панели ниже (см. has-tabs). */}
+            <ChartTabs<FundCategory>
+                tourId="funds-categories"
+                value={category}
+                onChange={setCategory}
+                items={CATEGORIES.map(c => ({
+                    key: c.key,
+                    label: c.name,
+                    sublabel: c.comingSoon ? 'Скоро' : c.index,
+                    Icon: c.icon,
+                    disabled: c.comingSoon,
+                    title: c.comingSoon ? 'Раздел скоро появится' : c.name,
+                }))}
+            />
 
-            {/* Вкладки категорий — pill-стиль с press-effect, fluid font/padding */}
-            <div data-tour="funds-categories" className="grid mb-4 md:mb-6" style={{ gap: 'var(--sp-2)', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
-                {CATEGORIES.map(cat => {
-                    const Icon = cat.icon;
-                    const isActive = category === cat.key;
-                    const soon = !!cat.comingSoon;
-                    return (
-                        <button
-                            key={cat.key}
-                            onClick={() => { if (!soon) setCategory(cat.key); }}
-                            disabled={soon}
-                            title={soon ? 'Раздел скоро появится' : undefined}
-                            className="editorial-press flex items-center justify-center font-semibold rounded-full min-w-0"
-                            style={{
-                                gap: 'var(--sp-2)',
-                                padding: 'var(--sp-2) var(--sp-3)',
-                                fontSize: 'var(--fs-sm)',
-                                backgroundColor: isActive ? 'var(--accent)' : 'var(--bg-secondary)',
-                                color: isActive ? 'var(--text-inverse)' : 'var(--text-primary)',
-                                border: '2px solid var(--text-primary)',
-                                boxShadow: isActive ? 'var(--shadow-hard-chip)' : undefined,
-                                opacity: soon ? 0.55 : undefined,
-                                cursor: soon ? 'not-allowed' : undefined,
-                            }}
-                        >
-                            <Icon className="shrink-0" style={{ width: 'var(--ico-sm)', height: 'var(--ico-sm)' }} />
-                            <span className="truncate min-w-0">{cat.name}</span>
-                            <span
-                                className="rounded-full shrink-0"
-                                style={{
-                                    fontSize: 'var(--fs-2xs)',
-                                    padding: 'calc(var(--sp-1)) var(--sp-2)',
-                                    background: soon ? 'var(--accent)' : (isActive ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.05)'),
-                                    color: soon ? 'var(--text-inverse)' : undefined,
-                                    whiteSpace: 'nowrap',
-                                }}
-                            >
-                                {soon ? 'Скоро' : cat.index}
-                            </span>
-                        </button>
-                    );
-                })}
-            </div>
+            {/* Editorial frame — обнимает controls + chart. has-tabs: верх под вкладки. */}
+            <div className="editorial-frame has-tabs">
 
             {/* Контролы */}
             <div className="flex flex-wrap mb-4 md:mb-6" style={{ gap: 'var(--sp-2)' }}>
