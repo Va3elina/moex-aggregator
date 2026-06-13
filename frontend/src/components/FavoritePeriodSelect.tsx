@@ -168,7 +168,14 @@ export default function FavoritePeriodSelect<T extends string>({
               <div
                 key={opt.key}
                 className="flex items-center"
-                style={{ margin: '2px 6px', gap: 'var(--sp-1)' }}
+                style={{
+                  margin: '2px 6px',
+                  borderRadius: 999,
+                  // Подсветка активного периода обнимает ВЕСЬ ряд, включая звезду.
+                  backgroundColor: active ? 'var(--accent)' : 'transparent',
+                  border: active ? '2px solid var(--text-primary)' : '2px solid transparent',
+                  boxShadow: active ? 'var(--shadow-hard-chip, 3px 3px 0 var(--text-primary))' : 'none',
+                }}
               >
                 <button
                   type="button"
@@ -185,16 +192,14 @@ export default function FavoritePeriodSelect<T extends string>({
                   className="flex-1 text-left text-sm flex items-center gap-2"
                   style={{
                     padding: '8px 12px',
-                    borderRadius: 999,
                     fontWeight: active ? 800 : 600,
                     color: opt.locked
                       ? 'var(--text-muted)'
                       : active
                         ? 'var(--text-inverse)'
                         : 'var(--text-primary)',
-                    backgroundColor: active ? 'var(--accent)' : 'transparent',
-                    border: active ? '2px solid var(--text-primary)' : '2px solid transparent',
-                    boxShadow: active ? 'var(--shadow-hard-chip, 3px 3px 0 var(--text-primary))' : 'none',
+                    backgroundColor: 'transparent',
+                    border: 'none',
                     cursor: opt.locked ? 'not-allowed' : 'pointer',
                     opacity: opt.locked ? 0.6 : 1,
                     whiteSpace: 'nowrap',
@@ -203,7 +208,8 @@ export default function FavoritePeriodSelect<T extends string>({
                   <span className="flex-1">{opt.label}</span>
                   {opt.locked && <Lock size={12} className="flex-shrink-0" />}
                 </button>
-                {/* Звезда — добавить/убрать из избранного (ряд обновляется сразу) */}
+                {/* Звезда — добавить/убрать из избранного. На активном ряду
+                    (accent bg) красим в inverse, чтобы была видна на оранжевом. */}
                 <button
                   type="button"
                   aria-label={isFav ? 'Убрать из избранного' : 'Добавить в избранное'}
@@ -212,8 +218,13 @@ export default function FavoritePeriodSelect<T extends string>({
                   className="inline-flex items-center justify-center rounded-full flex-shrink-0"
                   style={{
                     padding: 6,
+                    marginRight: 6,
                     cursor: 'pointer',
-                    color: isFav ? 'var(--accent)' : 'var(--text-muted)',
+                    color: active
+                      ? 'var(--text-inverse)'
+                      : isFav
+                        ? 'var(--accent)'
+                        : 'var(--text-muted)',
                   }}
                 >
                   <Star size={16} fill={isFav ? 'currentColor' : 'none'} strokeWidth={2} />
