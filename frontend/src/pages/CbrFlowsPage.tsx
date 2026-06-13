@@ -26,7 +26,7 @@ import {
 import { useFitToViewport } from '../hooks/useFitToViewport';
 import StackedBidirectionalHistogram from '../components/cbr/StackedBidirectionalHistogram';
 import { getCategoryColor } from '../components/cbr/cbrPalette';
-import { getCategoryInfo } from '../components/cbr/cbrCategoryInfo';
+import { getCategoryInfo, getCategoryShortLabel } from '../components/cbr/cbrCategoryInfo';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import CsvExportButton from '../components/export/CsvExportButton';
 import { periodToQuery } from '../utils/csvPeriod';
@@ -421,18 +421,20 @@ export default function CbrFlowsPage() {
                   label: 'Категории участников',
                   default: [], // пустой = все категории (backend не фильтрует)
                   hint: 'Пусто = все категории',
+                  // Подписи берём из getCategoryShortLabel — единый источник
+                  // правды с легендой графика, чтобы они не разъезжались.
                   options: [
-                    { value: 'Физические лица', label: 'Физлица' },
-                    { value: 'СЗКО', label: 'СЗКО' },
-                    { value: 'Прочие Банки', label: 'Прочие банки' },
-                    { value: 'Нерезиденты', label: 'Нерезиденты' },
-                    { value: 'НФО', label: 'НФО' },
-                    { value: 'Нефинансовые организации', label: 'Нефин. организации' },
-                    { value: 'Доверительное управление', label: 'ДУ' },
-                    { value: 'Банк России', label: 'ЦБ' },
-                    { value: 'Российские кредитные организации', label: 'РКО' },
-                    { value: 'Клиенты российских кредитных организаций', label: 'Клиенты РКО' },
-                  ],
+                    'Физические лица',
+                    'СЗКО',
+                    'Прочие Банки',
+                    'Нерезиденты',
+                    'НФО',
+                    'Нефинансовые организации',
+                    'Доверительное управление',
+                    'Банк России',
+                    'Российские кредитные организации',
+                    'Клиенты российских кредитных организаций',
+                  ].map((value) => ({ value, label: getCategoryShortLabel(value) })),
                 },
                 {
                   kind: 'period',
