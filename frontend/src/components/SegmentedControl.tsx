@@ -15,6 +15,7 @@
  *    будто можно «разблокировать». Так контрол всегда из 3 сегментов, без
  *    схлопывания в одну странную кнопку.
  */
+import { useState } from 'react';
 import { Lock } from 'lucide-react';
 
 export interface SegmentOption<T extends string> {
@@ -44,6 +45,7 @@ export default function SegmentedControl<T extends string>({
   onLockedClick,
   className = '',
 }: SegmentedControlProps<T>) {
+  const [hoveredKey, setHoveredKey] = useState<T | null>(null);
   return (
     <div
       role="group"
@@ -73,13 +75,22 @@ export default function SegmentedControl<T extends string>({
               if (opt.locked) { onLockedClick?.(opt.key); return; }
               if (!active) onChange(opt.key);
             }}
+            onMouseEnter={() => setHoveredKey(opt.key)}
+            onMouseLeave={() => setHoveredKey((k) => (k === opt.key ? null : k))}
             className="frame-segmented-item font-semibold inline-flex items-center justify-center"
             style={{
               fontSize: 'var(--fs-sm)',
               padding: 'var(--sp-2) var(--sp-3)',
               gap: 4,
               borderLeft: i > 0 ? '2px solid var(--text-primary)' : 'none',
-              backgroundColor: active ? 'var(--accent)' : 'transparent',
+              // hover «пред-нажим»: лёгкая accent-подсветка неактивного сегмента
+              // (как у inactive dropdown-item), без translate — чтобы не ломать
+              // единую pill. transition по background-color уже задан ниже.
+              backgroundColor: active
+                ? 'var(--accent)'
+                : (!muted && hoveredKey === opt.key)
+                  ? 'color-mix(in srgb, var(--accent) 18%, transparent)'
+                  : 'transparent',
               color: muted
                 ? 'var(--text-muted)'
                 : active
