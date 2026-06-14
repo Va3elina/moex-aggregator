@@ -178,7 +178,7 @@ export default function MobileSeasonalityPage() {
             <strong>Актив</strong> — выбор тикера: акции, валюты, индексы, сырьё
           </p>
           <p>
-            <strong>Опции</strong> — режим (Гистограмма / Годовая),
+            <strong>Опции</strong> — режим (Календарь / Годовая),
             сравнение с другими годами, фильтры
           </p>
         </>
@@ -196,7 +196,7 @@ export default function MobileSeasonalityPage() {
             Открыл кнопку <strong>«Опции»</strong>. Внутри:
           </p>
           <p style={{ marginBottom: 4 }}>
-            <strong>Гистограмма</strong> — средние % по выбранной шкале
+            <strong>Календарь</strong> — средние % по выбранной шкале
             (Дни недели / Месяцы / Дни месяца). Видны традиционно сильные
             и слабые периоды.
           </p>
@@ -302,7 +302,7 @@ export default function MobileSeasonalityPage() {
           showUpgrade,
           indicator: 'seasonality',
           featureName: mode === 'intraday' ? 'режим «Внутри дня»' :
-            histogramLocked ? 'режим «Сезонность»' : `актив ${selectedStock}`,
+            histogramLocked ? 'режим «Календарь»' : `актив ${selectedStock}`,
         });
       } finally {
         setLoading(false);
@@ -468,7 +468,7 @@ export default function MobileSeasonalityPage() {
         title="Опции"
       >
         <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 20 }}>
-          {/* Top-level toggle: Гистограмма (bars) vs Годовая (line chart).
+          {/* Top-level toggle: Календарь (bars) vs Годовая (line chart).
               Это разные chart-типы — не объединяем в один список. */}
           <div>
             <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
@@ -483,7 +483,7 @@ export default function MobileSeasonalityPage() {
                     if (tier) {
                       showUpgrade({
                         tier,
-                        featureName: 'режим «Сезонность»',
+                        featureName: 'режим «Календарь»',
                         indicator: 'seasonality',
                       });
                     }
@@ -503,7 +503,7 @@ export default function MobileSeasonalityPage() {
                 }}
                 aria-disabled={histogramLocked}
               >
-                Гистограмма
+                Календарь
                 {histogramLocked && <Lock size={11} strokeWidth={2.2} />}
               </button>
               <button
