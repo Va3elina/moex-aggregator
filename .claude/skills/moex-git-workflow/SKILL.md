@@ -11,7 +11,7 @@ description: Commit, push, or manage git for the Фрейм project. Use when us
 >
 > - **НЕ деплоить руками по SSH** — CI делает это сам. Если пользователь говорит «задеплой» — это значит **закоммить и запушить в main**.
 > - **Сервер `/opt/frame` = чистый deploy-target, НЕ воркспейс.** Деплой выполняет `git reset --hard origin/main` → **любая правка/scp прямо на проде СТИРАЕТСЯ** следующим деплоем. Все изменения — только через `git push`. **НЕ scp-ить** черновики/research на `/opt/frame`.
-> - **Сериализация**: `concurrency: deploy-prod` — два пуша выкатываются по очереди, не сталкиваются. Битый билд НЕ выкатывается (deploy ждёт зелёный build-check).
+> - **Сериализация**: `concurrency: deploy-prod` сериализует workflow-прогоны, но пачка быстрых пушей в `main` всё равно может поймать гонку на пересоздании контейнера (`removal of container ... is already in progress` — реальный случай 14.06.2026: один `deploy-prod` упал, прод поднялся от выигравшего). Ещё одна причина копить правки в ветке и мёржить пачкой. Битый билд НЕ выкатывается (deploy ждёт зелёный build-check).
 > - Ручной SSH-деплой остаётся только как **аварийный** путь (CI недоступен) — см. секцию «Аварийный ручной деплой» ниже.
 > - Детали в памяти: `ci_cd.md`, `deploy_manual.md`.
 
@@ -25,6 +25,26 @@ Project-specific conventions for commits and pushes.
 4. **DO add `Co-Authored-By`** with current Claude model version (see below)
 5. **Pull --rebase on conflict** — never merge commits
 6. **Never force-push to main** without explicit user approval
+
+## Командная работа — ветки + PR (ДЕФОЛТ с 2026-06-14)
+
+Канонический свод правил для людей — **`CONTRIBUTING.md` в корне репо**; скилл
+обязан ему соответствовать. Над репозиторием работают двое (Вадим +
+коллега, git-identity `vadim@frame.local`), поэтому **дефолт — НЕ прямой коммит
+в `main`, а ветка → Pull Request → мёрж**:
+
+1. Старт задачи: `git checkout main && git pull --rebase origin main && git checkout -b <type>/<kebab>`.
+2. Коммиты — в ветку; `git push -u origin <branch>` (это **НЕ** деплой).
+3. `gh pr create --base main --fill` → CI прогоняет `build-check` на PR
+   (зелёный/красный, **БЕЗ** деплоя; `build.yml` слушает `pull_request → main`).
+4. Зелёный → `gh pr merge --squash --delete-branch`. **Мёрж в `main` = деплой.**
+
+**Прямой push в `main` — ТОЛЬКО** когда пользователь явно просит (мелкий
+solo-фикс, грандфазинг уже готовой работы). По умолчанию НЕ делать.
+
+`pull --rebase` всегда; никаких merge-коммитов; `--force` только в свою ветку и
+только `--force-with-lease`. Перед параллельной правкой одного файла — свериться,
+кто что трогает.
 
 ## Commit Message Format
 
@@ -101,7 +121,11 @@ git diff --cached | grep -iE "password|secret|api[_-]?key|token|bearer"
 ls -la  # or specific directories
 ```
 
-## Standard Commit Workflow
+## Standard Commit Workflow (прямой push в main — НЕ дефолт)
+
+> Дефолт — **ветка + PR** (см. «Командная работа» выше и `CONTRIBUTING.md`).
+> Этот прямой-в-`main` рецепт применяется ТОЛЬКО когда пользователь явно
+> попросил запушить в `main` (solo-мелочь / грандфазинг готовой работы).
 
 When user says "коммит + пуш":
 
