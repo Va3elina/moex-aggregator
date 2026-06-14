@@ -378,6 +378,8 @@ export default function EmbedOpenInterest() {
             legendPosition="top"
             formatValue={formatPrice}
             formatSecondaryValue={(v) => formatNumber(v, 0)}
+            niceTicks={true}
+            niceTicksSecondary={true}
           />
         )}
         {status === 'loading' && <EmbedMsg text="Загрузка…" />}

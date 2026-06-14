@@ -266,7 +266,10 @@ export default function EmbedFundsMoney() {
                 secondaryColor="var(--funds-flow-positive)"
                 showSecondary={showIndex && !!indexData}
                 formatValue={fmtNav}
+                niceTicks={true}
+                niceTicksSecondary={true}
                 formatSecondaryValue={(v) => v.toFixed(2)}
+                formatSecondaryAxis={(v) => v.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
                 primaryLabel="Суммарная СЧА, млрд ₽"
                 secondaryLabel="Индекс"
                 showValueHeader={false}

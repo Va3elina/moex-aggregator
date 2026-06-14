@@ -15,6 +15,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { axisFontSize } from '../chart/chartTypography';
+import { niceTickValues } from '../../utils/niceTicks';
 
 /**
  * Одна точка серии. `gap: true` — заглушка в зоне без реальных данных
@@ -47,6 +48,9 @@ export interface MobileChartSeries {
   axis?: 'left' | 'right';
   /** Форматтер значений в pill / tooltip. */
   formatValue?: (v: number) => string;
+  /** Форматтер подписей ОСИ (короче, чем pill — напр. без юнита «трлн ₽»).
+   *  По умолчанию = formatValue. Симметрично desktop formatPrimaryAxis. */
+  formatAxis?: (v: number) => string;
   /** Скрыть current-value pill на оси (для секций где pill misleading,
    *  например yearly average которая accumulated за весь год). */
   hidePill?: boolean;
@@ -70,6 +74,10 @@ interface MobileChartProps {
   showXLabels?: boolean;
   /** Кастомный format для X-axis labels. По умолчанию DD.MM. */
   formatXLabel?: (time: string) => string;
+  /** «Круглые» деления (nice ticks) для ЛЕВОЙ / ПРАВОЙ оси отдельно.
+   *  Default false — прочие мобильные графики не задеты. */
+  niceTicksLeft?: boolean;
+  niceTicksRight?: boolean;
   loading?: boolean;
   /**
    * Явный триггер replay'я line-draw анимации. Структурная сигнатура
@@ -340,6 +348,8 @@ export default function MobileChart({
   height: heightProp,
   showXLabels = true,
   formatXLabel,
+  niceTicksLeft = false,
+  niceTicksRight = false,
   loading = false,
   animKey,
 }: MobileChartProps) {
@@ -720,6 +730,22 @@ export default function MobileChart({
   const leftLastIdx = hasLeft ? leftSeries[0].data.length - 1 : -1;
   const rightLastIdx = hasRight ? rightSeries[0].data.length - 1 : -1;
 
+  // Подписи оси: короткий форматтер если задан, иначе как в pill.
+  const fmtYAxis = (v: number, s: MobileChartSeries) =>
+    s.formatAxis ? s.formatAxis(v) : fmtY(v, s);
+  // Значения делений: круглые (nice ticks) если включено для оси, иначе —
+  // прежние 5 уровней Y_TICK_POSITIONS (через yAt позиция идентична старой,
+  // поэтому графики без флага не меняются).
+  const leftTickVals = !leftRange ? [] : niceTicksLeft
+    ? niceTickValues(leftRange.min, leftRange.max)
+    : Y_TICK_POSITIONS.map((t) => leftRange.min + leftRange.span * (1 - t));
+  const rightTickVals = !rightRange ? [] : niceTicksRight
+    ? niceTickValues(rightRange.min, rightRange.max)
+    : Y_TICK_POSITIONS.map((t) => rightRange.min + rightRange.span * (1 - t));
+  // Сетка следует за основной видимой осью (левая если есть, иначе правая).
+  const gridRange = hasLeft ? leftRange : rightRange;
+  const gridVals = hasLeft ? leftTickVals : rightTickVals;
+
   return (
     <div ref={wrapRef} style={{ position: 'relative', width: '100%', height: heightProp ?? '100%', minHeight: 160 }}>
       <svg
@@ -742,18 +768,21 @@ export default function MobileChart({
         onMouseLeave={handleMouseLeave}
         onClick={handleClickAway}
       >
-        {/* Y-axis grid lines (горизонтальные) — 5 уровней. */}
-        {Y_TICK_POSITIONS.map((t, i) => (
+        {/* Y-axis grid lines (горизонтальные) — следуют за делениями основной оси. */}
+        {gridRange && gridVals.map((v, i) => {
+          const gy = yAt(v, gridRange);
+          return (
           <line
             key={`grid-y-${i}`}
             x1={PAD_X}
-            y1={PAD_TOP + innerH * t}
+            y1={gy}
             x2={PAD_X + innerW}
-            y2={PAD_TOP + innerH * t}
+            y2={gy}
             stroke="color-mix(in srgb, var(--text-primary) 8%, transparent)"
             strokeWidth={1}
           />
-        ))}
+          );
+        })}
 
         {/* X-axis grid lines (вертикальные) — на тех же X-tick позициях
             что и нижние даты. Полная сетка как в десктопном SimpleChart. */}
@@ -795,39 +824,33 @@ export default function MobileChart({
 
         {/* Y-axis tick labels — INSIDE chart edges. 5 значений на каждой
             оси (10/30/50/70/90% от высоты), match с tick lines выше. */}
-        {hasLeft && leftRange && Y_TICK_POSITIONS.map((t, i) => {
-          const v = leftRange.min + leftRange.span * (1 - t);
-          return (
+        {hasLeft && leftRange && leftTickVals.map((v, i) => (
             <text
               key={`yl-${i}`}
               x={PAD_X + 4}
-              y={PAD_TOP + innerH * t + 3}
+              y={yAt(v, leftRange) + 3}
               fontSize={axisFs}
               fontWeight={600}
               fill="color-mix(in srgb, var(--text-primary) 55%, transparent)"
               style={{ pointerEvents: 'none' }}
             >
-              {fmtY(v, leftSeries[0])}
+              {fmtYAxis(v, leftSeries[0])}
             </text>
-          );
-        })}
-        {hasRight && rightRange && Y_TICK_POSITIONS.map((t, i) => {
-          const v = rightRange.min + rightRange.span * (1 - t);
-          return (
+        ))}
+        {hasRight && rightRange && rightTickVals.map((v, i) => (
             <text
               key={`yr-${i}`}
               x={PAD_X + innerW - 4}
-              y={PAD_TOP + innerH * t + 3}
+              y={yAt(v, rightRange) + 3}
               fontSize={axisFs}
               fontWeight={600}
               fill="color-mix(in srgb, var(--text-primary) 55%, transparent)"
               textAnchor="end"
               style={{ pointerEvents: 'none' }}
             >
-              {fmtY(v, rightSeries[0])}
+              {fmtYAxis(v, rightSeries[0])}
             </text>
-          );
-        })}
+        ))}
 
         {/* Current value pills — каждая У СВОЕЙ оси (как на десктопе):
             primary (left axis) → pill прижата к ЛЕВОМУ краю chart-area

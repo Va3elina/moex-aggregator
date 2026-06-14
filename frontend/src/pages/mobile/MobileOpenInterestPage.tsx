@@ -424,6 +424,8 @@ export default function MobileOpenInterestPage() {
         <div style={{ position: 'absolute', inset: 0 }}>
           <MobileChart
             series={chartSeries}
+            niceTicksLeft={true}
+            niceTicksRight={true}
             loading={loading}
             animKey={`${selectedInstrument}|${period}|${intervalValue}|${clgroup}|${displayMode}|${oiVariant}`}
             formatXLabel={(t) => {

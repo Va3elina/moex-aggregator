@@ -729,8 +729,11 @@ export default function FundsMoneyPage() {
                         primaryColor={NAV_COLOR}
                         secondaryColor={INDEX_COLOR}
                         showSecondary={showIndex}
+                        niceTicks={true}
+                        niceTicksSecondary={true}
                         formatValue={formatNav}
                         formatSecondaryValue={(v) => v.toFixed(2)}
+                        formatSecondaryAxis={(v) => v.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
                         primaryLabel={`Суммарная СЧА фондов ${currentCategory?.genitive ?? ''}, млрд руб`}
                         secondaryLabel={currentCategory?.index || 'Индекс'}
                         loading={loading}
