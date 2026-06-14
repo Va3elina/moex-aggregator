@@ -1168,11 +1168,11 @@
 }
 .chart-tab:not(.is-active):hover { color: var(--text-secondary); }
 .chart-tab:disabled { opacity: 0.45; cursor: not-allowed; }
-/* Активный фонд — папка-вкладка, сросшаяся с панелью */
+/* Активный фонд — папка-вкладка, сросшаяся с панелью. Без overlap (margin),
+   иначе боковые рамки выступали бы на 2px ниже кромки панели. */
 .chart-tab.is-active {
   position: relative;
   z-index: 4;
-  margin-bottom: -2px;
   color: var(--text-primary);
   background: var(--bg-secondary);
   border: 2px solid var(--text-primary);
@@ -1180,19 +1180,30 @@
   border-top-left-radius: 16px;
   border-top-right-radius: 16px;
 }
+/* Правый край активной папки продолжает тень карточки вверх, когда выбран
+   последний (крайний правый) фонд. */
+[data-theme^="editorial"] .chart-tab.is-active:last-child {
+  box-shadow: 5px 0 0 var(--card-border-color);
+}
+@media (max-width: 600px) {
+  [data-theme^="editorial"] .chart-tab.is-active:last-child {
+    box-shadow: 3px 0 0 var(--card-border-color);
+  }
+}
 .chart-tab .ct-ico { width: var(--ico-sm); height: var(--ico-sm); flex-shrink: 0; }
 .chart-tab .ct-name { overflow: hidden; text-overflow: ellipsis; }
 .chart-tab .ct-sub { font-size: var(--fs-2xs); opacity: 0.72; letter-spacing: 0.02em; }
 
-/* Панель под вкладками: активный язычок перекрывает её верхнюю границу
-   (сливается), по бокам граница видна как верхняя кромка карточки. Тень 5×5
-   наследуется от .editorial-frame — возвращаем карточке тень. */
+/* Панель под вкладками: верхней границы НЕТ — активная папка-вкладка ровно
+   сливается с панелью, без нависающих пикселей по бокам язычка. Боковые и
+   нижняя рамки — 2px. Тень 5×5 наследуется от .editorial-frame. */
 .editorial-frame.has-tabs {
   position: relative;
   z-index: 1;
 }
 [data-theme^="editorial"] .editorial-frame.has-tabs {
   border: 2px solid var(--text-primary);
+  border-top: none;
   border-top-left-radius: 0;
   border-top-right-radius: 0;
 }
