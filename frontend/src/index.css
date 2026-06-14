@@ -1204,7 +1204,7 @@
   }
 }
 .chart-tab .ct-ico { width: var(--ico-sm); height: var(--ico-sm); flex-shrink: 0; }
-.chart-tab .ct-name { overflow: hidden; text-overflow: ellipsis; font-size: var(--fs-md); }
+.chart-tab .ct-name { overflow: hidden; text-overflow: ellipsis; font-size: var(--fs-lg); }
 .chart-tab .ct-sub { font-size: var(--fs-2xs); opacity: 0.72; letter-spacing: 0.02em; }
 
 /* Панель под вкладками: рамка 2px со всех сторон, включая верх — кромка
