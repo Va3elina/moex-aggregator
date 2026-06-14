@@ -229,7 +229,7 @@ export default function MobileBuffettPage() {
           label: 'Капитализация',
           axis: 'left' as const,
           formatValue: (v: number) => `${v.toFixed(1)} трлн`,
-          formatAxis: (v: number) => String(v),
+          formatAxis: (v: number) => String(Math.round(v)),
         },
         {
           data: ratioData,
@@ -259,7 +259,7 @@ export default function MobileBuffettPage() {
           label: 'Капитализация',
           axis: 'left' as const,
           formatValue: (v: number) => `${v.toFixed(1)} трлн`,
-          formatAxis: (v: number) => String(v),
+          formatAxis: (v: number) => String(Math.round(v)),
         },
         {
           data: ratioData,

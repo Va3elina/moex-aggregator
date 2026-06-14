@@ -388,7 +388,7 @@ export default function BuffettPage() {
                     showSecondary={true}
                     reverseLegend={true}
                     formatValue={(v) => `${v.toFixed(2)} трлн ₽`}
-                    formatPrimaryAxis={(v) => String(v)}
+                    formatPrimaryAxis={(v) => String(Math.round(v))}
                     niceTicks={true}
                     formatSecondaryValue={(v) => `${v.toFixed(2)}%`}
                     formatSecondaryAxis={(v) => `${v.toFixed(1)}%`}
@@ -419,7 +419,7 @@ export default function BuffettPage() {
                     showSecondary={true}
                     reverseLegend={true}
                     formatValue={(v) => `${v.toFixed(2)} трлн ₽`}
-                    formatPrimaryAxis={(v) => String(v)}
+                    formatPrimaryAxis={(v) => String(Math.round(v))}
                     niceTicks={true}
                     formatSecondaryValue={(v) => `${(v * 100).toFixed(2)}%`}
                     formatSecondaryAxis={(v) => `${(v * 100).toFixed(1)}%`}
