@@ -239,7 +239,7 @@ export default function EmbedBuffett() {
             showSecondary
             reverseLegend
             formatValue={(v) => `${v.toFixed(2)} трлн ₽`}
-            formatPrimaryAxis={(v) => String(v)}
+            formatPrimaryAxis={(v) => String(Math.round(v))}
             niceTicks={true}
             formatSecondaryValue={ratioVal}
             formatSecondaryAxis={ratioAxis}
