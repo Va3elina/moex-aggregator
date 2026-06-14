@@ -45,7 +45,7 @@ export const seasonalityTourSteps: TourStep[] = [
     body: (
       <>
         <p style={{ marginBottom: 8 }}>
-          <strong>Сезонность</strong> — гистограмма средних изменений.
+          <strong>Календарь</strong> — гистограмма средних изменений.
           Под ним выбираешь режим:
         </p>
         <ul style={{ paddingLeft: 18, fontSize: 13, marginBottom: 8 }}>

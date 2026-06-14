@@ -3,6 +3,7 @@ import { ChevronDown, CalendarDays, X } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import InstrumentIcon from '../components/InstrumentIcon';
 import Dropdown, { type DropdownOption } from '../components/Dropdown';
+import SegmentedControl from '../components/SegmentedControl';
 import { usePrefetchLogos } from '../hooks/usePrefetchLogos';
 import { METHODOLOGY } from '../data/methodology';
 import { getSeasonality, getSeasonalityPrice, getSeasonalityYearly, getSeasonalityYears } from '../services/api';
@@ -14,6 +15,7 @@ import TestDashboard from '../components/seasonality/TestDashboard';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import CsvExportButton from '../components/export/CsvExportButton';
 import ChartActionsMenu from '../components/ChartActionsMenu';
+import LayersButton from '../components/LayersButton';
 import type { SeasonalityResponse, SeasonalityMode, PriceChartResponse, YearlySeasonalityResponse } from '../services/api';
 import { useOnboardingTour } from '../hooks/useFirstVisit';
 import { usePersistedState } from '../hooks/usePersistedState';
@@ -269,7 +271,7 @@ export default function SeasonalityPage() {
       setHistogramFetchId(id => id + 1);
     } catch (e: unknown) {
       if (reqId !== seasonalityReqIdRef.current) return;
-      if (!handleTierError(e, `режим «Сезонность»`)) {
+      if (!handleTierError(e, `режим «Календарь»`)) {
         setError(e instanceof Error ? e.message : 'Ошибка загрузки');
       }
     } finally {
@@ -551,23 +553,8 @@ export default function SeasonalityPage() {
         <span className="inline-block rounded-full" style={{ width: 'var(--ico-xs)', height: 'var(--ico-xs)', backgroundColor: showNoOutliers ? COLOR_NO_OUTLIERS : 'var(--text-muted)' }} />
         Без выбросов
       </button>
-      {chartType === 'yearly' && (
-        <button
-          onClick={() => setShowCurrentYear(!showCurrentYear)}
-          title="Показать или скрыть линию текущего года"
-          className="editorial-press font-semibold rounded-full whitespace-nowrap"
-          style={{
-            backgroundColor: showCurrentYear ? 'var(--accent)' : 'var(--bg-secondary)',
-            color: showCurrentYear ? 'var(--text-inverse)' : 'var(--text-primary)',
-            border: '1.5px solid var(--text-primary)',
-            boxShadow: showCurrentYear ? 'var(--shadow-hard-chip)' : undefined,
-            fontSize: 'var(--fs-sm)',
-            padding: 'var(--sp-2) var(--sp-3)',
-          }}
-        >
-          Текущий год
-        </button>
-      )}
+      {/* «Текущий год» переехал из горячего ряда в меню «Слои» (LayersButton
+          в ChartActionsMenu) — низкочастотный toggle вида, паттерн как у Strength. */}
       {renderCompareYearsControls()}
       {availableYears.length > 1 && (() => {
         // При достижении лимита (compareYears + exact = 5) разрешаем только
@@ -725,13 +712,13 @@ export default function SeasonalityPage() {
           )}
         </div>
 
-        {/* Chart type toggle */}
+        {/* Chart type toggle — горизонтальный сегмент (Календарь / Годовая) */}
         <div data-tour="seasonality-mode" className="flex" style={{ gap: 'var(--sp-2)' }}>
-        <Dropdown<ChartType>
+        <SegmentedControl<ChartType>
           options={[
             {
               key: 'histogram',
-              label: 'Сезонность',
+              label: 'Календарь',
               // На Free доступен только yearly. Histogram-режимы заблокированы.
               locked: !seasonAccess.isLoading && !seasonAccess.canUseMode('histogram'),
             },
@@ -744,7 +731,7 @@ export default function SeasonalityPage() {
             if (tier) {
               showUpgrade({
                 tier,
-                featureName: 'режим «Сезонность»',
+                featureName: 'режим «Календарь»',
                 indicator: 'seasonality',
               });
             }
@@ -814,6 +801,19 @@ export default function SeasonalityPage() {
             Скрыт в test mode (там свой дашборд). */}
         {chartType !== 'test' && (
           <ChartActionsMenu containerRef={chartCardRef} tourId="seasonality-export">
+          {chartType === 'yearly' && (
+            <LayersButton
+              layers={[
+                {
+                  key: 'currentYear',
+                  label: 'Текущий год',
+                  hint: 'Линия динамики с начала текущего года',
+                  checked: showCurrentYear,
+                  onChange: setShowCurrentYear,
+                },
+              ]}
+            />
+          )}
           <CsvExportButton
             indicator="seasonality"
             config={() => ({
