@@ -213,10 +213,10 @@ export default function BuffettPage() {
                 />
                 </div>
 
-                {/* Период */}
-                <div data-tour="buffett-period">
-                <Dropdown<BuffettPeriod>
-                    options={(Object.keys(PERIOD_LABELS) as BuffettPeriod[]).map((p): DropdownOption<BuffettPeriod> => ({
+                {/* Период — горизонтальный ряд, в конце (после таймфрейма) */}
+                <div data-tour="buffett-period" style={{ order: 3 }}>
+                <SegmentedControl<BuffettPeriod>
+                    options={(Object.keys(PERIOD_LABELS) as BuffettPeriod[]).map((p) => ({
                         key: p,
                         label: PERIOD_LABELS[p] ?? p,
                         locked: !isPeriodAllowed(p, isAuthenticated),
@@ -239,7 +239,7 @@ export default function BuffettPage() {
 
                 {/* Таймфрейм — плитки (как на OI). cap-gdp и cap-m2 оба используют. */}
                 {(viewMode === 'cap-gdp' || viewMode === 'cap-m2') && (
-                    <div data-tour="buffett-timeframe">
+                    <div data-tour="buffett-timeframe" style={{ order: 2 }}>
                     <SegmentedControl<'1d' | '1w' | '1m'>
                         options={[
                             { key: '1d', label: '1Д' },

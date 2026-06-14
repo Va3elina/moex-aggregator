@@ -15,7 +15,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { LineChart, Landmark, DollarSign, Building2, ChevronDown, Users, Lock } from 'lucide-react';
+import { LineChart, Landmark, DollarSign, Building2, ChevronDown, Users } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { METHODOLOGY } from '../data/methodology';
 import {
@@ -31,6 +31,7 @@ import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import CsvExportButton from '../components/export/CsvExportButton';
 import ChartActionsMenu from '../components/ChartActionsMenu';
 import ChartTabs from '../components/ChartTabs';
+import SegmentedControl from '../components/SegmentedControl';
 import { periodToQuery } from '../utils/csvPeriod';
 import { useOnboardingTour } from '../hooks/useFirstVisit';
 import { usePersistedState } from '../hooks/usePersistedState';
@@ -332,43 +333,23 @@ export default function CbrFlowsPage() {
             )}
           </div>
 
-          {/* === Период chips (1Г / Всё) — «Всё» под замком для free === */}
-          <div data-tour="cbr-period" className="flex items-center" style={{ gap: 'var(--sp-1)' }}>
-            {PERIOD_OPTIONS.map((opt) => {
-              const isActive = period === opt.key;
-              const allowed = cbrAccess.isLoading || cbrAccess.canUsePeriod(opt.key);
-              return (
-                <button
-                  key={opt.key}
-                  onClick={() => {
-                    if (!allowed) {
-                      const tier = cbrAccess.requiredTierFor({ period: opt.key });
-                      if (tier) {
-                        showUpgrade({ tier, featureName: `период «${opt.label}»`, indicator: 'cbr_flows' });
-                      }
-                      return;
-                    }
-                    setPeriod(opt.key);
-                  }}
-                  className="editorial-press font-semibold rounded-full inline-flex items-center justify-center"
-                  style={{
-                    padding: 'var(--sp-2) var(--sp-3)',
-                    fontSize: 'var(--fs-sm)',
-                    minWidth: '48px',
-                    gap: 'var(--sp-1)',
-                    backgroundColor: isActive ? 'var(--accent)' : 'var(--bg-secondary)',
-                    color: isActive ? 'var(--text-inverse)' : 'var(--text-primary)',
-                    border: '2px solid var(--text-primary)',
-                    boxShadow: isActive ? 'var(--shadow-hard-chip)' : undefined,
-                    opacity: allowed ? 1 : 0.5,
-                  }}
-                  aria-disabled={!allowed}
-                >
-                  {opt.label}
-                  {!allowed && <Lock size={12} strokeWidth={2.2} />}
-                </button>
-              );
-            })}
+          {/* === Период (1Г / Всё) — горизонтальный ряд, «Всё» под замком для free === */}
+          <div data-tour="cbr-period">
+          <SegmentedControl<PeriodFilter>
+            options={PERIOD_OPTIONS.map((opt) => ({
+              key: opt.key,
+              label: opt.label,
+              locked: !(cbrAccess.isLoading || cbrAccess.canUsePeriod(opt.key)),
+            }))}
+            value={period}
+            onChange={setPeriod}
+            onLockedClick={(p) => {
+              const tier = cbrAccess.requiredTierFor({ period: p });
+              if (tier) {
+                showUpgrade({ tier, featureName: `период «${PERIOD_OPTIONS.find((o) => o.key === p)?.label ?? p}»`, indicator: 'cbr_flows' });
+              }
+            }}
+          />
           </div>
 
           {/* Действия (Скриншот/CSV) свёрнуты в kebab «⋮» в углу графика (паттерн OI).

@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { isPeriodAllowed } from '../../config/accessControl';
 import Dropdown, { type DropdownOption } from '../Dropdown';
+import SegmentedControl from '../SegmentedControl';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../tier/UpgradeModal';
 
@@ -64,28 +65,6 @@ export default function StrengthControls({
 
     return (
         <div className="flex items-center flex-wrap mb-4 md:mb-6" style={{ gap: 'var(--sp-2)' }}>
-            {/* Period */}
-            <Dropdown<Period>
-                options={(Object.keys(PERIOD_LABELS) as Period[]).map((p): DropdownOption<Period> => ({
-                    key: p,
-                    label: PERIOD_LABELS[p],
-                    locked: !isPeriodAllowed(p, isAuthenticated),
-                }))}
-                value={period}
-                onChange={onPeriodChange}
-                onLockedClick={(p) => {
-                    // Tier-блокировка → upgrade modal; иначе legacy guest gate → /login.
-                    if (!strengthAccess.canUsePeriod(p)) {
-                        const tier = strengthAccess.requiredTierFor({ period: p });
-                        if (tier) {
-                            showUpgrade({ tier, featureName: `период «${PERIOD_LABELS[p]}»`, indicator: 'strength' });
-                            return;
-                        }
-                    }
-                    if (!isPeriodAllowed(p, isAuthenticated)) navigate('/login');
-                }}
-            />
-
             {/* Chart mode (line / histogram) */}
             <Dropdown<ChartMode>
                 options={[
@@ -146,6 +125,28 @@ export default function StrengthControls({
                 }))}
                 value={String(emaPeriod)}
                 onChange={(k) => onEmaPeriodChange(Number(k) as EmaPeriod)}
+            />
+
+            {/* Период — горизонтальный ряд, перенесён в конец селекторов */}
+            <SegmentedControl<Period>
+                options={(Object.keys(PERIOD_LABELS) as Period[]).map((p) => ({
+                    key: p,
+                    label: PERIOD_LABELS[p],
+                    locked: !isPeriodAllowed(p, isAuthenticated),
+                }))}
+                value={period}
+                onChange={onPeriodChange}
+                onLockedClick={(p) => {
+                    // Tier-блокировка → upgrade modal; иначе legacy guest gate → /login.
+                    if (!strengthAccess.canUsePeriod(p)) {
+                        const tier = strengthAccess.requiredTierFor({ period: p });
+                        if (tier) {
+                            showUpgrade({ tier, featureName: `период «${PERIOD_LABELS[p]}»`, indicator: 'strength' });
+                            return;
+                        }
+                    }
+                    if (!isPeriodAllowed(p, isAuthenticated)) navigate('/login');
+                }}
             />
 
             {/* Тумблер верхнего графика (индекса) переехал в модалку «Слои»

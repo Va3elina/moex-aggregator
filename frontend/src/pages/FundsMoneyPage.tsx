@@ -2,7 +2,6 @@ import React, { useEffect, useLayoutEffect, useState, useMemo, useRef, useCallba
 import { TrendingUp, DollarSign, Banknote, Gem, Wallet, JapaneseYen } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
-import Dropdown, { type DropdownOption } from '../components/Dropdown';
 import SegmentedControl from '../components/SegmentedControl';
 import ChartTabs from '../components/ChartTabs';
 import LayersButton from '../components/LayersButton';
@@ -516,10 +515,10 @@ export default function FundsMoneyPage() {
             {/* Контролы */}
             <div className="flex flex-wrap mb-4 md:mb-6" style={{ gap: 'var(--sp-2)' }}>
                 <div data-tour="funds-period" style={{ order: 3 }}>
-                <Dropdown<Period>
+                <SegmentedControl<Period>
                     options={(Object.keys(PERIOD_LABELS) as Period[])
                         .filter(p => AUM_PERIODS.includes(p))
-                        .map((p): DropdownOption<Period> => ({
+                        .map((p) => ({
                             key: p,
                             label: PERIOD_LABELS[p],
                             locked: !isPeriodAllowed(p, isAuthenticated),

@@ -454,7 +454,7 @@ export default function OpenInterestPage() {
           </button>
 
           {/* Таймфрейм + Период */}
-          <div data-tour="oi-timerange" className="flex" style={{ gap: 'var(--sp-2)' }}>
+          <div data-tour="oi-timerange" className="flex" style={{ gap: 'var(--sp-2)', order: 1 }}>
           {/* Таймфрейм — плитки, не Dropdown: переключается часто, нужен один
               клик и видимый активный сегмент (решение 2026-06-12).
               Все три сегмента показываем ВСЕГДА. Если у актива нет внутридневных
