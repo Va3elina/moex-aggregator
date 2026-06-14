@@ -15,7 +15,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { axisFontSize } from '../chart/chartTypography';
-import { niceTickValues } from '../../utils/niceTicks';
+import { niceScale } from '../../utils/niceTicks';
 
 /**
  * Одна точка серии. `gap: true` — заглушка в зоне без реальных данных
@@ -536,14 +536,25 @@ export default function MobileChart({
 
   // Range берёт min/max по ВСЕМ series на оси — иначе secondary series
   // могут выйти за visible (если её range шире чем у primary).
-  const leftRange = useMemo(
-    () => (hasLeft ? fit(leftSeries.flatMap((s) => s.data.map((d) => d.value))) : null),
-    [hasLeft, leftSeries],
-  );
-  const rightRange = useMemo(
-    () => (hasRight ? fit(rightSeries.flatMap((s) => s.data.map((d) => d.value))) : null),
-    [hasRight, rightSeries],
-  );
+  // niceTicks: округляем границы оси до круглых (niceScale) — линия зумится к
+  // круглым границам, и тики (с теми же границами) считаются ОДИН раз здесь,
+  // чтобы шаг не рассинхронился. ticks=null → прежнее поведение (Y_TICK_POSITIONS).
+  const leftRange = useMemo(() => {
+    if (!hasLeft) return null;
+    const vals = leftSeries.flatMap((s) => s.data.map((d) => d.value));
+    const base = fit(vals);
+    if (!niceTicksLeft || vals.length === 0) return { ...base, ticks: null as number[] | null };
+    const ns = niceScale(Math.min(...vals), Math.max(...vals), 4);
+    return { min: ns.min, max: ns.max, span: ns.max - ns.min, ticks: ns.ticks as number[] | null };
+  }, [hasLeft, leftSeries, niceTicksLeft]);
+  const rightRange = useMemo(() => {
+    if (!hasRight) return null;
+    const vals = rightSeries.flatMap((s) => s.data.map((d) => d.value));
+    const base = fit(vals);
+    if (!niceTicksRight || vals.length === 0) return { ...base, ticks: null as number[] | null };
+    const ns = niceScale(Math.min(...vals), Math.max(...vals), 4);
+    return { min: ns.min, max: ns.max, span: ns.max - ns.min, ticks: ns.ticks as number[] | null };
+  }, [hasRight, rightSeries, niceTicksRight]);
 
   // Сколько точек на оси X — берём из самой длинной серии (после downsampling)
   const N = useMemo(
@@ -736,12 +747,10 @@ export default function MobileChart({
   // Значения делений: круглые (nice ticks) если включено для оси, иначе —
   // прежние 5 уровней Y_TICK_POSITIONS (через yAt позиция идентична старой,
   // поэтому графики без флага не меняются).
-  const leftTickVals = !leftRange ? [] : niceTicksLeft
-    ? niceTickValues(leftRange.min, leftRange.max)
-    : Y_TICK_POSITIONS.map((t) => leftRange.min + leftRange.span * (1 - t));
-  const rightTickVals = !rightRange ? [] : niceTicksRight
-    ? niceTickValues(rightRange.min, rightRange.max)
-    : Y_TICK_POSITIONS.map((t) => rightRange.min + rightRange.span * (1 - t));
+  const leftTickVals = !leftRange ? [] : (leftRange.ticks
+    ?? Y_TICK_POSITIONS.map((t) => leftRange.min + leftRange.span * (1 - t)));
+  const rightTickVals = !rightRange ? [] : (rightRange.ticks
+    ?? Y_TICK_POSITIONS.map((t) => rightRange.min + rightRange.span * (1 - t)));
   // Сетка следует за основной видимой осью (левая если есть, иначе правая).
   const gridRange = hasLeft ? leftRange : rightRange;
   const gridVals = hasLeft ? leftTickVals : rightTickVals;
