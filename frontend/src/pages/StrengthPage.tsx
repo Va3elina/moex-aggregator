@@ -338,8 +338,6 @@ export default function StrengthPage() {
             <StrengthControls
                 period={period}
                 onPeriodChange={setPeriod}
-                chartMode={chartMode}
-                onChartModeChange={setChartMode}
                 universeBase={universeBase}
                 onUniverseBaseChange={setUniverseBase}
                 currency={currency}
@@ -356,6 +354,7 @@ export default function StrengthPage() {
                         tourId="strength-layers"
                         layers={[
                             { key: 'price', label: 'Индекс', hint: priceChartLabel, checked: showPrice, onChange: setShowPrice },
+                            { key: 'histogram', label: 'Гистограмма', hint: 'Столбики вместо линии', checked: chartMode === 'histogram', onChange: (v: boolean) => setChartMode(v ? 'histogram' : 'line') },
                         ]}
                     />
                     <CsvExportButton

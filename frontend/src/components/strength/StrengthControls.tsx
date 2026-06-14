@@ -7,7 +7,6 @@ import { useTierAccess } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../tier/UpgradeModal';
 
 type Period = '1y' | '5y' | 'all';
-type ChartMode = 'line' | 'histogram';
 type EmaPeriod = 50 | 100 | 200;
 
 const PERIOD_LABELS: Record<Period, string> = {
@@ -21,8 +20,6 @@ const EMA_OPTIONS: EmaPeriod[] = [50, 100, 200];
 interface StrengthControlsProps {
     period: Period;
     onPeriodChange: (period: Period) => void;
-    chartMode: ChartMode;
-    onChartModeChange: (mode: ChartMode) => void;
     universeBase: 'all' | 'imoex';
     onUniverseBaseChange: (base: 'all' | 'imoex') => void;
     currency: 'rub' | 'usd';
@@ -41,8 +38,6 @@ interface StrengthControlsProps {
 export default function StrengthControls({
     period,
     onPeriodChange,
-    chartMode,
-    onChartModeChange,
     universeBase,
     onUniverseBaseChange,
     currency,
@@ -65,16 +60,6 @@ export default function StrengthControls({
 
     return (
         <div className="flex items-center flex-wrap mb-4 md:mb-6" style={{ gap: 'var(--sp-2)' }}>
-            {/* Chart mode (line / histogram) */}
-            <Dropdown<ChartMode>
-                options={[
-                    { key: 'line', label: 'Линия' },
-                    { key: 'histogram', label: 'Гистограмма' },
-                ]}
-                value={chartMode}
-                onChange={onChartModeChange}
-            />
-
             {/* Universe: IMOEX / 100 акций.
                 Раньше label был 'Все акции' — переименовано чтобы точнее
                 отражать что universe = 100 ликвидных акций (не реально все). */}
