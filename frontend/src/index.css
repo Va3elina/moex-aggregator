@@ -1144,9 +1144,13 @@
    за контролами отображения внутри панели. Theme-aware через токены. */
 .chart-tabs {
   display: flex;
-  gap: var(--sp-1);
   position: relative;
   z-index: 2;
+  border: 2px solid var(--text-primary);
+  border-bottom: none;
+  border-top-left-radius: 14px;
+  border-top-right-radius: 14px;
+  overflow: hidden;
 }
 .chart-tab {
   flex: 1 1 0;
@@ -1161,12 +1165,14 @@
   font-size: var(--fs-sm);
   color: var(--text-muted);
   background: color-mix(in srgb, var(--text-primary) 8%, var(--bg-secondary));
-  border: 2px solid var(--text-primary);
-  border-top-left-radius: 14px;
-  border-top-right-radius: 14px;
+  border: none;
   cursor: pointer;
   white-space: nowrap;
-  transition: color 120ms, background 120ms;
+}
+/* Разделители между вкладками — одинарные (border-left у всех, кроме первой).
+   Анимации переключения нет: смена активной вкладки мгновенная. */
+.chart-tab + .chart-tab {
+  border-left: 2px solid var(--text-primary);
 }
 .chart-tab:not(.is-active):hover {
   color: var(--text-secondary);
@@ -1175,7 +1181,6 @@
 .chart-tab.is-active {
   background: var(--bg-secondary);
   color: var(--text-primary);
-  border-bottom-color: var(--bg-secondary);
 }
 .chart-tab:disabled {
   opacity: 0.45;
@@ -1200,12 +1205,14 @@
    не ровные). Тень снимаем — она живёт на обёртке .tabbed-card, иначе
    обрывалась бы у вкладок в правом верхнем углу. */
 .editorial-frame.has-tabs {
-  margin-top: -2px;
   position: relative;
   z-index: 1;
 }
+/* Панель срастается с полосой вкладок: верхней границы нет (её даёт полоса),
+   боковые/нижняя — 2px (совпадают с полосой), верхние углы прямые. */
 [data-theme^="editorial"] .editorial-frame.has-tabs {
-  border-width: 2px;
+  border: 2px solid var(--text-primary);
+  border-top: none;
   border-top-left-radius: 0;
   border-top-right-radius: 0;
   box-shadow: none;
