@@ -94,7 +94,9 @@ scp -rq -o IdentitiesOnly=yes -o IdentityAgent=none -i ~/.ssh/id_ed25519 \
   /tmp/reimport_X root@103.88.243.232:/opt/frame/data/manual_scha/reimport_X
 ssh ... 'docker exec frame-api-1 python3 -m Funds.manual_scha_backfill /data/manual_scha/reimport_X/ 2>&1 | tail -8'
 # api контейнер read-only rootfs → /data/manual_scha bind-mount единственный inbound-канал.
-# Если меняешь Funds/*.py — docker compose build api && up -d ПЕРЕД backfill.
+# data/ в .gitignore → scp сюда переживает deploy (reset --hard) — это OK, НЕ черновик в tracked-зону.
+# Если меняешь Funds/*.py — сначала git push (CI пересоберёт api), дождись зелёного deploy-prod,
+# ПОТОМ backfill. НЕ docker compose build руками на проде — сервер чистый target (reset --hard).
 ssh ... 'rm -rf /opt/frame/data/manual_scha/reimport_X'  # cleanup после
 ```
 Verify: `SELECT ticker, COUNT(DISTINCT snapshot_date), AVG(assets) ... WHERE source='interfax_manual'`.

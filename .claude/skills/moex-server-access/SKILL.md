@@ -1,13 +1,23 @@
 ---
 name: moex-server-access
-description: Безопасная работа с production-сервером Фрейм (таймфрейм.рф) через SSH — деплой кода (frontend/backend) через git pull + image rebuild, выполнение команд в контейнерах, чтение логов, БД-запросы. Соблюдает rate-limit и fail2ban защиту. Триггер когда пользователь говорит «задеплой на сервер», «обнови сайт», «посмотри логи прода», «выполни SQL на проде», «restart api», «check production», «прод не работает».
+description: Безопасная работа с production-сервером Фрейм (таймфрейм.рф) через SSH — деплой кода (frontend/backend) теперь авто-CI (git push в main → GitHub Actions), SSH остаётся для логов, БД-запросов, команд в контейнерах и аварийного ручного деплоя. Соблюдает rate-limit и fail2ban защиту. Триггер когда пользователь говорит «задеплой на сервер», «обнови сайт», «посмотри логи прода», «выполни SQL на проде», «restart api», «check production», «прод не работает».
 ---
 
 # MOEX Server Access
 
 Безопасная работа с сервером Фрейм для AI-помощников.
 
-**Главное правило (с 2026-05-12)**: деплой = **git pull на сервере + `docker compose build` + `docker compose up -d`**. НИКАКИХ `docker cp` в живой контейнер — они эфемерные и теряются при recreate.
+> # ⚠️ ДЕПЛОЙ ТЕПЕРЬ АВТО-CI (с 2026-06-09)
+>
+> **Деплой = `git push` в `main`. НЕ деплоить руками по SSH — CI делает сам.**
+>
+> - `git push origin main` → GitHub Actions **build-check** → (если зелёный) → **deploy-prod** (SSH на прод сам, `git reset --hard origin/main` + rebuild + recreate).
+> - Сериализация через `concurrency: deploy-prod` — два пуша идут по очереди, не сталкиваются. Битый билд **НЕ** выкатывается (deploy ждёт зелёный build-check).
+> - **Сервер `/opt/frame` = чистый deploy-target, НЕ воркспейс.** Деплой делает `git reset --hard origin/main` → **любая** ручная правка/`scp` прямо на проде **стирается** следующим деплоем. Все изменения — только через `git push`. НЕ scp-ить черновики/research на `/opt/frame`.
+> - SSH на прод **остаётся** нужен для: логов, SQL/БД, инспекции, аварийного деплоя.
+> - Детали в памяти: `ci_cd.md`, `deploy_manual.md`.
+
+**Эфемерность (с 2026-05-12, по-прежнему в силе)**: НИКАКИХ `docker cp` в живой контейнер, НИКАКОГО `pip install`/vim/sed в контейнере — теряются при recreate. Единственный source of truth — image, собранный из git.
 
 Сервер защищён жёстким SSH rate-limit и fail2ban — нарушение SSH-правил приводит к 24-часовому бану IP.
 
@@ -47,33 +57,61 @@ iptables drop'ит если 5+ NEW connections за 60s. Делать **chained 
 
 ---
 
-## 🚀 Главный deploy flow (с 12 мая 2026)
+## 🚀 Главный deploy flow (с 9 июня 2026 — АВТО-CI)
 
-### Шаг 1: Локально — commit + push
+**Деплой = `git push`. Больше ничего руками по SSH не нужно.**
+
+### Единственный шаг: commit + push
 
 ```bash
-# Bump SW version если frontend меняли
-# Edit frontend/public/sw.js: const CACHE_NAME = 'frame-vNNN+1';
+# Bump SW версии руками НЕ нужно — postbuild подставляет хэш автоматически
+# (см. MEMORY: SW cache auto frame-<sha1>). Просто правь фронт.
 
 git add <files>
 git commit -m "scope: description"
 git push origin main
 ```
 
-### Шаг 2: На сервере — pull + rebuild + recreate
+Дальше **сам CI**:
+1. **build-check** (GitHub Actions) собирает фронт+бэк. Если красный — деплоя НЕ будет.
+2. Если зелёный — **deploy-prod** заходит на прод по SSH, делает `git reset --hard origin/main`, `docker compose build api`, `docker compose up -d --force-recreate api`, health-check.
+3. `concurrency: deploy-prod` сериализует параллельные пуши — выкатываются по очереди.
 
-**Одной SSH командой**:
+**Проверить статус прогона**:
+```bash
+gh run list --workflow deploy-prod --limit 3
+gh run watch          # follow последнего прогона
+```
+
+**Время**: build-check + deploy ~3-5 мин суммарно.
+
+> ⚠️ orchestrator (`frame-orchestrator-1`) CI пересобирает отдельно, только если менялся его код. nginx CI **не трогает** (resolver-фикс — рестарт nginx ломает DNS-резолвинг внутри контейнера).
+
+---
+
+## 🆘 Аварийный ручной деплой (ТОЛЬКО если CI недоступен)
+
+Историческая/fallback-процедура. В обычной жизни **не использовать** — пуш делает всё сам.
+
+**Вариант A — перезапустить workflow вручную**:
+```bash
+gh workflow run deploy-prod
+```
+
+**Вариант B — напрямую на сервере** (если GitHub Actions лежит):
 ```bash
 ssh -o IdentitiesOnly=yes -o IdentityAgent=none -o ConnectTimeout=30 \
     -i ~/.ssh/id_ed25519 root@103.88.243.232 \
-  "cd /opt/frame && git pull origin main && \
+  "cd /opt/frame && git fetch && git reset --hard origin/main && \
    docker compose build api && \
-   docker compose up -d api && \
+   docker compose up -d --force-recreate api && \
    sleep 10 && \
    docker exec frame-api-1 python3 -c 'import urllib.request; print(urllib.request.urlopen(\"http://localhost:8000/health\").read().decode())' && \
    curl -sk 'https://localhost/sw.js' -H 'Host: xn--80aklbnczmv.xn--p1ai' | grep CACHE_NAME | head -1 && \
    curl -sk 'https://localhost/' -H 'Host: xn--80aklbnczmv.xn--p1ai' | grep -oE 'index-[A-Za-z0-9_-]+\\.js' | head -1"
 ```
+
+**Важно**: `git reset --hard origin/main`, **НЕ** `git pull` — сервер чистый target, локальных правок там быть не должно, pull может упереться в конфликт. orchestrator пересобирай отдельно (`docker compose build orchestrator && docker compose up -d --force-recreate orchestrator`) только если менял его код. nginx не трогай.
 
 **Время**: build ~1-2 мин с кешем (~3-5 без), downtime пересоздания ~30 сек.
 
@@ -131,7 +169,7 @@ SSH agent перебирает ключи → fail2ban после 3+. **Реше
 - Diagnose: `nc -z -w 5 103.88.243.232 22 && echo OPEN || echo BLOCKED`.
 
 ### `ModuleNotFoundError: No module named 'X'`
-Пакет в `requirements.txt`? Если да — нужен `docker compose build api && up -d api`. Если нет — добавить, push, rebuild.
+Пакет в `requirements.txt`? Если нет — добавь в `requirements.txt`, закоммить и **`git push`** (CI пересоберёт image сам). Руками `docker compose build api` — только в аварийном ручном деплое.
 
 ### Сайт раздаёт SPA HTML вместо JSON для /api/...
 Endpoint не зарегистрирован (router не include или удалён). Проверь `docker logs frame-api-1` на ImportError при startup.
@@ -156,7 +194,10 @@ tar -cz dist | ssh ... "docker cp /tmp/dist/. frame-api-1:/app/frontend/dist/"
 Эфемерно. Пакет пропадёт при recreate. Добавлять в `requirements.txt` + rebuild.
 
 ### ❌ Редактирование файлов прямо в контейнере (vim, sed)
-Не попадает в git, не попадает в image — потеряется. Всегда правки в git → push → rebuild.
+Не попадает в git, не попадает в image — потеряется. Всегда правки в git → push → CI rebuild.
+
+### ❌ Правки / `scp` / черновики прямо в `/opt/frame` на сервере
+`/opt/frame` — чистый deploy-target. Деплой делает `git reset --hard origin/main` → **любая** ручная правка там **затрётся** следующим пушем. Никаких research-скриптов, черновиков, `scp` на прод. Всё — через `git push`.
 
 ### ❌ `docker compose down` без согласования
 Контейнеры удаляются вместе с ephemeral state (если он был). Сейчас не страшно (всё в image), но раньше было катастрофой.
@@ -168,7 +209,7 @@ tar -cz dist | ssh ... "docker cp /tmp/dist/. frame-api-1:/app/frontend/dist/"
 ### Сервер
 - **IP**: `103.88.243.232`
 - **Домен**: `xn--80aklbnczmv.xn--p1ai` (punycode для `таймфрейм.рф`)
-- **Repo path**: `/opt/frame/` — git checkout main (синхронизирован с GitHub)
+- **Repo path**: `/opt/frame/` — чистый deploy-target, git checkout main. Деплой = `git reset --hard origin/main` (CI). НЕ воркспейс — ничего руками тут не править.
 - **VNC console** (для unban): https://timeweb.cloud/my/servers/7006331/console
 
 ### Контейнеры
@@ -195,15 +236,22 @@ tar -cz dist | ssh ... "docker cp /tmp/dist/. frame-api-1:/app/frontend/dist/"
 
 ## 📖 Reference quick-cards
 
-### Deploy frontend/backend (full pipeline)
+### Deploy frontend/backend (АВТО-CI)
 ```bash
-# Local
+# Это весь деплой. CI собирает и выкатывает сам.
 git push origin main
+gh run watch   # опционально — следить за прогоном
+```
 
-# Server (одна SSH)
+### Аварийный ручной деплой (только если CI лежит)
+```bash
+gh workflow run deploy-prod   # вариант A
+
+# вариант B — напрямую на сервере (reset --hard, НЕ pull):
 ssh -o IdentitiesOnly=yes -o IdentityAgent=none -i ~/.ssh/id_ed25519 \
     root@103.88.243.232 \
-  "cd /opt/frame && git pull && docker compose build api && docker compose up -d api"
+  "cd /opt/frame && git fetch && git reset --hard origin/main && \
+   docker compose build api && docker compose up -d --force-recreate api"
 ```
 
 ### Health check
@@ -245,4 +293,6 @@ ssh ... "docker logs frame-api-1 --tail 50 --since 10m 2>&1 | grep -iE 'error|ex
 
 **Восстановление** заняло час: git init в `/opt/frame/`, reset к `origin/main`, fix Dockerfile (python3+Pillow+bash в node-alpine), fix requirements.txt (UTF-16 → UTF-8), cleanup ghost files, rebuild image.
 
-**Урок**: deploy должен идти через git + image rebuild. Image — единственный source of truth для production. Делай всегда так.
+**Урок**: deploy должен идти через git + image rebuild. Image — единственный source of truth для production.
+
+С **12 мая** ручной шаг был SSH `git pull + docker compose build + up` (теперь раздел «Аварийный ручной деплой»). С **9 июня 2026** даже этот шаг автоматизирован: `git push` → GitHub Actions build-check → deploy-prod (SSH на прод сам, `git reset --hard origin/main`). Никто не деплоит руками по SSH; SSH остаётся только для логов/SQL/инспекции/аварий.

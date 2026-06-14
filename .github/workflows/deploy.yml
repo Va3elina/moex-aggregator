@@ -1,12 +1,14 @@
 name: deploy-prod
 
 # Авто-деплой на прод: после успешного build-check (push в main) →
-# SSH → git pull + build api (+orchestrator/alert-bot при изменении их кода) +
-# recreate + health-check. nginx НЕ трогаем (resolver-фикс c40017f сам ре-резолвит api).
+# SSH → git fetch + git reset --hard origin/main (НЕ pull!) + build api
+# (+orchestrator/alert-bot при изменении их кода) + recreate + health-check.
+# nginx НЕ трогаем (resolver-фикс c40017f сам ре-резолвит api).
 #
 # Предусловия (выполнены 2026-06-08):
 #   • Секрет PROD_SSH_KEY (приватный ключ) добавлен в Settings → Secrets → Actions.
-#   • /opt/frame приведён к ЧИСТОМУ checkout (git status пуст) — pull fast-forward без stash.
+#   • /opt/frame = ЧИСТЫЙ deploy-target: reset --hard форсит origin/main даже если
+#     кто-то случайно правил/scp'ил файл на проде (git pull в этом случае падал бы).
 #
 # Деплой идёт ТОЛЬКО на зелёный build-check (битый фронт-билд не выкатывается).
 # workflow_dispatch оставлен для ручного запуска.

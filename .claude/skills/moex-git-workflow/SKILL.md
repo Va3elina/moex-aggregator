@@ -5,6 +5,16 @@ description: Commit, push, or manage git for the Фрейм project. Use when us
 
 # Git Workflow for Фрейм
 
+> ## ⚠️ ДЕПЛОЙ ТЕПЕРЬ АВТО-CI (с 2026-06-09)
+>
+> **Деплой = `git push` в `main`.** GitHub Actions сам делает build-check → (если зелёный) → deploy-prod (SSH на прод сам, `git reset --hard origin/main` + rebuild).
+>
+> - **НЕ деплоить руками по SSH** — CI делает это сам. Если пользователь говорит «задеплой» — это значит **закоммить и запушить в main**.
+> - **Сервер `/opt/frame` = чистый deploy-target, НЕ воркспейс.** Деплой выполняет `git reset --hard origin/main` → **любая правка/scp прямо на проде СТИРАЕТСЯ** следующим деплоем. Все изменения — только через `git push`. **НЕ scp-ить** черновики/research на `/opt/frame`.
+> - **Сериализация**: `concurrency: deploy-prod` — два пуша выкатываются по очереди, не сталкиваются. Битый билд НЕ выкатывается (deploy ждёт зелёный build-check).
+> - Ручной SSH-деплой остаётся только как **аварийный** путь (CI недоступен) — см. секцию «Аварийный ручной деплой» ниже.
+> - Детали в памяти: `ci_cd.md`, `deploy_manual.md`.
+
 Project-specific conventions for commits and pushes.
 
 ## ⚠️ Critical Rules
@@ -24,7 +34,7 @@ type(scope): subject line (50-72 chars)
 Body paragraph explaining WHY not WHAT. 2-4 sentences max.
 Mention side effects, reasoning, alternatives considered.
 
-Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
 ```
 
 **Types** used in this project:
@@ -50,7 +60,7 @@ fix(scope): short subject here
 Longer body explaining the change and why it matters.
 Can be multiple paragraphs.
 
-Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
 EOF
 )"
 ```
@@ -109,12 +119,67 @@ fix(scope): subject
 
 Body.
 
-Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
 EOF
 )"
 
-# 4. Push
+# 4. Push  ⚠️ ЭТО ТРИГГЕРИТ АВТО-ДЕПЛОЙ НА ПРОД (build-check → deploy-prod)
 git push origin main
+
+# 5. (опц.) проследить за CI/CD-прогоном
+gh run list --branch main --limit 3
+# gh run watch   # дождаться build-check + deploy-prod
+```
+
+> **После пуша деплой произойдёт сам.** Не лезь на сервер делать `git pull`/rebuild руками — это делает CI. Если build-check красный, deploy НЕ запустится (битый билд на прод не попадёт) — чини билд и пуш заново.
+
+## Аварийный ручной деплой (только если CI недоступен)
+
+Обычно НЕ нужно — деплоит CI. Использовать только когда GitHub Actions недоступен/упал.
+
+**Вариант A — перезапустить workflow вручную (предпочтительно):**
+
+```bash
+gh workflow run deploy-prod
+```
+
+**Вариант B — напрямую на сервере** (SSH-преамбула ниже). Это ровно то, что делает CI:
+
+```bash
+ssh -o IdentitiesOnly=yes -o IdentityAgent=none -o ConnectTimeout=30 \
+    -i ~/.ssh/id_ed25519 root@103.88.243.232 \
+  'cd /opt/frame && git fetch && git reset --hard origin/main && \
+   docker compose build api && docker compose up -d --force-recreate api'
+```
+
+- **`git reset --hard origin/main`, НЕ `git pull`** — сервер это чистый target, локальных правок там быть не должно.
+- **orchestrator** пересобирать отдельно, если менялся его код.
+- **nginx НЕ трогать** (resolver-фикс — рестарт ломает резолв).
+
+## SSH на прод (логи / SQL / инспекция / аварийный деплой)
+
+SSH остаётся нужен для логов, БД, инспекции и аварийного деплоя — НЕ для штатной выкатки.
+Преамбула (всегда так):
+
+```bash
+ssh -o IdentitiesOnly=yes -o IdentityAgent=none -o ConnectTimeout=30 \
+    -i ~/.ssh/id_ed25519 root@103.88.243.232
+```
+
+Полезные проверки после деплоя:
+
+```bash
+# health бэкенда
+curl -s https://xn--80aklbnczmv.xn--p1ai/health
+
+# версия Service Worker (frame-<hash>) — менялся ли фронт
+curl -s https://xn--80aklbnczmv.xn--p1ai/sw.js | grep -o 'frame-[0-9a-f]\{8\}'
+
+# логи api-контейнера на сервере
+docker compose -f /opt/frame/docker-compose.yml logs --tail=100 api
+
+# SQL на проде
+docker exec frame-db-1 psql -U postgres -d moex_db -c 'SELECT ...;'
 ```
 
 ## Handling Push Rejections
@@ -161,7 +226,7 @@ This is fine — the user hasn't asked to customize it. Don't suggest changes un
 
 - Origin: `git@github.com:Va3elina/moex-aggregator.git`
 - Main branch: `main`
-- No CI configured (no checks to wait for)
+- **CI/CD активирован**: `git push` в `main` → GitHub Actions `build-check` → (если зелёный) → `deploy-prod` (авто-деплой на прод по SSH). **Push в main = выкатка на прод.** После пуша можно проверить статус прогона: `gh run list --branch main --limit 3` / `gh run watch`.
 
 ## Multi-commit Scenarios
 

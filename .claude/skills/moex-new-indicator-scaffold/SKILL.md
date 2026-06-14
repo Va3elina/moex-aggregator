@@ -185,17 +185,21 @@ cd /Users/vadim/PyCharmMiscProject/MOEX/frontend && npm run build
 
 Fix any TS errors BEFORE deploying.
 
-### Deploy (3 steps)
+### Deploy (push → авто-CI, с 2026-06-09)
 
-**Step 11: Deploy backend** (use `moex-deploy-backend` skill)
-- Upload all new/modified .py files
-- Restart container ONCE at the end
+**Step 11: Commit + push** — деплой теперь автоматический, НЕ руками по SSH:
+```bash
+git add -A && git commit -m "feat: <indicator>" && git push origin main
+```
+build-check (`npm run build`) → если зелёный → **deploy-prod** сам по SSH:
+`git reset --hard origin/main` → `docker compose build api` (api **запекает** frontend dist
+И Python-код) → recreate api. orchestrator пересобирается, если менялся его код — твой
+новый fetch-скрипт в `OI/`/`Funds/`/`Macro/`/`Commodity/`/`Candles/` попадёт под grep и
+триггернёт rebuild orchestrator автоматически. SW-версию бампить НЕ нужно (postbuild
+подставляет хэш). Следи за деплоем: `gh run watch` / `gh run list`.
+(детали и аварийный ручной путь — skills `moex-deploy-backend` / `moex-git-workflow`)
 
-**Step 12: Deploy frontend** (use `moex-deploy-frontend` skill)
-- Bump SW version
-- Build → scp → docker cp
-
-**Step 13: Verify on production**
+**Step 12: Verify on production**
 
 ```bash
 # Check endpoint returns JSON
