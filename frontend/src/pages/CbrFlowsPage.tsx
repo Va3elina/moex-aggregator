@@ -168,6 +168,9 @@ export default function CbrFlowsPage() {
         sourceNote="Источник: Банк России (ОРФР)"
       />
 
+      {/* Карточка с вкладками: обёртка несёт единую editorial-тень. */}
+      <div className="tabbed-card">
+
       {/* Вкладки типа актива — приклеены к верхней кромке панели. Активная
           сливается с панелью, неактивные затемнены. Категории/период — внутри. */}
       <ChartTabs<CbrInstrumentType>
@@ -521,6 +524,8 @@ export default function CbrFlowsPage() {
           )}
         </div>
       </div>{/* /editorial-frame */}
+
+      </div>{/* /tabbed-card */}
 
       <OnboardingTour
         steps={cbrFlowsTourSteps}

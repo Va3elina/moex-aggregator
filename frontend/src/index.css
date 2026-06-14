@@ -1196,13 +1196,31 @@
   letter-spacing: 0.02em;
 }
 /* Панель под вкладками: поднимаем на 2px, чтобы вкладки сели на её верхнюю
-   границу; верхние углы выпрямляем (их «закрывают» вкладки). */
+   границу. Рамку утолщаем до 2px (совпадает с вкладками, иначе боковые линии
+   не ровные). Тень снимаем — она живёт на обёртке .tabbed-card, иначе
+   обрывалась бы у вкладок в правом верхнем углу. */
 .editorial-frame.has-tabs {
   margin-top: -2px;
   position: relative;
   z-index: 1;
+}
+[data-theme^="editorial"] .editorial-frame.has-tabs {
+  border-width: 2px;
   border-top-left-radius: 0;
   border-top-right-radius: 0;
+  box-shadow: none;
+}
+/* Обёртка [вкладки + панель] — несёт единую editorial-тень на весь блок,
+   непрерывную по правому краю сверху донизу и по низу. */
+.tabbed-card { position: relative; }
+[data-theme^="editorial"] .tabbed-card {
+  box-shadow: 5px 5px 0 var(--card-border-color);
+  border-radius: 14px 14px 16px 16px;
+}
+@media (max-width: 600px) {
+  [data-theme^="editorial"] .tabbed-card {
+    box-shadow: 3px 3px 0 var(--card-border-color);
+  }
 }
 
 /* === OI variant palette ===

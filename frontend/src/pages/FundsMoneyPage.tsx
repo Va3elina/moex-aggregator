@@ -76,10 +76,6 @@ const CATEGORIES: { key: FundCategory; name: string; genitive: string; icon: Rea
 const INDEX_COLOR = 'var(--funds-flow-positive)';
 const NAV_COLOR   = 'var(--accent)';
 
-// Easing для анимации гистограммы
-import { ANIMATION } from '../config/chartTheme';
-const easeOutCubic = ANIMATION.easing;
-
 
 export default function FundsMoneyPage() {
     const { isAuthenticated } = useAuth();
@@ -410,55 +406,17 @@ export default function FundsMoneyPage() {
         }
     }, [flowsData]);
 
-    // Анимация гистограммы при смене flowsData.
-    // Всегда начинаем с нуля + каскад слева направо (волна),
-    // а не морфим из предыдущих значений — при переключении
-    // день/неделя/месяц данные полностью разные, морфинг
-    // показывал хаотичную перестановку баров.
+    // Анимация гистограммы отключена: бары рисуются сразу финальными значениями
+    // (без каскадной волны) — по запросу.
     useEffect(() => {
         if (!flowsData?.flows?.length) return;
-
         if (barsAnimRef.current) cancelAnimationFrame(barsAnimRef.current);
-
         const targetFlows = flowsData.flows.map(f => f.flow);
-        const fromFlows = new Array(targetFlows.length).fill(0);
-
+        setAnimatedBarsIn(targetFlows.map(v => Math.max(0, v)));
+        setAnimatedBarsOut(targetFlows.map(v => Math.min(0, v)));
+        prevBarsInRef.current = targetFlows;
+        prevBarsOutRef.current = [];
         isFirstBarsRender.current = false;
-
-        // Каскадная анимация: бары появляются слева направо (волна).
-        // Параметры из единого конфига chartTheme.ANIMATION.
-        const totalDuration = ANIMATION.waveDuration;
-        const staggerDelay = ANIMATION.waveStagger;
-        let startTime: number | null = null;
-
-        const animate = (timestamp: number) => {
-            if (!startTime) startTime = timestamp;
-            const elapsed = timestamp - startTime;
-
-            const flows = targetFlows.map((v, i) => {
-                const barDelay = (i / targetFlows.length) * staggerDelay;
-                const barElapsed = Math.max(0, elapsed - barDelay);
-                const t = Math.min(barElapsed / (totalDuration - staggerDelay), 1);
-                return fromFlows[i] + (v - fromFlows[i]) * easeOutCubic(t);
-            });
-
-            // Разделяем на in/out по знаку текущего анимированного значения
-            setAnimatedBarsIn(flows.map(v => Math.max(0, v)));
-            setAnimatedBarsOut(flows.map(v => Math.min(0, v)));
-
-            if (elapsed < totalDuration) {
-                barsAnimRef.current = requestAnimationFrame(animate);
-            } else {
-                prevBarsInRef.current = targetFlows;
-                prevBarsOutRef.current = [];
-            }
-        };
-
-        barsAnimRef.current = requestAnimationFrame(animate);
-
-        return () => {
-            if (barsAnimRef.current) cancelAnimationFrame(barsAnimRef.current);
-        };
     }, [flowsData]);
 
     const currentCategory = CATEGORIES.find(c => c.key === category);
@@ -488,6 +446,10 @@ export default function FundsMoneyPage() {
                 helpLink="/methodology/funds-money"
                 sourceNote="Индексы (IMOEX, RGBI, IMOEX2, GLDRUB): ПАО Московская Биржа"
             />
+
+            {/* Карточка с вкладками: обёртка несёт единую editorial-тень на
+                [вкладки + панель], иначе тень обрывалась бы у вкладок справа. */}
+            <div className="tabbed-card">
 
             {/* Вкладки выбора фонда — приклеены к верхней кромке editorial-frame.
                 Активная сливается с панелью, неактивные затемнены. Контролы
@@ -737,6 +699,7 @@ export default function FundsMoneyPage() {
                         showNavigator={true}
                         chartPadding={{ left: 120 }}
                         hideTime={true}
+                        noAnimate={true}
                     />
                 </div>
             ) : (
@@ -769,6 +732,8 @@ export default function FundsMoneyPage() {
             </div>{/* /funds-chart — стабильная обёртка */}
 
             </div>{/* /editorial-frame */}
+
+            </div>{/* /tabbed-card */}
 
             {/* Таблица фондов */}
             <div data-tour="funds-table">

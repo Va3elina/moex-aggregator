@@ -107,8 +107,9 @@ export default function StackedBidirectionalHistogram({
     `${periods.length}|${periods[0]?.end_date ?? ''}` +
     `|${periods[periods.length - 1]?.end_date ?? ''}`;
   const animKey = `${animTrigger ?? ''}|${dataSig}`;
+  // Анимация входа отключена — бары сразу полной высоты (progress=1).
   const [animProgress, setAnimProgress] = useState<number[]>(() =>
-    new Array(periods.length).fill(0),
+    new Array(periods.length).fill(1),
   );
   // Сброс прогресса СИНХРОННО при смене animKey (React-паттерн «adjust state
   // during render»). Без него один кадр бары рендерятся со старым animProgress:
@@ -118,35 +119,12 @@ export default function StackedBidirectionalHistogram({
   const [animatedKey, setAnimatedKey] = useState(animKey);
   if (animKey !== animatedKey) {
     setAnimatedKey(animKey);
-    setAnimProgress(new Array(periods.length).fill(0));
+    setAnimProgress(new Array(periods.length).fill(1));
   }
   useEffect(() => {
     if (periods.length === 0) return;
-    setAnimProgress(new Array(periods.length).fill(0));
-    const start = performance.now();
-    // Slower wave (match с Притоки/Оттоки feel):
-    const totalStagger = Math.min(800, periods.length * 70);
-    const perBarDuration = 900;
-    const totalDuration = totalStagger + perBarDuration;
-    let raf = 0;
-    const tick = (now: number) => {
-      const elapsed = now - start;
-      if (elapsed >= totalDuration) {
-        setAnimProgress(new Array(periods.length).fill(1));
-        return;
-      }
-      setAnimProgress(
-        periods.map((_, i) => {
-          const delay = periods.length > 1 ? (i / (periods.length - 1)) * totalStagger : 0;
-          const localElapsed = Math.max(0, elapsed - delay);
-          const t = Math.min(1, localElapsed / perBarDuration);
-          return 1 - Math.pow(1 - t, 4);
-        }),
-      );
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    // Анимация входа отключена — сразу полная высота, без волны.
+    setAnimProgress(new Array(periods.length).fill(1));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [animKey]);
   // Y-axis симметричный max
