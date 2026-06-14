@@ -502,7 +502,7 @@ export default function FundsMoneyPage() {
                 items={CATEGORIES.map(c => ({
                     key: c.key,
                     label: c.name,
-                    sublabel: c.comingSoon ? 'Скоро' : c.index,
+                    sublabel: c.comingSoon ? 'Скоро' : undefined,
                     Icon: c.icon,
                     disabled: c.comingSoon,
                     title: c.comingSoon ? 'Раздел скоро появится' : c.name,
