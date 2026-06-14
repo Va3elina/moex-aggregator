@@ -1160,7 +1160,7 @@
   font-family: inherit;
   font-weight: 600;
   font-size: var(--fs-sm);
-  color: var(--text-muted);
+  color: var(--text-secondary);
   background: transparent;
   border: none;
   cursor: pointer;
@@ -1168,7 +1168,7 @@
   /* Переключение мгновенное — никаких остаточных теней/анимаций на вкладке. */
   transition: none;
 }
-.chart-tab:not(.is-active):hover { color: var(--text-secondary); }
+.chart-tab:not(.is-active):hover { color: var(--text-primary); }
 .chart-tab:disabled { opacity: 0.45; cursor: not-allowed; }
 /* Активный фонд — папка-вкладка. Без overlap (margin): боковые рамки не
    налезают на панель → ничего не выпирает. Стык маскируется ::after: полоска
@@ -1204,7 +1204,7 @@
   }
 }
 .chart-tab .ct-ico { width: var(--ico-sm); height: var(--ico-sm); flex-shrink: 0; }
-.chart-tab .ct-name { overflow: hidden; text-overflow: ellipsis; }
+.chart-tab .ct-name { overflow: hidden; text-overflow: ellipsis; font-size: var(--fs-md); }
 .chart-tab .ct-sub { font-size: var(--fs-2xs); opacity: 0.72; letter-spacing: 0.02em; }
 
 /* Панель под вкладками: рамка 2px со всех сторон, включая верх — кромка
