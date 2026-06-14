@@ -10,7 +10,7 @@ import ChartLegend, { type ChartLegendItem } from './chart/ChartLegend';
 import { measureText } from './chart/measureText';
 import { axisFontSize } from './chart/chartTypography';
 import { formatNumber } from '../utils/formatNumber';
-import { niceTickValues } from '../utils/niceTicks';
+import { niceScale } from '../utils/niceTicks';
 
 interface DataPoint {
   time: string;
@@ -104,19 +104,6 @@ const pointsToAreaPath = ptsToArea;
 // Клампит стартовый индекс навигатора в [0, len-1]. undefined → 0 (вся история).
 const clampNavStart = (n: number | undefined, len: number) =>
   n != null && len > 0 ? Math.min(Math.max(0, Math.floor(n)), len - 1) : 0;
-
-// «Круглые» деления оси (nice ticks, как сетка TradingView): круглый шаг
-// 1/2/5×10ⁿ (D3 tickStep), деления встают на круглые значения ВНУТРИ текущего
-// домена [min,max]. Домен/масштаб не трогаем → линия и пилюля остаются на месте,
-// меняются только подписи/позиции делений. Защищено от вырожденных диапазонов.
-function makeNiceTicks(
-  min: number,
-  max: number,
-  scale: (v: number) => number,
-  count = 5,
-): { value: number; y: number }[] {
-  return niceTickValues(min, max, count).map((value) => ({ value, y: scale(value) }));
-}
 
 export default function SimpleChart({
   data,
@@ -407,8 +394,16 @@ export default function SimpleChart({
     const maxVal = Math.max(...values);
     const range = maxVal - minVal || 1;
     const yPadding = range * 0.1;
-    const yMinVal = minVal - yPadding;
-    const yMaxVal = maxVal + yPadding;
+    let yMinVal = minVal - yPadding;
+    let yMaxVal = maxVal + yPadding;
+    // niceTicks: округляем ГРАНИЦЫ оси до кратного шагу (низ вниз, верх вверх) —
+    // тогда деления стоят на круглых значениях И верхнее/нижнее число всегда есть.
+    let yNiceTicks: number[] | null = null;
+    if (niceTicks) {
+      // округление наружу само даёт headroom → берём СЫРОЙ диапазон данных
+      const ns = niceScale(minVal, maxVal, 4);
+      yMinVal = ns.min; yMaxVal = ns.max; yNiceTicks = ns.ticks;
+    }
 
     // Secondary scale (OI) - общая для secondary и third
     let secYMin = 0;
@@ -426,6 +421,11 @@ export default function SimpleChart({
       const secRange = secMax - secMin || 1;
       secYMin = secMin - secRange * 0.1;
       secYMax = secMax + secRange * 0.1;
+    }
+    let secNiceTicks: number[] | null = null;
+    if (niceTicksSecondary && allSecondaryValues.length > 0) {
+      const ns = niceScale(Math.min(...allSecondaryValues), Math.max(...allSecondaryValues), 4);
+      secYMin = ns.min; secYMax = ns.max; secNiceTicks = ns.ticks;
     }
 
     const scaleX = (index: number, total: number) => (index / Math.max(total - 1, 1)) * chartWidth;
@@ -465,8 +465,8 @@ export default function SimpleChart({
 
     // Y ticks (primary - price)
     const yTickCount = 5;
-    const yTicks = niceTicks
-      ? makeNiceTicks(yMinVal, yMaxVal, scaleY, yTickCount)
+    const yTicks = yNiceTicks
+      ? yNiceTicks.map((value) => ({ value, y: scaleY(value) }))
       : Array.from({ length: yTickCount }, (_, i) => {
         const value = yMinVal + ((yMaxVal - yMinVal) * i) / (yTickCount - 1);
         return { value, y: scaleY(value) };
@@ -474,8 +474,8 @@ export default function SimpleChart({
 
     // Secondary Y ticks (OI - right axis)
     const secYTicks = allSecondaryValues.length > 0
-      ? (niceTicksSecondary
-        ? makeNiceTicks(secYMin, secYMax, scaleSecondaryY, yTickCount)
+      ? (secNiceTicks
+        ? secNiceTicks.map((value) => ({ value, y: scaleSecondaryY(value) }))
         : Array.from({ length: yTickCount }, (_, i) => {
           const value = secYMin + ((secYMax - secYMin) * i) / (yTickCount - 1);
           return { value, y: scaleSecondaryY(value) };
