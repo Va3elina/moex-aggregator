@@ -1168,8 +1168,10 @@
 }
 .chart-tab:not(.is-active):hover { color: var(--text-secondary); }
 .chart-tab:disabled { opacity: 0.45; cursor: not-allowed; }
-/* Активный фонд — папка-вкладка, сросшаяся с панелью. Без overlap (margin),
-   иначе боковые рамки выступали бы на 2px ниже кромки панели. */
+/* Активный фонд — папка-вкладка. Без overlap (margin): боковые рамки не
+   налезают на панель → ничего не выпирает. Стык маскируется ::after: полоска
+   заливки 2px перекрывает верхнюю границу панели ровно под язычком (по всей
+   его ширине, включая углы), оставляя границу видимой по бокам. */
 .chart-tab.is-active {
   position: relative;
   z-index: 4;
@@ -1180,13 +1182,21 @@
   border-top-left-radius: 16px;
   border-top-right-radius: 16px;
 }
-/* Правый край активной папки продолжает тень карточки вверх, когда выбран
-   последний (крайний правый) фонд. */
-[data-theme^="editorial"] .chart-tab.is-active:last-child {
+.chart-tab.is-active::after {
+  content: "";
+  position: absolute;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  height: 2px;
+  background: var(--bg-secondary);
+}
+/* Тень справа у каждого выбранного фонда (editorial-lift). */
+[data-theme^="editorial"] .chart-tab.is-active {
   box-shadow: 5px 0 0 var(--card-border-color);
 }
 @media (max-width: 600px) {
-  [data-theme^="editorial"] .chart-tab.is-active:last-child {
+  [data-theme^="editorial"] .chart-tab.is-active {
     box-shadow: 3px 0 0 var(--card-border-color);
   }
 }
@@ -1194,16 +1204,16 @@
 .chart-tab .ct-name { overflow: hidden; text-overflow: ellipsis; }
 .chart-tab .ct-sub { font-size: var(--fs-2xs); opacity: 0.72; letter-spacing: 0.02em; }
 
-/* Панель под вкладками: верхней границы НЕТ — активная папка-вкладка ровно
-   сливается с панелью, без нависающих пикселей по бокам язычка. Боковые и
-   нижняя рамки — 2px. Тень 5×5 наследуется от .editorial-frame. */
+/* Панель под вкладками: рамка 2px со всех сторон, включая верх — кромка
+   карточки видна по бокам язычка. Под активным язычком его ::after маскирует
+   верхнюю границу (стык без шва и без нависаний). Верхние углы прямые.
+   Тень 5×5 наследуется от .editorial-frame. */
 .editorial-frame.has-tabs {
   position: relative;
   z-index: 1;
 }
 [data-theme^="editorial"] .editorial-frame.has-tabs {
   border: 2px solid var(--text-primary);
-  border-top: none;
   border-top-left-radius: 0;
   border-top-right-radius: 0;
 }
