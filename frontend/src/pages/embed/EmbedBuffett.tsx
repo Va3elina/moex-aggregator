@@ -239,7 +239,8 @@ export default function EmbedBuffett() {
             showSecondary
             reverseLegend
             formatValue={(v) => `${v.toFixed(2)} трлн ₽`}
-            formatPrimaryAxis={(v) => `${v.toFixed(2)} трлн ₽`}
+            formatPrimaryAxis={(v) => String(v)}
+            niceTicks={true}
             formatSecondaryValue={ratioVal}
             formatSecondaryAxis={ratioAxis}
             primaryLabel="Капитализация (трлн ₽)"

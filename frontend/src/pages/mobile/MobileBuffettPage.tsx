@@ -229,6 +229,7 @@ export default function MobileBuffettPage() {
           label: 'Капитализация',
           axis: 'left' as const,
           formatValue: (v: number) => `${v.toFixed(1)} трлн`,
+          formatAxis: (v: number) => String(v),
         },
         {
           data: ratioData,
@@ -258,6 +259,7 @@ export default function MobileBuffettPage() {
           label: 'Капитализация',
           axis: 'left' as const,
           formatValue: (v: number) => `${v.toFixed(1)} трлн`,
+          formatAxis: (v: number) => String(v),
         },
         {
           data: ratioData,
@@ -304,6 +306,7 @@ export default function MobileBuffettPage() {
         <div style={{ position: 'absolute', inset: 0 }}>
           <MobileChart
             series={chartSeries}
+            niceTicksLeft={chartSeries[0]?.label === 'Капитализация'}
             loading={loading}
             animKey={`${viewMode}|${period}|${timeframe}`}
             formatXLabel={(t) => {

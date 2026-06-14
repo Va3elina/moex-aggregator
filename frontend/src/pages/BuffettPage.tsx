@@ -388,7 +388,8 @@ export default function BuffettPage() {
                     showSecondary={true}
                     reverseLegend={true}
                     formatValue={(v) => `${v.toFixed(2)} трлн ₽`}
-                    formatPrimaryAxis={(v) => `${v.toFixed(2)} трлн ₽`}
+                    formatPrimaryAxis={(v) => String(v)}
+                    niceTicks={true}
                     formatSecondaryValue={(v) => `${v.toFixed(2)}%`}
                     formatSecondaryAxis={(v) => `${v.toFixed(1)}%`}
                     primaryLabel={isMobile ? 'Кап. (₽)' : 'Капитализация (трлн ₽)'}
@@ -418,7 +419,8 @@ export default function BuffettPage() {
                     showSecondary={true}
                     reverseLegend={true}
                     formatValue={(v) => `${v.toFixed(2)} трлн ₽`}
-                    formatPrimaryAxis={(v) => `${v.toFixed(2)} трлн ₽`}
+                    formatPrimaryAxis={(v) => String(v)}
+                    niceTicks={true}
                     formatSecondaryValue={(v) => `${(v * 100).toFixed(2)}%`}
                     formatSecondaryAxis={(v) => `${(v * 100).toFixed(1)}%`}
                     primaryLabel={isMobile ? 'Кап. (₽)' : 'Капитализация (трлн ₽)'}

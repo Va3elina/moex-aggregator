@@ -10,6 +10,7 @@ import ChartLegend, { type ChartLegendItem } from './chart/ChartLegend';
 import { measureText } from './chart/measureText';
 import { axisFontSize } from './chart/chartTypography';
 import { formatNumber } from '../utils/formatNumber';
+import { niceTickValues } from '../utils/niceTicks';
 
 interface DataPoint {
   time: string;
@@ -86,6 +87,13 @@ interface SimpleChartProps {
    *  legend должен ставить главное значение первым. См. Buffett swap (cap → primary,
    *  ratio → secondary), но в легенде ratio должно идти первым. */
   reverseLegend?: boolean;
+  /** «Круглые» деления ЛЕВОЙ (primary) оси — nice ticks в стиле TradingView
+   *  (50 000 / 100 000…), вместо равного деления диапазона. Домен/масштаб НЕ
+   *  меняется (линия и пилюля остаются на месте) — меняются только значения и
+   *  позиции делений внутри текущего [min,max]. Opt-in, default false. */
+  niceTicks?: boolean;
+  /** То же для ПРАВОЙ (secondary) оси. */
+  niceTicksSecondary?: boolean;
 }
 
 // Алиасы для обратной совместимости с внутренним кодом
@@ -96,6 +104,19 @@ const pointsToAreaPath = ptsToArea;
 // Клампит стартовый индекс навигатора в [0, len-1]. undefined → 0 (вся история).
 const clampNavStart = (n: number | undefined, len: number) =>
   n != null && len > 0 ? Math.min(Math.max(0, Math.floor(n)), len - 1) : 0;
+
+// «Круглые» деления оси (nice ticks, как сетка TradingView): круглый шаг
+// 1/2/5×10ⁿ (D3 tickStep), деления встают на круглые значения ВНУТРИ текущего
+// домена [min,max]. Домен/масштаб не трогаем → линия и пилюля остаются на месте,
+// меняются только подписи/позиции делений. Защищено от вырожденных диапазонов.
+function makeNiceTicks(
+  min: number,
+  max: number,
+  scale: (v: number) => number,
+  count = 5,
+): { value: number; y: number }[] {
+  return niceTickValues(min, max, count).map((value) => ({ value, y: scale(value) }));
+}
 
 export default function SimpleChart({
   data,
@@ -129,6 +150,8 @@ export default function SimpleChart({
   histogramDisabled = false,
   defaultHistogram = false,
   reverseLegend = false,
+  niceTicks = false,
+  niceTicksSecondary = false,
   showValueHeader = true,
   legendPosition = 'bottom',
   showDownloadButton = true,
@@ -442,17 +465,21 @@ export default function SimpleChart({
 
     // Y ticks (primary - price)
     const yTickCount = 5;
-    const yTicks = Array.from({ length: yTickCount }, (_, i) => {
-      const value = yMinVal + ((yMaxVal - yMinVal) * i) / (yTickCount - 1);
-      return { value, y: scaleY(value) };
-    });
+    const yTicks = niceTicks
+      ? makeNiceTicks(yMinVal, yMaxVal, scaleY, yTickCount)
+      : Array.from({ length: yTickCount }, (_, i) => {
+        const value = yMinVal + ((yMaxVal - yMinVal) * i) / (yTickCount - 1);
+        return { value, y: scaleY(value) };
+      });
 
     // Secondary Y ticks (OI - right axis)
     const secYTicks = allSecondaryValues.length > 0
-      ? Array.from({ length: yTickCount }, (_, i) => {
-        const value = secYMin + ((secYMax - secYMin) * i) / (yTickCount - 1);
-        return { value, y: scaleSecondaryY(value) };
-      })
+      ? (niceTicksSecondary
+        ? makeNiceTicks(secYMin, secYMax, scaleSecondaryY, yTickCount)
+        : Array.from({ length: yTickCount }, (_, i) => {
+          const value = secYMin + ((secYMax - secYMin) * i) / (yTickCount - 1);
+          return { value, y: scaleSecondaryY(value) };
+        }))
       : [];
 
     // X ticks — адаптивно по реальной ширине chart area (без padding'ов осей),
@@ -478,7 +505,7 @@ export default function SimpleChart({
     });
 
     return { points, secondaryPoints, thirdPoints, yTicks, secYTicks, xTicks };
-  }, [displayData, displaySecondaryData, displayThirdData, chartWidth, chartHeight, showSecondary, showThird]);
+  }, [displayData, displaySecondaryData, displayThirdData, chartWidth, chartHeight, showSecondary, showThird, niceTicks, niceTicksSecondary]);
 
   // Анимация морфинга
   const animateMorph = useCallback(() => {

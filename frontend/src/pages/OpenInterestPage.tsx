@@ -772,6 +772,8 @@ export default function OpenInterestPage() {
         height={chartHeight}
         loading={loading}
         formatValue={formatPrice}
+        niceTicks={true}
+        niceTicksSecondary={true}
         primaryLabel={instrumentName || selectedInstrument}
         secondaryLabel={labels.secondary}
         thirdLabel={labels.third}

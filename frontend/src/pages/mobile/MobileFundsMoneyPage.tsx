@@ -331,6 +331,7 @@ export default function MobileFundsMoneyPage() {
             label: data.index?.secid ?? 'Индекс',
             axis: 'right' as const,
             formatValue: (v: number) => v >= 1000 ? (v / 1000).toFixed(1) + 'K' : v.toFixed(0),
+            formatAxis: (v: number) => v.toLocaleString('ru-RU', { maximumFractionDigits: 0 }),
           }]
         : []),
     ];
@@ -368,6 +369,8 @@ export default function MobileFundsMoneyPage() {
           {viewMode === 'aum' ? (
             <MobileChart
               series={chartSeries}
+              niceTicksLeft={true}
+              niceTicksRight={true}
               loading={loading}
               formatXLabel={(t) => {
                 // FundsMoney AUM — всегда дневные точки. Default formatter
