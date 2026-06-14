@@ -42,15 +42,6 @@ const PERIOD_DAYS: Record<Period, number> = {
 
 const EMA_PERIOD = 200; // Fixed EMA period
 
-// Theme-aware (color = CSS var, bg = inline style через color-mix).
-// classInfo.color и .bg теперь не классы а CSS-значения — используются inline.
-const CLASSIFICATION_LABELS: Record<string, { label: string; color: string; bg: string }> = {
-    overbought: { label: 'Перекупленность', color: 'var(--funds-flow-positive)', bg: 'color-mix(in srgb, var(--funds-flow-positive) 18%, transparent)' },
-    bullish:    { label: 'Бычий тренд',     color: 'var(--funds-flow-positive)', bg: 'color-mix(in srgb, var(--funds-flow-positive) 12%, transparent)' },
-    neutral:    { label: 'Нейтрально',       color: 'var(--text-muted)',          bg: 'color-mix(in srgb, var(--text-muted) 18%, transparent)' },
-    oversold:   { label: 'Перепроданность',  color: 'var(--funds-flow-negative)', bg: 'color-mix(in srgb, var(--funds-flow-negative) 18%, transparent)' },
-};
-
 // Секторы строятся динамически из ответа API (поле sector)
 
 
@@ -261,10 +252,6 @@ export default function StrengthPage() {
         }
     }, [sectorCounts, selectedSector]);
 
-    const classInfo = current?.classification
-        ? CLASSIFICATION_LABELS[current.classification]
-        : CLASSIFICATION_LABELS.neutral;
-
     // Extracted pointer handler — общая логика для mouse + touch.
     // Раньше вся логика была inline в handleMouseMove → touch не работал.
     // Теперь mouse и touch handlers вызывают этот общий путь с координатами.
@@ -315,9 +302,6 @@ export default function StrengthPage() {
     // Текущие значения для тултипа
     const hoverData = hoverIndex !== null && displaySyncedData[hoverIndex] ? displaySyncedData[hoverIndex] : null;
 
-    const stocksAbove = current?.stocks ? current.stocks.filter(s => s.is_above).length : current?.count_above ?? 0;
-    const stocksTotal = current?.stocks?.length ?? current?.count_total ?? 0;
-
     return (
         <div className="max-w-[1408px] mx-auto px-4 md:px-6 py-6 md:py-8 min-h-screen">
             <PageHeader
@@ -344,10 +328,6 @@ export default function StrengthPage() {
                 onCurrencyChange={setCurrency}
                 emaPeriod={emaPeriod}
                 onEmaPeriodChange={setEmaPeriod}
-                stocksAbove={stocksAbove}
-                stocksTotal={stocksTotal}
-                classInfo={classInfo}
-                hasCurrent={!!current}
                 trailingSlot={
                     <ChartActionsMenu containerRef={containerRef} tourId="strength-layers">
                     <LayersButton

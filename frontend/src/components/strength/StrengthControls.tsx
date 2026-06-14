@@ -1,7 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { isPeriodAllowed } from '../../config/accessControl';
-import Dropdown, { type DropdownOption } from '../Dropdown';
 import SegmentedControl from '../SegmentedControl';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../tier/UpgradeModal';
@@ -26,12 +25,7 @@ interface StrengthControlsProps {
     onCurrencyChange: (currency: 'rub' | 'usd') => void;
     emaPeriod: EmaPeriod;
     onEmaPeriodChange: (ema: EmaPeriod) => void;
-    stocksAbove: number;
-    stocksTotal: number;
-    classInfo: { label: string; color: string; bg: string };
-    hasCurrent: boolean;
-    /** Trailing slot — rendered после classification chip (ml-auto group).
-     *  Используется для ChartCaptureButton чтобы он был на одной строке. */
+    /** Trailing slot — экшены графика (kebab) через portal. */
     trailingSlot?: React.ReactNode;
 }
 
@@ -44,10 +38,6 @@ export default function StrengthControls({
     onCurrencyChange,
     emaPeriod,
     onEmaPeriodChange,
-    stocksAbove,
-    stocksTotal,
-    classInfo,
-    hasCurrent,
     trailingSlot,
 }: StrengthControlsProps) {
     const { isAuthenticated } = useAuth();
@@ -63,7 +53,7 @@ export default function StrengthControls({
             {/* Universe: IMOEX / 100 акций.
                 Раньше label был 'Все акции' — переименовано чтобы точнее
                 отражать что universe = 100 ликвидных акций (не реально все). */}
-            <Dropdown<'imoex' | 'all'>
+            <SegmentedControl<'imoex' | 'all'>
                 options={[
                     { key: 'imoex', label: currency === 'usd' ? 'Индекс RTSI' : 'Индекс IMOEX' },
                     { key: 'all', label: '100 акций', locked: universeAllLocked },
@@ -82,11 +72,11 @@ export default function StrengthControls({
                 }}
             />
 
-            {/* Currency */}
-            <Dropdown<'rub' | 'usd'>
+            {/* Currency — только символ валюты */}
+            <SegmentedControl<'rub' | 'usd'>
                 options={[
-                    { key: 'rub', label: '₽ Рубль' },
-                    { key: 'usd', label: '$ Доллар', locked: usdLocked },
+                    { key: 'rub', label: '₽' },
+                    { key: 'usd', label: '$', locked: usdLocked },
                 ]}
                 value={currency}
                 onChange={onCurrencyChange}
@@ -103,8 +93,8 @@ export default function StrengthControls({
             />
 
             {/* EMA period */}
-            <Dropdown<string>
-                options={EMA_OPTIONS.map((p): DropdownOption<string> => ({
+            <SegmentedControl<string>
+                options={EMA_OPTIONS.map((p) => ({
                     key: String(p),
                     label: `EMA${p}`,
                 }))}
@@ -134,22 +124,8 @@ export default function StrengthControls({
                 }}
             />
 
-            {/* Тумблер верхнего графика (индекса) переехал в модалку «Слои»
-                справа (LayersButton в trailingSlot на странице) — паттерн OI. */}
-
-            {/* Status + counter.
-                visibility: hidden пока нет данных — чтобы место было зарезервировано
-                и главный контейнер НЕ сдвигался вниз когда данные прилетят. */}
-            <div className="flex items-center sm:ml-auto" style={{ gap: 'var(--sp-3)', visibility: hasCurrent ? 'visible' : 'hidden' }}>
-                <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-sm)' }}>
-                    <span className="font-bold text-theme-primary">{stocksAbove}</span>/{stocksTotal} выше EMA
-                </span>
-                <div className="rounded-full" style={{ padding: 'calc(var(--sp-1)) var(--sp-3)', background: classInfo.bg }}>
-                    <span className="font-medium" style={{ fontSize: 'var(--fs-2xs)', color: classInfo.color }}>
-                        {classInfo.label}
-                    </span>
-                </div>
-            </div>
+            {/* Индекс-линия и режим линия/гистограмма — в модалке «Слои»
+                (LayersButton в trailingSlot на странице). */}
             {trailingSlot}
         </div>
     );
