@@ -1137,21 +1137,18 @@
   }
 }
 
-/* === Chart tabs — вкладки выбора над графиком (folder-tabs) ===
-   Приклеены к верхней кромке `.editorial-frame.has-tabs`. Активная вкладка
-   сливается с панелью (та же поверхность, нижняя граница цвета панели);
-   неактивные затемнены и отделены границей. Без accent — он зарезервирован
-   за контролами отображения внутри панели. Theme-aware через токены. */
+/* === Chart tabs — папка-вкладка над графиком (file-folder) ===
+   Только активный фонд — это «папка»: светлая поверхность панели, рамка по
+   верху и бокам, основание плавными филетами перетекает в панель. Остальные
+   фонды — просто названия (иконка + имя + тикер) на фоне, без рамок и боксов,
+   приглушённый --text-muted. Без accent и без тени. Theme-aware через токены. */
 .chart-tabs {
   display: flex;
+  align-items: stretch;
   position: relative;
   z-index: 2;
-  border: 2px solid var(--text-primary);
-  border-bottom: none;
-  border-top-left-radius: 14px;
-  border-top-right-radius: 14px;
-  overflow: hidden;
 }
+/* Неактивный фонд — просто название на фоне */
 .chart-tab {
   flex: 1 1 0;
   min-width: 0;
@@ -1159,76 +1156,70 @@
   align-items: center;
   justify-content: center;
   gap: var(--sp-2);
-  padding: 10px var(--sp-3);
+  padding: 12px var(--sp-3);
   font-family: inherit;
   font-weight: 600;
   font-size: var(--fs-sm);
   color: var(--text-muted);
-  background: color-mix(in srgb, var(--text-primary) 8%, var(--bg-secondary));
+  background: transparent;
   border: none;
   cursor: pointer;
   white-space: nowrap;
 }
-/* Разделители между вкладками — одинарные (border-left у всех, кроме первой).
-   Анимации переключения нет: смена активной вкладки мгновенная. */
-.chart-tab + .chart-tab {
-  border-left: 2px solid var(--text-primary);
-}
-.chart-tab:not(.is-active):hover {
-  color: var(--text-secondary);
-  background: color-mix(in srgb, var(--text-primary) 13%, var(--bg-secondary));
-}
+.chart-tab:not(.is-active):hover { color: var(--text-secondary); }
+.chart-tab:disabled { opacity: 0.45; cursor: not-allowed; }
+/* Активный фонд — папка-вкладка, сросшаяся с панелью */
 .chart-tab.is-active {
-  background: var(--bg-secondary);
+  position: relative;
+  z-index: 4;
+  margin-bottom: -2px;
   color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 2px solid var(--text-primary);
+  border-bottom: none;
+  border-top-left-radius: 14px;
+  border-top-right-radius: 14px;
 }
-.chart-tab:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
+/* Плавные филеты основания: язычок перетекает в панель. Радиальный градиент
+   рисует вогнутую четверть-дугу той же поверхности, border-bottom продолжает
+   верхнюю границу панели по бокам от язычка. */
+.chart-tab.is-active::before,
+.chart-tab.is-active::after {
+  content: "";
+  position: absolute;
+  bottom: -2px;
+  width: 22px;
+  height: 22px;
+  border-bottom: 2px solid var(--text-primary);
 }
-.chart-tab .ct-ico {
-  width: var(--ico-sm);
-  height: var(--ico-sm);
-  flex-shrink: 0;
+.chart-tab.is-active::before {
+  left: -22px;
+  background: radial-gradient(circle at top left, #0000 0 22px, var(--bg-secondary) 22px);
 }
-.chart-tab .ct-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
+.chart-tab.is-active::after {
+  right: -22px;
+  background: radial-gradient(circle at top right, #0000 0 22px, var(--bg-secondary) 22px);
 }
-.chart-tab .ct-sub {
-  font-size: var(--fs-2xs);
-  opacity: 0.72;
-  letter-spacing: 0.02em;
-}
-/* Панель под вкладками: поднимаем на 2px, чтобы вкладки сели на её верхнюю
-   границу. Рамку утолщаем до 2px (совпадает с вкладками, иначе боковые линии
-   не ровные). Тень снимаем — она живёт на обёртке .tabbed-card, иначе
-   обрывалась бы у вкладок в правом верхнем углу. */
+/* Крайние вкладки: внешний филет не вылезает за край карточки */
+.chart-tab.is-active:first-child::before,
+.chart-tab.is-active:last-child::after { display: none; }
+.chart-tab .ct-ico { width: var(--ico-sm); height: var(--ico-sm); flex-shrink: 0; }
+.chart-tab .ct-name { overflow: hidden; text-overflow: ellipsis; }
+.chart-tab .ct-sub { font-size: var(--fs-2xs); opacity: 0.72; letter-spacing: 0.02em; }
+
+/* Панель под вкладками: язычок активного фонда перекрывает её верхнюю границу
+   (сливается), по бокам граница видна как верхняя кромка карточки. Без тени. */
 .editorial-frame.has-tabs {
   position: relative;
   z-index: 1;
 }
-/* Панель срастается с полосой вкладок: верхней границы нет (её даёт полоса),
-   боковые/нижняя — 2px (совпадают с полосой), верхние углы прямые. */
 [data-theme^="editorial"] .editorial-frame.has-tabs {
   border: 2px solid var(--text-primary);
-  border-top: none;
   border-top-left-radius: 0;
   border-top-right-radius: 0;
   box-shadow: none;
 }
-/* Обёртка [вкладки + панель] — несёт единую editorial-тень на весь блок,
-   непрерывную по правому краю сверху донизу и по низу. */
 .tabbed-card { position: relative; }
-[data-theme^="editorial"] .tabbed-card {
-  box-shadow: 5px 5px 0 var(--card-border-color);
-  border-radius: 14px 14px 16px 16px;
-}
-@media (max-width: 600px) {
-  [data-theme^="editorial"] .tabbed-card {
-    box-shadow: 3px 3px 0 var(--card-border-color);
-  }
-}
 
 /* === OI variant palette ===
    Шесть вариантов в нижнем ряду OI-кнопок имели hardcoded неон (#FFB020,
