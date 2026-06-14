@@ -187,9 +187,16 @@ Fix any TS errors BEFORE deploying.
 
 ### Deploy (push → авто-CI, с 2026-06-09)
 
-**Step 11: Commit + push** — деплой теперь автоматический, НЕ руками по SSH:
+**Step 11: Commit + PR** — деплой автоматический, НЕ руками по SSH. Новый
+индикатор трогает `api/` + `frontend/` (нетривиально/рисково) → **дефолт ветка+PR**,
+не прямой push в `main` (см. `CONTRIBUTING.md`):
 ```bash
-git add -A && git commit -m "feat: <indicator>" && git push origin main
+git checkout -b feat/<indicator>
+git add <конкретные файлы>            # НЕ `git add -A` вслепую
+git commit -m "feat(<scope>): <indicator>"
+git push -u origin feat/<indicator>
+gh pr create --base main --fill       # build-check прогонится на PR
+gh pr merge --squash --delete-branch  # зелёный → мёрж = деплой
 ```
 build-check (`npm run build`) → если зелёный → **deploy-prod** сам по SSH:
 `git reset --hard origin/main` → `docker compose build api` (api **запекает** frontend dist

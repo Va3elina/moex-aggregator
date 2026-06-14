@@ -16,7 +16,9 @@ description: Deploy Python backend changes to Фрейм production. Use when us
 > - Детали в памяти: `ci_cd.md`, `deploy_manual.md`.
 
 **Главное правило** (с 2026-06-09):
-**Закоммить → `git push origin main` → CI сам соберёт `docker compose build api` и пересоздаст контейнер на проде.**
+**Закоммить → попадание в `main` (мёрж PR — дефолт; прямой push — исключение) → CI сам соберёт `docker compose build api` и пересоздаст контейнер на проде.**
+> Дефолт — **ветка → PR → мёрж** (см. `CONTRIBUTING.md`). `api/` — «рисковая»
+> категория: пусть второй глянет PR перед мёржем.
 **Никаких ручных SSH-деплоев. Никаких `docker cp` Python-файлов. Никаких правок на сервере.**
 
 ## Почему именно так

@@ -29,9 +29,10 @@ Project-specific conventions for commits and pushes.
 ## Командная работа — ветки + PR (ДЕФОЛТ с 2026-06-14)
 
 Канонический свод правил для людей — **`CONTRIBUTING.md` в корне репо**; скилл
-обязан ему соответствовать. Над репозиторием работают двое (Вадим +
-коллега, git-identity `vadim@frame.local`), поэтому **дефолт — НЕ прямой коммит
-в `main`, а ветка → Pull Request → мёрж**:
+обязан ему соответствовать. Над репозиторием работают двое; их коммиты идут под
+двумя hostname-производными identity (`vadim@Mac-mini-Vadim.local` и
+`vadim@frame.local`) — обе легитимны (см. «User Identity» ниже). Поэтому
+**дефолт — НЕ прямой коммит в `main`, а ветка → Pull Request → мёрж**:
 
 1. Старт задачи: `git checkout main && git pull --rebase origin main && git checkout -b <type>/<kebab>`.
 2. Коммиты — в ветку; `git push -u origin <branch>` (это **НЕ** деплой).
@@ -63,6 +64,8 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
 - `refactor` — code improvement without behavior change
 - `chore` — tooling, deps, infra
 - `docs` — documentation changes
+- `style` — визуал/CSS без изменения логики
+- `revert` — автоген от `git revert`
 
 **Scope** examples from this repo:
 - `seasonality`, `buffett`, `heatmap`, `funds` — indicators
