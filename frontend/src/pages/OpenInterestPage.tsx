@@ -13,9 +13,8 @@ import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import CsvExportButton from '../components/export/CsvExportButton';
 import { periodToQuery } from '../utils/csvPeriod';
 import InstrumentSearchModal from '../components/InstrumentSearchModal';
-import Dropdown, { type DropdownOption } from '../components/Dropdown';
+import Dropdown from '../components/Dropdown';
 import SegmentedControl from '../components/SegmentedControl';
-import FavoritePeriodSelect from '../components/FavoritePeriodSelect';
 import LayersButton from '../components/LayersButton';
 import ChartActionsMenu from '../components/ChartActionsMenu';
 import { PERIOD_LABELS as ALL_PERIOD_LABELS, INTERVAL_LABELS } from '../config/chartConfig';
@@ -37,10 +36,9 @@ import { useTierAccess } from '../contexts/TierFeaturesContext';
 
 type DisplayMode = 'price' | 'positions' | 'participants';
 type OIVariant = 'oi' | 'long' | 'short' | 'both' | 'net';
-type Period = '1d' | '1w' | '1m' | '1y' | '5y' | 'all';
+type Period = '1w' | '1m' | '1y' | '5y' | 'all';
 
 const PERIOD_LABELS: Record<Period, string> = {
-  '1d':  ALL_PERIOD_LABELS['1d'],
   '1w':  ALL_PERIOD_LABELS['1w'],
   '1m':  ALL_PERIOD_LABELS['1m'],
   '1y':  ALL_PERIOD_LABELS['1y'],
@@ -163,12 +161,6 @@ export default function OpenInterestPage() {
   const [showExpirations, setShowExpirations] = usePersistedState('frame:oi:showExpirations', false);
   const [showPrice, setShowPrice] = usePersistedState('frame:oi:showPrice', true);
   const [period, setPeriod] = usePersistedState<Period>('frame:oi:period', getDefaultPeriod('1y', isAuthenticated) as Period);
-  // Избранные периоды (TradingView-стиль): показываются горизонтальным рядом,
-  // остальные — за стрелкой со звёздочками. Тест FavoritePeriodSelect на OI.
-  const [periodFavorites, setPeriodFavorites] = usePersistedState<Period[]>('frame:oi:periodFavorites', ['1d', '1m', '1y', 'all']);
-  const togglePeriodFavorite = (p: Period) => {
-    setPeriodFavorites(periodFavorites.includes(p) ? periodFavorites.filter((x) => x !== p) : [...periodFavorites, p]);
-  };
 
   // showOi: в режиме 'price' открытый интерес не запрашиваем. Поднято сюда из
   // прежнего места ниже — нужно фетчеру useIndicatorData.
@@ -250,9 +242,9 @@ export default function OpenInterestPage() {
   // Ограничения периодов для интервалов (для производительности)
   // 5мин: макс 1 месяц, 1час: макс 6 месяцев, 1день: все
   const MAX_PERIODS_BY_INTERVAL: Record<number, Period[]> = {
-    5: ['1d', '1w', '1m'],
-    60: ['1d', '1w', '1m'],
-    24: ['1d', '1w', '1m', '1y', '5y', 'all']
+    5: ['1w', '1m'],
+    60: ['1w', '1m'],
+    24: ['1w', '1m', '1y', '5y', 'all']
   };
 
   const isPeriodAvailable = (p: Period): boolean => {
@@ -264,12 +256,6 @@ export default function OpenInterestPage() {
   const handleIntervalChange = (newInterval: number) => {
     const allowed = MAX_PERIODS_BY_INTERVAL[newInterval] || MAX_PERIODS_BY_INTERVAL[24];
     setIntervalValue(newInterval);
-
-    // 1Д ТФ + 1Д период не имеет смысла → переключаем на 1Н
-    if (newInterval === 24 && period === '1d') {
-      setPeriod('1w');
-      return;
-    }
 
     // Если текущий период недоступен — переключаем на максимальный доступный
     if (!allowed.includes(period)) {
@@ -521,27 +507,19 @@ export default function OpenInterestPage() {
             }}
           />
 
-          {/* Период — TradingView-стиль: избранные в ряд + стрелка со звёздами */}
-          <FavoritePeriodSelect<Period>
-            options={(Object.keys(PERIOD_LABELS) as Period[]).map((p): DropdownOption<Period> => {
-              const allowed = isPeriodAllowed(p, isAuthenticated);
-              return {
-                key: p,
-                label: PERIOD_LABELS[p],
-                // Замочек только за тариф/гостевой гейт. Техническое ограничение
-                // 5м (длинные периоды) НЕ локаем — период кликабелен и сам
-                // переключит таймфрейм (см. onChange).
-                locked: !allowed,
-              };
-            })}
+          {/* Период — горизонтальный ряд (1Н / 1М / 1Г / 5Л / Всё) */}
+          <SegmentedControl<Period>
+            options={(Object.keys(PERIOD_LABELS) as Period[]).map((p) => ({
+              key: p,
+              label: PERIOD_LABELS[p],
+              // Замочек только за тариф/гостевой гейт. Технически недоступный на
+              // текущем ТФ период НЕ локаем — он кликабелен и сам переключит ТФ.
+              locked: !isPeriodAllowed(p, isAuthenticated),
+            }))}
             value={period}
-            favorites={periodFavorites}
-            onToggleFavorite={togglePeriodFavorite}
             onChange={(p) => {
-              // Период не влезает в текущий ТФ (напр. 6М/1Г на 5м) → переключаем
-              // на самый детальный ТФ, который его поддерживает (есть у инструмента
-              // + открыт по тарифу). Длинный период доступен, просто меняется
-              // таймфрейм — без замочка-обманки. Зеркалит мобильную версию.
+              // Период не влезает в текущий ТФ → переключаем на самый детальный ТФ,
+              // который его поддерживает (есть у инструмента + открыт по тарифу).
               if (!isPeriodAvailable(p)) {
                 const target = [5, 60, 24].find((int) =>
                   (MAX_PERIODS_BY_INTERVAL[int] ?? []).includes(p)
@@ -550,14 +528,11 @@ export default function OpenInterestPage() {
                   && isIntervalAllowed(int, isAuthenticated)
                 ) ?? 24;
                 if (target !== interval) setIntervalValue(target);
-              } else if (p === '1d' && interval === 24) {
-                setIntervalValue(60);
               }
               setPeriod(p);
             }}
             onLockedClick={(p) => {
               // Tier-блокировка → upgrade modal; иначе legacy guest gate → /login.
-              // Locked только из-за !isPeriodAvailable (нет данных) — ничего не делаем.
               if (!oiAccess.canUsePeriod(p)) {
                 const tier = oiAccess.requiredTierFor({ period: p });
                 if (tier) {

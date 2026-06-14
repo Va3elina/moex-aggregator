@@ -86,10 +86,6 @@ interface SimpleChartProps {
    *  legend должен ставить главное значение первым. См. Buffett swap (cap → primary,
    *  ratio → secondary), но в легенде ratio должно идти первым. */
   reverseLegend?: boolean;
-  /** Полностью отключить анимацию (морфинг линий + reveal-свип). Opt-in:
-   *  по умолчанию false → поведение не меняется. Включается там, где нужен
-   *  статичный график (Деньги в фондах). */
-  noAnimate?: boolean;
 }
 
 // Алиасы для обратной совместимости с внутренним кодом
@@ -147,7 +143,6 @@ export default function SimpleChart({
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   forecastCount: _forecastCount = 0,
   horizontalLines: _horizontalLines,
-  noAnimate = false,
 }: SimpleChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -489,26 +484,6 @@ export default function SimpleChart({
   const animateMorph = useCallback(() => {
     if (displayData.length === 0) return;
 
-    // Анимация отключена (opt-in noAnimate): рисуем финальные пути сразу,
-    // без морфинга и reveal-свипа.
-    if (noAnimate) {
-      if (animationRef.current) cancelAnimationFrame(animationRef.current);
-      const tp = targetCalc.points.map(p => ({ x: p.x, y: p.y }));
-      const ts = targetCalc.secondaryPoints.map(p => ({ x: p.x, y: p.y }));
-      const tt = targetCalc.thirdPoints.map(p => ({ x: p.x, y: p.y }));
-      setAnimatedPaths({
-        primary: pointsToPath(tp),
-        area: pointsToAreaPath(tp, chartHeight),
-        secondary: pointsToPath(ts),
-        third: pointsToPath(tt),
-      });
-      prevPointsRef.current = { primary: tp, secondary: ts, third: tt };
-      currentPointsRef.current = { primary: [], secondary: [], third: [] };
-      isFirstRender.current = false;
-      setOiOpacity(1);
-      return;
-    }
-
     // При первом resize (800 → реальная ширина) — не морфим, а перезапускаем reveal
     if (!widthStableRef.current) {
       widthStableRef.current = true;
@@ -659,7 +634,7 @@ export default function SimpleChart({
     }
 
     animationRef.current = requestAnimationFrame(animate);
-  }, [displayData, targetCalc, chartHeight, chartWidth, showNavigator, noAnimate]);
+  }, [displayData, targetCalc, chartHeight, chartWidth, showNavigator]);
 
   // Запуск анимации при изменении данных
   useEffect(() => {
@@ -976,7 +951,7 @@ export default function SimpleChart({
 
       {/* SVG График */}
       <div ref={chartWrapRef}
-        className={`relative ${revealed && !noAnimate ? 'chart-reveal' : ''}`}
+        className={`relative ${revealed ? 'chart-reveal' : ''}`}
         style={revealed ? undefined : { visibility: 'hidden' }}>
         <svg
           ref={svgRef}
