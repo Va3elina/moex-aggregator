@@ -1138,10 +1138,10 @@
 }
 
 /* === Chart tabs — папка-вкладка над графиком (file-folder) ===
-   Только активный фонд — это «папка»: светлая поверхность панели, рамка по
-   верху и бокам, основание плавными филетами перетекает в панель. Остальные
-   фонды — просто названия (иконка + имя + тикер) на фоне, без рамок и боксов,
-   приглушённый --text-muted. Без accent и без тени. Theme-aware через токены. */
+   Только активный фонд — «папка»: светлая поверхность панели, рамка по верху
+   и бокам, скруглённый верх, основание ровно сливается с панелью. Остальные
+   фонды — просто названия (иконка + имя + тикер) на фоне, без рамок и боксов.
+   Editorial-тень остаётся на панели (карточка с тенью). Theme-aware. */
 .chart-tabs {
   display: flex;
   align-items: stretch;
@@ -1177,38 +1177,16 @@
   background: var(--bg-secondary);
   border: 2px solid var(--text-primary);
   border-bottom: none;
-  border-top-left-radius: 14px;
-  border-top-right-radius: 14px;
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
 }
-/* Плавные филеты основания: язычок перетекает в панель. Радиальный градиент
-   рисует вогнутую четверть-дугу той же поверхности, border-bottom продолжает
-   верхнюю границу панели по бокам от язычка. */
-.chart-tab.is-active::before,
-.chart-tab.is-active::after {
-  content: "";
-  position: absolute;
-  bottom: -2px;
-  width: 22px;
-  height: 22px;
-  border-bottom: 2px solid var(--text-primary);
-}
-.chart-tab.is-active::before {
-  left: -22px;
-  background: radial-gradient(circle at top left, #0000 0 22px, var(--bg-secondary) 22px);
-}
-.chart-tab.is-active::after {
-  right: -22px;
-  background: radial-gradient(circle at top right, #0000 0 22px, var(--bg-secondary) 22px);
-}
-/* Крайние вкладки: внешний филет не вылезает за край карточки */
-.chart-tab.is-active:first-child::before,
-.chart-tab.is-active:last-child::after { display: none; }
 .chart-tab .ct-ico { width: var(--ico-sm); height: var(--ico-sm); flex-shrink: 0; }
 .chart-tab .ct-name { overflow: hidden; text-overflow: ellipsis; }
 .chart-tab .ct-sub { font-size: var(--fs-2xs); opacity: 0.72; letter-spacing: 0.02em; }
 
-/* Панель под вкладками: язычок активного фонда перекрывает её верхнюю границу
-   (сливается), по бокам граница видна как верхняя кромка карточки. Без тени. */
+/* Панель под вкладками: активный язычок перекрывает её верхнюю границу
+   (сливается), по бокам граница видна как верхняя кромка карточки. Тень 5×5
+   наследуется от .editorial-frame — возвращаем карточке тень. */
 .editorial-frame.has-tabs {
   position: relative;
   z-index: 1;
@@ -1217,7 +1195,6 @@
   border: 2px solid var(--text-primary);
   border-top-left-radius: 0;
   border-top-right-radius: 0;
-  box-shadow: none;
 }
 .tabbed-card { position: relative; }
 
