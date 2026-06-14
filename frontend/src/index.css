@@ -1165,6 +1165,8 @@
   border: none;
   cursor: pointer;
   white-space: nowrap;
+  /* Переключение мгновенное — никаких остаточных теней/анимаций на вкладке. */
+  transition: none;
 }
 .chart-tab:not(.is-active):hover { color: var(--text-secondary); }
 .chart-tab:disabled { opacity: 0.45; cursor: not-allowed; }
@@ -1217,6 +1219,14 @@
   border: 2px solid var(--text-primary);
   border-top-left-radius: 0;
   border-top-right-radius: 0;
+  /* Правый край: вторая тень 5px 0 0 (без вертикального смещения) продолжает
+     тень активного язычка вниз без разрыва на стыке язычок↔панель. */
+  box-shadow: 5px 5px 0 var(--card-border-color), 5px 0 0 var(--card-border-color);
+}
+@media (max-width: 600px) {
+  [data-theme^="editorial"] .editorial-frame.has-tabs {
+    box-shadow: 3px 3px 0 var(--card-border-color), 3px 0 0 var(--card-border-color);
+  }
 }
 .tabbed-card { position: relative; }
 
