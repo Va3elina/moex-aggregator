@@ -187,9 +187,9 @@ export default function BuffettPage() {
 
             {/* Контролы. Camera button — в конце строки через ml-auto. */}
             <div className="flex flex-wrap mb-4 md:mb-6 items-center" style={{ gap: 'var(--sp-2)' }}>
-                {/* Переключатель режимов */}
+                {/* Переключатель режимов — горизонтальный */}
                 <div data-tour="buffett-view-mode">
-                <Dropdown<ViewMode>
+                <SegmentedControl<ViewMode>
                     options={[
                         { key: 'cap-gdp', label: 'Капитализация / ВВП' },
                         {
