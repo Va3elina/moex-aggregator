@@ -685,18 +685,22 @@ export default function SeasonalityPage() {
         <div data-tour="seasonality-instrument" className="relative">
           <button
             onClick={() => setIsModalOpen(true)}
+            title={selectedName}
             className="widget-flat font-medium transition-colors flex items-center hover:opacity-90"
             style={{
               color: 'var(--text-primary)',
               fontSize: 'var(--fs-sm)',
               padding: 'var(--sp-2) var(--sp-4)',
               gap: 'var(--sp-3)',
-              minWidth: 'clamp(160px, 30vw, 200px)',
+              // Длинные имена («Индекс гособлигаций (ценовой)») не растягивают
+              // кнопку: maxWidth + ellipsis + minWidth:0 (как на OI). Полное имя — в title.
+              minWidth: 'clamp(140px, 22vw, 170px)',
+              maxWidth: 220,
             }}
           >
             <InstrumentIcon sectype={selectedStock} size={28} rounded="full" eager />
-            <div className="flex-1 text-left">
-              <div className="font-medium">{selectedName}</div>
+            <div className="flex-1 text-left" style={{ minWidth: 0 }}>
+              <div className="font-medium" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selectedName}</div>
               <div className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)' }}>{displayTicker(selectedStock)}</div>
             </div>
             <ChevronDown size={14} className="text-theme-secondary" />
