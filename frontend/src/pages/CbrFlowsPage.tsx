@@ -66,13 +66,12 @@ export default function CbrFlowsPage() {
   const { theme } = useTheme();
   // Тип актива (Акции/ОФЗ/Валюты) персистится в localStorage — не сбрасывается на новой сессии.
   const [type, setType] = usePersistedState<CbrInstrumentType>('frame:cbr:type', 'stocks');
-  // Данные грузятся через useIndicatorData. guardStale=true сохраняет прежний
-  // cancelled-guard от гонки при быстрой смене типа; errorMessage воспроизводит
-  // прежний raw `e?.message ?? …`. Без SSE и без tier (период гейтится в onClick).
+  // Данные грузятся через useIndicatorData (reqId-guard от гонки при быстрой смене
+  // типа теперь встроен в хук безусловно). errorMessage воспроизводит прежний raw
+  // `e?.message ?? …`. Без SSE и без tier (период гейтится в onClick).
   const { data, loading, error } = useIndicatorData<CbrFlowsResponse>({
     fetcher: () => getCbrFlows(type),
     deps: [type],
-    guardStale: true,
     errorMessage: (e) => (e as { message?: string } | null)?.message ?? 'Не удалось загрузить данные',
   });
 

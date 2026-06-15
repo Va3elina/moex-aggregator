@@ -20,17 +20,30 @@ export function useRealtimeData(
   const { lastEvent } = useSSE();
   const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
+  // Всегда держим АКТУАЛЬНЫЙ refetch/sources в ref. Без этого debounced-таймер от
+  // прошлого SSE-события через ~debounceMs звал бы СТАРОЕ замыкание refetch (старая
+  // категория/фильтр, если их сменили внутри окна debounce) → рефетч старых данных
+  // + инвалидация свежего in-flight запроса (через reqId-guard потребителя). Это и
+  // давало «переключил категорию — график не обновился до рефреша» (изредка, везде).
+  const refetchRef = useRef(refetch);
+  refetchRef.current = refetch;
+  const sourcesRef = useRef(sources);
+  sourcesRef.current = sources;
+
   useEffect(() => {
     if (!lastEvent) return;
-    if (!sources.includes(lastEvent.source)) return;
+    if (!sourcesRef.current.includes(lastEvent.source)) return;
 
     // Debounce — если несколько событий приходят быстро, refetch один раз
     clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
-      refetch();
+      refetchRef.current();
     }, debounceMs);
 
     return () => clearTimeout(timerRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastEvent]);
+
+  // Гарантированно гасим pending-таймер при unmount.
+  useEffect(() => () => clearTimeout(timerRef.current), []);
 }
