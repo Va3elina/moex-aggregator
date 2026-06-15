@@ -688,20 +688,19 @@ def compute_total_from_candles(engine, days: int = 45) -> int:
     if not issize:
         return 0
     # дедуп преф→обычка: компанию считаем один раз (как SmartLab)
-    universe = [s for s in issize if not (s.endswith('P') and s[:-1] in issize)]
+    universe = {s for s in issize if not (s.endswith('P') and s[:-1] in issize)}
+    cutoff = date.today() - timedelta(days=days)  # cutoff в Python — pg8000 не любит date−int
 
     with engine.connect() as conn:
         rows = conn.execute(text(
             "SELECT begin_time::date AS d, secid, close FROM candles "
-            "WHERE type='stock' AND interval=24 AND close>0 "
-            "AND begin_time::date >= CURRENT_DATE - :days AND secid = ANY(:u)"
-        ), {"days": days, "u": universe}).fetchall()
+            "WHERE type='stock' AND interval=24 AND close>0 AND begin_time::date >= :cutoff"
+        ), {"cutoff": cutoff}).fetchall()
 
     totals: Dict[date, float] = {}
     for d, secid, close in rows:
-        sz = issize.get(secid)
-        if sz:
-            totals[d] = totals.get(d, 0.0) + float(close) * sz / 1e9
+        if secid in universe:  # фильтр вселенной в Python (без SQL ANY)
+            totals[d] = totals.get(d, 0.0) + float(close) * issize[secid] / 1e9
     if not totals:
         log.info("  compute: нет дневных свечей в окне → пропуск")
         return 0
@@ -711,8 +710,8 @@ def compute_total_from_candles(engine, days: int = 45) -> int:
         anchors = conn.execute(text(
             "SELECT period_date, value FROM macro_data "
             "WHERE indicator='MARKET_CAP_TOTAL' AND source IN ('SMARTLAB','GURUFOCUS') "
-            "AND period_date >= CURRENT_DATE - :days ORDER BY period_date DESC"
-        ), {"days": days}).fetchall()
+            "AND period_date >= :cutoff ORDER BY period_date DESC"
+        ), {"cutoff": cutoff}).fetchall()
     factor = None
     for ad, av in anchors:
         if totals.get(ad, 0) > 0:
