@@ -166,10 +166,12 @@ services:
   orchestrator:
     build: .
     restart: always
-    # Container hardening (defense-in-depth): root batch-процесс без HTTP-exposure,
-    # но тянет внешние данные (Algopack/Cbonds/Yahoo). Снимаем все Linux
-    # capabilities и запрещаем privilege-escalation, чтобы RCE в фетчере не
-    # эскалировал до full-cap root. (CIS Docker 5.3/5.25, CWE-250)
+    # Container hardening (defense-in-depth): non-root (uid 1000, как api) +
+    # cap_drop:ALL + no-new-privileges. ВАЖНО: user:1000 ОБЯЗАТЕЛЕН — Dockerfile
+    # делает chown -R appuser /app, поэтому без него root-процесс при cap_drop:ALL
+    # терял CAP_DAC_OVERRIDE и падал на записи /app/logs (PermissionError, поймано
+    # на деплое 2026-06-15). Под uid 1000 пишет логи как владелец. (CIS 5.3/5.25)
+    user: "1000:1000"
     security_opt:
       - no-new-privileges:true
     cap_drop:
