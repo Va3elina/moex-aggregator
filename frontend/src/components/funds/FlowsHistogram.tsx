@@ -331,18 +331,55 @@ export default function FlowsHistogram({
                                 .filter(Boolean) as { ann: typeof FUND_ANNOTATIONS[0]; logo: typeof UK_LOGOS[string]; xPct: number }[];
                             return anns.map((m, i) => (
                                 <g key={`ann-${i}`} style={{ cursor: 'pointer' }}
+                                    opacity={hoveredAnnotation === m.ann.date ? 1 : 0.55}
                                     onMouseEnter={() => onSetHoveredAnnotation(m.ann.date)}
                                     onMouseLeave={() => onSetHoveredAnnotation(null)}>
-                                    <title>{`${m.ann.type === 'merger' ? 'Слияние' : m.ann.type === 'liquidation' ? 'Ликвидация' : 'Реорганизация'} · ${new Date(m.ann.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' })}\n${m.ann.description}`}</title>
-                                    <circle cx={`${m.xPct}%`} cy={13} r={10}
-                                        fill="var(--text-primary)" stroke="var(--accent)" strokeWidth={2} />
-                                    <text x={`${m.xPct}%`} y={13} textAnchor="middle" dominantBaseline="central"
-                                        fill="var(--bg-primary)" fontSize={11} fontWeight={700}
+                                    {/* СЕРЫЙ как вотермарк: var(--text-primary) @ opacity 0.55
+                                        (без accent-кольца), на НИЖНЕЙ gridline (97%). На hover —
+                                        ярче (opacity 1). Тултип — HTML ниже (SVG <title> ненадёжен). */}
+                                    <circle cx={`${m.xPct}%`} cy="97%" r={9}
+                                        fill="var(--text-primary)" />
+                                    <text x={`${m.xPct}%`} y="97%" textAnchor="middle" dominantBaseline="central"
+                                        fill="var(--bg-primary)" fontSize={10} fontWeight={700}
                                         style={{ pointerEvents: 'none' }}>{m.logo.letter}</text>
                                 </g>
                             ));
                         })()}
                     </svg>
+                    {/* Тултип события — HTML (надёжнее SVG <title>): показывается при
+                        hover на SVG-маркер через hoveredAnnotation, у x-координаты маркера,
+                        над нижней линией где он сидит. Sibling после <svg> → поверх него. */}
+                    {hoveredAnnotation && flowsData?.flows && (() => {
+                        const visF = flowsData.flows.slice(flowNavRange[0], flowNavRange[1] + 1);
+                        const bW = 100 / (visF.length || 1);
+                        const annTs = new Date(hoveredAnnotation).getTime();
+                        const ann = FUND_ANNOTATIONS.find(a => a.category === category && new Date(a.date).getTime() === annTs);
+                        if (!ann) return null;
+                        let bi = -1, bd = Infinity;
+                        for (let i = 0; i < visF.length; i++) {
+                            const dist = Math.abs(new Date(visF[i].period_end).getTime() - annTs);
+                            if (dist < bd && dist <= 7 * 86400000) { bd = dist; bi = i; }
+                        }
+                        if (bi === -1) return null;
+                        const xPct = bi * bW + bW / 2;
+                        return (
+                            <div className="absolute pointer-events-none z-50" style={{ left: `${xPct}%`, bottom: '8%', transform: 'translateX(-50%)' }}>
+                                <div className="rounded-lg border border-theme shadow-md max-w-[300px]" style={{ background: 'var(--bg-primary)', padding: 'var(--sp-2) var(--sp-3)' }}>
+                                    <div className="flex items-center gap-2 mb-0.5">
+                                        <span className="font-medium" style={{ color: CHART_COLORS.muted, fontSize: 'var(--fs-2xs)' }}>
+                                            {ann.type === 'merger' ? 'Слияние' : ann.type === 'liquidation' ? 'Ликвидация' : 'Реорганизация'}
+                                        </span>
+                                        <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)' }}>
+                                            {new Date(ann.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                        </span>
+                                    </div>
+                                    <p className="text-theme-primary whitespace-normal leading-tight" style={{ fontSize: 'var(--fs-xs)' }}>
+                                        {ann.description}
+                                    </p>
+                                </div>
+                            </div>
+                        );
+                    })()}
                     </div>
 
                     {/* Watermark — sibling inner chart-area, в flowContainerRef.
