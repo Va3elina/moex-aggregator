@@ -49,6 +49,10 @@ CAP_MAX_JUMP_PCT = 50       # Максимальный скачок между �
 # === SmartLab URL ===
 SMARTLAB_URL = "https://smart-lab.ru/q/shares_fundamental/?field=market_cap"
 
+# === ISS TQBR — для gap-safe расчёта total = Σ(close × ISSUESIZE) из свечей ===
+ISS_TQBR_URL = ("https://iss.moex.com/iss/engines/stock/markets/shares/boards/TQBR/"
+                "securities.json?iss.meta=off&iss.only=securities")
+
 # === Календарь MOEX ===
 sys.path.insert(0, str(PROJECT_DIR))
 try:
@@ -654,12 +658,99 @@ def print_check_report(engine):
 #                              MAIN
 # ======================================================================
 
+def fetch_issuesize() -> dict:
+    """ISSUESIZE (общее число ВЫПУЩЕННЫХ акций — включая заблокированные, они тоже
+    выпущенные) по бумагам TQBR из ISS. База для gap-safe расчёта total."""
+    req = urllib.request.Request(ISS_TQBR_URL, headers={"User-Agent": "Mozilla/5.0 (compatible; FrameBot/1.0)"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        d = json.load(r)
+    c = d["securities"]["columns"]
+    si, ii = c.index("SECID"), c.index("ISSUESIZE")
+    out = {}
+    for row in d["securities"]["data"]:
+        if row[ii]:
+            out[row[si]] = float(row[ii])
+    return out
+
+
+def compute_total_from_candles(engine, days: int = 45) -> int:
+    """Gap-safe fallback для MARKET_CAP_TOTAL: total = Σ(close × ISSUESIZE)/1e9 из
+    дневных свечей, пересчёт скользящего окна `days` — пропущенный день авто-залечивается,
+    как compute_breadth_history. FILL-ONLY: заполняет только дни без реального якоря;
+    строки SMARTLAB/GURUFOCUS/IMOEX_EXTRAPOLATED НЕ перетираем. Уровень калибруется
+    множителем к последнему SmartLab-якорю (наше покрытие ~88%, остальное — хвост
+    неликвида). ISSUESIZE = выпущенные акции (вкл. заблокированные) → методология как SmartLab."""
+    try:
+        issize = fetch_issuesize()
+    except Exception as e:
+        log.warning(f"  compute: ISSUESIZE недоступен ({e}) → пропуск gap-fill")
+        return 0
+    if not issize:
+        return 0
+    # дедуп преф→обычка: компанию считаем один раз (как SmartLab)
+    universe = [s for s in issize if not (s.endswith('P') and s[:-1] in issize)]
+
+    with engine.connect() as conn:
+        rows = conn.execute(text(
+            "SELECT begin_time::date AS d, secid, close FROM candles "
+            "WHERE type='stock' AND interval=24 AND close>0 "
+            "AND begin_time::date >= CURRENT_DATE - :days AND secid = ANY(:u)"
+        ), {"days": days, "u": universe}).fetchall()
+
+    totals: Dict[date, float] = {}
+    for d, secid, close in rows:
+        sz = issize.get(secid)
+        if sz:
+            totals[d] = totals.get(d, 0.0) + float(close) * sz / 1e9
+    if not totals:
+        log.info("  compute: нет дневных свечей в окне → пропуск")
+        return 0
+
+    # калибровочный множитель: последний день с реальным якорём И расчётом
+    with engine.connect() as conn:
+        anchors = conn.execute(text(
+            "SELECT period_date, value FROM macro_data "
+            "WHERE indicator='MARKET_CAP_TOTAL' AND source IN ('SMARTLAB','GURUFOCUS') "
+            "AND period_date >= CURRENT_DATE - :days ORDER BY period_date DESC"
+        ), {"days": days}).fetchall()
+    factor = None
+    for ad, av in anchors:
+        if totals.get(ad, 0) > 0:
+            factor = float(av) / totals[ad]
+            log.info(f"  compute: множитель {factor:.4f} (якорь {ad}: SmartLab {av:,.0f} / расчёт {totals[ad]:,.0f} млрд)")
+            break
+    if factor is None:
+        log.warning("  compute: нет SmartLab-якоря в окне для калибровки → пропуск")
+        return 0
+
+    filled = 0
+    with engine.begin() as conn:
+        for d, t in sorted(totals.items()):
+            res = conn.execute(text("""
+                INSERT INTO macro_data (indicator, period_date, value, source)
+                VALUES ('MARKET_CAP_TOTAL', :pd, :val, 'COMPUTED_CANDLES')
+                ON CONFLICT (indicator, period_date) DO UPDATE SET
+                    value = EXCLUDED.value, source = EXCLUDED.source,
+                    created_at = CURRENT_TIMESTAMP
+                WHERE macro_data.source = 'COMPUTED_CANDLES'
+            """), {"pd": d, "val": round(t * factor)})
+            filled += res.rowcount or 0
+    log.info(f"  compute: gap-fill {filled} расчётных дней (множитель {factor:.4f}; реальные якоря не тронуты)")
+    return filled
+
+
 async def update_market_cap(force: bool = False) -> dict:
-    """Обновить капитализацию (SmartLab)."""
+    """Обновить капитализацию: SmartLab (живой якорь) + gap-safe backfill из свечей."""
     engine = get_engine()
     ensure_table(engine)
 
     count = fetch_from_smartlab(engine)
+    # gap-safe: заполнить пропущенные дни из свечей (fill-only, реальные якоря не трогаем).
+    # Некритично — если упало, SmartLab-снимок уже сохранён.
+    try:
+        compute_total_from_candles(engine)
+    except Exception as e:
+        log.warning(f"  compute_total_from_candles упал (некритично): {e}")
 
     engine.dispose()
     return {'MARKET_CAP_TOTAL': count}
