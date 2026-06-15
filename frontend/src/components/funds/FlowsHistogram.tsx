@@ -445,13 +445,16 @@ export default function FlowsHistogram({
                                     onMouseEnter={() => onSetHoveredAnnotation(m.date)}
                                     onMouseLeave={() => onSetHoveredAnnotation(null)}
                                 >
-                                    {/* Кружок-маркер УК — editorial bordered chip, тема-зависимый.
-                                        Раньше bg был зашит #3a3f4f + буква muted → на тёмной теме
-                                        (дефолт) сливался с фоном = «событий не видно», а в экспорте
-                                        — серый блоб. Теперь рамка + читаемая буква, видно на обеих темах. */}
+                                    {/* Кружок-маркер УК — СОЛИДНОЕ контрастное пятно.
+                                        ПОЧЕМУ так: bg var(--bg-secondary) на тёмной теме = rgb(23,23,26),
+                                        а фон графика = rgb(14,14,16) → разница незаметна, маркер был
+                                        НЕВИДИМ (хотя и в DOM; подтверждено осмотром живой страницы
+                                        2026-06-15). Сверху ещё полупрозрачный SVG-вотермарк. Солидная
+                                        заливка text-primary + accent-кольцо + инверсная буква = пятно,
+                                        видимое сквозь вотермарк на ЛЮБОЙ теме (как сами бары). */}
                                     <div
-                                        className="w-7 h-7 rounded-full flex items-center justify-center cursor-pointer transition-all opacity-80 hover:opacity-100"
-                                        style={{ backgroundColor: 'var(--bg-secondary)', border: '2px solid var(--text-primary)', color: 'var(--text-primary)', fontSize: 11, fontWeight: 700 }}
+                                        className="w-7 h-7 rounded-full flex items-center justify-center cursor-pointer transition-transform hover:scale-110"
+                                        style={{ backgroundColor: 'var(--text-primary)', border: '2px solid var(--accent)', color: 'var(--bg-primary)', fontSize: 11, fontWeight: 800, boxShadow: '0 1px 5px rgba(0,0,0,0.45)' }}
                                     >
                                         {m.logo.letter}
                                     </div>
