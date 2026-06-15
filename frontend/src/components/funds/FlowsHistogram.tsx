@@ -391,8 +391,11 @@ export default function FlowsHistogram({
                         })()}
                     </div>
 
-                {/* Маркеры аномальных событий — зарезервированное место */}
-                <div className="relative" style={{ height: 'var(--chart-annotation-height, 28px)', marginTop: 'var(--chart-annotation-offset, -34px)', right: 0 }}>
+                {/* Маркеры аномальных событий — зарезервированное место.
+                    data-export-ignore: в html2canvas-снимке буква УК (muted на тёмном
+                    #3a3f4f) пропадает → оставался полупрозрачный серый кружок-артефакт.
+                    Прячем весь блок из экспорта, как и навигатор ниже. */}
+                <div data-export-ignore="true" className="relative" style={{ height: 'var(--chart-annotation-height, 28px)', marginTop: 'var(--chart-annotation-offset, -34px)', right: 0 }}>
                 <div style={{ position: 'absolute', left: 'var(--chart-pad-left, 100px)', right: 'var(--chart-pad-right-single, 95px)', top: 0, bottom: 0 }}>
                 {showEvents && flowsData?.flows && flowsData.flows.length > 0 && (() => {
                     const visibleFlows = flowsData.flows.slice(flowNavRange[0], flowNavRange[1] + 1);

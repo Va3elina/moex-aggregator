@@ -404,7 +404,15 @@ export default function MobileChart({
   // Если задан явно — используем; иначе измеренная высота контейнера.
   const height = heightProp ?? measuredHeight;
 
-  const innerW = width - PAD_X * 2;
+  // Правый жёлоб под current-value pill правой оси (как у десктопа): чтобы pill
+  // не садился на КОНЕЦ линии (последняя точка у правого края). Только если правая
+  // ось есть и её pill показывается — иначе плот занимает всю ширину как раньше.
+  // Левый pill оставляем оверлеем: он у левого края, НЕ на точке данных (последнее
+  // значение на правом крае), поэтому на линию обычно не наезжает; жёлоб слева
+  // удвоил бы потерю ширины на узком экране. PILL_GUTTER_R — тюнится одним числом.
+  const hasRightPill = rawSeries.some((s) => s.axis === 'right' && !s.hidePill);
+  const PILL_GUTTER_R = hasRightPill ? 52 : PAD_X;
+  const innerW = width - PAD_X - PILL_GUTTER_R;
   const innerH = height - PAD_TOP - PAD_BOTTOM;
 
   // Pipeline двух стадий:
@@ -849,7 +857,7 @@ export default function MobileChart({
         {hasRight && rightRange && rightTickVals.map((v, i) => (
             <text
               key={`yr-${i}`}
-              x={PAD_X + innerW - 4}
+              x={width - 4}
               y={yAt(v, rightRange) + 3}
               fontSize={axisFs}
               fontWeight={600}
@@ -890,7 +898,7 @@ export default function MobileChart({
           return (
             <PillLabel
               key="pill-right"
-              x={PAD_X + innerW}
+              x={width}
               y={y}
               text={text}
               color={rightSeries[0].color}
