@@ -6,6 +6,7 @@ import { getIntradayAssets } from '../services/api';
 import { useAnalytics } from '../contexts/AnalyticsContext';
 import { useTierAccess } from '../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from './tier/UpgradeModal';
+import { usePersistedState } from '../hooks/usePersistedState';
 
 interface Instrument {
   sec_id: string;
@@ -67,7 +68,9 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
   const [searchQuery, setSearchQuery] = useState('');
   const [instruments, setInstruments] = useState<Instrument[]>([]);
   const [loading, setLoading] = useState(true);
-  const [categoryFilter, setCategoryFilter] = useState('all');
+  // Вкладка-категория запоминается между открытиями (ключ по filterType-контексту),
+  // чтобы поиск не сбрасывался на «Все» каждый раз.
+  const [categoryFilter, setCategoryFilter] = usePersistedState(`frame:search:cat:${filterType ?? 'all'}`, 'all');
   const [sortCol, setSortCol] = useState<SortCol>('volume');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const { track } = useAnalytics();
