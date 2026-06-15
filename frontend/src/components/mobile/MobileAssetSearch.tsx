@@ -19,6 +19,7 @@ import InstrumentIcon from '../InstrumentIcon';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../tier/UpgradeModal';
 import type { Instrument } from '../../types';
+import { usePersistedState } from '../../hooks/usePersistedState';
 
 interface MobileAssetSearchProps {
   open: boolean;
@@ -65,7 +66,8 @@ export default function MobileAssetSearch({
   const [searchQuery, setSearchQuery] = useState('');
   const [instruments, setInstruments] = useState<Instrument[]>([]);
   const [loading, setLoading] = useState(true);
-  const [categoryFilter, setCategoryFilter] = useState('all');
+  // Вкладка-категория запоминается между открытиями (ключ по filterType-контексту).
+  const [categoryFilter, setCategoryFilter] = usePersistedState(`frame:msearch:cat:${filterType ?? 'all'}`, 'all');
   const [favorites, setFavorites] = useState<string[]>(() => {
     const saved = localStorage.getItem(FAVORITES_KEY);
     return saved ? JSON.parse(saved) : ['SR', 'GZ', 'MX'];

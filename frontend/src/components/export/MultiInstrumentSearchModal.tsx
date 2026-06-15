@@ -14,6 +14,7 @@ import { Search, X, Check, Star } from 'lucide-react';
 import { apiFetch } from '../../services/api';
 import InstrumentIcon from '../InstrumentIcon';
 import { formatCompact } from '../../utils/formatNumber';
+import { usePersistedState } from '../../hooks/usePersistedState';
 
 // Тот же storage key что использует обычный InstrumentSearchModal — favorites
 // общие между picker'ами. Юзер избранно SBER на странице — видит в CSV-picker.
@@ -111,7 +112,9 @@ export default function MultiInstrumentSearchModal({
     const [instruments, setInstruments] = useState<Instrument[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
-    const [category, setCategory] = useState('all');
+    // Вкладка-категория запоминается между открытиями (ключ по filterType-контексту);
+    // guard ниже сбросит на 'all', если сохранённая категория недоступна в контексте.
+    const [category, setCategory] = usePersistedState(`frame:multisearch:cat:${filterType ?? 'all'}`, 'all');
     const [selected, setSelected] = useState<Set<string>>(() => new Set(initial));
     const [favorites, setFavorites] = useState<string[]>(() => loadFavorites());
 
