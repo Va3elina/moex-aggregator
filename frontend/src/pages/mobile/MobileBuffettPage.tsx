@@ -43,6 +43,10 @@ export default function MobileBuffettPage() {
   // Последний период, по которому данные успешно загрузились. «Вся история»
   // (all) недоступна Free/Гостю → backend отдаёт 403 → откатываемся сюда.
   const lastGoodPeriod = useRef<BuffettPeriod>('10y');
+  // Reqid-guard против out-of-order-race: быстрый перебор period/viewMode/timeframe
+  // запускает несколько loadData; медленный ранний ответ не должен перезаписать
+  // свежий. Объявляем на уровне компонента — переживает пересоздание loadData.
+  const reqIdRef = useRef(0);
   // Таймфрейм аггрегации: день/неделя/месяц. По умолчанию месяц.
   const [timeframe, setTimeframe] = usePersistedState<'1d' | '1w' | '1m'>('frame:buffett:timeframe', '1m');
   const [capGdpData, setCapGdpData] = useState<BuffettCapGdpResponse | null>(null);
@@ -166,18 +170,25 @@ export default function MobileBuffettPage() {
   // Загрузка данных
   const loadData = useMemo(
     () => async () => {
+      // Захватываем id СИНХРОННО, ДО первого await — конкурентные вызовы
+      // получают разные id, и устаревший ответ опознаётся через isStale().
+      const myId = ++reqIdRef.current;
+      const isStale = () => myId !== reqIdRef.current;
       try {
         setLoading(true);
         if (viewMode === 'cap-gdp') {
           const result = await getBuffettCapGdp(period, false, timeframe);
+          if (isStale()) return;
           setCapGdpData(result);
         } else {
           const result = await getBuffettCapM2(period, false, timeframe);
+          if (isStale()) return;
           setCapM2Data(result);
         }
         // Период успешно загрузился — запоминаем как «безопасный» для отката.
         lastGoodPeriod.current = period;
       } catch (err) {
+        if (isStale()) return;
         console.error('Ошибка Buffett:', err);
         const msg = err instanceof Error ? err.message : String(err);
         // Ограничение глубины истории: «Вся история» (all) недоступна на
@@ -200,7 +211,8 @@ export default function MobileBuffettPage() {
           featureName: viewMode === 'cap-m2' ? 'режим «Кап / M2»' : 'индикатор Баффетта',
         });
       } finally {
-        setLoading(false);
+        // Устаревший ответ НЕ гасит спиннер свежего запроса.
+        if (!isStale()) setLoading(false);
       }
     },
     [viewMode, period, timeframe, showUpgrade],
