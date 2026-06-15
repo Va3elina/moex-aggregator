@@ -95,6 +95,25 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 
+# Предвычисленный argon2-хэш для timing-equalization (вычисляется один раз
+# при импорте). Нужен, чтобы ветка «пользователь не найден» в /auth/login
+# тратила столько же времени, сколько реальная проверка пароля — иначе по
+# латентности ответа можно отличить зарегистрированный email от незнакомого
+# (user-enumeration по таймингу, CWE-204).
+_DUMMY_HASH = pwd_context.hash("timing_equalization_dummy_password")
+
+
+def dummy_verify() -> None:
+    """
+    Холостая проверка пароля против фиктивного хэша.
+
+    Вызывать в ветках login, где реального хэша нет (несуществующий email),
+    чтобы выровнять время ответа с веткой, где argon2-verify реально гоняется.
+    Результат намеренно игнорируется.
+    """
+    pwd_context.verify("timing_equalization_probe", _DUMMY_HASH)
+
+
 def generate_secure_token(length: int = 32) -> str:
     """
     Генерирует криптографически безопасный токен.

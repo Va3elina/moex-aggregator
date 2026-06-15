@@ -2,6 +2,7 @@
 API endpoint для общей статистики открытого интереса
 С валидацией входных данных
 """
+import os
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -238,6 +239,12 @@ async def debug_oi(
     db: Session = Depends(get_db)
 ):
     """Отладочный endpoint для проверки данных OI"""
+
+    # Debug-эндпоинт доступен ТОЛЬКО когда явно включены API-docs (локальная
+    # разработка). В проде ENABLE_API_DOCS не задан → 404, чтобы не светить
+    # debug-маршрут наружу как recon-сигнал (OWASP API9 Improper Inventory).
+    if os.getenv("ENABLE_API_DOCS", "").strip().lower() not in ("1", "true", "yes", "on"):
+        raise HTTPException(status_code=404, detail="Not found")
 
     # Валидация sectype
     try:

@@ -20,13 +20,15 @@ from starlette.types import ASGIApp
 from starlette.exceptions import HTTPException as StarletteHTTPException
 import ipaddress
 
-# Docker internal networks — только от этих прокси доверяем X-Forwarded-For
+# Доверяем X-Forwarded-For ТОЛЬКО от reverse-proxy внутри docker-сети.
+# Сужено до docker-bridge диапазона (172.16/12) + loopback: этот стек НЕ
+# использует 10.0.0.0/8 и 192.168.0.0/16, держать их в доверенных — лишний
+# простор для IP-спуфинга в логах/rate-limit, если бы что-то из этих диапазонов
+# смогло достучаться к :8000 напрямую (CWE-348).
 _TRUSTED_PROXY_NETS = [
     ipaddress.ip_network("127.0.0.0/8"),
     ipaddress.ip_network("::1/128"),
     ipaddress.ip_network("172.16.0.0/12"),
-    ipaddress.ip_network("10.0.0.0/8"),
-    ipaddress.ip_network("192.168.0.0/16"),
 ]
 
 

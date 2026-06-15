@@ -51,6 +51,7 @@ from api.services.email import send_verification_email
 from api.security import (
     hash_password,
     verify_password,
+    dummy_verify,
     create_token_pair,
     verify_token,
     check_account_locked,
@@ -354,6 +355,10 @@ async def login(
     user = get_user_by_email(db, data.email)
 
     if not user:
+        # Холостая argon2-проверка: выравниваем время ответа с веткой реальной
+        # проверки пароля, иначе по латентности можно отличить зарегистрированный
+        # email от незнакомого (user-enumeration по таймингу, CWE-204).
+        dummy_verify()
         log_failed_login(data.email, ip, user_agent, 1, "user_not_found")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

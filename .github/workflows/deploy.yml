@@ -27,6 +27,10 @@ concurrency:
   group: deploy-prod
   cancel-in-progress: false
 
+# Деплой работает через SSH — токен репозитория ему не нужен для записи.
+permissions:
+  contents: read
+
 jobs:
   deploy:
     # Только если build-check прошёл (или ручной запуск).
@@ -34,7 +38,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: SSH deploy
-        uses: appleboy/ssh-action@v1.2.0
+        # Пин по commit-SHA (не плавающий тег): если тег перепереставят на
+        # вредоносный коммит, он получил бы PROD_SSH_KEY (root на проде).
+        uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17 # v1.2.0
         with:
           host: 103.88.243.232
           username: root

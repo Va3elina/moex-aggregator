@@ -210,6 +210,44 @@ _ip_attempts: dict[str, list[datetime]] = {}
 
 def check_ip_rate_limit(ip_address: str, max_attempts: int = 20, window_minutes: int = 5) -> bool:
     """
+    Rate limit по IP для auth-путей. Счётчик в Redis (общий для всех
+    gunicorn-воркеров) — fixed-window INCR+EXPIRE, тот же паттерн, что в
+    middleware.RateLimitMiddleware. Прежний in-memory dict при workers=3 давал
+    ~3× реального лимита и сбрасывался на каждом деплое/рестарте воркера.
+
+    fail-open: при недоступности Redis падаем на in-memory fallback — моргнувший
+    Redis не должен ронять все логины (account-lockout остаётся жёстким backstop).
+
+    Returns: True если лимит НЕ превышен (можно продолжать), False если превышен.
+    """
+    window_seconds = window_minutes * 60
+    try:
+        from api.cache import _get_redis
+        r = _get_redis()
+        rkey = f"auth_iprl:{ip_address}:{max_attempts}:{window_minutes}"
+        count = r.incr(rkey)
+        if count == 1:
+            r.expire(rkey, window_seconds)
+        if count > max_attempts:
+            logger.warning(
+                f"IP rate limit exceeded: {ip_address}",
+                extra={"extra_data": {
+                    "event": "ip_rate_limit",
+                    "ip": ip_address,
+                    "attempts": count,
+                    "window_minutes": window_minutes,
+                }},
+            )
+            return False
+        return True
+    except Exception as e:
+        logger.warning(f"check_ip_rate_limit: Redis недоступен, fallback in-memory: {e}")
+        return _check_ip_rate_limit_inmemory(ip_address, max_attempts, window_minutes)
+
+
+def _check_ip_rate_limit_inmemory(ip_address: str, max_attempts: int = 20, window_minutes: int = 5) -> bool:
+    """
+    In-memory fallback для check_ip_rate_limit (per-worker, НЕ cross-worker).
     Проверяет rate limit по IP (дополнительно к middleware).
 
     Защищает от:
