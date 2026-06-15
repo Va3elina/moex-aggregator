@@ -9,7 +9,9 @@ description: Безопасная работа с production-сервером Ф
 
 > # ⚠️ ДЕПЛОЙ ТЕПЕРЬ АВТО-CI (с 2026-06-09)
 >
-> **Деплой = `git push` в `main`. НЕ деплоить руками по SSH — CI делает сам.**
+> **Деплой = попадание в `main` → CI. НЕ деплоить руками по SSH — CI делает сам.**
+> Дефолт — **ветка → PR → мёрж** (мёрж = тот push, что триггерит CI; см.
+> `CONTRIBUTING.md`). Прямой `git push origin main` — solo-исключение.
 >
 > - `git push origin main` → GitHub Actions **build-check** → (если зелёный) → **deploy-prod** (SSH на прод сам, `git reset --hard origin/main` + rebuild + recreate).
 > - Сериализация через `concurrency: deploy-prod` — два пуша идут по очереди, не сталкиваются. Битый билд **НЕ** выкатывается (deploy ждёт зелёный build-check).
