@@ -300,6 +300,48 @@ export default function FlowsHistogram({
                                 />
                             );
                         })()}
+                        {/* Маркеры событий — ВНУТРИ SVG. Paint order кладёт их поверх
+                            баров, без войны z-index и без нестабильного HTML-оверлея
+                            (тот застревал под SVG-вотермарком/легендой и был тёмный-на-
+                            тёмном — подтверждено осмотром живой страницы 2026-06-15).
+                            cx в % (как бары), cy/r в px (SVG без viewBox → без искажений).
+                            fill text-primary + accent-кольцо + инверсная буква = контраст
+                            на любой теме. */}
+                        {showEvents && flowsData?.flows && flowsData.flows.length > 0 && (() => {
+                            const visFlows = flowsData.flows.slice(flowNavRange[0], flowNavRange[1] + 1);
+                            const bW = 100 / (visFlows.length || 1);
+                            const anns = FUND_ANNOTATIONS
+                                .filter(a => a.category === category)
+                                .filter(a => {
+                                    if (!hiddenTickers || !allTickers) return true;
+                                    if (!allTickers.has(a.ticker)) return true;
+                                    return !hiddenTickers.has(a.ticker);
+                                })
+                                .map(a => {
+                                    const annTs = new Date(a.date).getTime();
+                                    let bi = -1, bd = Infinity;
+                                    for (let i = 0; i < visFlows.length; i++) {
+                                        const dist = Math.abs(new Date(visFlows[i].period_end).getTime() - annTs);
+                                        if (dist < bd && dist <= 7 * 86400000) { bd = dist; bi = i; }
+                                    }
+                                    const logo = UK_LOGOS[a.ukId];
+                                    if (bi === -1 || !logo) return null;
+                                    return { ann: a, logo, xPct: bi * bW + bW / 2 };
+                                })
+                                .filter(Boolean) as { ann: typeof FUND_ANNOTATIONS[0]; logo: typeof UK_LOGOS[string]; xPct: number }[];
+                            return anns.map((m, i) => (
+                                <g key={`ann-${i}`} style={{ cursor: 'pointer' }}
+                                    onMouseEnter={() => onSetHoveredAnnotation(m.ann.date)}
+                                    onMouseLeave={() => onSetHoveredAnnotation(null)}>
+                                    <title>{`${m.ann.type === 'merger' ? 'Слияние' : m.ann.type === 'liquidation' ? 'Ликвидация' : 'Реорганизация'} · ${new Date(m.ann.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' })}\n${m.ann.description}`}</title>
+                                    <circle cx={`${m.xPct}%`} cy={13} r={10}
+                                        fill="var(--text-primary)" stroke="var(--accent)" strokeWidth={2} />
+                                    <text x={`${m.xPct}%`} y={13} textAnchor="middle" dominantBaseline="central"
+                                        fill="var(--bg-primary)" fontSize={11} fontWeight={700}
+                                        style={{ pointerEvents: 'none' }}>{m.logo.letter}</text>
+                                </g>
+                            ));
+                        })()}
                     </svg>
                     </div>
 
@@ -397,7 +439,10 @@ export default function FlowsHistogram({
                     Прячем весь блок из экспорта, как и навигатор ниже. */}
                 <div data-export-ignore="true" className="relative" style={{ height: 'var(--chart-annotation-height, 28px)', marginTop: 'var(--chart-annotation-offset, -34px)', right: 0 }}>
                 <div style={{ position: 'absolute', left: 'var(--chart-pad-left, 100px)', right: 'var(--chart-pad-right-single, 95px)', top: 0, bottom: 0 }}>
-                {showEvents && flowsData?.flows && flowsData.flows.length > 0 && (() => {
+                {/* СТАРЫЙ HTML-оверлей маркеров ОТКЛЮЧЁН (false &&) — заменён SVG-маркерами
+                    внутри графика (см. блок в <svg> выше). HTML-вариант застревал под
+                    вотермарком и уезжал к легенде. Тело оставлено для истории/диффа. */}
+                {false && showEvents && flowsData?.flows && flowsData.flows.length > 0 && (() => {
                     const visibleFlows = flowsData.flows.slice(flowNavRange[0], flowNavRange[1] + 1);
                     const barW = 100 / visibleFlows.length; // в процентах — как пунктирная линия
 
