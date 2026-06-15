@@ -68,7 +68,7 @@ propcache==0.4.1
 
 pydantic==2.12.5
 
-pydantic_core==2.41.5
+pydantic_core==2.47.0
 
 python-dateutil==2.9.0.post0
 
