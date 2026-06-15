@@ -433,99 +433,10 @@ export default function FlowsHistogram({
                         })()}
                     </div>
 
-                {/* Маркеры аномальных событий — зарезервированное место.
-                    data-export-ignore: в html2canvas-снимке буква УК (muted на тёмном
-                    #3a3f4f) пропадает → оставался полупрозрачный серый кружок-артефакт.
-                    Прячем весь блок из экспорта, как и навигатор ниже. */}
-                <div data-export-ignore="true" className="relative" style={{ height: 'var(--chart-annotation-height, 28px)', marginTop: 'var(--chart-annotation-offset, -34px)', right: 0 }}>
-                <div style={{ position: 'absolute', left: 'var(--chart-pad-left, 100px)', right: 'var(--chart-pad-right-single, 95px)', top: 0, bottom: 0 }}>
-                {/* СТАРЫЙ HTML-оверлей маркеров ОТКЛЮЧЁН (false &&) — заменён SVG-маркерами
-                    внутри графика (см. блок в <svg> выше). HTML-вариант застревал под
-                    вотермарком и уезжал к легенде. Тело оставлено для истории/диффа. */}
-                {false && showEvents && flowsData?.flows && flowsData.flows.length > 0 && (() => {
-                    const visibleFlows = flowsData.flows.slice(flowNavRange[0], flowNavRange[1] + 1);
-                    const barW = 100 / visibleFlows.length; // в процентах — как пунктирная линия
-
-                    // Находим аннотации — нечёткое совпадение дат (ближайший бар к дате аннотации)
-                    const markers = FUND_ANNOTATIONS
-                        .filter(a => a.category === category)
-                        // Привязка к чекбоксам: если тикер фонда в нашем списке
-                        // и он скрыт — скрываем событие. Если тикер не из нашего
-                        // списка (внешний фонд) — показываем всегда.
-                        .filter(a => {
-                            if (!hiddenTickers || !allTickers) return true;
-                            if (!allTickers.has(a.ticker)) return true; // не наш фонд → показываем
-                            return !hiddenTickers.has(a.ticker); // наш → проверяем чекбокс
-                        })
-                        .map(annotation => {
-                            const annDate = new Date(annotation.date).getTime();
-                            // Ищем ближайший бар по дате (не строгое совпадение)
-                            let bestIdx = -1;
-                            let bestDist = Infinity;
-                            for (let i = 0; i < visibleFlows.length; i++) {
-                                const barDate = new Date(visibleFlows[i].period_end).getTime();
-                                const dist = Math.abs(barDate - annDate);
-                                // Допуск: до 7 дней (для недельного ТФ)
-                                if (dist < bestDist && dist <= 7 * 86400000) {
-                                    bestDist = dist;
-                                    bestIdx = i;
-                                }
-                            }
-                            if (bestIdx === -1) return null;
-                            const logo = UK_LOGOS[annotation.ukId];
-                            if (!logo) return null;
-                            const xPct = bestIdx * barW + barW / 2; // % — совпадает с пунктиром
-                            return { ...annotation, idx: bestIdx, logo, xPct };
-                        })
-                        .filter(Boolean) as (typeof FUND_ANNOTATIONS[0] & { idx: number; logo: typeof UK_LOGOS[string]; xPct: number })[];
-
-                    if (!markers.length) return null;
-
-                    return (<>
-                            {markers.map((m, i) => (
-                                <div
-                                    key={i}
-                                    className="absolute -translate-x-1/2 group"
-                                    style={{ left: `${m.xPct}%` }}
-                                    onMouseEnter={() => onSetHoveredAnnotation(m.date)}
-                                    onMouseLeave={() => onSetHoveredAnnotation(null)}
-                                >
-                                    {/* Кружок-маркер УК — СОЛИДНОЕ контрастное пятно.
-                                        ПОЧЕМУ так: bg var(--bg-secondary) на тёмной теме = rgb(23,23,26),
-                                        а фон графика = rgb(14,14,16) → разница незаметна, маркер был
-                                        НЕВИДИМ (хотя и в DOM; подтверждено осмотром живой страницы
-                                        2026-06-15). Сверху ещё полупрозрачный SVG-вотермарк. Солидная
-                                        заливка text-primary + accent-кольцо + инверсная буква = пятно,
-                                        видимое сквозь вотермарк на ЛЮБОЙ теме (как сами бары). */}
-                                    <div
-                                        className="w-7 h-7 rounded-full flex items-center justify-center cursor-pointer transition-transform hover:scale-110"
-                                        style={{ backgroundColor: 'var(--text-primary)', border: '2px solid var(--accent)', color: 'var(--bg-primary)', fontSize: 11, fontWeight: 800, boxShadow: '0 1px 5px rgba(0,0,0,0.45)' }}
-                                    >
-                                        {m.logo.letter}
-                                    </div>
-
-                                    {/* Тултип при hover */}
-                                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block z-50 pointer-events-none">
-                                        <div className="rounded-lg border border-theme shadow-md whitespace-nowrap max-w-[320px]" style={{ background: 'var(--bg-primary)', padding: 'var(--sp-2) var(--sp-3)' }}>
-                                            <div className="flex items-center gap-2 mb-0.5">
-                                                <span className="font-medium" style={{ color: CHART_COLORS.muted, fontSize: 'var(--fs-2xs)' }}>
-                                                    {m.type === 'merger' ? 'Слияние' : m.type === 'liquidation' ? 'Ликвидация' : 'Реорганизация'}
-                                                </span>
-                                                <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)' }}>
-                                                    {new Date(m.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' })}
-                                                </span>
-                                            </div>
-                                            <p className="text-theme-primary whitespace-normal leading-tight" style={{ fontSize: 'var(--fs-xs)' }}>
-                                                {m.description}
-                                            </p>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                    </>);
-                })()}
-                </div>
-                </div>
+                {/* Маркеры событий теперь рисуются ВНУТРИ <svg> графика выше
+                    (SVG circle+text+title). Прежний HTML-оверлей удалён: он застревал
+                    под SVG-вотермарком, уезжал по позиции (то X-даты, то легенда) и был
+                    тёмный-на-тёмном. Подтверждено осмотром живой страницы 2026-06-15. */}
                 </div>
 
                 {/* Navigator — ОДИН и тот же ChartNavigator что в СЧА/OI/всех SimpleChart.
