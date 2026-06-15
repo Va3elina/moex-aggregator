@@ -514,7 +514,10 @@ export default function OpenInterestPage() {
               label: PERIOD_LABELS[p],
               // Замочек только за тариф/гостевой гейт. Технически недоступный на
               // текущем ТФ период НЕ локаем — он кликабелен и сам переключит ТФ.
-              locked: !isPeriodAllowed(p, isAuthenticated),
+              // Гейт = глобальный guest (isPeriodAllowed) ИЛИ пер-индикаторный лимит
+              // OI (canUsePeriod = бэковый max_history_days). Раньше был только
+              // глобальный → период за пер-индикаторным лимитом кликабелен → 403.
+              locked: !isPeriodAllowed(p, isAuthenticated) || !(oiAccess.isLoading || oiAccess.canUsePeriod(p)),
             }))}
             value={period}
             onChange={(p) => {

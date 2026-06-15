@@ -132,6 +132,20 @@ export default function FundsMoneyPage() {
             setFlowTimeframeRaw('1w');
         }
     }, [fundsAccess.isLoading, fundsAccess, flowTimeframe]);
+
+    // Tier-коррекция периода: сохранённый/дефолтный период мог быть заперт тарифом
+    // (гость: дефолт '1y' через GUEST_MAX_PERIOD, а funds_money лимит 180д → 403 на
+    // загрузке). Опускаем до максимально доступного. Только в AUM: в flows период
+    // подчиняется FLOW_MIN_PERIODS (≥ минимума ТФ), а для гостя flows тариф-недоступен
+    // целиком → там 403 ловит handleTierError в loadFlowsData (upgrade-модалка).
+    useEffect(() => {
+        if (fundsAccess.isLoading || viewMode !== 'aum') return;
+        if (!fundsAccess.canUsePeriod(period)) {
+            const allowed = AUM_PERIODS.filter(p => fundsAccess.canUsePeriod(p));
+            if (allowed.length) setPeriod(allowed[allowed.length - 1]);
+        }
+    }, [fundsAccess.isLoading, fundsAccess, viewMode, period, setPeriod]);
+
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [data, setData] = useState<FundsChartResponse | null>(null);
@@ -266,13 +280,23 @@ export default function FundsMoneyPage() {
                 const result = await getFundsFlows(category, flowTimeframe, period as FundPeriod, visibleFundIds);
                 setFlowsData(result);
             } catch (err) {
-                console.error('Flows error:', err);
+                // Tier-ошибка (403: период/таймфрейм за лимитом гостя) → upgrade-модалка,
+                // как у loadData. Раньше тут был тихий console.error → притоки-оттоки
+                // молча ломались для гостя («весь в ошибках, нельзя смотреть»).
+                if (!handleTierError(err, {
+                    showUpgrade,
+                    indicator: 'funds_money',
+                    featureName: 'притоки-оттоки фондов',
+                    onTier: () => setFlowsData({ category, timeframe: flowTimeframe, period, flows: [] }),
+                })) {
+                    console.error('Flows error:', err);
+                }
             } finally {
                 setLoading(false);
             }
         }
         loadFlowsData();
-    }, [viewMode, category, flowTimeframe, period, visibleFundIds, noFundsSelected]);
+    }, [viewMode, category, flowTimeframe, period, visibleFundIds, noFundsSelected, showUpgrade]);
 
     // Агрегация данных на основе видимых фондов
     const aggregatedData = useMemo(() => {
@@ -521,7 +545,11 @@ export default function FundsMoneyPage() {
                         .map((p) => ({
                             key: p,
                             label: PERIOD_LABELS[p],
-                            locked: !isPeriodAllowed(p, isAuthenticated),
+                            // tier-замок по ПЕР-ИНДИКАТОРНОМУ лимиту funds_money
+                            // (canUsePeriod = бэковый max_history_days, 180д для гостя),
+                            // а НЕ по глобальному GUEST_MAX_PERIOD='1y'. Иначе «1Г» для
+                            // гостя не запиралась (фронт думал 1y ок) → клик → 403.
+                            locked: !fundsAccess.isLoading && !fundsAccess.canUsePeriod(p),
                         }))}
                     value={period}
                     onChange={(p) => {

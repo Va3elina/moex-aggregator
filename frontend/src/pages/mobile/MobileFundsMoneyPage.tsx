@@ -260,12 +260,16 @@ export default function MobileFundsMoneyPage() {
         const result = await getFundsFlows(category, flowTimeframe, period, visibleFundIds);
         setFlowsData(result);
       } catch (err) {
-        console.error('Flows refetch error:', err);
+        // Tier-ошибка (403) → upgrade-модалка, как в primary loadData. Раньше
+        // глоталось молча.
+        if (!handleTierError(err, { showUpgrade, indicator: 'funds_money', featureName: 'притоки-оттоки фондов' })) {
+          console.error('Flows refetch error:', err);
+        }
       }
     })();
     // Зависимость от visibleFundIds — единственный триггер этого effect'а
     // в режиме flows. В режиме AUM этот effect возвращается early.
-  }, [visibleFundIds, viewMode, category, flowTimeframe, period]);
+  }, [visibleFundIds, viewMode, category, flowTimeframe, period, showUpgrade]);
 
   // Series: суммарная СЧА (млрд ₽) + индекс.
   //

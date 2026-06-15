@@ -107,7 +107,9 @@ export default function StrengthControls({
                 options={(Object.keys(PERIOD_LABELS) as Period[]).map((p) => ({
                     key: p,
                     label: PERIOD_LABELS[p],
-                    locked: !isPeriodAllowed(p, isAuthenticated),
+                    // tier-замок по ПЕР-ИНДИКАТОРНОМУ canUsePeriod (бэковый
+                    // max_history_days strength), а не глобальному GUEST_MAX='1y'.
+                    locked: strengthAccess.isLoading ? false : !strengthAccess.canUsePeriod(p),
                 }))}
                 value={period}
                 onChange={onPeriodChange}

@@ -219,7 +219,10 @@ export default function BuffettPage() {
                     options={(Object.keys(PERIOD_LABELS) as BuffettPeriod[]).map((p) => ({
                         key: p,
                         label: PERIOD_LABELS[p] ?? p,
-                        locked: !isPeriodAllowed(p, isAuthenticated),
+                        // tier-замок по ПЕР-ИНДИКАТОРНОМУ canUsePeriod (бэковый
+                        // max_history_days buffett), а не глобальному GUEST_MAX='1y'
+                        // — иначе период за лимитом кликабелен → 403.
+                        locked: !buffAccess.isLoading && !buffAccess.canUsePeriod(p),
                     }))}
                     value={period}
                     onChange={setPeriod}
