@@ -37,7 +37,9 @@ _redis: redis.Redis | None = None
 def _get_redis() -> redis.Redis:
     global _redis
     if _redis is None:
-        _redis = redis.from_url(REDIS_URL, decode_responses=True, socket_connect_timeout=2)
+        # socket_timeout=2: ограничивает не только connect, но и чтение/команду —
+        # «подвисший» (не refused) Redis не блокирует воркер дольше 2с до fail-open.
+        _redis = redis.from_url(REDIS_URL, decode_responses=True, socket_connect_timeout=2, socket_timeout=2)
     return _redis
 
 
