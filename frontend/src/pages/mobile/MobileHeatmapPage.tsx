@@ -80,6 +80,9 @@ type GroupBy = 'sector' | 'none';
 
 export default function MobileHeatmapPage() {
   const containerRef = useRef<HTMLDivElement>(null);
+  // Reqid-guard для load: устаревший (не последний) ответ не пишет state.
+  // Объявлен на уровне компонента — переживает пересоздание load (useMemo по deps).
+  const reqIdRef = useRef(0);
   const [sectors, setSectors] = useState<HeatmapSector[]>([]);
   const [loading, setLoading] = useState(true);
   const [containerSize, setContainerSize] = useState({ w: 360, h: 500 });
@@ -235,14 +238,20 @@ export default function MobileHeatmapPage() {
   // Загрузка данных — учитывает universe (IMOEX vs все) + groupBy
   const load = useMemo(
     () => async () => {
+      // Захватываем id СИНХРОННО, до первого await — конкурентные вызовы
+      // (быстрый перебор universe/groupBy + SSE-reload) получают разные id.
+      const myId = ++reqIdRef.current;
+      const isStale = () => myId !== reqIdRef.current;
       try {
         setLoading(true);
         const data =
           universe === 'imoex'
             ? await getHeatmapImoex('change_1d', groupBy)
             : await getHeatmapData('market_cap', 'change_1d', groupBy);
+        if (isStale()) return;
         setSectors(data.sectors || []);
       } catch (err) {
+        if (isStale()) return;
         console.error('Ошибка загрузки heatmap:', err);
         handleTierError(err, {
           showUpgrade,
@@ -250,7 +259,8 @@ export default function MobileHeatmapPage() {
           featureName: 'режим «Все акции»',
         });
       } finally {
-        setLoading(false);
+        // Устаревший ответ НЕ гасит спиннер свежего reload'а.
+        if (!isStale()) setLoading(false);
       }
     },
     [universe, groupBy, showUpgrade],

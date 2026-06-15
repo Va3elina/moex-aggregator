@@ -68,6 +68,8 @@ export default function MobileStrengthPage() {
   const [current, setCurrent] = useState<BreadthCurrentResponse | null>(null);
   const [history, setHistory] = useState<BreadthHistoryResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  // reqId stale-guard: переживает пересоздание loadData (useMemo по deps).
+  const reqIdRef = useRef(0);
   const [timeSheetOpen, setTimeSheetOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sectorsSheetOpen, setSectorsSheetOpen] = useState(false);
@@ -218,15 +220,21 @@ export default function MobileStrengthPage() {
 
   const loadData = useMemo(
     () => async () => {
+      // Захватываем id СИНХРОННО, до первого await — конкурентные вызовы
+      // (быстрый перебор EMA/вселенной/валюты) получают разные id.
+      const myId = ++reqIdRef.current;
+      const isStale = () => myId !== reqIdRef.current;
       try {
         setLoading(true);
         const [cur, hist] = await Promise.all([
           getBreadthCurrent(emaPeriod, universe),
           getBreadthHistory(emaPeriod, PERIOD_DAYS[period], universe),
         ]);
+        if (isStale()) return;
         setCurrent(cur);
         setHistory(hist);
       } catch (err) {
+        if (isStale()) return;
         console.error('Ошибка strength:', err);
         handleTierError(err, {
           showUpgrade,
@@ -235,7 +243,8 @@ export default function MobileStrengthPage() {
             currency === 'usd' ? 'долларовый режим' : 'индикатор «Сила рынка»',
         });
       } finally {
-        setLoading(false);
+        // Устаревший ответ не гасит спиннер свежего запроса.
+        if (!isStale()) setLoading(false);
       }
     },
     [emaPeriod, period, universe, universeBase, currency, showUpgrade],

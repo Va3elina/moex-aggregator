@@ -176,17 +176,26 @@ export default function MobileCbrFlowsPage() {
   ];
 
   // Загрузка
+  // Stale-guard: reqIdRef на УРОВНЕ компонента — переживает пересоздание loadData
+  // по [type]. При быстром переключении типа (или дубле onRefresh + эффект)
+  // медленный ранний ответ не должен перезаписать свежий. myId фиксирует
+  // «последний» запрос; устаревший ответ не пишет state и не гасит спиннер свежего.
+  const reqIdRef = useRef(0);
   const loadData = useMemo(
     () => async () => {
+      const myId = ++reqIdRef.current;
+      const isStale = () => myId !== reqIdRef.current;
       try {
         setLoading(true);
         setError(null);
         const result = await getCbrFlows(type);
+        if (isStale()) return;
         setData(result);
       } catch (err) {
+        if (isStale()) return;
         setError(err instanceof Error ? err.message : 'Ошибка загрузки');
       } finally {
-        setLoading(false);
+        if (!isStale()) setLoading(false);
       }
     },
     [type],

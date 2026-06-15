@@ -12,7 +12,7 @@
  *   - Один график: цена + net OI
  *   - Экспирации, толкование тура — Phase 4
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { BarChart3 } from 'lucide-react';
 import MobileLayout from '../../components/mobile/MobileLayout';
 import MobilePageHeader from '../../components/mobile/MobilePageHeader';
@@ -103,6 +103,10 @@ export default function MobileOpenInterestPage() {
   const [displayMode, setDisplayMode] = usePersistedState<DisplayMode>('frame:oi:mobileDisplayMode', 'positions');
   const [data, setData] = useState<ChartResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  // Stale-guard против out-of-order-гонки: при быстром переборе актива/интервала
+  // медленный ранний ответ не должен перезаписать свежий. reqIdRef на уровне
+  // компонента — переживает пересоздание loadData (useMemo по deps).
+  const reqIdRef = useRef(0);
 
   // Onboarding tour — shared storage key с десктопом (juser видит онбординг
   // один раз на любом устройстве). Контент адаптирован под мобильный layout.
@@ -273,6 +277,10 @@ export default function MobileOpenInterestPage() {
 
   // Загрузка chart data
   const loadData = useMemo(() => async () => {
+    // Захватываем id СИНХРОННО, до первого await — конкурентные вызовы
+    // получают разные id; устаревший (не последний) ответ не пишет state.
+    const myId = ++reqIdRef.current;
+    const isStale = () => myId !== reqIdRef.current;
     try {
       setLoading(true);
       const result = await getChartData(
@@ -284,6 +292,7 @@ export default function MobileOpenInterestPage() {
         true, // show_oi
         period,
       );
+      if (isStale()) return;
       setData(result);
       // Новый актив не поддерживает текущий интервал (ISS-only → только дневка) —
       // сбрасываем на максимальный доступный (как на десктопе).
@@ -291,6 +300,7 @@ export default function MobileOpenInterestPage() {
         setIntervalValue(Math.max(...result.available_intervals));
       }
     } catch (err) {
+      if (isStale()) return;
       // Tier 403 → upgrade prompt вместо silent console error
       if (!handleTierError(err, {
         showUpgrade,
@@ -301,7 +311,8 @@ export default function MobileOpenInterestPage() {
         console.error('Ошибка загрузки OI:', err);
       }
     } finally {
-      setLoading(false);
+      // Устаревший ответ не гасит спиннер свежего запроса.
+      if (!isStale()) setLoading(false);
     }
   }, [selectedInstrument, intervalValue, clgroup, period, showUpgrade]);
 

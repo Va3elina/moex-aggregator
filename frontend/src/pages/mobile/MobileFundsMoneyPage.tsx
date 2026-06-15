@@ -218,8 +218,22 @@ export default function MobileFundsMoneyPage() {
   const visibleFundIdsRef = useRef(visibleFundIds);
   useEffect(() => { visibleFundIdsRef.current = visibleFundIds; }, [visibleFundIds]);
 
+  // Stale-guard от out-of-order гонки при быстром переключении категории/периода/
+  // режима. ДВА счётчика (как desktop FundsMoneyPage):
+  //  • dataReqIdRef — для setData (единственный писатель — loadData);
+  //  • flowsReqIdRef — для setFlowsData (ДВА писателя: loadData в flows-режиме И
+  //    flows-refetch effect ниже) → общий, чтобы они сериализовались между собой.
+  // Разделять обязательно: один общий счётчик дал бы регрессию — bump flows-эффекта
+  // помечал бы свежий setData loadData как stale → data (список фондов/AUM) не
+  // обновлялся бы при смене категории (оба эффекта срабатывают на одну смену).
+  const dataReqIdRef = useRef(0);
+  const flowsReqIdRef = useRef(0);
   const loadData = useMemo(
     () => async () => {
+      const dataId = ++dataReqIdRef.current;
+      const flowsId = ++flowsReqIdRef.current;
+      const dataStale = () => dataId !== dataReqIdRef.current;
+      const flowsStale = () => flowsId !== flowsReqIdRef.current;
       try {
         setLoading(true);
         // data (FundsChartResponse) грузим ВСЕГДА — он несёт список фондов
@@ -227,13 +241,16 @@ export default function MobileFundsMoneyPage() {
         // в funds-sheet. Раньше data грузился только в AUM-режиме → в flows
         // кнопка управления фондами оставалась скрытой пока не переключишься.
         const chartResult = await getFundsChartData(category, period);
+        if (dataStale()) return;
         setData(chartResult);
         // flowsData — только в flows-режиме (для гистограммы притоков-оттоков).
         if (viewMode === 'flows') {
           const flowsResult = await getFundsFlows(category, flowTimeframe, period, visibleFundIdsRef.current);
+          if (flowsStale()) return;
           setFlowsData(flowsResult);
         }
       } catch (err) {
+        if (dataStale()) return;
         console.error('Ошибка funds:', err);
         handleTierError(err, {
           showUpgrade,
@@ -241,7 +258,7 @@ export default function MobileFundsMoneyPage() {
           featureName: flowTimeframe === '1d' ? 'дневной таймфрейм' : 'индикатор «Деньги в фондах»',
         });
       } finally {
-        setLoading(false);
+        if (!dataStale()) setLoading(false);
       }
     },
     [viewMode, category, period, flowTimeframe, showUpgrade],
@@ -255,11 +272,18 @@ export default function MobileFundsMoneyPage() {
   // Не зависит от loadData identity → не триггерит мигание в AUM режиме.
   useEffect(() => {
     if (viewMode !== 'flows') return;
+    // flowsReqIdRef ОБЩИЙ с loadData: оба пишут flowsData → сериализуем, иначе
+    // медленный ранний запрос (старый visibleFundIds/категория) мог перезаписать
+    // свежий результат. data НЕ трогаем — у неё свой dataReqIdRef.
+    const reqId = ++flowsReqIdRef.current;
+    const isStale = () => reqId !== flowsReqIdRef.current;
     void (async () => {
       try {
         const result = await getFundsFlows(category, flowTimeframe, period, visibleFundIds);
+        if (isStale()) return;
         setFlowsData(result);
       } catch (err) {
+        if (isStale()) return;
         // Tier-ошибка (403) → upgrade-модалка, как в primary loadData. Раньше
         // глоталось молча.
         if (!handleTierError(err, { showUpgrade, indicator: 'funds_money', featureName: 'притоки-оттоки фондов' })) {

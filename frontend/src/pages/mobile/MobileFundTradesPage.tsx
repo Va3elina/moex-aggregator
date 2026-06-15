@@ -16,7 +16,7 @@
  * FundPicker, UkMultiSelect, CompanyFlowsTab, usePersistedState с ТЕМИ ЖЕ
  * ключами frame:fundtrades:* (синхрон с десктопом), useGrowReveal, onboarding.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Wallet,
@@ -301,8 +301,14 @@ export default function MobileFundTradesPage() {
 
   const [funds, setFunds] = useState<FundWithHistory[]>([]);
   const [movers, setMovers] = useState<FundTradesMovers | null>(null);
-  const [loading, setLoading] = useState(false);
+  // Раздельные спиннеры: funds-список и movers-агрегаты грузятся независимыми
+  // эффектами — общий loading давал ложный спиннер/гашение чужого запроса.
+  const [loadingFunds, setLoadingFunds] = useState(false);
+  const [loadingMovers, setLoadingMovers] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // reqId stale-guard на каждый загрузчик: out-of-order-ответ не пишет state.
+  const fundsReqRef = useRef(0);
+  const moversReqRef = useRef(0);
 
   // Движения: месяц снапшота + конкретные фонды + метрика.
   const [asOf, setAsOf] = useState<string | undefined>(undefined);
@@ -319,11 +325,13 @@ export default function MobileFundTradesPage() {
   // ── Load funds list (один раз, при Pro-доступе) ──
   useEffect(() => {
     if (!common.fund_trades_access) return;
-    setLoading(true);
+    const reqId = ++fundsReqRef.current;
+    const isStale = () => reqId !== fundsReqRef.current;
+    setLoadingFunds(true);
     listFundsWithHistory()
-      .then((r) => setFunds(r.funds))
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setLoading(false));
+      .then((r) => { if (isStale()) return; setFunds(r.funds); })
+      .catch((e: Error) => { if (isStale()) return; setError(e.message); })
+      .finally(() => { if (!isStale()) setLoadingFunds(false); });
   }, [common.fund_trades_access]);
 
   // ── Load movers (tab=movers, либо смена месяца/фондов/метрики) ──
@@ -334,11 +342,13 @@ export default function MobileFundTradesPage() {
   useEffect(() => {
     if (!common.fund_trades_access) return;
     if (tab !== 'movers') return;
-    setLoading(true);
+    const reqId = ++moversReqRef.current;
+    const isStale = () => reqId !== moversReqRef.current;
+    setLoadingMovers(true);
     getFundTradesMovers(period, { asOf, funds: fundsParam || undefined, sort: metric })
-      .then(setMovers)
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setLoading(false));
+      .then((m) => { if (isStale()) return; setMovers(m); })
+      .catch((e: Error) => { if (isStale()) return; setError(e.message); })
+      .finally(() => { if (!isStale()) setLoadingMovers(false); });
   }, [tab, period, asOf, fundsParam, metric, common.fund_trades_access]);
 
   // Уникальные УК для UkMultiSelect (Состав фондов).
@@ -515,14 +525,18 @@ export default function MobileFundTradesPage() {
       enableFullscreen={false}
       onRefresh={async () => {
         if (tab === 'movers') {
+          const reqId = ++moversReqRef.current;
           const m = await getFundTradesMovers(period, { asOf, funds: fundsParam || undefined, sort: metric }).catch(() => null);
+          if (reqId !== moversReqRef.current) return;
           if (m) setMovers(m);
         } else {
+          const reqId = ++fundsReqRef.current;
           const r = await listFundsWithHistory().catch(() => null);
+          if (reqId !== fundsReqRef.current) return;
           if (r) setFunds(r.funds);
         }
       }}
-      loading={loading}
+      loading={loadingFunds || loadingMovers}
     >
       <MobilePageHeader
         Icon={Wallet}
@@ -557,8 +571,8 @@ export default function MobileFundTradesPage() {
       {tab === 'funds' && (
         <FundsTab
           fundsByCategory={fundsByCategory}
-          loading={loading && funds.length === 0}
-          empty={!loading && funds.length === 0 && !error}
+          loading={loadingFunds && funds.length === 0}
+          empty={!loadingFunds && funds.length === 0 && !error}
           returnPeriod={returnPeriod}
           tileHover={tileHover}
           setTileHover={setTileHover}
@@ -569,7 +583,7 @@ export default function MobileFundTradesPage() {
       {tab === 'movers' && (
         <MoversTab
           movers={movers}
-          loading={loading && !movers}
+          loading={loadingMovers && !movers}
           metric={metric}
           onAssetClick={openCompanyFlows}
         />
