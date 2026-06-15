@@ -166,6 +166,14 @@ services:
   orchestrator:
     build: .
     restart: always
+    # Container hardening (defense-in-depth): root batch-процесс без HTTP-exposure,
+    # но тянет внешние данные (Algopack/Cbonds/Yahoo). Снимаем все Linux
+    # capabilities и запрещаем privilege-escalation, чтобы RCE в фетчере не
+    # эскалировал до full-cap root. (CIS Docker 5.3/5.25, CWE-250)
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     depends_on:
       db:
         condition: service_healthy
@@ -192,6 +200,13 @@ services:
   tg-bot:
     build: .
     restart: always
+    # Container hardening: root batch-процесс, обрабатывает внешний ввод из
+    # Telegram. Снимаем capabilities + запрещаем privilege-escalation.
+    # (CIS Docker 5.3/5.25, CWE-250)
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     depends_on:
       db:
         condition: service_healthy
@@ -232,7 +247,8 @@ services:
   # Certbot (SSL сертификаты Let's Encrypt)
   # ═══════════════════════════════════════════════════════════════
   certbot:
-    image: certbot/certbot
+    # Пин конкретной версии вместо плавающего latest (poisoned-push → silent pull).
+    image: certbot/certbot:v5.6.0
     volumes:
       - certbot_data:/var/www/certbot
       - certbot_certs:/etc/letsencrypt

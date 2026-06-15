@@ -1,0 +1,24 @@
+# Dependabot — авто-PR'ы на обновление зависимостей + CVE-алёрты.
+# Покрывает Python (requirements.txt в корне), фронт (npm в /frontend) и сами
+# GitHub Actions (подскажет, когда запиннутый по SHA action получил фикс-версию).
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "python"]
+
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels: ["dependencies", "frontend"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels: ["dependencies", "ci"]

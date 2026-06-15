@@ -1,0 +1,30 @@
+name: gitleaks
+
+# Сканирование секретов: ловит случайно закоммиченные ключи/токены/пароли
+# ДО того, как они уйдут в историю (как было с .env.production). Прогоняется
+# на каждый push/PR. Для приватных org-репозиториев gitleaks-action требует
+# GITLEAKS_LICENSE — тогда раскомментировать env ниже и добавить в Secrets.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gitleaks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      # Пины по commit-SHA — иммутабельны (supply-chain hardening).
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0   # полная история — сканируем все коммиты PR/push
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}  # нужен для приватных org-репо

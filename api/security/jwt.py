@@ -56,6 +56,15 @@ import os
 # Генерация: python -c "import secrets; print(secrets.token_urlsafe(32))"
 SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "")
 if not SECRET_KEY:
+    # FAIL-CLOSED в проде: без секрета токены подписывались бы публично известной
+    # константой → тривиальная подделка токена любого юзера/роли (CWE-798).
+    # В production (ENV=production) это фатально — отказываемся стартовать.
+    # Локально — предупреждение + небоевой дефолт.
+    if os.environ.get("ENV", "development") == "production":
+        raise RuntimeError(
+            "JWT_SECRET_KEY is not set in production! Refusing to start with an "
+            "insecure default key. Set JWT_SECRET_KEY in the environment."
+        )
     import warnings
     warnings.warn("JWT_SECRET_KEY not set! Using insecure default for local development only.", stacklevel=2)
     SECRET_KEY = "LOCAL_DEV_ONLY_NOT_FOR_PRODUCTION_KEY"
@@ -226,26 +235,6 @@ def verify_token(token: str, token_type: str = "access") -> Optional[TokenPayloa
         type=payload["type"],
         role=payload.get("role", "user"),
     )
-
-
-def decode_token_unsafe(token: str) -> Optional[dict]:
-    """
-    Декодирует токен БЕЗ проверки подписи.
-
-    ВНИМАНИЕ: Использовать только для отладки!
-    Никогда не доверять данным из этой функции!
-
-    Полезно для:
-    - Просмотра содержимого токена в логах
-    - Отладки проблем с аутентификацией
-    """
-    try:
-        return jwt.decode(
-            token,
-            options={"verify_signature": False}
-        )
-    except Exception:
-        return None
 
 
 def create_token_pair(user_id: int, role: str = "user") -> TokenPair:

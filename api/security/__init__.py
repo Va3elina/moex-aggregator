@@ -11,6 +11,7 @@
 from .password import (
     hash_password,
     verify_password,
+    dummy_verify,
     generate_secure_token,
     check_password_strength,
 )
@@ -39,6 +40,7 @@ __all__ = [
     # Password
     "hash_password",
     "verify_password",
+    "dummy_verify",
     "generate_secure_token",
     "check_password_strength",
 
