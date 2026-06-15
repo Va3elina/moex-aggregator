@@ -260,7 +260,7 @@ export default function FlowsHistogram({
                             Grid-линии рассчитаны как yPct = 50 ± 47 (см. блок Горизонтальные
                             линии сетки выше). Crosshair должна совпадать с этим диапазоном,
                             а не идти от 0% до 100% (иначе выпирает на 3% с каждого края). */}
-                        {hoveredFlowIndex !== null && flowsData?.flows && (() => {
+                        {hoveredFlowIndex !== null && !hoveredAnnotation && flowsData?.flows && (() => {
                             const visibleCount = flowNavRange[1] - flowNavRange[0] + 1;
                             const barWidth = 100 / visibleCount;
                             const cx = hoveredFlowIndex * barWidth + barWidth / 2;
@@ -409,7 +409,9 @@ export default function FlowsHistogram({
                         (ResizeObserver), позиционирование через style — атомарно
                         с React render. Никаких DOM-мутаций, никаких offsetWidth
                         в hot-path → следует за пальцем 1-в-1. */}
-                    {hoveredFlowIndex !== null && flowsData?.flows && flowTooltipPos && (() => {
+                    {/* !hoveredAnnotation — при наведении на маркер события гасим
+                        flow-тултип, иначе две карточки налезают друг на друга. */}
+                    {hoveredFlowIndex !== null && !hoveredAnnotation && flowsData?.flows && flowTooltipPos && (() => {
                         const visibleFlowsList = flowsData.flows.slice(flowNavRange[0], flowNavRange[1] + 1);
                         const f = visibleFlowsList[hoveredFlowIndex];
                         if (!f) return null;
@@ -497,7 +499,7 @@ export default function FlowsHistogram({
             {/* Плавающая дата — позиционируется по реальному offsetTop/offsetLeft
                 flowContainerRef'а. top = низ chart-area (за вычетом chart-pad-bottom)
                 + небольшой подъём чтобы pill сидел на конце пунктирной линии. */}
-            {hoveredFlowIndex !== null && flowsData?.flows && (() => {
+            {hoveredFlowIndex !== null && !hoveredAnnotation && flowsData?.flows && (() => {
                 const visibleFlowsList = flowsData.flows.slice(flowNavRange[0], flowNavRange[1] + 1);
                 const f = visibleFlowsList[hoveredFlowIndex];
                 if (!f) return null;
