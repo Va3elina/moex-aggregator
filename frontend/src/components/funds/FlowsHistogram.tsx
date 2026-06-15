@@ -445,10 +445,13 @@ export default function FlowsHistogram({
                                     onMouseEnter={() => onSetHoveredAnnotation(m.date)}
                                     onMouseLeave={() => onSetHoveredAnnotation(null)}
                                 >
-                                    {/* Кружок — серый, мелкий */}
+                                    {/* Кружок-маркер УК — editorial bordered chip, тема-зависимый.
+                                        Раньше bg был зашит #3a3f4f + буква muted → на тёмной теме
+                                        (дефолт) сливался с фоном = «событий не видно», а в экспорте
+                                        — серый блоб. Теперь рамка + читаемая буква, видно на обеих темах. */}
                                     <div
-                                        className="w-7 h-7 rounded-full flex items-center justify-center cursor-pointer transition-opacity opacity-50 hover:opacity-100"
-                                        style={{ backgroundColor: '#3a3f4f', color: CHART_COLORS.muted, fontSize: 11, fontWeight: 600 }}
+                                        className="w-7 h-7 rounded-full flex items-center justify-center cursor-pointer transition-all opacity-80 hover:opacity-100"
+                                        style={{ backgroundColor: 'var(--bg-secondary)', border: '2px solid var(--text-primary)', color: 'var(--text-primary)', fontSize: 11, fontWeight: 700 }}
                                     >
                                         {m.logo.letter}
                                     </div>
