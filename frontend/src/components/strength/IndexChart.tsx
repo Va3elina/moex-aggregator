@@ -214,9 +214,17 @@ export default function IndexChart({
                             const pillH = fontY + padY * 2;
                             const textW = measureText(value, fontY, fontWeight);
                             const pillW = Math.ceil(textW) + padX * 2 + 1;
-                            // Pill aligned с axis tick text (textAnchor=start at chartEnd+12)
-                            const textX = width - padding.right + 12;
-                            const pillLeft = textX - padX;
+                            // Pill выровнен с подписями оси (textAnchor=start у chartEnd+12),
+                            // НО с клампом по обоим краям жёлоба:
+                            //  1) не вылезать за правый край виджета — pill шире подписи оси на
+                            //     2·padX, и на узком --strength-pad-right (55/45px) правый край
+                            //     уезжал за width и обрезался (жалоба);
+                            //  2) не наезжать на конец линии слева (зазор от графика).
+                            const plotRight = width - padding.right;
+                            let pillLeft = (plotRight + 12) - padX;
+                            pillLeft = Math.min(pillLeft, width - 4 - pillW);
+                            pillLeft = Math.max(pillLeft, plotRight + 2);
+                            const textX = pillLeft + padX;
                             return (
                                 <g pointerEvents="none">
                                     <rect

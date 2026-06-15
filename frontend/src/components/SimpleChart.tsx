@@ -1482,11 +1482,16 @@ export default function SimpleChart({
           const padX = 8;
           const padY = 2;
           const pillH = fontY + padY * 2;
-          // Pill positioning — pixel-aligned с axis tick text (anchor совпадает).
-          // Dash виден через ВЕСЬ chart (от opposite edge до pill) — длина не
-          // зависит от позиции pill, видно всегда.
-          const leftAxisTextRight = padding.left - tokens.axisGap;
-          const rightAxisTextLeft = padding.left + chartWidth + tokens.axisGap;
+          // AIR — гарантированный зазор между краем ГРАФИКА и ЗАЛИВКОЙ pill'а.
+          // Раньше pill центрировался на тексте оси (текст у края графика ±axisGap),
+          // а заливка добавляет padX(8) > axisGap(~6-8) → заливка заезжала на ~1-2px
+          // ВНУТРЬ графика и садилась прямо на конец линии (повторная жалоба коллеги),
+          // на отрицательных значениях минус ещё расширял. Теперь pill живёт В ЖЁЛОБЕ
+          // ОСИ: внутренний край заливки прижат к границе графика + AIR и растёт
+          // НАРУЖУ, в поле оси. Линию не перекрывает НИКОГДА — ни на пике, ни на минусе.
+          const AIR = 4;
+          const plotLeft = padding.left;
+          const plotRight = padding.left + chartWidth;
 
           return labels.map((l) => {
             // Split на main + unit (для smaller fontSize у unit) — symmetric с
@@ -1503,32 +1508,27 @@ export default function SimpleChart({
             const estimateW = mainW + unitW;
             const measuredW = pillTextW.get(l.key);
             const effectiveTextW = measuredW != null ? measuredW : estimateW;
-            // padX*2 — симметричный воздух. Pill центрируется на тексте ниже.
+            // padX*2 — симметричный воздух вокруг текста.
             const pillW = Math.ceil(effectiveTextW) + padX * 2;
 
+            // primary → ЛЕВАЯ ось (pill в левом жёлобе, правый край заливки у графика),
+            // secondary/third → ПРАВАЯ ось (pill в правом жёлобе, левый край у графика).
             const isLeftSide = l.key === 'primary';
-            const textAnchor: 'start' | 'end' = isLeftSide ? 'end' : 'start';
-            // textX — anchor-точка у оси (text-RIGHT для primary / text-LEFT для secondary).
-            const textX = isLeftSide ? leftAxisTextRight : rightAxisTextLeft;
-            // Pill ЦЕНТРИРУЕТСЯ относительно текста по ТОЧНОЙ ширине (effectiveTextW)
-            // → padX распределён симметрично, «у минуса» не длиннее.
-            const textCenter = isLeftSide ? textX - effectiveTextW / 2 : textX + effectiveTextW / 2;
-            const pillLeft = textCenter - pillW / 2;
-
-            // Знак минус — тонкий символ, у него меньше воздуха надо. Если
-            // значение отрицательное — укорачиваем pill со стороны минуса
-            // (минус всегда левый символ) на 4px, чтобы заливка не заходила
-            // на ядро графика.
-            const hasMinus = /^[−-]/.test(mainPart);
-            const finalPillLeft = hasMinus ? pillLeft + 4 : pillLeft;
-            const finalPillW = hasMinus ? pillW - 4 : pillW;
+            const rawLeft = isLeftSide
+              ? plotLeft - AIR - pillW   // правый край заливки = plotLeft − AIR
+              : plotRight + AIR;          // левый край заливки = plotRight + AIR
+            // Подстраховка: не вылезти за пределы холста (узкие mobile-жёлоба).
+            const pillLeft = Math.min(Math.max(rawLeft, 2), width - pillW - 2);
+            // Текст центрируется ВНУТРИ pill'а (anchor middle) — заливка и текст
+            // двигаются вместе, выравнивание текста к pill'у гарантировано.
+            const textX = pillLeft + pillW / 2;
 
             return (
               <g key={l.key} pointerEvents="none">
                 <rect
-                  x={finalPillLeft}
+                  x={pillLeft}
                   y={l.y - pillH / 2}
-                  width={finalPillW}
+                  width={pillW}
                   height={pillH}
                   rx={4}
                   ry={4}
@@ -1541,7 +1541,7 @@ export default function SimpleChart({
                   }}
                   x={textX}
                   y={l.y}
-                  textAnchor={textAnchor}
+                  textAnchor="middle"
                   dominantBaseline="central"
                   fill="#FFFFFF"
                   fontSize={fontY}
