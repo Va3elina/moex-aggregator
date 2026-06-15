@@ -209,7 +209,7 @@ export default function IndexChart({
                             const value = lastP.value.toLocaleString('ru-RU', { maximumFractionDigits: 0 });
                             const fontY = axisFs;
                             const fontWeight = 700;
-                            const padX = 5;
+                            const padX = 8; // как в SimpleChart — единый размер заливки pill'а
                             const padY = 2;
                             const pillH = fontY + padY * 2;
                             const textW = measureText(value, fontY, fontWeight);

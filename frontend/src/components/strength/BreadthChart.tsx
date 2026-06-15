@@ -409,14 +409,19 @@ export default function BreadthChart({
                             const color = getColor(lastBreadth);
                             const fontY = axisFs;
                             const fontWeight = 700;
-                            const padX = 5;
+                            const padX = 8; // как в SimpleChart — единый размер заливки pill'а
                             const padY = 2;
                             const pillH = fontY + padY * 2;
                             const textW = measureText(value, fontY, fontWeight);
                             const pillW = Math.ceil(textW) + padX * 2 + 1;
-                            // Pill aligned с axis tick text (textAnchor=start at chartEnd+12)
-                            const textX = width - padding.right + 12;
-                            const pillLeft = textX - padX;
+                            // Pill в жёлобе оси с клампом по обоим краям (как IndexChart):
+                            // не за правый край виджета (раньше острый срезанный угол справа)
+                            // и не на конец линии слева.
+                            const plotRight = width - padding.right;
+                            let pillLeft = (plotRight + 12) - padX;
+                            pillLeft = Math.min(pillLeft, width - 4 - pillW);
+                            pillLeft = Math.max(pillLeft, plotRight + 2);
+                            const textX = pillLeft + padX;
                             return (
                                 <g pointerEvents="none">
                                     <rect
