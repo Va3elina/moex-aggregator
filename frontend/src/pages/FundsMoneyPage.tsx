@@ -150,6 +150,10 @@ export default function FundsMoneyPage() {
     const [error, setError] = useState<string | null>(null);
     const [data, setData] = useState<FundsChartResponse | null>(null);
     const [flowsData, setFlowsData] = useState<FundsFlowsResponse | null>(null);
+    // Отдельный спиннер для притоков-оттоков: nav-загрузчик (loadData) и flows-загрузчик
+    // делят страницу, но НЕ должны делить флаг loading — иначе быстрый nav-ответ гасил
+    // спиннер, пока flows ещё грузится («даже не начал обновляться» при смене категории).
+    const [flowsLoading, setFlowsLoading] = useState(false);
     const [selectedFund, setSelectedFund] = useState<FundInfo | null>(null);
     const [hiddenFunds, setHiddenFunds] = useState<Set<number>>(new Set());
     const [collapsedSubcats, setCollapsedSubcats] = useState<Set<string>>(new Set());
@@ -263,23 +267,34 @@ export default function FundsMoneyPage() {
     }, [data?.funds]);
 
     // Загрузка данных притоков/оттоков
+    // Stale-guard (как у loadData): эффект перезапускается несколько раз при смене
+    // категории (сначала category, затем — после загрузки nav-data — пересчёт
+    // visibleFundIds, затем reset hiddenFunds). Без reqId медленный РАННИЙ ответ
+    // (старая категория) мог перезаписать свежий → «график не обновился до рефреша».
+    const flowsReqIdRef = useRef(0);
     useEffect(() => {
         if (viewMode !== 'flows') return;
 
         // Все фонды выключены — не дёргаем backend, ставим пустой результат.
         // FlowsHistogram по noFundsSelected покажет «Выберите фонды».
         if (noFundsSelected) {
+            flowsReqIdRef.current++; // отменяем любой in-flight flows-запрос
             setFlowsData({ category, timeframe: flowTimeframe, period, flows: [] });
-            setLoading(false);
+            setFlowsLoading(false);
             return;
         }
 
+        const reqId = ++flowsReqIdRef.current;
+        const isStale = () => reqId !== flowsReqIdRef.current;
+
         async function loadFlowsData() {
             try {
-                setLoading(true);
+                setFlowsLoading(true);
                 const result = await getFundsFlows(category, flowTimeframe, period as FundPeriod, visibleFundIds);
+                if (isStale()) return;
                 setFlowsData(result);
             } catch (err) {
+                if (isStale()) return;
                 // Tier-ошибка (403: период/таймфрейм за лимитом гостя) → upgrade-модалка,
                 // как у loadData. Раньше тут был тихий console.error → притоки-оттоки
                 // молча ломались для гостя («весь в ошибках, нельзя смотреть»).
@@ -292,7 +307,7 @@ export default function FundsMoneyPage() {
                     console.error('Flows error:', err);
                 }
             } finally {
-                setLoading(false);
+                if (!isStale()) setFlowsLoading(false);
             }
         }
         loadFlowsData();
@@ -789,7 +804,7 @@ export default function FundsMoneyPage() {
                         category={category}
                         inflowLabel={flowInflowLabel}
                         outflowLabel={flowOutflowLabel}
-                        loading={loading}
+                        loading={flowsLoading}
                         flowContainerRef={flowContainerRef}
                         flowChartRef={flowChartRef}
                         flowTooltipPos={flowTooltipPos}

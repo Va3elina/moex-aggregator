@@ -52,9 +52,6 @@ export interface UseIndicatorDataOptions<T> {
     onSuccess?: (data: T) => void;
     /** Если задан — tier-403 в catch идёт через handleTierError (caller-агностичный util). */
     tier?: TierConfig;
-    /** Опт-ин защита от гонки: устаревший (не последний) ответ НЕ пишет state
-     *  (reqId-guard, эквивалент cancelled-флага CbrFlows). Default off → как было у OI. */
-    guardStale?: boolean;
 }
 
 export interface UseIndicatorDataResult<T> {
@@ -67,7 +64,7 @@ export interface UseIndicatorDataResult<T> {
 export function useIndicatorData<T>(opts: UseIndicatorDataOptions<T>): UseIndicatorDataResult<T> {
     const {
         fetcher, deps, channels, debounceMs, enabled = true,
-        errorMessage, onSuccess, tier, guardStale = false,
+        errorMessage, onSuccess, tier,
     } = opts;
 
     const [data, setData] = useState<T | null>(null);
@@ -82,7 +79,10 @@ export function useIndicatorData<T>(opts: UseIndicatorDataOptions<T>): UseIndica
     const reload = useCallback(async () => {
         if (enabled === false) return;
         const myId = ++reqIdRef.current;
-        const isStale = () => guardStale && myId !== reqIdRef.current;
+        // Reqid-guard БЕЗУСЛОВНЫЙ: устаревший (не последний) ответ не пишет state.
+        // Дёшево и корректно для всех индикаторов — без него быстрый перебор
+        // фильтра/типа давал гонку (медленный ранний ответ перезаписывал свежий).
+        const isStale = () => myId !== reqIdRef.current;
         try {
             setLoading(true);
             setError(null);
