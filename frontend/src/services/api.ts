@@ -124,11 +124,18 @@ export async function apiFetch(url: string, init?: RequestInit): Promise<Respons
   }
 
   if (response.status === 403) {
-    // 403 — это либо tier-restriction («Доступно на тарифе Basic...»),
-    // либо отсутствие auth-token'а. Backend всегда возвращает detail
-    // с конкретным текстом — пробрасываем его как есть.
-    const data = await response.json().catch(() => ({ detail: 'Доступ ограничен' }));
-    throw new Error(data.detail || 'Доступ ограничен');
+    // 403 — это либо tier-restriction («… недоступен на тарифе …»), либо
+    // отсутствие auth-token'а. Backend шлёт текст в ДВУХ форматах: envelope
+    // {success:false,error:{message}} (текущий) ИЛИ legacy {detail}. Читаем ОБА —
+    // иначе tier-текст терялся, throw был 'Доступ ограничен' (без слов «тарифе»/
+    // «недоступ»), и handleTierError на странице не распознавал tier-403 →
+    // показывал «Ошибка загрузки» вместо upgrade-промпта. Это корень для ВСЕХ
+    // индикаторов через apiFetch (funds/OI/seasonality/…), не точечный.
+    const data = await response.json().catch(() => ({} as Record<string, unknown>));
+    const msg = (data as { detail?: string })?.detail
+      || (data as { error?: { message?: string } })?.error?.message
+      || 'Доступ ограничен';
+    throw new Error(msg);
   }
 
   return response;
@@ -479,8 +486,9 @@ export async function getFundsChartData(
     period
   });
   const response = await apiFetch(`${API_BASE}/api/funds/chart?${params}`);
-  // detail пробрасывается, чтобы handleTierError распознал tier-403 (период за
-  // лимитом funds_money: 180д для free) → upgrade-промпт, а не «Ошибка загрузки».
+  // tier-403 уже обрабатывает apiFetch (бросает текст «… недоступен на тарифе …»).
+  // Здесь — только НЕ-403 4xx/5xx: пробрасываем detail/error.message, чтобы текст
+  // ошибки не терялся (а не глоталось в генерик 'Failed to fetch').
   if (!response.ok) throw new Error(await apiErrorDetail(response, 'Failed to fetch funds chart data'));
   return response.json();
 }
@@ -527,8 +535,8 @@ export async function getFundsFlows(
     params.set('fund_ids', fundIds.join(','));
   }
   const response = await apiFetch(`${API_BASE}/api/funds/flows?${params}`);
-  // detail пробрасывается → handleTierError ловит tier-403 (потоки за лимитом
-  // free) и показывает upgrade-промпт вместо «Ошибка загрузки данных».
+  // tier-403 ловит apiFetch (см. выше). Здесь — только НЕ-403 ошибки: detail/
+  // error.message вместо генерик-текста.
   if (!response.ok) throw new Error(await apiErrorDetail(response, 'Failed to fetch funds flows'));
   return response.json();
 }

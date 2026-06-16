@@ -432,7 +432,13 @@ export default function SeasonalityPage() {
 
   useEffect(() => {
     if (!selectedStock) return;
-    if (chartType === 'histogram') { fetchSeasonality(); return; }
+    if (chartType === 'histogram') {
+      // На холодном кэше тарифа (isLoading) НЕ диспатчим: histogram — режим Basic+,
+      // у free/гостя дефолт histogram → 403 → вспышка upgrade-модалки. Ждём резолва
+      // тарифа; clamp-effect (выше) переключит на 'yearly', если режим недоступен.
+      if (seasonAccess.isLoading) return;
+      fetchSeasonality(); return;
+    }
     if (chartType === 'price') { fetchPrice(); return; }
     if (chartType === 'yearly') { fetchYearly(); return; }
     // Test-режим: дебаунс 350ms. Test стреляет 5-15 параллельными запросами
@@ -443,7 +449,7 @@ export default function SeasonalityPage() {
       const t = setTimeout(() => fetchTest(), 350);
       return () => clearTimeout(t);
     }
-  }, [chartType, fetchSeasonality, fetchPrice, fetchYearly, fetchTest, selectedStock]);
+  }, [chartType, fetchSeasonality, fetchPrice, fetchYearly, fetchTest, selectedStock, seasonAccess.isLoading]);
 
   const data = dataRaw;
 
