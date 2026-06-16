@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowDown, ArrowUp, Lock } from 'lucide-react';
+import { ArrowDown, ArrowUp, Lock, AlertCircle } from 'lucide-react';
 import { resolveFundLogo, stripUkName } from '../../config/fundConfig';
 import type { FundInfo, FundsChartResponse } from '../../services/api';
 import { useUpgradePrompt } from '../tier/UpgradeModal';
@@ -306,13 +306,18 @@ export default function FundsTable({
                                                         {fund.ticker}
                                                     </td>
                                                     <td className="px-4 py-3 text-right font-mono">
-                                                        {isLocked ? '—' : (lastData?.nav ? (lastData.nav / 1e9).toFixed(2) : '—')}
-                                                        {!isLocked && lastData?.date && maxDate && lastData.date < maxDate && (
-                                                            <div className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)' }}
-                                                                title="СЧА этого фонда отстаёт от общей даты данных">
-                                                                на {fmtDate(lastData.date)}
-                                                            </div>
-                                                        )}
+                                                        <span className="inline-flex items-center justify-end" style={{ gap: 'var(--sp-1)' }}>
+                                                            {isLocked ? '—' : (lastData?.nav ? (lastData.nav / 1e9).toFixed(2) : '—')}
+                                                            {!isLocked && lastData?.date && maxDate && lastData.date < maxDate && (
+                                                                <span
+                                                                    className="text-theme-secondary cursor-help inline-flex flex-shrink-0"
+                                                                    style={{ opacity: 0.6 }}
+                                                                    title={`СЧА этого фонда отстаёт от общей даты данных. Актуальна на ${fmtDate(lastData.date)}`}
+                                                                >
+                                                                    <AlertCircle size={13} strokeWidth={2.2} />
+                                                                </span>
+                                                            )}
+                                                        </span>
                                                     </td>
                                                     {(() => {
                                                         const br = isLocked ? null : bestReturn(fund.returns);
