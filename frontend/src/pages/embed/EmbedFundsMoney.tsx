@@ -273,6 +273,7 @@ export default function EmbedFundsMoney() {
                 formatPrimaryAxis={(v) => v.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
                 niceTicks={true}
                 niceTicksSecondary={true}
+                gridAxis="secondary"
                 formatSecondaryValue={fmtNav}
                 formatSecondaryAxis={fmtNav}
                 primaryLabel="Индекс"

@@ -883,6 +883,7 @@ export default function FundsMoneyPage() {
                         reverseLegend={true}
                         niceTicks={true}
                         niceTicksSecondary={true}
+                        gridAxis="secondary"
                         formatValue={(v) => v.toFixed(2)}
                         formatPrimaryAxis={(v) => v.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
                         formatSecondaryValue={formatNav}
