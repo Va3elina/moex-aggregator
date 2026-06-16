@@ -1411,6 +1411,11 @@ export interface FundTradesMovers {
     period: FundTradesPeriod;
     category: string | null;
     as_of: string | null;
+    // resolved_month — фактический месяц консенсуса (выбранный as_of или последний
+    // доступный для набора). funds_in_month — сколько выбранных фондов реально имеют
+    // снапшот этого месяца (0 → данных за месяц нет, показываем явное сообщение).
+    resolved_month: string | null;
+    funds_in_month: number;
     manager: string | null;
     sort: 'weight' | 'amount';
     available_months: string[];

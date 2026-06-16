@@ -887,7 +887,7 @@ export default function FundTradesPage() {
                         {movers && movers.available_months.length > 0 && (
                             <Dropdown<string>
                                 options={movers.available_months.map((m) => ({ key: m, label: formatMonthYear(m) }))}
-                                value={asOf ?? movers.available_months[0]}
+                                value={asOf ?? movers.resolved_month ?? movers.available_months[0]}
                                 onChange={setAsOf}
                                 minWidth={150}
                             />
@@ -951,7 +951,11 @@ export default function FundTradesPage() {
                     {movers
                         && movers.top_accumulated.length === 0
                         && movers.top_reduced.length === 0 && (
-                        <EmptyState message="Нет заметных движений между этими месяцами." />
+                        <EmptyState message={
+                            movers.funds_in_month === 0
+                                ? `Для выбранных фондов нет данных за ${formatMonthYear(movers.resolved_month ?? asOf ?? '')}. Снапшот за этот месяц ещё не загружен — выберите другой месяц или дождитесь публикации.`
+                                : 'Нет заметных движений между этими месяцами.'
+                        } />
                     )}
                 </>
             )}

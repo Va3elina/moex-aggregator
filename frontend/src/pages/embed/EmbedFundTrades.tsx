@@ -264,6 +264,7 @@ export default function EmbedFundTrades() {
   const [acc, setAcc] = useState<FundTradesMover[]>([]);
   const [red, setRed] = useState<FundTradesMover[]>([]);
   const [availableMonths, setAvailableMonths] = useState<string[]>([]);
+  const [resolvedMonth, setResolvedMonth] = useState<string | null>(null);
   const [moversStatus, setMoversStatus] = useState<LoadStatus>('idle');
 
   useEffect(() => { writeLS('frame:embed:fundtrades:period', period); }, [period]);
@@ -283,6 +284,7 @@ export default function EmbedFundTrades() {
         setAcc(a);
         setRed(r);
         setAvailableMonths(res?.available_months ?? []);
+        setResolvedMonth(res?.resolved_month ?? null);
         setMoversStatus(a.length || r.length ? 'ok' : 'empty');
       })
       .catch((err) => {
@@ -344,7 +346,7 @@ export default function EmbedFundTrades() {
         {availableMonths.length > 0 && (
           <DrawerSection label="Месяц снапшота">
             <SegGroup<string>
-              value={asOf ?? availableMonths[0]}
+              value={asOf ?? resolvedMonth ?? availableMonths[0]}
               options={availableMonths.map((m) => ({ id: m, label: formatMonthYear(m) }))}
               onChange={setAsOf}
             />

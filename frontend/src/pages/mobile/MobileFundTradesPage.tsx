@@ -502,7 +502,7 @@ export default function MobileFundTradesPage() {
   // - company:   ⚙️(режим); бумага/фонды — в теле CompanyFlowsTab
   const timeSummary = (() => {
     if (tab === 'funds') return `Доходность · ${RETURN_PERIOD_LABEL[returnPeriod]}`;
-    if (tab === 'movers') return asOf ? formatMonthYear(asOf) : (movers?.available_months[0] ? formatMonthYear(movers.available_months[0]) : 'Месяц');
+    if (tab === 'movers') return asOf ? formatMonthYear(asOf) : (movers?.resolved_month ? formatMonthYear(movers.resolved_month) : (movers?.available_months[0] ? formatMonthYear(movers.available_months[0]) : 'Месяц'));
     return undefined;
   })();
   const optionsSummary = (() => {
@@ -656,7 +656,7 @@ export default function MobileFundTradesPage() {
               {movers && movers.available_months.length > 0 ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {movers.available_months.map((m) => {
-                    const active = (asOf ?? movers.available_months[0]) === m;
+                    const active = (asOf ?? movers.resolved_month ?? movers.available_months[0]) === m;
                     return (
                       <button
                         key={m}
@@ -1134,7 +1134,11 @@ function MoversTab({
   if (!movers) return null;
   const noData = movers.top_accumulated.length === 0 && movers.top_reduced.length === 0;
   if (noData) {
-    return <EmptyState message="Нет заметных движений между этими месяцами." />;
+    return <EmptyState message={
+      movers.funds_in_month === 0
+        ? `Для выбранных фондов нет данных за ${formatMonthYear(movers.resolved_month ?? '')}. Снапшот за этот месяц ещё не загружен.`
+        : 'Нет заметных движений между этими месяцами.'
+    } />;
   }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, paddingBottom: 12 }}>
