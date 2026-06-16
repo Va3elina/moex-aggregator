@@ -701,7 +701,7 @@ export default function FundsMoneyPage() {
                     tourId="funds-layers"
                     layers={viewMode === 'flows'
                         ? [{ key: 'events', label: 'События', hint: 'Метки крупных событий фондов', checked: showEvents, onChange: setShowEvents }]
-                        : [{ key: 'index', label: 'Индекс', hint: `Линия ${currentCategory?.index ?? 'индекса'} на второй оси`, checked: showIndex, onChange: setShowIndex }]}
+                        : [{ key: 'index', label: 'Индекс', hint: `Линия ${currentCategory?.index ?? 'индекса'} на левой оси`, checked: showIndex, onChange: setShowIndex }]}
                 />
                 <CsvExportButton
                     indicator="funds_money"
@@ -866,20 +866,29 @@ export default function FundsMoneyPage() {
                 </div>
             ) : viewMode === 'aum' ? (
                 <div>
+                    {/* Свопнутые оси (TradingView-style): СЧА — главная серия —
+                        на ПРАВОЙ оси (secondaryData), индекс — на ЛЕВОЙ (data).
+                        Цвета закреплены за сериями через swap primaryColor/
+                        secondaryColor; reverseLegend держит СЧА первой в легенде.
+                        indexData ?? [] — на этапе загрузки indexData undefined, а
+                        data обязателен (иначе краш на data.length). */}
                     <SimpleChart
-                        data={aggregatedData.chartData}
-                        secondaryData={indexData}
+                        data={indexData ?? []}
+                        secondaryData={aggregatedData.chartData}
                         height={chartHeight}
-                        primaryColor={NAV_COLOR}
-                        secondaryColor={INDEX_COLOR}
-                        showSecondary={showIndex}
+                        primaryColor={INDEX_COLOR}
+                        secondaryColor={NAV_COLOR}
+                        showPrimary={showIndex}
+                        showSecondary={true}
+                        reverseLegend={true}
                         niceTicks={true}
                         niceTicksSecondary={true}
-                        formatValue={formatNav}
-                        formatSecondaryValue={(v) => v.toFixed(2)}
-                        formatSecondaryAxis={(v) => v.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
-                        primaryLabel={`Суммарная СЧА фондов ${currentCategory?.genitive ?? ''}, млрд руб`}
-                        secondaryLabel={currentCategory?.index || 'Индекс'}
+                        formatValue={(v) => v.toFixed(2)}
+                        formatPrimaryAxis={(v) => v.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
+                        formatSecondaryValue={formatNav}
+                        formatSecondaryAxis={formatNav}
+                        primaryLabel={currentCategory?.index || 'Индекс'}
+                        secondaryLabel={`Суммарная СЧА фондов ${currentCategory?.genitive ?? ''}, млрд руб`}
                         loading={loading}
                         showValueHeader={false}
                         legendPosition="top"

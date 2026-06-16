@@ -257,27 +257,32 @@ export default function EmbedFundsMoney() {
       <div ref={boxRef} style={{ flex: 1, position: 'relative', minHeight: 0 }}>
         {viewMode === 'aum' ? (
           <>
+            {/* Оси свопнуты как на странице: СЧА — на ПРАВОЙ оси (secondaryData),
+                индекс — на ЛЕВОЙ (data), reverseLegend держит СЧА первой. */}
             {status === 'ok' && chartData.length > 0 && (
               <SimpleChart
-                data={chartData}
-                secondaryData={indexData}
+                data={indexData ?? []}
+                secondaryData={chartData}
                 height={chartH}
-                primaryColor="var(--accent)"
-                secondaryColor="var(--funds-flow-positive)"
-                showSecondary={showIndex && !!indexData}
-                formatValue={fmtNav}
+                primaryColor="var(--funds-flow-positive)"
+                secondaryColor="var(--accent)"
+                showPrimary={showIndex && !!indexData}
+                showSecondary={true}
+                reverseLegend
+                formatValue={(v) => v.toFixed(2)}
+                formatPrimaryAxis={(v) => v.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
                 niceTicks={true}
                 niceTicksSecondary={true}
-                formatSecondaryValue={(v) => v.toFixed(2)}
-                formatSecondaryAxis={(v) => v.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
-                primaryLabel="Суммарная СЧА, млрд ₽"
-                secondaryLabel="Индекс"
+                formatSecondaryValue={fmtNav}
+                formatSecondaryAxis={fmtNav}
+                primaryLabel="Индекс"
+                secondaryLabel="Суммарная СЧА, млрд ₽"
                 showValueHeader={false}
                 legendPosition="top"
                 showDownloadButton={false}
                 showNavigator={false}
                 hideTime
-                chartPadding={{ left: 100, right: 60 }}
+                chartPadding={{ left: 60, right: 100 }}
               />
             )}
             {status === 'loading' && <EmbedMsg text="Загрузка…" />}

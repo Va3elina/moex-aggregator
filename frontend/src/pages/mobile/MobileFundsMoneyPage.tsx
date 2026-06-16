@@ -354,7 +354,8 @@ export default function MobileFundsMoneyPage() {
         data: navData,
         color: 'var(--accent)',
         label: 'СЧА',
-        axis: 'left' as const,
+        // СЧА — на ПРАВОЙ оси (свопнуто с индексом, как на десктопе/в эмбеде).
+        axis: 'right' as const,
         formatValue: (v: number) => `${v.toFixed(0)}`,
       },
       ...(indexData.length > 0
@@ -362,7 +363,7 @@ export default function MobileFundsMoneyPage() {
             data: indexData,
             color: 'var(--chart-line-1, #5DA3E9)',
             label: data.index?.secid ?? 'Индекс',
-            axis: 'right' as const,
+            axis: 'left' as const,
             formatValue: (v: number) => v >= 1000 ? (v / 1000).toFixed(1) + 'K' : v.toFixed(0),
             formatAxis: (v: number) => v.toLocaleString('ru-RU', { maximumFractionDigits: 0 }),
           }]
