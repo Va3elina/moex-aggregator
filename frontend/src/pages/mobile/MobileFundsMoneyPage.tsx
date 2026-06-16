@@ -9,8 +9,9 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Wallet, Lock, Bell } from 'lucide-react';
-import { useTierAccess } from '../../contexts/TierFeaturesContext';
+import { useTierAccess, useCommonFeatures } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
+import CreateFundAlertModal from '../../components/alerts/CreateFundAlertModal';
 import { handleTierError } from '../../utils/tierError';
 import { usePersistedState } from '../../hooks/usePersistedState';
 import MobileLayout from '../../components/mobile/MobileLayout';
@@ -43,6 +44,16 @@ const CATEGORIES: Array<{ key: FundCategory; label: string; comingSoon?: boolean
   { key: 'yuan', label: 'Юань' },
 ];
 
+// Полные имена категорий для фонд-алерта (asset_name + текст модалки). Чип-лейблы
+// выше терсе («Деньги»), а в сигнале хочется человекочитаемое «Денежный рынок».
+const CATEGORY_FULL_NAME: Record<string, string> = {
+  money_market: 'Денежный рынок',
+  stocks: 'Акции',
+  bonds: 'Облигации',
+  gold: 'Золото',
+  yuan: 'Юань',
+};
+
 const PERIODS: Array<{ key: FundPeriod; label: string }> = [
   { key: '1m', label: '1М' },
   { key: '1y', label: '1Г' },
@@ -62,6 +73,10 @@ export default function MobileFundsMoneyPage() {
   const [flowTimeframe, setFlowTimeframe] = usePersistedState<FlowTimeframe>('frame:funds:flowTimeframe', '1w');
   const fundsAccess = useTierAccess('funds_money');
   const { showUpgrade } = useUpgradePrompt();
+  // Алерты в мессенджере — квота по тарифу (0=Free/гость → апселл, как у OI-колокола).
+  const alertsQuota = useCommonFeatures().telegram_alerts_quota;
+  const alertsLocked = alertsQuota === 0;
+  const [fundAlertOpen, setFundAlertOpen] = useState(false);
   const [data, setData] = useState<FundsChartResponse | null>(null);
   const [flowsData, setFlowsData] = useState<FundsFlowsResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -568,9 +583,10 @@ export default function MobileFundsMoneyPage() {
             </div>
           )}
 
-          {/* Сигналы — заглушка «скоро» (только в режиме притоков). Disabled-чип
-              по образцу «Юань · Скоро»: автосигналы по притокам-оттокам появятся
-              позже. UI-only плейсхолдер, не кликабелен. */}
+          {/* Сигналы по фондам — рабочая кнопка (только в режиме притоков).
+              Открывает CreateFundAlertModal для текущей категории (актив=category).
+              Tier-гейт как у OI: quota=0 (Free/гость) → upgrade-промпт + замочек;
+              иначе закрываем sheet и открываем модалку создания. */}
           {viewMode === 'flows' && (
             <div>
               <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
@@ -578,20 +594,27 @@ export default function MobileFundsMoneyPage() {
               </div>
               <button
                 className="fm-chip"
-                disabled
-                aria-disabled="true"
+                onClick={() => {
+                  if (alertsLocked) {
+                    showUpgrade({ tier: 'basic', featureName: 'Сигналы по фондам', indicator: 'alerts' });
+                    return;
+                  }
+                  setOptionsSheetOpen(false);
+                  setFundAlertOpen(true);
+                }}
+                aria-label={alertsLocked ? 'Сигналы по фондам — доступно на тарифе Basic и Pro' : 'Создать сигнал по фондам'}
                 style={{
                   width: '100%',
                   justifyContent: 'center',
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: 6,
-                  opacity: 0.5,
-                  cursor: 'not-allowed',
+                  opacity: alertsLocked ? 0.78 : 1,
                 }}
               >
                 <Bell size={14} strokeWidth={2.2} />
-                Сигналы · Скоро
+                Сигнал по «{categoryLabel}»
+                {alertsLocked && <Lock size={11} strokeWidth={2.2} />}
               </button>
             </div>
           )}
@@ -748,6 +771,15 @@ export default function MobileFundsMoneyPage() {
           })}
         </div>
       </MobileSheet>
+
+      {/* Конструктор сигнала по фондам — актив = текущая категория. */}
+      {fundAlertOpen && (
+        <CreateFundAlertModal
+          category={category}
+          categoryName={CATEGORY_FULL_NAME[category] ?? categoryLabel}
+          onClose={() => setFundAlertOpen(false)}
+        />
+      )}
 
       <OnboardingTour
         steps={tourSteps}

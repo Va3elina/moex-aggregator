@@ -29,6 +29,7 @@ from signals.db import get_latest_price              # noqa: E402
 from signals.detectors.oi import (  # noqa: E402
     compute_oi_z, compute_position_atr, compute_participants_atr,
 )
+from signals.detectors.funds import compute_fund_flow_atr  # noqa: E402
 from signals.alert_notify import send_message        # noqa: E402
 
 SITE = "https://xn--80aklbnczmv.xn--p1ai"  # punycode таймфрейм.рф (надёжно в TG)
@@ -95,6 +96,17 @@ def compute_value(a: Alert):
         ratio, last_diff, current_npart, direction, sig_date = r
         return float(ratio), {"last_diff": last_diff, "current_npart": current_npart,
                               "direction": direction, "signal_date": sig_date}
+    if a.indicator == "funds_flow":
+        # «Аномальный поток» — во сколько раз дневной net_flow категории больше
+        # обычного (ATR14). asset = ключ категории (money_market/stocks/bonds/gold).
+        # direction: 'up' приток / 'down' отток. Дневная метрика → signal_date для
+        # гейта «новый торговый день» (как у oi_move).
+        r = compute_fund_flow_atr(a.asset)
+        if not r:
+            return None, None
+        ratio, direction, last_flow, sig_date = r
+        return float(ratio), {"direction": direction, "last_flow": last_flow,
+                              "category": a.asset, "signal_date": sig_date}
     return None, None
 
 
@@ -103,8 +115,10 @@ def build_keyboard(a: Alert) -> dict:
     p:<id> пауза, r:<id> возобновить, dx:<id> удалить.
     Строка 1 — ссылка на график; строка 2 — действия (once → 'Включить снова',
     repeat → 'Пауза'), + 'Удалить'."""
-    open_btn = {"text": "📈 Открыть график",
-                "url": f"{SITE}/oi?instrument={a.asset}"}
+    # Ссылка кнопки по источнику: fund-алерт ведёт на /funds-money, OI — на /oi.
+    open_url = (f"{SITE}/funds-money" if a.indicator == "funds_flow"
+                else f"{SITE}/oi?instrument={a.asset}")
+    open_btn = {"text": "📈 Открыть график", "url": open_url}
     if a.mode == "once":
         # после срабатывания once-алерт станет status='fired' → нужно r:<id>
         action_btn = {"text": "🔔 Включить снова", "callback_data": f"r:{a.id}"}
@@ -117,6 +131,15 @@ def build_keyboard(a: Alert) -> dict:
 # Нейтральный плейсхолдер-маркер вместо эмодзи/стикеров (фирменный добавим позже).
 # Одна строка-заголовок без эмодзи и хэштегов — единый «шильдик» всех алертов.
 _MARK = "СИГНАЛ ФРЕЙМ"
+
+# Человекочитаемые имена категорий фондов (зеркало CATEGORY_INDEX_MAP в API).
+# Юань не включён — на сайте «Скоро».
+_FUND_CAT_NAME = {
+    "money_market": "Денежный рынок",
+    "stocks": "Акции",
+    "bonds": "Облигации",
+    "gold": "Золото",
+}
 
 
 def _leg_phrase(direction: str, legs: dict) -> str:
@@ -191,6 +214,16 @@ def format_msg(a: Alert, value: float, ctx: dict) -> str:
         ctx_line = f" Сейчас {npart:,} участников." if npart else ""
         return (f"{head} — открытые позиции{tf_note}\n"
                 f"{flow} {clg} — в {value:g}× резче обычного (порог {thr:g}×).{ctx_line}\n{link}")
+    if a.indicator == "funds_flow":
+        # «Аномальный поток» по категории фондов. Собственный head (имя категории
+        # вместо тикер-инструмента) и ссылка на /funds-money. Главное в тексте —
+        # ×N + направление (приток/отток), в стиле oi_move.
+        cat_name = _FUND_CAT_NAME.get(a.asset, a.asset_name or a.asset)
+        funds_link = f'<a href="{SITE}/funds-money">открыть график →</a>'
+        funds_head = f"<b>{_MARK}</b>\n<b>{cat_name}</b>"
+        flow_word = "ПРИТОК" if ctx.get("direction") == "up" else "ОТТОК"
+        return (f"{funds_head} — притоки-оттоки\n"
+                f"Резкий {flow_word} — в {value:g}× больше обычного (порог {thr:g}×).\n{funds_link}")
     return f"{head}\nАлерт сработал.\n{link}"
 
 
