@@ -11,7 +11,8 @@
  * `[data-theme^="editorial"] .frame-dropdown`. На OKX/dark — обычный flat pill.
  */
 import { useEffect, useRef, useState } from 'react';
-import { ChevronDown, Lock } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { ChevronDown, HelpCircle, Lock, X } from 'lucide-react';
 
 export interface DropdownOption<T extends string> {
   key: T;
@@ -25,6 +26,135 @@ export interface DropdownOption<T extends string> {
   locked?: boolean;
   /** Скрыть из списка (но оставить в типе) */
   hidden?: boolean;
+  /** Подсказка «?» справа от лейбла: что показывает вариант и как считается.
+   *  Рендерится только если задано. Клик по «?» не выбирает опцию. */
+  help?: { title?: string; content: string };
+}
+
+/**
+ * OptionHelp — «?» возле опции дропдауна с поясняющим поповером.
+ *
+ * Поповер монтируется через portal в document.body с position:fixed —
+ * иначе его обрезает overflow:auto у меню. Hover на desktop, tap на mobile.
+ * Клик по иконке не выбирает опцию (stopPropagation), а mousedown по поповеру
+ * не закрывает сам дропдаун (его outside-handler слушает document.mousedown).
+ */
+function OptionHelp({ title, content }: { title?: string; content: string }) {
+  const [open, setOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const iconRef = useRef<HTMLSpanElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.matchMedia('(hover: none)').matches);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const r = iconRef.current?.getBoundingClientRect();
+      if (!r) return;
+      const width = Math.min(300, window.innerWidth - 32);
+      let left = r.left;
+      if (left + width > window.innerWidth - 8) left = window.innerWidth - 8 - width;
+      if (left < 8) left = 8;
+      setPos({ top: r.bottom + 6, left });
+    };
+    place();
+    const onScroll = () => setOpen(false);
+    const onDown = (e: MouseEvent) => {
+      if (popRef.current?.contains(e.target as Node)) return;
+      if (iconRef.current?.contains(e.target as Node)) return;
+      setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', place);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', place);
+    };
+  }, [open]);
+
+  const hoverOpen = () => { if (!isMobile) setOpen(true); };
+  const hoverClose = () => { if (!isMobile) setOpen(false); };
+
+  return (
+    <span
+      ref={iconRef}
+      role="button"
+      tabIndex={0}
+      aria-label="Что это и как считается"
+      onClick={(e) => { e.stopPropagation(); setOpen(o => !o); }}
+      onMouseEnter={hoverOpen}
+      onMouseLeave={hoverClose}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); setOpen(o => !o); }
+      }}
+      className="inline-flex items-center justify-center flex-shrink-0"
+      style={{ cursor: 'help', color: 'currentColor', opacity: open ? 1 : 0.65 }}
+    >
+      <HelpCircle size={15} strokeWidth={1.8} />
+      {open && pos && createPortal(
+        <div
+          ref={popRef}
+          role="tooltip"
+          onMouseEnter={hoverOpen}
+          onMouseLeave={hoverClose}
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: 'fixed',
+            top: pos.top,
+            left: pos.left,
+            zIndex: 80,
+            width: 'min(300px, calc(100vw - 32px))',
+            padding: 'var(--sp-4) var(--sp-5)',
+            borderRadius: 'var(--radius-md, 8px)',
+            backgroundColor: 'var(--bg-secondary)',
+            border: '1px solid var(--border-color)',
+            boxShadow: 'var(--shadow-hard, 0 10px 40px -10px rgba(0,0,0,0.5), 0 4px 12px rgba(0,0,0,0.3))',
+            color: 'var(--text-secondary)',
+            fontSize: 'var(--fs-xs)',
+            lineHeight: 1.5,
+            cursor: 'default',
+          }}
+        >
+          {isMobile && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setOpen(false); }}
+              aria-label="Закрыть"
+              style={{
+                position: 'absolute', top: 8, right: 8, padding: 4,
+                color: 'var(--text-muted)', background: 'transparent', border: 'none', cursor: 'pointer',
+              }}
+            >
+              <X size={16} />
+            </button>
+          )}
+          {title && (
+            <p style={{
+              color: 'var(--text-primary)', fontWeight: 600, fontSize: 'var(--fs-xs)',
+              marginBottom: 'var(--sp-2)', paddingRight: isMobile ? 24 : 0,
+            }}>
+              {title}
+            </p>
+          )}
+          <p style={{ margin: 0 }}>{content}</p>
+        </div>,
+        document.body
+      )}
+    </span>
+  );
 }
 
 // Кружок-аватар ~20px для dropdown-опций (логотип УК). Картинка перекрывает букву.
@@ -219,6 +349,9 @@ export default function Dropdown<T extends string>({
                   />
                 )}
                 <span className="flex-1 whitespace-nowrap">{opt.label}</span>
+                {opt.help && !opt.locked && (
+                  <OptionHelp title={opt.help.title} content={opt.help.content} />
+                )}
                 {opt.locked && <Lock size={12} className="flex-shrink-0" />}
               </button>
             );
