@@ -351,6 +351,22 @@ function alignSeriesToPrimary(series: MobileChartSeries[]): MobileChartSeries[] 
   });
 }
 
+/**
+ * Последнее РЕАЛЬНОЕ (не gap) значение ряда — для current-value pill.
+ * Берётся из СЫРОГО ряда (prop), МИНУЯ alignSeriesToPrimary/LTTB/smaSmooth:
+ * прорежение и сглаживание — для ВИЗУАЛА линии, но «текущая цена» обязана
+ * совпадать с реальной последней точкой (и с десктопом — там тот же endpoint,
+ * но без обработки). Без этого pill показывал сглаженную/усреднённую цену,
+ * уезжавшую на длинных периодах (1г≠1н при одной и той же последней свече).
+ */
+function lastRealValue(s?: MobileChartSeries): number | null {
+  if (!s) return null;
+  for (let i = s.data.length - 1; i >= 0; i--) {
+    if (!s.data[i].gap) return s.data[i].value;
+  }
+  return null;
+}
+
 export default function MobileChart({
   series: rawSeries,
   height: heightProp,
@@ -756,6 +772,12 @@ export default function MobileChart({
   // Last value pills (на правом краю)
   const leftLastIdx = hasLeft ? leftSeries[0].data.length - 1 : -1;
   const rightLastIdx = hasRight ? rightSeries[0].data.length - 1 : -1;
+  // «Текущая цена» для pill — из СЫРОГО ряда (как ПК), а не из обработанного.
+  // leftSeries[0]/rightSeries[0] соответствуют первому raw-ряду той же оси
+  // (порядок сохраняется через align→downsample), поэтому фильтруем rawSeries
+  // тем же предикатом оси.
+  const rawLeftLast = lastRealValue(rawSeries.filter((s) => s.axis !== 'right')[0]);
+  const rawRightLast = lastRealValue(rawSeries.filter((s) => s.axis === 'right')[0]);
 
   // Подписи оси: короткий форматтер если задан, иначе как в pill.
   const fmtYAxis = (v: number, s: MobileChartSeries) =>
@@ -884,7 +906,8 @@ export default function MobileChart({
             юзеру "current value" анкер на стороне соответствующей оси,
             а не оба значения сжатых в правом верхнем углу. */}
         {hasLeft && leftRange && leftLastIdx >= 0 && !leftSeries[0].hidePill && (() => {
-          const lastV = leftSeries[0].data[leftLastIdx].value;
+          // Значение — сырое (как ПК); fallback на обработанное, если сырого нет.
+          const lastV = rawLeftLast ?? leftSeries[0].data[leftLastIdx].value;
           const y = yAt(lastV, leftRange);
           const text = fmtY(lastV, leftSeries[0]);
           return (
@@ -900,7 +923,8 @@ export default function MobileChart({
           );
         })()}
         {hasRight && rightRange && rightLastIdx >= 0 && !rightSeries[0].hidePill && (() => {
-          const lastV = rightSeries[0].data[rightLastIdx].value;
+          // Значение — сырое (как ПК); fallback на обработанное, если сырого нет.
+          const lastV = rawRightLast ?? rightSeries[0].data[rightLastIdx].value;
           const y = yAt(lastV, rightRange);
           const text = fmtY(lastV, rightSeries[0]);
           return (
