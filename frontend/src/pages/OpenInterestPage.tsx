@@ -593,11 +593,19 @@ export default function OpenInterestPage() {
             <div data-tour="oi-variant">
             <Dropdown<OIVariant>
               options={[
-                { key: 'oi',    label: 'Открытый интерес',                                                     color: 'var(--oi-amber)' },
+                { key: 'oi',    label: 'Открытый интерес',                                                     color: 'var(--oi-amber)',
+                  help: {
+                    title: 'Открытый интерес',
+                    content: 'Общее число открытых позиций по инструменту — сумма позиций на покупку и на продажу. Каждая сделка считается один раз: у неё есть покупатель и продавец, вместе они образуют одну позицию. Открывают позиции — значение растёт, закрывают — снижается.',
+                  } },
                 { key: 'long',  label: displayMode === 'positions' ? 'Покупки' : 'Покупатели',                 color: 'var(--oi-green)' },
                 { key: 'short', label: displayMode === 'positions' ? 'Продажи' : 'Продавцы',                   color: 'var(--oi-red)' },
                 { key: 'both',  label: displayMode === 'positions' ? 'Покупки + Продажи' : 'Покупатели + Продавцы', color: 'var(--oi-purple)' },
-                { key: 'net',   label: 'Чистая позиция',                                                       color: 'var(--oi-cyan)' },
+                { key: 'net',   label: 'Чистая позиция',                                                       color: 'var(--oi-cyan)',
+                  help: {
+                    title: 'Чистая позиция',
+                    content: 'Разница между объёмом позиций на покупку и на продажу. Выше нуля — перевес покупателей, ниже нуля — перевес продавцов.',
+                  } },
               ]}
               value={oiVariant}
               onChange={setOiVariant}
