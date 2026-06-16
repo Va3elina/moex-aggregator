@@ -78,6 +78,12 @@ interface MobileChartProps {
    *  Default false — прочие мобильные графики не задеты. */
   niceTicksLeft?: boolean;
   niceTicksRight?: boolean;
+  /** Ось, к делениям которой привязаны горизонтальные линии сетки.
+   *  По умолчанию — левая (если есть), иначе правая. 'right' принудительно
+   *  кладёт сетку на деления ПРАВОЙ оси: нужно на индикаторах, где правая
+   *  серия главная (Открытые позиции: OI справа) — сетка должна совпадать с
+   *  её круглыми значениями, а не с ценой слева. */
+  gridAxis?: 'left' | 'right';
   loading?: boolean;
   /**
    * Явный триггер replay'я line-draw анимации. Структурная сигнатура
@@ -374,6 +380,7 @@ export default function MobileChart({
   formatXLabel,
   niceTicksLeft = false,
   niceTicksRight = false,
+  gridAxis = 'left',
   loading = false,
   animKey,
 }: MobileChartProps) {
@@ -789,9 +796,13 @@ export default function MobileChart({
     ?? Y_TICK_POSITIONS.map((t) => leftRange.min + leftRange.span * (1 - t)));
   const rightTickVals = !rightRange ? [] : (rightRange.ticks
     ?? Y_TICK_POSITIONS.map((t) => rightRange.min + rightRange.span * (1 - t)));
-  // Сетка следует за основной видимой осью (левая если есть, иначе правая).
-  const gridRange = hasLeft ? leftRange : rightRange;
-  const gridVals = hasLeft ? leftTickVals : rightTickVals;
+  // Сетка следует за основной видимой осью. По умолчанию — левая (если есть),
+  // иначе правая. gridAxis="right" принудительно кладёт сетку на деления ПРАВОЙ
+  // оси (Открытые позиции: OI справа — главная серия). Если правой оси нет
+  // (price-only), gracefully падаем на левую.
+  const preferRight = (gridAxis === 'right' || !hasLeft) && hasRight;
+  const gridRange = preferRight ? rightRange : leftRange;
+  const gridVals = preferRight ? rightTickVals : leftTickVals;
 
   return (
     <div ref={wrapRef} style={{ position: 'relative', width: '100%', height: heightProp ?? '100%', minHeight: 160 }}>

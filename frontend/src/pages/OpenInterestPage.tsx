@@ -791,6 +791,7 @@ export default function OpenInterestPage() {
         formatValue={formatPrice}
         niceTicks={true}
         niceTicksSecondary={true}
+        gridAxis="secondary"
         primaryLabel={instrumentName || selectedInstrument}
         secondaryLabel={labels.secondary}
         thirdLabel={labels.third}

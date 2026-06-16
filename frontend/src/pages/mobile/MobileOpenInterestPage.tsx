@@ -448,6 +448,7 @@ export default function MobileOpenInterestPage() {
             series={chartSeries}
             niceTicksLeft={true}
             niceTicksRight={true}
+            gridAxis="right"
             loading={loading}
             animKey={`${selectedInstrument}|${period}|${intervalValue}|${clgroup}|${displayMode}|${oiVariant}`}
             formatXLabel={(t) => {
