@@ -114,6 +114,9 @@ SCRIPTS = {
     # Candles скрипты
     'candles_futures': BASE_DIR / 'Candles' / 'fetch_candles_futures_realtime.py',
     'candles_spot': BASE_DIR / 'Candles' / 'fetch_candles_spot_realtime.py',
+    # Рублёвый оборот фьючерсов (VALTODAY с ISS → candles.value): у фьючерсных
+    # свечей оборот = 0, в поиске «Объём» нужен в рублях, а не контрактах.
+    'futures_turnover': BASE_DIR / 'Candles' / 'fetch_futures_turnover.py',
     # Funds скрипты
     'funds_daily': BASE_DIR / 'Funds' / 'fetch_funds_realtime.py',
     # Indices скрипты
@@ -186,6 +189,7 @@ TIMEOUTS = {
     'oi_daily': 1800,  # 30 минут
     'candles_futures': 300,  # 5 минут
     'candles_spot': 300,  # 5 минут
+    'futures_turnover': 60,  # 1 минута (один ISS-запрос + bulk UPDATE)
     'funds_daily': 600,  # 10 минут
     'indices_daily': 300,  # 5 минут
     'index_candles_hourly': 600,  # 10 минут (бэкфилл с 2011 — ~25k свечей)
@@ -518,6 +522,20 @@ class MainOrchestrator:
         else:
             self.stats['errors'] += 1
             log.error(f"    ✗ Candles Futures: {msg}")
+
+        # 2b. Рублёвый оборот фьючерсов (VALTODAY с ISS → candles.value).
+        # Best-effort: отдельный процесс ПОСЛЕ свечей (нужна сегодняшняя дневная
+        # свеча). Падение не трогает свечи и не считается ошибкой цикла — поиск
+        # просто покажет прежнее значение оборота.
+        self.stats.setdefault('futures_turnover_runs', 0)
+        self.stats.setdefault('futures_turnover_success', 0)
+        self.stats['futures_turnover_runs'] += 1
+        success, msg, dur = await run_script('futures_turnover', ['--force'])
+        if success:
+            self.stats['futures_turnover_success'] += 1
+            log.info(f"    ✓ Futures turnover ({dur:.1f}с)")
+        else:
+            log.warning(f"    ⚠️ Futures turnover: {msg}")
 
         # Пауза между скриптами для снижения нагрузки на CPU
         await asyncio.sleep(3)
