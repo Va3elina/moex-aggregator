@@ -66,26 +66,34 @@ def get_instruments(
             -- mv_heatmap_stocks DOW 1-5). Holiday-устойчиво: если в пятницу-
             -- праздник свечи нет — DISTINCT ON возьмёт предыдущий будний день.
             -- value (₽) для акций, volume (контракты) для срочного (value=0).
+            -- ⚠️ Фьючерсы: под одним sec_id (перпетуал-серия) в окне ролловера
+            -- живут ДВА dated-контракта (candles.secid) на одну дату → тай-брейк
+            -- по volume DESC берёт АКТИВНЫЙ (фронт) контракт, а не истёкший.
             SELECT DISTINCT ON (sec_id) sec_id,
                    CASE WHEN value > 0 THEN value ELSE volume END AS metric
             FROM candles
             WHERE interval = 24
               AND begin_time >= CURRENT_DATE - INTERVAL '14 days'
               AND EXTRACT(DOW FROM begin_time) BETWEEN 1 AND 5
-            ORDER BY sec_id, begin_time DESC
+            ORDER BY sec_id, begin_time DESC, volume DESC NULLS LAST
         ) v ON v.sec_id = i.sec_id
         LEFT JOIN (
-            -- Изменение цены за последний ТОРГОВЫЙ (будний) день: последняя
-            -- дневная свеча буднего дня против предыдущей будней. Фильтр DOW 1-5
-            -- — no-op в торговый день (сегодня будни), а в выходной даёт
-            -- пятница-vs-четверг, а не тонкую weekend-сессию (Вс-vs-Сб). Это
-            -- держит ИЗМ.% и ОБЪЁМ на ОДНОМ дне («последний торговый день»).
-            SELECT sec_id,
+            -- Изменение цены за последний ТОРГОВЫЙ (будний) день — ВНУТРИ одного
+            -- контракта (= закрытие предыдущего дня ЭТОГО ЖЕ фьючерса).
+            -- ⚠️ Для фьючерсов prev_close НЕЛЬЗЯ брать LAG по sec_id (перпетуал-
+            -- серия): в окне ролловера под одним sec_id два dated-контракта
+            -- (candles.secid), и LAG прыгает между ними → ложные −15…−20% (доказано
+            -- на ролловере июн-2025: CRM old −15.67% vs within-contract −0.86%).
+            -- Поэтому LAG/ROW_NUMBER партиционируем по secid, затем per sec_id
+            -- берём АКТИВНЫЙ контракт (свежайшая дата, тай-брейк по объёму).
+            -- Для акций secid == sec_id → поведение прежнее. DOW 1-5 держит
+            -- ИЗМ.% и ОБЪЁМ на одном «последнем торговом дне».
+            SELECT DISTINCT ON (sec_id) sec_id,
                    (close - prev_close) / NULLIF(prev_close, 0) * 100.0 AS change_pct
             FROM (
-                SELECT sec_id, close,
-                       LAG(close)   OVER (PARTITION BY sec_id ORDER BY begin_time) AS prev_close,
-                       ROW_NUMBER() OVER (PARTITION BY sec_id ORDER BY begin_time DESC) AS rn
+                SELECT sec_id, secid, close, begin_time, volume,
+                       LAG(close)   OVER (PARTITION BY secid ORDER BY begin_time) AS prev_close,
+                       ROW_NUMBER() OVER (PARTITION BY secid ORDER BY begin_time DESC) AS rn
                 FROM candles
                 WHERE interval = 24
                   AND begin_time >= CURRENT_DATE - INTERVAL '14 days'
@@ -93,6 +101,7 @@ def get_instruments(
                   AND close > 0
             ) c
             WHERE rn = 1
+            ORDER BY sec_id, begin_time DESC, volume DESC NULLS LAST
         ) d ON d.sec_id = i.sec_id
         {where_clause}
         ORDER BY daily_volume DESC
