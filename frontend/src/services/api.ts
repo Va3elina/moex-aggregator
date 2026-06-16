@@ -940,25 +940,6 @@ export async function getAnalyticsFunnel(opts: {
   return response.json();
 }
 
-export interface AssignResponse {
-  experiment: string;
-  variant: 'a' | 'b';
-  label: string;
-  active: boolean;
-}
-
-export async function getABAssignment(name: string): Promise<AssignResponse> {
-  // Pass session_id as header — backend читает X-Session-Id для гостей
-  const sessionId = (() => {
-    try { return sessionStorage.getItem('frame_session_id') || ''; } catch { return ''; }
-  })();
-  const response = await apiFetch(`${API_BASE}/api/analytics/experiments/${encodeURIComponent(name)}/assign`, {
-    headers: sessionId ? { 'X-Session-Id': sessionId } : {},
-  });
-  if (!response.ok) throw new Error('Failed to fetch assignment');
-  return response.json();
-}
-
 // ═══════════════════════════════════════════════════════════════════
 // Admin: Users panel
 // ═══════════════════════════════════════════════════════════════════
