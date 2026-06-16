@@ -133,8 +133,22 @@
   <script type="module" src="/src/main.tsx"></script>
   <script>
     if ('serviceWorker' in navigator) {
+      // Был ли контроллер на момент загрузки: если да — будущий controllerchange
+      // это ОБНОВЛЕНИЕ (новый деплой), а не первая установка.
+      var swHadController = !!navigator.serviceWorker.controller;
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('/sw.js').catch(() => { });
+      });
+      // sw.js делает skipWaiting()+clients.claim() → новый SW сразу берёт
+      // управление, но ТЕКУЩАЯ страница всё ещё на СТАРОМ бандле. Без этого фикс
+      // деплоя был виден только после ручного ВТОРОГО рефреша («не поменялось»).
+      // Перезагружаем ОДИН раз при смене контроллера — но НЕ при первой установке
+      // (там бандл уже свежий) и не зацикливаемся (swReloaded).
+      var swReloaded = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (swReloaded || !swHadController) return;
+        swReloaded = true;
+        window.location.reload();
       });
     }
   </script>
