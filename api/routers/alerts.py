@@ -155,10 +155,15 @@ class AlertCreate(BaseModel):
     # max_length зеркалит лимиты колонок БД — иначе длинная строка даёт 500
     # (Postgres DataError) вместо чистого 422.
     indicator: str = Field(max_length=24)        # 'price'|'oi_zscore'|'oi_move'|'funds_flow'
-    asset: str = Field(max_length=20)            # sectype | категория фондов
+    # asset для funds_flow: 'all' (все фонды) | 'custom' (набор fund_ids) |
+    # категория (money_market|stocks|bonds|gold). Для OI/цены — sectype.
+    asset: str = Field(max_length=20)            # sectype | категория/режим фондов
     asset_name: Optional[str] = Field(default=None, max_length=128)
     metric: str = Field(max_length=24)           # 'close'|'zscore'|'atr'|'net_flow'
     clgroup: Optional[str] = Field(default=None, max_length=3)   # OI: 'FIZ'|'YUR'
+    # funds_flow: явный набор фондов (заморожённый). Задан → asset форсится в
+    # 'custom', сериализуется в CSV в колонку alerts.fund_ids. None → таргет по asset.
+    fund_ids: Optional[list[int]] = None
     op: str = Field(max_length=16)               # 'gt'|'lt'|'cross_up'|'cross_down'
     threshold: float
     mode: str = "once"                   # 'once'|'repeat'
@@ -173,6 +178,9 @@ class AlertOut(BaseModel):
     asset_name: Optional[str] = None
     metric: str
     clgroup: Optional[str] = None
+    # funds_flow: набор фондов набора (распарсенный из CSV-колонки), None если
+    # таргет задаётся через asset (категория/'all'). Для OI/цены всегда None.
+    fund_ids: Optional[list[int]] = None
     op: str
     threshold: float
     mode: str
@@ -188,10 +196,43 @@ class AlertOut(BaseModel):
     created_at: Optional[str] = None
 
 
+def _fund_ids_to_csv(fund_ids: Optional[list[int]]) -> Optional[str]:
+    """list[int] → CSV для колонки alerts.fund_ids; пусто/None → None (таргет по asset).
+    Дедуп + сохранение порядка, отрицательные/нечисловые отсекаются на уровне типа."""
+    if not fund_ids:
+        return None
+    seen: set = set()
+    ordered: list[int] = []
+    for fid in fund_ids:
+        if fid in seen:
+            continue
+        seen.add(fid)
+        ordered.append(int(fid))
+    return ",".join(str(x) for x in ordered) if ordered else None
+
+
+def _fund_ids_from_csv(raw: Optional[str]) -> Optional[list[int]]:
+    """CSV из колонки alerts.fund_ids → list[int]; пусто/None → None."""
+    if not raw:
+        return None
+    out: list[int] = []
+    for part in str(raw).split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            out.append(int(part))
+        except ValueError:
+            continue
+    return out or None
+
+
 def _to_out(a: Alert, sector: Optional[str] = None, fires_count: int = 0) -> AlertOut:
     return AlertOut(
         id=a.id, indicator=a.indicator, asset=a.asset, asset_name=a.asset_name,
-        metric=a.metric, clgroup=a.clgroup, op=a.op, threshold=float(a.threshold),
+        metric=a.metric, clgroup=a.clgroup,
+        fund_ids=_fund_ids_from_csv(getattr(a, "fund_ids", None)),
+        op=a.op, threshold=float(a.threshold),
         mode=a.mode, status=a.status, timeframe=getattr(a, "timeframe", "1d") or "1d",
         source=getattr(a, "source", "oi") or "oi",
         sector=sector, fires_count=int(fires_count or 0),
@@ -213,6 +254,13 @@ def _log_alert_event(db: Session, *, alert_id: Optional[int], user_id: int,
 # Категории фонд-алертов (asset для funds_flow) — ключи разделов «Деньги в фондах».
 # Юань пока НЕ включаем (раздел «Скоро» — NAV юаневых фондов ещё наливается).
 FUNDS_CATEGORIES = ("money_market", "stocks", "bonds", "gold")
+# Допустимые значения asset для funds_flow: режимы 'all'/'custom' + категории.
+#   'all'    → все фонды всех категорий (динамически), fund_ids NULL;
+#   'custom' → произвольный набор (fund_ids обязателен);
+#   категория → вся категория (динамически, backward-compat), fund_ids NULL.
+FUNDS_ASSETS = ("all", "custom") + FUNDS_CATEGORIES
+# Потолок на размер заморожённого набора фондов (защита от мусорного payload).
+MAX_FUND_IDS = 500
 
 
 def _alert_source(indicator: str) -> str:
@@ -234,14 +282,26 @@ def _validate_alert_body(b: AlertCreate) -> Optional[str]:
         return "некорректный режим"
     if b.indicator not in ("price", "oi_zscore", "oi_move", "oi_participants", "funds_flow"):
         return "неизвестный индикатор"
-    # funds_flow: asset — ключ КАТЕГОРИИ (не sectype); clgroup у фондов нет;
-    # таймфрейм потоков всегда дневной.
+    # funds_flow: asset — режим/категория фондов (не sectype); clgroup у фондов
+    # нет; таймфрейм потоков всегда дневной. fund_ids задан → набор «custom».
     if b.indicator == "funds_flow":
-        if b.asset not in FUNDS_CATEGORIES:
+        if b.asset not in FUNDS_ASSETS:
             return "неизвестная категория фондов"
         if b.timeframe != "1d":
             return "у потоков фондов только дневной таймфрейм"
+        # 'custom' без набора бессмыслен; набор без 'custom' (на категории/all)
+        # тоже не допускаем — иначе двойная семантика таргета.
+        has_ids = bool(b.fund_ids)
+        if b.asset == "custom" and not has_ids:
+            return "для набора фондов нужно указать fund_ids"
+        if has_ids and b.asset != "custom":
+            return "fund_ids допустим только при asset='custom'"
+        if has_ids and len(b.fund_ids) > MAX_FUND_IDS:
+            return f"слишком много фондов в наборе (макс {MAX_FUND_IDS})"
+        if has_ids and any((not isinstance(x, int)) or x <= 0 for x in b.fund_ids):
+            return "некорректные fund_ids"
         return None
+    # fund_ids неприменим к не-fund алертам — игнорируем (не валим запрос).
     if b.clgroup not in (None, "FIZ", "YUR", "ALL"):
         return "некорректная группа участников"
     if b.timeframe not in ("5m", "1h", "1d"):
@@ -290,6 +350,7 @@ def list_alerts(
         out.append(AlertOut(
             id=r["id"], indicator=r["indicator"], asset=r["asset"],
             asset_name=r["asset_name"], metric=r["metric"], clgroup=r["clgroup"],
+            fund_ids=_fund_ids_from_csv(r.get("fund_ids")),
             op=r["op"], threshold=float(r["threshold"]), mode=r["mode"],
             status=r["status"], timeframe=r["timeframe"] or "1d",
             source=r["source"] or "oi", sector=r["sector"],
@@ -321,15 +382,20 @@ def create_alert(
         raise HTTPException(status_code=422, detail=err.capitalize())
 
     # funds_flow → source='funds' (отдельная секция кабинета), clgroup у фондов
-    # неприменим — обнуляем, чтобы не протёк случайный 'FIZ' из формы.
+    # неприменим — обнуляем, чтобы не протёк случайный 'FIZ' из формы. Набор
+    # фондов: fund_ids задан → asset форсим в 'custom' и сериализуем CSV; иначе
+    # fund_ids=NULL (таргет по asset: 'all' / категория).
     is_funds = body.indicator == "funds_flow"
+    fund_ids_csv = _fund_ids_to_csv(body.fund_ids) if is_funds else None
+    asset = "custom" if fund_ids_csv else body.asset
     alert = Alert(
         user_id=user.id,
         indicator=body.indicator,
-        asset=body.asset,
+        asset=asset,
         asset_name=body.asset_name,
         metric=body.metric,
         clgroup=None if is_funds else body.clgroup,
+        fund_ids=fund_ids_csv,
         op=body.op,
         threshold=body.threshold,
         mode=body.mode,
@@ -362,11 +428,21 @@ class AlertBatchResult(BaseModel):
     errors: list[str]
 
 
-def _alert_key(indicator, asset, clgroup, metric, op, threshold, timeframe="1d"):
+def _alert_key(indicator, asset, clgroup, metric, op, threshold, timeframe="1d",
+               fund_ids=None):
     # timeframe в ключе: 1d и 5m/1h на один актив — РАЗНЫЕ алерты (разный источник
     # «net сейчас»), не дубли. Дефолт '1d' для существующих строк без таймфрейма.
+    # fund_ids в ключе: два custom-fund-алерта (asset='custom') с разными наборами
+    # — РАЗНЫЕ алерты. Нормализуем CSV/list → отсортированный tuple (порядок и
+    # дубли не влияют на «тот же набор»). Для не-fund/категорий fund_ids пуст → ().
+    if isinstance(fund_ids, str):
+        norm = tuple(sorted(_fund_ids_from_csv(fund_ids) or ()))
+    elif fund_ids:
+        norm = tuple(sorted(set(int(x) for x in fund_ids)))
+    else:
+        norm = ()
     return (indicator, asset, clgroup or "", metric, op,
-            round(float(threshold), 6), timeframe or "1d")
+            round(float(threshold), 6), timeframe or "1d", norm)
 
 
 @router.post("/batch", response_model=AlertBatchResult)
@@ -384,7 +460,8 @@ def create_alerts_batch(
     remaining = None if quota is None else max(0, quota - used)
     # Дедуп: повторный «Создать» на той же группе не плодит дубли.
     seen = {_alert_key(x.indicator, x.asset, x.clgroup, x.metric, x.op, x.threshold,
-                       getattr(x, "timeframe", "1d")) for x in existing}
+                       getattr(x, "timeframe", "1d"), getattr(x, "fund_ids", None))
+            for x in existing}
 
     created = 0
     skipped = 0
@@ -394,18 +471,22 @@ def create_alerts_batch(
         if err:
             errors.append(f"{a.asset}: {err}")
             continue
-        k = _alert_key(a.indicator, a.asset, a.clgroup, a.metric, a.op, a.threshold, a.timeframe)
+        is_funds = a.indicator == "funds_flow"
+        fund_ids_csv = _fund_ids_to_csv(a.fund_ids) if is_funds else None
+        asset_val = "custom" if fund_ids_csv else a.asset
+        k = _alert_key(a.indicator, asset_val, a.clgroup, a.metric, a.op, a.threshold,
+                       a.timeframe, fund_ids_csv)
         if k in seen:
             skipped += 1
             continue
         if remaining is not None and created >= remaining:
             errors.append(f"{a.asset}: достигнут лимит {quota} алертов (Pro — безлимит)")
             continue
-        is_funds = a.indicator == "funds_flow"
         new_alert = Alert(
             user_id=user.id,
-            indicator=a.indicator, asset=a.asset, asset_name=a.asset_name,
+            indicator=a.indicator, asset=asset_val, asset_name=a.asset_name,
             metric=a.metric, clgroup=None if is_funds else a.clgroup,
+            fund_ids=fund_ids_csv,
             op=a.op, threshold=a.threshold,
             mode=a.mode, cooldown_hours=a.cooldown_hours, timeframe=a.timeframe,
             source=_alert_source(a.indicator),

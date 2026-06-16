@@ -6,7 +6,7 @@
 (signals/alerts_run.py, Phase 3) проверяет → бот шлёт пуш. Квота по тарифу
 (features.py telegram_alerts_quota): free=0, basic=20, pro=∞.
 """
-from sqlalchemy import Column, Integer, String, Numeric, DateTime, Date, ForeignKey, Index
+from sqlalchemy import Column, Integer, String, Text, Numeric, DateTime, Date, ForeignKey, Index
 from sqlalchemy.sql import func
 
 from api.database import Base
@@ -19,8 +19,13 @@ class Alert(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
 
     indicator = Column(String(24), nullable=False)   # 'price' | 'oi_zscore'
+    # asset: sectype (OI/цена) | категория фондов (money_market|stocks|bonds|gold) |
+    # 'all' (все фонды всех категорий) | 'custom' (произвольный набор fund_ids).
     asset = Column(String(20), nullable=False)        # sectype
     asset_name = Column(String(120), nullable=True)
+    # funds_flow: CSV из fund_id (заморожённый набор фондов). NULL = таргет
+    # определяется asset: 'all' → все фонды, категория → вся категория (динамически).
+    fund_ids = Column(Text, nullable=True)
     metric = Column(String(24), nullable=False)       # price: 'close'; oi: 'zscore'
     clgroup = Column(String(3), nullable=True)        # OI: 'FIZ'|'YUR'
     # Таймфрейм источника «net/npart сейчас» для OI-метрик: '5m'/'1h' — раннее

@@ -60,10 +60,13 @@ const STATUS_LABEL: Record<string, string> = {
     active: 'Активен', paused: 'Пауза', fired: 'Сработал',
 };
 
-// Имена категорий фондов (asset фонд-алерта — ключ категории).
+// Имена категорий фондов — фолбэк для старых фонд-алертов, у которых asset=ключ
+// категории, а asset_name мог быть пуст. Новые алерты несут метку выбора в
+// asset_name («Все фонды» / «Акции, Облигации» / «N фондов»).
 const FUNDS_CATEGORY_NAME: Record<string, string> = {
     money_market: 'Денежный рынок', stocks: 'Акции',
     bonds: 'Облигации', gold: 'Золото', yuan: 'Юань',
+    all: 'Все фонды',
 };
 
 function unitFor(a: AlertInfo): string {
@@ -74,9 +77,11 @@ function unitFor(a: AlertInfo): string {
     return '';
 }
 
-// Отображаемое имя актива: для фонд-алерта asset — ключ категории → человекочитаемое имя.
+// Отображаемое имя актива. Для фонд-алерта показываем метку выбора (asset_name:
+// «Все фонды» / «Акции, Облигации» / «N фондов»); фолбэк — карта категорий по
+// asset (старые алерты), затем сам asset.
 function assetLabel(a: AlertInfo): string {
-    if (a.indicator === 'funds_flow') return FUNDS_CATEGORY_NAME[a.asset] ?? a.asset_name ?? a.asset;
+    if (a.indicator === 'funds_flow') return a.asset_name || FUNDS_CATEGORY_NAME[a.asset] || a.asset;
     return a.asset_name || a.asset;
 }
 

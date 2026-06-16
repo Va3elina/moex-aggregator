@@ -43,6 +43,24 @@ _OP_PRICE = {"cross_up": "↑ пересекла", "cross_down": "↓ перес
 _TF_INTERVAL = {"5m": 5, "1h": 60, "1d": 24}
 
 
+def _parse_fund_ids(raw) -> list | None:
+    """CSV из fund_id (колонка alerts.fund_ids) → list[int]; пусто/None → None.
+    None = таргет задаётся через a.asset (категория или 'all'), а не явный набор.
+    Невалидные элементы тихо пропускаем; если ничего не осталось → None."""
+    if not raw:
+        return None
+    ids = []
+    for part in str(raw).split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            ids.append(int(part))
+        except ValueError:
+            continue
+    return ids or None
+
+
 def eval_op(op: str, value: float, prev, threshold: float) -> bool:
     if op == "gt":
         return value > threshold
@@ -97,16 +115,24 @@ def compute_value(a: Alert):
         return float(ratio), {"last_diff": last_diff, "current_npart": current_npart,
                               "direction": direction, "signal_date": sig_date}
     if a.indicator == "funds_flow":
-        # «Аномальный поток» — во сколько раз дневной net_flow категории больше
-        # обычного (ATR14). asset = ключ категории (money_market/stocks/bonds/gold).
+        # «Аномальный поток» — во сколько раз дневной net_flow набора фондов больше
+        # обычного (ATR14). Таргет (контракт fund-алерта):
+        #   • a.fund_ids задан (CSV) → именно эти фонды (asset='custom');
+        #   • a.asset ∈ {'all','custom'} → category=None (все фонды; для custom
+        #     fund_ids уже задают набор, category игнорируется);
+        #   • иначе a.asset = ключ категории (money_market/stocks/bonds/gold) →
+        #     вся категория (backward-compat со старыми fund-алертами).
         # direction: 'up' приток / 'down' отток. Дневная метрика → signal_date для
         # гейта «новый торговый день» (как у oi_move).
-        r = compute_fund_flow_atr(a.asset)
+        fund_ids = _parse_fund_ids(a.fund_ids)
+        category = None if a.asset in ("all", "custom") else a.asset
+        r = compute_fund_flow_atr(fund_ids, category)
         if not r:
             return None, None
         ratio, direction, last_flow, sig_date = r
         return float(ratio), {"direction": direction, "last_flow": last_flow,
-                              "category": a.asset, "signal_date": sig_date}
+                              "asset": a.asset, "fund_ids": fund_ids,
+                              "signal_date": sig_date}
     return None, None
 
 
@@ -215,12 +241,14 @@ def format_msg(a: Alert, value: float, ctx: dict) -> str:
         return (f"{head} — открытые позиции{tf_note}\n"
                 f"{flow} {clg} — в {value:g}× резче обычного (порог {thr:g}×).{ctx_line}\n{link}")
     if a.indicator == "funds_flow":
-        # «Аномальный поток» по категории фондов. Собственный head (имя категории
-        # вместо тикер-инструмента) и ссылка на /funds-money. Главное в тексте —
+        # «Аномальный поток» по выбранному набору фондов. Заголовок из метки
+        # выбора (a.asset_name: «Все фонды» / «Акции, Облигации» / «N фондов» /
+        # по УК), с fallback на имя категории для старых fund-алертов, у которых
+        # asset_name мог быть пуст. Ссылка на /funds-money. Главное в тексте —
         # ×N + направление (приток/отток), в стиле oi_move.
-        cat_name = _FUND_CAT_NAME.get(a.asset, a.asset_name or a.asset)
+        label = a.asset_name or _FUND_CAT_NAME.get(a.asset, a.asset)
         funds_link = f'<a href="{SITE}/funds-money">открыть график →</a>'
-        funds_head = f"<b>{_MARK}</b>\n<b>{cat_name}</b>"
+        funds_head = f"<b>{_MARK}</b>\n<b>{label}</b>"
         flow_word = "ПРИТОК" if ctx.get("direction") == "up" else "ОТТОК"
         return (f"{funds_head} — притоки-оттоки\n"
                 f"Резкий {flow_word} — в {value:g}× больше обычного (порог {thr:g}×).\n{funds_link}")
@@ -237,9 +265,12 @@ def run_once() -> dict:
         uids = {a.user_id for a in alerts}
         users = {u.id: u for u in db.query(User).filter(User.id.in_(uids)).all()} if uids else {}
         # Дедуп: значение метрики считаем ОДИН раз на (indicator, asset, clgroup,
-        # timeframe) за проход — 50 алертов на SR-цену = 1 запрос, а не 50. timeframe
-        # в ключе обязателен: 1d и 5m на один актив дают РАЗНЫЕ значения (дневное
-        # закрытие vs бегущий внутридневной бар) — иначе перепутались бы.
+        # timeframe, fund_ids) за проход — 50 алертов на SR-цену = 1 запрос, а не 50.
+        # timeframe в ключе обязателен: 1d и 5m на один актив дают РАЗНЫЕ значения
+        # (дневное закрытие vs бегущий внутридневной бар) — иначе перепутались бы.
+        # fund_ids в ключе: два custom-fund-алерта с asset='custom', но разными
+        # наборами фондов — РАЗНЫЕ значения, не должны делить кэш (для не-fund
+        # алертов fund_ids=NULL → нормализуется в "" → ключ как раньше).
         value_cache: dict = {}
         for a in alerts:
             summary["checked"] += 1
@@ -248,7 +279,8 @@ def run_once() -> dict:
                 if not user or not user.telegram_chat_id:
                     summary["skipped"] += 1   # не привязан Telegram — доставить некуда
                     continue
-                ck = (a.indicator, a.asset, a.clgroup or "", a.timeframe or "1d")
+                ck = (a.indicator, a.asset, a.clgroup or "", a.timeframe or "1d",
+                      (a.fund_ids or "") if a.indicator == "funds_flow" else "")
                 if ck in value_cache:
                     value, ctx = value_cache[ck]
                 else:

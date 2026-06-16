@@ -44,16 +44,6 @@ const CATEGORIES: Array<{ key: FundCategory; label: string; comingSoon?: boolean
   { key: 'yuan', label: 'Юань' },
 ];
 
-// Полные имена категорий для фонд-алерта (asset_name + текст модалки). Чип-лейблы
-// выше терсе («Деньги»), а в сигнале хочется человекочитаемое «Денежный рынок».
-const CATEGORY_FULL_NAME: Record<string, string> = {
-  money_market: 'Денежный рынок',
-  stocks: 'Акции',
-  bonds: 'Облигации',
-  gold: 'Золото',
-  yuan: 'Юань',
-};
-
 const PERIODS: Array<{ key: FundPeriod; label: string }> = [
   { key: '1m', label: '1М' },
   { key: '1y', label: '1Г' },
@@ -584,7 +574,8 @@ export default function MobileFundsMoneyPage() {
           )}
 
           {/* Сигналы по фондам — рабочая кнопка (только в режиме притоков).
-              Открывает CreateFundAlertModal для текущей категории (актив=category).
+              Открывает CreateFundAlertModal БЕЗ привязки к текущей категории —
+              фонды/категории выбираются внутри (дефолт — все фонды).
               Tier-гейт как у OI: quota=0 (Free/гость) → upgrade-промпт + замочек;
               иначе закрываем sheet и открываем модалку создания. */}
           {viewMode === 'flows' && (
@@ -613,7 +604,7 @@ export default function MobileFundsMoneyPage() {
                 }}
               >
                 <Bell size={14} strokeWidth={2.2} />
-                Сигнал по «{categoryLabel}»
+                Сигнал по фондам
                 {alertsLocked && <Lock size={11} strokeWidth={2.2} />}
               </button>
             </div>
@@ -772,11 +763,10 @@ export default function MobileFundsMoneyPage() {
         </div>
       </MobileSheet>
 
-      {/* Конструктор сигнала по фондам — актив = текущая категория. */}
+      {/* Конструктор сигнала по фондам — категория/фонды выбираются ВНУТРИ
+          модалки (дефолт — все фонды), без привязки к текущей категории. */}
       {fundAlertOpen && (
         <CreateFundAlertModal
-          category={category}
-          categoryName={CATEGORY_FULL_NAME[category] ?? categoryLabel}
           onClose={() => setFundAlertOpen(false)}
         />
       )}
