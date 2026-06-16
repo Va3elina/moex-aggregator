@@ -40,17 +40,16 @@ const FLUSH_INTERVAL_MS = 5_000;     // batch flush каждые 5s
 const HEARTBEAT_INTERVAL_MS = 60_000; // heartbeat каждые 60s
 const MAX_BATCH = 50;
 
+// Только типы, которые реально отправляются (см. track()-вызовы по проекту).
+// Мёртвые (indicator_view / chart_annotate / period_change / session_end)
+// удалены 2026-06-16 — никогда не слались, бэкенд-whitelist их тоже не принимает.
 type EventType =
   | 'pageview'
-  | 'indicator_view'
   | 'instrument_select'
   | 'seasonality_mode'
   | 'chart_export'
-  | 'chart_annotate'
-  | 'period_change'
   | 'theme_toggle'
-  | 'session_heartbeat'
-  | 'session_end';
+  | 'session_heartbeat';
 
 interface PendingEvent {
   session_id: string;

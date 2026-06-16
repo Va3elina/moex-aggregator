@@ -48,29 +48,62 @@ class AnalyticsBatch(BaseModel):
 
 # Whitelist of event types — preventing arbitrary type spam.
 # Если фронт пытается отправить unknown type — игнорим (без 4xx, чтобы не ломать UI).
+# Только типы, которые фронт реально шлёт (см. AnalyticsContext + track()-вызовы).
+# Мёртвые типы (indicator_view / chart_annotate / period_change / session_end)
+# удалены 2026-06-16 — никогда не отправлялись.
 ALLOWED_EVENT_TYPES = {
     "pageview",
-    "indicator_view",
     "instrument_select",
     "seasonality_mode",
     "chart_export",
-    "chart_annotate",
-    "period_change",
     "theme_toggle",
     "session_heartbeat",
-    "session_end",
 }
 
 
+# Канон ключей indicator в событиях chart_export. Ключ берётся из имени файла
+# экспорта ("frame-<indicator>-..."), и за историю накопился дрейф: один и тот
+# же индикатор писался по-разному. Маппим алиас → канон, чтобы «Топ экспортов»
+# не двоился (нормализация в SQL, см. _export_indicator_canon_sql).
+EXPORT_INDICATOR_ALIASES = {
+    "open_interest": "oi",
+    "fund": "funds",
+    "funds_money": "funds",
+}
+
+
+def _export_indicator_canon_sql(expr: str) -> str:
+    """SQL-выражение CASE, сводящее алиасы indicator к канону.
+
+    `expr` — SQL-выражение, дающее сырой indicator (e.g. "payload->>'indicator'").
+    Возвращает CASE ... END. Ключи/значения берём из EXPORT_INDICATOR_ALIASES —
+    хардкодим в строку безопасно: значения это фикс-литералы из кода (не user input).
+    """
+    whens = "\n".join(
+        f"                WHEN {expr} = '{alias}' THEN '{canon}'"
+        for alias, canon in EXPORT_INDICATOR_ALIASES.items()
+    )
+    return f"""CASE
+{whens}
+                ELSE {expr}
+            END"""
+
+
 def _detect_device(user_agent: str) -> str:
-    """Грубая классификация по UA. Не для precision, только для распределения."""
+    """Грубая классификация по UA. Не для precision, только для распределения.
+
+    Серверный fallback для device, когда фронт не прислал свой
+    (см. post_events: `ev.device or device`). Tablet проверяем ПЕРВЫМ,
+    т.к. iPad/Android-tablet UA содержат и mobi/android-токены.
+    """
     ua = (user_agent or "").lower()
     if "bot" in ua or "spider" in ua or "crawl" in ua:
         return "bot"
-    if "mobi" in ua or "iphone" in ua or "android" in ua and "mobile" in ua:
-        return "mobile"
     if "tablet" in ua or "ipad" in ua:
         return "tablet"
+    # Явные скобки: без них `and` связывал бы крепче `or` и менял семантику.
+    if "mobi" in ua or "iphone" in ua or ("android" in ua and "mobile" in ua):
+        return "mobile"
     return "desktop"
 
 
@@ -203,30 +236,51 @@ async def get_stats(
 
     where_sql = " AND ".join(where_clauses)
 
-    with engine.connect() as conn:
-        # === Summary ===
-        summary_row = conn.execute(text(f"""
-            SELECT
-                COUNT(DISTINCT COALESCE(user_id::text, session_id))         AS dau,
-                COUNT(DISTINCT session_id)                                   AS sessions,
-                COUNT(*)                                                     AS events
-            FROM analytics_events
-            WHERE {where_sql}
-        """), params).fetchone()
+    # Сессионная длительность считается ОДИНАКОВО для summary.sessions и avg:
+    # суммируем gap'ы между соседними событиями сессии, КАПНУВ каждый gap на
+    # SESSION_GAP_CAP_SEC (5 мин — стандарт GA). Без капа heartbeat'ы в фоновых
+    # вкладках (вкладка открыта часами) раздували (MAX-MIN) до многочасовых
+    # «сессий». Сессии с единственным событием имеют dur=0, но ВХОДЯТ в набор —
+    # один знаменатель и для «Сессий», и для «Среднего времени».
+    SESSION_GAP_CAP_SEC = 300
 
-        # Average session duration: для каждой сессии считаем (max - min) client_ts.
-        avg_session = conn.execute(text(f"""
-            WITH sess AS (
+    def _session_durations_cte(w_sql: str) -> str:
+        return f"""
+            sess AS (
                 SELECT session_id,
-                       EXTRACT(EPOCH FROM (MAX(client_ts) - MIN(client_ts)))::int AS dur
-                FROM analytics_events
-                WHERE {where_sql}
+                       COALESCE(SUM(
+                           LEAST(
+                               EXTRACT(EPOCH FROM (client_ts - prev_ts)),
+                               {SESSION_GAP_CAP_SEC}
+                           )
+                       ), 0)::int AS dur
+                FROM (
+                    SELECT session_id,
+                           client_ts,
+                           LAG(client_ts) OVER (
+                               PARTITION BY session_id ORDER BY client_ts
+                           ) AS prev_ts
+                    FROM analytics_events
+                    WHERE {w_sql}
+                ) ordered
                 GROUP BY session_id
-                HAVING EXTRACT(EPOCH FROM (MAX(client_ts) - MIN(client_ts))) > 0
             )
-            SELECT COALESCE(AVG(dur), 0)::int AS avg_dur, COUNT(*) AS sess_count FROM sess
+        """
+
+    with engine.connect() as conn:
+        # === Summary === (dau/events — прямой счёт; sessions — из того же
+        # набора сессий, что и avg, чтобы знаменатели совпадали)
+        summary_row = conn.execute(text(f"""
+            WITH {_session_durations_cte(where_sql)}
+            SELECT
+                (SELECT COUNT(DISTINCT COALESCE(user_id::text, session_id))
+                   FROM analytics_events WHERE {where_sql})  AS uniques,
+                (SELECT COUNT(*) FROM sess)                   AS sessions,
+                (SELECT COUNT(*) FROM analytics_events WHERE {where_sql}) AS events,
+                (SELECT COALESCE(AVG(dur), 0)::int FROM sess) AS avg_dur
+            FROM (SELECT 1) _
         """), params).fetchone()
-        avg_session_sec = int(avg_session[0]) if avg_session and avg_session[0] else 0
+        avg_session_sec = int(summary_row[3]) if summary_row and summary_row[3] else 0
 
         # Previous period для delta
         prev_params = {**params, "period_start": prev_period_start, "period_end": period_start}
@@ -236,25 +290,16 @@ async def get_stats(
             "server_ts >= :period_start AND server_ts < :period_end",
         )
         prev_summary = conn.execute(text(f"""
+            WITH {_session_durations_cte(prev_where_sql)}
             SELECT
-                COUNT(DISTINCT COALESCE(user_id::text, session_id)) AS dau,
-                COUNT(DISTINCT session_id)                          AS sessions,
-                COUNT(*)                                            AS events
-            FROM analytics_events
-            WHERE {prev_where_sql}
+                (SELECT COUNT(DISTINCT COALESCE(user_id::text, session_id))
+                   FROM analytics_events WHERE {prev_where_sql})  AS uniques,
+                (SELECT COUNT(*) FROM sess)                        AS sessions,
+                (SELECT COUNT(*) FROM analytics_events WHERE {prev_where_sql}) AS events,
+                (SELECT COALESCE(AVG(dur), 0)::int FROM sess)      AS avg_dur
+            FROM (SELECT 1) _
         """), prev_params).fetchone()
-        prev_avg_row = conn.execute(text(f"""
-            WITH sess AS (
-                SELECT session_id,
-                       EXTRACT(EPOCH FROM (MAX(client_ts) - MIN(client_ts)))::int AS dur
-                FROM analytics_events
-                WHERE {prev_where_sql}
-                GROUP BY session_id
-                HAVING EXTRACT(EPOCH FROM (MAX(client_ts) - MIN(client_ts))) > 0
-            )
-            SELECT COALESCE(AVG(dur), 0)::int AS avg_dur FROM sess
-        """), prev_params).fetchone()
-        prev_avg_sec = int(prev_avg_row[0]) if prev_avg_row and prev_avg_row[0] else 0
+        prev_avg_sec = int(prev_summary[3]) if prev_summary and prev_summary[3] else 0
 
         # === Trends (per-day series) ===
         trends_rows = conn.execute(text(f"""
@@ -292,13 +337,21 @@ async def get_stats(
         """), params).fetchall()
 
         # === Top exports ===
+        # Нормализуем алиасы indicator в SQL (CASE), чтобы один индикатор не
+        # двоился из-за исторического дрейфа ключей в filename экспорта:
+        #   open_interest → oi,  fund / funds_money → funds.
+        # См. EXPORT_INDICATOR_ALIASES. Группируем уже по канону → чинит и историю.
         top_exports = conn.execute(text(f"""
-            SELECT payload->>'indicator' AS indicator, COUNT(*) AS count
-            FROM analytics_events
-            WHERE {where_sql}
-              AND event_type = 'chart_export'
-              AND payload->>'indicator' IS NOT NULL
-            GROUP BY payload->>'indicator'
+            WITH normalized AS (
+                SELECT {_export_indicator_canon_sql("payload->>'indicator'")} AS indicator
+                FROM analytics_events
+                WHERE {where_sql}
+                  AND event_type = 'chart_export'
+                  AND payload->>'indicator' IS NOT NULL
+            )
+            SELECT indicator, COUNT(*) AS count
+            FROM normalized
+            GROUP BY indicator
             ORDER BY count DESC
             LIMIT 10
         """), params).fetchall()
@@ -324,11 +377,15 @@ async def get_stats(
         "segment": segment,
         "device": device,
         "summary": {
-            "dau": int(summary_row[0]) if summary_row else 0,
+            # «uniques» — уникальные посетители ЗА ВЕСЬ период (НЕ дневной DAU).
+            # Это COUNT(DISTINCT user_id|session_id) по всему окну. Гость = одна
+            # вкладка (session_id умирает при закрытии), поэтому это ближе к
+            # «визитам-уникам», чем к людям — фронт подписывает честно.
+            "uniques": int(summary_row[0]) if summary_row else 0,
             "sessions": int(summary_row[1]) if summary_row else 0,
             "events": int(summary_row[2]) if summary_row else 0,
             "avg_session_sec": avg_session_sec,
-            "delta_dau": (int(summary_row[0]) if summary_row else 0) - (int(prev_summary[0]) if prev_summary else 0),
+            "delta_uniques": (int(summary_row[0]) if summary_row else 0) - (int(prev_summary[0]) if prev_summary else 0),
             "delta_sessions_pct": pct_delta(
                 int(summary_row[1]) if summary_row else 0,
                 int(prev_summary[1]) if prev_summary else 0,
@@ -340,7 +397,9 @@ async def get_stats(
             "delta_avg_session_sec": avg_session_sec - prev_avg_sec,
         },
         "trends": [
-            {"date": r[0].isoformat(), "dau": int(r[1]), "sessions": int(r[2])}
+            # Per-day: «uniques» здесь это настоящий дневной distinct-count
+            # (GROUP BY server_ts::date) — честный daily-unique по дням.
+            {"date": r[0].isoformat(), "uniques": int(r[1]), "sessions": int(r[2])}
             for r in trends_rows
         ],
         "top_pages": [{"path": r[0], "views": int(r[1])} for r in top_pages],
@@ -451,231 +510,19 @@ async def get_funnel(
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# GET /cohort — retention curves (D1/D7/D30) для авторизованных
-# ════════════════════════════════════════════════════════════════════════════
-
-@router.get("/cohort")
-async def get_cohort(
-    weeks: int = Query(8, ge=1, le=26, description="Сколько cohort-недель показать"),
-    user=Depends(require_admin),
-):
-    """Cohort retention: для каждой недели регистрации — % вернувшихся через D1/D7/D30.
-
-    Только для авторизованных users (которые имеют persistent user_id через login).
-    Гости отслеживаются по session_id, который умирает при закрытии вкладки → cohort impossible.
-    """
-    engine = get_engine()
-    with engine.connect() as conn:
-        rows = conn.execute(text("""
-            WITH cohorts AS (
-                SELECT id AS user_id,
-                       date_trunc('week', created_at)::date AS cohort_week
-                FROM users
-                WHERE created_at >= NOW() - (:weeks * INTERVAL '1 week')
-            ),
-            user_active_days AS (
-                SELECT DISTINCT user_id, server_ts::date AS day
-                FROM analytics_events
-                WHERE user_id IS NOT NULL
-                  AND server_ts >= NOW() - (:weeks * INTERVAL '1 week') - INTERVAL '30 days'
-            )
-            SELECT
-                c.cohort_week,
-                COUNT(DISTINCT c.user_id) AS cohort_size,
-                COUNT(DISTINCT c.user_id) FILTER (
-                    WHERE EXISTS (
-                        SELECT 1 FROM user_active_days a
-                        WHERE a.user_id = c.user_id
-                          AND a.day = c.cohort_week + INTERVAL '1 day'
-                    )
-                ) AS d1,
-                COUNT(DISTINCT c.user_id) FILTER (
-                    WHERE EXISTS (
-                        SELECT 1 FROM user_active_days a
-                        WHERE a.user_id = c.user_id
-                          AND a.day BETWEEN c.cohort_week + INTERVAL '1 day' AND c.cohort_week + INTERVAL '7 days'
-                    )
-                ) AS d7,
-                COUNT(DISTINCT c.user_id) FILTER (
-                    WHERE EXISTS (
-                        SELECT 1 FROM user_active_days a
-                        WHERE a.user_id = c.user_id
-                          AND a.day BETWEEN c.cohort_week + INTERVAL '1 day' AND c.cohort_week + INTERVAL '30 days'
-                    )
-                ) AS d30
-            FROM cohorts c
-            GROUP BY c.cohort_week
-            ORDER BY c.cohort_week DESC
-        """), {"weeks": weeks}).fetchall()
-
-    cohorts = []
-    for r in rows:
-        size = int(r[1])
-        cohorts.append({
-            "cohort_week": r[0].isoformat(),
-            "cohort_size": size,
-            "d1": int(r[2]),
-            "d7": int(r[3]),
-            "d30": int(r[4]),
-            "d1_pct": round(int(r[2]) / size * 100, 1) if size > 0 else 0.0,
-            "d7_pct": round(int(r[3]) / size * 100, 1) if size > 0 else 0.0,
-            "d30_pct": round(int(r[4]) / size * 100, 1) if size > 0 else 0.0,
-        })
-
-    return {"weeks": weeks, "cohorts": cohorts}
-
-
-# ════════════════════════════════════════════════════════════════════════════
-# GET /realtime — активность за последние N минут
-# ════════════════════════════════════════════════════════════════════════════
-
-@router.get("/realtime")
-async def get_realtime(
-    minutes: int = Query(5, ge=1, le=60),
-    user=Depends(require_admin),
-):
-    """Real-time activity: что происходит на сайте прямо сейчас.
-
-    Endpoint меняется каждые 15-30 секунд → клиент polling'ом обновляет widget.
-    """
-    engine = get_engine()
-    cutoff = datetime.utcnow() - timedelta(minutes=minutes)
-
-    with engine.connect() as conn:
-        # Active sessions (с heartbeat в последние N минут)
-        active = conn.execute(text("""
-            SELECT COUNT(DISTINCT session_id)
-            FROM analytics_events
-            WHERE server_ts >= :cutoff
-        """), {"cutoff": cutoff}).fetchone()
-        active_sessions = int(active[0]) if active else 0
-
-        # Active pages (топ-5 путей за последние N минут)
-        pages = conn.execute(text("""
-            SELECT event_path, COUNT(DISTINCT session_id) AS sessions
-            FROM analytics_events
-            WHERE server_ts >= :cutoff
-              AND event_type = 'pageview'
-              AND event_path IS NOT NULL
-            GROUP BY event_path
-            ORDER BY sessions DESC
-            LIMIT 5
-        """), {"cutoff": cutoff}).fetchall()
-
-        # Recent events (последние 15 событий, любого типа)
-        recent = conn.execute(text("""
-            SELECT event_type, event_path, payload, server_ts, ip_country, device
-            FROM analytics_events
-            WHERE server_ts >= :cutoff
-            ORDER BY server_ts DESC
-            LIMIT 15
-        """), {"cutoff": cutoff}).fetchall()
-
-        # Devices breakdown
-        devices = conn.execute(text("""
-            SELECT device, COUNT(DISTINCT session_id) AS sessions
-            FROM analytics_events
-            WHERE server_ts >= :cutoff AND device IS NOT NULL
-            GROUP BY device
-        """), {"cutoff": cutoff}).fetchall()
-
-    return {
-        "minutes": minutes,
-        "active_sessions": active_sessions,
-        "active_pages": [{"path": r[0], "sessions": int(r[1])} for r in pages],
-        "recent_events": [
-            {
-                "event_type": r[0],
-                "event_path": r[1],
-                "payload": r[2],
-                "server_ts": r[3].isoformat(),
-                "country": r[4],
-                "device": r[5],
-            }
-            for r in recent
-        ],
-        "devices": [{"device": r[0], "sessions": int(r[1])} for r in devices],
-    }
-
-
-# ════════════════════════════════════════════════════════════════════════════
-# A/B testing — experiments + assignment
+# A/B testing — variant assignment
 # ════════════════════════════════════════════════════════════════════════════
 # Логика deterministic split:
 #   bucket = hash(experiment_name + user_id|session_id) mod 100
 #   bucket < traffic_split → variant_a, иначе variant_b
 # Даёт consistency: один user всегда видит ту же variant для эксперимента.
+#
+# Удалено 2026-06-16 (мёртвый код): GET /cohort, GET /realtime (на фронте блоки
+# Retention/Realtime удалены ещё 2026-05-13) и CRUD /experiments
+# (list/create/delete — UI управления экспериментами не было). Эндпоинт
+# /experiments/{name}/assign оставлен: его всё ещё дёргает useExperiment-хук.
 
 import hashlib
-
-
-class ABExperimentCreate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=64)
-    description: Optional[str] = None
-    variant_a: str = Field(..., min_length=1, max_length=64)
-    variant_b: str = Field(..., min_length=1, max_length=64)
-    traffic_split: int = Field(50, ge=0, le=100, description="% trafic в variant_a (rest → b)")
-    active: bool = True
-
-
-@router.get("/experiments")
-async def list_experiments(user=Depends(require_admin)):
-    """Список всех A/B экспериментов (admin-only)."""
-    engine = get_engine()
-    with engine.connect() as conn:
-        rows = conn.execute(text("""
-            SELECT name, description, variant_a, variant_b, traffic_split, active,
-                   created_at,
-                   (SELECT COUNT(*) FROM ab_assignments WHERE experiment_name = ab_experiments.name) AS total_assignments
-            FROM ab_experiments
-            ORDER BY created_at DESC
-        """)).fetchall()
-    return {
-        "experiments": [
-            {
-                "name": r[0],
-                "description": r[1],
-                "variant_a": r[2],
-                "variant_b": r[3],
-                "traffic_split": int(r[4]),
-                "active": bool(r[5]),
-                "created_at": r[6].isoformat(),
-                "total_assignments": int(r[7]),
-            }
-            for r in rows
-        ]
-    }
-
-
-@router.post("/experiments", status_code=201)
-async def create_experiment(exp: ABExperimentCreate, user=Depends(require_admin)):
-    """Создать новый A/B эксперимент. name unique."""
-    engine = get_engine()
-    try:
-        with engine.begin() as conn:
-            conn.execute(
-                text("""
-                    INSERT INTO ab_experiments
-                        (name, description, variant_a, variant_b, traffic_split, active)
-                    VALUES (:name, :description, :variant_a, :variant_b, :traffic_split, :active)
-                """),
-                exp.model_dump(),
-            )
-    except Exception as e:
-        if "duplicate" in str(e).lower() or "unique" in str(e).lower():
-            raise HTTPException(409, f"Эксперимент '{exp.name}' уже существует")
-        raise HTTPException(500, f"DB error: {e}")
-    return {"status": "created", "name": exp.name}
-
-
-@router.delete("/experiments/{name}", status_code=204)
-async def delete_experiment(name: str, user=Depends(require_admin)):
-    """Удалить эксперимент. Cascade удаляет assignments."""
-    engine = get_engine()
-    with engine.begin() as conn:
-        conn.execute(text("DELETE FROM ab_assignments WHERE experiment_name = :name"), {"name": name})
-        conn.execute(text("DELETE FROM ab_experiments WHERE name = :name"), {"name": name})
-    return None
 
 
 @router.get("/experiments/{name}/assign")
@@ -868,14 +715,25 @@ async def user_detail(
             WHERE user_id = :id AND server_ts >= :cutoff
         """), {"id": user_id, "cutoff": cutoff}).fetchone()
 
+        # Капаем gap между событиями (5 мин), как в /stats — иначе heartbeat
+        # в фоновой вкладке раздувает (MAX-MIN). avg И total считаем по ОДНОМУ
+        # набору сессий (включая одно-событийные с dur=0 → совпадает с sessions).
         avg_session = conn.execute(text("""
             WITH sess AS (
                 SELECT session_id,
-                       EXTRACT(EPOCH FROM (MAX(client_ts) - MIN(client_ts)))::int AS dur
-                FROM analytics_events
-                WHERE user_id = :id AND server_ts >= :cutoff
+                       COALESCE(SUM(
+                           LEAST(EXTRACT(EPOCH FROM (client_ts - prev_ts)), 300)
+                       ), 0)::int AS dur
+                FROM (
+                    SELECT session_id,
+                           client_ts,
+                           LAG(client_ts) OVER (
+                               PARTITION BY session_id ORDER BY client_ts
+                           ) AS prev_ts
+                    FROM analytics_events
+                    WHERE user_id = :id AND server_ts >= :cutoff
+                ) ordered
                 GROUP BY session_id
-                HAVING EXTRACT(EPOCH FROM (MAX(client_ts) - MIN(client_ts))) > 0
             )
             SELECT COALESCE(AVG(dur), 0)::int, COALESCE(SUM(dur), 0)::int FROM sess
         """), {"id": user_id, "cutoff": cutoff}).fetchone()
@@ -912,14 +770,19 @@ async def user_detail(
             LIMIT 10
         """), {"id": user_id, "cutoff": cutoff}).fetchall()
 
-        # Top exports
-        top_exports = conn.execute(text("""
-            SELECT payload->>'indicator' AS indicator, COUNT(*) AS count
-            FROM analytics_events
-            WHERE user_id = :id AND server_ts >= :cutoff
-              AND event_type = 'chart_export'
-              AND payload->>'indicator' IS NOT NULL
-            GROUP BY payload->>'indicator'
+        # Top exports — нормализуем алиасы indicator к канону (как в /stats),
+        # чтобы один индикатор не двоился (open_interest→oi, fund/funds_money→funds).
+        top_exports = conn.execute(text(f"""
+            WITH normalized AS (
+                SELECT {_export_indicator_canon_sql("payload->>'indicator'")} AS indicator
+                FROM analytics_events
+                WHERE user_id = :id AND server_ts >= :cutoff
+                  AND event_type = 'chart_export'
+                  AND payload->>'indicator' IS NOT NULL
+            )
+            SELECT indicator, COUNT(*) AS count
+            FROM normalized
+            GROUP BY indicator
             ORDER BY count DESC
             LIMIT 10
         """), {"id": user_id, "cutoff": cutoff}).fetchall()
