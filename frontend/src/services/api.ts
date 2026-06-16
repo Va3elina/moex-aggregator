@@ -1581,6 +1581,10 @@ export interface AlertInfo {
     // срабатываний за всю жизнь алерта (COUNT по alert_fires).
     source: string; sector: string | null; fires_count: number;
     last_fired_at: string | null; created_at: string | null;
+    // Фонд-алерты: заморожённый набор fund_id'ов через запятую (asset='custom').
+    // null для asset='all'/<категория> (динамический набор). Опционально — старый
+    // бэк может не отдавать поле. Метка выбора для кабинета — в asset_name.
+    fund_ids?: string | null;
 }
 // Страница алертов: items + общее число (из заголовка X-Total-Count).
 export interface AlertsPage { items: AlertInfo[]; total: number; }
@@ -1604,6 +1608,11 @@ export interface AlertCreatePayload {
     // Таймфрейм раннего срабатывания дневного сигнала: '5m' | '1h' | '1d'
     // (по умолчанию '1d'). Внутридневные доступны только у ликвидных активов.
     timeframe?: string;
+    // Фонд-алерты (indicator='funds_flow'): заморожённый набор fund_id'ов.
+    // Шлём только при asset='custom' (точечный выбор фондов); для asset='all'
+    // (все фонды) или asset=<категория> (вся категория) НЕ шлём — набор резолвится
+    // динамически на бэке. См. контракт fund-алерта в CreateFundAlertModal.
+    fund_ids?: number[];
 }
 
 export interface AlertContext {

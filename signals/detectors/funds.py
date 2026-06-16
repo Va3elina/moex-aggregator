@@ -1,22 +1,26 @@
-"""Fund-flow anomaly detector — «аномальный поток» по категориям фондов.
+"""Fund-flow anomaly detector — «аномальный поток» по произвольному набору фондов.
 
 Зеркало OI-детектора (signals/detectors/oi.py: compute_position_atr), но по
-дневному net_flow категории вместо чистой позиции по контрактам.
+дневному net_flow набора фондов вместо чистой позиции по контрактам.
 
 Метрика (решение Вадима — та же формула, что oi_move, БЕЗ серий/рекордов):
   ratio = |net_flow_сегодня| / ATR(14),
 где ATR = среднее |дневных net_flow| за 14 дней ДО последнего. «Во сколько раз
-сегодняшний поток (приток/отток денег в фонды категории) больше обычного дневного».
+сегодняшний поток (приток/отток денег в выбранные фонды) больше обычного дневного».
 
-net_flow считается в signals/db.get_fund_flow_series — суммарный по фондам
-категории ΔСЧА − рыночная переоценка пая (зеркало api/routers/funds.get_funds_flows
+net_flow считается в signals/db.get_fund_flow_series — суммарный по набору фондов
+ΔСЧА − рыночная переоценка пая (зеркало api/routers/funds.get_funds_flows
 ветка timeframe='1d'). direction: 'up' = приток денег (net_flow>0), 'down' = отток.
 
-Категории: 'money_market' | 'stocks' | 'bonds' | 'gold' (юань — «Скоро», не включён).
+Набор фондов (см. get_fund_flow_series):
+  - fund_ids задан → именно эти фонды (произвольный набор, кросс-категория);
+  - elif category задан → вся категория (money_market|stocks|bonds|gold) —
+    прежнее поведение как частный случай (backward-compat со старыми fund-алертами);
+  - иначе → ВСЕ фонды всех категорий (asset='all').
 """
 from __future__ import annotations
 import statistics
-from typing import Optional
+from typing import Optional, List
 
 from signals.db import get_fund_flow_series
 
@@ -28,9 +32,17 @@ ATR_WINDOW = 14
 MIN_HISTORY_DAYS = 30   # минимум дней ряда (как config.MIN_HISTORY_DAYS у OI)
 
 
-def compute_fund_flow_atr(category: str) -> Optional[tuple]:
-    """ATR-резкость последнего дневного net_flow категории — для fund-алертов
+def compute_fund_flow_atr(
+    fund_ids: Optional[List[int]] = None,
+    category: Optional[str] = None,
+) -> Optional[tuple]:
+    """ATR-резкость последнего дневного net_flow набора фондов — для fund-алертов
     «аномальный поток». Зеркало compute_position_atr.
+
+    Набор фондов (передаётся в get_fund_flow_series):
+      - fund_ids → именно эти фонды (произвольный набор, asset='custom');
+      - elif category → вся категория (прежнее поведение как частный случай);
+      - иначе → все фонды всех категорий (asset='all').
 
     ratio = |net_flow_последний| / ATR(14), ATR = среднее |дневных net_flow| за 14
     дней ДО последнего. direction: 'up' (приток) если net_flow>0 иначе 'down'.
@@ -41,7 +53,7 @@ def compute_fund_flow_atr(category: str) -> Optional[tuple]:
     Возвращает (ratio, direction, last_flow, signal_date) или None
     (мало истории / нулевой ATR). signal_date — дата последнего net_flow
     (для гейта «новый торговый день» в alerts_run, как у OI)."""
-    series = get_fund_flow_series(category, days=ATR_WINDOW + 45)
+    series = get_fund_flow_series(fund_ids, category, days=ATR_WINDOW + 45)
     if len(series) < MIN_HISTORY_DAYS:
         return None
     flows = [s[1] for s in series]

@@ -125,15 +125,32 @@ FUND_CATEGORIES = {
 }
 
 
-def get_fund_flow_series(category: str, days: int = 60) -> List[tuple]:
-    """Дневной ряд (date, net_flow) суммарного «аномального потока» категории —
-    для ATR-детектора fund-сигналов. Зеркало net_flow-логики из
+def get_fund_flow_series(
+    fund_ids: Optional[List[int]] = None,
+    category: Optional[str] = None,
+    days: int = 60,
+) -> List[tuple]:
+    """Дневной ряд (date, net_flow_total) суммарного «аномального потока» набора
+    фондов — для ATR-детектора fund-сигналов. Зеркало net_flow-логики из
     api/routers/funds.py get_funds_flows (timeframe='1d').
 
-    net_flow дня = Σ по фондам категории [ΔNAV − market_change], где
+    Набор фондов определяется так (приоритет сверху вниз):
+      - fund_ids задан → именно эти фонды (заморожённый произвольный набор,
+        возможно кросс-категория — asset='custom');
+      - elif category задан → все фонды категории (динамически — backward-compat
+        со старыми fund-алертами money_market|stocks|bonds|gold);
+      - else → ВСЕ фонды 4 категорий (FUND_CATEGORIES, asset='all').
+    Во всех случаях применяем фильтр «>=2 точки NAV» (как load_fund_categories
+    в API) и оставляем только фонды известных категорий — у каждого фонда есть
+    свой бенчмарк-индекс категории (FUND_CATEGORIES), переоценка пая per-fund.
+
+    net_flow фонда за день = ΔNAV − market_change, где
     market_change = prev_nav · (curr_pay − prev_pay) / prev_pay — «бумажная»
-    переоценка пая (рост СЧА за счёт цены, а не притока денег). То, что остаётся
-    после вычитания переоценки = реальный приток/отток средств в фонд.
+    переоценка пая ЭТОГО фонда (рост СЧА за счёт цены пая, а не притока денег).
+    Цена пая (pay) индивидуальна для каждого фонда и уже отражает динамику его
+    бенчмарк-индекса категории, поэтому суммировать кросс-категорию корректно:
+    каждый фонд переоценивается по своей цене пая. Итоговый дневной net_flow_total
+    = Σ net_flow по всем фондам набора.
 
     Логика повторяет ветку `timeframe == "1d"` в API:
       - forward-fill nav/pay по последней доступной точке ДО даты (фонд мог не
@@ -144,16 +161,30 @@ def get_fund_flow_series(category: str, days: int = 60) -> List[tuple]:
 
     Возвращает список (date, net_flow_rub) по возрастанию даты. net_flow в рублях
     (НЕ делим на 1e9 как API — ATR-кратность безразмерна, масштаб не важен).
-    Категории/фонды — как в API (funds.category + фильтр «>=2 точки NAV»).
     """
-    if category not in FUND_CATEGORIES:
-        return []
     cutoff = date.today() - timedelta(days=days)
     with SessionLocal() as session:
-        # fund_id'ы категории с историей (>=2 точки NAV) — тот же фильтр, что
+        # Резолвим набор fund_id'ов с историей (>=2 точки NAV) — тот же фильтр, что
         # load_fund_categories в API (фонд с одной точкой не даёт «изменения»).
-        fund_ids = [
-            r[0] for r in session.execute(
+        # Дополнительно ограничиваем известными категориями FUND_CATEGORIES
+        # (юань пока «Скоро» — не входит), чтобы у каждого фонда был бенчмарк.
+        known_cats = list(FUND_CATEGORIES.keys())
+        if fund_ids:
+            # Произвольный набор: фильтруем по факту наличия истории и категории.
+            rows = session.execute(
+                text("""
+                    SELECT f.fund_id FROM funds f
+                    WHERE f.fund_id = ANY(:ids)
+                      AND f.category = ANY(:cats)
+                      AND (SELECT count(*) FROM fund_data fd
+                           WHERE fd.fund_id = f.fund_id AND fd.nav IS NOT NULL) >= 2
+                """),
+                {"ids": list(fund_ids), "cats": known_cats},
+            ).fetchall()
+        elif category:
+            if category not in FUND_CATEGORIES:
+                return []
+            rows = session.execute(
                 text("""
                     SELECT f.fund_id FROM funds f
                     WHERE f.category = :cat
@@ -162,7 +193,18 @@ def get_fund_flow_series(category: str, days: int = 60) -> List[tuple]:
                 """),
                 {"cat": category},
             ).fetchall()
-        ]
+        else:
+            # asset='all' → все фонды всех известных категорий.
+            rows = session.execute(
+                text("""
+                    SELECT f.fund_id FROM funds f
+                    WHERE f.category = ANY(:cats)
+                      AND (SELECT count(*) FROM fund_data fd
+                           WHERE fd.fund_id = f.fund_id AND fd.nav IS NOT NULL) >= 2
+                """),
+                {"cats": known_cats},
+            ).fetchall()
+        fund_ids = [r[0] for r in rows]
         if not fund_ids:
             return []
         # Per-fund nav/pay с forward-fill (зеркало all_dates/fund_filled из API).

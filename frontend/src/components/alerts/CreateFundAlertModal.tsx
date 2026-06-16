@@ -1,30 +1,34 @@
 /**
  * CreateFundAlertModal — конструктор фонд-алертов «аномальный поток ×N».
- * Упрощённый брат CreateAlertModal (без пикера активов, без clgroup, ТФ всегда
- * дневной): актив = ТЕКУЩАЯ категория страницы «Деньги в фондах», метрика —
- * «аномальный поток» (ATR-кратность дневного net_flow категории).
+ * Упрощённый брат CreateAlertModal: метрика — «аномальный поток» (ATR-кратность
+ * дневного net_flow), но вместо одного актива — ПИКЕР ФОНДОВ (чипы категорий +
+ * мультивыбор отдельных фондов по УК). По умолчанию выбраны ВСЕ фонды.
  *
- * Контракт fund-алерта: indicator='funds_flow', asset∈{money_market|stocks|
- * bonds|gold}, metric='net_flow', op='gt', threshold=×N (кратность), source
- * 'funds' проставляет бэкенд. Требует привязки Telegram (как OI).
+ * Контракт fund-алерта (резолв выбора → payload):
+ *   • выбраны ВСЕ фонды          → asset='all',        fund_ids НЕ шлём;
+ *   • выбрана ровно одна категория целиком → asset=<category>, fund_ids НЕ шлём
+ *     (backward-compat со старыми фонд-алертами категории);
+ *   • иначе (подмножество)        → asset='custom',     fund_ids=[выбранные fund_id].
+ *   asset_name = человеко-метка выбора («Все фонды» / «Акции, Облигации» /
+ *   «N фондов») — для текста сигнала и кабинета.
+ *   indicator='funds_flow', metric='net_flow', op='gt', threshold=×N,
+ *   timeframe='1d'; source='funds' проставляет бэкенд. Требует привязки Telegram.
  *
  * Inline-styles + CSS-vars (как CreateAlertModal/UpgradeModal — переживает
  * portal/тему).
  */
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { Bell, X, Check, ExternalLink } from 'lucide-react';
 import {
-    getTelegramStatus, createTelegramLink, createAlert,
-    type AlertCreatePayload,
+    getTelegramStatus, createTelegramLink, createAlert, getFundsCatalog,
+    type AlertCreatePayload, type CatalogFund,
 } from '../../services/api';
+import FundPicker, { type FundPickerFund } from '../fundtrades/FundPicker';
+import { CATEGORY_LABELS } from '../../config/fundConfig';
 import MessengerChoice from './MessengerChoice';
 
 interface Props {
-    /** Ключ категории — asset фонд-алерта. */
-    category: string;          // 'money_market' | 'stocks' | 'bonds' | 'gold'
-    /** Человекочитаемое имя категории (для шапки + asset_name). */
-    categoryName: string;
     onClose: () => void;
 }
 
@@ -60,6 +64,24 @@ const pill = (active: boolean): CSSProperties => ({
     textAlign: 'left', width: '100%',
 });
 
+// Чип категории (мультивыбор) — pill-форма, как фильтр-пилюли в FundTrades.
+const catChip = (active: boolean): CSSProperties => ({
+    padding: '6px 14px',
+    background: active ? 'var(--accent)' : 'var(--bg-secondary)',
+    color: active ? 'var(--text-inverse)' : 'var(--text-primary)',
+    border: '2px solid var(--text-primary)',
+    borderRadius: 999,
+    fontSize: 'var(--fs-xs)',
+    fontWeight: active ? 700 : 600,
+    cursor: 'pointer',
+    boxShadow: active ? '3px 3px 0 var(--text-primary)' : 'none',
+    whiteSpace: 'nowrap',
+});
+
+// Категории фонд-алерта. Юань исключён (контракт). Порядок — как в категориях UI.
+const CATEGORY_KEYS = ['money_market', 'stocks', 'bonds', 'gold'] as const;
+type CategoryKey = (typeof CATEGORY_KEYS)[number];
+
 // Уровни сигнала — ступени множителя ATR (×), как у oi_move. «Сильное» по умолчанию.
 type SignalLevel = { key: string; label: string; mult: number; freq: string };
 const SIGNAL_LEVELS: SignalLevel[] = [
@@ -68,12 +90,28 @@ const SIGNAL_LEVELS: SignalLevel[] = [
     { key: 'extreme', label: 'Экстремальное', mult: 5, freq: 'только редкие всплески' },
 ];
 
-export default function CreateFundAlertModal({ category, categoryName, onClose }: Props) {
+// Русское склонение «N фондов».
+function fundsWord(n: number): string {
+    const m10 = n % 10, m100 = n % 100;
+    if (m10 === 1 && m100 !== 11) return 'фонд';
+    if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return 'фонда';
+    return 'фондов';
+}
+
+export default function CreateFundAlertModal({ onClose }: Props) {
     const [linked, setLinked] = useState<boolean | null>(null);  // null = загрузка
     const [linkUrl, setLinkUrl] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
     const [created, setCreated] = useState(false);
+
+    // ── Каталог фондов (все категории, кроме Юаня) ──────────────────────────
+    const [catalog, setCatalog] = useState<CatalogFund[]>([]);
+    // selectedTickers — выбор фондов в конвенции FundPicker: ПУСТО = ВСЕ фонды
+    // (так FundPicker рендерит «Все фонды» активной и его внутренняя кнопка
+    // «Все фонды» = onChange(new Set())). Дефолт — пусто = все фонды.
+    const [selectedTickers, setSelectedTickers] = useState<Set<string>>(new Set());
+    const [catalogReady, setCatalogReady] = useState(false);
 
     // Уровень сигнала (множитель ATR) + ввод «Своё значение».
     const [levelKey, setLevelKey] = useState('strong');   // default «Сильное»
@@ -86,6 +124,20 @@ export default function CreateFundAlertModal({ category, categoryName, onClose }
 
     useEffect(() => {
         getTelegramStatus().then((s) => setLinked(s.linked)).catch(() => setLinked(false));
+    }, []);
+
+    // Каталог фондов — публичный эндпоинт (как FundsMoney). Юань исключаем.
+    // selectedTickers оставляем пустым (= все фонды по дефолту).
+    useEffect(() => {
+        let cancelled = false;
+        getFundsCatalog()
+            .then((r) => {
+                if (cancelled) return;
+                setCatalog(r.funds.filter((f) => f.category !== 'yuan'));
+                setCatalogReady(true);
+            })
+            .catch(() => { if (!cancelled) setCatalogReady(true); });
+        return () => { cancelled = true; };
     }, []);
 
     // poll статуса после генерации ссылки (юзер жмёт Start в боте)
@@ -111,6 +163,90 @@ export default function CreateFundAlertModal({ category, categoryName, onClose }
         } finally { setBusy(false); }
     };
 
+    // ── Производные от каталога ──────────────────────────────────────────────
+    // Фонды для FundPicker (группировка по УК — внутри пикера).
+    const pickerFunds = useMemo<FundPickerFund[]>(
+        () => catalog.map((f) => ({ ticker: f.ticker, name: f.name, uk_id: f.uk_id })),
+        [catalog],
+    );
+    // ticker → fund_id (для резолва payload) и ticker → category (для чипов).
+    const fundIdByTicker = useMemo(() => {
+        const m = new Map<string, number>();
+        for (const f of catalog) m.set(f.ticker, f.fund_id);
+        return m;
+    }, [catalog]);
+    // Тикеры по категории (присутствующие в каталоге).
+    const tickersByCategory = useMemo(() => {
+        const m = new Map<CategoryKey, string[]>();
+        for (const k of CATEGORY_KEYS) m.set(k, []);
+        for (const f of catalog) {
+            if ((CATEGORY_KEYS as readonly string[]).includes(f.category)) {
+                m.get(f.category as CategoryKey)!.push(f.ticker);
+            }
+        }
+        return m;
+    }, [catalog]);
+    // Категории, реально присутствующие в каталоге (для рендера чипов).
+    const presentCategories = useMemo<CategoryKey[]>(
+        () => CATEGORY_KEYS.filter((k) => (tickersByCategory.get(k)?.length ?? 0) > 0),
+        [tickersByCategory],
+    );
+
+    const totalFunds = catalog.length;
+    // Конвенция FundPicker: ПУСТО = ВСЕ. allSelected — пусто (или физически все).
+    const allSelected = totalFunds > 0 && (selectedTickers.size === 0 || selectedTickers.size === totalFunds);
+    // Эффективный явный набор: при пустом selectedTickers подставляем все тикеры
+    // (нужно для подсветки чипов категорий и резолва payload).
+    const effectiveTickers = useMemo<Set<string>>(
+        () => (selectedTickers.size === 0 ? new Set(catalog.map((f) => f.ticker)) : selectedTickers),
+        [selectedTickers, catalog],
+    );
+    const selectedCount = effectiveTickers.size;
+
+    // Категория «целиком выбрана» = все её тикеры в эффективном наборе.
+    const isCategoryFullySelected = (k: CategoryKey): boolean => {
+        const ts = tickersByCategory.get(k) ?? [];
+        return ts.length > 0 && ts.every((t) => effectiveTickers.has(t));
+    };
+
+    // Тоггл чипа категории: если категория уже выбрана целиком — снимаем её
+    // фонды; иначе — добавляем все её фонды к выбору. Работаем от эффективного
+    // набора (раскрываем «пусто=все» в явный), чтобы снятие категории из дефолта
+    // «все» дало корректное подмножество.
+    const toggleCategory = (k: CategoryKey) => {
+        const ts = tickersByCategory.get(k) ?? [];
+        const full = ts.every((t) => effectiveTickers.has(t));
+        const next = new Set(effectiveTickers);
+        if (full) ts.forEach((t) => next.delete(t));
+        else ts.forEach((t) => next.add(t));
+        // Нормализация: явный «все» → пусто (канон дефолта = все фонды).
+        setSelectedTickers(next.size === totalFunds ? new Set() : next);
+    };
+
+    // «Все фонды» / «Все категории» — сброс к дефолту (пусто = все фонды).
+    // Создание требует ≥1 фонда, поэтому отдельного «снять всё в ноль» нет:
+    // тонкая настройка делается чипами категорий и тогглами в FundPicker.
+    const selectAll = () => setSelectedTickers(new Set());
+
+    // ── Метка выбора (asset_name) + резолв payload ───────────────────────────
+    // «Все фонды» | «<категории через запятую>» | «N фондов».
+    const selectionLabel = useMemo<string>(() => {
+        if (allSelected) return 'Все фонды';
+        if (selectedCount === 0) return 'Фонды не выбраны';
+        // Если выбор совпадает с объединением целых категорий — перечисляем их.
+        const fullCats = presentCategories.filter((k) => {
+            const ts = tickersByCategory.get(k) ?? [];
+            return ts.length > 0 && ts.every((t) => effectiveTickers.has(t));
+        });
+        const coveredByCats = fullCats.reduce(
+            (acc, k) => acc + (tickersByCategory.get(k)?.length ?? 0), 0,
+        );
+        if (fullCats.length > 0 && coveredByCats === selectedCount) {
+            return fullCats.map((k) => CATEGORY_LABELS[k] ?? k).join(', ');
+        }
+        return `${selectedCount} ${fundsWord(selectedCount)}`;
+    }, [allSelected, selectedCount, presentCategories, tickersByCategory, effectiveTickers]);
+
     // Множитель ступени (числовое значение порога).
     const resolvedMult = (): number | null => {
         if (isCustomLevel) {
@@ -120,23 +256,44 @@ export default function CreateFundAlertModal({ category, categoryName, onClose }
         return activeLevel?.mult ?? null;
     };
 
+    // Резолв выбора → {asset, fund_ids?} по контракту.
+    const resolveTarget = (): { asset: string; fund_ids?: number[] } => {
+        if (allSelected) return { asset: 'all' };
+        // Ровно одна категория целиком (и ничего вне неё) → asset=<категория>.
+        const fullCats = presentCategories.filter((k) => isCategoryFullySelected(k));
+        const coveredByCats = fullCats.reduce(
+            (acc, k) => acc + (tickersByCategory.get(k)?.length ?? 0), 0,
+        );
+        if (fullCats.length === 1 && coveredByCats === selectedCount) {
+            return { asset: fullCats[0] };
+        }
+        // Иначе — заморожённый набор fund_id.
+        const ids = Array.from(effectiveTickers)
+            .map((t) => fundIdByTicker.get(t))
+            .filter((v): v is number => v != null);
+        return { asset: 'custom', fund_ids: ids };
+    };
+
     const handleCreate = async () => {
         const mult = resolvedMult();
         if (mult == null || mult <= 0) { setMsg({ type: 'err', text: 'Укажите множитель уровня' }); return; }
+        if (selectedCount === 0) { setMsg({ type: 'err', text: 'Выберите хотя бы один фонд' }); return; }
         setBusy(true); setMsg(null);
         try {
-            // Контракт fund-алерта: indicator='funds_flow', asset=категория,
-            // metric='net_flow', op='gt', threshold=×N. timeframe всегда '1d'
-            // (потоки фондов дневные); source='funds' проставит бэкенд; clgroup нет.
+            const target = resolveTarget();
+            // Контракт fund-алерта: indicator='funds_flow', metric='net_flow',
+            // op='gt', threshold=×N. timeframe всегда '1d' (потоки дневные);
+            // source='funds' проставит бэкенд. asset/fund_ids — из resolveTarget.
             const payload: AlertCreatePayload = {
                 indicator: 'funds_flow',
-                asset: category,
-                asset_name: categoryName,
+                asset: target.asset,
+                asset_name: selectionLabel,
                 metric: 'net_flow',
                 op: 'gt',
                 threshold: mult,
                 mode,
                 timeframe: '1d',
+                ...(target.fund_ids ? { fund_ids: target.fund_ids } : {}),
                 ...(mode === 'repeat' ? { cooldown_hours: 24 } : {}),
             };
             await createAlert(payload);
@@ -163,7 +320,7 @@ export default function CreateFundAlertModal({ category, categoryName, onClose }
                         <Check size={40} style={{ color: 'var(--accent)', margin: '0 auto 8px', display: 'block' }} />
                         <div style={{ fontWeight: 600, marginBottom: 4 }}>Сигнал создан</div>
                         <div style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)', marginBottom: 16 }}>
-                            Уведомление придёт в Telegram (@framesignalbot), когда поток в фонды «{categoryName}» станет аномальным.
+                            Уведомление придёт в Telegram (@framesignalbot), когда поток в фонды «{selectionLabel}» станет аномальным.
                         </div>
                         <button onClick={onClose} className="editorial-press" style={{ ...primaryBtn, width: 'auto', padding: '10px 24px', margin: '0 auto', display: 'inline-block' }}>Готово</button>
                     </div>
@@ -193,9 +350,70 @@ export default function CreateFundAlertModal({ category, categoryName, onClose }
                     </div>
                 ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                        {/* ── АКТИВ (текущая категория, не пикер) ── */}
-                        <div style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)' }}>
-                            Категория: <b style={{ color: 'var(--text-primary)' }}>{categoryName}</b>
+                        {/* ── ВЫБОР ФОНДОВ — чипы категорий + пикер по УК ── */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>Фонды</div>
+                            {!catalogReady ? (
+                                <div style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)' }}>Загружаем список фондов…</div>
+                            ) : totalFunds === 0 ? (
+                                <div style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)' }}>Фонды не найдены.</div>
+                            ) : (
+                                <>
+                                    {/* Чипы категорий (мультивыбор) + «Все категории» */}
+                                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                        <button
+                                            type="button"
+                                            onClick={selectAll}
+                                            className="editorial-press"
+                                            style={catChip(allSelected)}
+                                        >
+                                            Все категории
+                                        </button>
+                                        {presentCategories.map((k) => (
+                                            <button
+                                                key={k}
+                                                type="button"
+                                                onClick={() => toggleCategory(k)}
+                                                className="editorial-press"
+                                                style={catChip(!allSelected && isCategoryFullySelected(k))}
+                                            >
+                                                {CATEGORY_LABELS[k] ?? k}
+                                            </button>
+                                        ))}
+                                    </div>
+
+                                    {/* Пикер отдельных фондов (по УК; тоггл отдельных + «Все
+                                        фонды»/выбор-всего-УК внутри). Рядом — быстрый сброс
+                                        к «все фонды», когда выбрано подмножество. */}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                        <FundPicker
+                                            funds={pickerFunds}
+                                            mode="multi"
+                                            selected={selectedTickers}
+                                            onChange={setSelectedTickers}
+                                            buttonLabel={() => (allSelected ? 'Все фонды' : `${selectedCount} ${fundsWord(selectedCount)}`)}
+                                        />
+                                        {!allSelected && (
+                                            <button
+                                                type="button"
+                                                onClick={selectAll}
+                                                className="editorial-press"
+                                                style={{
+                                                    background: 'transparent', border: 'none', cursor: 'pointer',
+                                                    color: 'var(--accent)', fontSize: 'var(--fs-xs)', fontWeight: 700,
+                                                    padding: '4px 2px',
+                                                }}
+                                            >
+                                                Выбрать все
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>
+                                        Выбрано: <b style={{ color: 'var(--text-primary)' }}>{selectionLabel}</b>
+                                    </div>
+                                </>
+                            )}
                         </div>
 
                         {/* ── УРОВЕНЬ СИГНАЛА — ступени множителя ATR ── */}
@@ -278,7 +496,7 @@ export default function CreateFundAlertModal({ category, categoryName, onClose }
                             <div style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
                                 Как считается аномальный поток
                             </div>
-                            Берётся чистый дневной приток-отток денег в фонды категории и делится на
+                            Берётся чистый дневной приток-отток денег в выбранные фонды и делится на
                             средний дневной шаг за последние 14 дней. Получается «во сколько раз
                             сегодняшний поток больше обычного»: 1 — обычный день, 3 — втрое сильнее
                             обычного. Сигнал придёт, когда |поток| превысит выбранную кратность —
@@ -287,7 +505,7 @@ export default function CreateFundAlertModal({ category, categoryName, onClose }
 
                         {/* Сводка */}
                         <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>
-                            Сигнал: <b style={{ color: 'var(--text-primary)' }}>{categoryName}</b>
+                            Сигнал: <b style={{ color: 'var(--text-primary)' }}>{selectionLabel}</b>
                             {' · поток ≥ '}
                             <b style={{ color: 'var(--text-primary)' }}>
                                 {isCustomLevel ? `${customMult || '—'}×` : `${activeLevel?.mult}×`}
@@ -295,7 +513,7 @@ export default function CreateFundAlertModal({ category, categoryName, onClose }
                         </div>
 
                         <button
-                            disabled={busy}
+                            disabled={busy || selectedCount === 0}
                             onClick={handleCreate}
                             className="editorial-press"
                             style={primaryBtn}

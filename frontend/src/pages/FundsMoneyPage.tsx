@@ -771,8 +771,9 @@ export default function FundsMoneyPage() {
                     }}
                 />
                 {/* Сигналы по фондам — рабочая кнопка-колокол. Только в режиме
-                    притоков-оттоков (алерт строится по флоу категории). Открывает
-                    CreateFundAlertModal для ТЕКУЩЕЙ категории (актив = category).
+                    притоков-оттоков. Открывает CreateFundAlertModal БЕЗ привязки к
+                    текущей категории — фонды/категории выбираются внутри (дефолт —
+                    все фонды).
                     Tier-гейт как у OI-колокола: quota=0 (Free/гость) → замочек +
                     upgrade-промпт; иначе — модалка создания. Стиль зеркалит
                     AlertBellButton (paper pill, 2px border), с подписью «Сигнал»
@@ -795,24 +796,19 @@ export default function FundsMoneyPage() {
                             }}
                             className="editorial-press rounded-full inline-flex items-center justify-center"
                             style={{
-                                gap: 'var(--sp-1)',
+                                width: 44,
                                 height: 44,
-                                padding: '0 var(--sp-3)',
                                 backgroundColor: 'var(--bg-secondary)',
                                 border: '2px solid var(--text-primary)',
                                 color: 'var(--text-primary)',
-                                fontSize: 'var(--fs-xs)',
-                                fontWeight: 700,
-                                whiteSpace: 'nowrap',
                                 opacity: alertsLocked ? 0.78 : 1,
                             }}
                             aria-label={alertsLocked ? 'Сигналы по фондам — доступно на тарифе Basic и Pro' : 'Создать сигнал по фондам'}
                             title={alertsLocked
                                 ? 'Сигналы в мессенджере — на тарифе Basic и Pro. Нажмите, чтобы улучшить.'
-                                : 'Создать сигнал по аномальному потоку категории'}
+                                : 'Создать сигнал по аномальному потоку фондов'}
                         >
                             <Bell size={18} />
-                            Сигнал
                         </button>
                         {alertsLocked && (
                             <span
@@ -955,11 +951,10 @@ export default function FundsMoneyPage() {
                 />
             )}
 
-            {/* Конструктор сигнала по фондам — актив = текущая категория. */}
+            {/* Конструктор сигнала по фондам — категория/фонды выбираются ВНУТРИ
+                модалки (дефолт — все фонды), без привязки к текущей категории. */}
             {fundAlertOpen && (
                 <CreateFundAlertModal
-                    category={category}
-                    categoryName={currentCategory?.name ?? category}
                     onClose={() => setFundAlertOpen(false)}
                 />
             )}
