@@ -152,6 +152,27 @@ def _parse_period(period: str) -> int:
     return PERIOD_DAYS[period]
 
 
+# Периоды для diff-расчёта в МЕСЯЦАХ (label → months назад). SCHA-снапшоты —
+# месячные (month-end), поэтому дельты надо считать по выравненным месяцам, а НЕ
+# «curr − N дней»: при дрейфе дня месяца (29 мая vs 30 апр) день-арифметика
+# перепрыгивает через месяц (29 мая − 30д = 29 апр < 30 апр → prev уезжает в март).
+PERIOD_MONTHS = {
+    "1m": 1,
+    "3m": 3,
+    "6m": 6,
+    "1y": 12,
+}
+
+
+def _parse_period_months(period: str) -> int:
+    if period not in PERIOD_MONTHS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"period must be one of {list(PERIOD_MONTHS)}, got '{period}'",
+        )
+    return PERIOD_MONTHS[period]
+
+
 def _calc_return(last, prev):
     """Период-доходность % по nav_per_share (pay). NULL если истории не хватает."""
     if last is not None and prev is not None and float(prev) > 0:
@@ -423,7 +444,7 @@ def fund_trades_detail(
     if ticker.upper() not in {t.upper() for t in WHITELIST_TICKERS}:
         raise HTTPException(status_code=404, detail=f"Fund {ticker} not available in beta")
 
-    days = _parse_period(period)
+    months = _parse_period_months(period)
 
     # Найти fund_id по тикеру (case-insensitive).
     fund_row = db.execute(text("""
@@ -461,16 +482,21 @@ def fund_trades_detail(
         }
 
     current_date = latest_row[0]
-    threshold = current_date - timedelta(days=days)
 
-    # Previous snapshot = latest snapshot перед threshold.
-    # Если такого нет — берём самый старый snapshot.
+    # Previous snapshot = снапшот, выровненный по МЕСЯЦУ на N месяцев назад
+    # (а не «curr − N дней» — день-арифметика перепрыгивает месяц при дрейфе
+    # дня месяца, см. _parse_period_months). Берём последний снапшот СТРОГО до
+    # начала месяца, который на (N−1) месяцев младше текущего: для 1m это
+    # «последний снапшот до текущего месяца» = прошлый месяц-энд.
     prev_row = db.execute(text("""
         SELECT snapshot_date FROM fund_holdings_history
-        WHERE fund_id = :fid AND snapshot_date <= :threshold AND source = ANY(:sources)
+        WHERE fund_id = :fid AND source = ANY(:sources)
+          AND snapshot_date < date_trunc('month', CAST(:curr AS date))
+                              - make_interval(months => CAST(:months AS integer) - 1)
         ORDER BY snapshot_date DESC
         LIMIT 1
-    """), {"fid": fund_id, "threshold": threshold, "sources": list(MONTHLY_SOURCES)}).first()
+    """), {"fid": fund_id, "curr": current_date, "months": months,
+           "sources": list(MONTHLY_SOURCES)}).first()
 
     previous_date = prev_row[0] if prev_row else None
 
@@ -618,7 +644,7 @@ def top_movers(
     Use case: "За месяц SBER суммарно накоплен на +3.4 п.п. across 7 фондов
     (TMOS +1.2, SBMX +0.9, ...)".
     """
-    days = _parse_period(period)
+    months = _parse_period_months(period)
     # Фича показывает ТОЛЬКО акции — облигации/деньги/золото скрыты целиком.
     # Параметр category игнорируется (всегда stocks).
     category_filter = "AND f.category = 'stocks'"
@@ -661,7 +687,7 @@ def top_movers(
     # order_col server-controlled (валидируется ниже) → безопасно для f-string ORDER BY.
     order_col = "total_delta_amount" if sort == "amount" else "total_delta_weight"
     params = {
-        "days": days,
+        "months": months,
         "limit": limit,
         "tickers": list(WHITELIST_TICKERS),
         "sources": list(MONTHLY_SOURCES),
@@ -676,26 +702,43 @@ def top_movers(
     # Diff weight per (fund, asset) → агрегируем по asset.
     # Это complex CTE но даёт точную картину.
     rows = db.execute(text(f"""
-        WITH fund_dates AS (
-            -- Для каждого фонда: latest snapshot + previous (N дней назад).
-            SELECT
-                f.fund_id,
-                f.ticker,
-                f.name AS fund_name,
-                MAX(h.snapshot_date) AS curr_date,
-                (
-                    SELECT MAX(h2.snapshot_date)
-                    FROM fund_holdings_history h2
-                    WHERE h2.fund_id = f.fund_id
-                      AND h2.snapshot_date <= MAX(h.snapshot_date) - (:days || ' days')::interval
-                      AND h2.source = ANY(:sources)
-                ) AS prev_date
+        WITH anchor AS (
+            -- Единый якорь: МЕСЯЦ самого свежего снапшота в наборе (с учётом as_of).
+            -- Консенсус считаем ТОЛЬКО по фондам, у которых ЕСТЬ снапшот этого месяца —
+            -- иначе фонд, не сдавший новый месяц, тянет в сумму свою СТАРУЮ дельту
+            -- (другой период) и раздувает «N фондов купили».
+            SELECT date_trunc('month', MAX(h.snapshot_date)) AS target_month
             FROM funds f
             JOIN fund_holdings_history h ON h.fund_id = f.fund_id AND h.source = ANY(:sources)
             WHERE 1=1 {category_filter} {whitelist_filter} {manager_filter}
               AND (CAST(:as_of AS date) IS NULL OR h.snapshot_date <= CAST(:as_of AS date))
-            GROUP BY f.fund_id, f.ticker, f.name
-            HAVING MAX(h.snapshot_date) IS NOT NULL
+        ),
+        fund_dates AS (
+            -- curr = снапшот target-месяца (нет → фонд выпадает из консенсуса);
+            -- prev = снапшот, выровненный по МЕСЯЦУ на N месяцев назад от target.
+            SELECT
+                f.fund_id,
+                f.ticker,
+                f.name AS fund_name,
+                MAX(h.snapshot_date) FILTER (
+                    WHERE date_trunc('month', h.snapshot_date) = a.target_month
+                ) AS curr_date,
+                (
+                    SELECT MAX(h2.snapshot_date)
+                    FROM fund_holdings_history h2
+                    WHERE h2.fund_id = f.fund_id
+                      AND h2.source = ANY(:sources)
+                      AND h2.snapshot_date < a.target_month - make_interval(months => CAST(:months AS integer) - 1)
+                ) AS prev_date
+            FROM funds f
+            JOIN fund_holdings_history h ON h.fund_id = f.fund_id AND h.source = ANY(:sources)
+            CROSS JOIN anchor a
+            WHERE 1=1 {category_filter} {whitelist_filter} {manager_filter}
+              AND (CAST(:as_of AS date) IS NULL OR h.snapshot_date <= CAST(:as_of AS date))
+            GROUP BY f.fund_id, f.ticker, f.name, a.target_month
+            HAVING MAX(h.snapshot_date) FILTER (
+                WHERE date_trunc('month', h.snapshot_date) = a.target_month
+            ) IS NOT NULL
         ),
         per_fund_diff AS (
             -- Дельта weight per (fund, asset) между curr и prev snapshot.
@@ -775,7 +818,7 @@ def top_movers(
     # Доступные месяцы для month-picker: один пункт на КАЛЕНДАРНЫЙ месяц.
     # У разных УК разные дни конца месяца (27/28/30/31) → схлопываем по месяцу
     # и берём MAX-дату месяца как as_of (каждый фонд внутри возьмёт свой <= неё).
-    months = db.execute(text("""
+    available_month_dates = db.execute(text("""
         SELECT MAX(h.snapshot_date) AS d
         FROM fund_holdings_history h JOIN funds f ON f.fund_id = h.fund_id
         WHERE f.category = 'stocks' AND f.ticker = ANY(:tickers) AND h.source = ANY(:sources)
@@ -790,7 +833,7 @@ def top_movers(
         "manager": manager,
         "funds": funds,
         "sort": sort,
-        "available_months": [m.isoformat() for m in months],
+        "available_months": [m.isoformat() for m in available_month_dates],
         "top_accumulated": top_accumulated,
         "top_reduced": top_reduced,
     }
@@ -927,30 +970,47 @@ def asset_buyers(
 
     Use case: "Я держу Сбер — какие БПИФ его аккумулируют, какие распродают?"
     """
-    days = _parse_period(period)
+    months = _parse_period_months(period)
 
     rows = db.execute(text("""
-        WITH fund_pairs AS (
-            -- Для каждого фонда у которого есть актив:
-            -- latest snapshot + ближайший до (latest - days).
+        WITH anchor AS (
+            -- Якорь — МЕСЯЦ самого свежего снапшота среди фондов, держащих актив.
+            -- Считаем дельты ТОЛЬКО по фондам со снапшотом этого месяца (как /movers),
+            -- prev выравниваем по месяцу — иначе мешаем периоды и перепрыгиваем месяц.
+            SELECT date_trunc('month', MAX(h.snapshot_date)) AS target_month
+            FROM funds f
+            JOIN fund_holdings_history h ON h.fund_id = f.fund_id AND h.source = ANY(:sources)
+            WHERE h.asset_name = :asset
+              AND f.ticker = ANY(:tickers)
+        ),
+        fund_pairs AS (
+            -- curr = снапшот актива в target-месяце (нет → фонд выпадает);
+            -- prev = снапшот актива, выровненный на N месяцев назад от target.
             SELECT
                 f.fund_id,
                 f.ticker,
                 f.name AS fund_name,
                 f.category,
-                MAX(h.snapshot_date) AS curr_date,
+                MAX(h.snapshot_date) FILTER (
+                    WHERE date_trunc('month', h.snapshot_date) = a.target_month
+                ) AS curr_date,
                 (
                     SELECT MAX(h2.snapshot_date)
                     FROM fund_holdings_history h2
                     WHERE h2.fund_id = f.fund_id
-                      AND h2.snapshot_date <= MAX(h.snapshot_date) - (:days || ' days')::interval
+                      AND h2.asset_name = :asset
                       AND h2.source = ANY(:sources)
+                      AND h2.snapshot_date < a.target_month - make_interval(months => CAST(:months AS integer) - 1)
                 ) AS prev_date
             FROM funds f
             JOIN fund_holdings_history h ON h.fund_id = f.fund_id AND h.source = ANY(:sources)
+            CROSS JOIN anchor a
             WHERE h.asset_name = :asset
               AND f.ticker = ANY(:tickers)
-            GROUP BY f.fund_id, f.ticker, f.name, f.category
+            GROUP BY f.fund_id, f.ticker, f.name, f.category, a.target_month
+            HAVING MAX(h.snapshot_date) FILTER (
+                WHERE date_trunc('month', h.snapshot_date) = a.target_month
+            ) IS NOT NULL
         )
         SELECT
             fp.ticker,
@@ -980,7 +1040,7 @@ def asset_buyers(
         ORDER BY delta_weight DESC NULLS LAST
     """), {
         "asset": asset_name,
-        "days": days,
+        "months": months,
         "tickers": list(WHITELIST_TICKERS),
         "sources": list(MONTHLY_SOURCES),
     }).mappings().all()
