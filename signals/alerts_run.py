@@ -164,42 +164,33 @@ def format_msg(a: Alert, value: float, ctx: dict) -> str:
             if ctx.get("interval") == 24 else ""
         return (f"{head}\n"
                 f"Цена {word} отметку {thr:g} ₽ — сейчас {value:g} ₽{eod}\n{link}")
+    # Принцип текста (правка Вадима): ГЛАВНОЕ — насколько аномально (×N к обычному
+    # дневному шагу) и в какую сторону (вырос/упал). Число контрактов УБРАНО из
+    # сообщения как второстепенное; методология («за 14 дней») вынесена из текста.
     if a.indicator == "oi_zscore":
-        clg = "физлиц" if (a.clgroup or "FIZ") == "FIZ" else "юрлиц"
-        diff = ctx.get("last_diff", 0)
-        verb = "нарастили чистую позицию" if diff > 0 else "сократили чистую позицию"
-        return (f"{head} — открытые позиции\n"
-                f"Аномалия в позициях {clg}: за день {verb} резче обычного.\n"
-                f"Чистая позиция изменилась на {diff:+,} контрактов за день.\n{link}")
-    if a.indicator == "oi_move":
-        diff = ctx.get("last_diff", 0)
-        direction = ctx.get("direction", "up")
-        leg = _leg_phrase(direction, ctx.get("legs") or {})
-        leg_note = f" ({leg})" if leg else ""
-        if ctx.get("neutral"):
-            # clgroup ALL — нейтральный текст, без субъекта физ/юр в роли действующего.
-            move = "выросла" if direction == "up" else "снизилась"
-            return (f"{head} — открытые позиции{tf_note}\n"
-                    f"Чистая позиция {move} резче обычного — в {value:g}× "
-                    f"сильнее среднего дневного шага за 14 дней (ваш порог {thr:g}×).\n"
-                    f"{diff_label}: {diff:+,} контрактов{leg_note}.\n{link}")
         clg = "Физлица" if (a.clgroup or "FIZ") == "FIZ" else "Юрлица"
-        word = "резко нарастили чистую позицию" if direction == "up" \
-            else "резко сократили чистую позицию"
+        diff = ctx.get("last_diff", 0)
+        word = "резко нарастили позицию" if diff > 0 else "резко сократили позицию"
+        return (f"{head} — открытые позиции\n"
+                f"{clg} {word} — аномально резкий дневной сдвиг.\n{link}")
+    if a.indicator == "oi_move":
+        direction = ctx.get("direction", "up")
+        if ctx.get("neutral"):
+            # clgroup ALL — без субъекта физ/юр.
+            move = "выросли" if direction == "up" else "упали"
+            return (f"{head} — открытые позиции{tf_note}\n"
+                    f"Позиции резко {move} — в {value:g}× резче обычного (порог {thr:g}×).\n{link}")
+        clg = "Физлица" if (a.clgroup or "FIZ") == "FIZ" else "Юрлица"
+        word = "резко нарастили позицию" if direction == "up" else "резко сократили позицию"
         return (f"{head} — открытые позиции{tf_note}\n"
-                f"{clg} {word} — сдвиг в {value:g}× сильнее обычного дневного шага "
-                f"за 14 дней (ваш порог {thr:g}×).\n"
-                f"{diff_label}: {diff:+,} контрактов{leg_note}.\n{link}")
+                f"{clg} {word} — в {value:g}× резче обычного (порог {thr:g}×).\n{link}")
     if a.indicator == "oi_participants":
         clg = "физлиц" if (a.clgroup or "FIZ") == "FIZ" else "юрлиц"
-        diff = ctx.get("last_diff", 0)
         npart = ctx.get("current_npart")
         flow = "Приток" if ctx.get("direction") == "up" else "Отток"
-        ctx_line = f"\nВсего в позиции сейчас {npart:,} участников." if npart else ""
+        ctx_line = f" Сейчас {npart:,} участников." if npart else ""
         return (f"{head} — открытые позиции{tf_note}\n"
-                f"{flow} {clg} в фьючерсе резче обычного — в {value:g}× сильнее "
-                f"среднего дневного шага за 14 дней (ваш порог {thr:g}×).\n"
-                f"{diff_label}: {diff:+,} участников.{ctx_line}\n{link}")
+                f"{flow} {clg} — в {value:g}× резче обычного (порог {thr:g}×).{ctx_line}\n{link}")
     return f"{head}\nАлерт сработал.\n{link}"
 
 

@@ -13,7 +13,7 @@ import { getAlertFires, type AlertFire } from '../../services/api';
 const PAGE = 20;
 
 /** Дата сигнала → «16 июн, 14:30». Без секунд — компактно для списка. */
-function fmtФired(iso: string | null): string {
+function fmtFired(iso: string | null): string {
     if (!iso) return '—';
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return '—';
@@ -27,6 +27,21 @@ function fmtValue(v: number | null, unit: string): string {
     if (v === null || v === undefined || Number.isNaN(v)) return '';
     const s = Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(2);
     return `${s}${unit}`;
+}
+
+/** Сырой Telegram-HTML сообщения → читаемый plain-text: убираем ссылку
+ *  «открыть график» (в кабинете нерабочая/лишняя), снимаем теги <b>/<i>,
+ *  декодируем HTML-entities. Раньше message_text показывался как есть →
+ *  пользователь видел «странные символы» (<b>…</b>, <a href=…>) и мёртвую ссылку. */
+function cleanMessage(html: string): string {
+    return html
+        .replace(/<a\b[^>]*>[\s\S]*?<\/a>/gi, '')   // ссылку целиком
+        .replace(/<[^>]+>/g, '')                      // остальные теги
+        .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
+        .replace(/&amp;/g, '&')                        // &amp; — последним
+        .split('\n').map((s) => s.trim()).filter(Boolean).join('\n')
+        .trim();
 }
 
 interface Props {
@@ -80,12 +95,12 @@ export default function AlertFiresList({ alertId, unit }: Props) {
                 {items.map((f) => (
                     <li key={f.id} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--sp-2)', fontSize: 'var(--fs-xs)' }}>
-                            <span style={{ color: sub }}>{fmtФired(f.fired_at)}</span>
+                            <span style={{ color: sub }}>{fmtFired(f.fired_at)}</span>
                             <span style={{ fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>{fmtValue(f.value, unit)}</span>
                         </div>
                         {f.message_text && (
-                            <div style={{ color: sub, fontSize: 'var(--fs-xs)', lineHeight: 1.3, opacity: 0.85 }}>
-                                {f.message_text}
+                            <div style={{ color: sub, fontSize: 'var(--fs-xs)', lineHeight: 1.3, opacity: 0.85, whiteSpace: 'pre-line' }}>
+                                {cleanMessage(f.message_text)}
                             </div>
                         )}
                     </li>
