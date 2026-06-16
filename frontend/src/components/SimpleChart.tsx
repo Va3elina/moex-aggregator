@@ -94,6 +94,13 @@ interface SimpleChartProps {
   niceTicks?: boolean;
   /** То же для ПРАВОЙ (secondary) оси. */
   niceTicksSecondary?: boolean;
+  /** Ось, к делениям которой привязаны горизонтальные линии сетки.
+   *  'primary' (default) — линии на делениях ЛЕВОЙ оси (как было исторически).
+   *  'secondary' — линии на делениях ПРАВОЙ оси. Нужно на индикаторах, где
+   *  secondary воспринимается ГЛАВНЫМ (Открытые позиции: OI справа) — сетка
+   *  должна совпадать с круглыми значениями OI, а не цены. Подписи ЛЕВОЙ оси
+   *  при этом остаются на своих позициях (visual reference, без линии). */
+  gridAxis?: 'primary' | 'secondary';
 }
 
 // Алиасы для обратной совместимости с внутренним кодом
@@ -139,6 +146,7 @@ export default function SimpleChart({
   reverseLegend = false,
   niceTicks = false,
   niceTicksSecondary = false,
+  gridAxis = 'primary',
   showValueHeader = true,
   legendPosition = 'bottom',
   showDownloadButton = true,
@@ -1008,56 +1016,67 @@ export default function SimpleChart({
               (showSecondary + есть secondary y-ticks). В таком случае красим
               ОБЕ оси своими цветами — симметрия. Иначе single-axis → нейтральный серый. */}
           <g transform={`translate(${padding.left}, ${padding.top})`}>
-            {/* Горизонтальные линии сетки.
-                Если showPrimary=false → grid рисуем по secondary scale, labels слева не выводим
-                (правая ось остаётся, левая исчезает). Это сохраняет визуальную сетку, не оставляя
-                "висящих" чисел primary scale, которые без primary line не имеют смысла. */}
-            {(showPrimary ? targetCalc.yTicks : (targetCalc.secYTicks || [])).map((tick, i) => {
-              // Primary axis всегда красится в primaryColor (раньше был серый fallback
-              // в single-axis режиме — выглядело «безжизненно» когда юзер скрывал
-              // index/cap и оставлял только основную серию). Linecolor = primary
-              // зеркалит цвет линии графика и совпадает с pill.
-              return (
-                <g key={i}>
-                  <line
-                    x1={0}
-                    y1={tick.y}
-                    x2={chartWidth}
-                    y2={tick.y}
-                    stroke={GRID.major}
-                    strokeWidth="1"
-                  />
-                  {showPrimary && (
-                    <text
-                      x={-tokens.axisGap}
-                      y={tick.y}
-                      textAnchor="end"
-                      dominantBaseline="central"
-                      fill={primaryColor}
-                      fontSize={tokens.fontY}
-                      fontWeight={tokens.fontYWeight}
-                      opacity={0.9}
-                    >
-                      {/* Split на "123.45" + " трлн ₽" — unit рисуется меньшим
-                          шрифтом (70%), чтобы длинные axis labels не «давили»
-                          на chart area. Match требует space перед unit:
-                          "123.45 трлн" → split, "55.43%" → no split. */}
-                      {(() => {
-                        const s = (formatPrimaryAxis || formatValue)(tick.value);
-                        const m = s.match(/^(.+?)\s+([а-яА-Яa-zA-Z₽].*?)$/);
-                        if (!m) return s;
-                        return (
-                          <>
-                            {m[1]}
-                            <tspan dx={2} fontSize={tokens.fontY * 0.7} fontWeight={700} opacity={0.85}>{m[2]}</tspan>
-                          </>
-                        );
-                      })()}
-                    </text>
-                  )}
-                </g>
-              );
-            })}
+            {/* Горизонтальные линии сетки. По умолчанию — на делениях ЛЕВОЙ
+                (primary) оси. gridAxis="secondary" (или showPrimary=false →
+                левой оси нет) кладёт линии на круглые деления ПРАВОЙ оси, чтобы
+                сетка совпадала с главной серией (OI), а не с ценой. Линии и
+                подписи осей теперь независимы: при разных nice-ticks у осей
+                число делений слева/справа не совпадает, общий цикл их «связал»
+                бы и сломал выравнивание. */}
+            {(() => {
+              const secTicks = targetCalc.secYTicks ?? [];
+              // gridAxis="secondary" + есть деления OI → сетка по правой оси.
+              // Иначе сохраняем прежнее поведение: showPrimary → левая ось,
+              // иначе правая (secTicks), как было до prop'а.
+              const gridTicks = (gridAxis === 'secondary' && secTicks.length > 0)
+                ? secTicks
+                : (showPrimary ? targetCalc.yTicks : secTicks);
+              return gridTicks.map((tick, i) => (
+                <line
+                  key={`grid-${i}`}
+                  x1={0}
+                  y1={tick.y}
+                  x2={chartWidth}
+                  y2={tick.y}
+                  stroke={GRID.major}
+                  strokeWidth="1"
+                />
+              ));
+            })()}
+
+            {/* Подписи ЛЕВОЙ (primary) оси — деления цены. Рисуются независимо
+                от линий сетки: при gridAxis="secondary" линии стоят на делениях
+                OI, а цена остаётся на своих позициях как visual reference.
+                Цвет primaryColor зеркалит цвет линии графика и pill. */}
+            {showPrimary && targetCalc.yTicks.map((tick, i) => (
+              <text
+                key={`pri-${i}`}
+                x={-tokens.axisGap}
+                y={tick.y}
+                textAnchor="end"
+                dominantBaseline="central"
+                fill={primaryColor}
+                fontSize={tokens.fontY}
+                fontWeight={tokens.fontYWeight}
+                opacity={0.9}
+              >
+                {/* Split на "123.45" + " трлн ₽" — unit рисуется меньшим
+                    шрифтом (70%), чтобы длинные axis labels не «давили»
+                    на chart area. Match требует space перед unit:
+                    "123.45 трлн" → split, "55.43%" → no split. */}
+                {(() => {
+                  const s = (formatPrimaryAxis || formatValue)(tick.value);
+                  const m = s.match(/^(.+?)\s+([а-яА-Яa-zA-Z₽].*?)$/);
+                  if (!m) return s;
+                  return (
+                    <>
+                      {m[1]}
+                      <tspan dx={2} fontSize={tokens.fontY * 0.7} fontWeight={700} opacity={0.85}>{m[2]}</tspan>
+                    </>
+                  );
+                })()}
+              </text>
+            ))}
 
             {/* Правая ось Y (secondary). На мобиле раньше скрывалась из-за маленького
                 --chart-pad-right-dual (48px), но с увеличением до 68px labels помещаются. */}
