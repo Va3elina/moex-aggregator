@@ -479,7 +479,9 @@ export async function getFundsChartData(
     period
   });
   const response = await apiFetch(`${API_BASE}/api/funds/chart?${params}`);
-  if (!response.ok) throw new Error('Failed to fetch funds chart data');
+  // detail пробрасывается, чтобы handleTierError распознал tier-403 (период за
+  // лимитом funds_money: 180д для free) → upgrade-промпт, а не «Ошибка загрузки».
+  if (!response.ok) throw new Error(await apiErrorDetail(response, 'Failed to fetch funds chart data'));
   return response.json();
 }
 
@@ -525,7 +527,9 @@ export async function getFundsFlows(
     params.set('fund_ids', fundIds.join(','));
   }
   const response = await apiFetch(`${API_BASE}/api/funds/flows?${params}`);
-  if (!response.ok) throw new Error('Failed to fetch funds flows');
+  // detail пробрасывается → handleTierError ловит tier-403 (потоки за лимитом
+  // free) и показывает upgrade-промпт вместо «Ошибка загрузки данных».
+  if (!response.ok) throw new Error(await apiErrorDetail(response, 'Failed to fetch funds flows'));
   return response.json();
 }
 
@@ -668,12 +672,13 @@ export interface BuffettRatioResponse {
 
 export type BuffettPeriod = '1m' | '1y' | '2y' | '3y' | '5y' | '10y' | '20y' | 'all';
 
-/** Извлекает человекочитаемый текст ошибки из 4xx-ответа buffett-эндпоинтов.
+/** Извлекает человекочитаемый текст ошибки из 4xx-ответа API.
  *  Backend оборачивает ошибки в envelope {success:false,error:{code,message}};
- *  legacy-роуты — в {detail}. Парсим оба. Без этого период «Всё» на free-
- *  тарифе показывал «Ошибка загрузки данных» вместо upgrade-модалки —
- *  tier-403 сообщение терялось и фронт не отличал его от реального сбоя. */
-async function buffettErrorDetail(response: Response, fallback: string): Promise<string> {
+ *  legacy-роуты (FastAPI HTTPException) — в {detail}. Парсим оба. Без этого
+ *  tier-403 (текст «… на тарифе …»/«… недоступ…») терялся → индикатор показывал
+ *  «Ошибка загрузки данных» вместо upgrade-модалки (handleTierError матчит по
+ *  тексту). Универсален — используется buffett и funds (chart/flows). */
+async function apiErrorDetail(response: Response, fallback: string): Promise<string> {
   try {
     const body = await response.json();
     // Legacy FastAPI-формат: {detail: "..."}
@@ -683,7 +688,7 @@ async function buffettErrorDetail(response: Response, fallback: string): Promise
       return body.error.message;
     }
   } catch { /* не JSON — отдаём fallback */ }
-  return `Failed to fetch Buffett ${fallback}`;
+  return fallback;
 }
 
 export async function getBuffettCapGdp(
@@ -697,7 +702,7 @@ export async function getBuffettCapGdp(
     timeframe
   });
   const response = await apiFetch(`${API_BASE}/api/buffett/cap-gdp?${params}`);
-  if (!response.ok) throw new Error(await buffettErrorDetail(response, 'cap/gdp'));
+  if (!response.ok) throw new Error(await apiErrorDetail(response, 'Failed to fetch Buffett cap/gdp'));
   return response.json();
 }
 
@@ -708,7 +713,7 @@ export async function getBuffettCapM2(
 ): Promise<BuffettRatioResponse> {
   const params = new URLSearchParams({ period, smooth: smooth.toString(), timeframe });
   const response = await apiFetch(`${API_BASE}/api/buffett/cap-m2?${params}`);
-  if (!response.ok) throw new Error(await buffettErrorDetail(response, 'cap/m2'));
+  if (!response.ok) throw new Error(await apiErrorDetail(response, 'Failed to fetch Buffett cap/m2'));
   return response.json();
 }
 

@@ -146,6 +146,22 @@ export default function FundsMoneyPage() {
         }
     }, [fundsAccess.isLoading, fundsAccess, viewMode, period, setPeriod]);
 
+    // Гость/free не может смотреть потоки вовсе: лимит истории (180д) несовместим
+    // с недельной/месячной гранулярностью, которой нужно ≥1Г (FLOW_MIN_PERIODS), а
+    // дневной ТФ — Pro. Чтобы первый экран был РАБОЧИМ (а не «Ошибка/замок» по
+    // дефолтному flows+1Г) — один раз при загрузке тарифа переводим на СЧА. Если
+    // юзер сам кликнет «Притоки-Оттоки» — tier-403 покажет upgrade-промпт.
+    const flowsModeCheckedRef = useRef(false);
+    useEffect(() => {
+        if (fundsAccess.isLoading || flowsModeCheckedRef.current) return;
+        flowsModeCheckedRef.current = true;
+        const flowsAvailable = (['1d', '1w', '1m'] as FlowTimeframe[]).some(
+            tf => fundsAccess.canUseTimeframe(tf)
+                && (FLOW_MIN_PERIODS[tf] ?? []).some(p => fundsAccess.canUsePeriod(p)),
+        );
+        if (!flowsAvailable && viewMode === 'flows') setViewMode('aum');
+    }, [fundsAccess.isLoading, fundsAccess, viewMode, setViewMode]);
+
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [data, setData] = useState<FundsChartResponse | null>(null);
