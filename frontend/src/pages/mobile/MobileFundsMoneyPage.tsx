@@ -8,7 +8,7 @@
  *   - Притоки-Оттоки и таблица фондов — Phase 4
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Wallet, Lock } from 'lucide-react';
+import { Wallet, Lock, Bell } from 'lucide-react';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
 import { handleTierError } from '../../utils/tierError';
@@ -565,6 +565,34 @@ export default function MobileFundsMoneyPage() {
                   );
                 })}
               </div>
+            </div>
+          )}
+
+          {/* Сигналы — заглушка «скоро» (только в режиме притоков). Disabled-чип
+              по образцу «Юань · Скоро»: автосигналы по притокам-оттокам появятся
+              позже. UI-only плейсхолдер, не кликабелен. */}
+          {viewMode === 'flows' && (
+            <div>
+              <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 800, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+                Сигналы
+              </div>
+              <button
+                className="fm-chip"
+                disabled
+                aria-disabled="true"
+                style={{
+                  width: '100%',
+                  justifyContent: 'center',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  opacity: 0.5,
+                  cursor: 'not-allowed',
+                }}
+              >
+                <Bell size={14} strokeWidth={2.2} />
+                Сигналы · Скоро
+              </button>
             </div>
           )}
 
