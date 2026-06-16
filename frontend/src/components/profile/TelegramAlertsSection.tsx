@@ -7,8 +7,11 @@
  *  - tier-aware: Free (quota 0) → upgrade на Basic.
  * Рендерится внутри карточки ProfilePage (как ExtensionTokenSection).
  */
-import { useCallback, useEffect, useState, type CSSProperties } from 'react';
-import { Bell, ExternalLink, Send, Trash2, Pause, Play, AlertTriangle } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
+import {
+    Bell, ExternalLink, Send, Trash2, Pause, Play, AlertTriangle,
+    ChevronDown, ChevronRight, Search, Zap, Clock,
+} from 'lucide-react';
 import {
     getTelegramStatus, createTelegramLink, unlinkTelegram,
     listAlerts, deleteAlert, deleteAllAlerts, setAlertStatus,
@@ -17,6 +20,7 @@ import {
 import { useCommonFeatures } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../tier/UpgradeModal';
 import MessengerChoice from '../alerts/MessengerChoice';
+import AlertFiresList from './AlertFiresList';
 
 /** Inline-глиф колокольчика — повторяет кнопку-колокол с индикаторов (Bell в обведённом
  *  кружке), чтобы текст «кнопкой …» указывал на реальный контрол, а не на эмодзи. */
@@ -58,25 +62,62 @@ function unitFor(a: AlertInfo): string {
     return a.indicator === 'price' ? ' ₽' : a.indicator === 'oi_zscore' ? 'σ' : '';
 }
 
+// Сколько алертов грузим за один запрос (X-Total-Count в шапке даёт общее число).
+// 200 — дефолт бэкенда; хватает на типичный кабинет, «показать ещё» догружает остаток.
+const PAGE_LIMIT = 200;
+// Заголовок секции без сектора — у фьючерсов sector обычно null.
+const NO_SECTOR = 'Без сектора';
+type SortKey = 'date' | 'fires';
+
+// «N сигналов» с правильным склонением.
+function firesLabel(n: number): string {
+    const mod10 = n % 10, mod100 = n % 100;
+    if (mod10 === 1 && mod100 !== 11) return `${n} сигнал`;
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return `${n} сигнала`;
+    return `${n} сигналов`;
+}
+
 export default function TelegramAlertsSection() {
     const quota = useCommonFeatures().telegram_alerts_quota; // 0 / число / null(∞)
     const { showUpgrade } = useUpgradePrompt();
     const [linked, setLinked] = useState<boolean | null>(null);
     const [username, setUsername] = useState<string | null>(null);
     const [alerts, setAlerts] = useState<AlertInfo[]>([]);
+    const [total, setTotal] = useState(0);            // X-Total-Count — сколько алертов всего
+    const [loadingMore, setLoadingMore] = useState(false);
     const [linkUrl, setLinkUrl] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+
+    // ── UI-стейт нового списка ──
+    const [query, setQuery] = useState('');            // локальный поиск по тикеру/имени
+    const [sortKey, setSortKey] = useState<SortKey>('date');
+    const [openSectors, setOpenSectors] = useState<Set<string>>(new Set());  // раскрытые секторы
+    const [openFires, setOpenFires] = useState<number | null>(null);          // alert.id с раскрытой историей
+
+    // Грузим первую страницу. items/total из контракта Agent A (listAlerts→{items,total}).
+    const loadAlerts = useCallback(async (offset: number) => {
+        const page = await listAlerts({ limit: PAGE_LIMIT, offset });
+        setTotal(page.total);
+        setAlerts((prev) => (offset === 0 ? page.items : [...prev, ...page.items]));
+    }, []);
 
     const refresh = useCallback(async () => {
         try {
             const s = await getTelegramStatus();
             setLinked(s.linked); setUsername(s.username);
         } catch { setLinked(false); }
-        try { setAlerts(await listAlerts()); } catch { /* free / no access */ }
-    }, []);
+        try { await loadAlerts(0); } catch { /* free / no access */ }
+    }, [loadAlerts]);
 
     useEffect(() => { refresh(); }, [refresh]);
+
+    const loadMore = async () => {
+        setLoadingMore(true);
+        try { await loadAlerts(alerts.length); }
+        catch (e) { setMsg({ type: 'err', text: (e as Error).message }); }
+        finally { setLoadingMore(false); }
+    };
 
     // poll статуса после генерации ссылки (юзер жмёт Start в боте)
     useEffect(() => {
@@ -125,6 +166,54 @@ export default function TelegramAlertsSection() {
     const activeCount = alerts.filter((a) => a.status === 'active').length;
     const link = 'var(--accent)';
     const sub = 'var(--text-secondary)';
+
+    const toggleSector = (name: string) => setOpenSectors((prev) => {
+        const next = new Set(prev);
+        if (next.has(name)) next.delete(name); else next.add(name);
+        return next;
+    });
+
+    // ── Алерты «Открытые позиции» (source='oi'), отфильтрованные поиском ──
+    // Поиск локальный (по тикеру/имени) — TODO: когда Agent A отдаст useInstrumentFilter,
+    // переключить на общий хук (по секторам/группам), чтобы совпадать с конструктором.
+    const oiAlerts = useMemo(() => {
+        const q = query.trim().toLowerCase();
+        return alerts.filter((a) => {
+            const src = a.source || 'oi';
+            if (src !== 'oi') return false;
+            if (!q) return true;
+            return (a.asset || '').toLowerCase().includes(q)
+                || (a.asset_name || '').toLowerCase().includes(q);
+        });
+    }, [alerts, query]);
+
+    // Группировка по сектору + сортировка внутри секции.
+    const sectorGroups = useMemo(() => {
+        const byCmp = (a: AlertInfo, b: AlertInfo) => {
+            if (sortKey === 'fires') {
+                const d = (b.fires_count ?? 0) - (a.fires_count ?? 0);
+                if (d !== 0) return d;
+            }
+            // дефолт / тай-брейк — по дате создания (новые сверху)
+            return (b.created_at || '').localeCompare(a.created_at || '');
+        };
+        const map = new Map<string, AlertInfo[]>();
+        for (const a of oiAlerts) {
+            const key = a.sector || NO_SECTOR;
+            const arr = map.get(key);
+            if (arr) arr.push(a); else map.set(key, [a]);
+        }
+        const groups = Array.from(map.entries()).map(([sector, list]) => ({
+            sector,
+            list: [...list].sort(byCmp),
+            fires: list.reduce((s, a) => s + (a.fires_count ?? 0), 0),
+        }));
+        // секции сортируем: по сумме сигналов (если sort=fires) либо по размеру
+        groups.sort((x, y) => sortKey === 'fires'
+            ? y.fires - x.fires
+            : y.list.length - x.list.length);
+        return groups;
+    }, [oiAlerts, sortKey]);
 
     return (
         <div>
@@ -187,30 +276,153 @@ export default function TelegramAlertsSection() {
                         </div>
                     ) : (
                         <>
-                        <ul style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                            {alerts.map((a) => (
-                                <li key={a.id} className="rounded-xl p-3" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--sp-2)' }}>
-                                    <div style={{ minWidth: 0 }}>
-                                        <div style={{ fontWeight: 600, fontSize: 'var(--fs-sm)' }}>{a.asset_name || a.asset}</div>
-                                        <div style={{ color: sub, fontSize: 'var(--fs-xs)' }}>
-                                            {METRIC_LABEL[a.indicator] || a.indicator} {OP_LABEL[a.op] || a.op} {a.threshold}{unitFor(a)}
-                                            {' · '}<span style={{ color: a.status === 'active' ? link : sub }}>{STATUS_LABEL[a.status] || a.status}</span>
-                                        </div>
-                                    </div>
-                                    <div style={{ display: 'flex', gap: 'var(--sp-2)', flexShrink: 0 }}>
-                                        {a.status !== 'fired' && (
-                                            <button onClick={() => toggle(a)} title={a.status === 'active' ? 'Пауза' : 'Возобновить'} aria-label={a.status === 'active' ? 'Пауза' : 'Возобновить'} className="editorial-press" style={{ ...iconBtn, color: sub }}>
-                                                {a.status === 'active' ? <Pause size={16} /> : <Play size={16} />}
+                        {/* ── Секция «Открытые позиции» (source='oi') ── */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 'var(--sp-2)' }}>
+                            <Zap size={16} style={{ color: link }} />
+                            <h3 style={{ fontWeight: 700, fontSize: 'var(--fs-base)' }}>Открытые позиции</h3>
+                            <span style={{ color: sub, fontSize: 'var(--fs-xs)' }}>{oiAlerts.length}</span>
+                        </div>
+
+                        {/* Контролы: поиск + сортировка */}
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--sp-2)', alignItems: 'center', marginBottom: 12 }}>
+                            <div style={{ position: 'relative', flex: '1 1 180px', minWidth: 0 }}>
+                                <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: sub, pointerEvents: 'none' }} />
+                                <input
+                                    value={query}
+                                    onChange={(e) => setQuery(e.target.value)}
+                                    placeholder="Поиск по тикеру…"
+                                    style={{
+                                        width: '100%', minHeight: 36, padding: '7px 10px 7px 30px', borderRadius: 8,
+                                        border: '1.5px solid var(--border-color)', background: 'var(--bg-primary)',
+                                        fontSize: 'var(--fs-sm)', color: 'var(--text-primary)',
+                                    }}
+                                />
+                            </div>
+                            <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                                <button
+                                    onClick={() => setSortKey('date')}
+                                    className="editorial-press"
+                                    aria-pressed={sortKey === 'date'}
+                                    style={{ ...chipBtn, fontSize: 'var(--fs-xs)', padding: '6px 10px', minHeight: 36, display: 'inline-flex', alignItems: 'center', gap: 4, background: sortKey === 'date' ? 'var(--bg-secondary)' : 'var(--bg-primary)', color: sortKey === 'date' ? 'var(--text-primary)' : sub }}
+                                >
+                                    <Clock size={13} /> По дате
+                                </button>
+                                <button
+                                    onClick={() => setSortKey('fires')}
+                                    className="editorial-press"
+                                    aria-pressed={sortKey === 'fires'}
+                                    style={{ ...chipBtn, fontSize: 'var(--fs-xs)', padding: '6px 10px', minHeight: 36, display: 'inline-flex', alignItems: 'center', gap: 4, background: sortKey === 'fires' ? 'var(--bg-secondary)' : 'var(--bg-primary)', color: sortKey === 'fires' ? 'var(--text-primary)' : sub }}
+                                >
+                                    <Zap size={13} /> По сигналам
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Аккордеоны по секторам (схлопнуты по умолчанию — не вываливаем весь список) */}
+                        {oiAlerts.length === 0 ? (
+                            <div style={{ color: sub, fontSize: 'var(--fs-sm)', marginBottom: 16 }}>
+                                {query ? 'Ничего не найдено по запросу.' : 'Нет алертов по открытым позициям.'}
+                            </div>
+                        ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+                                {sectorGroups.map(({ sector, list, fires }) => {
+                                    const open = openSectors.has(sector);
+                                    return (
+                                        <div key={sector} className="rounded-xl" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', overflow: 'hidden' }}>
+                                            <button
+                                                onClick={() => toggleSector(sector)}
+                                                className="editorial-press"
+                                                aria-expanded={open}
+                                                style={{
+                                                    width: '100%', minHeight: 44, padding: '10px 12px', background: 'transparent',
+                                                    border: 'none', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+                                                    textAlign: 'left', color: 'var(--text-primary)',
+                                                }}
+                                            >
+                                                {open ? <ChevronDown size={16} style={{ flexShrink: 0 }} /> : <ChevronRight size={16} style={{ flexShrink: 0 }} />}
+                                                <span style={{ fontWeight: 600, fontSize: 'var(--fs-sm)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sector}</span>
+                                                <span style={{ color: sub, fontSize: 'var(--fs-xs)', flexShrink: 0 }}>{list.length}</span>
+                                                {fires > 0 && (
+                                                    <span style={{ color: link, fontSize: 'var(--fs-xs)', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                                                        <Zap size={11} /> {fires}
+                                                    </span>
+                                                )}
                                             </button>
-                                        )}
-                                        <button onClick={() => remove(a)} title="Удалить" aria-label="Удалить алерт" className="editorial-press" style={{ ...iconBtn, color: 'var(--funds-flow-negative, #FF7A5C)' }}><Trash2 size={16} /></button>
-                                    </div>
-                                </li>
-                            ))}
-                        </ul>
+                                            {open && (
+                                                <ul style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '0 12px 12px' }}>
+                                                    {list.map((a) => {
+                                                        const firesN = a.fires_count ?? 0;
+                                                        const firesOpen = openFires === a.id;
+                                                        return (
+                                                            <li key={a.id} className="rounded-xl p-3" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)' }}>
+                                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--sp-2)' }}>
+                                                                    <div style={{ minWidth: 0 }}>
+                                                                        <div style={{ fontWeight: 600, fontSize: 'var(--fs-sm)' }}>{a.asset_name || a.asset}</div>
+                                                                        <div style={{ color: sub, fontSize: 'var(--fs-xs)' }}>
+                                                                            {METRIC_LABEL[a.indicator] || a.indicator} {OP_LABEL[a.op] || a.op} {a.threshold}{unitFor(a)}
+                                                                            {' · '}<span style={{ color: a.status === 'active' ? link : sub }}>{STATUS_LABEL[a.status] || a.status}</span>
+                                                                        </div>
+                                                                        <button
+                                                                            onClick={() => setOpenFires(firesOpen ? null : a.id)}
+                                                                            disabled={firesN === 0}
+                                                                            className="editorial-press"
+                                                                            aria-expanded={firesOpen}
+                                                                            style={{
+                                                                                marginTop: 6, padding: 0, background: 'transparent', border: 'none',
+                                                                                color: firesN === 0 ? sub : link, fontSize: 'var(--fs-xs)',
+                                                                                cursor: firesN === 0 ? 'default' : 'pointer', opacity: firesN === 0 ? 0.6 : 1,
+                                                                                display: 'inline-flex', alignItems: 'center', gap: 4,
+                                                                            }}
+                                                                        >
+                                                                            <Zap size={12} /> {firesLabel(firesN)}
+                                                                            {firesN > 0 && (firesOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />)}
+                                                                        </button>
+                                                                    </div>
+                                                                    <div style={{ display: 'flex', gap: 'var(--sp-2)', flexShrink: 0 }}>
+                                                                        {a.status !== 'fired' && (
+                                                                            <button onClick={() => toggle(a)} title={a.status === 'active' ? 'Пауза' : 'Возобновить'} aria-label={a.status === 'active' ? 'Пауза' : 'Возобновить'} className="editorial-press" style={{ ...iconBtn, color: sub }}>
+                                                                                {a.status === 'active' ? <Pause size={16} /> : <Play size={16} />}
+                                                                            </button>
+                                                                        )}
+                                                                        <button onClick={() => remove(a)} title="Удалить" aria-label="Удалить алерт" className="editorial-press" style={{ ...iconBtn, color: 'var(--funds-flow-negative, #FF7A5C)' }}><Trash2 size={16} /></button>
+                                                                    </div>
+                                                                </div>
+                                                                {firesOpen && firesN > 0 && (
+                                                                    <AlertFiresList alertId={a.id} unit={unitFor(a)} />
+                                                                )}
+                                                            </li>
+                                                        );
+                                                    })}
+                                                </ul>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        {/* Пагинация: догрузка остатка по total (X-Total-Count) */}
+                        {alerts.length < total && (
+                            <button onClick={loadMore} disabled={loadingMore} className="editorial-press" style={{ ...chipBtn, fontSize: 'var(--fs-sm)', marginBottom: 12, color: link }}>
+                                {loadingMore ? 'Загрузка…' : `Показать ещё (${total - alerts.length})`}
+                            </button>
+                        )}
+
+                        {/* ── Секция «Фонды» — заглушка «Скоро» (source='funds' пока не бывает) ── */}
+                        <div className="rounded-xl p-4" style={{ background: 'var(--bg-secondary)', border: '1px dashed var(--border-color)', marginBottom: 16 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <Send size={16} style={{ color: sub }} />
+                                <h3 style={{ fontWeight: 700, fontSize: 'var(--fs-base)', color: sub }}>Сигналы по фондам</h3>
+                                <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, color: link, border: '1.5px solid var(--accent)', borderRadius: 6, padding: '1px 6px' }}>Скоро</span>
+                            </div>
+                            <p style={{ color: sub, fontSize: 'var(--fs-xs)', marginTop: 6, lineHeight: 1.4 }}>
+                                Алерты по притокам и оттокам фондов появятся позже — следите за обновлениями.
+                            </p>
+                        </div>
+
                         {alerts.length > 1 && (
-                            <button onClick={removeAll} className="editorial-press" style={{ marginTop: 'var(--sp-2)', alignSelf: 'flex-start', background: 'transparent', border: 'none', color: 'var(--funds-flow-negative, #FF7A5C)', fontSize: 'var(--fs-xs)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, padding: 0 }}>
-                                <Trash2 size={14} /> Удалить все ({alerts.length})
+                            <button onClick={removeAll} className="editorial-press" style={{ alignSelf: 'flex-start', background: 'transparent', border: 'none', color: 'var(--funds-flow-negative, #FF7A5C)', fontSize: 'var(--fs-xs)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, padding: 0 }}>
+                                <Trash2 size={14} /> Удалить все ({total || alerts.length})
                             </button>
                         )}
                         </>

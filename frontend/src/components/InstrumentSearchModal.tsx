@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Search, X, Star, Lock, ChevronUp, ChevronDown, ChevronsUpDown, Check, Zap } from 'lucide-react';
 import InstrumentIcon from './InstrumentIcon';
 import { formatCompact } from '../utils/formatNumber';
@@ -7,6 +7,7 @@ import { useAnalytics } from '../contexts/AnalyticsContext';
 import { useTierAccess } from '../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from './tier/UpgradeModal';
 import { usePersistedState } from '../hooks/usePersistedState';
+import { useInstrumentFilter } from '../hooks/useInstrumentFilter';
 
 interface Instrument {
   sec_id: string;
@@ -139,58 +140,56 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
     return () => { cancelled = true; };
   }, []);
 
-  // Фильтрация по поиску и категории
-  const filteredInstruments = instruments.filter(inst => {
-    if (excludeType && inst.type === excludeType) return false;
-    if (onlyGroups && !onlyGroups.includes(inst.group || '')) return false;
-    const matchesSearch = !searchQuery ||
-      inst.sectype.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      inst.name.toLowerCase().includes(searchQuery.toLowerCase());
-    // matchesCategory: основной путь — group (backend проставляет
-    // 'Акции'/'Валюта'/'Индексы'/'Сырьё'). Fallback для категории «Акции» —
-    // type='stock', на случай если у инструмента группа не заполнена
-    // (видели 2 такие записи на проде → попадали в "не найдено").
-    const matchesCategory =
-      categoryFilter === 'all' ||
-      inst.group === categoryFilter ||
-      (categoryFilter === 'Акции' && inst.type === 'stock');
-    return matchesSearch && matchesCategory;
-  });
+  // Фильтрация / дедуп / сортировка / группировка — общий хук
+  // useInstrumentFilter (тот же, что в MobileAssetSearch). Поведенческие
+  // особенности desktop вынесены в options ниже (мемоизированы для стабильных
+  // ссылок, иначе хук пересчитывался бы каждый рендер):
+  //   - extraFilter — onlyGroups (десктоп ограничивает группы инструментов)
+  //   - dedup — тай-брейк дубликатов контрактов серии по change/объёму
+  //   - sort — по выбранной колонке (Изм./Объём) и направлению
 
-  // Уникальные по sectype (убираем дубликаты контрактов)
-  const uniqueInstruments = filteredInstruments.reduce((acc, inst) => {
-    const existing = acc.find(i => i.sectype === inst.sectype);
-    if (!existing) {
-      acc.push(inst);
-    } else {
-      // Выбираем «актуальный» контракт серии (для фьючерсов H/M/U/Z на один
-      // sectype). Раньше тай-брейк был ТОЛЬКО по daily_volume — но в выходной
-      // объём у всех фьючей = 0, и `0 > 0` никогда не срабатывало → выживал
-      // ПЕРВЫЙ в ответе API (истёкший контракт без day_change_pct → «—»).
-      // Теперь приоритет у строки, где ЕСТЬ дневное изменение (активный
-      // контракт всегда имеет свечу), и лишь при равенстве — по объёму.
-      const instHasChange = inst.day_change_pct != null;
-      const existingHasChange = existing.day_change_pct != null;
-      const instWins = instHasChange !== existingHasChange
-        ? instHasChange
-        : (inst.daily_volume || 0) > (existing.daily_volume || 0);
-      if (instWins) acc[acc.indexOf(existing)] = inst;
-    }
-    return acc;
-  }, [] as Instrument[])
-  .sort((a, b) => {
+  // extraFilter: onlyGroups (если задан — оставляем только эти группы).
+  const extraFilter = useMemo(
+    () => (onlyGroups ? (inst: Instrument) => onlyGroups.includes(inst.group || '') : undefined),
+    [onlyGroups],
+  );
+
+  // dedup: выбираем «актуальный» контракт серии (для фьючерсов H/M/U/Z на один
+  // sectype). Раньше тай-брейк был ТОЛЬКО по daily_volume — но в выходной объём
+  // у всех фьючей = 0, и `0 > 0` никогда не срабатывало → выживал ПЕРВЫЙ в
+  // ответе API (истёкший контракт без day_change_pct → «—»). Теперь приоритет у
+  // строки, где ЕСТЬ дневное изменение (активный контракт всегда имеет свечу), и
+  // лишь при равенстве — по объёму.
+  const dedup = useCallback((cand: Instrument, existing: Instrument) => {
+    const candHasChange = cand.day_change_pct != null;
+    const existingHasChange = existing.day_change_pct != null;
+    return candHasChange !== existingHasChange
+      ? candHasChange
+      : (cand.daily_volume || 0) > (existing.daily_volume || 0);
+  }, []);
+
+  // sort: по активной колонке + направлению. Активы без значения — всегда в
+  // конце, в обе стороны сортировки.
+  const sort = useCallback((a: Instrument, b: Instrument) => {
     const av = sortCol === 'change' ? a.day_change_pct : a.daily_volume;
     const bv = sortCol === 'change' ? b.day_change_pct : b.daily_volume;
-    // Активы без значения — всегда в конце, в обе стороны сортировки.
     if (av == null && bv == null) return 0;
     if (av == null) return 1;
     if (bv == null) return -1;
     return sortDir === 'desc' ? bv - av : av - bv;
-  });
+  }, [sortCol, sortDir]);
 
-  // При поиске — все инструменты в одном списке (избранные не прячутся)
-  const favoriteInstruments = searchQuery ? [] : uniqueInstruments.filter(inst => favorites.includes(inst.sectype));
-  const regularInstruments = searchQuery ? uniqueInstruments : uniqueInstruments.filter(inst => !favorites.includes(inst.sectype));
+  const { unique: uniqueInstruments, favoriteItems: favoriteInstruments, regularItems: regularInstruments } =
+    useInstrumentFilter<Instrument>({
+      instruments,
+      searchQuery,
+      categoryFilter,
+      favorites,
+      excludeType,
+      extraFilter,
+      dedup,
+      sort,
+    });
 
   const toggleFavorite = (sectype: string, e: React.MouseEvent) => {
     e.stopPropagation();
