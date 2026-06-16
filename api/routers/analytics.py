@@ -510,74 +510,15 @@ async def get_funnel(
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# A/B testing — variant assignment
+# A/B testing — УДАЛЕНО (мёртвый код, 2026-06-16)
 # ════════════════════════════════════════════════════════════════════════════
-# Логика deterministic split:
-#   bucket = hash(experiment_name + user_id|session_id) mod 100
-#   bucket < traffic_split → variant_a, иначе variant_b
-# Даёт consistency: один user всегда видит ту же variant для эксперимента.
-#
-# Удалено 2026-06-16 (мёртвый код): GET /cohort, GET /realtime (на фронте блоки
-# Retention/Realtime удалены ещё 2026-05-13) и CRUD /experiments
-# (list/create/delete — UI управления экспериментами не было). Эндпоинт
-# /experiments/{name}/assign оставлен: его всё ещё дёргает useExperiment-хук.
-
-import hashlib
-
-
-@router.get("/experiments/{name}/assign")
-async def assign_variant(
-    name: str,
-    request: Request,
-    user=Depends(get_current_user_optional),
-):
-    """Возвращает variant ('a' / 'b') для текущего пользователя.
-
-    Detarministic split:
-      - Если user залогинен → bucket = hash(name + user_id) mod 100
-      - Иначе → bucket = hash(name + session_id из Cookie 'frame_session_id')
-      - bucket < traffic_split → variant_a, иначе variant_b
-
-    Если эксперимент не найден или inactive → возвращает variant_a (default fallback).
-    Записываем assignment в ab_assignments (idempotent через ON CONFLICT).
-    """
-    engine = get_engine()
-    with engine.connect() as conn:
-        exp = conn.execute(text("""
-            SELECT variant_a, variant_b, traffic_split, active
-            FROM ab_experiments WHERE name = :name
-        """), {"name": name}).fetchone()
-
-    if not exp or not bool(exp[3]):
-        return {"experiment": name, "variant": "a", "label": "default", "active": False}
-
-    # Subject ID: user_id если залогинен, иначе session_id из request body / cookie / header
-    subject = str(user.id) if user else (
-        request.headers.get("X-Session-Id")
-        or request.cookies.get("frame_session_id")
-        or "anonymous"
-    )
-
-    # Deterministic bucket
-    h = hashlib.md5(f"{name}::{subject}".encode("utf-8")).digest()
-    bucket = h[0]  # первый byte → 0-255 → mod 100
-    bucket = bucket % 100
-
-    variant = "a" if bucket < int(exp[2]) else "b"
-    label = exp[0] if variant == "a" else exp[1]
-
-    # Запись assignment (idempotent)
-    try:
-        with engine.begin() as conn:
-            conn.execute(text("""
-                INSERT INTO ab_assignments (experiment_name, subject_id, variant, assigned_at)
-                VALUES (:exp, :subj, :var, NOW())
-                ON CONFLICT (experiment_name, subject_id) DO NOTHING
-            """), {"exp": name, "subj": subject, "var": variant})
-    except Exception:
-        pass  # fire-and-forget — не блокируем отдачу
-
-    return {"experiment": name, "variant": variant, "label": label, "active": True}
+# Вся A/B-цепочка УДАЛЕНА 2026-06-16 как мёртвый код: фронт-хук useExperiment
+# (0 вызовов) + getABAssignment/AssignResponse в services/api.ts + здешний
+# эндпоинт GET /experiments/{name}/assign (assign_variant) — последний reader.
+# Ранее в этот день удалены /cohort, /realtime и CRUD /experiments.
+# Таблицы БД `ab_experiments` / `ab_assignments` теперь НИГДЕ не используются →
+# можно дропнуть отдельной follow-up миграцией (DROP TABLE ab_assignments,
+# ab_experiments) — по правилам проекта миграции отдельно от кода.
 
 
 # ════════════════════════════════════════════════════════════════════════════
