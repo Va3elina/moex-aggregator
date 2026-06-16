@@ -77,7 +77,16 @@ export default function ChartLegend({
     // useMemo инвалидируется при изменении items/font — стабильная ссылка
     // между ре-рендерами parent.
     const computed = useMemo(() => {
-        const totalH = Math.max(effectiveDot, effectiveFs);
+        // Высота с запасом под выносные элементы кириллицы («у», «р», «ц», «щ»).
+        // Текст центрируется по totalH/2 с dominantBaseline="central": descender
+        // уходит вниз до ~totalH/2 + 0.585·fs, ascender вверх на столько же → чтобы
+        // НЕ клипалось, нужно totalH ≥ 1.17·fs. Раньше было totalH = fs → нижние
+        // засечки срезались на 0.085·fs.
+        // КРИТИЧНО для html2canvas-ЭКСПОРТА: он растеризует каждый <svg> РОВНО в
+        // width×height и КЛИПАЕТ overflow:visible (в живом браузере оно работает —
+        // потому проблему видно ТОЛЬКО на фото графика, не на экране). 1.35× —
+        // 1.17 + sub-pixel запас на округление html2canvas (scale=DPR).
+        const totalH = Math.max(effectiveDot, Math.ceil(effectiveFs * 1.35));
         return items.map((it) => {
             const textW = measureText(it.label, effectiveFs, fontWeight);
             // +1px sub-pixel safety — на retina измерение может округляться вниз,
