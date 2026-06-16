@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { TrendingUp, DollarSign, Banknote, Gem, Wallet, JapaneseYen } from 'lucide-react';
+import { TrendingUp, DollarSign, Banknote, Gem, Wallet, JapaneseYen, Bell } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import SegmentedControl from '../components/SegmentedControl';
@@ -765,6 +765,38 @@ export default function FundsMoneyPage() {
                       };
                     }}
                 />
+                {/* Сигналы — заглушка «скоро». Только в режиме притоков-оттоков:
+                    автосигналы будут строиться по флоу. Неактивный плейсхолдер
+                    (не кликабелен) — UI-only, без бэкенда. Стиль зеркалит
+                    AlertBellButton (paper pill, 2px border), но disabled — колокол
+                    + подпись «Скоро» инлайн (в вертикальном kebab-стеке бейдж-overlay
+                    задевал бы соседние пункты). */}
+                {viewMode === 'flows' && (
+                    <span
+                        data-export-ignore="true"
+                        aria-disabled="true"
+                        aria-label="Сигналы — скоро"
+                        className="rounded-full inline-flex items-center justify-center"
+                        title="Автосигналы по притокам-оттокам появятся позже"
+                        style={{
+                            flex: '0 0 auto',
+                            gap: 'var(--sp-1)',
+                            height: 44,
+                            padding: '0 var(--sp-3)',
+                            backgroundColor: 'var(--bg-secondary)',
+                            border: '2px solid var(--text-primary)',
+                            color: 'var(--text-primary)',
+                            fontSize: 'var(--fs-xs)',
+                            fontWeight: 700,
+                            whiteSpace: 'nowrap',
+                            opacity: 0.6,
+                            cursor: 'not-allowed',
+                        }}
+                    >
+                        <Bell size={18} />
+                        Сигналы · Скоро
+                    </span>
+                )}
                 <ChartCaptureButton
                     getTargetElement={() => chartAnchorRef.current}
                     filename={`frame-funds-${category}-${viewMode}-${period}`}
