@@ -448,9 +448,62 @@ const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(
             };
             window.addEventListener('keydown', onKeyDown);
 
+            // ── Доставка pointer-move в fabric во время нажатия ───────────────
+            // На страницах с живым графиком (Открытые позиции, Деньги в фондах)
+            // встроенный слушатель движения fabric во время зажатой кнопки
+            // перестаёт получать pointermove — на pointerdown fabric переносит
+            // слушатель на document, и там, поверх этих страниц, он не
+            // срабатывает (на Карте рынка срабатывает штатно). Из-за этого свежая
+            // фигура схлопывается в точку старта, а существующий объект/текст
+            // невозможно перетащить (mouse:move не приходит). Сам upper-canvas
+            // события получает стабильно, поэтому пробрасываем их в обработчик
+            // fabric, пока кнопка зажата. Дедуп по объекту события: каждое
+            // физическое движение обрабатывается один раз, даже если родной
+            // слушатель fabric всё-таки сработал — иначе фигура росла бы вдвое
+            // быстрее и объект перемещался бы на двойную дельту.
+            const fcEv = fc as unknown as {
+                upperCanvasEl: HTMLCanvasElement;
+                __onMouseMove: (e: Event) => void;
+                _onMouseMove: (e: Event) => void;
+            };
+            const upperCanvas = fcEv.upperCanvasEl;
+            // Холст рисовалки не делаем перетаскиваемым: fabric помечает
+            // upper-canvas draggable под свой DnD (здесь не используется), а с
+            // ним нативный HTML5-drag может перехватить жест после первого
+            // движения.
+            [upperCanvas, canvasRef.current].forEach((el) => {
+                if (!el) return;
+                el.setAttribute('draggable', 'false');
+                (el as HTMLCanvasElement).draggable = false;
+                el.style.setProperty('-webkit-user-drag', 'none');
+            });
+            const onAnnoDragStart = (e: Event) => e.preventDefault();
+            upperCanvas.addEventListener('dragstart', onAnnoDragStart);
+
+            const origOnMouseMove = fcEv.__onMouseMove.bind(fc);
+            let lastForwardedMove: Event | null = null;
+            fcEv.__onMouseMove = (e: Event) => {
+                if (e === lastForwardedMove) return; // дедуп одного физ. движения
+                lastForwardedMove = e;
+                origOnMouseMove(e);
+            };
+            let annoPointerDown = false;
+            const onAnnoPointerDown = () => { annoPointerDown = true; };
+            const onAnnoPointerMove = (e: PointerEvent) => {
+                if (annoPointerDown) fcEv._onMouseMove(e);
+            };
+            const onAnnoPointerUp = () => { annoPointerDown = false; };
+            upperCanvas.addEventListener('pointerdown', onAnnoPointerDown);
+            upperCanvas.addEventListener('pointermove', onAnnoPointerMove);
+            window.addEventListener('pointerup', onAnnoPointerUp);
+
             return () => {
                 cancelled = true;
                 window.removeEventListener('keydown', onKeyDown);
+                upperCanvas.removeEventListener('dragstart', onAnnoDragStart);
+                upperCanvas.removeEventListener('pointerdown', onAnnoPointerDown);
+                upperCanvas.removeEventListener('pointermove', onAnnoPointerMove);
+                window.removeEventListener('pointerup', onAnnoPointerUp);
                 fabricRef.current?.dispose();
                 fabricRef.current = null;
             };
