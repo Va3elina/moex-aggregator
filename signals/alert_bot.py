@@ -58,6 +58,21 @@ _STATUS_WORD = {"active": "активен", "paused": "на паузе", "fired"
 # Таймфрейм OI-алерта (раннее срабатывание дневного сигнала по интрадей-бару).
 _TF_LABEL = {"5m": "5 мин", "1h": "1 час", "1d": "день"}
 
+# Источник раздела для выбора по индикатору (зеркало _alert_source в api/routers/alerts).
+# Два «индикатора» в боте: ОИ (открытые позиции/цена) и Фонды (потоки).
+def _source_of(indicator: str) -> str:
+    return "funds" if indicator == "funds_flow" else "oi"
+
+_SOURCE_LABEL = {"oi": "🔓 Открытые позиции", "funds": "💰 Фонды"}
+
+# Человеко-имя fund-таргета, когда asset_name пуст (старые fund-алерты по категории
+# без метки выбора). Для новых asset_name приходит с фронта («Все фонды»/«N фондов»).
+_FUND_ASSET_NAME = {
+    "all": "Все фонды", "custom": "Набор фондов",
+    "money_market": "Денежный рынок", "stocks": "Акции",
+    "bonds": "Облигации", "gold": "Золото",
+}
+
 
 def _num(v) -> str:
     """Аккуратный вывод числа: целое без .0, дробное компактно (как :g)."""
@@ -180,17 +195,31 @@ def _user_id_by_chat(db, chat_id: int):
     return row[0] if row else None
 
 
-def _list_alerts(db, user_id: int):
-    """Все алерты юзера (свежие сверху), включая 'fired' (сработавшие once) —
-    чтобы их можно было найти в боте и нажать «Возобновить»/«Удалить» (иначе
-    fired-алерт был бы недостижим из бот-навигации)."""
-    return db.execute(
-        text("SELECT id, indicator, asset, asset_name, metric, clgroup, op, "
-             "threshold, mode, status, last_value, last_fired_at, timeframe "
-             "FROM alerts WHERE user_id = :u AND status IN ('active','paused','fired') "
-             "ORDER BY created_at DESC, id DESC"),
+def _list_alerts(db, user_id: int, source=None):
+    """Алерты юзера (свежие сверху), включая 'fired' (сработавшие once) — чтобы их
+    можно было найти в боте и нажать «Возобновить»/«Удалить» (иначе fired-алерт был
+    бы недостижим из бот-навигации). source задан → фильтр по разделу (oi|funds);
+    COALESCE(source,'oi') — старые алерты без source трактуем как ОИ."""
+    q = ("SELECT id, indicator, asset, asset_name, metric, clgroup, op, "
+         "threshold, mode, status, last_value, last_fired_at, timeframe "
+         "FROM alerts WHERE user_id = :u AND status IN ('active','paused','fired')")
+    params = {"u": user_id}
+    if source:
+        q += " AND COALESCE(source, 'oi') = :src"
+        params["src"] = source
+    q += " ORDER BY created_at DESC, id DESC"
+    return db.execute(text(q), params).fetchall()
+
+
+def _source_counts(db, user_id: int) -> dict:
+    """{source: count} по активным/paused/fired — для picker'а выбора индикатора."""
+    rows = db.execute(
+        text("SELECT COALESCE(source, 'oi') AS src, count(*) FROM alerts "
+             "WHERE user_id = :u AND status IN ('active','paused','fired') "
+             "GROUP BY 1"),
         {"u": user_id},
     ).fetchall()
+    return {r[0]: int(r[1]) for r in rows}
 
 
 def _get_alert(db, user_id: int, alert_id: int):
@@ -206,19 +235,22 @@ def _get_alert(db, user_id: int, alert_id: int):
 def _alert_unit(indicator: str) -> str:
     if indicator == "oi_zscore":
         return "σ"
-    if indicator in ("oi_move", "oi_participants"):
+    if indicator in ("oi_move", "oi_participants", "funds_flow"):
         return "×"        # множитель ATR «во сколько раз больше обычного»
     return "₽"
 
 
 def _alert_short_line(a) -> str:
     """Одна строка для кнопки списка: статус + актив + op + порог (+группа для OI,
-    +таймфрейм для интрадей OI-алертов)."""
-    _, indicator, asset, _name, _metric, clgroup, op, threshold = a[:8]
+    +таймфрейм для интрадей OI-алертов). Fund-алерт — метка выбора + «поток ×N»."""
+    _, indicator, asset, asset_name, _metric, clgroup, op, threshold = a[:8]
     status = a[9]
     timeframe = (a[12] if len(a) > 12 else None) or "1d"
     dot = _STATUS_DOT.get(status, "•")
     opn = _OP_SHORT.get(op, op)
+    if indicator == "funds_flow":
+        name = asset_name or _FUND_ASSET_NAME.get(asset, asset)
+        return f"{dot} {name} · поток {opn}{_num(threshold)}×"
     unit = _alert_unit(indicator)
     grp = ""
     if indicator == "oi_zscore":
@@ -239,28 +271,38 @@ def _alert_card_text(a) -> str:
     (_id, indicator, asset, asset_name, _metric, clgroup, op,
      threshold, mode, status, last_value, last_fired_at, timeframe) = a
     timeframe = timeframe or "1d"
-    name = asset_name or asset
     unit = _alert_unit(indicator)
 
     if indicator == "oi_zscore":
+        name = asset_name or asset
         head = "Открытые позиции"
         clg = "физлица" if (clgroup or "FIZ") == "FIZ" else "юрлица"
         cond = f"z-score ({clg}) {_OP_PRICE.get(op, op)} {_num(threshold)}{unit}"
     elif indicator == "oi_move":
+        name = asset_name or asset
         head = "Резкое движение позиции"
         clg = {"FIZ": "физлица", "YUR": "юрлица"}.get(clgroup or "ALL", "в целом")
         cond = f"движение позиции ({clg}) больше обычного в {_num(threshold)}{unit}"
     elif indicator == "oi_participants":
+        name = asset_name or asset
         head = "Резкое изменение числа участников"
         clg = "физлица" if (clgroup or "FIZ") == "FIZ" else "юрлица"
         cond = f"число участников ({clg}) меняется резче обычного в {_num(threshold)}{unit}"
+    elif indicator == "funds_flow":
+        # Фонды: заголовок — метка выбора (без сырого asset 'all'/'custom').
+        name = asset_name or _FUND_ASSET_NAME.get(asset, asset)
+        head = "Аномальный поток"
+        cond = f"поток денег в фонды больше обычного в {_num(threshold)}{unit}"
     else:
+        name = asset_name or asset
         head = "Цена фьючерса"
         cond = f"цена {_OP_PRICE.get(op, op)} {_num(threshold)} {unit}"
 
+    # Заголовок: для OI/цены — «имя · sectype»; для фондов sectype нет, только имя.
+    title = name if indicator == "funds_flow" else f"{name} · {asset}"
     mode_word = "однократно" if mode == "once" else "повторно"
     lines = [
-        f"🔔 <b>{name} · {asset}</b>",
+        f"🔔 <b>{title}</b>",
         f"<i>{head}</i>",
         "",
         f"Условие: {cond}",
@@ -293,9 +335,16 @@ def _view_menu():
     return txt, kb
 
 
-def _view_list(db, user_id: int):
-    rows = _list_alerts(db, user_id)
-    if not rows:
+# Сколько карточек на страницу списка (Telegram-клавиатура не должна быть бесконечной).
+_PAGE = 25
+
+
+def _view_list_root(db, user_id: int):
+    """Корень «Мои алерты» — ВЫБОР ИНДИКАТОРА. Вместо плоского дампа всех алертов
+    показываем два раздела (ОИ / Фонды) со счётчиками; тап ведёт в список раздела."""
+    counts = _source_counts(db, user_id)
+    total = sum(counts.values())
+    if total == 0:
         txt = (
             "У вас пока нет активных алертов.\n\n"
             "Создайте первый на сайте: Личный кабинет → Алерты."
@@ -305,11 +354,41 @@ def _view_list(db, user_id: int):
             [{"text": "← Меню", "callback_data": "m"}],
         ]
         return txt, kb
-    txt = f"📋 <b>Ваши алерты</b> ({len(rows)})\n\nВыберите, чтобы открыть карточку:"
-    kb = [[{"text": _alert_short_line(r), "callback_data": f"v:{r[0]}"}] for r in rows]
-    if len(rows) > 1:
-        kb.append([{"text": f"🗑 Удалить все ({len(rows)})", "callback_data": "dall"}])
+    txt = f"📋 <b>Ваши алерты</b> ({total})\n\nВыберите раздел:"
+    # Показываем оба индикатора всегда (со счётчиком) — чтобы выбор по индикатору
+    # был виден; пустой раздел откроется с пояснением.
+    kb = [[{"text": f"{_SOURCE_LABEL[src]} ({counts.get(src, 0)})",
+            "callback_data": f"ls:{src}"}] for src in ("oi", "funds")]
+    if total > 1:
+        kb.append([{"text": f"🗑 Удалить все ({total})", "callback_data": "dall"}])
     kb.append([{"text": "← Меню", "callback_data": "m"}])
+    return txt, kb
+
+
+def _view_list(db, user_id: int, source: str, page: int = 0):
+    """Список алертов одного раздела (oi|funds), пагинированный. Назад — к выбору
+    индикатора (_view_list_root)."""
+    rows = _list_alerts(db, user_id, source)
+    label = _SOURCE_LABEL.get(source, "📋 Алерты")
+    if not rows:
+        txt = f"<b>{label}</b>\n\nВ этом разделе пока нет алертов."
+        return txt, [[{"text": "← Назад", "callback_data": "la"}]]
+    pages = (len(rows) + _PAGE - 1) // _PAGE
+    page = max(0, min(page, pages - 1))
+    chunk = rows[page * _PAGE:(page + 1) * _PAGE]
+    head = f"<b>{label}</b> ({len(rows)})"
+    if pages > 1:
+        head += f" · стр {page + 1}/{pages}"
+    txt = f"{head}\n\nВыберите, чтобы открыть карточку:"
+    kb = [[{"text": _alert_short_line(r), "callback_data": f"v:{r[0]}"}] for r in chunk]
+    if pages > 1:
+        nav = []
+        if page > 0:
+            nav.append({"text": "← стр", "callback_data": f"ls:{source}:{page - 1}"})
+        if page < pages - 1:
+            nav.append({"text": "стр →", "callback_data": f"ls:{source}:{page + 1}"})
+        kb.append(nav)
+    kb.append([{"text": "← Разделы", "callback_data": "la"}])
     return txt, kb
 
 
@@ -323,10 +402,11 @@ def _view_card(db, user_id: int, alert_id: int):
         toggle = {"text": "⏸ Поставить на паузу", "callback_data": f"p:{alert_id}"}
     else:  # paused | fired
         toggle = {"text": "▶️ Возобновить", "callback_data": f"r:{alert_id}"}
+    back_src = _source_of(a[1])   # вернуться в раздел этого алерта (ОИ/Фонды)
     kb = [
         [toggle],
         [{"text": "🗑 Удалить", "callback_data": f"dq:{alert_id}"}],
-        [{"text": "← К списку", "callback_data": "la"}],
+        [{"text": "← К списку", "callback_data": f"ls:{back_src}"}],
     ]
     return _alert_card_text(a), kb
 
@@ -336,8 +416,13 @@ def _view_delete_confirm(db, user_id: int, alert_id: int):
     if not a:
         return ("Алерт не найден — возможно, он уже удалён.",
                 [[{"text": "← К списку", "callback_data": "la"}]])
-    name = a[3] or a[2]
-    txt = f"Удалить алерт «<b>{name} · {a[2]}</b>»?\nЭто действие необратимо."
+    # Заголовок: для фондов — метка выбора (без сырого 'all'/'custom'); для OI/цены —
+    # «имя · sectype».
+    if a[1] == "funds_flow":
+        title = a[3] or _FUND_ASSET_NAME.get(a[2], a[2])
+    else:
+        title = f"{a[3] or a[2]} · {a[2]}"
+    txt = f"Удалить алерт «<b>{title}</b>»?\nЭто действие необратимо."
     kb = [
         [{"text": "🗑 Да, удалить", "callback_data": f"dx:{alert_id}"}],
         [{"text": "← Отмена", "callback_data": f"v:{alert_id}"}],
@@ -444,7 +529,22 @@ def process_callback(cb: dict) -> None:
             return
 
         if data == "la":
-            txt, kb = _view_list(db, user_id)
+            # Корень «Мои алерты» — выбор индикатора (ОИ/Фонды).
+            txt, kb = _view_list_root(db, user_id)
+            edit_kb(chat_id, message_id, txt, kb)
+            answer_cb(cb_id)
+            return
+        if data.startswith("ls:"):
+            # ls:<source>[:<page>] — список раздела (с пагинацией).
+            rest = data[3:]
+            src, _, pg = rest.partition(":")
+            try:
+                page = int(pg) if pg else 0
+            except ValueError:
+                page = 0
+            if src not in ("oi", "funds"):
+                src = "oi"
+            txt, kb = _view_list(db, user_id, src, page)
             edit_kb(chat_id, message_id, txt, kb)
             answer_cb(cb_id)
             return
@@ -455,7 +555,7 @@ def process_callback(cb: dict) -> None:
             return
         if data == "dallx":
             n = _delete_all_alerts(db, user_id)
-            txt, kb = _view_list(db, user_id)
+            txt, kb = _view_list_root(db, user_id)
             edit_kb(chat_id, message_id, txt, kb)
             answer_cb(cb_id, f"Удалено {n} 🗑")
             return
@@ -487,8 +587,14 @@ def process_callback(cb: dict) -> None:
             edit_kb(chat_id, message_id, txt, kb)
             answer_cb(cb_id)
         elif op == "dx":
+            # Узнаём раздел ДО удаления, чтобы вернуться в нужный список.
+            a = _get_alert(db, user_id, alert_id)
+            src = _source_of(a[1]) if a else None
             ok = _delete_alert(db, user_id, alert_id)
-            txt, kb = _view_list(db, user_id)
+            if src:
+                txt, kb = _view_list(db, user_id, src)
+            else:
+                txt, kb = _view_list_root(db, user_id)
             edit_kb(chat_id, message_id, txt, kb)
             answer_cb(cb_id, "Удалено 🗑" if ok else "Не найдено")
         else:
@@ -549,7 +655,7 @@ def process_update(update: dict) -> None:
                         "«Подключить Telegram».",
                         [[{"text": "🌐 Открыть Фрейм", "url": SITE}]])
             else:
-                txt_list, kb = _view_list(db, user_id)
+                txt_list, kb = _view_list_root(db, user_id)
                 send_kb(chat_id, txt_list, kb)
         finally:
             db.close()
