@@ -18,7 +18,7 @@
  */
 import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { BarChart3, TrendingUp, TrendingDown, Activity, Users, Clock, MousePointerClick, Search, ChevronRight } from 'lucide-react';
+import { BarChart3, TrendingUp, TrendingDown, Activity, Users, Clock, MousePointerClick, Search, ChevronRight, Bell, BellOff, Pause, Play, Zap } from 'lucide-react';
 import Card from '../components/Card';
 import Skeleton from '../components/Skeleton';
 import Dropdown from '../components/Dropdown';
@@ -29,11 +29,13 @@ import {
   getAnalyticsStats,
   getAnalyticsFunnel,
   listAdminUsers,
+  getAlertsStats,
 } from '../services/api';
 import type {
   AnalyticsStats,
   FunnelResponse,
   AdminUser,
+  AlertsStats,
 } from '../services/api';
 
 export default function AdminStatsPage() {
@@ -284,6 +286,11 @@ export default function AdminStatsPage() {
           emptyText="Нет переключений режима"
         />
       </div>
+
+      {/* Алерты — трекинг что люди ставят/убирают + конверсия (сколько хоть раз сработало) */}
+      <Section title="Алерты">
+        <AlertsBlock days={days} />
+      </Section>
 
       {/* Users — кликабельная таблица для drill-down на /admin/users/:id */}
       <Section title="Пользователи">
@@ -744,6 +751,118 @@ function UCol({ children, align = 'left', hide }: {
         style={{ color: 'var(--text-muted)', letterSpacing: '0.08em', fontWeight: 600 }}>
       {children}
     </th>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// ALERTS BLOCK — трекинг алертов (поставили/убрали/пауза/возобновили + конверсия)
+// ════════════════════════════════════════════════════════════════════════════
+//
+// days приходит из общего селектора периода страницы. Бэкенд: created/deleted/
+// paused/resumed считаются ЗА период; active_now / with_fires / by_source —
+// снимок «сейчас» (текущее состояние таблицы alerts/alert_fires).
+
+function AlertsBlock({ days }: { days: number }) {
+  const [stats, setStats] = useState<AlertsStats | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    getAlertsStats(days)
+      .then(setStats)
+      .catch(() => setStats(null))
+      .finally(() => setLoading(false));
+  }, [days]);
+
+  if (loading && !stats) {
+    return (
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+        <Skeleton height={108} rounded="lg" />
+        <Skeleton height={108} rounded="lg" />
+        <Skeleton height={108} rounded="lg" />
+        <Skeleton height={108} rounded="lg" />
+      </div>
+    );
+  }
+
+  if (!stats) {
+    return (
+      <Card padding="md">
+        <p className="text-center py-6 text-sm" style={{ color: 'var(--text-muted)' }}>
+          Нет данных по алертам
+        </p>
+      </Card>
+    );
+  }
+
+  // Конверсия: какая доля активных алертов хоть раз сработала.
+  const conversionPct = stats.active_now > 0
+    ? Math.round((stats.with_fires / stats.active_now) * 100)
+    : null;
+
+  return (
+    <div className="space-y-3 md:space-y-4">
+      {/* Lifecycle-события за период */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+        <SummaryCard icon={<Bell size={16} />} label="Поставили" value={stats.created} />
+        <SummaryCard icon={<BellOff size={16} />} label="Убрали" value={stats.deleted} />
+        <SummaryCard icon={<Pause size={16} />} label="На паузу" value={stats.paused} />
+        <SummaryCard icon={<Play size={16} />} label="Возобновили" value={stats.resumed} />
+      </div>
+
+      {/* Текущее состояние + конверсия (снимок «сейчас») */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 md:gap-4">
+        <SummaryCard icon={<Activity size={16} />} label="Активных сейчас" value={stats.active_now} />
+        <SummaryCard
+          icon={<Zap size={16} />}
+          label="Хоть раз сработали"
+          value={stats.with_fires}
+          delta={conversionPct}
+          deltaSuffix="% от активных"
+        />
+        <Card padding="md" className="md:p-5">
+          <div className="flex items-center gap-2 mb-3" style={{ color: 'var(--text-muted)' }}>
+            <BarChart3 size={16} />
+            <span className="text-xs uppercase" style={{ letterSpacing: '0.1em', fontWeight: 600 }}>
+              По источнику
+            </span>
+          </div>
+          {stats.by_source.length === 0 ? (
+            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>—</p>
+          ) : (
+            <div className="space-y-1.5">
+              {stats.by_source.map((s) => (
+                <div key={s.source} className="flex items-center justify-between">
+                  <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
+                    {s.source}
+                  </span>
+                  <span
+                    className="text-sm font-semibold"
+                    style={{
+                      color: 'var(--text-primary)',
+                      fontFamily: "'IBM Plex Mono', monospace",
+                      fontVariantNumeric: 'tabular-nums',
+                    }}
+                  >
+                    {s.active.toLocaleString('ru-RU')}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      </div>
+
+      {/* Топ активов по числу активных алертов */}
+      {stats.top_assets && stats.top_assets.length > 0 && (
+        <TopList
+          title="Топ активов (активные алерты)"
+          items={stats.top_assets.map((a) => ({ label: a.asset, value: a.count }))}
+          loading={false}
+          emptyText="Нет активных алертов"
+        />
+      )}
+    </div>
   );
 }
 

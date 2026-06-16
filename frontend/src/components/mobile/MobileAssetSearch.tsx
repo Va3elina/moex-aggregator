@@ -12,7 +12,7 @@
  *
  * API совпадает с InstrumentSearchModal — onSelect(sectype, name).
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Search, Star, Lock } from 'lucide-react';
 import MobileSheet from './MobileSheet';
 import InstrumentIcon from '../InstrumentIcon';
@@ -20,6 +20,7 @@ import { useTierAccess } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../tier/UpgradeModal';
 import type { Instrument } from '../../types';
 import { usePersistedState } from '../../hooks/usePersistedState';
+import { useInstrumentFilter } from '../../hooks/useInstrumentFilter';
 
 interface MobileAssetSearchProps {
   open: boolean;
@@ -136,40 +137,29 @@ export default function MobileAssetSearch({
     );
   };
 
-  // Фильтрация (та же логика что в десктопном InstrumentSearchModal)
-  const filtered = instruments.filter((inst) => {
-    if (excludeType && inst.type === excludeType) return false;
-    // filterType='no-futures' грузит общий список — фьючерсы туда тоже
-    // приходят, поэтому отсекаем их здесь: Сезонность работает по
-    // спот-валютам / индексам / акциям / сырью, но не по фьючерсам.
-    if (filterType === 'no-futures' && inst.type === 'futures') return false;
-    const matchesSearch =
-      !searchQuery ||
-      inst.sectype.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      inst.name.toLowerCase().includes(searchQuery.toLowerCase());
-    // matchesCategory: совпадение по group (основной путь — backend проставляет
-    // 'Акции'/'Валюта'/'Индексы'/'Сырьё') ИЛИ по type (fallback). Для категории
-    // «Акции» есть особый случай: если backend не проставил group у какой-то
-    // акции (видели 2 такие записи на проде), но type='stock' — она всё равно
-    // должна попадать в категорию. Без этого fallback юзер искал «акции»
-    // через chip и не видел эти 2 инструмента.
-    const matchesCategory =
-      categoryFilter === 'all' ||
-      inst.group === categoryFilter ||
-      inst.type === categoryFilter ||
-      (categoryFilter === 'Акции' && inst.type === 'stock');
-    return matchesSearch && matchesCategory;
+  // Фильтрация / дедуп / группировка — общий хук useInstrumentFilter (тот же,
+  // что в десктопном InstrumentSearchModal). Мобильные особенности в options:
+  //   - matchType: true — категория-чип 'futures' матчится по inst.type
+  //     (group у фьючерсов не всегда совпадает с лейблом чипа)
+  //   - extraFilter — в режиме no-futures (Сезонность) отсекаем фьючерсы:
+  //     общий список грузит их тоже, но сезонность работает только по
+  //     спот-валютам / индексам / акциям / сырью
+  //   - dedup/sort не заданы → first-wins + preserve order (сортировка по
+  //     объёму уже сделана на бэкенде)
+  const extraFilter = useCallback(
+    (inst: Instrument) => !(filterType === 'no-futures' && inst.type === 'futures'),
+    [filterType],
+  );
+
+  const { favoriteItems, regularItems } = useInstrumentFilter<Instrument>({
+    instruments,
+    searchQuery,
+    categoryFilter,
+    favorites,
+    excludeType,
+    matchType: true,
+    extraFilter,
   });
-
-  // Уникальные по sectype — берём первый встретившийся.
-  // Сортировка по объёму делается на бэкенде, тут просто preserve order.
-  const unique = filtered.reduce((acc, inst) => {
-    if (!acc.find((i) => i.sectype === inst.sectype)) acc.push(inst);
-    return acc;
-  }, [] as Instrument[]);
-
-  const favoriteItems = searchQuery ? [] : unique.filter((i) => favorites.includes(i.sectype));
-  const regularItems = searchQuery ? unique : unique.filter((i) => !favorites.includes(i.sectype));
 
   // Render одного элемента списка
   const renderItem = (inst: Instrument) => {

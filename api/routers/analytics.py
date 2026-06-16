@@ -522,6 +522,93 @@ async def get_funnel(
 
 
 # ════════════════════════════════════════════════════════════════════════════
+# GET /alerts-stats — admin-only трекинг алертов (поставили/убрали/конверсия)
+# ════════════════════════════════════════════════════════════════════════════
+#
+# Источники:
+#   alert_events  — лог жизненного цикла (created/deleted/paused/resumed) за период
+#   alerts        — текущее состояние (active_now, by_source GROUP BY source)
+#   alert_fires   — конверсия «сколько алертов хоть раз сработали» (DISTINCT alert_id)
+#
+# Денормализованные asset/indicator/source в alert_events → статистику строим
+# без джойна на (возможно удалённый) алерт. Запросы агрегатные, без N+1.
+
+@router.get("/alerts-stats")
+async def get_alerts_stats(
+    days: int = Query(7, ge=1, le=180, description="Период (дней) для created/deleted/paused/resumed"),
+    user=Depends(require_admin),
+):
+    """Трекинг алертов для admin-stats: что люди ставят/убирают + конверсия.
+
+    Возвращает:
+      period_days  — окно для событий
+      created/deleted/paused/resumed — COUNT по alert_events.event за period
+      active_now   — COUNT alerts WHERE status='active' (текущее состояние)
+      with_fires   — COUNT DISTINCT alert_id из alert_fires (хоть раз сработали)
+      by_source    — active alerts GROUP BY source (разбивка кабинета)
+      top_assets   — топ активов по числу активных алертов
+    """
+    engine = get_engine()
+    period_start = datetime.utcnow() - timedelta(days=days)
+
+    with engine.connect() as conn:
+        # === События за период (один проход по alert_events) ===
+        # FILTER (WHERE …) — агрегируем все 4 типа в одном запросе, без N+1.
+        ev_row = conn.execute(text("""
+            SELECT
+                COUNT(*) FILTER (WHERE event = 'created')  AS created,
+                COUNT(*) FILTER (WHERE event = 'deleted')  AS deleted,
+                COUNT(*) FILTER (WHERE event = 'paused')   AS paused,
+                COUNT(*) FILTER (WHERE event = 'resumed')  AS resumed
+            FROM alert_events
+            WHERE created_at >= :period_start
+        """), {"period_start": period_start}).fetchone()
+
+        # === Текущее состояние (НЕ за период — снимок «сейчас») ===
+        active_now = conn.execute(text("""
+            SELECT COUNT(*) FROM alerts WHERE status = 'active'
+        """)).scalar() or 0
+
+        # Конверсия: сколько алертов хоть раз сработали. DISTINCT alert_id из
+        # alert_fires — alert_fires.alert_id FK на alerts (каскад при удалении),
+        # поэтому это «живые» алерты, что когда-либо стреляли.
+        with_fires = conn.execute(text("""
+            SELECT COUNT(DISTINCT alert_id) FROM alert_fires
+        """)).scalar() or 0
+
+        # Разбивка активных алертов по источнику (oi / funds / …).
+        by_source_rows = conn.execute(text("""
+            SELECT COALESCE(source, 'oi') AS source, COUNT(*) AS active
+            FROM alerts
+            WHERE status = 'active'
+            GROUP BY COALESCE(source, 'oi')
+            ORDER BY active DESC
+        """)).fetchall()
+
+        # Топ активов по числу активных алертов.
+        top_assets_rows = conn.execute(text("""
+            SELECT asset, COUNT(*) AS count
+            FROM alerts
+            WHERE status = 'active' AND asset IS NOT NULL
+            GROUP BY asset
+            ORDER BY count DESC
+            LIMIT 10
+        """)).fetchall()
+
+    return {
+        "period_days": days,
+        "created": int(ev_row[0]) if ev_row else 0,
+        "deleted": int(ev_row[1]) if ev_row else 0,
+        "paused": int(ev_row[2]) if ev_row else 0,
+        "resumed": int(ev_row[3]) if ev_row else 0,
+        "active_now": int(active_now),
+        "with_fires": int(with_fires),
+        "by_source": [{"source": r[0], "active": int(r[1])} for r in by_source_rows],
+        "top_assets": [{"asset": r[0], "count": int(r[1])} for r in top_assets_rows],
+    }
+
+
+# ════════════════════════════════════════════════════════════════════════════
 # USERS — admin user inspection panel
 # ════════════════════════════════════════════════════════════════════════════
 #

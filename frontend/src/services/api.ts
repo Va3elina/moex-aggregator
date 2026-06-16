@@ -1575,7 +1575,27 @@ export interface TelegramStatusInfo { linked: boolean; username: string | null; 
 export interface AlertInfo {
     id: number; indicator: string; asset: string; asset_name: string | null;
     metric: string; clgroup: string | null; op: string; threshold: number;
-    mode: string; status: string; last_fired_at: string | null; created_at: string | null;
+    mode: string; status: string; timeframe?: string;
+    // source — разделитель кабинета ('oi'|'funds'); sector — instruments.group
+    // джойном по asset (null если инструмент не найден); fires_count — число
+    // срабатываний за всю жизнь алерта (COUNT по alert_fires).
+    source: string; sector: string | null; fires_count: number;
+    last_fired_at: string | null; created_at: string | null;
+}
+// Страница алертов: items + общее число (из заголовка X-Total-Count).
+export interface AlertsPage { items: AlertInfo[]; total: number; }
+// Одно срабатывание алерта (история).
+export interface AlertFire {
+    id: number; fired_at: string | null;
+    value: number | null; message_text: string | null;
+}
+// Admin-статистика алертов (GET /api/analytics/alerts-stats).
+export interface AlertsStats {
+    period_days: number;
+    created: number; deleted: number; paused: number; resumed: number;
+    active_now: number; with_fires: number;
+    by_source: { source: string; active: number }[];
+    top_assets?: { asset: string; count: number }[];
 }
 export interface AlertCreatePayload {
     indicator: string; asset: string; asset_name?: string; metric: string;
@@ -1617,9 +1637,45 @@ export async function unlinkTelegram(): Promise<void> {
     const resp = await apiFetch(`${API_BASE}/api/alerts/telegram`, { method: 'DELETE' });
     if (!resp.ok && resp.status !== 204) throw new Error('Не удалось отвязать Telegram');
 }
-export async function listAlerts(): Promise<AlertInfo[]> {
-    const resp = await apiFetch(`${API_BASE}/api/alerts`);
+// Список алертов пользователя — плоский массив AlertOut + общее число в
+// заголовке X-Total-Count (для пагинации в кабинете). ?limit (деф 200) & ?offset.
+export async function listAlerts(opts?: { limit?: number; offset?: number }): Promise<AlertsPage> {
+    const params = new URLSearchParams();
+    if (opts?.limit != null) params.set('limit', String(opts.limit));
+    if (opts?.offset != null) params.set('offset', String(opts.offset));
+    const qs = params.toString();
+    const resp = await apiFetch(`${API_BASE}/api/alerts${qs ? `?${qs}` : ''}`);
     if (!resp.ok) throw new Error('Не удалось загрузить алерты');
+    const items: AlertInfo[] = await resp.json();
+    // X-Total-Count может отсутствовать (старый бэк / прокси режет заголовок) —
+    // фолбэк на длину текущей страницы, чтобы UI не падал.
+    const totalHeader = resp.headers.get('X-Total-Count');
+    const total = totalHeader != null ? Number(totalHeader) : items.length;
+    return { items, total: Number.isFinite(total) ? total : items.length };
+}
+// История срабатываний одного алерта (alert_fires), новые сверху. Доступ:
+// владелец|admin. total — из X-Total-Count. ?limit (деф 50) & ?offset.
+export async function getAlertFires(
+    alertId: number,
+    opts?: { limit?: number; offset?: number },
+): Promise<{ items: AlertFire[]; total: number }> {
+    const params = new URLSearchParams();
+    if (opts?.limit != null) params.set('limit', String(opts.limit));
+    if (opts?.offset != null) params.set('offset', String(opts.offset));
+    const qs = params.toString();
+    const resp = await apiFetch(`${API_BASE}/api/alerts/${alertId}/fires${qs ? `?${qs}` : ''}`);
+    if (!resp.ok) throw new Error('Не удалось загрузить историю срабатываний');
+    const items: AlertFire[] = await resp.json();
+    const totalHeader = resp.headers.get('X-Total-Count');
+    const total = totalHeader != null ? Number(totalHeader) : items.length;
+    return { items, total: Number.isFinite(total) ? total : items.length };
+}
+// Admin-статистика алертов за период (created/deleted/paused/resumed) + снимок
+// «сейчас» (active_now/with_fires/by_source/top_assets). GET /api/analytics/alerts-stats?days=
+export async function getAlertsStats(days?: number): Promise<AlertsStats> {
+    const qs = days != null ? `?days=${days}` : '';
+    const resp = await apiFetch(`${API_BASE}/api/analytics/alerts-stats${qs}`);
+    if (!resp.ok) throw new Error('Не удалось загрузить статистику алертов');
     return resp.json();
 }
 export async function createAlert(payload: AlertCreatePayload): Promise<AlertInfo> {
