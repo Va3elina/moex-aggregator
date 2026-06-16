@@ -703,11 +703,16 @@ def top_movers(
     # Это complex CTE но даёт точную картину.
     rows = db.execute(text(f"""
         WITH anchor AS (
-            -- Единый якорь: МЕСЯЦ самого свежего снапшота в наборе (с учётом as_of).
-            -- Консенсус считаем ТОЛЬКО по фондам, у которых ЕСТЬ снапшот этого месяца —
-            -- иначе фонд, не сдавший новый месяц, тянет в сумму свою СТАРУЮ дельту
-            -- (другой период) и раздувает «N фондов купили».
-            SELECT date_trunc('month', MAX(h.snapshot_date)) AS target_month
+            -- Якорь = выбранный месяц (as_of) ТОЧНО, иначе — самый свежий месяц набора.
+            -- Если юзер выбрал май, а у фондов набора майского снапшота нет — target=май,
+            -- ни один фонд не пройдёт HAVING → пустой консенсус (фронт скажет «нет данных
+            -- за месяц»), а НЕ молчаливый откат к апрелю под майской подписью.
+            -- Консенсус считаем ТОЛЬКО по фондам, у которых ЕСТЬ снапшот target-месяца —
+            -- иначе фонд со старым снапшотом тянет дельту другого периода и раздувает счёт.
+            SELECT COALESCE(
+                       date_trunc('month', CAST(:as_of AS date)),
+                       date_trunc('month', MAX(h.snapshot_date))
+                   ) AS target_month
             FROM funds f
             JOIN fund_holdings_history h ON h.fund_id = f.fund_id AND h.source = ANY(:sources)
             WHERE 1=1 {category_filter} {whitelist_filter} {manager_filter}
@@ -826,10 +831,42 @@ def top_movers(
         ORDER BY d DESC
     """), {"tickers": list(WHITELIST_TICKERS), "sources": list(MONTHLY_SOURCES)}).scalars().all()
 
+    # resolved_month = фактический target-месяц консенсуса (выбранный as_of, иначе последний
+    # доступный для набора); funds_in_month = сколько фондов набора РЕАЛЬНО имеют снапшот
+    # этого месяца. Фронт по funds_in_month==0 показывает «нет данных за месяц для выбранных
+    # фондов» вместо «нет движений» (когда выбран месяц, которого у фондов ещё нет).
+    meta_row = db.execute(text(f"""
+        WITH anchor AS (
+            SELECT COALESCE(
+                       date_trunc('month', CAST(:as_of AS date)),
+                       date_trunc('month', MAX(h.snapshot_date))
+                   ) AS target_month
+            FROM funds f
+            JOIN fund_holdings_history h ON h.fund_id = f.fund_id AND h.source = ANY(:sources)
+            WHERE 1=1 {category_filter} {whitelist_filter} {manager_filter}
+              AND (CAST(:as_of AS date) IS NULL OR h.snapshot_date <= CAST(:as_of AS date))
+        )
+        SELECT
+            a.target_month::date AS resolved_month,
+            (SELECT COUNT(DISTINCT f.fund_id)
+             FROM funds f
+             JOIN fund_holdings_history h ON h.fund_id = f.fund_id AND h.source = ANY(:sources)
+             WHERE 1=1 {category_filter} {whitelist_filter} {manager_filter}
+               AND date_trunc('month', h.snapshot_date) = a.target_month
+            ) AS funds_in_month
+        FROM anchor a
+    """), params).first()
+    resolved_month = (
+        meta_row[0].isoformat() if meta_row and meta_row[0] else None
+    )
+    funds_in_month = int(meta_row[1]) if meta_row and meta_row[1] is not None else 0
+
     return {
         "period": period,
         "category": category,
         "as_of": as_of,
+        "resolved_month": resolved_month,
+        "funds_in_month": funds_in_month,
         "manager": manager,
         "funds": funds,
         "sort": sort,
