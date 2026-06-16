@@ -197,8 +197,16 @@ function smaSmooth<T extends { time: string; value: number; gap?: boolean }>(
       result.push(data[i]);
       continue;
     }
-    const start = Math.max(0, i - half);
-    const end = Math.min(data.length, i + half + 1);
+    // Окно СИММЕТРИЧНО сжимается у краёв: на расстоянии d от ближайшего края
+    // берём по min(half, d) соседей с каждой стороны. На ПОСЛЕДНЕЙ точке d=0 →
+    // окно = сама точка → СЫРОЕ значение. Это критично: последняя точка — это
+    // «текущая цена» (её подсвечивает pill). Раньше окно у края вырождалось в
+    // ТРЕЙЛИНГ-среднее [i-half, i] → на прорежённом длинном периоде соседи слева
+    // далеко по времени → «текущая цена» уезжала (1г=5479 vs реальная 1н=5717).
+    // Первая точка тоже остаётся сырой (левый край не искажается).
+    const eHalf = Math.min(half, i, data.length - 1 - i);
+    const start = i - eHalf;
+    const end = i + eHalf + 1;
     let sum = 0;
     let count = 0;
     for (let j = start; j < end; j++) {
