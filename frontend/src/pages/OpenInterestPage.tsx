@@ -263,6 +263,20 @@ export default function OpenInterestPage() {
     }
   };
 
+  // Tier-коррекция дефолтного периода: гость дефолтит на '1y' (глобальный
+  // GUEST_MAX_PERIOD), но open_interest free-лимит строже (180д) → 403 на первой
+  // загрузке. Опускаем до максимального периода, доступного И по тарифу, И по
+  // интервалу — гость видит данные, а не upgrade-модалку на входе. Клик в
+  // locked-период сам показывает апселл (selector onLockedClick), не трогаем.
+  useEffect(() => {
+    if (oiAccess.isLoading) return;
+    if (oiAccess.canUsePeriod(period)) return;
+    const allowed = (MAX_PERIODS_BY_INTERVAL[interval] || MAX_PERIODS_BY_INTERVAL[24])
+      .filter(p => oiAccess.canUsePeriod(p));
+    if (allowed.length) setPeriod(allowed[allowed.length - 1]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [oiAccess.isLoading, period, interval]);
+
 
   // Выбор инструмента из модалки
   const handleSelectInstrument = (sectype: string, name: string) => {

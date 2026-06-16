@@ -256,6 +256,17 @@ export default function MobileOpenInterestPage() {
     }
   }
 
+  // Tier-коррекция дефолтного периода (как desktop): гость дефолтит на '1y', но
+  // open_interest free-лимит 180д → 403 на первой загрузке. Опускаем до макс.
+  // периода, доступного и по тарифу, и по интервалу → данные вместо модалки.
+  useEffect(() => {
+    if (oiAccess.isLoading) return;
+    if (oiAccess.canUsePeriod(period)) return;
+    const allowed = allowedPeriods.filter(p => oiAccess.canUsePeriod(p));
+    if (allowed.length) setPeriod(allowed[allowed.length - 1]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [oiAccess.isLoading, period, intervalValue]);
+
   // Смена period'а: авто-фикс interval'а если выбранный не поддерживает
   function handlePeriodChange(newPeriod: Period) {
     setPeriod(newPeriod);
