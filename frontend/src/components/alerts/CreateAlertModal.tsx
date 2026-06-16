@@ -7,6 +7,7 @@
  * Inline-styles + CSS-vars (как UpgradeModal — переживает portal/тему).
  */
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { createPortal } from 'react-dom';
 import { Bell, X, Check, ExternalLink, Info, Search } from 'lucide-react';
 import {
     getTelegramStatus, createTelegramLink, createAlert, createAlertsBatch, getAlertContext,
@@ -43,7 +44,7 @@ const overlay: CSSProperties = {
 const card: CSSProperties = {
     background: 'var(--bg-primary)', border: '2px solid var(--text-primary)',
     boxShadow: '5px 5px 0 0 var(--text-primary)', borderRadius: 16, padding: 24,
-    width: '100%', maxWidth: 420, maxHeight: '90vh', overflowY: 'auto',
+    width: '100%', maxWidth: 480, maxHeight: '88vh', overflowY: 'auto',
 };
 const field: CSSProperties = {
     width: '100%', padding: '10px 12px', borderRadius: 10,
@@ -310,7 +311,11 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
         }
     };
 
-    return (
+    // Портал в document.body: иначе fixed-overlay (z 9999) проваливается под
+    // sticky-шапку (z 50) из-за stacking-контекста родителя (transform/анимация
+    // на странице) → верхний край модалки прятался под шапкой. Портал выносит
+    // оверлей из контекста, и z честно перекрывает шапку.
+    return createPortal(
         <div style={overlay} onClick={onClose}>
             <div style={card} onClick={(e) => e.stopPropagation()}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
@@ -640,6 +645,7 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
                     />
                 </div>
             )}
-        </div>
+        </div>,
+        document.body,
     );
 }
