@@ -19,6 +19,8 @@ import MobilePageHeader from '../../components/mobile/MobilePageHeader';
 import MobileChart from '../../components/mobile/MobileChart';
 import MobileSheet from '../../components/mobile/MobileSheet';
 import MobileAssetSearch from '../../components/mobile/MobileAssetSearch';
+import OptionHelp from '../../components/OptionHelp';
+import { OI_VARIANT_HELP } from '../../data/oiVariantHelp';
 import { getChartData } from '../../services/api';
 import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
 import { handleTierError, oiTierResolver } from '../../utils/tierError';
@@ -615,7 +617,10 @@ export default function MobileOpenInterestPage() {
             Что показать на графике
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 20 }}>
-            {OI_VARIANTS.map((v) => (
+            {OI_VARIANTS.map((v) => {
+              // «?» с пояснением только у вариантов, где есть копирайт (ОИ и чистая позиция)
+              const help = v === 'oi' ? OI_VARIANT_HELP.oi : v === 'net' ? OI_VARIANT_HELP.net : null;
+              return (
               <button
                 key={v}
                 onClick={() => {
@@ -635,8 +640,10 @@ export default function MobileOpenInterestPage() {
                   }}
                 />
                 {variantLabel(v, displayMode)}
+                {help && <OptionHelp title={help.title} content={help.content} />}
               </button>
-            ))}
+              );
+            })}
           </div>
 
           <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>

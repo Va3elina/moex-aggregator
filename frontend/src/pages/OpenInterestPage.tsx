@@ -5,6 +5,7 @@ import PageHeader from '../components/PageHeader';
 import InstrumentIcon from '../components/InstrumentIcon';
 import { usePrefetchLogos } from '../hooks/usePrefetchLogos';
 import { METHODOLOGY } from '../data/methodology';
+import { OI_VARIANT_HELP } from '../data/oiVariantHelp';
 import { getChartData, getInstrument } from '../services/api';
 import type { ChartResponse } from '../types';
 import type { ChartAnnotation } from '../components/SimpleChart';
@@ -593,19 +594,11 @@ export default function OpenInterestPage() {
             <div data-tour="oi-variant">
             <Dropdown<OIVariant>
               options={[
-                { key: 'oi',    label: 'Открытый интерес',                                                     color: 'var(--oi-amber)',
-                  help: {
-                    title: 'Открытый интерес',
-                    content: 'Общее число открытых позиций по инструменту — сумма позиций на покупку и на продажу. Каждая сделка считается один раз: у неё есть покупатель и продавец, вместе они образуют одну позицию. Открывают позиции — значение растёт, закрывают — снижается.',
-                  } },
+                { key: 'oi',    label: 'Открытый интерес',                                                     color: 'var(--oi-amber)', help: OI_VARIANT_HELP.oi },
                 { key: 'long',  label: displayMode === 'positions' ? 'Покупки' : 'Покупатели',                 color: 'var(--oi-green)' },
                 { key: 'short', label: displayMode === 'positions' ? 'Продажи' : 'Продавцы',                   color: 'var(--oi-red)' },
                 { key: 'both',  label: displayMode === 'positions' ? 'Покупки + Продажи' : 'Покупатели + Продавцы', color: 'var(--oi-purple)' },
-                { key: 'net',   label: 'Чистая позиция',                                                       color: 'var(--oi-cyan)',
-                  help: {
-                    title: 'Чистая позиция',
-                    content: 'Разница между объёмом позиций на покупку и на продажу. Выше нуля — перевес покупателей, ниже нуля — перевес продавцов.',
-                  } },
+                { key: 'net',   label: 'Чистая позиция',                                                       color: 'var(--oi-cyan)', help: OI_VARIANT_HELP.net },
               ]}
               value={oiVariant}
               onChange={setOiVariant}
