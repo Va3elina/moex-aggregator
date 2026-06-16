@@ -67,9 +67,13 @@ def get_oi_daily(
 def get_position_series(sectype: str, clgroup: str, days: int,
                         as_of_date: Optional[date] = None,
                         interval: int = 24) -> List[tuple]:
-    """Дневной ряд (date, net, npart) для ATR-детектора «резкого движения позиции».
+    """Дневной ряд (date, net, npart, pos_long, pos_short) для ATR-детектора
+    «резкого движения позиции».
     net = pos_long + pos_short (pos_short отрицательный); npart = число участников
-    (pos_long_num + pos_short_num) — для guard'а ликвидности.
+    (pos_long_num + pos_short_num) — для guard'а ликвидности. pos_long/pos_short —
+    сами ноги (длинная положительная, короткая отрицательная) — чтобы текст алерта
+    мог сказать, какая нога двинулась. Порядок элементов 0-2 неизменен — на них
+    индексируются compute_position_atr (net) и compute_participants_atr (npart).
 
     `interval` — таймфрейм источника бара:
       24 → дневная публикация (одна точка/день — текущее поведение);
@@ -85,7 +89,8 @@ def get_position_series(sectype: str, clgroup: str, days: int,
             text("""
                 SELECT tradedate,
                        (pos_long + pos_short) AS net,
-                       (pos_long_num + pos_short_num) AS npart
+                       (pos_long_num + pos_short_num) AS npart,
+                       pos_long, pos_short
                 FROM (
                     SELECT DISTINCT ON (tradedate)
                         tradedate, pos_long, pos_short, pos_long_num, pos_short_num
@@ -103,7 +108,7 @@ def get_position_series(sectype: str, clgroup: str, days: int,
              "cutoff": cutoff, "end": end},
         ).fetchall()
     return [
-        (r[0], (r[1] or 0), (r[2] or 0))
+        (r[0], (r[1] or 0), (r[2] or 0), (r[3] or 0), (r[4] or 0))
         for r in rows
     ]
 
