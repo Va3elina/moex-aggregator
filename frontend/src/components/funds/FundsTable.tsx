@@ -308,15 +308,19 @@ export default function FundsTable({
                                                     <td className="px-4 py-3 text-right font-mono">
                                                         <span className="inline-flex items-center justify-end" style={{ gap: 'var(--sp-1)' }}>
                                                             {isLocked ? '—' : (lastData?.nav ? (lastData.nav / 1e9).toFixed(2) : '—')}
-                                                            {!isLocked && lastData?.date && maxDate && lastData.date < maxDate && (
-                                                                <span
-                                                                    className="text-theme-secondary cursor-help inline-flex flex-shrink-0"
-                                                                    style={{ opacity: 0.6 }}
-                                                                    title={`СЧА этого фонда отстаёт от общей даты данных. Актуальна на ${fmtDate(lastData.date)}`}
-                                                                >
-                                                                    <AlertCircle size={13} strokeWidth={2.2} />
-                                                                </span>
-                                                            )}
+                                                            {/* Слот под значок фиксированной ширины — резервируется на ВСЕХ строках,
+                                                                чтобы числа СЧА были выровнены по правому краю независимо от наличия значка. */}
+                                                            <span className="inline-flex items-center justify-center flex-shrink-0" style={{ width: 16 }}>
+                                                                {!isLocked && lastData?.date && maxDate && lastData.date < maxDate && (
+                                                                    <span
+                                                                        className="text-theme-secondary cursor-help inline-flex"
+                                                                        style={{ opacity: 0.6 }}
+                                                                        title={`СЧА этого фонда отстаёт от общей даты данных. Актуальна на ${fmtDate(lastData.date)}`}
+                                                                    >
+                                                                        <AlertCircle size={15} strokeWidth={2.2} />
+                                                                    </span>
+                                                                )}
+                                                            </span>
                                                         </span>
                                                     </td>
                                                     {(() => {
