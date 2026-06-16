@@ -214,7 +214,7 @@ export const SEO_META: Record<string, SeoMeta> = {
     '/style-preview': { title: 'Style Preview | Фрейм', description: '', noindex: true },
     '/api-docs': { title: 'API Документация | Фрейм', description: '', noindex: true },
     // Beta-фича с whitelist 6 ВИМ-фондов — не пускаем в индекс пока контент
-    // неполный (накапливаем данные через Cbonds monthly snapshot).
+    // неполный (накапливаем данные помесячными снапшотами составов фондов).
     '/fund-trades': { title: 'Покупки фондов (beta) | Фрейм', description: '', noindex: true },
 }
 
