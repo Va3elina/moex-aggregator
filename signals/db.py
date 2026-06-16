@@ -113,6 +113,111 @@ def get_position_series(sectype: str, clgroup: str, days: int,
     ]
 
 
+# Категории фондов → бенчмарк-индекс (зеркало CATEGORY_INDEX_MAP в
+# api/routers/funds.py). Юань НЕ включён — на сайте «Скоро». money_market/gold с
+# min_date=2022-01-09 (ранняя история шумная), но для ATR-серии берём окно ~30-45д
+# назад — все категории к этой дате давно «чистые», поэтому min_date тут не нужен.
+FUND_CATEGORIES = {
+    "money_market": "RUSFAR3M",
+    "stocks": "IMOEX",
+    "bonds": "RGBITR",
+    "gold": "GLDRUB_TOM",
+}
+
+
+def get_fund_flow_series(category: str, days: int = 60) -> List[tuple]:
+    """Дневной ряд (date, net_flow) суммарного «аномального потока» категории —
+    для ATR-детектора fund-сигналов. Зеркало net_flow-логики из
+    api/routers/funds.py get_funds_flows (timeframe='1d').
+
+    net_flow дня = Σ по фондам категории [ΔNAV − market_change], где
+    market_change = prev_nav · (curr_pay − prev_pay) / prev_pay — «бумажная»
+    переоценка пая (рост СЧА за счёт цены, а не притока денег). То, что остаётся
+    после вычитания переоценки = реальный приток/отток средств в фонд.
+
+    Логика повторяет ветку `timeframe == "1d"` в API:
+      - forward-fill nav/pay по последней доступной точке ДО даты (фонд мог не
+        обновиться в конкретный день);
+      - фонд учитывается в дне только если есть И prev_d, И curr_d (иначе появление/
+        исчезновение фонда даёт ложный «поток» — структурное изменение, не деньги);
+      - market_change вычитается лишь когда обе pay > 0 (иначе net_flow = ΔNAV).
+
+    Возвращает список (date, net_flow_rub) по возрастанию даты. net_flow в рублях
+    (НЕ делим на 1e9 как API — ATR-кратность безразмерна, масштаб не важен).
+    Категории/фонды — как в API (funds.category + фильтр «>=2 точки NAV»).
+    """
+    if category not in FUND_CATEGORIES:
+        return []
+    cutoff = date.today() - timedelta(days=days)
+    with SessionLocal() as session:
+        # fund_id'ы категории с историей (>=2 точки NAV) — тот же фильтр, что
+        # load_fund_categories в API (фонд с одной точкой не даёт «изменения»).
+        fund_ids = [
+            r[0] for r in session.execute(
+                text("""
+                    SELECT f.fund_id FROM funds f
+                    WHERE f.category = :cat
+                      AND (SELECT count(*) FROM fund_data fd
+                           WHERE fd.fund_id = f.fund_id AND fd.nav IS NOT NULL) >= 2
+                """),
+                {"cat": category},
+            ).fetchall()
+        ]
+        if not fund_ids:
+            return []
+        # Per-fund nav/pay с forward-fill (зеркало all_dates/fund_filled из API).
+        rows = session.execute(
+            text("""
+                WITH all_dates AS (
+                    SELECT DISTINCT trade_date FROM fund_data
+                    WHERE fund_id = ANY(:fund_ids) AND trade_date >= :cutoff
+                )
+                SELECT f.fund_id, d.trade_date,
+                    COALESCE(fd.nav,
+                        (SELECT fd2.nav FROM fund_data fd2
+                         WHERE fd2.fund_id = f.fund_id AND fd2.trade_date < d.trade_date
+                           AND fd2.nav IS NOT NULL
+                         ORDER BY fd2.trade_date DESC LIMIT 1)) AS nav,
+                    COALESCE(fd.pay,
+                        (SELECT fd2.pay FROM fund_data fd2
+                         WHERE fd2.fund_id = f.fund_id AND fd2.trade_date < d.trade_date
+                           AND fd2.pay IS NOT NULL
+                         ORDER BY fd2.trade_date DESC LIMIT 1)) AS pay
+                FROM all_dates d
+                CROSS JOIN (SELECT DISTINCT fund_id FROM fund_data
+                            WHERE fund_id = ANY(:fund_ids)) f
+                LEFT JOIN fund_data fd ON fd.fund_id = f.fund_id AND fd.trade_date = d.trade_date
+                ORDER BY f.fund_id, d.trade_date
+            """),
+            {"fund_ids": fund_ids, "cutoff": cutoff},
+        ).fetchall()
+    # date -> {fund_id: (nav, pay)} (только дни с nav, как API: WHERE nav IS NOT NULL)
+    by_fund: dict = {}
+    for fid, d, nav, pay in rows:
+        if nav is None:
+            continue
+        by_fund.setdefault(fid, {})[d] = (float(nav), float(pay or 0))
+    all_dates = sorted({d for fmap in by_fund.values() for d in fmap})
+    series: List[tuple] = []
+    for i in range(1, len(all_dates)):
+        prev_d, curr_d = all_dates[i - 1], all_dates[i]
+        total_net = 0.0
+        for fid, date_map in by_fund.items():
+            if prev_d not in date_map or curr_d not in date_map:
+                continue  # фонд отсутствует в одном из дней — не поток
+            prev_nav, prev_pay = date_map[prev_d]
+            curr_nav, curr_pay = date_map[curr_d]
+            total_flow = curr_nav - prev_nav
+            if prev_pay > 0 and curr_pay > 0:
+                market_change = prev_nav * (curr_pay - prev_pay) / prev_pay
+                net_flow = total_flow - market_change
+            else:
+                net_flow = total_flow
+            total_net += net_flow
+        series.append((curr_d, total_net))
+    return series
+
+
 def get_candles_continuous(sectype: str, days: int) -> List[CandlePoint]:
     """Continuous daily price series, склеенная из всех контрактов sectype.
 

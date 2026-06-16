@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
 import {
     Bell, ExternalLink, Send, Trash2, Pause, Play, AlertTriangle,
-    ChevronDown, ChevronRight, Search, Zap, Clock,
+    ChevronDown, ChevronRight, Search, Zap, Clock, Wallet,
 } from 'lucide-react';
 import {
     getTelegramStatus, createTelegramLink, unlinkTelegram,
@@ -53,13 +53,31 @@ const OP_LABEL: Record<string, string> = {
 };
 const METRIC_LABEL: Record<string, string> = {
     price: 'Цена', oi_zscore: 'OI z-score',
+    oi_move: 'Движение позиции', oi_participants: 'Число участников',
+    funds_flow: 'Аномальный поток',
 };
 const STATUS_LABEL: Record<string, string> = {
     active: 'Активен', paused: 'Пауза', fired: 'Сработал',
 };
 
+// Имена категорий фондов (asset фонд-алерта — ключ категории).
+const FUNDS_CATEGORY_NAME: Record<string, string> = {
+    money_market: 'Денежный рынок', stocks: 'Акции',
+    bonds: 'Облигации', gold: 'Золото', yuan: 'Юань',
+};
+
 function unitFor(a: AlertInfo): string {
-    return a.indicator === 'price' ? ' ₽' : a.indicator === 'oi_zscore' ? 'σ' : '';
+    if (a.indicator === 'price') return ' ₽';
+    if (a.indicator === 'oi_zscore') return 'σ';
+    // oi_move/oi_participants/funds_flow — кратность ×N (ATR-множитель).
+    if (a.indicator === 'oi_move' || a.indicator === 'oi_participants' || a.indicator === 'funds_flow') return '×';
+    return '';
+}
+
+// Отображаемое имя актива: для фонд-алерта asset — ключ категории → человекочитаемое имя.
+function assetLabel(a: AlertInfo): string {
+    if (a.indicator === 'funds_flow') return FUNDS_CATEGORY_NAME[a.asset] ?? a.asset_name ?? a.asset;
+    return a.asset_name || a.asset;
 }
 
 // Сколько алертов грузим за один запрос (X-Total-Count в шапке даёт общее число).
@@ -187,6 +205,28 @@ export default function TelegramAlertsSection() {
         });
     }, [alerts, query]);
 
+    // ── Алерты «Фонды» (source='funds'), отфильтрованные тем же поиском ──
+    // У фондов нет сектора → плоский список (без аккордеонов), сортировка как
+    // у OI (дата / число сигналов).
+    const fundsAlerts = useMemo(() => {
+        const q = query.trim().toLowerCase();
+        const byCmp = (a: AlertInfo, b: AlertInfo) => {
+            if (sortKey === 'fires') {
+                const d = (b.fires_count ?? 0) - (a.fires_count ?? 0);
+                if (d !== 0) return d;
+            }
+            return (b.created_at || '').localeCompare(a.created_at || '');
+        };
+        return alerts
+            .filter((a) => {
+                if ((a.source || 'oi') !== 'funds') return false;
+                if (!q) return true;
+                return assetLabel(a).toLowerCase().includes(q)
+                    || (a.asset || '').toLowerCase().includes(q);
+            })
+            .sort(byCmp);
+    }, [alerts, query, sortKey]);
+
     // Группировка по сектору + сортировка внутри секции.
     const sectorGroups = useMemo(() => {
         const byCmp = (a: AlertInfo, b: AlertInfo) => {
@@ -272,7 +312,7 @@ export default function TelegramAlertsSection() {
                     {/* ── Список алертов ── */}
                     {alerts.length === 0 ? (
                         <div style={{ color: sub, fontSize: 'var(--fs-sm)' }}>
-                            Пока нет алертов. Создайте кнопкой<BellGlyph /> на индикаторе (сейчас — «Открытые позиции»).
+                            Пока нет алертов. Создайте кнопкой<BellGlyph /> на индикаторе («Открытые позиции» или «Деньги в фондах»).
                         </div>
                     ) : (
                         <>
@@ -408,17 +448,72 @@ export default function TelegramAlertsSection() {
                             </button>
                         )}
 
-                        {/* ── Секция «Фонды» — заглушка «Скоро» (source='funds' пока не бывает) ── */}
-                        <div className="rounded-xl p-4" style={{ background: 'var(--bg-secondary)', border: '1px dashed var(--border-color)', marginBottom: 16 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <Send size={16} style={{ color: sub }} />
-                                <h3 style={{ fontWeight: 700, fontSize: 'var(--fs-base)', color: sub }}>Сигналы по фондам</h3>
-                                <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, color: link, border: '1.5px solid var(--accent)', borderRadius: 6, padding: '1px 6px' }}>Скоро</span>
+                        {/* ── Секция «Фонды» (source='funds') ── */}
+                        {fundsAlerts.length > 0 ? (
+                            <>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 'var(--sp-2)' }}>
+                                    <Wallet size={16} style={{ color: link }} />
+                                    <h3 style={{ fontWeight: 700, fontSize: 'var(--fs-base)' }}>Сигналы по фондам</h3>
+                                    <span style={{ color: sub, fontSize: 'var(--fs-xs)' }}>{fundsAlerts.length}</span>
+                                </div>
+                                <ul style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+                                    {fundsAlerts.map((a) => {
+                                        const firesN = a.fires_count ?? 0;
+                                        const firesOpen = openFires === a.id;
+                                        return (
+                                            <li key={a.id} className="rounded-xl p-3" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-color)' }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--sp-2)' }}>
+                                                    <div style={{ minWidth: 0 }}>
+                                                        <div style={{ fontWeight: 600, fontSize: 'var(--fs-sm)' }}>{assetLabel(a)}</div>
+                                                        <div style={{ color: sub, fontSize: 'var(--fs-xs)' }}>
+                                                            {METRIC_LABEL[a.indicator] || a.indicator} ≥ {a.threshold}{unitFor(a)}
+                                                            {' · '}<span style={{ color: a.status === 'active' ? link : sub }}>{STATUS_LABEL[a.status] || a.status}</span>
+                                                        </div>
+                                                        <button
+                                                            onClick={() => setOpenFires(firesOpen ? null : a.id)}
+                                                            disabled={firesN === 0}
+                                                            className="editorial-press"
+                                                            aria-expanded={firesOpen}
+                                                            style={{
+                                                                marginTop: 6, padding: 0, background: 'transparent', border: 'none',
+                                                                color: firesN === 0 ? sub : link, fontSize: 'var(--fs-xs)',
+                                                                cursor: firesN === 0 ? 'default' : 'pointer', opacity: firesN === 0 ? 0.6 : 1,
+                                                                display: 'inline-flex', alignItems: 'center', gap: 4,
+                                                            }}
+                                                        >
+                                                            <Zap size={12} /> {firesLabel(firesN)}
+                                                            {firesN > 0 && (firesOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />)}
+                                                        </button>
+                                                    </div>
+                                                    <div style={{ display: 'flex', gap: 'var(--sp-2)', flexShrink: 0 }}>
+                                                        {a.status !== 'fired' && (
+                                                            <button onClick={() => toggle(a)} title={a.status === 'active' ? 'Пауза' : 'Возобновить'} aria-label={a.status === 'active' ? 'Пауза' : 'Возобновить'} className="editorial-press" style={{ ...iconBtn, color: sub }}>
+                                                                {a.status === 'active' ? <Pause size={16} /> : <Play size={16} />}
+                                                            </button>
+                                                        )}
+                                                        <button onClick={() => remove(a)} title="Удалить" aria-label="Удалить алерт" className="editorial-press" style={{ ...iconBtn, color: 'var(--funds-flow-negative, #FF7A5C)' }}><Trash2 size={16} /></button>
+                                                    </div>
+                                                </div>
+                                                {firesOpen && firesN > 0 && (
+                                                    <AlertFiresList alertId={a.id} unit={unitFor(a)} />
+                                                )}
+                                            </li>
+                                        );
+                                    })}
+                                </ul>
+                            </>
+                        ) : (
+                            /* Нет фонд-алертов — заглушка «Скоро»: создаются с индикатора «Деньги в фондах». */
+                            <div className="rounded-xl p-4" style={{ background: 'var(--bg-secondary)', border: '1px dashed var(--border-color)', marginBottom: 16 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <Wallet size={16} style={{ color: sub }} />
+                                    <h3 style={{ fontWeight: 700, fontSize: 'var(--fs-base)', color: sub }}>Сигналы по фондам</h3>
+                                </div>
+                                <p style={{ color: sub, fontSize: 'var(--fs-xs)', marginTop: 6, lineHeight: 1.4 }}>
+                                    Создайте сигнал по аномальному притоку-оттоку на индикаторе «Деньги в фондах» (режим Притоки-Оттоки, кнопка<BellGlyph />).
+                                </p>
                             </div>
-                            <p style={{ color: sub, fontSize: 'var(--fs-xs)', marginTop: 6, lineHeight: 1.4 }}>
-                                Алерты по притокам и оттокам фондов появятся позже — следите за обновлениями.
-                            </p>
-                        </div>
+                        )}
 
                         {alerts.length > 1 && (
                             <button onClick={removeAll} className="editorial-press" style={{ alignSelf: 'flex-start', background: 'transparent', border: 'none', color: 'var(--funds-flow-negative, #FF7A5C)', fontSize: 'var(--fs-xs)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, padding: 0 }}>

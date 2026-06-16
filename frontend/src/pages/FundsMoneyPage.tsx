@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { TrendingUp, DollarSign, Banknote, Gem, Wallet, JapaneseYen, Bell } from 'lucide-react';
+import { TrendingUp, DollarSign, Banknote, Gem, Wallet, JapaneseYen, Bell, Lock } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import SegmentedControl from '../components/SegmentedControl';
@@ -34,9 +34,10 @@ import FlowsHistogram from '../components/funds/FlowsHistogram';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import CsvExportButton from '../components/export/CsvExportButton';
 import { periodToQuery } from '../utils/csvPeriod';
-import { useTierAccess } from '../contexts/TierFeaturesContext';
+import { useTierAccess, useCommonFeatures } from '../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 import { handleTierError } from '../utils/tierError';
+import CreateFundAlertModal from '../components/alerts/CreateFundAlertModal';
 
 // Режимы отображения
 type ViewMode = 'aum' | 'flows';
@@ -91,6 +92,10 @@ export default function FundsMoneyPage() {
     const [flowTimeframe, setFlowTimeframeRaw] = usePersistedState<FlowTimeframe>('frame:funds:flowTimeframe', '1d');
     const fundsAccess = useTierAccess('funds_money');
     const { showUpgrade } = useUpgradePrompt();
+    // Алерты в мессенджере — квота по тарифу (0=Free/гость → апселл, как у OI-колокола).
+    const alertsQuota = useCommonFeatures().telegram_alerts_quota;
+    const alertsLocked = alertsQuota === 0;
+    const [fundAlertOpen, setFundAlertOpen] = useState(false);
 
     // Динамическая высота графика — chartAnchorRef как в OI page
     const chartAnchorRef = useRef<HTMLDivElement>(null);
@@ -765,36 +770,65 @@ export default function FundsMoneyPage() {
                       };
                     }}
                 />
-                {/* Сигналы — заглушка «скоро». Только в режиме притоков-оттоков:
-                    автосигналы будут строиться по флоу. Неактивный плейсхолдер
-                    (не кликабелен) — UI-only, без бэкенда. Стиль зеркалит
-                    AlertBellButton (paper pill, 2px border), но disabled — колокол
-                    + подпись «Скоро» инлайн (в вертикальном kebab-стеке бейдж-overlay
-                    задевал бы соседние пункты). */}
+                {/* Сигналы по фондам — рабочая кнопка-колокол. Только в режиме
+                    притоков-оттоков (алерт строится по флоу категории). Открывает
+                    CreateFundAlertModal для ТЕКУЩЕЙ категории (актив = category).
+                    Tier-гейт как у OI-колокола: quota=0 (Free/гость) → замочек +
+                    upgrade-промпт; иначе — модалка создания. Стиль зеркалит
+                    AlertBellButton (paper pill, 2px border), с подписью «Сигнал»
+                    инлайн (в kebab-стеке бейдж-overlay задевал бы соседей). */}
                 {viewMode === 'flows' && (
                     <span
                         data-export-ignore="true"
-                        aria-disabled="true"
-                        aria-label="Сигналы — скоро"
-                        className="rounded-full inline-flex items-center justify-center"
-                        title="Автосигналы по притокам-оттокам появятся позже"
-                        style={{
-                            flex: '0 0 auto',
-                            gap: 'var(--sp-1)',
-                            height: 44,
-                            padding: '0 var(--sp-3)',
-                            backgroundColor: 'var(--bg-secondary)',
-                            border: '2px solid var(--text-primary)',
-                            color: 'var(--text-primary)',
-                            fontSize: 'var(--fs-xs)',
-                            fontWeight: 700,
-                            whiteSpace: 'nowrap',
-                            opacity: 0.6,
-                            cursor: 'not-allowed',
-                        }}
+                        className="relative inline-flex"
+                        style={{ flex: '0 0 auto' }}
                     >
-                        <Bell size={18} />
-                        Сигналы · Скоро
+                        <button
+                            type="button"
+                            data-export-ignore="true"
+                            onClick={() => {
+                                if (alertsLocked) {
+                                    showUpgrade({ tier: 'basic', featureName: 'Сигналы по фондам', indicator: 'alerts' });
+                                    return;
+                                }
+                                setFundAlertOpen(true);
+                            }}
+                            className="editorial-press rounded-full inline-flex items-center justify-center"
+                            style={{
+                                gap: 'var(--sp-1)',
+                                height: 44,
+                                padding: '0 var(--sp-3)',
+                                backgroundColor: 'var(--bg-secondary)',
+                                border: '2px solid var(--text-primary)',
+                                color: 'var(--text-primary)',
+                                fontSize: 'var(--fs-xs)',
+                                fontWeight: 700,
+                                whiteSpace: 'nowrap',
+                                opacity: alertsLocked ? 0.78 : 1,
+                            }}
+                            aria-label={alertsLocked ? 'Сигналы по фондам — доступно на тарифе Basic и Pro' : 'Создать сигнал по фондам'}
+                            title={alertsLocked
+                                ? 'Сигналы в мессенджере — на тарифе Basic и Pro. Нажмите, чтобы улучшить.'
+                                : 'Создать сигнал по аномальному потоку категории'}
+                        >
+                            <Bell size={18} />
+                            Сигнал
+                        </button>
+                        {alertsLocked && (
+                            <span
+                                aria-hidden="true"
+                                data-export-ignore="true"
+                                style={{
+                                    position: 'absolute', right: -3, bottom: -3,
+                                    width: 18, height: 18, borderRadius: '50%',
+                                    background: 'var(--bg-primary)', border: '2px solid var(--text-primary)',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    color: 'var(--text-primary)', pointerEvents: 'none',
+                                }}
+                            >
+                                <Lock size={10} strokeWidth={2.6} />
+                            </span>
+                        )}
                     </span>
                 )}
                 <ChartCaptureButton
@@ -918,6 +952,15 @@ export default function FundsMoneyPage() {
                     navRub={selectedFund.data?.[selectedFund.data.length - 1]?.nav ?? null}
                     enableDrilldown={category === 'stocks'}
                     onClose={() => setSelectedFund(null)}
+                />
+            )}
+
+            {/* Конструктор сигнала по фондам — актив = текущая категория. */}
+            {fundAlertOpen && (
+                <CreateFundAlertModal
+                    category={category}
+                    categoryName={currentCategory?.name ?? category}
+                    onClose={() => setFundAlertOpen(false)}
                 />
             )}
 

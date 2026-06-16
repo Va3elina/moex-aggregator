@@ -154,10 +154,10 @@ def alert_context(
 class AlertCreate(BaseModel):
     # max_length зеркалит лимиты колонок БД — иначе длинная строка даёт 500
     # (Postgres DataError) вместо чистого 422.
-    indicator: str = Field(max_length=24)        # 'price' | 'oi_zscore'
-    asset: str = Field(max_length=20)
+    indicator: str = Field(max_length=24)        # 'price'|'oi_zscore'|'oi_move'|'funds_flow'
+    asset: str = Field(max_length=20)            # sectype | категория фондов
     asset_name: Optional[str] = Field(default=None, max_length=128)
-    metric: str = Field(max_length=24)           # 'close' | 'zscore'
+    metric: str = Field(max_length=24)           # 'close'|'zscore'|'atr'|'net_flow'
     clgroup: Optional[str] = Field(default=None, max_length=3)   # OI: 'FIZ'|'YUR'
     op: str = Field(max_length=16)               # 'gt'|'lt'|'cross_up'|'cross_down'
     threshold: float
@@ -210,6 +210,21 @@ def _log_alert_event(db: Session, *, alert_id: Optional[int], user_id: int,
     ))
 
 
+# Категории фонд-алертов (asset для funds_flow) — ключи разделов «Деньги в фондах».
+# Юань пока НЕ включаем (раздел «Скоро» — NAV юаневых фондов ещё наливается).
+FUNDS_CATEGORIES = ("money_market", "stocks", "bonds", "gold")
+
+
+def _alert_source(indicator: str) -> str:
+    """Источник алерта для разделения в кабинете: funds_flow → 'funds', иначе 'oi'.
+
+    source задаём здесь (а не из тела запроса) — фронт его не присылает, он
+    однозначно выводится из индикатора. Так нельзя подсунуть funds-алерт под
+    'oi'-секцию и наоборот.
+    """
+    return "funds" if indicator == "funds_flow" else "oi"
+
+
 # Валидация значений (op/mode/indicator/clgroup) — общая для одиночного и
 # пакетного создания. Возвращает текст ошибки или None если всё ок.
 def _validate_alert_body(b: AlertCreate) -> Optional[str]:
@@ -217,8 +232,16 @@ def _validate_alert_body(b: AlertCreate) -> Optional[str]:
         return "некорректное условие"
     if b.mode not in ("once", "repeat"):
         return "некорректный режим"
-    if b.indicator not in ("price", "oi_zscore", "oi_move", "oi_participants"):
+    if b.indicator not in ("price", "oi_zscore", "oi_move", "oi_participants", "funds_flow"):
         return "неизвестный индикатор"
+    # funds_flow: asset — ключ КАТЕГОРИИ (не sectype); clgroup у фондов нет;
+    # таймфрейм потоков всегда дневной.
+    if b.indicator == "funds_flow":
+        if b.asset not in FUNDS_CATEGORIES:
+            return "неизвестная категория фондов"
+        if b.timeframe != "1d":
+            return "у потоков фондов только дневной таймфрейм"
+        return None
     if b.clgroup not in (None, "FIZ", "YUR", "ALL"):
         return "некорректная группа участников"
     if b.timeframe not in ("5m", "1h", "1d"):
@@ -297,18 +320,22 @@ def create_alert(
     if err:
         raise HTTPException(status_code=422, detail=err.capitalize())
 
+    # funds_flow → source='funds' (отдельная секция кабинета), clgroup у фондов
+    # неприменим — обнуляем, чтобы не протёк случайный 'FIZ' из формы.
+    is_funds = body.indicator == "funds_flow"
     alert = Alert(
         user_id=user.id,
         indicator=body.indicator,
         asset=body.asset,
         asset_name=body.asset_name,
         metric=body.metric,
-        clgroup=body.clgroup,
+        clgroup=None if is_funds else body.clgroup,
         op=body.op,
         threshold=body.threshold,
         mode=body.mode,
         cooldown_hours=body.cooldown_hours,
         timeframe=body.timeframe,
+        source=_alert_source(body.indicator),
         status="active",
     )
     db.add(alert)
@@ -374,11 +401,14 @@ def create_alerts_batch(
         if remaining is not None and created >= remaining:
             errors.append(f"{a.asset}: достигнут лимит {quota} алертов (Pro — безлимит)")
             continue
+        is_funds = a.indicator == "funds_flow"
         new_alert = Alert(
             user_id=user.id,
             indicator=a.indicator, asset=a.asset, asset_name=a.asset_name,
-            metric=a.metric, clgroup=a.clgroup, op=a.op, threshold=a.threshold,
+            metric=a.metric, clgroup=None if is_funds else a.clgroup,
+            op=a.op, threshold=a.threshold,
             mode=a.mode, cooldown_hours=a.cooldown_hours, timeframe=a.timeframe,
+            source=_alert_source(a.indicator),
             status="active",
         )
         db.add(new_alert)
