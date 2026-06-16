@@ -143,8 +143,12 @@ def compute_position_atr(
     идентичны — для интрадей pts[-1] = сегодняшний бегущий день, поэтому
     last_signed = net_сейчас − вчерашнее_закрытие выходит автоматически.
 
-    Возвращает (ratio, last_diff, current_net, direction) или None (мало истории /
-    неликвид / immaterial / замороженная база). direction: 'up'(нарастили)/'down'."""
+    Возвращает (ratio, last_diff, current_net, direction, signal_date, legs) или None
+    (мало истории / неликвид / immaterial / замороженная база). direction:
+    'up'(нарастили чистый лонг)/'down'. legs — dict с дневными Δ по каждой ноге
+    {'long': Δpos_long, 'short': Δpos_short} (длинная +, короткая знаковая) — чтобы
+    текст алерта мог сказать, какая нога двинулась; пустой dict если истории по
+    ногам нет."""
     pts = get_position_series(sectype, clgroup, days=ATR_WINDOW + 30,
                               as_of_date=as_of_date, interval=interval)
     if len(pts) < ATR_WINDOW + 3:
@@ -166,9 +170,14 @@ def compute_position_atr(
     if atr <= 0 or atr < ATR_FLOOR_REL * max(abs(net), 1):
         return None
     ratio = last / atr
+    # Дневные Δ по каждой ноге (длинная p[3] +, короткая p[4] знаковая хранится −).
+    # Нужны тексту: «выросла длинная нога» vs «нарастили короткую». Берём по той же
+    # последней паре дней, что и net-сдвиг.
+    legs = {"long": pts[-1][3] - pts[-2][3], "short": pts[-1][4] - pts[-2][4]}
     # 5-й элемент — дата последнего дневного значения (для гейта «новый день»
     # в alerts_run: не пере-выстреливать тот же торговый день).
-    return (round(ratio, 2), last_signed, net, "up" if last_signed > 0 else "down", pts[-1][0])
+    return (round(ratio, 2), last_signed, net,
+            "up" if last_signed > 0 else "down", pts[-1][0], legs)
 
 
 def compute_participants_atr(

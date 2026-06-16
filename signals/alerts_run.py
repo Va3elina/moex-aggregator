@@ -81,10 +81,10 @@ def compute_value(a: Alert):
         r = compute_position_atr(a.asset, "FIZ" if neutral else clg, interval=interval)
         if not r:
             return None, None
-        ratio, last_diff, current_net, direction, sig_date = r
+        ratio, last_diff, current_net, direction, sig_date, legs = r
         return float(ratio), {"last_diff": last_diff, "current_net": current_net,
                               "direction": direction, "neutral": neutral,
-                              "signal_date": sig_date}
+                              "signal_date": sig_date, "legs": legs}
     if a.indicator == "oi_participants":
         # «Резко изменилось число участников» — ATR14 по числу участников (npart).
         # FIZ/YUR — независимые счётчики (НЕ зеркальны), самостоятельные сигналы.
@@ -114,9 +114,43 @@ def build_keyboard(a: Alert) -> dict:
     return {"inline_keyboard": [[open_btn], [action_btn, delete_btn]]}
 
 
+# Нейтральный плейсхолдер-маркер вместо эмодзи/стикеров (фирменный добавим позже).
+# Одна строка-заголовок без эмодзи и хэштегов — единый «шильдик» всех алертов.
+_MARK = "СИГНАЛ ФРЕЙМ"
+
+
+def _leg_phrase(direction: str, legs: dict) -> str:
+    """Какая нога двинула чистую позицию — когда это однозначно. legs = дневные Δ
+    {'long': Δдлинной (+), 'short': Δкороткой (знаковая, короткая хранится −)}.
+
+    net вырос (direction='up') либо за счёт прироста длинной (Δlong>0), либо за счёт
+    закрытия короткой (Δshort>0 = модуль шорта уменьшился). net упал — наоборот.
+    Берём доминирующую по модулю ногу и описываем честно; если ноги почти равны или
+    данных нет — пустая строка (текст останется про чистую позицию, без выдумки)."""
+    if not legs:
+        return ""
+    dl = legs.get("long", 0)
+    ds = legs.get("short", 0)
+    # Доминирующая нога — у которой больше |Δ|. Требуем заметного перевеса (×1.5),
+    # иначе «обе ноги сразу» — не приписываем одну.
+    if abs(dl) < 1 and abs(ds) < 1:
+        return ""
+    if abs(dl) >= abs(ds) * 1.5:
+        if dl > 0:
+            return "нарастили длинную сторону"
+        return "сократили длинную сторону"
+    if abs(ds) >= abs(dl) * 1.5:
+        # короткая нога: Δshort>0 → шорт закрывают (модуль падает); <0 → шорт наращивают
+        if ds > 0:
+            return "закрывали короткую сторону"
+        return "нарастили короткую сторону"
+    return ""
+
+
 def format_msg(a: Alert, value: float, ctx: dict) -> str:
     name = a.asset_name or a.asset
     link = f'<a href="{SITE}/oi?instrument={a.asset}">открыть график →</a>'
+    head = f"<b>{_MARK}</b>\n<b>{name} · {a.asset}</b>"
     thr = float(a.threshold)
     # Таймфрейм-пометка для OI-сигналов: при 5m/1h уточняем, что net взят из
     # внутридневного бара (иначе при разных ТФ на один актив — путаница). И
@@ -128,37 +162,45 @@ def format_msg(a: Alert, value: float, ctx: dict) -> str:
         word = _OP_PRICE.get(a.op, a.op)
         eod = "\n<i>(дневная свеча — у актива нет внутридневных данных)</i>" \
             if ctx.get("interval") == 24 else ""
-        return (f"🔔 <b>{name} · {a.asset}</b>\n"
-                f"Цена {word} {thr:g} ₽ → сейчас {value:g} ₽{eod}\n{link}")
+        return (f"{head}\n"
+                f"Цена {word} отметку {thr:g} ₽ — сейчас {value:g} ₽{eod}\n{link}")
     if a.indicator == "oi_zscore":
-        clg = "физлица" if (a.clgroup or "FIZ") == "FIZ" else "юрлица"
+        clg = "физлиц" if (a.clgroup or "FIZ") == "FIZ" else "юрлиц"
         diff = ctx.get("last_diff", 0)
-        arrow = "↑" if diff > 0 else "↓"
-        return (f"🔔 <b>{name} · {a.asset}</b> — Открытые позиции\n"
-                f"Аномалия позиций ({clg}): z = {value:+g}σ (порог {thr:g})\n"
-                f"Δ чистой позиции за день: {diff:+,} контрактов {arrow}\n{link}")
+        verb = "нарастили чистую позицию" if diff > 0 else "сократили чистую позицию"
+        return (f"{head} — открытые позиции\n"
+                f"Аномалия в позициях {clg}: за день {verb} резче обычного.\n"
+                f"Чистая позиция изменилась на {diff:+,} контрактов за день.\n{link}")
     if a.indicator == "oi_move":
         diff = ctx.get("last_diff", 0)
+        direction = ctx.get("direction", "up")
+        leg = _leg_phrase(direction, ctx.get("legs") or {})
+        leg_note = f" ({leg})" if leg else ""
         if ctx.get("neutral"):
             # clgroup ALL — нейтральный текст, без субъекта физ/юр в роли действующего.
-            return (f"🔔 <b>{name} · {a.asset}</b> — Открытые позиции{tf_note}\n"
-                    f"Позиции по {a.asset} резко сдвинулись: "
-                    f"в {value:g}× больше обычного (порог {thr:g}×)\n"
-                    f"{diff_label}: {diff:+,} контрактов\n{link}")
+            move = "выросла" if direction == "up" else "снизилась"
+            return (f"{head} — открытые позиции{tf_note}\n"
+                    f"Чистая позиция {move} резче обычного — в {value:g}× "
+                    f"сильнее среднего дневного шага за 14 дней (ваш порог {thr:g}×).\n"
+                    f"{diff_label}: {diff:+,} контрактов{leg_note}.\n{link}")
         clg = "Физлица" if (a.clgroup or "FIZ") == "FIZ" else "Юрлица"
-        word = "резко нарастили" if ctx.get("direction") == "up" else "резко сократили"
-        return (f"🔔 <b>{name} · {a.asset}</b> — Открытые позиции{tf_note}\n"
-                f"{clg} {word} позицию: в {value:g}× больше обычного (порог {thr:g}×)\n"
-                f"{diff_label}: {diff:+,} контрактов\n{link}")
+        word = "резко нарастили чистую позицию" if direction == "up" \
+            else "резко сократили чистую позицию"
+        return (f"{head} — открытые позиции{tf_note}\n"
+                f"{clg} {word} — сдвиг в {value:g}× сильнее обычного дневного шага "
+                f"за 14 дней (ваш порог {thr:g}×).\n"
+                f"{diff_label}: {diff:+,} контрактов{leg_note}.\n{link}")
     if a.indicator == "oi_participants":
-        clg = "физлица" if (a.clgroup or "FIZ") == "FIZ" else "юрлица"
+        clg = "физлиц" if (a.clgroup or "FIZ") == "FIZ" else "юрлиц"
         diff = ctx.get("last_diff", 0)
-        verb = "Прибавилось" if ctx.get("direction") == "up" else "Убыло"
-        return (f"🔔 <b>{name} · {a.asset}</b> — Открытые позиции{tf_note}\n"
-                f"Резко изменилось число участников ({clg}) по {a.asset}: "
-                f"в {value:g}× больше обычного (порог {thr:g}×)\n"
-                f"{verb}: {diff:+,} участников\n{link}")
-    return f"🔔 {name}: алерт сработал"
+        npart = ctx.get("current_npart")
+        flow = "Приток" if ctx.get("direction") == "up" else "Отток"
+        ctx_line = f"\nВсего в позиции сейчас {npart:,} участников." if npart else ""
+        return (f"{head} — открытые позиции{tf_note}\n"
+                f"{flow} {clg} в фьючерсе резче обычного — в {value:g}× сильнее "
+                f"среднего дневного шага за 14 дней (ваш порог {thr:g}×).\n"
+                f"{diff_label}: {diff:+,} участников.{ctx_line}\n{link}")
+    return f"{head}\nАлерт сработал.\n{link}"
 
 
 def run_once() -> dict:
