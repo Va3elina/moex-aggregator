@@ -6,7 +6,7 @@
  *   GET /api/analytics/funnel  — пошаговая конверсия
  *
  * Структура (вертикально):
- *  1. 4 summary cards (DAU / Sessions / AvgTime / Events) + trends chart
+ *  1. 4 summary cards (Уникальные/период / Sessions / AvgTime / Events) + trends chart
  *  2. Top lists (pages/instruments/exports/modes)
  *  3. Users — drill-down таблица в /admin/users/:id
  *  4. Funnel — конверсия по воронке landing → indicator → action
@@ -181,9 +181,9 @@ export default function AdminStatsPage() {
           <>
             <SummaryCard
               icon={<Users size={16} />}
-              label="DAU"
-              value={data.summary.dau}
-              delta={data.summary.delta_dau}
+              label="Уникальные за период"
+              value={data.summary.uniques}
+              delta={data.summary.delta_uniques}
               deltaSuffix=" vs пред."
             />
             <SummaryCard
@@ -225,12 +225,12 @@ export default function AdminStatsPage() {
         {data && data.trends.length > 0 ? (
           <Card padding="md" className="md:p-5">
             <SimpleChart
-              data={data.trends.map(t => ({ time: t.date, value: t.dau }))}
+              data={data.trends.map(t => ({ time: t.date, value: t.uniques }))}
               secondaryData={data.trends.map(t => ({ time: t.date, value: t.sessions }))}
               showSecondary={true}
               primaryColor="var(--accent)"
               secondaryColor="var(--accent-secondary)"
-              primaryLabel="DAU"
+              primaryLabel="Уникальные/день"
               secondaryLabel="Сессии"
               formatValue={(v) => Math.round(v).toString()}
               formatSecondaryAxis={(v) => Math.round(v).toString()}
