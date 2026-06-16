@@ -146,21 +146,29 @@ export default function FundsMoneyPage() {
         }
     }, [fundsAccess.isLoading, fundsAccess, viewMode, period, setPeriod]);
 
-    // Гость/free не может смотреть потоки вовсе: лимит истории (180д) несовместим
-    // с недельной/месячной гранулярностью, которой нужно ≥1Г (FLOW_MIN_PERIODS), а
-    // дневной ТФ — Pro. Чтобы первый экран был РАБОЧИМ (а не «Ошибка/замок» по
-    // дефолтному flows+1Г) — один раз при загрузке тарифа переводим на СЧА. Если
-    // юзер сам кликнет «Притоки-Оттоки» — tier-403 покажет upgrade-промпт.
+    // Доступны ли потоки на текущем тарифе ВООБЩЕ: нужна хоть одна пара (ТФ, период),
+    // где ТФ открыт по тарифу И его минимальный период (FLOW_MIN_PERIODS) тоже открыт.
+    // Для free лимит истории 180д несовместим с недельной/месячной гранулярностью
+    // (нужно ≥1Г), а дневной ТФ — Pro → потоки недоступны целиком. `!isLoading &&`
+    // — пока tier грузится, НЕ показываем замок/НЕ дёргаем (не запираем платника).
+    const flowsTierOk = !fundsAccess.isLoading && (['1d', '1w', '1m'] as FlowTimeframe[]).some(
+        tf => fundsAccess.canUseTimeframe(tf)
+            && (FLOW_MIN_PERIODS[tf] ?? []).some(p => fundsAccess.canUsePeriod(p)),
+    );
+    // Текущий период заперт тарифом (tier уже резолвнут). persisted-период от прошлой
+    // авторизованной сессии (напр. 1Г у гостя) → 403 → ВСПЫШКА модалки до того, как
+    // tier-коррекция опустит период. Гейтим загрузчики этим флагом. (При isLoading
+    // флаг false → грузим как обычно: не знаем лимита + не виснем, если матрица упала.)
+    const periodLocked = !fundsAccess.isLoading && !fundsAccess.canUsePeriod(period);
+
+    // Гость/free на дефолтном flows+1Г → один раз при загрузке тарифа переводим на
+    // СЧА (рабочий вид). Сам клик по залоченным «Притоки-Оттоки» → upgrade-промпт.
     const flowsModeCheckedRef = useRef(false);
     useEffect(() => {
         if (fundsAccess.isLoading || flowsModeCheckedRef.current) return;
         flowsModeCheckedRef.current = true;
-        const flowsAvailable = (['1d', '1w', '1m'] as FlowTimeframe[]).some(
-            tf => fundsAccess.canUseTimeframe(tf)
-                && (FLOW_MIN_PERIODS[tf] ?? []).some(p => fundsAccess.canUsePeriod(p)),
-        );
-        if (!flowsAvailable && viewMode === 'flows') setViewMode('aum');
-    }, [fundsAccess.isLoading, fundsAccess, viewMode, setViewMode]);
+        if (!flowsTierOk && viewMode === 'flows') setViewMode('aum');
+    }, [fundsAccess.isLoading, flowsTierOk, viewMode, setViewMode]);
 
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -212,6 +220,10 @@ export default function FundsMoneyPage() {
     // ответ мог перезаписать свежий. reqId фиксирует «последний» запрос.
     const reqIdRef = useRef(0);
     const loadData = useCallback(async () => {
+        // Не фетчим с запертым тарифом периодом (persisted 1Г у гостя) → не даём 403/
+        // вспышку модалки. Держим спиннер: tier-коррекция опустит период до доступного
+        // → periodLocked станет false → loadData перезапустится и догрузит данные.
+        if (periodLocked) { setLoading(true); return; }
         const reqId = ++reqIdRef.current;
         const isStale = () => reqId !== reqIdRef.current;
         try {
@@ -234,7 +246,7 @@ export default function FundsMoneyPage() {
         } finally {
             if (!isStale()) setLoading(false);
         }
-    }, [category, period, showUpgrade]);
+    }, [category, period, showUpgrade, periodLocked]);
 
     useEffect(() => { loadData(); }, [loadData]);
 
@@ -290,6 +302,9 @@ export default function FundsMoneyPage() {
     const flowsReqIdRef = useRef(0);
     useEffect(() => {
         if (viewMode !== 'flows') return;
+        // Запертый тарифом период (persisted 1Г у гостя) → не дёргаем flows (403/
+        // вспышка модалки). Part B уведёт на СЧА, либо tier-коррекция опустит период.
+        if (periodLocked) return;
 
         // Все фонды выключены — не дёргаем backend, ставим пустой результат.
         // FlowsHistogram по noFundsSelected покажет «Выберите фонды».
@@ -327,7 +342,7 @@ export default function FundsMoneyPage() {
             }
         }
         loadFlowsData();
-    }, [viewMode, category, flowTimeframe, period, visibleFundIds, noFundsSelected, showUpgrade]);
+    }, [viewMode, category, flowTimeframe, period, visibleFundIds, noFundsSelected, showUpgrade, periodLocked]);
 
     // Агрегация данных на основе видимых фондов
     const aggregatedData = useMemo(() => {
@@ -618,7 +633,9 @@ export default function FundsMoneyPage() {
                 <SegmentedControl<ViewMode>
                     options={[
                         { key: 'aum',   label: 'СЧА' },
-                        { key: 'flows', label: 'Притоки-Оттоки' },
+                        // Потоки для free недоступны целиком (лимит 180д vs ≥1Г + дневной
+                        // ТФ=Pro) → показываем замок, а не «кликабельно но сразу 403».
+                        { key: 'flows', label: 'Притоки-Оттоки', locked: !fundsAccess.isLoading && !flowsTierOk },
                     ]}
                     value={viewMode}
                     onChange={(m) => {
@@ -631,6 +648,12 @@ export default function FundsMoneyPage() {
                             // допустимого, иначе на графике один столбец.
                             setPeriod((FLOW_MIN_PERIODS[flowTimeframe] ?? ['all'])[0]);
                         }
+                    }}
+                    onLockedClick={() => {
+                        // «Притоки-Оттоки» заперты тарифом (реальный блокер — лимит
+                        // истории: потокам нужен ≥1Г, а free=180д) → upgrade-промпт.
+                        const tier = fundsAccess.requiredTierFor({ period: '1y' }) ?? 'basic';
+                        showUpgrade({ tier, featureName: 'притоки-оттоки фондов', indicator: 'funds_money' });
                     }}
                 />
                 </div>
