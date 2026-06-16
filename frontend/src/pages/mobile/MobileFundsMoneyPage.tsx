@@ -405,6 +405,7 @@ export default function MobileFundsMoneyPage() {
               series={chartSeries}
               niceTicksLeft={true}
               niceTicksRight={true}
+              gridAxis="right"
               loading={loading}
               formatXLabel={(t) => {
                 // FundsMoney AUM — всегда дневные точки. Default formatter
