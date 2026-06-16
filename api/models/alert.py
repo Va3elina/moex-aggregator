@@ -31,6 +31,10 @@ class Alert(Base):
     op = Column(String(12), nullable=False)           # 'gt'|'lt'|'cross_up'|'cross_down'
     threshold = Column(Numeric(20, 6), nullable=False)
 
+    # Источник сигнала для разделения в кабинете: 'oi' (текущие OI/цена) |
+    # 'funds' (будущий фонд-детектор; создавать пока нельзя — нет детектора).
+    source = Column(String(16), nullable=False, default="oi", server_default="oi")
+
     mode = Column(String(8), nullable=False, default="once", server_default="once")
     cooldown_hours = Column(Integer, nullable=False, default=24, server_default="24")
     status = Column(String(10), nullable=False, default="active", server_default="active")
@@ -55,3 +59,29 @@ class AlertFire(Base):
     fired_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     value = Column(Numeric(20, 6), nullable=True)
     message_text = Column(String, nullable=True)
+
+
+class AlertEvent(Base):
+    """
+    Лог жизненного цикла алерта (поставил/убрал/пауза/возобновил) — для
+    админ-статистики «сколько алертов ставят/снимают». Намеренно НЕ FK на alerts:
+    алерт может быть удалён, а событие 'deleted' должно пережить его (alert_id
+    остаётся как «исторический» id, индекса/каскада нет). Денормализуем
+    asset/indicator/source, чтобы статистику можно было строить без джойна на
+    (возможно уже удалённый) алерт.
+    """
+    __tablename__ = "alert_events"
+
+    id = Column(Integer, primary_key=True, index=True)
+    alert_id = Column(Integer, nullable=True)          # без FK — алерт мог быть удалён
+    user_id = Column(Integer, nullable=False, index=True)
+    event = Column(String(16), nullable=False)         # 'created'|'deleted'|'paused'|'resumed'
+    asset = Column(String(20), nullable=True)
+    indicator = Column(String(24), nullable=True)
+    source = Column(String(16), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+
+    __table_args__ = (
+        Index("idx_alert_events_user", "user_id"),
+        Index("idx_alert_events_created", "created_at"),
+    )

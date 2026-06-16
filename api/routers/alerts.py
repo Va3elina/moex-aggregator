@@ -18,13 +18,13 @@ from datetime import datetime, timedelta, timezone
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from api.database import get_db
-from api.models import User, Alert
+from api.models import User, Alert, AlertEvent
 from api.models.telegram_link_token import TelegramLinkToken
 from api.routers.auth import get_current_user
 from api.billing.tiers import user_tier
@@ -178,18 +178,36 @@ class AlertOut(BaseModel):
     mode: str
     status: str
     timeframe: str = "1d"
+    source: str = "oi"
+    # Сектор инструмента (instruments.group) джойном по asset — для группировки
+    # в кабинете. None если инструмент не найден.
+    sector: Optional[str] = None
+    # Число срабатываний за всю жизнь алерта (COUNT по alert_fires).
+    fires_count: int = 0
     last_fired_at: Optional[str] = None
     created_at: Optional[str] = None
 
 
-def _to_out(a: Alert) -> AlertOut:
+def _to_out(a: Alert, sector: Optional[str] = None, fires_count: int = 0) -> AlertOut:
     return AlertOut(
         id=a.id, indicator=a.indicator, asset=a.asset, asset_name=a.asset_name,
         metric=a.metric, clgroup=a.clgroup, op=a.op, threshold=float(a.threshold),
         mode=a.mode, status=a.status, timeframe=getattr(a, "timeframe", "1d") or "1d",
+        source=getattr(a, "source", "oi") or "oi",
+        sector=sector, fires_count=int(fires_count or 0),
         last_fired_at=a.last_fired_at.isoformat() if a.last_fired_at else None,
         created_at=a.created_at.isoformat() if a.created_at else None,
     )
+
+
+def _log_alert_event(db: Session, *, alert_id: Optional[int], user_id: int,
+                     event: str, asset: Optional[str], indicator: Optional[str],
+                     source: Optional[str]) -> None:
+    """Записать событие жизненного цикла алерта (в той же сессии — коммит у вызывающего)."""
+    db.add(AlertEvent(
+        alert_id=alert_id, user_id=user_id, event=event,
+        asset=asset, indicator=indicator, source=source,
+    ))
 
 
 # Валидация значений (op/mode/indicator/clgroup) — общая для одиночного и
@@ -209,9 +227,54 @@ def _validate_alert_body(b: AlertCreate) -> Optional[str]:
 
 
 @router.get("", response_model=list[AlertOut])
-def list_alerts(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    rows = db.query(Alert).filter(Alert.user_id == user.id).order_by(Alert.created_at.desc()).all()
-    return [_to_out(a) for a in rows]
+def list_alerts(
+    response: Response,
+    limit: int = Query(200, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Список алертов юзера. Тело — ПЛОСКИЙ массив AlertOut (обратносовместимо с
+    фронтовым listAlerts). Общее число — в заголовке X-Total-Count.
+
+    Без N+1 и без фан-аута: sectype в instruments НЕ уникален (фьючерс 'Si' =
+    несколько контрактов SiH/SiM/... с одним sectype), поэтому сектор берём
+    скалярным коррелированным подзапросом (LIMIT 1), а НЕ JOIN'ом — иначе строки
+    алертов размножились бы. Число срабатываний — коррелированным COUNT по
+    alert_fires. Один запрос.
+    """
+    total = db.query(Alert).filter(Alert.user_id == user.id).count()
+
+    rows = db.execute(
+        text("""
+            SELECT a.*,
+                   (SELECT i."group" FROM instruments i
+                    WHERE i.sectype = a.asset AND i."group" IS NOT NULL
+                    LIMIT 1) AS sector,
+                   (SELECT count(*) FROM alert_fires f WHERE f.alert_id = a.id) AS fires_count
+            FROM alerts a
+            WHERE a.user_id = :uid
+            ORDER BY a.created_at DESC
+            LIMIT :limit OFFSET :offset
+        """),
+        {"uid": user.id, "limit": limit, "offset": offset},
+    ).mappings().all()
+
+    response.headers["X-Total-Count"] = str(total)
+
+    out: list[AlertOut] = []
+    for r in rows:
+        out.append(AlertOut(
+            id=r["id"], indicator=r["indicator"], asset=r["asset"],
+            asset_name=r["asset_name"], metric=r["metric"], clgroup=r["clgroup"],
+            op=r["op"], threshold=float(r["threshold"]), mode=r["mode"],
+            status=r["status"], timeframe=r["timeframe"] or "1d",
+            source=r["source"] or "oi", sector=r["sector"],
+            fires_count=int(r["fires_count"] or 0),
+            last_fired_at=r["last_fired_at"].isoformat() if r["last_fired_at"] else None,
+            created_at=r["created_at"].isoformat() if r["created_at"] else None,
+        ))
+    return out
 
 
 @router.post("", response_model=AlertOut)
@@ -249,6 +312,11 @@ def create_alert(
         status="active",
     )
     db.add(alert)
+    db.flush()   # получить alert.id до коммита для лога события
+    _log_alert_event(
+        db, alert_id=alert.id, user_id=user.id, event="created",
+        asset=alert.asset, indicator=alert.indicator, source=alert.source,
+    )
     db.commit()
     db.refresh(alert)
     return _to_out(alert)
@@ -306,13 +374,19 @@ def create_alerts_batch(
         if remaining is not None and created >= remaining:
             errors.append(f"{a.asset}: достигнут лимит {quota} алертов (Pro — безлимит)")
             continue
-        db.add(Alert(
+        new_alert = Alert(
             user_id=user.id,
             indicator=a.indicator, asset=a.asset, asset_name=a.asset_name,
             metric=a.metric, clgroup=a.clgroup, op=a.op, threshold=a.threshold,
             mode=a.mode, cooldown_hours=a.cooldown_hours, timeframe=a.timeframe,
             status="active",
-        ))
+        )
+        db.add(new_alert)
+        db.flush()   # alert.id для лога события
+        _log_alert_event(
+            db, alert_id=new_alert.id, user_id=user.id, event="created",
+            asset=new_alert.asset, indicator=new_alert.indicator, source=new_alert.source,
+        )
         seen.add(k)
         created += 1
     db.commit()
@@ -329,8 +403,13 @@ def update_alert(
     a = db.query(Alert).filter(Alert.id == alert_id, Alert.user_id == user.id).first()
     if not a:
         raise HTTPException(status_code=404, detail="Алерт не найден")
-    if status in ("active", "paused"):
+    if status in ("active", "paused") and status != a.status:
         a.status = status
+        _log_alert_event(
+            db, alert_id=a.id, user_id=user.id,
+            event="resumed" if status == "active" else "paused",
+            asset=a.asset, indicator=a.indicator, source=a.source,
+        )
     db.commit()
     db.refresh(a)
     return _to_out(a)
@@ -343,6 +422,12 @@ def delete_all_alerts(
 ):
     """Удалить ВСЕ алерты пользователя — массовая очистка (если случайно создал
     группу из 100). Возвращает число удалённых."""
+    # Лог 'deleted' по каждому до удаления (alert_id переживает удаление — без FK).
+    for a in db.query(Alert).filter(Alert.user_id == user.id).all():
+        _log_alert_event(
+            db, alert_id=a.id, user_id=user.id, event="deleted",
+            asset=a.asset, indicator=a.indicator, source=a.source,
+        )
     n = db.query(Alert).filter(Alert.user_id == user.id).delete(synchronize_session=False)
     db.commit()
     return {"deleted": int(n)}
@@ -357,6 +442,67 @@ def delete_alert(
     a = db.query(Alert).filter(Alert.id == alert_id, Alert.user_id == user.id).first()
     if not a:
         raise HTTPException(status_code=404, detail="Алерт не найден")
+    # Лог 'deleted' до удаления; alert_id переживёт удаление (alert_events без FK).
+    _log_alert_event(
+        db, alert_id=a.id, user_id=user.id, event="deleted",
+        asset=a.asset, indicator=a.indicator, source=a.source,
+    )
     db.delete(a)
     db.commit()
     return {"ok": True}
+
+
+# ─── История срабатываний одного алерта ─────────────────────────────────────
+
+class AlertFireOut(BaseModel):
+    id: int
+    fired_at: Optional[str] = None
+    value: Optional[float] = None
+    message_text: Optional[str] = None
+
+
+@router.get("/{alert_id}/fires", response_model=list[AlertFireOut])
+def list_alert_fires(
+    alert_id: int,
+    response: Response,
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """История срабатываний одного алерта (alert_fires), новые сверху.
+
+    Доступ: владелец алерта или admin. Общее число — в X-Total-Count.
+    """
+    a = db.query(Alert).filter(Alert.id == alert_id).first()
+    if not a:
+        raise HTTPException(status_code=404, detail="Алерт не найден")
+    if a.user_id != user.id and user.role != "admin":
+        raise HTTPException(status_code=403, detail="Нет доступа к этому алерту")
+
+    total = db.execute(
+        text("SELECT count(*) FROM alert_fires WHERE alert_id = :aid"),
+        {"aid": alert_id},
+    ).scalar() or 0
+    response.headers["X-Total-Count"] = str(int(total))
+
+    rows = db.execute(
+        text("""
+            SELECT id, fired_at, value, message_text
+            FROM alert_fires
+            WHERE alert_id = :aid
+            ORDER BY fired_at DESC
+            LIMIT :limit OFFSET :offset
+        """),
+        {"aid": alert_id, "limit": limit, "offset": offset},
+    ).mappings().all()
+
+    return [
+        AlertFireOut(
+            id=r["id"],
+            fired_at=r["fired_at"].isoformat() if r["fired_at"] else None,
+            value=float(r["value"]) if r["value"] is not None else None,
+            message_text=r["message_text"],
+        )
+        for r in rows
+    ]
