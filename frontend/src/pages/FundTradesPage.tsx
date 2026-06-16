@@ -9,7 +9,7 @@
  *
  * Источники данных: backend `/api/fund-trades/*`. Snapshot истории строится
  * скриптом `Funds/fetch_funds_realtime.py` который cron-аем дёргает раз в день.
- * Cbonds = monthly, ВИМ-парсер (WIP) = daily.
+ * Основной источник составов = monthly, ВИМ-парсер (WIP) = daily.
  *
  * Editorial design:
  *   - Card-based layout с иконками категорий

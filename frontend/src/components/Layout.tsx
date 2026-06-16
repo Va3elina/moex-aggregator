@@ -31,7 +31,7 @@ const NAV_ITEMS: { path: string; label: string; disabled?: boolean; badge?: stri
   { path: '/seasonality', label: 'Сезонность' },
   { path: '/cbr-flows', label: 'Поток капитала' },
   // Smart-money tracking — что покупают/продают БПИФ. Pro-only фича.
-  // Помечен Beta — данные накапливаются (Cbonds monthly snapshot).
+  // Помечен Beta — данные накапливаются (помесячные снапшоты составов фондов).
   { path: '/fund-trades', label: 'Покупки фондов', badge: 'Beta' },
 ];
 

@@ -467,7 +467,7 @@ export default function FundDetailModal({
                                         </div>
                                         {hasDist && (
                                             <div style={{ marginTop: 10, fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', lineHeight: 1.4 }}>
-                                                Доходность — полная, с&nbsp;учётом выплат дохода (по&nbsp;данным Cbonds).
+                                                Доходность — полная, с&nbsp;учётом выплат дохода.
                                                 График показывает цену пая — она снижается в&nbsp;даты выплат.
                                             </div>
                                         )}
