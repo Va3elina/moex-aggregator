@@ -1,15 +1,22 @@
 /**
- * PeriodSettingsPopover — шестерёнка на чипе «Период с YYYY» + якорный попап с
- * настройками этой серии: «Без выбросов» (медиана) и «Без дивидендных гэпов».
+ * PeriodSettingsPopover — шестерёнка на чипе «Период с YYYY» + попап с настройками
+ * этой серии: «Без выбросов» (медиана) и «Без дивидендных гэпов».
  *
- * Раньше эти опции были глобальными кнопками в горячем ряду и не комбинировались
- * с периодом (медиана считалась по всей истории отдельной серией). Теперь они
- * живут у каждого периода и применяются именно к нему.
+ * Раньше эти опции были глобальными кнопками и не комбинировались с периодом
+ * (медиана считалась по всей истории отдельной серией). Теперь они живут у каждого
+ * периода и применяются именно к нему.
  *
- * Паттерн open/outside-click/ESC переиспользован из Dropdown.tsx. Дивидендный
- * тоггл скрыт для инструментов без дивидендов (индексы/валюты/сырьё).
+ * Попап рендерится через ПОРТАЛ в document.body, а не absolute внутри чипа.
+ * Причина: чип имеет класс `editorial-press`, который на :hover/:active ставит
+ * `transform: translate(...)` (см. index.css). Любой transform создаёт новый
+ * stacking context, и z-index absolute-попапа оказывается заперт внутри чипа —
+ * карточка графика (ниже по DOM) рисовалась поверх попапа. Портал в body выносит
+ * попап из этого контекста; позиционируем его fixed по координатам шестерёнки.
+ *
+ * Дивидендный тоггл скрыт для инструментов без дивидендов (индексы/валюты/сырьё).
  */
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Settings2 } from 'lucide-react';
 import { ToggleRow } from '../ToggleRow';
 import type { PeriodConfig } from './periodConfig';
@@ -20,34 +27,54 @@ interface PeriodSettingsPopoverProps {
   onChange: (patch: Partial<Pick<PeriodConfig, 'median' | 'excludeDividends'>>) => void;
 }
 
+const POPOVER_WIDTH = 240;
+
 export default function PeriodSettingsPopover({ period, hasDividends, onChange }: PeriodSettingsPopoverProps) {
   const [open, setOpen] = useState(false);
-  const wrapRef = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
 
-  // Закрытие по клику вне + ESC (как в Dropdown).
+  // Позиция попапа по координатам шестерёнки (fixed → относительно viewport).
+  // Клампим по правому краю окна, чтобы не уезжал за экран.
+  const place = useCallback(() => {
+    const r = btnRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const left = Math.min(r.left, window.innerWidth - POPOVER_WIDTH - 8);
+    setPos({ top: r.bottom + 6, left: Math.max(8, left) });
+  }, []);
+
   useEffect(() => {
     if (!open) return;
-    const onClick = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
+    const onPointer = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (btnRef.current?.contains(t) || popRef.current?.contains(t)) return;
+      setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
-    document.addEventListener('mousedown', onClick);
+    document.addEventListener('mousedown', onPointer);
     document.addEventListener('keydown', onKey);
+    // Попап fixed — при скролле/ресайзе пересчитываем позицию (или закрылись бы «висеть»).
+    window.addEventListener('scroll', place, true);
+    window.addEventListener('resize', place);
     return () => {
-      document.removeEventListener('mousedown', onClick);
+      document.removeEventListener('mousedown', onPointer);
       document.removeEventListener('keydown', onKey);
+      window.removeEventListener('scroll', place, true);
+      window.removeEventListener('resize', place);
     };
-  }, [open]);
+  }, [open, place]);
 
-  // Активная настройка подсвечивает шестерёнку — видно, что серия модифицирована,
-  // не открывая попап.
+  // Активная настройка подсвечивает шестерёнку — видно, что серия модифицирована.
   const active = period.median || period.excludeDividends;
 
   return (
-    <div ref={wrapRef} className="relative inline-flex" data-export-ignore="true">
+    <>
       <button
+        ref={btnRef}
         type="button"
-        onClick={() => setOpen(o => !o)}
+        data-export-ignore="true"
+        onClick={() => { if (!open) place(); setOpen((o) => !o); }}
         className="inline-flex items-center justify-center rounded-full transition-opacity hover:opacity-100"
         style={{ opacity: active ? 1 : 0.6, color: active ? 'var(--accent)' : 'var(--text-primary)' }}
         title="Настройки периода: без выбросов / без дивидендных гэпов"
@@ -55,13 +82,18 @@ export default function PeriodSettingsPopover({ period, hasDividends, onChange }
       >
         <Settings2 size={14} />
       </button>
-      {open && (
+      {open && pos && createPortal(
         <div
-          className="absolute z-50 mt-1 p-2 rounded-xl"
+          ref={popRef}
+          data-export-ignore="true"
           style={{
-            top: '100%',
-            left: 0,
-            minWidth: 220,
+            position: 'fixed',
+            top: pos.top,
+            left: pos.left,
+            width: POPOVER_WIDTH,
+            zIndex: 1000,
+            padding: 'var(--sp-2)',
+            borderRadius: 12,
             backgroundColor: 'var(--bg-secondary)',
             border: '2px solid var(--text-primary)',
             boxShadow: 'var(--shadow-hard-chip, 4px 4px 0 var(--text-primary))',
@@ -84,8 +116,9 @@ export default function PeriodSettingsPopover({ period, hasDividends, onChange }
               onChange={(v) => onChange({ excludeDividends: v })}
             />
           )}
-        </div>
+        </div>,
+        document.body,
       )}
-    </div>
+    </>
   );
 }
