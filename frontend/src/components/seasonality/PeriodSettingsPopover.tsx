@@ -110,14 +110,14 @@ export default function PeriodSettingsPopover({ period, hasDividends, onChange }
         >
           <ToggleRow
             label="Без выбросов"
-            hint="Медиана вместо среднего — устойчива к кризисным годам"
+            hint="Считает по медиане, а не по среднему. Кризисные годы не перетягивают значение, видно типичную сезонность."
             checked={period.median}
             onChange={(v) => onChange({ median: v })}
           />
           {hasDividends && (
             <ToggleRow
               label="Без дивидендных гэпов"
-              hint="Цены с реинвестированием дивидендов (adjusted close)"
+              hint="Цены пересчитаны с учётом дивидендов. Провалы в дни отсечки не считаются падением и не искажают сезонность."
               checked={period.excludeDividends}
               onChange={(v) => onChange({ excludeDividends: v })}
             />
