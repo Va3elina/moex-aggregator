@@ -22,6 +22,7 @@ import sys
 import os
 import re
 import json
+import statistics
 import urllib.request
 from pathlib import Path
 from datetime import datetime, date, timedelta, timezone
@@ -367,14 +368,35 @@ def fetch_from_smartlab(engine) -> int:
         log.info(f"  Найдено: '{match.group(0).strip()}'")
         log.info(f"  Капитализация: {cap_value:,.0f} млрд руб")
 
-        # Валидация
+        # Валидация диапазона
         ok, msg = validate_value(cap_value)
         if not ok:
             log.error(f"  Валидация не пройдена: {msg}")
             return 0
 
-        # Сохраняем общую
         today = date.today()
+
+        # Защита от кривого снимка SmartLab: сверяем с последним известным значением.
+        # Полная капа за день так не ходит — грубый скачок (>30%) почти всегда ошибка
+        # страницы/парса → НЕ сохраняем (иначе кривой день отравляет и серию, и
+        # калибровку gap-fill: инцидент 2026-06-17, SmartLab отдал 60.8 трлн против
+        # 52.9 накануне при падающем рынке → «забор» в графике кап/ВВП). Умеренный
+        # скачок (>15%) сохраняем, но громко логируем для ручной проверки.
+        with engine.connect() as conn:
+            prev = conn.execute(text("""
+                SELECT value FROM macro_data
+                WHERE indicator = 'MARKET_CAP_TOTAL' AND period_date < :pd
+                ORDER BY period_date DESC LIMIT 1
+            """), {"pd": today}).fetchone()
+        if prev and float(prev[0]) > 0:
+            jump = abs(cap_value - float(prev[0])) / float(prev[0]) * 100
+            if jump > 30:
+                log.error(f"  Скачок {jump:.1f}% vs {float(prev[0]):,.0f} млрд — похоже на ошибку, НЕ сохраняем")
+                return 0
+            if jump > 15:
+                log.warning(f"  Скачок {jump:.1f}% vs {float(prev[0]):,.0f} млрд — сохраняю, но проверь вручную")
+
+        # Сохраняем общую
         with engine.connect() as conn:
             conn.execute(text("""
                 INSERT INTO macro_data (indicator, period_date, value, source)
@@ -705,22 +727,28 @@ def compute_total_from_candles(engine, days: int = 45) -> int:
         log.info("  compute: нет дневных свечей в окне → пропуск")
         return 0
 
-    # калибровочный множитель: последний день с реальным якорём И расчётом
+    # калибровочный множитель: МЕДИАНА по нескольким последним якорям.
+    # Раньше брался один самый свежий якорь — и одиночный кривой день SmartLab
+    # отравлял всю заливку (инцидент 2026-06-17: завышенный якорь раздул gap-fill
+    # на ~18%, в графике кап/ВВП появился «забор»). Медиана устойчива к выбросу.
     with engine.connect() as conn:
         anchors = conn.execute(text(
             "SELECT period_date, value FROM macro_data "
             "WHERE indicator='MARKET_CAP_TOTAL' AND source IN ('SMARTLAB','GURUFOCUS') "
             "AND period_date >= :cutoff ORDER BY period_date DESC"
         ), {"cutoff": cutoff}).fetchall()
-    factor = None
+    factor_pts = []
     for ad, av in anchors:
         if totals.get(ad, 0) > 0:
-            factor = float(av) / totals[ad]
-            log.info(f"  compute: множитель {factor:.4f} (якорь {ad}: SmartLab {av:,.0f} / расчёт {totals[ad]:,.0f} млрд)")
+            factor_pts.append((ad, float(av) / totals[ad]))
+        if len(factor_pts) >= 7:  # достаточно свежих якорей для устойчивой медианы
             break
-    if factor is None:
+    if not factor_pts:
         log.warning("  compute: нет SmartLab-якоря в окне для калибровки → пропуск")
         return 0
+    factor = statistics.median([f for _, f in factor_pts])
+    log.info(f"  compute: множитель {factor:.4f} (медиана по {len(factor_pts)} якорям; "
+             f"свежий {factor_pts[0][0]}={factor_pts[0][1]:.4f})")
 
     filled = 0
     with engine.begin() as conn:
