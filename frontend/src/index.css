@@ -1918,6 +1918,14 @@ a.btn-accent:active {
   to   { opacity: 1; transform: translateY(0); }
 }
 
+/* Попап настроек периода (Сезонность) — выезжает вниз из-под чипа «Период с».
+   Лёгкий drop-down: от -6px вверх к месту + fade. transform-origin top задаётся
+   на элементе. Используется в PeriodSettingsPopover.tsx. */
+@keyframes period-popover-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 /* Live-точка "данные обновляются" — расширяющийся ring effect каждые 2с.
    Используется в OverviewPage рядом с timestamp. */
 @keyframes frame-pulse {

@@ -35,11 +35,15 @@ export default function PeriodSettingsPopover({ period, hasDividends, onChange }
   const popRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
 
-  // Позиция попапа по координатам шестерёнки (fixed → относительно viewport).
-  // Клампим по правому краю окна, чтобы не уезжал за экран.
+  // Позиция попапа: выкатывается строго ВНИЗ из-под чипа «Период с» (а не из-под
+  // шестерёнки справа — иначе казалось, что он уезжает по диагонали вправо).
+  // Якорь — сам чип (.editorial-press), fixed → относительно viewport, кламп по
+  // правому краю окна.
   const place = useCallback(() => {
-    const r = btnRef.current?.getBoundingClientRect();
-    if (!r) return;
+    const gear = btnRef.current;
+    if (!gear) return;
+    const anchor = gear.closest('.editorial-press') ?? gear;
+    const r = anchor.getBoundingClientRect();
     const left = Math.min(r.left, window.innerWidth - POPOVER_WIDTH - 8);
     setPos({ top: r.bottom + 6, left: Math.max(8, left) });
   }, []);
@@ -100,6 +104,8 @@ export default function PeriodSettingsPopover({ period, hasDividends, onChange }
             display: 'flex',
             flexDirection: 'column',
             gap: 'var(--sp-2)',
+            transformOrigin: 'top left',
+            animation: 'period-popover-in 0.14s cubic-bezier(0.22, 1, 0.36, 1)',
           }}
         >
           <ToggleRow
