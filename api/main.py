@@ -38,6 +38,7 @@ from api.routers import (
     fund_trades_router,
 )
 from api.routers import stats
+from api.routers import health_monitor  # ← /api/health/data (барометр свежести, admin/X-API-Key)
 from api.routers import auth  # ← НОВОЕ: Аутентификация
 from api.routers import oauth  # ← OAuth (Google, VK, Telegram)
 from api.routers import events  # ← SSE real-time events
@@ -236,6 +237,7 @@ app.include_router(buffett_router)
 app.include_router(seasonality_router)
 app.include_router(cbr_flows_router)  # ← /api/cbr-flows/* (ОРФР ЦБ — потоки участников)
 app.include_router(csp_report_router)  # ← /api/csp-report (browser violation reports)
+app.include_router(health_monitor.router)  # ← /api/health/data (always-on, НЕ под kill-switch)
 # KILL-SWITCH: публичный API + CSV-экспорт скрыты до официального запуска.
 # По умолчанию (PUBLIC_API_CSV_ENABLED не задан) роутеры НЕ монтируются →
 # /api/export/*, /api/keys/*, /api/v1/public/* отдают 404 ДЛЯ ВСЕХ (включая
