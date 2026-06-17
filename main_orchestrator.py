@@ -348,6 +348,21 @@ def refresh_materialized_views(views: List[str] = None) -> Dict[str, Tuple[bool,
 
 async def run_script(script_key: str, args: List[str] = None, timeout: int = None) -> Tuple[bool, str, float]:
     """
+    Обёртка над _run_script_impl: после прогона пишет heartbeat в pipeline_runs
+    (единый пульс запуска для мониторинга /api/health/data). Запись best-effort —
+    сбой пульса НЕ влияет на фетч.
+    """
+    ok, msg, dur = await _run_script_impl(script_key, args, timeout)
+    try:
+        import pipeline_heartbeat
+        pipeline_heartbeat.record_pipeline_run(script_key, ok, msg, dur)
+    except Exception:
+        pass
+    return ok, msg, dur
+
+
+async def _run_script_impl(script_key: str, args: List[str] = None, timeout: int = None) -> Tuple[bool, str, float]:
+    """
     Асинхронно запускает Python скрипт.
 
     Args:

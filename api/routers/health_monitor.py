@@ -185,11 +185,35 @@ def health_data(
     md = db.execute(text("SELECT MAX(period_end_date) FROM cbr_flows")).scalar()
     sources.append(entry("cbr_flows", "manual", md))
 
+    # ── Pipeline heartbeats — статус ЗАПУСКА скриптов (не только данных) ──
+    # Пишется оркестратором/демонами через pipeline_heartbeat.record_pipeline_run.
+    # Таблицы может ещё не быть (до первого пульса) → пустой список, не падаем.
+    pipelines = []
+    try:
+        for r in db.execute(text(
+            "SELECT pipeline, last_run_at, last_success_at, last_status, "
+            "last_note, last_duration_sec FROM pipeline_runs ORDER BY pipeline"
+        )).all():
+            pipelines.append({
+                "pipeline": r.pipeline,
+                "last_run_at": r.last_run_at.isoformat() if r.last_run_at else None,
+                "last_success_at": r.last_success_at.isoformat() if r.last_success_at else None,
+                "status": r.last_status,
+                "note": (r.last_note or "")[:200],
+                "duration_sec": (round(r.last_duration_sec, 1)
+                                 if r.last_duration_sec is not None else None),
+            })
+    except Exception:
+        pipelines = []  # таблица ещё не создана (до первого heartbeat)
+
     stale = [s["name"] for s in sources if s["status"] == "stale"]
+    failed_pipelines = [p["pipeline"] for p in pipelines if p["status"] != "ok"]
     return {
         "generated_at": datetime.utcnow().isoformat() + "Z",
         "market_ref_date": market_ref.isoformat() if market_ref else None,
         "overall": "stale" if stale else "ok",
         "stale_sources": stale,
+        "failed_pipelines": failed_pipelines,
         "sources": sources,
+        "pipelines": pipelines,
     }
