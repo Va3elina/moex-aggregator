@@ -326,6 +326,18 @@ def main():
         for t, s, e in summary_err:
             print(f"    - {t} (sid {s}): {e}")
 
+    # Heartbeat: пульс запуска (host-cron скрипт, вне оркестратора). best-effort.
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        import pipeline_heartbeat
+        pipeline_heartbeat.record_pipeline_run(
+            "distributions",
+            success=(len(summary_err) == 0),
+            note=f"{len(summary_with)} funds, {total_rows} rows, {len(summary_err)} err",
+        )
+    except Exception:
+        pass
+
 
 if __name__ == "__main__":
     main()
