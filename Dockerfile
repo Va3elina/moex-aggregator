@@ -56,6 +56,7 @@ COPY Macro/ ./Macro/
 COPY Commodity/ ./Commodity/
 COPY CBR/ ./CBR/
 COPY main_orchestrator.py .
+COPY pipeline_heartbeat.py .
 COPY moex_calendar.py .
 COPY tg_bot.py .
 COPY backup_db.sh .
