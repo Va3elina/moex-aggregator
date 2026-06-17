@@ -1358,44 +1358,6 @@ export async function getFundTradesMovers(
     return resp.json();
 }
 
-export interface FundIntradayEvent {
-    timestamp: string;
-    asset_name: string;
-    change_type: 'new' | 'sold_out' | 'accumulated' | 'reduced';
-    delta_positions: number;
-    current_positions: number | null;
-    previous_positions: number | null;
-    current_weight: number | null;
-}
-
-export interface FundIntradayDetail {
-    fund: {
-        fund_id: number;
-        ticker: string;
-        name: string;
-        category: string;
-        subcategory: string | null;
-    };
-    days: number;
-    snapshots_count: number;
-    events: FundIntradayEvent[];
-    latest_timestamp: string | null;
-    earliest_timestamp?: string;
-}
-
-export async function getFundIntraday(
-    ticker: string,
-    days = 7,
-): Promise<FundIntradayDetail> {
-    const resp = await apiFetch(
-        `${API_BASE}/api/fund-trades/intraday/${encodeURIComponent(ticker)}?days=${days}`,
-    );
-    if (resp.status === 403) throw new Error('Доступно на тарифе Pro');
-    if (resp.status === 404) throw new Error(`Фонд ${ticker} не поддерживает intraday`);
-    if (!resp.ok) throw new Error('Не удалось загрузить intraday');
-    return resp.json();
-}
-
 // ─── Snapshot review API ────────────────────────────────────────
 
 export interface FundSnapshotItem {

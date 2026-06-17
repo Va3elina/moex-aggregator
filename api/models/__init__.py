@@ -13,7 +13,6 @@ from api.models.extension_token import ExtensionToken
 from api.models.telegram_link_token import TelegramLinkToken
 from api.models.alert import Alert, AlertFire, AlertEvent
 from api.models.fund_holdings_history import FundHoldingsHistory
-from api.models.fund_holdings_intraday import FundHoldingsIntraday
 
 __all__ = [
     "Instrument", "Candle", "OpenInterest",
@@ -26,5 +25,4 @@ __all__ = [
     "TelegramLinkToken",
     "Alert", "AlertFire", "AlertEvent",
     "FundHoldingsHistory",
-    "FundHoldingsIntraday",
 ]
