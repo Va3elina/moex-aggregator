@@ -1,19 +1,18 @@
 /**
  * TickerLogo — отображает логотип компании по её тикеру.
  *
- * Sprite-based: все 84 лого упакованы в один PNG (`/logos/sprite.png`)
- * + JSON-манифест с координатами (`/logos/sprite-manifest.json`).
+ * Рендер: <img> с полноразмерным PNG из `/public/logos/<ticker>.png`
+ * (исходники 256×256). Браузер масштабирует картинку под проп `size`, поэтому
+ * лого остаётся чётким при zoom-out и на retina. Раньше использовался 80px-спрайт
+ * (`sprite.png`), который мылился при дробном масштабе браузера — теперь он
+ * не используется.
  *
- * Преимущества vs отдельные файлы:
- *   - 2 HTTP-запроса вместо 70+ (sprite + manifest)
- *   - Один decode у браузера на всю коллекцию
- *   - Один объект в SW cache
- *   - 656 KB sprite vs ~3.4 MB суммы отдельных PNG
+ * `/logos/sprite-manifest.json` всё ещё грузится — но только как реестр
+ * «у какого тикера есть лого» (один fetch на всё приложение, см. singleton ниже).
+ * Набор отображаемых лого не меняется — меняется только разрешение источника.
  *
- * Render: <div> с background-image + background-position.
- * Размер картинки масштабируется через background-size пропорционально.
- *
- * Если тикера нет в манифесте → fallback circle с инициалами.
+ * Приоритет источника: INDIVIDUAL_LOGOS (Vite-import) → PNG по тикеру →
+ * fallback circle с инициалами (если тикера нет в реестре или картинка не загрузилась).
  */
 import { useEffect, useState } from 'react';
 import plzlLogo from '../assets/plzl.png';
@@ -54,12 +53,6 @@ function loadManifest(): Promise<SpriteManifest | null> {
     .then((r) => (r.ok ? r.json() : null))
     .then((m: SpriteManifest | null) => {
       cachedManifest = m;
-      // Pre-decode sprite, чтобы первый рендер не моргал
-      if (m?.sprite) {
-        const img = new Image();
-        img.decoding = 'async';
-        img.src = m.sprite;
-      }
       // Уведомляем всех подписчиков
       subscribers.forEach((fn) => fn(m));
       return m;
@@ -110,13 +103,20 @@ export default function TickerLogo({
   className = '',
 }: TickerLogoProps) {
   const manifest = useSpriteManifest();
+  const [failed, setFailed] = useState(false);
   const borderRadius = RADIUS_MAP[rounded];
   const initials = ticker.slice(0, 2).toUpperCase();
   const hue = tickerHue(ticker);
 
-  // Отдельное картиночное лого (вне спрайта)? → <img>. Приоритет над спрайтом.
+  // Источник лого: индивидуальный override (Vite-import) или полноразмерный
+  // PNG из /public/logos/<ticker>.png. Манифест используется только как реестр
+  // «у какого тикера есть лого» — набор отображаемых лого тот же, что и со
+  // спрайтом, но картинка отдаётся в исходном 256px-разрешении.
   const individual = INDIVIDUAL_LOGOS[ticker];
-  if (individual) {
+  const hasLogo = !!manifest?.logos[ticker];
+  const src = individual ?? (hasLogo ? `/logos/${ticker}.png` : null);
+
+  if (src && !failed) {
     return (
       <div
         className={`flex-shrink-0 ${className}`}
@@ -124,42 +124,16 @@ export default function TickerLogo({
         aria-label={ticker}
       >
         <img
-          src={individual}
+          src={src}
           alt={ticker}
           width={size}
           height={size}
-          style={{ width: size, height: size, objectFit: 'cover', display: 'block' }}
+          loading="lazy"
+          decoding="async"
+          onError={() => setFailed(true)}
+          style={{ width: size, height: size, objectFit: 'contain', display: 'block' }}
         />
       </div>
-    );
-  }
-
-  // Тикер в манифесте? → sprite render через background-position
-  const coords = manifest?.logos[ticker];
-  if (manifest && coords) {
-    const cell = manifest.cell;
-    const [x, y] = coords;
-    // Scale: native cell-size → требуемый size. Применяется и к bg-size, и к bg-position.
-    const scale = size / cell;
-    // Sprite размер: 10 cols × N rows (см. build-sprite.py).
-    const COLS = 10;
-    const totalLogos = Object.keys(manifest.logos).length;
-    const rows = Math.ceil(totalLogos / COLS);
-    return (
-      <div
-        className={`flex-shrink-0 ${className}`}
-        style={{
-          width: size,
-          height: size,
-          borderRadius,
-          overflow: 'hidden',
-          backgroundImage: `url(${manifest.sprite})`,
-          backgroundPosition: `-${x * scale}px -${y * scale}px`,
-          backgroundSize: `${COLS * cell * scale}px ${rows * cell * scale}px`,
-          backgroundRepeat: 'no-repeat',
-        }}
-        aria-label={ticker}
-      />
     );
   }
 
