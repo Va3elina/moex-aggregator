@@ -83,11 +83,14 @@ def health_data(
     response.headers["Cache-Control"] = "no-store"
     today = date.today()
 
-    # Пул торговых дней (holiday-proof): candles = только торг.дни.
+    # Пул торговых дней (holiday-proof). Берём из index_data по IMOEX: он
+    # торгуется каждый торговый день, а таблица маленькая (быстро). НЕ из
+    # candles — там нет индекса под begin_time-only, полный скан = десятки сек.
     tdays = [
         r.d for r in db.execute(text(
-            "SELECT DISTINCT begin_time::date AS d FROM candles "
-            "WHERE begin_time >= (CURRENT_DATE - INTERVAL '40 days') ORDER BY d"
+            "SELECT DISTINCT trade_date AS d FROM index_data "
+            "WHERE secid = 'IMOEX' AND trade_date >= (CURRENT_DATE - INTERVAL '40 days') "
+            "ORDER BY d"
         )).all()
     ]
     market_ref = tdays[-1] if tdays else None
@@ -111,24 +114,18 @@ def health_data(
 
     sources = []
 
-    # candles — пульс рынка
-    md = db.execute(text("SELECT MAX(begin_time)::date FROM candles")).scalar()
-    sources.append(entry(
-        "candles", "intraday", md,
-        entities_on_max=db.execute(text(
-            "SELECT COUNT(DISTINCT secid) FROM candles WHERE begin_time::date = :d"
-        ), {"d": md}).scalar(),
-        total_entities=db.execute(text("SELECT COUNT(DISTINCT secid) FROM candles")).scalar(),
-    ))
+    # candles (спот) — свежесть свечного пайплайна. Меряем по ОДНОМУ ликвидному
+    # secid (SBER) через индекс (secid, begin_time) — 19мс. Глобальные агрегаты
+    # по candles (MAX/COUNT DISTINCT без secid) = 8-29с (нет нужного индекса),
+    # поэтому НЕ используем. SBER торгуется каждый день → надёжный прокси.
+    md = db.execute(text(
+        "SELECT MAX(begin_time)::date FROM candles WHERE secid = 'SBER'"
+    )).scalar()
+    sources.append(entry("candles:SBER", "intraday", md))
 
-    # open_interest (физ/юр OI)
+    # open_interest (физ/юр OI) — только max (COUNT(*) по дате ~2с, не нужен)
     md = db.execute(text("SELECT MAX(tradedate) FROM open_interest")).scalar()
-    sources.append(entry(
-        "open_interest", "intraday", md,
-        rows_on_max=db.execute(text(
-            "SELECT COUNT(*) FROM open_interest WHERE tradedate = :d"
-        ), {"d": md}).scalar(),
-    ))
+    sources.append(entry("open_interest", "intraday", md))
 
     # fund_data — NAV (T+1, прогрессивный догон)
     md = db.execute(text("SELECT MAX(trade_date) FROM fund_data")).scalar()
