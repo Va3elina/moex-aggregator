@@ -8,7 +8,7 @@
  *   - Compare years, exclude dividends — Phase 4
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarDays, Lock } from 'lucide-react';
+import { CalendarDays, Lock, X } from 'lucide-react';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
 import { handleTierError } from '../../utils/tierError';
@@ -30,6 +30,7 @@ import { useOnboardingTour } from '../../hooks/useFirstVisit';
 import OnboardingTour from '../../components/onboarding/OnboardingTour';
 import { usePersistedState } from '../../hooks/usePersistedState';
 import type { TourStep } from '../../components/onboarding/OnboardingTour';
+import { type PeriodConfig, makePeriodId } from '../../components/seasonality/periodConfig';
 
 // Mobile mode: 4 API modes + локальный 'yearly' который дёргает отдельный endpoint
 // (getSeasonalityYearly) и рендерится как line chart, не bars.
@@ -46,10 +47,18 @@ const MODE_LABELS: Record<MobileMode, string> = {
 const WEEKDAY_LABELS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт'];
 const MONTH_LABELS = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'];
 
-// Максимум пользовательских серий-сравнений (compareYears + exactYears).
+// Максимум пользовательских серий-сравнений (periods + exactYears).
 // Не считая current year (accent) и среднюю (серую) на yearly — они системные.
 // Лимит 5 = 6 серий на гистограмме (base + 5 user) и 7 на yearly (base + 5 + current).
 const MAX_COMPARE_SERIES = 5;
+
+// Инструменты без дивидендов (индексы/валюты/сырьё/вечные фьючерсы) — для них
+// тоггл «Без дивидендных гэпов» бесполезен, прячем (паритет с десктопом).
+const NON_DIVIDEND_TICKERS = new Set([
+  'IMOEX', 'RTSI', 'RGBI', 'RVI', 'MCFTR', 'RGBITR', 'RUSFAR3M',
+  'GLDRUB_TOM', 'USD000UTSTOM', 'EUR_RUB__TOM', 'CNYRUB_TOM',
+  'USDRUBF', 'EURRUBF', 'CNYRUBF', 'IMOEXF',
+]);
 
 // Палитра цветов для compare-series. Accent neutral hues, без конфликта
 // с base accent (orange) и зелёный/красный (sentiment).
@@ -63,10 +72,10 @@ const COMPARE_COLORS = [
 ];
 
 export default function MobileSeasonalityPage() {
-  // Шарим desktop-ключи stock/stockName/excludeDividends/showCurrentYear (enum'ы
-  // совпадают). mode → отдельный mobileMode (mobile MobileMode шире: +'yearly';
-  // desktop держит mode+chartType раздельно). aggType → отдельный mobileAggType
-  // (на desktop нет такого ключа — там boolean showNoOutliers, формат несовместим).
+  // Шарим desktop-ключи stock/stockName/showCurrentYear (enum'ы совпадают).
+  // mode → отдельный mobileMode (mobile MobileMode шире: +'yearly'; desktop
+  // держит mode+chartType раздельно). Настройки серий (медиана / без дивгэпов)
+  // живут per-period (PeriodConfig), как и на десктопе.
   const [selectedStock, setSelectedStock] = usePersistedState<string>('frame:seasonality:stock', 'SBER');
   const [selectedName, setSelectedName] = usePersistedState<string>('frame:seasonality:stockName', 'Сбербанк');
   const [mode, setMode] = usePersistedState<MobileMode>('frame:seasonality:mobileMode', 'monthly');
@@ -76,45 +85,60 @@ export default function MobileSeasonalityPage() {
   const { showUpgrade } = useUpgradePrompt();
   // Для Free yearly — единственный доступный режим
   const histogramLocked = !seasonAccess.isLoading && !seasonAccess.canUseMode('histogram');
-  // Phase-4 фильтры:
-  const [excludeDividends, setExcludeDividends] = usePersistedState('frame:seasonality:excludeDividends', false);
-  const [aggType, setAggType] = usePersistedState<'avg' | 'median'>('frame:seasonality:mobileAggType', 'avg');
+  // Настройки «Без выбросов» (медиана) и «Без дивидендных гэпов» теперь живут
+  // у каждого периода (PeriodConfig), а не глобально. Базовая серия «Вся история»
+  // всегда среднее + с дивидендами.
   // Линия текущего года на годовом графике — можно скрыть тогглом.
   const [showCurrentYear, setShowCurrentYear] = usePersistedState('frame:seasonality:showCurrentYear', true);
 
   const [data, setData] = useState<SeasonalityResponse | null>(null);
   const [yearlyData, setYearlyData] = useState<YearlySeasonalityResponse | null>(null);
-  // compareYearlyData[i] — yearly response для compareYears[i] (с sinceYear=yr)
+  // compareYearlyData[i] — yearly response для periods[i] (с sinceYear + настройками)
   const [compareYearlyData, setCompareYearlyData] = useState<YearlySeasonalityResponse[]>([]);
   // exactYearlyData[i] — yearly response для exactYears[i]. Yearly endpoint
   // не поддерживает excludeYears → используем sinceYear=yr (approximation:
   // не «только этот год», а «с года X». См. комментарий в loadData ниже).
   const [exactYearlyData, setExactYearlyData] = useState<YearlySeasonalityResponse[]>([]);
   const [availableYears, setAvailableYears] = useState<number[]>([]);
-  // Сравнение: rolling window (с года X и позже) + single year (только X).
-  const [compareYears, setCompareYears] = useState<number[]>([]);
+  // Сравнение: rolling window (с года X и позже, со своими настройками) +
+  // single year (только X, без настроек).
+  const [periods, setPeriods] = useState<PeriodConfig[]>([]);
   const [exactYears, setExactYears] = useState<number[]>([]);
   // Histogram extra series (для каждого compareYear + exactYear).
   const [compareHistData, setCompareHistData] = useState<SeasonalityResponse[]>([]);
   const [exactHistData, setExactHistData] = useState<SeasonalityResponse[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // localStorage persist для compareYears + exactYears, per-actor.
-  // Один JSON-объект `{c: [...], e: [...]}` чтобы не плодить ключи.
+  // localStorage persist для periods + exactYears, per-actor.
+  // Новая форма `{ p: PeriodConfig[], e: number[] }`. Загрузка понимает 3 формы
+  // без падения: legacy-массив годов, старый `{c:[годы], e:[годы]}`, новый `{p,e}`.
+  // id регенерятся при загрузке — нужна только внутрисессионная стабильность.
+  const yearToPeriod = (yr: number): PeriodConfig => ({
+    id: makePeriodId(), sinceYear: yr, median: false, excludeDividends: false,
+  });
   useEffect(() => {
     if (!selectedStock) return;
     try {
       const saved = localStorage.getItem(`seasonality_compare_${selectedStock}`);
       if (saved) {
         const parsed = JSON.parse(saved);
-        setCompareYears(Array.isArray(parsed) ? parsed : parsed.c ?? []);
-        setExactYears(Array.isArray(parsed) ? [] : parsed.e ?? []);
+        if (Array.isArray(parsed)) {
+          setPeriods(parsed.map(yearToPeriod));
+          setExactYears([]);
+        } else if (Array.isArray(parsed.p)) {
+          setPeriods(parsed.p);
+          setExactYears(parsed.e ?? []);
+        } else {
+          // старая форма {c,e}
+          setPeriods((parsed.c ?? []).map(yearToPeriod));
+          setExactYears(parsed.e ?? []);
+        }
       } else {
-        setCompareYears([]);
+        setPeriods([]);
         setExactYears([]);
       }
     } catch {
-      setCompareYears([]);
+      setPeriods([]);
       setExactYears([]);
     }
   }, [selectedStock]);
@@ -124,12 +148,12 @@ export default function MobileSeasonalityPage() {
     try {
       localStorage.setItem(
         `seasonality_compare_${selectedStock}`,
-        JSON.stringify({ c: compareYears, e: exactYears }),
+        JSON.stringify({ p: periods, e: exactYears }),
       );
     } catch {
       // ignore quota errors
     }
-  }, [selectedStock, compareYears, exactYears]);
+  }, [selectedStock, periods, exactYears]);
 
   // Fetch availableYears на смену actor.
   useEffect(() => {
@@ -206,7 +230,8 @@ export default function MobileSeasonalityPage() {
           </p>
           <p>
             <strong>Сравнение с годами:</strong> «Период с года» и «Конкретный год».
-            <strong> Тогглы:</strong> Без дивидендов, Медиана.
+            У каждого периода свои настройки: <strong>Без выбросов</strong> (медиана)
+            и <strong>Без дивидендных гэпов</strong>.
           </p>
         </>
       ),
@@ -219,7 +244,7 @@ export default function MobileSeasonalityPage() {
         <>
           <p style={{ marginBottom: 6 }}>
             Сейчас переключу в <strong>Годовой</strong> режим: оранжевая линия —
-            этот год, серая — медиана всех годов истории.
+            этот год, серая — средняя по всем годам истории.
           </p>
           <p>
             Зажми палец — появится перекрестье с реальной датой и
@@ -247,42 +272,36 @@ export default function MobileSeasonalityPage() {
     () => async () => {
       try {
         setLoading(true);
-        // base filter без sinceYear — главная серия = вся доступная история.
-        // Сужение по периоду делается через compareYears / exactYears.
-        const filters = { aggType };
+        // Базовая серия = вся доступная история, среднее + с дивидендами (без настроек).
+        // Сужение и настройки (медиана / без дивгэпов) — через periods / exactYears.
         const currentYear = new Date().getFullYear();
         if (mode === 'yearly') {
-          const basePromise = getSeasonalityYearly(selectedStock, excludeDividends, filters);
-          const comparePromises = compareYears.map((yr) =>
-            getSeasonalityYearly(selectedStock, excludeDividends, { ...filters, sinceYear: yr }),
+          const basePromise = getSeasonalityYearly(selectedStock, false, {});
+          const comparePromises = periods.map((p) =>
+            getSeasonalityYearly(selectedStock, p.excludeDividends,
+              { sinceYear: p.sinceYear, aggType: p.median ? 'median' : 'avg' }),
           );
           // Для exact years на yearly endpoint — используем sinceYear=yr.
           // (yearly не имеет excludeYears support). Approximation: yearly данные
           // с year X = "период с X", не "только X". Это limitation API.
           const exactYearlyPromises = exactYears.map((yr) =>
-            getSeasonalityYearly(selectedStock, excludeDividends, { ...filters, sinceYear: yr }),
+            getSeasonalityYearly(selectedStock, false, { sinceYear: yr }),
           );
           const all = await Promise.all([basePromise, ...comparePromises, ...exactYearlyPromises]);
           setYearlyData(all[0]);
-          setCompareYearlyData(all.slice(1, 1 + compareYears.length));
-          setExactYearlyData(all.slice(1 + compareYears.length));
+          setCompareYearlyData(all.slice(1, 1 + periods.length));
+          setExactYearlyData(all.slice(1 + periods.length));
         } else {
-          const basePromise = getSeasonality(
-            selectedStock,
-            mode,
-            90,
-            excludeDividends,
-            filters,
-          );
-          // Compare series: rolling sinceYear для каждого compareYear
-          const comparePromises = compareYears.map((yr) =>
-            getSeasonality(selectedStock, mode, 90, excludeDividends, { ...filters, sinceYear: yr }),
+          const basePromise = getSeasonality(selectedStock, mode, 90, false, {});
+          // Compare series: rolling sinceYear + собственные настройки каждого периода
+          const comparePromises = periods.map((p) =>
+            getSeasonality(selectedStock, mode, 90, p.excludeDividends,
+              { sinceYear: p.sinceYear, aggType: p.median ? 'median' : 'avg' }),
           );
           // Exact series: excludeYears trick — исключаем все годы кроме target
           const exactPromises = exactYears.map((yr) => {
             const allOtherYears = availableYears.filter((y) => y !== yr && y < currentYear);
-            return getSeasonality(selectedStock, mode, 90, excludeDividends, {
-              ...filters,
+            return getSeasonality(selectedStock, mode, 90, false, {
               sinceYear: yr,
               excludeYears: allOtherYears,
             });
@@ -293,8 +312,8 @@ export default function MobileSeasonalityPage() {
             ...exactPromises,
           ]);
           setData(baseResult);
-          setCompareHistData(rest.slice(0, compareYears.length));
-          setExactHistData(rest.slice(compareYears.length));
+          setCompareHistData(rest.slice(0, periods.length));
+          setExactHistData(rest.slice(periods.length));
         }
       } catch (err) {
         console.error('Ошибка seasonality:', err);
@@ -308,7 +327,7 @@ export default function MobileSeasonalityPage() {
         setLoading(false);
       }
     },
-    [selectedStock, mode, excludeDividends, aggType, compareYears, exactYears, availableYears, showUpgrade, histogramLocked],
+    [selectedStock, mode, periods, exactYears, availableYears, showUpgrade, histogramLocked],
   );
 
   useEffect(() => {
@@ -340,10 +359,11 @@ export default function MobileSeasonalityPage() {
       color: 'var(--accent)',
       bars: data.bars.map((b) => ({ label: labelFor(b.key), value: b.avg_change, count: b.count })),
     };
-    const compare = compareYears.map((yr, i) => {
+    const compare = periods.map((p, i) => {
       const resp = compareHistData[i];
+      const mods = [p.median && 'медиана', p.excludeDividends && 'без див.'].filter(Boolean);
       return {
-        label: `с ${yr}`,
+        label: `с ${p.sinceYear}${mods.length ? ` · ${mods.join(' · ')}` : ''}`,
         color: COMPARE_COLORS[i % COMPARE_COLORS.length],
         bars: resp?.bars?.map((b) => ({ label: labelFor(b.key), value: b.avg_change, count: b.count })) ?? [],
       };
@@ -352,13 +372,13 @@ export default function MobileSeasonalityPage() {
       const resp = exactHistData[i];
       return {
         label: `${yr}`,
-        color: COMPARE_COLORS[(compareYears.length + i) % COMPARE_COLORS.length],
+        color: COMPARE_COLORS[(periods.length + i) % COMPARE_COLORS.length],
         bars: resp?.bars?.map((b) => ({ label: labelFor(b.key), value: b.avg_change, count: b.count })) ?? [],
       };
     });
     return [base, ...compare, ...exact];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, mode, compareYears, exactYears, compareHistData, exactHistData]);
+  }, [data, mode, periods, exactYears, compareHistData, exactHistData]);
 
   // Backwards-compat: bars/maxAbs для текущего render-path (single series)
   const bars = seriesGroups[0]?.bars ?? [];
@@ -369,9 +389,12 @@ export default function MobileSeasonalityPage() {
   }, [seriesGroups]);
 
   // Subtitle: показываем текущее значение фильтров под заголовком
+  // Инструменты без дивидендов: тоггл «Без дивидендных гэпов» в строке периода прячем.
+  const hasDividends = !NON_DIVIDEND_TICKERS.has(selectedStock);
+
   const filtersDesc: string[] = [MODE_LABELS[mode]];
-  if (excludeDividends) filtersDesc.push('без дивидендов');
-  if (aggType === 'median') filtersDesc.push('медиана');
+  if (periods.some((p) => p.excludeDividends)) filtersDesc.push('без дивидендов');
+  if (periods.some((p) => p.median)) filtersDesc.push('медиана');
 
   return (
     <MobileLayout
@@ -389,7 +412,7 @@ export default function MobileSeasonalityPage() {
         Icon={CalendarDays}
         title="Сезонность"
         subtitle={`${selectedName} · ${MODE_LABELS[mode]}${
-          compareYears.length === 1 ? ` · с ${compareYears[0]} г.` : ''
+          periods.length === 1 ? ` · с ${periods[0].sinceYear} г.` : ''
         }`}
         helpLink="/methodology/seasonality"
       />
@@ -405,7 +428,7 @@ export default function MobileSeasonalityPage() {
           {loading ? (
             <MobileSkeleton variant="chart" height="100%" />
           ) : mode === 'yearly' ? (
-            yearlyData ? <YearlySeasonalityChart data={yearlyData} compareData={compareYearlyData} compareYears={compareYears} exactData={exactYearlyData} exactYears={exactYears} showCurrentYear={showCurrentYear} /> : (
+            yearlyData ? <YearlySeasonalityChart data={yearlyData} compareData={compareYearlyData} periods={periods} exactData={exactYearlyData} exactYears={exactYears} showCurrentYear={showCurrentYear} /> : (
               <div style={{ display: 'grid', placeItems: 'center', height: '100%', color: 'var(--text-muted)' }}>
                 Нет данных
               </div>
@@ -537,11 +560,11 @@ export default function MobileSeasonalityPage() {
             </div>
           )}
 
-          {/* Сравнить с — multi-select для обоих режимов (histogram + yearly).
-              Два независимых типа: rolling window + конкретный год.
-              Суммарный лимит: MAX_COMPARE_SERIES (5). Не считает current+avg. */}
+          {/* Сравнить с — два независимых типа: «Период с года» (rolling, со
+              своими настройками — без выбросов / без дивгэпов) + «Конкретный год».
+              Суммарный лимит: MAX_COMPARE_SERIES (5). Не считает базовую серию. */}
           {availableYears.length > 0 && (() => {
-            const totalSelected = compareYears.length + exactYears.length;
+            const totalSelected = periods.length + exactYears.length;
             const limitReached = totalSelected >= MAX_COMPARE_SERIES;
             return (
             <>
@@ -555,36 +578,44 @@ export default function MobileSeasonalityPage() {
                   </div>
                 </div>
                 <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 10 }}>
-                  Средняя за период от выбранного года до сегодня.
+                  Средняя за период от выбранного года до сегодня. Жми год — добавить серию.
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {availableYears.map((yr) => {
-                    const selected = compareYears.includes(yr);
-                    const disabled = !selected && limitReached;
-                    return (
-                      <button
-                        key={yr}
-                        className={`fm-chip ${selected ? 'active' : ''}`}
-                        onClick={() => {
-                          if (disabled) return;
-                          setCompareYears((prev) =>
-                            prev.includes(yr) ? prev.filter((y) => y !== yr) : [...prev, yr],
-                          );
-                        }}
-                        aria-disabled={disabled}
-                        style={{
-                          flex: '0 0 auto',
-                          minWidth: 56,
-                          justifyContent: 'center',
-                          opacity: disabled ? 0.35 : 1,
-                          cursor: disabled ? 'not-allowed' : 'pointer',
-                        }}
-                      >
-                        {yr}
-                      </button>
-                    );
-                  })}
+                  {availableYears.map((yr) => (
+                    <button
+                      key={yr}
+                      className="fm-chip"
+                      onClick={() => {
+                        if (limitReached) return;
+                        setPeriods((prev) => [...prev, yearToPeriod(yr)].sort((a, b) => a.sinceYear - b.sinceYear));
+                      }}
+                      aria-disabled={limitReached}
+                      style={{
+                        flex: '0 0 auto',
+                        minWidth: 56,
+                        justifyContent: 'center',
+                        opacity: limitReached ? 0.35 : 1,
+                        cursor: limitReached ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      {yr}
+                    </button>
+                  ))}
                 </div>
+                {/* Настраиваемые строки выбранных периодов */}
+                {periods.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
+                    {periods.map((p) => (
+                      <PeriodRow
+                        key={p.id}
+                        period={p}
+                        hasDividends={hasDividends}
+                        onChange={(patch) => setPeriods((prev) => prev.map((x) => x.id === p.id ? { ...x, ...patch } : x))}
+                        onRemove={() => setPeriods((prev) => prev.filter((x) => x.id !== p.id))}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div>
@@ -622,9 +653,9 @@ export default function MobileSeasonalityPage() {
                     );
                   })}
                 </div>
-                {(compareYears.length > 0 || exactYears.length > 0) && (
+                {(periods.length > 0 || exactYears.length > 0) && (
                   <button
-                    onClick={() => { setCompareYears([]); setExactYears([]); }}
+                    onClick={() => { setPeriods([]); setExactYears([]); }}
                     style={{
                       marginTop: 12,
                       padding: '6px 16px',
@@ -649,26 +680,17 @@ export default function MobileSeasonalityPage() {
             );
           })()}
 
-          {/* Toggles row — без hints, простые лейблы */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {mode === 'yearly' && (
+          {/* Текущий год — только для годового графика (низкочастотный toggle вида).
+              «Без выбросов»/«Без дивидендов» теперь живут в строках периодов выше. */}
+          {mode === 'yearly' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <ToggleRow
                 label="Текущий год"
                 checked={showCurrentYear}
                 onChange={setShowCurrentYear}
               />
-            )}
-            <ToggleRow
-              label="Без дивидендов"
-              checked={excludeDividends}
-              onChange={setExcludeDividends}
-            />
-            <ToggleRow
-              label="Медиана"
-              checked={aggType === 'median'}
-              onChange={(v) => setAggType(v ? 'median' : 'avg')}
-            />
-          </div>
+            </div>
+          )}
         </div>
       </MobileSheet>
 
@@ -678,6 +700,72 @@ export default function MobileSeasonalityPage() {
         onClose={tour.close}
       />
     </MobileLayout>
+  );
+}
+
+// ──────────────────────────────────────────────────────────
+// Sub-component: PeriodRow — строка одного периода «С YYYY» + его настройки
+// (Без выбросов / Без дивидендных гэпов) + удаление. Дивидендный тоггл скрыт
+// для не-дивидендных инструментов.
+// ──────────────────────────────────────────────────────────
+
+function PeriodRow({
+  period,
+  hasDividends,
+  onChange,
+  onRemove,
+}: {
+  period: PeriodConfig;
+  hasDividends: boolean;
+  onChange: (patch: Partial<Pick<PeriodConfig, 'median' | 'excludeDividends'>>) => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+        padding: 12,
+        borderRadius: 12,
+        border: '1.5px solid color-mix(in srgb, var(--text-primary) 25%, transparent)',
+        background: 'var(--bg-secondary)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <span style={{ fontWeight: 800, fontSize: 'var(--fs-base)' }}>С {period.sinceYear}</span>
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label={`Убрать период с ${period.sinceYear}`}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            width: 32,
+            height: 32,
+            background: 'transparent',
+            border: 'none',
+            color: 'var(--text-secondary)',
+            cursor: 'pointer',
+          }}
+        >
+          <X size={18} />
+        </button>
+      </div>
+      <ToggleRow
+        label="Без выбросов"
+        checked={period.median}
+        onChange={(v) => onChange({ median: v })}
+      />
+      {hasDividends && (
+        <ToggleRow
+          label="Без дивидендных гэпов"
+          checked={period.excludeDividends}
+          onChange={(v) => onChange({ excludeDividends: v })}
+        />
+      )}
+    </div>
   );
 }
 
@@ -765,7 +853,7 @@ interface BarData {
   count: number;
 }
 
-// CompareGroup — series для grouped bar histogram (compareYears + exactYears).
+// CompareGroup — series для grouped bar histogram (periods + exactYears).
 interface CompareGroup {
   label: string;
   color: string;
@@ -1045,14 +1133,14 @@ const MONTH_BOUNDARIES = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'И�
 function YearlySeasonalityChart({
   data,
   compareData,
-  compareYears,
+  periods,
   exactData,
   exactYears,
   showCurrentYear,
 }: {
   data: YearlySeasonalityResponse;
   compareData: YearlySeasonalityResponse[];
-  compareYears: number[];
+  periods: PeriodConfig[];
   exactData: YearlySeasonalityResponse[];
   exactYears: number[];
   showCurrentYear: boolean;
@@ -1127,15 +1215,19 @@ function YearlySeasonalityChart({
       displayTime: p.date,
     }));
 
-    // compareYears — палитра COMPARE_COLORS с offset 0.
-    const compareSeries = compareData.map((cd, i) => ({
-      data: cd.average.map((p) => ({ time: tdToTime(p.td), value: p.avg_pct })),
-      color: COMPARE_COLORS[i % COMPARE_COLORS.length],
-      label: `с ${compareYears[i]}`,
-      axis: 'left' as const,
-      formatValue: (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`,
-      hidePill: true,
-    }));
+    // periods — палитра COMPARE_COLORS с offset 0. Подпись несёт модификаторы.
+    const compareSeries = compareData.map((cd, i) => {
+      const p = periods[i];
+      const mods = [p?.median && 'медиана', p?.excludeDividends && 'без див.'].filter(Boolean);
+      return {
+        data: cd.average.map((q) => ({ time: tdToTime(q.td), value: q.avg_pct })),
+        color: COMPARE_COLORS[i % COMPARE_COLORS.length],
+        label: `с ${p?.sinceYear}${mods.length ? ` · ${mods.join(' · ')}` : ''}`,
+        axis: 'left' as const,
+        formatValue: (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`,
+        hidePill: true,
+      };
+    });
     // exactYears — та же палитра со сдвигом, чтобы цвета не повторялись если
     // юзер выбрал и compare, и exact для разных лет. Yearly endpoint не
     // поддерживает «только этот год», и backend отдаёт sinceYear-approximation
@@ -1179,15 +1271,15 @@ function YearlySeasonalityChart({
         : []),
     ];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, compareData, compareYears, exactData, exactYears, showCurrentYear]);
+  }, [data, compareData, periods, exactData, exactYears, showCurrentYear]);
 
-  // animKey: явный re-trigger анимации при смене выбранных лет. Без него
-  // structurePart в MobileChart не ловит замену одного compareYear на другой
-  // (длина и временные крайние точки серий те же), и dasharray-replay не
-  // запускается → новая линия может остаться «застрявшей в скрытом состоянии»
-  // если animation effect ранее не зачистил dasharray. Паттерн — как у OI
-  // и Buffett mobile (фикс 762dbda и 8394cd5).
-  const animKey = `${compareYears.join(',')}|${exactYears.join(',')}|${showCurrentYear ? 'y' : 'n'}`;
+  // animKey: явный re-trigger анимации при смене периодов/настроек. Без него
+  // structurePart в MobileChart не ловит замену одного периода на другой или
+  // переключение настройки (длина и временные крайние точки серий те же), и
+  // dasharray-replay не запускается → новая линия может остаться «застрявшей
+  // в скрытом состоянии». Паттерн — как у OI и Buffett mobile (фикс 762dbda).
+  // Включаем median/excludeDividends, чтобы тоггл настройки тоже переигрывал анимацию.
+  const animKey = `${periods.map((p) => `${p.sinceYear}:${p.median ? 'm' : ''}${p.excludeDividends ? 'd' : ''}`).join(',')}|${exactYears.join(',')}|${showCurrentYear ? 'y' : 'n'}`;
 
   return (
     <MobileChart
