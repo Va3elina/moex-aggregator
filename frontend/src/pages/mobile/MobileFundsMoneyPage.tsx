@@ -8,6 +8,7 @@
  *   - Притоки-Оттоки и таблица фондов — Phase 4
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Wallet, Lock, Bell } from 'lucide-react';
 import { useTierAccess, useCommonFeatures } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
@@ -55,7 +56,14 @@ export default function MobileFundsMoneyPage() {
   // Шарим desktop-ключи category/viewMode/flowTimeframe (записываемые наборы
   // совпадают). period → отдельный mobilePeriod: desktop frame:funds:period
   // реально пишет 3m/1y/3y (clamp FLOW_MIN_PERIODS), которых нет в mobile-чипах.
+  const [searchParams] = useSearchParams();
   const [category, setCategory] = usePersistedState<FundCategory>('frame:funds:category', 'money_market');
+  // Диплинк из Telegram-сигнала: ?category= преселектит раздел на маунте.
+  useEffect(() => {
+    const c = searchParams.get('category');
+    if (c && ['money_market', 'stocks', 'bonds', 'gold', 'yuan'].includes(c)) setCategory(c as FundCategory);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [period, setPeriod] = usePersistedState<FundPeriod>('frame:funds:mobilePeriod', '1m');
   // По умолчанию — Притоки-Оттоки: даёт юзеру сразу actionable signal
   // (приток/отток денег за день/неделю/месяц), а не статичный график СЧА.

@@ -65,6 +65,19 @@ def _oi_url(a) -> str:
     return f"{SITE}/oi?" + urllib.parse.urlencode(params)
 
 
+_FUND_CATEGORIES = {"money_market", "stocks", "bonds", "gold", "yuan"}
+
+
+def _funds_url(a) -> str:
+    """Диплинк на /funds-money. Страница категорийная (один раздел за раз): если
+    сигнал по конкретной категории — преселектим её через ?category=. 'all'/'custom'
+    (набор фондов из разных категорий) страница показать не умеет → без преселекта.
+    Фронт читает ?category= на маунте обеих страниц фондов."""
+    if a.asset in _FUND_CATEGORIES:
+        return f"{SITE}/funds-money?category={a.asset}"
+    return f"{SITE}/funds-money"
+
+
 def _parse_fund_ids(raw) -> list | None:
     """CSV из fund_id (колонка alerts.fund_ids) → list[int]; пусто/None → None.
     None = таргет задаётся через a.asset (категория или 'all'), а не явный набор.
@@ -164,7 +177,7 @@ def build_keyboard(a: Alert) -> dict:
     Строка 1 — ссылка на график; строка 2 — действия (once → 'Включить снова',
     repeat → 'Пауза'), + 'Удалить'."""
     # Ссылка кнопки по источнику: fund-алерт ведёт на /funds-money, OI — на /oi.
-    open_url = (f"{SITE}/funds-money" if a.indicator == "funds_flow"
+    open_url = (_funds_url(a) if a.indicator == "funds_flow"
                 else _oi_url(a))
     open_btn = {"text": "📈 Открыть график", "url": open_url}
     if a.mode == "once":
@@ -287,7 +300,7 @@ def format_msg(a: Alert, value: float, ctx: dict) -> str:
         # asset_name мог быть пуст. Ссылка на /funds-money. Главное в тексте —
         # ×N + направление (приток/отток), в стиле oi_move.
         label = a.asset_name or _FUND_CAT_NAME.get(a.asset, a.asset)
-        funds_link = f'<a href="{SITE}/funds-money">открыть график →</a>'
+        funds_link = f'<a href="{_funds_url(a)}">открыть график →</a>'
         funds_head = f"{_ce(*_EMO_SIGNAL)} <b>{_MARK}</b>\n<b>{label}</b>"
         up = ctx.get("direction") == "up"
         flow_word = "ПРИТОК" if up else "ОТТОК"
