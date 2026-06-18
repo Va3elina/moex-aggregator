@@ -176,9 +176,23 @@ def build_keyboard(a: Alert) -> dict:
     return {"inline_keyboard": [[open_btn], [action_btn, delete_btn]]}
 
 
-# Нейтральный плейсхолдер-маркер вместо эмодзи/стикеров (фирменный добавим позже).
-# Одна строка-заголовок без эмодзи и хэштегов — единый «шильдик» всех алертов.
+# Фирменный «шильдик» всех алертов: кастом-эмодзи Frame + текст.
 _MARK = "СИГНАЛ ФРЕЙМ"
+
+
+# Кастом-эмодзи Frame в HTML-режиме (alert_notify шлёт с parse_mode=HTML).
+# ph — emoji-фолбэк, который видят не-Premium получатели. id из пака
+# t.me/addemoji/Frametool (вытащены через getStickerSet, 2026-06-17).
+def _ce(eid: str, ph: str) -> str:
+    return f'<tg-emoji emoji-id="{eid}">{ph}</tg-emoji>'
+
+
+_EMO_SIGNAL = ("5454063456045012758", "🔔")   # «сигнал» — заголовок
+_EMO_UP     = ("5454034507965444800", "📈")   # рост / приток
+_EMO_DOWN   = ("5454074292247499750", "⛔️")   # падение / отток
+_EMO_OI     = ("5454099499410561256", "🔄")   # открытые позиции
+_EMO_FUNDS  = ("5454114055054728462", "💼")   # фонды
+_EMO_PRICE  = ("5454013243582356952", "💵")   # цена
 
 # Человекочитаемые имена категорий фондов (зеркало CATEGORY_INDEX_MAP в API).
 # Юань не включён — на сайте «Скоро».
@@ -221,7 +235,7 @@ def _leg_phrase(direction: str, legs: dict) -> str:
 def format_msg(a: Alert, value: float, ctx: dict) -> str:
     name = a.asset_name or a.asset
     link = f'<a href="{_oi_url(a)}">открыть график →</a>'
-    head = f"<b>{_MARK}</b>\n<b>{name} · {a.asset}</b>"
+    head = f"{_ce(*_EMO_SIGNAL)} <b>{_MARK}</b>\n<b>{name} · {a.asset}</b>"
     thr = float(a.threshold)
     # Таймфрейм-пометка для OI-сигналов: при 5m/1h уточняем, что net взят из
     # внутридневного бара (иначе при разных ТФ на один актив — путаница). И
@@ -234,7 +248,7 @@ def format_msg(a: Alert, value: float, ctx: dict) -> str:
         eod = "\n<i>(дневная свеча — у актива нет внутридневных данных)</i>" \
             if ctx.get("interval") == 24 else ""
         return (f"{head}\n"
-                f"Цена {word} отметку {thr:g} ₽ — сейчас {value:g} ₽{eod}\n{link}")
+                f"{_ce(*_EMO_PRICE)} Цена {word} отметку {thr:g} ₽ — сейчас {value:g} ₽{eod}\n{link}")
     # Принцип текста (правка Вадима): ГЛАВНОЕ — насколько аномально (×N к обычному
     # дневному шагу) и в какую сторону (вырос/упал). Число контрактов УБРАНО из
     # сообщения как второстепенное; методология («за 14 дней») вынесена из текста.
@@ -242,26 +256,30 @@ def format_msg(a: Alert, value: float, ctx: dict) -> str:
         clg = "Физлица" if (a.clgroup or "FIZ") == "FIZ" else "Юрлица"
         diff = ctx.get("last_diff", 0)
         word = "резко нарастили позицию" if diff > 0 else "резко сократили позицию"
-        return (f"{head} — открытые позиции\n"
-                f"{clg} {word} — аномально резкий дневной сдвиг.\n{link}")
+        dir_emo = _ce(*_EMO_UP) if diff > 0 else _ce(*_EMO_DOWN)
+        return (f"{head} — {_ce(*_EMO_OI)} открытые позиции\n"
+                f"{dir_emo} {clg} {word} — аномально резкий дневной сдвиг.\n{link}")
     if a.indicator == "oi_move":
         direction = ctx.get("direction", "up")
+        dir_emo = _ce(*_EMO_UP) if direction == "up" else _ce(*_EMO_DOWN)
         if ctx.get("neutral"):
             # clgroup ALL — без субъекта физ/юр.
             move = "выросли" if direction == "up" else "упали"
-            return (f"{head} — открытые позиции{tf_note}\n"
-                    f"Позиции резко {move} — в {value:g}× резче обычного (порог {thr:g}×).\n{link}")
+            return (f"{head} — {_ce(*_EMO_OI)} открытые позиции{tf_note}\n"
+                    f"{dir_emo} Позиции резко {move} — в {value:g}× резче обычного (порог {thr:g}×).\n{link}")
         clg = "Физлица" if (a.clgroup or "FIZ") == "FIZ" else "Юрлица"
         word = "резко нарастили позицию" if direction == "up" else "резко сократили позицию"
-        return (f"{head} — открытые позиции{tf_note}\n"
-                f"{clg} {word} — в {value:g}× резче обычного (порог {thr:g}×).\n{link}")
+        return (f"{head} — {_ce(*_EMO_OI)} открытые позиции{tf_note}\n"
+                f"{dir_emo} {clg} {word} — в {value:g}× резче обычного (порог {thr:g}×).\n{link}")
     if a.indicator == "oi_participants":
         clg = "физлиц" if (a.clgroup or "FIZ") == "FIZ" else "юрлиц"
         npart = ctx.get("current_npart")
-        flow = "Приток" if ctx.get("direction") == "up" else "Отток"
+        up = ctx.get("direction") == "up"
+        flow = "Приток" if up else "Отток"
+        dir_emo = _ce(*_EMO_UP) if up else _ce(*_EMO_DOWN)
         ctx_line = f" Сейчас {npart:,} участников." if npart else ""
-        return (f"{head} — открытые позиции{tf_note}\n"
-                f"{flow} {clg} — в {value:g}× резче обычного (порог {thr:g}×).{ctx_line}\n{link}")
+        return (f"{head} — {_ce(*_EMO_OI)} открытые позиции{tf_note}\n"
+                f"{dir_emo} {flow} {clg} — в {value:g}× резче обычного (порог {thr:g}×).{ctx_line}\n{link}")
     if a.indicator == "funds_flow":
         # «Аномальный поток» по выбранному набору фондов. Заголовок из метки
         # выбора (a.asset_name: «Все фонды» / «Акции, Облигации» / «N фондов» /
@@ -270,10 +288,12 @@ def format_msg(a: Alert, value: float, ctx: dict) -> str:
         # ×N + направление (приток/отток), в стиле oi_move.
         label = a.asset_name or _FUND_CAT_NAME.get(a.asset, a.asset)
         funds_link = f'<a href="{SITE}/funds-money">открыть график →</a>'
-        funds_head = f"<b>{_MARK}</b>\n<b>{label}</b>"
-        flow_word = "ПРИТОК" if ctx.get("direction") == "up" else "ОТТОК"
-        return (f"{funds_head} — притоки-оттоки\n"
-                f"Резкий {flow_word} — в {value:g}× больше обычного (порог {thr:g}×).\n{funds_link}")
+        funds_head = f"{_ce(*_EMO_SIGNAL)} <b>{_MARK}</b>\n<b>{label}</b>"
+        up = ctx.get("direction") == "up"
+        flow_word = "ПРИТОК" if up else "ОТТОК"
+        dir_emo = _ce(*_EMO_UP) if up else _ce(*_EMO_DOWN)
+        return (f"{funds_head} — {_ce(*_EMO_FUNDS)} притоки-оттоки\n"
+                f"{dir_emo} Резкий {flow_word} — в {value:g}× больше обычного (порог {thr:g}×).\n{funds_link}")
     return f"{head}\nАлерт сработал.\n{link}"
 
 
