@@ -1,6 +1,7 @@
 import React from 'react';
 import { ArrowDown, ArrowUp, Lock, AlertCircle } from 'lucide-react';
-import { resolveFundLogo, stripUkName } from '../../config/fundConfig';
+import { resolveFundLogo, stripUkName, SUBCATEGORY_HELP } from '../../config/fundConfig';
+import HelpTooltip from '../HelpTooltip';
 import type { FundInfo, FundsChartResponse } from '../../services/api';
 import { useUpgradePrompt } from '../tier/UpgradeModal';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
@@ -213,6 +214,11 @@ export default function FundsTable({
                                                             {subcat}
                                                         </span>
                                                         <span className="text-xs text-theme-secondary">({groupFunds.length})</span>
+                                                        {subcat && SUBCATEGORY_HELP[subcat] && (
+                                                            <span className="inline-flex" onClick={(e) => e.stopPropagation()}>
+                                                                <HelpTooltip content={SUBCATEGORY_HELP[subcat]} size={14} />
+                                                            </span>
+                                                        )}
                                                         {subcat && COMING_SOON_SUBCATS.has(subcat) && (
                                                             <span className="rounded-full shrink-0" style={{ fontSize: 'var(--fs-2xs)', padding: 'calc(var(--sp-1)) var(--sp-2)', background: 'var(--accent)', color: 'var(--text-inverse)', fontWeight: 700 }}>
                                                                 Скоро
