@@ -6,8 +6,9 @@ import type { FundsFlowsResponse, FundCategory } from '../../services/api';
 import { CHART_COLORS, GRID, CROSSHAIR } from '../../config/chartTheme';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import ChartWatermark from '../ChartWatermark';
-import ChartLegend from '../chart/ChartLegend';
 import ChartNavigator from '../ChartNavigator';
+import { legendFontSize } from '../chart/chartTypography';
+import { useViewportWidth } from '../../hooks/useViewportWidth';
 import { ChartTooltip, TooltipRow } from '../chart';
 import { computeChartTopLineY, getDatePillStyle } from '../chart/datePillLayout';
 
@@ -34,12 +35,10 @@ interface FlowsHistogramProps {
     onMouseLeave: () => void;
     onSetHoveredAnnotation: (date: string | null) => void;
     onSetFlowNavRange: React.Dispatch<React.SetStateAction<[number, number]>>;
-    /** Текст legend'а для положительных баров (например «Приток в фонды денежного рынка»).
-     *  Единица «млрд» теперь стоит на верхнем тике правой оси, а не в легенде.
-     *  Если не задан — default «Приток». */
-    inflowLabel?: string;
-    /** Текст legend'а для отрицательных баров (например «Отток из фондов денежного рынка»). Если не задан — default «Отток». */
-    outflowLabel?: string;
+    /** Обобщающий заголовок графика (например «Чистые притоки и оттоки из фондов
+     *  облигаций (млрд ₽)»). Заменяет прежнюю двухпунктовую легенду приток/отток.
+     *  Если не задан — default «Чистые притоки и оттоки (млрд ₽)». */
+    flowTitle?: string;
 }
 
 export default function FlowsHistogram({
@@ -62,12 +61,12 @@ export default function FlowsHistogram({
     onMouseLeave,
     onSetHoveredAnnotation,
     onSetFlowNavRange,
-    inflowLabel = 'Приток',
-    outflowLabel = 'Отток',
+    flowTitle = 'Чистые притоки и оттоки (млрд ₽)',
 }: FlowsHistogramProps) {
     // На мобиле уменьшаем количество X-tick'ов чтобы даты не накладывались
     // (формат "29 окт. 25 г." ≈ 70px на 10px шрифте → 6 шт. = 420px > 343px viewport).
     const isMobile = useIsMobile();
+    const vw = useViewportWidth();
 
     // Стабильная ссылка на data для ChartNavigator — иначе на каждый render
     // .map() создаёт новый массив → внутренний useEffect([data]) сбрасывает selFrac,
@@ -131,17 +130,11 @@ export default function FlowsHistogram({
             )}
             {/* Гистограмма притоков/оттоков */}
             <div>
-                {/* Легенда — SVG-based для pixel-perfect dot↔text alignment */}
-                <div style={{ marginBottom: 'var(--chart-legend-mb, 16px)' }}>
-                    <ChartLegend
-                        items={[
-                            { color: 'var(--funds-flow-positive)', label: inflowLabel },
-                            { color: 'var(--funds-flow-negative)', label: outflowLabel },
-                        ]}
-                        fontWeight={600}
-                        gap={20}
-                        style={{ color: 'var(--text-primary)' }}
-                    />
+                {/* Заголовок графика — одно обобщающее название вместо двухпунктовой легенды */}
+                <div style={{ marginBottom: 'var(--chart-legend-mb, 16px)', display: 'flex', justifyContent: 'center' }}>
+                    <span className="font-semibold text-theme-primary" style={{ fontSize: legendFontSize(vw) }}>
+                        {flowTitle}
+                    </span>
                 </div>
 
                 {/* График с тултипом */}
@@ -441,16 +434,13 @@ export default function FlowsHistogram({
                                 {ticks.map((val, i) => {
                                     const yPct = 50 - (val / maxAbs) * 47;
                                     const label = val === 0 ? '0' : `${val > 0 ? '+' : ''}${Math.abs(val) >= 0.1 ? val.toFixed(1) : val.toFixed(2)}`;
-                                    // Единица измерения — только у верхнего тика (max), сразу
-                                    // после числа тем же шрифтом. Заменяет «, млрд руб» в легенде.
-                                    const display = i === 0 ? `${label} млрд` : label;
                                     return (
                                         <div key={`label-${i}`}
                                             className="absolute"
-                                            style={{ top: `${yPct}%`, left: 12, transform: 'translateY(-50%)', whiteSpace: 'nowrap' }}
+                                            style={{ top: `${yPct}%`, left: 12, transform: 'translateY(-50%)' }}
                                         >
                                             <span className="font-semibold" style={{ fontSize: 'var(--chart-font-y, 16px)', color: 'var(--axis-color, #9CA3B8)' }}>
-                                                {display}
+                                                {label}
                                             </span>
                                         </div>
                                     );

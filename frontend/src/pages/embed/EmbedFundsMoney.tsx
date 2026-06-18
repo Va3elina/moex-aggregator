@@ -277,8 +277,7 @@ export default function EmbedFundsMoney() {
                 formatSecondaryValue={fmtNav}
                 formatSecondaryAxis={fmtNav}
                 primaryLabel="Индекс"
-                secondaryLabel="Суммарная СЧА"
-                secondaryAxisUnit="млрд"
+                secondaryLabel="Суммарная СЧА (млрд ₽)"
                 showValueHeader={false}
                 legendPosition="top"
                 showDownloadButton={false}
@@ -294,13 +293,12 @@ export default function EmbedFundsMoney() {
         ) : (
           <>
             {/* Компактные pad-override: страница рассчитана на ~100px паддинги,
-                в узкой панели Y-подписи/даты клипают — ужимаем left/right.
-                right=78 (не 55): на верхнем тике правой оси теперь стоит «N млрд». */}
+                в узкой панели Y-подписи/даты клипают — ужимаем left/right. */}
             <div
               style={{
                 ['--chart-height' as string]: `${flowsChartH}px`,
                 ['--chart-pad-left' as string]: '70px',
-                ['--chart-pad-right-single' as string]: '78px',
+                ['--chart-pad-right-single' as string]: '55px',
               }}
             >
               {flowsStatus !== 'error' && (
@@ -316,8 +314,7 @@ export default function EmbedFundsMoney() {
                   hiddenTickers={undefined}
                   allTickers={undefined}
                   category={category}
-                  inflowLabel={`Приток в фонды ${genitive}`}
-                  outflowLabel={`Отток из фондов ${genitive}`}
+                  flowTitle={`Чистые притоки и оттоки из фондов ${genitive} (млрд ₽)`}
                   loading={flowsStatus === 'loading'}
                   flowContainerRef={flowContainerRef}
                   flowChartRef={flowChartRef}
