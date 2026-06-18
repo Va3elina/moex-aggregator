@@ -33,8 +33,9 @@ export interface ChartLegendItem {
     opacity?: number;
     /** Текст color override (default — currentColor наследуется от parent) */
     textColor?: string;
-    /** Форма маркера: 'dot' (кружок, default) или 'dash' (горизонтальное тире). */
-    marker?: 'dot' | 'dash';
+    /** Форма маркера: 'dot' (кружок, default), 'dash' (горизонтальное тире) или
+     *  'none' (без маркера — например для одиночного заголовка-легенды). */
+    marker?: 'dot' | 'dash' | 'none';
 }
 
 interface Props {
@@ -89,13 +90,15 @@ export default function ChartLegend({
         const totalH = Math.max(effectiveDot, Math.ceil(effectiveFs * 1.35));
         return items.map((it) => {
             const textW = measureText(it.label, effectiveFs, fontWeight);
+            // marker 'none' → текст без отступа под маркер (одиночный заголовок).
+            const markerW = it.marker === 'none' ? 0 : effectiveDot + itemGap;
             // +1px sub-pixel safety — на retina измерение может округляться вниз,
             // glyph рендерится с tiny extra width → clipping. +1 убирает риск.
-            const totalW = effectiveDot + itemGap + Math.ceil(textW) + 1;
-            return { ...it, totalW, totalH };
+            const totalW = markerW + Math.ceil(textW) + 1;
+            return { ...it, totalW, totalH, markerW };
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [items.map((i) => `${i.color}|${i.label}|${i.opacity ?? 1}|${i.textColor ?? ''}`).join('||'), effectiveFs, fontWeight, effectiveDot, itemGap]);
+    }, [items.map((i) => `${i.color}|${i.label}|${i.opacity ?? 1}|${i.textColor ?? ''}|${i.marker ?? 'dot'}`).join('||'), effectiveFs, fontWeight, effectiveDot, itemGap]);
 
     const containerStyle: React.CSSProperties = {
         display: 'flex',
@@ -121,7 +124,7 @@ export default function ChartLegend({
                 >
                     {/* Маркер — dot (кружок) или dash (горизонтальное тире).
                         Оба вписаны в квадрат effectiveDot, center y = totalH/2. */}
-                    {it.marker === 'dash' ? (
+                    {it.marker === 'none' ? null : it.marker === 'dash' ? (
                         <rect
                             x={0}
                             y={it.totalH / 2 - Math.max(2, effectiveDot * 0.2) / 2}
@@ -146,7 +149,7 @@ export default function ChartLegend({
                         overflow="visible" на parent svg — descender Cyrillic ("р", "у", "ц")
                         не клипается на retina sub-pixel rendering. */}
                     <text
-                        x={effectiveDot + itemGap}
+                        x={it.markerW}
                         y={it.totalH / 2}
                         dominantBaseline="central"
                         fill={it.textColor || 'currentColor'}
