@@ -12,6 +12,7 @@ MVP: метрики 'price' (фьючерсы) + 'oi_zscore'. Когда 🔔 п
 добавить ветки цены (candles по sec_id / index_data) в compute_value.
 """
 import os
+import urllib.parse
 from datetime import datetime, timezone
 
 from dotenv import load_dotenv
@@ -41,6 +42,27 @@ _OP_PRICE = {"cross_up": "↑ пересекла", "cross_down": "↓ перес
 # поведение (дневная публикация); 5m/1h — раннее срабатывание ТОГО ЖЕ дневного
 # сигнала по последнему внутридневному бару (свежесть ≤5мин / ≤1ч).
 _TF_INTERVAL = {"5m": 5, "1h": 60, "1d": 24}
+
+
+def _oi_url(a) -> str:
+    """Диплинк на /oi с контекстом сигнала: актив + физ/юр + таймфрейм + режим/
+    вариант — чтобы страница (вкл. мобилку) открылась ровно в том виде, о котором
+    пришёл сигнал, а не на дефолтном Сбербанке. Фронт читает эти параметры в
+    parseOiDeepLink (frontend/src/utils/oiDeepLink.ts)."""
+    params = [("instrument", a.asset)]
+    if a.clgroup in ("FIZ", "YUR"):
+        params.append(("clgroup", a.clgroup))
+    iv = _TF_INTERVAL.get(a.timeframe or "1d")
+    if iv:
+        params.append(("interval", str(iv)))
+    if a.indicator == "oi_participants":
+        params.append(("mode", "participants"))
+    elif a.indicator == "price":
+        params.append(("mode", "price"))
+    else:  # oi_move / oi_zscore — чистые позиции
+        params.append(("mode", "positions"))
+        params.append(("variant", "net"))
+    return f"{SITE}/oi?" + urllib.parse.urlencode(params)
 
 
 def _parse_fund_ids(raw) -> list | None:
@@ -143,7 +165,7 @@ def build_keyboard(a: Alert) -> dict:
     repeat → 'Пауза'), + 'Удалить'."""
     # Ссылка кнопки по источнику: fund-алерт ведёт на /funds-money, OI — на /oi.
     open_url = (f"{SITE}/funds-money" if a.indicator == "funds_flow"
-                else f"{SITE}/oi?instrument={a.asset}")
+                else _oi_url(a))
     open_btn = {"text": "📈 Открыть график", "url": open_url}
     if a.mode == "once":
         # после срабатывания once-алерт станет status='fired' → нужно r:<id>
@@ -198,7 +220,7 @@ def _leg_phrase(direction: str, legs: dict) -> str:
 
 def format_msg(a: Alert, value: float, ctx: dict) -> str:
     name = a.asset_name or a.asset
-    link = f'<a href="{SITE}/oi?instrument={a.asset}">открыть график →</a>'
+    link = f'<a href="{_oi_url(a)}">открыть график →</a>'
     head = f"<b>{_MARK}</b>\n<b>{name} · {a.asset}</b>"
     thr = float(a.threshold)
     # Таймфрейм-пометка для OI-сигналов: при 5m/1h уточняем, что net взят из

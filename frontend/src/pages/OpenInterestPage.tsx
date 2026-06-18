@@ -31,6 +31,7 @@ import { oiTourSteps } from '../data/tours/oi';
 import { formatPrice } from '../utils/formatNumber';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 import { oiTierResolver } from '../utils/tierError';
+import { parseOiDeepLink } from '../utils/oiDeepLink';
 import AlertBellButton from '../components/alerts/AlertBellButton';
 import { ALERTS_ENABLED } from '../config/alertsConfig';
 import { useTierAccess } from '../contexts/TierFeaturesContext';
@@ -162,6 +163,18 @@ export default function OpenInterestPage() {
   const [showExpirations, setShowExpirations] = usePersistedState('frame:oi:showExpirations', false);
   const [showPrice, setShowPrice] = usePersistedState('frame:oi:showPrice', true);
   const [period, setPeriod] = usePersistedState<Period>('frame:oi:period', getDefaultPeriod('1y', isAuthenticated) as Period);
+
+  // Контекст сигнала из URL (Telegram deep-link) — применяем ОДИН раз на маунте,
+  // чтобы открыть ОИ ровно в том виде, о котором пришёл сигнал (физ/юр, режим,
+  // вариант, таймфрейм). Инструмент уже инициализируется из ?instrument= выше.
+  useEffect(() => {
+    const dl = parseOiDeepLink(searchParams);
+    if (dl.clgroup) setClgroup(dl.clgroup);
+    if (dl.interval) setIntervalValue(dl.interval);
+    if (dl.displayMode) setDisplayMode(dl.displayMode);
+    if (dl.oiVariant) setOiVariant(dl.oiVariant);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // showOi: в режиме 'price' открытый интерес не запрашиваем. Поднято сюда из
   // прежнего места ниже — нужно фетчеру useIndicatorData.

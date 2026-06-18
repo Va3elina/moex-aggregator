@@ -13,6 +13,7 @@
  *   - Экспирации, толкование тура — Phase 4
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { BarChart3 } from 'lucide-react';
 import MobileLayout from '../../components/mobile/MobileLayout';
 import MobilePageHeader from '../../components/mobile/MobilePageHeader';
@@ -21,7 +22,7 @@ import MobileSheet from '../../components/mobile/MobileSheet';
 import MobileAssetSearch from '../../components/mobile/MobileAssetSearch';
 import OptionHelp from '../../components/OptionHelp';
 import { OI_VARIANT_HELP } from '../../data/oiVariantHelp';
-import { getChartData } from '../../services/api';
+import { getChartData, getInstrument } from '../../services/api';
 import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
 import { handleTierError, oiTierResolver } from '../../utils/tierError';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
@@ -33,6 +34,7 @@ import { getDefaultPeriod } from '../../config/accessControl';
 import { useOnboardingTour } from '../../hooks/useFirstVisit';
 import OnboardingTour, { type TourStep } from '../../components/onboarding/OnboardingTour';
 import { usePersistedState } from '../../hooks/usePersistedState';
+import { parseOiDeepLink } from '../../utils/oiDeepLink';
 
 type Period = '1d' | '1w' | '1m' | '1y' | '5y' | 'all';
 type OIVariant = 'oi' | 'long' | 'short' | 'both' | 'net';
@@ -93,8 +95,13 @@ export default function MobileOpenInterestPage() {
   const oiAccess = useTierAccess('open_interest');
 
   // State
-  const [selectedInstrument, setSelectedInstrument] = useState('SR');
-  const [instrumentName, setInstrumentName] = useState('Сбербанк');
+  // Diplink из Telegram-сигнала: ?instrument= (+ контекст применяется ниже).
+  // Раньше на мобилке URL не читался вовсе → актив всегда был дефолтный 'SR'.
+  const [searchParams] = useSearchParams();
+  const [selectedInstrument, setSelectedInstrument] = useState(
+    () => searchParams.get('instrument') || 'SR');
+  const [instrumentName, setInstrumentName] = useState(
+    () => (searchParams.get('instrument') ? '' : 'Сбербанк'));
   // Шарим desktop-ключи OI (enum'ы побайтово идентичны, формат JSON совместим;
   // instrument — ИСКЛЮЧЕНИЕ, см. ниже). displayMode → отдельный mobile-ключ
   // (у desktop 3-е значение 'price', которого нет в mobile-UI).
@@ -103,6 +110,30 @@ export default function MobileOpenInterestPage() {
   const [clgroup, setClgroup] = usePersistedState<'FIZ' | 'YUR'>('frame:oi:clgroup', 'YUR');
   const [oiVariant, setOiVariant] = usePersistedState<OIVariant>('frame:oi:oiVariant', 'net');
   const [displayMode, setDisplayMode] = usePersistedState<DisplayMode>('frame:oi:mobileDisplayMode', 'positions');
+
+  // Актив пришёл из URL (?instrument=) → имя пустое, резолвим через API (как на
+  // десктопе). Выбор из пикера ставит имя сам → guard `if (instrumentName)` не мешает.
+  useEffect(() => {
+    if (instrumentName) return;
+    let cancelled = false;
+    getInstrument(selectedInstrument).then((inst) => {
+      if (!cancelled) setInstrumentName(inst?.name || selectedInstrument);
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedInstrument]);
+
+  // Контекст сигнала из URL — один раз на маунте (физ/юр, режим, вариант,
+  // таймфрейм). Режима 'price' на мобилке нет → пропускаем.
+  useEffect(() => {
+    const dl = parseOiDeepLink(searchParams);
+    if (dl.clgroup) setClgroup(dl.clgroup);
+    if (dl.interval) setIntervalValue(dl.interval);
+    if (dl.displayMode && dl.displayMode !== 'price') setDisplayMode(dl.displayMode);
+    if (dl.oiVariant) setOiVariant(dl.oiVariant);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const [data, setData] = useState<ChartResponse | null>(null);
   const [loading, setLoading] = useState(true);
   // Stale-guard против out-of-order-гонки: при быстром переборе актива/интервала
