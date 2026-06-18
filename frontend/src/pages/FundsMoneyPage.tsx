@@ -633,14 +633,14 @@ export default function FundsMoneyPage() {
                 />
                 </div>
 
-                {/* Режим: СЧА / Притоки-оттоки — горизонтальный переключатель */}
+                {/* Режим: Притоки-оттоки / СЧА — горизонтальный переключатель */}
                 <div data-tour="funds-view-mode" style={{ order: 1 }}>
                 <SegmentedControl<ViewMode>
                     options={[
-                        { key: 'aum',   label: 'СЧА' },
                         // Потоки для free недоступны целиком (лимит 180д vs ≥1Г + дневной
                         // ТФ=Pro) → показываем замок, а не «кликабельно но сразу 403».
                         { key: 'flows', label: 'Притоки-Оттоки', locked: !fundsAccess.isLoading && !flowsTierOk },
+                        { key: 'aum',   label: 'СЧА' },
                     ]}
                     value={viewMode}
                     onChange={(m) => {
