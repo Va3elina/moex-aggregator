@@ -4,8 +4,8 @@
 -- Новая схема:               Короткие / Средние / Длинные (+ Авторские без изменений).
 --
 -- funds.subcategory хранит отображаемое имя группы; funds.subcategory_order задаёт
--- порядок групп внутри category (ASC). Порядок по возрастанию риска:
--- Короткие(1) → Средние(2) → Длинные(3) → Авторские(100, не трогаем).
+-- порядок групп внутри category (ASC). Порядок по убыванию дюрации (от длинных
+-- к коротким): Длинные(1) → Средние(2) → Короткие(3) → Авторские(100, не трогаем).
 -- Денежный рынок (category='money_market') не затрагивается.
 --
 -- Группировка по реальным составам фондов (fund_holdings):
@@ -17,7 +17,7 @@
 -- Применение: cat db/migrations/012_bond_subcategory_duration.sql | docker exec -i frame-db-1 psql -U postgres -d moex_db
 
 -- Короткие: SBFR, Накопительный, Консерватив (SAFE), Облигации с перем. купоном (Альфа)
-UPDATE funds SET subcategory = 'Короткие', subcategory_order = 1
+UPDATE funds SET subcategory = 'Короткие', subcategory_order = 3
 WHERE fund_id IN (10113, 4995, 7007, 11259);
 
 -- Средние: AKMB, OBLG, Облигации Плюс, Рублёвые сбережения, Казначейский,
@@ -26,7 +26,7 @@ UPDATE funds SET subcategory = 'Средние', subcategory_order = 2
 WHERE fund_id IN (6225, 12000, 33, 47, 54, 8119, 9113, 9165, 5713, 7067);
 
 -- Длинные: SBLB, AMGB, TOFZ
-UPDATE funds SET subcategory = 'Длинные', subcategory_order = 3
+UPDATE funds SET subcategory = 'Длинные', subcategory_order = 1
 WHERE fund_id IN (10331, 11705, 11445);
 
 -- Авторские (Рублёвые перспективы, fund_id=6450) остаются без изменений:
