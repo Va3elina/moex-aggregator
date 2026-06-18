@@ -826,9 +826,12 @@ export default function FundsMoneyPage() {
                     getTargetElement={() => chartAnchorRef.current}
                     filename={`frame-funds-${category}-${viewMode}-${period}`}
                     metadata={{
+                        // На скриншоте главный заголовок — название индикатора
+                        // «Деньги в фондах», а не категория. asset не задаём (иначе он
+                        // станет primary-заголовком); категория уходит в subtitle-чипы.
                         title: 'Деньги в фондах',
-                        asset: currentCategory?.name ?? category,
                         details: [
+                            currentCategory?.name ?? category,
                             viewMode === 'aum' ? 'СЧА' : 'Притоки-Оттоки',
                             PERIOD_LABELS[period] ?? period,
                             viewMode === 'flows' ? (flowTimeframe === '1d' ? 'День' : flowTimeframe === '1w' ? 'Неделя' : 'Месяц') : null,
