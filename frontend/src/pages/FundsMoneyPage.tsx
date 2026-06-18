@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { TrendingUp, DollarSign, Banknote, Gem, Wallet, JapaneseYen, Bell, Lock } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import SegmentedControl from '../components/SegmentedControl';
 import ChartTabs from '../components/ChartTabs';
@@ -84,8 +84,18 @@ const easeOutCubic = ANIMATION.easing;
 export default function FundsMoneyPage() {
     const { isAuthenticated } = useAuth();
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
     // Настройки отображения персистятся в localStorage — не сбрасываются на новой сессии.
     const [category, setCategory] = usePersistedState<FundCategory>('frame:funds:category', 'money_market');
+    // Диплинк из Telegram-сигнала: ?category= преселектит раздел (страница
+    // категорийная). Применяем один раз на маунте, перекрывая localStorage.
+    useEffect(() => {
+        const c = searchParams.get('category');
+        if (c && ['money_market', 'stocks', 'bonds', 'gold', 'yuan'].includes(c)) {
+            setCategory(c as FundCategory);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
     const [period, setPeriod] = usePersistedState<Period>('frame:funds:period', getDefaultPeriod('1y', isAuthenticated) as Period);
     // Default режим — Притоки-Оттоки (более информативно для нового пользователя)
     const [viewMode, setViewMode] = usePersistedState<ViewMode>('frame:funds:viewMode', 'flows');
