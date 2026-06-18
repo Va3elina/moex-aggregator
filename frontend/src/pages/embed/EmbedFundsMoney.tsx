@@ -48,8 +48,8 @@ const PERIODS: { id: FundPeriod; label: string }[] = [
   { id: 'all', label: 'Всё' },
 ];
 const VIEW_MODES: { id: ViewMode; label: string }[] = [
-  { id: 'aum', label: 'СЧА' },
   { id: 'flows', label: 'Притоки-Оттоки' },
+  { id: 'aum', label: 'СЧА' },
 ];
 const FLOW_TFS: { id: FlowTimeframe; label: string }[] = [
   { id: '1d', label: 'День' },

@@ -514,7 +514,7 @@ export default function MobileFundsMoneyPage() {
               Что показать
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
-              {(['aum', 'flows'] as const).map((m) => (
+              {(['flows', 'aum'] as const).map((m) => (
                 <button
                   key={m}
                   className={`fm-chip ${viewMode === m ? 'active' : ''}`}
