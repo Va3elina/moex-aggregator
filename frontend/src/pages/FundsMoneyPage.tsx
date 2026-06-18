@@ -537,21 +537,15 @@ export default function FundsMoneyPage() {
 
     const currentCategory = CATEGORIES.find(c => c.key === category);
 
-    // Adaptive labels для легенды гистограммы притоков/оттоков.
-    // Единица измерения («млрд») теперь стоит на верхнем тике правой оси, а не
-    // в легенде. На узких viewport'ах полный текст («Приток в фонды денежного
-    // рынка») не помещается на одной строке → на vw < 540 показываем краткую
-    // форму без подробностей категории.
-    // 540px — это breakpoint, на котором две полные строки (две для притока и оттока)
-    // ещё вписываются в типичный mobile-card padding (~16px по бокам).
+    // Обобщающий заголовок гистограммы притоков/оттоков. Единица — в скобках
+    // «(млрд ₽)». На узких viewport'ах убираем подробности категории, чтобы
+    // строка влезала в одну линию (540px — порог, на котором длинный заголовок
+    // ещё помещается в типичный mobile-card padding ~16px по бокам).
     const vw = useViewportWidth();
     const useShortFlowLabels = vw < 540;
-    const flowInflowLabel = useShortFlowLabels
-        ? 'Приток'
-        : `Приток в фонды ${currentCategory?.genitive ?? ''}`;
-    const flowOutflowLabel = useShortFlowLabels
-        ? 'Отток'
-        : `Отток из фондов ${currentCategory?.genitive ?? ''}`;
+    const flowTitle = useShortFlowLabels
+        ? 'Чистые притоки и оттоки (млрд ₽)'
+        : `Чистые притоки и оттоки из фондов ${currentCategory?.genitive ?? ''} (млрд ₽)`;
 
     return (
         <div className="max-w-[1408px] mx-auto px-4 md:px-6 py-6 md:py-8 text-theme-primary min-h-screen">
@@ -890,8 +884,7 @@ export default function FundsMoneyPage() {
                         formatSecondaryValue={formatNav}
                         formatSecondaryAxis={formatNav}
                         primaryLabel={currentCategory?.index || 'Индекс'}
-                        secondaryLabel={`Суммарная СЧА фондов ${currentCategory?.genitive ?? ''}`}
-                        secondaryAxisUnit="млрд"
+                        secondaryLabel={`СЧА фондов ${currentCategory?.genitive ?? ''} (млрд ₽)`}
                         loading={loading}
                         showValueHeader={false}
                         legendPosition="top"
@@ -915,8 +908,7 @@ export default function FundsMoneyPage() {
                         hiddenTickers={hiddenTickers}
                         allTickers={allTickers}
                         category={category}
-                        inflowLabel={flowInflowLabel}
-                        outflowLabel={flowOutflowLabel}
+                        flowTitle={flowTitle}
                         loading={flowsLoading}
                         flowContainerRef={flowContainerRef}
                         flowChartRef={flowChartRef}
