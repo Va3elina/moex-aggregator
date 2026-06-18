@@ -34,9 +34,11 @@ interface FlowsHistogramProps {
     onMouseLeave: () => void;
     onSetHoveredAnnotation: (date: string | null) => void;
     onSetFlowNavRange: React.Dispatch<React.SetStateAction<[number, number]>>;
-    /** Текст legend'а для положительных баров (например «Приток в фонды денежного рынка, млрд руб»). Если не задан — default «Приток (млрд руб)». */
+    /** Текст legend'а для положительных баров (например «Приток в фонды денежного рынка»).
+     *  Единица «млрд» теперь стоит на верхнем тике правой оси, а не в легенде.
+     *  Если не задан — default «Приток». */
     inflowLabel?: string;
-    /** Текст legend'а для отрицательных баров (например «Отток из фондов денежного рынка»). Если не задан — default «Отток (млрд руб)». */
+    /** Текст legend'а для отрицательных баров (например «Отток из фондов денежного рынка»). Если не задан — default «Отток». */
     outflowLabel?: string;
 }
 
@@ -60,8 +62,8 @@ export default function FlowsHistogram({
     onMouseLeave,
     onSetHoveredAnnotation,
     onSetFlowNavRange,
-    inflowLabel = 'Приток (млрд руб)',
-    outflowLabel = 'Отток (млрд руб)',
+    inflowLabel = 'Приток',
+    outflowLabel = 'Отток',
 }: FlowsHistogramProps) {
     // На мобиле уменьшаем количество X-tick'ов чтобы даты не накладывались
     // (формат "29 окт. 25 г." ≈ 70px на 10px шрифте → 6 шт. = 420px > 343px viewport).
@@ -439,13 +441,16 @@ export default function FlowsHistogram({
                                 {ticks.map((val, i) => {
                                     const yPct = 50 - (val / maxAbs) * 47;
                                     const label = val === 0 ? '0' : `${val > 0 ? '+' : ''}${Math.abs(val) >= 0.1 ? val.toFixed(1) : val.toFixed(2)}`;
+                                    // Единица измерения — только у верхнего тика (max), сразу
+                                    // после числа тем же шрифтом. Заменяет «, млрд руб» в легенде.
+                                    const display = i === 0 ? `${label} млрд` : label;
                                     return (
                                         <div key={`label-${i}`}
                                             className="absolute"
-                                            style={{ top: `${yPct}%`, left: 12, transform: 'translateY(-50%)' }}
+                                            style={{ top: `${yPct}%`, left: 12, transform: 'translateY(-50%)', whiteSpace: 'nowrap' }}
                                         >
                                             <span className="font-semibold" style={{ fontSize: 'var(--chart-font-y, 16px)', color: 'var(--axis-color, #9CA3B8)' }}>
-                                                {label}
+                                                {display}
                                             </span>
                                         </div>
                                     );
