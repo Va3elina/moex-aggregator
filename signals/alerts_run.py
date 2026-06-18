@@ -16,6 +16,7 @@ import urllib.parse
 from datetime import datetime, timezone
 
 from dotenv import load_dotenv
+from sqlalchemy import text, bindparam
 
 # ── .env + DB_URL override ДО импорта api.database (host-side, как alert_bot) ──
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -68,13 +69,42 @@ def _oi_url(a) -> str:
 _FUND_CATEGORIES = {"money_market", "stocks", "bonds", "gold", "yuan"}
 
 
+def _funds_resolve(fund_ids):
+    """Набор fund_id → (доминирующая категория, fund_id'ы ИЗ этой категории). Страница
+    /funds-money категорийная — ведём на категорию с наибольшим числом фондов набора
+    и изолируем именно их. (None, []) если БД недоступна / фонды не найдены."""
+    try:
+        stmt = (text("SELECT fund_id, category FROM funds WHERE fund_id IN :ids")
+                .bindparams(bindparam("ids", expanding=True)))
+        with SessionLocal() as s:
+            rows = s.execute(stmt, {"ids": fund_ids}).fetchall()
+    except Exception:
+        return None, []
+    by_cat: dict = {}
+    for fid, cat in rows:
+        by_cat.setdefault(cat, []).append(fid)
+    if not by_cat:
+        return None, []
+    dom = max(by_cat, key=lambda c: len(by_cat[c]))
+    return dom, by_cat[dom]
+
+
 def _funds_url(a) -> str:
-    """Диплинк на /funds-money. Страница категорийная (один раздел за раз): если
-    сигнал по конкретной категории — преселектим её через ?category=. 'all'/'custom'
-    (набор фондов из разных категорий) страница показать не умеет → без преселекта.
-    Фронт читает ?category= на маунте обеих страниц фондов."""
+    """Диплинк на /funds-money. Страница категорийная (один раздел за раз):
+    - сигнал по категории → ?category=<cat>;
+    - 'custom'-набор → доминирующая категория + ?funds= (изоляция именно сигнальных
+      фондов через пофондовую видимость; кросс-категорийный хвост набора показать
+      нельзя — берём самую представленную категорию);
+    - 'all' / нерезолвимое → голый /funds-money (агрегатного «все фонды» вида нет).
+    Фронт читает ?category=/?funds= на маунте обеих страниц фондов."""
     if a.asset in _FUND_CATEGORIES:
         return f"{SITE}/funds-money?category={a.asset}"
+    fund_ids = _parse_fund_ids(a.fund_ids)
+    if a.asset == "custom" and fund_ids:
+        cat, in_cat = _funds_resolve(fund_ids)
+        if cat:
+            funds_q = ("&funds=" + ",".join(str(i) for i in in_cat)) if in_cat else ""
+            return f"{SITE}/funds-money?category={cat}{funds_q}"
     return f"{SITE}/funds-money"
 
 

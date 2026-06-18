@@ -84,6 +84,8 @@ export default function MobileFundsMoneyPage() {
   // Hidden funds — Set fund_id'ов которые юзер скрыл из суммарной СЧА.
   // Сбрасывается при смене категории (фонды разные).
   const [hiddenFunds, setHiddenFunds] = useState<Set<number>>(new Set());
+  // ?funds= из диплинка применяется один раз (после загрузки funds); флаг от повторов.
+  const fundsFilterAppliedRef = useRef(false);
   // При смене категории — показываем все фонды заново
   useEffect(() => { setHiddenFunds(new Set()); }, [category]);
   const toggleFundVisibility = (fundId: number) =>
@@ -213,6 +215,18 @@ export default function MobileFundsMoneyPage() {
     () => data?.funds.filter((f) => !f.tier_locked) ?? [],
     [data?.funds],
   );
+  // Диплинк ?funds= из Telegram-сигнала: показать ТОЛЬКО сигнальные фонды внутри
+  // категории (остальные прячем через hiddenFunds). Один раз — после загрузки funds.
+  useEffect(() => {
+    if (fundsFilterAppliedRef.current || !data?.funds) return;
+    const raw = searchParams.get('funds');
+    if (!raw) return;
+    fundsFilterAppliedRef.current = true;
+    const want = new Set(raw.split(',').map((s) => parseInt(s, 10)).filter((n) => !isNaN(n)));
+    if (want.size === 0) return;
+    setHiddenFunds(new Set(accessibleFunds.filter((f) => !want.has(f.fund_id)).map((f) => f.fund_id)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data?.funds, accessibleFunds]);
 
   // visibleFundIds: список fund_id'ов для фильтрации API-запроса flows.
   // undefined = все доступные видимы (без фильтра, fastpath на бэке).
