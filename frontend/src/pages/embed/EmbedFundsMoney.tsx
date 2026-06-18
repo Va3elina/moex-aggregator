@@ -277,7 +277,8 @@ export default function EmbedFundsMoney() {
                 formatSecondaryValue={fmtNav}
                 formatSecondaryAxis={fmtNav}
                 primaryLabel="Индекс"
-                secondaryLabel="Суммарная СЧА, млрд ₽"
+                secondaryLabel="Суммарная СЧА"
+                secondaryAxisUnit="млрд"
                 showValueHeader={false}
                 legendPosition="top"
                 showDownloadButton={false}

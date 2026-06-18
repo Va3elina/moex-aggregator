@@ -890,7 +890,8 @@ export default function FundsMoneyPage() {
                         formatSecondaryValue={formatNav}
                         formatSecondaryAxis={formatNav}
                         primaryLabel={currentCategory?.index || 'Индекс'}
-                        secondaryLabel={`Суммарная СЧА фондов ${currentCategory?.genitive ?? ''}, млрд руб`}
+                        secondaryLabel={`Суммарная СЧА фондов ${currentCategory?.genitive ?? ''}`}
+                        secondaryAxisUnit="млрд"
                         loading={loading}
                         showValueHeader={false}
                         legendPosition="top"

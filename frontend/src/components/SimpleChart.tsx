@@ -47,6 +47,10 @@ interface SimpleChartProps {
   formatPrimaryAxis?: (value: number) => string;
   formatSecondaryValue?: (value: number) => string;
   formatSecondaryAxis?: (value: number) => string;
+  /** Единица измерения для ВЕРХНЕГО тика правой (secondary) оси, например «млрд».
+   *  Рисуется тем же шрифтом, что и числа оси, сразу после самого верхнего
+   *  значения. Используется когда единицу убрали из легенды (Деньги в фондах). */
+  secondaryAxisUnit?: string;
   formatThirdValue?: (value: number) => string;
   formatTime?: (time: string) => string;
   /** Формат даты в hover-тултипе (date pill). Если не задан — день+месяц+год
@@ -127,6 +131,7 @@ export default function SimpleChart({
   formatPrimaryAxis,
   formatSecondaryValue,
   formatSecondaryAxis,
+  secondaryAxisUnit,
   formatThirdValue,
   formatTime = (t) => {
     const date = new Date(t);
@@ -1080,21 +1085,32 @@ export default function SimpleChart({
 
             {/* Правая ось Y (secondary). На мобиле раньше скрывалась из-за маленького
                 --chart-pad-right-dual (48px), но с увеличением до 68px labels помещаются. */}
-            {showSecondary && targetCalc.secYTicks && targetCalc.secYTicks.map((tick, i) => (
-              <text
-                key={`sec-${i}`}
-                x={chartWidth + tokens.axisGap}
-                y={tick.y}
-                textAnchor="start"
-                dominantBaseline="central"
-                fill={secondaryColor}
-                fontSize={tokens.fontY}
-                fontWeight={tokens.fontYWeight}
-                opacity="0.9"
-              >
-                {formatSecondaryAxis ? formatSecondaryAxis(tick.value) : formatSecondaryValue ? formatSecondaryValue(tick.value) : formatNumber(tick.value, 0)}
-              </text>
-            ))}
+            {showSecondary && targetCalc.secYTicks && (() => {
+              // Единицу («млрд») рисуем только у верхнего тика (max), сразу после
+              // числа тем же шрифтом — когда её убрали из легенды (secondaryAxisUnit).
+              const secTopVal = secondaryAxisUnit
+                ? Math.max(...targetCalc.secYTicks.map((t) => t.value))
+                : null;
+              return targetCalc.secYTicks.map((tick, i) => {
+                const base = formatSecondaryAxis ? formatSecondaryAxis(tick.value) : formatSecondaryValue ? formatSecondaryValue(tick.value) : formatNumber(tick.value, 0);
+                const txt = secondaryAxisUnit && tick.value === secTopVal ? `${base} ${secondaryAxisUnit}` : base;
+                return (
+                  <text
+                    key={`sec-${i}`}
+                    x={chartWidth + tokens.axisGap}
+                    y={tick.y}
+                    textAnchor="start"
+                    dominantBaseline="central"
+                    fill={secondaryColor}
+                    fontSize={tokens.fontY}
+                    fontWeight={tokens.fontYWeight}
+                    opacity="0.9"
+                  >
+                    {txt}
+                  </text>
+                );
+              });
+            })()}
 
             {/* Вертикальные линии сетки + X метки.
                 first/last anchor 'start'/'end' чтобы крайние даты не наезжали
