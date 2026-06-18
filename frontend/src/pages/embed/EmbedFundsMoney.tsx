@@ -80,7 +80,6 @@ export default function EmbedFundsMoney() {
   const [viewMode, setViewMode] = useState<ViewMode>(() => (params.get('view') || readLS('frame:embed:funds:viewMode', 'flows')) as ViewMode);
   const [flowTimeframe, setFlowTimeframe] = useState<FlowTimeframe>(() => (readLS('frame:embed:funds:flowTimeframe', '1d')) as FlowTimeframe);
   const [showIndex, setShowIndex] = useState<boolean>(() => readLS('frame:embed:funds:showIndex', '1') !== '0');
-  const [showEvents, setShowEvents] = useState<boolean>(() => readLS('frame:embed:funds:showEvents', '0') === '1');
 
   const [data, setData] = useState<FundsResp | null>(null);
   const [status, setStatus] = useState<LoadStatus>('idle');
@@ -93,7 +92,6 @@ export default function EmbedFundsMoney() {
   const [flowNavRange, setFlowNavRange] = useState<[number, number]>([0, 0]);
   const [hoveredFlowIndex, setHoveredFlowIndex] = useState<number | null>(null);
   const [flowTooltipPos, setFlowTooltipPos] = useState<{ x: number; y: number } | null>(null);
-  const [hoveredAnnotation, setHoveredAnnotation] = useState<string | null>(null);
   const flowChartRef = useRef<SVGSVGElement>(null);
   const flowContainerRef = useRef<HTMLDivElement>(null);
 
@@ -103,7 +101,6 @@ export default function EmbedFundsMoney() {
   useEffect(() => { try { localStorage.setItem('frame:embed:funds:viewMode', viewMode); } catch { /* quota */ } }, [viewMode]);
   useEffect(() => { try { localStorage.setItem('frame:embed:funds:flowTimeframe', flowTimeframe); } catch { /* quota */ } }, [flowTimeframe]);
   useEffect(() => { try { localStorage.setItem('frame:embed:funds:showIndex', showIndex ? '1' : '0'); } catch { /* quota */ } }, [showIndex]);
-  useEffect(() => { try { localStorage.setItem('frame:embed:funds:showEvents', showEvents ? '1' : '0'); } catch { /* quota */ } }, [showEvents]);
 
   // ── AUM load ──
   useEffect(() => {
@@ -246,11 +243,6 @@ export default function EmbedFundsMoney() {
               <ToggleRow label="Индекс" checked={showIndex} onChange={setShowIndex} />
             </DrawerSection>
           )}
-          {viewMode === 'flows' && (
-            <DrawerSection label="Отображение">
-              <ToggleRow label="События" checked={showEvents} onChange={setShowEvents} />
-            </DrawerSection>
-          )}
         </>
       }
     >
@@ -309,11 +301,6 @@ export default function EmbedFundsMoney() {
                   animatedBarsOut={animatedBarsOut}
                   flowNavRange={flowNavRange}
                   hoveredFlowIndex={hoveredFlowIndex}
-                  hoveredAnnotation={hoveredAnnotation}
-                  showEvents={showEvents}
-                  hiddenTickers={undefined}
-                  allTickers={undefined}
-                  category={category}
                   flowTitle={`Чистые притоки и оттоки из фондов ${genitive} (млрд ₽)`}
                   loading={flowsStatus === 'loading'}
                   flowContainerRef={flowContainerRef}
@@ -321,7 +308,6 @@ export default function EmbedFundsMoney() {
                   flowTooltipPos={flowTooltipPos}
                   onMouseMove={handleFlowMouseMove}
                   onMouseLeave={handleFlowMouseLeave}
-                  onSetHoveredAnnotation={setHoveredAnnotation}
                   onSetFlowNavRange={setFlowNavRange}
                 />
               )}

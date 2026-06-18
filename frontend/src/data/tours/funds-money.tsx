@@ -175,23 +175,6 @@ export function buildFundsMoneyTour(setViewMode: (m: ViewMode) => void): TourSte
       position: 'bottom',
     },
     {
-      onEnter: () => setViewMode('flows'),
-      selector: '[data-tour="funds-export"]',
-      title: 'Слои (режим Притоки)',
-      body: (
-        <>
-          <p>
-            В режиме <strong>Притоки-Оттоки</strong> в слоях (кнопка «⋮» в углу
-            графика) есть тумблер <strong>«События»</strong> — накладывает на
-            гистограмму вертикальные метки крупных событий: повышение ключевой
-            ставки ЦБ, санкционные пакеты, дивидендные отсечки. Помогает понять
-            «что вызвало этот резкий приток или отток».
-          </p>
-        </>
-      ),
-      position: 'left',
-    },
-    {
       selector: '[data-tour="funds-table"]',
       title: 'Таблица фондов',
       body: (
