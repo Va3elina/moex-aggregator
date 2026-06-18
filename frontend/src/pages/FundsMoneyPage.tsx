@@ -204,8 +204,6 @@ export default function FundsMoneyPage() {
     // позиция сбрасывается до следующего mousemove → визуальный "коэффициент".
     // Паттерн как в SeasonalityHistogram (handlePointerMove → setTooltip({x,y})).
     const [flowTooltipPos, setFlowTooltipPos] = useState<{ x: number; y: number } | null>(null);
-    const [hoveredAnnotation, setHoveredAnnotation] = useState<string | null>(null); // date key
-    const [showEvents, setShowEvents] = usePersistedState('frame:funds:showEvents', false);
     const [showIndex, setShowIndex] = usePersistedState('frame:funds:showIndex', true);
     const [flowNavRange, setFlowNavRange] = useState<[number, number]>([0, 0]);
 
@@ -309,20 +307,6 @@ export default function FundsMoneyPage() {
         if (visibleAccessibleFunds.length === accessibleFunds.length) return undefined;
         return visibleAccessibleFunds.map(f => f.fund_id);
     }, [data?.funds, visibleAccessibleFunds, accessibleFunds]);
-
-    // Тикеры скрытых фондов (для фильтрации событий на графике)
-    const hiddenTickers = useMemo(() => {
-        if (!data?.funds || hiddenFunds.size === 0) return new Set<string>();
-        return new Set(
-            data.funds.filter(f => hiddenFunds.has(f.fund_id)).map(f => f.ticker)
-        );
-    }, [data?.funds, hiddenFunds]);
-
-    // Все тикеры в текущей категории (для определения «наших» фондов)
-    const allTickers = useMemo(() => {
-        if (!data?.funds) return new Set<string>();
-        return new Set(data.funds.map(f => f.ticker));
-    }, [data?.funds]);
 
     // Загрузка данных притоков/оттоков
     // Stale-guard (как у loadData): эффект перезапускается несколько раз при смене
@@ -717,12 +701,12 @@ export default function FundsMoneyPage() {
                     (паттерн OI). Через portal монтируется в обёртку графика
                     (containerRef=chartAnchorRef). Слои зависят от режима. */}
                 <ChartActionsMenu containerRef={chartAnchorRef} tourId="funds-export">
+                {viewMode === 'aum' && (
                 <LayersButton
                     tourId="funds-layers"
-                    layers={viewMode === 'flows'
-                        ? [{ key: 'events', label: 'События', hint: 'Метки крупных событий фондов', checked: showEvents, onChange: setShowEvents }]
-                        : [{ key: 'index', label: 'Индекс', hint: `Линия ${currentCategory?.index ?? 'индекса'} на левой оси`, checked: showIndex, onChange: setShowIndex }]}
+                    layers={[{ key: 'index', label: 'Индекс', hint: `Линия ${currentCategory?.index ?? 'индекса'} на левой оси`, checked: showIndex, onChange: setShowIndex }]}
                 />
+                )}
                 <CsvExportButton
                     indicator="funds_money"
                     config={() => {
@@ -931,11 +915,6 @@ export default function FundsMoneyPage() {
                         animatedBarsOut={animatedBarsOut}
                         flowNavRange={flowNavRange}
                         hoveredFlowIndex={hoveredFlowIndex}
-                        hoveredAnnotation={hoveredAnnotation}
-                        showEvents={showEvents}
-                        hiddenTickers={hiddenTickers}
-                        allTickers={allTickers}
-                        category={category}
                         flowTitle={flowTitle}
                         loading={flowsLoading}
                         flowContainerRef={flowContainerRef}
@@ -943,7 +922,6 @@ export default function FundsMoneyPage() {
                         flowTooltipPos={flowTooltipPos}
                         onMouseMove={handleFlowMouseMove}
                         onMouseLeave={handleFlowMouseLeave}
-                        onSetHoveredAnnotation={setHoveredAnnotation}
                         onSetFlowNavRange={setFlowNavRange}
                     />
             </div>
