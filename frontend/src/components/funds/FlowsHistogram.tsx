@@ -7,8 +7,7 @@ import { CHART_COLORS, GRID, CROSSHAIR } from '../../config/chartTheme';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import ChartWatermark from '../ChartWatermark';
 import ChartNavigator from '../ChartNavigator';
-import { legendFontSize } from '../chart/chartTypography';
-import { useViewportWidth } from '../../hooks/useViewportWidth';
+import ChartLegend from '../chart/ChartLegend';
 import { ChartTooltip, TooltipRow } from '../chart';
 import { computeChartTopLineY, getDatePillStyle } from '../chart/datePillLayout';
 
@@ -66,7 +65,6 @@ export default function FlowsHistogram({
     // На мобиле уменьшаем количество X-tick'ов чтобы даты не накладывались
     // (формат "29 окт. 25 г." ≈ 70px на 10px шрифте → 6 шт. = 420px > 343px viewport).
     const isMobile = useIsMobile();
-    const vw = useViewportWidth();
 
     // Стабильная ссылка на data для ChartNavigator — иначе на каждый render
     // .map() создаёт новый массив → внутренний useEffect([data]) сбрасывает selFrac,
@@ -130,11 +128,17 @@ export default function FlowsHistogram({
             )}
             {/* Гистограмма притоков/оттоков */}
             <div>
-                {/* Заголовок графика — одно обобщающее название вместо двухпунктовой легенды */}
-                <div style={{ marginBottom: 'var(--chart-legend-mb, 16px)', display: 'flex', justifyContent: 'center' }}>
-                    <span className="font-semibold text-theme-primary" style={{ fontSize: legendFontSize(vw) }}>
-                        {flowTitle}
-                    </span>
+                {/* Заголовок графика — одно обобщающее название вместо двухпунктовой
+                    легенды. Рендерим тем же ChartLegend (SVG-text), что и легенда СЧА,
+                    чтобы шрифт и жирность совпадали 1-в-1; marker 'none' — без кружка. */}
+                <div style={{ marginBottom: 'var(--chart-legend-mb, 16px)' }}>
+                    <ChartLegend
+                        items={[{ color: 'transparent', label: flowTitle, marker: 'none' }]}
+                        fontWeight={600}
+                        itemGap={6}
+                        gap="clamp(6px, 1vw, 16px)"
+                        style={{ color: 'var(--text-primary)' }}
+                    />
                 </div>
 
                 {/* График с тултипом */}
