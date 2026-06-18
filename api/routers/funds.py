@@ -622,6 +622,31 @@ async def get_categories():
 FlowTimeframeType = Literal["1d", "1w", "1m", "3m", "1y"]
 
 
+# Технические события реорганизации фондов (слияния/ликвидации). СЧА фонда в эти
+# дни меняется скачком не из-за притока/оттока денег инвесторов, а из-за
+# присоединения активов другого фонда (слияние) либо частичной ликвидации.
+# Чтобы график «Деньги в фондах» показывал реальную динамику, вычитаем известную
+# дельту из net_flow затронутого фонда в день скачка («как будто события не было»).
+# Знак impact_bln: + технический приток (слияние), − технический отток (ликвидация).
+# Значения и даты взяты из ранее размеченных аннотаций. Применяется ТОЛЬКО к
+# этому индикатору; алерты по потокам фондов это не затрагивает.
+FLOW_REORG_CORRECTIONS: dict = {
+    "stocks": [
+        ("OPIF-432", "2014-12-15", 0.9),
+        ("OPIF-43", "2019-09-25", 1.6),
+        ("OPIF-1003", "2025-06-06", 3.3),
+        ("OPIF-43", "2026-04-17", 2.4),
+    ],
+    "gold": [
+        ("SBGD", "2024-09-03", -1.5),
+    ],
+    "bonds": [
+        ("OPIF-33", "2020-10-22", 7.2),
+        ("OPIF-47", "2022-09-15", 4.6),
+    ],
+}
+
+
 @router.get("/flows")
 async def get_funds_flows(
     category: CategoryType = Query(..., description="Категория фондов"),
@@ -746,6 +771,40 @@ async def get_funds_flows(
             for row in result:
                 fund_series[row[0]].append((row[1], float(row[2]), float(row[3] or 0)))
 
+            # Поправки на технические реорганизации (FLOW_REORG_CORRECTIONS):
+            # находим день скачка net_flow затронутого фонда (max |net_flow| в окне
+            # ±10 дней от даты события — устойчиво к лагу/нерабочим дням) и копим
+            # знаковую поправку в рублях по ключу (fund_id, день_скачка). Фонд,
+            # снятый пользователем, отсутствует в fund_series → поправка не применится.
+            ticker_to_fid = {
+                finfo.get("ticker"): fid
+                for fid, finfo in cat_config["funds"].items()
+            }
+            corrections: dict = {}
+            for ev_ticker, ev_date_str, impact_bln in FLOW_REORG_CORRECTIONS.get(category, []):
+                fid = ticker_to_fid.get(ev_ticker)
+                if fid is None or fid not in fund_series:
+                    continue
+                ev_date = date.fromisoformat(ev_date_str)
+                series = fund_series[fid]
+                best_day = None
+                best_mag = -1.0
+                for j in range(1, len(series)):
+                    d_prev, nav_prev, pay_prev = series[j - 1]
+                    d_curr, nav_curr, pay_curr = series[j]
+                    if abs((d_curr - ev_date).days) > 10:
+                        continue
+                    tf = nav_curr - nav_prev
+                    if pay_prev > 0 and pay_curr > 0:
+                        nf = tf - nav_prev * (pay_curr - pay_prev) / pay_prev
+                    else:
+                        nf = tf
+                    if abs(nf) > best_mag:
+                        best_mag = abs(nf)
+                        best_day = d_curr
+                if best_day is not None:
+                    corrections[(fid, best_day)] = corrections.get((fid, best_day), 0.0) + impact_bln * 1e9
+
             flows = []
 
             if timeframe == "1d":
@@ -776,6 +835,9 @@ async def get_funds_flows(
                             net_flow = total_flow - market_change
                         else:
                             net_flow = total_flow
+                        corr = corrections.get((fid, curr_d))
+                        if corr:
+                            net_flow -= corr
                         total_net += net_flow
                         if net_flow >= 0:
                             gross_in += net_flow
@@ -840,6 +902,9 @@ async def get_funds_flows(
                             net_flow = total_flow - market_change
                         else:
                             net_flow = total_flow
+                        for (c_fid, c_day), c_val in corrections.items():
+                            if c_fid == fid and start_d <= c_day <= end_d:
+                                net_flow -= c_val
                         total_net += net_flow
                         if net_flow >= 0:
                             gross_in += net_flow
