@@ -170,6 +170,25 @@ function renderRoute(path: string, meta: SeoMeta): string {
         html = html.replace('</head>', `  ${ld}\n</head>`);
     }
 
+    // ── Статический контент в #root (для краулеров, особенно Yandex) ──────────
+    // SPA отдавал пустой <div id="root"></div> — Yandex почти не исполняет JS, то
+    // есть видел meta, но НЕ видел текста страницы → ранжировать нечего. Вставляем
+    // настоящий <h1> + вводный абзац (intro, иначе description) прямо в #root.
+    // main.tsx монтирует через createRoot → React заменяет это содержимое при
+    // загрузке (для пользователя — кратковременный «server-rendered» текст вместо
+    // пустоты, что даже быстрее по ощущению). Только для публичных (index) страниц.
+    if (!meta.noindex) {
+        const h1 = escapeText(meta.title.split(' | ')[0]);
+        const intro = escapeText(meta.intro || meta.description || '');
+        const block =
+            '<div class="seo-prerender" style="max-width:680px;margin:10vh auto;padding:0 24px;' +
+            'font-family:Georgia,\'Times New Roman\',serif;color:#1a1a1a;text-align:center">' +
+            `<h1 style="font-size:1.7rem;line-height:1.25;font-weight:700;margin:0 0 14px">${h1}</h1>` +
+            (intro ? `<p style="font-size:1.05rem;line-height:1.65;color:#555;margin:0">${intro}</p>` : '') +
+            '</div>';
+        html = html.replace('<div id="root"></div>', `<div id="root">${block}</div>`);
+    }
+
     return html;
 }
 
