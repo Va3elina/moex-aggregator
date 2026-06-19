@@ -266,6 +266,21 @@ def _head(type_label: str, subtitle: str, note: str = "") -> str:
             f"<b>{subtitle}</b>{note}")
 
 
+_MONTHS_RU = ("", "января", "февраля", "марта", "апреля", "мая", "июня",
+              "июля", "августа", "сентября", "октября", "ноября", "декабря")
+
+
+def _date_note(ctx: dict) -> str:
+    """Отдельная строка с торговым днём, за который посчитан сигнал (signal_date из
+    ctx) — курсивом. СЧА фондов и позиции МосБиржи публикуются с лагом (~T+1),
+    поэтому важно показать, за какой именно день аномалия, а не «сегодня». Пусто,
+    если даты в ctx нет (price — реальное время; oi_zscore — без даты)."""
+    d = (ctx or {}).get("signal_date")
+    if not d:
+        return ""
+    return f"\n<i>по данным за {d.day} {_MONTHS_RU[d.month]}</i>"
+
+
 def _leg_phrase(direction: str, legs: dict) -> str:
     """Какая нога двинула чистую позицию — когда это однозначно. legs = дневные Δ
     {'long': Δдлинной (+), 'short': Δкороткой (знаковая, короткая хранится −)}.
@@ -331,11 +346,11 @@ def format_msg(a: Alert, value: float, ctx: dict) -> str:
             # на физлиц, совпадая с текстом.
             word = "резко нарастили позицию" if direction == "up" else "резко сократили позицию"
             return (f"{head}\n"
-                    f"{dir_emo} Физлица {word} — в {value:g}× резче обычного (порог {thr:g}×).\n{link}")
+                    f"{dir_emo} Физлица {word} — в {value:g}× резче обычного (порог {thr:g}×).{_date_note(ctx)}\n{link}")
         clg = "Физлица" if (a.clgroup or "FIZ") == "FIZ" else "Юрлица"
         word = "резко нарастили позицию" if direction == "up" else "резко сократили позицию"
         return (f"{head}\n"
-                f"{dir_emo} {clg} {word} — в {value:g}× резче обычного (порог {thr:g}×).\n{link}")
+                f"{dir_emo} {clg} {word} — в {value:g}× резче обычного (порог {thr:g}×).{_date_note(ctx)}\n{link}")
     if a.indicator == "oi_participants":
         clg = "физлиц" if (a.clgroup or "FIZ") == "FIZ" else "юрлиц"
         npart = ctx.get("current_npart")
@@ -344,7 +359,7 @@ def format_msg(a: Alert, value: float, ctx: dict) -> str:
         dir_emo = _ce(*_EMO_UP) if up else _ce(*_EMO_DOWN)
         ctx_line = f" Сейчас {npart:,} участников." if npart else ""
         return (f"{_head(_TYPE_OI, subj, tf_note)}\n"
-                f"{dir_emo} {flow} {clg} — в {value:g}× резче обычного (порог {thr:g}×).{ctx_line}\n{link}")
+                f"{dir_emo} {flow} {clg} — в {value:g}× резче обычного (порог {thr:g}×).{ctx_line}{_date_note(ctx)}\n{link}")
     if a.indicator == "funds_flow":
         # «Аномальный поток» по выбранному набору фондов. Метка выбора в шапку
         # (a.asset_name: «Денежный рынок» / «Все фонды» / «N фондов»), с fallback
@@ -356,7 +371,7 @@ def format_msg(a: Alert, value: float, ctx: dict) -> str:
         flow_word = "ПРИТОК" if up else "ОТТОК"
         dir_emo = _ce(*_EMO_UP) if up else _ce(*_EMO_DOWN)
         return (f"{_head(_TYPE_FUNDS, label)}\n"
-                f"{dir_emo} Резкий {flow_word} — в {value:g}× больше обычного (порог {thr:g}×).\n{funds_link}")
+                f"{dir_emo} Резкий {flow_word} — в {value:g}× больше обычного (порог {thr:g}×).{_date_note(ctx)}\n{funds_link}")
     return (f"{_ce(*_EMO_SIGNAL)} <b>{_MARK}</b>\n<b>{subj}</b>\n"
             f"Алерт сработал.\n{link}")
 
