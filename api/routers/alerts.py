@@ -252,8 +252,9 @@ def _log_alert_event(db: Session, *, alert_id: Optional[int], user_id: int,
 
 
 # Категории фонд-алертов (asset для funds_flow) — ключи разделов «Деньги в фондах».
-# Юань пока НЕ включаем (раздел «Скоро» — NAV юаневых фондов ещё наливается).
-FUNDS_CATEGORIES = ("money_market", "stocks", "bonds", "gold")
+# Юань включён (2026-06-19): раздел «Юань» на /funds-money рабочий, NAV в ₽ →
+# поток считается той же математикой, что у остальных категорий (см. signals/db.py).
+FUNDS_CATEGORIES = ("money_market", "stocks", "bonds", "gold", "yuan")
 # Допустимые значения asset для funds_flow: режимы 'all'/'custom' + категории.
 #   'all'    → все фонды всех категорий (динамически), fund_ids NULL;
 #   'custom' → произвольный набор (fund_ids обязателен);

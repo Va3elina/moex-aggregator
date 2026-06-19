@@ -66,8 +66,7 @@ const CATEGORIES: { key: FundCategory; name: string; genitive: string; icon: Rea
     { key: 'stocks', name: 'Акции', genitive: 'акций', icon: TrendingUp, index: 'IMOEX' },
     { key: 'bonds', name: 'Облигации', genitive: 'облигаций', icon: DollarSign, index: 'RGBITR' },
     { key: 'gold', name: 'Золото', genitive: 'золота', icon: Gem, index: 'GLDRUB_TOM' },
-    // Раздел «Юань» — пока «Скоро» (NAV юаневых фондов наливается). Когда
-    // данные появятся, убрать `comingSoon` → вкладка станет рабочей.
+    // Раздел «Юань» — рабочий (NAV юаневых фондов в ₽, бенчмарк RUSFARCNY).
     { key: 'yuan', name: 'Юань', genitive: 'юаня', icon: JapaneseYen, index: 'RUSFARCNY' },
 ];
 

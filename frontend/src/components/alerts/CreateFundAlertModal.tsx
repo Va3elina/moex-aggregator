@@ -5,12 +5,14 @@
  * мультивыбор отдельных фондов по УК). По умолчанию выбраны ВСЕ фонды.
  *
  * Контракт fund-алерта (резолв выбора → payload):
- *   • выбраны ВСЕ фонды          → asset='all',        fund_ids НЕ шлём;
- *   • выбрана ровно одна категория целиком → asset=<category>, fund_ids НЕ шлём
- *     (backward-compat со старыми фонд-алертами категории);
- *   • иначе (подмножество)        → asset='custom',     fund_ids=[выбранные fund_id].
- *   asset_name = человеко-метка выбора («Все фонды» / «Акции, Облигации» /
- *   «N фондов») — для текста сигнала и кабинета.
+ *   • выбраны ЦЕЛЫЕ категории (одна или несколько, вкл. «Все категории») →
+ *     ОТДЕЛЬНЫЙ сигнал на КАЖДУЮ категорию (asset=<category>), чтобы спайк одной
+ *     категории не тонул в сумме других. Одна категория → createAlert; несколько
+ *     → createAlertsBatch (один сигнал на каждую). Это и есть «при выборе всех
+ *     категорий сигнал приходит конкретно по категории» (денежный рынок / золото / …).
+ *   • точечный набор фондов (не целые категории) → asset='custom',
+ *     fund_ids=[выбранные fund_id] — одна осознанно собранная «корзина» = один сигнал.
+ *   asset_name = человеко-метка («Денежный рынок» / «N фондов») — текст сигнала + кабинет.
  *   indicator='funds_flow', metric='net_flow', op='gt', threshold=×N,
  *   timeframe='1d'; source='funds' проставляет бэкенд. Требует привязки Telegram.
  *
@@ -21,7 +23,7 @@ import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { Bell, X, Check, ExternalLink } from 'lucide-react';
 import {
-    getTelegramStatus, createTelegramLink, createAlert, getFundsCatalog,
+    getTelegramStatus, createTelegramLink, createAlert, createAlertsBatch, getFundsCatalog,
     type AlertCreatePayload, type CatalogFund,
 } from '../../services/api';
 import FundPicker, { type FundPickerFund } from '../fundtrades/FundPicker';
@@ -78,8 +80,9 @@ const catChip = (active: boolean): CSSProperties => ({
     whiteSpace: 'nowrap',
 });
 
-// Категории фонд-алерта. Юань исключён (контракт). Порядок — как в категориях UI.
-const CATEGORY_KEYS = ['money_market', 'stocks', 'bonds', 'gold'] as const;
+// Категории фонд-алерта. Порядок — как в разделах «Деньги в фондах». Юань
+// включён (2026-06-19): раздел на сайте рабочий, поток считается так же.
+const CATEGORY_KEYS = ['money_market', 'stocks', 'bonds', 'gold', 'yuan'] as const;
 type CategoryKey = (typeof CATEGORY_KEYS)[number];
 
 // Уровни сигнала — ступени множителя ATR (×), как у oi_move. «Сильное» по умолчанию.
@@ -105,7 +108,7 @@ export default function CreateFundAlertModal({ onClose }: Props) {
     const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
     const [created, setCreated] = useState(false);
 
-    // ── Каталог фондов (все категории, кроме Юаня) ──────────────────────────
+    // ── Каталог фондов (все категории, включая Юань) ────────────────────────
     const [catalog, setCatalog] = useState<CatalogFund[]>([]);
     // selectedTickers — выбор фондов в конвенции FundPicker: ПУСТО = ВСЕ фонды
     // (так FundPicker рендерит «Все фонды» активной и его внутренняя кнопка
@@ -126,14 +129,14 @@ export default function CreateFundAlertModal({ onClose }: Props) {
         getTelegramStatus().then((s) => setLinked(s.linked)).catch(() => setLinked(false));
     }, []);
 
-    // Каталог фондов — публичный эндпоинт (как FundsMoney). Юань исключаем.
+    // Каталог фондов — публичный эндпоинт (как FundsMoney). Все категории, вкл. юань.
     // selectedTickers оставляем пустым (= все фонды по дефолту).
     useEffect(() => {
         let cancelled = false;
         getFundsCatalog()
             .then((r) => {
                 if (cancelled) return;
-                setCatalog(r.funds.filter((f) => f.category !== 'yuan'));
+                setCatalog(r.funds);
                 setCatalogReady(true);
             })
             .catch(() => { if (!cancelled) setCatalogReady(true); });
@@ -256,22 +259,14 @@ export default function CreateFundAlertModal({ onClose }: Props) {
         return activeLevel?.mult ?? null;
     };
 
-    // Резолв выбора → {asset, fund_ids?} по контракту.
-    const resolveTarget = (): { asset: string; fund_ids?: number[] } => {
-        if (allSelected) return { asset: 'all' };
-        // Ровно одна категория целиком (и ничего вне неё) → asset=<категория>.
+    // Целиком выбранные категории, ТОЧНО покрывающие выбор (ничего вне них).
+    // Если так — это «подписка на категории», и каждую шлём отдельным сигналом.
+    const wholeCategorySelection = (): CategoryKey[] | null => {
         const fullCats = presentCategories.filter((k) => isCategoryFullySelected(k));
         const coveredByCats = fullCats.reduce(
             (acc, k) => acc + (tickersByCategory.get(k)?.length ?? 0), 0,
         );
-        if (fullCats.length === 1 && coveredByCats === selectedCount) {
-            return { asset: fullCats[0] };
-        }
-        // Иначе — заморожённый набор fund_id.
-        const ids = Array.from(effectiveTickers)
-            .map((t) => fundIdByTicker.get(t))
-            .filter((v): v is number => v != null);
-        return { asset: 'custom', fund_ids: ids };
+        return fullCats.length >= 1 && coveredByCats === selectedCount ? fullCats : null;
     };
 
     const handleCreate = async () => {
@@ -279,25 +274,41 @@ export default function CreateFundAlertModal({ onClose }: Props) {
         if (mult == null || mult <= 0) { setMsg({ type: 'err', text: 'Укажите множитель уровня' }); return; }
         if (selectedCount === 0) { setMsg({ type: 'err', text: 'Выберите хотя бы один фонд' }); return; }
         setBusy(true); setMsg(null);
+        // Общие поля контракта: indicator='funds_flow', metric='net_flow', op='gt',
+        // threshold=×N, timeframe всегда '1d' (потоки дневные); source='funds' ставит бэк.
+        const common = {
+            indicator: 'funds_flow', metric: 'net_flow', op: 'gt',
+            threshold: mult, mode, timeframe: '1d',
+            ...(mode === 'repeat' ? { cooldown_hours: 24 } : {}),
+        } as const;
         try {
-            const target = resolveTarget();
-            // Контракт fund-алерта: indicator='funds_flow', metric='net_flow',
-            // op='gt', threshold=×N. timeframe всегда '1d' (потоки дневные);
-            // source='funds' проставит бэкенд. asset/fund_ids — из resolveTarget.
-            const payload: AlertCreatePayload = {
-                indicator: 'funds_flow',
-                asset: target.asset,
-                asset_name: selectionLabel,
-                metric: 'net_flow',
-                op: 'gt',
-                threshold: mult,
-                mode,
-                timeframe: '1d',
-                ...(target.fund_ids ? { fund_ids: target.fund_ids } : {}),
-                ...(mode === 'repeat' ? { cooldown_hours: 24 } : {}),
-            };
-            await createAlert(payload);
-            setCreated(true);
+            const cats = wholeCategorySelection();
+            if (cats) {
+                // Подписка на целые категории → ОТДЕЛЬНЫЙ сигнал на каждую, чтобы
+                // спайк одной (золото 5.6×) не размывался суммой остальных. Одна
+                // категория → createAlert; несколько → один batch-запрос.
+                const payloads: AlertCreatePayload[] = cats.map((k) => ({
+                    ...common,
+                    asset: k,
+                    asset_name: CATEGORY_LABELS[k] ?? k,
+                }));
+                if (payloads.length === 1) {
+                    await createAlert(payloads[0]);
+                    setCreated(true);
+                } else {
+                    const res = await createAlertsBatch(payloads);
+                    if (res.created > 0) setCreated(true);
+                    else setMsg({ type: 'err', text: res.errors[0] || 'Не удалось создать сигналы' });
+                }
+            } else {
+                // Точечный набор фондов (не целые категории) → один «custom»-сигнал
+                // по осознанно собранной корзине.
+                const ids = Array.from(effectiveTickers)
+                    .map((t) => fundIdByTicker.get(t))
+                    .filter((v): v is number => v != null);
+                await createAlert({ ...common, asset: 'custom', asset_name: selectionLabel, fund_ids: ids });
+                setCreated(true);
+            }
         } catch (e) {
             setMsg({ type: 'err', text: (e as Error).message });
         } finally { setBusy(false); }
@@ -320,7 +331,7 @@ export default function CreateFundAlertModal({ onClose }: Props) {
                         <Check size={40} style={{ color: 'var(--accent)', margin: '0 auto 8px', display: 'block' }} />
                         <div style={{ fontWeight: 600, marginBottom: 4 }}>Сигнал создан</div>
                         <div style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)', marginBottom: 16 }}>
-                            Уведомление придёт в Telegram (@framesignalbot), когда поток в фонды «{selectionLabel}» станет аномальным.
+                            Следим за потоком: <b style={{ color: 'var(--text-primary)' }}>{selectionLabel}</b>. Когда дневной приток или отток станет аномальным, придёт сигнал в Telegram (@framesignalbot) — по конкретной категории.
                         </div>
                         <button onClick={onClose} className="editorial-press" style={{ ...primaryBtn, width: 'auto', padding: '10px 24px', margin: '0 auto', display: 'inline-block' }}>Готово</button>
                     </div>
