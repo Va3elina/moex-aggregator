@@ -250,6 +250,21 @@ _FUND_CAT_NAME = {
     "yuan": "Юань",
 }
 
+# Тип-«плашка» в шапке сигнала — ЖИРНЫМ словом, чтобы тип (ОИ / цена / фонды)
+# читался с первого взгляда. Кастом-эмодзи у нас одноцветные (оранжевый пак Frame)
+# и тип НЕ различают — значки 🔄/💼 рядом не контрастируют. Поэтому различаем
+# именно жирным ТЕКСТОМ, а не значком.
+_TYPE_OI    = "ОТКРЫТЫЙ ИНТЕРЕС"
+_TYPE_PRICE = "ЦЕНА ФЬЮЧЕРСА"
+_TYPE_FUNDS = "ДЕНЬГИ В ФОНДАХ"
+
+
+def _head(type_label: str, subtitle: str, note: str = "") -> str:
+    """Шапка сигнала: бренд + ЖИРНЫЙ тег типа первой строкой, предмет сигнала
+    (актив/категория) — второй. Тип различаем текстом, а не эмодзи."""
+    return (f"{_ce(*_EMO_SIGNAL)} <b>{_MARK} · {type_label}</b>\n"
+            f"<b>{subtitle}</b>{note}")
+
 
 def _leg_phrase(direction: str, legs: dict) -> str:
     """Какая нога двинула чистую позицию — когда это однозначно. legs = дневные Δ
@@ -282,47 +297,44 @@ def _leg_phrase(direction: str, legs: dict) -> str:
 def format_msg(a: Alert, value: float, ctx: dict) -> str:
     name = a.asset_name or a.asset
     link = f'<a href="{_oi_url(a)}">открыть график →</a>'
-    head = f"{_ce(*_EMO_SIGNAL)} <b>{_MARK}</b>\n<b>{name} · {a.asset}</b>"
+    subj = f"{name} · {a.asset}"            # предмет OI/цены: имя · тикер
     thr = float(a.threshold)
     # Таймфрейм-пометка для OI-сигналов: при 5m/1h уточняем, что net взят из
-    # внутридневного бара (иначе при разных ТФ на один актив — путаница). И
-    # «Δ за день» для интрадей неточно → «Δ с прошлого закрытия».
+    # внутридневного бара (иначе при разных ТФ на один актив — путаница).
     tf = a.timeframe or "1d"
     tf_note = {"5m": " · данные 5-мин", "1h": " · данные часовые"}.get(tf, "")
-    diff_label = "Δ за день" if tf == "1d" else "Δ с прошлого закрытия"
     if a.indicator == "price":
         word = _OP_PRICE.get(a.op, a.op)
         eod = "\n<i>(дневная свеча — у актива нет внутридневных данных)</i>" \
             if ctx.get("interval") == 24 else ""
-        return (f"{head}\n"
+        return (f"{_head(_TYPE_PRICE, subj)}\n"
                 f"{_ce(*_EMO_PRICE)} Цена {word} отметку {thr:g} ₽ — сейчас {value:g} ₽{eod}\n{link}")
     # Принцип текста (правка Вадима): ГЛАВНОЕ — насколько аномально (×N к обычному
-    # дневному шагу) и в какую сторону (вырос/упал). Число контрактов УБРАНО из
-    # сообщения как второстепенное; методология («за 14 дней») вынесена из текста.
+    # дневному шагу) и в какую сторону. Тип сигнала («Открытый интерес») вынесен в
+    # ЖИРНУЮ плашку шапки — раньше был значок 🔄 + «открытые позиции», но эмодзи
+    # одноцветные и тип не различали.
     if a.indicator == "oi_zscore":
         clg = "Физлица" if (a.clgroup or "FIZ") == "FIZ" else "Юрлица"
         diff = ctx.get("last_diff", 0)
         word = "резко нарастили позицию" if diff > 0 else "резко сократили позицию"
         dir_emo = _ce(*_EMO_UP) if diff > 0 else _ce(*_EMO_DOWN)
-        return (f"{head} — {_ce(*_EMO_OI)} открытые позиции\n"
+        return (f"{_head(_TYPE_OI, subj)}\n"
                 f"{dir_emo} {clg} {word} — аномально резкий дневной сдвиг.\n{link}")
     if a.indicator == "oi_move":
         direction = ctx.get("direction", "up")
         dir_emo = _ce(*_EMO_UP) if direction == "up" else _ce(*_EMO_DOWN)
+        head = _head(_TYPE_OI, subj, tf_note)
         if ctx.get("neutral"):
             # clgroup ALL («в целом»). Чистую позицию считаем со стороны физлиц
-            # (net зеркален: net физлиц = −net юрлиц, величина одинакова). Раньше
-            # писали безличное «Позиции упали» — неясно, чьи (а график открывался на
-            # юрлицах, т.е. в обратную сторону). Называем ТОЛЬКО того, кого реально
-            # измерили — физлиц; зеркальную сторону юрлиц НЕ утверждаем (это было бы
-            # смелым допущением — у них могло двинуться не зеркально из-за округлений
-            # /доли рынка). Диплинк ведёт на физлиц, совпадая с текстом.
+            # (net зеркален: net физлиц = −net юрлиц). Называем ТОЛЬКО физлиц (тех,
+            # кого измерили); зеркальную сторону юрлиц НЕ утверждаем. Диплинк ведёт
+            # на физлиц, совпадая с текстом.
             word = "резко нарастили позицию" if direction == "up" else "резко сократили позицию"
-            return (f"{head} — {_ce(*_EMO_OI)} открытые позиции{tf_note}\n"
+            return (f"{head}\n"
                     f"{dir_emo} Физлица {word} — в {value:g}× резче обычного (порог {thr:g}×).\n{link}")
         clg = "Физлица" if (a.clgroup or "FIZ") == "FIZ" else "Юрлица"
         word = "резко нарастили позицию" if direction == "up" else "резко сократили позицию"
-        return (f"{head} — {_ce(*_EMO_OI)} открытые позиции{tf_note}\n"
+        return (f"{head}\n"
                 f"{dir_emo} {clg} {word} — в {value:g}× резче обычного (порог {thr:g}×).\n{link}")
     if a.indicator == "oi_participants":
         clg = "физлиц" if (a.clgroup or "FIZ") == "FIZ" else "юрлиц"
@@ -331,23 +343,22 @@ def format_msg(a: Alert, value: float, ctx: dict) -> str:
         flow = "Приток" if up else "Отток"
         dir_emo = _ce(*_EMO_UP) if up else _ce(*_EMO_DOWN)
         ctx_line = f" Сейчас {npart:,} участников." if npart else ""
-        return (f"{head} — {_ce(*_EMO_OI)} открытые позиции{tf_note}\n"
+        return (f"{_head(_TYPE_OI, subj, tf_note)}\n"
                 f"{dir_emo} {flow} {clg} — в {value:g}× резче обычного (порог {thr:g}×).{ctx_line}\n{link}")
     if a.indicator == "funds_flow":
-        # «Аномальный поток» по выбранному набору фондов. Заголовок из метки
-        # выбора (a.asset_name: «Все фонды» / «Акции, Облигации» / «N фондов» /
-        # по УК), с fallback на имя категории для старых fund-алертов, у которых
-        # asset_name мог быть пуст. Ссылка на /funds-money. Главное в тексте —
-        # ×N + направление (приток/отток), в стиле oi_move.
+        # «Аномальный поток» по выбранному набору фондов. Метка выбора в шапку
+        # (a.asset_name: «Денежный рынок» / «Все фонды» / «N фондов»), с fallback
+        # на имя категории. Тип — ЖИРНАЯ плашка «ДЕНЬГИ В ФОНДАХ» (раньше был значок
+        # 💼 + «притоки-оттоки»). Главное в тексте — ×N + направление.
         label = a.asset_name or _FUND_CAT_NAME.get(a.asset, a.asset)
         funds_link = f'<a href="{_funds_url(a)}">открыть график →</a>'
-        funds_head = f"{_ce(*_EMO_SIGNAL)} <b>{_MARK}</b>\n<b>{label}</b>"
         up = ctx.get("direction") == "up"
         flow_word = "ПРИТОК" if up else "ОТТОК"
         dir_emo = _ce(*_EMO_UP) if up else _ce(*_EMO_DOWN)
-        return (f"{funds_head} — {_ce(*_EMO_FUNDS)} притоки-оттоки\n"
+        return (f"{_head(_TYPE_FUNDS, label)}\n"
                 f"{dir_emo} Резкий {flow_word} — в {value:g}× больше обычного (порог {thr:g}×).\n{funds_link}")
-    return f"{head}\nАлерт сработал.\n{link}"
+    return (f"{_ce(*_EMO_SIGNAL)} <b>{_MARK}</b>\n<b>{subj}</b>\n"
+            f"Алерт сработал.\n{link}")
 
 
 def run_once() -> dict:
