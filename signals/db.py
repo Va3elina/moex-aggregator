@@ -114,14 +114,18 @@ def get_position_series(sectype: str, clgroup: str, days: int,
 
 
 # Категории фондов → бенчмарк-индекс (зеркало CATEGORY_INDEX_MAP в
-# api/routers/funds.py). Юань НЕ включён — на сайте «Скоро». money_market/gold с
-# min_date=2022-01-09 (ранняя история шумная), но для ATR-серии берём окно ~30-45д
-# назад — все категории к этой дате давно «чистые», поэтому min_date тут не нужен.
+# api/routers/funds.py). Юань включён (2026-06-19): NAV юаневых фондов хранится в
+# ₽ (как у рублёвых), цена пая тоже ₽ → переоценка пая снимает курс CNY/RUB
+# автоматически (та же математика net_flow, что у остальных категорий), отдельная
+# CNY-логика не нужна. money_market/gold с min_date=2022-01-09 (ранняя история
+# шумная), но для ATR-серии берём окно ~30-45д назад — все категории к этой дате
+# давно «чистые», поэтому min_date тут не нужен.
 FUND_CATEGORIES = {
     "money_market": "RUSFAR3M",
     "stocks": "IMOEX",
     "bonds": "RGBITR",
     "gold": "GLDRUB_TOM",
+    "yuan": "RUSFARCNY",
 }
 
 

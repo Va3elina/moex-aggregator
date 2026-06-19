@@ -53,6 +53,10 @@ def _oi_url(a) -> str:
     params = [("instrument", a.asset)]
     if a.clgroup in ("FIZ", "YUR"):
         params.append(("clgroup", a.clgroup))
+    elif a.clgroup == "ALL":
+        # «В целом» (ALL) считается от физлиц и текст ведёт от них → и график
+        # открываем на физлицах, чтобы направление совпало с тем, что в сигнале.
+        params.append(("clgroup", "FIZ"))
     iv = _TF_INTERVAL.get(a.timeframe or "1d")
     if iv:
         params.append(("interval", str(iv)))
@@ -238,12 +242,12 @@ _EMO_FUNDS  = ("5454114055054728462", "💼")   # фонды
 _EMO_PRICE  = ("5454013243582356952", "💵")   # цена
 
 # Человекочитаемые имена категорий фондов (зеркало CATEGORY_INDEX_MAP в API).
-# Юань не включён — на сайте «Скоро».
 _FUND_CAT_NAME = {
     "money_market": "Денежный рынок",
     "stocks": "Акции",
     "bonds": "Облигации",
     "gold": "Золото",
+    "yuan": "Юань",
 }
 
 
@@ -306,10 +310,17 @@ def format_msg(a: Alert, value: float, ctx: dict) -> str:
         direction = ctx.get("direction", "up")
         dir_emo = _ce(*_EMO_UP) if direction == "up" else _ce(*_EMO_DOWN)
         if ctx.get("neutral"):
-            # clgroup ALL — без субъекта физ/юр.
-            move = "выросли" if direction == "up" else "упали"
+            # clgroup ALL («в целом»). Чистая позиция зеркальна: net физлиц = −net
+            # юрлиц, поэтому величина одинакова, а направление — со стороны физлиц
+            # (от них и считаем). Раньше писали безличное «Позиции упали» — было
+            # неясно, чьи (а график по умолчанию открывался на юрлицах, т.е. в
+            # обратную сторону). Теперь называем ОБЕ стороны явно.
+            if direction == "up":
+                subj = "Физлица резко нарастили чистую позицию (юрлица — зеркально сократили)"
+            else:
+                subj = "Физлица резко сократили чистую позицию (юрлица — зеркально нарастили)"
             return (f"{head} — {_ce(*_EMO_OI)} открытые позиции{tf_note}\n"
-                    f"{dir_emo} Позиции резко {move} — в {value:g}× резче обычного (порог {thr:g}×).\n{link}")
+                    f"{dir_emo} {subj}. Сдвиг в {value:g}× резче обычного (порог {thr:g}×).\n{link}")
         clg = "Физлица" if (a.clgroup or "FIZ") == "FIZ" else "Юрлица"
         word = "резко нарастили позицию" if direction == "up" else "резко сократили позицию"
         return (f"{head} — {_ce(*_EMO_OI)} открытые позиции{tf_note}\n"
