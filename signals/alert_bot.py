@@ -121,6 +121,38 @@ def send_kb(chat_id, text_msg: str, inline_keyboard: list) -> None:
         print(f"[alert_bot] send_kb error: {_redact(e)}")
 
 
+# ── Постоянная reply-клавиатура (нижний бар, висит ВСЕГДА — без повторного /start) ──
+# Кнопки шлют свой ТЕКСТ обычным сообщением → ловим в process_update по тексту.
+# URL-кнопок reply-клавиатура НЕ поддерживает (только inline) → сайт остаётся
+# ссылкой в тексте. is_persistent=True держит бар постоянно даже когда поле ввода
+# в фокусе; resize_keyboard подгоняет высоту. Подписи — как в inline-меню (единообразно).
+_REPLY_KB = {
+    "keyboard": [[{"text": "📋 Мои алерты"}, {"text": "❓ Помощь"}]],
+    "resize_keyboard": True,
+    "is_persistent": True,
+}
+
+
+def send_persistent(chat_id, text_msg: str) -> None:
+    """sendMessage + постоянная нижняя клавиатура (устанавливает/обновляет бар).
+    Бар сохраняется для всех последующих сообщений (вкл. сигналы с inline-кнопками,
+    они на него не влияют) — пока не заменить другой reply-клавиатурой."""
+    try:
+        requests.post(
+            f"{API_BASE}/sendMessage",
+            json={
+                "chat_id": chat_id,
+                "text": text_msg,
+                "parse_mode": "HTML",
+                "disable_web_page_preview": True,
+                "reply_markup": _REPLY_KB,
+            },
+            timeout=15,
+        )
+    except requests.RequestException as e:
+        print(f"[alert_bot] send_persistent error: {_redact(e)}")
+
+
 def edit_kb(chat_id, message_id, text_msg: str, inline_keyboard: list) -> None:
     """editMessageText — правим то же сообщение (in-place навигация)."""
     try:
@@ -333,6 +365,17 @@ def _view_menu():
         [{"text": "🌐 Открыть Фрейм", "url": SITE}],
     ]
     return txt, kb
+
+
+def _welcome_text() -> str:
+    """Текст приветствия для /start и /menu — шлётся с постоянной нижней
+    клавиатурой (send_persistent). Сайт — ссылкой (URL-кнопку reply-бар не держит)."""
+    return (
+        "👋 <b>Frame Signal</b>\n\n"
+        "Здесь приходят алерты по рынку MOEX и можно ими управлять.\n"
+        f"Новые создаются на сайте — <a href=\"{SITE}\">в Личном кабинете</a>.\n\n"
+        "Кнопки снизу всегда под рукой 👇"
+    )
 
 
 # Сколько карточек на страницу списка (Telegram-клавиатура не должна быть бесконечной).
@@ -608,6 +651,28 @@ def process_callback(cb: dict) -> None:
         db.close()
 
 
+def _handle_alerts(chat_id) -> None:
+    """Корень «Мои алерты» (выбор раздела) — из /alerts И кнопки нижнего бара."""
+    db = SessionLocal()
+    try:
+        user_id = _user_id_by_chat(db, chat_id)
+        if not user_id:
+            send_kb(chat_id,
+                    "Аккаунт не привязан. Откройте сайт → Личный кабинет → "
+                    "«Подключить Telegram».",
+                    [[{"text": "🌐 Открыть Фрейм", "url": SITE}]])
+        else:
+            txt_list, kb = _view_list_root(db, user_id)
+            send_kb(chat_id, txt_list, kb)
+    finally:
+        db.close()
+
+
+def _handle_help(chat_id) -> None:
+    """Помощь — из /help И кнопки нижнего бара."""
+    send_kb(chat_id, HELP_TEXT, [[{"text": "← Меню", "callback_data": "m"}]])
+
+
 def process_update(update: dict) -> None:
     if update.get("callback_query"):
         process_callback(update["callback_query"])
@@ -619,6 +684,15 @@ def process_update(update: dict) -> None:
     username = msg["chat"].get("username")
     txt = (msg.get("text") or "").strip()
 
+    # Тап по постоянной нижней клавиатуре приходит как ОБЫЧНОЕ текстовое сообщение
+    # (равное подписи кнопки) — ловим до разбора команд.
+    if txt in ("📋 Мои алерты", "Мои алерты"):
+        _handle_alerts(chat_id)
+        return
+    if txt in ("❓ Помощь", "Помощь"):
+        _handle_help(chat_id)
+        return
+
     parts = txt.split(maxsplit=1)
     # /menu@framesignalbot → /menu (в группах TG добавляет @botname)
     cmd = parts[0].split("@", 1)[0].lower() if parts else ""
@@ -628,37 +702,23 @@ def process_update(update: dict) -> None:
         if arg:
             ok = link_account(arg, chat_id, username)
             if ok:
-                txt_menu, kb = _view_menu()
-                send_kb(chat_id,
-                        "✅ Аккаунт Фрейм подключён. Алерты будут приходить сюда.\n\n"
-                        + txt_menu, kb)
+                # send_persistent ставит постоянный нижний бар (кнопки навсегда).
+                send_persistent(chat_id,
+                                 "✅ Аккаунт Фрейм подключён. Алерты будут приходить сюда.\n\n"
+                                 + _welcome_text())
             else:
                 send(chat_id,
                      "⚠️ Ссылка недействительна или истекла.\n"
                      "Сгенерируйте новую на сайте: ЛК → Подключить Telegram.")
         else:
-            # /start без токена — приветственное меню
-            txt_menu, kb = _view_menu()
-            send_kb(chat_id, txt_menu, kb)
+            # /start без токена — приветствие + постоянный нижний бар.
+            send_persistent(chat_id, _welcome_text())
     elif cmd == "/menu":
-        txt_menu, kb = _view_menu()
-        send_kb(chat_id, txt_menu, kb)
+        send_persistent(chat_id, _welcome_text())
     elif cmd == "/help":
-        send_kb(chat_id, HELP_TEXT, [[{"text": "← Меню", "callback_data": "m"}]])
+        _handle_help(chat_id)
     elif cmd == "/alerts":
-        db = SessionLocal()
-        try:
-            user_id = _user_id_by_chat(db, chat_id)
-            if not user_id:
-                send_kb(chat_id,
-                        "Аккаунт не привязан. Откройте сайт → Личный кабинет → "
-                        "«Подключить Telegram».",
-                        [[{"text": "🌐 Открыть Фрейм", "url": SITE}]])
-            else:
-                txt_list, kb = _view_list_root(db, user_id)
-                send_kb(chat_id, txt_list, kb)
-        finally:
-            db.close()
+        _handle_alerts(chat_id)
     elif cmd == "/stop":
         db = SessionLocal()
         try:
