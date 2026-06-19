@@ -304,10 +304,20 @@ def api_info():
 
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend" / "dist"
 
+# Валидные клиентские маршруты, у которых НЕТ пререндера (нет записи в SEO_META,
+# поэтому scripts/prerender-meta.ts не создаёт для них dist/<route>/index.html):
+# динамические сегменты и чистые редиректы из frontend/src/App.tsx. Всё прочее,
+# что не статика и не пререндерено, — несуществующий URL → честный 404.
+# Иначе SPA-fallback отдавал 200 на ЛЮБУЮ опечатку (/nonexistent-page → 200),
+# и Yandex/Google ругаются «404 настроен некорректно» и хуже индексируют сайт.
+# ВАЖНО: добавил НЕ-пререндеренный route в App.tsx — добавь префикс/путь сюда.
+SPA_VALID_PREFIXES = ("embed/", "auth/callback/", "admin/")
+SPA_VALID_EXACT = frozenset({"verify-email", "funds", "security"})
+
 if FRONTEND_DIR.exists():
     app.mount("/assets", StaticFiles(directory=FRONTEND_DIR / "assets"), name="assets")
 
-    @app.get("/{path:path}")
+    @app.api_route("/{path:path}", methods=["GET", "HEAD"])
     async def serve_spa(path: str):
         # Неизвестные /api/* — это НЕ маршруты SPA: отдаём честный 404, а не
         # HTML-оболочку. Иначе любой опечатанный/удалённый эндпоинт (как
@@ -335,8 +345,17 @@ if FRONTEND_DIR.exists():
                     prerendered,
                     headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
                 )
-        # SPA fallback — dist/index.html (главная + неизвестные routes)
+        # SPA fallback — dist/index.html. Тело то же самое (React-роутер сам
+        # отрисует нужный экран), но СТАТУС зависит от валидности пути:
+        #   - "" (главная), известный не-пререндеренный route → 200
+        #   - всё остальное → 404 (для краулеров; пользователь видит ту же оболочку)
+        is_known_route = (
+            not path
+            or path in SPA_VALID_EXACT
+            or path.startswith(SPA_VALID_PREFIXES)
+        )
         return FileResponse(
             FRONTEND_DIR / "index.html",
+            status_code=200 if is_known_route else 404,
             headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
         )

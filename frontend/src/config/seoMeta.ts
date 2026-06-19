@@ -87,12 +87,15 @@ export const SEO_META: Record<string, SeoMeta> = {
         keywords: 'БПИФ, денежные потоки, притоки в фонды, ETF Россия, fund flows',
         breadcrumb: 'Индикаторы',
     },
+    // /funds-catalog — редирект на /fund-trades (см. App.tsx), который сам
+    // noindex + Disallow. Поэтому и сам /funds-catalog noindex: рекламировать
+    // его как индексируемый нельзя (Yandex индексировал бы, ловил JS-редирект на
+    // закрытую страницу). НЕ ставим Disallow в robots.txt — иначе краулер не
+    // увидит этот noindex и не удалит уже проиндексированный URL. Из sitemap убран.
     '/funds-catalog': {
-        title: 'Каталог биржевых фондов БПИФ MOEX — состав и динамика | Фрейм',
-        description:
-            'Все биржевые фонды Московской биржи: состав активов, стоимость пая, динамика СЧА. Сравнение БПИФ по категориям — акции, облигации, золото, денежный рынок.',
-        keywords: 'каталог БПИФ, биржевые фонды MOEX, состав фонда, СЧА, стоимость пая, ETF Россия',
-        breadcrumb: 'Индикаторы',
+        title: 'Каталог биржевых фондов БПИФ MOEX | Фрейм',
+        description: '',
+        noindex: true,
     },
     '/strength': {
         title: 'Сила рынка — market breadth MOEX | Фрейм',
