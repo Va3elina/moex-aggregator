@@ -46,6 +46,10 @@ CAP_MIN_VALUE = 10          # Минимум 10 млрд руб (1998 кризи
 CAP_MAX_VALUE = 200_000     # Максимум 200 трлн руб (200 000 млрд)
 CAP_MIN_DATE = date(1997, 1, 1)
 CAP_MAX_JUMP_PCT = 50       # Максимальный скачок между соседними точками (%)
+# Капа одной бумаги, которой нет в нашем реестре instruments, выше которой считаем её
+# ошибкой источника и вычитаем из «Всего» (см. subtract_bogus_company_caps). Инцидент
+# 2026-06-17: новому IPO INCB SmartLab присвоил 8 трлн руб → раздул total на ~15%.
+UNKNOWN_TICKER_CAP_CEILING = 1500  # млрд руб: больше любого реального нового IPO, ниже топ-эшелона
 
 # === SmartLab URL ===
 SMARTLAB_URL = "https://smart-lab.ru/q/shares_fundamental/?field=market_cap"
@@ -321,6 +325,37 @@ def save_per_company_caps(engine, caps: List[Tuple[str, float]]) -> int:
     return saved
 
 
+def subtract_bogus_company_caps(engine, total: float, per_company: List[Tuple[str, float]]) -> float:
+    """Вычитает из «Всего» капу бумаг с явно ошибочной капитализацией.
+
+    SmartLab изредка присваивает бумаге абсурдную капу, и она попадает в строку «Всего».
+    Инцидент 2026-06-17: новому IPO «Инкаб Холдинг» (INCB) присвоено 8 трлн руб (больше
+    Сбербанка) → total раздулся на ~15% (60.8 против 52.9 трлн), индикатор Баффетта дал
+    ложный всплеск на 17-18 июня, пока 19-го SmartLab не убрал бумагу.
+
+    Жёсткий потолок по величине не годится (Сбер уже ~7 трлн), поэтому ловим бумагу,
+    которой НЕТ в нашем реестре instruments И при этом её капа в топ-эшелоне
+    (> UNKNOWN_TICKER_CAP_CEILING): свежее IPO столько стоить не может (реальный Инкаб
+    ~30 млрд). Такую капу вычитаем из «Всего». Бумаги, которые мы просто не отслеживаем
+    (мелкий неликвид с капой ниже потолка), остаются в total как часть рынка."""
+    with engine.connect() as conn:
+        known = {r[0] for r in conn.execute(text("SELECT sec_id FROM instruments")).fetchall()}
+    # SmartLab показывает обыкновенные тикеры; добавляем их для бумаг, что у нас только префом
+    known |= {t[:-1] for t in list(known) if t.endswith('P')}
+    known.add('TRNF')  # Транснефть: в instruments только TRNFP, на SmartLab показана как TRNF
+
+    adjusted = total
+    for ticker, cap in per_company:
+        if cap > UNKNOWN_TICKER_CAP_CEILING and ticker not in known:
+            log.error(f"  Аномальная капа неизвестной бумаги {ticker}={cap:,.0f} млрд "
+                      f"(нет в instruments, > {UNKNOWN_TICKER_CAP_CEILING}) — вычитаю из «Всего», "
+                      f"вероятна ошибка источника")
+            adjusted -= cap
+    if adjusted != total:
+        log.warning(f"  «Всего» скорректировано: {total:,.0f} → {adjusted:,.0f} млрд")
+    return adjusted
+
+
 def fetch_from_smartlab(engine) -> int:
     """Парсит SmartLab и сохраняет капитализацию (общую + по компаниям)."""
     log.info("Загрузка капитализации с SmartLab...")
@@ -368,6 +403,11 @@ def fetch_from_smartlab(engine) -> int:
         log.info(f"  Найдено: '{match.group(0).strip()}'")
         log.info(f"  Капитализация: {cap_value:,.0f} млрд руб")
 
+        # Капитализацию по компаниям парсим заранее: она нужна, чтобы вычистить из «Всего»
+        # ошибочные капы отдельных бумаг (см. subtract_bogus_company_caps) ДО валидации и сейва.
+        per_company = parse_per_company_caps(html_clean)
+        cap_value = subtract_bogus_company_caps(engine, cap_value, per_company)
+
         # Валидация диапазона
         ok, msg = validate_value(cap_value)
         if not ok:
@@ -409,8 +449,7 @@ def fetch_from_smartlab(engine) -> int:
 
         log.info(f"  Сохранено: {today} = {cap_value:,.0f} млрд руб")
 
-        # === Капитализация по компаниям ===
-        per_company = parse_per_company_caps(html_clean)
+        # === Капитализация по компаниям (уже распарсено выше) ===
         if per_company:
             save_per_company_caps(engine, per_company)
         else:
