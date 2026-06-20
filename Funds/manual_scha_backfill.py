@@ -115,8 +115,12 @@ _DATE_PATTERNS = [
 ]
 
 # Regex для извлечения ticker из имени файла:
-# OPIF-54_..., OPIF-9165_..., EQMX-... и т.д.
-_TICKER_RE = re.compile(r"\b(OPIF-\d+|[A-Z]{4,6})(?=[^A-Z0-9]|$)")
+#   OPIF-54_..., OPIF-9165_...        — ОПИФ
+#   EQMX-..., SBMX_...                — биржевой 4-6 букв
+#   RU000A104M43_...                 — ISIN-тикер авторских фондов (Алёнка/Биткоган/
+#                                      Герои и пр.): у этих ОПИФ ticker = сам ISIN,
+#                                      а isin_pif в PDF нет → резолв ТОЛЬКО по имени файла.
+_TICKER_RE = re.compile(r"\b(OPIF-\d+|RU\d{3}A[A-Z0-9]{6}|[A-Z]{4,6})(?=[^A-Z0-9]|$)")
 
 
 def parse_filename(filename: str) -> tuple[str | None, str | None]:
