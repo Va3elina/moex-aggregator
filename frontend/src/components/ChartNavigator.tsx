@@ -17,8 +17,9 @@ interface ChartNavigatorProps {
         'histogram' — приглушённые серые мини-бары от нулевой базовой линии
         (приток вверх / отток вниз). Для FlowsHistogram (притоки/оттоки). */
     previewMode?: 'line' | 'histogram';
-    /** Цвет мини-баров в histogram-режиме. Default — нейтральный серый
-        (--text-secondary), приток и отток одним цветом. */
+    /** Цвет мини-баров в histogram-режиме. Default — тот же серый, что у тени
+        линейных графиков (заливка nav-mini-area в editorial: text-primary 22%).
+        Приток и отток одним цветом. */
     histogramColor?: string;
     /** Отступ слева — сужает навигатор. CSS-length (число px или строка).
         Default 0 — навигатор во всю ширину контейнера (= ширине SVG графика
@@ -49,7 +50,7 @@ export default function ChartNavigator({
     height = 52,
     showPreview = true,
     previewMode = 'line',
-    histogramColor = 'var(--text-secondary)',
+    histogramColor = 'color-mix(in srgb, var(--text-primary) 22%, transparent)',
     insetLeft = 0,
     insetRight = 0,
 }: ChartNavigatorProps) {
@@ -280,12 +281,13 @@ export default function ChartNavigator({
                     <>
                         {/* Нулевая базовая линия — едва заметная, помогает читать вверх/вниз */}
                         <line x1="0" y1={miniHist.mid} x2={VB_WIDTH} y2={miniHist.mid}
-                            stroke={histogramColor} strokeWidth="1" opacity="0.1" vectorEffect="non-scaling-stroke" />
-                        {/* Приглушённые серые мини-бары: приток вверх / отток вниз */}
+                            stroke={histogramColor} strokeWidth="1" opacity="0.5" vectorEffect="non-scaling-stroke" />
+                        {/* Серые мини-бары тоном тени линейного графика: приток вверх / отток вниз.
+                            Прозрачность зашита в histogramColor (color-mix), доп. opacity не нужен. */}
                         {miniHist.bars.map((b, i) => (
                             <rect key={i} className="nav-mini-bar" x={b.x.toFixed(1)} y={b.y.toFixed(1)}
                                 width={miniHist.bw.toFixed(1)} height={b.h.toFixed(1)}
-                                fill={histogramColor} opacity="0.32" />
+                                fill={histogramColor} />
                         ))}
                     </>
                 )}
