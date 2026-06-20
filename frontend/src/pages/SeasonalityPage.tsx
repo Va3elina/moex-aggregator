@@ -555,7 +555,7 @@ export default function SeasonalityPage() {
                 color: 'var(--text-primary)',
                 border: '2px solid var(--text-primary)',
                 fontSize: 'var(--fs-sm)',
-                padding: 'var(--sp-2) var(--sp-3)',
+                padding: 'var(--sp-1) var(--sp-3)',
                 gap: 'var(--sp-2)',
               }}
               title={isOnly

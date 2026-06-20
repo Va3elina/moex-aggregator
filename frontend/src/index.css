@@ -1926,6 +1926,33 @@ a.btn-accent:active {
   to   { opacity: 1; transform: translateY(0); }
 }
 
+/* Шестерёнка настроек периода (Сезонность, PeriodSettingsPopover) — ghost-кнопка
+   в чипе «Период с». Крупнее и явно кликабельная: видимый круглый фон + hover,
+   при активной настройке (медиана / без дивидендов) — accent-заливка. */
+.period-gear {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  cursor: pointer;
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--text-primary) 12%, transparent);
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+.period-gear:hover {
+  background: color-mix(in srgb, var(--text-primary) 26%, transparent);
+}
+.period-gear[data-active="true"] {
+  background: var(--accent);
+  color: var(--text-inverse);
+}
+.period-gear[data-active="true"]:hover {
+  background: color-mix(in srgb, var(--accent) 88%, var(--text-primary));
+}
+
 /* Live-точка "данные обновляются" — расширяющийся ring effect каждые 2с.
    Используется в OverviewPage рядом с timestamp. */
 @keyframes frame-pulse {
