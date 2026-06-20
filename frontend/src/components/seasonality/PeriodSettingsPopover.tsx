@@ -79,12 +79,12 @@ export default function PeriodSettingsPopover({ period, hasDividends, onChange }
         type="button"
         data-export-ignore="true"
         onClick={() => { if (!open) place(); setOpen((o) => !o); }}
-        className="inline-flex items-center justify-center rounded-full transition-opacity hover:opacity-100"
-        style={{ opacity: active ? 1 : 0.6, color: active ? 'var(--accent)' : 'var(--text-primary)' }}
+        className="period-gear"
+        data-active={active ? 'true' : undefined}
         title="Настройки периода: без выбросов / без дивидендных гэпов"
         aria-label="Настройки периода"
       >
-        <Settings2 size={14} />
+        <Settings2 size={16} />
       </button>
       {open && pos && createPortal(
         <div
