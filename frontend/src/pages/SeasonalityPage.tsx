@@ -832,8 +832,10 @@ export default function SeasonalityPage() {
             getTargetElement={() => chartCardRef.current}
             filename={`frame-seasonality-${displayTicker(selectedStock).replace('/', '-').toLowerCase()}-${chartType}-${mode}`}
             metadata={{
-              title: 'Сезонность',
-              asset: selectedName,
+              // Заголовок скрина — «Сезонность по {название}» + бейдж тикера.
+              // asset не задаём: тогда primary = title, а подзаголовок несёт
+              // только details (режим + период) без дубля слова «Сезонность».
+              title: `Сезонность по ${selectedName}`,
               ticker: displayTicker(selectedStock),
               details: [
                 chartType === 'histogram' ? MODE_LABELS[mode] :
