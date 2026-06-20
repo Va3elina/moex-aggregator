@@ -1,7 +1,11 @@
 -- Materialized View: карта рынка акций
 -- Обновляется каждые 5 минут через оркестратор (refresh_materialized_views)
 --
--- change_1d: текущая цена vs close последнего будня (PREVPRICE MOEX)
+-- change_1d: ход последнего торгового дня (тек. цена vs prev close = PREVPRICE
+--   MOEX). На выходных/праздниках, когда сегодня сделок не было, «снимок» берётся
+--   за последний торговый день: пятница vs четверг, а НЕ 0% (см. snap_date /
+--   prev_day_close ниже). Раньше prev = последний будень < CURRENT_DATE совпадал
+--   с latest_daily (та же пятница) → change_1d = 0 на всех выходных.
 -- change_1w/1m/1y: snapshot-to-snapshot — current price vs split-adjusted historical close
 --   Используем ТОЛЬКО daily candles (interval=24) — 5-мин историю в БД не
 --   пересчитывают при split'ах (например T 2026-04-02), поэтому 5-мин
@@ -38,16 +42,6 @@ latest_daily AS (
     SELECT secid, open AS daily_open, close AS price, begin_time AS last_update
     FROM ranked_daily WHERE rn = 1
 ),
--- Prev close = close последнего будня (пн-пт), как PREVPRICE на MOEX
--- На выходных ref = пятница, в понедельник ref = тоже пятница
-prev_day_close AS (
-    SELECT DISTINCT ON (secid) secid, close AS price
-    FROM candles
-    WHERE type = 'stock' AND interval = 24
-      AND begin_time::date < CURRENT_DATE
-      AND EXTRACT(DOW FROM begin_time) BETWEEN 1 AND 5
-    ORDER BY secid, begin_time DESC
-),
 -- Real-time: последняя 5мин свеча сегодня
 intraday_close AS (
     SELECT DISTINCT ON (secid) secid, close
@@ -55,6 +49,31 @@ intraday_close AS (
     WHERE type = 'stock' AND interval = 5
       AND begin_time::date = CURRENT_DATE
     ORDER BY secid, begin_time DESC
+),
+-- Дата «снимка» карты per-секция: если сегодня уже были сделки (есть 5-мин
+-- свеча) — снимок за сегодня; иначе (выходной/праздник/до открытия) — снимок за
+-- дату последней дневной свечи = последний торговый день. От неё отсчитывается
+-- prev_close, поэтому на выходных карта показывает ход последнего торгового дня.
+snap_date AS (
+    SELECT ld.secid,
+           CASE WHEN ic.close IS NOT NULL THEN CURRENT_DATE
+                ELSE ld.last_update::date END AS d
+    FROM latest_daily ld
+    LEFT JOIN intraday_close ic ON ic.secid = ld.secid
+),
+-- Prev close = close последнего БУДНЕГО торгового дня СТРОГО до даты снимка
+-- (= PREVPRICE на MOEX). На сессии снимок = сегодня → prev = вчера. На выходных
+-- снимок = пятница → prev = четверг (раньше предикат < CURRENT_DATE давал ту же
+-- пятницу, что и latest_daily → change_1d = 0). DOW 1-5 + «строго до даты
+-- снимка» делает расчёт holiday-устойчивым (ср. instruments.py day_change_pct).
+prev_day_close AS (
+    SELECT DISTINCT ON (c.secid) c.secid, c.close AS price
+    FROM candles c
+    JOIN snap_date sd ON sd.secid = c.secid
+    WHERE c.type = 'stock' AND c.interval = 24
+      AND c.begin_time::date < sd.d
+      AND EXTRACT(DOW FROM c.begin_time) BETWEEN 1 AND 5
+    ORDER BY c.secid, c.begin_time DESC
 ),
 -- 7D: snapshot-to-snapshot. Только daily candles + split-adjustment.
 price_1w AS (
