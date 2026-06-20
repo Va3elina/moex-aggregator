@@ -553,7 +553,7 @@ export default function SeasonalityPage() {
               style={{
                 background: 'var(--bg-secondary)',
                 color: 'var(--text-primary)',
-                border: '1.5px solid var(--text-primary)',
+                border: '2px solid var(--text-primary)',
                 fontSize: 'var(--fs-sm)',
                 padding: 'var(--sp-2) var(--sp-3)',
                 gap: 'var(--sp-2)',
