@@ -23,6 +23,10 @@ interface HelpTooltipProps {
   /** Или указать вручную заголовок + текст. */
   title?: string;
   content?: string;
+  /** Несколько визуально разделённых блоков (например режимы графика).
+   *  Каждый блок: жирный подзаголовок + абзац. Если задано — рендерится
+   *  вместо `content`. */
+  sections?: { heading: string; body: string }[];
   /** Размер иконки. Default 16. */
   size?: number;
   /** Ссылка на страницу методологии. Если указана — иконка становится
@@ -30,7 +34,7 @@ interface HelpTooltipProps {
   linkTo?: string;
 }
 
-export default function HelpTooltip({ entry, title, content, size = 16, linkTo }: HelpTooltipProps) {
+export default function HelpTooltip({ entry, title, content, sections, size = 16, linkTo }: HelpTooltipProps) {
   const [open, setOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -138,7 +142,16 @@ export default function HelpTooltip({ entry, title, content, size = 16, linkTo }
           {shortText}
         </p>
       )}
-      {fullText && <p style={{ marginBottom: linkTo ? 10 : 0 }}>{fullText}</p>}
+      {sections ? (
+        sections.map((s, i) => (
+          <div key={i} style={{ marginTop: i === 0 ? 0 : 'var(--sp-3)' }}>
+            <p style={{ color: 'var(--text-primary)', fontWeight: 600, marginBottom: 'var(--sp-1)' }}>{s.heading}</p>
+            <p style={{ margin: 0 }}>{s.body}</p>
+          </div>
+        ))
+      ) : (
+        fullText && <p style={{ marginBottom: linkTo ? 10 : 0 }}>{fullText}</p>
+      )}
       {linkTo && (
         <Link
           to={linkTo}
