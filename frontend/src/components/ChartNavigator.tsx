@@ -153,11 +153,15 @@ export default function ChartNavigator({
         const h = height - pt - pb;
         const mid = pt + h / 2;
         const half = h / 2;
-        const step = VB_WIDTH / data.length;
-        const bw = Math.max(0.6, step * 0.6);
+        // Центр бара — point-маппинг i/(n-1)*W, тот же, что у line-превью (pts выше)
+        // и у маппинга ручки в индекс (round(frac*(n-1)) в onChange). band-метод
+        // (i+0.5)/n сдвигал бар на полслота, из-за чего «бар под ручкой» не совпадал
+        // с реально выбираемым индексом и в график попадали лишние соседние бары.
+        const span = Math.max(data.length - 1, 1);
+        const bw = Math.max(0.6, (VB_WIDTH / data.length) * 0.6);
 
         const bars = vals.map((v, i) => {
-            const cx = (i + 0.5) * step;
+            const cx = (i / span) * VB_WIDTH;
             const bh = Math.max(0.4, (Math.abs(v) / maxAbs) * half);
             return { x: cx - bw / 2, y: v >= 0 ? mid - bh : mid, h: bh };
         });
