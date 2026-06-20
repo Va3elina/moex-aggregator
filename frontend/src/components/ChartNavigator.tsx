@@ -10,9 +10,19 @@ interface ChartNavigatorProps {
     onChange: (startIdx: number, endIdx: number, isDrag: boolean) => void;
     color?: string;
     height?: number;
-    /** Показывать мини-line preview данных внутри. Default true.
-        Для гистограмм (FlowsHistogram) ставим false — line plot не подходит. */
+    /** Показывать мини-preview данных внутри. Default true.
+        false — рисуем только маску выделения и ручки (пустая тень). */
     showPreview?: boolean;
+    /** Тип мини-preview. 'line' (default) — area+линия для линейных графиков.
+        'histogram' — мини-бары от нулевой базовой линии + тонкая линия
+        накопленного потока. Для FlowsHistogram (притоки/оттоки). */
+    previewMode?: 'line' | 'histogram';
+    /** Цвет столбиков «вверх» (приток) в histogram-режиме. Default = color. */
+    posColor?: string;
+    /** Цвет столбиков «вниз» (отток) в histogram-режиме. Default = color. */
+    negColor?: string;
+    /** Цвет линии накопленного потока в histogram-режиме. Default = color. */
+    cumColor?: string;
     /** Отступ слева — сужает навигатор. CSS-length (число px или строка).
         Default 0 — навигатор во всю ширину контейнера (= ширине SVG графика
         «от края до края», как просил коллега). */
@@ -41,6 +51,10 @@ export default function ChartNavigator({
     color = 'var(--accent)',
     height = 52,
     showPreview = true,
+    previewMode = 'line',
+    posColor,
+    negColor,
+    cumColor,
     insetLeft = 0,
     insetRight = 0,
 }: ChartNavigatorProps) {
@@ -130,6 +144,47 @@ export default function ChartNavigator({
         const line = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
         const area = `${line} L ${pts[pts.length - 1].x.toFixed(1)} ${height} L 0 ${height} Z`;
         return { line, area };
+    }, [data, height]);
+
+    // Мини-гистограмма: столбики от нулевой базовой линии (приток вверх / отток вниз)
+    // + линия накопленного потока (cumulative sum). Тот же viewBox=1000, что и miniPath.
+    // Бары масштабируются по max|value| относительно центральной оси; накопленная
+    // линия — по своему min..max на всю высоту. Разные шкалы намеренно: бары читаются
+    // как «сила периода», линия — как «общий тренд притоков».
+    const miniHist = useMemo(() => {
+        if (data.length < 1) return null;
+        const vals = data.map(d => d.value);
+        const maxAbs = Math.max(1e-9, ...vals.map(v => Math.abs(v)));
+        const pt = 5, pb = 5;
+        const h = height - pt - pb;
+        const mid = pt + h / 2;
+        const half = h / 2;
+        const n = data.length;
+        const step = VB_WIDTH / n;
+        const bw = Math.max(0.6, step * 0.6);
+
+        const bars = vals.map((v, i) => {
+            const cx = (i + 0.5) * step;
+            const bh = Math.max(0.4, (Math.abs(v) / maxAbs) * half);
+            return {
+                x: cx - bw / 2,
+                y: v >= 0 ? mid - bh : mid,
+                h: bh,
+                pos: v >= 0,
+            };
+        });
+
+        let acc = 0;
+        const cum = vals.map(v => (acc += v));
+        const cMin = Math.min(...cum);
+        const cRange = (Math.max(...cum) - cMin) || 1;
+        const cumLine = cum.map((c, i) => {
+            const x = (i / Math.max(n - 1, 1)) * VB_WIDTH;
+            const y = pt + h - ((c - cMin) / cRange) * h;
+            return `${i === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`;
+        }).join(' ');
+
+        return { bars, bw, mid, cumLine };
     }, [data, height]);
 
     // Перетаскивание
@@ -238,10 +293,26 @@ export default function ChartNavigator({
                         <stop offset="100%" stopColor={color} stopOpacity="0.03" />
                     </linearGradient>
                 </defs>
-                {showPreview && miniPath && (
+                {showPreview && previewMode === 'line' && miniPath && (
                     <>
                         <path className="nav-mini-area" d={miniPath.area} fill={`url(#${gradId})`} />
                         <path className="nav-mini-line" d={miniPath.line} fill="none" stroke={color} strokeWidth="1" opacity="0.5" vectorEffect="non-scaling-stroke" />
+                    </>
+                )}
+                {showPreview && previewMode === 'histogram' && miniHist && (
+                    <>
+                        {/* Нулевая базовая линия — едва заметная, помогает читать вверх/вниз */}
+                        <line x1="0" y1={miniHist.mid} x2={VB_WIDTH} y2={miniHist.mid}
+                            stroke={cumColor ?? color} strokeWidth="1" opacity="0.12" vectorEffect="non-scaling-stroke" />
+                        {/* Бледные мини-бары: приток вверх / отток вниз */}
+                        {miniHist.bars.map((b, i) => (
+                            <rect key={i} x={b.x.toFixed(1)} y={b.y.toFixed(1)}
+                                width={miniHist.bw.toFixed(1)} height={b.h.toFixed(1)}
+                                fill={b.pos ? (posColor ?? color) : (negColor ?? color)} opacity="0.3" />
+                        ))}
+                        {/* Тонкая линия накопленного потока поверх баров */}
+                        <path className="nav-mini-cum" d={miniHist.cumLine} fill="none"
+                            stroke={cumColor ?? color} strokeWidth="1" opacity="0.55" vectorEffect="non-scaling-stroke" />
                     </>
                 )}
             </svg>
