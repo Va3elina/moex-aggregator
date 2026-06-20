@@ -593,7 +593,23 @@ def parse_scha(pdf_bytes: bytes) -> dict:
             else:
                 result["parser_strategy"] = f"{best_strategy}(upgraded from tables)"
     else:
+        # `tables` выглядит полным (≥20 позиций). Но header-based `tables` умеет
+        # МОЛЧА терять первую строку раздела: на TMOS с 2026-01 теряется Аэрофлот
+        # (первый по алфавиту в подразделе 2.7 «Акции росс. эмитентов» — склейка
+        # первой data-строки с шапкой/строкой нумерации колонок). Header-agnostic
+        # rowwise эту строку сохраняет. Перепроверяем rowwise и предпочитаем его,
+        # только если он восстановил СТРОГО больше позиций И его Σстоимости не
+        # больше суммы по tables, и при этом ≤ общим активам формы (страховка от
+        # junk-строк rowwise на уже калиброванных фондах — Альфа/Первая/Т-Кап).
         result["parser_strategy"] = "tables"
+        rowwise_assets = _parse_assets_from_tables_rowwise(all_tables, result.get("isin_pif"))
+        if len(rowwise_assets) > tables_count:
+            rw_sum = sum(a.get("value_rub") or 0 for a in rowwise_assets)
+            tb_sum = sum(a.get("value_rub") or 0 for a in result["assets"])
+            gross = _find_gross_assets_text("\n".join(full_text_parts))
+            if rw_sum >= tb_sum and (not gross or rw_sum <= gross * 1.001):
+                result["assets"] = rowwise_assets
+                result["parser_strategy"] = "tables_rowwise(recovered dropped rows)"
 
     # Глобальный дедуп по ISIN. rowwise/text+regex дедупят сами, но header-based
     # `tables` — нет: если таблица повторяется на нескольких страницах, строка
