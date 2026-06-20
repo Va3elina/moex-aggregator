@@ -219,3 +219,17 @@ If after this checklist the discrepancy is unexplained:
 1. Try the `moex-data-investigator` agent — deeper analysis
 2. Document the investigation in `/memory/methodology_refs.md`
 3. Ask the user to contact the reference source for their exact formula
+
+## Торги выходного дня (с 2026-06-20) — учитывать при сверке
+MOEX торгует в выходные (акции уже; валютные фьючерсы с 18.07; вечные S&P500/Nasdaq).
+В БД есть субботние/воскресные свечи (спот type='stock') и выходной OI (interval=5).
+Что это значит для методологии:
+- **Сезонность (monthly) и breadth** считаются ТОЛЬКО по будням
+  (`EXTRACT(ISODOW FROM ...) BETWEEN 1 AND 5`) — субботние свечи исключены. Если
+  референс включает/исключает выходные иначе — это законный источник расхождения.
+- **Heatmap** и weekday/monthday-сезонность тоже фильтруют выходные.
+- **OI дневной (сигналы, interval=24)** — из ISS openpositions, выходные не отдаёт →
+  только будни; выходная активность сворачивается биржей в клиринг понедельника.
+- **OI/фьючерс-графики (intraday interval=5/60)** МОГУТ показывать выходные сессии.
+- Если сверяешь OI/breadth/сезонность и видишь «лишний» выходной день — проверь
+  ISODOW-фильтр в запросе. Детали — память `weekend_trading.md`.
