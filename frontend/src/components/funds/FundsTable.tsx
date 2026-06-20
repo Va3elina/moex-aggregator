@@ -216,7 +216,7 @@ export default function FundsTable({
                                                         <span className="text-xs text-theme-secondary">({groupFunds.length})</span>
                                                         {subcat && SUBCATEGORY_HELP[subcat] && (
                                                             <span className="inline-flex" onClick={(e) => e.stopPropagation()}>
-                                                                <HelpTooltip content={SUBCATEGORY_HELP[subcat]} size={14} />
+                                                                <HelpTooltip content={SUBCATEGORY_HELP[subcat]} size={18} />
                                                             </span>
                                                         )}
                                                         {subcat && COMING_SOON_SUBCATS.has(subcat) && (
