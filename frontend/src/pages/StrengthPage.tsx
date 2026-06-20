@@ -23,7 +23,6 @@ import CsvExportButton from '../components/export/CsvExportButton';
 import LayersButton from '../components/LayersButton';
 import ChartActionsMenu from '../components/ChartActionsMenu';
 import { periodToQuery } from '../utils/csvPeriod';
-import SectorDetail from '../components/strength/SectorDetail';
 import StrengthControls from '../components/strength/StrengthControls';
 import { computeChartTopLineY, getDatePillStyle } from '../components/chart/datePillLayout';
 import { useOnboardingTour } from '../hooks/useFirstVisit';
@@ -62,7 +61,6 @@ export default function StrengthPage() {
     const [emaPeriod, setEmaPeriod] = usePersistedState<20 | 50 | 100 | 200>('frame:strength:emaPeriod', EMA_PERIOD);
     const [chartMode, setChartMode] = usePersistedState<ChartMode>('frame:strength:chartMode', 'histogram');
     const [showPrice, setShowPrice] = usePersistedState('frame:strength:showPrice', true);
-    const [selectedSector, setSelectedSector] = useState('Все');
 
     // Onboarding tour
     const tour = useOnboardingTour('strength');
@@ -218,39 +216,6 @@ export default function StrengthPage() {
         () => syncedData.map(d => ({ time: d.time, value: d.breadth })),
         [syncedData]
     );
-
-    // Динамические секторы из ответа API
-    const sectorNames = useMemo(() => {
-        if (!current?.stocks) return ['Все'];
-        const names = new Set(current.stocks.map(s => s.sector).filter(Boolean));
-        return ['Все', ...Array.from(names).sort()];
-    }, [current?.stocks]);
-
-    // Реальное количество акций в каждом секторе
-    const sectorCounts = useMemo(() => {
-        if (!current?.stocks) return {};
-        const counts: Record<string, number> = { 'Все': current.stocks.length };
-        for (const stock of current.stocks) {
-            const sec = stock.sector || 'Другое';
-            counts[sec] = (counts[sec] || 0) + 1;
-        }
-        return counts;
-    }, [current?.stocks]);
-
-    // Фильтрованные акции по сектору
-    const filteredStocks = useMemo(() => {
-        if (!current?.stocks) return [];
-        if (selectedSector === 'Все') return current.stocks;
-
-        return current.stocks.filter(s => s.sector === selectedSector);
-    }, [current?.stocks, selectedSector]);
-
-    // Сбросить сектор если он стал пустым после обновления данных
-    useEffect(() => {
-        if (selectedSector !== 'Все' && (sectorCounts[selectedSector] ?? 0) === 0) {
-            setSelectedSector('Все');
-        }
-    }, [sectorCounts, selectedSector]);
 
     // Extracted pointer handler — общая логика для mouse + touch.
     // Раньше вся логика была inline в handleMouseMove → touch не работал.
@@ -651,20 +616,6 @@ export default function StrengthPage() {
             </div>
 
             </div>{/* /editorial-frame */}
-
-            {/* Таблица акций с фильтром по секторам */}
-            {current?.stocks && (
-                <div data-tour="strength-sectors">
-                <SectorDetail
-                    sectorNames={sectorNames}
-                    sectorCounts={sectorCounts}
-                    selectedSector={selectedSector}
-                    onSelectSector={setSelectedSector}
-                    filteredStocks={filteredStocks}
-                    emaPeriod={emaPeriod}
-                />
-                </div>
-            )}
 
             <OnboardingTour
                 steps={strengthTourSteps}
