@@ -225,11 +225,15 @@ def _compute_monthly_returns_candles(
     type_filter = f"type = '{inst_type}'" if inst_type else "TRUE"
 
     with engine.connect() as conn:
-        # Все дневные свечи нужны для adjusted close + month-end выборки
+        # Все дневные свечи нужны для adjusted close + month-end выборки.
+        # ТОЛЬКО будни: торги выходного дня MOEX дают субботние спот-свечи, и без
+        # фильтра «последний close месяца» мог бы взять субботу вместо пятницы →
+        # искажение месячного возврата. Сезонность считается по торговым будням.
         rows = conn.execute(text(f"""
             SELECT begin_time::date as d, close
             FROM candles
             WHERE secid = :secid AND interval = 24 AND {type_filter} AND close > 0
+              AND EXTRACT(ISODOW FROM begin_time) BETWEEN 1 AND 5
             ORDER BY begin_time
         """), {"secid": secid}).fetchall()
 
