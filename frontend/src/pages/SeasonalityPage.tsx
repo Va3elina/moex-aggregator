@@ -4,6 +4,7 @@ import PageHeader from '../components/PageHeader';
 import InstrumentIcon from '../components/InstrumentIcon';
 import Dropdown, { type DropdownOption } from '../components/Dropdown';
 import SegmentedControl from '../components/SegmentedControl';
+import HelpTooltip from '../components/HelpTooltip';
 import { usePrefetchLogos } from '../hooks/usePrefetchLogos';
 import { METHODOLOGY } from '../data/methodology';
 import { getSeasonality, getSeasonalityPrice, getSeasonalityYearly, getSeasonalityYears } from '../services/api';
@@ -679,7 +680,7 @@ export default function SeasonalityPage() {
         </div>
 
         {/* Chart type toggle — горизонтальный сегмент (Календарь / Годовая) */}
-        <div data-tour="seasonality-mode" className="flex" style={{ gap: 'var(--sp-2)' }}>
+        <div data-tour="seasonality-mode" className="flex items-center" style={{ gap: 'var(--sp-2)' }}>
         <SegmentedControl<ChartType>
           options={[
             {
@@ -702,6 +703,13 @@ export default function SeasonalityPage() {
               });
             }
           }}
+        />
+        <HelpTooltip
+          sections={[
+            { heading: 'Календарь', body: 'Средняя доходность по календарным периодам (по месяцам, дням недели, числам месяца, часам) в виде столбиков. Видно, какие периоды исторически были сильными, а какие слабыми.' },
+            { heading: 'Годовая', body: 'Усреднённая траектория цены внутри года по всей истории: типичная форма года, когда актив обычно растёт, а когда снижается. Поверх можно наложить текущий год для сравнения.' },
+          ]}
+          size={18}
         />
 
         {/* Histogram-specific: mode */}
@@ -741,16 +749,11 @@ export default function SeasonalityPage() {
           />
         )}
 
-      </div>
 
-      {/* Controls Row 2 — общие для histogram и yearly:
-          чипы периодов "Период с" + шестерёнка-настройки (медиана / без дивгэпов) + "+",
-          "Показать год" (yearly only). Настройки периода работают и в intraday
-          (для intraday див-гэпы = исключение ex-div дней целиком).
-          Для price — отдельная строка с информацией.
-          В конце через ml-auto — кнопка экспорта графика (📷). Раньше она
-          была в Row 1 и ломала layout при wrap'е на мобиле. */}
-      <div className="flex flex-wrap items-center gap-2 md:gap-4 mb-4">
+      {/* Все контролы в одну горизонтальную строку (Row 1 + Row 2 объединены):
+          селектор актива, тип графика (Календарь/Годовая) + «?», режим, чипы
+          периодов и «+», «Показать год» (yearly), экспорт. flex-wrap — перенос
+          только если не влезает по ширине. */}
         {chartType === 'price' && priceData && (
           <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
             {priceData.data.length} торговых дней • {priceData.ex_dates_count} дивидендных отсечек
