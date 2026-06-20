@@ -451,7 +451,7 @@ export default function SeasonalityPage() {
       const mods = [p.median && 'медиана', p.excludeDividends && 'без див.'].filter(Boolean);
       meta.push({
         key: p.id,
-        label: `С ${p.sinceYear}${mods.length ? ` · ${mods.join(' · ')}` : ' г.'}`,
+        label: `С ${p.sinceYear} г.${mods.length ? ` (${mods.join(', ')})` : ''}`,
         color: FUND_PALETTE[idx % FUND_PALETTE.length],
       });
     });
@@ -563,9 +563,12 @@ export default function SeasonalityPage() {
                 : `Серия "Период с ${p.sinceYear} г." — значения по годам от ${p.sinceYear} до сегодня`}
             >
               <span className="inline-block rounded-full" style={{ width: 'var(--ico-xs)', height: 'var(--ico-xs)', backgroundColor: color }} />
-              С {p.sinceYear}
-              {p.median && <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)' }}>· медиана</span>}
-              {p.excludeDividends && <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)' }}>· без див.</span>}
+              С {p.sinceYear} г.
+              {(p.median || p.excludeDividends) && (
+                <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)' }}>
+                  ({[p.median && 'медиана', p.excludeDividends && 'без див.'].filter(Boolean).join(', ')})
+                </span>
+              )}
               <PeriodSettingsPopover
                 period={p}
                 hasDividends={hasDividends}
