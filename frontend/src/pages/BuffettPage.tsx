@@ -16,6 +16,7 @@ import CsvExportButton from '../components/export/CsvExportButton';
 import { periodToQuery } from '../utils/csvPeriod';
 import Dropdown, { type DropdownOption } from '../components/Dropdown';
 import SegmentedControl from '../components/SegmentedControl';
+import HelpTooltip from '../components/HelpTooltip';
 import LayersButton from '../components/LayersButton';
 import ChartActionsMenu from '../components/ChartActionsMenu';
 import { useAuth } from '../contexts/AuthContext';
@@ -187,8 +188,8 @@ export default function BuffettPage() {
 
             {/* Контролы. Camera button — в конце строки через ml-auto. */}
             <div className="flex flex-wrap mb-4 md:mb-6 items-center" style={{ gap: 'var(--sp-2)' }}>
-                {/* Переключатель режимов — горизонтальный */}
-                <div data-tour="buffett-view-mode">
+                {/* Переключатель режимов — горизонтальный + «?» с пояснением режимов */}
+                <div data-tour="buffett-view-mode" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <SegmentedControl<ViewMode>
                     options={[
                         { key: 'cap-gdp', label: 'Капитализация / ВВП' },
@@ -210,6 +211,11 @@ export default function BuffettPage() {
                             });
                         }
                     }}
+                />
+                <HelpTooltip
+                    title="Режимы индикатора"
+                    content="Капитализация/ВВП это классический индикатор Баффетта: капитализация рынка к ВВП. Показывает, дорог ли рынок относительно того, что реально производит экономика. Для России ниже 40% недооценка, 40-70% норма, выше 70% возможная переоценка. ВВП меняется медленно, поэтому это про долгосрочную картину. Капитализация/M2 это капитализация к денежной массе M2 (наличные и депозиты): сколько в стране денег относительно рынка акций. Низкие значения значат, что денег много, но они не идут в акции, а сидят в депозитах и ОФЗ. M2 чувствительна к действиям ЦБ и бюджета, поэтому быстрее реагирует на монетарные условия."
+                    size={18}
                 />
                 </div>
 
@@ -441,29 +447,6 @@ export default function BuffettPage() {
             </div>{/* /buffett-chart — стабильная обёртка */}
 
             </div>{/* /editorial-frame */}
-
-            {/* Описание */}
-            <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="bg-theme-secondary rounded-2xl p-5 border border-theme">
-                    <h3 className="font-semibold mb-2 text-theme-warning">Капитализация / ВВП — оценка vs экономика</h3>
-                    <p className="text-sm text-theme-secondary leading-relaxed">
-                        Классический индикатор Баффетта: рыночная капитализация к ВВП.
-                        Отвечает на вопрос «дорог ли рынок относительно того, что реально производит экономика».
-                        Для России: ниже 40% — недооценка, 40–70% — норма, выше 70% — возможная переоценка.
-                        Знаменатель (ВВП) движется медленно, поэтому индикатор отражает долгосрочную картину.
-                    </p>
-                </div>
-                <div className="bg-theme-secondary rounded-2xl p-5 border border-theme">
-                    <h3 className="font-semibold mb-2 text-theme-warning">Капитализация / M2 — оценка vs ликвидность</h3>
-                    <p className="text-sm text-theme-secondary leading-relaxed">
-                        Рыночная капитализация к денежной массе M2 (наличные + депозиты).
-                        Отвечает на другой вопрос: «сколько в стране денег относительно рынка акций».
-                        Низкие значения = денег много, но они не идут в акции (сидят в депозитах/ОФЗ).
-                        Знаменатель чувствителен к действиям ЦБ и бюджета — индикатор быстрее реагирует
-                        на монетарные условия, чем Cap/ВВП.
-                    </p>
-                </div>
-            </div>
 
             {/* Onboarding tour */}
             <OnboardingTour
