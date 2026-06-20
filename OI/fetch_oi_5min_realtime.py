@@ -339,15 +339,19 @@ class OI5minUpdater:
 
     @staticmethod
     def _is_non_trading_date(d) -> bool:
-        """Проверяет, является ли дата выходным или праздником MOEX"""
-        from datetime import date as date_type
+        """Дата, за которую OI хранить НЕ нужно. ТОЛЬКО праздники MOEX.
+
+        Выходные (сб/вс) ТЕПЕРЬ могут быть торговыми (торги выходного дня MOEX) —
+        НЕ фильтруем их по weekday, иначе потеряем futoi выходных сессий.
+        Атрибуция даты: храним по фактической `tradedate` (=суббота); поле
+        `trade_session_date` (=след. пн) НЕ используем — так фьючерсная свеча и OI
+        выравниваются по одной календарной дате (signals/features.py,
+        api/routers/chart.py джойнят по date()). В неторговый день источник и так
+        отдаёт пусто, поэтому фильтр праздников — лёгкая подстраховка."""
         if isinstance(d, str):
             d = datetime.strptime(d, '%Y-%m-%d').date()
         if hasattr(d, 'date'):
             d = d.date()
-        # Суббота (5) или воскресенье (6)
-        if d.weekday() >= 5:
-            return True
         return is_holiday(d)
 
     def save_records(self, records: List[dict]) -> Tuple[int, int]:

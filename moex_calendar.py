@@ -181,6 +181,32 @@ def is_trading_hours(check_time: datetime = None) -> Tuple[bool, str]:
     return True, "Торговая сессия"
 
 
+def is_weekend_session(check_time: datetime = None) -> Tuple[bool, str]:
+    """Окно сбора данных для ТОРГОВ ВЫХОДНОГО ДНЯ MOEX (сб/вс).
+
+    True, если сейчас СУББОТА/ВОСКРЕСЕНЬЕ (не праздник) и в пределах торговых
+    часов. Отдельная функция (НЕ меняем is_trading_day/is_trading_hours — у них
+    десятки вызовов, поведение буден должно остаться идентичным).
+
+    Точные часы выходных сессий MOEX могут отличаться по инструментам и меняться
+    (валютные фьючерсы выходного дня — с 18.07.2026; вечные фьючерсы S&P500/Nasdaq —
+    июль 2026), поэтому берём ШИРОКОЕ окно (TRADING_START_HOUR..TRADING_END_HOUR).
+    Это безопасно: вне реальной сессии ISS/Algopack отдают пустой ответ → no-op.
+    """
+    if check_time is None:
+        check_time = get_moscow_time()
+    d = check_time.date()
+    if d.weekday() < 5:
+        return False, "Будний день (обычная сессия)"
+    if d in MOEX_HOLIDAYS:
+        return False, f"Праздник MOEX ({d})"
+    if check_time.hour < TRADING_START_HOUR:
+        return False, f"До начала ({TRADING_START_HOUR}:00 МСК)"
+    if check_time.hour >= TRADING_END_HOUR:
+        return False, "После закрытия"
+    return True, "Сессия выходного дня"
+
+
 def get_previous_trading_day(from_date: date = None) -> date:
     """
     Возвращает предыдущий торговый день.
