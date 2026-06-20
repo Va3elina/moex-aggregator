@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { ChevronDown, CalendarDays, X } from 'lucide-react';
+import { ChevronDown, CalendarDays } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import InstrumentIcon from '../components/InstrumentIcon';
 import Dropdown, { type DropdownOption } from '../components/Dropdown';
@@ -547,44 +547,18 @@ export default function SeasonalityPage() {
           // Цветная точка слева indicates series — единственный остаток FUND_PALETTE color
           // (нужен для синхронизации с линией на графике).
           return (
-            <div
+            <PeriodSettingsPopover
               key={p.id}
-              className="editorial-press flex items-center font-semibold rounded-full whitespace-nowrap"
-              style={{
-                background: 'var(--bg-secondary)',
-                color: 'var(--text-primary)',
-                border: '2px solid var(--text-primary)',
-                fontSize: 'var(--fs-sm)',
-                padding: 'var(--sp-1) var(--sp-3)',
-                gap: 'var(--sp-2)',
-              }}
+              period={p}
+              color={color}
+              removable={!isOnly}
+              onRemove={() => setPeriods(prev => prev.filter(x => x.id !== p.id))}
+              hasDividends={hasDividends}
+              onChange={(patch) => setPeriods(prev => prev.map(x => x.id === p.id ? { ...x, ...patch } : x))}
               title={isOnly
                 ? `Период с ${p.sinceYear} г. — единственный активный период, его нельзя отключить. Сначала добавьте ещё один период через «+».`
-                : `Серия "Период с ${p.sinceYear} г." — значения по годам от ${p.sinceYear} до сегодня`}
-            >
-              <span className="inline-block rounded-full" style={{ width: 'var(--ico-xs)', height: 'var(--ico-xs)', backgroundColor: color }} />
-              С {p.sinceYear} г.
-              {(p.median || p.excludeDividends) && (
-                <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)' }}>
-                  ({[p.median && 'медиана', p.excludeDividends && 'без див.'].filter(Boolean).join(', ')})
-                </span>
-              )}
-              <PeriodSettingsPopover
-                period={p}
-                hasDividends={hasDividends}
-                onChange={(patch) => setPeriods(prev => prev.map(x => x.id === p.id ? { ...x, ...patch } : x))}
-              />
-              {!isOnly && (
-                <button
-                  onClick={() => setPeriods(prev => prev.filter(x => x.id !== p.id))}
-                  className="opacity-60 hover:opacity-100 transition-opacity"
-                  title="Убрать"
-                  aria-label={`Убрать серию с ${p.sinceYear} г.`}
-                >
-                  <X size={14} />
-                </button>
-              )}
-            </div>
+                : `Серия "Период с ${p.sinceYear} г." — клик открывает настройки (медиана / без дивидендов). Значения по годам от ${p.sinceYear} до сегодня.`}
+            />
           );
         })}
         {addableYears.length > 0 && !compareLimitReached && (

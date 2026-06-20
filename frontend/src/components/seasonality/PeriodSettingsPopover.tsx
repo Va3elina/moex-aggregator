@@ -1,48 +1,54 @@
 /**
- * PeriodSettingsPopover — шестерёнка на чипе «Период с YYYY» + попап с настройками
- * этой серии: «Без выбросов» (медиана) и «Без дивидендных гэпов».
+ * PeriodSettingsPopover — чип «Период с YYYY» целиком + попап настроек серии:
+ * «Без выбросов» (медиана) и «Без дивидендных гэпов».
  *
- * Раньше эти опции были глобальными кнопками и не комбинировались с периодом
- * (медиана считалась по всей истории отдельной серией). Теперь они живут у каждого
- * периода и применяются именно к нему.
+ * Триггер — ВЕСЬ чип: клик в любое место открывает настройки (раньше нужно было
+ * целиться в маленькую шестерёнку). Шестерёнка осталась как визуальный hint и
+ * подсвечивается accent'ом, когда серия модифицирована. Крестик удаления гасит
+ * всплытие, чтобы не открывать настройки при удалении.
  *
  * Попап рендерится через ПОРТАЛ в document.body, а не absolute внутри чипа.
  * Причина: чип имеет класс `editorial-press`, который на :hover/:active ставит
  * `transform: translate(...)` (см. index.css). Любой transform создаёт новый
  * stacking context, и z-index absolute-попапа оказывается заперт внутри чипа —
  * карточка графика (ниже по DOM) рисовалась поверх попапа. Портал в body выносит
- * попап из этого контекста; позиционируем его fixed по координатам шестерёнки.
+ * попап из этого контекста; позиционируем его fixed по координатам чипа.
  *
  * Дивидендный тоггл скрыт для инструментов без дивидендов (индексы/валюты/сырьё).
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Settings2 } from 'lucide-react';
+import { Settings2, X } from 'lucide-react';
 import { ToggleRow } from '../ToggleRow';
 import type { PeriodConfig } from './periodConfig';
 
 interface PeriodSettingsPopoverProps {
   period: PeriodConfig;
+  /** Цвет точки серии (синхронизирован с линией на графике). */
+  color: string;
+  /** Можно ли убрать период (false для единственного активного). */
+  removable: boolean;
+  onRemove: () => void;
   hasDividends: boolean;
   onChange: (patch: Partial<Pick<PeriodConfig, 'median' | 'excludeDividends'>>) => void;
+  title?: string;
 }
 
 const POPOVER_WIDTH = 240;
 
-export default function PeriodSettingsPopover({ period, hasDividends, onChange }: PeriodSettingsPopoverProps) {
+export default function PeriodSettingsPopover({
+  period, color, removable, onRemove, hasDividends, onChange, title,
+}: PeriodSettingsPopoverProps) {
   const [open, setOpen] = useState(false);
-  const btnRef = useRef<HTMLButtonElement>(null);
+  const chipRef = useRef<HTMLButtonElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
 
-  // Позиция попапа: выкатывается строго ВНИЗ из-под чипа «Период с» (а не из-под
-  // шестерёнки справа — иначе казалось, что он уезжает по диагонали вправо).
-  // Якорь — сам чип (.editorial-press), fixed → относительно viewport, кламп по
-  // правому краю окна.
+  // Позиция попапа: строго ВНИЗ из-под чипа (fixed → относительно viewport,
+  // кламп по правому краю окна).
   const place = useCallback(() => {
-    const gear = btnRef.current;
-    if (!gear) return;
-    const anchor = gear.closest('.editorial-press') ?? gear;
+    const anchor = chipRef.current;
+    if (!anchor) return;
     const r = anchor.getBoundingClientRect();
     const left = Math.min(r.left, window.innerWidth - POPOVER_WIDTH - 8);
     setPos({ top: r.bottom + 6, left: Math.max(8, left) });
@@ -52,7 +58,7 @@ export default function PeriodSettingsPopover({ period, hasDividends, onChange }
     if (!open) return;
     const onPointer = (e: MouseEvent) => {
       const t = e.target as Node;
-      if (btnRef.current?.contains(t) || popRef.current?.contains(t)) return;
+      if (chipRef.current?.contains(t) || popRef.current?.contains(t)) return;
       setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
@@ -71,20 +77,59 @@ export default function PeriodSettingsPopover({ period, hasDividends, onChange }
 
   // Активная настройка подсвечивает шестерёнку — видно, что серия модифицирована.
   const active = period.median || period.excludeDividends;
+  const mods = [period.median && 'медиана', period.excludeDividends && 'без див.']
+    .filter(Boolean).join(', ');
 
   return (
     <>
       <button
-        ref={btnRef}
+        ref={chipRef}
         type="button"
-        data-export-ignore="true"
         onClick={() => { if (!open) place(); setOpen((o) => !o); }}
-        className="period-gear"
-        data-active={active ? 'true' : undefined}
-        title="Настройки периода: без выбросов / без дивидендных гэпов"
-        aria-label="Настройки периода"
+        title={title}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        className="editorial-press flex items-center font-semibold rounded-full whitespace-nowrap"
+        style={{
+          background: 'var(--bg-secondary)',
+          color: 'var(--text-primary)',
+          border: '2px solid var(--text-primary)',
+          fontSize: 'var(--fs-sm)',
+          padding: 'var(--sp-2) var(--sp-3)',
+          gap: 'var(--sp-2)',
+          cursor: 'pointer',
+        }}
       >
-        <Settings2 size={16} />
+        <span
+          className="inline-block rounded-full"
+          style={{ width: 'var(--ico-xs)', height: 'var(--ico-xs)', backgroundColor: color, flexShrink: 0 }}
+        />
+        С {period.sinceYear} г.
+        {mods && (
+          <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)' }}>({mods})</span>
+        )}
+        <Settings2
+          size={16}
+          data-export-ignore="true"
+          style={{ flexShrink: 0, color: active ? 'var(--accent)' : 'var(--text-muted)' }}
+        />
+        {removable && (
+          <span
+            role="button"
+            tabIndex={0}
+            data-export-ignore="true"
+            onClick={(e) => { e.stopPropagation(); onRemove(); }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); onRemove(); }
+            }}
+            className="opacity-60 hover:opacity-100 transition-opacity inline-flex items-center"
+            title="Убрать период"
+            aria-label="Убрать период"
+            style={{ cursor: 'pointer', flexShrink: 0 }}
+          >
+            <X size={14} />
+          </span>
+        )}
       </button>
       {open && pos && createPortal(
         <div
