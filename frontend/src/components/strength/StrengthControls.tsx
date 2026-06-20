@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { isPeriodAllowed } from '../../config/accessControl';
 import SegmentedControl from '../SegmentedControl';
+import Dropdown from '../Dropdown';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../tier/UpgradeModal';
 
@@ -92,11 +93,12 @@ export default function StrengthControls({
                 }}
             />
 
-            {/* EMA period */}
-            <SegmentedControl<string>
+            {/* EMA period — выпадающий список (вниз). Четыре варианта 20/50/100/200
+                не помещались бы в ряд сегментами, поэтому свернули в Dropdown. */}
+            <Dropdown<string>
                 options={EMA_OPTIONS.map((p) => ({
                     key: String(p),
-                    label: `EMA${p}`,
+                    label: `EMA ${p}`,
                 }))}
                 value={String(emaPeriod)}
                 onChange={(k) => onEmaPeriodChange(Number(k) as EmaPeriod)}
