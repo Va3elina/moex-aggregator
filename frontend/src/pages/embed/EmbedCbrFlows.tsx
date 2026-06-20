@@ -18,7 +18,7 @@ import { EmbedMsg } from './embedUi';
 import { useEmbedSettings, EmbedShell, DrawerSection, SegGroup, Checklist } from './EmbedSettings';
 
 type CbrType = 'stocks' | 'ofz' | 'fx';
-type PeriodFilter = '1y' | 'all';
+type PeriodFilter = '1y' | '3y' | 'all';
 type LoadStatus = 'idle' | 'loading' | 'ok' | 'empty' | 'error';
 type CbrResp = Awaited<ReturnType<typeof getCbrFlows>>;
 
@@ -30,6 +30,7 @@ const TYPES: { id: CbrType; label: string }[] = [
 
 const PERIODS: { id: PeriodFilter; label: string; months: number | null }[] = [
   { id: '1y', label: '1Г', months: 12 },
+  { id: '3y', label: '3Г', months: 36 },
   { id: 'all', label: 'Всё', months: null },
 ];
 

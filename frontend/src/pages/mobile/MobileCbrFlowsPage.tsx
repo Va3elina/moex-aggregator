@@ -28,7 +28,7 @@ import { usePersistedState } from '../../hooks/usePersistedState';
 import OnboardingTour from '../../components/onboarding/OnboardingTour';
 import type { TourStep } from '../../components/onboarding/OnboardingTour';
 
-type PeriodFilter = '1y' | 'all';
+type PeriodFilter = '1y' | '3y' | 'all';
 
 const TYPE_TABS: Array<{ key: CbrInstrumentType; label: string; Icon: typeof Banknote }> = [
   { key: 'stocks', label: 'Акции', Icon: Building2 },
@@ -37,11 +37,11 @@ const TYPE_TABS: Array<{ key: CbrInstrumentType; label: string; Icon: typeof Ban
 ];
 
 const PERIOD_OPTIONS: Array<{ key: PeriodFilter; label: string; months: number | null }> = [
-  // Данные помесячные (~11 точек). 6м даёт реальное сужение, 1г = вся текущая
-  // история, «Всё» семантически = безлимит истории (premium). Ключи совпадают
-  // с PERIOD_DAYS в TierFeaturesContext: '6m'→180, '1y'→365, 'all'→∞ —
-  // поэтому canUsePeriod('all') запирает «Всё» для free (matrix free=365).
+  // Данные помесячные (история с 2021 г., ~5 лет). Ключи совпадают с PERIOD_DAYS
+  // в TierFeaturesContext: '1y'→365, '3y'→1095, 'all'→∞ — поэтому «3Г» и «Всё»
+  // (>365 дней) запираются для free (matrix free=365).
   { key: '1y', label: '1Г', months: 12 },
+  { key: '3y', label: '3Г', months: 36 },
   { key: 'all', label: 'Всё', months: null },
 ];
 

@@ -52,13 +52,13 @@ const INSTRUMENT_TABS: Array<{
   { key: 'fx',     label: 'Валюты', Icon: DollarSign },
 ];
 
-type PeriodFilter = '1y' | 'all';
-// Данные ОРФР помесячные (~11 точек). Ключи совпадают с PERIOD_DAYS в
-// TierFeaturesContext ('6m'→180, '1y'→365, 'all'→∞), поэтому «Всё» (безлимит)
-// запирается для free (matrix cbr_flows free=365). 6м реально сужает выборку,
-// 1г = вся текущая история. (Было 1Г/2Г/Всё — 2г не отличался от 1г: данных <2 лет.)
+type PeriodFilter = '1y' | '3y' | 'all';
+// Данные ОРФР помесячные (история с 2021 г., ~5 лет). Ключи совпадают с
+// PERIOD_DAYS в TierFeaturesContext ('1y'→365, '3y'→1095, 'all'→∞), поэтому
+// «3Г» и «Всё» (>365 дней) запираются для free (matrix cbr_flows free=365).
 const PERIOD_OPTIONS: { key: PeriodFilter; label: string; months: number | null }[] = [
   { key: '1y', label: '1Г', months: 12 },
+  { key: '3y', label: '3Г', months: 36 },
   { key: 'all', label: 'Всё', months: null },
 ];
 
@@ -79,7 +79,7 @@ export default function CbrFlowsPage() {
   // При смене type — сбрасываем (категории различаются для stocks/ofz/fx).
   const [hiddenCategories, setHiddenCategories] = useState<Set<string>>(new Set());
 
-  // Период: 1г / 2г / Всё (default 1г) — персистится в localStorage
+  // Период: 1г / 3г / Всё (default 1г) — персистится в localStorage
   const [period, setPeriod] = usePersistedState<PeriodFilter>('frame:cbr:period', '1y');
   // Tier-gating периодов (зеркало мобилки): «Всё» (безлимит истории) под
   // замком для free — matrix cbr_flows free = 365 дней. canUsePeriod читает
