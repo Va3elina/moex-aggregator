@@ -37,6 +37,19 @@ const GROUP_OPTIONS = [
   { value: 'none', label: 'Без группировки' },
 ];
 
+// Подпись карты последним торговым днём на выходных/праздниках.
+// ISO («2026-06-19») → «пятницу 19 июня» (вин. падеж под «Данные за …»).
+const WEEKDAY_ACC: Record<string, string> = { среда: 'среду', пятница: 'пятницу', суббота: 'субботу' };
+function formatLastTradingDay(iso: string): string {
+  // Полдень по МСК, чтобы дата не «съехала» через таймзону браузера.
+  const d = new Date(`${iso}T12:00:00+03:00`);
+  if (Number.isNaN(d.getTime())) return '';
+  const opts = { timeZone: 'Europe/Moscow' } as const;
+  const weekday = d.toLocaleDateString('ru-RU', { weekday: 'long', ...opts });
+  const dayMonth = d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', ...opts });
+  return `${WEEKDAY_ACC[weekday] || weekday} ${dayMonth}`;
+}
+
 // Squarify алгоритм для treemap
 function squarify(
   items: { id: string; value: number; data: HeatmapStock }[],
@@ -147,6 +160,10 @@ export default function HeatmapPage() {
   const [loading, setLoading] = useState(true);
   const [containerSize, setContainerSize] = useState({ width: 1200, height: 700 });
   const [lastUpdate, setLastUpdate] = useState<string>('');
+  // is_live=false (выходной/праздник/до открытия) → карта подписывается
+  // последним торговым днём (data_date), а не текущим временем.
+  const [isLive, setIsLive] = useState<boolean>(true);
+  const [dataDate, setDataDate] = useState<string>('');
 
   // Кэш prev_close для real-time пересчёта change_1d
   const prevCloseMap = useRef<Record<string, number>>({});
@@ -254,6 +271,8 @@ export default function HeatmapPage() {
         if (s.prev_close > 0) prevCloseMap.current[s.secId] = s.prev_close;
       });
       setLastUpdate(data.updated_at || new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }));
+      setIsLive(data.is_live !== false);
+      setDataDate(data.data_date || '');
       hasDataRef.current = true;
     } catch (error) {
       if (isStale()) return;
@@ -593,7 +612,9 @@ export default function HeatmapPage() {
       <PageHeader
         icon={Grid3X3}
         title="Карта рынка"
-        subtitle={`Обновлено в ${lastUpdate || '--:--'}`}
+        subtitle={!isLive && dataDate
+          ? `Данные за ${formatLastTradingDay(dataDate)}`
+          : `Обновлено в ${lastUpdate || '--:--'}`}
         help={METHODOLOGY.heatmap}
         helpLink="/methodology/heatmap"
       />

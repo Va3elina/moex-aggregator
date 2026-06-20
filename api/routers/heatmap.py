@@ -50,6 +50,31 @@ def _load_imoex_weights_fallback() -> dict:
         return {}
 
 
+def _heatmap_data_date(engine):
+    """(data_date_iso, is_live) — дата данных карты и признак «идёт сессия».
+
+    is_live=True, если за сегодня уже есть 5-мин свеча → data_date = сегодня.
+    Иначе (выходной/праздник/до открытия) data_date = дата последней дневной
+    свечи = последний торговый день. Нужно, чтобы фронт подписывал карту датой
+    данных, а не текущим временем: на выходных «Обновлено в HH:MM» вводило в
+    заблуждение (см. snap_date в db/mv_heatmap_stocks.sql — там та же логика)."""
+    try:
+        with engine.connect() as conn:
+            row = conn.execute(text(
+                "SELECT "
+                "(SELECT MAX(begin_time::date) FROM candles "
+                "   WHERE type='stock' AND interval=5 AND begin_time::date = CURRENT_DATE), "
+                "(SELECT MAX(begin_time::date) FROM candles "
+                "   WHERE type='stock' AND interval=24)"
+            )).fetchone()
+        today_intraday, last_daily = row[0], row[1]
+        if today_intraday is not None:
+            return today_intraday.isoformat(), True
+        return (last_daily.isoformat() if last_daily else None), False
+    except Exception:
+        return None, False
+
+
 def build_stocks_heatmap(size_by: str, color_by: str, group_by: str):
     """Собирает (или достаёт из кеша) данные карты «все акции».
 
@@ -122,11 +147,14 @@ def build_stocks_heatmap(size_by: str, color_by: str, group_by: str):
 
     from datetime import datetime, timezone, timedelta
     msk = timezone(timedelta(hours=3))
+    data_date, is_live = _heatmap_data_date(engine)
     response = {
         "stocks": stocks,
         "sectors": sectors_list,
         "params": {"size_by": size_by, "color_by": color_by, "group_by": group_by},
         "updated_at": datetime.now(msk).strftime("%H:%M"),
+        "data_date": data_date,
+        "is_live": is_live,
     }
     get_or_set(cache_key, response, ttl=300)  # 5 мин
     return response
@@ -306,11 +334,14 @@ async def get_imoex_heatmap(
 
     from datetime import datetime, timezone, timedelta
     msk = timezone(timedelta(hours=3))
+    data_date, is_live = _heatmap_data_date(engine)
     response = {
         "stocks": stocks,
         "sectors": sectors_list,
         "params": {"size_by": "weight", "color_by": color_by, "group_by": group_by},
         "updated_at": datetime.now(msk).strftime("%H:%M"),
+        "data_date": data_date,
+        "is_live": is_live,
     }
     get_or_set(cache_key, response, ttl=300)
     return response
