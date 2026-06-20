@@ -363,7 +363,7 @@ export default function MobileSeasonalityPage() {
       const resp = compareHistData[i];
       const mods = [p.median && 'медиана', p.excludeDividends && 'без див.'].filter(Boolean);
       return {
-        label: `с ${p.sinceYear}${mods.length ? ` · ${mods.join(' · ')}` : ''}`,
+        label: `с ${p.sinceYear} г.${mods.length ? ` (${mods.join(', ')})` : ''}`,
         color: COMPARE_COLORS[i % COMPARE_COLORS.length],
         bars: resp?.bars?.map((b) => ({ label: labelFor(b.key), value: b.avg_change, count: b.count })) ?? [],
       };
@@ -733,7 +733,7 @@ function PeriodRow({
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ fontWeight: 800, fontSize: 'var(--fs-base)' }}>С {period.sinceYear}</span>
+        <span style={{ fontWeight: 800, fontSize: 'var(--fs-base)' }}>С {period.sinceYear} г.</span>
         <button
           type="button"
           onClick={onRemove}
@@ -1222,7 +1222,7 @@ function YearlySeasonalityChart({
       return {
         data: cd.average.map((q) => ({ time: tdToTime(q.td), value: q.avg_pct })),
         color: COMPARE_COLORS[i % COMPARE_COLORS.length],
-        label: `с ${p?.sinceYear}${mods.length ? ` · ${mods.join(' · ')}` : ''}`,
+        label: `с ${p?.sinceYear} г.${mods.length ? ` (${mods.join(', ')})` : ''}`,
         axis: 'left' as const,
         formatValue: (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`,
         hidePill: true,
