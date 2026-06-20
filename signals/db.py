@@ -100,6 +100,13 @@ def get_position_series(sectype: str, clgroup: str, days: int,
                       AND interval = :interval
                       AND tradedate >= :cutoff
                       AND tradedate <= :end
+                      -- ТОЛЬКО будни в сигнальном ряду. Торги выходного дня дают
+                      -- interval=5 строки за сб/вс (для внутридневных ГРАФИКОВ), но
+                      -- в ATR-ряд детектора их пускать нельзя: ряд станет нерегулярным
+                      -- (сб есть, вс часто нет) → сдвиг diff'ов Пт→Сб→Пн исказил бы
+                      -- ATR-базу для 5m/1h-алертов. Дневной сигнал (interval=24) и так
+                      -- из openpositions (только будни) — фильтр для него no-op.
+                      AND EXTRACT(ISODOW FROM tradedate) BETWEEN 1 AND 5
                     ORDER BY tradedate, tradetime DESC
                 ) t
                 ORDER BY tradedate ASC

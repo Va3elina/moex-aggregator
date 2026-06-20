@@ -249,6 +249,11 @@ def load_candles(engine, tickers: list[str], date_from: date) -> dict[str, tuple
               AND begin_time::date >= :date_from
               AND close IS NOT NULL
               AND close > 0
+              -- Только будни: торги выходного дня MOEX дают субботние/воскресные
+              -- спот-свечи, но breadth/EMA — индикатор по торговым БУДНЯМ. Лишние
+              -- выходные точки сдвигали бы EMA-базу (200 «дней» = меньше календарных
+              -- недель) и плодили бы выходные строки breadth_history. Исключаем.
+              AND EXTRACT(ISODOW FROM begin_time) BETWEEN 1 AND 5
             ORDER BY secid, begin_time
         """), {"tickers": tickers, "date_from": date_from}).fetchall()
 
