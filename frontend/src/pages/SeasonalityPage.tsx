@@ -592,6 +592,10 @@ export default function SeasonalityPage() {
 
         {/* Chart type toggle — горизонтальный сегмент (Календарь / Годовая) */}
         <div data-tour="seasonality-mode" className="flex items-center" style={{ gap: 'var(--sp-2)' }}>
+        {/* Переключатель режимов + «?» — отдельная группа с уменьшенным
+            зазором (sp-1 вместо sp-2). Подсказка прижата к режимам, чтобы
+            читалась как пояснение к ним, а не к соседнему чипу периода. */}
+        <div className="flex items-center" style={{ gap: 'var(--sp-1)' }}>
         <SegmentedControl<ChartType>
           options={[
             {
@@ -622,6 +626,7 @@ export default function SeasonalityPage() {
           ]}
           size={18}
         />
+        </div>
 
         {/* Histogram-specific: mode */}
         {chartType === 'histogram' && (
