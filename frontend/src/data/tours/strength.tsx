@@ -1,5 +1,5 @@
 /**
- * Подробный тур для «Силы рынка» (5 шагов).
+ * Подробный тур для «Силы рынка» (4 шага).
  */
 import type { TourStep } from '../../components/onboarding/OnboardingTour';
 
@@ -73,30 +73,6 @@ export const strengthTourSteps: TourStep[] = [
     ),
     position: 'top',
     spotlightPadding: 12,
-  },
-  {
-    selector: '[data-tour="strength-sectors"]',
-    title: 'Секторная разбивка',
-    body: (
-      <>
-        <p style={{ marginBottom: 8 }}>
-          Под графиком — таблица по отраслям. Выбираешь сектор и видишь
-          конкретные акции в нём с их ценой, EMA и разницей в процентах.
-        </p>
-        <p style={{ marginBottom: 8 }}>
-          Помогает найти где движение идёт <strong>широким фронтом</strong>
-          (весь сектор сильный), а где <strong>держится на единицах</strong>
-          (1-2 акции тащат остальных).
-        </p>
-        <p>
-          Также видна <strong>ротация</strong> — какие сектора лидируют,
-          а какие отстают. Часто новый лидер сектора предвещает смену
-          рыночного режима.
-        </p>
-      </>
-    ),
-    position: 'top',
-    spotlightPadding: 8,
   },
   {
     selector: null,

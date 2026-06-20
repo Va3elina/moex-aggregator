@@ -5,10 +5,10 @@
  *   - Верхний chart: breadth (% акций выше EMA)
  *   - Нижний chart: IMOEX (RUB) / RTS (USD) для контекста
  * Опции: period (6m/1y/2y/5y/all), EMA (50/100/200), universe (all/imoex),
- *        currency (rub/usd). Сектора — отдельный sheet (deep dive).
+ *        currency (rub/usd).
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Activity, ChevronDown, ChevronRight, LayoutGrid, Lock } from 'lucide-react';
+import { Activity, Lock } from 'lucide-react';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
 import { handleTierError } from '../../utils/tierError';
@@ -21,13 +21,11 @@ import {
   getBreadthHistory,
   type BreadthCurrentResponse,
   type BreadthHistoryResponse,
-  type BreadthStock,
   type BreadthUniverse,
 } from '../../services/api';
 import { useOnboardingTour } from '../../hooks/useFirstVisit';
 import OnboardingTour from '../../components/onboarding/OnboardingTour';
 import type { TourStep } from '../../components/onboarding/OnboardingTour';
-import { formatNumber } from '../../utils/formatNumber';
 
 const EMA_PERIODS = [20, 50, 100, 200] as const;
 
@@ -72,8 +70,6 @@ export default function MobileStrengthPage() {
   const reqIdRef = useRef(0);
   const [timeSheetOpen, setTimeSheetOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [sectorsSheetOpen, setSectorsSheetOpen] = useState(false);
-  const [expandedSector, setExpandedSector] = useState<string | null>(null);
 
   // Итоговый universe: добавляем _usd при долларовом режиме
   const universe: BreadthUniverse =
@@ -151,13 +147,9 @@ export default function MobileStrengthPage() {
             <strong>EMA-период:</strong> 50/100/200 дней. Короткая EMA — быстрее
             сигнализирует, длинная — стабильнее.
           </p>
-          <p style={{ marginBottom: 4 }}>
+          <p>
             <strong>Вселенная:</strong> Все (~95 акций) или только IMOEX-индекс
             (топ ликвидных).
-          </p>
-          <p>
-            <strong>Секторы:</strong> внутри есть кнопка показать процент
-            выше EMA по каждому сектору отдельно.
           </p>
         </>
       ),
@@ -193,30 +185,6 @@ export default function MobileStrengthPage() {
       ),
     },
   ];
-
-  // Группировка акций по секторам с подсчётом % выше EMA
-  const sectorStats = useMemo(() => {
-    if (!current?.stocks) return [];
-    const grouped = new Map<string, BreadthStock[]>();
-    for (const s of current.stocks) {
-      const arr = grouped.get(s.sector) ?? [];
-      arr.push(s);
-      grouped.set(s.sector, arr);
-    }
-    return Array.from(grouped.entries())
-      .map(([sector, stocks]) => {
-        const above = stocks.filter((s) => s.is_above).length;
-        const total = stocks.length;
-        return {
-          sector,
-          stocks,
-          above,
-          total,
-          percentAbove: total > 0 ? (above / total) * 100 : 0,
-        };
-      })
-      .sort((a, b) => b.percentAbove - a.percentAbove);
-  }, [current]);
 
   const loadData = useMemo(
     () => async () => {
@@ -553,42 +521,6 @@ export default function MobileStrengthPage() {
             </div>
           </div>
 
-          {/* Sectors trigger */}
-          {sectorStats.length > 0 && (
-            <button
-              data-tour="strength-sectors"
-              onClick={() => {
-                setSettingsOpen(false);
-                setSectorsSheetOpen(true);
-              }}
-              style={{
-                width: '100%',
-                padding: '12px 14px',
-                background: 'var(--bg-primary)',
-                border: '1.5px solid var(--text-primary)',
-                borderRadius: 10,
-                boxShadow: '3px 3px 0 var(--text-primary)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                cursor: 'pointer',
-                font: 'inherit',
-                color: 'var(--text-primary)',
-                textAlign: 'left',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <LayoutGrid size={18} color="var(--accent)" strokeWidth={2.5} />
-                <span style={{ fontSize: 'var(--fs-base)', fontWeight: 800, letterSpacing: '0.02em' }}>
-                  Сектора
-                </span>
-                <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>
-                  · {sectorStats.length}
-                </span>
-              </div>
-              <ChevronRight size={16} color="var(--text-secondary)" />
-            </button>
-          )}
         </div>
       </MobileSheet>
 
@@ -598,216 +530,6 @@ export default function MobileStrengthPage() {
         onClose={tour.close}
       />
 
-      {/* Sectors sheet — accordion: tap sector → expand stock list */}
-      <MobileSheet
-        open={sectorsSheetOpen}
-        onClose={() => setSectorsSheetOpen(false)}
-        title={`Сектора · EMA${emaPeriod}`}
-      >
-        <div style={{ padding: '4px 0 16px' }}>
-          {sectorStats.map((sec) => {
-            const isExpanded = expandedSector === sec.sector;
-            const isStrong = sec.percentAbove >= 50;
-            return (
-              <div key={sec.sector}>
-                <button
-                  onClick={() =>
-                    setExpandedSector(isExpanded ? null : sec.sector)
-                  }
-                  style={{
-                    width: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: 10,
-                    padding: '12px 16px',
-                    background: 'transparent',
-                    border: 'none',
-                    borderBottom:
-                      '1px solid color-mix(in srgb, var(--text-primary) 10%, transparent)',
-                    cursor: 'pointer',
-                    font: 'inherit',
-                    color: 'var(--text-primary)',
-                    textAlign: 'left',
-                  }}
-                >
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      flex: 1,
-                      minWidth: 0,
-                    }}
-                  >
-                    {isExpanded ? (
-                      <ChevronDown size={14} color="var(--text-secondary)" />
-                    ) : (
-                      <ChevronRight size={14} color="var(--text-secondary)" />
-                    )}
-                    <span
-                      style={{
-                        fontWeight: 700,
-                        fontSize: 'var(--fs-base)',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {sec.sector}
-                    </span>
-                  </div>
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      flexShrink: 0,
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: 48,
-                        height: 6,
-                        background:
-                          'color-mix(in srgb, var(--text-primary) 10%, transparent)',
-                        borderRadius: 3,
-                        overflow: 'hidden',
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: `${Math.max(2, sec.percentAbove)}%`,
-                          height: '100%',
-                          background: isStrong
-                            ? 'var(--funds-flow-positive, #5BD49C)'
-                            : 'var(--funds-flow-negative, #FF7A5C)',
-                        }}
-                      />
-                    </div>
-                    <span
-                      className="mono"
-                      style={{
-                        fontSize: 'var(--fs-sm)',
-                        fontWeight: 700,
-                        minWidth: 32,
-                        textAlign: 'right',
-                        color: isStrong
-                          ? 'var(--funds-flow-positive, #5BD49C)'
-                          : 'var(--funds-flow-negative, #FF7A5C)',
-                      }}
-                    >
-                      {sec.percentAbove.toFixed(0)}%
-                    </span>
-                    <span
-                      className="mono"
-                      style={{
-                        fontSize: 10,
-                        color: 'var(--text-muted)',
-                        minWidth: 36,
-                        textAlign: 'right',
-                      }}
-                    >
-                      {sec.above}/{sec.total}
-                    </span>
-                  </div>
-                </button>
-
-                {isExpanded && (
-                  <div
-                    style={{
-                      background: 'var(--bg-secondary)',
-                      borderBottom:
-                        '1px solid color-mix(in srgb, var(--text-primary) 10%, transparent)',
-                    }}
-                  >
-                    {sec.stocks
-                      .slice()
-                      .sort((a, b) => b.diff_percent - a.diff_percent)
-                      .map((stock) => (
-                        <div
-                          key={stock.ticker}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            gap: 8,
-                            padding: '8px 16px 8px 38px',
-                            borderBottom:
-                              '1px solid color-mix(in srgb, var(--text-primary) 5%, transparent)',
-                          }}
-                        >
-                          <div
-                            style={{
-                              display: 'flex',
-                              flexDirection: 'column',
-                              gap: 1,
-                              minWidth: 0,
-                            }}
-                          >
-                            <span
-                              className="mono"
-                              style={{ fontWeight: 700, fontSize: 'var(--fs-sm)' }}
-                            >
-                              {stock.ticker}
-                            </span>
-                            <span
-                              style={{
-                                fontSize: 10,
-                                color: 'var(--text-muted)',
-                              }}
-                            >
-                              EMA {formatNumber(stock.ema, 2)}
-                            </span>
-                          </div>
-                          <div
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: 6,
-                              flexShrink: 0,
-                            }}
-                          >
-                            <span
-                              style={{
-                                fontSize: 'var(--fs-xs)',
-                                fontWeight: 800,
-                                padding: '2px 6px',
-                                borderRadius: 4,
-                                background: stock.is_above
-                                  ? 'color-mix(in srgb, var(--funds-flow-positive, #5BD49C) 18%, transparent)'
-                                  : 'color-mix(in srgb, var(--funds-flow-negative, #FF7A5C) 18%, transparent)',
-                                color: stock.is_above
-                                  ? 'var(--funds-flow-positive, #5BD49C)'
-                                  : 'var(--funds-flow-negative, #FF7A5C)',
-                                minWidth: 46,
-                                textAlign: 'center',
-                              }}
-                            >
-                              {stock.diff_percent >= 0 ? '+' : ''}
-                              {stock.diff_percent.toFixed(1)}%
-                            </span>
-                            <span
-                              className="mono"
-                              style={{
-                                fontSize: 'var(--fs-xs)',
-                                fontWeight: 600,
-                                minWidth: 54,
-                                textAlign: 'right',
-                              }}
-                            >
-                              {formatNumber(stock.price, 2)}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </MobileSheet>
     </MobileLayout>
   );
 }
