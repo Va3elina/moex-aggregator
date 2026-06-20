@@ -357,14 +357,15 @@ export default function FlowsHistogram({
                 </div>
 
                 {/* Navigator — ОДИН и тот же ChartNavigator что в СЧА/OI/всех SimpleChart.
-                    showPreview=false — у нас гистограмма, line preview не подходит.
+                    previewMode=histogram — приглушённые серые мини-бары притоков/оттоков
+                    от нулевой линии (line preview по барам не подходит).
                     Скрыт в html2canvas snapshot через data-export-ignore. */}
                 {navigatorData.length > 1 && (
                     <div data-export-ignore="true">
                         <ChartNavigator
                             data={navigatorData}
                             color="var(--accent)"
-                            showPreview={false}
+                            previewMode="histogram"
                             onChange={(s, e) => onSetFlowNavRange([s, e])}
                             insetLeft="var(--chart-pad-left)"
                             insetRight="var(--chart-pad-right-single)"
