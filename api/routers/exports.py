@@ -150,7 +150,7 @@ def export_heatmap(
 # ════════════════════════════════════════════════════════════════════
 @router.get("/breadth.csv")
 def export_breadth(
-    ema: str = Query("200", description="EMA-период(ы), comma-sep: 50,100,200"),
+    ema: str = Query("200", description="EMA-период(ы), comma-sep: 20,50,100,200"),
     universe: str = Query("imoex", description="all|imoex|all_usd|imoex_usd, comma-sep"),
     days: int | None = Query(None, ge=1, le=3650),
     period_from: str | None = Query(None),

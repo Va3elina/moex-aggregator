@@ -29,7 +29,7 @@ import OnboardingTour from '../../components/onboarding/OnboardingTour';
 import type { TourStep } from '../../components/onboarding/OnboardingTour';
 import { formatNumber } from '../../utils/formatNumber';
 
-const EMA_PERIODS = [50, 100, 200] as const;
+const EMA_PERIODS = [20, 50, 100, 200] as const;
 
 type Period = '1y' | '5y' | 'all';
 type UniverseBase = 'all' | 'imoex';
@@ -59,7 +59,7 @@ export default function MobileStrengthPage() {
   // побайтово идентичны desktop, дефолты совпадают, onClick-гейты не дают free
   // записать платные значения ('usd'/'all'/'5y'). chartMode/showPrice у mobile
   // нет — их desktop-ключи не трогаем.
-  const [emaPeriod, setEmaPeriod] = usePersistedState<50 | 100 | 200>('frame:strength:emaPeriod', 200);
+  const [emaPeriod, setEmaPeriod] = usePersistedState<20 | 50 | 100 | 200>('frame:strength:emaPeriod', 200);
   const [period, setPeriod] = usePersistedState<Period>('frame:strength:period', '1y');
   const [universeBase, setUniverseBase] = usePersistedState<UniverseBase>('frame:strength:universeBase', 'imoex');
   const [currency, setCurrency] = usePersistedState<Currency>('frame:strength:currency', 'rub');

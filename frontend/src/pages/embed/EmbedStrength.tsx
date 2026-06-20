@@ -18,11 +18,12 @@ type LoadStatus = 'idle' | 'loading' | 'ok' | 'empty' | 'error';
 type Synced = { time: string; breadth: number; imoex: number }[];
 type Period = '1y' | '5y' | 'all';
 type ChartMode = 'line' | 'histogram';
-type Ema = 50 | 100 | 200;
+type Ema = 20 | 50 | 100 | 200;
 type UniverseBase = 'imoex' | 'all';
 type Currency = 'rub' | 'usd';
 
 const EMAS: { id: Ema; label: string }[] = [
+  { id: 20, label: 'EMA 20' },
   { id: 50, label: 'EMA 50' },
   { id: 100, label: 'EMA 100' },
   { id: 200, label: 'EMA 200' },

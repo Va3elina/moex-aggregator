@@ -57,9 +57,9 @@ export default function StrengthPage() {
     const { isAuthenticated } = useAuth();
     // Настройки отображения персистятся в localStorage — не сбрасываются на новой сессии.
     const [period, setPeriod] = usePersistedState<Period>('frame:strength:period', getDefaultPeriod('1y', isAuthenticated) as Period);
-    // EMA-период: 50 (краткосрок), 100 (среднесрок), 200 (долгосрок, по умолчанию).
-    // Все три доступны в pre-compute (breadth_history таблица).
-    const [emaPeriod, setEmaPeriod] = usePersistedState<50 | 100 | 200>('frame:strength:emaPeriod', EMA_PERIOD);
+    // EMA-период: 20 (очень краткосрок), 50 (краткосрок), 100 (среднесрок),
+    // 200 (долгосрок, по умолчанию). Все доступны в pre-compute (breadth_history таблица).
+    const [emaPeriod, setEmaPeriod] = usePersistedState<20 | 50 | 100 | 200>('frame:strength:emaPeriod', EMA_PERIOD);
     const [chartMode, setChartMode] = usePersistedState<ChartMode>('frame:strength:chartMode', 'histogram');
     const [showPrice, setShowPrice] = usePersistedState('frame:strength:showPrice', true);
     const [selectedSector, setSelectedSector] = useState('Все');
@@ -357,6 +357,7 @@ export default function StrengthPage() {
                                     default: [String(emaPeriod)],
                                     hint: 'Несколько EMA → ZIP с CSV per EMA',
                                     options: [
+                                        { value: '20', label: 'EMA 20' },
                                         { value: '50', label: 'EMA 50' },
                                         { value: '100', label: 'EMA 100' },
                                         { value: '200', label: 'EMA 200' },
