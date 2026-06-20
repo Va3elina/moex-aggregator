@@ -16,6 +16,7 @@
  *    схлопывания в одну странную кнопку.
  */
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 import { Lock } from 'lucide-react';
 
 export interface SegmentOption<T extends string> {
@@ -36,6 +37,11 @@ interface SegmentedControlProps<T extends string> {
   /** Клик по locked-сегменту (показ UpgradeModal / редирект на /login) */
   onLockedClick?: (key: T) => void;
   className?: string;
+  /** Трейлинг-ячейка ВНУТРИ пилюли (обычно HelpTooltip «?»), отделена
+   *  перегородкой как обычный сегмент. Привязывает подсказку к переключателю
+   *  общей обводкой — «?» перестаёт «висеть» отдельным кружком между
+   *  виджетами. Сам сегмент при этом некликабелен (это не режим). */
+  trailing?: ReactNode;
 }
 
 export default function SegmentedControl<T extends string>({
@@ -44,20 +50,28 @@ export default function SegmentedControl<T extends string>({
   onChange,
   onLockedClick,
   className = '',
+  trailing,
 }: SegmentedControlProps<T>) {
   const [hoveredKey, setHoveredKey] = useState<T | null>(null);
-  return (
+
+  const segmentGrid = (
     <div
-      role="group"
-      className={`frame-segmented rounded-full overflow-hidden ${className}`}
+      {...(trailing
+        ? {}
+        : { role: 'group' as const, className: `frame-segmented rounded-full overflow-hidden ${className}` })}
       style={{
-        backgroundColor: 'var(--bg-secondary)',
-        border: '2px solid var(--text-primary)',
         // Равные колонки (по самому широкому лейблу), иначе «5м» шире «1д»
         // и контрол выглядит несимметрично.
         display: 'inline-grid',
         gridAutoFlow: 'column',
         gridAutoColumns: '1fr',
+        ...(trailing
+          // С trailing рамка/фон/скругление уходят на внешнюю flex-пилюлю,
+          // а сетка лишь клиппит заливку и скругляет ЛЕВУЮ сторону.
+          ? { overflow: 'hidden', borderRadius: '9999px 0 0 9999px' }
+          // Без trailing — самостоятельная пилюля (как было исторически),
+          // рамка и фон живут прямо на сетке.
+          : { backgroundColor: 'var(--bg-secondary)', border: '2px solid var(--text-primary)' }),
       }}
     >
       {options.map((opt, i) => {
@@ -109,6 +123,38 @@ export default function SegmentedControl<T extends string>({
           </button>
         );
       })}
+    </div>
+  );
+
+  // Без trailing — возвращаем самостоятельную пилюлю как есть (десятки мест
+  // используют переключатель именно так, рендер обязан остаться прежним).
+  if (!trailing) return segmentGrid;
+
+  // С trailing — внешняя flex-пилюля несёт рамку/фон/скругление и НЕ клиппит
+  // (overflow видимый), чтобы поповер подсказки не обрезался. Внутри: сетка
+  // сегментов слева и ячейка-подсказка с перегородкой справа.
+  return (
+    <div
+      role="group"
+      className={`frame-segmented rounded-full ${className}`}
+      style={{
+        backgroundColor: 'var(--bg-secondary)',
+        border: '2px solid var(--text-primary)',
+        display: 'inline-flex',
+        alignItems: 'stretch',
+      }}
+    >
+      {segmentGrid}
+      <div
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          borderLeft: '2px solid var(--text-primary)',
+          padding: '0 var(--sp-2)',
+        }}
+      >
+        {trailing}
+      </div>
     </div>
   );
 }
