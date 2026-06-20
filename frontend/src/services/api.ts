@@ -375,6 +375,8 @@ export interface HeatmapResponse {
     group_by: string;
   };
   updated_at?: string;
+  data_date?: string;   // ISO дата данных карты (последний торговый день, если торгов сегодня нет)
+  is_live?: boolean;    // идёт ли сейчас торговая сессия
 }
 
 export async function getHeatmapData(
