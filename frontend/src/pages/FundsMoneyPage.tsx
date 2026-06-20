@@ -3,6 +3,7 @@ import { TrendingUp, DollarSign, Banknote, Gem, Wallet, JapaneseYen, Bell, Lock 
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import SegmentedControl from '../components/SegmentedControl';
+import HelpTooltip from '../components/HelpTooltip';
 import ChartTabs from '../components/ChartTabs';
 import LayersButton from '../components/LayersButton';
 import ChartActionsMenu from '../components/ChartActionsMenu';
@@ -636,8 +637,8 @@ export default function FundsMoneyPage() {
                 />
                 </div>
 
-                {/* Режим: Притоки-оттоки / СЧА — горизонтальный переключатель */}
-                <div data-tour="funds-view-mode" style={{ order: 1 }}>
+                {/* Режим: Притоки-оттоки / СЧА — горизонтальный переключатель + «?» с пояснением режимов */}
+                <div data-tour="funds-view-mode" style={{ order: 1, display: 'flex', alignItems: 'center', gap: 6 }}>
                 <SegmentedControl<ViewMode>
                     options={[
                         // Потоки для free недоступны целиком (лимит 180д vs ≥1Г + дневной
@@ -663,6 +664,11 @@ export default function FundsMoneyPage() {
                         const tier = fundsAccess.requiredTierFor({ period: '1y' }) ?? 'basic';
                         showUpgrade({ tier, featureName: 'притоки-оттоки фондов', indicator: 'funds_money' });
                     }}
+                />
+                <HelpTooltip
+                    title="Режимы графика"
+                    content="Притоки-оттоки показывают чистый приток средств: буквально, сколько людей внесли деньги в тот или иной инструмент. Это общее настроение рынка. СЧА это скорее ознакомительный режим: видно, сколько всего средств под управлением и как менялась эта сумма. Но динамика СЧА зависит ещё и от доходности фонда, поэтому не показывает, сколько денег люди действительно внесли."
+                    size={18}
                 />
                 </div>
 
