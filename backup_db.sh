@@ -58,13 +58,31 @@ send_msg() {
   fi
 }
 
+# Отправка одного документа в Telegram С РЕТРАЯМИ. Moscow→Telegram IPv6
+# периодически флапает, плюс Telegram может 429-ить при заливке десятка файлов
+# подряд. Раньше один блип (curl-фейл → {"ok":false}) ронял ВЕСЬ бэкап (break в
+# цикле ниже) → 0/N доставлено, дамп «обрывался». Теперь до 4 попыток с backoff
+# 0/5/15/30с. -w пишет http-код для диагностики (429=rate-limit, пусто=сеть).
+# Возврат: 0 = успех, 1 = все попытки исчерпаны.
 send_doc() {
   local file="$1"
   local caption="$2"
-  curl -6 -s --max-time 90 -F "chat_id=${ADMIN_CHAT_ID}" \
-    -F "document=@${file}" \
-    -F "caption=${caption}" \
-    "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument"
+  local delays=(0 5 15 30)
+  local attempt resp http
+  for attempt in "${!delays[@]}"; do
+    if [ "${delays[$attempt]}" -gt 0 ]; then sleep "${delays[$attempt]}"; fi
+    resp=$(curl -6 -s --max-time 120 -w '\n%{http_code}' \
+      -F "chat_id=${ADMIN_CHAT_ID}" \
+      -F "document=@${file}" \
+      -F "caption=${caption}" \
+      "https://api.telegram.org/bot${BOT_TOKEN}/sendDocument" 2>/dev/null) || true
+    http=$(printf '%s' "$resp" | tail -n1)
+    if printf '%s' "$resp" | grep -q '"ok":true'; then
+      return 0
+    fi
+    log "    ⚠ part upload failed (http=${http:-net}), попытка $((attempt + 1))/${#delays[@]}"
+  done
+  return 1
 }
 
 # ─── Проверка credentials ───
@@ -141,14 +159,13 @@ for i in "${!PARTS[@]}"; do
   PART="${PARTS[$i]}"
   PART_SIZE=$(du -h "$PART" | cut -f1)
   CAPTION="🔐 ${BASENAME} — часть ${N}/${TOTAL} (${PART_SIZE})"
-  RESP=$(send_doc "$PART" "$CAPTION" || echo '{"ok":false}')
-  if ! echo "$RESP" | grep -q '"ok":true'; then
-    log "ERROR sending part $N/$TOTAL: $RESP"
+  if ! send_doc "$PART" "$CAPTION"; then
+    log "ERROR sending part $N/$TOTAL: исчерпаны все ретраи"
     ALL_OK=false
     break
   fi
   log "  ✓ Sent part $N/$TOTAL ($PART_SIZE)"
-  sleep 1
+  sleep 3
 done
 
 # ─── 5) Cleanup частей (всегда) ───
