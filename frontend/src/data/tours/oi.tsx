@@ -169,20 +169,6 @@ export const oiTourSteps: TourStep[] = [
     spotlightPadding: 12,
   },
   {
-    selector: '[data-tour="oi-legend"]',
-    title: 'Легенда',
-    body: (
-      <>
-        <p>
-          Под графиком — расшифровка всех линий, цветов и режимов. Полезно
-          подсмотреть, если забыл что значит «net», «long» или какой цвет
-          у «Чистой позиции».
-        </p>
-      </>
-    ),
-    position: 'top',
-  },
-  {
     selector: null,
     title: 'Готово!',
     body: (

@@ -837,63 +837,6 @@ export default function OpenInterestPage() {
 
       </div>{/* /editorial-frame */}
 
-      {/* Легенда — оформлена как editorial card (frame с hard shadow в editorial,
-          обычная widget панель в OKX/dark). Inner bg = secondary чтобы выделяться
-          на page-bg, в editorial CSS override применит outline + hard shadow. */}
-      <div data-tour="oi-legend" className="mt-6 bg-theme-secondary border border-theme rounded-2xl widget" style={{ padding: 'var(--sp-5)' }}>
-        <div style={{ fontSize: 'var(--fs-sm)', display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
-          {/* Линии графика */}
-          <div className="flex items-start" style={{ gap: 'var(--sp-3)' }}>
-            <span className="legend-dot mt-1.5" style={{ backgroundColor: COLORS.primary }} />
-            <div>
-              <span className="font-medium" style={{ color: COLORS.primary }}>График цены</span>
-              <span className="text-theme-secondary"> — стоимость фьючерса на срочном рынке</span>
-            </div>
-          </div>
-
-          <div className="flex items-start" style={{ gap: 'var(--sp-3)' }}>
-            <span className="legend-dot mt-1.5" style={{ backgroundColor: COLORS.amber }} />
-            <div>
-              <span className="font-medium" style={{ color: COLORS.amber }}>Открытый интерес</span>
-              <span className="text-theme-secondary"> — сумма позиций на покупку и на продажу</span>
-            </div>
-          </div>
-
-          <div className="flex items-start" style={{ gap: 'var(--sp-3)' }}>
-            <span className="legend-dot mt-1.5" style={{ backgroundColor: COLORS.emerald }} />
-            <div>
-              <span className="font-medium" style={{ color: COLORS.emerald }}>Покупки</span>
-              <span className="text-theme-secondary"> — объём позиций на рост / количество покупателей</span>
-            </div>
-          </div>
-
-          <div className="flex items-start" style={{ gap: 'var(--sp-3)' }}>
-            <span className="legend-dot mt-1.5" style={{ backgroundColor: COLORS.rose }} />
-            <div>
-              <span className="font-medium" style={{ color: COLORS.rose }}>Продажи</span>
-              <span className="text-theme-secondary"> — объём позиций на падение / количество продавцов</span>
-            </div>
-          </div>
-
-          <div className="flex items-start" style={{ gap: 'var(--sp-3)' }}>
-            <span className="legend-dot mt-1.5" style={{ backgroundColor: COLORS.cyan }} />
-            <div>
-              <span className="font-medium" style={{ color: COLORS.cyan }}>Чистая позиция</span>
-              <span className="text-theme-secondary"> — разница между покупками и продажами</span>
-            </div>
-          </div>
-
-          {/* Режимы */}
-          <div className="pt-3 border-t border-theme mt-4">
-            <div className="text-theme-secondary">
-              <span className="font-medium text-theme-primary">Режимы:</span>{' '}
-              <span style={{ color: COLORS.primary }}>Объём позиций</span> — сколько контрактов куплено или продано,{' '}
-              <span style={{ color: COLORS.primary }}>Число трейдеров</span> — сколько человек или компаний держит позиции
-            </div>
-          </div>
-        </div>
-      </div>
-
       {/* Модалка выбора инструмента */}
       {isModalOpen && (
         <InstrumentSearchModal
