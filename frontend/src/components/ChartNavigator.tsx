@@ -236,9 +236,12 @@ export default function ChartNavigator({
     // ‹ › — двойной шеврон внутри кружка, намёк «тяни по горизонтали».
     const knobChevrons = (
         <span style={{ width: KNOB_D, height: KNOB_D, borderRadius: '50%', background: color, border: '2px solid var(--bg-elevated)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
-            <svg width="11" height="8" viewBox="0 0 11 8" style={{ pointerEvents: 'none' }}>
-                <path d="M4 1 L1.5 4 L4 7" fill="none" stroke="var(--text-inverse)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M7 1 L9.5 4 L7 7" fill="none" stroke="var(--text-inverse)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+            {/* Квадратный чётный viewBox (12×12) → целые отступы в 16px-области кружка,
+                без пол-пиксельного смещения. Шевроны зеркальны относительно x=6 и
+                центрированы по y=6. */}
+            <svg width="12" height="12" viewBox="0 0 12 12" style={{ display: 'block', pointerEvents: 'none' }}>
+                <path d="M4.5 3.5 L2 6 L4.5 8.5" fill="none" stroke="var(--text-inverse)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M7.5 3.5 L10 6 L7.5 8.5" fill="none" stroke="var(--text-inverse)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
         </span>
     );
