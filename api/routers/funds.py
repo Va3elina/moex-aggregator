@@ -307,6 +307,14 @@ async def get_funds_summary():
     """
     Сводка по всем категориям фондов
     """
+    from api.cache import get_or_compute
+    # Эндпоинт был БЕЗ кэша — каждый запрос гонял N window-запросов по fund_data
+    # (фигурировал в 502-шторме). single-flight + кэш 10 мин (данные фондов — EOD).
+    return get_or_compute("funds:summary", _compute_funds_summary, ttl=600)
+
+
+def _compute_funds_summary():
+    """Тяжёлая сводка по категориям фондов (вызывается через single-flight выше)."""
     engine = get_engine()
     
     try:

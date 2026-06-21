@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from datetime import datetime, date, time as dt_time, timedelta
-from api.cache import get_or_set, DEFAULT_TTL
+from api.cache import get_or_set, get_or_compute, DEFAULT_TTL
 from typing import Optional
 from pydantic import BaseModel
 import time
@@ -138,10 +138,22 @@ def get_chart_data(
 
     # Кеширование (TTL 30мин — инкрементально обновляется при NOTIFY)
     cache_key = f"chart:{sec_id}:{sectype}:{inst_type}:{interval}:{clgroup}:{show_oi}:{period}:{date_from}:{date_to}"
-    cached = get_or_set(cache_key)
-    if cached is not None:
-        return cached
+    # single-flight: при истечении ключа считает только один воркер, остальные
+    # ждут его результат (защита от cache-stampede). Tier-логика выше — на роуте,
+    # date_to уже учитывает effective_end → у Free/Paid разные cache_key, не течёт.
+    return get_or_compute(
+        cache_key,
+        lambda: _compute_chart_data(
+            db, sec_id, sectype, inst_type, interval,
+            clgroup, show_oi, period, date_from, date_to,
+        ),
+        ttl=DEFAULT_TTL,
+    )
 
+
+def _compute_chart_data(db, sec_id, sectype, inst_type, interval,
+                        clgroup, show_oi, period, date_from, date_to):
+    """Тяжёлый расчёт данных графика (вызывается через single-flight выше)."""
     log.info(f"REQUEST: {sec_id}, sectype={sectype}, interval={interval}, period={period}")
     total_start = time.time()
 
@@ -489,5 +501,4 @@ def get_chart_data(
     if date_from is None and date_to is None:
         append_live_points(db, response)
 
-    get_or_set(cache_key, response, ttl=DEFAULT_TTL)
     return response
