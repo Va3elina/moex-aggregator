@@ -105,6 +105,21 @@ def front_sec_id_for_day(windows: List[FrontWindow], day: date) -> Optional[str]
     return None
 
 
+def front_secid_for_day(windows: List[FrontWindow], day: date) -> Optional[str]:
+    """ПОЛНЫЙ датированный secid ('BRN6') фронт-контракта на дату.
+
+    Отличается от front_sec_id_for_day только тем, что возвращает реально
+    существующий тикер контракта (candles.secid), а не префикс серии — для
+    показа в UI «актуальный контракт» (обрезанный sectype 'BR' тикером не является).
+    """
+    for w in windows:
+        if w.is_perpetual:
+            return w.secid
+        if (w.start is None or day >= w.start) and (w.end is None or day <= w.end):
+            return w.secid
+    return None
+
+
 def resolve_day(
     windows: List[FrontWindow],
     day: date,
@@ -195,3 +210,39 @@ def front_sec_ids(conn, sectype: str) -> List[str]:
     except Exception:
         _safe_rollback(conn)
         return []
+
+
+def front_secid(conn, sectype: str, as_of_date: Optional[date] = None) -> Optional[str]:
+    """Датированный secid ('BRN6') фронт-контракта sectype на дату (None если нет)."""
+    as_of_date = as_of_date or date.today()
+    return front_secid_for_day(front_windows(conn, sectype), as_of_date)
+
+
+def front_secids_all(conn, as_of_date: Optional[date] = None) -> Dict[str, str]:
+    """{sectype: датированный secid фронт-контракта на дату} для ВСЕХ sectype.
+
+    Один запрос ко всей futures_contracts + чистая логика compute_windows на
+    sectype — для пикера инструментов, где надо показать актуальный контракт
+    у каждого фьючерса разом, без N запросов. {} при ошибке/отсутствии таблицы.
+    """
+    as_of_date = as_of_date or date.today()
+    try:
+        rows = conn.execute(text(
+            "SELECT sectype, secid, sec_id, lsttrade, is_perpetual, is_traded "
+            "FROM futures_contracts"
+        )).fetchall()
+    except Exception:
+        _safe_rollback(conn)
+        return {}
+    by_sectype: Dict[str, List[Contract]] = {}
+    for r in rows:
+        by_sectype.setdefault(r[0], []).append(
+            Contract(secid=r[1], sec_id=r[2], lsttrade=r[3],
+                     is_perpetual=bool(r[4]), is_traded=bool(r[5]))
+        )
+    out: Dict[str, str] = {}
+    for st, conts in by_sectype.items():
+        secid = front_secid_for_day(compute_windows(conts), as_of_date)
+        if secid:
+            out[st] = secid
+    return out

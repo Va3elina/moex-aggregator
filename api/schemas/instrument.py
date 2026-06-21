@@ -14,6 +14,7 @@ class InstrumentResponse(BaseModel):
     iss_code: str | None = None
     daily_volume: float | None = None
     day_change_pct: float | None = None  # % изменения за последний торговый день (дневной ТФ)
+    front_secid: str | None = None  # актуальный фронт-контракт ('BRN6') для фьючерсов; None для спота
 
     class Config:
         from_attributes = True  # Позволяет создавать из SQLAlchemy модели

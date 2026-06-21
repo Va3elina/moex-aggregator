@@ -225,7 +225,8 @@ export default function MobileAssetSearch({
                 marginTop: 2,
               }}
             >
-              {inst.sectype}
+              {/* Фьючерс → актуальный фронт-контракт ('BRN6'); спот → sectype. */}
+              {inst.front_secid || inst.sectype}
             </div>
           </div>
         </div>
