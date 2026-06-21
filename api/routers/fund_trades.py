@@ -365,8 +365,10 @@ def list_funds_with_history(
     if fund_ids:
         h_rows = db.execute(text("""
             WITH names AS (
-                SELECT isin, (array_agg(asset_name ORDER BY length(asset_name), asset_name))[1] AS short_name
-                FROM fund_holdings_history WHERE COALESCE(isin, '') <> '' GROUP BY isin
+                SELECT h.isin, COALESCE(MAX(sr.short_name),
+                       (array_agg(h.asset_name ORDER BY length(h.asset_name), h.asset_name))[1]) AS short_name
+                FROM fund_holdings_history h LEFT JOIN securities_ref sr ON sr.isin = h.isin
+                WHERE COALESCE(h.isin, '') <> '' GROUP BY h.isin
             ),
             last_snap AS (
                 SELECT fund_id, MAX(snapshot_date) AS d
@@ -505,8 +507,10 @@ def fund_trades_detail(
     # Current holdings.
     current_rows = db.execute(text("""
         WITH names AS (
-            SELECT isin, (array_agg(asset_name ORDER BY length(asset_name), asset_name))[1] AS short_name
-            FROM fund_holdings_history WHERE COALESCE(isin, '') <> '' GROUP BY isin
+            SELECT h.isin, COALESCE(MAX(sr.short_name),
+                   (array_agg(h.asset_name ORDER BY length(h.asset_name), h.asset_name))[1]) AS short_name
+            FROM fund_holdings_history h LEFT JOIN securities_ref sr ON sr.isin = h.isin
+            WHERE COALESCE(h.isin, '') <> '' GROUP BY h.isin
         )
         SELECT COALESCE(n.short_name, h.asset_name) AS asset_name, h.weight, h.positions, h.amount_rub, h.isin
         FROM fund_holdings_history h
@@ -547,8 +551,10 @@ def fund_trades_detail(
     # или у облигаций) давала фантомные 'sold_out'+'new'. ISIN стабилен.
     diff_rows = db.execute(text("""
         WITH names AS (
-            SELECT isin, (array_agg(asset_name ORDER BY length(asset_name), asset_name))[1] AS short_name
-            FROM fund_holdings_history WHERE COALESCE(isin, '') <> '' GROUP BY isin
+            SELECT h.isin, COALESCE(MAX(sr.short_name),
+                   (array_agg(h.asset_name ORDER BY length(h.asset_name), h.asset_name))[1]) AS short_name
+            FROM fund_holdings_history h LEFT JOIN securities_ref sr ON sr.isin = h.isin
+            WHERE COALESCE(h.isin, '') <> '' GROUP BY h.isin
         ),
         curr AS (
             SELECT COALESCE(NULLIF(isin, ''), asset_name) AS mkey,
@@ -776,14 +782,16 @@ def top_movers(
             -- Суммарная дельта per asset (across всех фондов), агрегируем по ISIN-ключу.
             SELECT
                 akey,
-                -- Самое короткое имя per akey: компактнее «Публичного акционерного…»
-                -- и различает ао/ап («Сбербанк» vs «Сбербанк-п»).
-                (array_agg(asset_name ORDER BY length(asset_name), asset_name))[1] AS asset_name,
+                -- Имя per akey: каноническое из securities_ref (по ISIN), fallback —
+                -- самое короткое свободное. Различает ао/ап, схлопывает написания.
+                COALESCE(MAX(sr.short_name),
+                         (array_agg(asset_name ORDER BY length(asset_name), asset_name))[1]) AS asset_name,
                 SUM(delta_weight) AS total_delta_weight,
                 SUM(delta_amount) AS total_delta_amount,
                 COUNT(DISTINCT fund_id) FILTER (WHERE delta_weight > 0) AS funds_buying,
                 COUNT(DISTINCT fund_id) FILTER (WHERE delta_weight < 0) AS funds_selling
             FROM per_fund_diff
+            LEFT JOIN securities_ref sr ON sr.isin = akey
             WHERE delta_weight <> 0
             GROUP BY akey
         )
@@ -1102,8 +1110,10 @@ def snapshot_review(
         # Просто весь current как "initial composition"
         rows = db.execute(text("""
             WITH names AS (
-                SELECT isin, (array_agg(asset_name ORDER BY length(asset_name), asset_name))[1] AS short_name
-                FROM fund_holdings_history WHERE COALESCE(isin, '') <> '' GROUP BY isin
+                SELECT h.isin, COALESCE(MAX(sr.short_name),
+                       (array_agg(h.asset_name ORDER BY length(h.asset_name), h.asset_name))[1]) AS short_name
+                FROM fund_holdings_history h LEFT JOIN securities_ref sr ON sr.isin = h.isin
+                WHERE COALESCE(h.isin, '') <> '' GROUP BY h.isin
             )
             SELECT COALESCE(n.short_name, h.asset_name) AS asset_name, h.isin, h.positions, h.amount_rub, h.weight
             FROM fund_holdings_history h
@@ -1149,8 +1159,10 @@ def snapshot_review(
     # («Сбербанк», «Сургнфгз-п»). Отображаем короткое — единообразно с консенсусом.
     diff_rows = db.execute(text("""
         WITH names AS (
-            SELECT isin, (array_agg(asset_name ORDER BY length(asset_name), asset_name))[1] AS short_name
-            FROM fund_holdings_history WHERE COALESCE(isin, '') <> '' GROUP BY isin
+            SELECT h.isin, COALESCE(MAX(sr.short_name),
+                   (array_agg(h.asset_name ORDER BY length(h.asset_name), h.asset_name))[1]) AS short_name
+            FROM fund_holdings_history h LEFT JOIN securities_ref sr ON sr.isin = h.isin
+            WHERE COALESCE(h.isin, '') <> '' GROUP BY h.isin
         ),
         curr AS (
             SELECT COALESCE(NULLIF(isin, ''), asset_name) AS mkey,
@@ -1405,9 +1417,12 @@ def list_fund_trade_assets(
               AND h.source = ANY(:sources)
         ),
         names AS (
-            SELECT mkey, (array_agg(asset_name ORDER BY length(asset_name), asset_name))[1] AS short_name,
-                   (array_agg(NULLIF(isin, '')) FILTER (WHERE NULLIF(isin, '') IS NOT NULL))[1] AS isin
-            FROM scoped GROUP BY mkey
+            SELECT s.mkey,
+                   COALESCE(MAX(sr.short_name),
+                            (array_agg(s.asset_name ORDER BY length(s.asset_name), s.asset_name))[1]) AS short_name,
+                   (array_agg(NULLIF(s.isin, '')) FILTER (WHERE NULLIF(s.isin, '') IS NOT NULL))[1] AS isin
+            FROM scoped s LEFT JOIN securities_ref sr ON sr.isin = NULLIF(s.isin, '')
+            GROUP BY s.mkey
         ),
         last_per_fund AS (
             -- последний snapshot ЭТОЙ бумаги В каждом фонде (где она есть).
@@ -1482,8 +1497,10 @@ def company_flows(
 
     rows = db.execute(text(f"""
         WITH names AS (
-            SELECT isin, (array_agg(asset_name ORDER BY length(asset_name), asset_name))[1] AS short_name
-            FROM fund_holdings_history WHERE COALESCE(isin, '') <> '' GROUP BY isin
+            SELECT h.isin, COALESCE(MAX(sr.short_name),
+                   (array_agg(h.asset_name ORDER BY length(h.asset_name), h.asset_name))[1]) AS short_name
+            FROM fund_holdings_history h LEFT JOIN securities_ref sr ON sr.isin = h.isin
+            WHERE COALESCE(h.isin, '') <> '' GROUP BY h.isin
         )
         SELECT f.fund_id, f.ticker, f.name AS fund_name, f.uk_id,
                h.snapshot_date, h.positions, h.amount_rub, h.weight, h.isin,
