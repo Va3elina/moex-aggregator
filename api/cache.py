@@ -65,6 +65,61 @@ def get_or_set(key: str, value: Any = None, ttl: int = DEFAULT_TTL) -> Any | Non
         return None if value is None else value
 
 
+def get_or_compute(key, compute_fn, ttl: int = DEFAULT_TTL, *,
+                   lock_ttl: int = 30, wait_timeout: float = 10.0,
+                   poll_interval: float = 0.1):
+    """Single-flight кэш: защита от cache-stampede.
+
+    При промахе ТОЛЬКО первый воркер берёт Redis-лок и считает compute_fn;
+    остальные ждут и читают его результат — вместо того чтобы все N воркеров
+    одновременно кинулись пересчитывать тяжёлый запрос при истечении горячего
+    ключа (ровно то, что давало 502-штормы).
+
+    fail-open (кэш — оптимизация, не критический путь):
+    - Redis недоступен / лок не взять → считаем сами (без дедупликации).
+    - Вычислитель завис/упал и за wait_timeout результат не появился → считаем сами.
+    - Исключения из compute_fn ПРОБРАСЫВАЮТСЯ и НЕ кэшируются (ошибки не залипают).
+
+    compute_fn должна возвращать non-None (None = «нет данных» для get_or_set).
+    """
+    cached = get_or_set(key)
+    if cached is not None:
+        return cached
+
+    lock_key = f"sflight:{key}"
+    have_lock = False
+    try:
+        have_lock = bool(_get_redis().set(lock_key, "1", nx=True, ex=lock_ttl))
+    except (redis.RedisError, ConnectionError):
+        have_lock = True  # Redis лёг → считаем сами (fail-open, без дедупа)
+
+    if have_lock:
+        try:
+            value = compute_fn()
+            if value is not None:
+                get_or_set(key, value, ttl)
+            return value
+        finally:
+            try:
+                _get_redis().delete(lock_key)
+            except (redis.RedisError, ConnectionError):
+                pass
+
+    # Кто-то уже считает — ждём его результат, периодически опрашивая кэш.
+    deadline = time.monotonic() + wait_timeout
+    while time.monotonic() < deadline:
+        time.sleep(poll_interval)
+        cached = get_or_set(key)
+        if cached is not None:
+            return cached
+
+    # Не дождались (медленный/упавший вычислитель) → считаем сами, fail-open.
+    value = compute_fn()
+    if value is not None:
+        get_or_set(key, value, ttl)
+    return value
+
+
 def invalidate(prefix: str | None = None):
     """Инвалидирует кеш по префиксу или весь кеш."""
     try:

@@ -97,13 +97,20 @@ def build_stocks_heatmap(size_by: str, color_by: str, group_by: str):
     напрямую, минуя tier-проверку (guest-клиент warmup'а получил бы 403).
     Сам tier-gating остаётся на роуте get_stocks_heatmap.
     """
-    from api.cache import get_or_set
+    from api.cache import get_or_compute
 
     cache_key = f"heatmap:{size_by}:{color_by}:{group_by}"
-    cached = get_or_set(cache_key)
-    if cached is not None:
-        return cached
+    # single-flight: при истечении ключа считает только один воркер, остальные
+    # ждут результат (защита от cache-stampede на homepage-карте).
+    return get_or_compute(
+        cache_key,
+        lambda: _compute_stocks_heatmap(size_by, color_by, group_by),
+        ttl=300,  # 5 мин
+    )
 
+
+def _compute_stocks_heatmap(size_by: str, color_by: str, group_by: str):
+    """Тяжёлый расчёт карты «все акции» (вызывается через single-flight выше)."""
     engine = get_engine()
 
     # Безопасный запрос — без пользовательских данных в SQL
@@ -171,7 +178,6 @@ def build_stocks_heatmap(size_by: str, color_by: str, group_by: str):
         "data_date": data_date,
         "is_live": is_live,
     }
-    get_or_set(cache_key, response, ttl=300)  # 5 мин
     return response
 
 
@@ -252,7 +258,7 @@ async def get_imoex_heatmap(
     group_by: HeatmapGroupByType = Query("sector", description="Группировка"),
 ):
     """Карта индекса IMOEX — размер по весу в индексе."""
-    from api.cache import get_or_set
+    from api.cache import get_or_set, get_or_compute
 
     cache_key = f"heatmap_imoex:{color_by}:{group_by}"
     cached = get_or_set(cache_key)
@@ -291,6 +297,16 @@ async def get_imoex_heatmap(
                 f"({len(weights)} бумаг)"
             )
 
+    # single-flight тяжёлого build'а (веса уже разрешены выше — отдельный кэш).
+    return get_or_compute(
+        cache_key,
+        lambda: _compute_imoex_heatmap(color_by, group_by, weights),
+        ttl=300,
+    )
+
+
+def _compute_imoex_heatmap(color_by: str, group_by: str, weights: dict):
+    """Тяжёлый расчёт карты IMOEX (вызывается через single-flight выше)."""
     # Берём данные акций из mv_heatmap_stocks
     engine = get_engine()
     query = text("""
@@ -358,5 +374,4 @@ async def get_imoex_heatmap(
         "data_date": data_date,
         "is_live": is_live,
     }
-    get_or_set(cache_key, response, ttl=300)
     return response
