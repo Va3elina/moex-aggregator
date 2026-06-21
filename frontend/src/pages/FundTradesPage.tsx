@@ -46,7 +46,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 import PageHeader from '../components/PageHeader';
 import Dropdown from '../components/Dropdown';
-import { UK_LOGOS, DONUT_COLORS, assetColor, resolveFundLogo, stripUkName } from '../config/fundConfig';
+import { UK_LOGOS, DONUT_COLORS, resolveFundTicker, fundAssetName, fundAssetColor, resolveFundLogo, stripUkName } from '../config/fundConfig';
+import InstrumentIcon from '../components/InstrumentIcon';
 import Donut from '../components/funds/Donut';
 import CompanyFlowsTab from '../components/fundtrades/CompanyFlowsTab';
 import UkMultiSelect, { type UkOption } from '../components/fundtrades/UkMultiSelect';
@@ -334,7 +335,7 @@ export default function FundTradesPage() {
 
     // (A) Колонки сетки плиток по ширине вьюпорта: ≥1024 → 3, ≥640 → 2, иначе 1.
     const vw = useViewportWidth();
-    const cols = vw >= 1024 ? 3 : vw >= 640 ? 2 : 1;
+    const cols = vw >= 1280 ? 4 : vw >= 1024 ? 3 : vw >= 640 ? 2 : 1;
 
     // ITEM 2 — клик по активу в movers → «Потоки по компании» с предвыбранной бумагой.
     // mover.akey = ISIN (если есть в снапшоте), иначе имя. Если akey похож на ISIN —
@@ -350,7 +351,7 @@ export default function FundTradesPage() {
     }
 
     return (
-        <div className="max-w-[1408px] mx-auto px-4 md:px-6 py-6 md:py-8 min-h-screen">
+        <div className="max-w-[1408px] mx-auto px-4 md:px-6 py-4 md:py-6 min-h-screen">
             {/* Header — единый PageHeader как у всех индикаторов
                 (иконка стилизуется через .page-header-icon → выравнивание как везде) */}
             <PageHeader
@@ -363,7 +364,7 @@ export default function FundTradesPage() {
             <div
                 style={{
                     padding: '12px 16px',
-                    marginBottom: 20,
+                    marginBottom: 14,
                     background: 'color-mix(in srgb, var(--warning, #f59e0b) 8%, var(--bg-secondary))',
                     border: '1.5px solid color-mix(in srgb, var(--warning, #f59e0b) 30%, transparent)',
                     borderRadius: 10,
@@ -405,8 +406,8 @@ export default function FundTradesPage() {
                     flexWrap: 'wrap',
                     gap: 12,
                     alignItems: 'center',
-                    marginBottom: 20,
-                    paddingBottom: 16,
+                    marginBottom: 16,
+                    paddingBottom: 12,
                     borderBottom: '1px solid var(--border-color)',
                 }}
             >
@@ -474,7 +475,7 @@ export default function FundTradesPage() {
                                 alignItems: 'flex-start',
                                 gap: 18,
                                 flexWrap: 'wrap',
-                                marginBottom: 18,
+                                marginBottom: 14,
                             }}
                         >
                             {/* (E) Сортировка — Доходность (с периодом в самой кнопке) · Объём · Имя */}
@@ -607,15 +608,15 @@ export default function FundTradesPage() {
                         <EmptyState message="Фонды не найдены." />
                     )}
                     {Object.entries(fundsByCategory).map(([cat, list]) => (
-                        <div key={cat} style={{ marginBottom: 28 }}>
+                        <div key={cat} style={{ marginBottom: 20 }}>
                             <h2
                                 style={{
                                     fontSize: 'var(--fs-md)',
                                     fontWeight: 700,
                                     color: 'var(--text-primary)',
-                                    marginBottom: 10,
+                                    marginBottom: 8,
                                     textTransform: 'uppercase',
-                                    letterSpacing: '0.04em',
+                                    letterSpacing: '0.06em',
                                 }}
                             >
                                 {CATEGORY_LABEL[cat] || cat} <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>· {list.length}</span>
@@ -637,39 +638,34 @@ export default function FundTradesPage() {
                                     const sum = top.reduce((s, h) => s + (h.weight || 0), 0);
                                     const other = 100 - sum;
                                     const donutHoldings = other > 1
-                                        ? [...top, { name: 'Прочее', weight: other }]
+                                        ? [...top, { name: 'Прочее', isin: null, weight: other }]
                                         : top;
                                     const donutColors = donutHoldings.map((h, i) =>
                                         h.name === 'Прочее'
                                             ? 'var(--text-muted)'
-                                            : (assetColor(h.name) ?? DONUT_COLORS[i % DONUT_COLORS.length]),
+                                            : (fundAssetColor(h.name, h.isin) ?? DONUT_COLORS[i % DONUT_COLORS.length]),
                                     );
                                     const ret = displayReturn(f.returns, returnPeriod);
                                     return (
                                     <button
                                         key={f.fund_id}
                                         onClick={() => setSelectedTicker(f.ticker)}
+                                        className="editorial-press"
                                         style={{
-                                            padding: 16,
+                                            padding: 14,
                                             background: 'var(--bg-secondary)',
                                             border: '1.5px solid var(--border-color)',
                                             borderRadius: 12,
+                                            boxShadow: 'var(--shadow-hard-chip)',
                                             textAlign: 'left',
                                             cursor: 'pointer',
-                                            transition: 'border-color 120ms, transform 80ms',
                                             // (B) колоночный flex full-height → все карточки в ряду равны.
                                             display: 'flex',
                                             flexDirection: 'column',
                                             height: '100%',
                                         }}
-                                        onMouseEnter={(e) => {
-                                            e.currentTarget.style.borderColor = 'var(--accent)';
-                                        }}
-                                        onMouseLeave={(e) => {
-                                            e.currentTarget.style.borderColor = 'var(--border-color)';
-                                        }}
                                     >
-                                        {/* Header: УК-аватар 44px + тикер + имя (2 строки, фикс высота) */}
+                                        {/* Header: УК-аватар + имя (2 строки) + тикер-eyebrow */}
                                         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
                                             {uk && (
                                                 <div
@@ -682,8 +678,8 @@ export default function FundTradesPage() {
                                                         alignItems: 'center',
                                                         justifyContent: 'center',
                                                         flexShrink: 0,
-                                                        fontWeight: 900,
-                                                        fontSize: 'var(--fs-lg)',
+                                                        fontWeight: 700,
+                                                        fontSize: 'var(--fs-base)',
                                                         overflow: 'hidden',
                                                         backgroundColor: uk.img ? undefined : uk.bg,
                                                         color: uk.color,
@@ -697,11 +693,11 @@ export default function FundTradesPage() {
                                             <div style={{ flex: 1, minWidth: 0 }}>
                                                 <div
                                                     style={{
-                                                        fontSize: 'var(--fs-md)',
-                                                        fontWeight: 800,
+                                                        fontSize: 'var(--fs-sm)',
+                                                        fontWeight: 700,
                                                         color: 'var(--text-primary)',
-                                                        lineHeight: 1.2,
-                                                        marginBottom: 2,
+                                                        lineHeight: 1.25,
+                                                        marginBottom: 3,
                                                         display: '-webkit-box',
                                                         WebkitLineClamp: 2,
                                                         WebkitBoxOrient: 'vertical',
@@ -713,9 +709,12 @@ export default function FundTradesPage() {
                                                 </div>
                                                 <div
                                                     style={{
-                                                        fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
-                                                        fontSize: 'var(--fs-xs)',
-                                                        color: 'var(--text-secondary)',
+                                                        fontFamily: 'var(--font-mono, ui-monospace, monospace)',
+                                                        fontSize: 'var(--fs-2xs)',
+                                                        fontWeight: 500,
+                                                        letterSpacing: '0.06em',
+                                                        textTransform: 'uppercase',
+                                                        color: 'var(--text-muted)',
                                                         lineHeight: 1.3,
                                                         whiteSpace: 'nowrap',
                                                         overflow: 'hidden',
@@ -727,7 +726,7 @@ export default function FundTradesPage() {
                                             </div>
                                         </div>
 
-                                        {/* Body: пончик (фикс 128) + топ-5 (контейнер фикс под 5 строк) */}
+                                        {/* Body: пончик (без центр-счётчика, уменьшен) + топ-5 */}
                                         <div
                                             style={{
                                                 display: 'flex',
@@ -741,12 +740,11 @@ export default function FundTradesPage() {
                                                     <Donut
                                                         holdings={donutHoldings}
                                                         colors={donutColors}
-                                                        size={144}
-                                                        outerRadius={92}
-                                                        innerRadius={62}
+                                                        size={104}
+                                                        outerRadius={90}
+                                                        innerRadius={64}
                                                         maxSlices={donutHoldings.length}
-                                                        centerCount={f.holdings_count}
-                                                        showCenterText
+                                                        showCenterText={false}
                                                         highlightIndex={tileHover?.fund === f.fund_id ? tileHover.idx : null}
                                                         onHoverChange={(i) => setTileHover(i == null ? null : { fund: f.fund_id, idx: i })}
                                                     />
@@ -754,8 +752,8 @@ export default function FundTradesPage() {
                                             ) : (
                                                 <div
                                                     style={{
-                                                        width: 144,
-                                                        height: 144,
+                                                        width: 104,
+                                                        height: 104,
                                                         flexShrink: 0,
                                                         borderRadius: '50%',
                                                         border: '1.5px dashed var(--border-color)',
@@ -778,8 +776,8 @@ export default function FundTradesPage() {
                                                     justifyContent: 'center',
                                                     gap: 4,
                                                     // (B) фикс высота под 5 строк — список не «двигает» футер,
-                                                    // даже если позиций <5. 5×20 + 4×4 = 116.
-                                                    minHeight: 116,
+                                                    // даже если позиций <5. 5×22 + 4×4 = 126.
+                                                    minHeight: 126,
                                                 }}
                                             >
                                                 {top.slice(0, 5).map((h, i) => (
@@ -790,13 +788,13 @@ export default function FundTradesPage() {
                                                         style={{
                                                             display: 'flex',
                                                             alignItems: 'center',
-                                                            gap: 6,
-                                                            minHeight: 20,
-                                                            fontSize: 'var(--fs-2xs)',
+                                                            gap: 7,
+                                                            minHeight: 22,
+                                                            fontSize: 'var(--fs-xs)',
                                                             borderRadius: 5,
                                                             padding: '0 4px',
                                                             margin: '0 -4px',
-                                                            background: tileHover?.fund === f.fund_id && tileHover.idx === i ? 'var(--bg-secondary)' : 'transparent',
+                                                            background: tileHover?.fund === f.fund_id && tileHover.idx === i ? 'var(--bg-primary)' : 'transparent',
                                                             transition: 'background 120ms',
                                                         }}
                                                     >
@@ -807,7 +805,7 @@ export default function FundTradesPage() {
                                                                 borderRadius: '50%',
                                                                 flexShrink: 0,
                                                                 // (C) точка = цвет сектора пончика (фирменный/индекс).
-                                                                backgroundColor: assetColor(h.name) ?? DONUT_COLORS[i % DONUT_COLORS.length],
+                                                                backgroundColor: fundAssetColor(h.name, h.isin) ?? DONUT_COLORS[i % DONUT_COLORS.length],
                                                             }}
                                                         />
                                                         <span
@@ -818,16 +816,16 @@ export default function FundTradesPage() {
                                                                 textOverflow: 'ellipsis',
                                                                 whiteSpace: 'nowrap',
                                                                 color: 'var(--text-secondary)',
-                                                                fontWeight: 600,
+                                                                fontWeight: 500,
                                                             }}
                                                         >
-                                                            {h.name}
+                                                            {fundAssetName(h.name, h.isin)}
                                                         </span>
                                                         <span
                                                             style={{
                                                                 flexShrink: 0,
                                                                 fontVariantNumeric: 'tabular-nums',
-                                                                fontWeight: 600,
+                                                                fontWeight: 700,
                                                                 color: 'var(--text-primary)',
                                                             }}
                                                         >
@@ -836,7 +834,7 @@ export default function FundTradesPage() {
                                                     </div>
                                                 ))}
                                                 {top.length === 0 && (
-                                                    <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)' }}>
+                                                    <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)' }}>
                                                         Состав не публикуется
                                                     </span>
                                                 )}
@@ -851,22 +849,22 @@ export default function FundTradesPage() {
                                                 borderTop: '1px solid var(--border-color)',
                                                 display: 'flex',
                                                 flexDirection: 'column',
-                                                gap: 8,
+                                                gap: 7,
                                             }}
                                         >
                                             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
-                                                <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-secondary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                                <span style={{ fontSize: 'var(--fs-2xs)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)' }}>
                                                     Доходность · {ret?.period ?? RETURN_PERIOD_LABEL[returnPeriod]}
                                                 </span>
-                                                <span style={{ fontSize: 'var(--fs-xl)', fontWeight: 800, fontVariantNumeric: 'tabular-nums', color: returnColor(ret?.v), lineHeight: 1.1 }}>
+                                                <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: returnColor(ret?.v) }}>
                                                     {formatReturnPct(ret?.v)}
                                                 </span>
                                             </div>
                                             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
-                                                <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-secondary)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                                                <span style={{ fontSize: 'var(--fs-2xs)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)' }}>
                                                     СЧА
                                                 </span>
-                                                <span style={{ fontSize: 'var(--fs-md)', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: 'var(--text-primary)' }}>
+                                                <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, fontVariantNumeric: 'tabular-nums', color: 'var(--text-primary)' }}>
                                                     {f.nav_rub != null ? formatRubShort(f.nav_rub) : '—'}
                                                 </span>
                                             </div>
@@ -1435,7 +1433,7 @@ function SnapshotReviewBody({
                                 borderBottom: '1px solid var(--border-soft, rgba(0,0,0,0.06))',
                             }}
                         >
-                            <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-primary)' }}>{h.asset_name}</span>
+                            <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-primary)' }}>{fundAssetName(h.asset_name, h.isin)}</span>
                             <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
                                 {h.weight != null ? `${h.weight.toFixed(2)}%` : '—'}
                             </span>
@@ -1626,7 +1624,7 @@ function SnapshotSection({
                 {displayed.map((r, i) => (
                     <EditorialBar
                         key={`${r.asset_name}-${r.isin || ''}`}
-                        label={r.asset_name}
+                        label={fundAssetName(r.asset_name, r.isin)}
                         subLabel={subLabelGetter(r)}
                         amount={valueGetter(r)}
                         maxAbs={maxAbs}
@@ -1701,6 +1699,7 @@ function MoversColumn({
                 border: '1.5px solid var(--border-color)',
                 borderRadius: 12,
                 padding: 16,
+                boxShadow: 'var(--shadow-hard-chip)',
             }}
         >
             <div
@@ -1717,7 +1716,7 @@ function MoversColumn({
                 <h3
                     style={{
                         fontSize: 'var(--fs-md)',
-                        fontWeight: 800,
+                        fontWeight: 700,
                         color,
                         margin: 0,
                     }}
@@ -1733,6 +1732,9 @@ function MoversColumn({
                         const val = valOf(m);
                         const pct = Math.max(2, (Math.abs(val) / maxAbs) * 100);
                         const clickable = !!onAssetClick;
+                        // Каноничное имя (формат Сезонности) по ISIN из akey.
+                        const mIsin = isIsin(m.akey) ? m.akey : null;
+                        const mName = fundAssetName(m.asset_name, mIsin);
                         return (
                         <div
                             key={m.akey}
@@ -1742,7 +1744,7 @@ function MoversColumn({
                                 : undefined}
                             role={clickable ? 'button' : undefined}
                             tabIndex={clickable ? 0 : undefined}
-                            title={clickable ? `Потоки по компании: ${m.asset_name}` : undefined}
+                            title={clickable ? `Потоки по компании: ${mName}` : undefined}
                             onMouseEnter={clickable ? (e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--text-primary) 5%, transparent)'; } : undefined}
                             onMouseLeave={clickable ? (e) => { e.currentTarget.style.background = 'transparent'; } : undefined}
                             style={{
@@ -1774,20 +1776,20 @@ function MoversColumn({
                                         minWidth: 0,
                                         fontSize: 'var(--fs-sm)',
                                         color: 'var(--text-primary)',
-                                        fontWeight: 600,
+                                        fontWeight: 500,
                                         lineHeight: 1.3,
                                         overflow: 'hidden',
                                         textOverflow: 'ellipsis',
                                         whiteSpace: 'nowrap',
                                     }}
                                 >
-                                    {m.asset_name}
+                                    {mName}
                                 </span>
                                 <span
                                     style={{
                                         fontFamily: 'ui-monospace, "SF Mono", monospace',
                                         fontSize: 'var(--fs-sm)',
-                                        fontWeight: 800,
+                                        fontWeight: 700,
                                         color,
                                         flexShrink: 0,
                                     }}
