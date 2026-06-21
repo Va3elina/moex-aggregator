@@ -14,7 +14,7 @@
  *   • Footer (источник + дата обновления)
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { LineChart, Landmark, DollarSign, Building2, ChevronDown, Users } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { METHODOLOGY } from '../data/methodology';
@@ -25,6 +25,7 @@ import {
 } from '../services/api';
 import { useFitToViewport } from '../hooks/useFitToViewport';
 import StackedBidirectionalHistogram from '../components/cbr/StackedBidirectionalHistogram';
+import ChartNavigator from '../components/ChartNavigator';
 import { getCategoryColor } from '../components/cbr/cbrPalette';
 import { getCategoryInfo, getCategoryShortLabel } from '../components/cbr/cbrCategoryInfo';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
@@ -142,6 +143,33 @@ export default function CbrFlowsPage() {
     if (!opt || opt.months === null) return data.periods;
     return data.periods.slice(-opt.months);
   }, [data, period]);
+
+  // Окно rail-навигатора по видимым периодам (таймлайн под графиком).
+  const [navRange, setNavRange] = useState<[number, number]>([0, 0]);
+
+  // Сброс окна при смене набора периодов (тип / период / догрузка данных).
+  // useLayoutEffect — до отрисовки, чтобы не мелькал кадр с окном [0,0].
+  useLayoutEffect(() => {
+    setNavRange([0, Math.max(0, visiblePeriods.length - 1)]);
+  }, [visiblePeriods]);
+
+  // Срез периодов по окну навигатора — его и рисует гистограмма.
+  const displayPeriods = useMemo(() => {
+    if (visiblePeriods.length === 0) return [];
+    // navRange ещё не инициализирован эффектом → показываем всё.
+    if (navRange[0] === 0 && navRange[1] === 0 && visiblePeriods.length > 1) return visiblePeriods;
+    const s = Math.max(0, Math.min(navRange[0], visiblePeriods.length - 1));
+    const e = Math.max(s, Math.min(navRange[1], visiblePeriods.length - 1));
+    return visiblePeriods.slice(s, e + 1);
+  }, [visiblePeriods, navRange]);
+
+  // Данные для rail-навигатора: важна только длина (= число периодов).
+  // Стабильная ссылка через useMemo — иначе новый массив каждый рендер сбрасывал
+  // бы выделение навигатора в бесконечном цикле.
+  const cbrNavData = useMemo(
+    () => visiblePeriods.map((_, i) => ({ time: String(i), value: 0 })),
+    [visiblePeriods]
+  );
 
   const toggleCategory = (cat: string) => {
     setHiddenCategories((prev) => {
@@ -493,7 +521,7 @@ export default function CbrFlowsPage() {
             </div>
           ) : (
             <StackedBidirectionalHistogram
-              periods={visiblePeriods}
+              periods={displayPeriods}
               categories={visibleCategories}
               allPeriods={data?.periods}
               unit={data?.unit ?? 'млрд руб.'}
@@ -501,6 +529,21 @@ export default function CbrFlowsPage() {
               loading={loading}
               animTrigger={`${type}|${period}`}
             />
+          )}
+
+          {/* Rail-таймлайн — единый вид со всеми графиками. Окно по visiblePeriods,
+              срез уходит в гистограмму как displayPeriods. */}
+          {!error && cbrNavData.length > 1 && (
+            <div className="cbr-nav-wrap" data-export-ignore="true">
+              <ChartNavigator
+                data={cbrNavData}
+                color="var(--accent)"
+                previewMode="line"
+                onChange={(s, e) => setNavRange([s, e])}
+                insetLeft="var(--chart-pad-left)"
+                insetRight="var(--chart-pad-right-single)"
+              />
+            </div>
           )}
         </div>
       </div>{/* /editorial-frame */}

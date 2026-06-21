@@ -993,6 +993,12 @@
   margin-top: calc(37px - var(--chart-pad-bottom, 50px));
   margin-bottom: calc(7px - clamp(12px, 3vw, 22px));
 }
+/* CBR «Поток капитала»: навигатор лежит внутри inner paper-card с фикс. 12px
+   нижним паддингом (а не clamp editorial-frame). Переопределяем margin-bottom
+   до -5px → нижний зазор те же ~7px (12 − 5). margin-top общий. */
+[data-theme^="editorial"] .cbr-nav-wrap .chart-navigator.chart-navigator--bare {
+  margin-bottom: -5px;
+}
 /* SVG mini-chart: убираем left/right 8px inset — в editorial chart занимает всю ширину */
 [data-theme^="editorial"] .chart-navigator .nav-mini-svg {
   left: 0 !important;
