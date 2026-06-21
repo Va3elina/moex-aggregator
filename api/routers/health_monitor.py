@@ -208,10 +208,14 @@ def health_data(
 
     stale = [s["name"] for s in sources if s["status"] == "stale"]
     failed_pipelines = [p["pipeline"] for p in pipelines if p["status"] != "ok"]
+    # overall: fail (пайплайн упал) > stale (данные протухли) > ok. Раньше падение
+    # пайплайна НЕ отражалось в overall (ключевал только по свежести данных) →
+    # упавший скрипт прятался до тех пор, пока его данные не протухнут (≈сутки).
+    overall = "fail" if failed_pipelines else ("stale" if stale else "ok")
     return {
         "generated_at": datetime.utcnow().isoformat() + "Z",
         "market_ref_date": market_ref.isoformat() if market_ref else None,
-        "overall": "stale" if stale else "ok",
+        "overall": overall,
         "stale_sources": stale,
         "failed_pipelines": failed_pipelines,
         "sources": sources,
