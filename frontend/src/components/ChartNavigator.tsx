@@ -39,7 +39,7 @@ function cssLen(v: number | string): string {
 const HANDLE_W = 14;
 const KNOB_D = 20;       // диаметр видимого кружка-ручки (line-режим)
 const KNOB_HIT = 28;     // ширина прозрачной зоны захвата вокруг кружка
-const RAIL_BOX_H = 26;   // компактная высота полосы рельса (line-режим, без окантовки)
+const RAIL_BOX_H = 20;   // высота полосы = диаметр кружка (line-режим, без окантовки)
 const MIN_WIN_FRAC = 0.01; // минимум 1% данных в окне
 
 // Последняя измеренная ширина — кэшируется между маунтами.
@@ -248,8 +248,9 @@ export default function ChartNavigator({
             ref={containerRef}
             className={`chart-navigator relative select-none overflow-visible${isRail ? ' chart-navigator--bare' : ' mt-3'}`}
             // inset'ы применяются как margin КОНТЕЙНЕРА — навигатор ровно по plot-area.
-            // line-режим: компактная высота без окантовки, прижат к датам (маленький marginTop).
-            style={{ height: isRail ? RAIL_BOX_H : height + 4, marginLeft: ilCss, marginRight: irCss, marginTop: isRail ? 6 : undefined }}
+            // line-режим: высота = кружок, без окантовки; вертикальные отступы (прижать
+            // к датам + симметрия снизу) заданы в CSS .chart-navigator--bare через calc.
+            style={{ height: isRail ? RAIL_BOX_H : height + 4, marginLeft: ilCss, marginRight: irCss }}
         >
             {/* SVG нужен только для histogram-превью (мини-бары). В line-режиме
                 рельс/заливка/ручки рисуются HTML-див'ами ниже. viewBox + preserveAspectRatio

@@ -852,7 +852,7 @@ export default function SimpleChart({
     effectiveHeight
     + 40 // p-5 top + bottom
     + (legendPosition === 'top' ? 36 : 0) // legend block
-    + (showNavigator ? 32 : 0); // navigator (компактный рельс) + nav-mt
+    + (showNavigator ? 6 : 0); // navigator (компактный рельс, отрицательные margin)
 
   // Показываем полный лоадер только если нет данных вообще
   if (data.length === 0 && loading) {

@@ -985,6 +985,13 @@
   background: transparent;
   border-radius: 0;
   overflow: visible;
+  /* Прижать таймлайн под даты и оставить симметричный отступ снизу.
+     Метки дат стоят на (--chart-pad-bottom − 30)px над низом svg, поэтому
+     отрицательный margin-top подтягивает рельс под цифры; margin-bottom гасит
+     паддинг карточки (.editorial-frame: clamp(12px,3vw,22px)) и оставляет тот же
+     зазор. Оба отступа = 7px на всех брейкпоинтах (переменные сокращаются). */
+  margin-top: calc(37px - var(--chart-pad-bottom, 50px));
+  margin-bottom: calc(7px - clamp(12px, 3vw, 22px));
 }
 /* SVG mini-chart: убираем left/right 8px inset — в editorial chart занимает всю ширину */
 [data-theme^="editorial"] .chart-navigator .nav-mini-svg {
