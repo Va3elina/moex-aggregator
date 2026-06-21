@@ -1,6 +1,7 @@
 /**
  * ChartNavigator — полоса выбора временного диапазона.
- * line-режим: тонкий рельс с заполненным выбранным отрезком и круглыми ручками.
+ * line-режим: тонкий рельс с заполненным выбранным отрезком и круглыми ручками,
+ * без окантовки, компактной высоты, прижат к датам графика.
  * histogram-режим: приглушённые мини-бары притоков/оттоков (для FlowsHistogram).
  * Аналог Highcharts / TradingView navigator.
  */
@@ -38,6 +39,7 @@ function cssLen(v: number | string): string {
 const HANDLE_W = 14;
 const KNOB_D = 20;       // диаметр видимого кружка-ручки (line-режим)
 const KNOB_HIT = 28;     // ширина прозрачной зоны захвата вокруг кружка
+const RAIL_BOX_H = 26;   // компактная высота полосы рельса (line-режим, без окантовки)
 const MIN_WIN_FRAC = 0.01; // минимум 1% данных в окне
 
 // Последняя измеренная ширина — кэшируется между маунтами.
@@ -227,8 +229,8 @@ export default function ChartNavigator({
         window.addEventListener('touchend', onEnd);
     }, [selFrac, width]);
 
-    // line-режим с превью → рельс + круглые ручки. Иначе (histogram / пустой) —
-    // старый вид с масками и прямоугольными хендлами.
+    // line-режим с превью → рельс + круглые ручки (без окантовки, компактно).
+    // Иначе (histogram / пустой) — старый вид с масками и прямоугольными хендлами.
     const isRail = showPreview && previewMode === 'line';
 
     // ‹ › — двойной шеврон внутри кружка, намёк «тяни по горизонтали».
@@ -244,10 +246,10 @@ export default function ChartNavigator({
     return (
         <div
             ref={containerRef}
-            className="chart-navigator relative select-none mt-3 overflow-visible"
-            // inset'ы применяются как margin КОНТЕЙНЕРА — сужается весь навигатор
-            // целиком (включая editorial border-рамку), а не только внутренности.
-            style={{ height: height + 4, marginLeft: ilCss, marginRight: irCss }}
+            className={`chart-navigator relative select-none overflow-visible${isRail ? ' chart-navigator--bare' : ' mt-3'}`}
+            // inset'ы применяются как margin КОНТЕЙНЕРА — навигатор ровно по plot-area.
+            // line-режим: компактная высота без окантовки, прижат к датам (маленький marginTop).
+            style={{ height: isRail ? RAIL_BOX_H : height + 4, marginLeft: ilCss, marginRight: irCss, marginTop: isRail ? 6 : undefined }}
         >
             {/* SVG нужен только для histogram-превью (мини-бары). В line-режиме
                 рельс/заливка/ручки рисуются HTML-див'ами ниже. viewBox + preserveAspectRatio
@@ -292,10 +294,10 @@ export default function ChartNavigator({
                             onTouchStart={e => startTouchDrag(e, 'window')}
                         />
                         {/* Левая круглая ручка. Колонка-хитзона на всю высоту (легко попасть,
-                            особенно на тач), видимый кружок KNOB_D по центру. translateX(-selFrac*100%)
-                            держит кружок в пределах контейнера у самых краёв. */}
+                            особенно на тач), видимый кружок KNOB_D по центру. translateX(-50%)
+                            центрирует кружок ровно на крайней точке окна (overflow:visible). */}
                         <div className="nav-knob nav-knob-left absolute flex items-center justify-center"
-                            style={{ left: `${selFrac[0] * 100}%`, top: 0, bottom: 0, transform: `translateX(-${selFrac[0] * 100}%)`, width: KNOB_HIT, cursor: 'ew-resize', pointerEvents: 'auto' }}
+                            style={{ left: `${selFrac[0] * 100}%`, top: 0, bottom: 0, transform: 'translateX(-50%)', width: KNOB_HIT, cursor: 'ew-resize', pointerEvents: 'auto' }}
                             onMouseDown={e => startDrag(e, 'left')}
                             onTouchStart={e => startTouchDrag(e, 'left')}
                         >
@@ -303,7 +305,7 @@ export default function ChartNavigator({
                         </div>
                         {/* Правая круглая ручка */}
                         <div className="nav-knob nav-knob-right absolute flex items-center justify-center"
-                            style={{ left: `${selFrac[1] * 100}%`, top: 0, bottom: 0, transform: `translateX(-${selFrac[1] * 100}%)`, width: KNOB_HIT, cursor: 'ew-resize', pointerEvents: 'auto' }}
+                            style={{ left: `${selFrac[1] * 100}%`, top: 0, bottom: 0, transform: 'translateX(-50%)', width: KNOB_HIT, cursor: 'ew-resize', pointerEvents: 'auto' }}
                             onMouseDown={e => startDrag(e, 'right')}
                             onTouchStart={e => startTouchDrag(e, 'right')}
                         >
