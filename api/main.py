@@ -182,9 +182,19 @@ async def startup_event():
             _conn.execute(_sql(
                 "CREATE INDEX IF NOT EXISTS idx_futures_contracts_roll "
                 "ON futures_contracts (sectype, lsttrade)"))
-        logger.info("futures_contracts table ensured")
+            # securities_ref — каноничные имена бумаг (fund_trades LEFT JOIN'ит её).
+            # Создаём пустой каркас, чтобы запросы не падали, если справочник ещё
+            # не наполнен (Funds/build_securities_ref.py).
+            _conn.execute(_sql("""
+                CREATE TABLE IF NOT EXISTS securities_ref (
+                    isin VARCHAR(20) PRIMARY KEY, secid VARCHAR(40),
+                    short_name VARCHAR(120), sec_type VARCHAR(40), is_traded BOOLEAN,
+                    canonical_isin VARCHAR(20), updated_at TIMESTAMP DEFAULT now()
+                )
+            """))
+        logger.info("futures_contracts + securities_ref tables ensured")
     except Exception as e:
-        logger.warning(f"ensure futures_contracts failed: {e}")
+        logger.warning(f"ensure ref tables failed: {e}")
     # Запускаем NOTIFY listener для SSE
     from api.notify_listener import start_notify_listener
     _notify_task = asyncio.create_task(start_notify_listener())
