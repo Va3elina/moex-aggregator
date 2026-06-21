@@ -37,9 +37,10 @@ function cssLen(v: number | string): string {
 }
 
 const HANDLE_W = 14;
-const KNOB_D = 20;       // диаметр видимого кружка-ручки (line-режим)
-const KNOB_HIT = 28;     // ширина прозрачной зоны захвата вокруг кружка
-const RAIL_BOX_H = 20;   // высота полосы = диаметр кружка (line-режим, без окантовки)
+const KNOB_D = 28;       // диаметр видимого кружка-ручки (line-режим)
+const KNOB_HIT = 48;     // ширина прозрачной зоны захвата вокруг кружка
+const GRAB_PAD = 8;      // вертикальное расширение хитзоны за полосу (overflow, безопасно)
+const RAIL_BOX_H = KNOB_D; // высота полосы = диаметр кружка (line-режим, без окантовки)
 const MIN_WIN_FRAC = 0.01; // минимум 1% данных в окне
 
 // Последняя измеренная ширина — кэшируется между маунтами.
@@ -239,7 +240,7 @@ export default function ChartNavigator({
             {/* Квадратный чётный viewBox (12×12) → целые отступы в 16px-области кружка,
                 без пол-пиксельного смещения. Шевроны зеркальны относительно x=6 и
                 центрированы по y=6. */}
-            <svg width="12" height="12" viewBox="0 0 12 12" style={{ display: 'block', pointerEvents: 'none' }}>
+            <svg width="16" height="16" viewBox="0 0 12 12" style={{ display: 'block', pointerEvents: 'none' }}>
                 <path d="M4.5 3.5 L2 6 L4.5 8.5" fill="none" stroke="var(--text-inverse)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                 <path d="M7.5 3.5 L10 6 L7.5 8.5" fill="none" stroke="var(--text-inverse)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
@@ -297,11 +298,12 @@ export default function ChartNavigator({
                             onMouseDown={e => startDrag(e, 'window')}
                             onTouchStart={e => startTouchDrag(e, 'window')}
                         />
-                        {/* Левая круглая ручка. Колонка-хитзона на всю высоту (легко попасть,
-                            особенно на тач), видимый кружок KNOB_D по центру. translateX(-50%)
-                            центрирует кружок ровно на крайней точке окна (overflow:visible). */}
+                        {/* Левая круглая ручка. Хитзона крупнее полосы: KNOB_HIT в ширину и
+                            полоса+2·GRAB_PAD в высоту (overflow:visible, расширение в безопасную
+                            зону под датами без crosshair). Видимый кружок KNOB_D по центру.
+                            translateX(-50%) центрирует кружок ровно на крайней точке окна. */}
                         <div className="nav-knob nav-knob-left absolute flex items-center justify-center"
-                            style={{ left: `${selFrac[0] * 100}%`, top: 0, bottom: 0, transform: 'translateX(-50%)', width: KNOB_HIT, cursor: 'ew-resize', pointerEvents: 'auto' }}
+                            style={{ left: `${selFrac[0] * 100}%`, top: -GRAB_PAD, bottom: -GRAB_PAD, transform: 'translateX(-50%)', width: KNOB_HIT, cursor: 'ew-resize', pointerEvents: 'auto' }}
                             onMouseDown={e => startDrag(e, 'left')}
                             onTouchStart={e => startTouchDrag(e, 'left')}
                         >
@@ -309,7 +311,7 @@ export default function ChartNavigator({
                         </div>
                         {/* Правая круглая ручка */}
                         <div className="nav-knob nav-knob-right absolute flex items-center justify-center"
-                            style={{ left: `${selFrac[1] * 100}%`, top: 0, bottom: 0, transform: 'translateX(-50%)', width: KNOB_HIT, cursor: 'ew-resize', pointerEvents: 'auto' }}
+                            style={{ left: `${selFrac[1] * 100}%`, top: -GRAB_PAD, bottom: -GRAB_PAD, transform: 'translateX(-50%)', width: KNOB_HIT, cursor: 'ew-resize', pointerEvents: 'auto' }}
                             onMouseDown={e => startDrag(e, 'right')}
                             onTouchStart={e => startTouchDrag(e, 'right')}
                         >
