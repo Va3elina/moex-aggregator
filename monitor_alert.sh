@@ -83,5 +83,5 @@ fi
 printf '%s\n' "$CURR_NAMES" | grep -v '^$' > "$STATE_FILE" || true
 
 if [ -z "$NEW" ] && [ -z "$RECOVERED" ]; then
-  log "ok (проблемных: $(printf '%s\n' "$CURR_NAMES" | grep -vc '^$' || echo 0), изменений нет)"
+  log "ok (проблемных: $(printf '%s\n' "$CURR_NAMES" | grep -vc '^$' || true), изменений нет)"
 fi

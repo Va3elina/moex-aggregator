@@ -362,13 +362,39 @@ def refresh_materialized_views(views: List[str] = None) -> Dict[str, Tuple[bool,
 #                         ЗАПУСК СКРИПТОВ
 # ======================================================================
 
+# Дневные пайплайны, которые РЕТРАИМ при транзиентном сбое (блипы ISS/Algopack):
+# для них одно падение = потеря дня данных до следующих суток. 5-мин фетчеры
+# (oi_5min, candles_futures/spot, futures_turnover, oi_aggregate) сюда НЕ входят —
+# они и так повторяются каждые 5 минут, ретрай только добавил бы латентность.
+RETRYABLE_DAILY = {
+    'oi_daily', 'funds_daily', 'indices_daily', 'contract_calendar',
+    'index_candles_hourly', 'macro_daily', 'market_cap_daily',
+    'breadth_daily', 'dividends_daily', 'commodity_daily',
+}
+RETRY_BACKOFF = [30, 120]  # сек между попытками (итого до 3 попыток)
+
+
 async def run_script(script_key: str, args: List[str] = None, timeout: int = None) -> Tuple[bool, str, float]:
     """
     Обёртка над _run_script_impl: после прогона пишет heartbeat в pipeline_runs
     (единый пульс запуска для мониторинга /api/health/data). Запись best-effort —
     сбой пульса НЕ влияет на фетч.
+
+    Для дневных пайплайнов (RETRYABLE_DAILY) при падении делает до 2 ретраев с
+    backoff — транзиентный сбой источника не должен терять день данных. Heartbeat
+    пишется ОДИН раз по ФИНАЛЬНОМУ исходу (монитор алертит только если не помогли
+    и ретраи).
     """
     ok, msg, dur = await _run_script_impl(script_key, args, timeout)
+    if not ok and script_key in RETRYABLE_DAILY:
+        for i, backoff in enumerate(RETRY_BACKOFF, 1):
+            log.warning(f"    ↻ {script_key} упал ({(msg or '')[:80]}) — "
+                        f"ретрай {i}/{len(RETRY_BACKOFF)} через {backoff}с")
+            await asyncio.sleep(backoff)
+            ok, msg, dur = await _run_script_impl(script_key, args, timeout)
+            if ok:
+                log.info(f"    ✓ {script_key} удался с ретрая {i}")
+                break
     try:
         import pipeline_heartbeat
         pipeline_heartbeat.record_pipeline_run(script_key, ok, msg, dur)
