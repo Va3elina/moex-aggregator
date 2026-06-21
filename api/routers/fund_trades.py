@@ -1392,6 +1392,29 @@ def asset_position_history(
 # ────────────────────────────────────────────────────────────────────
 
 
+# sec_type (ISS) → крупная категория для табов пикера «Потоки по компании».
+# Дробных типов ISS много (common_share/preferred_share/ofz_bond/exchange_bond/
+# exchange_ppif/...), но пользователю в фильтре нужны 5-6 корзин. None/неизвестный
+# → 'other' (строки без ISIN/не найденные в securities_ref).
+def _asset_category(sec_type: Optional[str]) -> str:
+    if not sec_type:
+        return "other"
+    t = sec_type.lower()
+    if t in ("common_share", "preferred_share", "depositary_receipt"):
+        return "share"
+    if "bond" in t:                       # ofz_bond / exchange_bond / corporate_bond / ...
+        return "bond"
+    if "ppif" in t or t == "etf":         # биржевые/открытые ПИФы, ETF
+        return "fund"
+    if t == "currency":
+        return "currency"
+    if "futures" in t or "commodity" in t:
+        return "commodity"
+    if t == "index":
+        return "index"
+    return "other"
+
+
 @router.get("/assets")
 def list_fund_trade_assets(
     user: User = Depends(require_pro),
@@ -1423,7 +1446,8 @@ def list_fund_trade_assets(
             SELECT s.mkey,
                    COALESCE(MAX(sr2.short_name),
                             (array_agg(s.asset_name ORDER BY length(s.asset_name), s.asset_name))[1]) AS short_name,
-                   MAX(CASE WHEN char_length(s.mkey) = 12 THEN s.mkey END) AS isin
+                   MAX(CASE WHEN char_length(s.mkey) = 12 THEN s.mkey END) AS isin,
+                   MAX(sr2.sec_type) AS sec_type
             FROM scoped s LEFT JOIN securities_ref sr2 ON sr2.isin = s.mkey
             GROUP BY s.mkey
         ),
@@ -1440,7 +1464,7 @@ def list_fund_trade_assets(
                    AVG(weight) AS avg_weight_pct
             FROM last_per_fund GROUP BY mkey
         )
-        SELECT a.mkey AS key, n.short_name AS asset_name, n.isin,
+        SELECT a.mkey AS key, n.short_name AS asset_name, n.isin, n.sec_type,
                a.funds_count, a.last_amount_rub, a.avg_weight_pct
         FROM agg a JOIN names n ON n.mkey = a.mkey
         ORDER BY a.funds_count DESC, a.last_amount_rub DESC NULLS LAST, n.short_name
@@ -1452,6 +1476,8 @@ def list_fund_trade_assets(
                 "key": r["key"],
                 "asset_name": r["asset_name"],
                 "isin": r["isin"],
+                "sec_type": r["sec_type"],
+                "category": _asset_category(r["sec_type"]),
                 "funds_count": int(r["funds_count"]),
                 "last_amount_rub": float(r["last_amount_rub"]) if r["last_amount_rub"] is not None else None,
                 "avg_weight_pct": float(r["avg_weight_pct"]) if r["avg_weight_pct"] is not None else None,

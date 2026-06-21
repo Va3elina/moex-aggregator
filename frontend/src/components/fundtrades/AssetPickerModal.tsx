@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Search, X, Star, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import InstrumentIcon from '../InstrumentIcon';
 import { resolveFundTicker, fundAssetName, fundAssetColor } from '../../config/fundConfig';
@@ -14,6 +14,10 @@ export interface AssetPickerAsset {
   key: string;
   asset_name: string;
   isin: string | null;
+  sec_type?: string | null;
+  // Крупная корзина для табов: share|bond|fund|currency|commodity|index|other.
+  // Опционально: бэкенд добавляет его, до появления — строка попадёт в 'other'.
+  category?: string | null;
   funds_count: number;
   last_amount_rub: number | null;
   avg_weight_pct?: number | null;
@@ -33,6 +37,22 @@ type SortDir = 'asc' | 'desc';
 // чтобы они гарантированно стояли друг под другом, выровненные по правому краю.
 const COL: Record<SortCol, number> = { volume: 110, weight: 56, funds: 66 };
 
+// Корзина-категория бумаги (приходит с бэкенда) → подпись таба. Порядок = порядок
+// табов слева направо; показываем ТОЛЬКО непустые корзины + «Все» всегда последней.
+// 'share' — дефолтный таб: «Потоки по компании» в первую очередь про акции, а
+// облигации/ОФЗ/фонды засоряли список (см. securities_ref.sec_type).
+const CAT_LABELS: Record<string, string> = {
+  share: 'Акции',
+  bond: 'Облигации',
+  fund: 'Фонды',
+  currency: 'Валюта',
+  commodity: 'Сырьё',
+  index: 'Индексы',
+  other: 'Прочее',
+};
+const CAT_ORDER = ['share', 'bond', 'fund', 'currency', 'commodity', 'index', 'other'];
+const normCat = (a: AssetPickerAsset) => a.category ?? 'other';
+
 /**
  * AssetPickerModal — окно выбора бумаги для «Покупок фондов».
  *
@@ -50,6 +70,22 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
   const [searchQuery, setSearchQuery] = useState('');
   const [sortCol, setSortCol] = useState<SortCol>('volume');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
+  // Активный таб-категория. Дефолт 'share' (Акции) — чистый список без облигаций/
+  // ОФЗ/фондов. 'all' = показать все корзины.
+  const [activeCat, setActiveCat] = useState<string>('share');
+
+  // Сколько бумаг в каждой корзине (по полному списку, не зависит от поиска) +
+  // какие корзины присутствуют → набор табов. Табы строим только для непустых.
+  const { catCounts, presentCats } = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const a of assets) counts[normCat(a)] = (counts[normCat(a)] ?? 0) + 1;
+    return { catCounts: counts, presentCats: CAT_ORDER.filter((c) => counts[c] > 0) };
+  }, [assets]);
+
+  // Эффективная категория: если дефолтный 'share' пуст (или выбранный таб исчез
+  // после смены данных) — откатываемся на 'all', чтобы пикер не оказался пустым.
+  const effectiveCat =
+    activeCat === 'all' || (catCounts[activeCat] ?? 0) > 0 ? activeCat : 'all';
 
   // Избранные из localStorage. Ключ — отдельное пространство имён для бумаг
   // фондов (id = asset.key = ISIN/имя), НЕ пересекается с favoriteInstruments
@@ -96,13 +132,14 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
     }
   };
 
-  // Фильтрация по имени (поиск нечувствителен к регистру).
+  // Сначала корзина-категория (таб), затем поиск по имени (нечувствителен к регистру).
+  const base = effectiveCat === 'all' ? assets : assets.filter((a) => normCat(a) === effectiveCat);
   const q = searchQuery.trim().toLowerCase();
   const filtered = (q
-    ? assets.filter((a) =>
+    ? base.filter((a) =>
         a.asset_name.toLowerCase().includes(q) ||
         fundAssetName(a.asset_name, a.isin).toLowerCase().includes(q))
-    : assets
+    : base
   ).slice().sort((a, b) => {
     const pick = (x: AssetPickerAsset) =>
       sortCol === 'volume' ? x.last_amount_rub
@@ -310,6 +347,40 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
               }}
             />
           </div>
+
+          {/* Табы-категории (показываем только если корзин > 1). Дефолт «Акции» —
+              чистый список; облигации/ОФЗ/фонды доступны по клику. «Все» — последняя. */}
+          {presentCats.length > 1 && (
+            <div className="flex flex-wrap gap-2 mt-4">
+              {[...presentCats, 'all'].map((cat) => {
+                const isActive = effectiveCat === cat;
+                const label = cat === 'all' ? 'Все' : (CAT_LABELS[cat] ?? cat);
+                const count = cat === 'all' ? assets.length : (catCounts[cat] ?? 0);
+                return (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setActiveCat(cat)}
+                    className="flex-shrink-0 whitespace-nowrap font-semibold transition-colors"
+                    style={{
+                      padding: '5px 12px',
+                      borderRadius: 999,
+                      fontSize: 'var(--fs-xs)',
+                      border: '1.5px solid var(--text-primary)',
+                      background: isActive ? 'var(--text-primary)' : 'transparent',
+                      color: isActive ? 'var(--bg-secondary)' : 'var(--text-primary)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {label}
+                    <span style={{ marginLeft: 6, opacity: 0.6, fontVariantNumeric: 'tabular-nums' }}>
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Results — со sticky-шапкой колонок ВНУТРИ скролл-контейнера: общий

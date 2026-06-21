@@ -1488,6 +1488,8 @@ export interface FundTradeAsset {
     key: string;
     asset_name: string;
     isin: string | null;
+    sec_type?: string | null;   // сырой тип ISS (common_share / ofz_bond / ...)
+    category?: string | null;   // крупная корзина: share|bond|fund|currency|commodity|index|other
     funds_count: number;
     last_amount_rub: number | null;
     avg_weight_pct: number | null;
