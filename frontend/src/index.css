@@ -999,6 +999,12 @@
 [data-theme^="editorial"] .cbr-nav-wrap .chart-navigator.chart-navigator--bare {
   margin-bottom: -5px;
 }
+/* StrengthPage (% акций выше EMA): навигатор в собственной обёртке px-4 pb-3
+   (своё нижнее поле 12px), а низ editorial-frame тут почти без паддинга. Общий
+   отрицательный margin-bottom съедал зазор → гасим его, отступ даёт pb-3. */
+[data-theme^="editorial"] .strength-nav .chart-navigator.chart-navigator--bare {
+  margin-bottom: 0;
+}
 /* SVG mini-chart: убираем left/right 8px inset — в editorial chart занимает всю ширину */
 [data-theme^="editorial"] .chart-navigator .nav-mini-svg {
   left: 0 !important;

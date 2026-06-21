@@ -599,7 +599,7 @@ export default function StrengthPage() {
                     {syncedData.length > 0 && (
                         <div
                             data-export-ignore="true"
-                            className="px-4 pb-3"
+                            className="px-4 pb-3 strength-nav"
                             onMouseMove={e => e.stopPropagation()}
                             onMouseEnter={() => setHoverIndex(null)}
                         >
