@@ -1,0 +1,453 @@
+/**
+ * CompanyFlowsHistogram — гистограмма «Потоки по компании», оформленная
+ * 1-в-1 как funds/FlowsHistogram («Деньги в фондах»): одна серия чистого
+ * потока (зелёный приток / красный отток) от нулевой линии, навигатор-брашер,
+ * watermark, плавающая пилюля даты, каскадная волна баров.
+ *
+ * Отличие от FlowsHistogram: входные данные многосерийные (поток по каждому
+ * фонду). Бары рисуют ЧИСТЫЙ поток (сумму по выбранным фондам), а тултип
+ * дополнительно раскрывает разбивку — какой фонд внёс наибольший вклад в
+ * движение этого месяца. Компонент самодостаточен (сам держит анимацию,
+ * навигатор, hover/tooltip), поэтому вызывающему достаточно передать данные.
+ *
+ * Значения приходят в ₽ → внутри переводим в млрд (÷1e9), как и в макете.
+ */
+import {
+    useEffect,
+    useLayoutEffect,
+    useMemo,
+    useRef,
+    useState,
+    type CSSProperties,
+} from 'react';
+import { BarChart3 } from 'lucide-react';
+import { GRID, CROSSHAIR, ANIMATION } from '../../config/chartTheme';
+import { useIsMobile } from '../../hooks/useIsMobile';
+import ChartWatermark from '../ChartWatermark';
+import ChartNavigator from '../ChartNavigator';
+import ChartLegend from '../chart/ChartLegend';
+import { ChartTooltip, TooltipRow } from '../chart';
+import { computeChartTopLineY, getDatePillStyle } from '../chart/datePillLayout';
+
+const easeOutCubic = ANIMATION.easing;
+
+export interface CompanyFlowsSeries {
+    label: string;
+    color: string;
+    /** ₽ по месяцам, выровнено с `months` по индексу. */
+    values: (number | null)[];
+}
+
+interface CompanyFlowsHistogramProps {
+    /** "YYYY-MM" — ось X. */
+    months: string[];
+    /** Серии по фондам (для баров суммируются, для тултипа — разбивка). ₽. */
+    series: CompanyFlowsSeries[];
+    /** Заголовок графика (рендерится тем же ChartLegend, что и в макете). */
+    title?: string;
+    /** Высота области графика, px. */
+    height?: number;
+    loading?: boolean;
+    /** Все фонды сняты пользователем — empty-state вместо пустой гистограммы. */
+    noFundsSelected?: boolean;
+    /** Перезапуск волны: меняй при смене бумаги / набора фондов. */
+    animTrigger?: string;
+}
+
+// Формат значения потока — 1-в-1 с FlowsHistogram (млрд ₽, знак + / −).
+function fmtFlow(v: number): string {
+    const sign = v > 0 ? '+' : v < 0 ? '−' : '';
+    const abs = Math.abs(v);
+    return `${sign}${abs >= 0.01 ? abs.toFixed(2) : abs.toFixed(3)} млрд ₽`;
+}
+
+// Подпись оси Y — короткая (без «млрд ₽»), как в макете.
+function fmtAxis(v: number): string {
+    if (v === 0) return '0';
+    const sign = v > 0 ? '+' : '−';
+    const abs = Math.abs(v);
+    return `${sign}${abs >= 0.1 ? abs.toFixed(1) : abs.toFixed(2)}`;
+}
+
+// "YYYY-MM" → Date (первое число месяца). Локальное время — для подписей дат.
+function monthToDate(m: string): Date {
+    return new Date(`${m}-01T00:00:00`);
+}
+
+export default function CompanyFlowsHistogram({
+    months,
+    series,
+    title = 'Чистые покупки и продажи (млрд ₽)',
+    height = 420,
+    loading = false,
+    noFundsSelected = false,
+    animTrigger,
+}: CompanyFlowsHistogramProps) {
+    const isMobile = useIsMobile();
+    const containerRef = useRef<HTMLDivElement>(null);
+    const svgRef = useRef<SVGSVGElement>(null);
+
+    // ── Чистый поток по месяцам (млрд ₽): сумма по всем переданным сериям. ──
+    const netMlrd = useMemo(() => {
+        const n = months.length;
+        const out = new Array<number>(n).fill(0);
+        for (const s of series) {
+            for (let i = 0; i < n; i++) {
+                const v = s.values[i];
+                if (v == null || Number.isNaN(v)) continue;
+                out[i] += v / 1e9;
+            }
+        }
+        return out;
+    }, [months, series]);
+
+    // Есть ли что рисовать — по НАЛИЧИЮ данных (как макет, который смотрит на
+    // flows.length), а не по «есть ненулевой нетто». Иначе месяц, где покупки
+    // одних фондов гасят продажи других (нетто = 0), ошибочно даёт «нет данных».
+    const hasData = useMemo(
+        () => months.length > 0 && series.some(s => s.values.some(v => v != null && !Number.isNaN(v))),
+        [months, series],
+    );
+
+    // ── Навигатор: [start, end] видимого диапазона. ──
+    const [navRange, setNavRange] = useState<[number, number]>([0, 0]);
+    useLayoutEffect(() => {
+        if (months.length > 0) setNavRange([0, months.length - 1]);
+    }, [months.length, animTrigger]);
+
+    // ── Каскадная волна баров (grow-from-zero, слева направо) — как в макете. ──
+    const [animated, setAnimated] = useState<number[]>([]);
+    const rafRef = useRef<number | null>(null);
+    useEffect(() => {
+        if (!netMlrd.length) {
+            setAnimated([]);
+            return;
+        }
+        if (rafRef.current) cancelAnimationFrame(rafRef.current);
+        const target = netMlrd;
+        const totalDuration = ANIMATION.waveDuration;
+        const staggerDelay = ANIMATION.waveStagger;
+        let start: number | null = null;
+
+        const tick = (ts: number) => {
+            if (start == null) start = ts;
+            const elapsed = ts - start;
+            const next = target.map((v, i) => {
+                const barDelay = (i / target.length) * staggerDelay;
+                const barElapsed = Math.max(0, elapsed - barDelay);
+                const t = Math.min(barElapsed / (totalDuration - staggerDelay), 1);
+                return v * easeOutCubic(t);
+            });
+            setAnimated(next);
+            if (elapsed < totalDuration) rafRef.current = requestAnimationFrame(tick);
+        };
+        rafRef.current = requestAnimationFrame(tick);
+        return () => {
+            if (rafRef.current) cancelAnimationFrame(rafRef.current);
+        };
+        // netMlrd (стабилен через useMemo) + animTrigger — перезапуск волны.
+    }, [netMlrd, animTrigger]);
+
+    // ── Hover ──
+    const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+    const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
+
+    const navigatorData = useMemo(
+        () => months.map((m, i) => ({ time: m, value: netMlrd[i] ?? 0 })),
+        [months, netMlrd],
+    );
+
+    const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+        if (!months.length || !containerRef.current || !svgRef.current) return;
+        const containerRect = containerRef.current.getBoundingClientRect();
+        const svgRect = svgRef.current.getBoundingClientRect();
+        const xInChart = e.clientX - svgRect.left;
+        if (xInChart < 0 || xInChart > svgRect.width) return;
+        const visibleCount = navRange[1] - navRange[0] + 1;
+        const barWidth = svgRect.width / visibleCount;
+        const idx = Math.floor(xInChart / barWidth);
+        if (idx >= 0 && idx < visibleCount) {
+            setHoveredIndex(idx);
+            const slotCenter = (svgRect.left - containerRect.left) + idx * barWidth + barWidth / 2;
+            setTooltipPos({ x: slotCenter, y: e.clientY - containerRect.top });
+        }
+    };
+    const handleMouseLeave = () => {
+        setHoveredIndex(null);
+        setTooltipPos(null);
+    };
+
+    // ── Разбивка по фондам для hovered месяца (вклад в чистый поток). ──
+    const hoverBreakdown = useMemo(() => {
+        if (hoveredIndex == null) return null;
+        const absIdx = navRange[0] + hoveredIndex;
+        const rows = series
+            .map(s => {
+                const raw = s.values[absIdx];
+                return raw == null || Number.isNaN(raw)
+                    ? null
+                    : { label: s.label, color: s.color, mlrd: raw / 1e9 };
+            })
+            .filter((r): r is { label: string; color: string; mlrd: number } => r != null && r.mlrd !== 0)
+            .sort((a, b) => Math.abs(b.mlrd) - Math.abs(a.mlrd));
+        const net = rows.reduce((acc, r) => acc + r.mlrd, 0);
+        return { rows, net };
+    }, [hoveredIndex, navRange, series]);
+
+    // ─────────────────────────────────────────────────────────────────────
+    return (
+        <div className="rounded-2xl p-5 bg-theme-primary border border-theme relative" style={{ ['--chart-height' as string]: `${height}px` }}>
+            {noFundsSelected ? (
+                <div
+                    className="flex flex-col items-center justify-center text-center"
+                    style={{ height: 'calc(var(--chart-height, 420px) + 100px)', gap: 'var(--sp-3)', padding: 'var(--sp-6)' }}
+                >
+                    <div
+                        style={{
+                            width: 56, height: 56, borderRadius: 12,
+                            background: 'var(--accent)', border: '2px solid var(--text-primary)',
+                            boxShadow: 'var(--shadow-hard-chip, 3px 3px 0 var(--text-primary))',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            marginBottom: 'var(--sp-2)',
+                        }}
+                    >
+                        <BarChart3 size={28} strokeWidth={2.4} color="#FFFFFF" />
+                    </div>
+                    <div className="font-semibold text-theme-primary" style={{ fontSize: 'var(--fs-lg)' }}>
+                        Не выбрано ни одного фонда
+                    </div>
+                    <div className="text-theme-secondary" style={{ fontSize: 'var(--fs-sm)', maxWidth: 360 }}>
+                        Отметьте фонды в фильтре выше, чтобы увидеть чистый поток по бумаге.
+                    </div>
+                </div>
+            ) : loading && !hasData && animated.length === 0 ? (
+                <div className="flex items-center justify-center" style={{ height: 'calc(var(--chart-height, 420px) + 100px)' }}>
+                    <div className="flex flex-col items-center" style={{ gap: 'var(--sp-3)' }}>
+                        <div className="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
+                        <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-base)' }}>Загрузка...</span>
+                    </div>
+                </div>
+            ) : !hasData ? (
+                <div className="flex items-center justify-center text-center" style={{ height: 'calc(var(--chart-height, 420px) + 100px)', color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)' }}>
+                    Нет данных по потокам за период
+                </div>
+            ) : (<>
+                {loading && (
+                    <div className="absolute top-4 left-4 z-20 flex items-center gap-2 rounded-lg border border-theme shadow-md" style={{ background: 'var(--bg-primary)', padding: 'var(--sp-2) var(--sp-3)' }}>
+                        <div className="w-4 h-4 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
+                        <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-xs)' }}>Обновление...</span>
+                    </div>
+                )}
+
+                <div>
+                    {/* Заголовок графика — тем же ChartLegend (SVG-text), что и в макете. */}
+                    <div style={{ marginBottom: 'var(--chart-legend-mb, 16px)' }}>
+                        <ChartLegend
+                            items={[{ color: 'transparent', label: title, marker: 'none' }]}
+                            fontWeight={600}
+                            itemGap={6}
+                            gap="clamp(6px, 1vw, 16px)"
+                            style={{ color: 'var(--text-primary)' }}
+                        />
+                    </div>
+
+                    {/* График с тултипом */}
+                    <div
+                        ref={containerRef}
+                        className="relative cursor-crosshair chart-reveal"
+                        style={{ height: 'var(--chart-height, 420px)', display: 'flow-root', touchAction: 'none' }}
+                        onMouseMove={handleMouseMove}
+                        onMouseLeave={handleMouseLeave}
+                        onTouchStart={(e) => {
+                            if (!e.touches[0]) return;
+                            const t = e.touches[0];
+                            handleMouseMove({ clientX: t.clientX, clientY: t.clientY, currentTarget: e.currentTarget } as React.MouseEvent<HTMLDivElement>);
+                        }}
+                        onTouchMove={(e) => {
+                            if (!e.touches[0]) return;
+                            const t = e.touches[0];
+                            handleMouseMove({ clientX: t.clientX, clientY: t.clientY, currentTarget: e.currentTarget } as React.MouseEvent<HTMLDivElement>);
+                        }}
+                        onTouchEnd={handleMouseLeave}
+                    >
+                        {/* Область графика — отступы из тех же CSS-переменных, что и макет. */}
+                        <div className="absolute" style={{ top: 'var(--chart-pad-top, 19px)', bottom: 'var(--chart-pad-bottom, 50px)', left: 'var(--chart-pad-left, 100px)', right: 'var(--chart-pad-right-single, 95px)' }}>
+                            <svg ref={svgRef} width="100%" height="100%" preserveAspectRatio="none">
+                                {animated.length > 0 && (() => {
+                                    const visible = animated.slice(navRange[0], navRange[1] + 1);
+                                    const visibleTarget = netMlrd.slice(navRange[0], navRange[1] + 1);
+                                    const maxScale = Math.max(...visibleTarget.map(v => Math.abs(v)), 0.001);
+                                    const barWidth = 100 / (visible.length || 1);
+                                    const midY = 50;
+                                    const halfH = 47;
+                                    const minBarH = 1.2;
+                                    const showOutline = visible.length <= 50;
+                                    const outlineWidth = visible.length <= 20 ? 1 : 0.7;
+                                    const strokeProps: React.SVGProps<SVGRectElement> = showOutline
+                                        ? { stroke: 'var(--bar-outline)', strokeWidth: outlineWidth, vectorEffect: 'non-scaling-stroke' }
+                                        : {};
+                                    return visible.map((val, i) => {
+                                        const isHovered = hoveredIndex === i;
+                                        const opacity = hoveredIndex === null ? 1 : isHovered ? 1 : 0.35;
+                                        const x = `${i * barWidth + barWidth * 0.15}%`;
+                                        const w = `${barWidth * 0.7}%`;
+                                        const hIn = val > 0 ? Math.max((val / maxScale) * halfH, minBarH) : 0;
+                                        const hOut = val < 0 ? Math.max((Math.abs(val) / maxScale) * halfH, minBarH) : 0;
+                                        return (
+                                            <g key={i} opacity={opacity}>
+                                                {hIn > 0 && (
+                                                    <rect x={x} y={`${midY - hIn}%`} width={w} height={`${hIn}%`} fill={'var(--funds-flow-positive)'} {...strokeProps} rx="2" />
+                                                )}
+                                                {hOut > 0 && (
+                                                    <rect x={x} y={`${midY}%`} width={w} height={`${hOut}%`} fill={'var(--funds-flow-negative)'} {...strokeProps} rx="2" />
+                                                )}
+                                            </g>
+                                        );
+                                    });
+                                })()}
+
+                                {/* Горизонтальная сетка + нулевая линия */}
+                                {(() => {
+                                    const visibleTarget = netMlrd.slice(navRange[0], navRange[1] + 1);
+                                    const maxAbs = Math.max(...visibleTarget.map(v => Math.abs(v)), 0.001);
+                                    const ticks = [-maxAbs, -maxAbs / 2, 0, maxAbs / 2, maxAbs];
+                                    return ticks.map((val, i) => {
+                                        const yPct = 50 - (val / maxAbs) * 47;
+                                        return (
+                                            <line key={`grid-${i}`} x1="0" y1={`${yPct}%`} x2="100%" y2={`${yPct}%`} stroke={val === 0 ? GRID.zero : GRID.major} strokeWidth="1" />
+                                        );
+                                    });
+                                })()}
+
+                                {/* Вертикальный курсор */}
+                                {hoveredIndex !== null && (() => {
+                                    const visibleCount = navRange[1] - navRange[0] + 1;
+                                    const barWidth = 100 / visibleCount;
+                                    const cx = hoveredIndex * barWidth + barWidth / 2;
+                                    return (
+                                        <line x1={`${cx}%`} y1="3%" x2={`${cx}%`} y2="97%" stroke={CROSSHAIR.accentColor} strokeWidth="1" strokeDasharray={CROSSHAIR.accentDashArray} opacity={CROSSHAIR.accentOpacity} style={{ pointerEvents: 'none' }} />
+                                    );
+                                })()}
+                            </svg>
+                        </div>
+
+                        {/* Watermark — привязан к нижней gridline (3% запас), как в макете. */}
+                        <ChartWatermark
+                            left="calc(var(--chart-pad-left, 100px) + 5px)"
+                            bottom="calc(var(--chart-pad-bottom, 50px) + 0.03 * (var(--chart-height, 420px) - var(--chart-pad-top, 19px) - var(--chart-pad-bottom, 50px)) + 5px)"
+                        />
+
+                        {/* Тултип: чистый поток + разбивка по фондам (вклад в движение). */}
+                        {hoveredIndex !== null && tooltipPos && hoverBreakdown && (() => {
+                            const net = hoverBreakdown.net;
+                            const netColor = net >= 0 ? 'var(--funds-flow-positive)' : 'var(--funds-flow-negative)';
+                            const MAX_ROWS = 6;
+                            const shown = hoverBreakdown.rows.slice(0, MAX_ROWS);
+                            const extra = hoverBreakdown.rows.length - shown.length;
+                            return (
+                                <ChartTooltip x={tooltipPos.x} y={tooltipPos.y}>
+                                    <TooltipRow color={netColor} label={net >= 0 ? 'Чистая покупка' : 'Чистая продажа'} value={fmtFlow(net)} />
+                                    {shown.length > 0 && (
+                                        <div style={{ marginTop: 'var(--sp-1)', paddingTop: 'var(--sp-1)', borderTop: '1px solid var(--border-color)' }}>
+                                            {shown.map((r, i) => (
+                                                <TooltipRow key={i} color={r.color} label={r.label} value={fmtFlow(r.mlrd)} />
+                                            ))}
+                                            {extra > 0 && (
+                                                <div className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)', marginTop: 'var(--sp-1)', paddingLeft: 'calc(var(--sp-2) + 8px)' }}>
+                                                    и ещё {extra} {extra === 1 ? 'фонд' : extra >= 2 && extra <= 4 ? 'фонда' : 'фондов'}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </ChartTooltip>
+                            );
+                        })()}
+
+                        {/* Подписи значений справа (ось Y) */}
+                        {(() => {
+                            const visibleTarget = netMlrd.slice(navRange[0], navRange[1] + 1);
+                            const maxAbs = Math.max(...visibleTarget.map(v => Math.abs(v)), 0.001);
+                            const ticks = [maxAbs, maxAbs / 2, 0, -maxAbs / 2, -maxAbs];
+                            return (
+                                <div className="absolute pointer-events-none" style={{ top: 'var(--chart-pad-top, 19px)', bottom: 'var(--chart-pad-bottom, 50px)', right: 0, width: 'var(--chart-pad-right-single, 95px)' }}>
+                                    {ticks.map((val, i) => {
+                                        const yPct = 50 - (val / maxAbs) * 47;
+                                        return (
+                                            <div key={`label-${i}`} className="absolute" style={{ top: `${yPct}%`, left: 12, transform: 'translateY(-50%)' }}>
+                                                <span className="font-semibold" style={{ fontSize: 'var(--chart-font-y, 16px)', color: 'var(--axis-color, #9CA3B8)' }}>
+                                                    {fmtAxis(val)}
+                                                </span>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            );
+                        })()}
+
+                        {/* Подписи оси X — месяц/год (прорежены, на мобиле 3 шт.) */}
+                        <div className="absolute flex justify-between font-semibold px-2" style={{ bottom: 'var(--chart-xlabel-bottom, 20px)', left: 'var(--chart-pad-left, 100px)', right: 'var(--chart-pad-right-single, 95px)', fontSize: 'var(--chart-font-x, 14px)', color: 'var(--axis-color, #9CA3B8)' }}>
+                            {(() => {
+                                const visibleMonths = months.slice(navRange[0], navRange[1] + 1);
+                                if (!visibleMonths.length) return null;
+                                const tickCount = Math.min(isMobile ? 3 : 6, visibleMonths.length);
+                                return Array.from({ length: tickCount }, (_, i) => {
+                                    const idx = Math.min(Math.round(i * (visibleMonths.length - 1) / Math.max(tickCount - 1, 1)), visibleMonths.length - 1);
+                                    if (!visibleMonths[idx]) return null;
+                                    return (
+                                        <span key={i}>{monthToDate(visibleMonths[idx]).toLocaleDateString('ru-RU', { month: 'short', year: '2-digit' })}</span>
+                                    );
+                                });
+                            })()}
+                        </div>
+                    </div>
+
+                    {/* Навигатор — тот же ChartNavigator, что в макете (histogram-preview). */}
+                    {navigatorData.length > 1 && (
+                        <div data-export-ignore="true">
+                            <ChartNavigator
+                                data={navigatorData}
+                                color="var(--accent)"
+                                previewMode="histogram"
+                                onChange={(s, e) => setNavRange([s, e])}
+                                insetLeft="var(--chart-pad-left)"
+                                insetRight="var(--chart-pad-right-single)"
+                            />
+                        </div>
+                    )}
+                </div>
+
+                {/* Плавающая пилюля даты — на конце пунктирной линии курсора. */}
+                {hoveredIndex !== null && (() => {
+                    const visibleMonths = months.slice(navRange[0], navRange[1] + 1);
+                    const m = visibleMonths[hoveredIndex];
+                    if (!m) return null;
+                    const cont = containerRef.current;
+                    const svg = svgRef.current;
+                    if (!cont || !svg) return null;
+                    const visibleCount = navRange[1] - navRange[0] + 1;
+                    const containerRect = cont.getBoundingClientRect();
+                    const svgRect = svg.getBoundingClientRect();
+                    const padTop = svgRect.top - containerRect.top;
+                    const chartW = svgRect.width;
+                    const chartAreaH = svgRect.height;
+                    const barWidth = chartW / visibleCount;
+                    const centerX = cont.offsetLeft + (svgRect.left - containerRect.left) + hoveredIndex * barWidth + barWidth / 2;
+                    const topLineY = computeChartTopLineY({
+                        wrapper: cont,
+                        paddingTop: padTop,
+                        gridOffsetFrac: 0.03,
+                        chartAreaHeight: chartAreaH,
+                    });
+                    const dateStr = monthToDate(m).toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
+                    return (
+                        <div className="absolute z-20 pointer-events-none" style={getDatePillStyle(centerX, topLineY) as CSSProperties}>
+                            <span className="text-theme-secondary rounded border border-theme whitespace-nowrap" style={{ background: 'var(--bg-primary)', padding: 'calc(var(--sp-1)) var(--sp-2)', fontSize: 'var(--fs-2xs)' }}>
+                                {dateStr}
+                            </span>
+                        </div>
+                    );
+                })()}
+            </>)}
+        </div>
+    );
+}
