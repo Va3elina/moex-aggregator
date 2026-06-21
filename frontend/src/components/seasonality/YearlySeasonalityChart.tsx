@@ -1,9 +1,8 @@
-import { useLayoutEffect, useState, useMemo, useRef } from 'react';
+import { useLayoutEffect, useState, useRef } from 'react';
 import type { YearlySeasonalityResponse } from '../../services/api';
 import { CHART_COLORS, PADDING, cssVar } from '../../config/chartTheme';
 import { ChartGrid, ChartCrosshair, ChartDateLabel, ChartTooltip, TooltipRow, ChartYAxis } from '../chart';
 import ChartLegend from '../chart/ChartLegend';
-import ChartNavigator from '../ChartNavigator';
 import ChartWatermark from '../ChartWatermark';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
@@ -54,9 +53,6 @@ export default function YearlySeasonalityChart({
   const isMobile = useIsMobile();
   // CSS-reveal на mount (key-based remount в parent)
   const [revealed, setRevealed] = useState(false);
-  // Navigator range — [startIdx, endIdx] в координатах bucket'ов baseAvg.
-  // null = показываем весь год.
-  const [navRange, setNavRange] = useState<[number, number] | null>(null);
   useLayoutEffect(() => {
     if (yearlyData.average.length > 0 && !revealed) setRevealed(true);
   }, [yearlyData.average.length, revealed]);
@@ -87,13 +83,6 @@ export default function YearlySeasonalityChart({
   const vw = useViewportWidth();
   const pillFontPx = axisFontSize(vw);
 
-  // ВСЕ хуки должны вызываться безусловно ДО любого раннего return — иначе при
-  // переключении yearlyData пусто↔непусто число хуков между рендерами меняется
-  // и React падает (rules-of-hooks). navData раньше был useMemo НИЖЕ guard'а.
-  const navData = useMemo(() =>
-    (yearlyData?.average ?? []).map(p => ({ time: String(p.td), value: p.avg_pct })),
-    [yearlyData]);
-
   if (!yearlyData || yearlyData.average.length === 0) {
     return (
       <div className="flex items-center justify-center" style={{ height: chartHeight, color: 'var(--text-muted)' }}>Нет данных</div>
@@ -119,12 +108,10 @@ export default function YearlySeasonalityChart({
   const cur = showCurrentYear ? yearlyData.current : [];
   const fullMaxTD = yearlyData.max_trading_days || 252;
 
-  // Visible range: если навигатор активен, фильтруем по td
-  const navStart = navRange ? navRange[0] : 0;
-  const navEnd = navRange ? navRange[1] : baseAvg.length - 1;
-  const visibleTdMin = baseAvg[navStart]?.td ?? 0;
-  const visibleTdMax = baseAvg[navEnd]?.td ?? fullMaxTD;
-  void visibleTdMax; // используется в scX
+  // Всегда показываем весь год: td нормализуется по полному диапазону торговых
+  // дней [0..fullMaxTD] (scX(td) = td / fullMaxTD).
+  const visibleTdMin = 0;
+  const visibleTdMax = fullMaxTD;
 
   // Фильтр: оставить только точки в видимом диапазоне td
   const filterByTd = <T extends { td: number }>(arr: T[]): T[] =>
@@ -548,17 +535,6 @@ export default function YearlySeasonalityChart({
           </ChartTooltip>
         )}
         {/* Asset name перенесён в legend row выше (на одном уровне с легендой). */}
-      </div>
-
-      {/* Navigator — скользящее окно по году. Скрыт в html2canvas snapshot. */}
-      <div data-export-ignore="true">
-        <ChartNavigator
-          data={navData}
-          onChange={(s, e) => setNavRange([s, e])}
-          color={CHART_COLORS.muted}
-          insetLeft="var(--seasonality-chart-pad-left)"
-          insetRight="var(--seasonality-chart-pad-right)"
-        />
       </div>
     </div>
   );
