@@ -117,6 +117,62 @@ def test_resolve_day_empty_returns_none():
     assert resolve_day(w, date(2026, 7, 15), {}) is None
 
 
+def test_compute_windows_no_inverted_windows():
+    """Ни одно окно не вырождено (start <= end) — иначе контракт «пропадал» бы."""
+    for cl in (BR, SI):
+        for w in compute_windows(cl):
+            if w.start and w.end:
+                assert w.start <= w.end, w
+
+
+def test_duplicate_lsttrade_no_inverted_window():
+    """Дубль lsttrade в одном sectype (грязные данные) → нет вырожденного окна,
+    покрытие дат непрерывно."""
+    dup = [_c("BRN6", "2026-07-01"), _c("BRQ6", "2026-07-01"), _c("BRU6", "2026-08-31")]
+    w = compute_windows(dup)
+    for x in w:
+        if x.start and x.end:
+            assert x.start <= x.end, x
+    assert front_sec_id_for_day(w, date(2026, 7, 1)) is not None
+    assert front_sec_id_for_day(w, date(2026, 8, 15)) == "BRU"
+
+
+def test_none_lsttrade_among_regulars_skipped():
+    """Регулярный контракт без lsttrade отбрасывается, окна не ломаются."""
+    mixed = [_c("BRN6", "2026-07-01"),
+             Contract("BRQ6", "BRQ", None, False, True),
+             _c("BRU6", "2026-08-31")]
+    w = compute_windows(mixed)
+    assert [x.sec_id for x in w] == ["BRN", "BRU"]
+    for x in w:
+        if x.start and x.end:
+            assert x.start <= x.end
+
+
+def test_mixed_perpetual_and_regular_returns_only_perpetual():
+    """Грязные данные: вечный + регулярные у одного sectype → только вечное окно."""
+    mixed = [_c("BRN6", "2026-07-01"), _c("USDRUBF", None, perp=True), _c("BRQ6", "2026-08-03")]
+    w = compute_windows(mixed)
+    assert len(w) == 1 and w[0].is_perpetual and w[0].sec_id == "USDRUBF"
+
+
+def test_resolve_day_zero_volume_calendar_candle_still_picked():
+    """Календарный фронт берётся даже при объёме 0 (валиден close) — без преждеврем. ролла."""
+    w = compute_windows(BR)
+    day = date(2026, 7, 15)  # календарь говорит BRQ
+    assert resolve_day(w, day, {"BRQ": 0.0, "BRX": 500.0}) == "BRQ"
+
+
+def test_cross_year_same_sec_id_distinct_windows():
+    """BRN6 и BRN7 (один sec_id 'BRN', разные годы) → два разных окна по датам."""
+    cross = [_c("BRN6", "2026-07-01"), _c("BRZ6", "2026-12-01"), _c("BRN7", "2027-07-01")]
+    w = compute_windows(cross)
+    assert [x.secid for x in w] == ["BRN6", "BRZ6", "BRN7"]
+    assert front_sec_id_for_day(w, date(2026, 6, 1)) == "BRN"   # 2026 июль-контракт
+    assert front_sec_id_for_day(w, date(2027, 6, 1)) == "BRN"   # 2027 июль-контракт
+    assert w[0].secid == "BRN6" and w[2].secid == "BRN7"
+
+
 def _run():
     tests = [v for k, v in sorted(globals().items())
              if k.startswith("test_") and callable(v)]

@@ -33,7 +33,7 @@ from api.schemas.validators import (
 from api.routers.auth import get_current_user_optional
 from api.security.access_control import enforce_tier_limits, get_effective_end_date
 from api.services.chart_live import append_live_points
-from api.services.contract_calendar import front_windows, resolve_day
+from api.services.contract_calendar import front_windows, resolve_day, front_sec_ids
 
 router = APIRouter(prefix='/api/chart', tags=['chart'])
 
@@ -152,6 +152,14 @@ def get_chart_data(
         WHERE sectype = :sectype AND type = :inst_type
     """), {"sectype": sectype, "inst_type": inst_type}).fetchall()
     sec_ids = [r[0] for r in sec_ids_result] or [sec_id]
+    # Расширяем календарными контрактами (futures_contracts): для фьючерсов
+    # подтягиваем sec_id'ы, которых ещё нет в instruments (напр. летние
+    # BRQ/BRU/BRV до их авто-регистрации) — иначе их свечи не попадут в выборку
+    # и календарный фронт за эти дни откатится на объём. Спот не трогаем.
+    if inst_type == 'futures':
+        cal_ids = front_sec_ids(db, sectype)
+        if cal_ids:
+            sec_ids = list(dict.fromkeys(sec_ids + cal_ids))
     log.info(f"[1] sec_ids: {(time.time()-t0)*1000:.0f} мс | {sec_ids}")
 
     # 2-4. Рабочий период
@@ -247,7 +255,7 @@ def get_chart_data(
     # 5. Запрос свечей (включаем sec_id для умной дедупликации)
     t0 = time.time()
     candles_raw = db.execute(text("""
-        SELECT begin_time, open, high, low, close, volume, sec_id
+        SELECT begin_time, open, high, low, close, volume, sec_id, secid
         FROM candles
         WHERE sec_id = ANY(:sec_ids)
           AND interval = :interval
@@ -392,7 +400,10 @@ def get_chart_data(
     for i in range(n_c - 1, 0, -1):
         prev_close = float(sorted_candles[i - 1][4] or 0)
         cur_close = float(sorted_candles[i][4] or 0)
-        same_contract = sorted_candles[i - 1][6] == sorted_candles[i][6]
+        # Сравниваем по ПОЛНОМУ secid (index 7, 'BRN6'), а не sec_id (index 6,
+        # 'BRN'): sec_id не уникален по годам (BRN5/BRN6 → 'BRN'), что при годовом
+        # разрыве в цепочке давало бы ложный same_contract на стыке ролла.
+        same_contract = sorted_candles[i - 1][7] == sorted_candles[i][7]
         if same_contract and prev_close > 0 and cur_close > 0:
             ratio = cur_close / prev_close
             if ratio >= SPLIT_RATIO_THRESHOLD or ratio <= 1.0 / SPLIT_RATIO_THRESHOLD:

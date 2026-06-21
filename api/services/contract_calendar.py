@@ -12,10 +12,13 @@ Candles/fetch_candles_futures_realtime) на КАЛЕНДАРНЫЙ — по р�
   lsttrade — каждый контракт становится фронтом ровно один раз, по очереди
   (даже неликвидные летние BRQ/BRU/BRV).
 
+Публичный API:
+  compute_windows / front_sec_id_for_day / resolve_day — ЧИСТЫЕ функции (без БД),
+    покрыты юнит-тестами tests/test_contract_calendar.py.
+  front_windows / front_sec_id / front_sec_ids — DB-обёртки (conn = Session/Connection).
+
 Модуль НАМЕРЕННО лёгкий (только sqlalchemy.text + stdlib), без api.database/
-api.models — чтобы дёшево импортироваться и из api, и из отдельного процесса
-фетчера свечей. Чистые функции (compute_windows / front_sec_id_for_day /
-resolve_day) не трогают БД и покрыты юнит-тестами.
+api.models — чтобы дёшево импортироваться и из api, и из отдельного процесса.
 
 Связь кодов:
   secid   'BRN6'  — полный контракт (candles.secid, futures_contracts.secid)
@@ -80,6 +83,12 @@ def compute_windows(contracts: Iterable[Contract]) -> List[FrontWindow]:
     windows: List[FrontWindow] = []
     prev_lst: Optional[date] = None
     for c in regs:
+        # Защита от грязных данных: дубль/немонотонная lsttrade дала бы вырожденное
+        # окно (start > end) → контракт «пропадал» бы тихо. Пропускаем такой
+        # контракт (тот же день экспирации уже покрыт предыдущим; resolve_day
+        # подстрахует объёмом, если у него окажутся уникальные свечи дня).
+        if prev_lst is not None and c.lsttrade <= prev_lst:
+            continue
         start = None if prev_lst is None else prev_lst + timedelta(days=1)
         windows.append(FrontWindow(start, c.lsttrade, c.secid, c.sec_id, False))
         prev_lst = c.lsttrade
@@ -96,16 +105,6 @@ def front_sec_id_for_day(windows: List[FrontWindow], day: date) -> Optional[str]
     return None
 
 
-def front_secid_for_day(windows: List[FrontWindow], day: date) -> Optional[str]:
-    """Полный secid ('BRN6') фронт-контракта на дату (None если вне окон)."""
-    for w in windows:
-        if w.is_perpetual:
-            return w.secid
-        if (w.start is None or day >= w.start) and (w.end is None or day <= w.end):
-            return w.secid
-    return None
-
-
 def resolve_day(
     windows: List[FrontWindow],
     day: date,
@@ -115,7 +114,9 @@ def resolve_day(
     данных за этот день; иначе fallback на контракт с макс. объёмом из имеющихся.
 
     `available` — {sec_id: суммарный объём за день} (что реально есть в БД за день).
-    Возвращает None, если данных за день нет вовсе.
+    Возвращает None, если данных за день нет вовсе. Замечание: календарный фронт
+    предпочитается даже при объёме 0 — у дневной свечи фронта валиден close, а
+    «без преждевременного ролла» важнее ликвидности соседа.
 
     Зачем fallback: на исторических днях старый объёмный фетчер мог не сохранить
     календарный фронт → берём что есть (поведение как раньше, без регрессии).
@@ -133,8 +134,17 @@ def resolve_day(
 
 # ---------------------------------------------------------------------------
 # DB-обёртки. conn = SQLAlchemy Session или Connection (у обоих есть .execute).
-# Любая ошибка БД → пустой результат / None, чтобы вызывающий откатился на объём.
+# При ошибке (напр. таблицы futures_contracts ещё нет) — ROLLBACK, чтобы снять
+# aborted-состояние транзакции (PostgreSQL 25P02), и пустой результат → вызывающий
+# откатится на объём, а общий Session не упадёт на последующих запросах.
 # ---------------------------------------------------------------------------
+
+def _safe_rollback(conn) -> None:
+    try:
+        conn.rollback()
+    except Exception:
+        pass
+
 
 def _fetch_contracts(conn, sectype: str) -> List[Contract]:
     rows = conn.execute(
@@ -155,37 +165,33 @@ def _fetch_contracts(conn, sectype: str) -> List[Contract]:
 
 
 def front_windows(conn, sectype: str) -> List[FrontWindow]:
-    """Фронт-окна sectype из futures_contracts (пустой список → календаря нет)."""
+    """Фронт-окна sectype из futures_contracts (пустой список → календаря нет/ошибка)."""
     try:
         return compute_windows(_fetch_contracts(conn, sectype))
     except Exception:
+        _safe_rollback(conn)
         return []
-
-
-def pick_front_contract(conn, sectype: str, as_of_date: Optional[date] = None) -> Optional[str]:
-    """Полный secid ('BRN6') фронт-контракта на дату. None — календаря нет/ошибка.
-
-    На день экспирации возвращает сам истекающий контракт (lsttrade >= день) —
-    без преждевременного ролла. Назавтра вернёт следующий по lsttrade.
-    """
-    as_of_date = as_of_date or date.today()
-    try:
-        row = conn.execute(
-            text("""
-                SELECT secid FROM futures_contracts
-                WHERE sectype = :sectype AND is_traded
-                  AND (is_perpetual OR lsttrade >= :d)
-                ORDER BY is_perpetual DESC, lsttrade ASC
-                LIMIT 1
-            """),
-            {"sectype": sectype, "d": as_of_date},
-        ).fetchone()
-        return row[0] if row else None
-    except Exception:
-        return None
 
 
 def front_sec_id(conn, sectype: str, as_of_date: Optional[date] = None) -> Optional[str]:
     """sec_id ('BRN') фронт-контракта на дату (через окна; None если нет)."""
     as_of_date = as_of_date or date.today()
     return front_sec_id_for_day(front_windows(conn, sectype), as_of_date)
+
+
+def front_sec_ids(conn, sectype: str) -> List[str]:
+    """Все sec_id ('BRN') контрактов sectype из календаря.
+
+    Для расширения списка контрактов в chart.py — чтобы тянуть свечи контрактов,
+    которых ещё нет в instruments (напр. летние BRQ/BRU/BRV до их регистрации).
+    [] при ошибке/отсутствии таблицы (+ rollback, чтобы не отравить Session).
+    """
+    try:
+        rows = conn.execute(
+            text("SELECT DISTINCT sec_id FROM futures_contracts WHERE sectype = :st"),
+            {"st": sectype},
+        ).fetchall()
+        return [r[0] for r in rows]
+    except Exception:
+        _safe_rollback(conn)
+        return []

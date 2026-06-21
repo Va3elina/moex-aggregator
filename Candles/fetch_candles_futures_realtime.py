@@ -303,10 +303,11 @@ class FuturesManager:
         # без преждевременных роллов и пропусков, futures_contracts из ISS).
         # Fallback на объёмный/свежий поиск ниже — если календаря для sectype
         # ещё нет (таблица не заполнена / новый актив).
-        cal_secid = self._calendar_fronts.get(sectype)
-        if cal_secid:
+        cal = self._calendar_fronts.get(sectype)
+        if cal:
+            cal_secid, cal_sec_id = cal
             log.debug(f"[{sectype}] календарь → {cal_secid}")
-            return (cal_secid, cal_secid[:-1], name, sectype)
+            return (cal_secid, cal_sec_id, name, sectype)
 
         candidates = self._generate_candidates(prefix)
 
@@ -403,23 +404,26 @@ class FuturesManager:
         log.debug(f"Сгруппировано {len(instruments)} базовых активов")
         return instruments
 
-    def _load_calendar_fronts(self) -> Dict[str, str]:
-        """{sectype: front_secid} на сегодня из futures_contracts (регулярные).
+    def _load_calendar_fronts(self) -> Dict[str, tuple]:
+        """{sectype: (front_secid, front_sec_id)} на сегодня из futures_contracts.
 
-        Фронт = ближайший непросроченный по lsttrade. Фильтр `lsttrade >= today`
-        корректно роллит даже если is_traded ещё не обновлён после экспирации.
-        Вечные обрабатываются отдельно (в get_active_contracts), здесь NOT is_perpetual.
+        Фронт = ближайший контракт с lsttrade >= today (is_traded, не вечный).
+        is_traded обязателен (настоящий фронт всегда в активном листинге); сам
+        ролл обеспечивает lsttrade >= today — в день экспирации фронт ещё старый
+        контракт, назавтра lsttrade < today его исключает → берётся следующий.
+        Вечные обрабатываются отдельной веткой в get_active_contracts.
+        sec_id берём из таблицы (а не secid[:-1]) — устойчиво к формату кода.
         """
         try:
             today = get_moscow_time().date()
             with self.engine.connect() as conn:
                 rows = conn.execute(text("""
-                    SELECT DISTINCT ON (sectype) sectype, secid
+                    SELECT DISTINCT ON (sectype) sectype, secid, sec_id
                     FROM futures_contracts
                     WHERE is_traded AND NOT is_perpetual AND lsttrade >= :today
                     ORDER BY sectype, lsttrade ASC
                 """), {"today": today}).fetchall()
-            fronts = {r[0]: r[1] for r in rows}
+            fronts = {r[0]: (r[1], r[2]) for r in rows}
             log.info(f"📅 Календарь фронтов: {len(fronts)} активов")
             return fronts
         except Exception as e:

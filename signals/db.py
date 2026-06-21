@@ -272,15 +272,21 @@ def get_fund_flow_series(
     return series
 
 
-def get_candles_continuous(sectype: str, days: int) -> List[CandlePoint]:
+def get_candles_continuous(
+    sectype: str, days: int, end_date: Optional[date] = None
+) -> List[CandlePoint]:
     """Continuous daily price series, склеенная из контрактов sectype по КАЛЕНДАРЮ.
 
     На каждый день берём свечу календарного фронт-контракта
     (futures_contracts.lsttrade); если его свечей за день нет (историч. дни,
     собранные старым объёмным фетчером) — откат на макс-объём. Единый источник
     истины — api/services/contract_calendar (без преждевременных роллов/пропусков).
+
+    `end_date` — верхняя граница (для бэктеста/showcase «как если бы сегодня было
+    end_date»; согласовано с get_oi_daily.as_of_date). По умолчанию today().
     """
-    cutoff = date.today() - timedelta(days=days)
+    end = end_date or date.today()
+    cutoff = end - timedelta(days=days)
     with SessionLocal() as session:
         windows = front_windows(session, sectype)
         rows = session.execute(
@@ -291,10 +297,11 @@ def get_candles_continuous(sectype: str, days: int) -> List[CandlePoint]:
                   AND interval = 24
                   AND type = 'futures'
                   AND begin_time::date >= :cutoff
+                  AND begin_time::date <= :end
                   AND close > 0
                 ORDER BY begin_time ASC
             """),
-            {"prefix": f"{sectype}%", "cutoff": cutoff},
+            {"prefix": f"{sectype}%", "cutoff": cutoff, "end": end},
         ).fetchall()
 
     # День → {sec_id: (begin_time, close)} (свеча с макс. объёмом контракта за день)
