@@ -401,13 +401,13 @@ export default function CompanyFlowsHistogram({
                         </div>
                     </div>
 
-                    {/* Навигатор — тот же ChartNavigator, что в макете (histogram-preview). */}
+                    {/* Навигатор — тот же ChartNavigator (rail-таймлайн, как во всех графиках). */}
                     {navigatorData.length > 1 && (
                         <div data-export-ignore="true">
                             <ChartNavigator
                                 data={navigatorData}
                                 color="var(--accent)"
-                                previewMode="histogram"
+                                previewMode="line"
                                 onChange={(s, e) => setNavRange([s, e])}
                                 insetLeft="var(--chart-pad-left)"
                                 insetRight="var(--chart-pad-right-single)"
