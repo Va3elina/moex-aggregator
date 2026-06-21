@@ -130,6 +130,8 @@ SCRIPTS = {
     # Рублёвый оборот фьючерсов (VALTODAY с ISS → candles.value): у фьючерсных
     # свечей оборот = 0, в поиске «Объём» нужен в рублях, а не контрактах.
     'futures_turnover': BASE_DIR / 'Candles' / 'fetch_futures_turnover.py',
+    # Календарь экспираций фьючерсов (ISS) — источник КАЛЕНДАРНОГО ролловера
+    'contract_calendar': BASE_DIR / 'Candles' / 'fetch_contract_calendar.py',
     # Funds скрипты
     'funds_daily': BASE_DIR / 'Funds' / 'fetch_funds_realtime.py',
     # Indices скрипты
@@ -203,6 +205,7 @@ TIMEOUTS = {
     'candles_futures': 300,  # 5 минут
     'candles_spot': 300,  # 5 минут
     'futures_turnover': 60,  # 1 минута (один ISS-запрос + bulk UPDATE)
+    'contract_calendar': 120,  # 2 минуты (1 bulk-запрос ISS + upsert ~566 строк)
     'funds_daily': 600,  # 10 минут
     'indices_daily': 300,  # 5 минут
     'index_candles_hourly': 600,  # 10 минут (бэкфилл с 2011 — ~25k свечей)
@@ -808,6 +811,21 @@ class MainOrchestrator:
 
         return success
 
+    async def run_contract_calendar_update(self) -> bool:
+        """Обновляет календарь экспираций фьючерсов (futures_contracts из ISS).
+
+        Источник КАЛЕНДАРНОГО ролловера. Дёшево (1 bulk-запрос ISS + upsert).
+        Запускается ПЕРЕД циклом свечей, чтобы фетчер выбрал фронт по lsttrade.
+        """
+        log.info("  📅 Контракт-календарь...")
+        success, msg, dur = await run_script('contract_calendar', ['--once', '--force'])
+        if success:
+            log.info(f"    ✓ Контракт-календарь ({dur:.1f}с)")
+        else:
+            self.stats['errors'] += 1
+            log.error(f"    ✗ Контракт-календарь: {msg}")
+        return success
+
     async def run_funds_update(self) -> bool:
         """Запускает дневное обновление фондов"""
         log.info("  📊 Funds Daily...")
@@ -989,6 +1007,7 @@ class MainOrchestrator:
         # 3. Дневные данные
         log.info("  📊 Дневные данные...")
         for fn in [
+            self.run_contract_calendar_update,
             self.run_daily_update,
             self.run_funds_update,
             self.run_indices_update,
@@ -1102,6 +1121,10 @@ class MainOrchestrator:
 
         # === Начальная синхронизация ===
         log.info("🔄 Начальная синхронизация...")
+
+        # Календарь экспираций фьючерсов — ДО первого цикла свечей, чтобы фетчер
+        # выбрал фронт-контракт по lsttrade (а не по объёму).
+        await self.run_contract_calendar_update()
 
         is_trading, reason = is_trading_day()
         if is_trading:
@@ -1252,6 +1275,7 @@ class MainOrchestrator:
                         now.hour == DAILY_UPDATE_HOUR and
                         now.minute >= DAILY_UPDATE_MINUTE):
                     log.info(f"⏰ [{now:%H:%M:%S} МСК] Дневное обновление...")
+                    await self.run_contract_calendar_update()
                     await self.run_daily_update()
                     await self.run_funds_update()
                     await self.run_indices_update()

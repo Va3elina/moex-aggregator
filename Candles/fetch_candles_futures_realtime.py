@@ -187,6 +187,7 @@ class FuturesManager:
         self._cache = {}
         self._cache_time = None
         self._cache_ttl = timedelta(hours=CONTRACT_CACHE_HOURS)
+        self._calendar_fronts = {}  # {sectype: front_secid} из futures_contracts
 
         log.debug("FuturesManager инициализирован")
 
@@ -298,6 +299,15 @@ class FuturesManager:
         Логика: выбираем контракт с самой поздней датой последней свечи.
         При равной дате — ближайший по экспирации.
         """
+        # ПРИОРИТЕТ: календарь экспираций (детерминированный фронт по lsttrade —
+        # без преждевременных роллов и пропусков, futures_contracts из ISS).
+        # Fallback на объёмный/свежий поиск ниже — если календаря для sectype
+        # ещё нет (таблица не заполнена / новый актив).
+        cal_secid = self._calendar_fronts.get(sectype)
+        if cal_secid:
+            log.debug(f"[{sectype}] календарь → {cal_secid}")
+            return (cal_secid, cal_secid[:-1], name, sectype)
+
         candidates = self._generate_candidates(prefix)
 
         found = []
@@ -393,6 +403,29 @@ class FuturesManager:
         log.debug(f"Сгруппировано {len(instruments)} базовых активов")
         return instruments
 
+    def _load_calendar_fronts(self) -> Dict[str, str]:
+        """{sectype: front_secid} на сегодня из futures_contracts (регулярные).
+
+        Фронт = ближайший непросроченный по lsttrade. Фильтр `lsttrade >= today`
+        корректно роллит даже если is_traded ещё не обновлён после экспирации.
+        Вечные обрабатываются отдельно (в get_active_contracts), здесь NOT is_perpetual.
+        """
+        try:
+            today = get_moscow_time().date()
+            with self.engine.connect() as conn:
+                rows = conn.execute(text("""
+                    SELECT DISTINCT ON (sectype) sectype, secid
+                    FROM futures_contracts
+                    WHERE is_traded AND NOT is_perpetual AND lsttrade >= :today
+                    ORDER BY sectype, lsttrade ASC
+                """), {"today": today}).fetchall()
+            fronts = {r[0]: r[1] for r in rows}
+            log.info(f"📅 Календарь фронтов: {len(fronts)} активов")
+            return fronts
+        except Exception as e:
+            log.warning(f"Календарь фронтов недоступен ({e}) — fallback на объёмный поиск")
+            return {}
+
     async def get_active_contracts(self, session: aiohttp.ClientSession) -> List[tuple]:
         """Получает список активных контрактов"""
         now = datetime.now()
@@ -405,6 +438,7 @@ class FuturesManager:
         log.info("🔍 Поиск активных контрактов...")
 
         instruments = self.load_instruments()
+        self._calendar_fronts = self._load_calendar_fronts()  # календарь приоритетнее объёма
         contracts = []
 
         # === Вечные фьючерсы ===

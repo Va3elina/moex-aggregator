@@ -33,6 +33,7 @@ from api.schemas.validators import (
 from api.routers.auth import get_current_user_optional
 from api.security.access_control import enforce_tier_limits, get_effective_end_date
 from api.services.chart_live import append_live_points
+from api.services.contract_calendar import front_windows, resolve_day
 
 router = APIRouter(prefix='/api/chart', tags=['chart'])
 
@@ -273,9 +274,9 @@ def get_chart_data(
             "available_intervals": [], "contract_switches": [],
         }
 
-    # 6. Склейка контрактов (необратимый ролловер, как TradingView)
-    # Для каждого дня определяем лидера по объёму, но после переключения
-    # на новый контракт — НЕ возвращаемся на старый.
+    # 6. Склейка контрактов — КАЛЕНДАРНЫЙ ролловер по датам экспирации.
+    # Для каждого дня берём фронт-контракт из календаря (futures_contracts),
+    # с откатом на объём, если за день нет свечей календарного фронта.
     t0 = time.time()
 
     # 6a. Дедупликация: для каждого (begin_time, sec_id) оставляем свечу с макс volume
@@ -301,74 +302,29 @@ def get_chart_data(
             daily_volume[day] = {}
         daily_volume[day][sid] = daily_volume[day].get(sid, 0) + vol
 
-    # 6c. Необратимый ролловер с multi-day confirmation.
-    #
-    # Защиты от false switches:
-    # 1. CONFIRM_DAYS=2 — новый лидер должен удерживать первенство 2 дня подряд.
-    #    Защищает от single-day аномалий: например 8.12.2025 CRZ=91k vs нормы
-    #    6-10M (data fetch / половинный день) → CRH временно «лидер» → следующий
-    #    день CRZ снова нормальный → переключения не происходит.
-    # 2. COOLDOWN_DAYS=45 — после переключения нельзя вернуться на предыдущий
-    #    контракт. Защищает от «дёрганья» возле даты экспирации, когда обе серии
-    #    имеют сравнимый объём.
+    # 6c. КАЛЕНДАРНЫЙ ролловер: фронт-контракт каждого дня берём из календаря
+    # экспираций (futures_contracts.lsttrade), а не по объёму. Детерминированно:
+    # без преждевременных роллов (контракт — фронт ВКЛЮЧАЯ день экспирации) и без
+    # пропусков (контракты по очереди по lsttrade, в т.ч. неликвидные летние BR).
+    # Если за исторический день нет свечей календарного фронта (старый объёмный
+    # фетчер сохранил другой контракт) — resolve_day откатывается на макс-объём
+    # дня. Календаря нет совсем → чистый объём (прежнее поведение). Единый
+    # источник истины — api/services/contract_calendar.
+    windows = front_windows(db, sectype)
     sorted_days = sorted(daily_volume.keys())
     best_contract_by_day = {}
-    current_contract = None
-    prev_contract = None
-    last_switch_day = None
-    COOLDOWN_DAYS = 45
-    CONFIRM_DAYS = 2  # multi-day confirmation для защиты от шумовых дней
     contract_switches = []
-    pending_leader = None  # кандидат на нового лидера, ждёт подтверждения
-    pending_days = 0       # сколько подряд дней кандидат лидирует
-
+    prev_contract = None
     for day in sorted_days:
-        contracts = daily_volume[day]
-        day_leader = max(contracts, key=contracts.get)
-
-        if current_contract is None:
-            current_contract = day_leader
-            last_switch_day = day
+        chosen = resolve_day(windows, day, daily_volume[day])
+        best_contract_by_day[day] = chosen
+        if chosen is not None and chosen != prev_contract:
             contract_switches.append({
                 "date": day.isoformat(),
-                "to": day_leader,
-                "from": None
+                "from": prev_contract,
+                "to": chosen,
             })
-        elif day_leader != current_contract and day_leader in contracts:
-            # Накапливаем дни подряд для одного и того же кандидата.
-            # Если кандидат сменился — сбрасываем счётчик.
-            if pending_leader == day_leader:
-                pending_days += 1
-            else:
-                pending_leader = day_leader
-                pending_days = 1
-
-            # Подтверждение получено — проверяем условия переключения
-            if pending_days >= CONFIRM_DAYS:
-                old_vol = contracts.get(current_contract, 0)
-                new_vol = contracts.get(day_leader, 0)
-                total_day_vol = sum(contracts.values())
-                if new_vol > old_vol and total_day_vol > 1000:
-                    days_since = (day - last_switch_day).days if last_switch_day else 999
-                    if day_leader == prev_contract and days_since < COOLDOWN_DAYS and old_vol > 0:
-                        pass  # Слишком рано для возврата — дёрганье при экспирации
-                    else:
-                        contract_switches.append({
-                            "date": day.isoformat(),
-                            "from": current_contract,
-                            "to": day_leader
-                        })
-                        prev_contract = current_contract
-                        current_contract = day_leader
-                        last_switch_day = day
-                        pending_leader = None
-                        pending_days = 0
-        else:
-            # Лидер совпадает с текущим контрактом → сброс pending
-            pending_leader = None
-            pending_days = 0
-
-        best_contract_by_day[day] = current_contract
+            prev_contract = chosen
 
     # 6d. Фильтруем свечи: оставляем только лучший контракт каждого дня
     best_by_time = {}  # {begin_time: candle_row}

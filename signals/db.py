@@ -11,6 +11,7 @@ from typing import Optional, List
 from sqlalchemy import text
 from api.database import SessionLocal
 from api.models import OpenInterest, Instrument, Candle
+from api.services.contract_calendar import front_windows, resolve_day
 
 
 @dataclass(frozen=True)
@@ -272,38 +273,53 @@ def get_fund_flow_series(
 
 
 def get_candles_continuous(sectype: str, days: int) -> List[CandlePoint]:
-    """Continuous daily price series, склеенная из всех контрактов sectype.
+    """Continuous daily price series, склеенная из контрактов sectype по КАЛЕНДАРЮ.
 
-    Простой rolling-front подход: на каждый день берём свечу того контракта,
-    у которого на эту дату наибольший объём (= front-month). Этого достаточно
-    для отображения «цены актива X» на графике.
+    На каждый день берём свечу календарного фронт-контракта
+    (futures_contracts.lsttrade); если его свечей за день нет (историч. дни,
+    собранные старым объёмным фетчером) — откат на макс-объём. Единый источник
+    истины — api/services/contract_calendar (без преждевременных роллов/пропусков).
     """
     cutoff = date.today() - timedelta(days=days)
     with SessionLocal() as session:
-        # Front contract picker через window function: на каждый день берём
-        # свечу с максимальным volume среди всех контрактов sectype.
+        windows = front_windows(session, sectype)
         rows = session.execute(
             text("""
-                SELECT begin_time, close
-                FROM (
-                    SELECT
-                        begin_time, close,
-                        ROW_NUMBER() OVER (
-                            PARTITION BY begin_time::date
-                            ORDER BY volume DESC NULLS LAST
-                        ) AS rn
-                    FROM candles
-                    WHERE secid LIKE :prefix
-                      AND interval = 24
-                      AND type = 'futures'
-                      AND begin_time::date >= :cutoff
-                ) t
-                WHERE rn = 1
+                SELECT begin_time, close, sec_id, volume
+                FROM candles
+                WHERE secid LIKE :prefix
+                  AND interval = 24
+                  AND type = 'futures'
+                  AND begin_time::date >= :cutoff
+                  AND close > 0
                 ORDER BY begin_time ASC
             """),
             {"prefix": f"{sectype}%", "cutoff": cutoff},
         ).fetchall()
-    return [CandlePoint(begin_time=r[0], close=float(r[1])) for r in rows]
+
+    # День → {sec_id: (begin_time, close)} (свеча с макс. объёмом контракта за день)
+    # и день → {sec_id: суммарный объём} (для resolve_day).
+    by_day: dict = {}
+    vol_by_day: dict = {}
+    best_vol: dict = {}  # (day, sec_id) -> макс одиночный объём, для выбора свечи
+    for begin_time, close, sec_id, volume in rows:
+        day = begin_time.date()
+        v = float(volume or 0)
+        vslot = vol_by_day.setdefault(day, {})
+        vslot[sec_id] = vslot.get(sec_id, 0.0) + v
+        slot = by_day.setdefault(day, {})
+        if sec_id not in slot or v > best_vol.get((day, sec_id), -1.0):
+            slot[sec_id] = (begin_time, float(close))
+            best_vol[(day, sec_id)] = v
+
+    out: List[CandlePoint] = []
+    for day in sorted(by_day):
+        chosen = resolve_day(windows, day, vol_by_day[day])
+        if chosen is None or chosen not in by_day[day]:
+            continue
+        bt, cl = by_day[day][chosen]
+        out.append(CandlePoint(begin_time=bt, close=cl))
+    return out
 
 
 def get_latest_price(sectype: str) -> Optional[tuple]:
