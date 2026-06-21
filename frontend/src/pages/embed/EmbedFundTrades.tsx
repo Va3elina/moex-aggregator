@@ -37,7 +37,10 @@ import {
   formatReturnPct,
   returnColor,
 } from '../../components/funds/FundDetailModal';
-import { UK_LOGOS, DONUT_COLORS, assetColor, resolveFundLogo, stripUkName } from '../../config/fundConfig';
+import { UK_LOGOS, DONUT_COLORS, fundAssetName, fundAssetColor, resolveFundLogo, stripUkName } from '../../config/fundConfig';
+
+// ISIN-детект для movers.akey (ISIN либо имя): 2 буквы + 10 алфанумерик.
+const ISIN_RE = /^[A-Z]{2}[A-Z0-9]{10}$/;
 
 type LoadStatus = 'idle' | 'loading' | 'ok' | 'empty' | 'error';
 type EmbedTab = 'movers' | 'snapshots' | 'funds' | 'company';
@@ -444,11 +447,12 @@ function MoverCol({ title, color, items, metric }: { title: string; color: strin
       {items.slice(0, 8).map((m) => {
         const v = valOf(m);
         const pct = Math.max(3, (Math.abs(v) / maxAbs) * 100);
+        const mName = fundAssetName(m.asset_name, ISIN_RE.test(m.akey) ? m.akey : null);
         return (
           <div key={m.akey} style={{ marginBottom: 6 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, fontSize: 11 }}>
               <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: 'var(--text-primary)' }}>
-                {m.asset_name}
+                {mName}
               </span>
               <span style={{ color, fontWeight: 600, flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
                 {fmtVal(v)}
@@ -638,7 +642,7 @@ function SnapshotsTab({ funds }: { funds: FundWithHistory[] }) {
                 </div>
                 {review.current_holdings.map((h) => (
                   <div key={h.isin || h.asset_name} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '5px 0', borderBottom: '1px solid color-mix(in srgb, var(--text-primary) 8%, transparent)' }}>
-                    <span style={{ fontSize: 12, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{h.asset_name}</span>
+                    <span style={{ fontSize: 12, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fundAssetName(h.asset_name, h.isin)}</span>
                     <span style={{ fontSize: 12, color: 'var(--text-secondary)', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
                       {h.weight != null ? `${h.weight.toFixed(2)}%` : '—'}
                     </span>
@@ -659,7 +663,7 @@ function SnapshotsTab({ funds }: { funds: FundWithHistory[] }) {
                 {sortByAbs(addedItems, isW ? wDelta : aAdded).slice(0, 8).map((r) => (
                   <EmbedBar
                     key={`${r.asset_name}-${r.isin || ''}`}
-                    label={r.asset_name}
+                    label={fundAssetName(r.asset_name, r.isin)}
                     subLabel={`+${formatShares(r.delta_positions || 0)} шт${r.curr_weight != null ? ` · ${r.curr_weight.toFixed(2)}%` : ''}`}
                     amount={isW ? wDelta(r) : aAdded(r)}
                     maxAbs={maxAbs}
@@ -682,7 +686,7 @@ function SnapshotsTab({ funds }: { funds: FundWithHistory[] }) {
                 {sortByAbs(reducedItems, isW ? wDelta : aAdded).slice(0, 8).map((r) => (
                   <EmbedBar
                     key={`${r.asset_name}-${r.isin || ''}`}
-                    label={r.asset_name}
+                    label={fundAssetName(r.asset_name, r.isin)}
                     subLabel={`${formatShares(r.delta_positions || 0)} шт${r.curr_weight != null ? ` · ${r.curr_weight.toFixed(2)}%` : ''}`}
                     amount={isW ? wDelta(r) : aAdded(r)}
                     maxAbs={maxAbs}
@@ -705,7 +709,7 @@ function SnapshotsTab({ funds }: { funds: FundWithHistory[] }) {
                 {sortByAbs(review.new, isW ? wNew : aNew).slice(0, 8).map((r) => (
                   <EmbedBar
                     key={`${r.asset_name}-${r.isin || ''}`}
-                    label={r.asset_name}
+                    label={fundAssetName(r.asset_name, r.isin)}
                     subLabel={`${formatShares(r.curr_positions)} шт${r.curr_weight != null ? ` · ${r.curr_weight.toFixed(2)}%` : ''}`}
                     amount={isW ? wNew(r) : aNew(r)}
                     maxAbs={maxAbs}
@@ -728,7 +732,7 @@ function SnapshotsTab({ funds }: { funds: FundWithHistory[] }) {
                 {sortByAbs(review.sold_out, isW ? wSold : aSold).slice(0, 8).map((r) => (
                   <EmbedBar
                     key={`${r.asset_name}-${r.isin || ''}`}
-                    label={r.asset_name}
+                    label={fundAssetName(r.asset_name, r.isin)}
                     subLabel={`было ${formatShares(r.prev_positions)} шт`}
                     amount={isW ? wSold(r) : aSold(r)}
                     maxAbs={maxAbs}
@@ -779,9 +783,9 @@ function FundCard({ fund: f }: { fund: FundWithHistory }) {
   const top = f.top_holdings ?? [];
   const sum = top.reduce((s, h) => s + (h.weight || 0), 0);
   const other = 100 - sum;
-  const donutHoldings = other > 1 ? [...top, { name: 'Прочее', weight: other }] : top;
+  const donutHoldings = other > 1 ? [...top, { name: 'Прочее', isin: null, weight: other }] : top;
   const donutColors = donutHoldings.map((h, i) =>
-    h.name === 'Прочее' ? 'var(--text-muted)' : (assetColor(h.name) ?? DONUT_COLORS[i % DONUT_COLORS.length]));
+    h.name === 'Прочее' ? 'var(--text-muted)' : (fundAssetColor(h.name, h.isin) ?? DONUT_COLORS[i % DONUT_COLORS.length]));
   const ret = f.returns?.y1 ?? f.returns?.all ?? null;
 
   const avatarStyle: CSSProperties = {
@@ -859,9 +863,9 @@ function FundCard({ fund: f }: { fund: FundWithHistory }) {
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 }}>
           {top.slice(0, 5).map((h, i) => (
             <div key={h.name + i} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
-              <span style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, backgroundColor: assetColor(h.name) ?? DONUT_COLORS[i % DONUT_COLORS.length] }} />
+              <span style={{ width: 7, height: 7, borderRadius: '50%', flexShrink: 0, backgroundColor: fundAssetColor(h.name, h.isin) ?? DONUT_COLORS[i % DONUT_COLORS.length] }} />
               <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-secondary)', fontWeight: 600 }}>
-                {h.name}
+                {fundAssetName(h.name, h.isin)}
               </span>
               <span style={{ flexShrink: 0, fontVariantNumeric: 'tabular-nums', fontWeight: 600, color: 'var(--text-primary)' }}>
                 {h.weight.toFixed(1)}%

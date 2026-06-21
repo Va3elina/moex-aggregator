@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Search, X, Star, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
-import TickerLogo from '../TickerLogo';
-import { assetTicker, assetColor } from '../../config/fundConfig';
+import InstrumentIcon from '../InstrumentIcon';
+import { resolveFundTicker, fundAssetName, fundAssetColor } from '../../config/fundConfig';
 import { formatCompact } from '../../utils/formatNumber';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
 
@@ -40,8 +40,8 @@ const COL: Record<SortCol, number> = { volume: 110, weight: 56, funds: 66 };
  * с поиском, сорт-заголовками, избранным и списком). Активы приходят через
  * props (без загрузки из API и без tier-lock).
  *
- * Лого: assetTicker(asset_name) → <TickerLogo> (sprite), иначе цветная точка
- * по assetColor(asset_name). Справа — три числовые колонки: объём (₽),
+ * Лого: resolveFundTicker(asset_name, isin) → <InstrumentIcon> (как в Сезонности/
+ * ОИ), иначе цветная точка по fundAssetColor. Справа — три числовые колонки: объём (₽),
  * средний вес (%) и «N фондов». Длинные имена обрезаются (ellipsis + title).
  * Клик по строке → onSelect(asset) + onClose(). Клик по звезде — toggle
  * избранного (localStorage 'favoriteFundTradeAssets', id = asset.key).
@@ -99,7 +99,9 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
   // Фильтрация по имени (поиск нечувствителен к регистру).
   const q = searchQuery.trim().toLowerCase();
   const filtered = (q
-    ? assets.filter((a) => a.asset_name.toLowerCase().includes(q))
+    ? assets.filter((a) =>
+        a.asset_name.toLowerCase().includes(q) ||
+        fundAssetName(a.asset_name, a.isin).toLowerCase().includes(q))
     : assets
   ).slice().sort((a, b) => {
     const pick = (x: AssetPickerAsset) =>
@@ -166,8 +168,12 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
   };
 
   const renderItem = (asset: AssetPickerAsset) => {
-    const ticker = assetTicker(asset.asset_name);
-    const color = assetColor(asset.asset_name);
+    // Унификация с Сезонностью: резолвим бумагу → каноничный тикер (по ISIN),
+    // каноничное имя и фирменный цвет. Лого — через InstrumentIcon (тот же путь,
+    // что в ОИ/Сезонности: STOCK_LOGO_OVERRIDE → стикерпак → /logos/<тикер>.png).
+    const ticker = resolveFundTicker(asset.asset_name, asset.isin);
+    const color = fundAssetColor(asset.asset_name, asset.isin);
+    const displayName = fundAssetName(asset.asset_name, asset.isin);
     const isFavorite = favorites.includes(asset.key);
 
     return (
@@ -180,9 +186,10 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
         className="instrument-item flex items-center gap-3.5 px-3 py-2.5 rounded-lg transition-colors"
         style={{ color: 'var(--text-primary)', cursor: 'pointer' }}
       >
-        {/* Лого: спрайт по тикеру, иначе цветная точка по фирменному цвету бумаги */}
+        {/* Лого: InstrumentIcon по резолвнутому тикеру (акция), иначе — цветная точка
+            по фирменному цвету бумаги (облигации/ОФЗ/денежный рынок без тикера). */}
         {ticker ? (
-          <TickerLogo ticker={ticker} size={24} rounded="full" />
+          <InstrumentIcon sectype={ticker} size={24} rounded="full" />
         ) : (
           <span
             className="flex-shrink-0 rounded-full"
@@ -195,13 +202,13 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
           />
         )}
 
-        {/* Имя бумаги — обрезается ellipsis, полное имя в title */}
+        {/* Имя бумаги — каноничное (формат Сезонности), ellipsis, полное в title */}
         <span
           className="truncate flex-1 font-semibold"
           style={{ fontSize: 'var(--fs-sm)' }}
-          title={asset.asset_name}
+          title={displayName}
         >
-          {asset.asset_name}
+          {displayName}
         </span>
 
         {/* Числовые колонки справа (ширины COL — под сорт-заголовками, по правому

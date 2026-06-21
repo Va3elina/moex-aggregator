@@ -1,31 +1,31 @@
 /**
  * CompanyFlowsTab — раздел «Потоки по компании».
  *
- * Выбор бумаги (searchable селектор) → её помесячные потоки (Δ стоимости позиции)
- * по ВСЕМ фондам, что её держат. Два чарта:
- *   1. «Flow по фондам (млрд ₽)» — divergent-stacked по фондам (легенда = имена).
- *   2. «Суммарный Flow (млрд ₽)» — одна серия, окраска по знаку.
+ * Выбор бумаги (таблетка-поиск в стиле «Сезонности») → её помесячные потоки
+ * (Δ стоимости позиции) по фондам, что её держат. Один чарт —
+ * CompanyFlowsHistogram, оформленный 1-в-1 как «Деньги в фондах»: бары рисуют
+ * ЧИСТЫЙ поток (сумму по выбранным фондам, приток зелёный / отток красный), а
+ * тултип раскрывает разбивку — какой фонд внёс наибольший вклад в движение.
  *
  * Цвет фонда: UK_LOGOS[String(uk_id)]?.bg, иначе DONUT_COLORS[idx % len].
- * Значения приходят в ₽ → делим на 1e9 (млрд) во formatValue StackedFlowBars.
+ * Значения приходят в ₽ → CompanyFlowsHistogram переводит в млрд (÷1e9).
  *
  * Контрактные импорты из services/api: listFundTradeAssets, getCompanyFlows,
  * типы FundTradeAsset, CompanyFlowsResponse. Их добавляет бэкенд-агент по
  * общему контракту — здесь импортируем строго по контрактным именам.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, TrendingUp } from 'lucide-react';
-import { UK_LOGOS, DONUT_COLORS, assetTicker, assetColor } from '../../config/fundConfig';
+import { UK_LOGOS, DONUT_COLORS, resolveFundTicker, fundAssetName, fundAssetColor } from '../../config/fundConfig';
 import {
     listFundTradeAssets,
     getCompanyFlows,
     type FundTradeAsset,
     type CompanyFlowsResponse,
 } from '../../services/api';
-import TickerLogo from '../TickerLogo';
-import ChartLegend from '../chart/ChartLegend';
-import StackedFlowBars, { type StackedSeries } from './StackedFlowBars';
-import { useViewportHeight } from '../../hooks/useViewportHeight';
+import InstrumentIcon from '../InstrumentIcon';
+import CompanyFlowsHistogram, { type CompanyFlowsSeries } from './CompanyFlowsHistogram';
+import { useFitToViewport } from '../../hooks/useFitToViewport';
 import AssetPickerModal from './AssetPickerModal';
 import FundPicker, { type FundPickerFund } from './FundPicker';
 
@@ -35,12 +35,13 @@ type Metric = 'amount' | 'weight';
 // top-N по суммарному |потоку| (см. computeTopFunds). Пусто-выбор = все фонды.
 const DEFAULT_FUND_COUNT = 3;
 
-// ITEM 4b/5 — логотип бумаги в опции селектора: спрайт по тикеру, иначе
-// цветная точка (assetColor), иначе нейтральная точка.
-function AssetMark({ name, size = 22 }: { name: string; size?: number }) {
-    const ticker = assetTicker(name);
-    if (ticker) return <TickerLogo ticker={ticker} size={size} rounded="full" />;
-    const dot = assetColor(name) ?? 'var(--text-muted)';
+// ITEM 4b/5 — логотип бумаги: резолвим по ISIN в каноничный тикер (как в
+// Сезонности) и рендерим через InstrumentIcon (STOCK_LOGO_OVERRIDE → стикерпак →
+// /logos/<тикер>.png). Нет тикера (облигация/ОФЗ) → цветная точка.
+function AssetMark({ name, isin, size = 22 }: { name: string; isin?: string | null; size?: number }) {
+    const ticker = resolveFundTicker(name, isin);
+    if (ticker) return <InstrumentIcon sectype={ticker} size={size} rounded="full" />;
+    const dot = fundAssetColor(name, isin) ?? 'var(--text-muted)';
     return (
         <span
             style={{
@@ -92,7 +93,9 @@ export interface CompanyFlowsTabProps {
 }
 
 export default function CompanyFlowsTab({ presetAsset, onPresetConsumed }: CompanyFlowsTabProps = {}) {
-    const vh = useViewportHeight();
+    // Высота графика «под экран» — anchor на обёртке чарта (как в «Деньги в фондах»).
+    const chartAnchorRef = useRef<HTMLDivElement>(null);
+    const chartHeight = useFitToViewport(chartAnchorRef, { min: 320, max: 560, bottomBuffer: 120 });
     const [assets, setAssets] = useState<FundTradeAsset[]>([]);
     const [assetsLoading, setAssetsLoading] = useState(true);
     const [assetsError, setAssetsError] = useState<string | null>(null);
@@ -199,9 +202,10 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed }: Compa
         }));
     }, [flows]);
 
-    // ITEM 2 — фонды, попадающие в чарты: фильтр по выбранным тикерам (пусто = все).
+    // ITEM 2 — фонды, попадающие в чарт: фильтр по выбранным тикерам (пусто = все).
     // Цвет фонда привязан к индексу в ПОЛНОМ списке (стабилен при фильтрации).
-    const visibleSeries: StackedSeries[] = useMemo(() => {
+    // Бары рисуют ЧИСТЫЙ поток (сумму по этим сериям), тултип — разбивку по фондам.
+    const fundSeries: CompanyFlowsSeries[] = useMemo(() => {
         if (!flows) return [];
         return flows.funds
             .map((f, idx) => {
@@ -212,38 +216,17 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed }: Compa
                         label: f.fund_name,
                         color: ukColor ?? DONUT_COLORS[idx % DONUT_COLORS.length],
                         values: f.values,
-                    } as StackedSeries,
+                    } as CompanyFlowsSeries,
                 };
             })
             .filter(x => selectedFunds.size === 0 || selectedFunds.has(x.ticker))
             .map(x => x.series);
     }, [flows, selectedFunds]);
 
-    // Серии для чарта «Flow по фондам».
-    const fundSeries = visibleSeries;
+    // Все фонды сняты пользователем (но у бумаги фонды есть) — empty-state.
+    const noFundsSelected = !!flows && flows.funds.length > 0 && fundSeries.length === 0;
 
-    // Серия для «Суммарный Flow» — сумма по ВИДИМЫМ фондам (учёт фильтра фондов).
-    const totalSeries: StackedSeries[] = useMemo(() => {
-        if (!flows) return [];
-        const monthsLen = flows.months.length;
-        const sum: (number | null)[] = new Array(monthsLen).fill(null);
-        for (const s of visibleSeries) {
-            for (let i = 0; i < monthsLen; i++) {
-                const v = s.values[i];
-                if (v == null) continue;
-                sum[i] = (sum[i] ?? 0) + v;
-            }
-        }
-        return [{ label: 'Суммарный поток', color: '', values: sum }];
-    }, [flows, visibleSeries]);
-
-    const legendItems = useMemo(
-        () => fundSeries.map(s => ({ color: s.color, label: s.label })),
-        [fundSeries],
-    );
-
-    // Триггер entrance-волны стек-баров: перезапуск при смене бумаги ИЛИ набора
-    // фондов/УК (StackedFlowBars сам домешивает длину months для первой загрузки).
+    // Триггер entrance-волны баров: перезапуск при смене бумаги ИЛИ набора фондов.
     const animTrigger = `${selectedAsset?.key ?? ''}|${[...selectedFunds].sort().join(',')}`;
 
     // ── Рендер ──
@@ -307,72 +290,60 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed }: Compa
     }
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-5)' }}>
-            {/* Заголовок + селектор бумаги */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-2)' }}>
-                <h2
-                    className="font-bold text-theme-primary"
-                    style={{ fontSize: 'var(--fs-xl)', margin: 0 }}
-                >
-                    Потоки по компании
-                </h2>
-                {/* ITEM 3 — кнопка-триггер бумаги (лого + имя + счётчик) → AssetPickerModal.
-                    ITEM 2 — FundPicker (multi) по конкретным фондам текущей бумаги. */}
-                <div
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-4)' }}>
+            {/* Контролы: таблетка поиска бумаги (стиль «Сезонности») + фильтр фондов.
+                Раскладка кнопок повторяет «Деньги в фондах» — горизонтальный ряд. */}
+            <div
+                style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    alignItems: 'center',
+                    gap: 'var(--sp-2)',
+                }}
+            >
+                {/* Таблетка бумаги — widget-flat (icon + имя + счётчик фондов + ▾),
+                    1-в-1 как селектор актива на «Сезонности». Открывает строковый
+                    поиск (AssetPickerModal — то же оформление, что и InstrumentSearchModal). */}
+                <button
+                    type="button"
+                    onClick={() => setPickerOpen(true)}
+                    title={selectedAsset ? fundAssetName(selectedAsset.asset_name, selectedAsset.isin) : undefined}
+                    className="widget-flat font-medium transition-colors flex items-center hover:opacity-90"
                     style={{
-                        marginTop: 'var(--sp-1)',
-                        display: 'flex',
-                        flexWrap: 'wrap',
-                        alignItems: 'center',
-                        gap: 'var(--sp-2)',
+                        color: 'var(--text-primary)',
+                        fontSize: 'var(--fs-sm)',
+                        padding: 'var(--sp-2) var(--sp-4)',
+                        gap: 'var(--sp-3)',
+                        minWidth: 'clamp(180px, 26vw, 240px)',
+                        maxWidth: 300,
+                        cursor: 'pointer',
                     }}
                 >
-                    <button
-                        type="button"
-                        onClick={() => setPickerOpen(true)}
-                        className="editorial-press flex items-center font-semibold rounded-full"
-                        style={{
-                            backgroundColor: 'var(--bg-secondary)',
-                            color: 'var(--text-primary)',
-                            border: '2px solid var(--text-primary)',
-                            minWidth: 240,
-                            maxWidth: '100%',
-                            fontSize: 'var(--fs-sm)',
-                            padding: 'var(--sp-2) var(--sp-4)',
-                            gap: 'var(--sp-2)',
-                            cursor: 'pointer',
-                        }}
-                    >
-                        {selectedAsset && <AssetMark name={selectedAsset.asset_name} />}
-                        {selectedAsset ? (
-                            <>
-                                <span
-                                    className="flex-1 text-left"
-                                    title={selectedAsset.asset_name}
-                                    style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                                >
-                                    {selectedAsset.asset_name}
-                                </span>
-                                <span
-                                    className="tabular-nums flex-shrink-0"
-                                    style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-xs)' }}
-                                >
-                                    {selectedAsset.funds_count} {pluralFunds(selectedAsset.funds_count)}
-                                </span>
-                            </>
-                        ) : (
-                            <span className="flex-1 text-left truncate">Выберите бумагу</span>
+                    {selectedAsset
+                        ? <AssetMark name={selectedAsset.asset_name} isin={selectedAsset.isin} size={28} />
+                        : <span style={{ width: 28, height: 28, flexShrink: 0 }} />}
+                    <div className="flex-1 text-left" style={{ minWidth: 0 }}>
+                        <div
+                            className="font-medium"
+                            style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                        >
+                            {selectedAsset ? fundAssetName(selectedAsset.asset_name, selectedAsset.isin) : 'Выберите бумагу'}
+                        </div>
+                        {selectedAsset && (
+                            <div className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)' }}>
+                                {selectedAsset.funds_count} {pluralFunds(selectedAsset.funds_count)}
+                            </div>
                         )}
-                        <ChevronDown size={16} style={{ flexShrink: 0 }} />
-                    </button>
+                    </div>
+                    <ChevronDown size={14} className="text-theme-secondary" style={{ flexShrink: 0 }} />
+                </button>
 
-                    <FundPicker
-                        funds={fundPickerFunds}
-                        mode="multi"
-                        selected={selectedFunds}
-                        onChange={setSelectedFunds}
-                    />
-                </div>
+                <FundPicker
+                    funds={fundPickerFunds}
+                    mode="multi"
+                    selected={selectedFunds}
+                    onChange={setSelectedFunds}
+                />
             </div>
 
             {flowsError && (
@@ -384,60 +355,19 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed }: Compa
                 </div>
             )}
 
-            {/* Чарт 1: Flow по фондам (stacked) */}
-            <section style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
-                <div className="flex items-center justify-between" style={{ gap: 'var(--sp-3)' }}>
-                    <h3 className="font-semibold text-theme-primary" style={{ fontSize: 'var(--fs-md)', margin: 0 }}>
-                        Flow по фондам (млрд ₽)
-                    </h3>
-                    {flowsLoading && (
-                        <div className="flex items-center" style={{ gap: 'var(--sp-2)' }}>
-                            <div
-                                className="w-4 h-4 border-2 border-t-transparent rounded-full animate-spin"
-                                style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }}
-                            />
-                            <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-xs)' }}>
-                                Обновление…
-                            </span>
-                        </div>
-                    )}
-                </div>
-
-                {legendItems.length > 0 && (
-                    <ChartLegend
-                        items={legendItems}
-                        fontWeight={600}
-                        gap={16}
-                        style={{ color: 'var(--text-primary)' }}
-                    />
-                )}
-
-                {/* ITEM 2 — фильтр фондов спрятал все серии */}
-                {flows && flows.funds.length > 0 && fundSeries.length === 0 && (
-                    <div
-                        className="text-theme-secondary"
-                        style={{ fontSize: 'var(--fs-xs)', padding: 'var(--sp-2) 0' }}
-                    >
-                        Не выбрано ни одного фонда — выберите фонды или «Все фонды».
-                    </div>
-                )}
-
-                <StackedFlowBars months={flows?.months ?? []} series={fundSeries} height={Math.max(200, Math.min(340, vh - 280))} animTrigger={animTrigger} />
-            </section>
-
-            {/* Чарт 2: Суммарный Flow */}
-            <section style={{ display: 'flex', flexDirection: 'column', gap: 'var(--sp-3)' }}>
-                <h3 className="font-semibold text-theme-primary" style={{ fontSize: 'var(--fs-md)', margin: 0 }}>
-                    Суммарный Flow (млрд ₽)
-                </h3>
-                <StackedFlowBars
+            {/* Чистый поток по бумаге — гистограмма 1-в-1 как «Деньги в фондах».
+                Бары = сумма по выбранным фондам (приток зелёный / отток красный),
+                тултип раскрывает вклад каждого фонда. */}
+            <div ref={chartAnchorRef}>
+                <CompanyFlowsHistogram
                     months={flows?.months ?? []}
-                    series={totalSeries}
-                    height={Math.max(160, Math.min(280, vh - 340))}
-                    signColorForSingle
+                    series={fundSeries}
+                    height={chartHeight}
+                    loading={flowsLoading}
+                    noFundsSelected={noFundsSelected}
                     animTrigger={animTrigger}
                 />
-            </section>
+            </div>
 
             {/* ITEM 3 — модалка выбора бумаги (assets = текущий список). */}
             {pickerOpen && (

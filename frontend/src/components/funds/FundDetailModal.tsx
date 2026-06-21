@@ -27,7 +27,8 @@ import {
 } from '../../services/api';
 import SimpleChart, { type ChartAnnotation } from '../SimpleChart';
 import ChartCaptureButton from '../export/ChartCaptureButton';
-import { DONUT_COLORS, assetColor } from '../../config/fundConfig';
+import { DONUT_COLORS, assetColor, resolveFundTicker, fundAssetName } from '../../config/fundConfig';
+import InstrumentIcon from '../InstrumentIcon';
 import Donut from './Donut';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
 import { useViewportHeight } from '../../hooks/useViewportHeight';
@@ -722,16 +723,23 @@ export function AssetHistoryModal({
                     marginBottom: 20, paddingBottom: 16,
                     borderBottom: '1.5px solid var(--text-primary)',
                 }}>
-                    <div>
-                        <h3 style={{
-                            fontFamily: 'var(--font-serif, Georgia, serif)',
-                            fontSize: 'var(--fs-2xl)', margin: 0, marginBottom: 4,
-                            color: 'var(--text-primary)',
-                        }}>
-                            {asset_name}
-                        </h3>
-                        <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-tertiary)' }}>
-                            {ticker} {isin && <span style={{ marginLeft: 8 }}>· {isin}</span>}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+                        {(() => {
+                            // Лого актива по резолвнутому тикеру (как в Сезонности/ОИ).
+                            const assetTk = resolveFundTicker(asset_name, isin);
+                            return assetTk ? <InstrumentIcon sectype={assetTk} size={isMobile ? 34 : 42} rounded="full" /> : null;
+                        })()}
+                        <div style={{ minWidth: 0 }}>
+                            <h3 style={{
+                                fontFamily: 'var(--font-serif, Georgia, serif)',
+                                fontSize: 'var(--fs-2xl)', margin: 0, marginBottom: 4,
+                                color: 'var(--text-primary)',
+                            }}>
+                                {fundAssetName(asset_name, isin)}
+                            </h3>
+                            <div style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-tertiary)' }}>
+                                {ticker} {isin && <span style={{ marginLeft: 8 }}>· {isin}</span>}
+                            </div>
                         </div>
                     </div>
                     <button
