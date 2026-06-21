@@ -852,7 +852,7 @@ export default function SimpleChart({
     effectiveHeight
     + 40 // p-5 top + bottom
     + (legendPosition === 'top' ? 36 : 0) // legend block
-    + (showNavigator ? 64 : 0); // navigator + nav-mt
+    + (showNavigator ? 32 : 0); // navigator (компактный рельс) + nav-mt
 
   // Показываем полный лоадер только если нет данных вообще
   if (data.length === 0 && loading) {
@@ -1728,7 +1728,8 @@ export default function SimpleChart({
           <ChartNavigator
             data={data}
             onChange={(s, e, isDrag) => { navDragRef.current = isDrag; setNavRange([s, e]); }}
-            color={primaryColor}
+            // Таймлайн всегда классический accent (оранжевый в editorial), не цвет серии.
+            color="var(--accent)"
             // Фактический padding (число), не CSS-переменная. padding уже
             // учитывает mobile labelMax, chartPadding-override и desktop CSS —
             // навигатор всегда ровно по ядру графика. CSS-var давал рассинхрон
