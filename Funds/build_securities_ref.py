@@ -26,7 +26,16 @@ from sqlalchemy import create_engine, text
 # Курируемые алиасы: старый_isin → ISIN-преемник (редомициляция / конверсия ГДР).
 # Только ЯВНЫЕ случаи «тот же бизнес, новый ISIN». Имя для слияния НЕ используем.
 ISIN_ALIASES = {
-    "US98387E2054": "RU000A108X38",  # X5: FIVE-гдр (X5 Retail Group N.V.) → КЦ ИКС 5
+    # Редомициляция: старый иностранный ISIN (ГДР/АДР) → новый РФ-ISIN того же бизнеса.
+    "US98387E2054": "RU000A108X38",  # X5: FIVE-гдр → КЦ ИКС 5
+    "US69269L1044": "RU000A10CW95",  # Озон ADR → МКПАО Озон
+    "US7496552057": "RU000A0JQUZ6",  # Русагро AGRO-гдр → RAGR
+    "US83418T1088": "RU000A10ANA1",  # Циан CIAN-адр → CNRU
+    "US42207L1061": "RU000A107662",  # Хэдхантер HHRU-адр → HEAD
+    "NL0009805522": "RU000A107T19",  # Яндекс (Yandex N.V.) → МКПАО Яндекс (YDEX)
+    "US87238U2033": "RU000A107UL4",  # TCS-гдр → Т-Технологии (T)
+    "US5603172082": "RU000A106YF0",  # VK-гдр (Mail.ru) → ВК (VKCO)
+    "US29760G1031": "RU000A10C1L6",  # Эталон ETLN-гдр → МКПАО Эталон Груп
 }
 
 ISS_URL = ("https://iss.moex.com/iss/securities.json?iss.meta=off&q={q}"

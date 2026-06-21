@@ -1409,19 +1409,22 @@ def list_fund_trade_assets(
     """
     rows = db.execute(text("""
         WITH scoped AS (
-            SELECT h.fund_id, h.snapshot_date, h.asset_name, h.isin, h.amount_rub, h.weight,
-                   COALESCE(NULLIF(h.isin, ''), h.asset_name) AS mkey
+            -- mkey по КАНОНИЧЕСКОМУ isin: редомициль-пары (старый ГДР + новая
+            -- локальная акция) сливаются в одну строку пикера (canonical_isin).
+            SELECT h.fund_id, h.snapshot_date, h.asset_name, h.amount_rub, h.weight,
+                   COALESCE(sr.canonical_isin, NULLIF(h.isin, ''), h.asset_name) AS mkey
             FROM fund_holdings_history h
             JOIN funds f ON f.fund_id = h.fund_id
+            LEFT JOIN securities_ref sr ON sr.isin = h.isin
             WHERE f.ticker = ANY(:tickers) AND f.category = 'stocks'
               AND h.source = ANY(:sources)
         ),
         names AS (
             SELECT s.mkey,
-                   COALESCE(MAX(sr.short_name),
+                   COALESCE(MAX(sr2.short_name),
                             (array_agg(s.asset_name ORDER BY length(s.asset_name), s.asset_name))[1]) AS short_name,
-                   (array_agg(NULLIF(s.isin, '')) FILTER (WHERE NULLIF(s.isin, '') IS NOT NULL))[1] AS isin
-            FROM scoped s LEFT JOIN securities_ref sr ON sr.isin = NULLIF(s.isin, '')
+                   MAX(CASE WHEN char_length(s.mkey) = 12 THEN s.mkey END) AS isin
+            FROM scoped s LEFT JOIN securities_ref sr2 ON sr2.isin = s.mkey
             GROUP BY s.mkey
         ),
         last_per_fund AS (
@@ -1489,7 +1492,11 @@ def company_flows(
     # во всех WHITELIST-фондах, по всем снапшотам — считаем дельты per fund в Python
     # (чтобы переиспользовать ту же split-логику что в snapshot_review).
     if isin:
-        match_sql = "h.isin = :isin"
+        # Матч по КАНОНИЧЕСКОМУ isin: выбранная бумага = canonical, берём и сам
+        # canonical, и все старые ISIN, заалиасенные на него (редомициль-пары) →
+        # потоки старой ГДР + новой акции в одном графике.
+        match_sql = ("(h.isin = :isin OR h.isin IN "
+                     "(SELECT isin FROM securities_ref WHERE canonical_isin = :isin))")
         match_params = {"isin": isin}
     else:
         match_sql = "h.asset_name = :aname"
