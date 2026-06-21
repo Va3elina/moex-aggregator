@@ -20,7 +20,11 @@ from sqlalchemy.orm import Session
 from api.database import get_db
 from api.models import ExtensionToken, User
 from api.routers.auth import get_current_user, require_pro
-from api.security.extension_token import generate_extension_token, lookup_extension_token
+from api.security.extension_token import (
+    generate_extension_token,
+    lookup_extension_token,
+    revoke_extension_token,
+)
 from api.security.jwt import ACCESS_TOKEN_EXPIRE_MINUTES, create_access_token
 
 router = APIRouter(prefix="/api/extension", tags=["extension"])
@@ -99,6 +103,16 @@ def revoke_token(token_id: int, user: User = Depends(get_current_user), db: Sess
     t.is_revoked = True
     t.revoked_at = datetime.now(timezone.utc)
     db.commit()
+    return {"ok": True}
+
+
+@router.post("/revoke")
+def revoke_by_token(req: ExchangeRequest, db: Session = Depends(get_db)):
+    """Отзыв ext-токена по самому токену — для popup расширения (оно не залогинено,
+    у него есть только plain-токен). Публичный, идемпотентный: всегда {ok:true},
+    чтобы не раскрывать существование токена. Доступа не добавляет — отзыв возможен
+    лишь тому, кто УЖЕ владеет токеном (т.е. и так имел бы полный доступ)."""
+    revoke_extension_token(req.token, db)
     return {"ok": True}
 
 

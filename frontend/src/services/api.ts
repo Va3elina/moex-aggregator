@@ -1181,9 +1181,13 @@ export async function exchangeExtensionToken(token: string): Promise<ExtensionEx
     });
     if (!resp.ok) {
         const data = await resp.json().catch(() => ({}));
-        throw new Error(
+        // Пробрасываем HTTP-статус, чтобы embed отличил 403 (подписка кончилась)
+        // от 401 (нет/невалиден/отозван токен) и показал правильный экран.
+        const err = new Error(
             data?.detail || (resp.status === 403 ? 'Токен требует активную подписку PRO' : 'Недействительный токен'),
-        );
+        ) as Error & { status?: number };
+        err.status = resp.status;
+        throw err;
     }
     return resp.json();
 }

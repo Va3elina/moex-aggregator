@@ -29,7 +29,7 @@ import EmbedFundTrades from './EmbedFundTrades';
 const DEFAULT_THEME = 'editorial-dark';
 const SITE = 'https://xn--80aklbnczmv.xn--p1ai'; // таймфрейм.рф
 
-type AuthState = 'loading' | 'ok' | 'locked';
+type AuthState = 'loading' | 'ok' | 'locked' | 'expired';
 
 export default function EmbedPage() {
   const { indicator } = useParams<{ indicator: string }>();
@@ -72,10 +72,18 @@ export default function EmbedPage() {
         setAuth('ok');
         // Переобмен за 2 мин до истечения — держим JWT свежим без refresh.
         timer = window.setTimeout(() => run(t), Math.max(60, res.expires_in - 120) * 1000);
-      } catch {
+      } catch (e) {
         if (cancelled) return;
         try { localStorage.removeItem('access_token'); } catch { /* ignore */ }
-        setAuth('locked');
+        // 403 = токен валиден, но подписка PRO кончилась → отдельный экран +
+        // мягкий ретрай раз в минуту (возобновил подписку → авто-разблокировка).
+        // 401/прочее = нет/невалиден/отозван токен → замок без ретрая.
+        if ((e as { status?: number })?.status === 403) {
+          setAuth('expired');
+          timer = window.setTimeout(() => run(t), 60_000);
+        } else {
+          setAuth('locked');
+        }
       }
     };
     run(token);
@@ -101,6 +109,7 @@ export default function EmbedPage() {
     >
       {auth === 'loading' && <EmbedCenter text="Загрузка…" />}
       {auth === 'locked' && <EmbedLocked />}
+      {auth === 'expired' && <EmbedExpired />}
       {auth === 'ok' && renderIndicator(indicator)}
     </div>
   );
@@ -185,6 +194,51 @@ function EmbedLocked() {
         }}
       >
         Открыть личный кабинет
+      </a>
+    </div>
+  );
+}
+
+function EmbedExpired() {
+  return (
+    <div
+      style={{
+        width: '100%',
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 10,
+        textAlign: 'center',
+        padding: 24,
+        boxSizing: 'border-box',
+      }}
+    >
+      <div style={{ fontSize: 30, lineHeight: 1 }}>⏳</div>
+      <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>
+        Подписка PRO закончилась
+      </div>
+      <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', maxWidth: 300, lineHeight: 1.5 }}>
+        Токен расширения действует, но требует активный тариф&nbsp;Pro. Возобновите
+        подписку — индикаторы разблокируются автоматически (без перевыпуска токена).
+      </div>
+      <a
+        href={`${SITE}/pricing`}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{
+          marginTop: 4,
+          padding: '7px 14px',
+          background: 'var(--accent, #FF5C2B)',
+          color: '#fff',
+          fontWeight: 700,
+          fontSize: 12.5,
+          borderRadius: 6,
+          textDecoration: 'none',
+        }}
+      >
+        Возобновить подписку
       </a>
     </div>
   );

@@ -11,6 +11,7 @@
 """
 import hashlib
 import secrets
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -52,3 +53,25 @@ def lookup_extension_token(plain_token: str | None, db: Session):
         .join(User, User.id == ExtensionToken.user_id)
         .where(ExtensionToken.token_hash == token_hash, ExtensionToken.is_revoked == False)  # noqa: E712
     ).first()
+
+
+def revoke_extension_token(plain_token: str | None, db: Session) -> bool:
+    """Отзыв ext-токена по самому plain-токену (для popup расширения — оно не
+    залогинено, у него есть только токен). Идемпотентно.
+
+    Returns True, если токен был найден и отозван этим вызовом; False если токена
+    нет или он уже отозван. Вызывающий в любом случае отвечает {ok:true}, чтобы
+    не раскрывать существование токена.
+    """
+    if not plain_token or not plain_token.startswith(EXT_PREFIX):
+        return False
+    token_hash = hashlib.sha256(plain_token.encode()).hexdigest()
+    row = db.execute(
+        select(ExtensionToken).where(ExtensionToken.token_hash == token_hash)
+    ).scalar_one_or_none()
+    if row is None or row.is_revoked:
+        return False
+    row.is_revoked = True
+    row.revoked_at = datetime.now(timezone.utc)
+    db.commit()
+    return True
