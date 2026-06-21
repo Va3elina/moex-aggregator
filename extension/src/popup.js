@@ -3,6 +3,9 @@
 (function () {
   'use strict';
 
+  // Адрес API (host_permission в manifest разрешает cross-origin fetch отсюда).
+  var API_BASE = 'https://xn--80aklbnczmv.xn--p1ai';
+
   var input = document.getElementById('tok');
   var statusEl = document.getElementById('status');
 
@@ -35,10 +38,25 @@
   }
 
   function clear() {
+    var t = (input.value || '').trim();
     input.value = '';
-    try {
-      chrome.storage.local.set({ frameToken: '' }, function () { setStatus('Токен очищен', false); });
-    } catch (e) { /* ignore */ }
+    function removeLocal(msg) {
+      try {
+        chrome.storage.local.set({ frameToken: '' }, function () { setStatus(msg, false); });
+      } catch (e) { setStatus(msg, false); }
+    }
+    if (!t) { removeLocal('Токен не задан'); return; }
+    // Отзываем на СЕРВЕРЕ (не только локально) — иначе утёкший токен оставался бы
+    // рабочим у того, у кого есть копия. Затем чистим из этого браузера.
+    // best-effort: сеть недоступна → всё равно удаляем локально + предупреждаем.
+    setStatus('Отзываю токен…', false);
+    fetch(API_BASE + '/api/extension/revoke', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: t })
+    })
+      .then(function (r) { removeLocal(r && r.ok ? 'Токен отозван и удалён' : 'Удалён из браузера (отозвать не удалось — проверьте в кабинете)'); })
+      .catch(function () { removeLocal('Удалён из браузера (отозвать не удалось — проверьте в кабинете)'); });
   }
 
   document.getElementById('save').addEventListener('click', save);
