@@ -100,14 +100,35 @@ export function TierFeaturesProvider({ children }: { children: ReactNode }) {
 
     useEffect(() => {
         let cancelled = false;
-        fetch('/api/billing/features')
-            .then((r) => r.json())
-            .then((data: FeaturesMatrix) => {
-                if (cancelled) return;
-                setMatrix(data);
-                saveToCache(data);
-            })
-            .catch((err) => console.warn('features matrix load failed:', err));
+
+        // Резистентность к деплою и transient-сбоям. fetch резолвится и на 502/504
+        // (nginx отдаёт HTML-страницу при пересоздании api-контейнера ~3с во время
+        // деплоя). Прежний код звал r.json() без проверки r.ok → парсил «<html>…» →
+        // «Unexpected token '<'» в консоли, и матрица оставалась null до перезагрузки.
+        // Теперь: проверяем r.ok и ретраим с backoff (0.5/1/2с ≈ переживает окно
+        // рестарта). При полном провале — оставляем кэш (loadFromCache в useState).
+        async function load() {
+            for (let attempt = 0; !cancelled && attempt < 4; attempt++) {
+                try {
+                    const r = await fetch('/api/billing/features');
+                    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                    const data: FeaturesMatrix = await r.json();
+                    if (cancelled) return;
+                    setMatrix(data);
+                    saveToCache(data);
+                    return;
+                } catch (err) {
+                    if (cancelled) return;
+                    if (attempt === 3) {
+                        console.warn('features matrix load failed:', err);
+                        return;
+                    }
+                    await new Promise((res) => setTimeout(res, 500 * 2 ** attempt));
+                }
+            }
+        }
+
+        load();
         return () => { cancelled = true; };
     }, []);
 
