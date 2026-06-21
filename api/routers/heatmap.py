@@ -57,16 +57,31 @@ def _heatmap_data_date(engine):
     Иначе (выходной/праздник/до открытия) data_date = дата последней дневной
     свечи = последний торговый день. Нужно, чтобы фронт подписывал карту датой
     данных, а не текущим временем: на выходных «Обновлено в HH:MM» вводило в
-    заблуждение (см. snap_date в db/mv_heatmap_stocks.sql — там та же логика)."""
+    заблуждение (см. snap_date в db/mv_heatmap_stocks.sql — там та же логика).
+
+    ⚠️ Индекс-дружественные предикаты обязательны: это sync-запрос внутри
+    async-роутов, он блокирует event-loop на всё время выполнения. Прежний
+    вариант `MAX(begin_time::date)` + `begin_time::date = CURRENT_DATE` не-sargable
+    (functional predicate глушит индекс) → seq-scan по ~3.7М 5-мин баров с 1.6М
+    heap-fetch'ей = до 75с на холодных страницах. Воркер зависал > gunicorn
+    timeout(60s) → kill → 502/504-штормы (тот же класс бага, что чинили в /prices).
+    Сейчас: LATERAL по 96 секциям mv_heatmap_stocks (точечные index-seek'и) для
+    intraday + `MAX(begin_time)::date` (cast ПОСЛЕ агрегата) для daily = ~10мс."""
     try:
         with engine.connect() as conn:
-            row = conn.execute(text(
-                "SELECT "
-                "(SELECT MAX(begin_time::date) FROM candles "
-                "   WHERE type='stock' AND interval=5 AND begin_time::date = CURRENT_DATE), "
-                "(SELECT MAX(begin_time::date) FROM candles "
-                "   WHERE type='stock' AND interval=24)"
-            )).fetchone()
+            row = conn.execute(text("""
+                SELECT
+                  (SELECT MAX(c.begin_time)::date
+                     FROM mv_heatmap_stocks m
+                     CROSS JOIN LATERAL (
+                       SELECT begin_time FROM candles
+                       WHERE secid = m.sec_id AND type='stock' AND interval=5
+                         AND begin_time >= date_trunc('day', now())
+                       ORDER BY begin_time DESC LIMIT 1
+                     ) c),
+                  (SELECT MAX(begin_time)::date
+                     FROM candles WHERE type='stock' AND interval=24)
+            """)).fetchone()
         today_intraday, last_daily = row[0], row[1]
         if today_intraday is not None:
             return today_intraday.isoformat(), True
