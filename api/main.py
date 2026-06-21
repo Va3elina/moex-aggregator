@@ -161,6 +161,30 @@ _notify_task = None
 @app.on_event("startup")
 async def startup_event():
     global _notify_task
+    # Гарантируем существование таблицы календаря контрактов ДО приёма трафика:
+    # front_windows на свежем контейнере иначе отравит транзакцию Session
+    # (PostgreSQL 25P02 «relation does not exist») → 500 на каждом futures
+    # /api/chart, включая warmup ниже. Идемпотентно (CREATE TABLE IF NOT EXISTS).
+    try:
+        from api.database import engine as _engine
+        from sqlalchemy import text as _sql
+        with _engine.begin() as _conn:
+            _conn.execute(_sql("""
+                CREATE TABLE IF NOT EXISTS futures_contracts (
+                    secid VARCHAR(32) PRIMARY KEY, sectype VARCHAR(20) NOT NULL,
+                    sec_id VARCHAR(20) NOT NULL, assetcode VARCHAR(20),
+                    frsttrade DATE, lsttrade DATE, lstdeldate DATE, expiration_time TIME,
+                    is_perpetual BOOLEAN NOT NULL DEFAULT FALSE,
+                    is_traded BOOLEAN NOT NULL DEFAULT TRUE,
+                    last_seen TIMESTAMP, updated_at TIMESTAMP DEFAULT now()
+                )
+            """))
+            _conn.execute(_sql(
+                "CREATE INDEX IF NOT EXISTS idx_futures_contracts_roll "
+                "ON futures_contracts (sectype, lsttrade)"))
+        logger.info("futures_contracts table ensured")
+    except Exception as e:
+        logger.warning(f"ensure futures_contracts failed: {e}")
     # Запускаем NOTIFY listener для SSE
     from api.notify_listener import start_notify_listener
     _notify_task = asyncio.create_task(start_notify_listener())

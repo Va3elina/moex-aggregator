@@ -187,6 +187,7 @@ class FuturesManager:
         self._cache = {}
         self._cache_time = None
         self._cache_ttl = timedelta(hours=CONTRACT_CACHE_HOURS)
+        self._calendar_fronts = {}  # {sectype: front_secid} из futures_contracts
 
         log.debug("FuturesManager инициализирован")
 
@@ -298,6 +299,16 @@ class FuturesManager:
         Логика: выбираем контракт с самой поздней датой последней свечи.
         При равной дате — ближайший по экспирации.
         """
+        # ПРИОРИТЕТ: календарь экспираций (детерминированный фронт по lsttrade —
+        # без преждевременных роллов и пропусков, futures_contracts из ISS).
+        # Fallback на объёмный/свежий поиск ниже — если календаря для sectype
+        # ещё нет (таблица не заполнена / новый актив).
+        cal = self._calendar_fronts.get(sectype)
+        if cal:
+            cal_secid, cal_sec_id = cal
+            log.debug(f"[{sectype}] календарь → {cal_secid}")
+            return (cal_secid, cal_sec_id, name, sectype)
+
         candidates = self._generate_candidates(prefix)
 
         found = []
@@ -393,6 +404,32 @@ class FuturesManager:
         log.debug(f"Сгруппировано {len(instruments)} базовых активов")
         return instruments
 
+    def _load_calendar_fronts(self) -> Dict[str, tuple]:
+        """{sectype: (front_secid, front_sec_id)} на сегодня из futures_contracts.
+
+        Фронт = ближайший контракт с lsttrade >= today (is_traded, не вечный).
+        is_traded обязателен (настоящий фронт всегда в активном листинге); сам
+        ролл обеспечивает lsttrade >= today — в день экспирации фронт ещё старый
+        контракт, назавтра lsttrade < today его исключает → берётся следующий.
+        Вечные обрабатываются отдельной веткой в get_active_contracts.
+        sec_id берём из таблицы (а не secid[:-1]) — устойчиво к формату кода.
+        """
+        try:
+            today = get_moscow_time().date()
+            with self.engine.connect() as conn:
+                rows = conn.execute(text("""
+                    SELECT DISTINCT ON (sectype) sectype, secid, sec_id
+                    FROM futures_contracts
+                    WHERE is_traded AND NOT is_perpetual AND lsttrade >= :today
+                    ORDER BY sectype, lsttrade ASC
+                """), {"today": today}).fetchall()
+            fronts = {r[0]: (r[1], r[2]) for r in rows}
+            log.info(f"📅 Календарь фронтов: {len(fronts)} активов")
+            return fronts
+        except Exception as e:
+            log.warning(f"Календарь фронтов недоступен ({e}) — fallback на объёмный поиск")
+            return {}
+
     async def get_active_contracts(self, session: aiohttp.ClientSession) -> List[tuple]:
         """Получает список активных контрактов"""
         now = datetime.now()
@@ -405,6 +442,7 @@ class FuturesManager:
         log.info("🔍 Поиск активных контрактов...")
 
         instruments = self.load_instruments()
+        self._calendar_fronts = self._load_calendar_fronts()  # календарь приоритетнее объёма
         contracts = []
 
         # === Вечные фьючерсы ===

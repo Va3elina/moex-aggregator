@@ -25,6 +25,7 @@ from datetime import datetime, time as dt_time
 from sqlalchemy import text
 
 from api.logger import get_logger
+from api.services.contract_calendar import front_sec_id
 
 log = get_logger()
 
@@ -82,6 +83,15 @@ def append_live_points(db, response: dict) -> bool:
 
         daily = interval == 24
         added = False
+        sectype = response.get("sectype")
+
+        # Календарный фронт сегодня: live-точка должна сидеть на том же контракте,
+        # что и непрерывная серия (chart.py / get_candles_continuous) — без
+        # преждевременного ролла. Если фронт известен и есть в contracts — берём
+        # 5м только из него; иначе (или если у фронта нет свежей 5м) — из всех
+        # контрактов (объёмный fallback, как раньше).
+        front = front_sec_id(db, sectype) if sectype else None
+        live_sec_ids = [front] if (front and front in sec_ids) else sec_ids
 
         # 1. Самая свежая 5-минутная свеча активного контракта.
         #    volume > 0 отсекает zero-fill артефакты агрегации; при равном
@@ -92,7 +102,7 @@ def append_live_points(db, response: dict) -> bool:
         #    страницах). Спуск по индексу с конца на каждый контракт — мс.
         #    volume DESC внутри LATERAL: на один begin_time может быть две
         #    датированные серии одного перпетуала (TBH5/TBH6) — берём активную.
-        row = db.execute(text("""
+        _LIVE_5M_SQL = text("""
             SELECT c.begin_time, c.close, c.volume
             FROM unnest(CAST(:sec_ids AS text[])) AS s(sid)
             CROSS JOIN LATERAL (
@@ -104,7 +114,10 @@ def append_live_points(db, response: dict) -> bool:
             ) c
             ORDER BY c.begin_time DESC, c.volume DESC
             LIMIT 1
-        """), {"sec_ids": sec_ids}).fetchone()
+        """)
+        row = db.execute(_LIVE_5M_SQL, {"sec_ids": live_sec_ids}).fetchone()
+        if (not row or not row[0]) and live_sec_ids is not sec_ids:
+            row = db.execute(_LIVE_5M_SQL, {"sec_ids": sec_ids}).fetchone()
 
         if not row or not row[0]:
             return False
@@ -141,7 +154,6 @@ def append_live_points(db, response: dict) -> bool:
         # 2. Самая свежая 5-минутная запись OI (только если OI вообще показываем).
         oi = response.get("open_interest")
         if response.get("mode") != "price_only" and oi:
-            sectype = response.get("sectype")
             clgroup = response.get("clgroup")
             orow = db.execute(text("""
                 SELECT tradedate, tradetime, pos, pos_long, pos_short,
