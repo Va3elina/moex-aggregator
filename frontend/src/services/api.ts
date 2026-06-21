@@ -1217,6 +1217,7 @@ export interface FundReturns {
 
 export interface FundTopHolding {
     name: string;
+    isin?: string | null;
     weight: number;
 }
 

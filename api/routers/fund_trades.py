@@ -377,6 +377,7 @@ def list_funds_with_history(
             ranked AS (
                 SELECT h.fund_id,
                        COALESCE(n.short_name, h.asset_name) AS name,
+                       NULLIF(h.isin, '') AS isin,
                        h.weight,
                        ROW_NUMBER() OVER (PARTITION BY h.fund_id ORDER BY h.weight DESC NULLS LAST) AS rn
                 FROM fund_holdings_history h
@@ -384,12 +385,13 @@ def list_funds_with_history(
                 LEFT JOIN names n ON n.isin = h.isin
                 WHERE h.source = ANY(:sources)
             )
-            SELECT fund_id, name, weight FROM ranked WHERE rn <= 10
+            SELECT fund_id, name, isin, weight FROM ranked WHERE rn <= 10
             ORDER BY fund_id, rn
         """), {"fids": fund_ids, "sources": list(MONTHLY_SOURCES)}).mappings().all()
         for hr in h_rows:
             holdings_map.setdefault(hr["fund_id"], []).append({
                 "name": hr["name"],
+                "isin": hr["isin"],
                 "weight": float(hr["weight"]) if hr["weight"] is not None else 0.0,
             })
 

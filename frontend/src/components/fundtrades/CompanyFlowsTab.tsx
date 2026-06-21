@@ -15,14 +15,14 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, TrendingUp } from 'lucide-react';
-import { UK_LOGOS, DONUT_COLORS, assetTicker, assetColor } from '../../config/fundConfig';
+import { UK_LOGOS, DONUT_COLORS, resolveFundTicker, fundAssetName, fundAssetColor } from '../../config/fundConfig';
 import {
     listFundTradeAssets,
     getCompanyFlows,
     type FundTradeAsset,
     type CompanyFlowsResponse,
 } from '../../services/api';
-import TickerLogo from '../TickerLogo';
+import InstrumentIcon from '../InstrumentIcon';
 import ChartLegend from '../chart/ChartLegend';
 import StackedFlowBars, { type StackedSeries } from './StackedFlowBars';
 import { useViewportHeight } from '../../hooks/useViewportHeight';
@@ -35,12 +35,13 @@ type Metric = 'amount' | 'weight';
 // top-N по суммарному |потоку| (см. computeTopFunds). Пусто-выбор = все фонды.
 const DEFAULT_FUND_COUNT = 3;
 
-// ITEM 4b/5 — логотип бумаги в опции селектора: спрайт по тикеру, иначе
-// цветная точка (assetColor), иначе нейтральная точка.
-function AssetMark({ name, size = 22 }: { name: string; size?: number }) {
-    const ticker = assetTicker(name);
-    if (ticker) return <TickerLogo ticker={ticker} size={size} rounded="full" />;
-    const dot = assetColor(name) ?? 'var(--text-muted)';
+// ITEM 4b/5 — логотип бумаги: резолвим по ISIN в каноничный тикер (как в
+// Сезонности) и рендерим через InstrumentIcon (STOCK_LOGO_OVERRIDE → стикерпак →
+// /logos/<тикер>.png). Нет тикера (облигация/ОФЗ) → цветная точка.
+function AssetMark({ name, isin, size = 22 }: { name: string; isin?: string | null; size?: number }) {
+    const ticker = resolveFundTicker(name, isin);
+    if (ticker) return <InstrumentIcon sectype={ticker} size={size} rounded="full" />;
+    const dot = fundAssetColor(name, isin) ?? 'var(--text-muted)';
     return (
         <span
             style={{
@@ -343,15 +344,15 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed }: Compa
                             cursor: 'pointer',
                         }}
                     >
-                        {selectedAsset && <AssetMark name={selectedAsset.asset_name} />}
+                        {selectedAsset && <AssetMark name={selectedAsset.asset_name} isin={selectedAsset.isin} />}
                         {selectedAsset ? (
                             <>
                                 <span
                                     className="flex-1 text-left"
-                                    title={selectedAsset.asset_name}
+                                    title={fundAssetName(selectedAsset.asset_name, selectedAsset.isin)}
                                     style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                                 >
-                                    {selectedAsset.asset_name}
+                                    {fundAssetName(selectedAsset.asset_name, selectedAsset.isin)}
                                 </span>
                                 <span
                                     className="tabular-nums flex-shrink-0"

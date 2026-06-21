@@ -45,7 +45,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
 import { usePersistedState } from '../../hooks/usePersistedState';
 import { useGrowReveal } from '../../hooks/useGrowReveal';
-import { UK_LOGOS, DONUT_COLORS, assetColor, resolveFundLogo, stripUkName } from '../../config/fundConfig';
+import { UK_LOGOS, DONUT_COLORS, fundAssetName, fundAssetColor, resolveFundLogo, stripUkName } from '../../config/fundConfig';
 import Donut from '../../components/funds/Donut';
 import FundDetailModal, {
   AssetHistoryModal,
@@ -897,11 +897,11 @@ function FundTile({
   const top = f.top_holdings ?? [];
   const sum = top.reduce((s, h) => s + (h.weight || 0), 0);
   const other = 100 - sum;
-  const donutHoldings = other > 1 ? [...top, { name: 'Прочее', weight: other }] : top;
+  const donutHoldings = other > 1 ? [...top, { name: 'Прочее', isin: null, weight: other }] : top;
   const donutColors = donutHoldings.map((h, i) =>
     h.name === 'Прочее'
       ? 'var(--text-muted)'
-      : (assetColor(h.name) ?? DONUT_COLORS[i % DONUT_COLORS.length]),
+      : (fundAssetColor(h.name, h.isin) ?? DONUT_COLORS[i % DONUT_COLORS.length]),
   );
   const ret = displayReturn(f.returns, returnPeriod);
 
@@ -1045,7 +1045,7 @@ function FundTile({
                   height: 8,
                   borderRadius: '50%',
                   flexShrink: 0,
-                  backgroundColor: assetColor(h.name) ?? DONUT_COLORS[i % DONUT_COLORS.length],
+                  backgroundColor: fundAssetColor(h.name, h.isin) ?? DONUT_COLORS[i % DONUT_COLORS.length],
                 }}
               />
               <span
@@ -1059,7 +1059,7 @@ function FundTile({
                   fontWeight: 600,
                 }}
               >
-                {h.name}
+                {fundAssetName(h.name, h.isin)}
               </span>
               <span
                 style={{
@@ -1223,6 +1223,7 @@ function MoversColumn({
           {items.map((m, i) => {
             const val = valOf(m);
             const pct = Math.max(2, (Math.abs(val) / maxAbs) * 100);
+            const mName = fundAssetName(m.asset_name, isIsin(m.akey) ? m.akey : null);
             return (
               <div
                 key={m.akey}
@@ -1230,7 +1231,7 @@ function MoversColumn({
                 role="button"
                 tabIndex={0}
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onAssetClick(m); } }}
-                title={`Потоки по компании: ${m.asset_name}`}
+                title={`Потоки по компании: ${mName}`}
                 style={{
                   padding: '9px 8px',
                   margin: '0 -8px',
@@ -1258,7 +1259,7 @@ function MoversColumn({
                       whiteSpace: 'nowrap',
                     }}
                   >
-                    {m.asset_name}
+                    {mName}
                   </span>
                   <span style={{ fontFamily: 'ui-monospace, "SF Mono", monospace', fontSize: 'var(--fs-sm)', fontWeight: 800, color, flexShrink: 0 }}>
                     {fmtVal(val)}
@@ -1493,7 +1494,7 @@ function SnapshotReviewBody({
               key={h.isin || h.asset_name}
               style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12, padding: '7px 0', borderBottom: '1px solid var(--border-soft, rgba(0,0,0,0.06))' }}
             >
-              <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-primary)' }}>{h.asset_name}</span>
+              <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-primary)' }}>{fundAssetName(h.asset_name, h.isin)}</span>
               <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
                 {h.weight != null ? `${h.weight.toFixed(2)}%` : '—'}
               </span>
@@ -1655,7 +1656,7 @@ function SnapshotSection({
         {displayed.map((r, i) => (
           <SnapshotBar
             key={`${r.asset_name}-${r.isin || ''}`}
-            label={r.asset_name}
+            label={fundAssetName(r.asset_name, r.isin)}
             subLabel={subLabelGetter(r)}
             amount={valueGetter(r)}
             maxAbs={maxAbs}

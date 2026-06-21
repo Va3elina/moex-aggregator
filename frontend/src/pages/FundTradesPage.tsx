@@ -47,7 +47,7 @@ import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 import PageHeader from '../components/PageHeader';
 import Dropdown from '../components/Dropdown';
 import SegmentedControl from '../components/SegmentedControl';
-import { UK_LOGOS, DONUT_COLORS, assetColor, resolveFundLogo, stripUkName } from '../config/fundConfig';
+import { UK_LOGOS, DONUT_COLORS, fundAssetName, fundAssetColor, resolveFundLogo, stripUkName } from '../config/fundConfig';
 import Donut from '../components/funds/Donut';
 import CompanyFlowsTab from '../components/fundtrades/CompanyFlowsTab';
 import UkMultiSelect, { type UkOption } from '../components/fundtrades/UkMultiSelect';
@@ -534,12 +534,12 @@ export default function FundTradesPage() {
                                     const sum = top.reduce((s, h) => s + (h.weight || 0), 0);
                                     const other = 100 - sum;
                                     const donutHoldings = other > 1
-                                        ? [...top, { name: 'Прочее', weight: other }]
+                                        ? [...top, { name: 'Прочее', isin: null, weight: other }]
                                         : top;
                                     const donutColors = donutHoldings.map((h, i) =>
                                         h.name === 'Прочее'
                                             ? 'var(--text-muted)'
-                                            : (assetColor(h.name) ?? DONUT_COLORS[i % DONUT_COLORS.length]),
+                                            : (fundAssetColor(h.name, h.isin) ?? DONUT_COLORS[i % DONUT_COLORS.length]),
                                     );
                                     const ret = displayReturn(f.returns, returnPeriod);
                                     return (
@@ -701,7 +701,7 @@ export default function FundTradesPage() {
                                                                 borderRadius: '50%',
                                                                 flexShrink: 0,
                                                                 // (C) точка = цвет сектора пончика (фирменный/индекс).
-                                                                backgroundColor: assetColor(h.name) ?? DONUT_COLORS[i % DONUT_COLORS.length],
+                                                                backgroundColor: fundAssetColor(h.name, h.isin) ?? DONUT_COLORS[i % DONUT_COLORS.length],
                                                             }}
                                                         />
                                                         <span
@@ -715,7 +715,7 @@ export default function FundTradesPage() {
                                                                 fontWeight: 500,
                                                             }}
                                                         >
-                                                            {h.name}
+                                                            {fundAssetName(h.name, h.isin)}
                                                         </span>
                                                         <span
                                                             style={{
@@ -1315,7 +1315,7 @@ function SnapshotReviewBody({
                                 borderBottom: '1px solid var(--border-soft, rgba(0,0,0,0.06))',
                             }}
                         >
-                            <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-primary)' }}>{h.asset_name}</span>
+                            <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-primary)' }}>{fundAssetName(h.asset_name, h.isin)}</span>
                             <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-secondary)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
                                 {h.weight != null ? `${h.weight.toFixed(2)}%` : '—'}
                             </span>
@@ -1506,7 +1506,7 @@ function SnapshotSection({
                 {displayed.map((r, i) => (
                     <EditorialBar
                         key={`${r.asset_name}-${r.isin || ''}`}
-                        label={r.asset_name}
+                        label={fundAssetName(r.asset_name, r.isin)}
                         subLabel={subLabelGetter(r)}
                         amount={valueGetter(r)}
                         maxAbs={maxAbs}
@@ -1614,6 +1614,9 @@ function MoversColumn({
                         const val = valOf(m);
                         const pct = Math.max(2, (Math.abs(val) / maxAbs) * 100);
                         const clickable = !!onAssetClick;
+                        // Каноничное имя (формат Сезонности) по ISIN из akey.
+                        const mIsin = isIsin(m.akey) ? m.akey : null;
+                        const mName = fundAssetName(m.asset_name, mIsin);
                         return (
                         <div
                             key={m.akey}
@@ -1623,7 +1626,7 @@ function MoversColumn({
                                 : undefined}
                             role={clickable ? 'button' : undefined}
                             tabIndex={clickable ? 0 : undefined}
-                            title={clickable ? `Потоки по компании: ${m.asset_name}` : undefined}
+                            title={clickable ? `Потоки по компании: ${mName}` : undefined}
                             onMouseEnter={clickable ? (e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--text-primary) 5%, transparent)'; } : undefined}
                             onMouseLeave={clickable ? (e) => { e.currentTarget.style.background = 'transparent'; } : undefined}
                             style={{
@@ -1662,7 +1665,7 @@ function MoversColumn({
                                         whiteSpace: 'nowrap',
                                     }}
                                 >
-                                    {m.asset_name}
+                                    {mName}
                                 </span>
                                 <span
                                     style={{
