@@ -977,6 +977,15 @@
   padding-right: 0 !important;
   overflow: hidden;
 }
+/* line-режим (рельс с круглыми ручками): убираем окантовку целиком — таймлайн
+   как горизонтальная линия прижат к датам. overflow:visible чтобы крайние
+   кружки, центрированные на крайних точках, не обрезались. */
+[data-theme^="editorial"] .chart-navigator.chart-navigator--bare {
+  border: none;
+  background: transparent;
+  border-radius: 0;
+  overflow: visible;
+}
 /* SVG mini-chart: убираем left/right 8px inset — в editorial chart занимает всю ширину */
 [data-theme^="editorial"] .chart-navigator .nav-mini-svg {
   left: 0 !important;

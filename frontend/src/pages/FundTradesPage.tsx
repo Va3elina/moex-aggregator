@@ -46,6 +46,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 import PageHeader from '../components/PageHeader';
 import Dropdown from '../components/Dropdown';
+import SegmentedControl from '../components/SegmentedControl';
 import { UK_LOGOS, DONUT_COLORS, fundAssetName, fundAssetColor, resolveFundLogo, stripUkName } from '../config/fundConfig';
 import Donut from '../components/funds/Donut';
 import CompanyFlowsTab from '../components/fundtrades/CompanyFlowsTab';
@@ -228,10 +229,6 @@ export default function FundTradesPage() {
     // Фильтры «Состав фондов» — combinable (AND): период доходности + сортировка + УК.
     // Период доходности: показывается на плитках И используется для сортировки по доходности.
     const [returnPeriod, setReturnPeriod] = usePersistedState<ReturnPeriodKey>('frame:fundtrades:returnPeriod', 'y1');
-    // Меню выбора периода — встроено в кнопку сортировки «Доходность».
-    const [periodMenuOpen, setPeriodMenuOpen] = useState(false);
-    // Hover-подсветка строки меню периода (editorial bg-highlight + сдвиг), как в FundPicker/CbrFlows.
-    const [periodMenuHover, setPeriodMenuHover] = useState<ReturnPeriodKey | null>(null);
     // Сортировка карточек: по доходности (за returnPeriod) / объёму руб / имени.
     const [fundSort, setFundSort] = usePersistedState<FundSortKey>('frame:fundtrades:fundSort', 'return');
     // Мультиселект УК (пусто = все). Ключ — uk_id (стабильнее имени), fallback на uk.
@@ -466,137 +463,37 @@ export default function FundTradesPage() {
             {/* Tab content */}
             {tab === 'funds' && (
                 <>
-                    {/* Фильтры карточек — combinable AND: период · сортировка · УК */}
+                    {/* Контролы карточек — единый формат индикаторов: сортировка и
+                        период доходности отдельными SegmentedControl (как период/режим
+                        на «Открытых позициях» и «Деньгах в фондах»), плюс мультиселект УК.
+                        Период влияет и на сортировку по доходности, и на число, которое
+                        показывает карточка («Доходность · …»). Combinable AND-фильтры. */}
                     {funds.length > 0 && (
-                        <div
-                            style={{
-                                display: 'flex',
-                                alignItems: 'flex-start',
-                                gap: 18,
-                                flexWrap: 'wrap',
-                                marginBottom: 14,
-                            }}
-                        >
-                            {/* (E) Сортировка — Доходность (с периодом в самой кнопке) · Объём · Имя */}
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                <span style={filterLabelStyle}>Сортировка</span>
-                                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                                    {/* Доходность + период в одной пилюле: левая часть — сортировка, правая — период ▾ */}
-                                    {(() => {
-                                        const active = fundSort === 'return';
-                                        return (
-                                            <div
-                                                style={{
-                                                    position: 'relative',
-                                                    display: 'inline-flex',
-                                                    alignItems: 'stretch',
-                                                    background: active ? 'var(--accent)' : 'var(--bg-secondary)',
-                                                    color: active ? 'var(--text-inverse)' : 'var(--text-primary)',
-                                                    border: '2px solid var(--text-primary)',
-                                                    borderRadius: 999,
-                                                    fontSize: 'var(--fs-sm)',
-                                                    fontWeight: active ? 700 : 600,
-                                                    boxShadow: active ? '3px 3px 0 var(--text-primary)' : 'none',
-                                                }}
-                                            >
-                                                <span
-                                                    onClick={() => setFundSort('return')}
-                                                    style={{ padding: '8px 10px 8px 18px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
-                                                >
-                                                    Доходность
-                                                </span>
-                                                <span
-                                                    onClick={() => { setFundSort('return'); setPeriodMenuOpen((o) => !o); }}
-                                                    style={{
-                                                        padding: '8px 16px 8px 10px',
-                                                        cursor: 'pointer',
-                                                        display: 'flex',
-                                                        alignItems: 'center',
-                                                        gap: 4,
-                                                        borderLeft: active ? '1px solid rgba(255,255,255,0.35)' : '1px solid var(--border-color)',
-                                                    }}
-                                                >
-                                                    {RETURN_PERIOD_LABEL[returnPeriod]}
-                                                    <span style={{ fontSize: '0.75em', opacity: 0.85 }}>▾</span>
-                                                </span>
-                                                {periodMenuOpen && (
-                                                    <>
-                                                        <div onClick={() => setPeriodMenuOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 19 }} />
-                                                        <div
-                                                            style={{
-                                                                position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 20,
-                                                                display: 'flex', flexDirection: 'column', minWidth: 170,
-                                                                background: 'var(--bg-primary)', border: '1.5px solid var(--text-primary)',
-                                                                borderRadius: 10, boxShadow: '3px 3px 0 var(--text-primary)', overflow: 'hidden',
-                                                                color: 'var(--text-primary)',
-                                                            }}
-                                                        >
-                                                            {(['m1', 'm3', 'm6', 'y1'] as ReturnPeriodKey[]).map((k) => {
-                                                                const on = returnPeriod === k;
-                                                                const isHover = periodMenuHover === k;
-                                                                return (
-                                                                    <button
-                                                                        key={k}
-                                                                        onClick={() => { setReturnPeriod(k); setFundSort('return'); setPeriodMenuOpen(false); }}
-                                                                        onMouseEnter={() => setPeriodMenuHover(k)}
-                                                                        onMouseLeave={() => setPeriodMenuHover(null)}
-                                                                        style={{
-                                                                            display: 'flex', alignItems: 'center', gap: 8,
-                                                                            padding: '9px 14px', textAlign: 'left', cursor: 'pointer',
-                                                                            background: on
-                                                                                ? 'var(--bg-secondary)'
-                                                                                : (isHover ? 'color-mix(in srgb, var(--text-primary) 6%, transparent)' : 'transparent'),
-                                                                            color: 'var(--text-primary)', border: 'none',
-                                                                            fontSize: 'var(--fs-xs)', fontWeight: on ? 700 : 500,
-                                                                            whiteSpace: 'nowrap',
-                                                                            transform: isHover ? 'translateX(2px)' : 'translateX(0)',
-                                                                            transition: 'background 150ms, transform 150ms',
-                                                                        }}
-                                                                    >
-                                                                        <span style={{
-                                                                            width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
-                                                                            background: on ? 'var(--accent)' : 'transparent',
-                                                                        }} />
-                                                                        Доходность · {RETURN_PERIOD_LABEL[k]}
-                                                                    </button>
-                                                                );
-                                                            })}
-                                                        </div>
-                                                    </>
-                                                )}
-                                            </div>
-                                        );
-                                    })()}
-                                    {([
-                                        { id: 'volume' as const, label: 'Объём, руб' },
-                                        { id: 'name' as const, label: 'Имя' },
-                                    ]).map((s) => {
-                                        const active = fundSort === s.id;
-                                        return (
-                                            <button
-                                                key={s.id}
-                                                onClick={() => setFundSort(s.id)}
-                                                className="editorial-press"
-                                                style={filterPillStyle(active)}
-                                            >
-                                                {s.label}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-
-                            {/* (E3) УК — мультиселект (UkMultiSelect): «Все УК» / «N из M УК». */}
+                        <div className="flex flex-wrap items-center gap-2 md:gap-3 mb-4 md:mb-6">
+                            <SegmentedControl<FundSortKey>
+                                options={[
+                                    { key: 'return', label: 'Доходность' },
+                                    { key: 'volume', label: 'Объём' },
+                                    { key: 'name', label: 'Имя' },
+                                ]}
+                                value={fundSort}
+                                onChange={setFundSort}
+                            />
+                            <SegmentedControl<ReturnPeriodKey>
+                                options={(['m1', 'm3', 'm6', 'y1'] as ReturnPeriodKey[]).map((k) => ({
+                                    key: k,
+                                    label: RETURN_PERIOD_LABEL[k],
+                                }))}
+                                value={returnPeriod}
+                                onChange={setReturnPeriod}
+                            />
                             {ukOptions.length > 1 && (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 0 }}>
-                                    <span style={filterLabelStyle}>Управляющая компания</span>
-                                    <UkMultiSelect
-                                        options={ukOptions}
-                                        selected={selectedUks}
-                                        onChange={setSelectedUks}
-                                        size="md"
-                                    />
-                                </div>
+                                <UkMultiSelect
+                                    options={ukOptions}
+                                    selected={selectedUks}
+                                    onChange={setSelectedUks}
+                                    size="md"
+                                />
                             )}
                         </div>
                     )}
@@ -879,8 +776,10 @@ export default function FundTradesPage() {
 
             {tab === 'movers' && (
                 <>
-                    {/* Контролы: месяц · фонды (FundPicker multi) · метрика (% веса / Объём, руб) */}
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 16 }}>
+                    {/* Контролы в единый формат индикаторов (как ряд на «Открытых
+                        позициях»): месяц (Dropdown) · фонды (FundPicker) · метрика
+                        (SegmentedControl % веса / Объём, руб). */}
+                    <div className="flex flex-wrap items-center gap-2 md:gap-3 mb-4 md:mb-6">
                         {movers && movers.available_months.length > 0 && (
                             <Dropdown<string>
                                 options={movers.available_months.map((m) => ({ key: m, label: formatMonthYear(m) }))}
@@ -897,21 +796,14 @@ export default function FundTradesPage() {
                                 onChange={setSelectedMoverFunds}
                             />
                         )}
-                        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-                            {([['weight', '% веса'], ['amount', 'Объём, руб']] as const).map(([key, lbl]) => {
-                                const on = metric === key;
-                                return (
-                                    <button
-                                        key={key}
-                                        onClick={() => setMetric(key)}
-                                        className="editorial-press"
-                                        style={filterPillStyle(on)}
-                                    >
-                                        {lbl}
-                                    </button>
-                                );
-                            })}
-                        </div>
+                        <SegmentedControl<'weight' | 'amount'>
+                            options={[
+                                { key: 'weight', label: '% веса' },
+                                { key: 'amount', label: 'Объём, руб' },
+                            ]}
+                            value={metric}
+                            onChange={setMetric}
+                        />
                     </div>
                     {loading && !movers && (
                         <div style={{ color: 'var(--text-muted)' }}>Загружаем агрегаты…</div>
@@ -1052,19 +944,10 @@ function isIsin(s: string | null | undefined): s is string {
     return !!s && /^[A-Z]{2}[A-Z0-9]{10}$/.test(s);
 }
 
-// Подпись над контролом фильтра (мелкая, muted, uppercase) — общий стиль.
-const filterLabelStyle = {
-    fontSize: 'var(--fs-2xs)',
-    fontWeight: 700,
-    textTransform: 'uppercase',
-    letterSpacing: '0.06em',
-    color: 'var(--text-muted)',
-} as const;
-
-// ITEM 3 — единый стиль кнопки-фильтра на ВСЕХ вкладках (sort/УК/период/метрика).
-// Один размер (padding 6px 14px), border 2px var(--text-primary), radius 999,
-// active = accent bg + text-inverse + 3px hard-shadow; inactive = bg-secondary.
-// Совпадает с UkMultiSelect, чтобы пилюли в ряду были однородны.
+// Стиль кнопки-фильтра «editorial»-пилюли: border 2px var(--text-primary),
+// radius 999, active = accent bg + text-inverse + 3px hard-shadow, inactive =
+// bg-secondary. Остался у переключателя метрики в «Обзоре снапшота»; основные
+// режимы («Состав фондов», «Покупки фондов») переведены на SegmentedControl.
 function filterPillStyle(active: boolean): CSSProperties {
     return {
         padding: '8px 18px',
