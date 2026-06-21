@@ -102,6 +102,9 @@ export default function MobileOpenInterestPage() {
     () => searchParams.get('instrument') || 'SR');
   const [instrumentName, setInstrumentName] = useState(
     () => (searchParams.get('instrument') ? '' : 'Сбербанк'));
+  // Актуальный фронт-контракт ('BRN6') — показываем как тикер вместо обрезанного
+  // sectype ('BR'). null → fallback на selectedInstrument.
+  const [frontContract, setFrontContract] = useState<string | null>(null);
   // Шарим desktop-ключи OI (enum'ы побайтово идентичны, формат JSON совместим;
   // instrument — ИСКЛЮЧЕНИЕ, см. ниже). displayMode → отдельный mobile-ключ
   // (у desktop 3-е значение 'price', которого нет в mobile-UI).
@@ -121,6 +124,16 @@ export default function MobileOpenInterestPage() {
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedInstrument]);
+
+  // Резолвим фронт-контракт при любой смене инструмента (URL / пикер). Отдельно
+  // от имени — без guard'а, т.к. front_secid нужен и при выборе из пикера.
+  useEffect(() => {
+    let cancelled = false;
+    getInstrument(selectedInstrument).then((inst) => {
+      if (!cancelled) setFrontContract(inst?.front_secid || null);
+    });
+    return () => { cancelled = true; };
   }, [selectedInstrument]);
 
   // Контекст сигнала из URL — один раз на маунте (физ/юр, режим, вариант,
@@ -445,7 +458,7 @@ export default function MobileOpenInterestPage() {
     <MobileLayout
       onAssetClick={() => setAssetSearchOpen(true)}
       assetLabel={instrumentName}
-      assetTicker={selectedInstrument}
+      assetTicker={frontContract || selectedInstrument}
       assetTourId="oi-asset"
       onTimeClick={() => setPeriodSheetOpen(true)}
       timeSummary={timeLabel}

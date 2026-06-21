@@ -118,6 +118,9 @@ export default function OpenInterestPage() {
     } catch { return 'Сбербанк'; }
   });
   const [isModalOpen, setIsModalOpen] = useState(false);
+  // Актуальный фронт-контракт ('BRN6') выбранного фьючерса — для кнопки пикера и
+  // экспорта. Обрезанный sectype ('BR') тикером не является. null → fallback на sectype.
+  const [frontContract, setFrontContract] = useState<string | null>(null);
 
   // Синхронизация имени инструмента с тикером.
   // Срабатывает когда selectedInstrument меняется без вызова handleSelectInstrument:
@@ -144,6 +147,18 @@ export default function OpenInterestPage() {
   // Персист выбранного инструмента (см. init выше — приоритет URL > localStorage).
   useEffect(() => {
     try { localStorage.setItem('frame:oi:instrument', selectedInstrument); } catch { /* quota / private */ }
+  }, [selectedInstrument]);
+
+  // Резолвим актуальный фронт-контракт при любой смене инструмента (выбор из
+  // модалки / URL / localStorage). getInstrument отдаёт front_secid из календаря;
+  // для спота/ошибки — null → ниже fallback на selectedInstrument.
+  useEffect(() => {
+    let cancelled = false;
+    getInstrument(selectedInstrument).then((inst) => {
+      if (cancelled) return;
+      setFrontContract(inst?.front_secid || null);
+    });
+    return () => { cancelled = true; };
   }, [selectedInstrument]);
 
   // Данные графика грузятся через useIndicatorData (ниже, после контролов —
@@ -476,7 +491,7 @@ export default function OpenInterestPage() {
             <InstrumentIcon sectype={selectedInstrument} size={24} rounded="full" eager />
             <div className="flex-1 text-left" style={{ minWidth: 0 }}>
               <div className="font-medium" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{instrumentName}</div>
-              <div className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)' }}>{selectedInstrument}</div>
+              <div className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)' }}>{frontContract || selectedInstrument}</div>
             </div>
             <ChevronDown size={14} className="text-theme-secondary flex-shrink-0" />
           </button>
@@ -717,7 +732,7 @@ export default function OpenInterestPage() {
               // получим asset=ticker и дубликат в header. composeFramedCanvas сам
               // сделает primary fallback на title если asset undefined.
               asset: instrumentName || undefined,
-              ticker: selectedInstrument,
+              ticker: frontContract || selectedInstrument,
               details: [
                 INTERVAL_LABELS[interval as keyof typeof INTERVAL_LABELS] || `${interval}ч`,
                 PERIOD_LABELS[period],

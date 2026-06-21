@@ -107,12 +107,19 @@ def get_instruments(
         ORDER BY daily_volume DESC
     """), params).fetchall()
 
+    # Актуальный фронт-контракт ('BRN6') на каждый фьючерс-sectype одним запросом
+    # (для спота не нужен). Показываем его в пикере вместо обрезанного sectype
+    # 'BR', которого как тикера не существует. {} → graceful fallback на sectype.
+    from api.services import contract_calendar
+    fronts = contract_calendar.front_secids_all(db) if type != "stock" else {}
+
     instruments = [
         InstrumentResponse(
             sec_id=r[0], sectype=r[1], name=r[2],
             type=r[3], group=r[4], iss_code=r[5],
             daily_volume=float(r[6]) if r[6] else 0,
             day_change_pct=round(float(r[7]), 2) if r[7] is not None else None,
+            front_secid=fronts.get(r[1]),
         )
         for r in rows
     ]
@@ -188,4 +195,10 @@ def get_instrument(sec_id: str, db: Session = Depends(get_db)):
     if not instrument:
         raise HTTPException(status_code=404, detail=f"Инструмент {sec_id} не найден")
 
-    return instrument
+    resp = InstrumentResponse.model_validate(instrument)
+    # Актуальный фронт-контракт для фьючерсов (OI-страница берёт его отсюда для
+    # кнопки и экспорта). Для спота/ошибки календаря — None (fallback на sectype).
+    if (instrument.type or "") == "futures":
+        from api.services import contract_calendar
+        resp.front_secid = contract_calendar.front_secid(db, instrument.sectype)
+    return resp

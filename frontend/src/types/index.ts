@@ -7,6 +7,7 @@ export interface Instrument {
   type: string | null;
   group: string | null;
   iss_code: string | null;
+  front_secid?: string | null;  // актуальный фронт-контракт ('BRN6') для фьючерсов; null для спота
 }
 
 export interface InstrumentGroup {

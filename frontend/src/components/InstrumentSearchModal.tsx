@@ -17,6 +17,7 @@ interface Instrument {
   group?: string;
   daily_volume?: number;
   day_change_pct?: number | null;
+  front_secid?: string | null;  // актуальный фронт-контракт ('BRN6') для фьючерсов
 }
 
 const CATEGORY_FILTERS = [
@@ -370,7 +371,9 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
               мельче). Бейдж intraday — нейтральный кружок с молнией, пояснение в
               тултипе на ховере (длинная подпись «5м·1ч» убрана). */}
           <span className="font-bold truncate" style={{ fontSize: 'var(--fs-sm)' }}>{inst.name}</span>
-          <span className="flex-shrink-0" style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-xs)' }}>{inst.sectype}</span>
+          {/* Тикер: для фьючерсов — актуальный фронт-контракт ('BRN6'), а не
+              обрезанный sectype 'BR' (такого тикера не существует). Спот → sectype. */}
+          <span className="flex-shrink-0" style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-xs)' }}>{inst.front_secid || inst.sectype}</span>
           {intradaySet.has(inst.sectype) && (
             <span
               className="flex-shrink-0 inline-flex items-center justify-center"
