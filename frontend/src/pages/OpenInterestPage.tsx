@@ -177,7 +177,12 @@ export default function OpenInterestPage() {
   const [oiVariant, setOiVariant] = usePersistedState<OIVariant>('frame:oi:oiVariant', 'net');
   const [showExpirations, setShowExpirations] = usePersistedState('frame:oi:showExpirations', false);
   const [showPrice, setShowPrice] = usePersistedState('frame:oi:showPrice', true);
-  const [period, setPeriod] = usePersistedState<Period>('frame:oi:period', getDefaultPeriod('1y', isAuthenticated) as Period);
+  // Период: диплинк сигнала (URL) приоритетнее сохранённого. Применяем на init
+  // (seed), а не эффектом — иначе первый запрос ушёл бы на сохранённом 5y и для
+  // 5-минутного сигнала тянул бы годы баров. См. parseOiDeepLink.
+  const [period, setPeriod] = usePersistedState<Period>(
+    'frame:oi:period', getDefaultPeriod('1y', isAuthenticated) as Period,
+    parseOiDeepLink(searchParams).period);
 
   // Контекст сигнала из URL (Telegram deep-link) — применяем ОДИН раз на маунте,
   // чтобы открыть ОИ ровно в том виде, о котором пришёл сигнал (физ/юр, режим,

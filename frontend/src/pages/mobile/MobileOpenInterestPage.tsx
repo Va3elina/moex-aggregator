@@ -108,7 +108,12 @@ export default function MobileOpenInterestPage() {
   // Шарим desktop-ключи OI (enum'ы побайтово идентичны, формат JSON совместим;
   // instrument — ИСКЛЮЧЕНИЕ, см. ниже). displayMode → отдельный mobile-ключ
   // (у desktop 3-е значение 'price', которого нет в mobile-UI).
-  const [period, setPeriod] = usePersistedState<Period>('frame:oi:period', getDefaultPeriod('1y', isAuthenticated) as Period);
+  // Период: диплинк сигнала (URL) приоритетнее сохранённого. Применяем на init
+  // (seed), а не эффектом — иначе первый запрос ушёл бы на сохранённом 5y и для
+  // 5-минутного сигнала тянул бы годы баров. См. parseOiDeepLink.
+  const [period, setPeriod] = usePersistedState<Period>(
+    'frame:oi:period', getDefaultPeriod('1y', isAuthenticated) as Period,
+    parseOiDeepLink(searchParams).period);
   const [intervalValue, setIntervalValue] = usePersistedState('frame:oi:interval', 24);
   const [clgroup, setClgroup] = usePersistedState<'FIZ' | 'YUR'>('frame:oi:clgroup', 'YUR');
   const [oiVariant, setOiVariant] = usePersistedState<OIVariant>('frame:oi:oiVariant', 'net');
