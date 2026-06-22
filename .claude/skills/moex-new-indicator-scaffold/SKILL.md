@@ -277,3 +277,27 @@ grep -r "{Name}\|{name}" /Users/vadim/PyCharmMiscProject/MOEX \
 - **Missing `enforce_guest_limits`** → security hole, guests can access premium periods
 - **No `setPeriod('1y')` fallback in catch block** → guest hitting 403 gets stuck
 - **TypeScript PeriodType mismatch between api.ts and page** → build fails
+
+## Кэширование тяжёлых эндпоинтов (2026-06-21)
+
+Если новый эндпоинт делает дорогой расчёт (агрегаты/window-функции/много строк) —
+кэшируй через **`get_or_compute`** (single-flight), а НЕ голый `get_or_set`:
+
+```python
+from api.cache import get_or_compute
+
+@router.get("/my-indicator")
+def get_my_indicator(param: str, user=Depends(get_current_user_optional)):
+    enforce_guest_limits(...)              # tier-логика ДО кэша (per-user, не кэшируется!)
+    cache_key = f"my_indicator:{param}"
+    return get_or_compute(cache_key, lambda: _compute(param), ttl=300)
+
+def _compute(param):                       # тяжёлый расчёт вынесен отдельно
+    ...
+    return result                          # non-None
+```
+
+Почему: при истечении ключа `get_or_set` даёт **cache-stampede** — все воркеры считают
+разом (давало 502-штормы). `get_or_compute` = первый считает, остальные ждут результат
+(Redis-лок, fail-open). Паттерн уже в heatmap/chart/funds. Tier-проверки ОСТАВЛЯЙ на роуте
+до single-flight (иначе у Free/Paid общий кэш-ключ → утечка). [[recent_changes]]

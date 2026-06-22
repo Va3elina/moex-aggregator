@@ -298,3 +298,17 @@ ssh ... "docker logs frame-api-1 --tail 50 --since 10m 2>&1 | grep -iE 'error|ex
 **Урок**: deploy должен идти через git + image rebuild. Image — единственный source of truth для production.
 
 С **12 мая** ручной шаг был SSH `git pull + docker compose build + up` (теперь раздел «Аварийный ручной деплой»). С **9 июня 2026** даже этот шаг автоматизирован: `git push` → GitHub Actions build-check → deploy-prod (SSH на прод сам, `git reset --hard origin/main`). Никто не деплоит руками по SSH; SSH остаётся только для логов/SQL/инспекции/аварий.
+
+---
+
+## ⚙️ Инфраструктура надёжности (2026-06-21)
+
+**Postgres-тюнинг (в `docker-compose.yml` db.command, версионируется).** `shared_buffers=1GB, work_mem=24MB, effective_cache_size=2560MB, maintenance_work_mem=256MB` (под 4ГБ-VM). Раньше были дефолты (128MB/4MB) → сортировки лились на диск, холодные страницы. Замер: sort-запрос 737мс→246мс. ⚠️ **Деплой db-сервис НЕ пересоздаёт** (только api/orchestrator) — менял compose db → вручную `cd /opt/frame && docker compose up -d --force-recreate db` (~15с). При апгрейде VM до 8ГБ: shared_buffers=2GB, work_mem=32MB, effective_cache_size=6GB.
+
+**Алерт на падение пайплайна.** `monitor_alert.sh` (репо + `/opt/frame/`, host-cron `*/15 * * * * /bin/bash`): edge-triggered пуш в Telegram при падении/восстановлении пайплайна (state-файл `/opt/frame/logs/monitor_alert_state`, лог `monitor_alert.log`). Источник — `pipeline_runs` (`last_status<>'ok'` ИЛИ молчит >26ч). `health_monitor.py` теперь `overall=fail>stale>ok`. **Шлёт с ХОСТА** (`curl -6`): контейнеры до api.telegram.org НЕ достают (РКН блочит IPv4, проверено: оркестратор→000) — как `backup_db.sh`/`signals`.
+
+**Retry дневного ингеста.** `main_orchestrator.run_script` ретраит ключи `RETRYABLE_DAILY` (дневной каскад 19:10) до 2× backoff 30/120с — транзиентный блип ISS/Algopack не теряет день. 5-мин фетчеры НЕ ретраятся.
+
+**Backup ретраит чанки** (`backup_db.sh`): дамп БД (9.6ГБ→460МБ→10 чанков по 48МБ) шлётся в TG с ретраем каждого чанка (Moscow→TG IPv6 флапает). Cron `0 3 * * *`.
+
+**Cache single-flight** (`api/cache.py:get_or_compute`): heatmap/chart/funds под защитой от cache-stampede. [[monitoring_system]]
