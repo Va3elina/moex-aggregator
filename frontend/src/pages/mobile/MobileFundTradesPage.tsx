@@ -1146,7 +1146,7 @@ function MoversTab({
         title="Топ-аккумуляция"
         icon={TrendingUp}
         color="var(--success, #2dd478)"
-        items={movers.top_accumulated}
+        items={movers.top_accumulated.slice(0, 5)}
         empty="Накоплений нет"
         metric={metric}
         onAssetClick={onAssetClick}
@@ -1155,7 +1155,7 @@ function MoversTab({
         title="Топ-распродажа"
         icon={TrendingDown}
         color="var(--danger, #ef4444)"
-        items={movers.top_reduced}
+        items={movers.top_reduced.slice(0, 5)}
         empty="Распродаж нет"
         negative
         metric={metric}
