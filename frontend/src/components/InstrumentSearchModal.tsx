@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Search, X, Star, Lock, ChevronUp, ChevronDown, ChevronsUpDown, Check, Zap } from 'lucide-react';
+import { Search, X, Star, Lock, ChevronUp, ChevronDown, ChevronsUpDown, Check } from 'lucide-react';
 import InstrumentIcon from './InstrumentIcon';
 import { formatCompact } from '../utils/formatNumber';
 import { getIntradayAssets } from '../services/api';
@@ -130,8 +130,10 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
   }, []);
 
   // Набор sectype с доступными внутридневными данными позиций (5м/1ч) — грузим
-  // один раз. У таких активов показываем компактный бейдж «intraday» рядом с
-  // тикером. При ошибке набор пуст → бейджи просто не появляются.
+  // один раз. Внутридневные есть у большинства активов, поэтому помечаем
+  // бейджем НАОБОРОТ меньшинство: те, кого в наборе нет (данные только на конец
+  // дня). При ошибке/до загрузки набор пуст (size 0) → бейджи не показываем,
+  // иначе сбой загрузки промаркировал бы как EOD вообще весь список.
   const [intradaySet, setIntradaySet] = useState<Set<string>>(new Set());
   useEffect(() => {
     let cancelled = false;
@@ -368,16 +370,17 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
           style={{ opacity: accessible ? 1 : 0.45 }}
         >
           {/* Название — основное (bold, fs-sm), тикер — вторичный (приглушённый,
-              мельче). Бейдж intraday — нейтральный кружок с молнией, пояснение в
-              тултипе на ховере (длинная подпись «5м·1ч» убрана). */}
+              мельче). Бейдж EOD — нейтральный кружок с восклицательным знаком,
+              помечает редкие активы, где данные позиций обновляются только на
+              конец дня; пояснение в тултипе на ховере. */}
           <span className="font-bold truncate" style={{ fontSize: 'var(--fs-sm)' }}>{inst.name}</span>
           {/* Тикер: для фьючерсов — актуальный фронт-контракт ('BRN6'), а не
               обрезанный sectype 'BR' (такого тикера не существует). Спот → sectype. */}
           <span className="flex-shrink-0" style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-xs)' }}>{inst.front_secid || inst.sectype}</span>
-          {intradaySet.has(inst.sectype) && (
+          {intradaySet.size > 0 && !intradaySet.has(inst.sectype) && (
             <span
               className="flex-shrink-0 inline-flex items-center justify-center"
-              title="Есть внутридневные данные позиций (5-минутные и часовые) — внутридневной режим сигналов скоро"
+              title="Данные позиций обновляются только на конец дня, внутридневных (5м и 1ч) пока нет"
               style={{
                 width: 18,
                 height: 18,
@@ -386,9 +389,12 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
                 color: 'var(--text-secondary)',
                 alignSelf: 'center',
                 cursor: 'help',
+                fontSize: 12,
+                fontWeight: 700,
+                lineHeight: 1,
               }}
             >
-              <Zap size={11} strokeWidth={2.5} />
+              !
             </span>
           )}
         </div>
