@@ -137,6 +137,9 @@ SCRIPTS = {
     # Indices скрипты
     'indices_daily': BASE_DIR / 'Funds' / 'fetch_indices_realtime.py',
     'index_candles_hourly': BASE_DIR / 'Funds' / 'fetch_index_candles_hourly.py',
+    # Внутридневное текущее значение индексов (IMOEX/RTSI) — держит сегодняшнюю
+    # строку index_data свежей для индикаторов («Сила рынка»). Гоняется в 5-мин цикле.
+    'index_intraday': BASE_DIR / 'Funds' / 'fetch_index_intraday.py',
     # Macro скрипты (M2, GDP)
     'macro_daily': BASE_DIR / 'Macro' / 'fetch_macro_realtime.py',
     # Market Cap (полная капитализация рынка)
@@ -209,6 +212,7 @@ TIMEOUTS = {
     'funds_daily': 600,  # 10 минут
     'indices_daily': 300,  # 5 минут
     'index_candles_hourly': 600,  # 10 минут (бэкфилл с 2011 — ~25k свечей)
+    'index_intraday': 60,  # 1 минута (2 HTTP-запроса ISS marketdata + upsert)
     'macro_daily': 120,  # 2 минуты
     'market_cap_daily': 120,  # 2 минуты
     'breadth_daily': 600,  # 10 минут (полный пересчёт ~2 мин)
@@ -608,6 +612,22 @@ class MainOrchestrator:
         else:
             self.stats['errors'] += 1
             log.error(f"    ✗ Candles Spot: {msg}")
+
+        # 3b. Внутридневное текущее значение индексов (IMOEX/RTSI). Держит
+        # сегодняшнюю строку index_data свежей, чтобы «Сила рынка» показывала
+        # последнее значение индекса, а не вчерашнее закрытие. Best-effort:
+        # падение НЕ считается ошибкой цикла (индикатор просто покажет прежнее
+        # значение), вне сессии скрипт сам пишет 0 строк и выходит успешно.
+        await asyncio.sleep(2)
+        self.stats.setdefault('index_intraday_runs', 0)
+        self.stats.setdefault('index_intraday_success', 0)
+        self.stats['index_intraday_runs'] += 1
+        success, msg, dur = await run_script('index_intraday', ['--force'])
+        if success:
+            self.stats['index_intraday_success'] += 1
+            log.info(f"    ✓ Index intraday ({dur:.1f}с)")
+        else:
+            log.warning(f"    ⚠️ Index intraday: {msg}")
 
         # 4. Обновление материализованных представлений
         log.info("  🔄 Обновление представлений...")
