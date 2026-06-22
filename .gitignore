@@ -42,6 +42,7 @@ buffett_tmp*
 # AI assistants
 .claude/*
 !.claude/skills/
+!.claude/agents/
 .gemini/
 .antigravityignore
 

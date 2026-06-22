@@ -15,12 +15,16 @@ services:
     # Дефолты (shared_buffers=128MB/work_mem=4MB) не использовали имеющуюся RAM:
     # тяжёлые сортировки лились на диск, горячие страницы перечитывались. Замер до/
     # после: тёплый sort-запрос 737мс→246мс (~3×), дисковые чтения 34497→0.
-    # Значения под 4ГБ-VM; при апгрейде до 8ГБ — shared_buffers=2GB, work_mem=32MB,
-    # effective_cache_size=6GB.
+    # Значения под 4ГБ-VM. shared_buffers=512MB (НЕ 1GB) намеренно консервативно:
+    # деплой собирает api-образ (frontend tsc+vite ≈2GB) НА проде, своп=0 →
+    # больший upfront-резерв рискует OOM (история: OOM при ≥512MB+build). 512МБ
+    # всё равно кэширует горячие таблицы графиков (~274МБ), а work_mem-выигрыш на
+    # сортировках от shared_buffers не зависит. При апгрейде до 8ГБ —
+    # shared_buffers=2GB, work_mem=32MB, effective_cache_size=6GB.
     command:
       - "postgres"
       - "-c"
-      - "shared_buffers=1GB"
+      - "shared_buffers=512MB"
       - "-c"
       - "work_mem=24MB"
       - "-c"
