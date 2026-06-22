@@ -479,6 +479,31 @@ async def get_breadth_history(
     except Exception as e:
         log.error(f"Error fetching {overlay_secid}: {e}")
 
+    # ── Последняя точка «сегодня»: актуальное значение, а не вчерашнее закрытие ──
+    # breadth_history наполняется только в дневном прогоне (19:10 МСК), а
+    # index_data сегодня обновляется каждые ~5 мин (fetch_index_intraday). Чтобы
+    # последняя точка графика не висела на вчера, дорастим ОДНУ сегодняшнюю точку:
+    # breadth из /current (тоже кэш ≤5 мин), индекс — из свежего index_data.
+    # Гейт без обращения к календарю: добавляем только если у индекса есть дата
+    # свежее последней в breadth_history (значит идёт сессия и в 19:10 этой точки
+    # ещё не было). Timezone-safe: ISO-даты сравниваются как строки. history —
+    # кэшированный список, поэтому НЕ мутируем его (append испортил бы кэш), а
+    # пересобираем новый с сегодняшней точкой в конце.
+    last_hist_date = history[-1]["date"] if history else None
+    latest_index_date = max(imoex_by_date) if imoex_by_date else None
+    if latest_index_date and (last_hist_date is None or latest_index_date > last_hist_date):
+        try:
+            cur = await get_current_breadth(ema_period=ema_period, universe=universe)
+            if cur and cur.get("count_total", 0) > 0:
+                history = history + [{
+                    "date": latest_index_date,
+                    "percent_above": float(cur["percent_above"]),
+                    "count_above": int(cur["count_above"]),
+                    "count_total": int(cur["count_total"]),
+                }]
+        except Exception as e:
+            log.warning(f"breadth/history: today point skipped: {e}")
+
     # data с индексом, НЕ мутируя кэшированную history (иначе испортим кэш).
     data_out = [
         ({**p, "imoex": imoex_by_date[p["date"]]} if p["date"] in imoex_by_date else p)
