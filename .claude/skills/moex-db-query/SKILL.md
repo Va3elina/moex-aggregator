@@ -238,9 +238,9 @@ with engine.connect() as conn:
 ## ⚙️ Postgres настроен (2026-06-21)
 
 Прод-БД больше НЕ на дефолтах. Тюнинг в `docker-compose.yml` (db.command):
-`shared_buffers=1GB, work_mem=24MB, effective_cache_size=2560MB, maintenance_work_mem=256MB`
-(под 4ГБ-VM). Поэтому при `EXPLAIN (ANALYZE, BUFFERS)`:
+`shared_buffers=512MB, work_mem=24MB, effective_cache_size=2560MB, maintenance_work_mem=256MB`
+(под 4ГБ-VM; 512MB а не 1GB — OOM-safety, build api идёт на проде). Поэтому при `EXPLAIN (ANALYZE, BUFFERS)`:
 - сортировки до ~24МБ идут в памяти (`quicksort Memory`), а не на диск — раньше при `work_mem=4MB` всё лилось (`external merge Disk`);
-- горячие таблицы кэшируются в `shared_buffers` (1ГБ) → меньше `read=` в Buffers.
+- горячие таблицы графиков (~274МБ) кэшируются в `shared_buffers` → меньше `read=` в Buffers.
 
 Менял тюнинг → правь **compose** (не `ALTER SYSTEM`), затем на проде `cd /opt/frame && docker compose up -d --force-recreate db` (~15с рестарт; деплой db НЕ трогает). При апгрейде VM до 8ГБ: shared_buffers=2GB, work_mem=32MB, effective_cache_size=6GB. [[server_constraints]]
