@@ -10,6 +10,23 @@ services:
   db:
     image: postgres:17-alpine
     restart: always
+    # Тюнинг памяти Postgres (версионируется здесь, чтобы переживать пересоздание
+    # тома — раньше лежал только в postgresql.auto.conf через ALTER SYSTEM).
+    # Дефолты (shared_buffers=128MB/work_mem=4MB) не использовали имеющуюся RAM:
+    # тяжёлые сортировки лились на диск, горячие страницы перечитывались. Замер до/
+    # после: тёплый sort-запрос 737мс→246мс (~3×), дисковые чтения 34497→0.
+    # Значения под 4ГБ-VM; при апгрейде до 8ГБ — shared_buffers=2GB, work_mem=32MB,
+    # effective_cache_size=6GB.
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_buffers=1GB"
+      - "-c"
+      - "work_mem=24MB"
+      - "-c"
+      - "effective_cache_size=2560MB"
+      - "-c"
+      - "maintenance_work_mem=256MB"
     environment:
       POSTGRES_DB: ${DB_NAME:-moex_db}
       POSTGRES_USER: ${DB_USER:-postgres}
