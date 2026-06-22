@@ -850,10 +850,14 @@ export default function FundTradesPage() {
             )}
 
             {tab === 'company' && (
-                <CompanyFlowsTab
-                    presetAsset={companyPreset}
-                    onPresetConsumed={() => setCompanyPreset(null)}
-                />
+                // Editorial-frame — оборачиваем индикатор «Потоки по компании» в тот
+                // же контейнер (paper bg + outline + hard-shadow), что и OI/Сезонность.
+                <div className="editorial-frame">
+                    <CompanyFlowsTab
+                        presetAsset={companyPreset}
+                        onPresetConsumed={() => setCompanyPreset(null)}
+                    />
+                </div>
             )}
 
             {tab === 'snapshots' && <SnapshotReviewTab />}
