@@ -498,16 +498,37 @@ class TBankProvider:
             body["Email"] = email[:64]
         return self._post_signed("AddCustomer", body)
 
-    def add_card(self, customer_key: str, check_type: str = "3DS") -> dict:
+    def add_card(
+        self,
+        customer_key: str,
+        check_type: str = "3DS",
+        *,
+        success_url: str | None = None,
+        fail_url: str | None = None,
+        notification_url: str | None = None,
+    ) -> dict:
         """Инициирует привязку карты. Возвращает {Success, PaymentURL, RequestKey, ...}.
 
         Клиента редиректим на PaymentURL (ввод карты/3DS). Деньги НЕ списываются
-        (HOLD/3DS делают холд+отмену). RebillId забираем через get_add_card_state.
+        (HOLD/3DS делают авторизацию-холд без расчёта). RebillId забираем через
+        get_add_card_state.
+
+        Success/Fail/NotificationURL — куда T-Bank вернёт клиента после привязки.
+        Если НЕ передать и в настройках терминала они пусты → ErrorCode 9
+        «Переадресовываемый url пуст» (привязка проходит, но редиректить некуда).
+        Переданные значения перекрывают настройки терминала.
         """
-        return self._post_signed("AddCard", {
+        body: dict[str, Any] = {
             "CustomerKey": str(customer_key)[:36],
             "CheckType": check_type,
-        })
+        }
+        if success_url:
+            body["SuccessURL"] = success_url
+        if fail_url:
+            body["FailURL"] = fail_url
+        if notification_url:
+            body["NotificationURL"] = notification_url
+        return self._post_signed("AddCard", body)
 
     def get_add_card_state(self, request_key: str) -> dict:
         """Статус привязки по RequestKey. При COMPLETED содержит RebillId/CardId/Pan."""
