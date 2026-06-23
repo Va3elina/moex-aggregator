@@ -241,6 +241,9 @@ export default function EmbedBuffett() {
             formatValue={(v) => `${v.toFixed(2)} трлн ₽`}
             formatPrimaryAxis={(v) => String(Math.round(v))}
             niceTicks={true}
+            // Сетка по ПРАВОЙ оси (ratio), как на странице индикатора.
+            niceTicksSecondary={true}
+            gridAxis="secondary"
             formatSecondaryValue={ratioVal}
             formatSecondaryAxis={ratioAxis}
             primaryLabel="Капитализация (трлн ₽)"

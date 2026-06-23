@@ -319,6 +319,11 @@ export default function MobileBuffettPage() {
           <MobileChart
             series={chartSeries}
             niceTicksLeft={chartSeries[0]?.label === 'Капитализация'}
+            // Сетка по ПРАВОЙ оси (ratio Кап/ВВП | Кап/M2), как на desktop.
+            // При single-series (ratio слева) gridAxis="right" безвреден —
+            // правой оси нет, сетка падает на левую (ту же ratio).
+            niceTicksRight={true}
+            gridAxis="right"
             loading={loading}
             animKey={`${viewMode}|${period}|${timeframe}`}
             formatXLabel={(t) => {
