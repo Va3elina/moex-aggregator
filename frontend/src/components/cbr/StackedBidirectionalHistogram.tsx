@@ -96,16 +96,24 @@ export default function StackedBidirectionalHistogram({
   // animKey — комбинируем ДВА сигнала:
   //   - animTrigger (от parent) — меняется при смене type/period, явный
   //     сигнал «перезапусти wave».
-  //   - data-signature (длина + крайние даты periods) — меняется когда
-  //     данные впервые приезжают. На первом открытии компонент рендерится
-  //     в loading-состоянии с periods=[]; эффект делает early-return, а
-  //     animTrigger потом не меняется → entrance-анимация НЕ играла при
-  //     первом открытии страницы. Signature ловит переход [] → загружено.
-  //   Toggle категорий не меняет ни animTrigger, ни signature (periods те
-  //   же объекты) → wave корректно НЕ перезапускается.
+  //   - data-signature (длина + крайние даты) — меняется когда данные впервые
+  //     приезжают. На первом открытии компонент рендерится в loading-состоянии
+  //     с пустыми данными; эффект делает early-return, а animTrigger потом не
+  //     меняется → entrance-анимация НЕ играла при первом открытии страницы.
+  //     Signature ловит переход [] → загружено.
+  //   Toggle категорий не меняет ни animTrigger, ни signature → wave корректно
+  //   НЕ перезапускается.
+  //
+  // ВАЖНО: signature берём из allPeriods (ПОЛНЫЙ набор), а не из periods (срез
+  // нижнего таймлайна-навигатора через navRange). Иначе драг навигатора менял
+  // длину/крайние даты periods → wave переигрывалась на каждое движение окна.
+  // Теперь — как в «Деньги в фондах»: волна привязана к fetched-данным, а
+  // навигатор лишь слайсит уже отрисованные бары. Fallback на periods для
+  // вызовов без allPeriods (мобилка без навигатора) — поведение не меняется.
+  const sigPeriods = allPeriods ?? periods;
   const dataSig =
-    `${periods.length}|${periods[0]?.end_date ?? ''}` +
-    `|${periods[periods.length - 1]?.end_date ?? ''}`;
+    `${sigPeriods.length}|${sigPeriods[0]?.end_date ?? ''}` +
+    `|${sigPeriods[sigPeriods.length - 1]?.end_date ?? ''}`;
   const animKey = `${animTrigger ?? ''}|${dataSig}`;
   const [animProgress, setAnimProgress] = useState<number[]>(() =>
     new Array(periods.length).fill(0),
