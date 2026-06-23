@@ -215,6 +215,21 @@ services:
       # Yahoo через Cloudflare Worker-релей (РКН блокирует прямой Yahoo). Пусто =
       # прямой Yahoo (дефолт в fetch_commodity_realtime.py). См. signals/relay/.
       - COMMODITY_API_ROOT=${COMMODITY_API_ROOT:-}
+      # Billing: orchestrator крутит renew_expiring_subs (авто-продление + конверсия
+      # триала) → charge_recurrent → нужен РЕАЛЬНЫЙ T-Bank провайдер (без этих var
+      # factory отдаёт Stub и списания ФЕЙКОВЫЕ). + Receipt-конфиг для чека 54-ФЗ.
+      - TBANK_TERMINAL_KEY=${TBANK_TERMINAL_KEY:-}
+      - TBANK_PASSWORD=${TBANK_PASSWORD:-}
+      - TBANK_RECEIPT_ENABLED=${TBANK_RECEIPT_ENABLED:-}
+      - TBANK_TAXATION=${TBANK_TAXATION:-usn_income}
+      - TBANK_VAT=${TBANK_VAT:-none}
+      # SMTP: orchestrator шлёт T-1 письмо об окончании триала (send_trial_reminders).
+      - SMTP_HOST=${SMTP_HOST:-smtp.yandex.ru}
+      - SMTP_PORT=${SMTP_PORT:-465}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM=${SMTP_FROM:-}
+      - SMTP_FROM_NAME=${SMTP_FROM_NAME:-Фрейм}
     command: ["python", "main_orchestrator.py"]
     healthcheck:
       test: ["CMD-SHELL", "test -f /proc/1/cmdline"]

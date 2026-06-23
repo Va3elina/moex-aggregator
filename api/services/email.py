@@ -119,3 +119,75 @@ def send_verification_email(to_email: str, code: str, display_name: str | None =
 </body></html>"""
 
     return _send(to_email, subject, text_body, html_body)
+
+
+def send_trial_ending_email(
+    to_email: str,
+    tier_ru: str,
+    amount: float,
+    charge_date: str,
+    display_name: str | None = None,
+) -> bool:
+    """T-1 уведомление: пробный период заканчивается, скоро автосписание.
+
+    amount — сумма в рублях; charge_date — уже отформатированная дата («30 июня»).
+    Best practice (не буква 376-ФЗ): прозрачно предупреждаем о сумме/дате + как
+    отменить (ЗоЗПП — простая отмена). Ссылка ведёт в профиль (отмена + отвязка карты).
+    """
+    amount_str = "{:,.0f}".format(amount).replace(",", " ")
+    greeting = f"Здравствуйте, {display_name}!" if display_name else "Здравствуйте!"
+    subject = f"Пробный период скоро закончится — {charge_date} спишем {amount_str} ₽"
+    profile_url = f"{SITE_URL}/profile"
+
+    text_body = (
+        f"{greeting}\n\n"
+        f"Ваш бесплатный пробный период тарифа {tier_ru} заканчивается {charge_date}.\n"
+        f"В этот день мы автоматически спишем {amount_str} ₽ за выбранный план, и "
+        f"подписка станет платной.\n\n"
+        f"Если не хотите продолжать — отмените подписку и отвяжите карту в профиле "
+        f"до {charge_date}, тогда списания не будет:\n{profile_url}\n\n"
+        f"— Фрейм, аналитика Московской биржи\n{SITE_URL}\n"
+    )
+
+    html_body = f"""\
+<!doctype html>
+<html lang="ru"><body style="margin:0;padding:0;background:#0B0D12;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0B0D12;padding:32px 16px;">
+    <tr><td align="center">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+             style="max-width:480px;background:#F4F1EA;border-radius:16px;overflow:hidden;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;">
+        <tr><td style="padding:32px 32px 8px;">
+          <div style="font-size:22px;font-weight:800;color:#15110B;letter-spacing:-0.02em;">Фрейм</div>
+          <div style="font-size:13px;color:#6B6357;margin-top:2px;">аналитика Московской биржи</div>
+        </td></tr>
+        <tr><td style="padding:8px 32px 0;">
+          <p style="font-size:15px;color:#2A241B;margin:16px 0 4px;">{greeting}</p>
+          <p style="font-size:15px;color:#2A241B;margin:0 0 12px;line-height:1.5;">
+            Ваш бесплатный пробный период тарифа <b>{tier_ru}</b> заканчивается
+            <b>{charge_date}</b>. В этот день мы автоматически спишем
+            <b>{amount_str}&nbsp;₽</b> за выбранный план.
+          </p>
+        </td></tr>
+        <tr><td style="padding:0 32px;">
+          <div style="background:#15110B;border-radius:12px;padding:18px 20px;">
+            <span style="font-size:15px;color:#F4F1EA;">Списание {charge_date}:</span>
+            <span style="font-size:22px;font-weight:700;color:#FF5C2B;float:right;">{amount_str}&nbsp;₽</span>
+          </div>
+        </td></tr>
+        <tr><td style="padding:18px 32px 0;">
+          <p style="font-size:13px;color:#6B6357;margin:0 0 16px;line-height:1.5;">
+            Не хотите продолжать? Отмените подписку и отвяжите карту в профиле до
+            {charge_date} — списания не будет.
+          </p>
+          <a href="{profile_url}" style="display:inline-block;background:#FF5C2B;color:#fff;text-decoration:none;font-size:14px;font-weight:700;padding:12px 22px;border-radius:10px;">Управление подпиской</a>
+        </td></tr>
+        <tr><td style="padding:24px 32px 32px;">
+          <hr style="border:none;border-top:1px solid #DAD3C6;margin:0 0 16px;">
+          <a href="{SITE_URL}" style="font-size:13px;color:#FF5C2B;text-decoration:none;">таймфрейм.рф</a>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>"""
+
+    return _send(to_email, subject, text_body, html_body)
