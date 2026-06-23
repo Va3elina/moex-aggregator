@@ -445,14 +445,19 @@ export default function PricingPage() {
                 )}
               </div>
 
-              {/* Бесплатный пробный период — видимая «фишка» карточки */}
+              {/* Бесплатный пробный период — выделенный чип, главная «фишка» карточки */}
               {canTrial && (
                 <div
-                  className="flex items-center gap-1.5 mb-4 -mt-2 text-sm font-semibold"
-                  style={{ color: meta.color }}
+                  className="inline-flex items-center gap-2 mb-4 -mt-1 px-3 py-2 rounded-xl font-extrabold leading-tight"
+                  style={{
+                    color: meta.color,
+                    background: meta.accentBg,
+                    border: `1.5px solid ${meta.color}`,
+                    fontSize: 'clamp(0.95rem, 1.5vw, 1.1rem)',
+                  }}
                 >
-                  <Gift size={16} className="flex-shrink-0" />
-                  <span>Первые {trialDays} дней — бесплатно</span>
+                  <Gift size={20} strokeWidth={2.4} className="flex-shrink-0" />
+                  <span>{trialDays} дней бесплатно</span>
                 </div>
               )}
 
