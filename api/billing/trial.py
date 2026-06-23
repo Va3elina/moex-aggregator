@@ -320,14 +320,35 @@ def send_trial_reminders(db: Session, within_days: int = 3) -> dict:
     return summary
 
 
-def _notify_trial_ending(user: User | None, sub: Subscription, plan) -> None:
-    """Отправка уведомления «триал заканчивается, спишем X₽».
+_RU_MONTHS = (
+    "", "января", "февраля", "марта", "апреля", "мая", "июня",
+    "июля", "августа", "сентября", "октября", "ноября", "декабря",
+)
 
-    TODO(before launch): подключить реальный email-сендер (как в email-верификации)
-    + Telegram если привязан. Сейчас — лог (на критическом пути запуска не стоит).
+
+def _ru_date(dt) -> str:
+    """'30 июня' из datetime (для письма). Пусто если dt=None."""
+    return f"{dt.day} {_RU_MONTHS[dt.month]}" if dt else ""
+
+
+def _notify_trial_ending(user: User | None, sub: Subscription, plan) -> None:
+    """Отправка уведомления «триал заканчивается, спишем X₽» на email.
+
+    Email у триал-юзера всегда есть и верифицирован (eligibility-гейт требует
+    реальный email для чека 54-ФЗ). Best-effort — исключения не роняют джобу
+    (send_trial_ending_email сам ловит SMTP-ошибки).
     """
     amount = float(plan.amount) if plan else None
+    email = getattr(user, "email", None)
+    tier_ru = "Pro" if sub.tier == "pro" else "Basic"
+    charge_date = _ru_date(sub.expires_at)
     log.info(
-        "TRIAL ENDING: user=%s email=%s ends=%s charge=%s plan=%s",
-        sub.user_id, getattr(user, "email", None), sub.expires_at, amount, sub.plan_id,
+        "TRIAL ENDING notify: user=%s email=%s ends=%s charge=%s plan=%s",
+        sub.user_id, email, sub.expires_at, amount, sub.plan_id,
     )
+    if email and amount:
+        from api.services.email import send_trial_ending_email
+        send_trial_ending_email(
+            email, tier_ru, amount, charge_date,
+            display_name=getattr(user, "display_name", None),
+        )
