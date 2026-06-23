@@ -338,12 +338,17 @@ def activate_from_webhook(db: Session, event: WebhookEvent) -> Subscription | No
         Subscription.cancelled_at.is_(None),
     ).all()
     for old_sub in lower_subs:
-        if TIER_LEVELS.get(old_sub.tier, 0) < new_level:
+        # Гасим авто-продление: (а) подписок строго НИЖЕ нового tier (апгрейд),
+        # (б) ЛЮБОГО активного ТРИАЛА — покупка/конверсия закрывает пробный период,
+        # чтобы он не списался повторно (ревью #1/#3). is_trial есть только у
+        # триал-строк → реальные платные подписки тем же/выше tier не затрагиваются.
+        if old_sub.is_trial or TIER_LEVELS.get(old_sub.tier, 0) < new_level:
             old_sub.cancelled_at = now
             log.info(
-                "activate_from_webhook: upgrade to %s — отключено авто-продление "
-                "нижней подписки #%s (tier=%s, дослужит до %s)",
-                sub.tier, old_sub.id, old_sub.tier, old_sub.expires_at,
+                "activate_from_webhook: %s — отключено авто-продление подписки #%s "
+                "(tier=%s, is_trial=%s, дослужит до %s)",
+                "конверсия/покупка поверх триала" if old_sub.is_trial else f"upgrade to {sub.tier}",
+                old_sub.id, old_sub.tier, old_sub.is_trial, old_sub.expires_at,
             )
 
     # Поднимаем роль user'а если нужно
@@ -571,6 +576,14 @@ def renew_expiring_subs(db: Session, hours_window: int = 24) -> dict:
                     sub.id, result.get("subscription_id"), user.id, charge_plan_id,
                     " (monthly fallback)" if sub.fallback_done else "",
                 )
+                # Триал сконвертирован в платную строку → закрываем триал-строку
+                # ТЕРМИНАЛЬНО (cancelled_at), чтобы она НАВСЕГДА выпала из
+                # expiring-запроса и не списалась повторно, если платная строка
+                # позже уйдёт из active/pending (возврат). Не полагаемся на Guard 1
+                # (ревью #1). Касается ТОЛЬКО is_trial — платные не трогаем.
+                if sub.is_trial and sub.cancelled_at is None:
+                    sub.cancelled_at = now
+                    db.commit()
             else:
                 summary["failed"] += 1
                 kind = result.get("failure_kind")
@@ -759,6 +772,10 @@ def sync_pending_for_user(
         Subscription.user_id == user.id,
         Subscription.status.in_(["pending", "active"]),
         Subscription.yk_payment_id.isnot(None),
+        # Триал-строки исключаем явно: у них yk_payment_id=NULL (RequestKey лежит в
+        # trial_request_key), поэтому они и так не попадают, но фильтр —
+        # defense-in-depth против ложной отмены триала через GetState (ревью #4/#9).
+        Subscription.is_trial.is_(False),
         # pending — узкое окно; active — без ограничения, проверяем все
         # (refund может прийти через месяц после оплаты).
         sa_or_(

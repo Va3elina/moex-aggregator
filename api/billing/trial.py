@@ -44,17 +44,32 @@ def _hash(value: str) -> str:
 
 
 def normalize_email(email: str | None) -> str | None:
-    """lowercase + для gmail срезаем точки и +алиасы (нормализация ДО хеша)."""
+    """lowercase + срез +алиаса (для всех доменов) + срез точек (gmail).
+
+    Plus-адресација почти универсальна → режем '+suffix' везде. Точки игнорирует
+    в локальной части только Gmail → убираем точки только для gmail/googlemail.
+    Это смягчение; жёсткий барьер — DB-UNIQUE на email_hash (миграция 014).
+    """
     if not email:
         return None
     email = email.strip().lower()
     if "@" not in email:
         return email
     local, _, domain = email.partition("@")
+    local = local.split("+", 1)[0]  # +алиас режем для всех доменов
     if domain in ("gmail.com", "googlemail.com"):
-        local = local.split("+", 1)[0].replace(".", "")
+        local = local.replace(".", "")
         domain = "gmail.com"
     return f"{local}@{domain}"
+
+
+def _require_salt() -> None:
+    """Фейл-фаст: при включённом триале соль обязательна (152-ФЗ, иначе хеши
+    обратимы и анти-абуз оголён). См. ревью находки #7/#11/#15."""
+    if not _HASH_SALT:
+        raise ValueError(
+            "TRIAL_HASH_SALT не задан — пробный период отключён в целях безопасности"
+        )
 
 
 def oauth_key_for(user: User) -> str | None:
@@ -113,6 +128,7 @@ def start_trial(
     """
     if not TRIAL_ENABLED:
         raise ValueError("Пробный период временно недоступен")
+    _require_salt()
     if not consent:
         raise ValueError("Требуется согласие на условия пробного периода")
     days = trial_days(tier)
@@ -173,12 +189,14 @@ def start_trial(
         db.commit()
         raise ValueError(f"AddCard error: {res.get('Message') or res.get('Details') or res}")
 
-    sub.yk_payment_id = str(res["RequestKey"])  # корреляция привязки
+    # RequestKey — в ОТДЕЛЬНУЮ колонку, НЕ в yk_payment_id (тот остаётся NULL →
+    # триал-строка невидима для sync_pending_for_user / cancel_by_webhook).
+    sub.trial_request_key = str(res["RequestKey"])
     db.commit()
-    log.info("start_trial user=%s tier=%s/%s request_key=%s", user.id, tier, period, sub.yk_payment_id)
+    log.info("start_trial user=%s tier=%s/%s request_key=%s", user.id, tier, period, sub.trial_request_key)
     return {
         "subscription_id": sub.id,
-        "request_key": sub.yk_payment_id,
+        "request_key": sub.trial_request_key,
         "payment_url": res.get("PaymentURL"),
         "tier": tier, "period": period, "trial_days": days,
     }
@@ -190,20 +208,30 @@ def complete_trial_for_user(db: Session, user: User) -> dict:
 
     Идемпотентно. Фронт зовёт на /billing/trial-success после возврата от T-Bank.
     """
+    _require_salt()
     sub = db.query(Subscription).filter(
         Subscription.user_id == user.id,
         Subscription.is_trial.is_(True),
         Subscription.status == "pending",
-        Subscription.yk_payment_id.isnot(None),
+        Subscription.trial_request_key.isnot(None),
     ).order_by(Subscription.created_at.desc()).first()
     if not sub:
+        # Уже активирован (повторный вызов) ИЛИ юзер уже оформил платную — мягкий ok.
         active = billing_service.current_subscription(db, user)
-        if active and active.is_trial:
+        if active:
             return {"ok": True, "status": "active", "subscription_id": active.id}
         return {"ok": False, "reason": "Нет ожидающей привязки карты"}
 
+    # Повторный eligibility-гейт (TOCTOU между start и complete): юзер мог за это
+    # время оформить платную подписку / стать неэлигибельным. См. ревью #8/#16.
+    elig = check_trial_eligibility(db, user)
+    if not elig["eligible"]:
+        sub.status = "failed"
+        db.commit()
+        return {"ok": False, "reason": elig["reason"] or "Пробный период недоступен"}
+
     provider = get_payment_provider()
-    state = provider.get_add_card_state(sub.yk_payment_id)  # type: ignore[attr-defined]
+    state = provider.get_add_card_state(sub.trial_request_key)  # type: ignore[attr-defined]
     status = (state.get("Status") or "").upper()
     rebill_id = state.get("RebillId")
     if status != "COMPLETED" or not rebill_id:
@@ -226,14 +254,23 @@ def complete_trial_for_user(db: Session, user: User) -> dict:
         user_id=user.id, subscription_id=sub.id, tier=sub.tier,
         oauth_hash=oauth_h, email_hash=email_h, ip=None,
     ))
+    sub_id = sub.id
     try:
         db.flush()
     except IntegrityError:
+        # UNIQUE на user_id/oauth_hash/email_hash → эта идентичность уже брала
+        # триал (тот же юзер = повтор/идемпотентно, ИЛИ другой аккаунт с тем же
+        # oauth/email = мульти-аккаунт абуз). Триал НЕ выдаём.
         db.rollback()
-        log.warning("complete_trial: redemption уже есть user=%s (идемпотентно)", user.id)
+        log.warning("complete_trial: identity already redeemed (user=%s) — abuse/идемпотентно", user.id)
         active = billing_service.current_subscription(db, user)
-        return {"ok": bool(active), "status": "active" if active else "used",
-                "subscription_id": active.id if active else None}
+        if active:
+            return {"ok": True, "status": "active", "subscription_id": active.id}
+        stale = db.query(Subscription).filter(Subscription.id == sub_id).first()
+        if stale and stale.status == "pending":
+            stale.status = "failed"
+            db.commit()
+        return {"ok": False, "status": "used", "reason": "Пробный период уже был использован"}
 
     now = datetime.now(timezone.utc)
     sub.status = "active"

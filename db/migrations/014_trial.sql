@@ -31,6 +31,10 @@ ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS is_trial              BOOLEAN
 ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS trial_reminder_sent   BOOLEAN     NOT NULL DEFAULT false;
 ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS trial_consent_at      TIMESTAMPTZ;
 ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS trial_consent_version VARCHAR(16);
+-- RequestKey привязки карты (AddCard) — отдельно от yk_payment_id (тот NULL у
+-- триала), иначе RequestKey попал бы в namespace PaymentId и sync_pending_for_user
+-- дёрнул бы по нему GetState (ложная отмена). См. ревью находки #4/#9/#13.
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS trial_request_key     VARCHAR(64);
 
 -- Для T-1 уведомлений и конверсии: WHERE is_trial AND status='active'
 CREATE INDEX IF NOT EXISTS idx_subs_trial_active
@@ -72,7 +76,12 @@ CREATE TABLE IF NOT EXISTS trial_redemptions (
     UNIQUE (user_id)
 );
 
--- Быстрая проверка eligibility по кросс-аккаунтным ключам (хеши)
-CREATE INDEX IF NOT EXISTS idx_trial_redemptions_oauth ON trial_redemptions (oauth_hash);
-CREATE INDEX IF NOT EXISTS idx_trial_redemptions_email ON trial_redemptions (email_hash);
+-- Кросс-аккаунтный дедуп — БАРЬЕР НА УРОВНЕ БД (не только app-проверка, иначе
+-- гонка start↔complete и новый аккаунт обходят). Partial UNIQUE (NULL разрешаем:
+-- у oauth-юзера нет пароля/email-хеша и наоборот). См. ревью находки #5/#8.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_trial_redemptions_oauth
+    ON trial_redemptions (oauth_hash) WHERE oauth_hash IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_trial_redemptions_email
+    ON trial_redemptions (email_hash) WHERE email_hash IS NOT NULL;
+-- card_fingerprint обычно NULL (AddCard не отдаёт PAN) — оставляем НЕ-unique индекс.
 CREATE INDEX IF NOT EXISTS idx_trial_redemptions_card  ON trial_redemptions (card_fingerprint);

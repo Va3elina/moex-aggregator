@@ -98,6 +98,10 @@ class Subscription(Base):
     trial_reminder_sent = Column(Boolean, nullable=False, default=False, server_default="false")
     trial_consent_at = Column(DateTime(timezone=True), nullable=True)
     trial_consent_version = Column(String(16), nullable=True)
+    # trial_request_key — T-Bank AddCard RequestKey для завершения привязки.
+    # ОТДЕЛЬНО от yk_payment_id (которое NULL у триала) — иначе RequestKey попал бы
+    # в namespace PaymentId и sync_pending_for_user дёрнул бы по нему GetState.
+    trial_request_key = Column(String(64), nullable=True)
 
     # === Провайдер реквизиты ===
     # yk_payment_id — id платежа у провайдера (T-Bank PaymentId или ЮKassa id),

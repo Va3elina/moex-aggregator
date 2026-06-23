@@ -57,6 +57,10 @@ class User(Base):
     is_verified = Column(Boolean, default=False, nullable=False)
     # Одноразовая retention-скидка при отмене автопродления — использована?
     retention_used = Column(Boolean, default=False, nullable=False, server_default="false")
+    # Бесплатный пробный период уже использован (один триал на аккаунт). См. [[trial_system]].
+    trial_used = Column(Boolean, default=False, nullable=False, server_default="false")
+    # IP регистрации — мягкий анти-абуз сигнал для триала (НИКОГДА не hard-block).
+    registration_ip = Column(String(64), nullable=True)
 
     # === Подтверждение email (Phase 2 — SMTP Yandex 360) ===
     # Заполняются только для email+password юзеров. OAuth-юзеры приходят с
