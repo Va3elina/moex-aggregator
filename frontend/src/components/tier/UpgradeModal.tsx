@@ -17,7 +17,7 @@ import { apiFetch } from '../../services/api';
 // Длительность пробного периода по тарифам (зеркало backend plans.TRIAL_DAYS).
 const TRIAL_DAYS_BY_TIER: Record<string, number> = { basic: 14, pro: 7 };
 // «Показать оффер триала 1 раз на браузер» (жёсткий барьер — backend trial_eligible).
-const TRIAL_OFFER_SEEN_KEY = 'frame_trial_offer_seen_v1';
+const TRIAL_OFFER_SEEN_LS = 'frame_trial_offer_seen_v1';
 
 function fmtRub(n: number | undefined): string {
     return n == null ? '' : n.toLocaleString('ru-RU') + ' ₽';
@@ -101,7 +101,7 @@ function TrialOffer({ tier, isMobile }: { tier: 'basic' | 'pro'; isMobile: boole
 
     useEffect(() => {
         // Уже показывали в этом браузере → не навязываем повторно (1 раз на юзера).
-        if (typeof window !== 'undefined' && localStorage.getItem(TRIAL_OFFER_SEEN_KEY) === '1') {
+        if (typeof window !== 'undefined' && localStorage.getItem(TRIAL_OFFER_SEEN_LS) === '1') {
             setEligible(false);
             return;
         }
@@ -122,7 +122,7 @@ function TrialOffer({ tier, isMobile }: { tier: 'basic' | 'pro'; isMobile: boole
                         | { monthly?: { amount: number }; yearly?: { amount: number } }
                         | undefined;
                     setPrices({ monthly: t?.monthly?.amount, yearly: t?.yearly?.amount });
-                    localStorage.setItem(TRIAL_OFFER_SEEN_KEY, '1');  // показ один раз
+                    localStorage.setItem(TRIAL_OFFER_SEEN_LS, '1');  // показ один раз
                 }
             } catch {
                 if (!cancelled) setEligible(false);
