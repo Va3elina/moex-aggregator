@@ -7,8 +7,8 @@
  *   const { showUpgrade } = useUpgradePrompt();
  *   onClick={() => showUpgrade({ tier: 'basic', featureName: 'актив CC' })}
  */
-import { createContext, useCallback, useContext, useState, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { Lock } from 'lucide-react';
 import { API_CSV_ENABLED } from '../../config/features';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
@@ -47,12 +47,19 @@ const TIER_LABELS: Record<string, { ru: string; price: string; desc: string }> =
 
 export function UpgradePromptProvider({ children }: { children: ReactNode }) {
     const [prompt, setPrompt] = useState<UpgradePromptProps | null>(null);
+    const location = useLocation();
 
     const showUpgrade = useCallback((props: UpgradePromptProps) => {
         setPrompt(props);
     }, []);
 
     const close = useCallback(() => setPrompt(null), []);
+
+    // Закрывать модалку при смене роута — иначе при переходе из неё (напр.
+    // «Зарегистрироваться и попробовать» → /login) она висела бы поверх страницы.
+    useEffect(() => {
+        setPrompt(null);
+    }, [location.pathname]);
 
     return (
         <UpgradeContext.Provider value={{ showUpgrade }}>
