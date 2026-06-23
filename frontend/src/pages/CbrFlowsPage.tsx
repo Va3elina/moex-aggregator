@@ -14,7 +14,7 @@
  *   • Footer (источник + дата обновления)
  */
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { LineChart, Landmark, DollarSign, Building2, ChevronDown, Users } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { METHODOLOGY } from '../data/methodology';
@@ -147,11 +147,20 @@ export default function CbrFlowsPage() {
   // Окно rail-навигатора по видимым периодам (таймлайн под графиком).
   const [navRange, setNavRange] = useState<[number, number]>([0, 0]);
 
-  // Сброс окна при смене набора периодов (тип / период / догрузка данных).
-  // useLayoutEffect — до отрисовки, чтобы не мелькал кадр с окном [0,0].
-  useLayoutEffect(() => {
+  // Сброс окна при смене НАБОРА периодов (тип / период-пресет / догрузка данных) —
+  // СИНХРОННО во время рендера (паттерн React «adjust state during render»), а не в
+  // эффекте. Эффект сбрасывал navRange ПОСЛЕ кадра, поэтому на первом кадре после
+  // смены периода окно оставалось старым → entrance-волна стартовала по неполному
+  // срезу displayPeriods, а после досброса уже не перезапускалась (animKey привязан
+  // к allPeriods, а не к срезу) → анимировался только «недостающий» промежуток, а
+  // старый период оставался статичным. Сравнение по ИДЕНТИЧНОСТИ visiblePeriods
+  // (новый массив при смене data/period, та же ссылка при драге таймлайна): драг
+  // окно не сбрасывает → волна не переигрывается, смена периода — переигрывает целиком.
+  const [prevVisible, setPrevVisible] = useState(visiblePeriods);
+  if (prevVisible !== visiblePeriods) {
+    setPrevVisible(visiblePeriods);
     setNavRange([0, Math.max(0, visiblePeriods.length - 1)]);
-  }, [visiblePeriods]);
+  }
 
   // Срез периодов по окну навигатора — его и рисует гистограмма.
   const displayPeriods = useMemo(() => {
