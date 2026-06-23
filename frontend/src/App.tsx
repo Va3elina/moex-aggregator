@@ -44,6 +44,7 @@ import DeliveryPage from './pages/DeliveryPage';
 import AddEmailPage from './pages/AddEmailPage';
 import VerifyEmailPage from './pages/VerifyEmailPage';
 import FAQPage from './pages/FAQPage';
+import GlossaryPage from './pages/GlossaryPage';
 import { API_CSV_ENABLED } from './config/features';
 
 // Mobile pages — lazy-loaded, desktop юзеры не качают этот код
@@ -251,6 +252,7 @@ export default function App() {
             <Route path="/refund" element={<RefundPage />} />
             <Route path="/delivery" element={<DeliveryPage />} />
             <Route path="/faq" element={<FAQPage />} />
+            <Route path="/glossary" element={<GlossaryPage />} />
             {/* /security удалён 2026-05-18, редирект на главную для старых bookmark'ов */}
             <Route path="/security" element={<Navigate to="/" replace />} />
             {/* API docs — KILL-SWITCH: скрыто до официального запуска (config/features.ts) */}

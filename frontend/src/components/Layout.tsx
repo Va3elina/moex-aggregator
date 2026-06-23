@@ -514,6 +514,9 @@ export default function Layout() {
           <Link to="/faq" className="transition-opacity hover:opacity-80" style={{ color: 'var(--text-secondary)' }}>
             FAQ
           </Link>
+          <Link to="/glossary" className="transition-opacity hover:opacity-80" style={{ color: 'var(--text-secondary)' }}>
+            Глоссарий
+          </Link>
           <Link to="/contacts" className="transition-opacity hover:opacity-80" style={{ color: 'var(--text-secondary)' }}>
             Контакты
           </Link>
