@@ -111,7 +111,7 @@ export default function TrialOfferCard({ lockedTier }: { lockedTier?: Tier }) {
                 </div>
                 <button
                     type="button"
-                    onClick={() => navigate('/login')}
+                    onClick={() => navigate('/login?next=/pricing')}
                     className="editorial-press"
                     style={{
                         width: '100%', padding: '12px 20px', borderRadius: 8, border: 'none',
