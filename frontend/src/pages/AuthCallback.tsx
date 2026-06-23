@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Loader2, CheckCircle, XCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { popPostLoginNext } from '../utils/postLoginRedirect';
 
 /**
  * OAuth callback handler.
@@ -83,7 +84,8 @@ export default function AuthCallback() {
                     setStatus('success');
                     // Telegram всегда без email → synthetic → ведём подтвердить почту
                     const tgSynthetic = (data.user?.email || '').endsWith('@oauth.local');
-                    setTimeout(() => navigate(tgSynthetic ? '/add-email' : '/'), 1000);
+                    const tgNext = popPostLoginNext();
+                    setTimeout(() => navigate(tgSynthetic ? '/add-email' : (tgNext || '/')), 1000);
                 })
                 .catch((err) => {
                     setStatus('error');
@@ -105,7 +107,8 @@ export default function AuthCallback() {
         if (sessionStorage.getItem(storageKey)) {
             if (auth.isAuthenticated) {
                 setStatus('success');
-                setTimeout(() => navigate('/'), 500);
+                const dest = popPostLoginNext();
+                setTimeout(() => navigate(dest || '/'), 500);
             }
             return;
         }
@@ -167,9 +170,10 @@ export default function AuthCallback() {
 
                 setStatus('success');
 
-                // Synthetic email (VK без email) → /add-email подтвердить почту; иначе на главную
+                // Synthetic email (VK без email) → /add-email подтвердить почту; иначе на next/главную
                 const synthetic = (data.user?.email || '').endsWith('@oauth.local');
-                setTimeout(() => navigate(synthetic ? '/add-email' : '/'), 1000);
+                const dest = popPostLoginNext();
+                setTimeout(() => navigate(synthetic ? '/add-email' : (dest || '/')), 1000);
             })
             .catch((err) => {
                 setStatus('error');
