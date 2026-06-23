@@ -15,14 +15,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  Check, Zap, Crown, Sparkles, X,
+  Check, Zap, Crown, Sparkles, X, Gift,
   Grid3X3, BarChart3, Wallet, Activity, Scale,
   CalendarDays, Banknote, LayoutGrid, Settings,
   type LucideIcon,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch } from '../services/api';
-import TrialOfferCard from '../components/tier/TrialOfferCard';
 import { API_CSV_ENABLED } from '../config/features';
 
 interface PlanVariant {
@@ -47,6 +46,10 @@ interface PlansResponse {
   tiers: TierCard[];
   /** Только для provider=tbank — публичный terminalKey для SDK init (SpeedPay). */
   terminal_key?: string | null;
+  /** Бесплатный пробный период включён (публичный флаг для гостевого CTA). */
+  trial_enabled?: boolean;
+  /** Длительность триала по tier'ам: {basic:14, pro:7}. */
+  trial_days?: Record<string, number>;
 }
 
 // Визуал tier'ов: иконка + акцентный цвет.
@@ -81,6 +84,7 @@ interface BillingStatus {
   plan_id: string | null;
   cancelled_at: string | null;
   expires_at: string | null;
+  trial_eligible?: boolean;   // можно ли предложить бесплатный пробный период
 }
 
 export default function PricingPage() {
@@ -114,6 +118,8 @@ export default function PricingPage() {
   // подтверждает информированное согласие со всем legal-stack'ом, ссылки
   // на каждый документ открываются отдельно в новой вкладке.
   const [agreementConsent, setAgreementConsent] = useState<boolean>(false);
+  // Триал ждёт подтверждения согласия (как pendingPlanId, но для /trial/start).
+  const [pendingTrial, setPendingTrial] = useState<{ tier: string; period: 'monthly' | 'yearly' } | null>(null);
 
   // Email теперь собирается и подтверждается ДО оплаты (сразу после регистрации/
   // OAuth или в профиле). В чекауте поля email больше нет — вместо этого
@@ -177,7 +183,49 @@ export default function PricingPage() {
   // Закрыть модалку без покупки
   const closeConsent = () => {
     setPendingPlanId(null);
+    setPendingTrial(null);
     setAgreementConsent(false);
+  };
+
+  // Старт триала: гость → регистрация; неподтверждённый email → верификация;
+  // иначе открываем consent-модалку в trial-режиме (tier+period с карточки).
+  const handleTrialStart = (tier: string, trialPeriod: 'monthly' | 'yearly') => {
+    if (!isAuthenticated) {
+      navigate('/login?next=/pricing');
+      return;
+    }
+    if (user && !user.is_verified) {
+      navigate(user.requires_email_setup ? '/add-email' : '/verify-email');
+      return;
+    }
+    setError(null);
+    setAgreementConsent(false);
+    setPendingPlanId(null);
+    setPendingTrial({ tier, period: trialPeriod });
+  };
+
+  // Подтверждение триала: создаём триал + привязку карты → редирект на T-Bank.
+  const confirmTrial = async () => {
+    if (!pendingTrial) return;
+    const { tier, period: trialPeriod } = pendingTrial;
+    setCheckoutLoading(`trial_${tier}`);
+    setError(null);
+    try {
+      const resp = await apiFetch('/api/billing/trial/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tier, period: trialPeriod, consent: true }),
+      });
+      const body = await resp.json().catch(() => ({}));
+      if (!resp.ok || !body.payment_url) {
+        throw new Error(body.detail || body.error?.message || 'Не удалось начать пробный период');
+      }
+      window.location.href = body.payment_url; // → привязка карты (T-Bank AddCard)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Ошибка');
+      setCheckoutLoading(null);
+      setPendingTrial(null);
+    }
   };
 
   // Подтверждение: создаём checkout-сессию на бэке и редиректим на pay.tbank.ru
@@ -230,11 +278,6 @@ export default function PricingPage() {
         <h1 className="text-3xl md:text-4xl font-bold text-theme-primary">Тарифы</h1>
       </div>
 
-      {/* Trial-оффер для новых пользователей. Сам гейтится по backend
-          trial_eligible (admin/активная подписка/уже брал → скрыт). */}
-      <div className="mx-auto max-w-md mb-8">
-        <TrialOfferCard />
-      </div>
 
       {/* Баннер STUB-режима — показываем только если провайдер 'stub' */}
       {data.provider === 'stub' && (
@@ -309,6 +352,18 @@ export default function PricingPage() {
           // Tier выше текущего ИЛИ same-tier-other-period → можно покупать.
           // Тарифы скрыты для admin (у него и так full access).
           const isLocked = isSamePlan || isLowerTier || isAdmin;
+
+          // Можно ли начать бесплатный пробный период с этой карточки:
+          // фича включена, tier платный, нет активной подписки, и юзер eligible
+          // (гость — да, ведём в регистрацию; залогиненный — по trial_eligible).
+          const trialDays = data.trial_days?.[tier.tier];
+          const canTrial =
+            tier.tier !== 'free' &&
+            data.trial_enabled === true &&
+            !!trialDays &&
+            !isLocked &&
+            !billing?.is_active &&
+            (!isAuthenticated || billing?.trial_eligible === true);
 
           return (
             <div
@@ -390,6 +445,17 @@ export default function PricingPage() {
                 )}
               </div>
 
+              {/* Бесплатный пробный период — видимая «фишка» карточки */}
+              {canTrial && (
+                <div
+                  className="flex items-center gap-1.5 mb-4 -mt-2 text-sm font-semibold"
+                  style={{ color: meta.color }}
+                >
+                  <Gift size={16} className="flex-shrink-0" />
+                  <span>Первые {trialDays} дней — бесплатно</span>
+                </div>
+              )}
+
               {/* Features list — пока placeholder, реальные появятся потом */}
               <ul className="flex-1 space-y-2 mb-5 text-sm">
                 {getFeaturesList(tier.tier).map((feat, i) => (
@@ -427,6 +493,19 @@ export default function PricingPage() {
                     : isSamePlan
                     ? 'Текущий план'
                     : 'Меньший тариф'}
+                </button>
+              ) : canTrial ? (
+                <button
+                  onClick={() => handleTrialStart(tier.tier, period)}
+                  disabled={checkoutLoading === `trial_${tier.tier}`}
+                  className="w-full py-3 rounded-xl text-sm font-semibold transition-colors disabled:opacity-50"
+                  style={{ backgroundColor: meta.color, color: 'var(--bg-primary)' }}
+                >
+                  {checkoutLoading === `trial_${tier.tier}`
+                    ? 'Открываем...'
+                    : isAuthenticated
+                      ? `Попробовать ${trialDays} дней бесплатно`
+                      : 'Зарегистрироваться и попробовать'}
                 </button>
               ) : (
                 <button
@@ -499,6 +578,33 @@ export default function PricingPage() {
           canConfirm={consentReady}
         />
       )}
+
+      {/* Consent для триала: то же окно, но с раскрытием суммы/даты первого
+          списания (ЗоЗПП ст.10) — информированное согласие на автосписание. */}
+      {pendingTrial && (() => {
+        const tcard = data.tiers.find((t) => t.tier === pendingTrial.tier);
+        const v = pendingTrial.period === 'yearly' ? tcard?.yearly : tcard?.monthly;
+        const days = data.trial_days?.[pendingTrial.tier] ?? 7;
+        const chargeDate = new Date(Date.now() + days * 86400000)
+          .toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+        return (
+          <ConsentModal
+            agreementConsent={agreementConsent}
+            onAgreementChange={setAgreementConsent}
+            onConfirm={confirmTrial}
+            onClose={closeConsent}
+            isLoading={checkoutLoading === `trial_${pendingTrial.tier}`}
+            canConfirm={consentReady}
+            trialInfo={{
+              tierRu: pendingTrial.tier === 'pro' ? 'Pro' : 'Basic',
+              days,
+              amount: v?.amount ?? 0,
+              periodRu: pendingTrial.period === 'yearly' ? 'год' : 'месяц',
+              chargeDate,
+            }}
+          />
+        );
+      })()}
     </div>
   );
 }
@@ -526,6 +632,7 @@ function ConsentModal({
   onClose,
   isLoading,
   canConfirm,
+  trialInfo,
 }: {
   agreementConsent: boolean;
   onAgreementChange: (v: boolean) => void;
@@ -533,7 +640,11 @@ function ConsentModal({
   onClose: () => void;
   isLoading: boolean;
   canConfirm: boolean;
+  // Если задан — режим подтверждения бесплатного пробного периода (раскрытие
+  // суммы/даты первого списания + явное согласие на автосписание).
+  trialInfo?: { tierRu: string; days: number; amount: number; periodRu: string; chargeDate: string };
 }) {
+  const amountStr = trialInfo ? trialInfo.amount.toLocaleString('ru-RU') : '';
   return (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center px-4 py-6"
@@ -578,18 +689,40 @@ function ConsentModal({
             paddingRight: '2rem',
           }}
         >
-          Подтверждение
+          {trialInfo ? 'Бесплатный пробный период' : 'Подтверждение'}
         </h2>
         <p
           style={{
             fontSize: 'var(--fs-sm, 13px)',
             color: 'var(--text-secondary)',
             lineHeight: 1.5,
-            marginBottom: '1.25rem',
+            marginBottom: trialInfo ? '0.75rem' : '1.25rem',
           }}
         >
-          Перед оплатой подтвердите согласие со следующими условиями:
+          {trialInfo
+            ? `Бесплатно ${trialInfo.days} дней, затем автоматическое списание. Подтвердите согласие:`
+            : 'Перед оплатой подтвердите согласие со следующими условиями:'}
         </p>
+
+        {trialInfo && (
+          <div
+            style={{
+              background: 'var(--bg-tertiary)',
+              border: '1px solid var(--border-color)',
+              borderRadius: 10,
+              padding: '12px 14px',
+              marginBottom: '1rem',
+              fontSize: 'var(--fs-sm, 13px)',
+              color: 'var(--text-secondary)',
+              lineHeight: 1.5,
+            }}
+          >
+            Тариф <b>{trialInfo.tierRu}</b> — бесплатно <b>{trialInfo.days} дней</b>. Затем{' '}
+            <b>{trialInfo.chargeDate}</b> спишется <b>{amountStr} ₽</b> за {trialInfo.periodRu}.
+            Карта не списывается сейчас. Отменить и отвязать карту можно в любой момент
+            до этой даты в профиле — тогда списания не будет.
+          </div>
+        )}
 
         {/* Единый consent на 3 документа — Соглашение, Privacy, Recurrent.
             Раньше было 2 чекбокса + toggle, сейчас одна галка покрывает весь
@@ -656,7 +789,9 @@ function ConsentModal({
               color: 'var(--bg-primary)',
             }}
           >
-            {isLoading ? 'Создаём…' : 'Подтвердить'}
+            {isLoading
+              ? (trialInfo ? 'Открываем…' : 'Создаём…')
+              : (trialInfo ? 'Начать бесплатно' : 'Подтвердить')}
           </button>
         </div>
       </div>
