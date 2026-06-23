@@ -14,6 +14,7 @@
  */
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { Gift } from 'lucide-react';
 import { apiFetch } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -92,8 +93,17 @@ export default function TrialOfferCard({ lockedTier }: { lockedTier?: Tier }) {
                 border: '2px solid var(--accent, #FF5C2B)',
                 borderRadius: 10, padding: 16, marginBottom: 20,
             }}>
-                <div style={{ fontWeight: 700, fontSize: 'var(--fs-lg)', marginBottom: 4 }}>
-                    🎁 {lead}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                    <span style={{
+                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                        width: 28, height: 28, borderRadius: 8, flexShrink: 0,
+                        background: 'var(--accent, #FF5C2B)',
+                        border: '2px solid var(--text-primary, #0A0A0A)',
+                        boxShadow: 'var(--shadow-hard-chip, 2px 2px 0 var(--text-primary, #0A0A0A))',
+                    }}>
+                        <Gift size={16} strokeWidth={2.4} color="#fff" />
+                    </span>
+                    <span style={{ fontWeight: 700, fontSize: 'var(--fs-lg)' }}>{lead}</span>
                 </div>
                 <div style={{ color: 'var(--text-secondary, #666)', fontSize: 'var(--fs-sm)', marginBottom: 14, lineHeight: 1.5 }}>
                     Зарегистрируйтесь и пользуйтесь бесплатно. Карта спишется только по
@@ -186,8 +196,17 @@ export default function TrialOfferCard({ lockedTier }: { lockedTier?: Tier }) {
                 marginBottom: 20,
             }}
         >
-            <div style={{ fontWeight: 700, fontSize: 'var(--fs-lg)', marginBottom: 4 }}>
-                🎁 Бесплатный пробный период
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                <span style={{
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    width: 28, height: 28, borderRadius: 8, flexShrink: 0,
+                    background: 'var(--accent, #FF5C2B)',
+                    border: '2px solid var(--text-primary, #0A0A0A)',
+                    boxShadow: 'var(--shadow-hard-chip, 2px 2px 0 var(--text-primary, #0A0A0A))',
+                }}>
+                    <Gift size={16} strokeWidth={2.4} color="#fff" />
+                </span>
+                <span style={{ fontWeight: 700, fontSize: 'var(--fs-lg)' }}>Бесплатный пробный период</span>
             </div>
             <div style={{ color: 'var(--text-secondary, #666)', fontSize: 'var(--fs-sm)', marginBottom: 12 }}>
                 Карта не спишется сейчас. Спишем только по окончании, если не отмените.
