@@ -1,0 +1,5 @@
+# Ложные срабатывания gitleaks (не секреты).
+# generic-api-key на имени localStorage-ключа TRIAL_OFFER_SEEN_KEY со значением
+# 'frame_trial_offer_seen_v1' — это имя ключа хранилища, не секрет. Live-код уже
+# переименован (TRIAL_OFFER_SEEN_LS), но старый коммит остаётся в истории PR.
+119cf7c141129b9049597a6accc726846ec766a1:frontend/src/components/tier/UpgradeModal.tsx:generic-api-key:20
