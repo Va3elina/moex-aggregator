@@ -13,8 +13,9 @@
  * POST /api/billing/trial/start → редирект на привязку карты (T-Bank AddCard).
  */
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { apiFetch } from '../../services/api';
+import { useAuth } from '../../contexts/AuthContext';
 
 type Tier = 'basic' | 'pro';
 type Period = 'monthly' | 'yearly';
@@ -31,7 +32,10 @@ interface Prices {
 }
 
 export default function TrialOfferCard({ lockedTier }: { lockedTier?: Tier }) {
+    const { isAuthenticated } = useAuth();
+    const navigate = useNavigate();
     const [eligible, setEligible] = useState<boolean | null>(null);
+    const [trialEnabled, setTrialEnabled] = useState(false);
     const [prices, setPrices] = useState<Prices>({ basic: {}, pro: {} });
     const [tier, setTier] = useState<Tier | null>(lockedTier ?? null);
     const [period, setPeriod] = useState<Period | null>(null);
@@ -43,14 +47,11 @@ export default function TrialOfferCard({ lockedTier }: { lockedTier?: Tier }) {
         let cancelled = false;
         (async () => {
             try {
-                const [sRes, pRes] = await Promise.all([
-                    apiFetch('/api/billing/status'),
-                    fetch('/api/billing/plans'),
-                ]);
-                if (cancelled) return;
-                const s = sRes.ok ? await sRes.json() : {};
+                // /plans — публичный (доступен гостю): даёт trial_enabled + цены.
+                const pRes = await fetch('/api/billing/plans');
                 const p = pRes.ok ? await pRes.json() : {};
-                setEligible(s.trial_eligible === true);
+                if (cancelled) return;
+                setTrialEnabled(p.trial_enabled === true);
                 const find = (t: string) =>
                     ((p.tiers || []).find((x: { tier: string }) => x.tier === t) || {}) as
                         { monthly?: { amount: number }; yearly?: { amount: number } };
@@ -60,12 +61,59 @@ export default function TrialOfferCard({ lockedTier }: { lockedTier?: Tier }) {
                     basic: { monthly: b.monthly?.amount, yearly: b.yearly?.amount },
                     pro: { monthly: pr.monthly?.amount, yearly: pr.yearly?.amount },
                 });
+                // trial_eligible считается только для залогиненных (/status под auth).
+                if (isAuthenticated) {
+                    const sRes = await apiFetch('/api/billing/status');
+                    const s = sRes.ok ? await sRes.json() : {};
+                    if (cancelled) return;
+                    setEligible(s.trial_eligible === true);
+                } else {
+                    setEligible(false);
+                }
             } catch {
-                if (!cancelled) setEligible(false);
+                if (!cancelled) { setTrialEnabled(false); setEligible(false); }
             }
         })();
         return () => { cancelled = true; };
-    }, []);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isAuthenticated]);
+
+    // Гость (не зарегистрирован) видит оффер, но действие — регистрация: триал
+    // требует аккаунт (eligibility + верифицированный email для чека 54-ФЗ).
+    // Показываем только если фича включена (публичный trial_enabled из /plans).
+    if (!isAuthenticated) {
+        if (!trialEnabled) return null;
+        const lead = lockedTier
+            ? `Попробуйте ${lockedTier === 'pro' ? 'Pro' : 'Basic'} бесплатно — ${TRIAL_DAYS[lockedTier]} дней`
+            : 'Бесплатный период: Basic — 14 дней, Pro — 7 дней';
+        return (
+            <div style={{
+                background: 'var(--bg-tertiary, #f5f1e8)',
+                border: '2px solid var(--accent, #FF5C2B)',
+                borderRadius: 10, padding: 16, marginBottom: 20,
+            }}>
+                <div style={{ fontWeight: 700, fontSize: 'var(--fs-lg)', marginBottom: 4 }}>
+                    🎁 {lead}
+                </div>
+                <div style={{ color: 'var(--text-secondary, #666)', fontSize: 'var(--fs-sm)', marginBottom: 14, lineHeight: 1.5 }}>
+                    Зарегистрируйтесь и пользуйтесь бесплатно. Карта спишется только по
+                    окончании пробного периода, если не отмените.
+                </div>
+                <button
+                    type="button"
+                    onClick={() => navigate('/login')}
+                    className="editorial-press"
+                    style={{
+                        width: '100%', padding: '12px 20px', borderRadius: 8, border: 'none',
+                        background: 'var(--accent, #FF5C2B)', color: '#fff', fontWeight: 700,
+                        fontSize: 'var(--fs-base)', cursor: 'pointer', minHeight: 48,
+                    }}
+                >
+                    Зарегистрироваться и попробовать
+                </button>
+            </div>
+        );
+    }
 
     if (eligible !== true) return null;
 

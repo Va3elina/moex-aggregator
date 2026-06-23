@@ -26,7 +26,7 @@ from api.billing import service as billing_service
 from api.billing import invites as invite_service
 from api.billing import trial as trial_service
 from api.billing.factory import get_payment_provider
-from api.billing.plans import get_plan, list_public_plans, tiers_grouped
+from api.billing.plans import TRIAL_DAYS, get_plan, list_public_plans, tiers_grouped
 from api.billing.tiers import user_tier
 from api.database import get_db
 from api.models.payment_method import UserPaymentMethod
@@ -113,6 +113,10 @@ async def list_plans():
         "provider": provider.name,
         "currency": "RUB",
         "tiers": tiers_grouped(),
+        # Публичный флаг для гостевого trial-тизера (гость не может звать /status).
+        # trial_eligible для залогиненных по-прежнему считается в /status.
+        "trial_enabled": trial_service.TRIAL_ENABLED,
+        "trial_days": dict(TRIAL_DAYS),
     }
     if provider.name == "tbank":
         # terminalKey — публичный (зашит в каждый Init request, отображается
