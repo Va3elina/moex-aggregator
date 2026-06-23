@@ -169,6 +169,11 @@ services:
       # не монтируются → 404; csv_export/api_access=False даже для Pro).
       # Включить на запуске: PUBLIC_API_CSV_ENABLED=1 в .env + фронт API_CSV_ENABLED=true.
       - PUBLIC_API_CSV_ENABLED=${PUBLIC_API_CSV_ENABLED:-}
+      # Бесплатный пробный период (free trial). TRIAL_ENABLED=1 включает /trial/*
+      # и trial_eligible в /status. TRIAL_HASH_SALT — соль для хешей идентичности
+      # анти-абуза (152-ФЗ); НЕ менять после запуска (инвалидирует дедуп-хеши).
+      - TRIAL_ENABLED=${TRIAL_ENABLED:-0}
+      - TRIAL_HASH_SALT=${TRIAL_HASH_SALT:-}
       # Python не пишет .pyc файлы в /app/api/__pycache__ при импорте
       # модулей. Совместимо с read_only rootfs. Лёгкая просадка на cold
       # import — pyc-кэш отсутствует. Compensated кэш гранулы Python 3.11.
