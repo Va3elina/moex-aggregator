@@ -16,6 +16,9 @@ frontend/dist/
 .env
 .env.*
 !.env.example
+# SEO service-account ключи (Google Search Console) — секрет
+scripts/seo/*service-account*.json
+scripts/seo/*.sa.json
 logs/
 
 # Деплой-заметки с паролями
