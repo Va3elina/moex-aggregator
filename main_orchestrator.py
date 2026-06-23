@@ -794,6 +794,21 @@ class MainOrchestrator:
         except Exception as e:
             log.error("billing.renew_expiring_subs failed: %s", e, exc_info=True)
 
+        # T-1 напоминания об окончании пробного периода (best practice, не закон).
+        # Идемпотентно через trial_reminder_sent; no-op если триалов нет / флаг выкл.
+        def _do_trial_reminders():
+            from api.billing.trial import send_trial_reminders
+            db = SessionLocal()
+            try:
+                return send_trial_reminders(db)
+            finally:
+                db.close()
+        try:
+            tr = await asyncio.to_thread(_do_trial_reminders)
+            result["trial_reminders_sent"] = tr.get("sent", 0)
+        except Exception as e:
+            log.error("billing.send_trial_reminders failed: %s", e, exc_info=True)
+
         log.info("  💳 Billing hourly result: %s", result)
         return result
 

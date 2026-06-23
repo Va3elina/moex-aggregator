@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 
 from api.billing import service as billing_service
 from api.billing import invites as invite_service
+from api.billing import trial as trial_service
 from api.billing.factory import get_payment_provider
 from api.billing.plans import get_plan, list_public_plans, tiers_grouped
 from api.billing.tiers import user_tier
@@ -67,6 +68,12 @@ class StatusResponse(BaseModel):
     expires_at: str | None = None
     cancelled_at: str | None = None      # NULL → активна и продлится, NOT NULL → отменена, доступ до expires_at
     retention_eligible: bool = False     # можно ли предложить retention-скидку 40% (active + автопродление + не использована)
+    # === Trial ===
+    is_trial: bool = False               # текущая подписка — пробный период
+    trial_ends_at: str | None = None     # когда кончится триал (= expires_at) и спишется next_charge
+    trial_eligible: bool = False         # можно ли предложить начать триал (только если нет подписки)
+    next_charge_amount: float | None = None  # сколько спишется по окончании триала (полная цена plan_id)
+    next_charge_at: str | None = None    # дата первого платного списания (= trial_ends_at)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -136,6 +143,22 @@ async def my_status(
         and sub.payment_method_id is not None
         and not getattr(user, "retention_used", False)
     )
+
+    # Trial-поля: если активная подписка — триал, отдаём дату окончания и сумму
+    # будущего списания; если подписки нет — считаем eligibility под CTA «попробовать».
+    is_trial = bool(sub and getattr(sub, "is_trial", False))
+    next_amount = None
+    next_at = None
+    if is_trial:
+        plan = get_plan(sub.plan_id)
+        next_amount = float(plan.amount) if plan else None
+        next_at = sub.expires_at.isoformat() if sub.expires_at else None
+    trial_eligible = bool(
+        sub is None
+        and trial_service.TRIAL_ENABLED
+        and trial_service.check_trial_eligibility(db, user)["eligible"]
+    )
+
     return StatusResponse(
         tier=user_tier(user),
         is_active=sub is not None,
@@ -145,6 +168,11 @@ async def my_status(
         expires_at=sub.expires_at.isoformat() if sub and sub.expires_at else None,
         cancelled_at=sub.cancelled_at.isoformat() if sub and sub.cancelled_at else None,
         retention_eligible=retention_eligible,
+        is_trial=is_trial,
+        trial_ends_at=next_at,
+        trial_eligible=trial_eligible,
+        next_charge_amount=next_amount,
+        next_charge_at=next_at,
     )
 
 
@@ -494,6 +522,60 @@ async def user_refund(
     if not result["ok"]:
         raise HTTPException(502, result.get("message", "Не удалось оформить возврат"))
     return result
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  5d. TRIAL — старт пробного периода (привязка карты) + завершение
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class TrialStartRequest(BaseModel):
+    tier: str                     # 'basic' / 'pro'
+    period: str = "monthly"       # что списать по окончании: monthly / yearly
+    consent: bool = False         # явное согласие на автосписание (ГК 438) — обязательно
+
+
+@router.post("/trial/start")
+async def trial_start(
+    body: TrialStartRequest,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Старт бесплатного пробного периода: создаёт pending триал-строку и инициирует
+    привязку карты через T-Bank AddCard (0₽ авторизация, без расчёта). Возвращает
+    payment_url — фронт редиректит туда; после возврата зовёт POST /trial/complete.
+
+    Гейтится TRIAL_ENABLED + check_trial_eligibility (анти-абуз). Требует consent=true.
+    """
+    origin = request.headers.get("origin") or request.headers.get("referer") or "https://xn--80aklbnczmv.xn--p1ai"
+    ip = request.client.host if request.client else None
+    try:
+        return trial_service.start_trial(
+            db, user, body.tier, body.period, origin.rstrip("/"),
+            consent=body.consent, ip=ip,
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        log.error("trial_start failed user=%s: %s", user.id, e, exc_info=True)
+        raise HTTPException(502, "Не удалось начать пробный период. Попробуйте позже.")
+
+
+@router.post("/trial/complete")
+async def trial_complete(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Завершение привязки карты: GetAddCardState → RebillId → активация триала.
+    Фронт зовёт на /billing/trial-success. Идемпотентно.
+    """
+    try:
+        return trial_service.complete_trial_for_user(db, user)
+    except Exception as e:
+        log.error("trial_complete failed user=%s: %s", user.id, e, exc_info=True)
+        raise HTTPException(502, "Не удалось завершить привязку карты.")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

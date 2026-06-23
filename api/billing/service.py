@@ -145,7 +145,10 @@ def create_checkout_for_user(
         raise ValueError("Подтвердите email перед оплатой")
 
     active_sub = current_subscription(db, user)
-    if active_sub and not active_sub.cancelled_at:
+    # is_trial исключаем из дедуп-гейта: во время пробного периода юзер ДОЛЖЕН
+    # иметь возможность оформить платную подписку досрочно (купленная active того
+    # же tier через Guard 1 в renew_expiring_subs заглушит конвертацию триала).
+    if active_sub and not active_sub.cancelled_at and not active_sub.is_trial:
         active_plan = get_plan(active_sub.plan_id)
         if active_plan:
             active_level = TIER_LEVELS.get(active_plan.tier, 0)
@@ -499,6 +502,14 @@ def renew_expiring_subs(db: Session, hours_window: int = 24) -> dict:
 
     for sub in expiring:
         summary["checked"] += 1
+
+        # Триал: заряжаем ТОЛЬКО по факту окончания (expires_at <= now), а НЕ за
+        # 24ч вперёд (как платные продления) — иначе спишем раньше конца
+        # бесплатного периода. expire_overdue идёт перед renew, grace-48ч ниже
+        # ловит недавно-истёкший триал → конвертация в течение ~1ч после конца.
+        if sub.is_trial and sub.expires_at and sub.expires_at > now:
+            summary["skipped"] += 1
+            continue
 
         # Guard 1 (анти-double-charge): дедуп по TIER, а не по plan_id. После
         # card-1 fallback follow-up имеет ДРУГОЙ plan_id (tier_monthly вместо
