@@ -403,6 +403,11 @@ export default function BuffettPage() {
                     formatValue={(v) => `${v.toFixed(2)} трлн ₽`}
                     formatPrimaryAxis={(v) => String(Math.round(v))}
                     niceTicks={true}
+                    // Сетка привязана к ПРАВОЙ оси (Кап/ВВП) — главное значение.
+                    // niceTicksSecondary даёт круглые деления ratio, gridAxis их
+                    // кладёт линиями. Левая ось (капитализация) — visual reference.
+                    niceTicksSecondary={true}
+                    gridAxis="secondary"
                     formatSecondaryValue={(v) => `${v.toFixed(2)}%`}
                     formatSecondaryAxis={(v) => `${v.toFixed(1)}%`}
                     primaryLabel={isMobile ? 'Кап. (₽)' : 'Капитализация (трлн ₽)'}
@@ -434,6 +439,9 @@ export default function BuffettPage() {
                     formatValue={(v) => `${v.toFixed(2)} трлн ₽`}
                     formatPrimaryAxis={(v) => String(Math.round(v))}
                     niceTicks={true}
+                    // Сетка по ПРАВОЙ оси (Кап/M2), как в cap-gdp выше.
+                    niceTicksSecondary={true}
+                    gridAxis="secondary"
                     formatSecondaryValue={(v) => `${(v * 100).toFixed(2)}%`}
                     formatSecondaryAxis={(v) => `${(v * 100).toFixed(1)}%`}
                     primaryLabel={isMobile ? 'Кап. (₽)' : 'Капитализация (трлн ₽)'}
