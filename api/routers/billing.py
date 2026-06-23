@@ -822,3 +822,83 @@ async def admin_list_user_payment_methods(
         d["customer_key"] = pm.customer_key
         items.append(d)
     return {"user_id": user_id, "email": user.email, "items": items}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  12. ADMIN — AddCard probe (тест привязки карты без оплаты для пробного периода)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class AddCardTestRequest(BaseModel):
+    check_type: str = "3DS"   # NO / HOLD / 3DS / 3DSHOLD
+
+
+@router.post("/admin/addcard_test")
+async def admin_addcard_test(
+    body: AddCardTestRequest,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """
+    ИЗОЛИРОВАННЫЙ ТЕСТ привязки карты через T-Bank AddCard (для пробного периода).
+
+    Проверяет блокеры до постройки полного триала:
+      - включён ли AddCard на терминале (если нет — T-Bank вернёт ошибку);
+      - возвращается ли RebillId (через GetAddCardState);
+      - формируется ли кассовый чек (НЕ должен при HOLD/3DS — это холд+отмена).
+
+    Только admin. Деньги за подписку не списываются (HOLD/3DS делают холд+возврат
+    1₽). CustomerKey = str(admin.id). Открой PaymentURL, введи карту, затем дёрни
+    GET /admin/addcard_state/{request_key}.
+    """
+    provider = get_payment_provider()
+    if provider.name != "tbank":
+        raise HTTPException(400, f"AddCard доступен только на T-Bank (сейчас {provider.name})")
+    if body.check_type not in ("NO", "HOLD", "3DS", "3DSHOLD"):
+        raise HTTPException(400, "check_type: NO | HOLD | 3DS | 3DSHOLD")
+
+    ck = str(admin.id)
+    # AddCustomer идемпотентен; ошибку «уже существует» проглатываем
+    try:
+        provider.add_customer(ck, email=admin.email)  # type: ignore[attr-defined]
+    except Exception as e:
+        log.warning("addcard_test: add_customer warning: %s", e)
+
+    try:
+        res = provider.add_card(ck, check_type=body.check_type)  # type: ignore[attr-defined]
+    except Exception as e:
+        log.error("addcard_test: add_card failed: %s", e)
+        raise HTTPException(502, f"AddCard error: {e}")
+
+    log.info("addcard_test: admin=%s check_type=%s -> %s", admin.id, body.check_type, res.get("RequestKey"))
+    return {
+        "ok": bool(res.get("Success")),
+        "request_key": res.get("RequestKey"),
+        "payment_url": res.get("PaymentURL"),
+        "raw": res,
+    }
+
+
+@router.get("/admin/addcard_state/{request_key}")
+async def admin_addcard_state(
+    request_key: str,
+    admin: User = Depends(require_admin),
+):
+    """
+    Статус привязки карты по RequestKey (T-Bank GetAddCardState).
+    При COMPLETED содержит RebillId/CardId/Pan — это и проверяем.
+    """
+    provider = get_payment_provider()
+    if provider.name != "tbank":
+        raise HTTPException(400, f"AddCard доступен только на T-Bank (сейчас {provider.name})")
+    try:
+        res = provider.get_add_card_state(request_key)  # type: ignore[attr-defined]
+    except Exception as e:
+        raise HTTPException(502, f"GetAddCardState error: {e}")
+    return {
+        "ok": bool(res.get("Success")),
+        "status": res.get("Status"),
+        "rebill_id": res.get("RebillId"),
+        "card_id": res.get("CardId"),
+        "pan": res.get("Pan"),
+        "raw": res,
+    }
