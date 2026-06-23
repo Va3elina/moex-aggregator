@@ -48,6 +48,27 @@ BASIC_MONTHLY = 2900.00
 PRO_MONTHLY = 5900.00
 
 
+# === Бесплатный пробный период (free trial) ===
+# Длительность по tier'ам (решение session 2026-06-23): Basic 14 дней, Pro 7.
+TRIAL_DAYS: dict[str, int] = {
+    "basic": 14,
+    "pro": 7,
+}
+
+# Привязочный платёж для получения rebill_id (T-Bank выдаёт RebillId только при
+# реальном CONFIRMED-платеже с Recurrent='Y'; возвращаем сразу после привязки).
+TRIAL_BIND_AMOUNT = 1.00
+
+# Версия текста согласия на автосписание — фиксируем в subscriptions при старте
+# триала (доказательство акцепта при споре: ГК ст.438, ЗоЗПП ст.10).
+TRIAL_CONSENT_VERSION = "trial-v1"
+
+
+def trial_days(tier: str) -> int | None:
+    """Длительность триала для tier ('basic'→14, 'pro'→7) или None если триала нет."""
+    return TRIAL_DAYS.get(tier)
+
+
 def _make_pair(tier: str, title_base: str, monthly_price: float, popular: bool = False) -> list[Plan]:
     """Создаёт пару monthly + yearly для одного tier'а. Годовая = 9.6×месячных (скидка 20%)."""
     # 20% скидка относительно (monthly × 12). Округление до 10 ₽ для эстетики.

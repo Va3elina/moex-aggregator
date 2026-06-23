@@ -145,7 +145,10 @@ def create_checkout_for_user(
         raise ValueError("Подтвердите email перед оплатой")
 
     active_sub = current_subscription(db, user)
-    if active_sub and not active_sub.cancelled_at:
+    # is_trial исключаем из дедуп-гейта: во время пробного периода юзер ДОЛЖЕН
+    # иметь возможность оформить платную подписку досрочно (купленная active того
+    # же tier через Guard 1 в renew_expiring_subs заглушит конвертацию триала).
+    if active_sub and not active_sub.cancelled_at and not active_sub.is_trial:
         active_plan = get_plan(active_sub.plan_id)
         if active_plan:
             active_level = TIER_LEVELS.get(active_plan.tier, 0)
@@ -335,12 +338,17 @@ def activate_from_webhook(db: Session, event: WebhookEvent) -> Subscription | No
         Subscription.cancelled_at.is_(None),
     ).all()
     for old_sub in lower_subs:
-        if TIER_LEVELS.get(old_sub.tier, 0) < new_level:
+        # Гасим авто-продление: (а) подписок строго НИЖЕ нового tier (апгрейд),
+        # (б) ЛЮБОГО активного ТРИАЛА — покупка/конверсия закрывает пробный период,
+        # чтобы он не списался повторно (ревью #1/#3). is_trial есть только у
+        # триал-строк → реальные платные подписки тем же/выше tier не затрагиваются.
+        if old_sub.is_trial or TIER_LEVELS.get(old_sub.tier, 0) < new_level:
             old_sub.cancelled_at = now
             log.info(
-                "activate_from_webhook: upgrade to %s — отключено авто-продление "
-                "нижней подписки #%s (tier=%s, дослужит до %s)",
-                sub.tier, old_sub.id, old_sub.tier, old_sub.expires_at,
+                "activate_from_webhook: %s — отключено авто-продление подписки #%s "
+                "(tier=%s, is_trial=%s, дослужит до %s)",
+                "конверсия/покупка поверх триала" if old_sub.is_trial else f"upgrade to {sub.tier}",
+                old_sub.id, old_sub.tier, old_sub.is_trial, old_sub.expires_at,
             )
 
     # Поднимаем роль user'а если нужно
@@ -500,6 +508,14 @@ def renew_expiring_subs(db: Session, hours_window: int = 24) -> dict:
     for sub in expiring:
         summary["checked"] += 1
 
+        # Триал: заряжаем ТОЛЬКО по факту окончания (expires_at <= now), а НЕ за
+        # 24ч вперёд (как платные продления) — иначе спишем раньше конца
+        # бесплатного периода. expire_overdue идёт перед renew, grace-48ч ниже
+        # ловит недавно-истёкший триал → конвертация в течение ~1ч после конца.
+        if sub.is_trial and sub.expires_at and sub.expires_at > now:
+            summary["skipped"] += 1
+            continue
+
         # Guard 1 (анти-double-charge): дедуп по TIER, а не по plan_id. После
         # card-1 fallback follow-up имеет ДРУГОЙ plan_id (tier_monthly вместо
         # tier_yearly) — матч по plan_id его бы не увидел → крон списал бы год
@@ -560,6 +576,14 @@ def renew_expiring_subs(db: Session, hours_window: int = 24) -> dict:
                     sub.id, result.get("subscription_id"), user.id, charge_plan_id,
                     " (monthly fallback)" if sub.fallback_done else "",
                 )
+                # Триал сконвертирован в платную строку → закрываем триал-строку
+                # ТЕРМИНАЛЬНО (cancelled_at), чтобы она НАВСЕГДА выпала из
+                # expiring-запроса и не списалась повторно, если платная строка
+                # позже уйдёт из active/pending (возврат). Не полагаемся на Guard 1
+                # (ревью #1). Касается ТОЛЬКО is_trial — платные не трогаем.
+                if sub.is_trial and sub.cancelled_at is None:
+                    sub.cancelled_at = now
+                    db.commit()
             else:
                 summary["failed"] += 1
                 kind = result.get("failure_kind")
@@ -748,6 +772,10 @@ def sync_pending_for_user(
         Subscription.user_id == user.id,
         Subscription.status.in_(["pending", "active"]),
         Subscription.yk_payment_id.isnot(None),
+        # Триал-строки исключаем явно: у них yk_payment_id=NULL (RequestKey лежит в
+        # trial_request_key), поэтому они и так не попадают, но фильтр —
+        # defense-in-depth против ложной отмены триала через GetState (ревью #4/#9).
+        Subscription.is_trial.is_(False),
         # pending — узкое окно; active — без ограничения, проверяем все
         # (refund может прийти через месяц после оплаты).
         sa_or_(

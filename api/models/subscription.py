@@ -86,6 +86,23 @@ class Subscription(Base):
     fallback_done = Column(Boolean, nullable=False, default=False, server_default="false")
     renewal_last_error = Column(String(32), nullable=True)
 
+    # === Free trial (пробный период) ===
+    # Триал — ОТДЕЛЬНАЯ строка: is_trial=true, status='active', amount=0,
+    #   period='trial', plan_id=РЕАЛЬНОГО целевого плана (basic_monthly/pro_*),
+    #   yk_payment_id=NULL (иммунна к webhook'у привязочного 1₽-платежа).
+    #   Реальная цена конверсии по окончании берётся из plan_id через plans.py:
+    #   renew_expiring_subs списывает get_plan(plan_id).amount, НЕ sub.amount=0.
+    # trial_reminder_sent: T-1 уведомление об окончании триала отправлено (анти-дубль).
+    # trial_consent_at/version: зафиксированный акцепт автосписания (ГК 438/ЗоЗПП 10).
+    is_trial = Column(Boolean, nullable=False, default=False, server_default="false")
+    trial_reminder_sent = Column(Boolean, nullable=False, default=False, server_default="false")
+    trial_consent_at = Column(DateTime(timezone=True), nullable=True)
+    trial_consent_version = Column(String(16), nullable=True)
+    # trial_request_key — T-Bank AddCard RequestKey для завершения привязки.
+    # ОТДЕЛЬНО от yk_payment_id (которое NULL у триала) — иначе RequestKey попал бы
+    # в namespace PaymentId и sync_pending_for_user дёрнул бы по нему GetState.
+    trial_request_key = Column(String(64), nullable=True)
+
     # === Провайдер реквизиты ===
     # yk_payment_id — id платежа у провайдера (T-Bank PaymentId или ЮKassa id),
     # заполняется при создании checkout-сессии. Используется в webhook'е для
