@@ -85,6 +85,27 @@ function buildBreadcrumb(path: string, meta: SeoMeta, canonical: string): object
     };
 }
 
+// Статический блок внутренних ссылок на главные индикаторы. Краулер (особенно
+// до выполнения JS) видел в #root только текст, но НИ ОДНОЙ <a href> — вся
+// навигация рисуется React'ом. Без реальных ссылок слабее перелинковка и почти
+// нет шанса на «быстрые ссылки»/sitelinks (движок берёт кандидатов из заметных
+// внутренних ссылок). Добавляем настоящие <a> на 7 индикаторов; React заменяет
+// #root при гидрации, так что для пользователя блок невидим. Источник истины —
+// SEO_META (breadcrumb==='Индикаторы'), новый индикатор подхватится сам.
+const NAV_LINKS = Object.entries(SEO_META)
+    .filter(([, m]) => m.breadcrumb === 'Индикаторы' && !m.noindex)
+    .map(([p, m]) => {
+        const label = escapeText(m.title.split(' | ')[0].split(' — ')[0]);
+        return `<li style="margin:0"><a href="${p}" style="color:#1a1a1a">${label}</a></li>`;
+    })
+    .join('');
+const NAV_BLOCK =
+    '<nav aria-label="Индикаторы Фрейма" style="margin-top:28px">' +
+    '<ul style="list-style:none;padding:0;margin:0;display:flex;flex-wrap:wrap;' +
+    'gap:10px 18px;justify-content:center;font-size:0.95rem">' +
+    NAV_LINKS +
+    '</ul></nav>';
+
 function renderRoute(path: string, meta: SeoMeta): string {
     const canonical = `${CANONICAL_HOST}${path}`;
     let html = template;
@@ -185,6 +206,7 @@ function renderRoute(path: string, meta: SeoMeta): string {
             'font-family:Georgia,\'Times New Roman\',serif;color:#1a1a1a;text-align:center">' +
             `<h1 style="font-size:1.7rem;line-height:1.25;font-weight:700;margin:0 0 14px">${h1}</h1>` +
             (intro ? `<p style="font-size:1.05rem;line-height:1.65;color:#555;margin:0">${intro}</p>` : '') +
+            NAV_BLOCK +
             '</div>';
         html = html.replace('<div id="root"></div>', `<div id="root">${block}</div>`);
     }
