@@ -31,6 +31,10 @@ class WebhookEvent:
     customer_key: str | None = None      # CustomerKey которым была привязана
     card_last4: str | None = None        # последние 4 цифры PAN для UI
     card_brand: str | None = None        # 'VISA' / 'MASTERCARD' / 'MIR' / ...
+    # card_fingerprint — sha256 маскированного PAN (first6+last4). Стабилен между
+    # разными CustomerKey/rebill_id (та же карта → тот же отпечаток), поэтому
+    # годится как кросс-аккаунтный анти-абуз ключ для триала. 152-ФЗ: это ХЕШ.
+    card_fingerprint: str | None = None
 
 
 class PaymentProvider(Protocol):

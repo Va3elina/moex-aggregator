@@ -401,6 +401,15 @@ class TBankProvider:
         pan = data.get("Pan") or ""
         card_last4 = pan[-4:] if len(pan) >= 4 else None
 
+        # card_fingerprint — sha256 маскированного PAN. Маска (first6+last4) у
+        # одной карты одинакова между разными CustomerKey/RebillId, поэтому это
+        # рабочий кросс-аккаунтный анти-абуз ключ для триала (rebill_id — нет, он
+        # per-привязка). 152-ФЗ: храним хеш, не сам PAN. Требуется ≥10 значащих
+        # символов маски, иначе слишком слабо — тогда None.
+        card_fingerprint = None
+        if len(pan) >= 10:
+            card_fingerprint = hashlib.sha256(pan.encode("utf-8")).hexdigest()
+
         # CardType: 'VISA' / 'MASTERCARD' / 'MIR' / 'MAESTRO' / 'JCB' / ...
         card_brand = data.get("CardType")
 
@@ -414,6 +423,7 @@ class TBankProvider:
             customer_key=customer_key,
             card_last4=card_last4,
             card_brand=card_brand,
+            card_fingerprint=card_fingerprint,
         )
 
     # ─────────────────────────────────────────────────────────────────────
@@ -452,6 +462,56 @@ class TBankProvider:
             )
             return None
         return data
+
+    # ─────────────────────────────────────────────────────────────────────
+    #  AddCard — привязка карты БЕЗ оплаты подписки (для пробного периода)
+    #  Поток: AddCustomer → AddCard(CheckType) → клиент проходит форму/3DS →
+    #         GetAddCardState(RequestKey) отдаёт RebillId для будущих Charge.
+    #  CheckType: NO (без проверки) | HOLD (холд+отмена, без расчёта) |
+    #             3DS (3DS + холд+отмена) | 3DSHOLD (проверка поддержки 3DS).
+    #  https://developer.tbank.ru/eacq/api/v2
+    # ─────────────────────────────────────────────────────────────────────
+    def _post_signed(self, path: str, body: dict[str, Any]) -> dict:
+        """POST к T-Bank: добавляет TerminalKey + Token, парсит JSON.
+
+        Только для запросов БЕЗ Receipt/DATA (AddCustomer/AddCard/GetAddCardState) —
+        _make_token считает подпись по плоским скалярам, что здесь и нужно.
+        """
+        payload = dict(body)
+        payload["TerminalKey"] = self.terminal_key
+        payload["Token"] = self._make_token(payload)
+        try:
+            with httpx.Client(timeout=15) as client:
+                resp = client.post(f"{TBANK_API_BASE}/{path}", json=payload)
+        except httpx.HTTPError as e:
+            log.error("TBank.%s: HTTP error: %s", path, e)
+            raise
+        if resp.status_code >= 400:
+            log.error("TBank.%s: %s %s", path, resp.status_code, resp.text)
+            resp.raise_for_status()
+        return resp.json()
+
+    def add_customer(self, customer_key: str, email: str | None = None) -> dict:
+        """Регистрирует покупателя у эквайера (нужно до AddCard). Идемпотентно."""
+        body: dict[str, Any] = {"CustomerKey": str(customer_key)[:36]}
+        if email and not email.endswith("@oauth.local"):
+            body["Email"] = email[:64]
+        return self._post_signed("AddCustomer", body)
+
+    def add_card(self, customer_key: str, check_type: str = "3DS") -> dict:
+        """Инициирует привязку карты. Возвращает {Success, PaymentURL, RequestKey, ...}.
+
+        Клиента редиректим на PaymentURL (ввод карты/3DS). Деньги НЕ списываются
+        (HOLD/3DS делают холд+отмену). RebillId забираем через get_add_card_state.
+        """
+        return self._post_signed("AddCard", {
+            "CustomerKey": str(customer_key)[:36],
+            "CheckType": check_type,
+        })
+
+    def get_add_card_state(self, request_key: str) -> dict:
+        """Статус привязки по RequestKey. При COMPLETED содержит RebillId/CardId/Pan."""
+        return self._post_signed("GetAddCardState", {"RequestKey": str(request_key)})
 
     # ─────────────────────────────────────────────────────────────────────
     #  charge — POST /Init + POST /Charge (рекуррентное списание)
