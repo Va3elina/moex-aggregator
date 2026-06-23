@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Mail, Lock, Eye, EyeOff, ArrowRight, X } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { safeInternalPath, setPostLoginNext } from '../utils/postLoginRedirect';
 
 // SVG иконки провайдеров — официальные стили (Yandex 2021 rebrand, VK ID 2021)
 const VKIcon = () => (
@@ -39,12 +40,15 @@ interface OAuthProvider {
 export default function LoginPage() {
     const navigate = useNavigate();
     const auth = useAuth();
+    const [searchParams] = useSearchParams();
+    // Куда вернуть после входа (?next=). Валидируем (только внутренние пути).
+    const urlNext = safeInternalPath(searchParams.get('next'));
     const [mode, setMode] = useState<'login' | 'register'>('login');
 
-    // Если уже залогинен — редирект на главную
+    // Если уже залогинен — редирект на next (или главную)
     useEffect(() => {
-        if (auth.isAuthenticated) navigate('/');
-    }, [auth.isAuthenticated, navigate]);
+        if (auth.isAuthenticated) navigate(urlNext || '/');
+    }, [auth.isAuthenticated, navigate, urlNext]);
 
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -105,7 +109,7 @@ export default function LoginPage() {
 
             // Сохраняем токены через AuthContext (login mode)
             await auth.login({ access_token: data.access_token, refresh_token: data.refresh_token });
-            navigate('/');
+            navigate(urlNext || '/');
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Произошла ошибка');
         } finally {
@@ -115,6 +119,8 @@ export default function LoginPage() {
 
     // Обработка OAuth
     const handleOAuth = async (providerId: string) => {
+        // next переживёт round-trip провайдера через localStorage → AuthCallback.
+        setPostLoginNext(urlNext);
         if (providerId === 'telegram') {
             // Прямой редирект на Telegram OAuth (без popup-виджета)
             const botId = '8604817597';
@@ -170,7 +176,7 @@ export default function LoginPage() {
     };
 
     const handleClose = () => {
-        navigate('/');
+        navigate(urlNext || '/');
     };
 
     return (
