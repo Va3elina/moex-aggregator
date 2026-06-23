@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { apiFetch } from '../services/api';
+import TrialOfferCard from '../components/tier/TrialOfferCard';
 import { API_CSV_ENABLED } from '../config/features';
 
 interface PlanVariant {
@@ -227,6 +228,12 @@ export default function PricingPage() {
           подробности по способам оплаты есть в блоке внизу. */}
       <div className="text-center mb-6 md:mb-8">
         <h1 className="text-3xl md:text-4xl font-bold text-theme-primary">Тарифы</h1>
+      </div>
+
+      {/* Trial-оффер для новых пользователей. Сам гейтится по backend
+          trial_eligible (admin/активная подписка/уже брал → скрыт). */}
+      <div className="mx-auto max-w-md mb-8">
+        <TrialOfferCard />
       </div>
 
       {/* Баннер STUB-режима — показываем только если провайдер 'stub' */}
