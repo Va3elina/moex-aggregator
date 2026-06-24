@@ -958,16 +958,10 @@ async def admin_addcard_test(
     except Exception as e:
         log.warning("addcard_test: add_customer warning: %s", e)
 
-    # Success/Fail URL — иначе ErrorCode 9 на редиректе после привязки.
-    origin = request.headers.get("origin") or request.headers.get("referer") or ""
-    origin = origin.rstrip("/") or "https://xn--80aklbnczmv.xn--p1ai"
+    # URL НЕ передаём: T-Bank AddCard их не honor-ит из запроса (204/9) и не
+    # откатывается на кабинет, если они присланы. Редирект — из настроек терминала.
     try:
-        res = provider.add_card(  # type: ignore[attr-defined]
-            ck,
-            check_type=body.check_type,
-            success_url=f"{origin}/billing/success",
-            fail_url=f"{origin}/billing/fail",
-        )
+        res = provider.add_card(ck, check_type=body.check_type)  # type: ignore[attr-defined]
     except Exception as e:
         log.error("addcard_test: add_card failed: %s", e)
         raise HTTPException(502, f"AddCard error: {e}")

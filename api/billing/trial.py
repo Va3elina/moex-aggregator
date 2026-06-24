@@ -227,18 +227,17 @@ def start_trial(
     db.add(sub)
     db.flush()
 
-    base = base_url.rstrip("/")
     try:
         provider.add_customer(str(user.id), email=user.email)  # type: ignore[attr-defined]
     except Exception as e:
         log.warning("start_trial add_customer warning user=%s: %s", user.id, e)
 
     try:
-        res = provider.add_card(  # type: ignore[attr-defined]
-            str(user.id), check_type="3DS",
-            success_url=f"{base}/billing/trial-success",
-            fail_url=f"{base}/billing/trial-fail",
-        )
+        # URL НЕ передаём в запросе: T-Bank AddCard их не honor-ит (в подписи →
+        # ErrorCode 204, в теле без подписи → ErrorCode 9 «url пуст», и при этом
+        # НЕ откатывается на кабинет). Success/Fail-страницы прописаны в кабинете
+        # терминала → редирект после привязки берётся оттуда. См. trial_system memory.
+        res = provider.add_card(str(user.id), check_type="3DS")  # type: ignore[attr-defined]
     except Exception as e:
         sub.status = "failed"
         db.commit()
