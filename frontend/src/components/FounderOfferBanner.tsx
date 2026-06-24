@@ -163,8 +163,8 @@ export default function FounderOfferBanner() {
         onClick={dismiss}
         aria-label="Закрыть"
         style={{
-          position: 'absolute', top: 8, right: 8,
-          width: 32, height: 32, display: 'inline-flex',
+          position: 'absolute', top: 4, right: 4,
+          width: 44, height: 44, display: 'inline-flex',  // 44px touch-target (мобилка)
           alignItems: 'center', justifyContent: 'center',
           background: 'transparent', border: 'none', cursor: 'pointer',
           color: 'var(--text-secondary, #666)', borderRadius: 8,

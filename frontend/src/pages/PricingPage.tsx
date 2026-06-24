@@ -723,19 +723,20 @@ function ConsentModal({
       aria-labelledby="consent-modal-title"
     >
       <div
-        className="relative w-full max-w-md rounded-2xl border p-6"
+        className="relative w-full max-w-md rounded-2xl border p-6 overflow-y-auto"
         style={{
-          background: 'var(--bg-secondary)',
+          background: 'var(--bg-primary)',
           borderColor: 'var(--border-color)',
           boxShadow: '0 24px 64px rgba(0,0,0,0.4)',
+          maxHeight: 'calc(100dvh - 48px)',  // мобилка: не вылезать за экран, кнопка не скрыта
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Close X */}
+        {/* Close X — 44px touch-target (мобилка) */}
         <button
           onClick={onClose}
           aria-label="Закрыть"
-          className="absolute top-3 right-3 w-8 h-8 rounded-full flex items-center justify-center transition-colors"
+          className="absolute top-2 right-2 w-11 h-11 rounded-full flex items-center justify-center transition-colors"
           style={{
             color: 'var(--text-secondary)',
             background: 'transparent',
