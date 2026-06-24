@@ -97,7 +97,7 @@ export default function TrialSuccessPage() {
     }}>
       {state === 'active' && (
         <>
-          <CheckCircle2 size={56} color="var(--accent, #FF5C2B)" style={{ marginBottom: 16 }} />
+          <CheckCircle2 size={56} color="var(--accent, #FF5C2B)" style={{ display: 'block', margin: '0 auto 16px' }} />
           <h1 style={{ fontSize: 'var(--fs-2xl)', marginBottom: 12 }}>Пробный период активирован</h1>
           <p style={{ color: 'var(--text-secondary, #666)', marginBottom: 8, lineHeight: 1.6 }}>
             Доступ открыт{expiresAt ? <> до <b>{fmtDate(expiresAt)}</b></> : ''}. Списание произойдёт
@@ -114,7 +114,7 @@ export default function TrialSuccessPage() {
 
       {state === 'pending' && (
         <>
-          <Clock size={56} color="var(--text-muted, #999)" style={{ marginBottom: 16 }} />
+          <Clock size={56} color="var(--text-muted, #999)" style={{ display: 'block', margin: '0 auto 16px' }} />
           <h1 style={{ fontSize: 'var(--fs-xl)', marginBottom: 12 }}>Активируем пробный период…</h1>
           <p style={{ color: 'var(--text-secondary, #666)' }}>Подтверждаем привязку карты, секунду.</p>
         </>
@@ -122,7 +122,7 @@ export default function TrialSuccessPage() {
 
       {(state === 'timeout' || state === 'error') && (
         <>
-          <AlertCircle size={56} color="var(--text-muted, #999)" style={{ marginBottom: 16 }} />
+          <AlertCircle size={56} color="var(--text-muted, #999)" style={{ display: 'block', margin: '0 auto 16px' }} />
           <h1 style={{ fontSize: 'var(--fs-xl)', marginBottom: 12 }}>Почти готово</h1>
           <p style={{ color: 'var(--text-secondary, #666)', marginBottom: 8 }}>
             {reason || 'Не удалось подтвердить привязку карты автоматически.'}
