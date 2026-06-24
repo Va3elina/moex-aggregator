@@ -201,9 +201,14 @@ function renderRoute(path: string, meta: SeoMeta): string {
     if (!meta.noindex) {
         const h1 = escapeText(meta.title.split(' | ')[0]);
         const intro = escapeText(meta.intro || meta.description || '');
+        // Блок ВИЗУАЛЬНО СКРЫТ (sr-only/off-screen): иначе он мелькал тёмным
+        // текстом до монтирования React (FOUC). Не-JS краулеры читают текст из
+        // HTML-исходника (CSS-позиционирование им безразлично), JS-краулеры и
+        // пользователи получают React-контент (он заменяет #root при гидрации) —
+        // SEO не страдает, флэша нет.
         const block =
-            '<div class="seo-prerender" style="max-width:680px;margin:10vh auto;padding:0 24px;' +
-            'font-family:Georgia,\'Times New Roman\',serif;color:#1a1a1a;text-align:center">' +
+            '<div class="seo-prerender" style="position:absolute;width:1px;height:1px;' +
+            'overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);margin:-1px;padding:0;border:0">' +
             `<h1 style="font-size:1.7rem;line-height:1.25;font-weight:700;margin:0 0 14px">${h1}</h1>` +
             (intro ? `<p style="font-size:1.05rem;line-height:1.65;color:#555;margin:0">${intro}</p>` : '') +
             NAV_BLOCK +
