@@ -103,7 +103,7 @@ class TBankProvider:
     # ─────────────────────────────────────────────────────────────────────
     #  Подпись Token
     # ─────────────────────────────────────────────────────────────────────
-    def _make_token(self, params: dict[str, Any]) -> str:
+    def _make_token(self, params: dict[str, Any], *, extra_exclude: tuple[str, ...] = ()) -> str:
         """
         T-Bank Token algorithm:
           1. Берём все top-level скалярные параметры (исключая Receipt, DATA, Token).
@@ -111,11 +111,17 @@ class TBankProvider:
           3. Сортируем по ключу в алфавитном порядке.
           4. Конкатенируем значения (без разделителей).
           5. SHA256 → hex lowercase.
+
+        extra_exclude — доп. поля, НЕ участвующие в подписи для конкретного метода.
+        Для AddCard T-Bank считает токен БЕЗ SuccessURL/FailURL/NotificationURL
+        (эмпирически проверено: с URL в подписи → ErrorCode 204 «Неверный токен»,
+        URL только в теле → Success). У Init, наоборот, URL в подписи участвуют —
+        поэтому исключение точечное (через _post_signed), а не глобальное.
         """
         # bool/None/dict исключаем — Token считается только по простым скалярам
         flat: dict[str, str] = {}
         for k, v in params.items():
-            if k in ("Receipt", "DATA", "Token"):
+            if k in ("Receipt", "DATA", "Token") or k in extra_exclude:
                 continue
             if v is None:
                 continue
@@ -479,7 +485,11 @@ class TBankProvider:
         """
         payload = dict(body)
         payload["TerminalKey"] = self.terminal_key
-        payload["Token"] = self._make_token(payload)
+        # AddCard: URL-поля идут в теле, но НЕ в подписи (иначе ErrorCode 204).
+        # Для AddCustomer/GetAddCardState URL-полей нет → исключение безвредно.
+        payload["Token"] = self._make_token(
+            payload, extra_exclude=("SuccessURL", "FailURL", "NotificationURL")
+        )
         try:
             with httpx.Client(timeout=15) as client:
                 resp = client.post(f"{TBANK_API_BASE}/{path}", json=payload)
