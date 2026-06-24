@@ -373,6 +373,13 @@ def cancel_by_webhook(db: Session, event: WebhookEvent) -> Subscription | None:
     if not sub:
         return None
 
+    # Триал: возврат 1₽-привязки — ОЖИДАЕМЫЙ (инициируем сами после активации) и
+    # НЕ должен гасить активный триал. У активного триала yk_payment_id обнулён в
+    # complete_trial_binding, поэтому сюда он обычно не попадёт; гард — на случай гонки.
+    if getattr(sub, "is_trial", False) and sub.status == "active":
+        log.info("cancel_by_webhook: пропускаем активный триал sub=%s (event=%s)", sub.id, event.event_type)
+        return sub
+
     now = datetime.now(timezone.utc)
     if event.event_type == "refund.succeeded":
         sub.status = "refunded"

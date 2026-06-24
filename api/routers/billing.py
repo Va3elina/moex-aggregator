@@ -298,7 +298,14 @@ async def webhook(request: Request, db: Session = Depends(get_db)):
 
     try:
         if event.event_type == "payment.succeeded":
-            billing_service.activate_from_webhook(db, event)
+            # Триал: 1₽-привязка принадлежит is_trial-строке → активируем ТРИАЛ
+            # (N дней, 0₽) + сохраняем карту + возврат 1₽, а не платную подписку.
+            from api.models.subscription import Subscription as _Sub
+            sub = db.query(_Sub).filter(_Sub.yk_payment_id == event.payment_id).first()
+            if sub is not None and getattr(sub, "is_trial", False):
+                trial_service.complete_trial_binding(db, sub, event)
+            else:
+                billing_service.activate_from_webhook(db, event)
         elif event.event_type in ("payment.canceled", "refund.succeeded"):
             billing_service.cancel_by_webhook(db, event)
         else:
