@@ -9,6 +9,7 @@
 Frontend берёт отсюда же цены через GET /api/billing/plans.
 Меняется цена? → правишь здесь, фронт подхватывает автоматически.
 """
+import os
 from dataclasses import dataclass
 
 
@@ -44,7 +45,11 @@ class Plan:
 # Финальные цены из спецификации тарифов 2026-05-20:
 #   Basic — основной платный, realtime, почти весь функционал
 #   Pro   — полный функционал + API + Excel/CSV + TradingView/Т-терминал
-BASIC_MONTHLY = 2900.00
+# Цена basic env-управляема для прод-тестов рекуррента (списание малой суммой
+# вместо 2900₽). По умолчанию 2900 → поведение прода без изменений. Для теста:
+# BASIC_MONTHLY_OVERRIDE=30 в .env api И orchestrator → recreate. Откат — убрать
+# env (без деплоя). Затрагивает цену в /plans, checkout и конверсию триала.
+BASIC_MONTHLY = float(os.getenv("BASIC_MONTHLY_OVERRIDE") or 2900.00)
 PRO_MONTHLY = 5900.00
 
 

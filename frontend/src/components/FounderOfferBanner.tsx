@@ -32,6 +32,10 @@ const COPY = {
     'когда вы её оформляли, автопродление ещё не было настроено, поэтому она просто ' +
     'истекла. В благодарность хотим подарить вам месяц Pro.',
   cta: 'Активировать месяц Pro',
+  // Контакт для обратной связи (если захочет поделиться опытом).
+  contactLead: 'Будем рады услышать ваш опыт — пишите',
+  contactHandle: '@TorSasha',
+  contactUrl: 'https://t.me/TorSasha',
   // Шаг согласия (раскрытие условий автосписания).
   consentLead: (days: number, amountStr: string, dateStr: string) =>
     `Бесплатно ${days} дней Pro. Затем ${dateStr} спишется ${amountStr} и далее ` +
@@ -173,9 +177,19 @@ export default function FounderOfferBanner() {
         <>
           <p style={{
             color: 'var(--text-secondary, #555)', fontSize: 'var(--fs-sm, 0.9rem)',
-            lineHeight: 1.55, margin: '0 0 14px',
+            lineHeight: 1.55, margin: '0 0 10px',
           }}>
             {COPY.body}
+          </p>
+          <p style={{
+            color: 'var(--text-secondary, #666)', fontSize: 'var(--fs-xs, 0.8rem)',
+            lineHeight: 1.5, margin: '0 0 14px',
+          }}>
+            {COPY.contactLead}{' '}
+            <a href={COPY.contactUrl} target="_blank" rel="noopener noreferrer"
+               style={{ color: 'var(--accent, #FF5C2B)', fontWeight: 700, textDecoration: 'none' }}>
+              {COPY.contactHandle}
+            </a>
           </p>
           {err && (
             <div style={{ color: 'var(--accent, #FF5C2B)', fontSize: 'var(--fs-sm)', marginBottom: 10 }}>{err}</div>
