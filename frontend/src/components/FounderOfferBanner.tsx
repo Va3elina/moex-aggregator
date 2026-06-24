@@ -20,6 +20,7 @@ import { useLocation } from 'react-router-dom';
 import { Heart, X } from 'lucide-react';
 import { apiFetch } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
+import { useIsMobile } from '../hooks/useIsMobile';
 
 const DISMISS_KEY = 'frame_founder_offer_dismissed_v1';
 
@@ -71,6 +72,7 @@ function firstChargeDate(days: number): string {
 
 export default function FounderOfferBanner() {
   const { isAuthenticated } = useAuth();
+  const isMobile = useIsMobile();
   const loc = useLocation();
   const [offer, setOffer] = useState<FounderOffer | null>(null);
   const [dismissed, setDismissed] = useState(
@@ -133,11 +135,22 @@ export default function FounderOfferBanner() {
       aria-label="Подарок первому подписчику"
       style={{
         position: 'fixed',
-        left: '50%',
-        bottom: 'max(16px, env(safe-area-inset-bottom))',
-        transform: 'translateX(-50%)',
-        zIndex: 1000,
-        width: 'min(440px, calc(100vw - 24px))',
+        // Mobile: ставим НАД фикс. навигацией (.fm-bottomrail z=20, bottom=0) и
+        // page-actions — те же значения, что у проверенного MobilePWABanner,
+        // иначе баннер накрывал бы нижнее меню. Desktop: карточка снизу по центру.
+        zIndex: 50,
+        ...(isMobile
+          ? {
+              left: 'clamp(12px, 4vw, 20px)',
+              right: 'clamp(12px, 4vw, 20px)',
+              bottom: 'clamp(120px, 30vw, 145px)',
+            }
+          : {
+              left: '50%',
+              transform: 'translateX(-50%)',
+              bottom: 'max(16px, env(safe-area-inset-bottom))',
+              width: 'min(440px, calc(100vw - 24px))',
+            }),
         background: 'var(--bg-primary, #FBF7EF)',
         border: '2px solid var(--text-primary, #0A0A0A)',
         borderRadius: 14,
