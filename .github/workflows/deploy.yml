@@ -37,52 +37,35 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
-      - name: SSH deploy
-        # Пин по commit-SHA (не плавающий тег): если тег перепереставят на
-        # вредоносный коммит, он получил бы PROD_SSH_KEY (root на проде).
-        uses: appleboy/ssh-action@7eaf76671a0d7eec5d98ee897acda4f968735a17 # v1.2.0
-        with:
-          host: 103.88.243.232
-          username: root
-          key: ${{ secrets.PROD_SSH_KEY }}
-          command_timeout: 20m
-          script: |
-            set -e
-            cd /opt/frame
-            before=$(git rev-parse HEAD)
-            # reset --hard, НЕ pull: деплой-таргет = ЧИСТЫЙ checkout origin/main.
-            # Если кто-то случайно scp'ил/правил файл на проде, git pull падал бы
-            # ("local changes would be overwritten ... Aborting"). reset --hard
-            # форсит чистое состояние (легитимные правки давно закоммичены).
-            git fetch origin main
-            git reset --hard origin/main
-            after=$(git rev-parse HEAD)
-            changed=$(git diff --name-only "$before" "$after")
-            echo "=== Changed files ==="; echo "$changed"
+      # Репо нужен для scripts/prod_deploy.sh — пайпим его на сервер по SSH.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
-            # Убрать висячие renamed-контейнеры от прерванного предыдущего recreate
-            # (иначе "container name ..._frame-api-1 already in use" → деплой падал).
-            docker rm -f $(docker ps -aq --filter 'name=_frame-api-1') 2>/dev/null || true
-
-            # api всегда (запекает frontend dist + Python код api)
-            docker compose build api
-            docker compose up -d --force-recreate api
-
-            # orchestrator — ОТДЕЛЬНЫЙ image; пересобираем только если менялся его код
-            if echo "$changed" | grep -qE '^(OI/|Funds/|Candles/|Macro/|Commodity/|main_orchestrator\.py|requirements\.txt|Dockerfile$)'; then
-              echo "=== Orchestrator code changed -> rebuild ==="
-              docker rm -f $(docker ps -aq --filter 'name=_frame-orchestrator-1') 2>/dev/null || true
-              docker compose build orchestrator
-              docker compose up -d --force-recreate orchestrator
+      # SSH-деплой с РЕТРАЯМИ: сеть GitHub-раннер → РФ-хост периодически флапает
+      # (dial tcp ...:22: i/o timeout). Без ретраев каждый такой деплой падал и
+      # слал "failed"-уведомление, хотя код корректный. 6 попыток (≈до 5 мин)
+      # ловят транзиентные окна потери пакетов. scripts/prod_deploy.sh идемпотентен
+      # (reset --hard + rebuild), повтор безопасен. Скрипт из checkout (актуальный
+      # origin/main), не с сервера — без version-lag.
+      - name: SSH deploy (retry on flaky network)
+        env:
+          PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$PROD_SSH_KEY" > ~/.ssh/prod_key
+          chmod 600 ~/.ssh/prod_key
+          ok=0
+          for i in 1 2 3 4 5 6; do
+            echo "=== SSH deploy: попытка $i/6 ==="
+            if ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30 \
+                   -o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
+                   -i ~/.ssh/prod_key root@103.88.243.232 'bash -s' < scripts/prod_deploy.sh; then
+              ok=1; break
             fi
-
-            # alert-bot — host-side systemd; рестарт только если менялся его код
-            if echo "$changed" | grep -qE '^signals/alert_bot\.py$'; then
-              echo "=== alert_bot changed -> systemctl restart ==="
-              systemctl restart frame-alert-bot
-            fi
-
-            echo "=== HEAD на проде: $(git rev-parse --short HEAD) ==="
+            echo "попытка $i не удалась (вероятно SSH-таймаут до РФ-хоста), повтор через 20с..."
+            sleep 20
+          done
+          rm -f ~/.ssh/prod_key
+          test "$ok" = "1" || { echo "::error::все 6 SSH-попыток провалились — сеть до прод-хоста недоступна"; exit 1; }
 
       - name: Health + SW check
         run: |
