@@ -310,9 +310,16 @@ export default function PricingPage() {
               Спасибо, что были первым — дарим месяц Pro
             </span>
           </div>
-          <p style={{ color: 'var(--text-secondary, #555)', fontSize: 'var(--fs-sm, 0.9rem)', lineHeight: 1.55, margin: '0 0 14px' }}>
+          <p style={{ color: 'var(--text-secondary, #555)', fontSize: 'var(--fs-sm, 0.9rem)', lineHeight: 1.55, margin: '0 0 8px' }}>
             Бесплатно {billing.founder_offer.days} дней Pro. Карта привязывается через защищённую проверку
             Т-Банка (0&nbsp;₽), списание — только по окончании периода, если не отмените.
+          </p>
+          <p style={{ color: 'var(--text-secondary, #666)', fontSize: 'var(--fs-xs, 0.8rem)', lineHeight: 1.5, margin: '0 0 14px' }}>
+            Будем рады услышать ваш опыт — пишите{' '}
+            <a href="https://t.me/TorSasha" target="_blank" rel="noopener noreferrer"
+               style={{ color: 'var(--accent, #FF5C2B)', fontWeight: 700, textDecoration: 'none' }}>
+              @TorSasha
+            </a>
           </p>
           <button
             type="button"

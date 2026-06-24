@@ -180,6 +180,10 @@ services:
       # FOUNDER_OFFER_DAYS — длительность (по умолч. 30), FOUNDER_OFFER_TIER — pro.
       - FOUNDER_OFFER_USER_IDS=${FOUNDER_OFFER_USER_IDS:-}
       - FOUNDER_OFFER_DAYS=${FOUNDER_OFFER_DAYS:-30}
+      # Прод-тест рекуррента: переопределить цену basic малой суммой (напр. 30).
+      # Пусто = штатные 2900₽. Должна совпадать в api И orchestrator (конверсию
+      # считает оркестратор). Откат — убрать из .env + recreate (без деплоя).
+      - BASIC_MONTHLY_OVERRIDE=${BASIC_MONTHLY_OVERRIDE:-}
       # Python не пишет .pyc файлы в /app/api/__pycache__ при импорте
       # модулей. Совместимо с read_only rootfs. Лёгкая просадка на cold
       # import — pyc-кэш отсутствует. Compensated кэш гранулы Python 3.11.
@@ -236,6 +240,8 @@ services:
       - SMTP_PASSWORD=${SMTP_PASSWORD:-}
       - SMTP_FROM=${SMTP_FROM:-}
       - SMTP_FROM_NAME=${SMTP_FROM_NAME:-Фрейм}
+      # Прод-тест рекуррента: цена basic для конверсии триала (должна совпадать с api).
+      - BASIC_MONTHLY_OVERRIDE=${BASIC_MONTHLY_OVERRIDE:-}
     command: ["python", "main_orchestrator.py"]
     healthcheck:
       test: ["CMD-SHELL", "test -f /proc/1/cmdline"]
