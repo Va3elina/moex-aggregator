@@ -37,6 +37,55 @@ TRIAL_ENABLED = os.getenv("TRIAL_ENABLED", "").lower() in ("1", "true", "yes")
 # Соль для хешей идентификаторов анти-абуза (152-ФЗ: храним только хеш).
 _HASH_SALT = os.getenv("TRIAL_HASH_SALT", "")
 
+# ─────────────────────────── Founder offer (персональный жест) ───────────────
+# Точечный обход «триал только новым пользователям» для конкретных user_id
+# (напр. первый подписчик, у кого подписка истекла, т.к. при покупке автопродление
+# ещё не было настроено). Whitelist через env (как TRIAL_ENABLED — dark launch):
+# пока FOUNDER_OFFER_USER_IDS пуст, поведение прода = ноль изменений.
+#   FOUNDER_OFFER_USER_IDS — "21" или "21,42" (пусто = выключено)
+#   FOUNDER_OFFER_DAYS     — длительность бесплатного периода (по умолч. 30)
+#   FOUNDER_OFFER_TIER     — какой tier дарим (по умолч. pro)
+# Founder НЕ трогает публичную check_trial_eligibility: обход живёт отдельной
+# веткой в start_trial/complete_trial_for_user, поэтому /status.trial_eligible
+# для остальных юзеров не меняется (никаких утечек CTA).
+FOUNDER_OFFER_USER_IDS = {
+    int(x) for x in os.getenv("FOUNDER_OFFER_USER_IDS", "").replace(" ", "").split(",")
+    if x.strip().isdigit()
+}
+FOUNDER_OFFER_DAYS = int(os.getenv("FOUNDER_OFFER_DAYS", "30") or "30")
+FOUNDER_OFFER_TIER = os.getenv("FOUNDER_OFFER_TIER", "pro") or "pro"
+
+
+def is_founder_offer(user: User | None) -> bool:
+    """User в founder-whitelist (имеет право на персональный подарочный период)."""
+    return bool(user is not None and getattr(user, "id", None) in FOUNDER_OFFER_USER_IDS)
+
+
+def founder_offer_state(db: Session, user: User) -> dict | None:
+    """Состояние founder-оффера для баннера. None = не показывать.
+
+    Показываем если: юзер в whitelist, фича-триал включён, триал ещё не брал,
+    нет активной подписки, email верифицирован (нужен для чека 54-ФЗ при
+    конверсии). После активации (trial_used=True / появилась активная подписка)
+    → None → баннер сам исчезает, серверного dismiss-состояния не требуется.
+    """
+    if not TRIAL_ENABLED or not is_founder_offer(user):
+        return None
+    if getattr(user, "trial_used", False):
+        return None
+    if billing_service.current_subscription(db, user) is not None:
+        return None
+    email = getattr(user, "email", "") or ""
+    if (not user.is_verified) or email.endswith("@oauth.local"):
+        return None
+    plan = get_plan(f"{FOUNDER_OFFER_TIER}_monthly")
+    return {
+        "tier": FOUNDER_OFFER_TIER,
+        "period": "monthly",
+        "days": FOUNDER_OFFER_DAYS,
+        "amount": float(plan.amount) if plan else None,
+    }
+
 
 # ─────────────────────────── Идентичность / хеши ───────────────────────────
 def _hash(value: str) -> str:
@@ -140,9 +189,21 @@ def start_trial(
     if not get_plan(plan_id):
         raise ValueError(f"Неизвестный план {plan_id}")
 
-    elig = check_trial_eligibility(db, user)
-    if not elig["eligible"]:
-        raise ValueError(elig["reason"] or "Пробный период недоступен")
+    # Founder: обходим только «триал доступен новым пользователям» (он уже платил).
+    # Базовые гарантии держим: нет активной подписки + верифицированный email
+    # (для чека 54-ФЗ при конверсии) + consent/salt (проверены выше). Длительность
+    # — FOUNDER_OFFER_DAYS (30), а не стандартные trial_days(tier)=7.
+    if is_founder_offer(user):
+        if billing_service.current_subscription(db, user) is not None:
+            raise ValueError("У вас уже есть активная подписка")
+        em = getattr(user, "email", "") or ""
+        if (not user.is_verified) or em.endswith("@oauth.local"):
+            raise ValueError("Подтвердите email перед активацией")
+        days = FOUNDER_OFFER_DAYS
+    else:
+        elig = check_trial_eligibility(db, user)
+        if not elig["eligible"]:
+            raise ValueError(elig["reason"] or "Пробный период недоступен")
 
     provider = get_payment_provider()
     if provider.name != "tbank":
@@ -224,11 +285,21 @@ def complete_trial_for_user(db: Session, user: User) -> dict:
 
     # Повторный eligibility-гейт (TOCTOU между start и complete): юзер мог за это
     # время оформить платную подписку / стать неэлигибельным. См. ревью #8/#16.
-    elig = check_trial_eligibility(db, user)
-    if not elig["eligible"]:
-        sub.status = "failed"
-        db.commit()
-        return {"ok": False, "reason": elig["reason"] or "Пробный период недоступен"}
+    # Founder обходит публичную проверку (он уже платил), но защищаемся от
+    # двойной активации: если успел оформить платную подписку — триал не выдаём.
+    founder = is_founder_offer(user)
+    if founder:
+        active = billing_service.current_subscription(db, user)
+        if active is not None and not getattr(active, "is_trial", False):
+            sub.status = "failed"
+            db.commit()
+            return {"ok": False, "reason": "У вас уже есть активная подписка"}
+    else:
+        elig = check_trial_eligibility(db, user)
+        if not elig["eligible"]:
+            sub.status = "failed"
+            db.commit()
+            return {"ok": False, "reason": elig["reason"] or "Пробный период недоступен"}
 
     provider = get_payment_provider()
     state = provider.get_add_card_state(sub.trial_request_key)  # type: ignore[attr-defined]
@@ -275,7 +346,9 @@ def complete_trial_for_user(db: Session, user: User) -> dict:
     now = datetime.now(timezone.utc)
     sub.status = "active"
     sub.started_at = now
-    sub.expires_at = now + timedelta(days=trial_days(sub.tier) or 7)
+    # Founder получает FOUNDER_OFFER_DAYS (30), остальные — стандартные trial_days.
+    days = FOUNDER_OFFER_DAYS if founder else (trial_days(sub.tier) or 7)
+    sub.expires_at = now + timedelta(days=days)
     sub.payment_method_id = pm.id
     user.trial_used = True
     db.flush()
