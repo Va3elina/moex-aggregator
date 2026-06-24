@@ -785,10 +785,10 @@ function ConsentModal({
               lineHeight: 1.5,
             }}
           >
-            Тариф <b>{trialInfo.tierRu}</b> — бесплатно <b>{trialInfo.days} дней</b>. Затем{' '}
-            <b>{trialInfo.chargeDate}</b> спишется <b>{amountStr} ₽</b> за {trialInfo.periodRu}.
-            Карта не списывается сейчас. Отменить и отвязать карту можно в любой момент
-            до этой даты в профиле — тогда списания не будет.
+            Тариф <b>{trialInfo.tierRu}</b> — бесплатно <b>{trialInfo.days} дней</b>. Сейчас
+            карта только привязывается, деньги не списываются. Первое списание{' '}
+            <b>{amountStr} ₽</b> за {trialInfo.periodRu} — <b>{trialInfo.chargeDate}</b>, и только
+            если до этой даты не отмените. Отменить и отвязать карту можно в любой момент в профиле.
           </div>
         )}
 
