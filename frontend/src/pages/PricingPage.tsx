@@ -15,7 +15,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  Check, Zap, Crown, Sparkles, X, Gift,
+  Check, Zap, Crown, Sparkles, X, Gift, Heart,
   Grid3X3, BarChart3, Wallet, Activity, Scale,
   CalendarDays, Banknote, LayoutGrid, Settings,
   type LucideIcon,
@@ -85,6 +85,9 @@ interface BillingStatus {
   cancelled_at: string | null;
   expires_at: string | null;
   trial_eligible?: boolean;   // можно ли предложить бесплатный пробный период
+  // Персональный подарочный оффер (whitelist через env). Fallback для баннера:
+  // если юзер закрыл FounderOfferBanner, оффер остаётся доступен здесь.
+  founder_offer?: { tier: string; period: string; days: number; amount: number | null } | null;
 }
 
 export default function PricingPage() {
@@ -277,6 +280,56 @@ export default function PricingPage() {
       <div className="text-center mb-6 md:mb-8">
         <h1 className="text-3xl md:text-4xl font-bold text-theme-primary">Тарифы</h1>
       </div>
+
+      {/* Founder-оффер: персональный подарок (whitelist через env). Виден ТОЛЬКО
+          юзеру, кому backend вернул founder_offer. Это fallback для глобального
+          баннера: если юзер закрыл баннер, оффер не теряется — он здесь. Клик →
+          тот же consent-модал (с раскрытием 30 дней/цены/даты) → /trial/start. */}
+      {billing?.founder_offer && (
+        <div
+          className="mb-8 mx-auto max-w-3xl"
+          style={{
+            background: 'var(--bg-primary, #FBF7EF)',
+            border: '2px solid var(--text-primary, #0A0A0A)',
+            borderRadius: 14,
+            boxShadow: '4px 4px 0 var(--text-primary, #0A0A0A)',
+            padding: '18px 20px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              width: 32, height: 32, borderRadius: 9, flexShrink: 0,
+              background: 'var(--accent, #FF5C2B)',
+              border: '2px solid var(--text-primary, #0A0A0A)',
+              boxShadow: 'var(--shadow-hard-chip, 2px 2px 0 var(--text-primary, #0A0A0A))',
+            }}>
+              <Heart size={17} strokeWidth={2.4} color="#fff" fill="#fff" />
+            </span>
+            <span style={{ fontWeight: 800, fontSize: 'var(--fs-lg, 1.15rem)' }}>
+              Спасибо, что были первым — дарим месяц Pro
+            </span>
+          </div>
+          <p style={{ color: 'var(--text-secondary, #555)', fontSize: 'var(--fs-sm, 0.9rem)', lineHeight: 1.55, margin: '0 0 14px' }}>
+            Бесплатно {billing.founder_offer.days} дней Pro. Карта привязывается через защищённую проверку
+            Т-Банка (0&nbsp;₽), списание — только по окончании периода, если не отмените.
+          </p>
+          <button
+            type="button"
+            onClick={() => handleTrialStart('pro', 'monthly')}
+            className="editorial-press"
+            style={{
+              minHeight: 48, padding: '12px 24px', borderRadius: 9,
+              border: '2px solid var(--text-primary, #0A0A0A)',
+              background: 'var(--accent, #FF5C2B)', color: '#fff', fontWeight: 800,
+              fontSize: 'var(--fs-base, 1rem)', cursor: 'pointer',
+              boxShadow: 'var(--shadow-hard-chip, 2px 2px 0 var(--text-primary, #0A0A0A))',
+            }}
+          >
+            Активировать месяц Pro
+          </button>
+        </div>
+      )}
 
 
       {/* Баннер STUB-режима — показываем только если провайдер 'stub' */}
@@ -589,7 +642,10 @@ export default function PricingPage() {
       {pendingTrial && (() => {
         const tcard = data.tiers.find((t) => t.tier === pendingTrial.tier);
         const v = pendingTrial.period === 'yearly' ? tcard?.yearly : tcard?.monthly;
-        const days = data.trial_days?.[pendingTrial.tier] ?? 7;
+        // Founder получает 30 дней (из founder_offer), остальные — публичные trial_days.
+        const days = billing?.founder_offer
+          ? billing.founder_offer.days
+          : (data.trial_days?.[pendingTrial.tier] ?? 7);
         const chargeDate = new Date(Date.now() + days * 86400000)
           .toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
         return (

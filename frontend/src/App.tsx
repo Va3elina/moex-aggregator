@@ -8,6 +8,7 @@ import { AnalyticsProvider, AnalyticsPageViewTracker } from './contexts/Analytic
 import { TierFeaturesProvider } from './contexts/TierFeaturesContext';
 import { UpgradePromptProvider } from './components/tier/UpgradeModal';
 import CookieConsentBanner from './components/CookieConsentBanner';
+import FounderOfferBanner from './components/FounderOfferBanner';
 import ErrorBoundary from './components/ErrorBoundary';
 import Layout from './components/Layout';
 import OverviewPage from './pages/OverviewPage';
@@ -140,6 +141,7 @@ export default function App() {
       <ScrollToTop />
       <AnalyticsPageViewTracker />
       <ConditionalCookieBanner />
+      <FounderOfferBanner />
       <RouterErrorBoundary>
         <Suspense fallback={<div style={{ minHeight: '100vh', background: 'var(--bg-primary)' }} />}>
         <Routes>

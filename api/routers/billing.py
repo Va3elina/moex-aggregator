@@ -74,6 +74,10 @@ class StatusResponse(BaseModel):
     trial_eligible: bool = False         # можно ли предложить начать триал (только если нет подписки)
     next_charge_amount: float | None = None  # сколько спишется по окончании триала (полная цена plan_id)
     next_charge_at: str | None = None    # дата первого платного списания (= trial_ends_at)
+    # === Founder offer (персональный подарочный период, whitelist через env) ===
+    # None у всех, кроме whitelisted юзеров без активной подписки/триала. Управляет
+    # персональным баннером FounderOfferBanner. {tier, period, days, amount}.
+    founder_offer: dict | None = None
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -162,6 +166,9 @@ async def my_status(
         and trial_service.TRIAL_ENABLED
         and trial_service.check_trial_eligibility(db, user)["eligible"]
     )
+    # Founder-оффер (whitelist через env) — отдельно от публичного trial_eligible,
+    # чтобы у обычных юзеров CTA не появлялся. None для всех, кроме whitelisted.
+    founder_offer = trial_service.founder_offer_state(db, user)
 
     return StatusResponse(
         tier=user_tier(user),
@@ -177,6 +184,7 @@ async def my_status(
         trial_eligible=trial_eligible,
         next_charge_amount=next_amount,
         next_charge_at=next_at,
+        founder_offer=founder_offer,
     )
 
 
