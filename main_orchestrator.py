@@ -736,10 +736,28 @@ class MainOrchestrator:
             n = await asyncio.to_thread(_do)
             if n:
                 log.info("  💳 expire-only: погашено %d истёкших подписок", n)
-            return n
         except Exception as e:
             log.error("expire-only failed: %s", e, exc_info=True)
-            return 0
+            n = 0
+
+        # Фоллбэк: добить триал-привязки, чей редирект сломался (T-Bank AddCard
+        # ErrorCode 9 не возвращает юзера на /trial-success, но карта биндится).
+        # Активируем server-side через GetAddCardState. Каждые 15 мин.
+        def _complete_trials():
+            from api.billing.trial import complete_pending_trials
+            db = SessionLocal()
+            try:
+                return complete_pending_trials(db)
+            finally:
+                db.close()
+        try:
+            ct = await asyncio.to_thread(_complete_trials)
+            if ct.get("completed"):
+                log.info("  💳 trial-fallback: активировано %d привязок", ct["completed"])
+        except Exception as e:
+            log.error("trial-complete fallback failed: %s", e, exc_info=True)
+
+        return n
 
     async def run_billing_hourly(self) -> dict:
         """Billing hourly job: expire overdue + auto-renewal через T-Bank Charge.
