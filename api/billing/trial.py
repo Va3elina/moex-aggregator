@@ -361,6 +361,48 @@ def complete_trial_for_user(db: Session, user: User) -> dict:
     }
 
 
+# ─────────────── Fallback: добить привязку без редиректа ───────────────
+def complete_pending_trials(db: Session, max_age_hours: int = 6) -> dict:
+    """Оркестратор-фоллбэк: активирует триалы, чья привязка карты завершилась
+    у T-Bank, но юзер не вернулся на сайт (T-Bank AddCard ErrorCode 9 ломает
+    редирект, ХОТЯ карта биндится). Для каждой pending is_trial-строки с
+    trial_request_key зовём complete_trial_for_user → GetAddCardState; если
+    привязка COMPLETED — триал активируется server-side, без участия юзера.
+
+    Идемпотентно. Гоняется в run_expire_only (каждые 15 мин). Пустой no-op
+    если триал выключен или нет pending-привязок.
+    """
+    if not TRIAL_ENABLED:
+        return {"checked": 0, "completed": 0}
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(hours=max_age_hours)
+    subs = db.query(Subscription).filter(
+        Subscription.is_trial.is_(True),
+        Subscription.status == "pending",
+        Subscription.trial_request_key.isnot(None),
+        Subscription.created_at > cutoff,
+    ).all()
+    summary = {"checked": len(subs), "completed": 0}
+    seen_users: set[int] = set()
+    for sub in subs:
+        if sub.user_id in seen_users:
+            continue
+        seen_users.add(sub.user_id)
+        user = db.query(User).filter(User.id == sub.user_id).first()
+        if not user:
+            continue
+        try:
+            res = complete_trial_for_user(db, user)
+            if res.get("ok") and res.get("status") == "active":
+                summary["completed"] += 1
+                log.info("complete_pending_trials: активирован триал user=%s sub=%s", user.id, sub.id)
+        except Exception as e:
+            log.error("complete_pending_trials sub=%s: %s", sub.id, e, exc_info=True)
+    if summary["completed"]:
+        log.info("complete_pending_trials summary: %s", summary)
+    return summary
+
+
 # ─────────────────────────── Reminders (T-1) ───────────────────────────
 def send_trial_reminders(db: Session, within_days: int = 3) -> dict:
     """Уведомление об окончании триала (best practice, не буква 376-ФЗ).
