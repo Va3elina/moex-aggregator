@@ -311,8 +311,8 @@ export default function PricingPage() {
             </span>
           </div>
           <p style={{ color: 'var(--text-secondary, #555)', fontSize: 'var(--fs-sm, 0.9rem)', lineHeight: 1.55, margin: '0 0 8px' }}>
-            Бесплатно {billing.founder_offer.days} дней Pro. Карта привязывается через защищённую проверку
-            Т-Банка (0&nbsp;₽), списание — только по окончании периода, если не отмените.
+            Бесплатно {billing.founder_offer.days} дней Pro. Для привязки карты спишется 1&nbsp;₽ и сразу
+            вернётся; полное списание — только по окончании периода, если не отмените.
           </p>
           <p style={{ color: 'var(--text-secondary, #666)', fontSize: 'var(--fs-xs, 0.8rem)', lineHeight: 1.5, margin: '0 0 14px' }}>
             Будем рады услышать ваш опыт — пишите{' '}
@@ -785,8 +785,8 @@ function ConsentModal({
               lineHeight: 1.5,
             }}
           >
-            Тариф <b>{trialInfo.tierRu}</b> — бесплатно <b>{trialInfo.days} дней</b>. Сейчас
-            карта только привязывается, деньги не списываются. Первое списание{' '}
+            Тариф <b>{trialInfo.tierRu}</b> — бесплатно <b>{trialInfo.days} дней</b>. Для привязки
+            карты спишется <b>1&nbsp;₽</b> и сразу вернётся. Первое полное списание{' '}
             <b>{amountStr} ₽</b> за {trialInfo.periodRu} — <b>{trialInfo.chargeDate}</b>, и только
             если до этой даты не отмените. Отменить и отвязать карту можно в любой момент в профиле.
           </div>

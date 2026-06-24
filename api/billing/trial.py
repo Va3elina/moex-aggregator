@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 
 from api.billing import service as billing_service
 from api.billing.factory import get_payment_provider
-from api.billing.plans import TRIAL_CONSENT_VERSION, get_plan, trial_days
+from api.billing.plans import TRIAL_BIND_AMOUNT, TRIAL_CONSENT_VERSION, get_plan, trial_days
 from api.billing.provider import WebhookEvent
 from api.models.subscription import Subscription
 from api.models.trial_redemption import TrialRedemption
@@ -170,10 +170,13 @@ def start_trial(
     db: Session, user: User, tier: str, period: str,
     base_url: str, consent: bool, ip: str | None = None,
 ) -> dict:
-    """Создаёт pending триал-строку + инициирует привязку карты (AddCard).
+    """Создаёт pending триал-строку + инициирует привязку карты через Init 1₽.
 
-    Возвращает {payment_url, request_key, ...} — фронт редиректит на payment_url.
-    Завершение — complete_trial_for_user (фронт зовёт на /billing/trial-success).
+    Привязка идёт обычным платежом /Init на TRIAL_BIND_AMOUNT (1₽) с Recurrent="Y"
+    — у него редирект работает штатно (в отличие от AddCard, чей redirect нерабочий:
+    204/ErrorCode 9). 1₽ возвращается после получения RebillId (complete_trial_binding
+    в webhook). Возвращает {payment_url, ...} — фронт редиректит на payment_url
+    (pay.tbank.ru). Завершение — в webhook (payment.succeeded → complete_trial_binding).
     """
     if not TRIAL_ENABLED:
         raise ValueError("Пробный период временно недоступен")
@@ -227,150 +230,200 @@ def start_trial(
     db.add(sub)
     db.flush()
 
+    base = base_url.rstrip("/")
+    # Привязка карты через Init 1₽ + Recurrent="Y" — редирект на /billing/trial-success
+    # работает штатно. 1₽ возвращается в complete_trial_binding после получения
+    # RebillId. Чек прихода 54-ФЗ бьётся автоматически (create_checkout→_build_receipt),
+    # на возврат — чек возврата. yk_payment_id хранит 1₽-платёж до активации;
+    # complete_trial_binding обнуляет его (чтобы refund-webhook не погасил триал).
     try:
-        provider.add_customer(str(user.id), email=user.email)  # type: ignore[attr-defined]
-    except Exception as e:
-        log.warning("start_trial add_customer warning user=%s: %s", user.id, e)
-
-    try:
-        # URL НЕ передаём в запросе: T-Bank AddCard их не honor-ит (в подписи →
-        # ErrorCode 204, в теле без подписи → ErrorCode 9 «url пуст», и при этом
-        # НЕ откатывается на кабинет). Success/Fail-страницы прописаны в кабинете
-        # терминала → редирект после привязки берётся оттуда. См. trial_system memory.
-        res = provider.add_card(str(user.id), check_type="3DS")  # type: ignore[attr-defined]
+        session = provider.create_checkout(  # type: ignore[attr-defined]
+            amount=TRIAL_BIND_AMOUNT, currency="RUB",
+            description=f"Привязка карты для пробного периода — user #{user.id}",
+            return_url=f"{base}/billing/trial-success",
+            metadata={
+                "user_id": str(user.id),
+                "subscription_id": str(sub.id),
+                "plan_id": plan_id,
+                "trial_bind": "1",
+            },
+            customer_email=getattr(user, "email", None) or None,
+            customer_phone=getattr(user, "phone", None) or None,
+            recurrent=True,
+            customer_key=str(user.id),
+        )
     except Exception as e:
         sub.status = "failed"
         db.commit()
-        log.error("start_trial add_card failed user=%s: %s", user.id, e)
+        log.error("start_trial create_checkout (1₽ bind) failed user=%s: %s", user.id, e)
         raise
 
-    if not res.get("Success") or not res.get("RequestKey"):
-        sub.status = "failed"
-        db.commit()
-        raise ValueError(f"AddCard error: {res.get('Message') or res.get('Details') or res}")
-
-    # RequestKey — в ОТДЕЛЬНУЮ колонку, НЕ в yk_payment_id (тот остаётся NULL →
-    # триал-строка невидима для sync_pending_for_user / cancel_by_webhook).
-    sub.trial_request_key = str(res["RequestKey"])
+    sub.yk_payment_id = session.payment_id
     db.commit()
-    log.info("start_trial user=%s tier=%s/%s request_key=%s", user.id, tier, period, sub.trial_request_key)
+    log.info("start_trial user=%s tier=%s/%s payment_id=%s (1₽ bind)", user.id, tier, period, sub.yk_payment_id)
     return {
         "subscription_id": sub.id,
-        "request_key": sub.trial_request_key,
-        "payment_url": res.get("PaymentURL"),
+        "payment_id": session.payment_id,
+        "payment_url": session.confirmation_url,
         "tier": tier, "period": period, "trial_days": days,
     }
 
 
-# ─────────────────────────── Complete ───────────────────────────
-def complete_trial_for_user(db: Session, user: User) -> dict:
-    """Завершение привязки: GetAddCardState → RebillId → активация триала.
+# ─────────────── Активация триала после 1₽-привязки ───────────────
+def _refund_bind(payment_id: str | None) -> None:
+    """Вернуть 1₽-привязку (после получения RebillId). Best-effort: ошибка возврата
+    не должна ломать активный триал. Чек возврата 54-ФЗ — внутри provider.refund."""
+    if not payment_id:
+        return
+    try:
+        get_payment_provider().refund(payment_id, amount=TRIAL_BIND_AMOUNT)  # type: ignore[attr-defined]
+        log.info("trial: возврат 1₽ payment=%s инициирован", payment_id)
+    except Exception as e:
+        log.error("trial: возврат 1₽ payment=%s не удался: %s", payment_id, e)
 
-    Идемпотентно. Фронт зовёт на /billing/trial-success после возврата от T-Bank.
-    """
-    _require_salt()
-    sub = db.query(Subscription).filter(
-        Subscription.user_id == user.id,
-        Subscription.is_trial.is_(True),
-        Subscription.status == "pending",
-        Subscription.trial_request_key.isnot(None),
-    ).order_by(Subscription.created_at.desc()).first()
-    if not sub:
-        # Уже активирован (повторный вызов) ИЛИ юзер уже оформил платную — мягкий ok.
-        active = billing_service.current_subscription(db, user)
-        if active:
-            return {"ok": True, "status": "active", "subscription_id": active.id}
-        return {"ok": False, "reason": "Нет ожидающей привязки карты"}
 
-    # Повторный eligibility-гейт (TOCTOU между start и complete): юзер мог за это
-    # время оформить платную подписку / стать неэлигибельным. См. ревью #8/#16.
-    # Founder обходит публичную проверку (он уже платил), но защищаемся от
-    # двойной активации: если успел оформить платную подписку — триал не выдаём.
-    founder = is_founder_offer(user)
-    if founder:
-        active = billing_service.current_subscription(db, user)
-        if active is not None and not getattr(active, "is_trial", False):
-            sub.status = "failed"
-            db.commit()
-            return {"ok": False, "reason": "У вас уже есть активная подписка"}
-    else:
-        elig = check_trial_eligibility(db, user)
-        if not elig["eligible"]:
-            sub.status = "failed"
-            db.commit()
-            return {"ok": False, "reason": elig["reason"] or "Пробный период недоступен"}
-
-    provider = get_payment_provider()
-    state = provider.get_add_card_state(sub.trial_request_key)  # type: ignore[attr-defined]
-    status = (state.get("Status") or "").upper()
-    rebill_id = state.get("RebillId")
-    if status != "COMPLETED" or not rebill_id:
-        return {"ok": False, "status": status, "reason": "Привязка карты не завершена"}
-
-    pan = state.get("Pan") or ""
-    event = WebhookEvent(
-        payment_id=str(sub.yk_payment_id), event_type="addcard",
-        rebill_id=str(rebill_id), customer_key=str(user.id),
+def _rebill_from_cardlist(provider, customer_key: str) -> WebhookEvent | None:
+    """Восстановить RebillId из GetCardList (fallback если webhook не принёс).
+    Берём самую свежую активную карту клиента."""
+    try:
+        lst = provider._post_signed("GetCardList", {"CustomerKey": customer_key})  # type: ignore[attr-defined]
+    except Exception as e:
+        log.warning("trial: GetCardList(%s) failed: %s", customer_key, e)
+        return None
+    if not isinstance(lst, list):
+        return None
+    active = [c for c in lst if (c.get("Status") == "A" and c.get("RebillId"))]
+    if not active:
+        return None
+    c = active[-1]  # последняя в списке — самая свежая привязка
+    pan = c.get("Pan") or ""
+    return WebhookEvent(
+        payment_id="", event_type="payment.succeeded",
+        rebill_id=str(c["RebillId"]), customer_key=customer_key,
         card_last4=(pan[-4:] if len(pan) >= 4 else None),
-        card_brand=state.get("CardType"),
+        card_brand=str(c.get("CardType") or ""),
+        amount=TRIAL_BIND_AMOUNT,
     )
+
+
+def complete_trial_binding(db: Session, sub: Subscription, event: WebhookEvent) -> Subscription | None:
+    """Webhook payment.succeeded по 1₽-привязке: сохранить карту (RebillId),
+    активировать триал (N дней, 0₽), вернуть 1₽. Идемпотентно.
+
+    Зовётся из webhook-роутера, когда платёж принадлежит is_trial-строке.
+    """
+    if sub.status == "active":
+        return sub  # уже активирован (идемпотентно)
+    if sub.status != "pending":
+        return None
+    user = db.query(User).filter(User.id == sub.user_id).first()
+    if not user:
+        return None
+    if not event.rebill_id:
+        # Без RebillId нечем списывать после триала → привязка бессмысленна.
+        log.warning("complete_trial_binding: нет rebill_id sub=%s — fail + возврат 1₽", sub.id)
+        bind_pid = sub.yk_payment_id
+        sub.status = "failed"
+        db.commit()
+        _refund_bind(bind_pid)
+        return None
+
+    # Анти-двойная-активация: если за это время оформлена платная подписка — не выдаём.
+    active = billing_service.current_subscription(db, user)
+    if active is not None and not getattr(active, "is_trial", False):
+        bind_pid = sub.yk_payment_id
+        sub.status = "failed"
+        db.commit()
+        _refund_bind(bind_pid)
+        return None
+
     pm = billing_service._upsert_payment_method(db, user.id, event)
     if not pm:
-        return {"ok": False, "reason": "Не удалось сохранить карту"}
+        return None  # не коммитим — webhook может прийти повторно
 
-    # Анти-абуз: фиксируем редемпшн. UNIQUE(user_id) → повтор ловим IntegrityError.
+    # Анти-абуз: фиксируем редемпшн (UNIQUE по идентичности → повтор = IntegrityError).
     oauth_h, email_h = _identity_hashes(user)
     db.add(TrialRedemption(
         user_id=user.id, subscription_id=sub.id, tier=sub.tier,
         oauth_hash=oauth_h, email_hash=email_h, ip=None,
     ))
-    sub_id = sub.id
     try:
         db.flush()
     except IntegrityError:
-        # UNIQUE на user_id/oauth_hash/email_hash → эта идентичность уже брала
-        # триал (тот же юзер = повтор/идемпотентно, ИЛИ другой аккаунт с тем же
-        # oauth/email = мульти-аккаунт абуз). Триал НЕ выдаём.
         db.rollback()
-        log.warning("complete_trial: identity already redeemed (user=%s) — abuse/идемпотентно", user.id)
-        active = billing_service.current_subscription(db, user)
-        if active:
-            return {"ok": True, "status": "active", "subscription_id": active.id}
-        stale = db.query(Subscription).filter(Subscription.id == sub_id).first()
-        if stale and stale.status == "pending":
-            stale.status = "failed"
-            db.commit()
-        return {"ok": False, "status": "used", "reason": "Пробный период уже был использован"}
+        log.warning("complete_trial_binding: идентичность уже брала триал user=%s", user.id)
+        bind_pid = sub.yk_payment_id
+        fresh = db.query(Subscription).filter(Subscription.id == sub.id).first()
+        if fresh and fresh.status == "pending":
+            fresh.status = "failed"
+        db.commit()
+        _refund_bind(bind_pid)  # деньги назад в любом случае
+        return None
 
     now = datetime.now(timezone.utc)
+    days = FOUNDER_OFFER_DAYS if is_founder_offer(user) else (trial_days(sub.tier) or 7)
     sub.status = "active"
     sub.started_at = now
-    # Founder получает FOUNDER_OFFER_DAYS (30), остальные — стандартные trial_days.
-    days = FOUNDER_OFFER_DAYS if founder else (trial_days(sub.tier) or 7)
     sub.expires_at = now + timedelta(days=days)
     sub.payment_method_id = pm.id
     user.trial_used = True
+    # Обнуляем yk_payment_id (1₽-платёж): иначе refund-webhook на возврат 1₽ найдёт
+    # эту строку в cancel_by_webhook и погасит активный триал. Возврат делаем по
+    # сохранённому bind_pid.
+    bind_pid = sub.yk_payment_id
+    sub.yk_payment_id = None
     db.flush()
     billing_service.sync_user_role(db, user)
     db.commit()
-    log.info("complete_trial user=%s sub=%s active until %s", user.id, sub.id, sub.expires_at)
-    return {
-        "ok": True, "status": "active", "subscription_id": sub.id,
-        "tier": sub.tier, "expires_at": sub.expires_at.isoformat(),
-    }
+    log.info("complete_trial_binding: триал активен user=%s sub=%s до %s", user.id, sub.id, sub.expires_at)
+    _refund_bind(bind_pid)  # вернуть 1₽
+    return sub
 
 
-# ─────────────── Fallback: добить привязку без редиректа ───────────────
+# ─────────────────────────── Status-чек / recovery ───────────────────────────
+def complete_trial_for_user(db: Session, user: User) -> dict:
+    """Фронт зовёт на /billing/trial-success (поллинг). Основная активация — в
+    webhook (complete_trial_binding). Здесь: если триал уже активен — ok; если
+    pending и 1₽-платёж CONFIRMED, но webhook ещё не пришёл — восстанавливаем
+    RebillId через GetCardList и активируем сами (recovery)."""
+    active = billing_service.current_subscription(db, user)
+    if active and getattr(active, "is_trial", False):
+        return {"ok": True, "status": "active", "subscription_id": active.id,
+                "tier": active.tier,
+                "expires_at": active.expires_at.isoformat() if active.expires_at else None}
+
+    sub = db.query(Subscription).filter(
+        Subscription.user_id == user.id,
+        Subscription.is_trial.is_(True),
+        Subscription.status == "pending",
+        Subscription.yk_payment_id.isnot(None),
+    ).order_by(Subscription.created_at.desc()).first()
+    if not sub:
+        return {"ok": False, "status": "none", "reason": "Нет ожидающей привязки карты"}
+
+    provider = get_payment_provider()
+    info = provider.verify_payment(sub.yk_payment_id) if sub.yk_payment_id else None  # type: ignore[attr-defined]
+    if not info or (info.get("Status") or "").upper() != "CONFIRMED":
+        return {"ok": False, "status": "pending", "reason": "Ожидаем подтверждение оплаты"}
+
+    # 1₽ оплачен, но webhook ещё не активировал → достаём RebillId из GetCardList.
+    ev = _rebill_from_cardlist(provider, str(user.id))
+    if not ev:
+        return {"ok": False, "status": "pending", "reason": "Карта ещё привязывается"}
+    ev.payment_id = str(sub.yk_payment_id)
+    res = complete_trial_binding(db, sub, ev)
+    if res is not None:
+        return {"ok": True, "status": "active", "subscription_id": res.id,
+                "tier": res.tier,
+                "expires_at": res.expires_at.isoformat() if res.expires_at else None}
+    return {"ok": False, "status": "pending", "reason": "Привязка ещё обрабатывается"}
+
+
+# ─────────────── Fallback: добить pending-привязки (оркестратор) ───────────────
 def complete_pending_trials(db: Session, max_age_hours: int = 6) -> dict:
-    """Оркестратор-фоллбэк: активирует триалы, чья привязка карты завершилась
-    у T-Bank, но юзер не вернулся на сайт (T-Bank AddCard ErrorCode 9 ломает
-    редирект, ХОТЯ карта биндится). Для каждой pending is_trial-строки с
-    trial_request_key зовём complete_trial_for_user → GetAddCardState; если
-    привязка COMPLETED — триал активируется server-side, без участия юзера.
-
-    Идемпотентно. Гоняется в run_expire_only (каждые 15 мин). Пустой no-op
-    если триал выключен или нет pending-привязок.
-    """
+    """Оркестратор-фоллбэк (run_expire_only, 15 мин): на случай потерянного webhook
+    проходит pending is_trial-строки с оплаченным 1₽ и активирует их через
+    complete_trial_for_user (verify + GetCardList). Идемпотентно, no-op без pending."""
     if not TRIAL_ENABLED:
         return {"checked": 0, "completed": 0}
     now = datetime.now(timezone.utc)
@@ -378,7 +431,7 @@ def complete_pending_trials(db: Session, max_age_hours: int = 6) -> dict:
     subs = db.query(Subscription).filter(
         Subscription.is_trial.is_(True),
         Subscription.status == "pending",
-        Subscription.trial_request_key.isnot(None),
+        Subscription.yk_payment_id.isnot(None),
         Subscription.created_at > cutoff,
     ).all()
     summary = {"checked": len(subs), "completed": 0}
@@ -394,11 +447,10 @@ def complete_pending_trials(db: Session, max_age_hours: int = 6) -> dict:
             res = complete_trial_for_user(db, user)
             if res.get("ok") and res.get("status") == "active":
                 summary["completed"] += 1
-                log.info("complete_pending_trials: активирован триал user=%s sub=%s", user.id, sub.id)
         except Exception as e:
             log.error("complete_pending_trials sub=%s: %s", sub.id, e, exc_info=True)
     if summary["completed"]:
-        log.info("complete_pending_trials summary: %s", summary)
+        log.info("complete_pending_trials: %s", summary)
     return summary
 
 
