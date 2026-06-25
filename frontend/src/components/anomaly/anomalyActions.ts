@@ -1,0 +1,57 @@
+/**
+ * Общие действия аномалии — переиспользуют ToastHost и AnomalyBell, чтобы логика
+ * «открыть график» (с tier-вердиктом) и «получать сигнал» (с квотой) не дублировалась.
+ * Плоские функции с прокинутыми зависимостями (navigate/showUpgrade) — без хуков,
+ * чтобы звать из любого контекста.
+ */
+import type { NavigateFunction } from 'react-router-dom';
+import { handleTierError, type UpgradeTier } from '../../utils/tierError';
+import { subscribeAnomaly as apiSubscribe, type AnomalyItem, type AnomalyDeepLink } from '../../services/api';
+
+type ShowUpgrade = (p: { tier: UpgradeTier; featureName?: string; indicator?: string }) => void;
+
+export function buildAnomalyUrl(dl: AnomalyDeepLink): string {
+  if (dl.route === '/oi') {
+    const p = new URLSearchParams();
+    if (dl.secid) p.set('instrument', dl.secid);
+    if (dl.clgroup) p.set('clgroup', dl.clgroup);
+    if (dl.interval != null) p.set('interval', String(dl.interval));
+    if (dl.mode) p.set('mode', dl.mode);
+    if (dl.variant) p.set('variant', dl.variant);
+    return `/oi?${p.toString()}`;
+  }
+  if (dl.route === '/funds-money') {
+    return dl.category ? `/funds-money?category=${dl.category}` : '/funds-money';
+  }
+  return dl.route || '/';
+}
+
+/** Открыть график аномалии. Если цель закрыта тарифом (link_required_tier) —
+ *  апселл + переход на ДЕФОЛТ страницы (доступное по умолчанию); иначе диплинк. */
+export function openAnomaly(item: AnomalyItem, navigate: NavigateFunction, showUpgrade: ShowUpgrade): void {
+  if (item.link_required_tier) {
+    const indicator = item.type === 'funds_flow' ? 'funds_money' : 'open_interest';
+    showUpgrade({ tier: item.link_required_tier, featureName: item.asset_name || item.asset_id, indicator });
+    navigate(item.deep_link.route || '/');
+  } else {
+    navigate(buildAnomalyUrl(item.deep_link));
+  }
+}
+
+/** Создать личный сигнал из аномалии. Гость → апселл (нужен аккаунт+тариф);
+ *  квота-403 → handleTierError (апселл Pro/Basic). Возвращает исход для UI. */
+export async function subscribeAnomalyAction(
+  item: AnomalyItem, isAuthenticated: boolean, showUpgrade: ShowUpgrade,
+): Promise<'ok' | 'guest' | 'error'> {
+  if (!isAuthenticated) {
+    showUpgrade({ tier: 'basic', featureName: 'сигналы', indicator: 'anomaly' });
+    return 'guest';
+  }
+  try {
+    await apiSubscribe(item.id);
+    return 'ok';
+  } catch (e) {
+    handleTierError(e, { showUpgrade, indicator: 'anomaly', featureName: 'сигналы' });
+    return 'error';
+  }
+}
