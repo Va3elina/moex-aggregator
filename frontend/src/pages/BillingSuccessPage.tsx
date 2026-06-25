@@ -42,6 +42,20 @@ export default function BillingSuccessPage() {
     }
   }, []);
 
+  /** Добивание триала: если T-Bank после AddCard-привязки вернул на эту (общую)
+   *  success-страницу, а не на /billing/trial-success — всё равно активируем
+   *  триал. No-op если ожидающего триала нет. */
+  const runTrialComplete = useCallback(async (): Promise<boolean> => {
+    try {
+      const r = await apiFetch('/api/billing/trial/complete', { method: 'POST' });
+      if (!r.ok) return false;
+      const b = await r.json();
+      return b?.ok === true && b?.status === 'active';
+    } catch {
+      return false;
+    }
+  }, []);
+
   /** Лёгкий polling статуса (без вызовов к провайдеру). */
   const fetchStatus = useCallback(async (): Promise<Status | null> => {
     try {
@@ -61,6 +75,14 @@ export default function BillingSuccessPage() {
     const maxAttempts = 15; // 15 × 2 сек = 30 сек
 
     (async () => {
+      // 0. Триал-привязка (AddCard) могла вести сюда вместо /billing/trial-success —
+      //    добиваем триал. No-op для обычных платежей.
+      if (await runTrialComplete()) {
+        if (cancelled) return;
+        await fetchStatus();
+        setState('active');
+        return;
+      }
       // 1. Сразу sync — спросим T-Bank GetState не дожидаясь webhook
       const synced = await runSync();
       if (cancelled) return;
@@ -71,6 +93,12 @@ export default function BillingSuccessPage() {
       // 2. Polling каждые 2 сек — вдруг webhook дойдёт за это время
       const tick = async () => {
         if (cancelled) return;
+        if (await runTrialComplete()) {
+          if (cancelled) return;
+          await fetchStatus();
+          setState('active');
+          return;
+        }
         const s = await fetchStatus();
         if (s?.is_active) {
           setState('active');
@@ -89,7 +117,7 @@ export default function BillingSuccessPage() {
     return () => {
       cancelled = true;
     };
-  }, [runSync, fetchStatus]);
+  }, [runSync, fetchStatus, runTrialComplete]);
 
   /** Кнопка «Проверить статус» в timeout-state. */
   const handleManualSync = async () => {
