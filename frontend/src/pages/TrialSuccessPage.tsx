@@ -104,7 +104,8 @@ export default function TrialSuccessPage() {
             только по окончании, если вы не отмените. Отменить и отвязать карту можно в профиле.
           </p>
           <Link to="/" className="editorial-press" style={{
-            display: 'inline-block', marginTop: 20, padding: '12px 24px', borderRadius: 8,
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minHeight: 44,
+            marginTop: 20, padding: '12px 24px', borderRadius: 8,
             background: 'var(--accent, #FF5C2B)', color: '#fff', textDecoration: 'none', fontWeight: 600,
           }}>
             К аналитике →

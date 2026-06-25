@@ -840,7 +840,7 @@ function ConsentModal({
           <button
             onClick={onClose}
             disabled={isLoading}
-            className="flex-1 py-2.5 rounded-xl text-sm font-medium border transition-colors disabled:opacity-50"
+            className="flex-1 py-3 rounded-xl text-sm font-medium border transition-colors disabled:opacity-50"
             style={{
               borderColor: 'var(--border-color)',
               color: 'var(--text-secondary)',
@@ -852,7 +852,7 @@ function ConsentModal({
           <button
             onClick={onConfirm}
             disabled={!canConfirm || isLoading}
-            className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex-1 py-3 rounded-xl text-sm font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             style={{
               background: 'var(--accent)',
               color: 'var(--bg-primary)',

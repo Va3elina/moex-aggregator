@@ -157,14 +157,14 @@ export default function BillingSuccessPage() {
           <div className="flex gap-3 justify-center">
             <Link
               to="/"
-              className="px-5 py-2 rounded-xl text-sm font-medium"
+              className="px-5 py-3 rounded-xl text-sm font-medium"
               style={{ backgroundColor: 'var(--accent)', color: 'var(--bg-primary)' }}
             >
               На главную
             </Link>
             <Link
               to="/profile"
-              className="px-5 py-2 rounded-xl text-sm font-medium border"
+              className="px-5 py-3 rounded-xl text-sm font-medium border"
               style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
             >
               Мой профиль
@@ -184,7 +184,7 @@ export default function BillingSuccessPage() {
             <button
               onClick={handleManualSync}
               disabled={syncing}
-              className="inline-flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
+              className="inline-flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-medium transition-opacity hover:opacity-90 disabled:opacity-50"
               style={{ backgroundColor: 'var(--accent)', color: '#fff' }}
             >
               <RotateCw size={16} className={syncing ? 'animate-spin' : ''} />
@@ -192,7 +192,7 @@ export default function BillingSuccessPage() {
             </button>
             <Link
               to="/profile"
-              className="px-5 py-2 rounded-xl text-sm font-medium border"
+              className="px-5 py-3 rounded-xl text-sm font-medium border"
               style={{ borderColor: 'var(--border-color)', color: 'var(--text-primary)' }}
             >
               В профиль
