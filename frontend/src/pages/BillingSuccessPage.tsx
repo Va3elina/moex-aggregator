@@ -28,6 +28,8 @@ export default function BillingSuccessPage() {
   const [status, setStatus] = useState<Status | null>(null);
   const [state, setState] = useState<'pending' | 'active' | 'timeout'>('pending');
   const [syncing, setSyncing] = useState(false);
+  // true если сюда привёл AddCard-триал (а не обычная оплата) → текст про триал.
+  const [trialActivated, setTrialActivated] = useState(false);
 
   /** Принудительный sync через GetState у провайдера. */
   const runSync = useCallback(async (): Promise<Status | null> => {
@@ -80,6 +82,7 @@ export default function BillingSuccessPage() {
       if (await runTrialComplete()) {
         if (cancelled) return;
         await fetchStatus();
+        setTrialActivated(true);
         setState('active');
         return;
       }
@@ -96,6 +99,7 @@ export default function BillingSuccessPage() {
         if (await runTrialComplete()) {
           if (cancelled) return;
           await fetchStatus();
+          setTrialActivated(true);
           setState('active');
           return;
         }
@@ -139,7 +143,9 @@ export default function BillingSuccessPage() {
       {state === 'active' && status && (
         <>
           <CheckCircle2 className="w-16 h-16 mx-auto mb-4 text-green-400" />
-          <h1 className="text-2xl font-bold text-theme-primary mb-2">Оплата прошла!</h1>
+          <h1 className="text-2xl font-bold text-theme-primary mb-2">
+            {trialActivated ? 'Успешно! Пробный период активирован' : 'Оплата прошла!'}
+          </h1>
           <p className="text-theme-secondary mb-2">
             Тариф: <strong className="text-theme-primary">{status.tier.toUpperCase()}</strong>
           </p>

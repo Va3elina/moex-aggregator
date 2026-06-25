@@ -98,7 +98,7 @@ export default function TrialSuccessPage() {
       {state === 'active' && (
         <>
           <CheckCircle2 size={56} color="var(--accent, #FF5C2B)" style={{ display: 'block', margin: '0 auto 16px' }} />
-          <h1 style={{ fontSize: 'var(--fs-2xl)', marginBottom: 12 }}>Пробный период активирован</h1>
+          <h1 style={{ fontSize: 'var(--fs-2xl)', marginBottom: 12 }}>Успешно! Пробный период активирован</h1>
           <p style={{ color: 'var(--text-secondary, #666)', marginBottom: 8, lineHeight: 1.6 }}>
             Доступ открыт{expiresAt ? <> до <b>{fmtDate(expiresAt)}</b></> : ''}. Списание произойдёт
             только по окончании, если вы не отмените. Отменить и отвязать карту можно в профиле.
