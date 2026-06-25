@@ -174,6 +174,25 @@ def feed(
     )
 
 
+@router.get("/channel-posts", response_model=list[ChannelPostOut])
+def channel_posts_feed(limit: int = Query(12, ge=1, le=40), db: Session = Depends(get_db)):
+    """Последние посты каналов для виджета «Новости каналов» на главной. Публично,
+    без auth. try/except — пустой список если миграция 016 не применена."""
+    try:
+        rows = db.execute(text("""
+            SELECT id, channel, channel_name, text, photo_url, link, posted_at
+            FROM channel_posts ORDER BY posted_at DESC NULLS LAST, post_id DESC LIMIT :lim
+        """), {"lim": limit}).mappings().all()
+    except Exception:
+        db.rollback()
+        return []
+    return [ChannelPostOut(
+        id=r["id"], channel=r["channel"], channel_name=r["channel_name"],
+        text=r["text"], photo_url=r["photo_url"], link=r["link"],
+        posted_at=r["posted_at"].isoformat() if r["posted_at"] else None,
+    ) for r in rows]
+
+
 class SeenIn(BaseModel):
     last_id: int
 
