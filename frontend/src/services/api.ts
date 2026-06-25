@@ -1732,10 +1732,20 @@ export interface AnomalyItem {
     mine: boolean;                              // личная (твой сигнал сработал)
     link_required_tier: 'basic' | 'pro' | null; // gated-цель → апселл + дефолт
 }
+export interface ChannelPost {
+    id: number;
+    channel: string;             // username канала (FrameTool / Thor_INV)
+    channel_name: string | null; // человекочитаемо
+    text: string | null;
+    photo_url: string | null;
+    link: string;                // t.me/<channel>/<post_id> — открывать внешней вкладкой
+    posted_at: string | null;
+}
 export interface AnomalyFeed {
     items: AnomalyItem[];
     last_seen_id: number | null;  // серверный для залогиненных; null для гостя
     toasts_enabled: boolean;      // тумблер показа (гость → true, решает localStorage)
+    channel_posts: ChannelPost[]; // новости каналов — секция в колоколе
 }
 
 // Лента аномалий. apiFetch работает и для гостя (без токена бэкенд видит guest).
