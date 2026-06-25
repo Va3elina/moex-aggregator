@@ -29,6 +29,7 @@ import {
   TrendingDown,
   Building2,
 } from 'lucide-react';
+import ChannelNews from '../components/ChannelNews';
 import {
   getHeatmapImoex,
   getFundsSummary,
@@ -230,6 +231,8 @@ export default function OverviewPage() {
             : <Skeleton height={240} rounded="lg" />}
         </div>
       </section>
+
+      <ChannelNews />
 
       {/* ═══ SECTOR PERFORMANCE ═══ */}
       <section className="mb-10 md:mb-12">

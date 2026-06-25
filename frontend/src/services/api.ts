@@ -1788,6 +1788,17 @@ export async function subscribeAnomaly(id: number): Promise<{ ok: boolean; alert
     if (!resp.ok) throw new Error('Не удалось создать сигнал');
     return resp.json();
 }
+// Последние посты каналов для виджета «Новости каналов» на главной. Публичный
+// эндпоинт (без auth) → голый fetch; при ошибке — пустой массив (виджет скрыт).
+export async function getChannelPosts(limit = 12): Promise<ChannelPost[]> {
+    try {
+        const resp = await fetch(`${API_BASE}/api/anomalies/channel-posts?limit=${limit}`);
+        if (!resp.ok) return [];
+        return await resp.json();
+    } catch {
+        return [];
+    }
+}
 
 // Список sectype, у которых есть свежие внутридневные данные позиций
 // (open_interest interval=5). Используется в InstrumentSearchModal для бейджа
