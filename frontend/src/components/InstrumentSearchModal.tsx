@@ -58,13 +58,17 @@ interface InstrumentSearchModalProps {
   onDone?: () => void;
   /** Снять весь выбор (очистить набор) — для кнопки «Снять выбор». */
   onClearAll?: () => void;
+  /** Показывать бейдж «данные позиций только на конец дня» (нет 5м/1ч).
+   *  Внутридневные позиции — концепт открытого интереса; на индикаторах без
+   *  позиций (напр. сезонность) неактуально → передаём false. По умолчанию true. */
+  showIntradayBadge?: boolean;
 }
 
 
 // InstrumentIcon + INSTRUMENT_ICONS + FUT_TO_STOCK перенесены в
 // отдельный модуль ./InstrumentIcon.tsx, общий для всех страниц.
 
-export default function InstrumentSearchModal({ onSelect, onClose, filterType, excludeType, onlyGroups, indicator, multiSelect = false, selectedSectypes, onToggleSelect, onDone, onClearAll }: InstrumentSearchModalProps) {
+export default function InstrumentSearchModal({ onSelect, onClose, filterType, excludeType, onlyGroups, indicator, multiSelect = false, selectedSectypes, onToggleSelect, onDone, onClearAll, showIntradayBadge = true }: InstrumentSearchModalProps) {
   // Набор выбранных в multi-режиме — Set для O(1) проверки в renderItem.
   const selectedSet = new Set(selectedSectypes || []);
   const [searchQuery, setSearchQuery] = useState('');
@@ -136,12 +140,13 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
   // иначе сбой загрузки промаркировал бы как EOD вообще весь список.
   const [intradaySet, setIntradaySet] = useState<Set<string>>(new Set());
   useEffect(() => {
+    if (!showIntradayBadge) return; // бейдж скрыт → набор не нужен, запрос не шлём
     let cancelled = false;
     getIntradayAssets()
       .then((list) => { if (!cancelled) setIntradaySet(new Set(list)); })
       .catch(() => { /* пустой набор — бейджи не показываются */ });
     return () => { cancelled = true; };
-  }, []);
+  }, [showIntradayBadge]);
 
   // Фильтрация / дедуп / сортировка / группировка — общий хук
   // useInstrumentFilter (тот же, что в MobileAssetSearch). Поведенческие
@@ -377,7 +382,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
           {/* Тикер: для фьючерсов — актуальный фронт-контракт ('BRN6'), а не
               обрезанный sectype 'BR' (такого тикера не существует). Спот → sectype. */}
           <span className="flex-shrink-0" style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-xs)' }}>{inst.front_secid || inst.sectype}</span>
-          {intradaySet.size > 0 && !intradaySet.has(inst.sectype) && (
+          {showIntradayBadge && intradaySet.size > 0 && !intradaySet.has(inst.sectype) && (
             <span
               className="flex-shrink-0 inline-flex items-center justify-center"
               title="Данные позиций обновляются только на конец дня, внутридневных (5м и 1ч) пока нет"
