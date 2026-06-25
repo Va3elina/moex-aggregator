@@ -7,6 +7,8 @@ import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AnalyticsProvider, AnalyticsPageViewTracker } from './contexts/AnalyticsContext';
 import { TierFeaturesProvider } from './contexts/TierFeaturesContext';
 import { UpgradePromptProvider } from './components/tier/UpgradeModal';
+import { AnomalyProvider } from './contexts/AnomalyContext';
+import { ToastHost } from './components/anomaly/ToastHost';
 import CookieConsentBanner from './components/CookieConsentBanner';
 import FounderOfferBanner from './components/FounderOfferBanner';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -138,7 +140,9 @@ export default function App() {
       <TierFeaturesProvider>
       <BrowserRouter>
       <UpgradePromptProvider>
+      <AnomalyProvider>
       <AnalyticsProvider>
+      <ToastHost />
       <ScrollToTop />
       <AnalyticsPageViewTracker />
       <ConditionalCookieBanner />
@@ -278,6 +282,7 @@ export default function App() {
         </Suspense>
       </RouterErrorBoundary>
       </AnalyticsProvider>
+      </AnomalyProvider>
       </UpgradePromptProvider>
       </BrowserRouter>
       </TierFeaturesProvider>

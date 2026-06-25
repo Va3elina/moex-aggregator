@@ -1703,6 +1703,82 @@ export async function setAlertStatus(id: number, status: 'active' | 'paused'): P
     return resp.json();
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// Лента аномалий — всплывающие тосты + колокол. Бэкенд: /api/anomalies/*
+// ════════════════════════════════════════════════════════════════════════════
+export interface AnomalyDeepLink {
+    route: string;            // '/oi' | '/funds-money'
+    secid?: string;
+    category?: string;
+    clgroup?: string;
+    interval?: number;
+    mode?: string;
+    variant?: string;
+    period?: string;
+}
+export interface AnomalyItem {
+    id: number;
+    type: string;             // 'oi_move' | 'funds_flow' | 'oi_zscore' | 'oi_participants'
+    asset_id: string;
+    asset_name: string | null;
+    clgroup: string | null;
+    direction: string | null; // 'up' | 'down'
+    headline: string;
+    context: string | null;
+    severity_value: number | null;
+    signal_date: string | null;
+    created_at: string | null;
+    deep_link: AnomalyDeepLink;
+    mine: boolean;                              // личная (твой сигнал сработал)
+    link_required_tier: 'basic' | 'pro' | null; // gated-цель → апселл + дефолт
+}
+export interface AnomalyFeed {
+    items: AnomalyItem[];
+    last_seen_id: number | null;  // серверный для залогиненных; null для гостя
+    toasts_enabled: boolean;      // тумблер показа (гость → true, решает localStorage)
+}
+
+// Лента аномалий. apiFetch работает и для гостя (без токена бэкенд видит guest).
+export async function getAnomalyFeed(
+    opts?: { since?: number; limit?: number; maxAgeHours?: number },
+): Promise<AnomalyFeed> {
+    const params = new URLSearchParams();
+    if (opts?.since != null) params.set('since', String(opts.since));
+    if (opts?.limit != null) params.set('limit', String(opts.limit));
+    if (opts?.maxAgeHours != null) params.set('max_age_hours', String(opts.maxAgeHours));
+    const qs = params.toString();
+    const resp = await apiFetch(`${API_BASE}/api/anomalies/feed${qs ? `?${qs}` : ''}`);
+    if (!resp.ok) throw new Error('Не удалось загрузить ленту аномалий');
+    return resp.json();
+}
+// Сдвинуть серверный маркер «просмотрено» (только залогиненные; гость — localStorage).
+export async function markAnomaliesSeen(lastId: number): Promise<void> {
+    const resp = await apiFetch(`${API_BASE}/api/anomalies/seen`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ last_id: lastId }),
+    });
+    if (!resp.ok) throw new Error('Не удалось пометить просмотренным');
+}
+// Вкл/выкл всплывающие тосты (залогиненные; гость — localStorage).
+export async function setAnomalyToasts(enabled: boolean): Promise<void> {
+    const resp = await apiFetch(`${API_BASE}/api/anomalies/toggle`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+    });
+    if (!resp.ok) throw new Error('Не удалось изменить настройку');
+}
+// Создать личный сигнал из аномалии (кнопка «🔔 Получать»). 403 → текст с «тарифе»
+// для handleTierError (апселл-модалка).
+export async function subscribeAnomaly(id: number): Promise<{ ok: boolean; alert_id: number }> {
+    const resp = await apiFetch(`${API_BASE}/api/anomalies/${id}/subscribe`, { method: 'POST' });
+    if (resp.status === 403) {
+        const d = await resp.json().catch(() => ({}));
+        throw new Error(d?.detail || d?.error?.message || 'Сигналы доступны на тарифе Basic и Pro');
+    }
+    if (!resp.ok) throw new Error('Не удалось создать сигнал');
+    return resp.json();
+}
+
 // Список sectype, у которых есть свежие внутридневные данные позиций
 // (open_interest interval=5). Используется в InstrumentSearchModal для бейджа
 // «intraday». При любой ошибке — пустой массив (бейджи просто не показываются).

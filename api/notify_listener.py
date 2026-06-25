@@ -60,6 +60,7 @@ async def start_notify_listener():
             logger.info("NOTIFY listener: connected to PostgreSQL")
 
             await conn.add_listener("data_updated", _on_notification)
+            await conn.add_listener("anomaly", _on_anomaly)   # лента аномалий → SSE-нудж
 
             # Keepalive loop
             while True:
@@ -83,6 +84,7 @@ async def start_notify_listener():
             if conn and not conn.is_closed():
                 try:
                     await conn.remove_listener("data_updated", _on_notification)
+                    await conn.remove_listener("anomaly", _on_anomaly)
                     await conn.close()
                 except Exception:
                     pass
@@ -93,6 +95,22 @@ async def start_notify_listener():
 def _on_notification(conn, pid, channel, payload):
     """Callback для PostgreSQL NOTIFY."""
     asyncio.ensure_future(_handle_notification(payload))
+
+
+def _on_anomaly(conn, pid, channel, payload):
+    """Callback канала 'anomaly' (продюсер шлёт NOTIFY на каждую новую аномалию)."""
+    asyncio.ensure_future(_handle_anomaly(payload))
+
+
+async def _handle_anomaly(payload: str):
+    """Новая аномалия → SSE-нудж клиентам. Сам объект не несём — фронт по нудж'у
+    тянет /api/anomalies/feed?since=<last_id> (REST, как везде). Кеш не трогаем."""
+    from api.sse import sse_manager
+    try:
+        data = json.loads(payload) if payload else {}
+    except json.JSONDecodeError:
+        data = {}
+    await sse_manager.broadcast(json.dumps({"source": "anomaly", "id": data.get("id")}))
 
 
 async def _handle_notification(payload: str):

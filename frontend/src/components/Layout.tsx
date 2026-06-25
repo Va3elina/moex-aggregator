@@ -10,6 +10,7 @@ import { Menu, X, LogIn, BarChart3 } from 'lucide-react';
 import Logo from './Logo';
 import FrameLogo from './FrameLogo';
 import ThemeToggle from './ThemeToggle';
+import { AnomalyBell } from './anomaly/AnomalyBell';
 import PageSEO from './PageSEO';
 import MobileFallbackChrome from './mobile/MobileFallbackChrome';
 
@@ -235,6 +236,8 @@ export default function Layout() {
             >
               {/* Theme Toggle (sun/moon, animated) */}
               <ThemeToggle />
+
+              <AnomalyBell />
 
               {/* Header-icons унифицированы: 40 → 36 → 32 пропорциональное
                   масштабирование на mobile/md/xl. ThemeToggle и Admin Stats

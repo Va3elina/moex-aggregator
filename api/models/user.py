@@ -49,6 +49,13 @@ class User(Base):
     telegram_username = Column(String(64), nullable=True)
     telegram_linked_at = Column(DateTime(timezone=True), nullable=True)
 
+    # === Лента всплывающих аномалий (сайт: тосты + колокол) ===
+    # last_seen_anomaly_id — монотонный маркер «всё ≤ него просмотрено» (дедуп
+    # тостов между визитами); anomaly_toasts_enabled — тумблер показа (вкл по
+    # умолчанию, кнопка «выключить»). Миграция 015. См. [[anomaly_feed]] (память).
+    last_seen_anomaly_id = Column(BigInteger, nullable=True)
+    anomaly_toasts_enabled = Column(Boolean, default=True, nullable=False, server_default="true")
+
     # === Роль и доступ ===
     # Используем String вместо SQLEnum для совместимости с существующим enum в БД
     role = Column(String(20), default="user", nullable=False)
