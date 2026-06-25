@@ -586,6 +586,7 @@ export default function SeasonalityPage() {
               onClose={() => setIsModalOpen(false)}
               excludeType="futures"
               indicator="seasonality"
+              showIntradayBadge={false}
             />
           )}
         </div>
