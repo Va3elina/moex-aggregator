@@ -52,6 +52,14 @@ export function AnomalyBell() {
     setBellOpen(false);
   };
 
+  // Единый список «Новости и сигналы»: аномалии + посты каналов, по времени (новые сверху).
+  const merged = [
+    ...items.map((a) => ({ kind: 'anomaly' as const, key: `a-${a.id}`,
+      ts: a.created_at ? Date.parse(a.created_at) : 0, a })),
+    ...channelPosts.map((p) => ({ kind: 'post' as const, key: `p-${p.id}`,
+      ts: p.posted_at ? Date.parse(p.posted_at) : 0, p })),
+  ].sort((x, y) => y.ts - x.ts);
+
   return (
     <div ref={ref} style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
       <button onClick={toggle} aria-label="Аномалии рынка"
@@ -75,20 +83,42 @@ export function AnomalyBell() {
           border: '0.5px solid var(--border-color, rgba(255,255,255,0.12))', borderRadius: 12,
           boxShadow: '0 12px 36px rgba(0,0,0,0.45)', zIndex: 1300 }}>
           <div style={{ padding: '12px 14px', borderBottom: '0.5px solid var(--border-color)' }}>
-            <span style={{ color: 'var(--text-primary)', fontSize: 14, fontWeight: 600 }}>Аномалии рынка</span>
+            <span style={{ color: 'var(--text-primary)', fontSize: 14, fontWeight: 600 }}>Новости и сигналы</span>
           </div>
 
-          {items.length === 0 ? (
+          {merged.length === 0 ? (
             <div style={{ padding: '28px 14px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
-              Пока тихо — заметных аномалий нет
+              Пока тихо — ничего нового
             </div>
           ) : (
-            items.slice(0, 20).map((item) => {
+            merged.slice(0, 30).map((row) => {
+              if (row.kind === 'post') {
+                const p = row.p;
+                return (
+                  <button key={row.key}
+                    onClick={() => window.open(p.link, '_blank', 'noopener,noreferrer')}
+                    style={{ display: 'block', width: '100%', textAlign: 'left', background: 'transparent',
+                      border: 'none', borderBottom: '0.5px solid var(--border-color)', padding: '8px 14px', cursor: 'pointer' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--accent-cyan, #22D3EE)', fontSize: 11 }}>
+                        <Send size={11} /> {p.channel_name || p.channel}
+                      </span>
+                      <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>{relTime(p.posted_at)}</span>
+                    </div>
+                    {p.text && (
+                      <div style={{ color: 'var(--text-primary)', fontSize: 12.5, lineHeight: 1.35 }}>
+                        {p.text.length > 110 ? `${p.text.slice(0, 110)}…` : p.text}
+                      </div>
+                    )}
+                  </button>
+                );
+              }
+              const item = row.a;
               const up = item.direction === 'up';
               const Dir = up ? TrendingUp : TrendingDown;
               const c = up ? 'var(--success, #00E676)' : 'var(--danger, #FF5252)';
               return (
-                <button key={item.id} onClick={() => onItem(item)}
+                <button key={row.key} onClick={() => onItem(item)}
                   style={{ display: 'block', width: '100%', textAlign: 'left', background: 'transparent',
                     border: 'none', borderBottom: '0.5px solid var(--border-color)', padding: '10px 14px', cursor: 'pointer' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
@@ -113,32 +143,6 @@ export function AnomalyBell() {
                 </button>
               );
             })
-          )}
-
-          {channelPosts.length > 0 && (
-            <>
-              <div style={{ padding: '10px 14px 6px', borderTop: '0.5px solid var(--border-color)' }}>
-                <span style={{ color: 'var(--text-secondary)', fontSize: 12, fontWeight: 600 }}>Новости каналов</span>
-              </div>
-              {channelPosts.map((p) => (
-                <button key={`cp-${p.id}`}
-                  onClick={() => window.open(p.link, '_blank', 'noopener,noreferrer')}
-                  style={{ display: 'block', width: '100%', textAlign: 'left', background: 'transparent',
-                    border: 'none', borderBottom: '0.5px solid var(--border-color)', padding: '8px 14px', cursor: 'pointer' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--accent-cyan, #22D3EE)', fontSize: 11 }}>
-                      <Send size={11} /> {p.channel_name || p.channel}
-                    </span>
-                    <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>{relTime(p.posted_at)}</span>
-                  </div>
-                  {p.text && (
-                    <div style={{ color: 'var(--text-primary)', fontSize: 12.5, lineHeight: 1.35 }}>
-                      {p.text.length > 110 ? `${p.text.slice(0, 110)}…` : p.text}
-                    </div>
-                  )}
-                </button>
-              ))}
-            </>
           )}
 
           <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
