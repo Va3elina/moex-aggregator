@@ -52,14 +52,16 @@ export function AnomalyBell() {
   };
 
   return (
-    <div ref={ref} style={{ position: 'relative' }}>
+    <div ref={ref} style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
       <button onClick={toggle} aria-label="Аномалии рынка"
-        style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: 'transparent', border: 'none', cursor: 'pointer', padding: 6, color: 'var(--text-secondary)' }}>
-        <Bell size={20} />
+        className="editorial-press grid place-items-center w-5 h-5 xl:w-8 xl:h-8 rounded-full"
+        style={{ position: 'relative', color: 'var(--accent)', border: '1.5px solid var(--text-primary)',
+          backgroundColor: 'transparent', cursor: 'pointer' }}>
+        <Bell strokeWidth={2}
+          style={{ width: 'clamp(13px, 1vw + 0.3rem, 17px)', height: 'clamp(13px, 1vw + 0.3rem, 17px)' }} />
         {unseenCount > 0 && (
-          <span style={{ position: 'absolute', top: 0, right: 0, minWidth: 16, height: 16, padding: '0 4px',
-            background: 'var(--accent-orange, #FF9100)', color: '#1a1206', fontSize: 11, fontWeight: 600,
+          <span style={{ position: 'absolute', top: -4, right: -4, minWidth: 15, height: 15, padding: '0 3px',
+            background: 'var(--accent-orange, #FF9100)', color: '#1a1206', fontSize: 10, fontWeight: 600,
             borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>
             {unseenCount > 9 ? '9+' : unseenCount}
           </span>
@@ -67,7 +69,7 @@ export function AnomalyBell() {
       </button>
 
       {bellOpen && (
-        <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 8px)', width: 340, maxHeight: 440,
+        <div style={{ position: 'absolute', right: 0, top: 'calc(100% + 10px)', width: 'min(340px, calc(100vw - 24px))', maxHeight: 440,
           overflowY: 'auto', background: 'var(--bg-secondary, #15181C)',
           border: '0.5px solid var(--border-color, rgba(255,255,255,0.12))', borderRadius: 12,
           boxShadow: '0 12px 36px rgba(0,0,0,0.45)', zIndex: 1300 }}>
