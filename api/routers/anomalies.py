@@ -83,10 +83,21 @@ class AnomalyOut(BaseModel):
     link_required_tier: Optional[str] = None  # None → открыть как есть; иначе апселл+дефолт
 
 
+class ChannelPostOut(BaseModel):
+    id: int
+    channel: str
+    channel_name: Optional[str] = None
+    text: Optional[str] = None
+    photo_url: Optional[str] = None
+    link: str
+    posted_at: Optional[str] = None
+
+
 class FeedOut(BaseModel):
     items: list[AnomalyOut]
     last_seen_id: Optional[int] = None   # серверный для залогиненных; None для гостя
     toasts_enabled: bool = True          # users.anomaly_toasts_enabled (гость → true)
+    channel_posts: list[ChannelPostOut] = []   # новости каналов — секция колокола
 
 
 _FEED_SQL = text("""
@@ -103,6 +114,13 @@ _FEED_SQL = text("""
   ) t
   ORDER BY created_at DESC
   LIMIT :limit
+""")
+
+_CHANNEL_POSTS_SQL = text("""
+  SELECT id, channel, channel_name, text, photo_url, link, posted_at
+  FROM channel_posts
+  ORDER BY posted_at DESC NULLS LAST, post_id DESC
+  LIMIT 12
 """)
 
 
@@ -136,10 +154,23 @@ def feed(
         )
         for r in rows
     ]
+    # Новости каналов — отдельная секция колокола (таблица channel_posts).
+    # try/except: если миграция 016 ещё не применена — лента аномалий не падает.
+    posts: list[ChannelPostOut] = []
+    try:
+        prows = db.execute(_CHANNEL_POSTS_SQL).mappings().all()
+        posts = [ChannelPostOut(
+            id=p["id"], channel=p["channel"], channel_name=p["channel_name"],
+            text=p["text"], photo_url=p["photo_url"], link=p["link"],
+            posted_at=p["posted_at"].isoformat() if p["posted_at"] else None,
+        ) for p in prows]
+    except Exception:
+        db.rollback()   # сброс failed-tx (на случай отсутствия таблицы)
     return FeedOut(
         items=items,
         last_seen_id=(user.last_seen_anomaly_id if user else None),
         toasts_enabled=(bool(user.anomaly_toasts_enabled) if user else True),
+        channel_posts=posts,
     )
 
 

@@ -6,7 +6,7 @@
  */
 import { useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Bell, TrendingUp, TrendingDown } from 'lucide-react';
+import { Bell, TrendingUp, TrendingDown, Send } from 'lucide-react';
 import { useAnomalies } from '../../contexts/AnomalyContext';
 import { useUpgradePrompt } from '../tier/UpgradeModal';
 import { openAnomaly } from './anomalyActions';
@@ -26,6 +26,7 @@ function relTime(iso?: string | null): string {
 export function AnomalyBell() {
   const {
     items, unseenCount, markAllSeen, toastsEnabled, setToastsEnabled, bellOpen, setBellOpen,
+    channelPosts,
   } = useAnomalies();
   const { showUpgrade } = useUpgradePrompt();
   const navigate = useNavigate();
@@ -106,6 +107,32 @@ export function AnomalyBell() {
                 </button>
               );
             })
+          )}
+
+          {channelPosts.length > 0 && (
+            <>
+              <div style={{ padding: '10px 14px 6px', borderTop: '0.5px solid var(--border-color)' }}>
+                <span style={{ color: 'var(--text-secondary)', fontSize: 12, fontWeight: 600 }}>Новости каналов</span>
+              </div>
+              {channelPosts.map((p) => (
+                <button key={`cp-${p.id}`}
+                  onClick={() => window.open(p.link, '_blank', 'noopener,noreferrer')}
+                  style={{ display: 'block', width: '100%', textAlign: 'left', background: 'transparent',
+                    border: 'none', borderBottom: '0.5px solid var(--border-color)', padding: '8px 14px', cursor: 'pointer' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'var(--accent-cyan, #22D3EE)', fontSize: 11 }}>
+                      <Send size={11} /> {p.channel_name || p.channel}
+                    </span>
+                    <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>{relTime(p.posted_at)}</span>
+                  </div>
+                  {p.text && (
+                    <div style={{ color: 'var(--text-primary)', fontSize: 12.5, lineHeight: 1.35 }}>
+                      {p.text.length > 110 ? `${p.text.slice(0, 110)}…` : p.text}
+                    </div>
+                  )}
+                </button>
+              ))}
+            </>
           )}
 
           <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>

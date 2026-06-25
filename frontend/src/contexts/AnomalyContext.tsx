@@ -22,7 +22,7 @@ import {
 import { useAuth } from './AuthContext';
 import { useSSE } from '../hooks/useSSE';
 import {
-  getAnomalyFeed, markAnomaliesSeen, setAnomalyToasts, type AnomalyItem,
+  getAnomalyFeed, markAnomaliesSeen, setAnomalyToasts, type AnomalyItem, type ChannelPost,
 } from '../services/api';
 
 const LS_SEEN = 'anomaly_last_seen_id';
@@ -40,6 +40,7 @@ interface AnomalyCtx {
   refetch: () => void;
   bellOpen: boolean;             // общий стейт: дайджест-тост открывает колокол
   setBellOpen: (v: boolean) => void;
+  channelPosts: ChannelPost[];   // новости каналов — секция колокола
 }
 
 const Ctx = createContext<AnomalyCtx | null>(null);
@@ -54,6 +55,7 @@ export function AnomalyProvider({ children }: { children: ReactNode }) {
   const { lastEvent } = useSSE();
 
   const [items, setItems] = useState<AnomalyItem[]>([]);
+  const [channelPosts, setChannelPosts] = useState<ChannelPost[]>([]);
   const [bellOpen, setBellOpen] = useState(false);
   const [lastSeenId, setLastSeenId] = useState<number>(() => lsNum(LS_SEEN));
   const [toastsEnabled, setEnabledState] = useState<boolean>(
@@ -66,6 +68,7 @@ export function AnomalyProvider({ children }: { children: ReactNode }) {
     try {
       const feed = await getAnomalyFeed({ maxAgeHours: FEED_WINDOW_HOURS, limit: 50 });
       setItems(feed.items);
+      setChannelPosts(feed.channel_posts || []);
       // Источник истины «просмотрено»: сервер для залогиненных, localStorage для гостя.
       if (isAuthenticated && feed.last_seen_id != null) {
         setLastSeenId((cur) => Math.max(cur, feed.last_seen_id as number));
@@ -122,8 +125,8 @@ export function AnomalyProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AnomalyCtx>(() => ({
     items, lastSeenId, unseenCount, toastsEnabled, markAllSeen, setToastsEnabled, refetch,
-    bellOpen, setBellOpen,
-  }), [items, lastSeenId, unseenCount, toastsEnabled, markAllSeen, setToastsEnabled, refetch, bellOpen]);
+    bellOpen, setBellOpen, channelPosts,
+  }), [items, lastSeenId, unseenCount, toastsEnabled, markAllSeen, setToastsEnabled, refetch, bellOpen, channelPosts]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
