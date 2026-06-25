@@ -36,6 +36,11 @@ log = logging.getLogger(__name__)
 TRIAL_ENABLED = os.getenv("TRIAL_ENABLED", "").lower() in ("1", "true", "yes")
 # Соль для хешей идентификаторов анти-абуза (152-ФЗ: храним только хеш).
 _HASH_SALT = os.getenv("TRIAL_HASH_SALT", "")
+# Способ привязки карты: "init" — платёж 1₽ + возврат (текущий, рабочий);
+# "addcard" — T-Bank AddCard (0₽, без чеков). AddCard включать ТОЛЬКО после того
+# как поддержка T-Bank задаст Success/Fail Add Card URL на терминале (иначе
+# редирект не вернёт клиента). Дефолт init — переключаемо env без передеплоя.
+TRIAL_BIND_METHOD = os.getenv("TRIAL_BIND_METHOD", "init").lower()
 
 # ─────────────────────────── Founder offer (персональный жест) ───────────────
 # Точечный обход «триал только новым пользователям» для конкретных user_id
@@ -230,6 +235,11 @@ def start_trial(
     db.add(sub)
     db.flush()
 
+    # AddCard-путь (за флагом TRIAL_BIND_METHOD=addcard): 0₽-привязка, без чеков.
+    # Init-путь ниже — текущий рабочий по умолчанию.
+    if TRIAL_BIND_METHOD == "addcard":
+        return _start_addcard_bind(db, sub, user, tier, period, days)
+
     base = base_url.rstrip("/")
     # Привязка карты через Init 1₽ + Recurrent="Y" — редирект на /billing/trial-success
     # работает штатно. 1₽ возвращается в complete_trial_binding после получения
@@ -267,6 +277,65 @@ def start_trial(
         "payment_url": session.confirmation_url,
         "tier": tier, "period": period, "trial_days": days,
     }
+
+
+# ─────────────── AddCard-привязка (за флагом, 0₽, без чеков) ───────────────
+def _start_addcard_bind(db: Session, sub: Subscription, user: User,
+                        tier: str, period: str, days: int) -> dict:
+    """Инициировать привязку карты через T-Bank AddCard (CheckType=3DS, 0₽, без
+    расчёта/чеков). RequestKey хранится в sub.trial_request_key (yk_payment_id
+    остаётся None → возврат в complete_trial_binding = no-op). Success/Fail Add Card
+    URL заданы НА ТЕРМИНАЛЕ поддержкой T-Bank (не в запросе). Завершение —
+    complete_trial_for_user → _complete_addcard (GetAddCardState)."""
+    provider = get_payment_provider()
+    try:
+        provider.add_customer(str(user.id), email=getattr(user, "email", None))  # type: ignore[attr-defined]
+    except Exception as e:
+        log.warning("start_trial addcard add_customer user=%s: %s", user.id, e)
+    try:
+        res = provider.add_card(str(user.id), check_type="3DS")  # type: ignore[attr-defined]
+    except Exception as e:
+        sub.status = "failed"
+        db.commit()
+        log.error("start_trial add_card failed user=%s: %s", user.id, e)
+        raise
+    if not res.get("Success") or not res.get("RequestKey") or not res.get("PaymentURL"):
+        sub.status = "failed"
+        db.commit()
+        raise ValueError(f"AddCard error: {res.get('Message') or res.get('Details') or res}")
+    sub.trial_request_key = str(res["RequestKey"])
+    db.commit()
+    log.info("start_trial user=%s tier=%s/%s request_key=%s (AddCard)", user.id, tier, period, sub.trial_request_key)
+    return {
+        "subscription_id": sub.id,
+        "request_key": sub.trial_request_key,
+        "payment_url": res.get("PaymentURL"),
+        "tier": tier, "period": period, "trial_days": days,
+    }
+
+
+def _complete_addcard(db: Session, sub: Subscription, user: User) -> dict:
+    """Завершить AddCard-привязку: GetAddCardState → RebillId → активировать триал
+    (через complete_trial_binding; yk_payment_id=None → 1₽-возврат не делается)."""
+    provider = get_payment_provider()
+    state = provider.get_add_card_state(sub.trial_request_key)  # type: ignore[attr-defined]
+    status = (state.get("Status") or "").upper()
+    rebill_id = state.get("RebillId")
+    if status != "COMPLETED" or not rebill_id:
+        return {"ok": False, "status": "pending", "reason": "Привязка карты не завершена"}
+    pan = state.get("Pan") or ""
+    ev = WebhookEvent(
+        payment_id="", event_type="addcard",
+        rebill_id=str(rebill_id), customer_key=str(user.id),
+        card_last4=(pan[-4:] if len(pan) >= 4 else None),
+        card_brand=str(state.get("CardType") or ""),
+        amount=0,
+    )
+    res = complete_trial_binding(db, sub, ev)
+    if res is not None:
+        return {"ok": True, "status": "active", "subscription_id": res.id, "tier": res.tier,
+                "expires_at": res.expires_at.isoformat() if res.expires_at else None}
+    return {"ok": False, "status": "pending", "reason": "Привязка ещё обрабатывается"}
 
 
 # ─────────────── Активация триала после 1₽-привязки ───────────────
@@ -391,6 +460,17 @@ def complete_trial_for_user(db: Session, user: User) -> dict:
         return {"ok": True, "status": "active", "subscription_id": active.id,
                 "tier": active.tier,
                 "expires_at": active.expires_at.isoformat() if active.expires_at else None}
+
+    # AddCard-привязка (за флагом TRIAL_BIND_METHOD=addcard): завершаем через
+    # GetAddCardState. trial_request_key есть только у AddCard-строк (Init=NULL).
+    ac = db.query(Subscription).filter(
+        Subscription.user_id == user.id,
+        Subscription.is_trial.is_(True),
+        Subscription.status == "pending",
+        Subscription.trial_request_key.isnot(None),
+    ).order_by(Subscription.created_at.desc()).first()
+    if ac is not None:
+        return _complete_addcard(db, ac, user)
 
     sub = db.query(Subscription).filter(
         Subscription.user_id == user.id,
