@@ -58,12 +58,18 @@ export default function MobileFundsMoneyPage() {
   // реально пишет 3m/1y/3y (clamp FLOW_MIN_PERIODS), которых нет в mobile-чипах.
   const [searchParams] = useSearchParams();
   const [category, setCategory] = usePersistedState<FundCategory>('frame:funds:category', 'money_market');
-  // Диплинк из Telegram-сигнала: ?category= преселектит раздел на маунте.
+  // Диплинк из сигнала/аномалии: ?category= преселектит раздел. Применяем при
+  // КАЖДОЙ навигации (не только на маунте) — иначе клик по второй fund-аномалии
+  // другой категории не переключал бы раздел (SPA не перемонтирует страницу).
+  const appliedFundsUrlRef = useRef('');
   useEffect(() => {
+    const urlKey = searchParams.toString();
+    if (urlKey === appliedFundsUrlRef.current) return;
+    appliedFundsUrlRef.current = urlKey;
     const c = searchParams.get('category');
     if (c && ['money_market', 'stocks', 'bonds', 'gold', 'yuan'].includes(c)) setCategory(c as FundCategory);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [searchParams]);
   const [period, setPeriod] = usePersistedState<FundPeriod>('frame:funds:mobilePeriod', '1m');
   // По умолчанию — Притоки-Оттоки: даёт юзеру сразу actionable signal
   // (приток/отток денег за день/неделю/месяц), а не статичный график СЧА.
