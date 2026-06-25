@@ -260,7 +260,7 @@ export default function TrialOfferCard({ lockedTier }: { lockedTier?: Tier }) {
             </label>
 
             {err && (
-                <div style={{ color: '#d33', fontSize: 'var(--fs-sm)', marginBottom: 10 }}>{err}</div>
+                <div style={{ color: 'var(--danger, #d9534f)', fontSize: 'var(--fs-sm)', marginBottom: 10 }}>{err}</div>
             )}
 
             <button
