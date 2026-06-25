@@ -12,8 +12,9 @@ MVP: метрики 'price' (фьючерсы) + 'oi_zscore'. Когда 🔔 п
 добавить ветки цены (candles по sec_id / index_data) в compute_value.
 """
 import os
+import json
 import urllib.parse
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 
 from dotenv import load_dotenv
 from sqlalchemy import text, bindparam
@@ -376,6 +377,75 @@ def format_msg(a: Alert, value: float, ctx: dict) -> str:
             f"Алерт сработал.\n{link}")
 
 
+# ─── Phase 2b: write-through личного fire в ленту аномалий сайта ──────────────
+# При срабатывании личного алерта пишем scope='personal'-строку в `anomalies` →
+# в колоколе/тосте появляется бейдж «ваш сигнал», и личные аномалии вне публичного
+# скана тоже попадают в ленту. Только ×N-типы (oi_move/oi_participants/funds_flow);
+# price и oi_zscore (другая единица измерения) — НЕ в ленту. НИКОГДА не ломает
+# доставку алерта: отдельная сессия + try/except (см. _write_personal_anomaly).
+_ANOMALY_TYPES = {"oi_move", "oi_participants", "funds_flow"}
+
+_PERSONAL_ANOMALY_SQL = text("""
+  INSERT INTO anomalies (scope, user_id, type, asset_id, asset_name, clgroup,
+                         direction, headline, context, severity_value, signal_date, deep_link)
+  VALUES ('personal', :user_id, :type, :asset_id, :asset_name, :clgroup, :direction,
+          :headline, :context, :severity_value, :signal_date, CAST(:deep_link AS JSONB))
+  ON CONFLICT DO NOTHING
+""")
+
+
+def _anomaly_deep_link(a) -> dict:
+    if a.indicator == "funds_flow":
+        cat = a.asset if a.asset in _FUND_CATEGORIES else None
+        return {"route": "/funds-money", "category": cat} if cat else {"route": "/funds-money"}
+    clg = a.clgroup if a.clgroup in ("FIZ", "YUR") else "FIZ"
+    iv = _TF_INTERVAL.get(a.timeframe or "1d", 24)
+    mode = "participants" if a.indicator == "oi_participants" else "positions"
+    return {"route": "/oi", "secid": a.asset, "clgroup": clg, "interval": iv,
+            "mode": mode, "variant": "net"}
+
+
+def _anomaly_text(a, value: float, ctx: dict) -> tuple:
+    direction = (ctx or {}).get("direction")
+    if a.indicator == "funds_flow":
+        name = a.asset_name or _FUND_CAT_NAME.get(a.asset, a.asset)
+        word = "приток" if direction == "up" else "отток"
+        return f"Резкий {word} — {name}", f"×{value:g} к обычному дневному потоку"
+    if a.indicator == "oi_participants":
+        clg = "физлиц" if (a.clgroup or "FIZ") == "FIZ" else "юрлиц"
+        flow = "Приток" if direction == "up" else "Отток"
+        return f"{flow} участников ({clg})", f"×{value:g} к обычному"
+    # oi_move
+    clg = "Физлица" if (a.clgroup or "FIZ") in ("FIZ", "ALL") else "Юрлица"
+    word = "резко нарастили позицию" if direction == "up" else "резко сократили позицию"
+    return f"{clg} {word}", f"×{value:g} к обычному дневному шагу"
+
+
+def _write_personal_anomaly(a, value: float, ctx: dict, sig_date) -> None:
+    """Личный fire → строка anomalies (scope='personal') для ленты сайта. Пишем в
+    ОТДЕЛЬНОЙ сессии (полная изоляция) + try/except: ошибка ленты физически НЕ может
+    затронуть транзакцию алерта (fire/AlertFire/доставку в Telegram)."""
+    if a.indicator not in _ANOMALY_TYPES:
+        return  # price / oi_zscore — не аномалия для ленты
+    direction = (ctx or {}).get("direction") or ("up" if value > 0 else "down")
+    headline, context = _anomaly_text(a, value, ctx)
+    params = {
+        "user_id": a.user_id, "type": a.indicator, "asset_id": a.asset,
+        "asset_name": a.asset_name, "clgroup": a.clgroup, "direction": direction,
+        "headline": headline, "context": context, "severity_value": value,
+        "signal_date": sig_date or date.today(),
+        "deep_link": json.dumps(_anomaly_deep_link(a), ensure_ascii=False),
+    }
+    try:
+        with SessionLocal() as s2:
+            s2.execute(_PERSONAL_ANOMALY_SQL, params)
+            s2.execute(text("SELECT pg_notify('anomaly', :p)"),
+                       {"p": json.dumps({"source": "anomaly", "id": 0})})
+            s2.commit()
+    except Exception as e:
+        print(f"[alerts_run] personal anomaly write failed (alert {a.id}): {e}")
+
+
 def run_once() -> dict:
     summary = {"checked": 0, "fired": 0, "skipped": 0, "unlinked": 0, "errors": 0}
     db = SessionLocal()
@@ -436,6 +506,7 @@ def run_once() -> dict:
                                           reply_markup=build_keyboard(a))
                     if result == "ok":
                         db.add(AlertFire(alert_id=a.id, value=value, message_text=text))
+                        _write_personal_anomaly(a, value, ctx or {}, sig_date)
                         a.last_fired_at = now
                         if sig_date is not None:
                             a.last_fired_date = sig_date   # гейт «новый день»
