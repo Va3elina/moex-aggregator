@@ -184,17 +184,31 @@ export default function OpenInterestPage() {
     'frame:oi:period', getDefaultPeriod('1y', isAuthenticated) as Period,
     parseOiDeepLink(searchParams).period);
 
-  // Контекст сигнала из URL (Telegram deep-link) — применяем ОДИН раз на маунте,
-  // чтобы открыть ОИ ровно в том виде, о котором пришёл сигнал (физ/юр, режим,
-  // вариант, таймфрейм). Инструмент уже инициализируется из ?instrument= выше.
+  // Контекст сигнала из URL (Telegram deep-link ИЛИ in-app тост/колокол аномалии).
+  // Применяем при КАЖДОЙ навигации, не только на маунте — иначе клик по второй
+  // аномалии того же индикатора /oi, но ДРУГОГО актива, не менял бы ничего: SPA не
+  // перемонтирует страницу, а mount-эффект и useState-инициализатор больше не
+  // дёргаются. Гард по строке URL + сравнение тикера: пользовательский выбор актива
+  // (он тоже пишет ?instrument= через setSearchParams, строка 319) НЕ вызывает
+  // лишнего сброса имени.
+  const selectedInstrumentRef = useRef(selectedInstrument);
+  selectedInstrumentRef.current = selectedInstrument;
+  const appliedDeepLinkRef = useRef('');
   useEffect(() => {
+    const urlKey = searchParams.toString();
+    if (urlKey === appliedDeepLinkRef.current) return;
+    appliedDeepLinkRef.current = urlKey;
     const dl = parseOiDeepLink(searchParams);
+    if (dl.instrument && dl.instrument !== selectedInstrumentRef.current) {
+      setSelectedInstrument(dl.instrument);
+      setInstrumentName('');   // переразрешим имя по новому тикеру (эффект-резолвер выше)
+    }
     if (dl.clgroup) setClgroup(dl.clgroup);
     if (dl.interval) setIntervalValue(dl.interval);
     if (dl.displayMode) setDisplayMode(dl.displayMode);
     if (dl.oiVariant) setOiVariant(dl.oiVariant);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [searchParams]);
 
   // showOi: в режиме 'price' открытый интерес не запрашиваем. Поднято сюда из
   // прежнего места ниже — нужно фетчеру useIndicatorData.

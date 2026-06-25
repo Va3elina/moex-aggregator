@@ -141,16 +141,28 @@ export default function MobileOpenInterestPage() {
     return () => { cancelled = true; };
   }, [selectedInstrument]);
 
-  // Контекст сигнала из URL — один раз на маунте (физ/юр, режим, вариант,
-  // таймфрейм). Режима 'price' на мобилке нет → пропускаем.
+  // Контекст сигнала из URL (Telegram deep-link ИЛИ in-app тост/колокол аномалии).
+  // Применяем при КАЖДОЙ навигации, не только на маунте — иначе клик по второй
+  // аномалии /oi другого актива не менял бы ничего (SPA не перемонтирует страницу).
+  // Режима 'price' на мобилке нет → пропускаем. Гард по строке URL + сравнение тикера.
+  const selectedInstrumentRef = useRef(selectedInstrument);
+  selectedInstrumentRef.current = selectedInstrument;
+  const appliedDeepLinkRef = useRef('');
   useEffect(() => {
+    const urlKey = searchParams.toString();
+    if (urlKey === appliedDeepLinkRef.current) return;
+    appliedDeepLinkRef.current = urlKey;
     const dl = parseOiDeepLink(searchParams);
+    if (dl.instrument && dl.instrument !== selectedInstrumentRef.current) {
+      setSelectedInstrument(dl.instrument);
+      setInstrumentName('');
+    }
     if (dl.clgroup) setClgroup(dl.clgroup);
     if (dl.interval) setIntervalValue(dl.interval);
     if (dl.displayMode && dl.displayMode !== 'price') setDisplayMode(dl.displayMode);
     if (dl.oiVariant) setOiVariant(dl.oiVariant);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [searchParams]);
 
   const [data, setData] = useState<ChartResponse | null>(null);
   const [loading, setLoading] = useState(true);
