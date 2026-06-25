@@ -29,6 +29,12 @@ export function buildAnomalyUrl(dl: AnomalyDeepLink): string {
 /** Открыть график аномалии. Если цель закрыта тарифом (link_required_tier) —
  *  апселл + переход на ДЕФОЛТ страницы (доступное по умолчанию); иначе диплинк. */
 export function openAnomaly(item: AnomalyItem, navigate: NavigateFunction, showUpgrade: ShowUpgrade): void {
+  // Внешняя ссылка (промо канала / пост) — открываем в новой вкладке, без навигации.
+  const route = item.deep_link?.route || '';
+  if (/^https?:\/\//.test(route)) {
+    window.open(route, '_blank', 'noopener,noreferrer');
+    return;
+  }
   if (item.link_required_tier) {
     const indicator = item.type === 'funds_flow' ? 'funds_money' : 'open_interest';
     showUpgrade({ tier: item.link_required_tier, featureName: item.asset_name || item.asset_id, indicator });

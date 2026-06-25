@@ -98,12 +98,18 @@ export function AnomalyBell() {
                     <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>{relTime(item.created_at)}</span>
                   </div>
                   <div style={{ color: 'var(--text-primary)', fontSize: 13, marginBottom: 3 }}>{item.headline}</div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <Dir size={14} color={c} />
-                    {item.severity_value != null && (
-                      <span style={{ color: c, fontSize: 12, fontWeight: 500 }}>×{item.severity_value.toFixed(1)}</span>
-                    )}
-                  </div>
+                  {item.type === 'promo' ? (
+                    item.context && (
+                      <div style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{item.context}</div>
+                    )
+                  ) : (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <Dir size={14} color={c} />
+                      {item.severity_value != null && (
+                        <span style={{ color: c, fontSize: 12, fontWeight: 500 }}>×{item.severity_value.toFixed(1)}</span>
+                      )}
+                    </div>
+                  )}
                 </button>
               );
             })

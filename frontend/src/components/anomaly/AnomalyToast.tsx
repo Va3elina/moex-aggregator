@@ -9,7 +9,7 @@
  * вверх / красный вниз). Замок на «Открыть график» = цель закрыта тарифом (клик
  * даст апселл + дефолт — решает сервер через link_required_tier).
  */
-import { TrendingUp, TrendingDown, X, Lock, Bell, ArrowRight, Check } from 'lucide-react';
+import { TrendingUp, TrendingDown, X, Lock, Bell, ArrowRight, Check, ExternalLink } from 'lucide-react';
 import type { AnomalyItem } from '../../services/api';
 
 const TYPE_META: Record<string, { label: string; dot: string }> = {
@@ -17,6 +17,7 @@ const TYPE_META: Record<string, { label: string; dot: string }> = {
   oi_zscore:       { label: 'Открытый интерес', dot: 'var(--accent-orange, #FF9100)' },
   oi_participants: { label: 'Открытый интерес', dot: 'var(--accent-orange, #FF9100)' },
   funds_flow:      { label: 'Деньги в фондах',  dot: 'var(--accent-cyan, #00BCD4)' },
+  promo:           { label: 'Канал Фрейма',     dot: 'var(--accent, #00E676)' },
 };
 
 interface Props {
@@ -36,8 +37,10 @@ export function AnomalyToast({
   onOpen, onSubscribe, onClose, onPause, onResume,
 }: Props) {
   const meta = TYPE_META[item.type] ?? { label: 'Сигнал', dot: 'var(--text-muted)' };
+  const isPromo = item.type === 'promo';
   const up = item.direction === 'up';
-  const dirColor = up ? 'var(--success, #00E676)' : 'var(--danger, #FF5252)';
+  const dirColor = isPromo ? 'var(--accent, #00E676)'
+    : (up ? 'var(--success, #00E676)' : 'var(--danger, #FF5252)');
   const DirIcon = up ? TrendingUp : TrendingDown;
   const sev = item.severity_value != null ? `×${item.severity_value.toFixed(1)}` : '';
   // context = «×5.2 к обычному дневному шагу» → отрезаем ведущий ×N (он рендерится
@@ -85,14 +88,23 @@ export function AnomalyToast({
         {item.headline}
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
-        <DirIcon size={16} color={dirColor} />
-        {sev && <span style={{ color: dirColor, fontSize: 13, fontWeight: 500 }}>{sev}</span>}
-        {tail && <span style={{ color: 'var(--text-secondary)', fontSize: 13 }}>{tail}</span>}
-      </div>
-
-      {assetLine && (
-        <div style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 12 }}>{assetLine}</div>
+      {isPromo ? (
+        item.context && (
+          <div style={{ color: 'var(--text-secondary)', fontSize: 13, lineHeight: 1.4, marginBottom: 12 }}>
+            {item.context}
+          </div>
+        )
+      ) : (
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+            <DirIcon size={16} color={dirColor} />
+            {sev && <span style={{ color: dirColor, fontSize: 13, fontWeight: 500 }}>{sev}</span>}
+            {tail && <span style={{ color: 'var(--text-secondary)', fontSize: 13 }}>{tail}</span>}
+          </div>
+          {assetLine && (
+            <div style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 12 }}>{assetLine}</div>
+          )}
+        </>
       )}
 
       <div style={{ display: 'flex', gap: 8 }}>
@@ -106,10 +118,11 @@ export function AnomalyToast({
             fontSize: 13, fontWeight: 500, padding: '7px 10px', borderRadius: 8, cursor: 'pointer',
           }}
         >
-          {locked && <Lock size={14} />}
-          Открыть график
-          {!locked && <ArrowRight size={15} />}
+          {locked && !isPromo && <Lock size={14} />}
+          {isPromo ? 'Открыть канал' : 'Открыть график'}
+          {isPromo ? <ExternalLink size={15} /> : (!locked && <ArrowRight size={15} />)}
         </button>
+        {!isPromo && (
         <button
           onClick={onSubscribe}
           disabled={subscribing || subscribed}
@@ -125,6 +138,7 @@ export function AnomalyToast({
           {subscribed ? <Check size={15} /> : <Bell size={15} />}
           {subscribed ? 'Готово' : 'Получать'}
         </button>
+        )}
       </div>
 
       <div style={{
