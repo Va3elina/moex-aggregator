@@ -10,6 +10,7 @@
 """
 import os
 import re
+import json
 import html as _html
 from datetime import datetime, timezone
 
@@ -72,7 +73,14 @@ def _parse_posts(page: str, channel: str) -> list:
                 posted_at = datetime.fromisoformat(dm.group(1))
             except ValueError:
                 posted_at = None
-        pm = re.search(r"background-image:url\('([^']+)'\)", chunk)
+        # Берём фон ИМЕННО у photo_wrap (собственное hi-res фото поста), а не
+        # первый попавшийся background-image: у постов-комментариев первым идёт
+        # tgme_widget_message_reply_thumb — крошечная мыльная превьюшка цитируемого
+        # поста. Нет своего photo_wrap → photo=None (рисуем текст без картинки),
+        # а не блёрнутый thumb.
+        pm = re.search(
+            r"tgme_widget_message_photo_wrap[^>]*?background-image:url\('([^']+)'\)",
+            chunk)
         photo = pm.group(1) if pm else None
         if not textval and not photo:
             continue   # сервисное/пустое сообщение
@@ -90,6 +98,7 @@ _UPSERT = text("""
   ON CONFLICT (channel, post_id) DO UPDATE
     SET text = EXCLUDED.text, photo_url = EXCLUDED.photo_url,
         channel_name = EXCLUDED.channel_name
+  RETURNING (xmax = 0) AS inserted
 """)
 
 
@@ -113,9 +122,19 @@ def run_once() -> dict:
         return summary
     db = SessionLocal()
     try:
+        new_posts = 0
         for row in rows:
-            db.execute(_UPSERT, row)
+            res = db.execute(_UPSERT, row).fetchone()
+            if res and res[0]:        # xmax=0 → строка ВСТАВЛЕНА (новый пост), не апдейт
+                new_posts += 1
             summary["posts"] += 1
+        # Новый пост → SSE-нудж (source:'anomaly'): фронт сразу освежит ленту
+        # колокола/новостей, не дожидаясь 90с-поллинга. notify_listener форвардит
+        # канал 'anomaly' в sse_manager (как anomaly_scan).
+        if new_posts:
+            db.execute(text("SELECT pg_notify('anomaly', :p)"),
+                       {"p": json.dumps({"source": "anomaly", "kind": "channel_post"})})
+            summary["new"] = new_posts
         db.commit()
     except Exception as e:
         db.rollback()

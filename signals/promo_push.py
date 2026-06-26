@@ -21,7 +21,10 @@ if "@db:" in _db:
 
 from api.database import SessionLocal  # noqa: E402
 
-CHANNEL_URL = "https://t.me/FrameTool"
+# Трекинг-инвайт канала: Telegram считает переходы по этой ссылке отдельно
+# (аналитика инвайт-ссылок) → видим, сколько подписалось С САЙТА. Текст промо
+# может упоминать @FrameTool как бренд; КЛИК идёт через трекер.
+CHANNEL_URL = "https://t.me/+vbt614-Qq1w1YWYy"
 
 # Пул формулировок (round-robin). (headline, context). Не повторяемся.
 VARIANTS = [
