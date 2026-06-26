@@ -514,28 +514,51 @@ def run_once() -> dict:
                 send_failed = False
                 if eval_op(a.op, value, prev, float(a.threshold)):
                     text = format_msg(a, value, ctx or {})
+                    # РЕЗЕРВ-ПЕРЕД-ОТПРАВКОЙ (фикс дубля 2026-06-26). send необратим и
+                    # НЕ трогает БД. Раньше выстрел фиксировался ПОСЛЕ send одним
+                    # батч-коммитом в конце прогона — и если тот срывался (БД-блип на
+                    # 4ГБ-хосте / OOM-kill / «ядовитый» алерт ронял коммит всей пачки),
+                    # сообщение уже ушло, а гейт last_fired_date оставался пуст →
+                    # следующий 5-мин прогон слал ДУБЛЬ (VI пришёл 06:12 и 06:17, fire
+                    # записан ОДИН; ни AlertFire, ни personal-anomaly за 06:12 — значит
+                    # БД была недоступна, а relay-send прошёл). Теперь пишем гейт и
+                    # коммитим ДО send: reserve не прошёл → НЕ отправляем (повтор позже,
+                    # без дубля); отправка не удалась → откатываем резерв (БД жива, раз
+                    # reserve закоммитился) → честный повтор без потери сигнала.
+                    prev_state = (a.last_fired_at, a.last_fired_date, a.status)
+                    fire = AlertFire(alert_id=a.id, value=value, message_text=text)
+                    db.add(fire)
+                    a.last_fired_at = now
+                    if sig_date is not None:
+                        a.last_fired_date = sig_date   # гейт «новый день»
+                    if a.mode == "once":
+                        a.status = "fired"
+                    try:
+                        db.commit()                    # резерв durable ДО отправки
+                    except Exception as e:
+                        db.rollback()                  # БД недоступна → НЕ шлём, повтор позже
+                        summary["errors"] += 1
+                        print(f"[alerts_run] reserve failed (alert {a.id}): {e}")
+                        continue
                     result = send_message(user.telegram_chat_id, text,
                                           reply_markup=build_keyboard(a))
                     if result == "ok":
-                        db.add(AlertFire(alert_id=a.id, value=value, message_text=text))
                         _write_personal_anomaly(a, value, ctx or {}, sig_date)
-                        a.last_fired_at = now
-                        if sig_date is not None:
-                            a.last_fired_date = sig_date   # гейт «новый день»
-                        if a.mode == "once":
-                            a.status = "fired"
                         summary["fired"] += 1
-                    elif result == "blocked":
-                        # юзер забанил бота / чат мёртв → авто-отвязка, чтобы не
-                        # долбить впустую. Алерт остаётся, но без chat_id eval его
-                        # скипнет до повторной привязки на сайте.
-                        user.telegram_chat_id = None
-                        user.telegram_username = None
-                        user.telegram_linked_at = None
-                        summary["unlinked"] += 1
-                        send_failed = True
-                        print(f"[alerts_run] user {user.id} blocked bot → auto-unlinked")
-                    else:  # 'error' — временная ошибка отправки
+                    else:
+                        # доставки не было → откатываем резерв, чтобы повторить (не
+                        # занятый гейт, не статус 'fired' у mode='once').
+                        db.delete(fire)
+                        a.last_fired_at, a.last_fired_date, a.status = prev_state
+                        if result == "blocked":
+                            # юзер забанил бота / чат мёртв → авто-отвязка, чтобы не
+                            # долбить впустую (eval скипнет до повторной привязки на сайте).
+                            user.telegram_chat_id = None
+                            user.telegram_username = None
+                            user.telegram_linked_at = None
+                            summary["unlinked"] += 1
+                            print(f"[alerts_run] user {user.id} blocked bot → auto-unlinked")
+                        db.commit()
                         send_failed = True
                 # last_value НЕ двигаем при неудачной отправке — иначе cross_up/down
                 # не пере-сработает (prev уже за порогом). При успехе/без срабатывания — двигаем.
