@@ -32,7 +32,7 @@ export default function ChannelNews() {
           Новости каналов
         </p>
         <div className="h-px flex-1" style={{ backgroundColor: 'var(--border-color)' }} />
-        <a href="https://t.me/FrameTool" target="_blank" rel="noopener noreferrer"
+        <a href="https://t.me/+vbt614-Qq1w1YWYy" target="_blank" rel="noopener noreferrer"
           className="text-xs flex items-center gap-1 transition-opacity hover:opacity-80"
           style={{ color: 'var(--text-secondary)' }}>
           @FrameTool <ExternalLink size={12} />
