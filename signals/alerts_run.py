@@ -394,11 +394,23 @@ _PERSONAL_ANOMALY_SQL = text("""
 """)
 
 
+def _anomaly_clgroup(a) -> str | None:
+    """clgroup строки ленты, канонизированный КАК ПУБЛИЧНЫЙ СКАН: OI меряется со
+    стороны физлиц (net зеркален, см. anomaly_scan), поэтому ALL/None → FIZ.
+    Иначе DISTINCT ON в /feed не свернёт личную (alert.clgroup часто = 'ALL') и
+    публичную (всегда 'FIZ') строки одного движения — и пользователь видит дубль
+    «мой + системный сигнал» (баг 2026-06-26). Явный YUR — отдельная сторона
+    (другой текст/направление), его не схлопываем. Фонды clgroup не имеют → None."""
+    if a.indicator == "funds_flow":
+        return None
+    return a.clgroup if a.clgroup in ("FIZ", "YUR") else "FIZ"
+
+
 def _anomaly_deep_link(a) -> dict:
     if a.indicator == "funds_flow":
         cat = a.asset if a.asset in _FUND_CATEGORIES else None
         return {"route": "/funds-money", "category": cat} if cat else {"route": "/funds-money"}
-    clg = a.clgroup if a.clgroup in ("FIZ", "YUR") else "FIZ"
+    clg = _anomaly_clgroup(a)
     iv = _TF_INTERVAL.get(a.timeframe or "1d", 24)
     mode = "participants" if a.indicator == "oi_participants" else "positions"
     return {"route": "/oi", "secid": a.asset, "clgroup": clg, "interval": iv,
@@ -431,7 +443,7 @@ def _write_personal_anomaly(a, value: float, ctx: dict, sig_date) -> None:
     headline, context = _anomaly_text(a, value, ctx)
     params = {
         "user_id": a.user_id, "type": a.indicator, "asset_id": a.asset,
-        "asset_name": a.asset_name, "clgroup": a.clgroup, "direction": direction,
+        "asset_name": a.asset_name, "clgroup": _anomaly_clgroup(a), "direction": direction,
         "headline": headline, "context": context, "severity_value": value,
         "signal_date": sig_date or date.today(),
         "deep_link": json.dumps(_anomaly_deep_link(a), ensure_ascii=False),
