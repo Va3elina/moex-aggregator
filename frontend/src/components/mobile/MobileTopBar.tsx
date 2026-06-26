@@ -15,6 +15,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import FrameLogo from '../FrameLogo';
+import MobileAnomalyBell from '../anomaly/MobileAnomalyBell';
 
 interface MobileTopBarProps {
   /** Если задан — на месте логотипа рендерится ← back-кнопка. */
@@ -51,6 +52,7 @@ export default function MobileTopBar({ onBack }: MobileTopBarProps) {
         )}
       </div>
       <div className="fm-topbar-right">
+        <MobileAnomalyBell />
         <button
           className="fm-icon-btn"
           aria-label="Сменить тему"

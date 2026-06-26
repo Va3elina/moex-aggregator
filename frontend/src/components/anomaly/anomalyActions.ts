@@ -18,6 +18,9 @@ export function buildAnomalyUrl(dl: AnomalyDeepLink): string {
     if (dl.interval != null) p.set('interval', String(dl.interval));
     if (dl.mode) p.set('mode', dl.mode);
     if (dl.variant) p.set('variant', dl.variant);
+    // Аномалии — дневной OI-сигнал; открываем на 1 году (контекст движения, лёгкая
+    // дневная серия), переопределяя сохранённый период пользователя. Решение Вадима.
+    p.set('period', '1y');
     return `/oi?${p.toString()}`;
   }
   if (dl.route === '/funds-money') {

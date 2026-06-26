@@ -159,6 +159,7 @@ export default function MobileOpenInterestPage() {
     }
     if (dl.clgroup) setClgroup(dl.clgroup);
     if (dl.interval) setIntervalValue(dl.interval);
+    if (dl.period) setPeriod(dl.period);   // диплинк аномалии несёт period=1y; seed ловит только маунт
     if (dl.displayMode && dl.displayMode !== 'price') setDisplayMode(dl.displayMode);
     if (dl.oiVariant) setOiVariant(dl.oiVariant);
     // eslint-disable-next-line react-hooks/exhaustive-deps
