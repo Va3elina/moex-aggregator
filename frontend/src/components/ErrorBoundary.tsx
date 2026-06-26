@@ -1,4 +1,5 @@
 import { Component, type ReactNode } from 'react';
+import { isChunkLoadError, reloadOnceForChunk } from '../utils/chunkReload';
 
 interface Props {
   children: ReactNode;
@@ -11,20 +12,30 @@ interface Props {
 interface State {
   hasError: boolean;
   error: Error | null;
+  /** Сбой загрузки code-split чанка (устаревший бандл после деплоя). Такой случай
+      лечим тихой перезагрузкой, а не экраном «Что-то пошло не так». */
+  isChunkError: boolean;
 }
 
 export default class ErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { hasError: false, error: null, isChunkError: false };
   }
 
   static getDerivedStateFromError(error: Error): State {
-    return { hasError: true, error };
+    return { hasError: true, error, isChunkError: isChunkLoadError(error) };
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
     console.error('ErrorBoundary caught:', error, info.componentStack);
+    // Устаревший чанк после деплоя — пробуем разово перезагрузиться на свежий
+    // билд вместо показа ошибки. Если guard не дал (недавно уже перезагружались,
+    // а чанк всё равно битый → деплой реально сломан) — снимаем флаг, чтобы
+    // отрисовать обычный экран ошибки, а не висеть на пустом placeholder'е.
+    if (this.state.isChunkError && !reloadOnceForChunk()) {
+      this.setState({ isChunkError: false });
+    }
   }
 
   componentDidUpdate(prevProps: Props) {
@@ -33,12 +44,17 @@ export default class ErrorBoundary extends Component<Props, State> {
     // даже если пользователь кликает другие nav-ссылки. URL меняется, но boundary
     // продолжает отрисовывать "Что-то пошло не так".
     if (this.state.hasError && prevProps.resetKey !== this.props.resetKey) {
-      this.setState({ hasError: false, error: null });
+      this.setState({ hasError: false, error: null, isChunkError: false });
     }
   }
 
   render() {
     if (this.state.hasError) {
+      // Сбой загрузки чанка → тихий placeholder (как Suspense fallback): сейчас
+      // инициируется перезагрузка на свежий билд, незачем мигать экраном ошибки.
+      if (this.state.isChunkError) {
+        return <div style={{ minHeight: '100vh', background: 'var(--bg-primary)' }} />;
+      }
       return (
         <div style={{
           display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
