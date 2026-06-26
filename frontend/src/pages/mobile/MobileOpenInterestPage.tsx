@@ -477,6 +477,7 @@ export default function MobileOpenInterestPage() {
       onAssetClick={() => setAssetSearchOpen(true)}
       assetLabel={instrumentName}
       assetTicker={frontContract || selectedInstrument}
+      assetSectype={selectedInstrument}
       assetTourId="oi-asset"
       onTimeClick={() => setPeriodSheetOpen(true)}
       timeSummary={timeLabel}
