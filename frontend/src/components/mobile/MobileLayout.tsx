@@ -33,6 +33,7 @@ import MobileTopBar from './MobileTopBar';
 import MobileBottomRail from './MobileBottomRail';
 import MobilePWABanner from './MobilePWABanner';
 import { usePullToRefresh } from '../../hooks/usePullToRefresh';
+import InstrumentIcon from '../InstrumentIcon';
 import '../../styles/mobile.css';
 
 interface MobileLayoutProps {
@@ -45,6 +46,9 @@ interface MobileLayoutProps {
   assetLabel?: string;
   /** Тикер актива («SR»). */
   assetTicker?: string;
+  /** Sectype для лого компании в кнопке (вместо звезды). Если задан — кнопка
+   *  рисует InstrumentIcon + тикер/фьючерс (как на ПК); иначе ★ + «Актив». */
+  assetSectype?: string;
   /** data-tour ID для Asset-кнопки. */
   assetTourId?: string;
 
@@ -88,6 +92,7 @@ export default function MobileLayout({
   onAssetClick,
   assetLabel,
   assetTicker,
+  assetSectype,
   assetTourId,
   onTimeClick,
   timeSummary,
@@ -165,10 +170,22 @@ export default function MobileLayout({
               }
               title={assetLabel && assetTicker ? `${assetLabel} · ${assetTicker}` : assetLabel}
             >
-              <span className="fm-rail-ico">
-                <Star size={16} fill="var(--accent)" strokeWidth={0} />
-              </span>
-              <span>Актив</span>
+              {assetSectype ? (
+                <>
+                  {/* Лого компании + последний фьючерс/тикер — один в один как на ПК */}
+                  <InstrumentIcon sectype={assetSectype} size={20} rounded="full" />
+                  <span style={{ maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {assetTicker || assetLabel || 'Актив'}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="fm-rail-ico">
+                    <Star size={16} fill="var(--accent)" strokeWidth={0} />
+                  </span>
+                  <span>Актив</span>
+                </>
+              )}
             </button>
           )}
 

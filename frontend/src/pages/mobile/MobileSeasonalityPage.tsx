@@ -12,6 +12,7 @@ import { CalendarDays, Lock, X } from 'lucide-react';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
 import { handleTierError } from '../../utils/tierError';
+import { displayTicker } from '../../utils/displayTicker';
 import MobileLayout from '../../components/mobile/MobileLayout';
 import MobilePageHeader from '../../components/mobile/MobilePageHeader';
 import MobileAssetSearch from '../../components/mobile/MobileAssetSearch';
@@ -400,7 +401,8 @@ export default function MobileSeasonalityPage() {
     <MobileLayout
       onAssetClick={() => setAssetSearchOpen(true)}
       assetLabel={selectedName}
-      assetTicker={selectedStock}
+      assetTicker={displayTicker(selectedStock)}
+      assetSectype={selectedStock}
       assetTourId="seasonality-asset"
       onSettingsClick={() => setModeSheetOpen(true)}
       settingsSummary={filtersDesc.join(' · ')}
