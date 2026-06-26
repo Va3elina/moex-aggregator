@@ -26,7 +26,7 @@ _db = os.environ.get("DB_URL", "")
 if "@db:" in _db:
     os.environ["DB_URL"] = _db.replace("@db:", "@127.0.0.1:")
 
-from api.database import SessionLocal               # noqa: E402
+from api.database import SessionLocal, engine       # noqa: E402
 from api.models import User, Alert, AlertFire        # noqa: E402
 from signals.db import get_latest_price              # noqa: E402
 from signals.detectors.oi import (  # noqa: E402
@@ -458,8 +458,32 @@ def _write_personal_anomaly(a, value: float, ctx: dict, sig_date) -> None:
         print(f"[alerts_run] personal anomaly write failed (alert {a.id}): {e}")
 
 
+_RUN_LOCK_KEY = 0x616C7274  # 'alrt' — id сессионного advisory-lock прогона alerts_run
+
+
 def run_once() -> dict:
     summary = {"checked": 0, "fired": 0, "skipped": 0, "unlinked": 0, "errors": 0}
+    # ЗАЩИТА ОТ НАЛОЖЕНИЯ ПРОГОНОВ (PR #208). reserve-перед-send (PR #207) спасает от
+    # ПОСЛЕДОВАТЕЛЬНОГО сбоя коммита, но два ОДНОВРЕМЕННЫХ прогона (cron-tick поверх
+    # затянувшегося >5мин прогона, либо ручной `python -m signals.alerts_run` во время
+    # крона) прочли бы старый last_fired_date ДО любого коммита и оба отправили бы дубль.
+    # Сессионный advisory-lock на ВЫДЕЛЕННОМ соединении: держим его открытым весь прогон
+    # независимо от mid-loop commit'ов основной сессии; закрытие соединения = авто-релиз
+    # замка даже при падении процесса. Не взяли → другой прогон активен → пропускаем тик
+    # (следующий подхватит). exec_driver_sql, т.к. `text` шадоумится в цикле (text=format_msg).
+    try:
+        lock_conn = engine.connect()
+    except Exception as e:
+        print(f"[alerts_run] cannot connect for run-lock: {e}")
+        return summary
+    got = lock_conn.exec_driver_sql(
+        f"SELECT pg_try_advisory_lock({_RUN_LOCK_KEY})").scalar()
+    lock_conn.commit()   # завершаем tx; session-level замок живёт на соединении до close
+    if not got:
+        lock_conn.close()
+        print("[alerts_run] overlap: another run holds the lock → skip this tick")
+        summary["skipped_locked"] = 1
+        return summary
     db = SessionLocal()
     try:
         alerts = db.query(Alert).filter(Alert.status == "active").all()
@@ -573,6 +597,7 @@ def run_once() -> dict:
         print(f"[alerts_run] fatal: {e}")
     finally:
         db.close()
+        lock_conn.close()   # авто-релиз session advisory-lock (даже при падении прогона)
     return summary
 
 
