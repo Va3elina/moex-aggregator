@@ -447,18 +447,18 @@ export default function MobileChart({
   const innerH = height - PAD_TOP - PAD_BOTTOM;
 
   // Pipeline двух стадий:
-  //   1. LTTB — уменьшение количества точек до ~width*0.4 (≈144 на 360px)
-  //   2. SMA — симметричное сглаживание с adaptive окном:
-  //        > 80 точек → window 7 (агрессивно)
-  //        > 40       → window 5
-  //        > 20       → window 3
-  //        иначе      → без сглаживания (короткий период)
-  // LTTB сохраняет важные swing'и, но на OI и других волатильных рядах
-  // эти swing'и И ЕСТЬ шум. SMA усредняет соседние пики в плавный тренд.
-  // Cubic-bezier поверх в pathFor добавляет финальную геометрическую
-  // плавность.
+  //   1. LTTB — прореживание до ~1 точки на CSS-пиксель ширины (≈360–400 на
+  //      мобиле, было width*0.4≈144). Дневные ряды ≤~1.5г при этом LOSSLESS
+  //      (252 точки 1г < threshold → LTTB возвращает сырьё как есть). Длинные
+  //      периоды и интрадей жмутся до ~width вместо прежних ~144.
+  //   2. SMA — теперь МИНИМАЛЬНОЕ: ≤300 точек (дневка) рисуем СЫРЫМИ — макс.
+  //      детализация (раньше даже 1г сглаживался window=7). Только очень
+  //      плотные ряды (длинные/интрадей) получают лёгкое window=3 против
+  //      чистого шума. Catmull-Rom в pathFor даёт геометрическую плавность БЕЗ
+  //      потери данных; на плотных точках сплайн короткими сегментами овершутит
+  //      МЕНЬШЕ, не больше — поэтому больше точек = и детальнее, и чище.
   const downsampledSeries = useMemo(() => {
-    const threshold = Math.max(50, Math.floor(width * 0.4));
+    const threshold = Math.max(50, Math.floor(width));
 
     // Baseline (longest) определяет downsampling ratio. Это критично для
     // index-based xAt: если baseline сжимается 252→160 (ratio 0.635), а
@@ -478,8 +478,9 @@ export default function MobileChart({
         ? Math.max(2, Math.round(s.data.length * ratio))
         : s.data.length;
       let data = lttbDownsample(s.data, targetCount);
-      const smaWindow =
-        data.length > 80 ? 7 : data.length > 40 ? 5 : data.length > 20 ? 3 : 0;
+      // Сглаживаем ТОЛЬКО очень плотные ряды (длинные периоды/интрадей) лёгким
+      // window=3; дневка (≤300 точек) — сырьё, без SMA. Макс. детализация.
+      const smaWindow = data.length > 300 ? 3 : 0;
       if (smaWindow > 0) data = smaSmooth(data, smaWindow);
       return { ...s, data };
     });
