@@ -36,7 +36,7 @@ type SortDir = 'asc' | 'desc';
 
 // Ширина колонки объёма (px) — единый источник для сорт-заголовка И значений,
 // чтобы они гарантированно стояли друг под другом, выровненные по правому краю.
-const COL: Record<SortCol, number> = { volume: 110 };
+const COL: Record<SortCol, number> = { volume: 96 };
 
 // Корзина-категория бумаги (приходит с бэкенда) → подпись таба. Порядок = порядок
 // табов слева направо; показываем ТОЛЬКО непустые корзины + «Все» всегда последней.
@@ -217,7 +217,7 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
           onSelect(asset);
           onClose();
         }}
-        className="instrument-item flex items-center gap-3.5 px-3 py-2.5 rounded-lg transition-colors"
+        className="instrument-item flex items-center gap-3 px-3 py-1 rounded-lg transition-colors"
         style={{ color: 'var(--text-primary)', cursor: 'pointer' }}
       >
         {/* Лого: InstrumentIcon по резолвнутому тикеру (акция), иначе — цветная точка
@@ -236,14 +236,18 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
           />
         )}
 
-        {/* Имя бумаги — каноничное (формат Сезонности), ellipsis, полное в title */}
-        <span
-          className="truncate flex-1 font-semibold"
-          style={{ fontSize: 'var(--fs-sm)' }}
-          title={displayName}
-        >
-          {displayName}
-        </span>
+        {/* Имя + тикер — как в Сезонности: имя жирное (fs-sm), резолвнутый тикер
+            (SBER/GAZP…) серый рядом (fs-xs). У бумаг без тикера — только имя. */}
+        <div className="flex items-baseline gap-1.5 flex-1 min-w-0">
+          <span className="font-bold truncate" style={{ fontSize: 'var(--fs-sm)' }} title={displayName}>
+            {displayName}
+          </span>
+          {ticker && (
+            <span className="flex-shrink-0" style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-xs)' }}>
+              {ticker}
+            </span>
+          )}
+        </div>
 
         {/* Колонка объёма (₽) — единственная, под сорт-заголовком, по правому краю
             (вес/число фондов убраны по образцу Сезонности). */}
@@ -263,11 +267,11 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
         {/* Star — toggle избранного, stopPropagation чтобы не выбрать актив */}
         <button
           onClick={(e) => toggleFavorite(asset.key, e)}
-          className="p-2 transition-colors flex-shrink-0"
+          className="p-1.5 transition-colors flex-shrink-0"
           style={{ color: isFavorite ? 'var(--accent)' : 'var(--text-muted)' }}
           aria-label={isFavorite ? 'Убрать из избранных' : 'Добавить в избранные'}
         >
-          <Star size={20} fill={isFavorite ? 'currentColor' : 'transparent'} />
+          <Star size={16} fill={isFavorite ? 'currentColor' : 'transparent'} />
         </button>
       </div>
     );
@@ -370,7 +374,7 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
           {/* Sticky-шапка колонок — кликабельная сортировка, зеркалит строку списка
               ([лого-спейсер 24] · gap · [Бумага flex-1] · cols · [звезда-спейсер 36]) */}
           <div
-            className="sticky top-0 z-10 flex items-center gap-3.5 px-3 pt-1 pb-2.5 mb-2"
+            className="sticky top-0 z-10 flex items-center gap-3 px-3 pt-1 pb-2.5 mb-2"
             style={{ backgroundColor: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-color)' }}
           >
             <span
@@ -380,7 +384,7 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
               Бумага
             </span>
             {renderSortHeader('volume', 'Объём', 'Суммарный объём бумаги в портфелях фондов, ₽')}
-            <span style={{ width: 36, flexShrink: 0 }} aria-hidden="true" />
+            <span style={{ width: 28, flexShrink: 0 }} aria-hidden="true" />
           </div>
 
           {favoriteAssets.length === 0 && regularAssets.length === 0 ? (
