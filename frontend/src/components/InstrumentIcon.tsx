@@ -144,16 +144,19 @@ export const FUT_BASE_TO_LOGO: Record<string, string> = {
  * Источник: frame-logo-corrections-2026-04-29.json (правки коллеги).
  *
  * Содержит:
- *  - 41 stock с raw_NNN-логотипами из дизайнерского стикерпака
- *  - 1 reuse существующего логотипа (AFKS → HYDR)
- *  - 2 тикера выпали из коррекций (SELG, RGSS) — без override, fallback на дефолт
+ *  - stock-тикеры с raw_NNN-логотипами из дизайнерского стикерпака
+ *  - расширение для «Потоков по компании» (fund-trades): префы/субхолдинги и
+ *    компании, у которых была только futures-коррекция (Мечел, М.Видео, Софтлайн,
+ *    СПБ Биржа, Whoosh, Сегежа, РуссНефть, Артген) — без него они падали на
+ *    плейсхолдер /logos/<тикер>.png или инициалы, хотя лого в ОИ уже показывается
+ *  - SELG, RGSS — лого в стикерпаке нет, fallback на инициалы
  *
  * Логика fallback:
  *   sectype в STOCK_LOGO_OVERRIDE → используем override
  *   Иначе → existing FUT_BASE_TO_LOGO / direct sectype
  */
 export const STOCK_LOGO_OVERRIDE: Record<string, string> = {
-  AFKS: 'HYDR',     // Система — reuse HYDR logo per JSON
+  AFKS: 'raw_069',  // Система — было 'HYDR' (показывало знак РусГидро); raw_069 = лого Системы, как в ОИ для базы AK
   ALRS: 'raw_063',  // Алроса
   ASTR: 'raw_012',  // Группа Астра
   BANE: 'raw_009',  // Башнефть
@@ -194,6 +197,25 @@ export const STOCK_LOGO_OVERRIDE: Record<string, string> = {
   VSMO: 'raw_108',  // ВСМПО-АВИСМА
   VJGZ: 'raw_004',  // Варьеганнефтегаз
   TRNFP: 'raw_010', // Транснефть п
+  // ── Дополнено для «Потоков по компании» (fund-trades). Эти тикеры акций раньше
+  //    резолвились в плейсхолдер /logos/<тикер>.png или инициалы, хотя реальный
+  //    логотип компании уже есть в стикерпаке и показывается в ОИ через futures-базу.
+  //    raw_NNN тот же, что в FUT_BASE_TO_LOGO для соответствующей базы.
+  MTLR: 'raw_071',  // Мечел (база MC)
+  MTLRP: 'raw_071', // Мечел п
+  MVID: 'raw_093',  // М.Видео (база MV)
+  SGZH: 'raw_068',  // Сегежа (база SZ)
+  SOFL: 'raw_070',  // Софтлайн (база S0)
+  SPBE: 'raw_035',  // СПБ Биржа (база SE)
+  WUSH: 'raw_067',  // Whoosh (база WU)
+  RNFT: 'raw_066',  // РуссНефть (база RU)
+  ABIO: 'raw_087',  // Артген (база IS)
+  BANEP: 'raw_009', // Башнефть п (BANE уже выше)
+  RTKMP: 'raw_034', // Ростелеком п (RTKM уже выше)
+  LSNGP: 'raw_123', // Россети Ленэнерго п (LSNG уже выше)
+  MRKZ: 'raw_123',  // Россети Северо-Запад
+  MRKC: 'raw_123',  // Россети Центр
+  MRKV: 'raw_123',  // Россети Волга
 };
 
 /**
