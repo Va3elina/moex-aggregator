@@ -58,6 +58,11 @@ ALLOWED_EVENT_TYPES = {
     "chart_export",
     "theme_toggle",
     "session_heartbeat",
+    # Воронка монетизации (намерение → оплата/триал) — добавлено 2026-06-27
+    "checkout_start",
+    "trial_start",
+    "purchase_success",
+    "trial_activated",
 }
 
 

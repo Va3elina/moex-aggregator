@@ -49,7 +49,12 @@ type EventType =
   | 'seasonality_mode'
   | 'chart_export'
   | 'theme_toggle'
-  | 'session_heartbeat';
+  | 'session_heartbeat'
+  // Воронка монетизации: намерение → оплата/триал
+  | 'checkout_start'
+  | 'trial_start'
+  | 'purchase_success'
+  | 'trial_activated';
 
 interface PendingEvent {
   session_id: string;

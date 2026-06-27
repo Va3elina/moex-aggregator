@@ -173,6 +173,54 @@ class Google:
         return r.status_code
 
 
+# ─────────────────────────── Яндекс.Метрика ───────────────────────────
+class Metrika:
+    """Яндекс.Метрика Reporting API — трафик, отказы, глубина, цели.
+
+    Нужен ОТДЕЛЬНЫЙ OAuth-токен со scope ``metrika:read`` (вебмастерский НЕ
+    подходит — у него другой доступ). Счётчик по умолчанию — боевой 109137033.
+    """
+    STAT = "https://api-metrika.yandex.net/stat/v1/data"
+    MGMT = "https://api-metrika.yandex.net/management/v1"
+
+    def __init__(self, env):
+        self.token = env.get("YANDEX_METRIKA_TOKEN")
+        self.counter = env.get("YANDEX_METRIKA_COUNTER", "109137033")
+        self.ok = bool(self.token and self.counter)
+
+    def _h(self):
+        return {"Authorization": f"OAuth {self.token}"}
+
+    def _data(self, metrics, days, filters=None):
+        """Возвращает (totals|None, http_code, raw_json). totals — плоский
+        список агрегатов в порядке metrics. Метрика по умолчанию исключает
+        роботов, так что это уже «живые» люди."""
+        end, start = date.today(), date.today() - timedelta(days=days)
+        params = {"ids": self.counter, "metrics": metrics,
+                  "date1": str(start), "date2": str(end), "accuracy": "full"}
+        if filters:
+            params["filters"] = filters
+        r = requests.get(self.STAT, headers=self._h(), params=params)
+        j = r.json() if r.content else {}
+        return (j.get("totals") if r.status_code == 200 else None), r.status_code, j
+
+    def traffic(self, days):
+        return self._data(
+            "ym:s:users,ym:s:visits,ym:s:bounceRate,ym:s:pageDepth,"
+            "ym:s:avgVisitDurationSeconds", days)
+
+    def engaged(self, days):
+        # «изучали»: визиты глубже 1 страницы — отсекает случайных/одностраничных.
+        return self._data("ym:s:users,ym:s:visits", days, filters="ym:s:pageViews>1")
+
+    def goals(self):
+        r = requests.get(f"{self.MGMT}/counter/{self.counter}/goals", headers=self._h())
+        return r.json().get("goals", []) if r.status_code == 200 else []
+
+    def goal_stats(self, days, goal_id):
+        return self._data(f"ym:s:goal{goal_id}visits,ym:s:goal{goal_id}conversionRate", days)
+
+
 # ─────────────────────────── вывод ───────────────────────────
 def _qtable(rows, poscol=3):
     print("%8s %7s %6s  запрос" % ("показы", "клики", "поз."))
@@ -248,10 +296,50 @@ def cmd_sitemap_submit(y, g, args):
         print("Яндекс sitemap-submit:", st, j.get("sitemap_id", j))
 
 
+def cmd_traffic(m, args):
+    if not m.ok:
+        sys.exit("нет YANDEX_METRIKA_TOKEN в scripts/seo/.env "
+                 "(получить токен со scope metrika:read — см. инструкцию)")
+    d = args.days
+    tot, code, j = m.traffic(d)
+    if tot is None:
+        err = j.get("message") if isinstance(j, dict) else j
+        sys.exit(f"Метрика API {code}: {err}")
+    users, visits, bounce, depth, dur = tot
+    print(f"=== 📊 ЯНДЕКС.МЕТРИКА — трафик ({d}д, счётчик {m.counter}) ===")
+    print(f"  Уникальных людей:      {users:,.0f}")
+    print(f"  Визитов:               {visits:,.0f}")
+    print(f"  Отказы:                {bounce:.1f}%")
+    print(f"  Глубина (стр./визит):  {depth:.1f}")
+    print(f"  Ср. время на сайте:    {dur/60:.1f} мин")
+    eng, _, _ = m.engaged(d)
+    if eng:
+        eu, ev = eng
+        share = 100 * ev / visits if visits else 0
+        print(f"  «Изучали» (>1 стр.):   {eu:,.0f} чел / {ev:,.0f} виз. "
+              f"({share:.0f}% визитов) — не случайные/боты")
+    # Цели → конверсия в регистрацию
+    goals = m.goals()
+    reg = next((gg for gg in goals if any(s in gg.get("name", "").lower()
+                for s in ("регистр", "signup", "sign up", "register", "account"))), None)
+    print("  ── Цели ──")
+    if reg:
+        gt, _, _ = m.goal_stats(d, reg["id"])
+        if gt:
+            gv, cr = gt
+            print(f"  «{reg['name']}»: {gv:,.0f} достижений, конверсия {cr:.2f}%")
+    elif goals:
+        print("  (цель регистрации не распознана; есть: "
+              + ", ".join(g.get("name", "?") for g in goals[:6]) + ")")
+    else:
+        print("  (целей в Метрике нет — настрой цель «регистрация» в интерфейсе, "
+              "тогда покажу точную конверсию визит→регистрация)")
+
+
 def main():
     p = argparse.ArgumentParser(description="Фрейм SEO CLI (Яндекс + Google)")
     sub = p.add_subparsers(dest="cmd", required=True)
-    for name in ("status", "queries", "compare", "diagnostics", "sitemap-submit"):
+    for name in ("status", "queries", "compare", "diagnostics", "sitemap-submit", "traffic"):
         sp = sub.add_parser(name)
         sp.add_argument("--days", type=int, default=28)
         sp.add_argument("--limit", type=int, default=25)
@@ -261,7 +349,7 @@ def main():
     args = p.parse_args()
 
     env = load_env()
-    y, g = Yandex(env), Google()
+    y, g, m = Yandex(env), Google(), Metrika(env)
     if not y.ok:
         print("⚠️  Яндекс: нет .env/токена", file=sys.stderr)
     if not g.ok:
@@ -269,7 +357,8 @@ def main():
 
     {"status": cmd_status, "queries": cmd_queries, "compare": cmd_compare,
      "recrawl": cmd_recrawl, "diagnostics": cmd_diagnostics,
-     "sitemap-submit": cmd_sitemap_submit}[args.cmd](y, g, args)
+     "sitemap-submit": cmd_sitemap_submit,
+     "traffic": lambda _y, _g, a: cmd_traffic(m, a)}[args.cmd](y, g, args)
 
 
 if __name__ == "__main__":

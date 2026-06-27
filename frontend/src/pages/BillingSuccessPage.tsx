@@ -15,6 +15,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { CheckCircle2, Clock, AlertCircle, RotateCw } from 'lucide-react';
 import { apiFetch } from '../services/api';
+import { useAnalytics } from '../contexts/AnalyticsContext';
+import { trackEvent } from '../hooks/useYandexMetrica';
 
 interface Status {
   tier: string;
@@ -30,6 +32,15 @@ export default function BillingSuccessPage() {
   const [syncing, setSyncing] = useState(false);
   // true если сюда привёл AddCard-триал (а не обычная оплата) → текст про триал.
   const [trialActivated, setTrialActivated] = useState(false);
+  const { track } = useAnalytics();
+
+  // Воронка: фиксируем успех (оплата или активация триала) ровно один раз.
+  useEffect(() => {
+    if (state !== 'active') return;
+    const ev = trialActivated ? 'trial_activated' : 'purchase_success';
+    track(ev, { tier: status?.tier });
+    trackEvent(ev, { tier: status?.tier });
+  }, [state, trialActivated, track, status?.tier]);
 
   /** Принудительный sync через GetState у провайдера. */
   const runSync = useCallback(async (): Promise<Status | null> => {
