@@ -12,7 +12,7 @@ import { useNavigate } from 'react-router-dom';
 import { TrendingUp, TrendingDown, Send } from 'lucide-react';
 import { useAnomalies } from '../../contexts/AnomalyContext';
 import { useUpgradePrompt } from '../tier/UpgradeModal';
-import { openAnomaly } from './anomalyActions';
+import { openAnomaly, tradeDateLabel } from './anomalyActions';
 import type { AnomalyItem } from '../../services/api';
 
 export function relTime(iso?: string | null): string {
@@ -77,6 +77,7 @@ export function AnomalyFeedPanel({ onClose }: { onClose: () => void }) {
           const up = item.direction === 'up';
           const Dir = up ? TrendingUp : TrendingDown;
           const c = up ? 'var(--success, #00E676)' : 'var(--danger, #FF5252)';
+          const dateLbl = tradeDateLabel(item.signal_date);
           return (
             <button key={row.key} onClick={() => onItem(item)}
               style={{ display: 'block', width: '100%', textAlign: 'left', background: 'transparent',
@@ -97,6 +98,9 @@ export function AnomalyFeedPanel({ onClose }: { onClose: () => void }) {
                   <Dir size={14} color={c} />
                   {item.severity_value != null && (
                     <span style={{ color: c, fontSize: 12, fontWeight: 500 }}>×{item.severity_value.toFixed(1)}</span>
+                  )}
+                  {dateLbl && (
+                    <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>· за {dateLbl}</span>
                   )}
                 </div>
               )}

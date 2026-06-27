@@ -11,6 +11,7 @@
  */
 import { TrendingUp, TrendingDown, X, Lock, Bell, ArrowRight, Check, ExternalLink } from 'lucide-react';
 import type { AnomalyItem } from '../../services/api';
+import { tradeDateLabel } from './anomalyActions';
 
 const TYPE_META: Record<string, { label: string; dot: string }> = {
   oi_move:         { label: 'Открытый интерес', dot: 'var(--accent-orange, #FF9100)' },
@@ -49,6 +50,10 @@ export function AnomalyToast({
   const assetLine = item.type === 'funds_flow'
     ? (item.asset_name || item.asset_id)
     : [item.asset_id, item.asset_name].filter(Boolean).join(' · ');
+  // Торговый день движения («за 26 июня») — данные позиций/СЧА выходят с лагом ~T+1,
+  // поэтому время обнаружения тоста ≠ дата самих торгов. Показываем явно.
+  const dateLbl = tradeDateLabel(item.signal_date);
+  const metaLine = [assetLine, dateLbl ? `за ${dateLbl}` : ''].filter(Boolean).join(' · ');
   const locked = !!item.link_required_tier;
 
   return (
@@ -101,8 +106,8 @@ export function AnomalyToast({
             {sev && <span style={{ color: dirColor, fontSize: 13, fontWeight: 500 }}>{sev}</span>}
             {tail && <span style={{ color: 'var(--text-secondary)', fontSize: 13 }}>{tail}</span>}
           </div>
-          {assetLine && (
-            <div style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 12 }}>{assetLine}</div>
+          {metaLine && (
+            <div style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 12 }}>{metaLine}</div>
           )}
         </>
       )}

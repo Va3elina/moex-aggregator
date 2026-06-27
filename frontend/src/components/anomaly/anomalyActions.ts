@@ -29,6 +29,16 @@ export function buildAnomalyUrl(dl: AnomalyDeepLink): string {
   return dl.route || '/';
 }
 
+/** Торговый день аномалии (signal_date='YYYY-MM-DD') в родительном падеже: «26 июня».
+ *  Форматируем в UTC, чтобы день не «съезжал» в часовых поясах западнее UTC. Пустая
+ *  строка, если даты нет (промо/посты канала). Зеркалит TG-строку «по данным за N». */
+export function tradeDateLabel(signalDate?: string | null): string {
+  if (!signalDate) return '';
+  const d = new Date(`${signalDate}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', timeZone: 'UTC' });
+}
+
 /** Открыть график аномалии. Если цель закрыта тарифом (link_required_tier) —
  *  апселл + переход на ДЕФОЛТ страницы (доступное по умолчанию); иначе диплинк. */
 export function openAnomaly(item: AnomalyItem, navigate: NavigateFunction, showUpgrade: ShowUpgrade): void {
