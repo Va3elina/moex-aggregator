@@ -1569,60 +1569,78 @@ def company_flows(
     # fund_id -> { "YYYY-MM": value|None }
     fund_month_val = {}
     for fid, frows in per_fund_rows.items():
-        month_val = {}
-        prev_pos = None
-        prev_amt = None
-        prev_weight = None
+        # Дельты считаем ОТДЕЛЬНО по каждому ISIN (линии инструмента). Старый ISIN
+        # расписки (ГДР) и новый ISIN акции склеены в один фонд через canonical_isin,
+        # чтобы показать их потоки на одном графике — но вычитать один из другого
+        # НЕЛЬЗЯ: это разные инструменты с разным масштабом позиций. Иначе на стыке
+        # расконвертации (или на битой строке-остатке) (curr_pos − prev_pos)×price
+        # взрывается. Поток фонда по бумаге за месяц = сумма потоков по каждому ISIN.
+        isin_groups = defaultdict(list)
         for r in frows:
-            month = r["snapshot_date"].strftime("%Y-%m")
-            all_months.add(month)
-            curr_pos = int(r["positions"]) if r["positions"] is not None else None
-            curr_amt = float(r["amount_rub"]) if r["amount_rub"] is not None else None
-            curr_weight = float(r["weight"]) if r["weight"] is not None else None
-            curr_price = (curr_amt / curr_pos) if (curr_amt and curr_pos and curr_pos > 0) else None
+            isin_groups[r["isin"] or r["asset_name"]].append(r)
 
-            if prev_pos is None and prev_amt is None and prev_weight is None:
-                # Самый первый снапшот фонда в истории бумаги → null (нет базы).
-                value = None
-            else:
-                if metric == "amount":
-                    # Split-adjust prev_pos (та же логика, что snapshot_review):
-                    # стоимость непрерывна → коррекция нейтральна для ₽-дельты,
-                    # но держим структуру идентичной для согласованности.
-                    adj_prev_pos = prev_pos
-                    if (curr_pos and prev_pos and curr_amt and prev_amt and curr_price
-                            and prev_pos > 0):
-                        prev_price = prev_amt / prev_pos
-                        pos_r = curr_pos / prev_pos
-                        price_r = prev_price / curr_price if curr_price else 0
-                        amt_r = curr_amt / prev_amt if prev_amt else 1
-                        if (price_r and abs(amt_r - 1) < 0.4 and abs(pos_r / price_r - 1) < 0.4
-                                and ((pos_r > 1.8 and price_r > 1.8) or (pos_r < 0.55 and price_r < 0.55))):
-                            adj_prev_pos = round(prev_pos * _nearest_split_ratio((pos_r * price_r) ** 0.5))
-                    if curr_amt is not None and prev_amt is not None:
-                        if curr_pos is not None and adj_prev_pos is not None and curr_price:
-                            # Δ стоимости = Δ позиций (split-adj) × текущая цена.
-                            value = (curr_pos - adj_prev_pos) * curr_price
+        month_val = {}
+        for _key, irows in isin_groups.items():
+            irows.sort(key=lambda x: x["snapshot_date"])
+            prev_pos = None
+            prev_amt = None
+            prev_weight = None
+            for r in irows:
+                month = r["snapshot_date"].strftime("%Y-%m")
+                all_months.add(month)
+                curr_pos = int(r["positions"]) if r["positions"] is not None else None
+                curr_amt = float(r["amount_rub"]) if r["amount_rub"] is not None else None
+                curr_weight = float(r["weight"]) if r["weight"] is not None else None
+                curr_price = (curr_amt / curr_pos) if (curr_amt and curr_pos and curr_pos > 0) else None
+
+                if prev_pos is None and prev_amt is None and prev_weight is None:
+                    # Первый снапшот этого ISIN в истории → null (нет базы → не спайк).
+                    value = None
+                else:
+                    if metric == "amount":
+                        # Split-adjust prev_pos (та же логика, что snapshot_review):
+                        # стоимость непрерывна → коррекция нейтральна для ₽-дельты,
+                        # но держим структуру идентичной для согласованности.
+                        adj_prev_pos = prev_pos
+                        if (curr_pos and prev_pos and curr_amt and prev_amt and curr_price
+                                and prev_pos > 0):
+                            prev_price = prev_amt / prev_pos
+                            pos_r = curr_pos / prev_pos
+                            price_r = prev_price / curr_price if curr_price else 0
+                            amt_r = curr_amt / prev_amt if prev_amt else 1
+                            if (price_r and abs(amt_r - 1) < 0.4 and abs(pos_r / price_r - 1) < 0.4
+                                    and ((pos_r > 1.8 and price_r > 1.8) or (pos_r < 0.55 and price_r < 0.55))):
+                                adj_prev_pos = round(prev_pos * _nearest_split_ratio((pos_r * price_r) ** 0.5))
+                        if curr_amt is not None and prev_amt is not None:
+                            if curr_pos is not None and adj_prev_pos is not None and curr_price:
+                                # Δ стоимости = Δ позиций (split-adj) × текущая цена.
+                                value = (curr_pos - adj_prev_pos) * curr_price
+                            else:
+                                value = curr_amt - prev_amt
+                        elif curr_amt is not None:
+                            value = curr_amt  # новая позиция (приток)
                         else:
-                            value = curr_amt - prev_amt
-                    elif curr_amt is not None:
-                        value = curr_amt  # новая позиция (приток)
-                    else:
-                        value = None
-                else:  # weight
-                    if curr_weight is not None and prev_weight is not None:
-                        value = curr_weight - prev_weight
-                    elif curr_weight is not None:
-                        value = curr_weight  # новая позиция
-                    else:
-                        value = None
+                            value = None
+                    else:  # weight
+                        if curr_weight is not None and prev_weight is not None:
+                            value = curr_weight - prev_weight
+                        elif curr_weight is not None:
+                            value = curr_weight  # новая позиция
+                        else:
+                            value = None
 
-            month_val[month] = value
-            # Обновляем prev только если в текущем снапшоте бумага реально есть.
-            if curr_pos is not None or curr_amt is not None or curr_weight is not None:
-                prev_pos = curr_pos
-                prev_amt = curr_amt
-                prev_weight = curr_weight
+                # Несколько ISIN одной бумаги (ГДР + акция) → суммируем их вклад в месяц.
+                # value=None (нет базы) — месяц помечаем, но в сумму не берём (ось X
+                # не теряет точку, фантомного нуля не возникает).
+                if value is not None:
+                    month_val[month] = (month_val.get(month) or 0.0) + value
+                else:
+                    month_val.setdefault(month, None)
+                # Обновляем prev только если в текущем снапшоте бумага реально есть.
+                if curr_pos is not None or curr_amt is not None or curr_weight is not None:
+                    prev_pos = curr_pos
+                    prev_amt = curr_amt
+                    prev_weight = curr_weight
         fund_month_val[fid] = month_val
 
     months = sorted(all_months)
