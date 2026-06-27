@@ -364,11 +364,15 @@ ON CONFLICT (fund_id) DO UPDATE SET ...;   -- PK=fund_id, UNIQUE ticker
 Фетчер для нового фонда (`last_date=None`) сам бэкфилит **3 года** NAV
 (`fetch_funds_realtime.py:544-552`). Источник — cbonds nav-endpoint по `cbonds_share_id`:
 ```bash
-docker cp Funds/fetch_funds_realtime.py frame-orchestrator-1:/app/Funds/
+# docker cp нужен ТОЛЬКО если меняли сам скрипт; обычно пропускаем.
 docker exec frame-orchestrator-1 python /app/Funds/fetch_funds_realtime.py --once --force
-docker exec frame-redis-1 sh -c "redis-cli --scan --pattern 'funds*' | xargs -r redis-cli del"
+# Redis под паролем (--requirepass). Пароль = REDIS_URL контейнера frame-api-1.
+PW=$(docker exec frame-api-1 python3 -c "import os,urllib.parse as u; print(u.urlparse(os.environ['REDIS_URL']).password)")
+docker exec frame-redis-1 sh -c "redis-cli -a '$PW' --no-auth-warning --scan --pattern 'funds*' | xargs -r redis-cli -a '$PW' --no-auth-warning del"
 ```
-(Или просто дождаться планового прогона 09:00 МСК.) Проверка: `/api/funds/chart?category=…`.
+(Или просто дождаться планового прогона 09:00 МСК.) Проверка: `/api/funds/categories` (список фондов; `/chart` тариф-гейтит период>180д для гостя).
+> ⚠️ `--force` сегодня обязателен в неторговый день (без него `--once` выходит рано).
+> `--force` форсит полный 3-летний реролл по ВСЕМ фондам (idempotent, ON CONFLICT) — норм, но не быстро.
 
 ### ⚠️ Подводные камни
 - **cbonds mobile auth — НЕ долбить.** Серия auth + 403-list пробов → временный блок
