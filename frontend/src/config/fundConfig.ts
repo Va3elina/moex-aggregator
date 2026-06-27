@@ -166,6 +166,11 @@ const ASSET_COLOR_RULES: { kw: string[]; color: string; ticker: string }[] = [
     { kw: ['астра'], color: '#3E72A8', ticker: 'ASTR' },       // Астра — синий
     { kw: ['позитив', 'positive', 'group-ib'], color: '#5A7A3E', ticker: 'POSI' }, // Positive — зелёный
     { kw: ['эн+', 'en+', 'эн ', 'rusal'], color: '#7A5C3F', ticker: 'ENPG' }, // Эн+ — бронза
+    // Добавлено из стикерпака (новые логотипы DATA/VSEH/GLRX.png): фонды держат
+    // эти бумаги, имена в составе приходят без ISIN — резолвим по ключевому слову.
+    { kw: ['аренадата'], color: '#2F8A6E', ticker: 'DATA' },              // Аренадата — зелёный
+    { kw: ['ви.ру', 'все инструмент'], color: '#BE3F3F', ticker: 'VSEH' }, // ВИ.ру — красный
+    { kw: ['глоракс'], color: '#5546A8', ticker: 'GLRX' },                // Глоракс — фиолетовый
 ];
 
 // Цвет бумаги: фирменный, если узнан по имени; иначе undefined → вызывающий берёт
