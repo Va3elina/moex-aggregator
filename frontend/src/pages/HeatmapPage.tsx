@@ -172,12 +172,13 @@ export default function HeatmapPage() {
   const heatAccess = useTierAccess('heatmap');
   const { showUpgrade } = useUpgradePrompt();
 
-  // Фильтры. mapMode/groupBy персистим в localStorage — чтобы режим карты
-  // («Индекс IMOEX» / «Все акции») и группировка не сбрасывались на новой сессии.
-  // sizeBy/period остаются session-only (по умолчанию market_cap / 1Д).
+  // Фильтры. Все четыре контрола (режим карты / группировка / размер / период)
+  // персистим в localStorage — чтобы выбор не сбрасывался на новой сессии
+  // (как уже сделано в мобильной версии: mobilePeriod/mobileSizeBy). Ключи
+  // period/sizeBy десктопные, отдельные от мобильных mobile*-ключей.
   const [mapMode, setMapMode] = usePersistedState<'imoex' | 'all'>('frame:heatmap:mapMode', 'imoex');
-  const [sizeBy, setSizeBy] = useState<string>('market_cap');
-  const [period, setPeriod] = useState('1d');
+  const [sizeBy, setSizeBy] = usePersistedState<string>('frame:heatmap:sizeBy', 'market_cap');
+  const [period, setPeriod] = usePersistedState<string>('frame:heatmap:period', '1d');
   const [groupBy, setGroupBy] = usePersistedState<string>('frame:heatmap:groupBy', 'sector');
 
   // Onboarding tour

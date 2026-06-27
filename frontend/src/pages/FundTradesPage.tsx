@@ -1058,7 +1058,7 @@ function EditorialBar({
 
 function SnapshotReviewTab() {
     const [availableFunds, setAvailableFunds] = useState<FundWithHistory[]>([]);
-    const [ticker, setTicker] = useState<string>('EQMX');
+    const [ticker, setTicker] = usePersistedState<string>('frame:fundtrades:snapTicker', 'EQMX');
     const [snapshotsList, setSnapshotsList] = useState<FundSnapshotsList | null>(null);
     const [selectedDate, setSelectedDate] = useState<string | null>(null);
     const [review, setReview] = useState<FundSnapshotReview | null>(null);
