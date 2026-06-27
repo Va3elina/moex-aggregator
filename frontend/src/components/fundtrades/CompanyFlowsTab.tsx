@@ -144,6 +144,14 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed }: Compa
         [assets, selectedKey],
     );
 
+    // Тикер выбранной бумаги для подписи в таблетке (как в «Сезонности», где
+    // под именем — тикер). Резолвим по ISIN/имени; нет тикера (облигация/ОФЗ) →
+    // undefined, и подпись падает на счётчик фондов.
+    const selectedTicker = useMemo(
+        () => (selectedAsset ? resolveFundTicker(selectedAsset.asset_name, selectedAsset.isin) : undefined),
+        [selectedAsset],
+    );
+
     // ITEM 2 (cross-tab) — применить presetAsset: выбрать бумагу по isin || name.
     // Ждём загрузки assets, затем матчим и сразу «потребляем» preset.
     useEffect(() => {
@@ -301,9 +309,10 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed }: Compa
                     gap: 'var(--sp-2)',
                 }}
             >
-                {/* Таблетка бумаги — widget-flat (icon + имя + счётчик фондов + ▾),
-                    1-в-1 как селектор актива на «Сезонности». Открывает строковый
-                    поиск (AssetPickerModal — то же оформление, что и InstrumentSearchModal). */}
+                {/* Таблетка бумаги — widget-flat (icon + имя + тикер + ▾),
+                    1-в-1 как селектор актива на «Сезонности» (под именем — тикер).
+                    Открывает строковый поиск (AssetPickerModal — то же оформление,
+                    что и InstrumentSearchModal). */}
                 <button
                     type="button"
                     onClick={() => setPickerOpen(true)}
@@ -331,7 +340,7 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed }: Compa
                         </div>
                         {selectedAsset && (
                             <div className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)' }}>
-                                {selectedAsset.funds_count} {pluralFunds(selectedAsset.funds_count)}
+                                {selectedTicker ?? `${selectedAsset.funds_count} ${pluralFunds(selectedAsset.funds_count)}`}
                             </div>
                         )}
                     </div>
