@@ -10,7 +10,8 @@
  * движение этого месяца. Компонент самодостаточен (сам держит анимацию,
  * навигатор, hover/tooltip), поэтому вызывающему достаточно передать данные.
  *
- * Значения приходят в ₽ → внутри переводим в млрд (÷1e9), как и в макете.
+ * Значения приходят в ₽ → внутри переводим в млн (÷1e6): потоки по компании
+ * мельче, чем в «Деньги в фондах», поэтому отдельная единица — только здесь.
  */
 import {
     useEffect,
@@ -54,19 +55,24 @@ interface CompanyFlowsHistogramProps {
     animTrigger?: string;
 }
 
-// Формат значения потока — 1-в-1 с FlowsHistogram (млрд ₽, знак + / −).
-function fmtFlow(v: number): string {
-    const sign = v > 0 ? '+' : v < 0 ? '−' : '';
-    const abs = Math.abs(v);
-    return `${sign}${abs >= 0.01 ? abs.toFixed(2) : abs.toFixed(3)} млрд ₽`;
+// Число потока в млн без знака/единиц: целое с разделителем тысяч при ≥10 млн,
+// иначе 1 знак после запятой — мелкие потоки (<10 млн) не схлопываются в «0».
+function fmtMlnNumber(abs: number): string {
+    return abs >= 10 ? Math.round(abs).toLocaleString('ru-RU') : abs.toFixed(1);
 }
 
-// Подпись оси Y — короткая (без «млрд ₽»), как в макете.
+// Формат значения потока — млн ₽ (раньше млрд). Типичные месячные потоки тут
+// десятки–сотни млн: в млрд это «0.07» и плохо читается. Знак + / −.
+function fmtFlow(v: number): string {
+    const sign = v > 0 ? '+' : v < 0 ? '−' : '';
+    return `${sign}${fmtMlnNumber(Math.abs(v))} млн ₽`;
+}
+
+// Подпись оси Y — короткая (без «млн ₽»), как в макете.
 function fmtAxis(v: number): string {
     if (v === 0) return '0';
     const sign = v > 0 ? '+' : '−';
-    const abs = Math.abs(v);
-    return `${sign}${abs >= 0.1 ? abs.toFixed(1) : abs.toFixed(2)}`;
+    return `${sign}${fmtMlnNumber(Math.abs(v))}`;
 }
 
 // "YYYY-MM" → Date (первое число месяца). Локальное время — для подписей дат.
@@ -77,7 +83,7 @@ function monthToDate(m: string): Date {
 export default function CompanyFlowsHistogram({
     months,
     series,
-    title = 'Чистые покупки и продажи (млрд ₽)',
+    title = 'Чистые покупки и продажи (млн ₽)',
     height = 420,
     loading = false,
     noFundsSelected = false,
@@ -87,15 +93,15 @@ export default function CompanyFlowsHistogram({
     const containerRef = useRef<HTMLDivElement>(null);
     const svgRef = useRef<SVGSVGElement>(null);
 
-    // ── Чистый поток по месяцам (млрд ₽): сумма по всем переданным сериям. ──
-    const netMlrd = useMemo(() => {
+    // ── Чистый поток по месяцам (млн ₽): сумма по всем переданным сериям. ──
+    const netMln = useMemo(() => {
         const n = months.length;
         const out = new Array<number>(n).fill(0);
         for (const s of series) {
             for (let i = 0; i < n; i++) {
                 const v = s.values[i];
                 if (v == null || Number.isNaN(v)) continue;
-                out[i] += v / 1e9;
+                out[i] += v / 1e6;
             }
         }
         return out;
@@ -119,12 +125,12 @@ export default function CompanyFlowsHistogram({
     const [animated, setAnimated] = useState<number[]>([]);
     const rafRef = useRef<number | null>(null);
     useEffect(() => {
-        if (!netMlrd.length) {
+        if (!netMln.length) {
             setAnimated([]);
             return;
         }
         if (rafRef.current) cancelAnimationFrame(rafRef.current);
-        const target = netMlrd;
+        const target = netMln;
         const totalDuration = ANIMATION.waveDuration;
         const staggerDelay = ANIMATION.waveStagger;
         let start: number | null = null;
@@ -145,16 +151,16 @@ export default function CompanyFlowsHistogram({
         return () => {
             if (rafRef.current) cancelAnimationFrame(rafRef.current);
         };
-        // netMlrd (стабилен через useMemo) + animTrigger — перезапуск волны.
-    }, [netMlrd, animTrigger]);
+        // netMln (стабилен через useMemo) + animTrigger — перезапуск волны.
+    }, [netMln, animTrigger]);
 
     // ── Hover ──
     const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
     const [tooltipPos, setTooltipPos] = useState<{ x: number; y: number } | null>(null);
 
     const navigatorData = useMemo(
-        () => months.map((m, i) => ({ time: m, value: netMlrd[i] ?? 0 })),
-        [months, netMlrd],
+        () => months.map((m, i) => ({ time: m, value: netMln[i] ?? 0 })),
+        [months, netMln],
     );
 
     const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -186,11 +192,11 @@ export default function CompanyFlowsHistogram({
                 const raw = s.values[absIdx];
                 return raw == null || Number.isNaN(raw)
                     ? null
-                    : { label: s.label, color: s.color, mlrd: raw / 1e9 };
+                    : { label: s.label, color: s.color, mln: raw / 1e6 };
             })
-            .filter((r): r is { label: string; color: string; mlrd: number } => r != null && r.mlrd !== 0)
-            .sort((a, b) => Math.abs(b.mlrd) - Math.abs(a.mlrd));
-        const net = rows.reduce((acc, r) => acc + r.mlrd, 0);
+            .filter((r): r is { label: string; color: string; mln: number } => r != null && r.mln !== 0)
+            .sort((a, b) => Math.abs(b.mln) - Math.abs(a.mln));
+        const net = rows.reduce((acc, r) => acc + r.mln, 0);
         return { rows, net };
     }, [hoveredIndex, navRange, series]);
 
@@ -275,7 +281,7 @@ export default function CompanyFlowsHistogram({
                             <svg ref={svgRef} width="100%" height="100%" preserveAspectRatio="none">
                                 {animated.length > 0 && (() => {
                                     const visible = animated.slice(navRange[0], navRange[1] + 1);
-                                    const visibleTarget = netMlrd.slice(navRange[0], navRange[1] + 1);
+                                    const visibleTarget = netMln.slice(navRange[0], navRange[1] + 1);
                                     const maxScale = Math.max(...visibleTarget.map(v => Math.abs(v)), 0.001);
                                     const barWidth = 100 / (visible.length || 1);
                                     const midY = 50;
@@ -308,7 +314,7 @@ export default function CompanyFlowsHistogram({
 
                                 {/* Горизонтальная сетка + нулевая линия */}
                                 {(() => {
-                                    const visibleTarget = netMlrd.slice(navRange[0], navRange[1] + 1);
+                                    const visibleTarget = netMln.slice(navRange[0], navRange[1] + 1);
                                     const maxAbs = Math.max(...visibleTarget.map(v => Math.abs(v)), 0.001);
                                     const ticks = [-maxAbs, -maxAbs / 2, 0, maxAbs / 2, maxAbs];
                                     return ticks.map((val, i) => {
@@ -350,7 +356,7 @@ export default function CompanyFlowsHistogram({
                                     {shown.length > 0 && (
                                         <div style={{ marginTop: 'var(--sp-1)', paddingTop: 'var(--sp-1)', borderTop: '1px solid var(--border-color)' }}>
                                             {shown.map((r, i) => (
-                                                <TooltipRow key={i} color={r.color} label={r.label} value={fmtFlow(r.mlrd)} />
+                                                <TooltipRow key={i} color={r.color} label={r.label} value={fmtFlow(r.mln)} />
                                             ))}
                                             {extra > 0 && (
                                                 <div className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)', marginTop: 'var(--sp-1)', paddingLeft: 'calc(var(--sp-2) + 8px)' }}>
@@ -365,7 +371,7 @@ export default function CompanyFlowsHistogram({
 
                         {/* Подписи значений справа (ось Y) */}
                         {(() => {
-                            const visibleTarget = netMlrd.slice(navRange[0], navRange[1] + 1);
+                            const visibleTarget = netMln.slice(navRange[0], navRange[1] + 1);
                             const maxAbs = Math.max(...visibleTarget.map(v => Math.abs(v)), 0.001);
                             const ticks = [maxAbs, maxAbs / 2, 0, -maxAbs / 2, -maxAbs];
                             return (

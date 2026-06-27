@@ -8,7 +8,7 @@
  * тултип раскрывает разбивку — какой фонд внёс наибольший вклад в движение.
  *
  * Цвет фонда: UK_LOGOS[String(uk_id)]?.bg, иначе DONUT_COLORS[idx % len].
- * Значения приходят в ₽ → CompanyFlowsHistogram переводит в млрд (÷1e9).
+ * Значения приходят в ₽ → CompanyFlowsHistogram переводит в млн (÷1e6).
  *
  * Контрактные импорты из services/api: listFundTradeAssets, getCompanyFlows,
  * типы FundTradeAsset, CompanyFlowsResponse. Их добавляет бэкенд-агент по
