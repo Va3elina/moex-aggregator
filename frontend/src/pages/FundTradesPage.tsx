@@ -552,7 +552,8 @@ export default function FundTradesPage() {
                                             background: 'var(--bg-secondary)',
                                             border: '1.5px solid var(--border-color)',
                                             borderRadius: 12,
-                                            boxShadow: 'var(--shadow-hard-chip)',
+                                            // Тень не по умолчанию, а только на hover — как у всех кнопок
+                                            // сайта: класс editorial-press добавляет hard-shadow при :hover.
                                             textAlign: 'left',
                                             cursor: 'pointer',
                                             // (B) колоночный flex full-height → все карточки в ряду равны.
