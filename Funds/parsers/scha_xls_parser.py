@@ -320,58 +320,153 @@ def _xls_cell_number(v):
     return _norm_number(v)
 
 
+def _detect_rasshifr_cols(df: pd.DataFrame, hdr_max: int = 10) -> Optional[dict]:
+    """
+    Найти колонки в листе-расшифровке XBRL-Excel (Атон) по ТЕКСТУ шапки.
+
+    Возвращает {'isin': j, 'positions': j, 'value': j} (любой ключ может
+    отсутствовать) если в первых hdr_max строках нашлась строка-шапка формы
+    0420502, иначе None (лист без распознаваемой шапки → legacy-эвристика).
+
+    🐞 Подраздел 3.4 «Иностранные депозитарные расписки»: в строке ДВА блока
+    ISIN — самой расписки («…ISIN») и представляемых бумаг («…ISIN
+    представляемых ценных бумаг»). Берём ПЕРВЫЙ (саму расписку), исключая
+    «представляем». Иначе строка ГДР атрибутируется underlying-бумаге (ФосАгро
+    ао RU000A0JRKT8, у которой есть СОБСТВЕННАЯ строка в Подразделе 2 акций),
+    а её настоящие количество/стоимость теряются. Старая эвристика «два
+    последних числа» брала тут ИНН эмитента (col «ИНН представляемых») за
+    positions (~7.7e9) и код валюты 643-RUB за стоимость.
+    """
+    for i in range(min(hdr_max, len(df))):
+        row = [("" if pd.isna(v) else str(v)).lower().replace("\n", " ")
+               for v in df.iloc[i].values]
+        joined = " | ".join(row)
+        # Шапку узнаём по столбцу-имени эмитента ИЛИ по столбцу «Количество».
+        if "наименование эмитента" not in joined and "количество" not in joined:
+            continue
+        cols: dict = {}
+        for j, c in enumerate(row):
+            if "isin" in c and "представляем" not in c and "isin" not in cols:
+                cols["isin"] = j
+            elif "количество" in c and "positions" not in cols:
+                cols["positions"] = j
+            elif "стоимость" in c and "чистых активов" not in c and "value" not in cols:
+                cols["value"] = j
+        return cols
+    return None
+
+
+def _parse_rasshifr_rows(df: pd.DataFrame, cols: dict, isin_pif, seen: set) -> list[dict]:
+    """Header-aware разбор holdings-строк листа-расшифровки по найденным колонкам."""
+    out: list[dict] = []
+    ic, pc, vc = cols["isin"], cols["positions"], cols["value"]
+    for _, r in df.iterrows():
+        cells = ["" if pd.isna(v) else str(v) for v in r.values]
+        if ic >= len(cells):
+            continue
+        isin = re.sub(r"\s", "", cells[ic])
+        if not ISIN_ANY.match(isin) or isin == isin_pif or isin in seen:
+            continue
+        low = " ".join(cells).lower()
+        if "итого" in low or "репо" in low:
+            continue
+        positions = _xls_cell_number(cells[pc]) if pc < len(cells) else None
+        value_rub = _xls_cell_number(cells[vc]) if vc < len(cells) else None
+        if positions is None and value_rub is None:
+            continue
+        if value_rub is not None and value_rub > 5e11:
+            continue
+        seen.add(isin)
+        out.append({
+            "asset_name": "(name from ISIN)",
+            "isin": isin,
+            "ogrn": None, "inn": None, "regnum": None,
+            # Количество допускается дробным (ФосАгро 5947.66) → округляем для bigint.
+            "positions": int(round(positions)) if positions is not None else None,
+            "value_rub": value_rub,
+            "maturity": None,
+        })
+    return out
+
+
+def _parse_rowwise_legacy(df: pd.DataFrame, isin_pif, seen: set) -> list[dict]:
+    """
+    Legacy-эвристика для листов БЕЗ распознаваемой шапки (архивный формат без
+    `Rasshifr_Akt`): в строке-позиции **количество и стоимость = два ПОСЛЕДНИХ
+    числа** (ОГРН/ИНН/регномер/дата погашения идут раньше, биржа/«уровень 1» —
+    текст в хвосте). Строки «итого» и РЕПО пропускаем; количество обязано быть
+    целым.
+    """
+    out: list[dict] = []
+    for _, r in df.iterrows():
+        cells = ["" if pd.isna(v) else str(v) for v in r.values]
+        isin = None
+        for c in cells:
+            cc = re.sub(r"\s", "", c)
+            if ISIN_ANY.match(cc):
+                isin = cc
+                break
+        if not isin or isin == isin_pif or isin in seen:
+            continue
+        low = " ".join(cells).lower()
+        if "итого" in low or "репо" in low:
+            continue
+        nums = []
+        for c in cells:
+            if any(ch.isalpha() for ch in c):
+                continue
+            v = _xls_cell_number(c)
+            if v is not None and v > 0:
+                nums.append(v)
+        if len(nums) < 2:
+            continue
+        positions, value_rub = nums[-2], nums[-1]
+        if positions != int(positions):
+            continue
+        if value_rub > 5e11:
+            continue
+        seen.add(isin)
+        out.append({
+            "asset_name": "(name from ISIN)",
+            "isin": isin,
+            "ogrn": None, "inn": None, "regnum": None,
+            "positions": int(positions),
+            "value_rub": value_rub,
+            "maturity": None,
+        })
+    return out
+
+
 def _parse_xls_rowwise(sheets: dict, isin_pif=None) -> list[dict]:
     """
-    Row-wise обход для многолистового XBRL-Excel формы 0420502 (Атон): каждая
-    расшифровка активов — отдельный лист `N; sr_0420502_Rasshifr_Akt/Ob_*`, а
-    `parse_scha_xls`'s single-sheet section-логика их не видит (даёт 0).
+    Обход многолистового XBRL-Excel формы 0420502 (Атон): каждая расшифровка
+    активов — отдельный лист `N; sr_0420502_Rasshifr_Akt/Ob_*`, а single-sheet
+    section-логика `parse_scha_xls` их не видит (даёт 0).
 
-    Инвариант — тот же, что в PDF row-wise (scha_parser): в строке-позиции
-    **количество и стоимость = два ПОСЛЕДНИХ числа** (ОГРН/ИНН/регномер/дата
-    погашения идут раньше, биржа/«уровень 1» — текст в хвосте). Строки «итого»
-    и РЕПО пропускаем; количество обязано быть целым.
+    Читаем ПО ШАПКЕ (header-aware): находим колонки ISIN / Количество /
+    Стоимость по тексту заголовка КАЖДОГО листа. Лист считается таблицей
+    holdings ТОЛЬКО если в шапке есть И «Количество», И «Стоимость». Это
+    отсекает вспомогательные таблицы расшифровки — напр. «Сведения об
+    организациях, осуществляющих хранение/учёт ценных бумаг» (там есть
+    «Количество ценных бумаг», но НЕТ «Стоимости»): раньше из них ИНН
+    спецдепозитария (7710198911) попадал в positions ~7.7e9.
+
+    Для листов без распознаваемой шапки (архивный формат) — legacy-эвристика
+    «два последних числа».
     """
     assets: list[dict] = []
     seen: set[str] = set()
     for _name, df in sheets.items():
         if df is None or df.empty:
             continue
-        for _, r in df.iterrows():
-            cells = ["" if pd.isna(v) else str(v) for v in r.values]
-            isin = None
-            for c in cells:
-                cc = re.sub(r"\s", "", c)
-                if ISIN_ANY.match(cc):
-                    isin = cc
-                    break
-            if not isin or isin == isin_pif or isin in seen:
-                continue
-            low = " ".join(cells).lower()
-            if "итого" in low or "репо" in low:
-                continue
-            nums = []
-            for c in cells:
-                if any(ch.isalpha() for ch in c):
-                    continue
-                v = _xls_cell_number(c)
-                if v is not None and v > 0:
-                    nums.append(v)
-            if len(nums) < 2:
-                continue
-            positions, value_rub = nums[-2], nums[-1]
-            if positions != int(positions):
-                continue
-            if value_rub > 5e11:
-                continue
-            seen.add(isin)
-            assets.append({
-                "asset_name": "(name from ISIN)",
-                "isin": isin,
-                "ogrn": None, "inn": None, "regnum": None,
-                "positions": int(positions),
-                "value_rub": value_rub,
-                "maturity": None,
-            })
+        cols = _detect_rasshifr_cols(df)
+        if cols is not None:
+            # Header-aware. holdings-лист — только при наличии И qty, И value, И isin.
+            if "isin" not in cols or "positions" not in cols or "value" not in cols:
+                continue  # вспомогательная/служебная таблица — пропускаем целиком
+            assets.extend(_parse_rasshifr_rows(df, cols, isin_pif, seen))
+        else:
+            assets.extend(_parse_rowwise_legacy(df, isin_pif, seen))
     return assets
 
 

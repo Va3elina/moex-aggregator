@@ -49,6 +49,28 @@ from Funds.parsers.scha_xls_parser import parse_scha_xls
 SOURCE = "interfax_manual"
 SLEEP_BETWEEN_MOEX = 0.15  # сек между MOEX ISS запросами для резолва имён
 
+# Порог сигнатуры «битой» строки: количество абсурдно велико И подразумеваемая
+# цена ниже 0.0001 ₽/шт. Так выглядят строки, где парсер взял ИНН/ОГРН эмитента
+# (~7.7e9) за «количество», а код валюты/страны (643, 196) — за «стоимость»
+# (см. Атон ГДР, форма 0420502, Подраздел 3.4). Реальные копеечные бумаги (ВТБ
+# ~0.02 ₽) на 2+ порядка выше порога → не задеваются.
+GARBAGE_POS_MIN = 1e8
+GARBAGE_PRICE_MAX = 0.0001  # ₽/шт
+
+
+def is_implausible_row(positions, amount_rub) -> bool:
+    """True если (positions, amount_rub) совпадает с сигнатурой мис-парса.
+
+    Срабатывает когда количество > 1e8 И (стоимость/количество) < 0.0001 ₽.
+    Количество > 1e8 без стоимости тоже отвергаем — холдинг в 100M+ единиц без
+    зафиксированной стоимости не бывает корректным.
+    """
+    if positions is None or positions <= GARBAGE_POS_MIN:
+        return False
+    if amount_rub is None or amount_rub <= 0:
+        return True
+    return (amount_rub / positions) < GARBAGE_PRICE_MAX
+
 # In-memory кеш ISIN → SHORTNAME (одна сессия одного запуска)
 _name_cache: dict[str, str] = {}
 
@@ -186,10 +208,25 @@ def save_assets(engine, fund_id: int, snap_date: _date, assets: list[dict],
     sec_sum = sum(a.get("value_rub") or 0 for a in assets)
     denom = gross_assets if (gross_assets and gross_assets > 0) else sec_sum
     inserted = 0
+    rejected = 0
     with engine.connect() as conn:
         for a in assets:
             name = a.get("asset_name") or "(unknown)"
             isin = a.get("isin")
+
+            # Guard: отвергаем строки с сигнатурой мис-парса (ИНН/ОГРН попал в
+            # «количество»). НЕ пишем мусор в БД — иначе /company-flows рисует
+            # бары на −23 трлн ₽. Лучше потерять одну строку (видно в логе), чем
+            # отравить агрегат. При штатном парсинге сюда попадать НЕ должно.
+            if is_implausible_row(a.get("positions"), a.get("value_rub")):
+                rejected += 1
+                log.warning(
+                    f"  ⛔ rejected implausible row fund={fund_id} isin={isin} "
+                    f"date={snap_date} positions={a.get('positions')} "
+                    f"amount_rub={a.get('value_rub')} (impl. price < {GARBAGE_PRICE_MAX}₽)"
+                )
+                continue
+
             # Резолвим имя если placeholder и есть ISIN
             if name in ("(name from ISIN)", "(имя не извлечено)") and isin and resolve_names:
                 name = resolve_isin_name(isin)
@@ -225,6 +262,9 @@ def save_assets(engine, fund_id: int, snap_date: _date, assets: list[dict],
             if result.rowcount > 0:
                 inserted += 1
         conn.commit()
+    if rejected:
+        log.warning(f"  ⚠️  {rejected} строк отвергнуто как мис-парс (см. ⛔ выше) — "
+                    f"проверь парсер для fund_id={fund_id} date={snap_date}")
     return inserted
 
 
