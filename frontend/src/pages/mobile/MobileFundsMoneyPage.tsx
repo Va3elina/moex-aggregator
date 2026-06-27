@@ -14,7 +14,7 @@ import { useTierAccess, useCommonFeatures } from '../../contexts/TierFeaturesCon
 import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
 import CreateFundAlertModal from '../../components/alerts/CreateFundAlertModal';
 import { handleTierError } from '../../utils/tierError';
-import { usePersistedState } from '../../hooks/usePersistedState';
+import { usePersistedState, usePersistedSet } from '../../hooks/usePersistedState';
 import MobileLayout from '../../components/mobile/MobileLayout';
 import MobilePageHeader from '../../components/mobile/MobilePageHeader';
 import MobileChart from '../../components/mobile/MobileChart';
@@ -87,13 +87,13 @@ export default function MobileFundsMoneyPage() {
   const [timeSheetOpen, setTimeSheetOpen] = useState(false);
   const [optionsSheetOpen, setOptionsSheetOpen] = useState(false);
   const [fundsSheetOpen, setFundsSheetOpen] = useState(false);
-  // Hidden funds — Set fund_id'ов которые юзер скрыл из суммарной СЧА.
-  // Сбрасывается при смене категории (фонды разные).
-  const [hiddenFunds, setHiddenFunds] = useState<Set<number>>(new Set());
+  // Hidden funds — Set fund_id'ов которые юзер скрыл из суммарной СЧА. Персистим
+  // по категории (frame:funds:hidden:<category>, общий ключ с десктопом) — выбор
+  // не сбрасывается на новой сессии и хранится отдельно для каждой категории;
+  // смена категории перечитывает набор под новый ключ (заменяет прежний reset).
+  const [hiddenFunds, setHiddenFunds] = usePersistedSet<number>(`frame:funds:hidden:${category}`);
   // ?funds= из диплинка применяется один раз (после загрузки funds); флаг от повторов.
   const fundsFilterAppliedRef = useRef(false);
-  // При смене категории — показываем все фонды заново
-  useEffect(() => { setHiddenFunds(new Set()); }, [category]);
   const toggleFundVisibility = (fundId: number) =>
     setHiddenFunds((prev) => {
       const next = new Set(prev);

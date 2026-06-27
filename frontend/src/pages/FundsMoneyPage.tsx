@@ -23,7 +23,7 @@ import SimpleChart from '../components/SimpleChart';
 import { useAuth } from '../contexts/AuthContext';
 import { isPeriodAllowed, getDefaultPeriod } from '../config/accessControl';
 import { useRealtimeData } from '../hooks/useRealtimeData';
-import { usePersistedState } from '../hooks/usePersistedState';
+import { usePersistedState, usePersistedSet } from '../hooks/usePersistedState';
 import { useFitToViewport } from '../hooks/useFitToViewport';
 import { useViewportWidth } from '../hooks/useViewportWidth';
 import FundDetailModal from '../components/funds/FundDetailModal';
@@ -201,7 +201,11 @@ export default function FundsMoneyPage() {
     // спиннер, пока flows ещё грузится («даже не начал обновляться» при смене категории).
     const [flowsLoading, setFlowsLoading] = useState(false);
     const [selectedFund, setSelectedFund] = useState<FundInfo | null>(null);
-    const [hiddenFunds, setHiddenFunds] = useState<Set<number>>(new Set());
+    // Скрытые фонды. Персистим по категории (frame:funds:hidden:<category>) —
+    // выбор не сбрасывается на новой сессии и хранится отдельно для каждой
+    // категории; смена категории перечитывает набор под новый ключ (это заменяет
+    // прежний reset в пустой Set).
+    const [hiddenFunds, setHiddenFunds] = usePersistedSet<number>(`frame:funds:hidden:${category}`);
     // ?funds= из диплинка применяется один раз (после загрузки funds); флаг от повторов.
     const fundsFilterAppliedRef = useRef(false);
     const [collapsedSubcats, setCollapsedSubcats] = useState<Set<string>>(new Set());
@@ -233,9 +237,6 @@ export default function FundsMoneyPage() {
     const prevBarsOutRef = useRef<number[]>([]);
     const barsAnimRef = useRef<number | null>(null);
     const isFirstBarsRender = useRef(true);
-
-    // Сброс скрытых фондов только при смене категории (не периода/таймфрейма)
-    useEffect(() => { setHiddenFunds(new Set()); }, [category]);
 
     // Загрузка данных
     // Stale-guard: при быстром переключении категории/периода медленный ранний

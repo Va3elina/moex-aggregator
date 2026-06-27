@@ -35,7 +35,7 @@ import ChartTabs from '../components/ChartTabs';
 import SegmentedControl from '../components/SegmentedControl';
 import { periodToQuery } from '../utils/csvPeriod';
 import { useOnboardingTour } from '../hooks/useFirstVisit';
-import { usePersistedState } from '../hooks/usePersistedState';
+import { usePersistedState, usePersistedSet } from '../hooks/usePersistedState';
 import { useIndicatorData } from '../hooks/useIndicatorData';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { cbrFlowsTourSteps } from '../data/tours/cbr-flows';
@@ -76,9 +76,11 @@ export default function CbrFlowsPage() {
     errorMessage: (e) => (e as { message?: string } | null)?.message ?? 'Не удалось загрузить данные',
   });
 
-  // Категории-фильтр: какие категории скрыты из графика.
-  // При смене type — сбрасываем (категории различаются для stocks/ofz/fx).
-  const [hiddenCategories, setHiddenCategories] = useState<Set<string>>(new Set());
+  // Категории-фильтр: какие категории скрыты из графика. Персистим в localStorage
+  // с ключом по типу актива (frame:cbr:hidden:<type>) — выбор не сбрасывается на
+  // новой сессии и хранится отдельно для stocks/ofz/fx (категории разные). Смена
+  // type перечитывает набор под новый ключ — это заменяет прежний reset в пустой Set.
+  const [hiddenCategories, setHiddenCategories] = usePersistedSet<string>(`frame:cbr:hidden:${type}`);
 
   // Период: 1г / 3г / Всё (default 1г) — персистится в localStorage
   const [period, setPeriod] = usePersistedState<PeriodFilter>('frame:cbr:period', '1y');
@@ -124,11 +126,6 @@ export default function CbrFlowsPage() {
     max: 640,
     bottomBuffer: 96,
   });
-
-  // Reset hidden при смене типа актива
-  useEffect(() => {
-    setHiddenCategories(new Set());
-  }, [type]);
 
   // Видимые категории (для передачи в график)
   const visibleCategories = useMemo(() => {
