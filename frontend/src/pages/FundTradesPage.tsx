@@ -462,7 +462,10 @@ export default function FundTradesPage() {
 
             {/* Tab content */}
             {tab === 'funds' && (
-                <>
+                // Editorial-frame — как у остальных индикаторов (Сезонность/OI):
+                // белый контейнер с рамкой, контролы сверху на белом, а сетка
+                // карточек — на бежевой paper-card внутри.
+                <div className="editorial-frame">
                     {/* Контролы карточек — единый формат индикаторов: сортировка и
                         период доходности отдельными SegmentedControl (как период/режим
                         на «Открытых позициях» и «Деньгах в фондах»), плюс мультиселект УК.
@@ -497,6 +500,10 @@ export default function FundTradesPage() {
                             )}
                         </div>
                     )}
+                    {/* Бежевая paper-card вокруг сетки карточек — как график в
+                        Сезонности/OI: bg-theme-primary + rounded-2xl + 2px inkstroke.
+                        Белые карточки сохраняют контраст на бежевом фоне. */}
+                    <div className="rounded-2xl bg-theme-primary p-3 md:p-5" style={{ border: '2px solid var(--text-primary)' }}>
                     {loading && funds.length === 0 && (
                         <div style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>Загружаем фонды…</div>
                     )}
@@ -772,7 +779,8 @@ export default function FundTradesPage() {
                             </div>
                         </div>
                     ))}
-                </>
+                    </div>{/* /paper-card */}
+                </div>
             )}
 
             {tab === 'movers' && (
