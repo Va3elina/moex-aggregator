@@ -17,6 +17,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Gift } from 'lucide-react';
 import { apiFetch } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
+import { useAnalytics } from '../../contexts/AnalyticsContext';
+import { trackEvent } from '../../hooks/useYandexMetrica';
 
 type Tier = 'basic' | 'pro';
 type Period = 'monthly' | 'yearly';
@@ -34,6 +36,7 @@ interface Prices {
 
 export default function TrialOfferCard({ lockedTier }: { lockedTier?: Tier }) {
     const { isAuthenticated } = useAuth();
+    const { track } = useAnalytics();
     const navigate = useNavigate();
     const [eligible, setEligible] = useState<boolean | null>(null);
     const [trialEnabled, setTrialEnabled] = useState(false);
@@ -139,6 +142,8 @@ export default function TrialOfferCard({ lockedTier }: { lockedTier?: Tier }) {
         if (!ready) return;
         setSubmitting(true);
         setErr(null);
+        track('trial_start', { tier, period, src: 'modal' });
+        trackEvent('trial_start', { tier, period, src: 'modal' });
         try {
             const r = await apiFetch('/api/billing/trial/start', {
                 method: 'POST',

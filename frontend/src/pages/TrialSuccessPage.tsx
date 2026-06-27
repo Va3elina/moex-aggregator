@@ -13,6 +13,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { CheckCircle2, Clock, AlertCircle, RotateCw } from 'lucide-react';
 import { apiFetch } from '../services/api';
+import { useAnalytics } from '../contexts/AnalyticsContext';
+import { trackEvent } from '../hooks/useYandexMetrica';
 
 interface CompleteResult {
   ok: boolean;
@@ -28,6 +30,15 @@ export default function TrialSuccessPage() {
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [reason, setReason] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
+  const { track } = useAnalytics();
+
+  // Воронка: фиксируем успешную активацию триала ровно один раз.
+  useEffect(() => {
+    if (state === 'active') {
+      track('trial_activated', {});
+      trackEvent('trial_activated');
+    }
+  }, [state, track]);
 
   const runComplete = useCallback(async (): Promise<CompleteResult | null> => {
     try {

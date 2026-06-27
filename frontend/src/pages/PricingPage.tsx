@@ -21,7 +21,9 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { useAnalytics } from '../contexts/AnalyticsContext';
 import { apiFetch } from '../services/api';
+import { trackEvent } from '../hooks/useYandexMetrica';
 import { API_CSV_ENABLED } from '../config/features';
 
 interface PlanVariant {
@@ -93,6 +95,7 @@ interface BillingStatus {
 export default function PricingPage() {
   const { user, isAuthenticated } = useAuth();
   const navigate = useNavigate();
+  const { track } = useAnalytics();
   const [data, setData] = useState<PlansResponse | null>(null);
   const [period, setPeriod] = useState<'monthly' | 'yearly'>('yearly'); // годовой по умолчанию (выгоднее)
   const [loading, setLoading] = useState(true);
@@ -213,6 +216,8 @@ export default function PricingPage() {
     const { tier, period: trialPeriod } = pendingTrial;
     setCheckoutLoading(`trial_${tier}`);
     setError(null);
+    track('trial_start', { tier, period: trialPeriod });
+    trackEvent('trial_start', { tier, period: trialPeriod });
     try {
       const resp = await apiFetch('/api/billing/trial/start', {
         method: 'POST',
@@ -237,6 +242,8 @@ export default function PricingPage() {
     const planId = pendingPlanId;
     setCheckoutLoading(planId);
     setError(null);
+    track('checkout_start', { plan: planId });
+    trackEvent('checkout_start', { plan: planId });
     try {
       const resp = await apiFetch('/api/billing/checkout', {
         method: 'POST',
