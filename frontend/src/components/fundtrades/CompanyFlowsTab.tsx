@@ -323,8 +323,11 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed }: Compa
                         fontSize: 'var(--fs-sm)',
                         padding: 'var(--sp-2) var(--sp-4)',
                         gap: 'var(--sp-3)',
-                        minWidth: 'clamp(180px, 26vw, 240px)',
-                        maxWidth: 300,
+                        // Ширины 1-в-1 как у селектора актива на «Сезонности»:
+                        // длинное имя обрезается ellipsis'ом и НЕ тянет кнопку
+                        // дальше вправо (cap на maxWidth, как там).
+                        minWidth: 'clamp(140px, 22vw, 170px)',
+                        maxWidth: 220,
                         cursor: 'pointer',
                     }}
                 >
