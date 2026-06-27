@@ -27,7 +27,7 @@ import {
 } from '../../services/api';
 import SimpleChart, { type ChartAnnotation } from '../SimpleChart';
 import ChartCaptureButton from '../export/ChartCaptureButton';
-import { DONUT_COLORS, assetColor, resolveFundTicker, fundAssetName } from '../../config/fundConfig';
+import { DONUT_COLORS, assetColor, resolveFundTicker, fundAssetName, fundAssetColor } from '../../config/fundConfig';
 import InstrumentIcon from '../InstrumentIcon';
 import Donut from './Donut';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
@@ -594,17 +594,27 @@ export default function FundDetailModal({
                                                                     color: 'var(--text-primary)',
                                                                 }}>
                                                                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                                                                        <span
-                                                                            style={{
-                                                                                width: 8,
-                                                                                height: 8,
-                                                                                borderRadius: '50%',
-                                                                                flexShrink: 0,
-                                                                                // (C) точка = цвет актива (фирменный/editorial-индекс) у ВСЕХ строк.
-                                                                                backgroundColor: assetColor(h.asset_name) ?? DONUT_COLORS[i % DONUT_COLORS.length],
-                                                                            }}
-                                                                        />
-                                                                        {h.asset_name}
+                                                                        {/* Лого + согласованное имя — как в «потоке по компании»:
+                                                                            тикер резолвим по ISIN (fallback — по имени), даём логотип;
+                                                                            без логотипа — цветная точка того же размера. Имя — через
+                                                                            fundAssetName, чтобы «ГАЗПРОМ ао»→«Газпром», «ВТБ ао»→«ВТБ» и т.д. */}
+                                                                        {(() => {
+                                                                            const tk = resolveFundTicker(h.asset_name, h.isin);
+                                                                            return tk ? (
+                                                                                <InstrumentIcon sectype={tk} size={20} rounded="full" />
+                                                                            ) : (
+                                                                                <span
+                                                                                    style={{
+                                                                                        width: 20,
+                                                                                        height: 20,
+                                                                                        borderRadius: '50%',
+                                                                                        flexShrink: 0,
+                                                                                        backgroundColor: fundAssetColor(h.asset_name, h.isin) ?? DONUT_COLORS[i % DONUT_COLORS.length],
+                                                                                    }}
+                                                                                />
+                                                                            );
+                                                                        })()}
+                                                                        {fundAssetName(h.asset_name, h.isin)}
                                                                     </span>
                                                                 </td>
                                                                 <td style={{
