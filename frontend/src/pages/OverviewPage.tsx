@@ -37,6 +37,7 @@ import {
 } from '../services/api';
 import type { HeatmapStock, FundsSummaryResponse } from '../services/api';
 import { useRealtimeData } from '../hooks/useRealtimeData';
+import { usePersistedState } from '../hooks/usePersistedState';
 import { formatNumber } from '../utils/formatNumber';
 import Card from '../components/Card';
 import Skeleton from '../components/Skeleton';
@@ -755,10 +756,14 @@ type ScreenerPeriod = '1d' | '1w' | '1m' | '1y';
 type ScreenerSort = 'change' | 'volume' | 'mcap';
 
 function Screener({ stocks }: { stocks: HeatmapStock[] }) {
+  // searchQuery/limit остаются session-only: восстанавливать строку поиска или
+  // «показать ещё» при возврате только запутало бы (список выглядел бы
+  // отфильтрованным/раскрытым без видимой причины). Persist'им только настройки
+  // вида — сектор/период/сортировку.
   const [searchQuery, setSearchQuery] = useState('');
-  const [sectorFilter, setSectorFilter] = useState<string>('all');
-  const [period, setPeriod] = useState<ScreenerPeriod>('1d');
-  const [sortBy, setSortBy] = useState<ScreenerSort>('mcap');
+  const [sectorFilter, setSectorFilter] = usePersistedState<string>('frame:screener:sectorFilter', 'all');
+  const [period, setPeriod] = usePersistedState<ScreenerPeriod>('frame:screener:period', '1d');
+  const [sortBy, setSortBy] = usePersistedState<ScreenerSort>('frame:screener:sortBy', 'mcap');
   const [limit, setLimit] = useState(20);
 
   // Уникальные сектора из stocks для dropdown'а. Sort by alphabet.
