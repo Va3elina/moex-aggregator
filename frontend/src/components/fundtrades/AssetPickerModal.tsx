@@ -29,13 +29,14 @@ export interface AssetPickerModalProps {
   onClose: () => void;
 }
 
-// Сортировка списка: активная колонка (объём / вес / число фондов) + направление.
-type SortCol = 'volume' | 'weight' | 'funds';
+// Сортировка списка. По образцу Сезонности оставлена ОДНА колонка — объём (₽);
+// вес и число фондов убраны из таблицы (объём — основной интересующий показатель).
+type SortCol = 'volume';
 type SortDir = 'asc' | 'desc';
 
-// Ширины числовых колонок (px) — единый источник для сорт-заголовков И значений,
+// Ширина колонки объёма (px) — единый источник для сорт-заголовка И значений,
 // чтобы они гарантированно стояли друг под другом, выровненные по правому краю.
-const COL: Record<SortCol, number> = { volume: 110, weight: 56, funds: 66 };
+const COL: Record<SortCol, number> = { volume: 110 };
 
 // Корзина-категория бумаги (приходит с бэкенда) → подпись таба. Порядок = порядок
 // табов слева направо; показываем ТОЛЬКО непустые корзины + «Все» всегда последней.
@@ -61,8 +62,8 @@ const normCat = (a: AssetPickerAsset) => a.category ?? 'other';
  * props (без загрузки из API и без tier-lock).
  *
  * Лого: resolveFundTicker(asset_name, isin) → <InstrumentIcon> (как в Сезонности/
- * ОИ), иначе цветная точка по fundAssetColor. Справа — три числовые колонки: объём (₽),
- * средний вес (%) и «N фондов». Длинные имена обрезаются (ellipsis + title).
+ * ОИ), иначе цветная точка по fundAssetColor. Справа — одна колонка объёма (₽)
+ * (по образцу Сезонности; вес/число фондов убраны). Имена обрезаются (ellipsis + title).
  * Клик по строке → onSelect(asset) + onClose(). Клик по звезде — toggle
  * избранного (localStorage 'favoriteFundTradeAssets', id = asset.key).
  */
@@ -141,12 +142,8 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
         fundAssetName(a.asset_name, a.isin).toLowerCase().includes(q))
     : base
   ).slice().sort((a, b) => {
-    const pick = (x: AssetPickerAsset) =>
-      sortCol === 'volume' ? x.last_amount_rub
-      : sortCol === 'weight' ? (x.avg_weight_pct ?? null)
-      : x.funds_count;
-    const av = pick(a);
-    const bv = pick(b);
+    const av = a.last_amount_rub;
+    const bv = b.last_amount_rub;
     // Активы без значения — всегда в конце, в обе стороны сортировки.
     if (av == null && bv == null) return 0;
     if (av == null) return 1;
@@ -226,13 +223,13 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
         {/* Лого: InstrumentIcon по резолвнутому тикеру (акция), иначе — цветная точка
             по фирменному цвету бумаги (облигации/ОФЗ/денежный рынок без тикера). */}
         {ticker ? (
-          <InstrumentIcon sectype={ticker} size={24} rounded="full" />
+          <InstrumentIcon sectype={ticker} size={28} rounded="full" />
         ) : (
           <span
             className="flex-shrink-0 rounded-full"
             style={{
-              width: 24,
-              height: 24,
+              width: 28,
+              height: 28,
               backgroundColor: color || 'var(--text-muted)',
             }}
             aria-hidden="true"
@@ -248,29 +245,20 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
           {displayName}
         </span>
 
-        {/* Числовые колонки справа (ширины COL — под сорт-заголовками, по правому
-            краю). Активная колонка сортировки — ярче (text-primary, bold). */}
-        {/* Мобила: показываем только «Объём ₽» — три колонки (110+56+66) не влезали,
-            имя сжималось в ноль и текст уезжал вправо. */}
-        {(([
-          ['volume', asset.last_amount_rub != null ? `${formatCompact(asset.last_amount_rub)} ₽` : '—'],
-          ['weight', asset.avg_weight_pct != null ? `${asset.avg_weight_pct.toFixed(1)}%` : '—'],
-          ['funds', String(asset.funds_count)],
-        ] as [SortCol, string][]).filter(([c]) => !isMobile || c === 'volume')).map(([c, text]) => (
-          <span
-            key={c}
-            className="flex-shrink-0 text-right"
-            style={{
-              width: COL[c],
-              fontSize: 'var(--fs-sm)',
-              fontVariantNumeric: 'tabular-nums',
-              fontWeight: sortCol === c ? 700 : 600,
-              color: sortCol === c ? 'var(--text-primary)' : 'var(--text-secondary)',
-            }}
-          >
-            {text}
-          </span>
-        ))}
+        {/* Колонка объёма (₽) — единственная, под сорт-заголовком, по правому краю
+            (вес/число фондов убраны по образцу Сезонности). */}
+        <span
+          className="flex-shrink-0 text-right"
+          style={{
+            width: COL.volume,
+            fontSize: 'var(--fs-sm)',
+            fontVariantNumeric: 'tabular-nums',
+            fontWeight: 700,
+            color: 'var(--text-primary)',
+          }}
+        >
+          {asset.last_amount_rub != null ? `${formatCompact(asset.last_amount_rub)} ₽` : '—'}
+        </span>
 
         {/* Star — toggle избранного, stopPropagation чтобы не выбрать актив */}
         <button
@@ -286,7 +274,7 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
   };
 
   return (
-    <div className="instrument-modal-root fixed inset-0 z-50 flex items-start justify-center p-4 pt-20">
+    <div className="instrument-modal-root fixed inset-0 z-50 flex items-start justify-center p-4 pt-8 sm:pt-10">
       {/* Backdrop — solid dim без backdrop-blur (editorial: no glass effects). */}
       <div
         className="absolute inset-0"
@@ -296,86 +284,75 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
 
       {/* Окно — bg-secondary + 2px border text-primary + hard shadow. */}
       <div
-        className="instrument-modal relative w-full rounded-2xl max-h-[80vh] overflow-hidden"
+        className="instrument-modal relative w-full max-w-xl rounded-2xl max-h-[80vh] overflow-hidden"
         style={{
-          maxWidth: 560,
           backgroundColor: 'var(--bg-secondary)',
           border: '2px solid var(--text-primary)',
           boxShadow: 'var(--shadow-hard-chip, 6px 6px 0 var(--text-primary))',
           color: 'var(--text-primary)',
         }}
       >
-        {/* Header */}
-        <div className="px-6 pt-6 pb-4">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
-              Выбор бумаги
-            </h2>
+        {/* Header — заголовок «Выбор бумаги» убран (поиск самоочевиден). Поиск
+            (flex-1) + «×» в одном ряду — как в Сезонности (InstrumentSearchModal). */}
+        <div className="px-6 pt-6 pb-3">
+          <div className="flex items-center gap-3">
+            {/* Search — outline 2px text-primary, компактный (py-2.5) как в Сезонности */}
+            <div className="relative flex-1 min-w-0">
+              <Search
+                size={18}
+                className="absolute left-3.5 top-1/2 -translate-y-1/2"
+                style={{ color: 'var(--text-secondary)' }}
+              />
+              <input
+                ref={inputRef}
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Поиск актива"
+                className="instrument-modal-search w-full pl-11 pr-4 py-2.5 text-sm rounded-xl focus:outline-none transition-colors"
+                style={{
+                  backgroundColor: 'var(--bg-primary)',
+                  color: 'var(--text-primary)',
+                  border: '2px solid var(--text-primary)',
+                }}
+              />
+            </div>
             <button
               onClick={onClose}
-              className="instrument-modal-close transition-colors"
+              className="instrument-modal-close transition-colors flex-shrink-0"
               style={isMobile ? {
                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                width: 34, height: 34, flexShrink: 0, borderRadius: 8,
+                width: 34, height: 34, borderRadius: 8,
                 border: '1.5px solid var(--text-primary)',
                 background: 'var(--bg-primary)', color: 'var(--text-primary)',
-              } : { color: 'var(--text-secondary)', padding: 8, borderRadius: 8 }}
+              } : { color: 'var(--text-secondary)', padding: 8, borderRadius: 8, marginRight: -8 }}
               aria-label="Закрыть"
             >
-              <X size={isMobile ? 18 : 24} strokeWidth={isMobile ? 2.4 : 2} />
+              <X size={isMobile ? 18 : 22} strokeWidth={isMobile ? 2.4 : 2} />
             </button>
-          </div>
-
-          {/* Search */}
-          <div className="relative">
-            <Search
-              size={20}
-              className="absolute left-4 top-1/2 -translate-y-1/2"
-              style={{ color: 'var(--text-secondary)' }}
-            />
-            <input
-              ref={inputRef}
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Поиск бумаги"
-              className="instrument-modal-search w-full pl-12 pr-4 py-4 text-base rounded-xl focus:outline-none transition-colors"
-              style={{
-                backgroundColor: 'var(--bg-primary)',
-                color: 'var(--text-primary)',
-                border: '2px solid var(--text-primary)',
-              }}
-            />
           </div>
 
           {/* Табы-категории (показываем только если корзин > 1). Дефолт «Акции» —
               чистый список; облигации/ОФЗ/фонды доступны по клику. «Все» — последняя. */}
           {presentCats.length > 1 && (
-            <div className="flex flex-wrap gap-2 mt-4">
+            <div className="flex flex-wrap gap-2 mt-3">
               {[...presentCats, 'all'].map((cat) => {
                 const isActive = effectiveCat === cat;
                 const label = cat === 'all' ? 'Все' : (CAT_LABELS[cat] ?? cat);
-                const count = cat === 'all' ? assets.length : (catCounts[cat] ?? 0);
                 return (
                   <button
                     key={cat}
                     type="button"
                     onClick={() => setActiveCat(cat)}
-                    className="flex-shrink-0 whitespace-nowrap font-semibold transition-colors"
+                    className="instrument-modal-chip px-4 py-2 text-sm font-semibold rounded-full transition-colors"
                     style={{
-                      padding: '5px 12px',
-                      borderRadius: 999,
-                      fontSize: 'var(--fs-xs)',
-                      border: '1.5px solid var(--text-primary)',
-                      background: isActive ? 'var(--text-primary)' : 'transparent',
-                      color: isActive ? 'var(--bg-secondary)' : 'var(--text-primary)',
-                      cursor: 'pointer',
+                      backgroundColor: isActive ? 'var(--accent)' : 'var(--bg-secondary)',
+                      color: isActive ? 'var(--text-inverse)' : 'var(--text-primary)',
+                      border: `2px solid ${isActive ? 'var(--accent)' : 'var(--text-primary)'}`,
+                      boxShadow: isActive ? 'var(--shadow-hard-chip, 3px 3px 0 var(--text-primary))' : undefined,
                     }}
                   >
                     {label}
-                    <span style={{ marginLeft: 6, opacity: 0.6, fontVariantNumeric: 'tabular-nums' }}>
-                      {count}
-                    </span>
                   </button>
                 );
               })}
@@ -403,8 +380,6 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
               Бумага
             </span>
             {renderSortHeader('volume', 'Объём', 'Суммарный объём бумаги в портфелях фондов, ₽')}
-            {!isMobile && renderSortHeader('weight', 'Вес', 'Средний вес бумаги в портфелях фондов, %')}
-            {!isMobile && renderSortHeader('funds', 'Фонды', 'Сколько фондов держат бумагу')}
             <span style={{ width: 36, flexShrink: 0 }} aria-hidden="true" />
           </div>
 
