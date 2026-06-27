@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 /**
  * usePersistedState — как useState, но начальное значение читается из localStorage
@@ -46,6 +46,70 @@ export function usePersistedState<T>(
       /* localStorage недоступен (quota / private mode) — игнорируем */
     }
   }, [key, value]);
+
+  return [value, setValue];
+}
+
+/**
+ * usePersistedSet — версия usePersistedState для Set'ов. Обычный usePersistedState
+ * не годится: JSON.stringify(new Set([1,2])) === '{}', данные теряются. Здесь Set
+ * сериализуем как массив (Array.from) и читаем обратно через new Set(arr).
+ *
+ * Ключ можно неймспейсить по текущей подвыборке, напр.
+ * `frame:funds:hidden:${category}`: при смене ключа набор ПЕРЕЧИТЫВАЕТСЯ под новый
+ * ключ. Это заменяет прежний «сброс в пустой Set при смене категории» и заодно
+ * запоминает выбор для каждой категории отдельно. Запись идёт синхронно в сеттере
+ * под актуальный ключ (keyRef), а не отдельным эффектом — иначе смена ключа
+ * успела бы записать старый набор в новый ключ и затереть его.
+ *
+ * Контракт безопасности тот же, что у usePersistedState: JSON.parse/запись в
+ * try/catch (битый формат / quota / приватный режим → fallback на initial), SSR-safe.
+ */
+export function usePersistedSet<T>(
+  key: string,
+  initial?: Set<T>,
+): [Set<T>, React.Dispatch<React.SetStateAction<Set<T>>>] {
+  const readSet = (k: string): Set<T> => {
+    const fallback = initial ?? new Set<T>();
+    if (typeof window === 'undefined') return fallback;
+    try {
+      const raw = window.localStorage.getItem(k);
+      if (raw == null) return fallback;
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? new Set(parsed as T[]) : fallback;
+    } catch {
+      return fallback;
+    }
+  };
+
+  const keyRef = useRef(key);
+  const [value, setValueRaw] = useState<Set<T>>(() => readSet(key));
+
+  // Смена ключа (неймспейс по категории/типу) → перечитываем набор под новый
+  // ключ. На маунте keyRef.current === key, поэтому пропускаем: state уже готов.
+  useEffect(() => {
+    if (keyRef.current === key) return;
+    keyRef.current = key;
+    setValueRaw(readSet(key));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  const setValue = useCallback<React.Dispatch<React.SetStateAction<Set<T>>>>((action) => {
+    setValueRaw((prev) => {
+      const next =
+        typeof action === 'function'
+          ? (action as (p: Set<T>) => Set<T>)(prev)
+          : action;
+      if (typeof window !== 'undefined') {
+        try {
+          window.localStorage.setItem(keyRef.current, JSON.stringify(Array.from(next)));
+        } catch {
+          /* quota / private mode — игнорируем */
+        }
+      }
+      return next;
+    });
+  }, []);
 
   return [value, setValue];
 }

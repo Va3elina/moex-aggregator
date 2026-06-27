@@ -24,7 +24,7 @@ import {
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
 import { useOnboardingTour } from '../../hooks/useFirstVisit';
-import { usePersistedState } from '../../hooks/usePersistedState';
+import { usePersistedState, usePersistedSet } from '../../hooks/usePersistedState';
 import OnboardingTour from '../../components/onboarding/OnboardingTour';
 import type { TourStep } from '../../components/onboarding/OnboardingTour';
 
@@ -57,8 +57,10 @@ export default function MobileCbrFlowsPage() {
   const [error, setError] = useState<string | null>(null);
   const [timeSheetOpen, setTimeSheetOpen] = useState(false);
   const [optionsSheetOpen, setOptionsSheetOpen] = useState(false);
-  // Hidden categories — match desktop pattern (Set, exclude from stack).
-  const [hiddenCategories, setHiddenCategories] = useState<Set<string>>(new Set());
+  // Hidden categories — Set, исключаются из стека (как на десктопе). Персистим
+  // по типу актива (frame:cbr:hidden:<type>, общий ключ с десктопом) — выбор не
+  // сбрасывается на новой сессии и хранится отдельно для stocks/ofz/fx.
+  const [hiddenCategories, setHiddenCategories] = usePersistedSet<string>(`frame:cbr:hidden:${type}`);
 
   // Tier-gating периодов: free = до 365 дней (matrix cbr_flows), «Всё»
   // (безлимит) под замком. canUsePeriod читает ту же матрицу что и backend;
