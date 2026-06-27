@@ -133,6 +133,31 @@ function readConsent(): 'accepted' | 'minimal' | null {
   }
 }
 
+/** Источник захода (referrer + utm) — для аналитики «откуда пришли».
+ *  Храним только ХОСТ реферера (не полный URL → без PII/параметров) + utm-метки.
+ *  Привязывается к payload ПЕРВОГО события сессии (см. acqSentRef в track). */
+function getAcquisition(): Record<string, string> | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const out: Record<string, string> = {};
+    if (document.referrer) {
+      try {
+        out.ref = new URL(document.referrer).hostname || 'direct';
+      } catch {
+        /* malformed referrer — пропускаем */
+      }
+    }
+    const p = new URLSearchParams(window.location.search);
+    for (const k of ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content']) {
+      const v = p.get(k);
+      if (v) out[k] = v.slice(0, 64);
+    }
+    return Object.keys(out).length > 0 ? out : null;
+  } catch {
+    return null;
+  }
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // PROVIDER
 // ════════════════════════════════════════════════════════════════════════════
@@ -144,6 +169,7 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
   const flushTimerRef = useRef<number | null>(null);
   const heartbeatTimerRef = useRef<number | null>(null);
   const deviceRef = useRef<string>(detectDevice());
+  const acqSentRef = useRef<boolean>(false);  // источник (referrer/utm) шлём 1 раз за сессию
 
   // Initialize session_id on mount (lazy, чтобы не активировать sessionStorage если consent=null)
   useEffect(() => {
@@ -195,11 +221,22 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
       if (!sessionIdRef.current) sessionIdRef.current = getOrCreateSessionId();
 
       const path = typeof window !== 'undefined' ? window.location.pathname : null;
+
+      // Первое событие сессии обогащаем источником захода (referrer/utm) →
+      // payload.acq. Так «откуда пришли» привязано к точке входа, без отдельного
+      // event_type (бэк whitelist'ит типы, а payload хранит как есть).
+      let pl: Record<string, unknown> | null = Object.keys(payload).length > 0 ? payload : null;
+      if (!acqSentRef.current) {
+        acqSentRef.current = true;
+        const acq = getAcquisition();
+        if (acq) pl = { ...payload, acq };
+      }
+
       queueRef.current.push({
         session_id: sessionIdRef.current,
         event_type: type,
         event_path: path,
-        payload: Object.keys(payload).length > 0 ? payload : null,
+        payload: pl,
         client_ts: new Date().toISOString(),
         device: deviceRef.current,
       });
