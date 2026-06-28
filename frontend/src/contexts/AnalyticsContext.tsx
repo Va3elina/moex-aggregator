@@ -173,6 +173,7 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
   const queueRef = useRef<PendingEvent[]>([]);
   const flushTimerRef = useRef<number | null>(null);
   const heartbeatTimerRef = useRef<number | null>(null);
+  const lastBeatRef = useRef<number>(0);  // ms-метка последнего ОТПРАВЛЕННОГО heartbeat (дедуп)
   const deviceRef = useRef<string>(detectDevice());
   const acqSentRef = useRef<boolean>(false);  // источник (referrer/utm) шлём 1 раз за сессию
 
@@ -287,11 +288,20 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
   }, [consent, flush]);
 
   // === Heartbeat (только когда tab visible) ===
+  // Идемпотентный по времени: после sleep/wake или Chrome tab-freeze браузер может
+  // возобновить эффект, не выполнив cleanup прошлой цепочки → накапливаются параллельные
+  // setTimeout-цепочки (наблюдалось: после 3.4ч сна пульс ускорялся 60s→~12s на 11 часов).
+  // Защита — дедуп по lastBeatRef: сколько бы цепочек ни тикало, в очередь идёт максимум
+  // один heartbeat за HEARTBEAT_INTERVAL_MS. -5s — допуск на дрейф таймера.
   useEffect(() => {
     if (consent !== 'accepted') return;
     const beat = () => {
       if (document.visibilityState === 'visible') {
-        track('session_heartbeat');
+        const now = Date.now();
+        if (now - lastBeatRef.current >= HEARTBEAT_INTERVAL_MS - 5_000) {
+          lastBeatRef.current = now;
+          track('session_heartbeat');
+        }
       }
       heartbeatTimerRef.current = window.setTimeout(beat, HEARTBEAT_INTERVAL_MS);
     };
