@@ -22,8 +22,6 @@ export const INSTRUMENT_ICONS: Record<string, { icon: string; bg: string; color:
   MA: { icon: 'ИМ', bg: '#7C2D12', color: '#fff' },
   OG: { icon: 'ИНГ', bg: '#92400E', color: '#fff' },
   VI: { icon: 'σ', bg: '#EF4444', color: '#fff' },
-  // Зарубежный индекс (нет лого в стикерпаке) — фьючерс на индекс S&P 500 (SPYF)
-  SF: { icon: 'S&P', bg: '#0C4A6E', color: '#fff' },
   // Spot инструменты валюты — теперь через FUT_BASE_TO_LOGO (USD/EUR/CNY/GOLD).
   // RGBI/RGBITR — через FUT_BASE_TO_LOGO (BONDS-герб).
   // Здесь только то для чего нет лого в стикерпаке:
@@ -106,6 +104,7 @@ export const FUT_BASE_TO_LOGO: Record<string, string> = {
   MX: 'MOEX_IDX', MM: 'MOEX_IDX', MY: 'MOEX_IDX',
   IP: 'MOEX_IDX', IMOEXF: 'MOEX_IDX',
   RI: 'RTS_IDX',  RM: 'RTS_IDX',
+  SF: 'SP500_IDX',  // фьючерс на индекс S&P 500 (SPYF) — лого из стикерпака
   // Spot валюта (с биржи MOEX) → лого валюты из стикерпака
   USD000UTSTOM: 'USD',
   EUR_RUB__TOM: 'EUR',
