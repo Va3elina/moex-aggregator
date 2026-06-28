@@ -317,6 +317,14 @@ async def get_current_breadth(
                     FROM candles
                     WHERE secid = u.secid AND interval = 24 AND type = 'stock'
                       AND close > 0
+                      -- Только торговые БУДНИ — ровно как в compute_breadth_history.py.
+                      -- У MOEX есть выходные сессии (суб/вс спот-свечи). История
+                      -- breadth их исключает, а live-эндпоинт без этого фильтра брал
+                      -- субботнее/воскресное закрытие как current_price И тащил
+                      -- выходные точки в EMA-базу → /current расходился с последним
+                      -- столбиком графика (граничная бумага перескакивала EMA,
+                      -- карточка показывала 4%/«2 из 45» против 2% на гистограмме).
+                      AND EXTRACT(ISODOW FROM begin_time) BETWEEN 1 AND 5
                     ORDER BY begin_time DESC
                     LIMIT :limit
                 ) c
