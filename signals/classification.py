@@ -36,6 +36,7 @@ SUBTYPE_MAP: dict[str, str] = {
     # ── Индексы — фондовые индексы (mean-reversion, российский рынок) ──
     "MX": "index", "MM": "index", "RI": "index",
     "IMOEXF": "index", "IB": "index", "VI": "index",
+    "SF": "index",  # фьючерс на индекс S&P 500 (зарубежный индекс)
 
     # ── Сырьё (group="Сырьё") разделяется на металлы/энерго/с.х. ──
     # Metals — драгоценные металлы (momentum, gold-style trends)
