@@ -84,6 +84,7 @@ export default function SpeedPayButtons({ terminalKey, planId, onStart }: Props)
             plan_id: pid,
             return_url: `${window.location.origin}/billing/success`,
             widget_mode: true,
+            recurrent: true, // подписка ВСЕГДА с авто-продлением — паритет с картой
           }),
         });
         if (!resp.ok) {
