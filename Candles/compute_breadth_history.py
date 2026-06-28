@@ -225,6 +225,12 @@ def convert_to_usd(
         usd_dates = []
         usd_prices = []
         for d, p in zip(dates, prices):
+            # Долларовый ряд — только торговые БУДНИ: РТС и USDRUBF на выходных не
+            # торгуются. Выходные спот-свечи акций в USD-широту не пускаем, иначе на
+            # форвард-филле пятничного курса появлялись бы синтетические субботние/
+            # воскресные точки, которых нет ни в индексе РТС, ни в курсе.
+            if d.weekday() >= 5:
+                continue
             rate = filled_rates.get(d)
             if rate and rate > 0:
                 usd_dates.append(d)
@@ -249,11 +255,11 @@ def load_candles(engine, tickers: list[str], date_from: date) -> dict[str, tuple
               AND begin_time::date >= :date_from
               AND close IS NOT NULL
               AND close > 0
-              -- Только будни: торги выходного дня MOEX дают субботние/воскресные
-              -- спот-свечи, но breadth/EMA — индикатор по торговым БУДНЯМ. Лишние
-              -- выходные точки сдвигали бы EMA-базу (200 «дней» = меньше календарных
-              -- недель) и плодили бы выходные строки breadth_history. Исключаем.
-              AND EXTRACT(ISODOW FROM begin_time) BETWEEN 1 AND 5
+              -- Грузим ВКЛЮЧАЯ выходные сессии MOEX. Рублёвые вселенные (all/imoex)
+              -- считают широту и по субботам/воскресеньям (индекс рублёвого режима —
+              -- IMOEX2, он тоже считается в доп. сессии). Долларовые вселенные
+              -- остаются только по будням — фильтр в convert_to_usd, т.к. РТС и курс
+              -- USDRUBF на выходных не торгуются.
             ORDER BY secid, begin_time
         """), {"tickers": tickers, "date_from": date_from}).fetchall()
 
