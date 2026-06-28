@@ -24,6 +24,7 @@ import LayersButton from '../components/LayersButton';
 import ChartActionsMenu from '../components/ChartActionsMenu';
 import { periodToQuery } from '../utils/csvPeriod';
 import StrengthControls from '../components/strength/StrengthControls';
+import DollarStaleHint from '../components/strength/DollarStaleHint';
 import { computeChartTopLineY, getDatePillStyle } from '../components/chart/datePillLayout';
 import { useOnboardingTour } from '../hooks/useFirstVisit';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
@@ -97,6 +98,10 @@ export default function StrengthPage() {
     });
     const current = data?.current ?? null;
     const history = data?.history ?? null;
+
+    // Долларовый ряд отстаёт от рублёвого (РТС и курс не торгуются на выходных и в
+    // нерабочие дни) → маркеры «доллар не обновляется». Только в USD-режиме.
+    const dollarStale = currency === 'usd' && !!history?.dollar_stale;
 
     // Синхронизированный hover между графиками
     const [hoverIndex, setHoverIndex] = useState<number | null>(null);
@@ -291,6 +296,7 @@ export default function StrengthPage() {
                 onUniverseBaseChange={setUniverseBase}
                 currency={currency}
                 onCurrencyChange={setCurrency}
+                dollarStale={dollarStale}
                 emaPeriod={emaPeriod}
                 onEmaPeriodChange={setEmaPeriod}
                 trailingSlot={
@@ -404,6 +410,12 @@ export default function StrengthPage() {
                 onTouchMove={isAnimating ? undefined : handleTouchMove}
                 onTouchEnd={handleTouchEnd}
             >
+                {dollarStale && (
+                    <DollarStaleHint
+                        variant="alert"
+                        style={{ position: 'absolute', top: 12, left: 16, zIndex: 30 }}
+                    />
+                )}
                 {/* Полный loading / error на месте графика */}
                 {loading && !current ? (
                     <div className="flex items-center justify-center" style={{ height: (showPrice ? heights.top + 34 : 0) + (showPrice ? heights.bottomDual : heights.bottomSolo) + 24 + 68 }}>
