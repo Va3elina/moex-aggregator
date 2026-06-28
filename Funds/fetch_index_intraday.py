@@ -57,6 +57,10 @@ except ImportError:
 INDICES = {
     "IMOEX": "SNDX",
     "RTSI": "RTSI",
+    # IMOEX2 — индекс МосБиржи доп./выходных сессий (тот же борд SNDX). Нужен,
+    # чтобы рублёвая «Сила рынка» рисовала верхний график и по субботам/
+    # воскресеньям: IMOEX и RTSI в выходные не торгуются, IMOEX2 живой.
+    "IMOEX2": "SNDX",
 }
 
 ISS_URL = "https://iss.moex.com/iss/engines/stock/markets/index/securities/{secid}.json"

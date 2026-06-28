@@ -624,6 +624,11 @@ export interface BreadthHistoryResponse {
   ema_period: number;
   data: BreadthHistoryPoint[];
   imoex: { date: string; close: number }[];
+  /** USD-режим: долларовый ряд отстаёт от рублёвого (РТС и курс не торгуются
+   *  на выходных и в нерабочие дни). Драйвит маркер «доллар не обновляется». */
+  dollar_stale?: boolean;
+  /** Дата последней доступной точки долларового ряда (для текста маркера). */
+  data_date?: string | null;
 }
 
 export type BreadthUniverse = 'all' | 'imoex' | 'all_usd' | 'imoex_usd';
