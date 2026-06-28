@@ -711,6 +711,20 @@ class MainOrchestrator:
         else:
             log.warning(f"    ⚠️ Futures turnover: {msg}")
 
+        # 2c. Внутридневное значение индексов в выходной день. IMOEX и RTSI по
+        # выходным не торгуются (fetch вернёт None → пропуск), но IMOEX2 живой —
+        # держим его сегодняшнюю строку index_data свежей, чтобы рублёвая «Сила
+        # рынка» рисовала верхний график и по выходным. Best-effort.
+        self.stats.setdefault('index_intraday_runs', 0)
+        self.stats.setdefault('index_intraday_success', 0)
+        self.stats['index_intraday_runs'] += 1
+        success, msg, dur = await run_script('index_intraday', ['--force'])
+        if success:
+            self.stats['index_intraday_success'] += 1
+            log.info(f"    ✓ [выходной] Index intraday ({dur:.1f}с)")
+        else:
+            log.warning(f"    ⚠️ [выходной] Index intraday: {msg}")
+
         await asyncio.sleep(3)
 
         # 3. Candles Spot (акции выходной сессии MOEX; до открытия источник отдаёт

@@ -870,6 +870,10 @@ function ConsentModal({
               : (trialInfo ? 'Начать бесплатно' : 'Подтвердить')}
           </button>
         </div>
+        {/* SpeedPay (СБП/T-Pay/SberPay/MirPay) временно скрыт — ждём ответ T-Bank
+            саппорта (серт платёжки). Компоненты SpeedPayButtons/useTbankIntegration
+            остаются в репо: для возврата вернуть импорт + проп terminalKey/planId
+            в ConsentModal и блок-рендер. См. PR #235. */}
       </div>
     </div>
   );

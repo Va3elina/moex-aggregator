@@ -308,8 +308,14 @@ async def get_current_breadth(
     tickers = [e["ticker"] for e in stock_entries]
     prices_by_ticker: dict[str, list[tuple]] = {}
     if tickers:
+        # Долларовые вселенные — только торговые БУДНИ: РТС и USDRUBF на выходных
+        # не торгуются, поэтому выходные спот-свечи акций в долларовый ряд не
+        # пускаем (иначе current_price и EMA-база разъезжались бы с историей).
+        # Рублёвые вселенные включают выходные сессии MOEX — верхний график у них
+        # строится по IMOEX2, который тоже считается в доп. сессии.
+        weekday_clause = "AND EXTRACT(ISODOW FROM begin_time) BETWEEN 1 AND 5" if is_usd else ""
         with engine.connect() as conn:
-            bulk_rows = conn.execute(text("""
+            bulk_rows = conn.execute(text(f"""
                 SELECT u.secid, c.d, c.close
                 FROM unnest(CAST(:tickers AS text[])) AS u(secid)
                 CROSS JOIN LATERAL (
@@ -317,14 +323,7 @@ async def get_current_breadth(
                     FROM candles
                     WHERE secid = u.secid AND interval = 24 AND type = 'stock'
                       AND close > 0
-                      -- Только торговые БУДНИ — ровно как в compute_breadth_history.py.
-                      -- У MOEX есть выходные сессии (суб/вс спот-свечи). История
-                      -- breadth их исключает, а live-эндпоинт без этого фильтра брал
-                      -- субботнее/воскресное закрытие как current_price И тащил
-                      -- выходные точки в EMA-базу → /current расходился с последним
-                      -- столбиком графика (граничная бумага перескакивала EMA,
-                      -- карточка показывала 4%/«2 из 45» против 2% на гистограмме).
-                      AND EXTRACT(ISODOW FROM begin_time) BETWEEN 1 AND 5
+                      {weekday_clause}
                     ORDER BY begin_time DESC
                     LIMIT :limit
                 ) c
@@ -465,27 +464,38 @@ async def get_breadth_history(
         ttl = 1800 if universe == "imoex" else 3600
         get_or_set(cache_key, history, ttl=ttl)
 
-    # ── Индекс-наложение ВСЕГДА свежий (IMOEX ₽ / RTSI $), БЕЗ кэша ──
-    overlay_secid = "RTSI" if is_usd else "IMOEX"
+    # ── Индекс-наложение ВСЕГДА свежее, БЕЗ кэша ──
+    # Доллар: RTSI. Рубль: IMOEX основной (будни без шва) + IMOEX2 дозаполняет
+    # выходные точки, которых у IMOEX нет (IMOEX2 считается и в доп./выходные
+    # сессии). На совпадающих датах берём IMOEX, на выходных — IMOEX2.
+    overlay_secids = ["RTSI"] if is_usd else ["IMOEX", "IMOEX2"]
     imoex_data = []
     imoex_by_date: dict[str, float] = {}
     try:
         with engine.connect() as conn:
             imoex_rows = conn.execute(text("""
-                SELECT trade_date as date, close
+                SELECT secid, trade_date as date, close
                 FROM index_data
-                WHERE secid = :secid
+                WHERE secid = ANY(:secids)
                   AND trade_date >= :date_from
                   AND close IS NOT NULL
                 ORDER BY trade_date
-            """), {"secid": overlay_secid, "date_from": date_from}).fetchall()
-        imoex_by_date = {str(row[0]): float(row[1]) for row in imoex_rows if row[1]}
-        imoex_data = [
-            {"date": str(row[0]), "close": float(row[1])}
-            for row in imoex_rows if row[1]
-        ]
+            """), {"secids": overlay_secids, "date_from": date_from}).fetchall()
+        by_date: dict[str, dict] = {}
+        for secid, d, close in imoex_rows:
+            if close is None:
+                continue
+            by_date.setdefault(str(d), {})[secid] = float(close)
+        # Приоритет по порядку overlay_secids: IMOEX раньше IMOEX2 → будни без шва,
+        # IMOEX2 выигрывает только на датах, которых у IMOEX нет (выходные).
+        for ds, vals in by_date.items():
+            for pref in overlay_secids:
+                if pref in vals:
+                    imoex_by_date[ds] = vals[pref]
+                    break
+        imoex_data = [{"date": ds, "close": imoex_by_date[ds]} for ds in sorted(imoex_by_date)]
     except Exception as e:
-        log.error(f"Error fetching {overlay_secid}: {e}")
+        log.error(f"Error fetching overlay {overlay_secids}: {e}")
 
     # ── Последняя точка «сегодня»: актуальное значение, а не вчерашнее закрытие ──
     # breadth_history наполняется только в дневном прогоне (19:10 МСК), а
@@ -518,6 +528,27 @@ async def get_breadth_history(
         for p in history
     ]
 
+    # Долларовый ряд «устарел»: РТС и курс USDRUBF на выходных и в нерабочие для
+    # РТС дни не торгуются, поэтому долларовая широта отстаёт от рублёвой. Сравнение
+    # по ДАТЕ EOD (не по времени): и историю, и сегодняшнюю точку двигает ночной
+    # предрасчёт/intraday на закрытых данных, так что ночная сессия (в которую
+    # данные не приходят) ложного срабатывания не даёт. Только для USD-режима.
+    dollar_stale = False
+    data_date = data_out[-1]["date"] if data_out else None
+    if is_usd and data_date:
+        try:
+            with engine.connect() as conn:
+                r = conn.execute(text("""
+                    SELECT max(begin_time::date)
+                    FROM candles
+                    WHERE interval = 24 AND type = 'stock' AND close > 0
+                """)).fetchone()
+            latest_stock_date = str(r[0]) if r and r[0] else None
+            if latest_stock_date and latest_stock_date > data_date:
+                dollar_stale = True
+        except Exception as e:
+            log.warning(f"breadth/history: dollar_stale check skipped: {e}")
+
     duration = time.time() - start_time
     log.info(f"DONE: /breadth/history {len(history)} points, {duration:.2f}s")
     return {
@@ -525,4 +556,6 @@ async def get_breadth_history(
         "universe": universe,
         "data": data_out,
         "imoex": imoex_data,
+        "dollar_stale": dollar_stale,
+        "data_date": data_date,
     }
