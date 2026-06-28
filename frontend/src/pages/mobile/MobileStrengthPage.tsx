@@ -26,6 +26,7 @@ import {
 import { useOnboardingTour } from '../../hooks/useFirstVisit';
 import OnboardingTour from '../../components/onboarding/OnboardingTour';
 import type { TourStep } from '../../components/onboarding/OnboardingTour';
+import DollarStaleHint from '../../components/strength/DollarStaleHint';
 
 const EMA_PERIODS = [20, 50, 100, 200] as const;
 
@@ -224,6 +225,10 @@ export default function MobileStrengthPage() {
 
   const classInfo = current ? CLASSIFICATION_LABELS[current.classification] : null;
 
+  // Долларовый ряд отстаёт от рублёвого (РТС и курс не торгуются на выходных и в
+  // нерабочие дни) → показываем маркеры «доллар не обновляется». Только в USD-режиме.
+  const dollarStale = currency === 'usd' && !!history?.dollar_stale;
+
   // Sync'нутые данные: для каждой даты — price + breadth. Только пересечение
   // дат (не все breadth дни имеют price snapshot и наоборот).
   const syncedData = useMemo(() => {
@@ -269,6 +274,12 @@ export default function MobileStrengthPage() {
         data-tour="strength-chart"
         style={{ flex: 1, minHeight: 0, position: 'relative' }}
       >
+        {dollarStale && (
+          <DollarStaleHint
+            variant="alert"
+            style={{ position: 'absolute', top: 8, left: 8, zIndex: 5 }}
+          />
+        )}
         <div style={{ position: 'absolute', inset: 0 }}>
           <StrengthDualChart
             data={syncedData}
@@ -471,9 +482,13 @@ export default function MobileStrengthPage() {
                 letterSpacing: '0.06em',
                 textTransform: 'uppercase',
                 marginBottom: 8,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
               }}
             >
               Валюта
+              {dollarStale && <DollarStaleHint variant="info" />}
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
               {([

@@ -5,6 +5,7 @@ import SegmentedControl from '../SegmentedControl';
 import Dropdown from '../Dropdown';
 import { useTierAccess } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../tier/UpgradeModal';
+import DollarStaleHint from './DollarStaleHint';
 
 type Period = '1y' | '5y' | 'all';
 type EmaPeriod = 20 | 50 | 100 | 200;
@@ -24,6 +25,8 @@ interface StrengthControlsProps {
     onUniverseBaseChange: (base: 'all' | 'imoex') => void;
     currency: 'rub' | 'usd';
     onCurrencyChange: (currency: 'rub' | 'usd') => void;
+    /** USD-режим: долларовый ряд отстал → показать маркер «доллар не обновляется». */
+    dollarStale?: boolean;
     emaPeriod: EmaPeriod;
     onEmaPeriodChange: (ema: EmaPeriod) => void;
     /** Trailing slot — экшены графика (kebab) через portal. */
@@ -37,6 +40,7 @@ export default function StrengthControls({
     onUniverseBaseChange,
     currency,
     onCurrencyChange,
+    dollarStale,
     emaPeriod,
     onEmaPeriodChange,
     trailingSlot,
@@ -92,6 +96,10 @@ export default function StrengthControls({
                     }
                 }}
             />
+
+            {/* Маркер «доллар не обновляется на выходных» — только когда долларовый
+                ряд отстал от рублёвого (выходные/нерабочие дни). */}
+            {dollarStale && <DollarStaleHint variant="info" />}
 
             {/* EMA period — выпадающий список (вниз). Четыре варианта 20/50/100/200
                 не помещались бы в ряд сегментами, поэтому свернули в Dropdown. */}
