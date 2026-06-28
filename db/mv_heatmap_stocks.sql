@@ -62,25 +62,21 @@ snap_date AS (
     FROM latest_daily ld
     LEFT JOIN intraday_close ic ON ic.secid = ld.secid
 ),
--- Prev close = close ПРЕДЫДУЩЕЙ сессии СТРОГО до даты снимка (= PREVPRICE MOEX).
---   • снимок-БУДНИЙ день → эталон = последний БУДНИЙ день (DOW 1-5): пн считается
---     vs пт, выходные сессии MOEX как база игнорируются (консистентно с
---     instruments.py day_change_pct; раньше так считалась и вся карта).
---   • снимок-ВЫХОДНОЙ (сб/вс) → эталон = любая предыдущая сессия, включая
---     выходную: СБ → пт, ВС → СБ (а не пятница). Так карта в воскресенье
---     показывает ход именно воскресной сессии vs субботнее закрытие, а в субботу —
---     vs пятницу. EXTRACT(DOW): 0=вс, 6=сб.
--- «Строго до даты снимка» делает расчёт holiday-устойчивым.
+-- Prev close = close НЕПОСРЕДСТВЕННО ПРЕДЫДУЩЕЙ сессии этой бумаги, строго до
+-- даты снимка (= PREVPRICE MOEX). Сессии идут непрерывной цепочкой, выходные НЕ
+-- пропускаем: …чт→пт→сб→вс→пн→… Поэтому пн считается vs вс, вс vs сб, сб vs пт.
+-- Для бумаги, которая по выходным НЕ торгуется, «предыдущая сессия» перед
+-- понедельником сама окажется пятницей (нет сб/вс свечей) → эталон всегда =
+-- последнее ФАКТИЧЕСКОЕ закрытие именно этой бумаги, без «прыжка через выходные».
+-- «Строго до даты снимка» делает расчёт holiday-устойчивым (нет своей свечи в
+-- день снимка — берём предыдущую). NB: instruments.py day_change_pct пока держит
+-- DOW 1-5 (пн vs пт) — это отдельная поверхность (пикер), карту не трогает.
 prev_day_close AS (
     SELECT DISTINCT ON (c.secid) c.secid, c.close AS price
     FROM candles c
     JOIN snap_date sd ON sd.secid = c.secid
     WHERE c.type = 'stock' AND c.interval = 24
       AND c.begin_time::date < sd.d
-      AND (
-          EXTRACT(DOW FROM sd.d) IN (0, 6)                    -- снимок выходной → любая сессия
-          OR EXTRACT(DOW FROM c.begin_time) BETWEEN 1 AND 5   -- снимок будний → только будни
-      )
     ORDER BY c.secid, c.begin_time DESC
 ),
 -- 7D: snapshot-to-snapshot. Только daily candles + split-adjustment.
