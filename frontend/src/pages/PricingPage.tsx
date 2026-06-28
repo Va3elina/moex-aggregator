@@ -25,7 +25,6 @@ import { useAnalytics } from '../contexts/AnalyticsContext';
 import { apiFetch } from '../services/api';
 import { trackEvent } from '../hooks/useYandexMetrica';
 import { API_CSV_ENABLED } from '../config/features';
-import SpeedPayButtons from '../components/billing/SpeedPayButtons';
 
 interface PlanVariant {
   plan_id: string;
@@ -649,8 +648,6 @@ export default function PricingPage() {
           onClose={closeConsent}
           isLoading={checkoutLoading === pendingPlanId}
           canConfirm={consentReady}
-          terminalKey={data.terminal_key}
-          planId={pendingPlanId}
         />
       )}
 
@@ -711,8 +708,6 @@ function ConsentModal({
   isLoading,
   canConfirm,
   trialInfo,
-  terminalKey,
-  planId,
 }: {
   agreementConsent: boolean;
   onAgreementChange: (v: boolean) => void;
@@ -723,11 +718,6 @@ function ConsentModal({
   // Если задан — режим подтверждения бесплатного пробного периода (раскрытие
   // суммы/даты первого списания + явное согласие на автосписание).
   trialInfo?: { tierRu: string; days: number; amount: number; periodRu: string; chargeDate: string };
-  // T-Bank SpeedPay (СБП/T-Pay/SberPay/MirPay): кнопки рендерятся ВНУТРИ модалки
-  // ПОСЛЕ галки согласия (canConfirm) — наследуют тот же consent+email-гейт, что и
-  // карта. Только для checkout-режима (не trial: тот идёт через AddCard 1₽).
-  terminalKey?: string | null;
-  planId?: string | null;
 }) {
   const amountStr = trialInfo ? trialInfo.amount.toLocaleString('ru-RU') : '';
   return (
@@ -880,23 +870,10 @@ function ConsentModal({
               : (trialInfo ? 'Начать бесплатно' : 'Подтвердить')}
           </button>
         </div>
-
-        {/* SpeedPay — альтернативные рельсы оплаты (СБП/T-Pay/SberPay/MirPay).
-            Только для checkout (не trial), только ПОСЛЕ галки согласия — тогда
-            consent+email уже валидны, виджет ничего не обходит. Сами кнопки рисует
-            SDK T-Bank по бренд-гайдам ПС; наш дизайн — обёртка/разделитель. */}
-        {!trialInfo && terminalKey && planId && canConfirm && (
-          <div className="mt-4">
-            <div className="flex items-center gap-3 mb-3">
-              <span className="flex-1" style={{ height: 1, background: 'var(--border-color)' }} />
-              <span className="text-xs whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>
-                или оплатить через
-              </span>
-              <span className="flex-1" style={{ height: 1, background: 'var(--border-color)' }} />
-            </div>
-            <SpeedPayButtons terminalKey={terminalKey} planId={planId} />
-          </div>
-        )}
+        {/* SpeedPay (СБП/T-Pay/SberPay/MirPay) временно скрыт — ждём ответ T-Bank
+            саппорта (серт платёжки). Компоненты SpeedPayButtons/useTbankIntegration
+            остаются в репо: для возврата вернуть импорт + проп terminalKey/planId
+            в ConsentModal и блок-рендер. См. PR #235. */}
       </div>
     </div>
   );
