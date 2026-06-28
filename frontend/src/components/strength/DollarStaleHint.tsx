@@ -1,24 +1,21 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Info } from 'lucide-react';
 
 // Текст специально без тире и кавычек.
 export const DOLLAR_STALE_TEXT =
     'На выходных доллар не обновляется: индекс РТС и курс не торгуются. Рублёвый режим работает и в выходные.';
 
 interface DollarStaleHintProps {
-    /** 'info' — серая иконка info рядом с переключателем валюты.
-     *  'alert' — красный восклицательный знак в углу графика. */
-    variant: 'info' | 'alert';
     className?: string;
     style?: React.CSSProperties;
 }
 
 /**
- * Кликабельный маркер «доллар не обновляется на выходных». По нажатию
- * открывает поповер с пояснением. Поповер позиционируется fixed по координатам
- * кнопки — так он не обрезается overflow-hidden контейнером графика.
+ * Кликабельный маркер «доллар не обновляется на выходных» — красный кружок с
+ * восклицательным знаком (без тени). По нажатию открывает поповер с пояснением.
+ * Позиционируется родителем через style: в углу графика или внахлёст на угол
+ * кнопки $. Поповер position:fixed, чтобы не обрезался overflow-hidden графика.
  */
-export default function DollarStaleHint({ variant, className, style }: DollarStaleHintProps) {
+export default function DollarStaleHint({ className, style }: DollarStaleHintProps) {
     const [open, setOpen] = useState(false);
     const [coords, setCoords] = useState<{ top: number; left: number } | null>(null);
     const btnRef = useRef<HTMLButtonElement>(null);
@@ -76,29 +73,24 @@ export default function DollarStaleHint({ variant, className, style }: DollarSta
                     ...style,
                 }}
             >
-                {variant === 'alert' ? (
-                    <span
-                        style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            width: 22,
-                            height: 22,
-                            borderRadius: '50%',
-                            background: 'var(--funds-flow-negative, #FF4D4D)',
-                            color: '#fff',
-                            fontWeight: 800,
-                            fontSize: 14,
-                            lineHeight: 1,
-                            border: '1.5px solid var(--text-primary)',
-                            boxShadow: '2px 2px 0 var(--text-primary)',
-                        }}
-                    >
-                        !
-                    </span>
-                ) : (
-                    <Info size={16} strokeWidth={2} style={{ color: 'var(--text-muted)' }} />
-                )}
+                <span
+                    style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: 22,
+                        height: 22,
+                        borderRadius: '50%',
+                        background: 'var(--funds-flow-negative, #FF4D4D)',
+                        color: '#fff',
+                        fontWeight: 800,
+                        fontSize: 14,
+                        lineHeight: 1,
+                        border: '1.5px solid var(--text-primary)',
+                    }}
+                >
+                    !
+                </span>
             </button>
             {open && coords && (
                 <div

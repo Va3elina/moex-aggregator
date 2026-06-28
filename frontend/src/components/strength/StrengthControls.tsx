@@ -77,29 +77,32 @@ export default function StrengthControls({
                 }}
             />
 
-            {/* Currency — только символ валюты */}
-            <SegmentedControl<'rub' | 'usd'>
-                options={[
-                    { key: 'rub', label: '₽' },
-                    { key: 'usd', label: '$', locked: usdLocked },
-                ]}
-                value={currency}
-                onChange={onCurrencyChange}
-                onLockedClick={() => {
-                    const tier = strengthAccess.requiredTierFor({ universe: 'imoex_usd' });
-                    if (tier) {
-                        showUpgrade({
-                            tier,
-                            featureName: 'долларовый режим',
-                            indicator: 'strength',
-                        });
-                    }
-                }}
-            />
-
-            {/* Маркер «доллар не обновляется на выходных» — только когда долларовый
-                ряд отстал от рублёвого (выходные/нерабочие дни). */}
-            {dollarStale && <DollarStaleHint variant="info" />}
+            {/* Currency — только символ валюты. На выходных и в нерабочие для РТС
+                дни на угол кнопки $ накладывается красный маркер «доллар не
+                обновляется» (по клику — поповер с пояснением). */}
+            <div style={{ position: 'relative', display: 'inline-flex' }}>
+                <SegmentedControl<'rub' | 'usd'>
+                    options={[
+                        { key: 'rub', label: '₽' },
+                        { key: 'usd', label: '$', locked: usdLocked },
+                    ]}
+                    value={currency}
+                    onChange={onCurrencyChange}
+                    onLockedClick={() => {
+                        const tier = strengthAccess.requiredTierFor({ universe: 'imoex_usd' });
+                        if (tier) {
+                            showUpgrade({
+                                tier,
+                                featureName: 'долларовый режим',
+                                indicator: 'strength',
+                            });
+                        }
+                    }}
+                />
+                {dollarStale && (
+                    <DollarStaleHint style={{ position: 'absolute', top: -8, right: -8, zIndex: 5 }} />
+                )}
+            </div>
 
             {/* EMA period — выпадающий список (вниз). Четыре варианта 20/50/100/200
                 не помещались бы в ряд сегментами, поэтому свернули в Dropdown. */}
