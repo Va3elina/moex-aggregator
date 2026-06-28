@@ -218,11 +218,13 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """
-    Ограничение запросов по IP адресу
+    Ограничение запросов. Только /api/* (SPA-навигации и статика не считаются).
+    Ключ: user_id для авторизованных (Bearer JWT), иначе IP — общий VPN/NAT-IP
+    не режет реальных залогиненных юзеров.
 
     - Общий лимит: 100 запросов в минуту
     - Auth эндпоинты: 10 запросов в минуту
-    - Тяжёлые эндпоинты: 30 запросов в минуту
+    - Тяжёлые эндпоинты (кэшируемые heatmap/chart/stats): 60 запросов в минуту
     """
 
     def __init__(
@@ -256,22 +258,38 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return self.heavy_requests_per_minute
         return self.requests_per_minute
 
+    def _rate_limit_identity(self, request: Request, client_ip: str) -> str:
+        # Залогиненный юзер? Ключуем по user_id, чтобы общий VPN/NAT-IP не резал
+        # реальных людей. Bearer-токен парсим тем же verify_token, что и auth-слой;
+        # на любой сбой/отсутствие/просрочку токена — тихий фолбэк на IP.
+        auth = request.headers.get("Authorization", "")
+        if auth.startswith("Bearer "):
+            try:
+                from api.security.jwt import verify_token
+                payload = verify_token(auth[7:])
+                if payload and payload.sub:
+                    return f"u:{payload.sub}"
+            except Exception:
+                pass
+        return client_ip
+
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
-        # Статика: /assets, /logos, /videos, /showcase, favicon — не считаем в rate limit.
-        # Модалка выбора актива может параллельно запросить ~100 лого-файлов;
-        # HLS-стрим тянет десятки .ts сегментов на каждое видео карточки.
-        # Без exclude'а они съедают лимит 100 req/min и ломают API.
-        if (
-            path in ["/health", "/favicon.ico"]
-            or path.startswith("/assets")
-            or path.startswith("/logos")
-            or path.startswith("/videos")
-            or path.startswith("/showcase")
-        ):
+        # Rate-limit касается ТОЛЬКО /api. SPA-навигации (/strength, /funds-money,
+        # «/»), пререндеренный per-route HTML и статика (/assets, /logos, /videos,
+        # /showcase, favicon, /health) отдаются как ДОКУМЕНТЫ — заменять их JSON-
+        # ошибкой 429 нельзя: иначе обычный refresh страницы за лимитом показывал
+        # сырой JSON вместо сайта (так и было на /strength). Защиту несут /api-лимит
+        # ниже + nginx limit_req на 80/443 как сетевой backstop.
+        if not path.startswith("/api"):
             return await call_next(request)
 
+        # Ключ лимита: авторизованный юзер → по user_id (Bearer JWT), аноним → по IP.
+        # VPN/корп-NAT прячут сотни людей за одним IP — общий IP-бакет ложно резал
+        # реальных залогиненных юзеров (триал-юзер за VPN ловил 429 просто на
+        # refresh). Свой бакет на user_id это снимает; для логина/анонима — по IP.
         client_ip = self._get_client_ip(request)
+        ident = self._rate_limit_identity(request, client_ip)
         limit = self._get_limit_for_path(path)
 
         # Счётчик в Redis (общий для всех gunicorn-воркеров): прежний in-memory
@@ -289,7 +307,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             from api.cache import _get_redis
             r = _get_redis()
             bucket = int(now // 60)
-            rkey = f"ratelimit:{client_ip}:{limit}:{bucket}"
+            rkey = f"ratelimit:{ident}:{limit}:{bucket}"
             count = r.incr(rkey)
             if count == 1:
                 r.expire(rkey, 60)

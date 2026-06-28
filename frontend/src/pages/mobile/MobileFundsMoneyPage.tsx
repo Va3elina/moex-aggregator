@@ -56,8 +56,16 @@ export default function MobileFundsMoneyPage() {
   // Шарим desktop-ключи category/viewMode/flowTimeframe (записываемые наборы
   // совпадают). period → отдельный mobilePeriod: desktop frame:funds:period
   // реально пишет 3m/1y/3y (clamp FLOW_MIN_PERIODS), которых нет в mobile-чипах.
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [category, setCategory] = usePersistedState<FundCategory>('frame:funds:category', 'money_market');
+  // Выбор раздела пишем в ?category= (replace) — адресная строка отражает фонд,
+  // URL можно сохранить в избранное, как ?instrument= на /oi. Чтение — ниже.
+  const selectCategory = (c: FundCategory) => {
+    setCategory(c);
+    const next = new URLSearchParams(searchParams);
+    next.set('category', c);
+    setSearchParams(next, { replace: true });
+  };
   // Диплинк из сигнала/аномалии: ?category= преселектит раздел. Применяем при
   // КАЖДОЙ навигации (не только на маунте) — иначе клик по второй fund-аномалии
   // другой категории не переключал бы раздел (SPA не перемонтирует страницу).
@@ -524,7 +532,7 @@ export default function MobileFundsMoneyPage() {
                   key={cat.key}
                   className={`fm-chip ${category === cat.key ? 'active' : ''}`}
                   onClick={() => {
-                    if (!soon) setCategory(cat.key);
+                    if (!soon) selectCategory(cat.key);
                   }}
                   disabled={soon}
                   style={{ flex: 1, minWidth: 'calc(50% - 4px)', justifyContent: 'center', opacity: soon ? 0.5 : undefined, cursor: soon ? 'not-allowed' : undefined }}

@@ -228,7 +228,7 @@ export default function LoginPage() {
                             disabled={!p.configured}
                         >
                             {providerIcons[p.id]}
-                            <span className="text-sm text-left" style={{ minWidth: '13rem' }}>
+                            <span className="text-sm">
                                 {mode === 'login' ? 'Войти' : 'Регистрация'} через {p.name}
                             </span>
                             {!p.configured && (
