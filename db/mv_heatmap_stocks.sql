@@ -51,9 +51,10 @@ intraday_close AS (
     ORDER BY secid, begin_time DESC
 ),
 -- Дата «снимка» карты per-секция: если сегодня уже были сделки (есть 5-мин
--- свеча) — снимок за сегодня; иначе (выходной/праздник/до открытия) — снимок за
--- дату последней дневной свечи = последний торговый день. От неё отсчитывается
--- prev_close, поэтому на выходных карта показывает ход последнего торгового дня.
+-- свеча) — снимок за сегодня; иначе (праздник/до открытия) — снимок за дату
+-- последней дневной свечи = последний торговый день. В выходную сессию MOEX
+-- (сб/вс) спот собирается → снимок = сегодня, карта показывает живой ход
+-- выходных; на праздник сделок нет → снимок = последний торговый день.
 snap_date AS (
     SELECT ld.secid,
            CASE WHEN ic.close IS NOT NULL THEN CURRENT_DATE
@@ -61,18 +62,25 @@ snap_date AS (
     FROM latest_daily ld
     LEFT JOIN intraday_close ic ON ic.secid = ld.secid
 ),
--- Prev close = close последнего БУДНЕГО торгового дня СТРОГО до даты снимка
--- (= PREVPRICE на MOEX). На сессии снимок = сегодня → prev = вчера. На выходных
--- снимок = пятница → prev = четверг (раньше предикат < CURRENT_DATE давал ту же
--- пятницу, что и latest_daily → change_1d = 0). DOW 1-5 + «строго до даты
--- снимка» делает расчёт holiday-устойчивым (ср. instruments.py day_change_pct).
+-- Prev close = close ПРЕДЫДУЩЕЙ сессии СТРОГО до даты снимка (= PREVPRICE MOEX).
+--   • снимок-БУДНИЙ день → эталон = последний БУДНИЙ день (DOW 1-5): пн считается
+--     vs пт, выходные сессии MOEX как база игнорируются (консистентно с
+--     instruments.py day_change_pct; раньше так считалась и вся карта).
+--   • снимок-ВЫХОДНОЙ (сб/вс) → эталон = любая предыдущая сессия, включая
+--     выходную: СБ → пт, ВС → СБ (а не пятница). Так карта в воскресенье
+--     показывает ход именно воскресной сессии vs субботнее закрытие, а в субботу —
+--     vs пятницу. EXTRACT(DOW): 0=вс, 6=сб.
+-- «Строго до даты снимка» делает расчёт holiday-устойчивым.
 prev_day_close AS (
     SELECT DISTINCT ON (c.secid) c.secid, c.close AS price
     FROM candles c
     JOIN snap_date sd ON sd.secid = c.secid
     WHERE c.type = 'stock' AND c.interval = 24
       AND c.begin_time::date < sd.d
-      AND EXTRACT(DOW FROM c.begin_time) BETWEEN 1 AND 5
+      AND (
+          EXTRACT(DOW FROM sd.d) IN (0, 6)                    -- снимок выходной → любая сессия
+          OR EXTRACT(DOW FROM c.begin_time) BETWEEN 1 AND 5   -- снимок будний → только будни
+      )
     ORDER BY c.secid, c.begin_time DESC
 ),
 -- 7D: snapshot-to-snapshot. Только daily candles + split-adjustment.
