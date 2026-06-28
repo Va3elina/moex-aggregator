@@ -654,11 +654,22 @@ class MainOrchestrator:
 
     async def run_weekend_5min_cycle(self) -> dict:
         """5-мин цикл для ТОРГОВ ВЫХОДНОГО ДНЯ — урезанная версия run_5min_cycle:
-        только фьючерсы + OI (+ оборот). СПОТ в выходные НЕ собираем намеренно:
-        он нужен лишь сезонности и карте рынка, а те работают по будням, и
-        субботние спот-свечи их исказили бы. Соответственно не трогаем и
-        mv_heatmap_stocks (спот-вью). OI хранится по фактической дате (=суббота),
-        фьючерсная свеча — тоже → пара свеча↔OI остаётся выровненной по дате."""
+        фьючерсы + OI (+ оборот) + СПОТ + карта рынка.
+
+        СПОТ собираем и в выходные: MOEX торгует ликвидными акциями по сб/вс
+        (09:55–18:50 МСК), и карта рынка должна показывать актуальный ход
+        выходной сессии, а не пятничный снимок. mv_heatmap_stocks обновляем здесь
+        же, чтобы /api/heatmap отдавал свежий снимок (раньше спот+вью обновлялись
+        лишь раз в сутки в run_weekend_catchup ≈ в полночь, ДО начала сессии →
+        суббота весь день показывала пятницу, воскресенье — субботу).
+
+        Сезонность от этого НЕ страдает — её запросы фильтруют ISODOW 1-5
+        (api/routers/seasonality.py), как и prev_close в mv_heatmap_stocks
+        (DOW 1-5): эталон дневного изменения остаётся последним БУДНИМ закрытием
+        (сб/вс считаются vs пятница — кумулятивный ход выходных).
+
+        OI/фьючерсная свеча хранятся по фактической дате (=суббота) → пара
+        свеча↔OI остаётся выровненной по дате."""
         results = {}
         total_start = datetime.now()
 
@@ -700,8 +711,40 @@ class MainOrchestrator:
         else:
             log.warning(f"    ⚠️ Futures turnover: {msg}")
 
-        # NOTIFY: новые OI/свечи (без mv_heatmap — спот в выходные не трогаем)
+        await asyncio.sleep(3)
+
+        # 3. Candles Spot (акции выходной сессии MOEX; до открытия источник отдаёт
+        #    пусто → no-op, в сессию — субботние/воскресные 5-мин свечи). Тот же
+        #    скрипт, что и в будни (run_5min_cycle) и в run_weekend_catchup.
+        log.info("  📊 [выходной] Candles Spot...")
+        self.stats['candles_spot_runs'] += 1
+        success, msg, dur = await run_script('candles_spot', ['--once', '--force'])
+        results['candles_spot'] = success
+        if success:
+            self.stats['candles_spot_success'] += 1
+            log.info(f"    ✓ Candles Spot ({dur:.1f}с)")
+        else:
+            self.stats['errors'] += 1
+            log.error(f"    ✗ Candles Spot: {msg}")
+
+        # 4. Карта рынка — обновляем mv_heatmap_stocks (CONCURRENTLY, читатели не
+        #    блокируются). Снимок per-секция сам определит дату: есть 5-мин свеча
+        #    за сегодня → snap=сегодня (is_live), иначе → последний торговый день
+        #    (см. db/mv_heatmap_stocks.sql). Только эта вью — OI-вью на выходных
+        #    не трогаем (поведение OI без изменений).
+        log.info("  🔄 [выходной] Карта рынка (mv_heatmap_stocks)...")
+        self.stats['views_refresh_runs'] += 1
+        view_results = await asyncio.to_thread(
+            refresh_materialized_views, ['mv_heatmap_stocks']
+        )
+        if all(r[0] for r in view_results.values()):
+            self.stats['views_refresh_success'] += 1
+
+        # NOTIFY: новые OI/свечи + обновлённая карта. mv_refresh инвалидирует
+        # серверный кэш heatmap: (api/notify_listener.py) и триггерит SSE-reload
+        # карты на фронте (useRealtimeData(['5min','mv_refresh'])).
         send_data_notify("5min", ["candles", "open_interest"])
+        send_data_notify("mv_refresh", ["mv_heatmap_stocks"])
 
         total_duration = (datetime.now() - total_start).total_seconds()
         self.stats['total_duration'] += total_duration
@@ -1279,15 +1322,15 @@ class MainOrchestrator:
                     else:
                         log.debug(f"Выходной, докачка уже выполнена сегодня")
 
-                    # === ТОРГИ ВЫХОДНОГО ДНЯ: фьючерсы+OI 5-мин цикл в часы сессии ===
-                    # Спот в выходные НЕ собираем (run_weekend_5min_cycle без спота)
-                    # — сезонность/карта работают по будням. В часы сессии опрашиваем
+                    # === ТОРГИ ВЫХОДНОГО ДНЯ: фьючерсы+OI+спот 5-мин цикл в часы сессии ===
+                    # Спот собираем и в выходные (карта рынка показывает живой ход
+                    # сб/вс — см. run_weekend_5min_cycle). В часы сессии опрашиваем
                     # часто (1с, как будни) для точного попадания в 5-мин слот; вне
                     # сессии — раз в 5 минут.
                     wknd_session, wknd_reason = is_weekend_session(now)
                     if wknd_session:
                         if slot_5min != self.last_5min_update and now.second >= BUFFER_5MIN:
-                            log.info(f"⏰ [{now:%H:%M:%S} МСК] Выходная сессия — фьючерсы+OI...")
+                            log.info(f"⏰ [{now:%H:%M:%S} МСК] Выходная сессия — фьючерсы+OI+спот...")
                             results = await self.run_weekend_5min_cycle()
                             self.last_5min_update = slot_5min
                             # Агрегация OI 5м→60м (новый час, минута >= 2)
