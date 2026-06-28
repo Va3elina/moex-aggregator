@@ -412,7 +412,6 @@ export default function StrengthPage() {
             >
                 {dollarStale && (
                     <DollarStaleHint
-                        variant="alert"
                         style={{ position: 'absolute', top: 12, left: 16, zIndex: 30 }}
                     />
                 )}

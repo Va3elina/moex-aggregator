@@ -276,7 +276,6 @@ export default function MobileStrengthPage() {
       >
         {dollarStale && (
           <DollarStaleHint
-            variant="alert"
             style={{ position: 'absolute', top: 8, left: 8, zIndex: 5 }}
           />
         )}
@@ -482,15 +481,14 @@ export default function MobileStrengthPage() {
                 letterSpacing: '0.06em',
                 textTransform: 'uppercase',
                 marginBottom: 8,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
               }}
             >
               Валюта
-              {dollarStale && <DollarStaleHint variant="info" />}
             </div>
-            <div style={{ display: 'flex', gap: 6 }}>
+            <div style={{ display: 'flex', gap: 6, position: 'relative' }}>
+              {dollarStale && (
+                <DollarStaleHint style={{ position: 'absolute', top: -8, right: -8, zIndex: 5 }} />
+              )}
               {([
                 { key: 'rub' as const, label: 'Рубли (IMOEX)' },
                 { key: 'usd' as const, label: 'Доллары (RTS)' },
