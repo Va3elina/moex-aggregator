@@ -137,11 +137,16 @@ else:
 app.add_middleware(SecurityHeadersMiddleware)
 
 # 3. Rate Limiting
+# heavy=60: /api/{heatmap,chart,stats} теперь Redis-кэш + анти-stampede
+# (get_or_compute) — запрос почти всегда дешёвый cache-hit, прежний «дорогой»
+# лимит 30 устарел. Гости (без токена) ключуются по IP, а на мобилке ВСЕ гости
+# приземляются на /heatmap → за общим VPN/NAT-IP пачка гостей могла коллективно
+# выбить 30/мин. 60/мин даёт запас, не теряя защиту (nginx limit_req — backstop).
 app.add_middleware(
     RateLimitMiddleware,
     requests_per_minute=100,
     auth_requests_per_minute=10,
-    heavy_requests_per_minute=30,
+    heavy_requests_per_minute=60,
 )
 
 # 2. Логирование медленных запросов (> 1 сек)
