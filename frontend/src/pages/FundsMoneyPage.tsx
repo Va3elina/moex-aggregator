@@ -84,9 +84,18 @@ const easeOutCubic = ANIMATION.easing;
 export default function FundsMoneyPage() {
     const { isAuthenticated } = useAuth();
     const navigate = useNavigate();
-    const [searchParams] = useSearchParams();
+    const [searchParams, setSearchParams] = useSearchParams();
     // Настройки отображения персистятся в localStorage — не сбрасываются на новой сессии.
     const [category, setCategory] = usePersistedState<FundCategory>('frame:funds:category', 'money_market');
+    // Выбор раздела пишем в ?category= (replace, без замусоривания истории) — чтобы
+    // адресная строка всегда отражала текущий фонд и URL можно было сохранить в
+    // избранное, как ?instrument= на /oi. Чтение ?category= ниже остаётся.
+    const selectCategory = (c: FundCategory) => {
+        setCategory(c);
+        const next = new URLSearchParams(searchParams);
+        next.set('category', c);
+        setSearchParams(next, { replace: true });
+    };
     // Диплинк из сигнала/аномалии: ?category= преселектит раздел. Применяем при
     // КАЖДОЙ навигации (не только на маунте) — иначе клик по второй fund-аномалии
     // другой категории не переключал бы раздел: SPA не перемонтирует /funds-money.
@@ -585,7 +594,7 @@ export default function FundsMoneyPage() {
             <ChartTabs<FundCategory>
                 tourId="funds-categories"
                 value={category}
-                onChange={setCategory}
+                onChange={selectCategory}
                 items={CATEGORIES.map(c => ({
                     key: c.key,
                     label: c.name,
