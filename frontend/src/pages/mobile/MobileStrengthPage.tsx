@@ -624,7 +624,12 @@ function StrengthDualChart({
   const PAD_TOP = 8;
   const PAD_BOTTOM = 22; // X-axis labels снизу
   const MID_GAP = 18; // зона X-labels между двумя графиками
-  const innerW = W - PAD_X * 2;
+  // Правый жёлоб под Y-шкалу + pill последнего значения (как PILL_GUTTER_R в
+  // MobileChart «Открытых позиций»): график рисуется только до W - PAD_RIGHT,
+  // а цифры шкалы стоят в зарезервированной колонке справа и НЕ перекрываются
+  // линией/барами.
+  const PAD_RIGHT = 46;
+  const innerW = W - PAD_X - PAD_RIGHT;
   const totalInnerH = H - PAD_TOP - PAD_BOTTOM - MID_GAP;
   // Top zone (price) = 50%, bottom zone (breadth) = 50%
   const topH = totalInnerH * 0.5;
