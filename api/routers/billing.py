@@ -294,6 +294,14 @@ async def webhook(request: Request, db: Session = Depends(get_db)):
     raw_body = await request.body()
     headers = dict(request.headers)
 
+    # [ВРЕМЕННО, диагностика СБП-привязки 2026-06-29] логируем сырое тело, чтобы
+    # увидеть структуру уведомления о привязке счёта (AccountToken). Снять после фикса.
+    log.warning(
+        "WEBHOOK-RAW ct=%s body=%s",
+        headers.get("content-type"),
+        raw_body[:700].decode("utf-8", "replace"),
+    )
+
     provider = get_payment_provider()
     event = provider.parse_webhook(raw_body, headers)
 
