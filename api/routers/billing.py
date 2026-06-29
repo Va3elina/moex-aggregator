@@ -48,6 +48,7 @@ class CheckoutRequest(BaseModel):
     return_url: str | None = None # куда вернуть после оплаты (optional)
     widget_mode: bool = False     # True если инициирован через T-Bank JS SDK (SpeedPay)
     recurrent: bool = False       # True → сохранить карту для auto-renewal (T-Bank Recurrent="Y")
+    rail: str = "card"            # 'card' (redirect) | 'sbp' (QR, рекуррентный СБП)
 
 
 class CheckoutResponse(BaseModel):
@@ -57,6 +58,11 @@ class CheckoutResponse(BaseModel):
     plan_id: str
     tier: str
     amount: float
+    rail: str = "card"
+    # Заполнены только при rail='sbp': картинка QR (data-URL) и СБП-ссылка
+    # для мобильного диплинка. Для карты — None (фронт идёт по confirmation_url).
+    qr_image: str | None = None
+    qr_payload: str | None = None
 
 
 class StatusResponse(BaseModel):
@@ -240,6 +246,9 @@ async def checkout(
     if not plan:
         raise HTTPException(400, f"Unknown plan_id: {body.plan_id}")
 
+    if body.rail not in ("card", "sbp"):
+        raise HTTPException(400, f"Unknown rail: {body.rail}")
+
     # Определяем return_url — куда T-Bank вернёт пользователя после оплаты.
     # Если клиент не прислал — строим из Referer.
     return_url = body.return_url
@@ -255,6 +264,7 @@ async def checkout(
             return_url=return_url,
             widget_mode=body.widget_mode,
             recurrent=body.recurrent,
+            rail=body.rail,
         )
     except ValueError as e:
         raise HTTPException(400, str(e))

@@ -26,6 +26,7 @@ import AuthCallback from './pages/AuthCallback';
 import ProfilePage from './pages/ProfilePage';
 import BillingSuccessPage from './pages/BillingSuccessPage';
 import BillingFailPage from './pages/BillingFailPage';
+import BillingSbpPage from './pages/BillingSbpPage';
 import TrialSuccessPage from './pages/TrialSuccessPage';
 import TrialFailPage from './pages/TrialFailPage';
 import BillingStubPage from './pages/BillingStubPage';
@@ -248,6 +249,7 @@ export default function App() {
               />
             } />
             <Route path="/billing/success" element={<BillingSuccessPage />} />
+            <Route path="/billing/sbp" element={<BillingSbpPage />} />
             <Route path="/billing/fail" element={<BillingFailPage />} />
             <Route path="/billing/trial-success" element={<TrialSuccessPage />} />
             <Route path="/billing/trial-fail" element={<TrialFailPage />} />

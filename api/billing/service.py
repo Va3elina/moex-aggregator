@@ -44,16 +44,25 @@ def _upsert_payment_method(
 
     Вызывается из activate_from_webhook когда event.rebill_id != None.
     """
-    if not event.rebill_id:
+    # Карта → match по rebill_id; СБП → по account_token (rebill_id у СБП пуст).
+    is_sbp = bool(event.account_token) and not event.rebill_id
+    if not event.rebill_id and not event.account_token:
         return None
 
     provider = get_payment_provider()
 
-    existing = db.query(UserPaymentMethod).filter(
-        UserPaymentMethod.user_id == user_id,
-        UserPaymentMethod.rebill_id == event.rebill_id,
-        UserPaymentMethod.deleted_at.is_(None),
-    ).first()
+    if is_sbp:
+        existing = db.query(UserPaymentMethod).filter(
+            UserPaymentMethod.user_id == user_id,
+            UserPaymentMethod.account_token == event.account_token,
+            UserPaymentMethod.deleted_at.is_(None),
+        ).first()
+    else:
+        existing = db.query(UserPaymentMethod).filter(
+            UserPaymentMethod.user_id == user_id,
+            UserPaymentMethod.rebill_id == event.rebill_id,
+            UserPaymentMethod.deleted_at.is_(None),
+        ).first()
 
     now = datetime.now(timezone.utc)
 
@@ -81,7 +90,9 @@ def _upsert_payment_method(
     pm = UserPaymentMethod(
         user_id=user_id,
         provider=provider.name,
+        method_type="sbp" if is_sbp else "card",
         rebill_id=event.rebill_id,
+        account_token=event.account_token,
         customer_key=event.customer_key,
         card_last4=event.card_last4,
         card_brand=event.card_brand,
@@ -91,8 +102,8 @@ def _upsert_payment_method(
     db.add(pm)
     db.flush()
     log.info(
-        "Created payment method: user=%s pm=%s brand=%s last4=%s default=%s",
-        user_id, pm.id, pm.card_brand, pm.card_last4, pm.is_default,
+        "Created payment method: user=%s pm=%s type=%s brand=%s last4=%s default=%s",
+        user_id, pm.id, pm.method_type, pm.card_brand, pm.card_last4, pm.is_default,
     )
     return pm
 
@@ -108,12 +119,17 @@ def create_checkout_for_user(
     return_url: str,
     widget_mode: bool = False,
     recurrent: bool = False,
+    rail: str = "card",
 ) -> dict:
     """
     Создаёт subscription(pending) + платёж у провайдера.
 
-    Возвращает {subscription_id, payment_id, confirmation_url, plan_id, amount}.
-    Frontend редиректит пользователя на confirmation_url.
+    rail='card' (по умолчанию) → возвращает confirmation_url (redirect на оплату).
+    rail='sbp' → СБП по QR: возвращает qr_image (картинка) + qr_payload (ссылка),
+    confirmation_url пуст; фронт ведёт на /billing/sbp.
+
+    Возвращает {subscription_id, payment_id, confirmation_url, qr_image,
+    qr_payload, rail, plan_id, tier, amount}.
     """
     plan = get_plan(plan_id)
     if not plan:
@@ -181,30 +197,46 @@ def create_checkout_for_user(
     provider = get_payment_provider()
     customer_email = getattr(user, "email", None) or None
     customer_phone = getattr(user, "phone", None) or None
+    metadata = {
+        "user_id": str(user.id),
+        "subscription_id": str(sub.id),
+        "plan_id": plan.plan_id,
+    }
     try:
-        session = provider.create_checkout(
-            amount=plan.amount,
-            currency="RUB",
-            description=f"{plan.title} — user #{user.id}",
-            return_url=return_url,
-            metadata={
-                "user_id": str(user.id),
-                "subscription_id": str(sub.id),
-                "plan_id": plan.plan_id,
-            },
-            customer_email=customer_email,
-            customer_phone=customer_phone,
-            widget_mode=widget_mode,
-            recurrent=recurrent,
-            # CustomerKey — обязательный когда recurrent=True. Уникальный
-            # идентификатор клиента у эквайера; у нас str(user.id).
-            customer_key=str(user.id) if recurrent else None,
-        )
+        if rail == "sbp":
+            # СБП всегда recurrent (привязка счёта во время первой оплаты).
+            # customer_key обязателен; sub помечаем как оплаченную через СБП.
+            sub.yk_method = "sbp"
+            session = provider.create_sbp_checkout(  # type: ignore[attr-defined]
+                amount=plan.amount,
+                currency="RUB",
+                description=f"{plan.title} — user #{user.id}",
+                metadata=metadata,
+                customer_email=customer_email,
+                customer_phone=customer_phone,
+                recurrent=True,
+                customer_key=str(user.id),
+            )
+        else:
+            session = provider.create_checkout(
+                amount=plan.amount,
+                currency="RUB",
+                description=f"{plan.title} — user #{user.id}",
+                return_url=return_url,
+                metadata=metadata,
+                customer_email=customer_email,
+                customer_phone=customer_phone,
+                widget_mode=widget_mode,
+                recurrent=recurrent,
+                # CustomerKey — обязательный когда recurrent=True. Уникальный
+                # идентификатор клиента у эквайера; у нас str(user.id).
+                customer_key=str(user.id) if recurrent else None,
+            )
     except Exception as e:
         # Платёж не создался — помечаем fail и пробрасываем
         sub.status = "failed"
         db.commit()
-        log.error("create_checkout_for_user: provider failed: %s", e)
+        log.error("create_checkout_for_user: provider failed (rail=%s): %s", rail, e)
         raise
 
     # 3. Сохраняем payment_id от провайдера в нашу подписку
@@ -220,6 +252,9 @@ def create_checkout_for_user(
         "subscription_id": sub.id,
         "payment_id": session.payment_id,
         "confirmation_url": session.confirmation_url,
+        "qr_image": getattr(session, "qr_image", None),
+        "qr_payload": getattr(session, "qr_payload", None),
+        "rail": rail,
         "plan_id": plan.plan_id,
         "tier": plan.tier,
         "amount": plan.amount,
@@ -316,9 +351,9 @@ def activate_from_webhook(db: Session, event: WebhookEvent) -> Subscription | No
     sub.expires_at = now + timedelta(days=plan.duration_days) if plan else None
     sub.yk_method = event.payment_method
 
-    # Если webhook принёс RebillId — это был recurrent-платёж, сохраняем карту
-    # в user_payment_methods и привязываем к этой подписке.
-    if event.rebill_id:
+    # Если webhook принёс RebillId (карта) ИЛИ AccountToken (СБП) — это был
+    # recurrent-платёж: сохраняем привязку в user_payment_methods и линкуем к sub.
+    if event.rebill_id or event.account_token:
         pm = _upsert_payment_method(db, sub.user_id, event)
         if pm:
             sub.payment_method_id = pm.id
@@ -906,8 +941,11 @@ def charge_recurrent(
         ).quantize(Decimal("0.01"))
 
     provider = get_payment_provider()
-    if not hasattr(provider, "charge"):
-        raise RuntimeError(f"Provider {provider.name} не поддерживает рекурренты")
+    # Ветвление card/СБП: карта → /v2/Charge(RebillId), СБП → ChargeQr(AccountToken).
+    is_sbp = (payment_method.method_type == "sbp")
+    needed = "charge_qr" if is_sbp else "charge"
+    if not hasattr(provider, needed):
+        raise RuntimeError(f"Provider {provider.name} не поддерживает рекурренты ({needed})")
 
     # 1. Sub(pending)
     sub = Subscription(
@@ -929,21 +967,28 @@ def charge_recurrent(
     # для старых записей (до 2026-05) где customer_key не сохранялся.
     # customer_email: для Receipt-блока (54-ФЗ). Терминал-с-фискализацией без
     # Receipt вернёт 309 «expected.receipt». Берём из user.email.
+    charge_kwargs = dict(
+        amount=effective_amount,
+        currency="RUB",
+        description=f"{plan.title} — auto-renewal user #{user.id}" + (f" (скидка {discount_pct}%)" if discount_pct else ""),
+        customer_key=payment_method.customer_key or str(user.id),
+        customer_email=user.email,
+        metadata={
+            "user_id": str(user.id),
+            "subscription_id": str(sub.id),
+            "plan_id": plan.plan_id,
+            "auto_renewal": "1",
+        },
+    )
     try:
-        result = provider.charge(  # type: ignore[attr-defined]
-            amount=effective_amount,
-            currency="RUB",
-            description=f"{plan.title} — auto-renewal user #{user.id}" + (f" (скидка {discount_pct}%)" if discount_pct else ""),
-            rebill_id=payment_method.rebill_id,
-            customer_key=payment_method.customer_key or str(user.id),
-            customer_email=user.email,
-            metadata={
-                "user_id": str(user.id),
-                "subscription_id": str(sub.id),
-                "plan_id": plan.plan_id,
-                "auto_renewal": "1",
-            },
-        )
+        if is_sbp:
+            result = provider.charge_qr(  # type: ignore[attr-defined]
+                account_token=payment_method.account_token, **charge_kwargs
+            )
+        else:
+            result = provider.charge(  # type: ignore[attr-defined]
+                rebill_id=payment_method.rebill_id, **charge_kwargs
+            )
     except Exception as e:
         sub.status = "failed"
         db.commit()
@@ -966,7 +1011,7 @@ def charge_recurrent(
         event = WebhookEvent(
             payment_id=result["payment_id"],
             event_type="payment.succeeded",
-            payment_method="bank_card",  # рекуррент всегда карта
+            payment_method="sbp" if is_sbp else "bank_card",
             amount=result.get("amount"),
         )
         activated = activate_from_webhook(db, event)
