@@ -19,6 +19,7 @@ import MobileAssetSearch from '../../components/mobile/MobileAssetSearch';
 import MobileSheet from '../../components/mobile/MobileSheet';
 import MobileSkeleton from '../../components/mobile/MobileSkeleton';
 import MobileChart from '../../components/mobile/MobileChart';
+import { axisFontSize } from '../../components/chart/chartTypography';
 import {
   getSeasonality,
   getSeasonalityYears,
@@ -907,6 +908,8 @@ function SeasonalityBars({
   }, [seriesGroups]);
 
   const { w: width, h: height } = size;
+  // Размер шрифта осей — общий с «Открытыми позициями» (MobileChart).
+  const axisFs = axisFontSize(width);
   const padX = 8;
   const padTop = 12;
   const padBottom = 22;
@@ -979,7 +982,7 @@ function SeasonalityBars({
               key={`ys-${i}`}
               x={width - 4}
               y={ty}
-              fontSize={9}
+              fontSize={axisFs}
               fontWeight={600}
               fill="color-mix(in srgb, var(--text-primary) 55%, transparent)"
               textAnchor="end"
@@ -1088,7 +1091,7 @@ function SeasonalityBars({
               key={`xl-${i}`}
               x={x}
               y={height - 6}
-              fontSize={9.5}
+              fontSize={axisFs}
               fontWeight={600}
               fill="var(--text-secondary)"
               textAnchor={anchor}

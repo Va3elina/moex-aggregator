@@ -12,6 +12,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FlowDataPoint } from '../../services/api';
+import { axisFontSize } from '../chart/chartTypography';
 
 interface MobileFlowsHistogramProps {
   flows: FlowDataPoint[];
@@ -64,6 +65,9 @@ export default function MobileFlowsHistogram({ flows }: MobileFlowsHistogramProp
 
   const W = size.w;
   const H = size.h;
+  // Размер шрифта осей — общий с «Открытыми позициями» (MobileChart): дискретная
+  // шкала по 6 брейкпоинтам ширины (axisFontSize), а не хардкод 9px.
+  const axisFs = axisFontSize(W);
   const padX = 8;
   const padTop = 16;
   const padBottom = 24;
@@ -154,7 +158,7 @@ export default function MobileFlowsHistogram({ flows }: MobileFlowsHistogramProp
               key={`ys-${i}`}
               x={W - 4}
               y={ty}
-              fontSize={9}
+              fontSize={axisFs}
               fontWeight={600}
               fill="color-mix(in srgb, var(--text-primary) 55%, transparent)"
               textAnchor="end"
@@ -238,7 +242,7 @@ export default function MobileFlowsHistogram({ flows }: MobileFlowsHistogramProp
               key={`xl-${i}`}
               x={x}
               y={H - 8}
-              fontSize={9}
+              fontSize={axisFs}
               fontWeight={600}
               fill="var(--text-secondary)"
               textAnchor={anchor}

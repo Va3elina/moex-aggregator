@@ -13,6 +13,7 @@ import MobileLayout from '../../components/mobile/MobileLayout';
 import MobilePageHeader from '../../components/mobile/MobilePageHeader';
 import MobileSheet from '../../components/mobile/MobileSheet';
 import MobileSkeleton from '../../components/mobile/MobileSkeleton';
+import { axisFontSize } from '../../components/chart/chartTypography';
 import { getCategoryColor } from '../../components/cbr/cbrPalette';
 import { useTheme } from '../../contexts/ThemeContext';
 import {
@@ -498,6 +499,8 @@ function MobileCbrHistogram({
   }, [animKey]);
 
   const { w: W, h: H } = size;
+  // Размер шрифта осей — общий с «Открытыми позициями» (MobileChart).
+  const axisFs = axisFontSize(W);
   const padX = 8;
   const padTop = 14;
   const padBottom = 22;
@@ -613,7 +616,7 @@ function MobileCbrHistogram({
               key={`ys-${i}`}
               x={W - 4}
               y={ty}
-              fontSize={9}
+              fontSize={axisFs}
               fontWeight={600}
               fill="color-mix(in srgb, var(--text-primary) 55%, transparent)"
               textAnchor="end"
@@ -709,7 +712,7 @@ function MobileCbrHistogram({
               key={`xl-${idx}`}
               x={x}
               y={H - 6}
-              fontSize={9}
+              fontSize={axisFs}
               fontWeight={600}
               fill="var(--text-secondary)"
               textAnchor={anchor}
