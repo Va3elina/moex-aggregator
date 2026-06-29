@@ -96,12 +96,6 @@ export default function PricingPage() {
   const { user, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const { track } = useAnalytics();
-  // Временный флаг для живого теста рекуррентного СБП: кнопка «СБП — QR» видна
-  // только на /pricing?sbp=1, пока поток не подтверждён боевым платежом.
-  const sbpEnabled = useMemo(
-    () => new URLSearchParams(window.location.search).get('sbp') === '1',
-    [],
-  );
   const [data, setData] = useState<PlansResponse | null>(null);
   const [period, setPeriod] = useState<'monthly' | 'yearly'>('yearly'); // годовой по умолчанию (выгоднее)
   const [loading, setLoading] = useState(true);
@@ -665,10 +659,8 @@ export default function PricingPage() {
           agreementConsent={agreementConsent}
           onAgreementChange={setAgreementConsent}
           onConfirm={() => confirmCheckout('card')}
-          // СБП-кнопка пока за флагом ?sbp=1 — пускаем после живого теста на проде
-          // (рекуррентный СБП по QR ещё не верифицирован боевым платежом). Снять
-          // флаг = показать всем: убрать условие ниже.
-          onConfirmSbp={sbpEnabled ? () => confirmCheckout('sbp') : undefined}
+          // СБП (QR, рекуррент) проверен боевым списанием → открыт всем.
+          onConfirmSbp={() => confirmCheckout('sbp')}
           onClose={closeConsent}
           isLoading={checkoutLoading === pendingPlanId}
           canConfirm={consentReady}
