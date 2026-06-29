@@ -501,7 +501,10 @@ function MobileCbrHistogram({
   const padX = 8;
   const padTop = 14;
   const padBottom = 22;
-  const innerW = W - padX * 2;
+  // Правый жёлоб под шкалу (как в «Силе рынка»): стэки до W - padRight, цифры
+  // млрд ₽ стоят в чистой колонке справа.
+  const padRight = 44;
+  const innerW = W - padX - padRight;
   const innerH = H - padTop - padBottom;
   const midY = padTop + innerH / 2;
   const halfH = innerH / 2;
@@ -597,7 +600,30 @@ function MobileCbrHistogram({
         <line x1={padX} y1={midY} x2={padX + innerW} y2={midY}
           stroke="var(--text-primary)" strokeWidth={1.2} opacity={0.6} />
 
-        {/* Y-axis labels убраны — значения видны в tooltip на тапе. */}
+        {/* Y-axis шкала (млрд ₽) в правом жёлобе: [+max, +max/2, 0, -max/2,
+            -max]. Крайние с hanging/alphabetic, чтобы не обрезались по краям. */}
+        {[yMax, yMax / 2, 0, -yMax / 2, -yMax].map((val, i, arr) => {
+          const ty = midY - (val / yMax) * halfH;
+          const baseline = i === 0 ? 'hanging' : i === arr.length - 1 ? 'alphabetic' : 'central';
+          const label = val === 0
+            ? '0'
+            : `${val > 0 ? '+' : ''}${Math.abs(val) >= 10 ? val.toFixed(0) : val.toFixed(1)}`;
+          return (
+            <text
+              key={`ys-${i}`}
+              x={W - 4}
+              y={ty}
+              fontSize={9}
+              fontWeight={600}
+              fill="color-mix(in srgb, var(--text-primary) 55%, transparent)"
+              textAnchor="end"
+              dominantBaseline={baseline}
+              pointerEvents="none"
+            >
+              {label}
+            </text>
+          );
+        })}
 
         {/* Stacked bars per period */}
         {periods.map((p, i) => {

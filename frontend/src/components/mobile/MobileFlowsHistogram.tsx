@@ -67,7 +67,10 @@ export default function MobileFlowsHistogram({ flows }: MobileFlowsHistogramProp
   const padX = 8;
   const padTop = 16;
   const padBottom = 24;
-  const innerW = W - padX * 2;
+  // Правый жёлоб под шкалу (как в «Силе рынка»): бары до W - padRight, цифры
+  // нетто-потоков стоят в чистой колонке справа.
+  const padRight = 44;
+  const innerW = W - padX - padRight;
   const innerH = H - padTop - padBottom;
   const zeroY = padTop + innerH / 2;
 
@@ -138,6 +141,31 @@ export default function MobileFlowsHistogram({ flows }: MobileFlowsHistogramProp
           strokeWidth={1}
         />
 
+        {/* Y-axis шкала нетто-потоков (млрд ₽) в правом жёлобе: [+max, +max/2,
+            0, -max/2, -max]. Крайние с hanging/alphabetic, чтобы не обрезались. */}
+        {[maxAbs, maxAbs / 2, 0, -maxAbs / 2, -maxAbs].map((val, i, arr) => {
+          const ty = zeroY - (val / maxAbs) * (innerH / 2);
+          const baseline = i === 0 ? 'hanging' : i === arr.length - 1 ? 'alphabetic' : 'central';
+          const label = val === 0
+            ? '0'
+            : `${val > 0 ? '+' : ''}${Math.abs(val) >= 10 ? val.toFixed(0) : val.toFixed(1)}`;
+          return (
+            <text
+              key={`ys-${i}`}
+              x={W - 4}
+              y={ty}
+              fontSize={9}
+              fontWeight={600}
+              fill="color-mix(in srgb, var(--text-primary) 55%, transparent)"
+              textAnchor="end"
+              dominantBaseline={baseline}
+              pointerEvents="none"
+            >
+              {label}
+            </text>
+          );
+        })}
+
         {/* Dashed crosshair — vertical line через центр выбранной bar.
             Помогает визуально связать tooltip values с конкретным столбцом. */}
         {hoverIdx !== null && (() => {
@@ -198,11 +226,12 @@ export default function MobileFlowsHistogram({ flows }: MobileFlowsHistogramProp
           const isFirst = i === 0;
           const isLast = i === flows.length - 1;
           const anchor: 'start' | 'middle' | 'end' = isFirst ? 'start' : isLast ? 'end' : 'middle';
-          // x: первый → padX (с edge), последний → W - padX, остальные → центр bar
+          // x: первый → padX (с edge), последний → правый край плота (padX +
+          // innerW, перед жёлобом шкалы), остальные → центр bar
           const x = isFirst
             ? padX
             : isLast
-              ? W - padX
+              ? padX + innerW
               : padX + i * (barW + barGap) + barGap / 2 + barW / 2;
           return (
             <text
