@@ -685,7 +685,11 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: clamp(4px, 1.6vw, 7px) clamp(7px, 2.6vw, 12px);
+  /* Компактнее по вертикали + асимметрия padding (top > bottom): шрифт Inter
+     резервирует место под descender'ы, поэтому при симметричном padding текст
+     (особенно без хвостов, напр. «Все») визуально сидит выше центра pill'а.
+     Нижний padding меньше верхнего → текст опускается в оптический центр. */
+  padding: clamp(3.5px, 1.3vw, 6px) clamp(7px, 2.4vw, 11px) clamp(2px, 0.8vw, 4px);
   background: var(--bg-secondary);
   border: 1.5px solid var(--text-primary);
   border-radius: 999px;
