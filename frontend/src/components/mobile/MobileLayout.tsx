@@ -199,9 +199,8 @@ export default function MobileLayout({
               title={timeSummary}
             >
               <span className="fm-rail-ico">
-                <Clock size={16} strokeWidth={2.2} />
+                <Clock size={18} strokeWidth={2.2} />
               </span>
-              <span>Время</span>
             </button>
           )}
 
@@ -215,9 +214,8 @@ export default function MobileLayout({
               title={settingsSummary}
             >
               <span className="fm-rail-ico">
-                <Settings size={16} strokeWidth={2.2} />
+                <Settings size={18} strokeWidth={2.2} />
               </span>
-              <span>Опции</span>
             </button>
           )}
 
@@ -230,9 +228,8 @@ export default function MobileLayout({
               aria-label="Полный экран"
             >
               <span className="fm-rail-ico">
-                <Maximize2 size={16} strokeWidth={2.2} />
+                <Maximize2 size={18} strokeWidth={2.2} />
               </span>
-              <span>Экран</span>
             </button>
           )}
         </div>
