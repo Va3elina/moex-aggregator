@@ -773,49 +773,52 @@ function StrengthDualChart({
           );
         })}
 
-        {/* Y-axis labels — price (top, left edge) */}
+        {/* Y-axis labels — price (top, right edge — как в «Открытых позициях») */}
         {[0.2, 0.5, 0.8].map((t, i) => {
           const v = priceRange.min + priceRange.span * (1 - t);
           return (
             <text
               key={`yp-${i}`}
-              x={PAD_X + 4}
+              x={W - PAD_X - 4}
               y={topY0 + topH * t + 3}
               fontSize={9}
               fontWeight={600}
               fill="color-mix(in srgb, var(--text-primary) 55%, transparent)"
+              textAnchor="end"
               pointerEvents="none"
             >
               {v.toFixed(0)}
             </text>
           );
         })}
-        {/* Y-axis labels — breadth zones */}
+        {/* Y-axis labels — breadth zones (right edge) */}
         {[30, 50, 70].map((v) => (
           <text
             key={`yb-${v}`}
-            x={PAD_X + 4}
+            x={W - PAD_X - 4}
             y={yBreadth(v) + 3}
             fontSize={9}
             fontWeight={600}
             fill="color-mix(in srgb, var(--text-primary) 55%, transparent)"
+            textAnchor="end"
             pointerEvents="none"
           >
             {v}%
           </text>
         ))}
 
-        {/* Pills с последним значением */}
+        {/* Pills с последним значением — у правого края, под шкалой (как в ОИ) */}
         {(() => {
           const last = data[N - 1];
           return (
             <>
-              <PillSmall x={PAD_X + 2} y={yPrice(last.price)} text={last.price.toFixed(0)} color="var(--chart-line-1, #5DA3E9)" />
+              <PillSmall x={W - PAD_X - 2} y={yPrice(last.price)} text={last.price.toFixed(0)} color="var(--chart-line-1, #5DA3E9)" align="right" />
               <PillSmall
-                x={PAD_X + 2}
+                x={W - PAD_X - 2}
                 y={yBreadth(last.breadth)}
                 text={`${last.breadth.toFixed(0)}%`}
                 color={breadthBarColor(last.breadth)}
+                align="right"
               />
             </>
           );
@@ -950,19 +953,24 @@ function PillSmall({
   y,
   text,
   color,
+  align = 'left',
 }: {
   x: number;
   y: number;
   text: string;
   color: string;
+  align?: 'left' | 'right';
 }) {
   const w = text.length * 5.5 + 8;
   const h = 14;
+  // align='right' → x это ПРАВЫЙ край pill'а (растём влево). Так последнее
+  // значение садится у правой шкалы, как в «Открытых позициях».
+  const rectX = align === 'right' ? x - w : x;
   return (
     <g pointerEvents="none">
-      <rect x={x} y={y - h / 2} width={w} height={h} fill={color} rx={3} />
+      <rect x={rectX} y={y - h / 2} width={w} height={h} fill={color} rx={3} />
       <text
-        x={x + w / 2}
+        x={rectX + w / 2}
         y={y}
         textAnchor="middle"
         dominantBaseline="central"
