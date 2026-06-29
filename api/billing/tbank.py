@@ -24,6 +24,7 @@
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import hmac
 import json
@@ -409,10 +410,17 @@ class TBankProvider:
         )
 
         # ── GetQr ×2: IMAGE (картинка для скана) + PAYLOAD (ссылка для диплинка) ──
+        # T-Bank GetQr DataType=IMAGE отдаёт СЫРОЙ SVG-markup (<svg ...>), НЕ base64
+        # (проверено вживую 2026-06-29). Кодируем в base64 для data-URL, иначе
+        # <img src> не отрисует.
         qr_image = self._get_qr(payment_id, "IMAGE")
-        if qr_image and not qr_image.startswith("data:"):
-            # IMAGE приходит base64-SVG без data-префикса → оборачиваем для <img>.
-            qr_image = f"data:image/svg+xml;base64,{qr_image}"
+        if qr_image:
+            if qr_image.lstrip().startswith("<"):
+                b64 = base64.b64encode(qr_image.encode("utf-8")).decode("ascii")
+                qr_image = f"data:image/svg+xml;base64,{b64}"
+            elif not qr_image.startswith("data:"):
+                # defensive: если вдруг вернётся уже base64
+                qr_image = f"data:image/svg+xml;base64,{qr_image}"
         qr_payload = self._get_qr(payment_id, "PAYLOAD")
 
         return CheckoutSession(
