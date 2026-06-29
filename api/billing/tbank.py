@@ -330,6 +330,129 @@ class TBankProvider:
         return CheckoutSession(payment_id=payment_id, confirmation_url=payment_url)
 
     # ─────────────────────────────────────────────────────────────────────
+    #  create_sbp_checkout — Init(Recurrent,QR) + GetQr (рекуррентный СБП)
+    #  Вариант №2 T-Bank: привязка счёта во время первой оплаты по QR.
+    #  https://developer.tbank.ru/eacq/scenarios/payments/PCI_DSS/autopay/
+    # ─────────────────────────────────────────────────────────────────────
+    def create_sbp_checkout(
+        self,
+        *,
+        amount: float,
+        currency: str,
+        description: str,
+        metadata: dict | None = None,
+        customer_email: str | None = None,
+        customer_phone: str | None = None,
+        recurrent: bool = False,
+        customer_key: str | None = None,
+    ) -> CheckoutSession:
+        """
+        СБП по QR с привязкой счёта (Вариант №2):
+          1. Init(Recurrent="Y", DATA={"QR":"true"}, Description) → PaymentId
+          2. GetQr(DataType=IMAGE) → картинка QR; GetQr(DataType=PAYLOAD) → СБП-ссылка
+
+        confirmation_url пуст — оплата завершается в приложении банка по QR, без
+        redirect'а на платёжку (это и обходит недоверенный РФ-серт хостед-страницы).
+        AccountToken для будущих ChargeQr приходит ПОЗЖЕ в webhook на
+        NotificationURL терминала (не здесь).
+        """
+        if currency and currency.upper() != "RUB":
+            log.warning("TBank.create_sbp_checkout: terminal обычно RUB, передан %s", currency)
+        if not customer_key:
+            raise ValueError("create_sbp_checkout: customer_key обязателен (рекуррентный СБП)")
+
+        order_id = uuid.uuid4().hex
+
+        # ── Init ──────────────────────────────────────────────────────
+        body: dict[str, Any] = {
+            "TerminalKey": self.terminal_key,
+            "Amount": int(round(amount * 100)),  # копейки!
+            "OrderId": order_id,
+            # Description ОБЯЗАТЕЛЕН для QR-привязки (Вариант №2 T-Bank).
+            "Description": (description or "Подписка")[:250],
+            # Recurrent + DATA={"QR":"true"} создают привязку счёта для ChargeQr.
+            "Recurrent": "Y",
+            "CustomerKey": customer_key[:36],
+        }
+        body["Token"] = self._make_token(body)  # DATA/Receipt в подписи не участвуют
+        data_block: dict[str, str] = {"QR": "true"}
+        if metadata:
+            data_block.update({
+                str(k): str(v)[:256] for k, v in metadata.items() if v is not None
+            })
+        body["DATA"] = data_block
+        receipt = self._build_receipt(amount, description, customer_email, customer_phone)
+        if receipt is not None:
+            body["Receipt"] = receipt
+
+        try:
+            with httpx.Client(timeout=15) as client:
+                resp = client.post(f"{TBANK_API_BASE}/Init", json=body)
+        except httpx.HTTPError as e:
+            log.error("TBank.create_sbp_checkout: Init HTTP error: %s", e)
+            raise RuntimeError(f"T-Bank Init(QR) failed: {e}") from e
+        if resp.status_code >= 400:
+            log.error("TBank.create_sbp_checkout: Init %s %s", resp.status_code, resp.text)
+            resp.raise_for_status()
+        init_data = resp.json()
+        if not init_data.get("Success"):
+            err = (
+                f"T-Bank Init(QR) failed: {init_data.get('Message', 'unknown')} "
+                f"(ErrorCode {init_data.get('ErrorCode')}) Details: {init_data.get('Details')}"
+            )
+            log.error("TBank.create_sbp_checkout: %s", err)
+            raise RuntimeError(err)
+        payment_id = str(init_data["PaymentId"])
+        log.info(
+            "TBank.create_sbp_checkout: Init OK payment_id=%s amount=%.2f RUB",
+            payment_id, amount,
+        )
+
+        # ── GetQr ×2: IMAGE (картинка для скана) + PAYLOAD (ссылка для диплинка) ──
+        qr_image = self._get_qr(payment_id, "IMAGE")
+        if qr_image and not qr_image.startswith("data:"):
+            # IMAGE приходит base64-SVG без data-префикса → оборачиваем для <img>.
+            qr_image = f"data:image/svg+xml;base64,{qr_image}"
+        qr_payload = self._get_qr(payment_id, "PAYLOAD")
+
+        return CheckoutSession(
+            payment_id=payment_id,
+            confirmation_url="",
+            qr_image=qr_image,
+            qr_payload=qr_payload,
+        )
+
+    def _get_qr(self, payment_id: str, data_type: str) -> str | None:
+        """POST /GetQr → строка из поля Data. data_type: 'IMAGE' (base64-картинка
+        QR) или 'PAYLOAD' (СБП-ссылка qr.nspk.ru/...). None если запрос не удался."""
+        body: dict[str, Any] = {
+            "TerminalKey": self.terminal_key,
+            "PaymentId": str(payment_id),
+            "DataType": data_type,
+        }
+        body["Token"] = self._make_token(body)
+        try:
+            with httpx.Client(timeout=15) as client:
+                resp = client.post(f"{TBANK_API_BASE}/GetQr", json=body)
+        except httpx.HTTPError as e:
+            log.error("TBank.GetQr(%s,%s): HTTP error: %s", payment_id, data_type, e)
+            return None
+        if resp.status_code >= 400:
+            log.error(
+                "TBank.GetQr(%s,%s): %s %s",
+                payment_id, data_type, resp.status_code, resp.text,
+            )
+            return None
+        data = resp.json()
+        if not data.get("Success"):
+            log.error(
+                "TBank.GetQr(%s,%s): Success=false %s",
+                payment_id, data_type, data.get("Message"),
+            )
+            return None
+        return data.get("Data")
+
+    # ─────────────────────────────────────────────────────────────────────
     #  parse_webhook — приём нотификации от T-Bank
     # ─────────────────────────────────────────────────────────────────────
     def parse_webhook(self, raw_body: bytes, headers: dict) -> WebhookEvent | None:
@@ -419,10 +542,26 @@ class TBankProvider:
         # CardType: 'VISA' / 'MASTERCARD' / 'MIR' / 'MAESTRO' / 'JCB' / ...
         card_brand = data.get("CardType")
 
+        # === СБП-QR: AccountToken приходит при успешной привязке счёта по QR ===
+        # (Вариант №2 T-Bank) — СБП-аналог RebillId. RequestKey — id GetQr-привязки.
+        # AccountToken — top-level скаляр → автоматически участвует в Token-подписи
+        # (verify выше уже его проверил).
+        account_token = data.get("AccountToken")
+        if account_token is not None:
+            account_token = str(account_token)
+        request_key = data.get("RequestKey")
+        if request_key is not None:
+            request_key = str(request_key)
+
+        # payment_method: T-Bank шлёт явно; иначе выводим (СБП если есть AccountToken)
+        payment_method = data.get("PaymentMethod")
+        if not payment_method:
+            payment_method = "sbp" if account_token else "bank_card"
+
         return WebhookEvent(
             payment_id=payment_id,
             event_type=event_type,
-            payment_method=data.get("PaymentMethod") or "bank_card",
+            payment_method=payment_method,
             amount=amount,
             metadata=data.get("DATA") or {},
             rebill_id=rebill_id,
@@ -430,6 +569,8 @@ class TBankProvider:
             card_last4=card_last4,
             card_brand=card_brand,
             card_fingerprint=card_fingerprint,
+            account_token=account_token,
+            request_key=request_key,
         )
 
     # ─────────────────────────────────────────────────────────────────────
@@ -692,6 +833,115 @@ class TBankProvider:
                 payment_id, status, amount,
             )
 
+        return result
+
+    # ─────────────────────────────────────────────────────────────────────
+    #  charge_qr — POST /Init + POST /ChargeQr (рекуррентный СБП)
+    #  СБП-аналог charge(): списание по AccountToken без участия юзера.
+    # ─────────────────────────────────────────────────────────────────────
+    def charge_qr(
+        self,
+        *,
+        amount: float,
+        currency: str,
+        description: str,
+        account_token: str,
+        customer_key: str,
+        customer_email: str | None = None,
+        customer_phone: str | None = None,
+        metadata: dict | None = None,
+    ) -> dict:
+        """
+        Рекуррентное списание по СБП-привязке.
+        1. POST /v2/Init с Recurrent="Y" + DATA={"QR":"true"} + Description + CustomerKey
+           + Receipt → PaymentId (сценарий autopay T-Bank, шаг «init» перед charge-qr).
+        2. POST /v2/ChargeQr с PaymentId + AccountToken → списание без участия юзера.
+
+        Контракт возврата идентичен charge(): {payment_id, status, success}; при
+        отказе + message/error_code/failure_kind (для card-1 fallback год→месяц).
+        ВЫЗЫВАЕТ RuntimeError если Init/ChargeQr провалились на уровне HTTP/API.
+        """
+        if currency and currency.upper() != "RUB":
+            log.warning("TBank.charge_qr: terminal обычно RUB, передан %s", currency)
+
+        order_id = uuid.uuid4().hex
+
+        # ── Шаг 1: Init ───────────────────────────────────────────────
+        init_body: dict[str, Any] = {
+            "TerminalKey": self.terminal_key,
+            "Amount": int(round(amount * 100)),  # копейки!
+            "OrderId": order_id,
+            "CustomerKey": customer_key[:36],
+            "Description": (description or "Авто-продление подписки (СБП)")[:250],
+            "Recurrent": "Y",
+        }
+        init_body["Token"] = self._make_token(init_body)
+        data_block: dict[str, str] = {"QR": "true"}
+        if metadata:
+            data_block.update({
+                str(k): str(v)[:256] for k, v in metadata.items() if v is not None
+            })
+        init_body["DATA"] = data_block
+        receipt = self._build_receipt(amount, description, customer_email, customer_phone)
+        if receipt is not None:
+            init_body["Receipt"] = receipt
+
+        try:
+            with httpx.Client(timeout=15) as client:
+                resp = client.post(f"{TBANK_API_BASE}/Init", json=init_body)
+        except httpx.HTTPError as e:
+            log.error("TBank.charge_qr: Init HTTP error: %s", e)
+            raise RuntimeError(f"T-Bank Init(QR charge) failed: {e}") from e
+        if resp.status_code >= 400:
+            log.error("TBank.charge_qr: Init %s %s", resp.status_code, resp.text)
+            resp.raise_for_status()
+        init_data = resp.json()
+        if not init_data.get("Success"):
+            err = (
+                f"T-Bank Init(QR charge) failed: {init_data.get('Message', 'unknown')} "
+                f"(ErrorCode {init_data.get('ErrorCode')}) Details: {init_data.get('Details')}"
+            )
+            log.error("TBank.charge_qr: %s", err)
+            raise RuntimeError(err)
+        payment_id = str(init_data["PaymentId"])
+        log.info("TBank.charge_qr: Init OK payment_id=%s amount=%.2f RUB", payment_id, amount)
+
+        # ── Шаг 2: ChargeQr ───────────────────────────────────────────
+        charge_body: dict[str, Any] = {
+            "TerminalKey": self.terminal_key,
+            "PaymentId": payment_id,
+            "AccountToken": str(account_token),
+        }
+        charge_body["Token"] = self._make_token(charge_body)
+        try:
+            with httpx.Client(timeout=30) as client:
+                resp = client.post(f"{TBANK_API_BASE}/ChargeQr", json=charge_body)
+        except httpx.HTTPError as e:
+            log.error("TBank.charge_qr: ChargeQr HTTP error pid=%s: %s", payment_id, e)
+            raise RuntimeError(f"T-Bank ChargeQr failed: {e}") from e
+        if resp.status_code >= 400:
+            log.error("TBank.charge_qr: ChargeQr pid=%s %s %s", payment_id, resp.status_code, resp.text)
+            resp.raise_for_status()
+        charge_data = resp.json()
+        success = bool(charge_data.get("Success"))
+        status = charge_data.get("Status", "").upper()
+
+        result = {
+            "payment_id": payment_id,
+            "status": status,
+            "success": success,
+            "amount": amount,
+        }
+        if not success:
+            result["message"] = charge_data.get("Message", "T-Bank ChargeQr rejected")
+            result["error_code"] = charge_data.get("ErrorCode")
+            result["failure_kind"] = classify_charge_failure(charge_data.get("ErrorCode"))
+            log.warning(
+                "TBank.charge_qr: REJECTED pid=%s status=%s code=%s msg=%s",
+                payment_id, status, charge_data.get("ErrorCode"), charge_data.get("Message"),
+            )
+        else:
+            log.info("TBank.charge_qr: OK pid=%s status=%s amount=%.2f RUB", payment_id, status, amount)
         return result
 
     # ─────────────────────────────────────────────────────────────────────

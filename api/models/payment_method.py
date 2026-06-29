@@ -52,10 +52,21 @@ class UserPaymentMethod(Base):
     # для recurrent flow. Stub-режим вообще не имеет такой сущности.
     provider = Column(String(16), nullable=False, default="tbank")
 
-    # === Токен карты у провайдера ===
-    # T-Bank RebillId — постоянный идентификатор сохранённой карты,
-    # привязанный к CustomerKey терминала.
-    rebill_id = Column(String(64), nullable=False)
+    # === Тип привязки ===
+    # 'card' — карточный рекуррент (rebill_id заполнен).
+    # 'sbp'  — рекуррентный СБП по QR (account_token заполнен, rebill_id NULL).
+    # charge_recurrent ветвится по этому полю: card → /v2/Charge(RebillId),
+    # sbp → ChargeQr(AccountToken).
+    method_type = Column(String(8), nullable=False, default="card")
+
+    # === Токен привязки у провайдера ===
+    # T-Bank RebillId — постоянный идентификатор сохранённой КАРТЫ,
+    # привязанный к CustomerKey терминала. NULL для СБП-привязок.
+    rebill_id = Column(String(64), nullable=True)
+
+    # СБП AccountToken — идентификатор привязки счёта (СБП-аналог rebill_id).
+    # Приходит в нотификации T-Bank при успешной привязке по QR. NULL для карт.
+    account_token = Column(String(64), nullable=True)
 
     # CustomerKey, под которым карта зарегистрирована в T-Bank.
     # У нас это str(user_id). Сохраняем для дебага и для случая если
@@ -115,7 +126,9 @@ class UserPaymentMethod(Base):
 
     @property
     def display_name(self) -> str:
-        """Для UI: 'VISA ****0333' либо 'Карта ****0333' если brand неизвестен."""
+        """Для UI: 'VISA ····0333' для карты, 'СБП' для СБП-привязки."""
+        if self.method_type == "sbp":
+            return "СБП"
         brand = self.card_brand or "Карта"
         last4 = self.card_last4 or "????"
         return f"{brand} ····{last4}"

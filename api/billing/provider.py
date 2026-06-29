@@ -11,9 +11,16 @@ from typing import Protocol
 
 @dataclass
 class CheckoutSession:
-    """Результат создания платёжной сессии — пользователя редиректим на URL."""
-    payment_id: str        # id платежа у провайдера (сохраняем в subscriptions.yk_payment_id)
-    confirmation_url: str  # URL, на который отправить пользователя для оплаты
+    """Результат создания платёжной сессии.
+
+    Карта: пользователя редиректим на confirmation_url.
+    СБП-QR: confirmation_url пуст, вместо него qr_image (картинка для скана) и
+    qr_payload (СБП-ссылка qr.nspk.ru/... для мобильного диплинка «открыть банк»).
+    """
+    payment_id: str               # id платежа у провайдера (→ subscriptions.yk_payment_id)
+    confirmation_url: str = ""     # URL оплаты (карта). Пусто для СБП.
+    qr_image: str | None = None    # data-URL картинки QR (СБП, GetQr DataType=IMAGE)
+    qr_payload: str | None = None  # СБП-ссылка для мобильного диплинка (GetQr DataType=PAYLOAD)
 
 
 @dataclass
@@ -31,6 +38,11 @@ class WebhookEvent:
     customer_key: str | None = None      # CustomerKey которым была привязана
     card_last4: str | None = None        # последние 4 цифры PAN для UI
     card_brand: str | None = None        # 'VISA' / 'MASTERCARD' / 'MIR' / ...
+    # === Поля для рекуррентного СБП (T-Bank QR-flow) ===
+    # account_token приходит в нотификации при успешной привязке счёта по QR
+    # (СБП-аналог rebill_id). request_key — id запроса GetQr/AddAccountQR.
+    account_token: str | None = None     # СБП-токен привязки для будущих ChargeQr
+    request_key: str | None = None       # RequestKey QR-привязки
     # card_fingerprint — sha256 маскированного PAN (first6+last4). Стабилен между
     # разными CustomerKey/rebill_id (та же карта → тот же отпечаток), поэтому
     # годится как кросс-аккаунтный анти-абуз ключ для триала. 152-ФЗ: это ХЕШ.
@@ -75,6 +87,56 @@ class PaymentProvider(Protocol):
         клиента у провайдера. У нас обычно str(user.id).
 
         Возвращает payment_id (для сохранения в нашу БД) и confirmation_url.
+        """
+        ...
+
+    def create_sbp_checkout(
+        self,
+        *,
+        amount: float,
+        currency: str,
+        description: str,
+        metadata: dict | None = None,
+        customer_email: str | None = None,
+        customer_phone: str | None = None,
+        recurrent: bool = False,
+        customer_key: str | None = None,
+    ) -> CheckoutSession:
+        """
+        Создать платёж по СБП-QR (Вариант №2 T-Bank: привязка во время первой
+        оплаты). Init с Recurrent="Y" + DATA={"QR":"true"} → GetQr.
+
+        В отличие от create_checkout НЕ возвращает redirect-URL: возвращает
+        CheckoutSession с qr_image (картинка QR для скана) и qr_payload (СБП-
+        ссылка для мобильного диплинка). confirmation_url пуст.
+
+        После оплаты T-Bank присылает в webhook (на NotificationURL терминала)
+        AccountToken — сохраняем его в user_payment_methods (method_type='sbp')
+        для последующих ChargeQr.
+
+        recurrent — должен быть True (иначе нет смысла в привязке); customer_key
+        обязателен. ВЫЗЫВАЕТ ИСКЛЮЧЕНИЕ если провайдер не поддерживает СБП.
+        """
+        ...
+
+    def charge_qr(
+        self,
+        *,
+        amount: float,
+        currency: str,
+        description: str,
+        account_token: str,
+        customer_key: str,
+        customer_email: str | None = None,
+        customer_phone: str | None = None,
+        metadata: dict | None = None,
+    ) -> dict:
+        """
+        Рекуррентное списание по СБП-привязке (ChargeQr) — СБП-аналог charge().
+        Init с Recurrent="Y" + DATA={"QR":"true"} → ChargeQr с AccountToken.
+
+        Возвращает тот же dict-контракт, что charge(): минимум
+        {payment_id, status, success}; при отказе — message/error_code/failure_kind.
         """
         ...
 

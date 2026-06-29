@@ -96,6 +96,12 @@ export default function PricingPage() {
   const { user, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const { track } = useAnalytics();
+  // Временный флаг для живого теста рекуррентного СБП: кнопка «СБП — QR» видна
+  // только на /pricing?sbp=1, пока поток не подтверждён боевым платежом.
+  const sbpEnabled = useMemo(
+    () => new URLSearchParams(window.location.search).get('sbp') === '1',
+    [],
+  );
   const [data, setData] = useState<PlansResponse | null>(null);
   const [period, setPeriod] = useState<'monthly' | 'yearly'>('yearly'); // годовой по умолчанию (выгоднее)
   const [loading, setLoading] = useState(true);
@@ -237,13 +243,13 @@ export default function PricingPage() {
   };
 
   // Подтверждение: создаём checkout-сессию на бэке и редиректим на pay.tbank.ru
-  const confirmCheckout = async () => {
+  const confirmCheckout = async (rail: 'card' | 'sbp' = 'card') => {
     if (!pendingPlanId) return;
     const planId = pendingPlanId;
     setCheckoutLoading(planId);
     setError(null);
-    track('checkout_start', { plan: planId });
-    trackEvent('checkout_start', { plan: planId });
+    track('checkout_start', { plan: planId, rail });
+    trackEvent('checkout_start', { plan: planId, rail });
     try {
       const resp = await apiFetch('/api/billing/checkout', {
         method: 'POST',
@@ -252,6 +258,7 @@ export default function PricingPage() {
           plan_id: planId,
           return_url: `${window.location.origin}/billing/success`,
           recurrent: true,  // подписка ВСЕГДА с авто-продлением (toggle убран)
+          rail,
         }),
       });
       if (!resp.ok) {
@@ -259,7 +266,20 @@ export default function PricingPage() {
         throw new Error(errData.detail || errData.error?.message || 'Ошибка создания платежа');
       }
       const body = await resp.json();
-      // Full-page redirect на pay.tbank.ru (или /billing/stub).
+      if (rail === 'sbp') {
+        // СБП: переходим на страницу QR. qr_image — крупный data-URL, поэтому
+        // передаём через navigation state (в query не положишь).
+        navigate('/billing/sbp', {
+          state: {
+            payment_id: body.payment_id,
+            qr_image: body.qr_image,
+            qr_payload: body.qr_payload,
+            plan_id: planId,
+          },
+        });
+        return;
+      }
+      // Карта: full-page redirect на pay.tbank.ru (или /billing/stub).
       window.location.href = body.confirmation_url;
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Ошибка');
@@ -644,7 +664,11 @@ export default function PricingPage() {
         <ConsentModal
           agreementConsent={agreementConsent}
           onAgreementChange={setAgreementConsent}
-          onConfirm={confirmCheckout}
+          onConfirm={() => confirmCheckout('card')}
+          // СБП-кнопка пока за флагом ?sbp=1 — пускаем после живого теста на проде
+          // (рекуррентный СБП по QR ещё не верифицирован боевым платежом). Снять
+          // флаг = показать всем: убрать условие ниже.
+          onConfirmSbp={sbpEnabled ? () => confirmCheckout('sbp') : undefined}
           onClose={closeConsent}
           isLoading={checkoutLoading === pendingPlanId}
           canConfirm={consentReady}
@@ -704,6 +728,7 @@ function ConsentModal({
   agreementConsent,
   onAgreementChange,
   onConfirm,
+  onConfirmSbp,
   onClose,
   isLoading,
   canConfirm,
@@ -712,6 +737,9 @@ function ConsentModal({
   agreementConsent: boolean;
   onAgreementChange: (v: boolean) => void;
   onConfirm: () => void;
+  // Оплата через СБП (QR) — второй способ. Задан только в checkout-режиме (не
+  // trial). Кнопка появляется под «Подтвердить» после галки согласия.
+  onConfirmSbp?: () => void;
   onClose: () => void;
   isLoading: boolean;
   canConfirm: boolean;
@@ -867,13 +895,36 @@ function ConsentModal({
           >
             {isLoading
               ? (trialInfo ? 'Открываем…' : 'Создаём…')
-              : (trialInfo ? 'Начать бесплатно' : 'Подтвердить')}
+              : (trialInfo ? 'Начать бесплатно' : 'Оплатить картой')}
           </button>
         </div>
-        {/* SpeedPay (СБП/T-Pay/SberPay/MirPay) временно скрыт — ждём ответ T-Bank
-            саппорта (серт платёжки). Компоненты SpeedPayButtons/useTbankIntegration
-            остаются в репо: для возврата вернуть импорт + проп terminalKey/planId
-            в ConsentModal и блок-рендер. См. PR #235. */}
+
+        {/* Оплата через СБП (QR) — второй способ, только в checkout (не trial).
+            Ведёт на /billing/sbp с QR; оплата завершается в приложении банка по
+            СБП напрямую (обходит недоверенный серт хостед-страницы T-Bank). */}
+        {!trialInfo && onConfirmSbp && (
+          <>
+            <div className="flex items-center gap-3 my-4">
+              <span className="flex-1" style={{ height: 1, background: 'var(--border-color)' }} />
+              <span className="text-xs whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>
+                или оплатить через
+              </span>
+              <span className="flex-1" style={{ height: 1, background: 'var(--border-color)' }} />
+            </div>
+            <button
+              onClick={onConfirmSbp}
+              disabled={!canConfirm || isLoading}
+              className="w-full py-3 rounded-xl text-sm font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed border"
+              style={{
+                borderColor: 'var(--accent)',
+                color: 'var(--accent)',
+                background: 'transparent',
+              }}
+            >
+              {isLoading ? 'Создаём…' : 'СБП — QR-код'}
+            </button>
+          </>
+        )}
       </div>
     </div>
   );
