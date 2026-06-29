@@ -68,6 +68,11 @@ class UserPaymentMethod(Base):
     # Приходит в нотификации T-Bank при успешной привязке по QR. NULL для карт.
     account_token = Column(String(64), nullable=True)
 
+    # BankMemberId — id банка плательщика (приходит в GetAddAccountQrState рядом
+    # с AccountToken). ОБЯЗАТЕЛЕН в ChargeQr, иначе ErrorCode 5031 «привязка не
+    # найдена» (вытащено живым тестом 2026-06-29). NULL для карт.
+    bank_member_id = Column(String(32), nullable=True)
+
     # CustomerKey, под которым карта зарегистрирована в T-Bank.
     # У нас это str(user_id). Сохраняем для дебага и для случая если
     # потребуется удалить карту через T-Bank API (DeleteCard endpoint

@@ -30,6 +30,7 @@ import hmac
 import json
 import logging
 import os
+import time
 import uuid
 from typing import Any
 
@@ -409,11 +410,13 @@ class TBankProvider:
             payment_id, amount,
         )
 
-        # ── GetQr ×2: IMAGE (картинка для скана) + PAYLOAD (ссылка для диплинка) ──
+        # ── GetQr: PAYLOAD (ссылка + RequestKey) + IMAGE (картинка) ──
+        # RequestKey приходит в ответе GetQr — это id СБП-привязки, по нему потом
+        # reconciler тянет AccountToken+BankMemberId через GetAddAccountQrState.
         # T-Bank GetQr DataType=IMAGE отдаёт СЫРОЙ SVG-markup (<svg ...>), НЕ base64
-        # (проверено вживую 2026-06-29). Кодируем в base64 для data-URL, иначе
-        # <img src> не отрисует.
-        qr_image = self._get_qr(payment_id, "IMAGE")
+        # (проверено вживую 2026-06-29). Кодируем в base64 для data-URL.
+        qr_payload, request_key = self._get_qr(payment_id, "PAYLOAD")
+        qr_image, _ = self._get_qr(payment_id, "IMAGE")
         if qr_image:
             if qr_image.lstrip().startswith("<"):
                 b64 = base64.b64encode(qr_image.encode("utf-8")).decode("ascii")
@@ -421,18 +424,19 @@ class TBankProvider:
             elif not qr_image.startswith("data:"):
                 # defensive: если вдруг вернётся уже base64
                 qr_image = f"data:image/svg+xml;base64,{qr_image}"
-        qr_payload = self._get_qr(payment_id, "PAYLOAD")
 
         return CheckoutSession(
             payment_id=payment_id,
             confirmation_url="",
             qr_image=qr_image,
             qr_payload=qr_payload,
+            request_key=request_key,
         )
 
-    def _get_qr(self, payment_id: str, data_type: str) -> str | None:
-        """POST /GetQr → строка из поля Data. data_type: 'IMAGE' (base64-картинка
-        QR) или 'PAYLOAD' (СБП-ссылка qr.nspk.ru/...). None если запрос не удался."""
+    def _get_qr(self, payment_id: str, data_type: str) -> tuple[str | None, str | None]:
+        """POST /GetQr → (Data, RequestKey). data_type: 'IMAGE' (SVG-картинка QR)
+        или 'PAYLOAD' (СБП-ссылка qr.nspk.ru/...). RequestKey — id привязки счёта.
+        (None, None) если запрос не удался."""
         body: dict[str, Any] = {
             "TerminalKey": self.terminal_key,
             "PaymentId": str(payment_id),
@@ -444,21 +448,60 @@ class TBankProvider:
                 resp = client.post(f"{TBANK_API_BASE}/GetQr", json=body)
         except httpx.HTTPError as e:
             log.error("TBank.GetQr(%s,%s): HTTP error: %s", payment_id, data_type, e)
-            return None
+            return None, None
         if resp.status_code >= 400:
             log.error(
                 "TBank.GetQr(%s,%s): %s %s",
                 payment_id, data_type, resp.status_code, resp.text,
             )
-            return None
+            return None, None
         data = resp.json()
         if not data.get("Success"):
             log.error(
                 "TBank.GetQr(%s,%s): Success=false %s",
                 payment_id, data_type, data.get("Message"),
             )
+            return None, None
+        rk = data.get("RequestKey")
+        return data.get("Data"), (str(rk) if rk else None)
+
+    def get_account_qr_state(self, request_key: str) -> dict | None:
+        """POST /GetAddAccountQrState — статус СБП-привязки счёта по RequestKey.
+        Возвращает {status, account_token, bank_member_id} или None при ошибке.
+
+        status: 'PROCESSING' (ещё формируется) / 'ACTIVE' (привязка готова, токен
+        чарджабельный) / 'INACTIVE' (перебита более новой привязкой) / 'REJECTED'.
+        account_token + bank_member_id заполнены при ACTIVE — оба нужны для ChargeQr.
+        """
+        body: dict[str, Any] = {
+            "TerminalKey": self.terminal_key,
+            "RequestKey": str(request_key),
+        }
+        body["Token"] = self._make_token(body)
+        try:
+            with httpx.Client(timeout=15) as client:
+                resp = client.post(f"{TBANK_API_BASE}/GetAddAccountQrState", json=body)
+        except httpx.HTTPError as e:
+            log.error("TBank.get_account_qr_state(%s): HTTP error: %s", request_key, e)
             return None
-        return data.get("Data")
+        if resp.status_code >= 400:
+            log.error(
+                "TBank.get_account_qr_state(%s): %s %s",
+                request_key, resp.status_code, resp.text,
+            )
+            return None
+        data = resp.json()
+        if not data.get("Success"):
+            log.warning(
+                "TBank.get_account_qr_state(%s): Success=false %s",
+                request_key, data.get("Message"),
+            )
+            return None
+        return {
+            "status": data.get("Status"),
+            "account_token": data.get("AccountToken"),
+            "bank_member_id": data.get("BankMemberId"),
+        }
 
     # ─────────────────────────────────────────────────────────────────────
     #  parse_webhook — приём нотификации от T-Bank
@@ -855,6 +898,7 @@ class TBankProvider:
         description: str,
         account_token: str,
         customer_key: str,
+        bank_member_id: str | None = None,
         customer_email: str | None = None,
         customer_phone: str | None = None,
         metadata: dict | None = None,
@@ -863,10 +907,17 @@ class TBankProvider:
         Рекуррентное списание по СБП-привязке.
         1. POST /v2/Init с Recurrent="Y" + DATA={"QR":"true"} + Description + CustomerKey
            + Receipt → PaymentId (сценарий autopay T-Bank, шаг «init» перед charge-qr).
-        2. POST /v2/ChargeQr с PaymentId + AccountToken → списание без участия юзера.
+        2. POST /v2/ChargeQr с PaymentId + AccountToken + **BankMemberId** → списание.
 
-        Контракт возврата идентичен charge(): {payment_id, status, success}; при
-        отказе + message/error_code/failure_kind (для card-1 fallback год→месяц).
+        ⚠️ Найдено живым тестом 2026-06-29:
+          - BankMemberId ОБЯЗАТЕЛЕН, иначе ErrorCode 5031 «привязка не найдена».
+          - Токен должен быть ACTIVE, иначе 3015 «Неверный статус AccountToken».
+          - ChargeQr АСИНХРОННЫЙ: возвращает FORM_SHOWED, финал CONFIRMED приходит
+            позже → дожимаем GetState. Если за окно не дожали → status='PENDING'
+            (вызывающий оставляет подписку pending, webhook CONFIRMED её активирует).
+
+        Контракт возврата как у charge(): {payment_id, status, success}; при отказе
+        + message/error_code/failure_kind. status='PENDING' → ещё в обработке.
         ВЫЗЫВАЕТ RuntimeError если Init/ChargeQr провалились на уровне HTTP/API.
         """
         if currency and currency.upper() != "RUB":
@@ -914,12 +965,14 @@ class TBankProvider:
         payment_id = str(init_data["PaymentId"])
         log.info("TBank.charge_qr: Init OK payment_id=%s amount=%.2f RUB", payment_id, amount)
 
-        # ── Шаг 2: ChargeQr ───────────────────────────────────────────
+        # ── Шаг 2: ChargeQr (BankMemberId ОБЯЗАТЕЛЕН) ──────────────────
         charge_body: dict[str, Any] = {
             "TerminalKey": self.terminal_key,
             "PaymentId": payment_id,
             "AccountToken": str(account_token),
         }
+        if bank_member_id:
+            charge_body["BankMemberId"] = str(bank_member_id)
         charge_body["Token"] = self._make_token(charge_body)
         try:
             with httpx.Client(timeout=30) as client:
@@ -931,26 +984,53 @@ class TBankProvider:
             log.error("TBank.charge_qr: ChargeQr pid=%s %s %s", payment_id, resp.status_code, resp.text)
             resp.raise_for_status()
         charge_data = resp.json()
-        success = bool(charge_data.get("Success"))
-        status = charge_data.get("Status", "").upper()
 
-        result = {
-            "payment_id": payment_id,
-            "status": status,
-            "success": success,
-            "amount": amount,
-        }
-        if not success:
-            result["message"] = charge_data.get("Message", "T-Bank ChargeQr rejected")
-            result["error_code"] = charge_data.get("ErrorCode")
-            result["failure_kind"] = classify_charge_failure(charge_data.get("ErrorCode"))
+        # Синхронный отказ ChargeQr (напр. 3015 INACTIVE-токен, 5031 без BankMemberId).
+        if not charge_data.get("Success"):
+            code = charge_data.get("ErrorCode")
             log.warning(
-                "TBank.charge_qr: REJECTED pid=%s status=%s code=%s msg=%s",
-                payment_id, status, charge_data.get("ErrorCode"), charge_data.get("Message"),
+                "TBank.charge_qr: ChargeQr REJECTED(sync) pid=%s code=%s msg=%s",
+                payment_id, code, charge_data.get("Message"),
             )
-        else:
-            log.info("TBank.charge_qr: OK pid=%s status=%s amount=%.2f RUB", payment_id, status, amount)
-        return result
+            return {
+                "payment_id": payment_id, "status": "REJECTED", "success": False,
+                "amount": amount,
+                "message": charge_data.get("Message", "T-Bank ChargeQr rejected"),
+                "error_code": code,
+                "failure_kind": classify_charge_failure(code),
+            }
+
+        # ── Шаг 3: дожать async-статус ────────────────────────────────
+        # СБП ChargeQr возвращает FORM_SHOWED, реальный исход — позже
+        # (FORM_SHOWED→AUTHORIZING→CONFIRMED). Поллим GetState до терминального.
+        TERMINAL = {"CONFIRMED", "REJECTED", "AUTH_FAIL", "CANCELED", "REVERSED"}
+        status = (charge_data.get("Status") or "").upper()
+        for _ in range(18):  # ~18×5с = 90с
+            if status in TERMINAL:
+                break
+            time.sleep(5)
+            info = self.verify_payment(payment_id)
+            if info:
+                status = (info.get("Status") or "").upper()
+
+        if status == "CONFIRMED":
+            log.info("TBank.charge_qr: OK pid=%s CONFIRMED amount=%.2f RUB", payment_id, amount)
+            return {"payment_id": payment_id, "status": "CONFIRMED", "success": True, "amount": amount}
+
+        if status in TERMINAL:  # REJECTED/AUTH_FAIL/CANCELED/REVERSED
+            log.warning("TBank.charge_qr: pid=%s терминальный отказ status=%s", payment_id, status)
+            # Код отказа СБП приходит в webhook, не в GetState → failure_kind='other'
+            # (безопасно: card-1 fallback не триггерим без явного NSF).
+            return {
+                "payment_id": payment_id, "status": status, "success": False,
+                "amount": amount, "message": f"ChargeQr {status}", "failure_kind": "other",
+            }
+
+        # Не дожали за окно — оставляем PENDING. Вызывающий не помечает fail;
+        # webhook CONFIRMED активирует подписку по yk_payment_id позже.
+        log.info("TBank.charge_qr: pid=%s ещё в обработке (status=%s) → PENDING", payment_id, status)
+        return {"payment_id": payment_id, "status": "PENDING", "success": False,
+                "amount": amount, "pending": True}
 
     # ─────────────────────────────────────────────────────────────────────
     #  refund — POST /Cancel

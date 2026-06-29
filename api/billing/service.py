@@ -93,6 +93,7 @@ def _upsert_payment_method(
         method_type="sbp" if is_sbp else "card",
         rebill_id=event.rebill_id,
         account_token=event.account_token,
+        bank_member_id=event.bank_member_id,
         customer_key=event.customer_key,
         card_last4=event.card_last4,
         card_brand=event.card_brand,
@@ -241,6 +242,10 @@ def create_checkout_for_user(
 
     # 3. Сохраняем payment_id от провайдера в нашу подписку
     sub.yk_payment_id = session.payment_id
+    # СБП: RequestKey привязки — reconciler по нему дотянет AccountToken+BankMemberId
+    # после оплаты (resolve_sbp_bindings в orchestrator).
+    if rail == "sbp":
+        sub.sbp_request_key = getattr(session, "request_key", None)
     db.commit()
 
     log.info(
@@ -983,7 +988,9 @@ def charge_recurrent(
     try:
         if is_sbp:
             result = provider.charge_qr(  # type: ignore[attr-defined]
-                account_token=payment_method.account_token, **charge_kwargs
+                account_token=payment_method.account_token,
+                bank_member_id=payment_method.bank_member_id,
+                **charge_kwargs,
             )
         else:
             result = provider.charge(  # type: ignore[attr-defined]
@@ -1029,6 +1036,22 @@ def charge_recurrent(
             "expires_at": activated.expires_at.isoformat() if activated and activated.expires_at else None,
             "message": "Списание прошло, подписка активирована",
         }
+    elif result.get("pending"):
+        # СБП-списание async и ещё не дожато до CONFIRMED. Оставляем sub в pending
+        # (yk_payment_id уже проставлен) — webhook CONFIRMED активирует её позже
+        # через activate_from_webhook. Renew-крон не перепродлит: дедуп по pending-
+        # подписке того же tier. НЕ помечаем failed (деньги могут списаться).
+        db.commit()
+        log.info("charge_recurrent: sub=%s СБП-списание PENDING (pid=%s) — ждём webhook",
+                 sub.id, result.get("payment_id"))
+        return {
+            "ok": False,
+            "status": "pending",
+            "subscription_id": sub.id,
+            "payment_id": result.get("payment_id"),
+            "message": "СБП-списание в обработке",
+            "failure_kind": "pending",
+        }
     else:
         # REJECTED / AUTHORIZED (ждёт) / etc — помечаем sub failed
         sub.status = "failed"
@@ -1044,6 +1067,84 @@ def charge_recurrent(
             # 'nsf' (недостаточно средств) → card-1 fallback; иначе 'other'.
             "failure_kind": result.get("failure_kind", "other"),
         }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  7b. RECONCILER СБП-привязок — дотягивание AccountToken после оплаты
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def resolve_sbp_bindings(db: Session, max_age_minutes: int = 30) -> dict:
+    """
+    Для СБП-подписок с sbp_request_key, но без payment_method_id — тянет статус
+    привязки счёта через GetAddAccountQrState и:
+      - ACTIVE → сохраняет AccountToken+BankMemberId в user_payment_methods,
+        линкует к подписке → автопродление включено.
+      - INACTIVE/REJECTED или старше max_age → оставляет подписку РАЗОВОЙ (без
+        автопродления), чистит sbp_request_key. НЕ ошибка («оплатил, не привязал»).
+      - PROCESSING и не старо → ждём следующий цикл.
+
+    Запускать из orchestrator каждые ~2-3 мин. Возвращает счётчики.
+
+    Это шаги 3-5 сценария autopay T-Bank (Вариант №2): надёжный способ получить
+    AccountToken (вместо ненадёжного webhook о привязке).
+    """
+    provider = get_payment_provider()
+    summary = {"checked": 0, "bound": 0, "gave_up": 0, "pending": 0}
+    if not hasattr(provider, "get_account_qr_state"):
+        return summary
+
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(minutes=max_age_minutes)
+
+    subs = db.query(Subscription).filter(
+        Subscription.sbp_request_key.isnot(None),
+        Subscription.payment_method_id.is_(None),
+    ).all()
+
+    for sub in subs:
+        summary["checked"] += 1
+        st = provider.get_account_qr_state(sub.sbp_request_key)  # type: ignore[attr-defined]
+        status = (st or {}).get("status")
+        token = (st or {}).get("account_token")
+        bank = (st or {}).get("bank_member_id")
+
+        if status == "ACTIVE" and token:
+            # Сохраняем привязку через _upsert_payment_method (синтетический event).
+            ev = WebhookEvent(
+                payment_id=sub.yk_payment_id or "",
+                event_type="payment.succeeded",
+                payment_method="sbp",
+                account_token=str(token),
+                bank_member_id=str(bank) if bank else None,
+                customer_key=str(sub.user_id),
+            )
+            pm = _upsert_payment_method(db, sub.user_id, ev)
+            if pm:
+                sub.payment_method_id = pm.id
+            sub.sbp_request_key = None  # готово — больше не поллим
+            if sub.yk_method != "sbp":
+                sub.yk_method = "sbp"
+            db.commit()
+            summary["bound"] += 1
+            log.info(
+                "resolve_sbp_bindings: sub=%s привязка ACTIVE → pm=%s, автопродление включено",
+                sub.id, pm.id if pm else None,
+            )
+        elif status in ("INACTIVE", "REJECTED") or (sub.created_at and sub.created_at < cutoff):
+            # Не привязал / перебито / таймаут → разовая подписка, без автопродления.
+            sub.sbp_request_key = None
+            db.commit()
+            summary["gave_up"] += 1
+            log.info(
+                "resolve_sbp_bindings: sub=%s привязки нет (status=%s) → разовая подписка",
+                sub.id, status,
+            )
+        else:
+            summary["pending"] += 1  # PROCESSING, ждём следующий цикл
+
+    if summary["checked"]:
+        log.info("resolve_sbp_bindings: %s", summary)
+    return summary
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

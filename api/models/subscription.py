@@ -103,6 +103,12 @@ class Subscription(Base):
     # в namespace PaymentId и sync_pending_for_user дёрнул бы по нему GetState.
     trial_request_key = Column(String(64), nullable=True)
 
+    # sbp_request_key — T-Bank GetQr RequestKey для СБП-привязки счёта.
+    # Живёт пока reconciler (resolve_sbp_bindings) не дотянет AccountToken+
+    # BankMemberId через GetAddAccountQrState после оплаты. Очищается при успехе
+    # или таймауте. NULL для карточных/обычных подписок.
+    sbp_request_key = Column(String(64), nullable=True)
+
     # === Провайдер реквизиты ===
     # yk_payment_id — id платежа у провайдера (T-Bank PaymentId или ЮKassa id),
     # заполняется при создании checkout-сессии. Используется в webhook'е для
