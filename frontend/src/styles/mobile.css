@@ -693,6 +693,10 @@
   font-size: clamp(10px, 3vw, 13px);
   font-weight: 600;
   letter-spacing: -0.01em;
+  /* line-height: 1 — иначе унаследованный 1.5 раздувает line-box и из-за
+     асимметричных метрик Inter (descender area) текст в pill'е центрируется
+     криво, визуально сидит выше середины. Тугой line-box центрируется ровно. */
+  line-height: 1;
   cursor: pointer;
   white-space: nowrap;
   transition: all 150ms ease;
@@ -868,6 +872,23 @@
   flex: 1;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+}
+
+/* Asset-search sheet (выбор инструмента: OI, Сезонность).
+   Фиксированная высота, чтобы строка категорий-чипов не «прыгала» при
+   смене категории: короткий список (напр. 2 крипто-фьючерса) больше НЕ
+   ужимает панель — снизу остаётся пустота, а чипы стоят на месте.
+   Тело делаем flex-column: поиск + чипы закреплены сверху (flex-shrink:0),
+   скроллится только внутренний список (flex:1). */
+.fm-sheet--asset-search {
+  height: 90vh;
+  height: 90dvh;
+}
+.fm-sheet--asset-search .fm-sheet-body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
 }
 
 /* ========== Animations ========== */

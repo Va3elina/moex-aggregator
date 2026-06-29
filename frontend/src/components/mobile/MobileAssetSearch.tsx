@@ -263,7 +263,7 @@ export default function MobileAssetSearch({
   };
 
   return (
-    <MobileSheet open={open} onClose={onClose}>
+    <MobileSheet open={open} onClose={onClose} className="fm-sheet--asset-search">
       {/* Search input */}
       <div
         style={{
