@@ -310,7 +310,7 @@
   bottom: 70px;
   display: flex;
   gap: 5px;
-  padding: 6px 12px;
+  padding: 4px 12px;
   background: var(--bg-primary);
   /* Две границы:
      - top (чёткая): отделяет chart от nav-зоны
@@ -332,7 +332,7 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 6px;
+  padding: 3px;
   background: transparent;
   border: 1.5px solid transparent;
   border-radius: 10px;
@@ -345,7 +345,7 @@
   transition: all 150ms ease;
   flex: 1 1 0;
   min-width: 0;
-  min-height: 36px;
+  min-height: 28px;
 }
 
 .fm-page-action:hover {
@@ -950,8 +950,8 @@
   /* Action кнопки: только иконки, минимальная высота строки в landscape. */
   .fm-page-action {
     gap: 6px;
-    padding: 3px 5px;
-    min-height: 30px;
+    padding: 2px 5px;
+    min-height: 24px;
   }
   .fm-page-action .fm-rail-ico {
     width: 16px;
