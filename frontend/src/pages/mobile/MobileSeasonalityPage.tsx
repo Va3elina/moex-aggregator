@@ -910,7 +910,10 @@ function SeasonalityBars({
   const padX = 8;
   const padTop = 12;
   const padBottom = 22;
-  const innerW = width - padX * 2;
+  // Правый жёлоб под шкалу % (как в «Силе рынка»/«Открытых позициях»): бары
+  // строятся только до width - padRight, цифры стоят в чистой колонке справа.
+  const padRight = 44;
+  const innerW = width - padX - padRight;
   const innerH = height - padTop - padBottom;
   const zeroY = padTop + innerH / 2;
   const halfH = innerH / 2;
@@ -962,6 +965,31 @@ function SeasonalityBars({
           stroke="color-mix(in srgb, var(--text-primary) 25%, transparent)"
           strokeWidth={1}
         />
+
+        {/* Y-axis шкала (% изменения) в правом жёлобе: [+max, +max/2, 0, -max/2,
+            -max]. dominantBaseline у крайних так, чтобы текст не обрезался. */}
+        {[maxAbs, maxAbs / 2, 0, -maxAbs / 2, -maxAbs].map((val, i, arr) => {
+          const ty = zeroY - (val / maxAbs) * halfH;
+          const baseline = i === 0 ? 'hanging' : i === arr.length - 1 ? 'alphabetic' : 'central';
+          const label = val === 0
+            ? '0'
+            : `${val > 0 ? '+' : ''}${Math.abs(val) >= 10 ? val.toFixed(0) : val.toFixed(1)}%`;
+          return (
+            <text
+              key={`ys-${i}`}
+              x={width - 4}
+              y={ty}
+              fontSize={9}
+              fontWeight={600}
+              fill="color-mix(in srgb, var(--text-primary) 55%, transparent)"
+              textAnchor="end"
+              dominantBaseline={baseline}
+              pointerEvents="none"
+            >
+              {label}
+            </text>
+          );
+        })}
 
         {/* Dashed crosshair (по центру выбранного slot) */}
         {hoverIdx !== null && (() => {
@@ -1225,7 +1253,7 @@ function YearlySeasonalityChart({
         data: cd.average.map((q) => ({ time: tdToTime(q.td), value: q.avg_pct })),
         color: COMPARE_COLORS[i % COMPARE_COLORS.length],
         label: `с ${p?.sinceYear} г.${mods.length ? ` (${mods.join(', ')})` : ''}`,
-        axis: 'left' as const,
+        axis: 'right' as const,
         formatValue: (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`,
         hidePill: true,
       };
@@ -1239,7 +1267,7 @@ function YearlySeasonalityChart({
       data: cd.average.map((p) => ({ time: tdToTime(p.td), value: p.avg_pct })),
       color: COMPARE_COLORS[(i + compareData.length) % COMPARE_COLORS.length],
       label: `${exactYears[i]}+`,
-      axis: 'left' as const,
+      axis: 'right' as const,
       formatValue: (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`,
       hidePill: true,
     }));
@@ -1256,7 +1284,7 @@ function YearlySeasonalityChart({
         data: avgData,
         color: 'var(--text-secondary)',
         label: 'Средняя',
-        axis: 'left' as const,
+        axis: 'right' as const,
         formatValue: (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`,
         hidePill: true,
       },
@@ -1267,7 +1295,7 @@ function YearlySeasonalityChart({
             data: curData,
             color: 'var(--accent)',
             label: `${yr}`,
-            axis: 'left' as const,
+            axis: 'right' as const,
             formatValue: (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`,
           }]
         : []),

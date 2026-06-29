@@ -441,8 +441,11 @@ export default function MobileChart({
   // Левый pill оставляем оверлеем: он у левого края, НЕ на точке данных (последнее
   // значение на правом крае), поэтому на линию обычно не наезжает; жёлоб слева
   // удвоил бы потерю ширины на узком экране. PILL_GUTTER_R — тюнится одним числом.
-  const hasRightPill = rawSeries.some((s) => s.axis === 'right' && !s.hidePill);
-  const PILL_GUTTER_R = hasRightPill ? 52 : PAD_X;
+  // Жёлоб резервируем под ЛЮБУЮ правую ось: подписи правой шкалы рендерятся
+  // всегда, даже когда pill скрыт (напр. Сезонность «Годовая» со скрытым
+  // current-year — там все серии hidePill, но шкала % всё равно нужна справа).
+  const hasRightAxis = rawSeries.some((s) => s.axis === 'right');
+  const PILL_GUTTER_R = hasRightAxis ? 52 : PAD_X;
   const innerW = width - PAD_X - PILL_GUTTER_R;
   const innerH = height - PAD_TOP - PAD_BOTTOM;
 
