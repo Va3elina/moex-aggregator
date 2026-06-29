@@ -310,7 +310,7 @@
   bottom: 70px;
   display: flex;
   gap: 5px;
-  padding: 8px 12px;
+  padding: 6px 12px;
   background: var(--bg-primary);
   /* Две границы:
      - top (чёткая): отделяет chart от nav-зоны
@@ -322,15 +322,17 @@
 
 /* Кнопки внутри page-actions — каждая занимает равную долю ширины.
    На странице с 4 кнопками — по 25%, с 3 — по 33%, с 2 — по 50%.
-   FIXED размеры — чтобы action-bar имел одинаковую высоту на всех viewport'ах
+   Только иконки (без подписей) → горизонтальная раскладка, низкая строка.
+   Чип «Актив» в этой же раскладке кладёт лого + тикер в один ряд.
+   FIXED min-height — чтобы action-bar имел одинаковую высоту на всех viewport'ах
    (раньше clamp давал разный min-height → менялась геометрия chart-bottom). */
 .fm-page-action {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
-  gap: 3px;
-  padding: 9px 6px;
+  gap: 6px;
+  padding: 6px;
   background: transparent;
   border: 1.5px solid transparent;
   border-radius: 10px;
@@ -343,7 +345,7 @@
   transition: all 150ms ease;
   flex: 1 1 0;
   min-width: 0;
-  min-height: 50px;
+  min-height: 36px;
 }
 
 .fm-page-action:hover {
@@ -356,6 +358,8 @@
 
 .fm-page-action .fm-rail-ico {
   color: var(--text-primary);
+  width: 18px;
+  height: 18px;
 }
 
 /* ========== PWA Install Banner ========== */
@@ -943,20 +947,19 @@
     padding: 3px 10px;
   }
 
-  /* Action кнопки: компактные — 36px высоты, 9px шрифт. */
+  /* Action кнопки: только иконки, минимальная высота строки в landscape. */
   .fm-page-action {
-    gap: 1px;
+    gap: 6px;
     padding: 3px 5px;
-    min-height: 36px;
-    font-size: 9px;
+    min-height: 30px;
   }
   .fm-page-action .fm-rail-ico {
-    width: 13px;
-    height: 13px;
+    width: 16px;
+    height: 16px;
   }
   .fm-page-action .fm-rail-ico svg {
-    width: 13px;
-    height: 13px;
+    width: 16px;
+    height: 16px;
   }
 
   /* BottomRail: items равномерно по всей ширине без скролла. */
