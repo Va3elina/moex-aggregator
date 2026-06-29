@@ -685,11 +685,7 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  /* Компактнее по вертикали + асимметрия padding (top > bottom): шрифт Inter
-     резервирует место под descender'ы, поэтому при симметричном padding текст
-     (особенно без хвостов, напр. «Все») визуально сидит выше центра pill'а.
-     Нижний padding меньше верхнего → текст опускается в оптический центр. */
-  padding: clamp(3.5px, 1.3vw, 6px) clamp(7px, 2.4vw, 11px) clamp(2px, 0.8vw, 4px);
+  padding: clamp(4px, 1.6vw, 7px) clamp(7px, 2.6vw, 12px);
   background: var(--bg-secondary);
   border: 1.5px solid var(--text-primary);
   border-radius: 999px;
@@ -697,10 +693,6 @@
   font-size: clamp(10px, 3vw, 13px);
   font-weight: 600;
   letter-spacing: -0.01em;
-  /* line-height: 1 — иначе унаследованный 1.5 раздувает line-box и из-за
-     асимметричных метрик Inter (descender area) текст в pill'е центрируется
-     криво, визуально сидит выше середины. Тугой line-box центрируется ровно. */
-  line-height: 1;
   cursor: pointer;
   white-space: nowrap;
   transition: all 150ms ease;
@@ -720,6 +712,27 @@
 
 .fm-chip.wide {
   padding: clamp(6px, 2vw, 8px) clamp(10px, 3.2vw, 14px);
+}
+
+/* Чипы-категории в sheet поиска инструмента (OI, Сезонность) — компактнее
+   и текст ровно по оптическому центру.
+   align-items:center центрирует line-box, но Inter резервирует место под
+   descender'ы, поэтому видимый текст (особенно у слов без хвостов, напр.
+   «Все») визуально уезжает вверх — выглядит «нажатым», не по центру.
+   text-box-trim обрезает box до заглавных/базовой линии → центрируется
+   именно высота капс → ровно по центру pill'а, хвосты свисают в нижний
+   padding. Фолбэк для браузеров без text-box-trim — лёгкий асимметричный
+   padding (top > bottom), который тоже опускает текст к центру. */
+.fm-sheet--asset-search .fm-chip {
+  line-height: 1;
+  padding: clamp(4px, 1.5vw, 6px) clamp(7px, 2.4vw, 11px) clamp(2.5px, 1vw, 4.5px);
+}
+@supports (text-box-trim: trim-both) {
+  .fm-sheet--asset-search .fm-chip {
+    padding: clamp(3.5px, 1.3vw, 5.5px) clamp(7px, 2.4vw, 11px);
+    text-box-trim: trim-both;
+    text-box-edge: cap alphabetic;
+  }
 }
 
 .fm-chip-color {
