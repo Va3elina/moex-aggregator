@@ -91,6 +91,15 @@ class StubPaymentProvider:
         log.info("StubProvider.charge_qr: payment_id=%s amount=%s (mock success)", payment_id, amount)
         return {"payment_id": payment_id, "status": "CONFIRMED", "success": True, "amount": amount}
 
+    def get_account_qr_state(self, request_key: str) -> dict | None:
+        """Фейковый статус СБП-привязки для dev — сразу ACTIVE с токеном."""
+        _ = request_key
+        return {
+            "status": "ACTIVE",
+            "account_token": f"stub_acct_{uuid.uuid4().hex[:12]}",
+            "bank_member_id": "100000000004",
+        }
+
     def parse_webhook(self, raw_body: bytes, headers: dict) -> WebhookEvent | None:
         """В stub принимаем сырой JSON без проверки подписи."""
         try:

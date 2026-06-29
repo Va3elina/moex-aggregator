@@ -814,6 +814,24 @@ class MainOrchestrator:
         except Exception as e:
             log.error("trial-complete fallback failed: %s", e, exc_info=True)
 
+        # СБП-привязки: дотянуть AccountToken+BankMemberId после оплаты по
+        # RequestKey (GetAddAccountQrState). Включает автопродление, либо помечает
+        # подписку разовой если юзер не привязал счёт. Каждые 15 мин.
+        def _resolve_sbp():
+            from api.billing.service import resolve_sbp_bindings
+            db = SessionLocal()
+            try:
+                return resolve_sbp_bindings(db)
+            finally:
+                db.close()
+        try:
+            rs = await asyncio.to_thread(_resolve_sbp)
+            if rs.get("bound") or rs.get("gave_up"):
+                log.info("  💳 sbp-reconcile: bound=%d gave_up=%d pending=%d",
+                         rs.get("bound", 0), rs.get("gave_up", 0), rs.get("pending", 0))
+        except Exception as e:
+            log.error("sbp-reconcile failed: %s", e, exc_info=True)
+
         return n
 
     async def run_billing_hourly(self) -> dict:

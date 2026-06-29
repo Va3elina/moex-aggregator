@@ -21,6 +21,7 @@ class CheckoutSession:
     confirmation_url: str = ""     # URL оплаты (карта). Пусто для СБП.
     qr_image: str | None = None    # data-URL картинки QR (СБП, GetQr DataType=IMAGE)
     qr_payload: str | None = None  # СБП-ссылка для мобильного диплинка (GetQr DataType=PAYLOAD)
+    request_key: str | None = None # СБП RequestKey (GetQr) — для дотягивания AccountToken
 
 
 @dataclass
@@ -43,6 +44,7 @@ class WebhookEvent:
     # (СБП-аналог rebill_id). request_key — id запроса GetQr/AddAccountQR.
     account_token: str | None = None     # СБП-токен привязки для будущих ChargeQr
     request_key: str | None = None       # RequestKey QR-привязки
+    bank_member_id: str | None = None    # id банка плательщика (нужен в ChargeQr)
     # card_fingerprint — sha256 маскированного PAN (first6+last4). Стабилен между
     # разными CustomerKey/rebill_id (та же карта → тот же отпечаток), поэтому
     # годится как кросс-аккаунтный анти-абуз ключ для триала. 152-ФЗ: это ХЕШ.
@@ -127,16 +129,28 @@ class PaymentProvider(Protocol):
         description: str,
         account_token: str,
         customer_key: str,
+        bank_member_id: str | None = None,
         customer_email: str | None = None,
         customer_phone: str | None = None,
         metadata: dict | None = None,
     ) -> dict:
         """
         Рекуррентное списание по СБП-привязке (ChargeQr) — СБП-аналог charge().
-        Init с Recurrent="Y" + DATA={"QR":"true"} → ChargeQr с AccountToken.
+        Init с Recurrent="Y" + DATA={"QR":"true"} → ChargeQr с AccountToken +
+        BankMemberId (обязателен, иначе ErrorCode 5031).
 
-        Возвращает тот же dict-контракт, что charge(): минимум
-        {payment_id, status, success}; при отказе — message/error_code/failure_kind.
+        Возвращает тот же dict-контракт, что charge(): минимум {payment_id, status,
+        success}; при отказе — message/error_code/failure_kind. status='PENDING'
+        (+ pending=True) — async-списание ещё в обработке (дожмётся webhook'ом).
+        """
+        ...
+
+    def get_account_qr_state(self, request_key: str) -> dict | None:
+        """
+        Статус СБП-привязки счёта по RequestKey (GetAddAccountQrState).
+        Возвращает {status, account_token, bank_member_id} или None при ошибке.
+        status: 'PROCESSING' / 'ACTIVE' / 'INACTIVE' / 'REJECTED'.
+        account_token + bank_member_id заполнены при ACTIVE.
         """
         ...
 
