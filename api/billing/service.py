@@ -1079,17 +1079,21 @@ def resolve_sbp_bindings(db: Session, max_age_minutes: int = 30) -> dict:
     привязки счёта через GetAddAccountQrState и:
       - ACTIVE → сохраняет AccountToken+BankMemberId в user_payment_methods,
         линкует к подписке → автопродление включено.
-      - INACTIVE/REJECTED или старше max_age → оставляет подписку РАЗОВОЙ (без
-        автопродления), чистит sbp_request_key. НЕ ошибка («оплатил, не привязал»).
+      - INACTIVE/REJECTED или старше max_age (give-up) → пробуем переиспользовать
+        ПРОШЛУЮ живую заряжаемую СБП-привязку юзера (кейс «вернувшийся уже-
+        привязанный»: банк не переспрашивает привязку → новый ключ висит
+        PROCESSING, но старый токен всё ещё ACTIVE). Нашли → линкуем, автопродление
+        сохранено; нет → подписка РАЗОВАЯ. В обоих случаях чистим sbp_request_key.
+        НЕ ошибка («оплатил, не привязал»).
       - PROCESSING и не старо → ждём следующий цикл.
 
-    Запускать из orchestrator каждые ~2-3 мин. Возвращает счётчики.
+    Запускать из orchestrator каждые ~15 мин (run_expire_only). Возвращает счётчики.
 
     Это шаги 3-5 сценария autopay T-Bank (Вариант №2): надёжный способ получить
     AccountToken (вместо ненадёжного webhook о привязке).
     """
     provider = get_payment_provider()
-    summary = {"checked": 0, "bound": 0, "gave_up": 0, "pending": 0}
+    summary = {"checked": 0, "bound": 0, "reused": 0, "gave_up": 0, "pending": 0}
     if not hasattr(provider, "get_account_qr_state"):
         return summary
 
@@ -1131,14 +1135,50 @@ def resolve_sbp_bindings(db: Session, max_age_minutes: int = 30) -> dict:
                 sub.id, pm.id if pm else None,
             )
         elif status in ("INACTIVE", "REJECTED") or (sub.created_at and sub.created_at < cutoff):
-            # Не привязал / перебито / таймаут → разовая подписка, без автопродления.
-            sub.sbp_request_key = None
-            db.commit()
-            summary["gave_up"] += 1
-            log.info(
-                "resolve_sbp_bindings: sub=%s привязки нет (status=%s) → разовая подписка",
-                sub.id, status,
-            )
+            # Новый RequestKey не дал привязки (перебито/таймаут). Частый кейс —
+            # «вернувшийся уже-привязанный юзер»: банк не переспрашивает привязку,
+            # новый ключ висит PROCESSING, ЗАТО прошлая привязка всё ещё ACTIVE
+            # (токен становится INACTIVE только при ПОДТВЕРЖДЕНИИ новой привязки).
+            # Поэтому переиспользуем последнюю живую ЗАРЯЖАЕМУЮ СБП-привязку юзера,
+            # если есть. Money-safe: мёртвый токен лишь провалит ОДНО продление
+            # (ChargeQr 3015/5031 → not nsf → без card-1 fallback) — как и сегодня;
+            # зато в типичном кейсе автопродление сохраняется. Оптимистично, БЕЗ
+            # повторной проверки ACTIVE: GetAddAccountQrState по СТАРОМУ RequestKey
+            # может вернуть INACTIVE для ЗАПРОСА, хотя ТОКЕН ещё заряжается
+            # (request-superseded ≠ token-dead) → проверка дала бы ложный отказ и
+            # навсегда потеряла бы живую привязку. bank_member_id обязателен для
+            # ChargeQr (иначе 5031) → отсекаем legacy-017 строки без него.
+            # ⚠️ Линковка без row-lock корректна при ОДНОМ orchestrator-процессе
+            # (15-мин слоты не пересекаются, см. run_expire_only); второй
+            # параллельный процесс мог бы сдвоить — это деплой-инвариант, не гард.
+            reuse_pm = db.query(UserPaymentMethod).filter(
+                UserPaymentMethod.user_id == sub.user_id,
+                UserPaymentMethod.method_type == "sbp",
+                UserPaymentMethod.deleted_at.is_(None),
+                UserPaymentMethod.account_token.isnot(None),
+                UserPaymentMethod.bank_member_id.isnot(None),
+            ).order_by(
+                UserPaymentMethod.created_at.desc(), UserPaymentMethod.id.desc()
+            ).first()
+            sub.sbp_request_key = None  # больше не поллим (и не оставляем stale-ключ)
+            if reuse_pm:
+                sub.payment_method_id = reuse_pm.id
+                if sub.yk_method != "sbp":
+                    sub.yk_method = "sbp"
+                db.commit()
+                summary["reused"] += 1
+                log.info(
+                    "resolve_sbp_bindings: sub=%s новый ключ не привязался (status=%s) → "
+                    "переиспользуем прошлую СБП-привязку pm=%s, автопродление сохранено",
+                    sub.id, status, reuse_pm.id,
+                )
+            else:
+                db.commit()
+                summary["gave_up"] += 1
+                log.info(
+                    "resolve_sbp_bindings: sub=%s привязки нет (status=%s) → разовая подписка",
+                    sub.id, status,
+                )
         else:
             summary["pending"] += 1  # PROCESSING, ждём следующий цикл
 
