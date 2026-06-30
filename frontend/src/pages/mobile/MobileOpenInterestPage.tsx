@@ -523,12 +523,18 @@ export default function MobileOpenInterestPage() {
               // на уровне страницы: интервал известен → формат detrminистичный.
               const d = new Date(t);
               if (isNaN(d.getTime())) return t;
+              const dd = String(d.getDate()).padStart(2, '0');
+              const mm = String(d.getMonth() + 1).padStart(2, '0');
               if (intervalValue !== 24) {
-                const dd = String(d.getDate()).padStart(2, '0');
-                const mm = String(d.getMonth() + 1).padStart(2, '0');
-                const HH = String(d.getHours()).padStart(2, '0');
-                const MM = String(d.getMinutes()).padStart(2, '0');
-                return `${dd}.${mm} ${HH}:${MM}`;
+                // Интрадей. Час показываем ТОЛЬКО на 1-дневном периоде — там
+                // дата постоянна, и именно время различает точки. На 1н/1м
+                // конкретный час внутри дня рядом с датой — шум, даём только день.
+                if (period === '1d') {
+                  const HH = String(d.getHours()).padStart(2, '0');
+                  const MM = String(d.getMinutes()).padStart(2, '0');
+                  return `${HH}:${MM}`;
+                }
+                return `${dd}.${mm}`;
               }
               return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
             }}
