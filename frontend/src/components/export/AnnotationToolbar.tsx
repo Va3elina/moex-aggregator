@@ -11,13 +11,16 @@
 import { MousePointer2, Pencil, Minus, MoveUpRight, Square, Circle as CircleIcon, Type, RotateCcw, RotateCw, Trash2 } from 'lucide-react';
 import type { AnnotationTool } from './AnnotationCanvas';
 
-/** 5 preset colors — editorial palette. Theme-aware через CSS vars где возможно. */
+/** 6 preset colors — editorial palette. Theme-aware через CSS vars где возможно. */
 export const COLOR_PRESETS = [
     { key: 'accent', value: 'var(--accent)', label: 'Акцент' },
     { key: 'primary', value: 'var(--text-primary)', label: 'Основной' },
     { key: 'red', value: '#E63946', label: 'Красный' },
     { key: 'green', value: '#06A77D', label: 'Зелёный' },
     { key: 'blue', value: '#1D7AB8', label: 'Синий' },
+    // Фирменный цвет линии «Открытых позиций» (deep magenta, --oi-red в editorial).
+    // Хардкодим, как red/green/blue — цвет рисунка не должен меняться от темы.
+    { key: 'oi-magenta', value: '#B91C5C', label: 'Фиолетовый' },
 ];
 
 /** Stroke width presets — 3 size discrete values vs slider (Phase 4). */
