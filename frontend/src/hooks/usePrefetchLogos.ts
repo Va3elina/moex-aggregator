@@ -1,14 +1,15 @@
 /**
- * usePrefetchLogos — гарантирует загрузку sprite + manifest при mount страницы.
+ * usePrefetchLogos — прогревает реестр логотипов в SW cache при mount страницы.
  *
- * Стратегия:
- *   - 1 fetch: /logos/sprite-manifest.json (~1.5 KB)
- *   - 1 fetch: /logos/sprite.png (~656 KB) — pre-decode в Image()
- *   - SW cache (cache-first для /logos/*) → второй заход instant
+ * Грузит ТОЛЬКО /logos/sprite-manifest.json (~1.5 KB) — реестр «у какого
+ * тикера есть лого». Сам спрайт (sprite.png, ~1.2 MB) НЕ предзагружается:
+ * после рефактора TickerLogo рендерит индивидуальные PNG по требованию
+ * (<img loading="lazy">), а спрайт нигде не отображается (см. TickerLogo.tsx).
+ * Раньше тут был ещё фоновый preload+decode спрайта — это была чистая трата
+ * сети и CPU, картинку качали и выбрасывали.
  *
- * Запускается на страницах с инструмент-селектором (ОИ, Сезонность).
- * При открытии модалки лого уже в SW cache → 0 сетевых запросов
- * (TickerLogo использует CSS background, не делает отдельных GET).
+ * Манифест попадает в SW cache (cache-first для /logos/*), и singleton-fetch
+ * в TickerLogo потом читает его уже из кэша.
  *
  * Module-level флаг блокирует дублирующий prefetch.
  */
@@ -22,19 +23,10 @@ export function usePrefetchLogos() {
     prefetched = true;
 
     const id = setTimeout(() => {
-      // Manifest — лёгкий, грузим сразу
-      fetch('/logos/sprite-manifest.json')
-        .then((r) => (r.ok ? r.json() : null))
-        .then((data: { sprite?: string } | null) => {
-          if (!data?.sprite) return;
-          // Sprite — preload через Image() с low priority в фоне
-          const img = new Image();
-          img.decoding = 'async';
-          img.src = data.sprite;
-        })
-        .catch(() => {
-          // Manifest недоступен — TickerLogo покажет fallback circles
-        });
+      // Только лёгкий манифест-реестр — прогрев SW cache. Спрайт не трогаем.
+      fetch('/logos/sprite-manifest.json').catch(() => {
+        // Manifest недоступен — TickerLogo покажет fallback circles
+      });
     }, 800);
 
     return () => clearTimeout(id);
