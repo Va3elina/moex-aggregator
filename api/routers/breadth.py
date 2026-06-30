@@ -528,23 +528,30 @@ async def get_breadth_history(
         for p in history
     ]
 
-    # Долларовый ряд «устарел»: РТС и курс USDRUBF на выходных и в нерабочие для
-    # РТС дни не торгуются, поэтому долларовая широта отстаёт от рублёвой. Сравнение
-    # по ДАТЕ EOD (не по времени): и историю, и сегодняшнюю точку двигает ночной
-    # предрасчёт/intraday на закрытых данных, так что ночная сессия (в которую
-    # данные не приходят) ложного срабатывания не даёт. Только для USD-режима.
+    # Долларовый ряд «устарел» ТОЛЬКО когда рублёвая широта ушла вперёд по дате:
+    # РТС и курс USDRUBF на выходных и в нерабочие для РТС дни не торгуются,
+    # поэтому за такой день долларовая широта не считается, а рублёвая — да.
+    # Сравниваем обе вселенные по ОДНОМУ источнику — таблице breadth_history
+    # (один предрасчёт, одинаковый тайминг). РАНЬШЕ сравнивали с сырыми свечами
+    # акций (candles): они обновляются intraday раньше, чем предрасчёт широты,
+    # из-за чего каждое утро в обычный торговый будний день флаг ложно зажигался,
+    # пока предрасчёт/кэш не догонят. Только для USD-режима.
     dollar_stale = False
     data_date = data_out[-1]["date"] if data_out else None
-    if is_usd and data_date:
+    if is_usd:
         try:
+            rub_universe = universe[:-4]  # all_usd → all, imoex_usd → imoex
             with engine.connect() as conn:
                 r = conn.execute(text("""
-                    SELECT max(begin_time::date)
-                    FROM candles
-                    WHERE interval = 24 AND type = 'stock' AND close > 0
-                """)).fetchone()
-            latest_stock_date = str(r[0]) if r and r[0] else None
-            if latest_stock_date and latest_stock_date > data_date:
+                    SELECT
+                      (SELECT max(trade_date) FROM breadth_history
+                         WHERE ema_period = :ema AND universe = :usd) AS usd_last,
+                      (SELECT max(trade_date) FROM breadth_history
+                         WHERE ema_period = :ema AND universe = :rub) AS rub_last
+                """), {"ema": ema_period, "usd": universe, "rub": rub_universe}).fetchone()
+            usd_last = r[0] if r else None
+            rub_last = r[1] if r else None
+            if usd_last and rub_last and rub_last > usd_last:
                 dollar_stale = True
         except Exception as e:
             log.warning(f"breadth/history: dollar_stale check skipped: {e}")
