@@ -913,13 +913,17 @@ function SeasonalityBars({
   const padX = 8;
   const padTop = 12;
   const padBottom = 22;
-  // Правый жёлоб под шкалу % (как в «Силе рынка»/«Открытых позициях»): бары
-  // строятся только до width - padRight, цифры стоят в чистой колонке справа.
-  const padRight = 44;
-  const innerW = width - padX - padRight;
   const innerH = height - padTop - padBottom;
   const zeroY = padTop + innerH / 2;
   const halfH = innerH / 2;
+  // Правый жёлоб = ширина самой длинной подписи шкалы % + зазор, чтобы бары
+  // доходили почти до цифр (без лишней пустоты справа), не наезжая на шкалу.
+  const yTicks = [maxAbs, maxAbs / 2, 0, -maxAbs / 2, -maxAbs];
+  const fmtYTick = (val: number) =>
+    val === 0 ? '0' : `${val > 0 ? '+' : ''}${Math.abs(val) >= 10 ? val.toFixed(0) : val.toFixed(1)}%`;
+  const maxTickLen = Math.max(...yTicks.map((v) => fmtYTick(v).length));
+  const padRight = Math.ceil(maxTickLen * axisFs * 0.62) + 7;
+  const innerW = width - padX - padRight;
 
   // Slot-based geometry как на ПК: slotW = innerW / bars.length,
   // внутри slot — N узких sub-bars (если multi-series).
@@ -959,6 +963,21 @@ function SeasonalityBars({
         onTouchMove={(e) => updateHover(e.touches[0].clientX)}
         onTouchEnd={() => { setHoverIdx(null); setTouchX(null); }}
       >
+        {/* Горизонтальные полоски (0.25/0.5/0.75 от полувысоты, вверх и вниз) —
+            как в «Потоке капитала». */}
+        {[0.25, 0.5, 0.75].map((t) => {
+          const yUp = zeroY - halfH * t;
+          const yDown = zeroY + halfH * t;
+          return (
+            <g key={`grid-${t}`}>
+              <line x1={padX} y1={yUp} x2={padX + innerW} y2={yUp}
+                stroke="color-mix(in srgb, var(--text-primary) 8%, transparent)" strokeWidth={1} />
+              <line x1={padX} y1={yDown} x2={padX + innerW} y2={yDown}
+                stroke="color-mix(in srgb, var(--text-primary) 8%, transparent)" strokeWidth={1} />
+            </g>
+          );
+        })}
+
         {/* Zero line */}
         <line
           x1={padX}
@@ -971,12 +990,10 @@ function SeasonalityBars({
 
         {/* Y-axis шкала (% изменения) в правом жёлобе: [+max, +max/2, 0, -max/2,
             -max]. dominantBaseline у крайних так, чтобы текст не обрезался. */}
-        {[maxAbs, maxAbs / 2, 0, -maxAbs / 2, -maxAbs].map((val, i, arr) => {
+        {yTicks.map((val, i, arr) => {
           const ty = zeroY - (val / maxAbs) * halfH;
           const baseline = i === 0 ? 'hanging' : i === arr.length - 1 ? 'alphabetic' : 'central';
-          const label = val === 0
-            ? '0'
-            : `${val > 0 ? '+' : ''}${Math.abs(val) >= 10 ? val.toFixed(0) : val.toFixed(1)}%`;
+          const label = fmtYTick(val);
           return (
             <text
               key={`ys-${i}`}

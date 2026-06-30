@@ -71,10 +71,6 @@ export default function MobileFlowsHistogram({ flows }: MobileFlowsHistogramProp
   const padX = 8;
   const padTop = 16;
   const padBottom = 24;
-  // Правый жёлоб под шкалу (как в «Силе рынка»): бары до W - padRight, цифры
-  // нетто-потоков стоят в чистой колонке справа.
-  const padRight = 44;
-  const innerW = W - padX - padRight;
   const innerH = H - padTop - padBottom;
   const zeroY = padTop + innerH / 2;
 
@@ -85,6 +81,16 @@ export default function MobileFlowsHistogram({ flows }: MobileFlowsHistogramProp
     if (flows.length === 0) return 1;
     return Math.max(...flows.map((f) => Math.abs(f.flow)), 0.1);
   }, [flows]);
+
+  // Подписи Y-шкалы (млрд ₽) и ширина правого жёлоба. Жёлоб = ширина самой
+  // длинной подписи + небольшой зазор, чтобы бары доходили почти до цифр
+  // (без лишней пустоты справа), не наезжая на шкалу. Шкала остаётся на месте.
+  const yTicks = [maxAbs, maxAbs / 2, 0, -maxAbs / 2, -maxAbs];
+  const fmtYTick = (val: number) =>
+    val === 0 ? '0' : `${val > 0 ? '+' : ''}${Math.abs(val) >= 10 ? val.toFixed(0) : val.toFixed(1)}`;
+  const maxTickLen = Math.max(...yTicks.map((v) => fmtYTick(v).length));
+  const padRight = Math.ceil(maxTickLen * axisFs * 0.62) + 7;
+  const innerW = W - padX - padRight;
 
   const barW = (innerW / flows.length) * 0.7;
   const barGap = (innerW / flows.length) * 0.3;
@@ -135,6 +141,21 @@ export default function MobileFlowsHistogram({ flows }: MobileFlowsHistogramProp
         onTouchMove={(e) => updateHoverFromTouch(e.touches[0].clientX)}
         onTouchEnd={() => { setHoverIdx(null); setTouchX(null); }}
       >
+        {/* Горизонтальные полоски (0.25/0.5/0.75 от полувысоты, вверх и вниз) —
+            как в «Потоке капитала». */}
+        {[0.25, 0.5, 0.75].map((t) => {
+          const yUp = zeroY - (innerH / 2) * t;
+          const yDown = zeroY + (innerH / 2) * t;
+          return (
+            <g key={`grid-${t}`}>
+              <line x1={padX} y1={yUp} x2={padX + innerW} y2={yUp}
+                stroke="color-mix(in srgb, var(--text-primary) 8%, transparent)" strokeWidth={1} />
+              <line x1={padX} y1={yDown} x2={padX + innerW} y2={yDown}
+                stroke="color-mix(in srgb, var(--text-primary) 8%, transparent)" strokeWidth={1} />
+            </g>
+          );
+        })}
+
         {/* Zero line */}
         <line
           x1={padX}
@@ -147,12 +168,10 @@ export default function MobileFlowsHistogram({ flows }: MobileFlowsHistogramProp
 
         {/* Y-axis шкала нетто-потоков (млрд ₽) в правом жёлобе: [+max, +max/2,
             0, -max/2, -max]. Крайние с hanging/alphabetic, чтобы не обрезались. */}
-        {[maxAbs, maxAbs / 2, 0, -maxAbs / 2, -maxAbs].map((val, i, arr) => {
+        {yTicks.map((val, i, arr) => {
           const ty = zeroY - (val / maxAbs) * (innerH / 2);
           const baseline = i === 0 ? 'hanging' : i === arr.length - 1 ? 'alphabetic' : 'central';
-          const label = val === 0
-            ? '0'
-            : `${val > 0 ? '+' : ''}${Math.abs(val) >= 10 ? val.toFixed(0) : val.toFixed(1)}`;
+          const label = fmtYTick(val);
           return (
             <text
               key={`ys-${i}`}
