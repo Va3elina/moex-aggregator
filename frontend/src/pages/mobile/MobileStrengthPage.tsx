@@ -966,22 +966,20 @@ function PillSmall({
   color: string;
   align?: 'left' | 'right';
 }) {
-  // Размер таблетки увеличен в 1.25× от исходного — промежуточный вариант между
-  // h14 (исходный) и h21 (1.5×): 5.5→6.875, 8→10, h 14→17.5, шрифт 10→12.5, rx 3→3.75.
-  const w = text.length * 6.875 + 10;
-  const h = 17.5;
+  const w = text.length * 5.5 + 8;
+  const h = 14;
   // align='right' → x это ПРАВЫЙ край pill'а (растём влево). Так последнее
   // значение садится у правой шкалы, как в «Открытых позициях».
   const rectX = align === 'right' ? x - w : x;
   return (
     <g pointerEvents="none">
-      <rect x={rectX} y={y - h / 2} width={w} height={h} fill={color} rx={3.75} />
+      <rect x={rectX} y={y - h / 2} width={w} height={h} fill={color} rx={3} />
       <text
         x={rectX + w / 2}
         y={y}
         textAnchor="middle"
         dominantBaseline="central"
-        fontSize={12.5}
+        fontSize={10}
         fontWeight={700}
         fill="#fff"
         style={{ fontFamily: 'IBM Plex Mono, monospace' }}
