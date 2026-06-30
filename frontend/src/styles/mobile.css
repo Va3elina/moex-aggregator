@@ -272,6 +272,15 @@
   padding-bottom: 80px;
 }
 
+/* Узкий зазор график→строка действий (opt-in через tightActionGap у MobileLayout).
+   Строка действий стала компактной (~38px: иконки, min-height 28px), а базовый
+   padding-bottom 140px оставлял ~31px лишнего gap'а. 112px = action-bar top
+   (~108px от низа: bottom 70 + высота ~38) + небольшой воздух. График тянется
+   вниз, шкала/контент не меняются. */
+.fm-main.fm-main--tight {
+  padding-bottom: 112px;
+}
+
 /* Фолбэк-chrome (MobileFallbackChrome) для маршрутов без мобильной
    версии: десктопная страница под мобильным top-bar'ом. В отличие от
    .fm-main здесь нужен обычный скролл — контент длиннее viewport'а. */
@@ -931,6 +940,10 @@
   }
   .fm-main.no-actions {
     padding-bottom: 42px;
+  }
+  /* Узкий зазор в landscape: action-bar bottom 40 + высота ~30 = top ~70px. */
+  .fm-main.fm-main--tight {
+    padding-bottom: 76px;
   }
 
   /* Action bar: лежит почти на rail (4px gap для активной rail-окантовки).
