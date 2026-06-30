@@ -949,6 +949,7 @@ export default function MobileChart({
               text={text}
               color={leftSeries[0].color}
               anchor="start"
+              fontSize={axisFs}
             />
           );
         })()}
@@ -965,6 +966,7 @@ export default function MobileChart({
               text={text}
               color={rightSeries[0].color}
               anchor="end"
+              fontSize={axisFs}
             />
           );
         })()}
@@ -1066,21 +1068,20 @@ interface PillLabelProps {
   text: string;
   color: string;
   anchor?: 'start' | 'end';
+  fontSize?: number;
 }
 
-function PillLabel({ x, y, text, color, anchor = 'end' }: PillLabelProps) {
-  // Размер таблетки — как в «Силе рынка»: фикс 1.25× от исходного (10/14).
-  // Шрифт 12.5, charW 6.875, padX 5, padY 2.5 → w = len*6.875+10, h = 17.5.
-  const fontY = 12.5;
+function PillLabel({ x, y, text, color, anchor = 'end', fontSize = 10 }: PillLabelProps) {
+  const fontY = fontSize;
   const charW = fontY * 0.55;
-  const padX = 5;
-  const padY = 2.5;
+  const padX = 4;
+  const padY = 2;
   const w = text.length * charW + padX * 2;
   const h = fontY + padY * 2;
   const pillX = anchor === 'end' ? x - w - 2 : x + 2;
   return (
     <g pointerEvents="none">
-      <rect x={pillX} y={y - h / 2} width={w} height={h} rx={3.75} fill={color} />
+      <rect x={pillX} y={y - h / 2} width={w} height={h} rx={3} fill={color} />
       <text
         x={pillX + w / 2}
         y={y}
