@@ -219,7 +219,7 @@ export default function LoginPage() {
                         <button
                             key={p.id}
                             onClick={() => handleOAuth(p.id)}
-                            className={`relative w-full flex items-center justify-center gap-3 py-2.5 px-4 rounded-xl border font-medium transition-all duration-200 ${providerColors[p.id] || ''} ${!p.configured ? 'opacity-50' : ''}`}
+                            className={`relative w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border font-medium transition-all duration-200 ${providerColors[p.id] || ''} ${!p.configured ? 'opacity-50' : ''}`}
                             style={{
                                 borderColor: 'var(--border-color)',
                                 color: 'var(--text-primary)',
