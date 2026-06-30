@@ -12,7 +12,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FlowDataPoint } from '../../services/api';
-import { axisFontSize } from '../chart/chartTypography';
+import { axisFontSize, xAxisTickCount } from '../chart/chartTypography';
 
 interface MobileFlowsHistogramProps {
   flows: FlowDataPoint[];
@@ -95,8 +95,16 @@ export default function MobileFlowsHistogram({ flows }: MobileFlowsHistogramProp
   const barW = (innerW / flows.length) * 0.7;
   const barGap = (innerW / flows.length) * 0.3;
 
-  // X-axis labels — каждый Nth период (на мобиле 3-4 метки)
-  const labelStep = Math.max(1, Math.ceil(flows.length / 4));
+  // X-axis labels — равномерно распределённые индексы (как в «Потоке капитала»):
+  // первая у левого края, последняя у правого, без форсированного последнего
+  // тика впритык к предыдущему (раньше из-за этого 23-е и 26-е числа наезжали).
+  // Кол-во подписей по ширине ("DD.MM.YY" ~8 симв. + воздух).
+  const xLabelCount = Math.min(xAxisTickCount(innerW, axisFs, 12), flows.length);
+  const xLabelIndices = xLabelCount < 2
+    ? (flows.length > 0 ? [0] : [])
+    : Array.from({ length: xLabelCount }, (_, k) =>
+        Math.min(Math.round((k * (flows.length - 1)) / (xLabelCount - 1)), flows.length - 1),
+      );
 
   // Currently hovered tooltip
   const hovered = hoverIdx !== null ? flows[hoverIdx] : null;
@@ -241,13 +249,13 @@ export default function MobileFlowsHistogram({ flows }: MobileFlowsHistogramProp
           );
         })}
 
-        {/* X-axis labels: первый — anchor=start, последний — anchor=end,
-            остальные — middle. Это держит labels всегда внутри SVG, не
-            выпадая за edges при большом количестве bars. */}
-        {flows.map((f, i) => {
-          if (i % labelStep !== 0 && i !== flows.length - 1) return null;
-          const isFirst = i === 0;
-          const isLast = i === flows.length - 1;
+        {/* X-axis labels: равномерно распределены (xLabelIndices). Первый —
+            anchor=start, последний — anchor=end, остальные — middle под столбцом. */}
+        {xLabelIndices.map((i, ti) => {
+          const f = flows[i];
+          if (!f) return null;
+          const isFirst = ti === 0;
+          const isLast = ti === xLabelIndices.length - 1;
           const anchor: 'start' | 'middle' | 'end' = isFirst ? 'start' : isLast ? 'end' : 'middle';
           // x: первый → padX (с edge), последний → правый край плота (padX +
           // innerW, перед жёлобом шкалы), остальные → центр bar

@@ -14,7 +14,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { axisFontSize } from '../chart/chartTypography';
+import { axisFontSize, xAxisTickCount } from '../chart/chartTypography';
 import { niceScale } from '../../utils/niceTicks';
 
 /**
@@ -718,11 +718,27 @@ export default function MobileChart({
     if (!crosshair?.pinned) setCrosshair(null);
   };
 
-  // X-axis ticks (3-4 для мобиле, чтобы не наезжали)
+  // X-axis ticks: число подписей зависит от их ширины, чтобы не наезжали.
+  // Широкие intraday-подписи ("DD.MM HH:MM" ~11 симв.) влезают реже, чем daily
+  // ("DD.MM.YY" ~8) — для intraday это даёт 3 тика вместо 4 (раньше 4 наезжали).
+  // Cap = 4: только УМЕНЬШАЕМ для широких, не увеличиваем (daily/Buffett как были).
   const xTicks = useMemo(() => {
-    const count = Math.min(4, N);
-    return Array.from({ length: count }, (_, i) => Math.round((i / (count - 1)) * (N - 1)));
-  }, [N]);
+    if (N < 2) return N > 0 ? [0] : [];
+    const longest = downsampledSeries.reduce(
+      (acc, s) => (s.data.length > acc.data.length ? s : acc),
+      downsampledSeries[0],
+    );
+    const sampleTime = longest?.data?.[longest.data.length - 1]?.time;
+    const sampleLabel = sampleTime
+      ? (formatXLabel ? formatXLabel(sampleTime) : formatTimeForDisplay(sampleTime))
+      : '00.00.00';
+    const count = Math.min(
+      xAxisTickCount(innerW, axisFs, Math.ceil(sampleLabel.length * 1.4)),
+      N,
+      4,
+    );
+    return Array.from({ length: count }, (_, i) => Math.round((i / Math.max(count - 1, 1)) * (N - 1)));
+  }, [N, innerW, axisFs, downsampledSeries, formatXLabel]);
 
   // Format X label — DD.MM.YY для дневных таймфреймов, DD.MM HH:mm для intraday.
   // Страницы могут override через formatXLabel prop для специфических форматов
