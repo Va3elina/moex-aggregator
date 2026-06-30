@@ -259,6 +259,7 @@ export default function MobileStrengthPage() {
       fullscreenTourId="strength-fullscreen"
       onRefresh={loadData}
       loading={loading}
+      tightActionGap
     >
       <MobilePageHeader
         Icon={Activity}
@@ -966,20 +967,22 @@ function PillSmall({
   color: string;
   align?: 'left' | 'right';
 }) {
-  const w = text.length * 5.5 + 8;
-  const h = 14;
+  // Размер таблетки увеличен в 1.5× (текущее значение графика подсвечивается
+  // заметнее): 5.5→8.25, 8→12, h 14→21, шрифт 10→15, rx 3→4.5.
+  const w = text.length * 8.25 + 12;
+  const h = 21;
   // align='right' → x это ПРАВЫЙ край pill'а (растём влево). Так последнее
   // значение садится у правой шкалы, как в «Открытых позициях».
   const rectX = align === 'right' ? x - w : x;
   return (
     <g pointerEvents="none">
-      <rect x={rectX} y={y - h / 2} width={w} height={h} fill={color} rx={3} />
+      <rect x={rectX} y={y - h / 2} width={w} height={h} fill={color} rx={4.5} />
       <text
         x={rectX + w / 2}
         y={y}
         textAnchor="middle"
         dominantBaseline="central"
-        fontSize={10}
+        fontSize={15}
         fontWeight={700}
         fill="#fff"
         style={{ fontFamily: 'IBM Plex Mono, monospace' }}
