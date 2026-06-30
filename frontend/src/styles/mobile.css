@@ -262,23 +262,16 @@
   overflow: hidden;
   /* FIXED padding (не clamp): расстояние от X-axis даты до action-bar
      должно быть одинаковым на любом viewport. Раньше clamp(135, 32vw, 160)
-     рос с шириной экрана с разной скоростью чем action-bar bottom, что
-     меняло gap между датой и линией разделения. */
-  padding-bottom: 140px;
+     рос с шириной экрана с разной скоростью чем action-bar bottom.
+     112px = action-bar top (~108px от низа: bottom 70 + высота ~38) + воздух.
+     После того как строка действий стала компактной (#247/#248), прежние
+     140px оставляли лишний gap под графиком на всех индикаторах. */
+  padding-bottom: 112px;
 }
 
 /* Страницы БЕЗ page-actions — только BottomRail снизу. */
 .fm-main.no-actions {
   padding-bottom: 80px;
-}
-
-/* Узкий зазор график→строка действий (opt-in через tightActionGap у MobileLayout).
-   Строка действий стала компактной (~38px: иконки, min-height 28px), а базовый
-   padding-bottom 140px оставлял ~31px лишнего gap'а. 112px = action-bar top
-   (~108px от низа: bottom 70 + высота ~38) + небольшой воздух. График тянется
-   вниз, шкала/контент не меняются. */
-.fm-main.fm-main--tight {
-  padding-bottom: 112px;
 }
 
 /* Фолбэк-chrome (MobileFallbackChrome) для маршрутов без мобильной
@@ -933,17 +926,13 @@
    В landscape: фиксированные px, компактная высота, BottomRail items
    распределяются равномерно по всей ширине. */
 @media (orientation: landscape) and (max-height: 500px) {
-  /* Main padding-bottom: ~36 (rail) + 4 (gap) + 40 (actions) + 6 (air for date)
-     = 86px. Chart забирает +19px высоты vs прошлой версии. */
+  /* Main padding-bottom: action-bar bottom 40 + высота ~30 = top ~70px + воздух
+     = 76px (после компактной строки действий #247/#248). */
   .fm-main {
-    padding-bottom: 86px;
+    padding-bottom: 76px;
   }
   .fm-main.no-actions {
     padding-bottom: 42px;
-  }
-  /* Узкий зазор в landscape: action-bar bottom 40 + высота ~30 = top ~70px. */
-  .fm-main.fm-main--tight {
-    padding-bottom: 76px;
   }
 
   /* Action bar: лежит почти на rail (4px gap для активной rail-окантовки).

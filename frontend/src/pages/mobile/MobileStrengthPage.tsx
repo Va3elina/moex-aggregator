@@ -259,7 +259,6 @@ export default function MobileStrengthPage() {
       fullscreenTourId="strength-fullscreen"
       onRefresh={loadData}
       loading={loading}
-      tightActionGap
     >
       <MobilePageHeader
         Icon={Activity}

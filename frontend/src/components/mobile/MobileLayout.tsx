@@ -85,13 +85,6 @@ interface MobileLayoutProps {
   /** Если задан — заменяет логотип в TopBar на ← кнопку «Назад».
    *  Используется для secondary screens (Profile, Pricing, Methodology). */
   onBack?: () => void;
-
-  // ──────── Tight action gap ────────
-  /** Узкий зазор между графиком и строкой действий. После того как строка
-   *  действий стала компактной (только иконки), стандартный padding-bottom
-   *  у .fm-main оставляет лишний gap. Включает .fm-main--tight (opt-in —
-   *  другие страницы не затрагиваются). */
-  tightActionGap?: boolean;
 }
 
 export default function MobileLayout({
@@ -112,7 +105,6 @@ export default function MobileLayout({
   onRefresh,
   loading = false,
   onBack,
-  tightActionGap = false,
 }: MobileLayoutProps) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const hasActions =
@@ -161,7 +153,7 @@ export default function MobileLayout({
         </div>
       )}
 
-      <main className={`fm-main ${hasActions && !isFullscreen ? '' : 'no-actions'}${tightActionGap ? ' fm-main--tight' : ''}`}>
+      <main className={`fm-main ${hasActions && !isFullscreen ? '' : 'no-actions'}`}>
         {children}
       </main>
 
