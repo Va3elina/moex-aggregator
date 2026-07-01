@@ -302,6 +302,25 @@ export default function PricingPage() {
         <h1 className="text-3xl md:text-4xl font-bold text-theme-primary">Тарифы</h1>
       </div>
 
+      {/* Плашка: тарифный план на пересмотре. Оплата действующих тарифов работает
+          как обычно (карта / T-Pay / СБП); пробный период на время пересмотра снят. */}
+      <div
+        className="mb-6 md:mb-8 mx-auto max-w-3xl text-center"
+        style={{
+          background: 'color-mix(in srgb, var(--accent) 10%, transparent)',
+          border: '1px solid color-mix(in srgb, var(--accent) 40%, transparent)',
+          borderRadius: 12,
+          padding: '14px 18px',
+        }}
+      >
+        <p style={{ fontWeight: 700, fontSize: 'var(--fs-base, 1rem)', color: 'var(--text-primary)', margin: 0 }}>
+          Мы пересматриваем тарифный план
+        </p>
+        <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-sm, 0.9rem)', margin: '4px 0 0', lineHeight: 1.5 }}>
+          Действующие тарифы можно оформить — оплата картой, T&#8209;Pay и СБП.
+        </p>
+      </div>
+
       {/* Founder-оффер: персональный подарок (whitelist через env). Виден ТОЛЬКО
           юзеру, кому backend вернул founder_offer. Это fallback для глобального
           баннера: если юзер закрыл баннер, оффер не теряется — он здесь. Клик →
