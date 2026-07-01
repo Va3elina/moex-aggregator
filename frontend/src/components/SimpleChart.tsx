@@ -63,6 +63,10 @@ interface SimpleChartProps {
   allowHistogram?: boolean;
   histogramDisabled?: boolean;
   defaultHistogram?: boolean;
+  /** Тип отображения основной серии (цены): 'line' (по умолчанию) или 'area'
+   *  (градиентная заливка под ценой — отделяет цену от вторичной серии). Контролируемый
+   *  проп (управляется извне через настройки графика), без внутреннего тумблера. */
+  primaryType?: 'line' | 'area';
   showValueHeader?: boolean;
   legendPosition?: 'top' | 'bottom';
   showDownloadButton?: boolean;
@@ -143,6 +147,7 @@ export default function SimpleChart({
   allowHistogram = false,
   histogramDisabled = false,
   defaultHistogram = false,
+  primaryType = 'line',
   reverseLegend = false,
   niceTicks = false,
   niceTicksSecondary = false,
@@ -1146,7 +1151,25 @@ export default function SimpleChart({
                 </defs>
               )}
 
-              {/* Область под основной линией — отключена */}
+              {/* Область под основной линией (тип «Область») — градиентная заливка
+                  под ценой, чтобы визуально отделить цену от вторичной серии (ОИ).
+                  Сама линия рисуется сверху (ниже), как в TradingView area-режиме. */}
+              {showPrimary && primaryType === 'area' && animatedPaths.area && (
+                <>
+                  <defs>
+                    <linearGradient id="priceAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={primaryColor} stopOpacity="0.28" />
+                      <stop offset="100%" stopColor={primaryColor} stopOpacity="0.02" />
+                    </linearGradient>
+                  </defs>
+                  <path
+                    d={animatedPaths.area}
+                    fill="url(#priceAreaGrad)"
+                    stroke="none"
+                    clipPath={_forecastCount > 0 ? 'url(#solidClip)' : undefined}
+                  />
+                </>
+              )}
 
               {/* Основная линия (цена — сплошная до прогноза).
                   showPrimary=false → пропускаем рендер (юзер скрыл primary через toggle). */}

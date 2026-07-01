@@ -11,6 +11,7 @@ import type { ChartResponse } from '../types';
 import type { ChartAnnotation } from '../components/SimpleChart';
 import SimpleChart from '../components/SimpleChart';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
+import ChartSettings from '../components/chart/ChartSettings';
 import CsvExportButton from '../components/export/CsvExportButton';
 import { periodToQuery } from '../utils/csvPeriod';
 import InstrumentSearchModal from '../components/InstrumentSearchModal';
@@ -177,6 +178,7 @@ export default function OpenInterestPage() {
   const [oiVariant, setOiVariant] = usePersistedState<OIVariant>('frame:oi:oiVariant', 'net');
   const [showExpirations, setShowExpirations] = usePersistedState('frame:oi:showExpirations', false);
   const [showPrice, setShowPrice] = usePersistedState('frame:oi:showPrice', true);
+  const [chartType, setChartType] = usePersistedState<'line' | 'area'>('frame:oi:chartType', 'line');
   // Период: диплинк сигнала (URL) приоритетнее сохранённого. Применяем на init
   // (seed), а не эффектом — иначе первый запрос ушёл бы на сохранённом 5y и для
   // 5-минутного сигнала тянул бы годы баров. См. parseOiDeepLink.
@@ -760,6 +762,7 @@ export default function OpenInterestPage() {
               ].filter(Boolean),
             }}
           />
+          <ChartSettings chartType={chartType} onChartType={setChartType} />
           {ALERTS_ENABLED && (
           <AlertBellButton
             indicator="open_interest"
@@ -832,6 +835,7 @@ export default function OpenInterestPage() {
         showPrimary={displayMode === 'price' || showPrice}
         showSecondary={displayMode !== 'price' && !!oiData}
         showThird={oiVariant === 'both' && !!oiDataThird}
+        primaryType={chartType}
         primaryColor={COLORS.primary}
         secondaryColor={colors.secondary}
         thirdColor={colors.third}
