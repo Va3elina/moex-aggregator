@@ -193,24 +193,68 @@
   --font-mono: 'IBM Plex Mono', 'SF Mono', Menlo, monospace;
 }
 
-/* === COLORBLIND PALETTE (accessibility) — Okabe-Ito, поверх ЛЮБОЙ темы ===
-   Активируется data-palette="colorblind" на <html> (useChartPalette). Специфичность
-   :root[data-palette] (0,2,0) бьёт [data-theme="…"] (0,1,0). Меняем ТОЛЬКО цвета
-   графиков (не брендовый --accent/UI): красно-зелёные пары → сине-оранжевые,
-   различимые при дейтер-/протан-/тританопии. */
-:root[data-palette="colorblind"] {
-  --oi-green: #0072B2;              /* Покупки/лонг → синий (Okabe-Ito) */
-  --oi-red: #D55E00;               /* Продажи/шорт → киноварь */
-  --oi-amber: #E69F00;             /* ОИ → оранжевый */
-  --oi-cyan: #009E73;              /* Чистая позиция → сине-зелёный */
-  --funds-flow-positive: #0072B2;  /* Приток → синий */
-  --funds-flow-negative: #D55E00;  /* Отток → киноварь */
-  --mood-green: #0072B2;           /* fund-trades покупки */
-  --mood-red: #D55E00;             /* fund-trades продажи */
-  --chart-line-1: #0072B2;
-  --chart-line-2: #E69F00;
-  --chart-line-3: #009E73;
-  --chart-area: rgba(0, 114, 178, 0.10);
+/* === ПАЛИТРЫ ДОСТУПНОСТИ (accessibility) — поверх ЛЮБОЙ темы ===============
+   Активируются data-palette="…" на <html> (useChartPalette). Специфичность
+   :root[data-palette] (0,2,0) бьёт [data-theme] (0,1,0). Меняем ТОЛЬКО цвета
+   графиков (не брендовый --accent/UI). Приглушено под editorial. Одной палитрой
+   все типы дальтонизма НЕ покрыть — поэтому несколько. */
+
+/* Красно-зелёный дальтонизм (дейтеранопия/протанопия, ~8% муж.) — сине-янтарная.
+   Различимы по сине-жёлтой оси, которая у них сохранна. */
+:root[data-palette="redgreen"] {
+  --oi-green: #4C8FBF;             /* Покупки → сине-стальной */
+  --oi-red: #DE9540;               /* Продажи → янтарь */
+  --oi-amber: #9B7FC0;             /* ОИ → приглушённый фиолет */
+  --oi-cyan: #C9A227;              /* Чистая позиция → золото */
+  --funds-flow-positive: #4C8FBF;
+  --funds-flow-negative: #DE9540;
+  --mood-green: #4C8FBF;
+  --mood-red: #DE9540;
+  --chart-line-1: #4C8FBF; --chart-line-2: #DE9540; --chart-line-3: #9B7FC0;
+  --chart-area: rgba(76, 143, 191, 0.10);
+}
+
+/* Сине-жёлтый дальтонизм (тританопия) — бирюза-роза. Различимы по красно-зелёной
+   оси (у тританопов сохранна); сине-оранжевые схемы им НЕ подходят. */
+:root[data-palette="blueyellow"] {
+  --oi-green: #2FA090;             /* Покупки → бирюза */
+  --oi-red: #C6577F;               /* Продажи → роза */
+  --oi-amber: #B0413E;             /* ОИ → кирпичный */
+  --oi-cyan: #6E9B3E;              /* Чистая позиция → оливка */
+  --funds-flow-positive: #2FA090;
+  --funds-flow-negative: #C6577F;
+  --mood-green: #2FA090;
+  --mood-red: #C6577F;
+  --chart-line-1: #2FA090; --chart-line-2: #C6577F; --chart-line-3: #B0413E;
+  --chart-area: rgba(47, 160, 144, 0.10);
+}
+
+/* Полная цветовая слепота / максимальный контраст — различие по ЯРКОСТИ, не тону.
+   Тема-адаптивно: на тёмной — светлые линии, на светлой — тёмные (иначе исчезнут). */
+:root[data-palette="contrast"] {
+  --oi-green: #F2ECDD;             /* Покупки → почти белый (высокая яркость) */
+  --oi-red: #FF8A5B;               /* Продажи → светлый pumpkin */
+  --oi-amber: #A8A290;             /* ОИ → серый */
+  --oi-cyan: #FFC078;              /* Чистая позиция → светлый янтарь */
+  --funds-flow-positive: #F2ECDD;
+  --funds-flow-negative: #FF8A5B;
+  --mood-green: #F2ECDD;
+  --mood-red: #FF8A5B;
+  --chart-line-1: #F2ECDD; --chart-line-2: #FF8A5B; --chart-line-3: #A8A290;
+  --chart-area: rgba(242, 236, 221, 0.08);
+}
+[data-theme="editorial-light"][data-palette="contrast"],
+[data-theme="light"][data-palette="contrast"] {
+  --oi-green: #241F19;             /* на светлой бумаге линии тёмные */
+  --oi-red: #C0491A;
+  --oi-amber: #6B6559;
+  --oi-cyan: #8A5A12;
+  --funds-flow-positive: #241F19;
+  --funds-flow-negative: #C0491A;
+  --mood-green: #241F19;
+  --mood-red: #C0491A;
+  --chart-line-1: #241F19; --chart-line-2: #C0491A; --chart-line-3: #6B6559;
+  --chart-area: rgba(36, 31, 25, 0.08);
 }
 
 /* === NEON LIME THEME (Original Dark) === */
