@@ -63,11 +63,17 @@ export default function FundsTable({
     };
     // Общая дата данных (максимальный trade_date NAV среди фондов) — выводится в шапке;
     // в строках дата остаётся только у фондов, чья СЧА отстаёт от неё (stale NAV).
+    // laggardDate — самая ранняя дата среди НЕ-locked фондов (тех же, что получают
+    // значок "!"): нужна для подписи о том, что часть данных ещё поступает.
     let maxDate = '';
+    let laggardDate = '';
     for (const f of data?.funds ?? []) {
         const d = f.data[f.data.length - 1]?.date;
-        if (d && d > maxDate) maxDate = d;
+        if (!d) continue;
+        if (d > maxDate) maxDate = d;
+        if (f.tier_locked !== true && (!laggardDate || d < laggardDate)) laggardDate = d;
     }
+    const hasStaleFunds = !!(laggardDate && maxDate && laggardDate < maxDate);
     const fmtDate = (iso: string) => iso.split('-').reverse().join('.');
 
     return (
@@ -88,6 +94,15 @@ export default function FundsTable({
                     </span>
                 </div>
             </div>
+            {hasStaleFunds && (
+                <div className="text-theme-secondary" style={{
+                    fontSize: 'var(--fs-xs)', padding: 'var(--sp-2) var(--sp-4)',
+                    borderBottom: '1px solid var(--border-color)',
+                    background: 'color-mix(in srgb, var(--accent) 5%, transparent)',
+                }}>
+                    Данные ещё поступают, часть фондов уже актуальна. Самые свежие на {fmtDate(maxDate)}, самые запоздавшие на {fmtDate(laggardDate)}.
+                </div>
+            )}
             {data?.category === 'yuan' && (
                 <div className="text-theme-secondary" style={{
                     fontSize: 'var(--fs-xs)', padding: 'var(--sp-2) var(--sp-4)',
