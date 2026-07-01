@@ -1,5 +1,6 @@
 import { useEffect, useState, type CSSProperties } from 'react';
-import { Settings2, X, LineChart, AreaChart } from 'lucide-react';
+import { Settings2, X, LineChart, AreaChart, Palette, Eye } from 'lucide-react';
+import { useChartPalette, type ChartPalette } from '../../hooks/useChartPalette';
 
 export type ChartType = 'line' | 'area';
 
@@ -44,6 +45,11 @@ const CHART_TYPES: { key: ChartType; label: string; Icon: typeof LineChart }[] =
   { key: 'area', label: 'Область', Icon: AreaChart },
 ];
 
+const PALETTES: { key: ChartPalette; label: string; Icon: typeof Palette }[] = [
+  { key: 'default', label: 'Обычная', Icon: Palette },
+  { key: 'colorblind', label: 'Для дальтоников', Icon: Eye },
+];
+
 /**
  * ChartSettings — единая кнопка-шестерёнка (в editorial-стиле, под стать
  * ChartCaptureButton: круглая 44×44) + стилизованная модалка настроек графика.
@@ -53,6 +59,7 @@ const CHART_TYPES: { key: ChartType; label: string; Icon: typeof LineChart }[] =
  */
 export default function ChartSettings({ chartType, onChartType, className = '' }: Props) {
   const [open, setOpen] = useState(false);
+  const [palette, setPalette] = useChartPalette();
 
   useEffect(() => {
     if (!open) return;
@@ -115,6 +122,28 @@ export default function ChartSettings({ chartType, onChartType, className = '' }
                   ))}
                 </div>
               </>
+            )}
+
+            {/* Палитра — ГЛОБАЛЬНАЯ (accessibility), всегда доступна на любом графике. */}
+            <div style={{ ...sectionLabel, marginTop: chartType && onChartType ? 22 : 0 }}>Палитра</div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              {PALETTES.map(({ key, label, Icon }) => (
+                <button
+                  key={key}
+                  type="button"
+                  className="editorial-press"
+                  onClick={() => setPalette(key)}
+                  style={optionPill(palette === key)}
+                  aria-pressed={palette === key}
+                >
+                  <Icon size={18} /> {label}
+                </button>
+              ))}
+            </div>
+            {palette === 'colorblind' && (
+              <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)', marginTop: 10, lineHeight: 1.4 }}>
+                Сине-оранжевая схема (Okabe-Ito) вместо красно-зелёной — различима при дальтонизме. Действует на все графики.
+              </p>
             )}
           </div>
         </div>

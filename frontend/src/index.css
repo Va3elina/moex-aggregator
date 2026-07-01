@@ -193,6 +193,26 @@
   --font-mono: 'IBM Plex Mono', 'SF Mono', Menlo, monospace;
 }
 
+/* === COLORBLIND PALETTE (accessibility) — Okabe-Ito, поверх ЛЮБОЙ темы ===
+   Активируется data-palette="colorblind" на <html> (useChartPalette). Специфичность
+   :root[data-palette] (0,2,0) бьёт [data-theme="…"] (0,1,0). Меняем ТОЛЬКО цвета
+   графиков (не брендовый --accent/UI): красно-зелёные пары → сине-оранжевые,
+   различимые при дейтер-/протан-/тританопии. */
+:root[data-palette="colorblind"] {
+  --oi-green: #0072B2;              /* Покупки/лонг → синий (Okabe-Ito) */
+  --oi-red: #D55E00;               /* Продажи/шорт → киноварь */
+  --oi-amber: #E69F00;             /* ОИ → оранжевый */
+  --oi-cyan: #009E73;              /* Чистая позиция → сине-зелёный */
+  --funds-flow-positive: #0072B2;  /* Приток → синий */
+  --funds-flow-negative: #D55E00;  /* Отток → киноварь */
+  --mood-green: #0072B2;           /* fund-trades покупки */
+  --mood-red: #D55E00;             /* fund-trades продажи */
+  --chart-line-1: #0072B2;
+  --chart-line-2: #E69F00;
+  --chart-line-3: #009E73;
+  --chart-area: rgba(0, 114, 178, 0.10);
+}
+
 /* === NEON LIME THEME (Original Dark) === */
 [data-theme="dark"] {
   --bg-primary: #0B0D12;
