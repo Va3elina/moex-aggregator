@@ -295,74 +295,82 @@ async def fetch_index_chunk(
     else:
         params["till"] = date_to.strftime("%Y-%m-%d")
 
-    try:
-        async with session.get(url, params=params, headers=HEADERS, timeout=30) as response:
-            if response.status == 404:
-                log.error(f"❌ [{secid}] Индекс не найден (404).")
-                return []
-            elif response.status in (500, 502, 503):
-                log.error(f"❌ [{secid}] Сервер недоступен ({response.status}).")
-                return []
-            elif response.status != 200:
-                log.error(f"❌ [{secid}] HTTP {response.status}. URL: {url}")
-                return []
-
-            try:
-                data = await response.json()
-            except Exception as json_err:
-                log.error(f"❌ [{secid}] Ошибка парсинга JSON: {json_err}")
-                return []
-
-            if use_candles:
-                # Candles endpoint: ключ "candles", колонки: open, close, high, low, value, volume, begin, end
-                if "candles" not in data:
-                    log.error(f"❌ [{secid}] Отсутствует ключ 'candles' в ответе.")
+    # Ретраим транзиентные сбои ISS (таймаут/5xx/обрыв), чтобы один блип не
+    # выкидывал secid из дневного прогона на целые сутки (причина lag=2 по
+    # MCFTR/MOEXIT/MOEXRE/EUR_RUB 30.06). Легитимно пустой ответ (выходной) НЕ
+    # ретраится — возвращаем [] сразу.
+    RETRY_ATTEMPTS = 3
+    for attempt in range(1, RETRY_ATTEMPTS + 1):
+        try:
+            async with session.get(url, params=params, headers=HEADERS, timeout=30) as response:
+                if response.status == 404:
+                    log.error(f"❌ [{secid}] Индекс не найден (404).")
                     return []
-                candles_data = data["candles"]
-                columns = candles_data.get("columns", [])
-                rows = candles_data.get("data", [])
-                if not rows:
+                elif response.status in (500, 502, 503):
+                    if attempt < RETRY_ATTEMPTS:
+                        await asyncio.sleep(2 * attempt)
+                        continue
+                    log.error(f"❌ [{secid}] Сервер недоступен ({response.status}) после {RETRY_ATTEMPTS} попыток.")
                     return []
-                # Конвертируем в формат history: TRADEDATE, OPEN, HIGH, LOW, CLOSE, VALUE
-                result = []
-                for row in rows:
-                    rec = dict(zip(columns, row))
-                    result.append({
-                        "TRADEDATE": rec["begin"][:10],  # "2025-01-03 00:00:00" → "2025-01-03"
-                        "OPEN": rec.get("open"),
-                        "HIGH": rec.get("high"),
-                        "LOW": rec.get("low"),
-                        "CLOSE": rec.get("close"),
-                        "VALUE": rec.get("value"),
-                    })
-                return result
-            else:
-                if not isinstance(data, dict) or "history" not in data:
-                    log.error(f"❌ [{secid}] Отсутствует ключ 'history' в ответе.")
+                elif response.status != 200:
+                    log.error(f"❌ [{secid}] HTTP {response.status}. URL: {url}")
                     return []
 
-                history = data["history"]
-                columns = history.get("columns", [])
-                rows = history.get("data", [])
-
-                if not rows:
-                    log.debug(f"  [{secid}] Нет данных за {date_from} - {date_to}")
+                try:
+                    data = await response.json()
+                except Exception as json_err:
+                    log.error(f"❌ [{secid}] Ошибка парсинга JSON: {json_err}")
                     return []
 
-                return [dict(zip(columns, row)) for row in rows]
+                if use_candles:
+                    # Candles endpoint: ключ "candles", колонки: open, close, high, low, value, volume, begin, end
+                    if "candles" not in data:
+                        log.error(f"❌ [{secid}] Отсутствует ключ 'candles' в ответе.")
+                        return []
+                    candles_data = data["candles"]
+                    columns = candles_data.get("columns", [])
+                    rows = candles_data.get("data", [])
+                    if not rows:
+                        return []
+                    # Конвертируем в формат history: TRADEDATE, OPEN, HIGH, LOW, CLOSE, VALUE
+                    result = []
+                    for row in rows:
+                        rec = dict(zip(columns, row))
+                        result.append({
+                            "TRADEDATE": rec["begin"][:10],  # "2025-01-03 00:00:00" → "2025-01-03"
+                            "OPEN": rec.get("open"),
+                            "HIGH": rec.get("high"),
+                            "LOW": rec.get("low"),
+                            "CLOSE": rec.get("close"),
+                            "VALUE": rec.get("value"),
+                        })
+                    return result
+                else:
+                    if not isinstance(data, dict) or "history" not in data:
+                        log.error(f"❌ [{secid}] Отсутствует ключ 'history' в ответе.")
+                        return []
 
-    except asyncio.TimeoutError:
-        log.error(f"❌ [{secid}] Таймаут соединения (30с).")
-        return []
-    except aiohttp.ClientConnectorError as e:
-        log.error(f"❌ [{secid}] Ошибка соединения: {e}")
-        return []
-    except aiohttp.ServerDisconnectedError:
-        log.error(f"❌ [{secid}] Сервер разорвал соединение.")
-        return []
-    except Exception as e:
-        log.error(f"❌ [{secid}] Ошибка: {type(e).__name__}: {e}")
-        return []
+                    history = data["history"]
+                    columns = history.get("columns", [])
+                    rows = history.get("data", [])
+
+                    if not rows:
+                        log.debug(f"  [{secid}] Нет данных за {date_from} - {date_to}")
+                        return []
+
+                    return [dict(zip(columns, row)) for row in rows]
+
+        except (asyncio.TimeoutError, aiohttp.ClientConnectorError, aiohttp.ServerDisconnectedError) as e:
+            if attempt < RETRY_ATTEMPTS:
+                await asyncio.sleep(2 * attempt)
+                continue
+            log.error(f"❌ [{secid}] Сетевой сбой ({type(e).__name__}) после {RETRY_ATTEMPTS} попыток: {e}")
+            return []
+        except Exception as e:
+            log.error(f"❌ [{secid}] Ошибка: {type(e).__name__}: {e}")
+            return []
+
+    return []
 
 
 async def fetch_index_full(

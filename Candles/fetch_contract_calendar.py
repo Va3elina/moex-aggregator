@@ -65,10 +65,27 @@ MONTH_LETTERS = set("FGHJKMNQUVXZ")
 MAX_BACKFILL_PER_RUN = 800  # бережём ISS: за прогон догружаем не больше N историч. контрактов
 
 
-def _get_json(url: str, timeout: int = 30):
-    req = urllib.request.Request(url, headers=_UA)
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+def _get_json(url: str, timeout: int = 30, attempts: int = 3, backoff: float = 3.0):
+    """GET -> JSON с ретраями против транзиентных таймаутов ISS.
+
+    ISS периодически отвечает медленно ("urlopen timed out") — одиночный запрос
+    без ретрая ронял весь дневной прогон. Ретраим до `attempts` раз с линейным
+    backoff. Бюджет держим < таймаута оркестратора (contract_calendar=120с):
+    3 попытки x 30с + 3с + 6с ~= 99с.
+    """
+    last_err = None
+    for attempt in range(1, attempts + 1):
+        try:
+            req = urllib.request.Request(url, headers=_UA)
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except Exception as e:
+            last_err = e
+            if attempt < attempts:
+                sleep_s = backoff * attempt
+                log.warning(f"ISS запрос не удался ({attempt}/{attempts}): {e}. Повтор через {sleep_s:.0f}с")
+                time.sleep(sleep_s)
+    raise last_err
 
 
 def _create_table(engine):
@@ -145,7 +162,7 @@ def _fetch_active():
 def _fetch_description(secid: str):
     """Phase B: метаданные одного контракта из description. → dict | None."""
     try:
-        rows = _get_json(ISS_DESC_URL.format(secid=secid), timeout=15).get(
+        rows = _get_json(ISS_DESC_URL.format(secid=secid), timeout=15, attempts=2, backoff=1.0).get(
             "description", {}).get("data", [])
         kv = {row[0]: row[2] for row in rows if len(row) >= 3}
     except Exception as e:
