@@ -1436,8 +1436,9 @@
   --line-primary-width: 3.3px;
   --line-secondary-width: 2.75px;
 
-  /* Hover dots */
-  --dot-primary-r: 6;
+  /* Hover dots — primary и secondary одинакового небольшого размера, чтобы
+     на графиках с двумя активами кружки не отличались по величине. */
+  --dot-primary-r: 5;
   --dot-secondary-r: 5;
 
   /* Axis colors — dark gray (не такой контрастный как text-primary) чтобы
@@ -1539,7 +1540,7 @@
     --line-primary-width: 2.2px;
     --line-secondary-width: 2.2px;
 
-    --dot-primary-r: 5;
+    --dot-primary-r: 4;
     --dot-secondary-r: 4;
 
     /* Strength — mobile */
