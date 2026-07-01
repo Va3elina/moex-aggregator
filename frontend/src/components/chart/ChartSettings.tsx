@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties } from 'react';
-import { Settings2, X, LineChart, AreaChart, Palette, Eye } from 'lucide-react';
+import { Settings2, X, LineChart, AreaChart } from 'lucide-react';
 import { useChartPalette, type ChartPalette } from '../../hooks/useChartPalette';
 
 export type ChartType = 'line' | 'area';
@@ -45,10 +45,29 @@ const CHART_TYPES: { key: ChartType; label: string; Icon: typeof LineChart }[] =
   { key: 'area', label: 'Область', Icon: AreaChart },
 ];
 
-const PALETTES: { key: ChartPalette; label: string; Icon: typeof Palette }[] = [
-  { key: 'default', label: 'Обычная', Icon: Palette },
-  { key: 'colorblind', label: 'Для дальтоников', Icon: Eye },
+// Свотчи (покупки/продажи) для превью в пикере. Для 'default' — представительные
+// editorial-dark значения (реальные --oi-* перекрыты при активной палитре). tag —
+// человеческое пояснение типа, без клиники.
+const PALETTES: { key: ChartPalette; label: string; tag: string; buy: string; sell: string }[] = [
+  { key: 'default',    label: 'Обычная',          tag: 'по умолчанию',   buy: '#5BD49C', sell: '#B91C5C' },
+  { key: 'redgreen',   label: 'Сине-янтарная',    tag: 'красно-зелёный', buy: '#4C8FBF', sell: '#DE9540' },
+  { key: 'blueyellow', label: 'Бирюза-роза',      tag: 'сине-жёлтый',    buy: '#2FA090', sell: '#C6577F' },
+  { key: 'contrast',   label: 'Высокий контраст', tag: 'макс. яркость',  buy: '#EFE7D4', sell: '#FF8A5B' },
 ];
+
+// Карточка палитры — свотчи + подпись, левое выравнивание. active = accent-заливка.
+const paletteCard = (active: boolean): CSSProperties => ({
+  display: 'flex', alignItems: 'center', gap: 9, textAlign: 'left', cursor: 'pointer',
+  padding: '9px 11px', borderRadius: 10, border: '2px solid var(--text-primary)',
+  background: active ? 'var(--accent)' : 'var(--bg-secondary)',
+  color: active ? 'var(--text-inverse)' : 'var(--text-primary)',
+  boxShadow: active ? '3px 3px 0 0 var(--text-primary)' : 'none',
+  transition: 'box-shadow 0.12s, background 0.12s',
+});
+const swatch = (bg: string): CSSProperties => ({
+  width: 14, height: 14, borderRadius: 4, background: bg, flex: '0 0 auto',
+  boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.18)',
+});
 
 /**
  * ChartSettings — единая кнопка-шестерёнка (в editorial-стиле, под стать
@@ -124,27 +143,33 @@ export default function ChartSettings({ chartType, onChartType, className = '' }
               </>
             )}
 
-            {/* Палитра — ГЛОБАЛЬНАЯ (accessibility), всегда доступна на любом графике. */}
+            {/* Палитра — ГЛОБАЛЬНАЯ (accessibility), всегда доступна на любом графике.
+                Несколько схем: одна не покрывает все типы дальтонизма. */}
             <div style={{ ...sectionLabel, marginTop: chartType && onChartType ? 22 : 0 }}>Палитра</div>
-            <div style={{ display: 'flex', gap: 10 }}>
-              {PALETTES.map(({ key, label, Icon }) => (
+            <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)', margin: '0 0 10px', lineHeight: 1.4 }}>
+              Выбери, где обе линии (покупки / продажи) хорошо различаешь. Действует на все графики.
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              {PALETTES.map((p) => (
                 <button
-                  key={key}
+                  key={p.key}
                   type="button"
                   className="editorial-press"
-                  onClick={() => setPalette(key)}
-                  style={optionPill(palette === key)}
-                  aria-pressed={palette === key}
+                  onClick={() => setPalette(p.key)}
+                  style={paletteCard(palette === p.key)}
+                  aria-pressed={palette === p.key}
                 >
-                  <Icon size={18} /> {label}
+                  <span style={{ display: 'flex', gap: 5 }}>
+                    <i style={swatch(p.buy)} />
+                    <i style={swatch(p.sell)} />
+                  </span>
+                  <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2, minWidth: 0 }}>
+                    <span style={{ fontWeight: 700, fontSize: 'var(--fs-sm)', whiteSpace: 'nowrap' }}>{p.label}</span>
+                    <span style={{ fontSize: 11, opacity: 0.7 }}>{p.tag}</span>
+                  </span>
                 </button>
               ))}
             </div>
-            {palette === 'colorblind' && (
-              <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)', marginTop: 10, lineHeight: 1.4 }}>
-                Сине-оранжевая схема (Okabe-Ito) вместо красно-зелёной — различима при дальтонизме. Действует на все графики.
-              </p>
-            )}
           </div>
         </div>
       )}
