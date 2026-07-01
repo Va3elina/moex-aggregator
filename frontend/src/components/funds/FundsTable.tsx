@@ -75,6 +75,8 @@ export default function FundsTable({
     }
     const hasStaleFunds = !!(laggardDate && maxDate && laggardDate < maxDate);
     const fmtDate = (iso: string) => iso.split('-').reverse().join('.');
+    // Короткий формат без года для второй (отстающей) даты в шапке.
+    const fmtDateShort = (iso: string) => iso.split('-').reverse().slice(0, 2).join('.');
 
     return (
         <div className="mt-6 rounded-2xl overflow-hidden editorial-frame" style={{ background: 'var(--bg-secondary)', padding: 0 }}>
@@ -83,7 +85,7 @@ export default function FundsTable({
                     <h3 className="font-semibold" style={{ fontSize: 'var(--fs-base)' }}>Фонды категории</h3>
                     {maxDate && (
                         <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-xs)' }}>
-                            данные на {fmtDate(maxDate)}
+                            данные на {fmtDate(maxDate)}{hasStaleFunds ? `, часть фондов на ${fmtDateShort(laggardDate)}` : ''}
                         </span>
                     )}
                 </div>
@@ -94,15 +96,6 @@ export default function FundsTable({
                     </span>
                 </div>
             </div>
-            {hasStaleFunds && (
-                <div className="text-theme-secondary" style={{
-                    fontSize: 'var(--fs-xs)', padding: 'var(--sp-2) var(--sp-4)',
-                    borderBottom: '1px solid var(--border-color)',
-                    background: 'color-mix(in srgb, var(--accent) 5%, transparent)',
-                }}>
-                    Данные ещё поступают, часть фондов уже актуальна. Самые свежие на {fmtDate(maxDate)}, самые запоздавшие на {fmtDate(laggardDate)}.
-                </div>
-            )}
             {data?.category === 'yuan' && (
                 <div className="text-theme-secondary" style={{
                     fontSize: 'var(--fs-xs)', padding: 'var(--sp-2) var(--sp-4)',
