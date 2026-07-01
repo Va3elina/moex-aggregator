@@ -78,6 +78,21 @@ export default function FundsTable({
     // Короткий формат без года для второй (отстающей) даты в шапке.
     const fmtDateShort = (iso: string) => iso.split('-').reverse().slice(0, 2).join('.');
 
+    // Мастер-переключатель «Выбрать все» над всеми подкатегориями. Семантика
+    // select-all: если выбраны все — клик снимает все; иначе (частично/никого) —
+    // выбирает все. Идёт по тем же fund_id, что и чекбоксы подкатегорий.
+    const allFundIds = (data?.funds ?? []).map(f => f.fund_id);
+    const allSelected = allFundIds.length > 0 && allFundIds.every(id => !hiddenFunds.has(id));
+    const anySelected = allFundIds.some(id => !hiddenFunds.has(id));
+    const toggleAllFunds = () => {
+        onSetHiddenFunds(prev => {
+            const next = new Set(prev);
+            if (allSelected) allFundIds.forEach(id => next.add(id));      // всё выбрано → снять все
+            else allFundIds.forEach(id => next.delete(id));              // не всё выбрано → выбрать все
+            return next;
+        });
+    };
+
     return (
         <div className="mt-6 rounded-2xl overflow-hidden editorial-frame" style={{ background: 'var(--bg-secondary)', padding: 0 }}>
             <div className="border-b border-theme flex items-center justify-between flex-wrap" style={{ padding: 'var(--sp-3) var(--sp-4)', gap: 'var(--sp-1) var(--sp-3)' }}>
@@ -138,6 +153,28 @@ export default function FundsTable({
                         </tr>
                     </thead>
                     <tbody>
+                        {allFundIds.length > 0 && (
+                            <tr className="border-b border-theme" style={{ background: 'color-mix(in srgb, var(--text-primary) 6%, transparent)' }}>
+                                <td className="px-4 py-3">
+                                    <div
+                                        className="flex items-center justify-center w-8 h-8 rounded-lg hover:bg-white/5 cursor-pointer transition-colors"
+                                        onClick={toggleAllFunds}
+                                    >
+                                        <input
+                                            type="checkbox"
+                                            checked={allSelected}
+                                            ref={el => { if (el) el.indeterminate = anySelected && !allSelected; }}
+                                            onChange={() => {}}
+                                            className="w-4 h-4 rounded border-theme cursor-pointer"
+                                            style={{ accentColor: 'var(--accent)' }}
+                                        />
+                                    </div>
+                                </td>
+                                <td colSpan={4} className="px-4 py-3 cursor-pointer select-none" onClick={toggleAllFunds}>
+                                    <span className="text-sm font-bold text-theme-primary">Выбрать все</span>
+                                </td>
+                            </tr>
+                        )}
                         {(() => {
                             if (!data?.funds) return null;
                             // Группируем фонды по подкатегории
