@@ -181,7 +181,7 @@ export default function SimpleChart({
     fontX: axisFontSize(vw),
     fontYWeight: cssVar('--chart-font-y-weight', 600),
     tooltipWidth: cssVar('--tooltip-width', 200),
-    dotPrimaryR: cssVar('--dot-primary-r', 6),
+    dotPrimaryR: cssVar('--dot-primary-r', 5),
     dotSecondaryR: cssVar('--dot-secondary-r', 5),
     linePrimaryW: cssVar('--line-primary-width', 3),
     lineSecondaryW: cssVar('--line-secondary-width', 2.5),

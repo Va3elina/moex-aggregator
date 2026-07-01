@@ -429,6 +429,38 @@ export default function YearlySeasonalityChart({
               </svg>
             );
           })()}
+
+          {/* Hover-точки на линиях (как на остальных графиках). Рисуем в
+              отдельном pixel-space SVG (основной SVG растянут
+              preserveAspectRatio=none → там circle стал бы эллипсом).
+              Координата X совпадает с crosshair (scX(yearlyTd)). */}
+          {tooltip?.yearlyTd !== undefined && dataAreaSize.h > 0 && (() => {
+            const td = tooltip.yearlyTd;
+            const xPx = scX(td) * dataAreaSize.w;
+            const dots: { y: number; color: string }[] = [];
+            visAllSeries.forEach((s, i) => {
+              const pt = s.average.find(p => p.td === td);
+              if (pt) dots.push({ y: scY(pt.avg_pct) * dataAreaSize.h, color: allMeta[i]?.color ?? CHART_COLORS.muted });
+            });
+            if (visCur.length > 0) {
+              const cpt = visCur.find(p => p.td === td);
+              if (cpt) dots.push({ y: scY(cpt.pct) * dataAreaSize.h, color: CHART_COLORS.accent });
+            }
+            if (dots.length === 0) return null;
+            return (
+              <svg
+                width={dataAreaSize.w}
+                height={dataAreaSize.h}
+                viewBox={`0 0 ${dataAreaSize.w} ${dataAreaSize.h}`}
+                style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none', overflow: 'visible', zIndex: 3 }}
+              >
+                {dots.map((d, i) => (
+                  <circle key={i} cx={xPx} cy={d.y} r={5}
+                    fill={d.color} stroke="var(--bg-secondary)" strokeWidth={2} />
+                ))}
+              </svg>
+            );
+          })()}
         </div>
 
         {/* Y labels — padRight=PR обязателен, иначе ChartYAxis использует
