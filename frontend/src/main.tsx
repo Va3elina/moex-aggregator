@@ -4,6 +4,7 @@ import { UnheadProvider, createHead } from '@unhead/react/client'
 import './index.css'
 import App from './App.tsx'
 import { reloadOnceForChunk } from './utils/chunkReload'
+import { readPalette, applyPalette } from './hooks/useChartPalette'
 
 // После деплоя hashed-имена code-split чанков меняются. Долго открытая вкладка
 // держит старый бандл и ссылается на чанк, которого новый билд уже не содержит,
@@ -21,6 +22,10 @@ window.addEventListener('vite:preloadError', (e) => {
 // per-page meta через useHead() — необходимо для SEO (каждая страница получает
 // свой <title>/<meta description>/canonical/JSON-LD вместо одинаковых из index.html).
 const head = createHead()
+
+// Глобальная палитра графиков (colorblind) — применяем ДО рендера, чтобы не было
+// вспышки красно-зелёного перед переключением на colorblind-safe (Okabe-Ito).
+applyPalette(readPalette())
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
