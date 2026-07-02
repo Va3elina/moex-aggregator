@@ -64,7 +64,7 @@ export default function FundsTable({
     // Общая дата данных (максимальный trade_date NAV среди фондов) — выводится в шапке;
     // в строках дата остаётся только у фондов, чья СЧА отстаёт от неё (stale NAV).
     // laggardDate — самая ранняя дата среди НЕ-locked фондов (тех же, что получают
-    // значок "!"): нужна для подписи о том, что часть данных ещё поступает.
+    // значок "!"): по ней определяем флаг hasStaleFunds (есть ли отстающие фонды).
     let maxDate = '';
     let laggardDate = '';
     for (const f of data?.funds ?? []) {
@@ -75,8 +75,6 @@ export default function FundsTable({
     }
     const hasStaleFunds = !!(laggardDate && maxDate && laggardDate < maxDate);
     const fmtDate = (iso: string) => iso.split('-').reverse().join('.');
-    // Короткий формат без года для второй (отстающей) даты в шапке.
-    const fmtDateShort = (iso: string) => iso.split('-').reverse().slice(0, 2).join('.');
 
     // Мастер-переключатель «Выбрать все» над всеми подкатегориями. Семантика
     // select-all: если выбраны все — клик снимает все; иначе (частично/никого) —
@@ -100,7 +98,18 @@ export default function FundsTable({
                     <h3 className="font-semibold" style={{ fontSize: 'var(--fs-base)' }}>Фонды категории</h3>
                     {maxDate && (
                         <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-xs)' }}>
-                            данные на {fmtDate(maxDate)}{hasStaleFunds ? `, часть фондов на ${fmtDateShort(laggardDate)}` : ''}
+                            данные на {fmtDate(maxDate)}
+                            {hasStaleFunds && (
+                                <>
+                                    , часть фондов запаздывает (отмечены{' '}
+                                    <AlertCircle
+                                        size={13}
+                                        strokeWidth={2.2}
+                                        style={{ display: 'inline', verticalAlign: '-0.15em', opacity: 0.6 }}
+                                    />
+                                    )
+                                </>
+                            )}
                         </span>
                     )}
                 </div>
