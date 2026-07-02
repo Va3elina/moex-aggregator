@@ -1459,6 +1459,11 @@
   /* Legend-to-chart gap (внешний отступ между легендой и верхом чарт-контейнера) */
   --chart-legend-mb: 16px;
 
+  /* Зазор top-легенды от верхней границы paper-card. У SimpleChart контейнер
+     p-5 (20px) — легенда подтягивается negative margin'ом до этого зазора,
+     чтобы стоять почти вплотную к верху, как зона легенды в cbr-flows (--sp-2). */
+  --chart-legend-top-gap: var(--sp-2);
+
   /* Annotation row (кружочки событий под графиком — FlowsHistogram) */
   --chart-annotation-height: 28px;
   --chart-annotation-offset: -34px;  /* негативный margin-top чтобы наложить на чарт-низ */
