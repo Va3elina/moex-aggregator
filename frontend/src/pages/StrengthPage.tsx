@@ -420,14 +420,14 @@ export default function StrengthPage() {
                 )}
                 {/* Полный loading / error на месте графика */}
                 {loading && !current ? (
-                    <div className="flex items-center justify-center" style={{ height: (showPrice ? heights.top + 34 : 0) + (showPrice ? heights.bottomDual : heights.bottomSolo) + 24 + 68 }}>
+                    <div className="flex items-center justify-center" style={{ height: (showPrice ? heights.top + 16 : 0) + (showPrice ? heights.bottomDual : heights.bottomSolo) + 16 + 68 }}>
                         <div className="flex flex-col items-center gap-3">
                             <div className="w-8 h-8 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
                             <span className="text-theme-secondary">Загрузка...</span>
                         </div>
                     </div>
                 ) : error && !current ? (
-                    <div className="flex items-center justify-center" style={{ height: (showPrice ? heights.top + 34 : 0) + (showPrice ? heights.bottomDual : heights.bottomSolo) + 24 + 68 }}>
+                    <div className="flex items-center justify-center" style={{ height: (showPrice ? heights.top + 16 : 0) + (showPrice ? heights.bottomDual : heights.bottomSolo) + 16 + 68 }}>
                         <div className="text-center">
                             <Activity className="w-12 h-12 text-red-400 mx-auto mb-3" />
                             <p className="text-red-400">{error}</p>
@@ -551,12 +551,14 @@ export default function StrengthPage() {
                     })()}
 
                     {/* График IMOEX (верхний).
-                        minHeight = height SVG + высота блока заголовка (mb-5=20 + text-sm=14) ≈ 34px.
+                        minHeight = height SVG + высота блока заголовка (legend ~14 + mb 2) ≈ 16px.
+                        paddingTop/marginBottom легенды — единые токены геометрии
+                        (--chart-legend-top-gap / --chart-legend-mb), как в SimpleChart.
                         Mobile: px-1 (4px) вместо px-4 (16px) — освобождаем 24px для графика. */}
                     {showPrice && (
-                        <div className="px-1 md:px-4 pt-4 pb-1 border-b border-theme relative overflow-hidden"
-                             style={{ minHeight: heights.top + 34 }}>
-                            <div className="flex items-center justify-center mb-5 relative z-10">
+                        <div className="px-1 md:px-4 pb-1 border-b border-theme relative overflow-hidden"
+                             style={{ minHeight: heights.top + 16, paddingTop: 'var(--chart-legend-top-gap, 8px)' }}>
+                            <div className="flex items-center justify-center relative z-10" style={{ marginBottom: 'var(--chart-legend-mb, 2px)' }}>
                                 <ChartLegend
                                     items={[{ color: 'var(--accent)', label: priceChartLabel }]}
                                     fontWeight={600}
@@ -574,11 +576,11 @@ export default function StrengthPage() {
                     )}
 
                     {/* График Breadth (нижний) — расширяется когда IMOEX скрыт.
-                        minHeight = height SVG + высота блока заголовка (mb-2=8 + text-sm=14 + margin) ≈ 24px.
+                        minHeight = height SVG + высота блока заголовка (legend ~14 + mb 2) ≈ 16px.
                         Mobile: px-1 (4px) — стрейчим график влево. */}
                     <div className="px-1 md:px-4 pt-2 pb-1 relative overflow-hidden"
-                         style={{ minHeight: (showPrice ? heights.bottomDual : heights.bottomSolo) + 24 }}>
-                        <div className="flex items-center justify-center mb-2 relative z-10">
+                         style={{ minHeight: (showPrice ? heights.bottomDual : heights.bottomSolo) + 16 }}>
+                        <div className="flex items-center justify-center relative z-10" style={{ marginBottom: 'var(--chart-legend-mb, 2px)' }}>
                             <ChartLegend
                                 items={[{ color: 'var(--accent)', label: `% акций выше EMA${emaPeriod}` }]}
                                 fontWeight={600}

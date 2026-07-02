@@ -253,7 +253,7 @@ export default function YearlySeasonalityChart({
           каждая со своим цветом линии. Название актива убрано — оно есть
           в заголовке карточки, дублирование выглядело перегружено. */}
       <div
-        style={{ marginBottom: 'var(--seasonality-legend-mb, 12px)' }}
+        style={{ marginBottom: 'var(--seasonality-legend-mb, var(--chart-legend-mb, 2px))' }}
         className="flex items-center justify-center gap-3 flex-wrap"
       >
         <ChartLegend
@@ -299,10 +299,11 @@ export default function YearlySeasonalityChart({
         }}
         onTouchEnd={() => setTooltip(null)}
       >
-        {/* Date pill — absolute over chart, bottom 5px above top grid line (y=PT).
-            Pill height ~22px → wrapper top = PT - 5 - 22 = PT - 27. */}
+        {/* Date pill — absolute над верхней грид-линией (y=PT): низ текста
+            (~14px) на 3px ниже линии, как PILL_GAP_ABOVE_LINE в остальных
+            графиках → wrapper top = PT + 3 - 14 = PT - 11. */}
         {tooltip?.yearlyCurDate && (
-          <div className="absolute pointer-events-none" style={{ top: PT - 27, left: 0, right: 0, zIndex: 5 }}>
+          <div className="absolute pointer-events-none" style={{ top: PT - 11, left: 0, right: 0, zIndex: 5 }}>
             <ChartDateLabel date={tooltip.yearlyCurDate} x={tooltip.x} />
           </div>
         )}

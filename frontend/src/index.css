@@ -1540,7 +1540,9 @@
      справа — место под Y-цифры. По просьбе пользователя. */
   --strength-pad-left: 70px;
   --strength-pad-right: 70px;
-  --strength-pad-top: 10px;
+  /* top 10→14: матчит --chart-pad-top — зазор легенда→верхняя линия единый
+     со всеми графиками (legend-mb 2 + pad-top 14 ≈ 16px). */
+  --strength-pad-top: 14px;
   --strength-pad-bottom: 30px;
   --strength-chart-top-height: 300px;      /* IMOEX (верхний) */
   --strength-chart-bottom-height: 150px;   /* Breadth когда IMOEX показан */

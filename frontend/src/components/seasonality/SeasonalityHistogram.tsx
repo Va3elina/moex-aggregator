@@ -198,9 +198,11 @@ export default function SeasonalityHistogram({
           справа — но это дублировало информацию: цвет баров уже несёт смысл
           (зелёные ≥ 0, красные < 0), а тикер дублировался с заголовком карточки.
           Теперь весь identifier графика — один flex-item (кружок + label). */}
-      {/* Легенда — периоды/года, каждый со своим цветом-кружком. */}
+      {/* Легенда — периоды/года, каждый со своим цветом-кружком.
+          top-0: карточка сверху уже даёт 8px (md:pt-2 / p-2) — итоговый зазор
+          от верхней границы = --chart-legend-top-gap, как в OI. */}
       {periodItems.length > 0 && (
-        <div className="absolute top-1 left-1/2 -translate-x-1/2 z-20 pointer-events-none">
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 z-20 pointer-events-none">
           <ChartLegend
             items={periodItems}
             fontWeight={600}

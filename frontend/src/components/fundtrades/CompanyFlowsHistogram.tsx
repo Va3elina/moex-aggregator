@@ -245,8 +245,10 @@ export default function CompanyFlowsHistogram({
                 )}
 
                 <div>
-                    {/* Заголовок графика — тем же ChartLegend (SVG-text), что и в макете. */}
-                    <div style={{ marginBottom: 'var(--chart-legend-mb, 16px)' }}>
+                    {/* Заголовок графика — тем же ChartLegend (SVG-text), что и в макете.
+                        Negative margin-top компенсирует p-5 (20px) карточки — легенда
+                        на --chart-legend-top-gap от верхней границы, как в SimpleChart. */}
+                    <div style={{ marginTop: 'calc(var(--chart-legend-top-gap, 8px) - 20px)', marginBottom: 'var(--chart-legend-mb, 16px)' }}>
                         <ChartLegend
                             items={[{ color: 'transparent', label: title, marker: 'none' }]}
                             fontWeight={600}
