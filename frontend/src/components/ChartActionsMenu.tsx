@@ -44,9 +44,17 @@ export default function ChartActionsMenu({ children, containerRef, tourId }: Cha
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
+      const t = e.target instanceof Element ? e.target : (e.target as Node)?.parentElement;
+      // Модалки настроек (ChartSettings) живут body-порталом ВНЕ ref — клик в них
+      // не «снаружи»: закрытие меню размонтировало бы открытую модалку.
+      if (t?.closest('[data-chart-modal]')) return;
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    // Esc при открытой модалке настроек закрывает ТОЛЬКО её (свой обработчик
+    // в ChartSettings), меню остаётся — иначе модалка размонтируется вместе с ним.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !document.querySelector('[data-chart-modal]')) setOpen(false);
+    };
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
     return () => {

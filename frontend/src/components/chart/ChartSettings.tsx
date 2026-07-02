@@ -1,4 +1,5 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { Settings2, X, LineChart, AreaChart, ChartCandlestick, ChartColumnBig } from 'lucide-react';
 import { useChartPalette, type ChartPalette } from '../../hooks/useChartPalette';
 import { useChartSettings, OHLC_TYPES, type ChartSeriesType } from '../../hooks/useChartSettings';
@@ -145,8 +146,19 @@ export default function ChartSettings({ showType = true, ohlcHere = false, scope
         <Settings2 size={22} />
       </button>
 
-      {open && (
-        <div style={overlay} onClick={() => setOpen(false)} role="dialog" aria-modal="true">
+      {/* Модалка — ПОРТАЛОМ в body: сама кнопка живёт внутри chart-карточки
+          (portal kebab-меню), и position:fixed там заперт в stacking-контексте
+          карточки — табы категорий (Деньги в фондах) рисовались ПОВЕРХ модалки. */}
+      {open && createPortal(
+        <div
+          style={overlay}
+          onClick={() => setOpen(false)}
+          role="dialog"
+          aria-modal="true"
+          // Маркер для ChartActionsMenu: мы в body-портале, mousedown внутри
+          // модалки НЕ должен закрывать kebab (иначе модалка размонтируется).
+          data-chart-modal="true"
+        >
           <div style={card} onClick={(e) => e.stopPropagation()}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 'var(--fs-lg)', color: 'var(--text-primary)' }}>
@@ -257,7 +269,8 @@ export default function ChartSettings({ showType = true, ohlcHere = false, scope
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );
