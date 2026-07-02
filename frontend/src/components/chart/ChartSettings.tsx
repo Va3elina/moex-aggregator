@@ -12,6 +12,10 @@ interface Props {
    *  false (default) — OHLC-типы СКРЫТЫ (фидбек Вадима: не дизейблить, убирать).
    *  Глобально выбранный OHLC-тип на страницах без OHLC откатывается на линию. */
   ohlcHere?: boolean;
+  /** Человеческие подписи пилюль «Применять к» под КОНКРЕТНЫЙ график страницы —
+   *  «серия» никому не понятна (фидбек Вадима). ОИ: «Только цена» /
+   *  «Цена + линии ОИ»; Баффетт: «Только капитализация» / «Все линии»; и т.д. */
+  scopeLabels?: { primary: string; all: string };
   /** Доп. классы для кнопки-шестерёнки (размер/позиция как у соседних кнопок). */
   className?: string;
 }
@@ -105,10 +109,11 @@ const swatch = (bg: string): CSSProperties => ({
  *  - штрих-режим (различие линий формой — полная монохромность).
  * Состояние — в useChartSettings/useChartPalette, пропсов-коллбэков нет.
  */
-export default function ChartSettings({ showType = true, ohlcHere = false, className = '' }: Props) {
+export default function ChartSettings({ showType = true, ohlcHere = false, scopeLabels, className = '' }: Props) {
   const [open, setOpen] = useState(false);
   const [palette, setPalette] = useChartPalette();
   const { type, dash, scope, setType, setDash, setScope } = useChartSettings();
+  const sl = scopeLabels ?? { primary: 'Только основная линия', all: 'Все линии графика' };
 
   useEffect(() => {
     if (!open) return;
@@ -185,7 +190,7 @@ export default function ChartSettings({ showType = true, ohlcHere = false, class
                     style={{ ...optionPill(scope === 'primary'), flex: 1, justifyContent: 'center' }}
                     aria-pressed={scope === 'primary'}
                   >
-                    Основной серии
+                    {sl.primary}
                   </button>
                   <button
                     type="button"
@@ -194,7 +199,7 @@ export default function ChartSettings({ showType = true, ohlcHere = false, class
                     style={{ ...optionPill(scope === 'all'), flex: 1, justifyContent: 'center' }}
                     aria-pressed={scope === 'all'}
                   >
-                    Всем сериям
+                    {sl.all}
                   </button>
                 </div>
               </>

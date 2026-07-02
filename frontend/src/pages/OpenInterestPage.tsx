@@ -767,7 +767,7 @@ export default function OpenInterestPage() {
               ].filter(Boolean),
             }}
           />
-          <ChartSettings ohlcHere />
+          <ChartSettings ohlcHere scopeLabels={{ primary: 'Только цена', all: 'Цена + линии ОИ' }} />
           {ALERTS_ENABLED && (
           <AlertBellButton
             indicator="open_interest"
