@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { BarChart3 } from 'lucide-react';
 import type { FundsFlowsResponse } from '../../services/api';
-import { CHART_COLORS, GRID, CROSSHAIR } from '../../config/chartTheme';
+import { CHART_COLORS, GRID, CROSSHAIR, TOOLTIP } from '../../config/chartTheme';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import ChartWatermark from '../ChartWatermark';
 import ChartNavigator from '../ChartNavigator';
@@ -414,7 +414,7 @@ export default function FlowsHistogram({
                         className="absolute z-20 pointer-events-none"
                         style={getDatePillStyle(centerX, topLineY)}
                     >
-                        <span className="text-theme-secondary rounded border border-theme whitespace-nowrap" style={{ background: 'var(--bg-primary)', padding: 'calc(var(--sp-1)) var(--sp-2)', fontSize: 'var(--fs-2xs)' }}>
+                        <span className={TOOLTIP.datePillClass} style={TOOLTIP.datePillStyle}>
                             {dateStr}
                         </span>
                     </div>

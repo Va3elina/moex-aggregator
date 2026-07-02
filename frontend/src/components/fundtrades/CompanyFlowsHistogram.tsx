@@ -22,7 +22,7 @@ import {
     type CSSProperties,
 } from 'react';
 import { BarChart3 } from 'lucide-react';
-import { GRID, CROSSHAIR, ANIMATION } from '../../config/chartTheme';
+import { GRID, CROSSHAIR, ANIMATION, TOOLTIP } from '../../config/chartTheme';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import ChartWatermark from '../ChartWatermark';
 import ChartNavigator from '../ChartNavigator';
@@ -447,7 +447,7 @@ export default function CompanyFlowsHistogram({
                     const dateStr = monthToDate(m).toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
                     return (
                         <div className="absolute z-20 pointer-events-none" style={getDatePillStyle(centerX, topLineY) as CSSProperties}>
-                            <span className="text-theme-secondary rounded border border-theme whitespace-nowrap" style={{ background: 'var(--bg-primary)', padding: 'calc(var(--sp-1)) var(--sp-2)', fontSize: 'var(--fs-2xs)' }}>
+                            <span className={TOOLTIP.datePillClass} style={TOOLTIP.datePillStyle}>
                                 {dateStr}
                             </span>
                         </div>

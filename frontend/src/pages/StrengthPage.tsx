@@ -27,6 +27,7 @@ import { periodToQuery } from '../utils/csvPeriod';
 import StrengthControls from '../components/strength/StrengthControls';
 import DollarStaleHint from '../components/strength/DollarStaleHint';
 import { computeChartTopLineY, getDatePillStyle } from '../components/chart/datePillLayout';
+import { TOOLTIP } from '../config/chartTheme';
 import { useOnboardingTour } from '../hooks/useFirstVisit';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { strengthTourSteps } from '../data/tours/strength';
@@ -501,14 +502,7 @@ export default function StrengthPage() {
                                     className="absolute z-20 pointer-events-none"
                                     style={getDatePillStyle(hoverX, topLineY)}
                                 >
-                                    <span
-                                        className="text-theme-secondary rounded border border-theme whitespace-nowrap shadow-sm"
-                                        style={{
-                                            background: 'var(--bg-primary)',
-                                            padding: '2px var(--sp-2)',
-                                            fontSize: 'var(--fs-2xs)',
-                                        }}
-                                    >
+                                    <span className={TOOLTIP.datePillClass} style={TOOLTIP.datePillStyle}>
                                         {dateStr}
                                     </span>
                                 </div>
