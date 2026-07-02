@@ -23,6 +23,7 @@ import { getCategoryShortLabel } from './cbrCategoryInfo';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
 import ChartLegend, { type ChartLegendItem } from '../chart/ChartLegend';
+import ChartDatePill from '../chart/ChartDatePill';
 import ChartWatermark from '../ChartWatermark';
 import { TOOLTIP } from '../../config/chartTheme';
 
@@ -254,12 +255,15 @@ export default function StackedBidirectionalHistogram({
     >
       {/* ═══ Зона легенды — auto height, не сжимается при wrap (7 категорий
               могут перейти на 2 строки на узком viewport). flex-shrink: 0
-              чтобы legend никогда не уходила за верхний край. ═══ */}
+              чтобы legend никогда не уходила за верхний край.
+              Отступы — единые токены геометрии графиков: сверху
+              --chart-legend-top-gap (зазор от верха paper-card), снизу
+              --chart-legend-mb (зазор легенда → chart-area). ═══ */}
       <div
         style={{
           flexShrink: 0,
-          paddingTop: 'var(--sp-2)',
-          paddingBottom: 'var(--sp-2)',
+          paddingTop: 'var(--chart-legend-top-gap, 8px)',
+          paddingBottom: 'var(--chart-legend-mb, 2px)',
         }}
       >
         <ChartLegend items={legendItems} />
@@ -484,6 +488,28 @@ export default function StackedBidirectionalHistogram({
         >
           <ChartWatermark />
         </div>
+
+        {/* Плавающая дата над графиком — единый стиль/позиция со всеми чартами
+            (ChartDatePill: прозрачный текст, низ прижат к верхней грид-линии,
+            кламп в границах chart-area чтобы не наезжать на Y-шкалу). */}
+        {hover && periods[hover.periodIdx] && (() => {
+          const cs = getComputedStyle(document.documentElement);
+          const padLeft = parseFloat(cs.getPropertyValue('--chart-pad-left')) || 100;
+          const padRight = parseFloat(cs.getPropertyValue('--chart-pad-right-single')) || 95;
+          const padTop = parseFloat(cs.getPropertyValue('--chart-pad-top')) || 14;
+          const w = containerRef.current?.clientWidth ?? 800;
+          const slotW = (w - padLeft - padRight) / periods.length;
+          const p = periods[hover.periodIdx];
+          return (
+            <ChartDatePill
+              date={`${p.label} ${p.year}`}
+              x={padLeft + (hover.periodIdx + 0.5) * slotW}
+              topLineY={padTop}
+              minX={padLeft}
+              maxX={w - padRight}
+            />
+          );
+        })()}
       </div>
 
       {/* === Tooltip === */}
@@ -547,9 +573,6 @@ export default function StackedBidirectionalHistogram({
               whiteSpace: 'normal',
             }}
           >
-            <div className={TOOLTIP.dateClass} style={{ ...TOOLTIP.dateStyle, marginBottom: 'var(--sp-1)', display: 'inline-block' }}>
-              {p.label} {p.year}
-            </div>
             {sortedPositive.map((e) => (
               <div key={e.cat} className="flex items-center justify-between py-0.5" style={{ gap: 'var(--sp-2)' }}>
                 <div className="flex items-center min-w-0" style={{ gap: 'var(--sp-1)' }}>

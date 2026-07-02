@@ -116,8 +116,10 @@ export default function FlowsHistogram({
             <div>
                 {/* Заголовок графика — одно обобщающее название вместо двухпунктовой
                     легенды. Рендерим тем же ChartLegend (SVG-text), что и легенда СЧА,
-                    чтобы шрифт и жирность совпадали 1-в-1; marker 'none' — без кружка. */}
-                <div style={{ marginBottom: 'var(--chart-legend-mb, 16px)' }}>
+                    чтобы шрифт и жирность совпадали 1-в-1; marker 'none' — без кружка.
+                    Negative margin-top компенсирует p-5 (20px) карточки — легенда
+                    на --chart-legend-top-gap от верхней границы, как в SimpleChart. */}
+                <div style={{ marginTop: 'calc(var(--chart-legend-top-gap, 8px) - 20px)', marginBottom: 'var(--chart-legend-mb, 16px)' }}>
                     <ChartLegend
                         items={[{ color: 'transparent', label: flowTitle, marker: 'none' }]}
                         fontWeight={600}

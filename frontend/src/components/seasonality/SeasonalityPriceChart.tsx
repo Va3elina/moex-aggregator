@@ -70,8 +70,9 @@ export default function SeasonalityPriceChart({
     return { min: min - range * 0.05, max: max + range * 0.05 };
   }, [pricePoints]);
 
-  // Padding from CSS tokens (with fallback)
-  const PL = cssVar('--chart-pad-left', PADDING.left), PR = cssVar('--chart-pad-right-single', PADDING.rightSingle), PT = PADDING.top, PB = 60;
+  // Padding from CSS tokens (with fallback). PT — из --chart-pad-top:
+  // единый зазор легенда→верхняя линия со всеми графиками.
+  const PL = cssVar('--chart-pad-left', PADDING.left), PR = cssVar('--chart-pad-right-single', PADDING.rightSingle), PT = cssVar('--chart-pad-top', PADDING.top), PB = 60;
   const hasAdj = pricePoints.some(p => p.close !== p.adjusted);
   const scX = (i: number) => (i / Math.max(pricePoints.length - 1, 1));
   const scY = (v: number) => 1 - (v - priceMinMax.min) / (priceMinMax.max - priceMinMax.min);
@@ -175,8 +176,9 @@ export default function SeasonalityPriceChart({
 
   return (
     <div>
-      {/* Legend centered — SVG-based через <ChartLegend> для pixel-perfect alignment */}
-      <div className="mb-3">
+      {/* Legend centered — SVG-based через <ChartLegend> для pixel-perfect alignment.
+          margin-bottom — единый токен --chart-legend-mb (зазор легенда → chart). */}
+      <div style={{ marginBottom: 'var(--chart-legend-mb, 2px)' }}>
         <ChartLegend
           items={[
             { color: CHART_COLORS.accent, label: 'Цена' },
@@ -187,13 +189,6 @@ export default function SeasonalityPriceChart({
           style={{ color: 'var(--text-primary)' }}
         />
       </div>
-
-      {/* Floating date label */}
-      {tooltip?.priceDate ? (
-        <ChartDateLabel date={tooltip.priceDate} x={tooltip.x} />
-      ) : (
-        <div style={{ height: 22 }} />
-      )}
 
       {/* Chart area — chart-reveal класс активируется после первого рендера.
           touchAction: none + onTouch* handlers → поддержка водения пальцем на mobile. */}
@@ -253,6 +248,15 @@ export default function SeasonalityPriceChart({
         }}
         onTouchEnd={() => { divHoverRef.current = false; setTooltip(null); }}
       >
+        {/* Floating date — absolute над верхней грид-линией (y=PT), как в
+            SimpleChart/Yearly: низ текста (~14px) на 3px ниже линии
+            (= PILL_GAP_ABOVE_LINE в datePillLayout). Раньше дата занимала
+            отдельный 22px-ряд между легендой и графиком. */}
+        {tooltip?.priceDate && (
+          <div className="absolute pointer-events-none" style={{ top: PT - 11, left: 0, right: 0, zIndex: 5 }}>
+            <ChartDateLabel date={tooltip.priceDate} x={tooltip.x} />
+          </div>
+        )}
         {/* SVG */}
         <div className="absolute" style={{ left: PL, right: PR, top: PT, bottom: PB }}>
           <svg viewBox={`0 0 1000 500`} preserveAspectRatio="none" width="100%" height="100%">

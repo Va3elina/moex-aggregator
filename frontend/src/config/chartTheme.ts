@@ -155,19 +155,13 @@ export const TOOLTIP = {
   labelStyle: { fontSize: 'var(--fs-2xs)' },
   valueClass: 'font-semibold tabular-nums whitespace-nowrap',
   valueStyle: { fontSize: 'var(--fs-2xs)' },  // унифицировано с labelStyle для компактности
-  dateClass: 'text-theme-secondary border border-theme rounded-md tabular-nums whitespace-nowrap',
-  dateStyle: {
-    background: 'var(--bg-primary)',  // paper
-    padding: 'calc(var(--sp-1)) var(--sp-2)',
-    fontSize: 'var(--fs-2xs)',
-    whiteSpace: 'nowrap' as const,
-  },
   /* Плавающая дата над графиком (crosshair/annotation hover) — без рамки и
      без подложки: только текст. Прозрачный фон убирает саму проблему обрезки
      высоких букв (Д, У, цифры) краем paper-прямоугольника. Безопасно, т.к.
      дата стоит НАД верхней линией графика, а вертикальный crosshair начинается
-     ровно от неё — линия не проходит за цифрами. dateClass/dateStyle с рамкой
-     остаются для даты ВНУТРИ hover-карточки (cbr-flows). */
+     ровно от неё — линия не проходит за цифрами. Бывшие dateClass/dateStyle
+     (рамка + paper) удалены — последний потребитель (дата внутри hover-карточки
+     cbr-flows) переведён на эту же плавающую пилюлю. */
   datePillClass: 'text-theme-secondary tabular-nums whitespace-nowrap',
   datePillStyle: {
     background: 'transparent',

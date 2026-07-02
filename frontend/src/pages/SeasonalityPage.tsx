@@ -792,9 +792,11 @@ export default function SeasonalityPage() {
       {/* Existing Chart block — hidden in test mode.
           Paper-card как в OI/Funds-Money: rounded-2xl + p-5 + bg-theme-primary
           + 2px inkstroke. Editorial-стандарт: chart cards = 2px (тяжёлая рамка),
-          chips/buttons = 1.5px. Иерархия по толщине обводки. */}
+          chips/buttons = 1.5px. Иерархия по толщине обводки.
+          md:pt-2 (8px) — верхний паддинг ужат: легенда графика на том же
+          зазоре от верхней границы карточки, что и в OI (--chart-legend-top-gap). */}
       {chartType !== 'test' && (
-      <div ref={chartCardRef} data-tour="seasonality-chart" className="relative rounded-2xl bg-theme-primary p-2 md:p-5" style={{ border: '2px solid var(--text-primary)' }}>
+      <div ref={chartCardRef} data-tour="seasonality-chart" className="relative rounded-2xl bg-theme-primary p-2 md:p-5 md:pt-2" style={{ border: '2px solid var(--text-primary)' }}>
         {/* Спиннер обновления — paper-style без glass */}
         {loading && (bars.length > 0 || priceData || yearlyData) && (
           <div
