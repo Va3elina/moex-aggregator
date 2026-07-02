@@ -18,10 +18,12 @@ export const OHLC_TYPES: ReadonlyArray<ChartSeriesType> = ['candles', 'bars', 'h
 
 const ALL_TYPES: ReadonlyArray<ChartSeriesType> = ['line', 'area', 'columns', 'candles', 'bars', 'heikin'];
 
-/** К чему применять тип: только основная серия или все серии графика
- *  (area/columns красят и вторичные линии; OHLC-типы всё равно только там,
- *  где есть OHLC — вторичные серии остаются линиями). */
-export type ChartTypeScope = 'primary' | 'all';
+/** К какой линии применять тип — юзер выбирает сам (фидбек Вадима: «1, 2 или все»):
+ *  'primary' — только первая (основная) линия; 'secondary' — только вторые
+ *  линии (напр. линии ОИ), первая остаётся линией; 'all' — все. Касается
+ *  area/columns; OHLC-типы (свечи/бары/хайкен) физически применимы только к
+ *  линии с OHLC-данными (цена) — они рисуются там при любом scope. */
+export type ChartTypeScope = 'primary' | 'secondary' | 'all';
 
 const TYPE_KEY = 'frame:chart:type';
 const DASH_KEY = 'frame:chart:dash';
@@ -50,7 +52,8 @@ function read(): ChartSettingsState {
       const legacy = localStorage.getItem(LEGACY_OI_TYPE_KEY);
       if (legacy === '"area"' || legacy === 'area') type = 'area';
     }
-    if (localStorage.getItem(SCOPE_KEY) === 'all') scope = 'all';
+    const sc = localStorage.getItem(SCOPE_KEY);
+    if (sc === 'all' || sc === 'secondary') scope = sc;
     dash = localStorage.getItem(DASH_KEY) === '1';
   } catch { /* private mode / SSR — дефолты */ }
   return { type, scope, dash };

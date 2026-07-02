@@ -884,7 +884,7 @@ export default function FundsMoneyPage() {
                         return { '--chart-pad-left': 'calc(var(--chart-pad-right-single) - 12px)' };
                     }}
                 />
-                <ChartSettings scopeLabels={{ primary: 'Только СЧА', all: 'СЧА + индекс' }} />
+                <ChartSettings scopeLabels={{ primary: 'СЧА', secondary: 'Индекс' }} />
                 </ChartActionsMenu>
             </div>
 
