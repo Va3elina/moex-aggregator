@@ -162,17 +162,16 @@ export const TOOLTIP = {
     fontSize: 'var(--fs-2xs)',
     whiteSpace: 'nowrap' as const,
   },
-  /* Плавающая дата над графиком (crosshair/annotation hover) — без рамки,
-     просто текст на paper-подложке, прижатый к верхней линии графика
-     (PILL_GAP_ABOVE_LINE в datePillLayout.ts опускает низ чуть в plot).
-     Вертикальный padding 2px — воздух над верхушками высоких букв (Д, У,
-     цифры): при padding 0 верх глифов совпадал с краем paper-подложки и
-     буквы выглядели обрезанными. dateClass/dateStyle с рамкой остаются
-     для даты ВНУТРИ hover-карточки (cbr-flows). */
+  /* Плавающая дата над графиком (crosshair/annotation hover) — без рамки и
+     без подложки: только текст. Прозрачный фон убирает саму проблему обрезки
+     высоких букв (Д, У, цифры) краем paper-прямоугольника. Безопасно, т.к.
+     дата стоит НАД верхней линией графика, а вертикальный crosshair начинается
+     ровно от неё — линия не проходит за цифрами. dateClass/dateStyle с рамкой
+     остаются для даты ВНУТРИ hover-карточки (cbr-flows). */
   datePillClass: 'text-theme-secondary tabular-nums whitespace-nowrap',
   datePillStyle: {
-    background: 'var(--bg-primary)',  // paper — маскирует crosshair за текстом
-    padding: '2px var(--sp-2)',
+    background: 'transparent',
+    padding: '0 var(--sp-2)',
     fontSize: 'var(--fs-2xs)',
     whiteSpace: 'nowrap' as const,
   },
