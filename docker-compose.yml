@@ -3,6 +3,32 @@
 # Запуск: docker compose up -d
 # ═══════════════════════════════════════════════════════════════
 
+# ─── Логи контейнеров (пост-инцидент 02.07.2026) ─────────────────
+# Разбор I/O-шторма упёрся в то, что docker logs api/orchestrator гибнут при
+# rolling-recreate деплоя (json-файл лога удаляется вместе с контейнером,
+# ротация max-size этого НЕ лечит). Поэтому:
+#
+# • api / orchestrator / db → journald-драйвер: лог уходит в системный журнал
+#   хоста и переживает recreate. Читать: `journalctl -t frame-api --since ...`
+#   (tag = SYSLOG_IDENTIFIER, стабилен при росте имени frame-api-N);
+#   `docker logs` продолжает работать — драйвер умеет читать журнал обратно.
+#   mode=non-blocking: приложение НИКОГДА не блокируется на записи лога —
+#   journald на этом сервере сам жертва I/O-штормов (watchdog-kill 02.07,
+#   10.04), при его затыке строки копятся в буфере 4МБ и излишек дропается.
+#   Потерять строки лучше, чем стопнуть event loop uvicorn'а.
+#
+# • redis / nginx / tg-bot / certbot → json-file с ротацией: деплой их не
+#   пересоздаёт (история не гибнет), но без ротации файл растёт бесконечно
+#   (tg-bot дорос до 17МБ за 2 недели).
+x-journald-opts: &journald-opts
+  mode: "non-blocking"
+  max-buffer-size: "4m"
+x-log-json: &log-json
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   # ═══════════════════════════════════════════════════════════════
   # PostgreSQL
@@ -21,6 +47,14 @@ services:
     # всё равно кэширует горячие таблицы графиков (~274МБ), а work_mem-выигрыш на
     # сортировках от shared_buffers не зависит. При апгрейде до 8ГБ —
     # shared_buffers=2GB, work_mem=32MB, effective_cache_size=6GB.
+    # pg_stat_statements + track_io_timing (пост-инцидент 02.07.2026, I/O-шторм):
+    # без per-query статистики разбор «кто пёк диск» упирается в отсутствие
+    # истории. track_io_timing даёт blk_read/write_time в разрезе запросов.
+    # Накладные: ~10МБ shared memory (5k statements) + дешёвый clock_gettime.
+    # ⚠️ Вступает в силу только при recreate db-контейнера (деплой db НЕ трогает,
+    # см. scripts/prod_deploy.sh) — пересоздавать вручную в согласованный момент:
+    #   cd /opt/frame && docker compose up -d --no-deps --force-recreate db
+    # CREATE EXTENSION уже выполнен заранее (безвреден до загрузки библиотеки).
     command:
       - "postgres"
       - "-c"
@@ -31,6 +65,10 @@ services:
       - "effective_cache_size=2560MB"
       - "-c"
       - "maintenance_work_mem=256MB"
+      - "-c"
+      - "shared_preload_libraries=pg_stat_statements"
+      - "-c"
+      - "track_io_timing=on"
     environment:
       POSTGRES_DB: ${DB_NAME:-moex_db}
       POSTGRES_USER: ${DB_USER:-postgres}
@@ -45,6 +83,13 @@ services:
       timeout: 5s
       retries: 5
     shm_size: 256mb
+    # journald: checkpoint/error-логи postgres переживают recreate — при разборе
+    # I/O-инцидентов это ровно та история, которой не хватало 02.07.
+    logging:
+      driver: journald
+      options:
+        <<: *journald-opts
+        tag: "frame-db"
 
   # ═══════════════════════════════════════════════════════════════
   # Redis (общий кеш между воркерами)
@@ -61,6 +106,7 @@ services:
       interval: 10s
       timeout: 3s
       retries: 3
+    logging: *log-json
 
   # ═══════════════════════════════════════════════════════════════
   # FastAPI + Frontend (SPA)
@@ -199,6 +245,13 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+    # journald: история api переживает rolling-recreate (имя контейнера растёт
+    # frame-api-N, но tag стабилен → journalctl -t frame-api за все поколения).
+    logging:
+      driver: journald
+      options:
+        <<: *journald-opts
+        tag: "frame-api"
 
   # ═══════════════════════════════════════════════════════════════
   # Оркестратор (сбор данных)
@@ -252,6 +305,11 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+    logging:
+      driver: journald
+      options:
+        <<: *journald-opts
+        tag: "frame-orchestrator"
 
   # ═══════════════════════════════════════════════════════════════
   # Telegram Admin Bot
@@ -279,6 +337,7 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+    logging: *log-json
 
   # ═══════════════════════════════════════════════════════════════
   # Nginx (reverse proxy + SSL)
@@ -301,6 +360,9 @@ services:
       - ./nginx/logs:/var/log/nginx
       - certbot_data:/var/www/certbot:ro
       - certbot_certs:/etc/letsencrypt:ro
+    # stdout у nginx почти пуст (access/error идут в bind-mount файлы для
+    # fail2ban) — ротация просто страхует от бесконечного роста.
+    logging: *log-json
 
   # ═══════════════════════════════════════════════════════════════
   # Certbot (SSL сертификаты Let's Encrypt)
@@ -313,6 +375,7 @@ services:
       - certbot_data:/var/www/certbot
       - certbot_certs:/etc/letsencrypt
     entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done'"
+    logging: *log-json
 
 volumes:
   postgres_data:
