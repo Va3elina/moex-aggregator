@@ -1,16 +1,23 @@
 name: deploy-prod
 
-# Авто-деплой на прод: после успешного build-check (push в main) →
-# SSH → git fetch + git reset --hard origin/main (НЕ pull!) + build api
-# (+orchestrator/alert-bot при изменении их кода) + recreate + health-check.
-# nginx НЕ трогаем (resolver-фикс c40017f сам ре-резолвит api).
+# Авто-деплой на прод: push в main → СРАЗУ SSH → git fetch + git reset --hard
+# origin/main (НЕ pull!) + build api (+orchestrator/alert-bot при изменении их
+# кода) + recreate + health-check. nginx НЕ трогаем (resolver-фикс c40017f сам
+# ре-резолвит api).
+#
+# Гейт сборки — на PR (2026-07-02, ускорение деплоя ~2 мин): branch protection
+# пускает в main ТОЛЬКО PR, а PR не мёржится без зелёного frontend-build →
+# повторный build-check на main проверял ровно тот же код и лишь задерживал
+# деплой (build ~1 мин + прыжок планировщика workflow_run ~20-30с). Убран:
+# триггер теперь прямой push. Битый билд по-прежнему не выкатывается: (1) в main
+# он не попадёт через PR; (2) даже при обходе — docker build упадёт НА сервере,
+# старый контейнер останется жить (rolling recreate до health-check).
 #
 # Предусловия (выполнены 2026-06-08):
 #   • Секрет PROD_SSH_KEY (приватный ключ) добавлен в Settings → Secrets → Actions.
 #   • /opt/frame = ЧИСТЫЙ deploy-target: reset --hard форсит origin/main даже если
 #     кто-то случайно правил/scp'ил файл на проде (git pull в этом случае падал бы).
 #
-# Деплой идёт ТОЛЬКО на зелёный build-check (битый фронт-билд не выкатывается).
 # workflow_dispatch оставлен для ручного запуска.
 #
 # Заметка про 4ГБ прод: сборка образа идёт НА проде (с кешем — быстро). Если станет
@@ -18,9 +25,7 @@ name: deploy-prod
 
 on:
   workflow_dispatch:
-  workflow_run:
-    workflows: ["build-check"]
-    types: [completed]
+  push:
     branches: [main]
 
 concurrency:
@@ -33,8 +38,6 @@ permissions:
 
 jobs:
   deploy:
-    # Только если build-check прошёл (или ручной запуск).
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
       # Репо нужен для scripts/prod_deploy.sh — пайпим его на сервер по SSH.
