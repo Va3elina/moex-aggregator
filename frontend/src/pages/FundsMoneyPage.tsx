@@ -884,7 +884,9 @@ export default function FundsMoneyPage() {
                         return { '--chart-pad-left': 'calc(var(--chart-pad-right-single) - 12px)' };
                     }}
                 />
-                <ChartSettings scopeLabels={{ primary: 'СЧА', secondary: 'Индекс' }} />
+                {/* Тип графика применим только в режиме СЧА (линейный SimpleChart);
+                    «Притоки-Оттоки» — гистограмма, там в модалке только палитра. */}
+                <ChartSettings showType={viewMode === 'aum'} scopeLabels={{ primary: 'СЧА', secondary: 'Индекс' }} />
                 </ChartActionsMenu>
             </div>
 
