@@ -1,11 +1,12 @@
 /**
  * Единая логика позиционирования плавающего date-pill (тултипа с датой)
- * на всех графиках Фрейм. Используется в SimpleChart, FlowsHistogram, StrengthPage.
+ * на всех графиках Фрейм. Сам pill рендерит компонент ChartDatePill
+ * (центрирование на cursor X + кламп в plot-область); здесь — расчёт
+ * y-координаты верхней линии, к которой pill прижимается низом.
  *
  * ── Контракт ──
  * Pill bottom edge сидит вплотную к верхней горизонтальной линии графика
  * (PILL_GAP_ABOVE_LINE = 0; стиль пилюли — TOOLTIP.datePillClass, без рамки).
- * Pill horizontally центрирован на cursor X.
  *
  * ── Почему helper а не hook ──
  * Stateless: считает y-координату из DOM на каждом render'е. React внутри
@@ -19,8 +20,6 @@
  *
  * Helper унифицирует через optional gridOffsetFrac.
  */
-
-import type { CSSProperties } from 'react';
 
 export const PILL_GAP_ABOVE_LINE = 0;
 
@@ -51,19 +50,4 @@ export function computeChartTopLineY(opts: ChartTopLineOptions): number {
   const padTop = opts.paddingTop ?? 8;
   const gridOff = (opts.gridOffsetFrac ?? 0) * (opts.chartAreaHeight ?? 0);
   return wrapTop + padTop + gridOff;
-}
-
-/**
- * Готовый CSS-стиль для date-pill: anchor pill bottom edge в 4px над линией.
- * Передай результат в style={...} JSX.
- */
-export function getDatePillStyle(
-  hoverX: number,
-  topLineY: number,
-): CSSProperties {
-  return {
-    left: hoverX,
-    top: topLineY - PILL_GAP_ABOVE_LINE,
-    transform: 'translate(-50%, -100%)',
-  };
 }

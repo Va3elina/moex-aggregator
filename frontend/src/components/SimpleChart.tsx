@@ -5,7 +5,8 @@ import ChartWatermark from './ChartWatermark';
 import { easeOutCubic, morphPts, ptsToPath, ptsToArea } from '../utils/chartAnimation';
 import { cssVar, GRID, CROSSHAIR, ANIMATION, TOOLTIP } from '../config/chartTheme';
 import { fluid } from '../config/fluidScale';
-import { computeChartTopLineY, getDatePillStyle } from './chart/datePillLayout';
+import { computeChartTopLineY } from './chart/datePillLayout';
+import ChartDatePill from './chart/ChartDatePill';
 import ChartLegend, { type ChartLegendItem } from './chart/ChartLegend';
 import { measureText } from './chart/measureText';
 import { axisFontSize } from './chart/chartTypography';
@@ -1890,7 +1891,7 @@ export default function SimpleChart({
 
       </div>
 
-      {/* Плавающая дата аннотации — единая логика через computeChartTopLineY/getDatePillStyle */}
+      {/* Плавающая дата аннотации — единая логика через computeChartTopLineY/ChartDatePill */}
       {hoveredAnnotationIdx !== null && annotations && (() => {
         const ann = annotations[hoveredAnnotationIdx];
         if (!ann) return null;
@@ -1902,14 +1903,13 @@ export default function SimpleChart({
         const annDate = new Date(ann.time).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' });
         const topLineY = computeChartTopLineY({ wrapper: wrap, paddingTop: padding.top });
         return (
-          <div
-            className="absolute z-20 pointer-events-none"
-            style={getDatePillStyle(wrap.offsetLeft + x, topLineY)}
-          >
-            <span className={TOOLTIP.datePillClass} style={TOOLTIP.datePillStyle}>
-              {annDate}
-            </span>
-          </div>
+          <ChartDatePill
+            date={annDate}
+            x={wrap.offsetLeft + x}
+            topLineY={topLineY}
+            minX={wrap.offsetLeft + padding.left}
+            maxX={wrap.offsetLeft + padding.left + chartWidth}
+          />
         );
       })()}
 
@@ -1928,14 +1928,14 @@ export default function SimpleChart({
             : dateStr;
         const topLineY = computeChartTopLineY({ wrapper: wrap, paddingTop: padding.top });
         return (
-          <div
-            className="chart-hover-ui absolute z-20 pointer-events-none"
-            style={getDatePillStyle(wrap.offsetLeft + tooltip.x, topLineY)}
-          >
-            <span className={TOOLTIP.datePillClass} style={TOOLTIP.datePillStyle}>
-              {htmlDateLabel}
-            </span>
-          </div>
+          <ChartDatePill
+            className="chart-hover-ui"
+            date={htmlDateLabel}
+            x={wrap.offsetLeft + tooltip.x}
+            topLineY={topLineY}
+            minX={wrap.offsetLeft + padding.left}
+            maxX={wrap.offsetLeft + padding.left + chartWidth}
+          />
         );
       })()}
 

@@ -26,8 +26,8 @@ import ChartSettings from '../components/chart/ChartSettings';
 import { periodToQuery } from '../utils/csvPeriod';
 import StrengthControls from '../components/strength/StrengthControls';
 import DollarStaleHint from '../components/strength/DollarStaleHint';
-import { computeChartTopLineY, getDatePillStyle } from '../components/chart/datePillLayout';
-import { TOOLTIP } from '../config/chartTheme';
+import { computeChartTopLineY } from '../components/chart/datePillLayout';
+import ChartDatePill from '../components/chart/ChartDatePill';
 import { useOnboardingTour } from '../hooks/useFirstVisit';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { strengthTourSteps } from '../data/tours/strength';
@@ -498,14 +498,13 @@ export default function StrengthPage() {
                                         paddingTop: padding.top,
                                     });
                                     return (
-                                <div
-                                    className="absolute z-20 pointer-events-none"
-                                    style={getDatePillStyle(hoverX, topLineY)}
-                                >
-                                    <span className={TOOLTIP.datePillClass} style={TOOLTIP.datePillStyle}>
-                                        {dateStr}
-                                    </span>
-                                </div>
+                                <ChartDatePill
+                                    date={dateStr}
+                                    x={hoverX}
+                                    topLineY={topLineY}
+                                    minX={px4 + padding.left}
+                                    maxX={px4 + padding.left + chartWidth}
+                                />
                                     );
                                 })()}
 

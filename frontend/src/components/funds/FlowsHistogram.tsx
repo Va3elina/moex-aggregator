@@ -1,13 +1,13 @@
 import React, { useMemo } from 'react';
 import { BarChart3 } from 'lucide-react';
 import type { FundsFlowsResponse } from '../../services/api';
-import { CHART_COLORS, GRID, CROSSHAIR, TOOLTIP } from '../../config/chartTheme';
+import { CHART_COLORS, GRID, CROSSHAIR } from '../../config/chartTheme';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import ChartWatermark from '../ChartWatermark';
 import ChartNavigator from '../ChartNavigator';
 import ChartLegend from '../chart/ChartLegend';
-import { ChartTooltip, TooltipRow } from '../chart';
-import { computeChartTopLineY, getDatePillStyle } from '../chart/datePillLayout';
+import { ChartTooltip, TooltipRow, ChartDatePill } from '../chart';
+import { computeChartTopLineY } from '../chart/datePillLayout';
 
 interface FlowsHistogramProps {
     flowsData: FundsFlowsResponse | null;
@@ -409,15 +409,15 @@ export default function FlowsHistogram({
                     chartAreaHeight: chartAreaH,
                 });
                 const dateStr = new Date(f.period_end).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' });
+                const plotLeft = cont.offsetLeft + (svgRect.left - containerRect.left);
                 return (
-                    <div
-                        className="absolute z-20 pointer-events-none"
-                        style={getDatePillStyle(centerX, topLineY)}
-                    >
-                        <span className={TOOLTIP.datePillClass} style={TOOLTIP.datePillStyle}>
-                            {dateStr}
-                        </span>
-                    </div>
+                    <ChartDatePill
+                        date={dateStr}
+                        x={centerX}
+                        topLineY={topLineY}
+                        minX={plotLeft}
+                        maxX={plotLeft + chartW}
+                    />
                 );
             })()}
             </>)}
