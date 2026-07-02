@@ -18,20 +18,29 @@ export const OHLC_TYPES: ReadonlyArray<ChartSeriesType> = ['candles', 'bars', 'h
 
 const ALL_TYPES: ReadonlyArray<ChartSeriesType> = ['line', 'area', 'columns', 'candles', 'bars', 'heikin'];
 
+/** К чему применять тип: только основная серия или все серии графика
+ *  (area/columns красят и вторичные линии; OHLC-типы всё равно только там,
+ *  где есть OHLC — вторичные серии остаются линиями). */
+export type ChartTypeScope = 'primary' | 'all';
+
 const TYPE_KEY = 'frame:chart:type';
 const DASH_KEY = 'frame:chart:dash';
+const SCOPE_KEY = 'frame:chart:scope';
 /** До v2 тип был per-page только на ОИ (usePersistedState → JSON-строка). */
 const LEGACY_OI_TYPE_KEY = 'frame:oi:chartType';
 
 export interface ChartSettingsState {
   type: ChartSeriesType;
+  scope: ChartTypeScope;
   /** Штрих-режим: вторая/третья линия пунктиром — различие ФОРМОЙ, не цветом
-   *  (полная монохромность, которую не закрыть никакой палитрой). */
+   *  (полная монохромность, которую не закрыть никакой палитрой). Управляется
+   *  карточкой «Монохром + штрих» в секции «Палитра». */
   dash: boolean;
 }
 
 function read(): ChartSettingsState {
   let type: ChartSeriesType = 'line';
+  let scope: ChartTypeScope = 'primary';
   let dash = false;
   try {
     const t = localStorage.getItem(TYPE_KEY) as ChartSeriesType | null;
@@ -41,9 +50,10 @@ function read(): ChartSettingsState {
       const legacy = localStorage.getItem(LEGACY_OI_TYPE_KEY);
       if (legacy === '"area"' || legacy === 'area') type = 'area';
     }
+    if (localStorage.getItem(SCOPE_KEY) === 'all') scope = 'all';
     dash = localStorage.getItem(DASH_KEY) === '1';
   } catch { /* private mode / SSR — дефолты */ }
-  return { type, dash };
+  return { type, scope, dash };
 }
 
 let state: ChartSettingsState = read();
@@ -76,9 +86,16 @@ export function setChartDash(dash: boolean): void {
   emit();
 }
 
+export function setChartScope(scope: ChartTypeScope): void {
+  if (scope === state.scope) return;
+  state = { ...state, scope };
+  try { localStorage.setItem(SCOPE_KEY, scope); } catch { /* не критично */ }
+  emit();
+}
+
 if (typeof window !== 'undefined') {
   window.addEventListener('storage', (e) => {
-    if (e.key === TYPE_KEY || e.key === DASH_KEY || e.key === null) {
+    if (e.key === TYPE_KEY || e.key === DASH_KEY || e.key === SCOPE_KEY || e.key === null) {
       state = read();
       emit();
     }
@@ -88,7 +105,8 @@ if (typeof window !== 'undefined') {
 export function useChartSettings(): ChartSettingsState & {
   setType: (t: ChartSeriesType) => void;
   setDash: (d: boolean) => void;
+  setScope: (s: ChartTypeScope) => void;
 } {
   const s = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
-  return { ...s, setType: setChartType, setDash: setChartDash };
+  return { ...s, setType: setChartType, setDash: setChartDash, setScope: setChartScope };
 }
