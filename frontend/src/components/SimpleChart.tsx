@@ -11,10 +11,17 @@ import { measureText } from './chart/measureText';
 import { axisFontSize } from './chart/chartTypography';
 import { formatNumber } from '../utils/formatNumber';
 import { niceScale } from '../utils/niceTicks';
+import { useChartSettings, OHLC_TYPES, type ChartSeriesType } from '../hooks/useChartSettings';
 
 interface DataPoint {
   time: string;
   value: number;
+  /** OHLC (опционально): нужны для типов «свечи»/«бары»/«Хайкен-Аши».
+   *  value = close (обратная совместимость — все линейные ряды как раньше).
+   *  Ряды без OHLC автоматически откатываются на линию. */
+  open?: number;
+  high?: number;
+  low?: number;
 }
 
 export interface ChartAnnotation {
@@ -63,10 +70,12 @@ interface SimpleChartProps {
   allowHistogram?: boolean;
   histogramDisabled?: boolean;
   defaultHistogram?: boolean;
-  /** Тип отображения основной серии (цены): 'line' (по умолчанию) или 'area'
-   *  (градиентная заливка под ценой — отделяет цену от вторичной серии). Контролируемый
-   *  проп (управляется извне через настройки графика), без внутреннего тумблера. */
-  primaryType?: 'line' | 'area';
+  /** Тип отображения основной серии. НЕ задан (обычный случай) → берётся
+   *  ГЛОБАЛЬНАЯ настройка (useChartSettings, модалка-шестерёнка, весь сайт).
+   *  Задан явно → оверрайд для графиков, которым глобальный тип не подходит
+   *  (headless-экспорт и т.п.). OHLC-типы (candles/bars/heikin) требуют
+   *  open/high/low в data — иначе тихий откат на 'line'. */
+  primaryType?: ChartSeriesType;
   showValueHeader?: boolean;
   legendPosition?: 'top' | 'bottom';
   showDownloadButton?: boolean;
@@ -147,7 +156,7 @@ export default function SimpleChart({
   allowHistogram = false,
   histogramDisabled = false,
   defaultHistogram = false,
-  primaryType = 'line',
+  primaryType,
   reverseLegend = false,
   niceTicks = false,
   niceTicksSecondary = false,
@@ -256,6 +265,16 @@ export default function SimpleChart({
       setChartMode('line');
     }
   }, [histogramDisabled, chartMode]);
+
+  // Глобальные настройки графиков (модалка-шестерёнка): тип основной серии +
+  // штрих-режим (доступность: различие линий формой, не цветом). Проп
+  // primaryType — явный оверрайд для страниц, где глобальный тип не подходит.
+  const { type: globalChartType, dash: dashMode } = useChartSettings();
+  const requestedType: ChartSeriesType = primaryType ?? globalChartType;
+  // OHLC есть в данных? Ряды однородны — достаточно первой точки.
+  const hasOhlc = data.length > 0 && data[0].open != null && data[0].high != null && data[0].low != null;
+  const resolvedType: ChartSeriesType =
+    OHLC_TYPES.includes(requestedType) && !hasOhlc ? 'line' : requestedType;
 
   const animationRef = useRef<number | null>(null);
   const [tooltip, setTooltip] = useState<{
@@ -396,13 +415,41 @@ export default function SimpleChart({
         points: [],
         secondaryPoints: [],
         thirdPoints: [],
+        ohlcPoints: [],
         yTicks: [],
         xTicks: [],
       };
     }
 
-    // Primary scale (price)
-    const values = displayData.map((d) => d.value);
+    const isOhlcType = OHLC_TYPES.includes(resolvedType);
+
+    // Хайкен-Аши: рекуррентное сглаживание OHLC по видимому окну.
+    // haOpen = (prev haOpen + prev haClose)/2, haClose = (o+h+l+c)/4.
+    let ohlcData = displayData;
+    if (resolvedType === 'heikin') {
+      const ha: DataPoint[] = [];
+      for (let i = 0; i < displayData.length; i++) {
+        const d = displayData[i];
+        const o = d.open ?? d.value, h = d.high ?? d.value, l = d.low ?? d.value, c = d.value;
+        const haClose = (o + h + l + c) / 4;
+        const prev = ha[i - 1];
+        const haOpen = prev ? ((prev.open ?? prev.value) + prev.value) / 2 : (o + c) / 2;
+        ha.push({
+          time: d.time,
+          value: haClose,
+          open: haOpen,
+          high: Math.max(h, haOpen, haClose),
+          low: Math.min(l, haOpen, haClose),
+        });
+      }
+      ohlcData = ha;
+    }
+
+    // Primary scale (price). Для OHLC-типов диапазон считаем по high/low —
+    // иначе тени свечей упираются в chartClip.
+    const values = isOhlcType
+      ? ohlcData.flatMap((d) => [d.low ?? d.value, d.high ?? d.value])
+      : displayData.map((d) => d.value);
     const minVal = Math.min(...values);
     const maxVal = Math.max(...values);
     const range = maxVal - minVal || 1;
@@ -453,6 +500,22 @@ export default function SimpleChart({
       value: d.value,
       time: d.time,
     }));
+
+    // OHLC-точки для свечей/баров/Хайкен-Аши (пустые для остальных типов)
+    const ohlcPoints = isOhlcType
+      ? ohlcData.map((d, i) => {
+        const o = d.open ?? d.value, h = d.high ?? d.value, l = d.low ?? d.value, c = d.value;
+        return {
+          x: scaleX(i, ohlcData.length),
+          yOpen: scaleY(o),
+          yHigh: scaleY(h),
+          yLow: scaleY(l),
+          yClose: scaleY(c),
+          up: c >= o,
+          time: d.time,
+        };
+      })
+      : [];
 
     // Secondary points
     let secondaryPoints: typeof points = [];
@@ -517,8 +580,8 @@ export default function SimpleChart({
       return { time: displayData[index].time, x };
     });
 
-    return { points, secondaryPoints, thirdPoints, yTicks, secYTicks, xTicks };
-  }, [displayData, displaySecondaryData, displayThirdData, chartWidth, chartHeight, showSecondary, showThird, niceTicks, niceTicksSecondary]);
+    return { points, secondaryPoints, thirdPoints, ohlcPoints, yTicks, secYTicks, xTicks };
+  }, [displayData, displaySecondaryData, displayThirdData, chartWidth, chartHeight, showSecondary, showThird, niceTicks, niceTicksSecondary, resolvedType]);
 
   // Анимация морфинга
   const animateMorph = useCallback(() => {
@@ -1154,7 +1217,7 @@ export default function SimpleChart({
               {/* Область под основной линией (тип «Область») — градиентная заливка
                   под ценой, чтобы визуально отделить цену от вторичной серии (ОИ).
                   Сама линия рисуется сверху (ниже), как в TradingView area-режиме. */}
-              {showPrimary && primaryType === 'area' && animatedPaths.area && (
+              {showPrimary && resolvedType === 'area' && animatedPaths.area && (
                 <>
                   <defs>
                     <linearGradient id="priceAreaGrad" x1="0" y1="0" x2="0" y2="1">
@@ -1172,8 +1235,10 @@ export default function SimpleChart({
               )}
 
               {/* Основная линия (цена — сплошная до прогноза).
-                  showPrimary=false → пропускаем рендер (юзер скрыл primary через toggle). */}
-              {showPrimary && animatedPaths.primary && (
+                  showPrimary=false → пропускаем рендер (юзер скрыл primary через toggle).
+                  Рисуется только в line/area типах — для столбиков/свечей/баров
+                  primary рендерится своими блоками ниже. */}
+              {showPrimary && (resolvedType === 'line' || resolvedType === 'area') && animatedPaths.primary && (
                 <path
                   d={animatedPaths.primary}
                   fill="none"
@@ -1183,6 +1248,76 @@ export default function SimpleChart({
                   strokeLinejoin="round"
                   clipPath={_forecastCount > 0 ? "url(#solidClip)" : undefined}
                 />
+              )}
+
+              {/* Тип «Столбики» — колонки значения основной серии (работает для
+                  любого ряда, OHLC не нужен). Базовая линия — низ chart area,
+                  как у существующей OI-гистограммы. */}
+              {showPrimary && resolvedType === 'columns' && targetCalc.points.length > 0 && (
+                <g>
+                  {targetCalc.points.map((p, i) => {
+                    const barWidth = Math.max((chartWidth / targetCalc.points.length) * 0.55, 1);
+                    const barHeight = Math.max(chartHeight - p.y, 0);
+                    return (
+                      <rect
+                        key={`pri-col-${i}`}
+                        x={p.x - barWidth / 2}
+                        y={p.y}
+                        width={barWidth}
+                        height={barHeight}
+                        fill={primaryColor}
+                        fillOpacity={0.55}
+                        stroke={primaryColor}
+                        strokeWidth={0.5}
+                      />
+                    );
+                  })}
+                </g>
+              )}
+
+              {/* Типы «Свечи» и «Хайкен-Аши» — тело open↔close + тень high↔low.
+                  Цвета up/down = --oi-green/--oi-red → палитры доступности
+                  применяются автоматически. */}
+              {showPrimary && (resolvedType === 'candles' || resolvedType === 'heikin') && targetCalc.ohlcPoints.length > 0 && (
+                <g>
+                  {targetCalc.ohlcPoints.map((p, i) => {
+                    const slot = chartWidth / targetCalc.ohlcPoints.length;
+                    const bw = Math.min(Math.max(slot * 0.6, 1.5), 13);
+                    const col = p.up ? 'var(--oi-green)' : 'var(--oi-red)';
+                    const bodyY = Math.min(p.yOpen, p.yClose);
+                    const bodyH = Math.max(Math.abs(p.yClose - p.yOpen), 1);
+                    return (
+                      <g key={`candle-${i}`}>
+                        <line
+                          x1={p.x} y1={p.yHigh} x2={p.x} y2={p.yLow}
+                          stroke={col}
+                          strokeWidth={Math.max(Math.min(bw * 0.15, 2), 1)}
+                        />
+                        <rect x={p.x - bw / 2} y={bodyY} width={bw} height={bodyH} fill={col} />
+                      </g>
+                    );
+                  })}
+                </g>
+              )}
+
+              {/* Тип «Бары» (OHLC) — вертикаль high↔low, засечка open слева,
+                  close справа. Классика для тех, кому свечи «жирные». */}
+              {showPrimary && resolvedType === 'bars' && targetCalc.ohlcPoints.length > 0 && (
+                <g>
+                  {targetCalc.ohlcPoints.map((p, i) => {
+                    const slot = chartWidth / targetCalc.ohlcPoints.length;
+                    const tick = Math.min(Math.max(slot * 0.3, 1.5), 6);
+                    const col = p.up ? 'var(--oi-green)' : 'var(--oi-red)';
+                    const sw = Math.max(Math.min(slot * 0.15, 2.5), 1.2);
+                    return (
+                      <g key={`ohlc-bar-${i}`} stroke={col} strokeWidth={sw}>
+                        <line x1={p.x} y1={p.yHigh} x2={p.x} y2={p.yLow} />
+                        <line x1={p.x - tick} y1={p.yOpen} x2={p.x} y2={p.yOpen} />
+                        <line x1={p.x} y1={p.yClose} x2={p.x + tick} y2={p.yClose} />
+                      </g>
+                    );
+                  })}
+                </g>
               )}
 
               {/* Пунктирный прогноз — хаотичная траектория.
@@ -1272,6 +1407,7 @@ export default function SimpleChart({
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   opacity={oiOpacity}
+                  strokeDasharray={dashMode ? '2.5 5' : undefined}
                 />
               )}
 
@@ -1298,6 +1434,9 @@ export default function SimpleChart({
                   })}
                 </g>
               )}
+              {/* Штрих-режим (доступность): secondary — длинный штрих, third —
+                  точечный. Линии различимы ФОРМОЙ при полной монохромности,
+                  когда никакая палитра не помогает. */}
               {showSecondary && chartMode === 'line' && animatedPaths.secondary && (
                 <path
                   d={animatedPaths.secondary}
@@ -1307,6 +1446,7 @@ export default function SimpleChart({
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   opacity={oiOpacity}
+                  strokeDasharray={dashMode ? '9 6' : undefined}
                   clipPath={_forecastCount > 0 ? "url(#solidClip)" : undefined}
                 />
               )}

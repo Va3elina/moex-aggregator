@@ -22,6 +22,7 @@ import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import CsvExportButton from '../components/export/CsvExportButton';
 import LayersButton from '../components/LayersButton';
 import ChartActionsMenu from '../components/ChartActionsMenu';
+import ChartSettings from '../components/chart/ChartSettings';
 import { periodToQuery } from '../utils/csvPeriod';
 import StrengthControls from '../components/strength/StrengthControls';
 import DollarStaleHint from '../components/strength/DollarStaleHint';
@@ -384,6 +385,7 @@ export default function StrengthPage() {
                             ].filter(Boolean),
                         }}
                     />
+                    <ChartSettings showType={false} />
                     </ChartActionsMenu>
                 }
             />

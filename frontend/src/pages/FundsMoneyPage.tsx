@@ -33,6 +33,7 @@ import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { buildFundsMoneyTour } from '../data/tours/funds-money';
 import FlowsHistogram from '../components/funds/FlowsHistogram';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
+import ChartSettings from '../components/chart/ChartSettings';
 import CsvExportButton from '../components/export/CsvExportButton';
 import { periodToQuery } from '../utils/csvPeriod';
 import { useTierAccess, useCommonFeatures } from '../contexts/TierFeaturesContext';
@@ -883,6 +884,7 @@ export default function FundsMoneyPage() {
                         return { '--chart-pad-left': 'calc(var(--chart-pad-right-single) - 12px)' };
                     }}
                 />
+                <ChartSettings />
                 </ChartActionsMenu>
             </div>
 
