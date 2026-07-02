@@ -1,13 +1,15 @@
 name: build-check
 
-# Гейт сборки: на каждый push в main и каждый PR прогоняем ПОЛНУЮ прод-сборку
+# Гейт сборки: на каждый PR в main прогоняем ПОЛНУЮ прод-сборку
 # (`npm run build` = tsc -b строгий + vite + prerender). Ловит TS6133 unused и
 # type-ошибки, которых `tsc --noEmit` НЕ видит (из-за них 2 июня прод-деплой молча
-# падал и оставался на старом образе). Красный билд тут = не мёржим/не деплоим.
+# падал и оставался на старом образе). Красный билд тут = не мёржим.
+#
+# Push-триггер на main убран (2026-07-02): branch protection пускает в main
+# только PR с зелёным этим же чеком → повторный прогон на main дублировал
+# работу и лишь задерживал deploy-prod (он теперь триггерится прямо на push).
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
 
@@ -49,11 +51,5 @@ jobs:
       - name: Build (tsc -b + vite + prerender)
         working-directory: frontend
         run: npm run build
-
-      - name: SW bump check (warning)
-        if: github.event_name == 'push'
-        run: |
-          changed=$(git diff --name-only HEAD~1 HEAD)
-          if echo "$changed" | grep -q '^frontend/src/' && ! echo "$changed" | grep -q '^frontend/public/sw.js$'; then
-            echo "::warning::frontend/src changed but sw.js not bumped - PWA cache will not refresh. Bump CACHE_NAME."
-          fi
+      # SW bump check удалён (2026-07-02): CACHE_NAME давно бампается АВТОМАТИЧЕСКИ
+      # на postbuild (prerender-meta подставляет content-hash) — варнинг был мёртвый.

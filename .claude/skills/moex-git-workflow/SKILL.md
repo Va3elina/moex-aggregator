@@ -7,11 +7,11 @@ description: Commit, push, or manage git for the Фрейм project. Use when us
 
 > ## ⚠️ ДЕПЛОЙ ТЕПЕРЬ АВТО-CI (с 2026-06-09)
 >
-> **Деплой = `git push` в `main`.** GitHub Actions сам делает build-check → (если зелёный) → deploy-prod (SSH на прод сам, `git reset --hard origin/main` + rebuild).
+> **Деплой = попадание в `main`.** С 2026-07-02 `deploy-prod` триггерится **прямо на push в main** (без повторного build-check — гейт сборки живёт на PR, дубль на main убран, деплой стал быстрее на ~2 мин). GitHub Actions сам SSH-ит на прод: `git reset --hard origin/main` + rebuild.
 >
 > - **НЕ деплоить руками по SSH** — CI делает это сам. Если пользователь говорит «задеплой» — это значит **закоммить и запушить в main**.
 > - **Сервер `/opt/frame` = чистый deploy-target, НЕ воркспейс.** Деплой выполняет `git reset --hard origin/main` → **любая правка/scp прямо на проде СТИРАЕТСЯ** следующим деплоем. Все изменения — только через `git push`. **НЕ scp-ить** черновики/research на `/opt/frame`.
-> - **Сериализация**: `concurrency: deploy-prod` сериализует workflow-прогоны, но пачка быстрых пушей в `main` всё равно может поймать гонку на пересоздании контейнера (`removal of container ... is already in progress` — реальный случай 14.06.2026: один `deploy-prod` упал, прод поднялся от выигравшего). Ещё одна причина копить правки в ветке и мёржить пачкой. Битый билд НЕ выкатывается (deploy ждёт зелёный build-check).
+> - **Сериализация**: `concurrency: deploy-prod` сериализует workflow-прогоны, но пачка быстрых пушей в `main` всё равно может поймать гонку на пересоздании контейнера (`removal of container ... is already in progress` — реальный случай 14.06.2026: один `deploy-prod` упал, прод поднялся от выигравшего). Ещё одна причина копить правки в ветке и мёржить пачкой. Битый билд НЕ выкатывается: в main он не попадает (PR требует зелёный `frontend-build`), а при обходе защиты docker build просто упадёт на сервере — старый контейнер останется жить.
 > - Ручной SSH-деплой остаётся только как **аварийный** путь (CI недоступен) — см. секцию «Аварийный ручной деплой» ниже.
 > - Детали в памяти: `ci_cd.md`, `deploy_manual.md`.
 
@@ -37,8 +37,11 @@ Project-specific conventions for commits and pushes.
 1. Старт задачи: `git checkout main && git pull --rebase origin main && git checkout -b <type>/<kebab>`.
 2. Коммиты — в ветку; `git push -u origin <branch>` (это **НЕ** деплой).
 3. `gh pr create --base main --fill` → CI прогоняет `build-check` на PR
-   (зелёный/красный, **БЕЗ** деплоя; `build.yml` слушает `pull_request → main`).
-4. Зелёный → `gh pr merge --squash --delete-branch`. **Мёрж в `main` = деплой.**
+   (зелёный/красный, **БЕЗ** деплоя; `build.yml` слушает ТОЛЬКО `pull_request → main`).
+4. СРАЗУ после создания PR: `gh pr merge --auto --squash --delete-branch` —
+   **авто-мёрж**: GitHub сам смёржит, как только чек позеленеет (allow_auto_merge
+   включён в репо 2026-07-02, ждать руками не нужно). **Мёрж в `main` = деплой**
+   (`deploy-prod` стартует сразу на push, повторного build-check на main НЕТ).
 
 **Прямой push в `main` — ТОЛЬКО** когда пользователь явно просит (мелкий
 solo-фикс, грандфазинг уже готовой работы). По умолчанию НЕ делать.
@@ -150,15 +153,15 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
 EOF
 )"
 
-# 4. Push  ⚠️ ЭТО ТРИГГЕРИТ АВТО-ДЕПЛОЙ НА ПРОД (build-check → deploy-prod)
+# 4. Push  ⚠️ ЭТО ТРИГГЕРИТ АВТО-ДЕПЛОЙ НА ПРОД (deploy-prod стартует сразу)
 git push origin main
 
 # 5. (опц.) проследить за CI/CD-прогоном
 gh run list --branch main --limit 3
-# gh run watch   # дождаться build-check + deploy-prod
+# gh run watch   # дождаться deploy-prod
 ```
 
-> **После пуша деплой произойдёт сам.** Не лезь на сервер делать `git pull`/rebuild руками — это делает CI. Если build-check красный, deploy НЕ запустится (битый билд на прод не попадёт) — чини билд и пуш заново.
+> **После пуша деплой произойдёт сам.** Не лезь на сервер делать `git pull`/rebuild руками — это делает CI. Гейт сборки живёт на PR (красный `frontend-build` = PR не мёржится = в main битый код не попадает).
 
 ## Аварийный ручной деплой (только если CI недоступен)
 
@@ -253,7 +256,7 @@ This is fine — the user hasn't asked to customize it. Don't suggest changes un
 
 - Origin: `git@github.com:Va3elina/moex-aggregator.git`
 - Main branch: `main`
-- **CI/CD активирован**: `git push` в `main` → GitHub Actions `build-check` → (если зелёный) → `deploy-prod` (авто-деплой на прод по SSH). **Push в main = выкатка на прод.** После пуша можно проверить статус прогона: `gh run list --branch main --limit 3` / `gh run watch`.
+- **CI/CD активирован**: push в `main` → `deploy-prod` СРАЗУ (авто-деплой на прод по SSH; гейт сборки — на PR, дубль-билд на main убран 2026-07-02). **Push в main = выкатка на прод.** Статус: `gh run list --branch main --limit 3` / `gh run watch`.
 
 ## Multi-commit Scenarios
 
