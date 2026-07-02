@@ -1845,14 +1845,16 @@ export default function SimpleChart({
           return visibleAnnotations.map((ann) => (
             <div
               key={ann.origIdx}
-              // Центрируем кружок через left-offset, а НЕ через -translate-x-1/2.
-              // Tailwind v4 компилирует -translate-x-1/2 в CSS-свойство `translate`,
-              // которое html2canvas (движок экспорта по 📷) не читает — в итоге в
-              // PNG кружок уезжал вправо на annSize/2 и «неровно» наезжал на подписи
-              // дат внизу. left - annSize/2 даёт тот же визуальный центр и рендерится
-              // идентично в live-графике и в экспорте.
+              // Позиционируем кружок чистыми left/top без CSS-трансформаций.
+              // По X: left - annSize/2 центрирует его над точкой (раньше был
+              // -translate-x-1/2, но Tailwind v4 отдаёт его через CSS-свойство
+              // `translate`, которое html2canvas при экспорте по 📷 не читает).
+              // По Y: кладём НИЖНИЙ край кружка на нижнюю линию графика
+              // (top = chartHeight - annSize), а не центрируем на ней
+              // (было - annSize/2). Так кружок сидит над осью с зазором до
+              // подписей дат, а не наезжает на них снизу.
               className="absolute group z-30"
-              style={{ left: ann.x - tokens.annSize / 2, top: padding.top + chartHeight - tokens.annSize / 2 }}
+              style={{ left: ann.x - tokens.annSize / 2, top: padding.top + chartHeight - tokens.annSize }}
               onMouseEnter={() => setHoveredAnnotationIdx(ann.origIdx)}
               onMouseLeave={() => setHoveredAnnotationIdx(null)}
             >
