@@ -649,8 +649,11 @@ def fetch_m2_from_cbr(engine) -> int:
 
 # Регулярка ловит ссылку вида "/storage/mediabank/VVP_kvartal_s_1995-2025.xlsx"
 # (с опциональным подкаталогом-хешем, как у некоторых файлов на сайте Росстата).
+# Разделитель после "s" плавает: было "s_1995" и "s1995", с 2026 Росстат стал
+# писать "VVP_kvartal_s-1995-2026.xlsx" (ДЕФИС) → из-за этого discover отвалился
+# 02.07 и ВВП завис на Q4 2025. Допускаем `-`/`_`/пусто: `s[-_]?\d{4}`.
 GDP_XLSX_HREF_RE = _re.compile(
-    r'href="(/storage/mediabank/(?:[^"/]+/)?VVP_kvartal_s_?\d{4}[^"]*\.xlsx)"',
+    r'href="(/storage/mediabank/(?:[^"/]+/)?VVP_kvartal_s[-_]?\d{4}[^"]*\.xlsx)"',
     _re.IGNORECASE,
 )
 # "Обновлено 10.04.2026г." на странице "Содержание" в самом xlsx.
