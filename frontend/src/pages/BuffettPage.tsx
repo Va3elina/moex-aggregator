@@ -370,7 +370,7 @@ export default function BuffettPage() {
                         ].filter(Boolean),
                     }}
                 />
-                <ChartSettings />
+                <ChartSettings scopeLabels={{ primary: 'Только капитализация', all: 'Все линии' }} />
                 </ChartActionsMenu>
 
             </div>
