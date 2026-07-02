@@ -940,7 +940,7 @@ export default function SimpleChart({
   const placeholderHeight =
     effectiveHeight
     + 40 // p-5 top + bottom
-    + (legendPosition === 'top' ? 24 : 0) // legend block (~36px минус ~12px подтяжки к верхней границе)
+    + (legendPosition === 'top' ? 10 : 0) // legend block (~20px текст + mb 2 минус 12px подтяжки к верху)
     + (showNavigator ? 6 : 0); // navigator (компактный рельс, отрицательные margin)
 
   // Показываем полный лоадер только если нет данных вообще

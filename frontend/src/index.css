@@ -1449,15 +1449,21 @@
 
   /* Chart padding (SimpleChart SVG area).
      Right-dual бампнут 95→120 потому что pill на правой оси с 17px font
-     ("-149 960" = ~82px) обрезался на ~6px. */
-  --chart-pad-top: 19px;
+     ("-149 960" = ~82px) обрезался на ~6px.
+     Top ужат 19→14 (вместе с legend-mb 16→2): верхняя грид-линия подтянута
+     к легенде, зазор ~16px — симметрично зазору легенды от верха paper-card.
+     Ниже 14 нельзя: верхний Y-лейбл центрован на грид-линии и торчит
+     на ~9px вверх, pill текущего значения — до ~12px. */
+  --chart-pad-top: 14px;
   --chart-pad-bottom: 50px;
   --chart-pad-left: 100px;
   --chart-pad-right-single: 95px;
   --chart-pad-right-dual: 120px;
 
-  /* Legend-to-chart gap (внешний отступ между легендой и верхом чарт-контейнера) */
-  --chart-legend-mb: 16px;
+  /* Legend-to-chart gap (внешний отступ между легендой и верхом чарт-контейнера).
+     2px: видимый воздух даёт --chart-pad-top внутри SVG (лейбл оси ниже
+     грид-линии на ~9px) + leading легенды — итого ~16px до верхней линии. */
+  --chart-legend-mb: 2px;
 
   /* Зазор top-легенды от верхней границы paper-card. У SimpleChart контейнер
      p-5 (20px) — легенда подтягивается negative margin'ом до этого зазора,
