@@ -43,7 +43,10 @@ deploy_api_rolling() {
   # Поднять ВТОРОЙ api на новом образе, старый не трогаем (--no-recreate).
   if ! docker compose up -d --no-deps --no-recreate --scale api=2 api; then
     echo "!! scale=2 не удался → fallback на force-recreate (будет короткое 502-окно)"
-    docker compose up -d --force-recreate --scale api=1 api
+    # --no-deps ОБЯЗАТЕЛЕН: без него compose «доводит» и зависимости (db/redis)
+    # до текущего конфига — при отложенных db-правках (pg_stat_statements)
+    # это внезапный рестарт БД посреди деплоя. db пересоздаём только вручную.
+    docker compose up -d --no-deps --force-recreate --scale api=1 api
     return 0
   fi
 
@@ -89,7 +92,9 @@ if echo "$changed" | grep -qE '^(OI/|Funds/|Candles/|Macro/|Commodity/|main_orch
   echo "=== Orchestrator code changed -> rebuild ==="
   docker rm -f $(docker ps -aq --filter 'name=_frame-orchestrator-1') 2>/dev/null || true
   docker compose build orchestrator
-  docker compose up -d --force-recreate orchestrator
+  # --no-deps: иначе up пересоздаст и db, если её compose-конфиг менялся
+  # (см. комментарий в fallback выше) — даунтайм БД в случайный момент.
+  docker compose up -d --no-deps --force-recreate orchestrator
 fi
 
 # alert-bot — host-side systemd; рестарт только если менялся его код
