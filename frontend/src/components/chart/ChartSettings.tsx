@@ -13,9 +13,9 @@ interface Props {
    *  Глобально выбранный OHLC-тип на страницах без OHLC откатывается на линию. */
   ohlcHere?: boolean;
   /** Человеческие подписи пилюль «Применять к» под КОНКРЕТНЫЙ график страницы —
-   *  «серия» никому не понятна (фидбек Вадима). ОИ: «Только цена» /
-   *  «Цена + линии ОИ»; Баффетт: «Только капитализация» / «Все линии»; и т.д. */
-  scopeLabels?: { primary: string; all: string };
+   *  юзер выбирает сам: 1-я линия / 2-я линия / все (фидбек Вадима). ОИ:
+   *  «Цена» / «Линии ОИ» / «Все»; Баффетт: «Капитализация» / «Отношение» / «Все». */
+  scopeLabels?: { primary: string; secondary: string; all?: string };
   /** Доп. классы для кнопки-шестерёнки (размер/позиция как у соседних кнопок). */
   className?: string;
 }
@@ -113,7 +113,11 @@ export default function ChartSettings({ showType = true, ohlcHere = false, scope
   const [open, setOpen] = useState(false);
   const [palette, setPalette] = useChartPalette();
   const { type, dash, scope, setType, setDash, setScope } = useChartSettings();
-  const sl = scopeLabels ?? { primary: 'Только основная линия', all: 'Все линии графика' };
+  const sl = {
+    primary: scopeLabels?.primary ?? 'Линия 1',
+    secondary: scopeLabels?.secondary ?? 'Линия 2',
+    all: scopeLabels?.all ?? 'Все',
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -178,29 +182,28 @@ export default function ChartSettings({ showType = true, ohlcHere = false, scope
                     ))}
                 </div>
 
-                {/* К чему применять тип: только основная серия или все линии
-                    графика (area/columns красят и вторичные; свечи/бары — только
-                    основную, у вторичных рядов OHLC не бывает). */}
+                {/* К какой линии применять тип — юзер выбирает сам: 1-я / 2-я / все.
+                    Подписи — имена линий конкретного графика (scopeLabels).
+                    Свечи/бары/хайкен рисуются только на линии с OHLC (цена)
+                    при любом выборе — вторичным не из чего строиться. */}
                 <div style={{ ...sectionLabel, marginTop: 22 }}>Применять к</div>
                 <div style={{ display: 'flex', gap: 10 }}>
-                  <button
-                    type="button"
-                    className="editorial-press"
-                    onClick={() => setScope('primary')}
-                    style={{ ...optionPill(scope === 'primary'), flex: 1, justifyContent: 'center' }}
-                    aria-pressed={scope === 'primary'}
-                  >
-                    {sl.primary}
-                  </button>
-                  <button
-                    type="button"
-                    className="editorial-press"
-                    onClick={() => setScope('all')}
-                    style={{ ...optionPill(scope === 'all'), flex: 1, justifyContent: 'center' }}
-                    aria-pressed={scope === 'all'}
-                  >
-                    {sl.all}
-                  </button>
+                  {([
+                    ['primary', sl.primary],
+                    ['secondary', sl.secondary],
+                    ['all', sl.all],
+                  ] as const).map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      className="editorial-press"
+                      onClick={() => setScope(key)}
+                      style={{ ...optionPill(scope === key), flex: 1, justifyContent: 'center' }}
+                      aria-pressed={scope === key}
+                    >
+                      {label}
+                    </button>
+                  ))}
                 </div>
               </>
             )}

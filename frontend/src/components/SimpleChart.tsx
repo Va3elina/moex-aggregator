@@ -275,10 +275,16 @@ export default function SimpleChart({
   const hasOhlc = data.length > 0 && data[0].open != null && data[0].high != null && data[0].low != null;
   const resolvedType: ChartSeriesType =
     OHLC_TYPES.includes(requestedType) && !hasOhlc ? 'line' : requestedType;
-  // scope='all': area/columns применяются и к вторичным сериям (OHLC-типы — нет,
-  // у вторичных рядов OHLC не бывает: они остаются линиями).
-  const oiAsArea = typeScope === 'all' && resolvedType === 'area';
-  const oiAsColumns = typeScope === 'all' && resolvedType === 'columns';
+  // Scope — к какой линии применять тип (выбор юзера: 1-я / 2-я / все):
+  //  'primary'   → тип у основной линии, вторичные — линии;
+  //  'secondary' → основная остаётся ЛИНИЕЙ, area/columns у вторичных;
+  //  'all'       → у всех. OHLC-типы (свечи/бары/хайкен) рисуются только там,
+  //  где есть OHLC (основная), при любом scope — вторичным не из чего строиться.
+  const applyToOi = typeScope === 'all' || typeScope === 'secondary';
+  const oiAsArea = applyToOi && resolvedType === 'area';
+  const oiAsColumns = applyToOi && resolvedType === 'columns';
+  const primaryEffType: ChartSeriesType =
+    typeScope === 'secondary' && !OHLC_TYPES.includes(resolvedType) ? 'line' : resolvedType;
 
   const animationRef = useRef<number | null>(null);
   const [tooltip, setTooltip] = useState<{
@@ -1232,7 +1238,7 @@ export default function SimpleChart({
               {/* Область под основной линией (тип «Область») — градиентная заливка
                   под ценой, чтобы визуально отделить цену от вторичной серии (ОИ).
                   Сама линия рисуется сверху (ниже), как в TradingView area-режиме. */}
-              {showPrimary && resolvedType === 'area' && animatedPaths.area && (
+              {showPrimary && primaryEffType === 'area' && animatedPaths.area && (
                 <>
                   <defs>
                     <linearGradient id="priceAreaGrad" x1="0" y1="0" x2="0" y2="1">
@@ -1253,7 +1259,7 @@ export default function SimpleChart({
                   showPrimary=false → пропускаем рендер (юзер скрыл primary через toggle).
                   Рисуется только в line/area типах — для столбиков/свечей/баров
                   primary рендерится своими блоками ниже. */}
-              {showPrimary && (resolvedType === 'line' || resolvedType === 'area') && animatedPaths.primary && (
+              {showPrimary && (primaryEffType === 'line' || primaryEffType === 'area') && animatedPaths.primary && (
                 <path
                   d={animatedPaths.primary}
                   fill="none"
@@ -1268,7 +1274,7 @@ export default function SimpleChart({
               {/* Тип «Столбики» — колонки значения основной серии (работает для
                   любого ряда, OHLC не нужен). Базовая линия — низ chart area,
                   как у существующей OI-гистограммы. */}
-              {showPrimary && resolvedType === 'columns' && targetCalc.points.length > 0 && (
+              {showPrimary && primaryEffType === 'columns' && targetCalc.points.length > 0 && (
                 <g>
                   {targetCalc.points.map((p, i) => {
                     const barWidth = Math.max((chartWidth / targetCalc.points.length) * 0.55, 1);
@@ -1293,7 +1299,7 @@ export default function SimpleChart({
               {/* Типы «Свечи» и «Хайкен-Аши» — тело open↔close + тень high↔low.
                   Цвета up/down = --oi-green/--oi-red → палитры доступности
                   применяются автоматически. */}
-              {showPrimary && (resolvedType === 'candles' || resolvedType === 'heikin') && targetCalc.ohlcPoints.length > 0 && (
+              {showPrimary && (primaryEffType === 'candles' || primaryEffType === 'heikin') && targetCalc.ohlcPoints.length > 0 && (
                 <g>
                   {targetCalc.ohlcPoints.map((p, i) => {
                     const slot = chartWidth / targetCalc.ohlcPoints.length;
@@ -1317,7 +1323,7 @@ export default function SimpleChart({
 
               {/* Тип «Бары» (OHLC) — вертикаль high↔low, засечка open слева,
                   close справа. Классика для тех, кому свечи «жирные». */}
-              {showPrimary && resolvedType === 'bars' && targetCalc.ohlcPoints.length > 0 && (
+              {showPrimary && primaryEffType === 'bars' && targetCalc.ohlcPoints.length > 0 && (
                 <g>
                   {targetCalc.ohlcPoints.map((p, i) => {
                     const slot = chartWidth / targetCalc.ohlcPoints.length;
