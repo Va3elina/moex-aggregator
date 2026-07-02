@@ -1904,7 +1904,7 @@ export default function SimpleChart({
             className="absolute z-20 pointer-events-none"
             style={getDatePillStyle(wrap.offsetLeft + x, topLineY)}
           >
-            <span className={`${TOOLTIP.dateClass} whitespace-nowrap`} style={TOOLTIP.dateStyle}>
+            <span className={TOOLTIP.datePillClass} style={TOOLTIP.datePillStyle}>
               {annDate}
             </span>
           </div>
@@ -1930,7 +1930,7 @@ export default function SimpleChart({
             className="chart-hover-ui absolute z-20 pointer-events-none"
             style={getDatePillStyle(wrap.offsetLeft + tooltip.x, topLineY)}
           >
-            <span className={`${TOOLTIP.dateClass} whitespace-nowrap`} style={TOOLTIP.dateStyle}>
+            <span className={TOOLTIP.datePillClass} style={TOOLTIP.datePillStyle}>
               {htmlDateLabel}
             </span>
           </div>

@@ -3,7 +3,8 @@
  * на всех графиках Фрейм. Используется в SimpleChart, FlowsHistogram, StrengthPage.
  *
  * ── Контракт ──
- * Pill bottom edge сидит на 4px выше верхней горизонтальной линии графика.
+ * Pill bottom edge сидит вплотную к верхней горизонтальной линии графика
+ * (PILL_GAP_ABOVE_LINE = 0; стиль пилюли — TOOLTIP.datePillClass, без рамки).
  * Pill horizontally центрирован на cursor X.
  *
  * ── Почему helper а не hook ──
@@ -21,7 +22,7 @@
 
 import type { CSSProperties } from 'react';
 
-export const PILL_GAP_ABOVE_LINE = 4;
+export const PILL_GAP_ABOVE_LINE = 0;
 
 interface ChartTopLineOptions {
   /** Wrapper element с chart-reveal SVG. Если null — query из container'а. */

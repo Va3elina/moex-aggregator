@@ -50,7 +50,7 @@ export default function ChartDateLabel({ date, x, containerWidth }: ChartDateLab
         className="absolute pointer-events-none"
         style={{ left: clampedX, transform: 'translateX(-50%)', top: 0 }}
       >
-        <span ref={labelRef} className={TOOLTIP.dateClass} style={TOOLTIP.dateStyle}>
+        <span ref={labelRef} className={TOOLTIP.datePillClass} style={TOOLTIP.datePillStyle}>
           {date}
         </span>
       </div>

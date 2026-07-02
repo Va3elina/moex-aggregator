@@ -162,6 +162,19 @@ export const TOOLTIP = {
     fontSize: 'var(--fs-2xs)',
     whiteSpace: 'nowrap' as const,
   },
+  /* Плавающая дата над графиком (crosshair/annotation hover) — без рамки,
+     просто текст на paper-подложке, прижатый к верхней линии графика
+     (PILL_GAP_ABOVE_LINE = 0 в datePillLayout.ts). Вертикальный padding 0,
+     чтобы текст стоял вплотную к линии и не упирался в легенду
+     (между легендой и линией всего ~16px). dateClass/dateStyle с рамкой
+     остаются для даты ВНУТРИ hover-карточки (cbr-flows). */
+  datePillClass: 'text-theme-secondary tabular-nums whitespace-nowrap',
+  datePillStyle: {
+    background: 'var(--bg-primary)',  // paper — маскирует crosshair за текстом
+    padding: '0 var(--sp-2)',
+    fontSize: 'var(--fs-2xs)',
+    whiteSpace: 'nowrap' as const,
+  },
   dotClass: 'rounded-full flex-shrink-0',
   dotStyle: { width: 'var(--sp-2)', height: 'var(--sp-2)' },
   /** @deprecated Use `dotClass` + `dotStyle`. Kept for backward compat. */
