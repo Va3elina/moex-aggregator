@@ -678,8 +678,6 @@ export default function PricingPage() {
           agreementConsent={agreementConsent}
           onAgreementChange={setAgreementConsent}
           onConfirm={() => confirmCheckout('card')}
-          // СБП (QR, рекуррент) проверен боевым списанием → открыт всем.
-          onConfirmSbp={() => confirmCheckout('sbp')}
           onClose={closeConsent}
           isLoading={checkoutLoading === pendingPlanId}
           canConfirm={consentReady}
@@ -739,7 +737,6 @@ function ConsentModal({
   agreementConsent,
   onAgreementChange,
   onConfirm,
-  onConfirmSbp,
   onClose,
   isLoading,
   canConfirm,
@@ -748,9 +745,6 @@ function ConsentModal({
   agreementConsent: boolean;
   onAgreementChange: (v: boolean) => void;
   onConfirm: () => void;
-  // Оплата через СБП (QR) — второй способ. Задан только в checkout-режиме (не
-  // trial). Кнопка появляется под «Подтвердить» после галки согласия.
-  onConfirmSbp?: () => void;
   onClose: () => void;
   isLoading: boolean;
   canConfirm: boolean;
@@ -906,36 +900,15 @@ function ConsentModal({
           >
             {isLoading
               ? (trialInfo ? 'Открываем…' : 'Создаём…')
-              : (trialInfo ? 'Начать бесплатно' : 'Оплатить картой')}
+              : (trialInfo ? 'Начать бесплатно' : 'Оплатить')}
           </button>
         </div>
 
-        {/* Оплата через СБП (QR) — второй способ, только в checkout (не trial).
-            Ведёт на /billing/sbp с QR; оплата завершается в приложении банка по
-            СБП напрямую (обходит недоверенный серт хостед-страницы T-Bank). */}
-        {!trialInfo && onConfirmSbp && (
-          <>
-            <div className="flex items-center gap-3 my-4">
-              <span className="flex-1" style={{ height: 1, background: 'var(--border-color)' }} />
-              <span className="text-xs whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>
-                или оплатить через
-              </span>
-              <span className="flex-1" style={{ height: 1, background: 'var(--border-color)' }} />
-            </div>
-            <button
-              onClick={onConfirmSbp}
-              disabled={!canConfirm || isLoading}
-              className="w-full py-3 rounded-xl text-sm font-bold transition-colors disabled:opacity-50 disabled:cursor-not-allowed border"
-              style={{
-                borderColor: 'var(--accent)',
-                color: 'var(--accent)',
-                background: 'transparent',
-              }}
-            >
-              {isLoading ? 'Создаём…' : 'СБП — QR-код'}
-            </button>
-          </>
-        )}
+        {/* Кнопка «СБП — QR-код» убрана 2026-07-02: T-Bank GetQr(IMAGE) стабильно
+            отдавал «Внутренняя ошибка системы» → юзер видел тупиковый экран.
+            СБП остаётся доступен внутри хостед-формы T-Bank («Быстрая оплата»).
+            Механизм QR-флоу (confirmCheckout('sbp') + /billing/sbp + бэк) сохранён —
+            вернуть = снова передать onConfirmSbp в ConsentModal. */}
       </div>
     </div>
   );
