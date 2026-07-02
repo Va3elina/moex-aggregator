@@ -6,11 +6,11 @@ import { useChartSettings, OHLC_TYPES, type ChartSeriesType } from '../../hooks/
 interface Props {
   /** Показывать секцию «Тип графика». false — для страниц, где основной чарт
    *  не SimpleChart (treemap/donut/кастомные SVG) и тип не к чему применять;
-   *  палитра и штрих-режим остаются (они глобальные). */
+   *  палитра остаётся (она глобальная). */
   showType?: boolean;
-  /** На ЭТОМ графике есть OHLC-данные → свечи/бары/Хайкен-Аши применятся прямо
-   *  здесь. false (default) — OHLC-типы в пикере приглушены с пометкой (глобально
-   *  выбрать можно, на текущем графике применится линия). */
+  /** На ЭТОМ графике есть OHLC-данные → показываем свечи/бары/Хайкен-Аши.
+   *  false (default) — OHLC-типы СКРЫТЫ (фидбек Вадима: не дизейблить, убирать).
+   *  Глобально выбранный OHLC-тип на страницах без OHLC откатывается на линию. */
   ohlcHere?: boolean;
   /** Доп. классы для кнопки-шестерёнки (размер/позиция как у соседних кнопок). */
   className?: string;
@@ -35,8 +35,7 @@ const sectionHint: CSSProperties = {
   fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)', margin: '0 0 10px', lineHeight: 1.4,
 };
 // Сегмент-опция — editorial pill. active = accent-заливка + тень.
-// dimmed — опция глобально доступна, но на текущем графике не применится.
-const optionPill = (active: boolean, dimmed = false): CSSProperties => ({
+const optionPill = (active: boolean): CSSProperties => ({
   display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: 8,
   padding: '9px 12px', borderRadius: 10, cursor: 'pointer',
   border: '2px solid var(--text-primary)',
@@ -45,7 +44,6 @@ const optionPill = (active: boolean, dimmed = false): CSSProperties => ({
   boxShadow: active ? '3px 3px 0 0 var(--text-primary)' : 'none',
   transition: 'box-shadow 0.12s, background 0.12s',
   fontSize: 'var(--fs-sm)', fontWeight: 600,
-  opacity: dimmed && !active ? 0.5 : 1,
 });
 
 type IconProps = { size?: number };
@@ -73,13 +71,14 @@ const CHART_TYPES: { key: ChartSeriesType; label: string; Icon: (p: IconProps) =
   { key: 'heikin', label: 'Хайкен-Аши', Icon: HeikinIcon },
 ];
 
-// Свотчи (покупки/продажи) для превью в пикере. Для 'default' — представительные
+// Свотчи (пары линий) для превью в пикере. Для 'default' — представительные
 // editorial-dark значения (реальные --oi-* перекрыты при активной палитре). tag —
-// человеческое пояснение типа, без клиники.
+// человеческое пояснение типа, без клиники. Пары проверены CVD-симуляцией
+// (Machado 2009): каждая различима под своим типом дальтонизма с запасом ΔE>30.
 const PALETTES: { key: ChartPalette; label: string; tag: string; buy: string; sell: string }[] = [
   { key: 'default',    label: 'Обычная',          tag: 'по умолчанию',   buy: '#5BD49C', sell: '#B91C5C' },
   { key: 'redgreen',   label: 'Сине-янтарная',    tag: 'красно-зелёный', buy: '#4C8FBF', sell: '#DE9540' },
-  { key: 'blueyellow', label: 'Бирюза-роза',      tag: 'сине-жёлтый',    buy: '#2FA090', sell: '#C6577F' },
+  { key: 'blueyellow', label: 'Бирюза-роза',      tag: 'сине-жёлтый',    buy: '#56CBB4', sell: '#8C3D63' },
   { key: 'contrast',   label: 'Высокий контраст', tag: 'макс. яркость',  buy: '#EFE7D4', sell: '#FF8A5B' },
 ];
 
@@ -109,7 +108,7 @@ const swatch = (bg: string): CSSProperties => ({
 export default function ChartSettings({ showType = true, ohlcHere = false, className = '' }: Props) {
   const [open, setOpen] = useState(false);
   const [palette, setPalette] = useChartPalette();
-  const { type, dash, setType, setDash } = useChartSettings();
+  const { type, dash, scope, setType, setDash, setScope } = useChartSettings();
 
   useEffect(() => {
     if (!open) return;
@@ -157,88 +156,96 @@ export default function ChartSettings({ showType = true, ohlcHere = false, class
             {showType && (
               <>
                 <div style={sectionLabel}>Тип графика</div>
-                <p style={sectionHint}>
-                  Действует на все графики. Свечи, бары и Хайкен-Аши — там, где есть
-                  биржевые данные открытия/максимума/минимума (цена на «Открытых
-                  позициях»); на остальных применится линия.
-                </p>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                  {CHART_TYPES.map(({ key, label, Icon }) => {
-                    const dimmed = !ohlcHere && OHLC_TYPES.includes(key);
-                    return (
+                  {CHART_TYPES
+                    .filter(({ key }) => ohlcHere || !OHLC_TYPES.includes(key))
+                    .map(({ key, label, Icon }) => (
                       <button
                         key={key}
                         type="button"
                         className="editorial-press"
                         onClick={() => setType(key)}
-                        style={optionPill(type === key, dimmed)}
+                        style={optionPill(type === key)}
                         aria-pressed={type === key}
-                        title={dimmed ? 'На этом графике нет OHLC-данных — применится линия' : undefined}
                       >
                         <Icon size={18} /> {label}
                       </button>
-                    );
-                  })}
+                    ))}
+                </div>
+
+                {/* К чему применять тип: только основная серия или все линии
+                    графика (area/columns красят и вторичные; свечи/бары — только
+                    основную, у вторичных рядов OHLC не бывает). */}
+                <div style={{ ...sectionLabel, marginTop: 22 }}>Применять к</div>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button
+                    type="button"
+                    className="editorial-press"
+                    onClick={() => setScope('primary')}
+                    style={{ ...optionPill(scope === 'primary'), flex: 1, justifyContent: 'center' }}
+                    aria-pressed={scope === 'primary'}
+                  >
+                    Основной серии
+                  </button>
+                  <button
+                    type="button"
+                    className="editorial-press"
+                    onClick={() => setScope('all')}
+                    style={{ ...optionPill(scope === 'all'), flex: 1, justifyContent: 'center' }}
+                    aria-pressed={scope === 'all'}
+                  >
+                    Всем сериям
+                  </button>
                 </div>
               </>
             )}
 
             {/* Палитра — ГЛОБАЛЬНАЯ (accessibility), всегда доступна на любом графике.
-                Несколько схем: одна не покрывает все типы дальтонизма. */}
+                Несколько схем: одна не покрывает все типы дальтонизма. Пятая карточка
+                «Монохром» = контраст-палитра + штрих второй линии (различие формой —
+                для тех, кому не помогает никакой цвет). */}
             <div style={{ ...sectionLabel, marginTop: showType ? 22 : 0 }}>Палитра</div>
             <p style={sectionHint}>
-              Выбери, где обе линии (покупки / продажи) хорошо различаешь. Действует на все графики.
+              Выбери схему, в которой линии графика различаются лучше всего.
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              {PALETTES.map((p) => (
-                <button
-                  key={p.key}
-                  type="button"
-                  className="editorial-press"
-                  onClick={() => setPalette(p.key)}
-                  style={paletteCard(palette === p.key)}
-                  aria-pressed={palette === p.key}
-                >
-                  <span style={{ display: 'flex', gap: 5 }}>
-                    <i style={swatch(p.buy)} />
-                    <i style={swatch(p.sell)} />
-                  </span>
-                  <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2, minWidth: 0 }}>
-                    <span style={{ fontWeight: 700, fontSize: 'var(--fs-sm)', whiteSpace: 'nowrap' }}>{p.label}</span>
-                    <span style={{ fontSize: 11, opacity: 0.7 }}>{p.tag}</span>
-                  </span>
-                </button>
-              ))}
-            </div>
-
-            {/* Штрих-режим — если и палитры не помогают (полная монохромность):
-                линии различаются ФОРМОЙ (штрих/точки), а не цветом. */}
-            <div style={{ ...sectionLabel, marginTop: 22 }}>Линии</div>
-            <p style={sectionHint}>
-              Если цвета не различаются совсем: вторая линия — штрихом, третья — точками.
-              Различие формой, а не цветом.
-            </p>
-            <div style={{ display: 'flex', gap: 10 }}>
+              {PALETTES.map((p) => {
+                const active = palette === p.key && !dash;
+                return (
+                  <button
+                    key={p.key}
+                    type="button"
+                    className="editorial-press"
+                    onClick={() => { setPalette(p.key); setDash(false); }}
+                    style={paletteCard(active)}
+                    aria-pressed={active}
+                  >
+                    <span style={{ display: 'flex', gap: 5 }}>
+                      <i style={swatch(p.buy)} />
+                      <i style={swatch(p.sell)} />
+                    </span>
+                    <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2, minWidth: 0 }}>
+                      <span style={{ fontWeight: 700, fontSize: 'var(--fs-sm)', whiteSpace: 'nowrap' }}>{p.label}</span>
+                      <span style={{ fontSize: 11, opacity: 0.7 }}>{p.tag}</span>
+                    </span>
+                  </button>
+                );
+              })}
               <button
                 type="button"
                 className="editorial-press"
-                onClick={() => setDash(false)}
-                style={{ ...optionPill(!dash), flex: 1, justifyContent: 'center' }}
-                aria-pressed={!dash}
+                onClick={() => { setPalette('contrast'); setDash(true); }}
+                style={paletteCard(palette === 'contrast' && dash)}
+                aria-pressed={palette === 'contrast' && dash}
               >
-                Сплошные
-              </button>
-              <button
-                type="button"
-                className="editorial-press"
-                onClick={() => setDash(true)}
-                style={{ ...optionPill(dash), flex: 1, justifyContent: 'center' }}
-                aria-pressed={dash}
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
-                  <path d="M3 12h4M10 12h4M17 12h4" />
+                <svg width="33" height="14" viewBox="0 0 33 14" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" style={{ flex: '0 0 auto' }}>
+                  <path d="M2 4h29" />
+                  <path d="M2 10h5M11 10h5M20 10h5M29 10h2" />
                 </svg>
-                Штрихом
+                <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.2, minWidth: 0 }}>
+                  <span style={{ fontWeight: 700, fontSize: 'var(--fs-sm)', whiteSpace: 'nowrap' }}>Монохром</span>
+                  <span style={{ fontSize: 11, opacity: 0.7 }}>формой, не цветом</span>
+                </span>
               </button>
             </div>
           </div>

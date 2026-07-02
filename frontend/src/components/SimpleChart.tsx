@@ -269,12 +269,16 @@ export default function SimpleChart({
   // Глобальные настройки графиков (модалка-шестерёнка): тип основной серии +
   // штрих-режим (доступность: различие линий формой, не цветом). Проп
   // primaryType — явный оверрайд для страниц, где глобальный тип не подходит.
-  const { type: globalChartType, dash: dashMode } = useChartSettings();
+  const { type: globalChartType, dash: dashMode, scope: typeScope } = useChartSettings();
   const requestedType: ChartSeriesType = primaryType ?? globalChartType;
   // OHLC есть в данных? Ряды однородны — достаточно первой точки.
   const hasOhlc = data.length > 0 && data[0].open != null && data[0].high != null && data[0].low != null;
   const resolvedType: ChartSeriesType =
     OHLC_TYPES.includes(requestedType) && !hasOhlc ? 'line' : requestedType;
+  // scope='all': area/columns применяются и к вторичным сериям (OHLC-типы — нет,
+  // у вторичных рядов OHLC не бывает: они остаются линиями).
+  const oiAsArea = typeScope === 'all' && resolvedType === 'area';
+  const oiAsColumns = typeScope === 'all' && resolvedType === 'columns';
 
   const animationRef = useRef<number | null>(null);
   const [tooltip, setTooltip] = useState<{
@@ -289,12 +293,15 @@ export default function SimpleChart({
     visible: boolean;
   }>({ x: 0, primaryY: 0, secondaryY: null, thirdY: null, value: 0, time: '', visible: false });
 
-  // Анимированные пути
+  // Анимированные пути (area* — заливки под линиями для типа «Область»;
+  // secondary/third area используются только при scope='all')
   const [animatedPaths, setAnimatedPaths] = useState({
     primary: '',
     area: '',
     secondary: '',
+    areaSecondary: '',
     third: '',
+    areaThird: '',
   });
 
   // Opacity для OI линий (для fade-in эффекта)
@@ -602,7 +609,9 @@ export default function SimpleChart({
         primary: pointsToPath(targetPrimary),
         area: pointsToAreaPath(targetPrimary, chartHeight),
         secondary: pointsToPath(targetSecondary),
+        areaSecondary: pointsToAreaPath(targetSecondary, chartHeight),
         third: pointsToPath(targetThird),
+        areaThird: pointsToAreaPath(targetThird, chartHeight),
       });
       prevPointsRef.current = { primary: targetPrimary, secondary: targetSecondary, third: targetThird };
       currentPointsRef.current = { primary: [], secondary: [], third: [] };
@@ -627,7 +636,9 @@ export default function SimpleChart({
         primary: pointsToPath(targetPrimary),
         area: pointsToAreaPath(targetPrimary, chartHeight),
         secondary: pointsToPath(targetSecondary),
+        areaSecondary: pointsToAreaPath(targetSecondary, chartHeight),
         third: pointsToPath(targetThird),
+        areaThird: pointsToAreaPath(targetThird, chartHeight),
       });
       prevPointsRef.current = { primary: targetPrimary, secondary: targetSecondary, third: targetThird };
       currentPointsRef.current = { primary: [], secondary: [], third: [] };
@@ -650,7 +661,9 @@ export default function SimpleChart({
         primary: pointsToPath(targetPrimary),
         area: pointsToAreaPath(targetPrimary, chartHeight),
         secondary: pointsToPath(targetSecondary),
+        areaSecondary: pointsToAreaPath(targetSecondary, chartHeight),
         third: pointsToPath(targetThird),
+        areaThird: pointsToAreaPath(targetThird, chartHeight),
       });
       setOiOpacity(1);
       setRevealed(true);
@@ -715,7 +728,9 @@ export default function SimpleChart({
         primary: pointsToPath(interpolatedPrimary),
         area: pointsToAreaPath(interpolatedPrimary, chartHeight),
         secondary: pointsToPath(interpolatedSecondary),
+        areaSecondary: pointsToAreaPath(interpolatedSecondary, chartHeight),
         third: pointsToPath(interpolatedThird),
+        areaThird: pointsToAreaPath(interpolatedThird, chartHeight),
       });
 
       if (t < 1) {
@@ -1376,8 +1391,34 @@ export default function SimpleChart({
                 );
               })()}
 
-              {/* Third данные — гистограмма или линия */}
-              {showThird && chartMode === 'histogram' && targetCalc.thirdPoints.length > 0 && (
+              {/* Заливки под вторичными линиями (тип «Область» + scope «все серии»).
+                  Лёгкий градиент цветом серии — линии рисуются сверху. */}
+              {showSecondary && oiAsArea && chartMode === 'line' && animatedPaths.areaSecondary && (
+                <>
+                  <defs>
+                    <linearGradient id="secAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={secondaryColor} stopOpacity="0.16" />
+                      <stop offset="100%" stopColor={secondaryColor} stopOpacity="0.02" />
+                    </linearGradient>
+                  </defs>
+                  <path d={animatedPaths.areaSecondary} fill="url(#secAreaGrad)" stroke="none" opacity={oiOpacity} />
+                </>
+              )}
+              {showThird && oiAsArea && chartMode === 'line' && animatedPaths.areaThird && (
+                <>
+                  <defs>
+                    <linearGradient id="thirdAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={thirdColor} stopOpacity="0.16" />
+                      <stop offset="100%" stopColor={thirdColor} stopOpacity="0.02" />
+                    </linearGradient>
+                  </defs>
+                  <path d={animatedPaths.areaThird} fill="url(#thirdAreaGrad)" stroke="none" opacity={oiOpacity} />
+                </>
+              )}
+
+              {/* Third данные — гистограмма или линия. Столбики также при
+                  scope «все серии» + тип «Столбики». */}
+              {showThird && (chartMode === 'histogram' || oiAsColumns) && targetCalc.thirdPoints.length > 0 && (
                 <g opacity={oiOpacity} className="transition-opacity duration-300">
                   {targetCalc.thirdPoints.map((p, i) => {
                     const barWidth = Math.max((chartWidth / targetCalc.thirdPoints.length) * 0.35, 1);
@@ -1398,7 +1439,7 @@ export default function SimpleChart({
                   })}
                 </g>
               )}
-              {showThird && chartMode === 'line' && animatedPaths.third && (
+              {showThird && chartMode === 'line' && !oiAsColumns && animatedPaths.third && (
                 <path
                   d={animatedPaths.third}
                   fill="none"
@@ -1411,8 +1452,8 @@ export default function SimpleChart({
                 />
               )}
 
-              {/* Secondary данные — гистограмма или линия */}
-              {showSecondary && chartMode === 'histogram' && targetCalc.secondaryPoints.length > 0 && (
+              {/* Secondary данные — гистограмма или линия (или столбики при scope «все серии») */}
+              {showSecondary && (chartMode === 'histogram' || oiAsColumns) && targetCalc.secondaryPoints.length > 0 && (
                 <g opacity={oiOpacity} className="transition-opacity duration-300">
                   {targetCalc.secondaryPoints.map((p, i) => {
                     const totalSeries = showThird ? 2 : 1;
@@ -1437,7 +1478,7 @@ export default function SimpleChart({
               {/* Штрих-режим (доступность): secondary — длинный штрих, third —
                   точечный. Линии различимы ФОРМОЙ при полной монохромности,
                   когда никакая палитра не помогает. */}
-              {showSecondary && chartMode === 'line' && animatedPaths.secondary && (
+              {showSecondary && chartMode === 'line' && !oiAsColumns && animatedPaths.secondary && (
                 <path
                   d={animatedPaths.secondary}
                   fill="none"
