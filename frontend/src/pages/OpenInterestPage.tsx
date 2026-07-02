@@ -178,7 +178,8 @@ export default function OpenInterestPage() {
   const [oiVariant, setOiVariant] = usePersistedState<OIVariant>('frame:oi:oiVariant', 'net');
   const [showExpirations, setShowExpirations] = usePersistedState('frame:oi:showExpirations', false);
   const [showPrice, setShowPrice] = usePersistedState('frame:oi:showPrice', true);
-  const [chartType, setChartType] = usePersistedState<'line' | 'area'>('frame:oi:chartType', 'line');
+  // Тип графика теперь ГЛОБАЛЬНЫЙ (useChartSettings в SimpleChart/ChartSettings) —
+  // старый per-page ключ frame:oi:chartType мигрируется в сторе.
   // Период: диплинк сигнала (URL) приоритетнее сохранённого. Применяем на init
   // (seed), а не эффектом — иначе первый запрос ушёл бы на сохранённом 5y и для
   // 5-минутного сигнала тянул бы годы баров. См. parseOiDeepLink.
@@ -343,6 +344,10 @@ export default function OpenInterestPage() {
     filteredData?.candles.map((c) => ({
       time: c.time,
       value: c.close,
+      // OHLC — для типов «свечи»/«бары»/«Хайкен-Аши» (API отдаёт полный OHLCV)
+      open: c.open,
+      high: c.high,
+      low: c.low,
     })) || []
     , [filteredData]);
 
@@ -762,7 +767,7 @@ export default function OpenInterestPage() {
               ].filter(Boolean),
             }}
           />
-          <ChartSettings chartType={chartType} onChartType={setChartType} />
+          <ChartSettings ohlcHere />
           {ALERTS_ENABLED && (
           <AlertBellButton
             indicator="open_interest"
@@ -835,7 +840,6 @@ export default function OpenInterestPage() {
         showPrimary={displayMode === 'price' || showPrice}
         showSecondary={displayMode !== 'price' && !!oiData}
         showThird={oiVariant === 'both' && !!oiDataThird}
-        primaryType={chartType}
         primaryColor={COLORS.primary}
         secondaryColor={colors.secondary}
         thirdColor={colors.third}

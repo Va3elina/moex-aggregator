@@ -31,6 +31,7 @@ import { getCategoryInfo, getCategoryShortLabel } from '../components/cbr/cbrCat
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import CsvExportButton from '../components/export/CsvExportButton';
 import ChartActionsMenu from '../components/ChartActionsMenu';
+import ChartSettings from '../components/chart/ChartSettings';
 import ChartTabs from '../components/ChartTabs';
 import SegmentedControl from '../components/SegmentedControl';
 import { periodToQuery } from '../utils/csvPeriod';
@@ -485,6 +486,7 @@ export default function CbrFlowsPage() {
               ].filter(Boolean) as string[],
             }}
           />
+          <ChartSettings showType={false} />
           </ChartActionsMenu>
         </div>
 

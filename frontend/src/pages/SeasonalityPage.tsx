@@ -18,6 +18,7 @@ import { type PeriodConfig, makePeriodId } from '../components/seasonality/perio
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import CsvExportButton from '../components/export/CsvExportButton';
 import ChartActionsMenu from '../components/ChartActionsMenu';
+import ChartSettings from '../components/chart/ChartSettings';
 import LayersButton from '../components/LayersButton';
 import type { SeasonalityResponse, SeasonalityMode, PriceChartResponse, YearlySeasonalityResponse } from '../services/api';
 import { useOnboardingTour } from '../hooks/useFirstVisit';
@@ -760,6 +761,7 @@ export default function SeasonalityPage() {
               ].filter(Boolean) as string[],
             }}
           />
+          <ChartSettings showType={false} />
           </ChartActionsMenu>
         )}
       </div>

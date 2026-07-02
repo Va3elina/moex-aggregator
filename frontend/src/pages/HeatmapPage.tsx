@@ -4,6 +4,7 @@ import PageHeader from '../components/PageHeader';
 import Dropdown, { type DropdownOption } from '../components/Dropdown';
 import AdaptiveSegmented from '../components/AdaptiveSegmented';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
+import ChartSettings from '../components/chart/ChartSettings';
 import CsvExportButton from '../components/export/CsvExportButton';
 import ChartWatermark from '../components/ChartWatermark';
 import { METHODOLOGY } from '../data/methodology';
@@ -719,6 +720,7 @@ export default function HeatmapPage() {
             ].filter(Boolean),
           }}
         />
+        <ChartSettings showType={false} />
         </div>
       </div>
 

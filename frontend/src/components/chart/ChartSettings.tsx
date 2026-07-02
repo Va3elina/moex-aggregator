@@ -1,14 +1,17 @@
-import { useEffect, useState, type CSSProperties } from 'react';
-import { Settings2, X, LineChart, AreaChart } from 'lucide-react';
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { Settings2, X, LineChart, AreaChart, ChartCandlestick, ChartColumnBig } from 'lucide-react';
 import { useChartPalette, type ChartPalette } from '../../hooks/useChartPalette';
-
-export type ChartType = 'line' | 'area';
+import { useChartSettings, OHLC_TYPES, type ChartSeriesType } from '../../hooks/useChartSettings';
 
 interface Props {
-  /** Тип отображения основной (линейной) серии. Передаётся ТОЛЬКО для графиков,
-   *  где смена типа применима (линия ↔ область). Для гистограмм/treemap — не задаём. */
-  chartType?: ChartType;
-  onChartType?: (t: ChartType) => void;
+  /** Показывать секцию «Тип графика». false — для страниц, где основной чарт
+   *  не SimpleChart (treemap/donut/кастомные SVG) и тип не к чему применять;
+   *  палитра и штрих-режим остаются (они глобальные). */
+  showType?: boolean;
+  /** На ЭТОМ графике есть OHLC-данные → свечи/бары/Хайкен-Аши применятся прямо
+   *  здесь. false (default) — OHLC-типы в пикере приглушены с пометкой (глобально
+   *  выбрать можно, на текущем графике применится линия). */
+  ohlcHere?: boolean;
   /** Доп. классы для кнопки-шестерёнки (размер/позиция как у соседних кнопок). */
   className?: string;
 }
@@ -28,21 +31,46 @@ const sectionLabel: CSSProperties = {
   fontSize: 'var(--fs-xs)', fontWeight: 700, textTransform: 'uppercase',
   letterSpacing: '0.04em', color: 'var(--text-secondary)', marginBottom: 10,
 };
-// Сегмент-опция (тип графика) — editorial pill. active = accent-заливка + тень.
-const optionPill = (active: boolean): CSSProperties => ({
-  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, flex: 1,
-  padding: '10px 14px', borderRadius: 10, cursor: 'pointer',
+const sectionHint: CSSProperties = {
+  fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)', margin: '0 0 10px', lineHeight: 1.4,
+};
+// Сегмент-опция — editorial pill. active = accent-заливка + тень.
+// dimmed — опция глобально доступна, но на текущем графике не применится.
+const optionPill = (active: boolean, dimmed = false): CSSProperties => ({
+  display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: 8,
+  padding: '9px 12px', borderRadius: 10, cursor: 'pointer',
   border: '2px solid var(--text-primary)',
   background: active ? 'var(--accent)' : 'var(--bg-secondary)',
   color: active ? 'var(--text-inverse)' : 'var(--text-primary)',
   boxShadow: active ? '3px 3px 0 0 var(--text-primary)' : 'none',
   transition: 'box-shadow 0.12s, background 0.12s',
   fontSize: 'var(--fs-sm)', fontWeight: 600,
+  opacity: dimmed && !active ? 0.5 : 1,
 });
 
-const CHART_TYPES: { key: ChartType; label: string; Icon: typeof LineChart }[] = [
-  { key: 'line', label: 'Линия', Icon: LineChart },
-  { key: 'area', label: 'Область', Icon: AreaChart },
+type IconProps = { size?: number };
+
+// Кастомные иконки (в lucide нет OHLC-баров и Хайкен-Аши) — тот же stroke-стиль.
+const OhlcBarsIcon = ({ size = 18 }: IconProps) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+    <path d="M7 4v13M4 8h3M7 12h3M17 7v13M14 15h3M17 11h3" />
+  </svg>
+);
+const HeikinIcon = ({ size = 18 }: IconProps) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+    <path d="M8 3v3M8 16v4M16 5v3M16 17v3" />
+    <rect x="5.5" y="6" width="5" height="10" rx="2.2" />
+    <rect x="13.5" y="8" width="5" height="9" rx="2.2" />
+  </svg>
+);
+
+const CHART_TYPES: { key: ChartSeriesType; label: string; Icon: (p: IconProps) => ReactNode }[] = [
+  { key: 'line', label: 'Линия', Icon: (p) => <LineChart size={p.size} /> },
+  { key: 'area', label: 'Область', Icon: (p) => <AreaChart size={p.size} /> },
+  { key: 'columns', label: 'Столбики', Icon: (p) => <ChartColumnBig size={p.size} /> },
+  { key: 'candles', label: 'Свечи', Icon: (p) => <ChartCandlestick size={p.size} /> },
+  { key: 'bars', label: 'Бары', Icon: OhlcBarsIcon },
+  { key: 'heikin', label: 'Хайкен-Аши', Icon: HeikinIcon },
 ];
 
 // Свотчи (покупки/продажи) для превью в пикере. Для 'default' — представительные
@@ -72,13 +100,16 @@ const swatch = (bg: string): CSSProperties => ({
 /**
  * ChartSettings — единая кнопка-шестерёнка (в editorial-стиле, под стать
  * ChartCaptureButton: круглая 44×44) + стилизованная модалка настроек графика.
- * Все опции кастомизации графика живут ЗДЕСЬ (не россыпью тумблеров, не дефолтами).
- * Пока: тип графика (Линия/Область). Задел под палитры / свечи-Хайкен-Аши — новые
- * секции ниже. Состояние настроек живёт у родителя (persisted), сюда приходит пропом.
+ * ВСЕ настройки ГЛОБАЛЬНЫЕ (одно место → весь сайт → localStorage):
+ *  - тип графика (6 видов; OHLC-типы применяются где есть данные, иначе линия);
+ *  - палитра доступности (4 схемы под разные типы цветовосприятия);
+ *  - штрих-режим (различие линий формой — полная монохромность).
+ * Состояние — в useChartSettings/useChartPalette, пропсов-коллбэков нет.
  */
-export default function ChartSettings({ chartType, onChartType, className = '' }: Props) {
+export default function ChartSettings({ showType = true, ohlcHere = false, className = '' }: Props) {
   const [open, setOpen] = useState(false);
   const [palette, setPalette] = useChartPalette();
+  const { type, dash, setType, setDash } = useChartSettings();
 
   useEffect(() => {
     if (!open) return;
@@ -123,30 +154,39 @@ export default function ChartSettings({ chartType, onChartType, className = '' }
               </button>
             </div>
 
-            {chartType && onChartType && (
+            {showType && (
               <>
                 <div style={sectionLabel}>Тип графика</div>
-                <div style={{ display: 'flex', gap: 10 }}>
-                  {CHART_TYPES.map(({ key, label, Icon }) => (
-                    <button
-                      key={key}
-                      type="button"
-                      className="editorial-press"
-                      onClick={() => onChartType(key)}
-                      style={optionPill(chartType === key)}
-                      aria-pressed={chartType === key}
-                    >
-                      <Icon size={18} /> {label}
-                    </button>
-                  ))}
+                <p style={sectionHint}>
+                  Действует на все графики. Свечи, бары и Хайкен-Аши — там, где есть
+                  биржевые данные открытия/максимума/минимума (цена на «Открытых
+                  позициях»); на остальных применится линия.
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  {CHART_TYPES.map(({ key, label, Icon }) => {
+                    const dimmed = !ohlcHere && OHLC_TYPES.includes(key);
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        className="editorial-press"
+                        onClick={() => setType(key)}
+                        style={optionPill(type === key, dimmed)}
+                        aria-pressed={type === key}
+                        title={dimmed ? 'На этом графике нет OHLC-данных — применится линия' : undefined}
+                      >
+                        <Icon size={18} /> {label}
+                      </button>
+                    );
+                  })}
                 </div>
               </>
             )}
 
             {/* Палитра — ГЛОБАЛЬНАЯ (accessibility), всегда доступна на любом графике.
                 Несколько схем: одна не покрывает все типы дальтонизма. */}
-            <div style={{ ...sectionLabel, marginTop: chartType && onChartType ? 22 : 0 }}>Палитра</div>
-            <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)', margin: '0 0 10px', lineHeight: 1.4 }}>
+            <div style={{ ...sectionLabel, marginTop: showType ? 22 : 0 }}>Палитра</div>
+            <p style={sectionHint}>
               Выбери, где обе линии (покупки / продажи) хорошо различаешь. Действует на все графики.
             </p>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -169,6 +209,37 @@ export default function ChartSettings({ chartType, onChartType, className = '' }
                   </span>
                 </button>
               ))}
+            </div>
+
+            {/* Штрих-режим — если и палитры не помогают (полная монохромность):
+                линии различаются ФОРМОЙ (штрих/точки), а не цветом. */}
+            <div style={{ ...sectionLabel, marginTop: 22 }}>Линии</div>
+            <p style={sectionHint}>
+              Если цвета не различаются совсем: вторая линия — штрихом, третья — точками.
+              Различие формой, а не цветом.
+            </p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                type="button"
+                className="editorial-press"
+                onClick={() => setDash(false)}
+                style={{ ...optionPill(!dash), flex: 1, justifyContent: 'center' }}
+                aria-pressed={!dash}
+              >
+                Сплошные
+              </button>
+              <button
+                type="button"
+                className="editorial-press"
+                onClick={() => setDash(true)}
+                style={{ ...optionPill(dash), flex: 1, justifyContent: 'center' }}
+                aria-pressed={dash}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+                  <path d="M3 12h4M10 12h4M17 12h4" />
+                </svg>
+                Штрихом
+              </button>
             </div>
           </div>
         </div>

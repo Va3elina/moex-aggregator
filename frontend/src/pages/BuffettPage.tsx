@@ -19,6 +19,7 @@ import SegmentedControl from '../components/SegmentedControl';
 import HelpTooltip from '../components/HelpTooltip';
 import LayersButton from '../components/LayersButton';
 import ChartActionsMenu from '../components/ChartActionsMenu';
+import ChartSettings from '../components/chart/ChartSettings';
 import { useAuth } from '../contexts/AuthContext';
 import { isPeriodAllowed } from '../config/accessControl';
 import { useRealtimeData } from '../hooks/useRealtimeData';
@@ -369,6 +370,7 @@ export default function BuffettPage() {
                         ].filter(Boolean),
                     }}
                 />
+                <ChartSettings />
                 </ChartActionsMenu>
 
             </div>
