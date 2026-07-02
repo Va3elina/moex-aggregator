@@ -940,7 +940,7 @@ export default function SimpleChart({
   const placeholderHeight =
     effectiveHeight
     + 40 // p-5 top + bottom
-    + (legendPosition === 'top' ? 36 : 0) // legend block
+    + (legendPosition === 'top' ? 24 : 0) // legend block (~36px минус ~12px подтяжки к верхней границе)
     + (showNavigator ? 6 : 0); // navigator (компактный рельс, отрицательные margin)
 
   // Показываем полный лоадер только если нет данных вообще
@@ -1045,9 +1045,11 @@ export default function SimpleChart({
       {/* Область измерения ширины (без padding) */}
       <div ref={containerRef}>
 
-      {/* Легенда — вверху, по центру */}
+      {/* Легенда — вверху, по центру. Negative margin-top компенсирует p-5 (20px)
+          контейнера: легенда встаёт на --chart-legend-top-gap от верхней границы
+          paper-card — почти вплотную, как в cbr-flows. */}
       {legendPosition === 'top' && (
-        <div className="flex justify-center" style={{ marginBottom: 'var(--chart-legend-mb, 16px)' }}>{legendBlock}</div>
+        <div className="flex justify-center" style={{ marginTop: 'calc(var(--chart-legend-top-gap, 8px) - 20px)', marginBottom: 'var(--chart-legend-mb, 16px)' }}>{legendBlock}</div>
       )}
 
       {/* Заголовок с текущим значением */}
