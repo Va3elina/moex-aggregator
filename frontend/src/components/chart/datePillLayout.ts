@@ -5,8 +5,10 @@
  * y-координаты верхней линии, к которой pill прижимается низом.
  *
  * ── Контракт ──
- * Pill bottom edge сидит вплотную к верхней горизонтальной линии графика
- * (PILL_GAP_ABOVE_LINE = 0; стиль пилюли — TOOLTIP.datePillClass, без рамки).
+ * Pill bottom edge = topLineY - PILL_GAP_ABOVE_LINE. Значение отрицательное,
+ * т.е. низ пилюли чуть опущен в plot (на 3px ниже верхней линии) — тогда
+ * дата не жмётся к легенде, а верхушки высоких букв не режутся краем
+ * paper-подложки. Стиль пилюли — TOOLTIP.datePillClass, без рамки.
  *
  * ── Почему helper а не hook ──
  * Stateless: считает y-координату из DOM на каждом render'е. React внутри
@@ -21,7 +23,7 @@
  * Helper унифицирует через optional gridOffsetFrac.
  */
 
-export const PILL_GAP_ABOVE_LINE = 0;
+export const PILL_GAP_ABOVE_LINE = -3;
 
 interface ChartTopLineOptions {
   /** Wrapper element с chart-reveal SVG. Если null — query из container'а. */
