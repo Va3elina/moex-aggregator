@@ -1,6 +1,6 @@
 /**
  * ChannelNews — секция «Новости каналов» на главной (OverviewPage). Карточки
- * последних постов @FrameTool + @Thor_INV (источник channel_posts, ридер
+ * последних постов @FrameTool (источник channel_posts, ридер
  * signals/channel_scan.py), клик → пост в Telegram. Не рендерится если постов нет.
  */
 import { useEffect, useState } from 'react';

@@ -1739,7 +1739,7 @@ export interface AnomalyItem {
 }
 export interface ChannelPost {
     id: number;
-    channel: string;             // username канала (FrameTool / Thor_INV)
+    channel: string;             // username канала (FrameTool)
     channel_name: string | null; // человекочитаемо
     text: string | null;
     photo_url: string | null;

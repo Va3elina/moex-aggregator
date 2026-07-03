@@ -122,7 +122,7 @@ export function buildFundsMoneyTour(setViewMode: (m: ViewMode) => void): TourSte
         <>
           <p style={{ marginBottom: 8 }}>
             Кнопка <strong>«⋮»</strong> в правом верхнем углу графика собирает
-            слои, скриншот и экспорт CSV.
+            слои и скриншот.
           </p>
           <p>
             В режиме <strong>СЧА</strong> в слоях есть тумблер{' '}

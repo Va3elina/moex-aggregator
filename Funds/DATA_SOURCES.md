@@ -205,7 +205,10 @@ HTTP 200, e-disclosure не нужен!):
 |---|---|---|---|---|
 | ГЕРОИ | Флагманский | RU000A108AB5 | 220519 | `ih-capital.ru/disclosure` (JS-рендер) |
 | Рекорд Капитал | Алёнка-Капитал | RU000A104M43 | 208777 | `recordcap.ru/component/fund/fund/1` (прямые download-ссылки) |
-| Финам Менеджмент | Поляков Инвестиции | RU000A10ERX6 | 352059 | e-disclosure card **7696** / own-site `fdu.ru` |
+
+> «Поляков Инвестиции» (Финам, RU000A10ERX6, cbonds 352059) — УДАЛЁН полностью
+> 2026-07-03 по решению Вадима: строки funds/fund_data стёрты, из WHITELIST_TICKERS
+> убран. НЕ добавлять обратно без явной просьбы.
 
 ⚠️ **Резолв fund_id для этих фондов:** `ticker=ISIN` (не `OPIF-N`), а `parse_scha_xls`
 НЕ извлекает `isin_pif` → `manual_scha_backfill` их НЕ резолвит ни по тикеру, ни по isin_pif.
