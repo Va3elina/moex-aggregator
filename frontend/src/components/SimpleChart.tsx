@@ -96,6 +96,11 @@ interface SimpleChartProps {
   hideTime?: boolean;
   forecastCount?: number; // reserved for future use
   horizontalLines?: { value: number; color: string; label?: string; axis?: 'primary' | 'secondary' }[];
+  /** Клик по «+»-пилюле у ЛЕВОЙ (ценовой) оси — создать алерт на уровне под
+   *  курсором. level — значение в единицах primary-оси. Задан → на десктопе при
+   *  наведении рисуется горизонтальный кросхэйр + «+» пилюля в жёлобе оси.
+   *  Не задан → поведение как раньше (нулевой эффект на прочие графики). */
+  onCreateAlert?: (p: { metric: 'price' | 'oi'; axis: 'primary' | 'secondary'; level: number }) => void;
   /** Развернуть порядок легенды (secondary первым, primary вторым). Нужно когда
    *  primary линия рисуется как «вспомогательная» а secondary как «главная» —
    *  legend должен ставить главное значение первым. См. Buffett swap (cap → primary,
@@ -175,7 +180,8 @@ export default function SimpleChart({
   clampEdgeLabels = false,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   forecastCount: _forecastCount = 0,
-  horizontalLines: _horizontalLines,
+  horizontalLines,
+  onCreateAlert,
 }: SimpleChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -293,12 +299,15 @@ export default function SimpleChart({
     primaryY: number;
     secondaryY: number | null;
     thirdY: number | null;
+    // cursorY — АБСОЛЮТНАЯ svg-Y курсора (не снапнутая к линии). Для горизонтального
+    // кросхэйра и «+»-пилюли уровня алерта (TradingView-стиль: уровень = где палец/мышь).
+    cursorY: number;
     value: number;
     secondaryValue?: number;
     thirdValue?: number;
     time: string;
     visible: boolean;
-  }>({ x: 0, primaryY: 0, secondaryY: null, thirdY: null, value: 0, time: '', visible: false });
+  }>({ x: 0, primaryY: 0, secondaryY: null, thirdY: null, cursorY: 0, value: 0, time: '', visible: false });
 
   // Анимированные пути (area* — заливки под линиями для типа «Область»;
   // secondary/third area используются только при scope='all')
@@ -431,7 +440,9 @@ export default function SimpleChart({
         thirdPoints: [],
         ohlcPoints: [],
         yTicks: [],
+        secYTicks: [],
         xTicks: [],
+        yMinVal: 0, yMaxVal: 1, secYMin: 0, secYMax: 1,
       };
     }
 
@@ -594,7 +605,8 @@ export default function SimpleChart({
       return { time: displayData[index].time, x };
     });
 
-    return { points, secondaryPoints, thirdPoints, ohlcPoints, yTicks, secYTicks, xTicks };
+    return { points, secondaryPoints, thirdPoints, ohlcPoints, yTicks, secYTicks, xTicks,
+             yMinVal, yMaxVal, secYMin, secYMax };
   }, [displayData, displaySecondaryData, displayThirdData, chartWidth, chartHeight, showSecondary, showThird, niceTicks, niceTicksSecondary, resolvedType]);
 
   // Анимация морфинга
@@ -871,7 +883,7 @@ export default function SimpleChart({
   };
 
   // Общая логика обновления tooltip по X-координате
-  const updateTooltipAtX = useCallback((clientX: number, svgElement: SVGSVGElement) => {
+  const updateTooltipAtX = useCallback((clientX: number, clientY: number | null, svgElement: SVGSVGElement) => {
     if (targetCalc.points.length === 0) return;
 
     const rect = svgElement.getBoundingClientRect();
@@ -888,26 +900,44 @@ export default function SimpleChart({
 
     if (!primaryPoint) return;
 
+    // cursorY — где реально курсор (для «+»-пилюли уровня); клампим в plot-область.
+    // clientY null (touch без Y / внешний вызов) → снапаем к primary-линии.
+    const rawCursorY = clientY != null ? clientY - rect.top : primaryPoint.y + padding.top;
+    const cursorY = Math.min(Math.max(rawCursorY, padding.top), padding.top + chartHeight);
+
     setTooltip({
       x: primaryPoint.x + padding.left,
       primaryY: primaryPoint.y + padding.top,
       secondaryY: secondaryPoint ? secondaryPoint.y + padding.top : null,
       thirdY: thirdPoint ? thirdPoint.y + padding.top : null,
+      cursorY,
       value: primaryPoint.value,
       secondaryValue: secondaryPoint?.value,
       thirdValue: thirdPoint?.value,
       time: primaryPoint.time,
       visible: true,
     });
-  }, [targetCalc, chartWidth, padding, showSecondary, showThird]);
+  }, [targetCalc, chartWidth, chartHeight, padding, showSecondary, showThird]);
 
   // Mouse events
   const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
-    updateTooltipAtX(e.clientX, e.currentTarget);
+    updateTooltipAtX(e.clientX, e.clientY, e.currentTarget);
   };
 
   const handleMouseLeave = () => {
     setTooltip((prev) => ({ ...prev, visible: false }));
+  };
+
+  // Клик по графику при активном горизонтальном кросхэйре → создать алерт на
+  // уровне под курсором. «+» пилюля у оси — визуальная подсказка (в жёлобе, куда
+  // курсор увёл бы crosshair за край); реальный клик ловим по всей plot-области.
+  const handleChartClick = () => {
+    if (!onCreateAlert || isMobile || !tooltip.visible) return;
+    if (hoveredAnnotationIdx != null) return;  // не перехватываем клик по маркеру события
+    const { yMinVal, yMaxVal } = targetCalc;
+    if (yMaxVal === yMinVal) return;
+    const level = yMinVal + ((padding.top + chartHeight - tooltip.cursorY) / chartHeight) * (yMaxVal - yMinVal);
+    onCreateAlert({ metric: 'price', axis: 'primary', level });
   };
 
   // Touch events — для мобильных.
@@ -918,13 +948,13 @@ export default function SimpleChart({
   // работает быстрее и без warnings.
   const handleTouchStart = (e: React.TouchEvent<SVGSVGElement>) => {
     if (e.touches.length === 1) {
-      updateTooltipAtX(e.touches[0].clientX, e.currentTarget);
+      updateTooltipAtX(e.touches[0].clientX, e.touches[0].clientY, e.currentTarget);
     }
   };
 
   const handleTouchMove = (e: React.TouchEvent<SVGSVGElement>) => {
     if (e.touches.length === 1) {
-      updateTooltipAtX(e.touches[0].clientX, e.currentTarget);
+      updateTooltipAtX(e.touches[0].clientX, e.touches[0].clientY, e.currentTarget);
     }
   };
 
@@ -1089,6 +1119,7 @@ export default function SimpleChart({
           style={{ touchAction: 'none', backgroundColor: 'var(--bg-primary)' }}
           onMouseMove={handleMouseMove}
           onMouseLeave={handleMouseLeave}
+          onClick={onCreateAlert ? handleChartClick : undefined}
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
@@ -1530,6 +1561,20 @@ export default function SimpleChart({
                   strokeDasharray="4,4"
                   opacity="0.55"
                 />
+                {/* Горизонтальный кросхэйр — только когда включён режим создания
+                    алертов (onCreateAlert) и на десктопе. Уровень = где курсор. */}
+                {onCreateAlert && !isMobile && (
+                  <line
+                    x1={0}
+                    y1={tooltip.cursorY - padding.top}
+                    x2={chartWidth}
+                    y2={tooltip.cursorY - padding.top}
+                    stroke="var(--text-primary)"
+                    strokeWidth={CROSSHAIR.strokeWidth}
+                    strokeDasharray="4,4"
+                    opacity="0.4"
+                  />
+                )}
                 {/* Точка на основной линии — скрываем когда primary не показан */}
                 {showPrimary && (
                   <circle
@@ -1794,6 +1839,52 @@ export default function SimpleChart({
               </g>
             );
           });
+        })()}
+
+        {/* Уровни активных алертов (horizontalLines) — пунктир по всей ширине plot.
+            Абсолютные координаты; y считаем инверсией scaleY из домена targetCalc. */}
+        {horizontalLines && horizontalLines.length > 0 && targetCalc.points.length > 0 &&
+          horizontalLines.map((hl, i) => {
+            const min = hl.axis === 'secondary' ? targetCalc.secYMin : targetCalc.yMinVal;
+            const max = hl.axis === 'secondary' ? targetCalc.secYMax : targetCalc.yMaxVal;
+            if (max === min) return null;
+            const yLocal = chartHeight - ((hl.value - min) / (max - min)) * chartHeight;
+            if (yLocal < 0 || yLocal > chartHeight) return null;
+            const y = padding.top + yLocal;
+            return (
+              <line key={`alertlvl-${i}`} pointerEvents="none"
+                x1={padding.left} y1={y} x2={padding.left + chartWidth} y2={y}
+                stroke={hl.color} strokeWidth={1} strokeDasharray="5,4" opacity={0.75} />
+            );
+          })}
+
+        {/* «+» пилюля-подсказка уровня на ЛЕВОЙ (ценовой) оси при наведении (десктоп).
+            Не кликается сама (в жёлобе курсор ушёл бы за край и скрыл crosshair) —
+            клик ловит handleChartClick по всей plot-области на текущем уровне. */}
+        {onCreateAlert && !isMobile && tooltip.visible && targetCalc.points.length > 0 && (() => {
+          const { yMinVal, yMaxVal } = targetCalc;
+          if (yMaxVal === yMinVal) return null;
+          const level = yMinVal + ((padding.top + chartHeight - tooltip.cursorY) / chartHeight) * (yMaxVal - yMinVal);
+          const label = String(formatPrimaryAxis ? formatPrimaryAxis(level) : formatValue(level));
+          const fontY = tokens.fontY;
+          const plusR = fontY * 0.62;
+          const textW = measureText(label, fontY, tokens.fontYWeight);
+          const gap = 6;
+          const pillW = Math.ceil(textW) + 10 + plusR * 2 + gap;
+          const pillH = fontY + 8;
+          const y = tooltip.cursorY;
+          const pillLeft = Math.max(2, padding.left - 4 - pillW);
+          const plusCx = pillLeft + pillW - plusR - 5;
+          return (
+            <g pointerEvents="none">
+              <rect x={pillLeft} y={y - pillH / 2} width={pillW} height={pillH} rx={4} fill="var(--accent)" />
+              <text x={pillLeft + 6} y={y} textAnchor="start" dominantBaseline="central"
+                fill="#FFFFFF" fontSize={fontY} fontWeight={tokens.fontYWeight}>{label}</text>
+              <circle cx={plusCx} cy={y} r={plusR} fill="#FFFFFF" opacity={0.28} />
+              <text x={plusCx} y={y} textAnchor="middle" dominantBaseline="central"
+                fill="#FFFFFF" fontSize={fontY} fontWeight={700}>+</text>
+            </g>
+          );
         })()}
         </svg>
 

@@ -88,6 +88,50 @@ def unlink_telegram(
     return {"ok": True}
 
 
+# ─── Настройки доставки (дефолт-каналы юзера + доступность каналов) ──────────
+class NotifySettings(BaseModel):
+    # Дефолт-каналы для новых алертов (пресет модалки).
+    default_channels: list[str] = Field(default_factory=lambda: ["telegram", "site"])
+    # Доступность каналов для этого юзера — для рендера чекбоксов в модалке.
+    telegram_linked: bool = False
+    email_available: bool = False   # подтверждённый non-oauth email
+    email: Optional[str] = None
+
+
+def _email_available(user: User) -> bool:
+    email = (getattr(user, "email", "") or "")
+    return bool(getattr(user, "is_verified", False)) and not email.endswith("@oauth.local")
+
+
+@router.get("/settings", response_model=NotifySettings)
+def get_notify_settings(user: User = Depends(get_current_user)):
+    email_ok = _email_available(user)
+    return NotifySettings(
+        default_channels=_channels_from_csv(getattr(user, "notify_channels_default", None)),
+        telegram_linked=user.telegram_chat_id is not None,
+        email_available=email_ok,
+        email=(user.email if email_ok else None),
+    )
+
+
+class NotifySettingsUpdate(BaseModel):
+    default_channels: list[str] = Field(min_length=1)
+
+
+@router.put("/settings", response_model=NotifySettings)
+def put_notify_settings(
+    body: NotifySettingsUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    csv, err = _normalize_channels(body.default_channels, user=user, default_csv=None)
+    if err:
+        raise HTTPException(status_code=422, detail=err.capitalize())
+    user.notify_channels_default = csv
+    db.commit()
+    return get_notify_settings(user)
+
+
 # ─── Контекст для окна создания (текущая цена + intraday-доступность) ────────
 # Лёгкий read-эндпоинт: фронт подтягивает свежую цену фьючерса, чтобы показать
 # «Сейчас: <value> руб», задать placeholder порога и решить, есть ли у актива
@@ -169,6 +213,9 @@ class AlertCreate(BaseModel):
     mode: str = "once"                   # 'once'|'repeat'
     cooldown_hours: int = Field(default=24, ge=1, le=720)
     timeframe: str = Field(default="1d", max_length=4)   # '5m'|'1h'|'1d' (OI-метрики)
+    # Каналы доставки: список из {telegram,site,email}. None → берём дефолт юзера
+    # (notify_channels_default) на сервере. email требует подтверждённый email.
+    channels: Optional[list[str]] = None
 
 
 class AlertOut(BaseModel):
@@ -187,6 +234,7 @@ class AlertOut(BaseModel):
     status: str
     timeframe: str = "1d"
     source: str = "oi"
+    channels: list[str] = Field(default_factory=lambda: ["telegram"])
     # Сектор инструмента (instruments.group) джойном по asset — для группировки
     # в кабинете. None если инструмент не найден.
     sector: Optional[str] = None
@@ -227,6 +275,42 @@ def _fund_ids_from_csv(raw: Optional[str]) -> Optional[list[int]]:
     return out or None
 
 
+# Каналы доставки алерта. 'site' бесплатен и не требует привязок; 'telegram'
+# работает если привязан chat_id (иначе просто пропустится в eval-loop);
+# 'email' требует подтверждённый email. Хранится CSV в alerts.channels.
+ALERT_CHANNELS = ("telegram", "site", "email")
+
+
+def _channels_from_csv(raw: Optional[str]) -> list[str]:
+    """CSV из колонки alerts.channels → list[str] в каноническом порядке.
+    Пусто → ['telegram'] (бэкенд-дефолт, обратная совместимость)."""
+    if not raw:
+        return ["telegram"]
+    present = {p.strip() for p in str(raw).split(",") if p.strip()}
+    ordered = [c for c in ALERT_CHANNELS if c in present]
+    return ordered or ["telegram"]
+
+
+def _normalize_channels(channels: Optional[list[str]], *, user: User,
+                        default_csv: Optional[str]) -> tuple[Optional[str], Optional[str]]:
+    """(csv | None, error | None). None channels → дефолт юзера. Валидирует
+    поднабор {telegram,site,email}, непустой; email → нужен подтверждённый email."""
+    if channels is None:
+        raw = default_csv or getattr(user, "notify_channels_default", None) or "telegram,site"
+        sel = _channels_from_csv(raw)
+    else:
+        sel = [c for c in ALERT_CHANNELS if c in set(channels)]
+        if any(c not in ALERT_CHANNELS for c in channels):
+            return None, "неизвестный канал доставки"
+        if not sel:
+            return None, "нужен хотя бы один канал доставки"
+    if "email" in sel:
+        email = (getattr(user, "email", "") or "")
+        if not getattr(user, "is_verified", False) or email.endswith("@oauth.local"):
+            return None, "для канала e-mail нужен подтверждённый адрес"
+    return ",".join(sel), None
+
+
 def _to_out(a: Alert, sector: Optional[str] = None, fires_count: int = 0) -> AlertOut:
     return AlertOut(
         id=a.id, indicator=a.indicator, asset=a.asset, asset_name=a.asset_name,
@@ -235,6 +319,7 @@ def _to_out(a: Alert, sector: Optional[str] = None, fires_count: int = 0) -> Ale
         op=a.op, threshold=float(a.threshold),
         mode=a.mode, status=a.status, timeframe=getattr(a, "timeframe", "1d") or "1d",
         source=getattr(a, "source", "oi") or "oi",
+        channels=_channels_from_csv(getattr(a, "channels", None)),
         sector=sector, fires_count=int(fires_count or 0),
         last_fired_at=a.last_fired_at.isoformat() if a.last_fired_at else None,
         created_at=a.created_at.isoformat() if a.created_at else None,
@@ -354,7 +439,9 @@ def list_alerts(
             fund_ids=_fund_ids_from_csv(r.get("fund_ids")),
             op=r["op"], threshold=float(r["threshold"]), mode=r["mode"],
             status=r["status"], timeframe=r["timeframe"] or "1d",
-            source=r["source"] or "oi", sector=r["sector"],
+            source=r["source"] or "oi",
+            channels=_channels_from_csv(r.get("channels")),
+            sector=r["sector"],
             fires_count=int(r["fires_count"] or 0),
             last_fired_at=r["last_fired_at"].isoformat() if r["last_fired_at"] else None,
             created_at=r["created_at"].isoformat() if r["created_at"] else None,
@@ -382,6 +469,10 @@ def create_alert(
     if err:
         raise HTTPException(status_code=422, detail=err.capitalize())
 
+    channels_csv, ch_err = _normalize_channels(body.channels, user=user, default_csv=None)
+    if ch_err:
+        raise HTTPException(status_code=422, detail=ch_err.capitalize())
+
     # funds_flow → source='funds' (отдельная секция кабинета), clgroup у фондов
     # неприменим — обнуляем, чтобы не протёк случайный 'FIZ' из формы. Набор
     # фондов: fund_ids задан → asset форсим в 'custom' и сериализуем CSV; иначе
@@ -403,6 +494,7 @@ def create_alert(
         cooldown_hours=body.cooldown_hours,
         timeframe=body.timeframe,
         source=_alert_source(body.indicator),
+        channels=channels_csv,
         status="active",
     )
     db.add(alert)
@@ -472,6 +564,10 @@ def create_alerts_batch(
         if err:
             errors.append(f"{a.asset}: {err}")
             continue
+        channels_csv, ch_err = _normalize_channels(a.channels, user=user, default_csv=None)
+        if ch_err:
+            errors.append(f"{a.asset}: {ch_err}")
+            continue
         is_funds = a.indicator == "funds_flow"
         fund_ids_csv = _fund_ids_to_csv(a.fund_ids) if is_funds else None
         asset_val = "custom" if fund_ids_csv else a.asset
@@ -491,6 +587,7 @@ def create_alerts_batch(
             op=a.op, threshold=a.threshold,
             mode=a.mode, cooldown_hours=a.cooldown_hours, timeframe=a.timeframe,
             source=_alert_source(a.indicator),
+            channels=channels_csv,
             status="active",
         )
         db.add(new_alert)
@@ -571,6 +668,55 @@ class AlertFireOut(BaseModel):
     fired_at: Optional[str] = None
     value: Optional[float] = None
     message_text: Optional[str] = None
+
+
+class RecentFireOut(BaseModel):
+    """Срабатывание для центра уведомлений (вкладка «Мои алерты» + тост).
+    Несёт контекст алерта, чтобы отрисовать карточку без доп. запросов."""
+    id: int
+    alert_id: int
+    fired_at: Optional[str] = None
+    value: Optional[float] = None
+    message_text: Optional[str] = None
+    indicator: str
+    asset: str
+    asset_name: Optional[str] = None
+    source: str = "oi"
+
+
+@router.get("/recent-fires", response_model=list[RecentFireOut])
+def recent_fires(
+    response: Response,
+    limit: int = Query(20, ge=1, le=100),
+    since: int = Query(0, ge=0),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Последние срабатывания по ВСЕМ алертам юзера (user-scoped). Источник тоста
+    на сайте (SSE 'alert_fire' даёт только user_id → фронт тянет контент отсюда) и
+    вкладки «Мои алерты» в колоколе. since>0 → только новее этого fire.id."""
+    rows = db.execute(
+        text("""
+            SELECT f.id, f.alert_id, f.fired_at, f.value, f.message_text,
+                   a.indicator, a.asset, a.asset_name, a.source
+            FROM alert_fires f
+            JOIN alerts a ON a.id = f.alert_id
+            WHERE a.user_id = :uid AND f.id > :since
+            ORDER BY f.id DESC
+            LIMIT :limit
+        """),
+        {"uid": user.id, "since": since, "limit": limit},
+    ).mappings().all()
+    return [
+        RecentFireOut(
+            id=r["id"], alert_id=r["alert_id"],
+            fired_at=r["fired_at"].isoformat() if r["fired_at"] else None,
+            value=float(r["value"]) if r["value"] is not None else None,
+            message_text=r["message_text"], indicator=r["indicator"],
+            asset=r["asset"], asset_name=r["asset_name"], source=r["source"] or "oi",
+        )
+        for r in rows
+    ]
 
 
 @router.get("/{alert_id}/fires", response_model=list[AlertFireOut])

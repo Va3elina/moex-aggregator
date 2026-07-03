@@ -44,6 +44,11 @@ class Alert(Base):
     cooldown_hours = Column(Integer, nullable=False, default=24, server_default="24")
     status = Column(String(10), nullable=False, default="active", server_default="active")
 
+    # Каналы доставки (CSV-поднабор {telegram,site,email}, непустой). Дефолт
+    # 'telegram' сохраняет поведение существующих алертов. 'site' = тост+вкладка
+    # «Мои алерты» (источник alert_fires); 'email' = noreply (после настройки SMTP).
+    channels = Column(String(32), nullable=False, default="telegram", server_default="telegram")
+
     last_value = Column(Numeric(20, 6), nullable=True)   # prev-снимок для cross
     last_fired_at = Column(DateTime(timezone=True), nullable=True)
     # Дата ДАННЫХ, на которой алерт сработал в последний раз (для дневных

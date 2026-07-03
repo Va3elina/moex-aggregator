@@ -34,6 +34,7 @@ from signals.detectors.oi import (  # noqa: E402
 )
 from signals.detectors.funds import compute_fund_flow_atr  # noqa: E402
 from signals.alert_notify import send_message        # noqa: E402
+from signals.email_notify import send_email          # noqa: E402
 
 SITE = "https://xn--80aklbnczmv.xn--p1ai"  # punycode таймфрейм.рф (надёжно в TG)
 
@@ -458,6 +459,37 @@ def _write_personal_anomaly(a, value: float, ctx: dict, sig_date) -> None:
         print(f"[alerts_run] personal anomaly write failed (alert {a.id}): {e}")
 
 
+_ALERT_CHANNELS = ("telegram", "site", "email")
+
+
+def _alert_channels(a) -> set:
+    """CSV alerts.channels → множество каналов. Пусто → {'telegram'} (совместимость
+    со старыми алертами без колонки)."""
+    raw = getattr(a, "channels", None) or "telegram"
+    present = {p.strip() for p in str(raw).split(",") if p.strip()}
+    sel = {c for c in _ALERT_CHANNELS if c in present}
+    return sel or {"telegram"}
+
+
+def _email_ok(user) -> bool:
+    email = (getattr(user, "email", "") or "")
+    return bool(getattr(user, "is_verified", False)) and not email.endswith("@oauth.local")
+
+
+def _notify_alert_fire(a) -> None:
+    """Site-канал: nudge фронту через SSE, что у юзера сработал алерт (сам fire уже
+    durable в alert_fires). Broadcast несёт ТОЛЬКО user_id — контент фронт тянет
+    сам user-scoped запросом (/api/alerts/recent-fires), без утечки в общий SSE.
+    Отдельная сессия + try/except — не влияет на доставку."""
+    try:
+        with SessionLocal() as s2:
+            s2.execute(text("SELECT pg_notify('alert_fire', :p)"),
+                       {"p": json.dumps({"source": "alert_fire", "user_id": a.user_id})})
+            s2.commit()
+    except Exception as e:
+        print(f"[alerts_run] alert_fire notify failed (alert {a.id}): {e}")
+
+
 _RUN_LOCK_KEY = 0x616C7274  # 'alrt' — id сессионного advisory-lock прогона alerts_run
 
 
@@ -503,8 +535,18 @@ def run_once() -> dict:
             summary["checked"] += 1
             try:
                 user = users.get(a.user_id)
-                if not user or not user.telegram_chat_id:
-                    summary["skipped"] += 1   # не привязан Telegram — доставить некуда
+                if not user:
+                    summary["skipped"] += 1
+                    continue
+                # Куда реально можем доставить: site — всегда; telegram — если
+                # привязан; email — если подтверждён. Нет ни одного пригодного
+                # канала (напр. только telegram, но не привязан) → пропускаем.
+                channels = _alert_channels(a)
+                can_deliver = ("site" in channels) \
+                    or ("telegram" in channels and user.telegram_chat_id) \
+                    or ("email" in channels and _email_ok(user))
+                if not can_deliver:
+                    summary["skipped"] += 1
                     continue
                 ck = (a.indicator, a.asset, a.clgroup or "", a.timeframe or "1d",
                       (a.fund_ids or "") if a.indicator == "funds_flow" else "")
@@ -564,24 +606,42 @@ def run_once() -> dict:
                         summary["errors"] += 1
                         print(f"[alerts_run] reserve failed (alert {a.id}): {e}")
                         continue
-                    result = send_message(user.telegram_chat_id, text,
-                                          reply_markup=build_keyboard(a))
-                    if result == "ok":
-                        _write_personal_anomaly(a, value, ctx or {}, sig_date)
-                        summary["fired"] += 1
-                    else:
-                        # доставки не было → откатываем резерв, чтобы повторить (не
-                        # занятый гейт, не статус 'fired' у mode='once').
-                        db.delete(fire)
-                        a.last_fired_at, a.last_fired_date, a.status = prev_state
-                        if result == "blocked":
-                            # юзер забанил бота / чат мёртв → авто-отвязка, чтобы не
-                            # долбить впустую (eval скипнет до повторной привязки на сайте).
+                    # МУЛЬТИКАНАЛ. Резерв уже durable → доставляем по каждому каналу
+                    # из a.channels. delivered = хотя бы один канал доставил; если ВСЕ
+                    # провалились → откат резерва (честный повтор), как раньше при
+                    # неудачном TG-send. Инвариант дубля цел: гейт закоммичен ДО отправки.
+                    delivered = False
+                    # site — самый надёжный: fire уже в alert_fires, шлём nudge фронту.
+                    if "site" in channels:
+                        _notify_alert_fire(a)
+                        delivered = True
+                    # telegram — как раньше; blocked → авто-отвязка (даже если site/email
+                    # доставили: бан бота — устойчивое состояние, чистим привязку).
+                    if "telegram" in channels and user.telegram_chat_id:
+                        result = send_message(user.telegram_chat_id, text,
+                                              reply_markup=build_keyboard(a))
+                        if result == "ok":
+                            delivered = True
+                        elif result == "blocked":
                             user.telegram_chat_id = None
                             user.telegram_username = None
                             user.telegram_linked_at = None
                             summary["unlinked"] += 1
                             print(f"[alerts_run] user {user.id} blocked bot → auto-unlinked")
+                        # result == 'error' → этот канал не доставил (delivered от него не растёт)
+                    # email — за гейтом SMTP: 'skip' если не настроен (не влияет на delivered).
+                    if "email" in channels and _email_ok(user):
+                        if send_email(user.email, "Сработал алерт · Фрейм", text) == "ok":
+                            delivered = True
+
+                    if delivered:
+                        _write_personal_anomaly(a, value, ctx or {}, sig_date)
+                        summary["fired"] += 1
+                    else:
+                        # ни один канал не доставил → откатываем резерв (не занятый
+                        # гейт, не статус 'fired' у mode='once') для честного повтора.
+                        db.delete(fire)
+                        a.last_fired_at, a.last_fired_date, a.status = prev_state
                         db.commit()
                         send_failed = True
                 # last_value НЕ двигаем при неудачной отправке — иначе cross_up/down
