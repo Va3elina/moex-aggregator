@@ -87,6 +87,8 @@ export default function StackedBidirectionalHistogram({
 }: Props) {
   const { theme } = useTheme();
   const containerRef = useRef<HTMLDivElement>(null);
+  // Chart-контейнер (зона ПОД легендой) — для клампа тултипа в plot-коридоре.
+  const chartWrapRef = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<HoverState | null>(null);
   const vw = useViewportWidth();
   const isMobile = vw < 768;
@@ -271,6 +273,7 @@ export default function StackedBidirectionalHistogram({
 
       {/* ═══ Контейнер chart — flex: 1 (берёт оставшуюся высоту) ═══ */}
       <div
+        ref={chartWrapRef}
         className="relative"
         style={{ flex: 1, minHeight: 0 }}
         onMouseMove={handleMove}
@@ -555,10 +558,20 @@ export default function StackedBidirectionalHistogram({
         // Переключаем сторону с СЕРЕДИНЫ chart-area.
         const placeLeft = hover.mouseX > containerW / 2;
         const left = placeLeft ? hover.mouseX - tooltipW - 16 : hover.mouseX + 16;
-        // Tooltip top clamp: bottom-cap уменьшается на mobile (там tooltip
-        // короче — меньше категорий visible или narrower).
+        // Tooltip clamp: карточка в plot-коридоре (между крайними грид-линиями
+        // chart-области, с запасом 6px) — не накрывает легенду и дату-пилюлю
+        // сверху, не заезжает на подписи оси снизу. Координаты hover.mouseY —
+        // от OUTER контейнера (включая зону легенды), поэтому границы коридора
+        // считаем через offsetTop chart-контейнера.
         const tooltipMaxH = isMobile ? 180 : 240;
-        const top = Math.max(8, Math.min(hover.mouseY - 20, height - tooltipMaxH));
+        const csDoc = getComputedStyle(document.documentElement);
+        const padTopPx = parseFloat(csDoc.getPropertyValue('--chart-pad-top')) || 14;
+        const padBottomPx = parseFloat(csDoc.getPropertyValue('--chart-pad-bottom')) || 50;
+        const wrapTop = chartWrapRef.current?.offsetTop ?? 40;
+        const wrapH = chartWrapRef.current?.clientHeight ?? (height - wrapTop);
+        const minTop = wrapTop + padTopPx + 6;
+        const maxTop = wrapTop + wrapH - padBottomPx - 6 - tooltipMaxH;
+        const top = Math.max(minTop, Math.min(hover.mouseY - 20, maxTop));
 
         return (
           <div
