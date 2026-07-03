@@ -310,12 +310,12 @@ export default function OpenInterestPage() {
     },
   });
 
-  // ── Алерты на графике (TradingView-стиль: «+» на ценовой оси) ──────────────
+  // ── Алерты на графике (TradingView-стиль: «+» на оси) ──────────────────────
   const alertQuota = useCommonFeatures().telegram_alerts_quota;   // 0 / N / null(∞)
   const alertsLocked = alertQuota === 0;                          // Free/гость
-  // Префилл модалки при клике «+»: порог = уровень под курсором (метрика — цена).
-  const [chartAlertPrefill, setChartAlertPrefill] = useState<{ threshold: number } | null>(null);
-  // Активные price-алерты юзера на ТЕКУЩЕМ инструменте → горизонтальные линии.
+  // Префилл модалки при клике «+»: метрика (цена / уровень ОИ) + порог = уровень.
+  const [chartAlertPrefill, setChartAlertPrefill] = useState<{ metricKey: string; threshold: number } | null>(null);
+  // Активные алерты юзера на ТЕКУЩЕМ инструменте → горизонтальные линии уровней.
   const [myAlerts, setMyAlerts] = useState<AlertInfo[]>([]);
   const reloadMyAlerts = () => {
     if (!ALERTS_ENABLED || alertsLocked) { setMyAlerts([]); return; }
@@ -325,22 +325,44 @@ export default function OpenInterestPage() {
   };
   useEffect(() => { reloadMyAlerts(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [alertsLocked]);
 
-  // Уровни price-алертов текущего актива (только активные) → пунктир на графике.
+  // Реестр метрик OI: цена + УРОВЕНЬ ОИ (clgroup = текущий) + аномалии. Общий для
+  // кнопки-колокола и «+». oi_level получает текущий clgroup (совпадает с графиком).
+  const oiAlertMetrics = useMemo<AlertMetricOption[]>(() => {
+    const oiLevel: AlertMetricOption = {
+      key: 'oi_level', label: 'Открытый интерес (уровень)',
+      indicator: 'oi_level', metric: 'net', clgroup, unit: '',
+      ops: [
+        { value: 'cross_up', label: '↑ пересечёт (снизу вверх)' },
+        { value: 'cross_down', label: '↓ пересечёт (сверху вниз)' },
+        { value: 'gt', label: 'станет выше' },
+        { value: 'lt', label: 'станет ниже' },
+      ],
+      hint: 'Сработает, когда чистая позиция (открытый интерес) выбранной группы пересечёт заданный уровень в контрактах или окажется выше/ниже него.',
+    };
+    return [OI_ALERT_METRICS[0], oiLevel, ...OI_ALERT_METRICS.slice(1)];
+  }, [clgroup]);
+
+  // Уровни алертов текущего актива → пунктир: price на ЛЕВОЙ оси, oi_level на ПРАВОЙ.
   const alertLevels = useMemo(() => {
     if (!ALERTS_ENABLED) return undefined;
+    type LevelLine = { value: number; color: string; axis: 'primary' | 'secondary' };
     const lines = myAlerts
-      .filter((a) => a.indicator === 'price' && a.asset === selectedInstrument && a.status === 'active')
-      .map((a) => ({ value: a.threshold, color: 'var(--accent)', axis: 'primary' as const }));
+      .filter((a) => a.status === 'active' && a.asset === selectedInstrument)
+      .flatMap((a): LevelLine[] => {
+        if (a.indicator === 'price') return [{ value: a.threshold, color: 'var(--accent)', axis: 'primary' }];
+        if (a.indicator === 'oi_level') return [{ value: a.threshold, color: 'var(--accent)', axis: 'secondary' }];
+        return [];
+      });
     return lines.length ? lines : undefined;
   }, [myAlerts, selectedInstrument]);
 
-  // Клик «+» / по графику при активном горизонтальном кросхэйре → открыть модалку.
-  const handleCreateAlertFromChart = (p: { level: number }) => {
+  // Клик «+» / по графику при активном кросхэйре → открыть модалку с префиллом.
+  const handleCreateAlertFromChart = (p: { metric: 'price' | 'oi'; level: number }) => {
     if (alertsLocked) {
       showUpgrade({ tier: 'basic', featureName: 'Алерты', indicator: 'alerts' });
       return;
     }
-    setChartAlertPrefill({ threshold: p.level });
+    setChartAlertPrefill({ metricKey: p.metric === 'oi' ? 'oi_level' : 'price', threshold: p.level });
   };
 
   // Фильтрация нерабочих дней и пре-маркета.
@@ -544,6 +566,12 @@ export default function OpenInterestPage() {
       third: alignToCandles(third),
     };
   }, [filteredData, displayMode, oiVariant, chartData]);
+
+  // ОИ показан на правой оси? Тогда «+» живёт справа и ставит уровень ОИ (иначе —
+  // ценовой уровень на левой). Считаем здесь: oiData объявлена выше.
+  const oiOnRight = displayMode !== 'price' && !!oiData;
+  const chartAlertAxis: 'primary' | 'secondary' = oiOnRight ? 'secondary' : 'primary';
+  const chartAlertEnabled = ALERTS_ENABLED && (oiOnRight || displayMode === 'price' || showPrice);
 
   const getColors = () => {
     switch (oiVariant) {
@@ -878,7 +906,7 @@ export default function OpenInterestPage() {
             indicator="open_interest"
             asset={selectedInstrument}
             assetName={instrumentName || selectedInstrument}
-            metrics={OI_ALERT_METRICS}
+            metrics={oiAlertMetrics}
           />
           )}
           </ChartActionsMenu>
@@ -916,10 +944,9 @@ export default function OpenInterestPage() {
         primaryLabel={instrumentName || selectedInstrument}
         secondaryLabel={labels.secondary}
         thirdLabel={labels.third}
-        // «+» на ценовой оси активен, только когда цена видна как основная серия
-        // (в OI-only виде левая ось не про цену — не путаем уровни алерта).
-        onCreateAlert={ALERTS_ENABLED && (displayMode === 'price' || showPrice)
-          ? handleCreateAlertFromChart : undefined}
+        // «+» на ОИ-оси (справа), когда ОИ показан; иначе на ценовой (слева).
+        onCreateAlert={chartAlertEnabled ? handleCreateAlertFromChart : undefined}
+        alertAxis={chartAlertAxis}
         horizontalLines={alertLevels}
         showValueHeader={false}
         legendPosition="top"
@@ -965,8 +992,8 @@ export default function OpenInterestPage() {
           indicator="open_interest"
           asset={selectedInstrument}
           assetName={instrumentName || selectedInstrument}
-          metrics={OI_ALERT_METRICS}
-          prefill={{ metricKey: 'price', threshold: chartAlertPrefill.threshold }}
+          metrics={oiAlertMetrics}
+          prefill={{ metricKey: chartAlertPrefill.metricKey, threshold: chartAlertPrefill.threshold }}
           onClose={() => { setChartAlertPrefill(null); reloadMyAlerts(); }}
         />
       )}

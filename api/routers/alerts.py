@@ -366,7 +366,7 @@ def _validate_alert_body(b: AlertCreate) -> Optional[str]:
         return "некорректное условие"
     if b.mode not in ("once", "repeat"):
         return "некорректный режим"
-    if b.indicator not in ("price", "oi_zscore", "oi_move", "oi_participants", "funds_flow"):
+    if b.indicator not in ("price", "oi_zscore", "oi_move", "oi_participants", "oi_level", "funds_flow"):
         return "неизвестный индикатор"
     # funds_flow: asset — режим/категория фондов (не sectype); clgroup у фондов
     # нет; таймфрейм потоков всегда дневной. fund_ids задан → набор «custom».

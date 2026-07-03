@@ -269,6 +269,8 @@ def _alert_unit(indicator: str) -> str:
         return "σ"
     if indicator in ("oi_move", "oi_participants", "funds_flow"):
         return "×"        # множитель ATR «во сколько раз больше обычного»
+    if indicator == "oi_level":
+        return ""         # уровень чистой позиции — контракты, без символа
     return "₽"
 
 
@@ -320,6 +322,11 @@ def _alert_card_text(a) -> str:
         head = "Резкое изменение числа участников"
         clg = "физлица" if (clgroup or "FIZ") == "FIZ" else "юрлица"
         cond = f"число участников ({clg}) меняется резче обычного в {_num(threshold)}{unit}"
+    elif indicator == "oi_level":
+        name = asset_name or asset
+        head = "Открытый интерес"
+        clg = "физлица" if (clgroup or "FIZ") in ("FIZ", "ALL") else "юрлица"
+        cond = f"чистая позиция ({clg}) {_OP_PRICE.get(op, op)} {_num(threshold)}"
     elif indicator == "funds_flow":
         # Фонды: заголовок — метка выбора (без сырого asset 'all'/'custom').
         name = asset_name or _FUND_ASSET_NAME.get(asset, asset)

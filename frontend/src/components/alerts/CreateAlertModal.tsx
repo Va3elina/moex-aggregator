@@ -425,7 +425,7 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
                         ) : (
                             <div style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)' }}>
                                 Актив: <b style={{ color: 'var(--text-primary)' }}>{assetName || asset}</b>
-                                {hasPrice && (
+                                {hasPrice && metric?.indicator === 'price' && (
                                     <>
                                         {' · '}Сейчас: <b style={{ color: 'var(--text-primary)' }}>{fmtRub(price!.value!)} руб</b>
                                     </>
