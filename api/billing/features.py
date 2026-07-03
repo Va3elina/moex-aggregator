@@ -51,7 +51,9 @@ FREE_SEASONALITY_ASSETS: list[str] = [
     "USD000UTSTOM", # USD/RUB
 ]
 
-# Деньги в фондах — топ-2 в каждой из 4 категорий = 8 тикеров
+# Деньги в фондах — топ-2 в каждой из 4 категорий = 8 тикеров.
+# NB: с 2026-07 Free-тариф открыт для ВСЕХ фондов (tickers_whitelist=None),
+# этот список больше не гейтит доступ. Оставлен для справки.
 FREE_FUNDS_TICKERS: list[str] = [
     # money_market
     "LQDT", "AKMM",
@@ -114,9 +116,9 @@ INDICATOR_FEATURES: dict[str, dict[str, dict]] = {
     # ───────────────────────────────────────────────────────────────
     "funds_money": {
         "free": {
-            "tickers_whitelist": FREE_FUNDS_TICKERS,   # 8 фондов
-            "allowed_timeframes": ["1w", "1m"],        # без дневного
-            "max_history_days": 180,
+            "tickers_whitelist": None,                 # все фонды открыты на Free (без whitelist'а)
+            "allowed_timeframes": None,                # все ТФ, включая дневной (притоки-оттоки открыты)
+            "max_history_days": 365 * 3,               # 3 года (период «Всё» → Basic/Pro)
         },
         "basic": {
             "tickers_whitelist": None,
