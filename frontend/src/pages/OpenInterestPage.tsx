@@ -6,7 +6,7 @@ import InstrumentIcon from '../components/InstrumentIcon';
 import { usePrefetchLogos } from '../hooks/usePrefetchLogos';
 import { METHODOLOGY } from '../data/methodology';
 import { OI_VARIANT_HELP } from '../data/oiVariantHelp';
-import { getChartData, getInstrument } from '../services/api';
+import { getChartData, getInstrument, listAlerts, type AlertInfo } from '../services/api';
 import type { ChartResponse } from '../types';
 import type { ChartAnnotation } from '../components/SimpleChart';
 import SimpleChart from '../components/SimpleChart';
@@ -34,12 +34,62 @@ import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 import { oiTierResolver } from '../utils/tierError';
 import { parseOiDeepLink } from '../utils/oiDeepLink';
 import AlertBellButton from '../components/alerts/AlertBellButton';
+import CreateAlertModal, { type AlertMetricOption } from '../components/alerts/CreateAlertModal';
 import { ALERTS_ENABLED } from '../config/alertsConfig';
-import { useTierAccess } from '../contexts/TierFeaturesContext';
+import { useTierAccess, useCommonFeatures } from '../contexts/TierFeaturesContext';
 
 type DisplayMode = 'price' | 'positions' | 'participants';
 type OIVariant = 'oi' | 'long' | 'short' | 'both' | 'net';
 type Period = '1w' | '1m' | '1y' | '5y' | 'all';
+
+// Метрики алертов для «Открытого интереса»: цена (TradingView-стиль: пересечение/
+// больше/меньше) + наши аномалии по резкому движению (ATR ×N). Общий список для
+// кнопки-колокола и для «+» на графике. Цена — первой (дефолт при клике «+»).
+const OI_ALERT_METRICS: AlertMetricOption[] = [
+  {
+    key: 'price', label: 'Цена', indicator: 'price', metric: 'close', unit: '₽',
+    ops: [
+      { value: 'cross_up', label: '↑ пересечёт (снизу вверх)' },
+      { value: 'cross_down', label: '↓ пересечёт (сверху вниз)' },
+      { value: 'gt', label: 'станет выше' },
+      { value: 'lt', label: 'станет ниже' },
+    ],
+    hint: 'Сработает, когда цена фьючерса пересечёт заданный уровень или окажется выше/ниже него. У ликвидных контрактов проверка каждые несколько минут, у остальных — раз в день после закрытия.',
+  },
+  {
+    // «move_all» (clgroup ALL) — считается по тем же net-данным (источник net —
+    // FIZ), но текст НЕЙТРАЛЬНЫЙ, без роли субъекта. «Общий ракурс» сигнала.
+    key: 'move_all', label: 'Резкое движение позиции — в целом',
+    indicator: 'oi_move', metric: 'atr', clgroup: 'ALL', unit: '×', defaultThreshold: 3,
+    ops: [{ value: 'gt', label: 'превысит' }],
+    hint: 'Сработает, когда чистая позиция изменится за день резче обычного — во столько-то раз больше среднего дневного шага за 14 дней (ATR). 2× — заметно, 3× — сильно, 5× — экстремально. Обновляется раз в день после публикации позиций МосБиржи; это описание движения, не прогноз цены.',
+  },
+  {
+    key: 'move_fiz', label: 'Резкое движение позиции — физлица',
+    indicator: 'oi_move', metric: 'atr', clgroup: 'FIZ', unit: '×', defaultThreshold: 3,
+    ops: [{ value: 'gt', label: 'превысит' }],
+    hint: 'Сработает, когда чистая позиция физлиц изменится за день резче обычного — во столько-то раз больше среднего дневного шага за 14 дней (ATR). 2× — заметно, 3× — сильно, 5× — экстремально. Обновляется раз в день после публикации позиций МосБиржи; это описание движения, не прогноз цены.',
+  },
+  {
+    key: 'move_yur', label: 'Резкое движение позиции — юрлица',
+    indicator: 'oi_move', metric: 'atr', clgroup: 'YUR', unit: '×', defaultThreshold: 3,
+    ops: [{ value: 'gt', label: 'превысит' }],
+    hint: 'Сработает, когда чистая позиция юрлиц изменится за день резче обычного — во столько-то раз больше среднего дневного шага за 14 дней (ATR). 2× — заметно, 3× — сильно, 5× — экстремально. Обновляется раз в день после публикации позиций МосБиржи; это описание движения, не прогноз цены.',
+  },
+  {
+    // Участники НЕ зеркальны: счётчики физ и юр независимы → самостоятельный сигнал.
+    key: 'part_fiz', label: 'Резкое изменение числа трейдеров — физлица',
+    indicator: 'oi_participants', metric: 'atr', clgroup: 'FIZ', unit: '×', defaultThreshold: 3,
+    ops: [{ value: 'gt', label: 'превысит' }],
+    hint: 'Сработает, когда число физлиц-участников изменится за день резче обычного — во столько-то раз больше среднего дневного шага за 14 дней (ATR). 2× — заметно, 3× — сильно, 5× — экстремально. Обновляется раз в день после публикации позиций МосБиржи; это описание движения, не прогноз цены.',
+  },
+  {
+    key: 'part_yur', label: 'Резкое изменение числа трейдеров — юрлица',
+    indicator: 'oi_participants', metric: 'atr', clgroup: 'YUR', unit: '×', defaultThreshold: 3,
+    ops: [{ value: 'gt', label: 'превысит' }],
+    hint: 'Сработает, когда число юрлиц-участников изменится за день резче обычного — во столько-то раз больше среднего дневного шага за 14 дней (ATR). 2× — заметно, 3× — сильно, 5× — экстремально. Обновляется раз в день после публикации позиций МосБиржи; это описание движения, не прогноз цены.',
+  },
+];
 
 const PERIOD_LABELS: Record<Period, string> = {
   '1w':  ALL_PERIOD_LABELS['1w'],
@@ -259,6 +309,39 @@ export default function OpenInterestPage() {
       }
     },
   });
+
+  // ── Алерты на графике (TradingView-стиль: «+» на ценовой оси) ──────────────
+  const alertQuota = useCommonFeatures().telegram_alerts_quota;   // 0 / N / null(∞)
+  const alertsLocked = alertQuota === 0;                          // Free/гость
+  // Префилл модалки при клике «+»: порог = уровень под курсором (метрика — цена).
+  const [chartAlertPrefill, setChartAlertPrefill] = useState<{ threshold: number } | null>(null);
+  // Активные price-алерты юзера на ТЕКУЩЕМ инструменте → горизонтальные линии.
+  const [myAlerts, setMyAlerts] = useState<AlertInfo[]>([]);
+  const reloadMyAlerts = () => {
+    if (!ALERTS_ENABLED || alertsLocked) { setMyAlerts([]); return; }
+    listAlerts({ limit: 200 })
+      .then((page) => setMyAlerts(page.items))
+      .catch(() => setMyAlerts([]));
+  };
+  useEffect(() => { reloadMyAlerts(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [alertsLocked]);
+
+  // Уровни price-алертов текущего актива (только активные) → пунктир на графике.
+  const alertLevels = useMemo(() => {
+    if (!ALERTS_ENABLED) return undefined;
+    const lines = myAlerts
+      .filter((a) => a.indicator === 'price' && a.asset === selectedInstrument && a.status === 'active')
+      .map((a) => ({ value: a.threshold, color: 'var(--accent)', axis: 'primary' as const }));
+    return lines.length ? lines : undefined;
+  }, [myAlerts, selectedInstrument]);
+
+  // Клик «+» / по графику при активном горизонтальном кросхэйре → открыть модалку.
+  const handleCreateAlertFromChart = (p: { level: number }) => {
+    if (alertsLocked) {
+      showUpgrade({ tier: 'basic', featureName: 'Алерты', indicator: 'alerts' });
+      return;
+    }
+    setChartAlertPrefill({ threshold: p.level });
+  };
 
   // Фильтрация нерабочих дней и пре-маркета.
   // Алгопак возвращает forward-fill данные за выходные, праздники и
@@ -795,48 +878,7 @@ export default function OpenInterestPage() {
             indicator="open_interest"
             asset={selectedInstrument}
             assetName={instrumentName || selectedInstrument}
-            metrics={[
-              {
-                // «move_all» (clgroup ALL) — ПЕРВАЯ, дефолтная. Считается по тем же
-                // net-данным (источник net — FIZ), но текст НЕЙТРАЛЬНЫЙ, без роли
-                // субъекта (физ/юр). Это «общий ракурс» одного и того же сигнала.
-                key: 'move_all',
-                label: 'Резкое движение позиции — в целом',
-                indicator: 'oi_move', metric: 'atr', clgroup: 'ALL', unit: '×', defaultThreshold: 3,
-                ops: [{ value: 'gt', label: 'превысит' }],
-                hint: 'Сработает, когда чистая позиция изменится за день резче обычного — во столько-то раз больше среднего дневного шага за 14 дней (ATR). 2× — заметно, 3× — сильно, 5× — экстремально. Обновляется раз в день после публикации позиций МосБиржи; это описание движения, не прогноз цены.',
-              },
-              {
-                key: 'move_fiz',
-                label: 'Резкое движение позиции — физлица',
-                indicator: 'oi_move', metric: 'atr', clgroup: 'FIZ', unit: '×', defaultThreshold: 3,
-                ops: [{ value: 'gt', label: 'превысит' }],
-                hint: 'Сработает, когда чистая позиция физлиц изменится за день резче обычного — во столько-то раз больше среднего дневного шага за 14 дней (ATR). 2× — заметно, 3× — сильно, 5× — экстремально. Обновляется раз в день после публикации позиций МосБиржи; это описание движения, не прогноз цены.',
-              },
-              {
-                key: 'move_yur',
-                label: 'Резкое движение позиции — юрлица',
-                indicator: 'oi_move', metric: 'atr', clgroup: 'YUR', unit: '×', defaultThreshold: 3,
-                ops: [{ value: 'gt', label: 'превысит' }],
-                hint: 'Сработает, когда чистая позиция юрлиц изменится за день резче обычного — во столько-то раз больше среднего дневного шага за 14 дней (ATR). 2× — заметно, 3× — сильно, 5× — экстремально. Обновляется раз в день после публикации позиций МосБиржи; это описание движения, не прогноз цены.',
-              },
-              {
-                // Участники НЕ зеркальны: счётчики физ и юр независимы (оба
-                // положительные) → самостоятельный сигнал, не дубликат part_yur.
-                key: 'part_fiz',
-                label: 'Резкое изменение числа трейдеров — физлица',
-                indicator: 'oi_participants', metric: 'atr', clgroup: 'FIZ', unit: '×', defaultThreshold: 3,
-                ops: [{ value: 'gt', label: 'превысит' }],
-                hint: 'Сработает, когда число физлиц-участников изменится за день резче обычного — во столько-то раз больше среднего дневного шага за 14 дней (ATR). 2× — заметно, 3× — сильно, 5× — экстремально. Обновляется раз в день после публикации позиций МосБиржи; это описание движения, не прогноз цены.',
-              },
-              {
-                key: 'part_yur',
-                label: 'Резкое изменение числа трейдеров — юрлица',
-                indicator: 'oi_participants', metric: 'atr', clgroup: 'YUR', unit: '×', defaultThreshold: 3,
-                ops: [{ value: 'gt', label: 'превысит' }],
-                hint: 'Сработает, когда число юрлиц-участников изменится за день резче обычного — во столько-то раз больше среднего дневного шага за 14 дней (ATR). 2× — заметно, 3× — сильно, 5× — экстремально. Обновляется раз в день после публикации позиций МосБиржи; это описание движения, не прогноз цены.',
-              },
-            ]}
+            metrics={OI_ALERT_METRICS}
           />
           )}
           </ChartActionsMenu>
@@ -874,6 +916,11 @@ export default function OpenInterestPage() {
         primaryLabel={instrumentName || selectedInstrument}
         secondaryLabel={labels.secondary}
         thirdLabel={labels.third}
+        // «+» на ценовой оси активен, только когда цена видна как основная серия
+        // (в OI-only виде левая ось не про цену — не путаем уровни алерта).
+        onCreateAlert={ALERTS_ENABLED && (displayMode === 'price' || showPrice)
+          ? handleCreateAlertFromChart : undefined}
+        horizontalLines={alertLevels}
         showValueHeader={false}
         legendPosition="top"
         showDownloadButton={false}
@@ -909,6 +956,18 @@ export default function OpenInterestPage() {
           onClose={() => setIsModalOpen(false)}
           filterType="futures"
           indicator="open_interest"
+        />
+      )}
+
+      {/* Модалка алерта, открытая кликом «+» на графике (префилл: цена + уровень). */}
+      {ALERTS_ENABLED && chartAlertPrefill && (
+        <CreateAlertModal
+          indicator="open_interest"
+          asset={selectedInstrument}
+          assetName={instrumentName || selectedInstrument}
+          metrics={OI_ALERT_METRICS}
+          prefill={{ metricKey: 'price', threshold: chartAlertPrefill.threshold }}
+          onClose={() => { setChartAlertPrefill(null); reloadMyAlerts(); }}
         />
       )}
 

@@ -56,6 +56,11 @@ class User(Base):
     last_seen_anomaly_id = Column(BigInteger, nullable=True)
     anomaly_toasts_enabled = Column(Boolean, default=True, nullable=False, server_default="true")
 
+    # Дефолт-каналы доставки для НОВЫХ алертов (пресет в модалке). CSV-поднабор
+    # {telegram,site,email}. Миграция 019. См. [[signal_engine]] / план chart-alerts.
+    notify_channels_default = Column(String(32), nullable=False,
+                                     default="telegram,site", server_default="telegram,site")
+
     # === Роль и доступ ===
     # Используем String вместо SQLEnum для совместимости с существующим enum в БД
     role = Column(String(20), default="user", nullable=False)

@@ -11,11 +11,16 @@ import { createPortal } from 'react-dom';
 import { Bell, X, Check, ExternalLink, Info, Search } from 'lucide-react';
 import {
     getTelegramStatus, createTelegramLink, createAlert, createAlertsBatch, getAlertContext,
-    getIntradayAssets,
-    type AlertCreatePayload, type AlertContext,
+    getIntradayAssets, getNotifySettings,
+    type AlertCreatePayload, type AlertContext, type NotifySettings,
 } from '../../services/api';
 import MessengerChoice from './MessengerChoice';
 import InstrumentSearchModal from '../InstrumentSearchModal';
+
+// Каналы доставки. E-mail пока за флагом (SMTP noreply настраивается — см. план):
+// пилюля рендерится, но выбрать нельзя, пока EMAIL_CHANNEL_ENABLED=false.
+type Channel = 'telegram' | 'site' | 'email';
+const EMAIL_CHANNEL_ENABLED = false;
 
 export interface AlertMetricOption {
     key: string;
@@ -35,6 +40,8 @@ interface Props {
     assetName?: string;
     metrics: AlertMetricOption[];
     onClose: () => void;
+    /** Префилл при открытии из «+» на графике: какую метрику выбрать и порог. */
+    prefill?: { metricKey?: string; threshold?: number };
 }
 
 const overlay: CSSProperties = {
@@ -104,11 +111,26 @@ const pill = (active: boolean): CSSProperties => ({
     textAlign: 'left', width: '100%',
 });
 
-export default function CreateAlertModal({ indicator, asset, assetName, metrics, onClose }: Props) {
+export default function CreateAlertModal({ indicator, asset, assetName, metrics, onClose, prefill }: Props) {
     const [linked, setLinked] = useState<boolean | null>(null);  // null = загрузка
     const [linkUrl, setLinkUrl] = useState<string | null>(null);
-    const [metricKey, setMetricKey] = useState(metrics[0]?.key ?? '');
+    const [metricKey, setMetricKey] = useState(
+        (prefill?.metricKey && metrics.some((m) => m.key === prefill.metricKey))
+            ? prefill.metricKey
+            : (metrics[0]?.key ?? ''),
+    );
     const metric = metrics.find((m) => m.key === metricKey) ?? metrics[0];
+
+    // ── Каналы доставки ─────────────────────────────────────────────────────
+    // Дефолт из настроек юзера; до их загрузки — site (бесплатный, без привязки).
+    const [channels, setChannels] = useState<Set<Channel>>(() => new Set<Channel>(['site']));
+    const [settings, setSettings] = useState<NotifySettings | null>(null);
+    const [settingsLoaded, setSettingsLoaded] = useState(false);
+    const toggleChannel = (c: Channel) => setChannels((prev) => {
+        const next = new Set(prev);
+        if (next.has(c)) next.delete(c); else next.add(c);
+        return next;
+    });
     // Тир-UI (ступени множителя ATR / мульти-выбор активов / формула резкости)
     // включается для всех «во сколько раз больше обычного» метрик: движение
     // позиции (oi_move) И изменение числа участников (oi_participants). Признак —
@@ -121,7 +143,9 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
     const [op, setOp] = useState(metric?.ops[0]?.value ?? 'cross_up');
     // price → числовой порог в ₽; oi_move → не используется (порог = множитель ступени).
     const [threshold, setThreshold] = useState<string>(
-        metric?.defaultThreshold != null ? String(metric.defaultThreshold) : '',
+        prefill?.threshold != null
+            ? String(Math.round(prefill.threshold * 100) / 100)
+            : (metric?.defaultThreshold != null ? String(metric.defaultThreshold) : ''),
     );
     const [mode, setMode] = useState<'once' | 'repeat'>('once');
     const [context, setContext] = useState<AlertContext | null>(null);
@@ -160,12 +184,30 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
         getTelegramStatus().then((s) => setLinked(s.linked)).catch(() => setLinked(false));
     }, []);
 
+    // Настройки доставки: дефолт-каналы юзера + доступность e-mail. Задаём стартовый
+    // набор каналов один раз (после загрузки), если пользователь ещё не трогал.
+    useEffect(() => {
+        let cancelled = false;
+        getNotifySettings()
+            .then((s) => {
+                if (cancelled) return;
+                setSettings(s);
+                const init = (s.default_channels || []).filter(
+                    (c): c is Channel => c === 'telegram' || c === 'site'
+                        || (c === 'email' && EMAIL_CHANNEL_ENABLED && s.email_available),
+                );
+                setChannels(new Set<Channel>(init.length ? init : ['site']));
+                setSettingsLoaded(true);
+            })
+            .catch(() => { if (!cancelled) setSettingsLoaded(true); });
+        return () => { cancelled = true; };
+    }, []);
+
     // Контекст (свежая цена + intraday-доступность) — грузим когда форма доступна
     // (Telegram привязан). clgroup нужен для oi-метрик; берём из выбранной метрики,
     // иначе дефолт FIZ. Перезапрашиваем при смене актива/clgroup.
     const ctxClgroup = metric?.clgroup ?? 'FIZ';
     useEffect(() => {
-        if (linked !== true) return;
         let cancelled = false;
         getAlertContext(indicator, asset, ctxClgroup)
             .then((c) => { if (!cancelled) setContext(c); })
@@ -247,8 +289,15 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
         return activeLevel?.mult ?? null;
     };
 
+    const channelsArr = useMemo(() => Array.from(channels), [channels]);
+    // Telegram выбран, но не привязан → создать нельзя (доставить некуда по этому
+    // каналу). Site/email покрывают — тогда Telegram не обязателен.
+    const needsTelegramLink = channels.has('telegram') && linked === false;
+
     const handleCreate = async () => {
         if (!metric) return;
+        if (channelsArr.length === 0) { setMsg({ type: 'err', text: 'Выберите хотя бы один канал доставки' }); return; }
+        if (needsTelegramLink) { setMsg({ type: 'err', text: 'Подключите Telegram или уберите этот канал' }); return; }
 
         // ── price: один актив, числовой порог в ₽ (старое поведение) ─────────
         if (!isTierMetric) {
@@ -259,7 +308,7 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
                 const payload: AlertCreatePayload = {
                     indicator: metric.indicator, asset, asset_name: assetName,
                     metric: metric.metric, clgroup: metric.clgroup ?? null,
-                    op, threshold: th, mode,
+                    op, threshold: th, mode, channels: channelsArr,
                     ...(mode === 'repeat' ? { cooldown_hours: 24 } : {}),
                 };
                 await createAlert(payload);
@@ -285,7 +334,7 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
             const payloads: AlertCreatePayload[] = selectedList.map((a) => ({
                 indicator: metric.indicator, asset: a.sectype, asset_name: a.name,
                 metric: metric.metric, clgroup: metric.clgroup ?? null,
-                op: oiOp, threshold: mult, mode,
+                op: oiOp, threshold: mult, mode, channels: channelsArr,
                 // Внутридневной таймфрейм — только ликвидным активам; дневным-only
                 // всегда '1d', даже если в селекторе выбран 5м/1ч.
                 timeframe: (intradaySet.has(a.sectype) && timeframe !== '1d') ? timeframe : '1d',
@@ -334,34 +383,17 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
                                 : 'Алерт создан'}
                         </div>
                         <div style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)', marginBottom: 16 }}>
-                            {createdCount > 1 ? 'Уведомления придут' : 'Уведомление придёт'} в Telegram (@framesignalbot).
+                            {createdCount > 1 ? 'Уведомления придут' : 'Уведомление придёт'}{' '}
+                            {[
+                                channels.has('telegram') && 'в Telegram',
+                                channels.has('site') && 'на сайт',
+                                channels.has('email') && 'на e-mail',
+                            ].filter(Boolean).join(' и ') || 'на сайт'}.
                         </div>
                         <button onClick={onClose} className="editorial-press" style={{ ...primaryBtn, width: 'auto', padding: '10px 24px', margin: '0 auto', display: 'inline-block' }}>Готово</button>
                     </div>
-                ) : linked === null ? (
+                ) : linked === null || !settingsLoaded ? (
                     <div style={{ color: 'var(--text-secondary)', textAlign: 'center', padding: '20px 0' }}>Загрузка…</div>
-                ) : !linked ? (
-                    <div>
-                        {linkUrl ? (
-                            <>
-                                <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)', marginBottom: 12, lineHeight: 1.5 }}>
-                                    Откройте бота, нажмите <b>Start</b> — и вернитесь сюда. Статус обновится сам.
-                                </p>
-                                <a href={linkUrl} target="_blank" rel="noreferrer" className="editorial-press"
-                                    style={{ ...primaryBtn, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, textDecoration: 'none', marginBottom: 8 }}>
-                                    <ExternalLink size={16} /> Открыть @framesignalbot
-                                </a>
-                                <div style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-xs)', textAlign: 'center' }}>Ждём подключения…</div>
-                            </>
-                        ) : (
-                            <>
-                                <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)', marginBottom: 16, lineHeight: 1.5 }}>
-                                    Чтобы получать алерты, подключите мессенджер. После этого все ваши алерты будут приходить туда.
-                                </p>
-                                <MessengerChoice onTelegram={handleConnect} busy={busy} />
-                            </>
-                        )}
-                    </div>
                 ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                         {/* ── ВЫБОР АКТИВОВ (тир-метрика) — всегда первым в форме ── */}
@@ -536,6 +568,50 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
                             </div>
                         </div>
 
+                        {/* ── КАНАЛЫ ДОСТАВКИ ─────────────────────────────────── */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            <div style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>Куда присылать</div>
+                            <div style={{ display: 'flex', gap: 6 }}>
+                                {([
+                                    { key: 'telegram' as Channel, label: 'Telegram', disabled: false, soon: false },
+                                    { key: 'site' as Channel, label: 'На сайте', disabled: false, soon: false },
+                                    { key: 'email' as Channel, label: 'E-mail', disabled: !(EMAIL_CHANNEL_ENABLED && settings?.email_available), soon: !EMAIL_CHANNEL_ENABLED },
+                                ]).map((c) => {
+                                    const active = channels.has(c.key);
+                                    return (
+                                        <button key={c.key} type="button" disabled={c.disabled}
+                                            onClick={() => { if (!c.disabled) toggleChannel(c.key); }}
+                                            className="editorial-press"
+                                            style={{
+                                                ...pill(active), justifyContent: 'center',
+                                                fontSize: 'var(--fs-sm)', fontWeight: 700,
+                                                opacity: c.disabled ? 0.5 : 1,
+                                                cursor: c.disabled ? 'default' : 'pointer',
+                                            }}
+                                        >
+                                            {c.label}{c.soon && <span style={{ fontWeight: 600, opacity: 0.8 }}> · скоро</span>}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                            {/* Telegram выбран, но не привязан → инлайн-подключение */}
+                            {channels.has('telegram') && linked === false && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                    {linkUrl ? (
+                                        <>
+                                            <a href={linkUrl} target="_blank" rel="noreferrer" className="editorial-press"
+                                                style={{ ...primaryBtn, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, textDecoration: 'none' }}>
+                                                <ExternalLink size={16} /> Открыть @framesignalbot
+                                            </a>
+                                            <div style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-xs)', textAlign: 'center' }}>Нажмите Start в боте — статус обновится сам</div>
+                                        </>
+                                    ) : (
+                                        <MessengerChoice onTelegram={handleConnect} busy={busy} />
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
                         {/* ── ТЕКСТ ФОРМУЛЫ (тир-метрика) ─────────────────────── */}
                         {isTierMetric && (
                             <div style={{
@@ -602,10 +678,10 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
                         )}
 
                         <button
-                            disabled={busy || (isTierMetric && selectedList.length === 0)}
+                            disabled={busy || channels.size === 0 || needsTelegramLink || (isTierMetric && selectedList.length === 0)}
                             onClick={handleCreate}
                             className="editorial-press"
-                            style={primaryBtn}
+                            style={{ ...primaryBtn, opacity: (channels.size === 0 || needsTelegramLink) ? 0.6 : 1 }}
                         >
                             {busy
                                 ? 'Создаём…'

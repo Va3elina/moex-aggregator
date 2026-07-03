@@ -61,6 +61,7 @@ async def start_notify_listener():
 
             await conn.add_listener("data_updated", _on_notification)
             await conn.add_listener("anomaly", _on_anomaly)   # лента аномалий → SSE-нудж
+            await conn.add_listener("alert_fire", _on_alert_fire)  # сработал алерт юзера → SSE-нудж
 
             # Keepalive loop
             while True:
@@ -85,6 +86,7 @@ async def start_notify_listener():
                 try:
                     await conn.remove_listener("data_updated", _on_notification)
                     await conn.remove_listener("anomaly", _on_anomaly)
+                    await conn.remove_listener("alert_fire", _on_alert_fire)
                     await conn.close()
                 except Exception:
                     pass
@@ -111,6 +113,23 @@ async def _handle_anomaly(payload: str):
     except json.JSONDecodeError:
         data = {}
     await sse_manager.broadcast(json.dumps({"source": "anomaly", "id": data.get("id")}))
+
+
+def _on_alert_fire(conn, pid, channel, payload):
+    """Callback канала 'alert_fire' (alerts_run шлёт при site-доставке алерта)."""
+    asyncio.ensure_future(_handle_alert_fire(payload))
+
+
+async def _handle_alert_fire(payload: str):
+    """Сработал алерт юзера → SSE-нудж. Broadcast несёт ТОЛЬКО user_id (без контента,
+    чтобы не течь в общий SSE); адресат сверяет свой id и тянет
+    /api/alerts/recent-fires (user-scoped). Кеш не трогаем."""
+    from api.sse import sse_manager
+    try:
+        data = json.loads(payload) if payload else {}
+    except json.JSONDecodeError:
+        data = {}
+    await sse_manager.broadcast(json.dumps({"source": "alert_fire", "user_id": data.get("user_id")}))
 
 
 async def _handle_notification(payload: str):

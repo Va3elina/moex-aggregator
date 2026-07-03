@@ -1556,6 +1556,9 @@ export interface AlertInfo {
     // джойном по asset (null если инструмент не найден); fires_count — число
     // срабатываний за всю жизнь алерта (COUNT по alert_fires).
     source: string; sector: string | null; fires_count: number;
+    // Каналы доставки ('telegram'|'site'|'email'). Старый бэк мог не отдавать →
+    // опционально (фронт трактует пусто как ['telegram']).
+    channels?: string[];
     last_fired_at: string | null; created_at: string | null;
     // Фонд-алерты: заморожённый набор fund_id'ов через запятую (asset='custom').
     // null для asset='all'/<категория> (динамический набор). Опционально — старый
@@ -1589,6 +1592,23 @@ export interface AlertCreatePayload {
     // (все фонды) или asset=<категория> (вся категория) НЕ шлём — набор резолвится
     // динамически на бэке. См. контракт fund-алерта в CreateFundAlertModal.
     fund_ids?: number[];
+    // Каналы доставки: ['telegram','site','email']. Не шлём → бэк берёт дефолт юзера.
+    channels?: string[];
+}
+
+// Настройки доставки (GET/PUT /api/alerts/settings).
+export interface NotifySettings {
+    default_channels: string[];
+    telegram_linked: boolean;
+    email_available: boolean;
+    email: string | null;
+}
+
+// Срабатывание для центра уведомлений (тост + вкладка «Мои алерты»).
+export interface RecentFire {
+    id: number; alert_id: number; fired_at: string | null;
+    value: number | null; message_text: string | null;
+    indicator: string; asset: string; asset_name: string | null; source: string;
 }
 
 export interface AlertContext {
@@ -1611,6 +1631,26 @@ export async function getAlertContext(
     const params = new URLSearchParams({ indicator, asset, clgroup });
     const resp = await apiFetch(`${API_BASE}/api/alerts/context?${params}`);
     if (!resp.ok) throw new Error('Не удалось получить контекст алерта');
+    return resp.json();
+}
+export async function getNotifySettings(): Promise<NotifySettings> {
+    const resp = await apiFetch(`${API_BASE}/api/alerts/settings`);
+    if (!resp.ok) throw new Error('Не удалось получить настройки доставки');
+    return resp.json();
+}
+export async function updateNotifySettings(default_channels: string[]): Promise<NotifySettings> {
+    const resp = await apiFetch(`${API_BASE}/api/alerts/settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ default_channels }),
+    });
+    if (!resp.ok) throw new Error('Не удалось сохранить настройки доставки');
+    return resp.json();
+}
+export async function getRecentFires(since = 0, limit = 20): Promise<RecentFire[]> {
+    const params = new URLSearchParams({ since: String(since), limit: String(limit) });
+    const resp = await apiFetch(`${API_BASE}/api/alerts/recent-fires?${params}`);
+    if (!resp.ok) throw new Error('Не удалось получить срабатывания');
     return resp.json();
 }
 export async function createTelegramLink(): Promise<TelegramLinkInfo> {
