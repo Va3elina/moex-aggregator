@@ -306,7 +306,7 @@ export default function YearlySeasonalityChart({
             = -3) в остальных графиках → wrapper top = PT + 3 - 17 = PT - 14. */}
         {tooltip?.yearlyCurDate && (
           <div className="absolute pointer-events-none" style={{ top: PT - 14, left: 0, right: 0, zIndex: 5 }}>
-            <ChartDateLabel date={tooltip.yearlyCurDate} x={tooltip.x} />
+            <ChartDateLabel date={tooltip.yearlyCurDate} x={tooltip.x} padLeft={PL} padRight={PR} />
           </div>
         )}
         <div ref={dataAreaRef} className="absolute" style={{ left: PL, right: PR, top: PT, bottom: PB }}>

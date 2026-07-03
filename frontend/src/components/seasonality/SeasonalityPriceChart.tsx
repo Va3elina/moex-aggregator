@@ -257,6 +257,8 @@ export default function SeasonalityPriceChart({
             <ChartDateLabel
               date={new Date(tooltip.priceDate).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' })}
               x={tooltip.x}
+              padLeft={PL}
+              padRight={PR}
             />
           </div>
         )}
