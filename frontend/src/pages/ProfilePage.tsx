@@ -10,7 +10,7 @@ import ApiKeysSection from '../components/profile/ApiKeysSection';
 import ExtensionTokenSection from '../components/profile/ExtensionTokenSection';
 import TelegramAlertsSection from '../components/profile/TelegramAlertsSection';
 import { ALERTS_ENABLED } from '../config/alertsConfig';
-import { API_CSV_ENABLED } from '../config/features';
+import { API_CSV_ENABLED, PAYMENT_METHODS_UI_ENABLED } from '../config/features';
 
 interface BillingStatus {
   tier: string;
@@ -159,7 +159,7 @@ export default function ProfilePage() {
   useEffect(() => {
     fetchBilling();
     fetchHistory();
-    fetchPaymentMethods();
+    if (PAYMENT_METHODS_UI_ENABLED) fetchPaymentMethods();
   }, []);
 
   // Отвязать способ оплаты. Данные привязки стираются на бэке — повторное
@@ -603,7 +603,7 @@ export default function ProfilePage() {
           способ оплаты самостоятельно, из ЛК, без поддержки. Показываем
           только когда есть хотя бы одна активная привязка. При отвязке
           бэк стирает рекуррент-токен из БД (не только скрывает). */}
-      {paymentMethods.length > 0 && (
+      {PAYMENT_METHODS_UI_ENABLED && paymentMethods.length > 0 && (
         <div className="rounded-2xl border p-6" style={cardStyle}>
           <h2 className="text-lg font-semibold mb-1 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
             <Lock size={20} style={{ color: 'var(--text-muted)' }} />

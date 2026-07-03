@@ -12,3 +12,15 @@
  *   3. rebuild фронта + recreate api
  */
 export const API_CSV_ENABLED = false;
+
+/**
+ * PAYMENT_METHODS_UI_ENABLED — секция «Способы оплаты» в ЛК (/profile):
+ * список привязок + кнопка «Отвязать» (стирает рекуррент-токен на бэке).
+ * Построена под компл-требование ЮKassa (автоплатежи), СКРЫТА по решению
+ * Вадима 2026-07-03 до запуска ЮKassa-теста. Бэкенд (GET/DELETE
+ * /api/billing/payment_methods) живёт независимо от флага.
+ *
+ * Включить (при старте теста ЮKassa или по просьбе проверяющих):
+ *   export const PAYMENT_METHODS_UI_ENABLED = true; + rebuild фронта.
+ */
+export const PAYMENT_METHODS_UI_ENABLED = false;

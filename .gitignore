@@ -103,3 +103,5 @@ signals/data/
 *.bak
 # Стухший ручной SW (реальный — frontend/public/sw.js с __SW_VERSION__)
 frontend/src/pages/sw.js
+# Локальные секреты скиллов (ключи эквайринга и т.п.) — НИКОГДА не коммитить
+.claude/skills/**/secrets.local.md
