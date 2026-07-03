@@ -32,6 +32,10 @@ class WebhookEvent:
     payment_method: str | None = None    # 'bank_card' / 'sbp' / 'tpay' / ...
     amount: float | None = None
     metadata: dict | None = None         # произвольные данные, которые мы прокинули при создании
+    # Имя провайдера, чей webhook породил событие ('tbank'/'yookassa'). Нужен
+    # при двух живых провайдерах: upsert пишет его в pm.provider, верификация
+    # activate_from_webhook роутится к правильному API. None → глобальный дефолт.
+    provider_name: str | None = None
     # === Поля для рекуррентных платежей (T-Bank Recurrent flow) ===
     # Приходят в webhook'е CONFIRMED платежа созданного с Recurrent="Y".
     # service.py использует их для создания записи в user_payment_methods.
