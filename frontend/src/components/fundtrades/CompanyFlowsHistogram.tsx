@@ -21,7 +21,7 @@ import {
     useState,
 } from 'react';
 import { BarChart3 } from 'lucide-react';
-import { GRID, CROSSHAIR, ANIMATION } from '../../config/chartTheme';
+import { GRID, CROSSHAIR, ANIMATION, cssVar } from '../../config/chartTheme';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import ChartWatermark from '../ChartWatermark';
 import ChartNavigator from '../ChartNavigator';
@@ -352,7 +352,7 @@ export default function CompanyFlowsHistogram({
                             const shown = hoverBreakdown.rows.slice(0, MAX_ROWS);
                             const extra = hoverBreakdown.rows.length - shown.length;
                             return (
-                                <ChartTooltip x={tooltipPos.x} y={tooltipPos.y}>
+                                <ChartTooltip x={tooltipPos.x} y={tooltipPos.y} clampTop={cssVar('--chart-pad-top', 14)} clampBottom={cssVar('--chart-pad-bottom', 50)}>
                                     <TooltipRow color={netColor} label={net >= 0 ? 'Чистая покупка' : 'Чистая продажа'} value={fmtFlow(net)} />
                                     {shown.length > 0 && (
                                         <div style={{ marginTop: 'var(--sp-1)', paddingTop: 'var(--sp-1)', borderTop: '1px solid var(--border-color)' }}>

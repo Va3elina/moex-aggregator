@@ -522,7 +522,7 @@ export default function YearlySeasonalityChart({
 
         {/* Tooltip */}
         {tooltip?.yearlyAvgPct !== undefined && (
-          <ChartTooltip x={tooltip.x} y={tooltip.y}>
+          <ChartTooltip x={tooltip.x} y={tooltip.y} clampTop={PT} clampBottom={PB}>
             {/* Все серии */}
             {allMeta.map((m, s) => {
               const seriesAvg = visAllSeries[s]?.average;

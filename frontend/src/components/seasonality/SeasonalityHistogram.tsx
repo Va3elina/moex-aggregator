@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import type { SeasonalityResponse } from '../../services/api';
-import { CHART_COLORS, CROSSHAIR, TOOLTIP, ANIMATION } from '../../config/chartTheme';
+import { CHART_COLORS, CROSSHAIR, TOOLTIP, ANIMATION, cssVar } from '../../config/chartTheme';
 import { ChartGrid, ChartCrosshair, ChartTooltip, TooltipRow } from '../chart';
 import ChartLegend from '../chart/ChartLegend';
 import ChartWatermark from '../ChartWatermark';
@@ -326,7 +326,7 @@ export default function SeasonalityHistogram({
         const idx = bars.indexOf(tooltip.bar!);
         if (idx === -1) return null;
         return (
-          <ChartTooltip x={tooltip.x} y={tooltip.y}>
+          <ChartTooltip x={tooltip.x} y={tooltip.y} clampTop={cssVar('--seasonality-hist-pad-top', 28)} clampBottom={cssVar('--seasonality-hist-pad-bottom', 24)}>
             {isMulti ? (
               <>
                 {/* Label header — bigger/bolder для лучшей читаемости. Особенно
