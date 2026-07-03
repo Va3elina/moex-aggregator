@@ -20,34 +20,49 @@ interface ChartTooltipProps {
   children: ReactNode;
   /** Ручной override: порог flip'а в px (если не задан — 50% ширины родителя) */
   flipAt?: number;
+  /** Вертикальный коридор: отступ от ВЕРХА родителя (px) — обычно позиция
+      верхней грид-линии (--chart-pad-top). Карточка не поднимается выше. */
+  clampTop?: number;
+  /** Отступ от НИЗА родителя (px) — обычно высота зоны X-подписей
+      (--chart-pad-bottom). Карточка не опускается ниже нижней грид-линии
+      и не перекрывает даты оси. */
+  clampBottom?: number;
 }
 
 const GAP = 12; // отступ между курсором и тултипом
 
-export default function ChartTooltip({ x, y, children, flipAt }: ChartTooltipProps) {
+export default function ChartTooltip({ x, y, children, flipAt, clampTop, clampBottom }: ChartTooltipProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const [parentW, setParentW] = useState(800);
+  const [parentH, setParentH] = useState(400);
   const [cardW, setCardW] = useState(160);
+  const [cardH, setCardH] = useState(56);
 
-  // Измеряем ширину родителя один раз (+ на resize)
+  // Измеряем размеры родителя один раз (+ на resize)
   useEffect(() => {
     const el = wrapperRef.current?.parentElement;
     if (!el) return;
-    const update = () => setParentW(el.clientWidth);
+    const update = () => { setParentW(el.clientWidth); setParentH(el.clientHeight); };
     update();
     const ro = new ResizeObserver(update);
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
 
-  // Измеряем ширину карточки при каждом изменении содержимого
+  // Измеряем размеры карточки при каждом изменении содержимого
   useLayoutEffect(() => {
-    if (cardRef.current) setCardW(cardRef.current.offsetWidth);
+    if (cardRef.current) { setCardW(cardRef.current.offsetWidth); setCardH(cardRef.current.offsetHeight); }
   }, [children]);
 
   const threshold = flipAt ?? parentW / 2;
   const isRight = x > threshold;
+
+  // Вертикальный кламп: карточка целиком в коридоре между крайними
+  // горизонтальными линиями графика. Math.max последним — при карточке выше
+  // коридора прижимаемся к верхней линии (вылезет вниз, но не наверх).
+  const minTop = clampTop ?? 4;
+  const maxTop = parentH - (clampBottom ?? 4) - cardH;
 
   return (
     <div
@@ -55,7 +70,7 @@ export default function ChartTooltip({ x, y, children, flipAt }: ChartTooltipPro
       className="absolute pointer-events-none z-30"
       style={{
         left: isRight ? Math.max(4, x - cardW - GAP) : x + GAP,
-        top: Math.max(y - 40, 4),
+        top: Math.max(minTop, Math.min(y - 40, maxTop)),
       }}
     >
       <div ref={cardRef} className={TOOLTIP.containerClass} style={TOOLTIP.containerStyle}>

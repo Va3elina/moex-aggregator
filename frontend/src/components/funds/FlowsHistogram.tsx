@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { BarChart3 } from 'lucide-react';
 import type { FundsFlowsResponse } from '../../services/api';
-import { CHART_COLORS, GRID, CROSSHAIR } from '../../config/chartTheme';
+import { CHART_COLORS, GRID, CROSSHAIR, cssVar } from '../../config/chartTheme';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import ChartWatermark from '../ChartWatermark';
 import ChartNavigator from '../ChartNavigator';
@@ -303,7 +303,7 @@ export default function FlowsHistogram({
                         const pctStr = `${f.flow_pct > 0 ? '+' : ''}${f.flow_pct.toFixed(2)}%`;
                         const color = f.flow >= 0 ? 'var(--funds-flow-positive)' : 'var(--funds-flow-negative)';
                         return (
-                            <ChartTooltip x={flowTooltipPos.x} y={flowTooltipPos.y}>
+                            <ChartTooltip x={flowTooltipPos.x} y={flowTooltipPos.y} clampTop={cssVar('--chart-pad-top', 14)} clampBottom={cssVar('--chart-pad-bottom', 50)}>
                                 <TooltipRow color={color} label={f.flow >= 0 ? 'Приток' : 'Отток'} value={flowStr} />
                                 <TooltipRow color={CHART_COLORS.primary} label="Изменение" value={pctStr} valueClass={`${f.flow >= 0 ? '' : ''}`} />
                             </ChartTooltip>

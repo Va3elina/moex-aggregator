@@ -319,7 +319,7 @@ export default function SeasonalityPriceChart({
 
         {/* Value tooltip */}
         {tooltip?.priceDate && (
-          <ChartTooltip x={tooltip.x} y={tooltip.y}>
+          <ChartTooltip x={tooltip.x} y={tooltip.y} clampTop={PT} clampBottom={PB}>
             <TooltipRow color={CHART_COLORS.accent} label="Цена" value={`${tooltip.priceClose?.toFixed(2)} ₽`} />
             {tooltip.priceAdj !== tooltip.priceClose && (
               <TooltipRow color={CHART_COLORS.adjusted} label="Без гэпов" value={`${tooltip.priceAdj?.toFixed(2)} ₽`} />

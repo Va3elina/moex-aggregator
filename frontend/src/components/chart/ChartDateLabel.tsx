@@ -50,7 +50,11 @@ export default function ChartDateLabel({ date, x, containerWidth }: ChartDateLab
         className="absolute pointer-events-none"
         style={{ left: clampedX, transform: 'translateX(-50%)', top: 0 }}
       >
-        <span ref={labelRef} className={TOOLTIP.datePillClass} style={TOOLTIP.datePillStyle}>
+        {/* display:block изолирует от наследуемого line-height контекста:
+            inline-span выравнивался по baseline строки родителя (в сезонности
+            line-height ~30px) и съезжал на ~11px вниз — дата оказывалась ПОД
+            верхней грид-линией вместо НАД ней. */}
+        <span ref={labelRef} className={TOOLTIP.datePillClass} style={{ ...TOOLTIP.datePillStyle, display: 'block' }}>
           {date}
         </span>
       </div>
