@@ -1214,11 +1214,15 @@ def soft_delete_payment_method(
     db: Session, user: User, payment_method_id: int
 ) -> bool:
     """
-    Soft-удалить карту. Возвращает True если удалено, False если не нашли.
+    Отвязать способ оплаты: soft-delete строки + СТИРАНИЕ рекуррент-токенов.
+    Возвращает True если удалено, False если не нашли.
 
-    Не отвязываем у T-Bank (DeleteCard API) — оставляем им очистку. У них
-    карта остаётся привязанной к CustomerKey, но нам она недоступна (мы её
-    больше не вернём из list_payment_methods).
+    Токены (rebill_id / account_token) обнуляются, а не только скрываются:
+    требование платёжных провайдеров (ЮKassa при подключении автоплатежей,
+    T-Bank RemoveCustomer-compliance) — при самостоятельной отвязке юзером
+    магазин обязан удалить токен повторных списаний из своей системы.
+    Провайдеру ничего сообщать не нужно. Строка остаётся для аудита
+    (card_last4/brand), но списать по ней уже нечем.
     """
     pm = db.query(UserPaymentMethod).filter(
         UserPaymentMethod.id == payment_method_id,
@@ -1229,6 +1233,8 @@ def soft_delete_payment_method(
         return False
 
     pm.deleted_at = datetime.now(timezone.utc)
+    pm.rebill_id = None
+    pm.account_token = None
     was_default = pm.is_default
     pm.is_default = False
     db.flush()

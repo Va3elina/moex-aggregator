@@ -802,10 +802,11 @@ async def admin_refund(
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _serialize_pm(pm: UserPaymentMethod) -> dict:
-    """JSON-сериализация карты для UI «Сохранённые карты»."""
+    """JSON-сериализация способа оплаты для UI «Способы оплаты» в ЛК."""
     return {
         "id": pm.id,
         "provider": pm.provider,
+        "method_type": pm.method_type,  # 'card' / 'sbp' — UI ветвит бейдж и подпись
         "card_last4": pm.card_last4,
         "card_brand": pm.card_brand,
         "display_name": pm.display_name,
@@ -832,9 +833,10 @@ async def delete_my_payment_method(
     db: Session = Depends(get_db),
 ):
     """
-    Soft-delete карты юзера. Не отвязываем у T-Bank — она просто скрывается
-    из нашего списка. Подписки которые на неё ссылаются остаются работать
-    до expires_at, но auto-renewal на этой карте не сработает.
+    Отвязка способа оплаты юзером: soft-delete + стирание рекуррент-токенов
+    (rebill_id/account_token) из БД — компл-требование ЮKassa/T-Bank.
+    Подписки, которые на него ссылаются, работают до expires_at, но
+    auto-renewal больше не сработает.
     """
     ok = billing_service.soft_delete_payment_method(db, user, pm_id)
     if not ok:
