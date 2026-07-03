@@ -3,7 +3,8 @@
 -- Источник: парсинг t.me/s/<channel> (публичное web-превью). РКН блокирует только
 -- api.telegram.org (бот идёт через релей), а t.me/s достижим с прода НАПРЯМУЮ
 -- (проверено: HTTP 200, IPv4/IPv6). Ридер — signals/channel_scan.py (host-cron),
--- парсит FrameTool + Thor_INV, апсертит последние посты.
+-- парсит каналы из CHANNELS (сейчас только FrameTool; Thor_INV удалён 2026-07-03),
+-- апсертит последние посты.
 --
 -- ОТДЕЛЬНАЯ таблица (не `anomalies`): её дедуп-ключ включает signal_date →
 -- несколько постов за день схлопнулись бы в один. Здесь уник по (channel, post_id).
@@ -13,7 +14,7 @@
 
 CREATE TABLE IF NOT EXISTS channel_posts (
   id           BIGSERIAL PRIMARY KEY,
-  channel      VARCHAR(64)  NOT NULL,        -- username канала: 'FrameTool' | 'Thor_INV'
+  channel      VARCHAR(64)  NOT NULL,        -- username канала (см. CHANNELS в channel_scan.py)
   channel_name VARCHAR(120),                 -- человекочитаемо («Фрейм» / «Thor Invest»)
   post_id      INTEGER      NOT NULL,        -- номер поста в канале (из data-post="ch/N")
   text         TEXT,                          -- текст поста (для заголовка-сниппета)

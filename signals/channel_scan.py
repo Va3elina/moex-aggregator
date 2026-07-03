@@ -29,7 +29,8 @@ from api.database import SessionLocal  # noqa: E402
 # (username, запасное имя). Реальное имя парсим со страницы; это fallback.
 CHANNELS = [
     ("FrameTool", "Фрейм"),
-    ("Thor_INV", "Thor Invest"),
+    # Thor_INV удалён 2026-07-03 по решению Вадима — не отслеживаем;
+    # посты вычищены из channel_posts. НЕ возвращать без явной просьбы.
 ]
 MAX_POSTS_PER_CHANNEL = 12
 HTTP_TIMEOUT = 20
