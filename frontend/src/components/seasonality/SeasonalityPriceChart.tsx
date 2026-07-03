@@ -249,12 +249,15 @@ export default function SeasonalityPriceChart({
         onTouchEnd={() => { divHoverRef.current = false; setTooltip(null); }}
       >
         {/* Floating date — absolute над верхней грид-линией (y=PT), как в
-            SimpleChart/Yearly: низ текста (~14px) на 3px ниже линии
-            (= PILL_GAP_ABOVE_LINE в datePillLayout). Раньше дата занимала
-            отдельный 22px-ряд между легендой и графиком. */}
+            SimpleChart/Yearly: низ бокса (~17px) на 3px ниже линии
+            (= PILL_GAP_ABOVE_LINE) → top = PT - 14. Формат как в OI
+            («7 апр. 2026 г.») — в стейте ISO остаётся (ключ поиска точки). */}
         {tooltip?.priceDate && (
-          <div className="absolute pointer-events-none" style={{ top: PT - 11, left: 0, right: 0, zIndex: 5 }}>
-            <ChartDateLabel date={tooltip.priceDate} x={tooltip.x} />
+          <div className="absolute pointer-events-none" style={{ top: PT - 14, left: 0, right: 0, zIndex: 5 }}>
+            <ChartDateLabel
+              date={new Date(tooltip.priceDate).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' })}
+              x={tooltip.x}
+            />
           </div>
         )}
         {/* SVG */}
