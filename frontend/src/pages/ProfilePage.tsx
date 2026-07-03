@@ -37,6 +37,18 @@ interface HistoryItem {
   yk_payment_id: string | null;
 }
 
+interface PaymentMethod {
+  id: number;
+  provider: string;            // 'tbank' / 'yookassa'
+  method_type: string | null;  // 'card' / 'sbp'
+  card_last4: string | null;
+  card_brand: string | null;
+  display_name: string | null;
+  is_default: boolean;
+  last_used_at: string | null;
+  created_at: string | null;
+}
+
 const TIER_LABELS: Record<string, string> = {
   free: 'Бесплатный план',
   basic: 'Basic',
@@ -114,6 +126,12 @@ export default function ProfilePage() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [historyExpanded, setHistoryExpanded] = useState(false);
 
+  // Привязанные способы оплаты (рекуррент-токены). Секция вернулась 2026-07-03:
+  // компл-требование ЮKassa (и T-Bank) — юзер обязан уметь отвязать сам,
+  // без обращения в поддержку; бэк при отвязке стирает токен из БД.
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
+  const [pmActionId, setPmActionId] = useState<number | null>(null);
+
   const fetchBilling = () => {
     fetch('/api/billing/status', {
       headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` },
@@ -130,10 +148,40 @@ export default function ProfilePage() {
       .then(d => setHistory(d.items || []))
       .catch(() => setHistory([]));
   };
+  const fetchPaymentMethods = () => {
+    fetch('/api/billing/payment_methods', {
+      headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` },
+    })
+      .then(r => r.ok ? r.json() : { items: [] })
+      .then(d => setPaymentMethods(d.items || []))
+      .catch(() => setPaymentMethods([]));
+  };
   useEffect(() => {
     fetchBilling();
     fetchHistory();
+    fetchPaymentMethods();
   }, []);
+
+  // Отвязать способ оплаты. Данные привязки стираются на бэке — повторное
+  // списание невозможно; активная подписка доживает до expires_at.
+  const handleDeletePaymentMethod = async (pmId: number) => {
+    if (!window.confirm(
+      'Отвязать способ оплаты?\n\n' +
+      'Данные привязки будут удалены, авто-продление подписки перестанет работать. ' +
+      'Оплаченный период продолжит действовать до конца. ' +
+      'Привязать способ оплаты снова можно при следующей оплате.'
+    )) return;
+    setPmActionId(pmId);
+    try {
+      await fetch(`/api/billing/payment_methods/${pmId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` },
+      });
+      fetchPaymentMethods();
+    } finally {
+      setPmActionId(null);
+    }
+  };
 
   // Cancel или Resume — обе ручки идут через те же args, разные endpoints
   const handleSubAction = async (action: 'cancel' | 'resume', opts?: { force?: boolean }) => {
@@ -549,11 +597,81 @@ export default function ProfilePage() {
         )}
       </div>
 
-      {/* Секция «Сохранённые карты» убрана 2026-05-18: T-Bank хранит карту
-          у себя по RebillId, нам показывать её в UI нет смысла. Юзер
-          управляет только подпиской (отмена/возобновление); при отмене
-          подписки auto-renewal cron перестаёт дёргать /v2/Charge, токен
-          у T-Bank остаётся неиспользованным. */}
+      {/* ============ Секция 2.3: Способы оплаты ============
+          Вернулась 2026-07-03 (была убрана 2026-05-18): компл-требование
+          ЮKassa при подключении автоплатежей — юзер должен уметь отвязать
+          способ оплаты самостоятельно, из ЛК, без поддержки. Показываем
+          только когда есть хотя бы одна активная привязка. При отвязке
+          бэк стирает рекуррент-токен из БД (не только скрывает). */}
+      {paymentMethods.length > 0 && (
+        <div className="rounded-2xl border p-6" style={cardStyle}>
+          <h2 className="text-lg font-semibold mb-1 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+            <Lock size={20} style={{ color: 'var(--text-muted)' }} />
+            Способы оплаты
+          </h2>
+          <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
+            Используются для авто-продления подписки. Отвязать можно в любой момент —
+            авто-продление остановится, оплаченный период сохранится.
+          </p>
+          <div className="space-y-3">
+            {paymentMethods.map((pm) => {
+              const isSbp = pm.method_type === 'sbp';
+              const badge = isSbp ? 'СБП' : (pm.card_brand || 'КАРТА');
+              const label = isSbp
+                ? (pm.display_name || 'Счёт по СБП')
+                : `···· ${pm.card_last4 || '????'}`;
+              return (
+                <div
+                  key={pm.id}
+                  className="flex items-center justify-between gap-3 rounded-xl p-3 border"
+                  style={{
+                    borderColor: 'var(--border-color)',
+                    backgroundColor: 'var(--bg-secondary)',
+                  }}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span
+                      className="inline-flex items-center justify-center font-bold rounded shrink-0"
+                      style={{
+                        minWidth: 44,
+                        height: 28,
+                        padding: '0 6px',
+                        fontSize: 11,
+                        letterSpacing: '0.03em',
+                        color: 'var(--text-primary)',
+                        border: '1.5px solid var(--border-color)',
+                        backgroundColor: 'var(--bg-primary)',
+                      }}
+                    >
+                      {badge.toUpperCase()}
+                    </span>
+                    <span className="text-sm truncate" style={{ color: 'var(--text-secondary)' }}>
+                      {label}
+                    </span>
+                    {pm.is_default && paymentMethods.length > 1 && (
+                      <span className="text-xs shrink-0" style={{ color: 'var(--text-muted)' }}>
+                        основной
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => handleDeletePaymentMethod(pm.id)}
+                    disabled={pmActionId === pm.id}
+                    className="shrink-0 px-3 py-1.5 rounded-full text-sm font-medium transition-opacity hover:opacity-80 disabled:opacity-50"
+                    style={{
+                      background: 'transparent',
+                      border: '1.5px solid var(--border-color)',
+                      color: 'var(--text-muted)',
+                    }}
+                  >
+                    {pmActionId === pm.id ? 'Отвязываем…' : 'Отвязать'}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* ============ Секция 2.4: История платежей ============
           Показываем когда у юзера есть хотя бы 1 запись в history. Свёрнут по
