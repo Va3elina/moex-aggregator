@@ -14,13 +14,18 @@
   - Для idempotency — lookup по yk_payment_id (webhook могут прийти дважды).
 """
 import logging
+import os
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from sqlalchemy import or_ as sa_or_
 from sqlalchemy.orm import Session
 
-from api.billing.factory import get_payment_provider
+from api.billing.factory import (
+    get_payment_provider,
+    get_provider_by_name,
+    get_provider_for_user,
+)
 from api.billing.plans import TIER_LEVELS, get_plan, monthly_fallback
 from api.billing.provider import WebhookEvent
 from api.models.payment_method import UserPaymentMethod
@@ -49,7 +54,9 @@ def _upsert_payment_method(
     if not event.rebill_id and not event.account_token:
         return None
 
-    provider = get_payment_provider()
+    # Провайдер привязки — из события (при двух живых провайдерах webhook
+    # ЮKassa не должен записать pm как tbank'овский); fallback — дефолт.
+    provider_name = event.provider_name or get_payment_provider().name
 
     if is_sbp:
         existing = db.query(UserPaymentMethod).filter(
@@ -89,7 +96,7 @@ def _upsert_payment_method(
 
     pm = UserPaymentMethod(
         user_id=user_id,
-        provider=provider.name,
+        provider=provider_name,
         method_type="sbp" if is_sbp else "card",
         rebill_id=event.rebill_id,
         account_token=event.account_token,
@@ -180,22 +187,36 @@ def create_checkout_for_user(
                     "Этот план уже активен. Сменить период — после окончания текущего."
                 )
 
+    # Роутинг: тест-юзеры ЮKassa (env YOOKASSA_TEST_USER_IDS) чекаутятся через
+    # ЮKassa, остальные — через дефолт (T-Bank). Без env — прежнее поведение.
+    provider = get_provider_for_user(user.id)
+
+    # Тестовая цена ЮKassa: ТОЛЬКО для тест-юзеров этого провайдера — НЕ
+    # глобальный override (реальный юзер не должен купить Basic за 5₽).
+    checkout_amount = plan.amount
+    if provider.name == "yookassa":
+        test_price = os.getenv("YOOKASSA_TEST_PRICE_RUB", "").strip()
+        if test_price:
+            try:
+                checkout_amount = float(test_price)
+            except ValueError:
+                log.warning("YOOKASSA_TEST_PRICE_RUB=%r не число — игнорирую", test_price)
+
     # 1. Создаём запись subscription со статусом 'pending'
     sub = Subscription(
         user_id=user.id,
         tier=plan.tier,
         period=plan.period,
         plan_id=plan.plan_id,
-        amount=plan.amount,
+        amount=checkout_amount,
         currency="RUB",
         status="pending",
     )
     db.add(sub)
     db.flush()  # нужен sub.id до commit'а
 
-    # 2. Зовём провайдера. user.email/phone используется T-Bank провайдером
-    # для построения Receipt (54-ФЗ), остальные провайдеры эти параметры игнорируют.
-    provider = get_payment_provider()
+    # 2. Зовём провайдера. user.email/phone используется провайдером
+    # для построения Receipt (54-ФЗ).
     customer_email = getattr(user, "email", None) or None
     customer_phone = getattr(user, "phone", None) or None
     metadata = {
@@ -209,7 +230,7 @@ def create_checkout_for_user(
             # customer_key обязателен; sub помечаем как оплаченную через СБП.
             sub.yk_method = "sbp"
             session = provider.create_sbp_checkout(  # type: ignore[attr-defined]
-                amount=plan.amount,
+                amount=checkout_amount,
                 currency="RUB",
                 description=f"{plan.title} — user #{user.id}",
                 metadata=metadata,
@@ -220,7 +241,7 @@ def create_checkout_for_user(
             )
         else:
             session = provider.create_checkout(
-                amount=plan.amount,
+                amount=checkout_amount,
                 currency="RUB",
                 description=f"{plan.title} — user #{user.id}",
                 return_url=return_url,
@@ -249,8 +270,10 @@ def create_checkout_for_user(
     db.commit()
 
     log.info(
-        "Created subscription #%s (pending) for user #%s: plan=%s amount=%.2f payment_id=%s",
-        sub.id, user.id, plan.plan_id, plan.amount, session.payment_id,
+        "Created subscription #%s (pending) for user #%s: plan=%s amount=%.2f "
+        "provider=%s payment_id=%s",
+        sub.id, user.id, plan.plan_id, checkout_amount, provider.name,
+        session.payment_id,
     )
 
     return {
@@ -262,7 +285,7 @@ def create_checkout_for_user(
         "rail": rail,
         "plan_id": plan.plan_id,
         "tier": plan.tier,
-        "amount": plan.amount,
+        "amount": checkout_amount,
     }
 
 
@@ -270,17 +293,23 @@ def create_checkout_for_user(
 #  2. WEBHOOK — активация / отмена
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _verify_with_provider(sub: Subscription) -> bool:
+def _verify_with_provider(sub: Subscription, provider_name: str | None = None) -> bool:
     """
-    Дополнительная проверка: GET /v2/GetState у T-Bank, чтобы убедиться
-    что платёж реально CONFIRMED. Защита от подделки webhook'ов (даже
-    если злоумышленник угадал Token, GetState вернёт реальный статус).
+    Дополнительная проверка: GET состояния платежа у провайдера, чтобы
+    убедиться что он реально CONFIRMED. Защита от подделки webhook'ов
+    (T-Bank: даже если угадали Token; ЮKassa вообще не подписывает
+    уведомления — эта проверка там единственная линия обороны).
+
+    provider_name — от события (event.provider_name): при двух живых
+    провайдерах платёж ЮKassa нельзя проверять T-Bank'ом GetState.
     """
-    provider = get_payment_provider()
+    provider = get_provider_by_name(provider_name) if provider_name else get_payment_provider()
     if provider.name == "stub":
         return True  # stub доверяем всегда
-    if provider.name != "tbank":
+    if provider.name not in ("tbank", "yookassa"):
         return True  # другие провайдеры — настраивать отдельно
+    # tbank и yookassa возвращают единую форму {"Status": ...} (yookassa
+    # нормализует свои статусы к T-Bank-подобным — см. yookassa.verify_payment)
     info = provider.verify_payment(sub.yk_payment_id)  # type: ignore[attr-defined]
     if info is None:
         log.warning(
@@ -329,8 +358,8 @@ def activate_from_webhook(db: Session, event: WebhookEvent) -> Subscription | No
             )
             return None
 
-    # Double-check с провайдером
-    if not _verify_with_provider(sub):
+    # Double-check с провайдером (роутим по источнику события)
+    if not _verify_with_provider(sub, event.provider_name):
         log.warning("activate_from_webhook: verification failed for sub=%s", sub.id)
         return None
 
@@ -705,6 +734,21 @@ def subscription_history(db: Session, user: User, limit: int = 20) -> list[Subsc
 #  6. Sync pending — fallback на случай задержки/отсутствия webhook
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _provider_for_sub(db: Session, sub: Subscription):
+    """
+    Провайдер, через которого шёл платёж подписки: по pm.provider, если
+    подписка привязана к payment_method; иначе — по юзер-роутингу (checkout
+    этого юзера шёл бы туда же). Нужен для refund при двух живых провайдерах.
+    """
+    if sub.payment_method_id:
+        pm = db.query(UserPaymentMethod).filter(
+            UserPaymentMethod.id == sub.payment_method_id
+        ).first()
+        if pm is not None and pm.provider:
+            return get_provider_by_name(pm.provider)
+    return get_provider_for_user(sub.user_id)
+
+
 def refund_subscription(
     db: Session,
     sub: Subscription,
@@ -728,7 +772,7 @@ def refund_subscription(
     Возвращает {ok, status, refunded_amount, message}.
     Если провайдер вернул False — оставляем sub без изменений.
     """
-    provider = get_payment_provider()
+    provider = _provider_for_sub(db, sub)
 
     if provider.name == "stub":
         # Stub — просто маркируем refunded, без обращения наружу
@@ -804,7 +848,8 @@ def sync_pending_for_user(
 
     Возвращает summary {activated, cancelled, skipped, checked}.
     """
-    provider = get_payment_provider()
+    # Роутинг как на checkout: тест-юзеры ЮKassa поллятся в ЮKassa.
+    provider = get_provider_for_user(user.id)
     summary = {"activated": 0, "cancelled": 0, "skipped": 0, "checked": 0}
 
     # Stub провайдер не имеет внешнего state — нет смысла верифицировать.
@@ -844,7 +889,9 @@ def sync_pending_for_user(
         amount: float | None = None
         method: str | None = None
 
-        if provider.name == "tbank":
+        # yookassa.verify_payment нормализует ответ к той же форме, что tbank
+        # ({"Status", "Amount" в копейках, "PaymentMethod"}) — ветка общая.
+        if provider.name in ("tbank", "yookassa"):
             status = info.get("Status", "").upper()
             if status == "CONFIRMED":
                 event_type = "payment.succeeded"
@@ -872,6 +919,9 @@ def sync_pending_for_user(
             event_type=event_type,
             payment_method=method,
             amount=amount,
+            # Без provider_name activate_from_webhook верифицировал бы платёж
+            # ЮKassa через T-Bank GetState → ложный отказ активации.
+            provider_name=provider.name,
         )
 
         try:
@@ -945,7 +995,9 @@ def charge_recurrent(
             Decimal(str(plan.amount)) * (100 - discount_pct) / 100
         ).quantize(Decimal("0.01"))
 
-    provider = get_payment_provider()
+    # Продление идёт через провайдера ПРИВЯЗКИ (pm.provider), не через
+    # глобальный дефолт: T-Bank-карты продлеваются в T-Bank, ЮKassa — в ЮKassa.
+    provider = get_provider_by_name(payment_method.provider)
     # Ветвление card/СБП: карта → /v2/Charge(RebillId), СБП → ChargeQr(AccountToken).
     is_sbp = (payment_method.method_type == "sbp")
     needed = "charge_qr" if is_sbp else "charge"

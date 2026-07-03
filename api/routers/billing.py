@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session
 from api.billing import service as billing_service
 from api.billing import invites as invite_service
 from api.billing import trial as trial_service
-from api.billing.factory import get_payment_provider
+from api.billing.factory import get_payment_provider, get_yookassa_provider
 from api.billing.plans import TRIAL_DAYS, get_plan, list_public_plans, tiers_grouped
 from api.billing.tiers import user_tier
 from api.database import get_db
@@ -325,6 +325,42 @@ async def webhook(request: Request, db: Session = Depends(get_db)):
         # НЕ пробрасываем — чтобы провайдер не ретраил. Ошибки смотрим в логах.
 
     return ok_response
+
+
+@router.post("/webhook/yookassa", status_code=status.HTTP_200_OK)
+async def webhook_yookassa(request: Request, db: Session = Depends(get_db)):
+    """
+    Webhook ЮKassa (отдельный путь — на проде живут ДВА провайдера: T-Bank
+    дефолтом, ЮKassa для тест-юзеров; общий /webhook разбирает T-Bank Token).
+
+    ЮKassa НЕ подписывает уведомления: parse_webhook берёт из тела только id
+    платежа и строит событие из ответа GET /payments/{id} — подделка тела
+    бессильна. ЮKassa ждёт HTTP 200 (иначе ретраит до суток).
+
+    URL прописывается в ЛК: Интеграция → HTTP-уведомления → события
+    payment.succeeded / payment.canceled / refund.succeeded.
+    """
+    provider = get_yookassa_provider()
+    if provider is None:
+        # env не заданы — фича спит; 404 чтобы случайные POST не выглядели ок
+        raise HTTPException(404)
+
+    raw_body = await request.body()
+    event = provider.parse_webhook(raw_body, dict(request.headers))
+    if not event:
+        log.warning("YooKassa webhook: не распарсилось/не подтвердилось (%d bytes)", len(raw_body))
+        return {"ok": True}  # 200 — чтобы не ретраила мусор
+
+    log.info("YooKassa webhook event=%s payment_id=%s", event.event_type, event.payment_id)
+    try:
+        if event.event_type == "payment.succeeded":
+            billing_service.activate_from_webhook(db, event)
+        elif event.event_type in ("payment.canceled", "refund.succeeded"):
+            billing_service.cancel_by_webhook(db, event)
+    except Exception as e:
+        log.error("YooKassa webhook processing error: %s", e, exc_info=True)
+        # НЕ пробрасываем — ошибки смотрим в логах, ретрай ЮKassa не поможет.
+    return {"ok": True}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
