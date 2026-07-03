@@ -96,11 +96,15 @@ interface SimpleChartProps {
   hideTime?: boolean;
   forecastCount?: number; // reserved for future use
   horizontalLines?: { value: number; color: string; label?: string; axis?: 'primary' | 'secondary' }[];
-  /** Клик по «+»-пилюле у ЛЕВОЙ (ценовой) оси — создать алерт на уровне под
-   *  курсором. level — значение в единицах primary-оси. Задан → на десктопе при
-   *  наведении рисуется горизонтальный кросхэйр + «+» пилюля в жёлобе оси.
-   *  Не задан → поведение как раньше (нулевой эффект на прочие графики). */
+  /** Клик по «+»-пилюле у оси — создать алерт на уровне под курсором. level —
+   *  значение в единицах оси alertAxis. Задан → на десктопе при наведении рисуется
+   *  горизонтальный кросхэйр + «+» пилюля в жёлобе оси. Не задан → поведение как
+   *  раньше (нулевой эффект на прочие графики). */
   onCreateAlert?: (p: { metric: 'price' | 'oi'; axis: 'primary' | 'secondary'; level: number }) => void;
+  /** На какой оси рисовать «+» и в чьих единицах считать level: 'primary' (ЛЕВАЯ,
+   *  обычно цена) или 'secondary' (ПРАВАЯ, на графике ОИ — открытый интерес).
+   *  По умолчанию 'primary'. */
+  alertAxis?: 'primary' | 'secondary';
   /** Развернуть порядок легенды (secondary первым, primary вторым). Нужно когда
    *  primary линия рисуется как «вспомогательная» а secondary как «главная» —
    *  legend должен ставить главное значение первым. См. Buffett swap (cap → primary,
@@ -182,6 +186,7 @@ export default function SimpleChart({
   forecastCount: _forecastCount = 0,
   horizontalLines,
   onCreateAlert,
+  alertAxis = 'primary',
 }: SimpleChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -934,10 +939,11 @@ export default function SimpleChart({
   const handleChartClick = () => {
     if (!onCreateAlert || isMobile || !tooltip.visible) return;
     if (hoveredAnnotationIdx != null) return;  // не перехватываем клик по маркеру события
-    const { yMinVal, yMaxVal } = targetCalc;
-    if (yMaxVal === yMinVal) return;
-    const level = yMinVal + ((padding.top + chartHeight - tooltip.cursorY) / chartHeight) * (yMaxVal - yMinVal);
-    onCreateAlert({ metric: 'price', axis: 'primary', level });
+    const min = alertAxis === 'secondary' ? targetCalc.secYMin : targetCalc.yMinVal;
+    const max = alertAxis === 'secondary' ? targetCalc.secYMax : targetCalc.yMaxVal;
+    if (max === min) return;
+    const level = min + ((padding.top + chartHeight - tooltip.cursorY) / chartHeight) * (max - min);
+    onCreateAlert({ metric: alertAxis === 'secondary' ? 'oi' : 'price', axis: alertAxis, level });
   };
 
   // Touch events — для мобильных.
@@ -1858,22 +1864,30 @@ export default function SimpleChart({
             );
           })}
 
-        {/* «+» пилюля-подсказка уровня на ЛЕВОЙ (ценовой) оси при наведении (десктоп).
-            Не кликается сама (в жёлобе курсор ушёл бы за край и скрыл crosshair) —
-            клик ловит handleChartClick по всей plot-области на текущем уровне. */}
+        {/* «+» пилюля-подсказка уровня у оси alertAxis при наведении (десктоп).
+            primary → ЛЕВЫЙ жёлоб (цена); secondary → ПРАВЫЙ жёлоб (ОИ). Не кликается
+            сама (в жёлобе курсор ушёл бы за край и скрыл crosshair) — клик ловит
+            handleChartClick по всей plot-области на текущем уровне. */}
         {onCreateAlert && !isMobile && tooltip.visible && targetCalc.points.length > 0 && (() => {
-          const { yMinVal, yMaxVal } = targetCalc;
-          if (yMaxVal === yMinVal) return null;
-          const level = yMinVal + ((padding.top + chartHeight - tooltip.cursorY) / chartHeight) * (yMaxVal - yMinVal);
-          const label = String(formatPrimaryAxis ? formatPrimaryAxis(level) : formatValue(level));
+          const isSec = alertAxis === 'secondary';
+          const min = isSec ? targetCalc.secYMin : targetCalc.yMinVal;
+          const max = isSec ? targetCalc.secYMax : targetCalc.yMaxVal;
+          if (max === min) return null;
+          const level = min + ((padding.top + chartHeight - tooltip.cursorY) / chartHeight) * (max - min);
+          const fmt = isSec
+            ? (formatSecondaryAxis || formatSecondaryValue || formatValue)
+            : (formatPrimaryAxis || formatValue);
+          const label = String(fmt(level));
           const fontY = tokens.fontY;
           const plusR = fontY * 0.62;
           const textW = measureText(label, fontY, tokens.fontYWeight);
-          const gap = 6;
-          const pillW = Math.ceil(textW) + 10 + plusR * 2 + gap;
+          const pillW = Math.ceil(textW) + 10 + plusR * 2 + 6;
           const pillH = fontY + 8;
           const y = tooltip.cursorY;
-          const pillLeft = Math.max(2, padding.left - 4 - pillW);
+          // Жёлоб: secondary — справа от plot; primary — слева.
+          const pillLeft = isSec
+            ? Math.min(width - pillW - 2, padding.left + chartWidth + 4)
+            : Math.max(2, padding.left - 4 - pillW);
           const plusCx = pillLeft + pillW - plusR - 5;
           return (
             <g pointerEvents="none">
