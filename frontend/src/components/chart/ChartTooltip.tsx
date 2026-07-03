@@ -59,10 +59,13 @@ export default function ChartTooltip({ x, y, children, flipAt, clampTop, clampBo
   const isRight = x > threshold;
 
   // Вертикальный кламп: карточка целиком в коридоре между крайними
-  // горизонтальными линиями графика. Math.max последним — при карточке выше
-  // коридора прижимаемся к верхней линии (вылезет вниз, но не наверх).
-  const minTop = clampTop ?? 4;
-  const maxTop = parentH - (clampBottom ?? 4) - cardH;
+  // горизонтальными линиями графика, с запасом GAP_Y внутрь — чтобы не
+  // прилипать к линиям и не перекрывать дату-пилюлю (её низ на 3px ниже
+  // верхней линии). Math.max последним — при карточке выше коридора
+  // прижимаемся к верхней границе (вылезет вниз, но не наверх).
+  const GAP_Y = 6;
+  const minTop = (clampTop ?? 4) + GAP_Y;
+  const maxTop = parentH - (clampBottom ?? 4) - cardH - GAP_Y;
 
   return (
     <div

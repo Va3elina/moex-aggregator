@@ -234,8 +234,10 @@ export default function YearlySeasonalityChart({
 
     const snappedTD = closestAvg.td;
     const snappedX = PL + scX(snappedTD) * chartW;
+    // Формат как у даты в SimpleChart (OI): «7 апр. 2026 г.» — не сырой ISO.
     const displayDate = closestCur?.date
-      ?? `≈ ${getApproxMonth(snappedTD)} ${yearlyData.current_year}`;
+      ? new Date(closestCur.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' })
+      : `≈ ${getApproxMonth(snappedTD)} ${yearlyData.current_year}`;
 
     setTooltip({
       x: snappedX,
@@ -299,11 +301,11 @@ export default function YearlySeasonalityChart({
         }}
         onTouchEnd={() => setTooltip(null)}
       >
-        {/* Date pill — absolute над верхней грид-линией (y=PT): низ текста
-            (~14px) на 3px ниже линии, как PILL_GAP_ABOVE_LINE в остальных
-            графиках → wrapper top = PT + 3 - 14 = PT - 11. */}
+        {/* Date pill — absolute над верхней грид-линией (y=PT): низ бокса
+            (~17px) на 3px ниже линии, как у ChartDatePill (PILL_GAP_ABOVE_LINE
+            = -3) в остальных графиках → wrapper top = PT + 3 - 17 = PT - 14. */}
         {tooltip?.yearlyCurDate && (
-          <div className="absolute pointer-events-none" style={{ top: PT - 11, left: 0, right: 0, zIndex: 5 }}>
+          <div className="absolute pointer-events-none" style={{ top: PT - 14, left: 0, right: 0, zIndex: 5 }}>
             <ChartDateLabel date={tooltip.yearlyCurDate} x={tooltip.x} />
           </div>
         )}
