@@ -173,9 +173,12 @@ export default function OpenInterestPage() {
 
   // Настройки (персистятся в localStorage по индикатору — не сбрасываются на новой сессии)
   const [interval, setIntervalValue] = usePersistedState('frame:oi:interval', 24);
-  const [clgroup, setClgroup] = usePersistedState<'FIZ' | 'YUR'>('frame:oi:clgroup', 'YUR');
-  const [displayMode, setDisplayMode] = usePersistedState<DisplayMode>('frame:oi:displayMode', 'positions');
-  const [oiVariant, setOiVariant] = usePersistedState<OIVariant>('frame:oi:oiVariant', 'net');
+  // raw* — сохранённый пользовательский выбор среза. Для Free он переопределяется
+  // дефолтом ниже (settingsLocked), но остаётся в localStorage — после апгрейда
+  // на Basic вернётся то, что юзер выбирал. Дефолт clgroup = FIZ (физлица).
+  const [rawClgroup, setClgroup] = usePersistedState<'FIZ' | 'YUR'>('frame:oi:clgroup', 'FIZ');
+  const [rawDisplayMode, setDisplayMode] = usePersistedState<DisplayMode>('frame:oi:displayMode', 'positions');
+  const [rawOiVariant, setOiVariant] = usePersistedState<OIVariant>('frame:oi:oiVariant', 'net');
   const [showExpirations, setShowExpirations] = usePersistedState('frame:oi:showExpirations', false);
   const [showPrice, setShowPrice] = usePersistedState('frame:oi:showPrice', true);
   // Тип графика теперь ГЛОБАЛЬНЫЙ (useChartSettings в SimpleChart/ChartSettings) —
@@ -186,6 +189,22 @@ export default function OpenInterestPage() {
   const [period, setPeriod] = usePersistedState<Period>(
     'frame:oi:period', getDefaultPeriod('1y', isAuthenticated) as Period,
     parseOiDeepLink(searchParams).period);
+
+  // ── Free-тариф: индикатор открыт всем и по всем активам, но СРЕЗ данных
+  // (категория участников / тип данных / показатель) залочен на дефолт —
+  // Физлица · Объём позиций · Чистая позиция. Попытка сменить любой → апселл на
+  // Basic. Basic/Pro (settings_customizable=true) — полная свобода. Лок чисто
+  // UI-шный: backend отдаёт все срезы (их читает и embed-виджет). Пока tier
+  // грузится, считаем НЕ кастомизируемым — не мигаем чужим сохранённым срезом
+  // до подтверждения тарифа.
+  const canCustomizeOi = !oiAccess.isLoading && oiAccess.canUseFlag('settings_customizable');
+  const settingsLocked = !oiAccess.isLoading && !oiAccess.canUseFlag('settings_customizable');
+  const settingsUpgradeTier = oiAccess.requiredTierFor({ flag: 'settings_customizable' }) ?? 'basic';
+  const clgroup: 'FIZ' | 'YUR' = canCustomizeOi ? rawClgroup : 'FIZ';
+  const displayMode: DisplayMode = canCustomizeOi ? rawDisplayMode : 'positions';
+  const oiVariant: OIVariant = canCustomizeOi ? rawOiVariant : 'net';
+  const promptSettingsUpgrade = (featureName: string) =>
+    showUpgrade({ tier: settingsUpgradeTier, featureName, indicator: 'open_interest' });
 
   // Контекст сигнала из URL (Telegram deep-link ИЛИ in-app тост/колокол аномалии).
   // Применяем при КАЖДОЙ навигации, не только на маунте — иначе клик по второй
@@ -624,10 +643,11 @@ export default function OpenInterestPage() {
             <Dropdown<'FIZ' | 'YUR'>
               options={[
                 { key: 'FIZ', label: 'Физлица' },
-                { key: 'YUR', label: 'Юрлица' },
+                { key: 'YUR', label: 'Юрлица', locked: settingsLocked },
               ]}
               value={clgroup}
               onChange={setClgroup}
+              onLockedClick={settingsLocked ? () => promptSettingsUpgrade('данные по юрлицам') : undefined}
             />
             </div>
           )}
@@ -637,10 +657,11 @@ export default function OpenInterestPage() {
             <Dropdown<DisplayMode>
               options={[
                 { key: 'positions', label: 'Объём позиций' },
-                { key: 'participants', label: 'Число трейдеров' },
+                { key: 'participants', label: 'Число трейдеров', locked: settingsLocked },
               ]}
               value={displayMode}
               onChange={setDisplayMode}
+              onLockedClick={settingsLocked ? () => promptSettingsUpgrade('режим числа трейдеров') : undefined}
             />
           </div>
 
@@ -649,14 +670,15 @@ export default function OpenInterestPage() {
             <div data-tour="oi-variant">
             <Dropdown<OIVariant>
               options={[
-                { key: 'oi',    label: 'Открытый интерес',                                                     color: 'var(--oi-amber)', help: OI_VARIANT_HELP.oi },
-                { key: 'long',  label: displayMode === 'positions' ? 'Покупки' : 'Покупатели',                 color: 'var(--oi-green)' },
-                { key: 'short', label: displayMode === 'positions' ? 'Продажи' : 'Продавцы',                   color: 'var(--oi-red)' },
-                { key: 'both',  label: displayMode === 'positions' ? 'Покупки + Продажи' : 'Покупатели + Продавцы', color: 'var(--oi-purple)' },
+                { key: 'oi',    label: 'Открытый интерес',                                                     color: 'var(--oi-amber)', help: OI_VARIANT_HELP.oi, locked: settingsLocked },
+                { key: 'long',  label: displayMode === 'positions' ? 'Покупки' : 'Покупатели',                 color: 'var(--oi-green)',  locked: settingsLocked },
+                { key: 'short', label: displayMode === 'positions' ? 'Продажи' : 'Продавцы',                   color: 'var(--oi-red)',    locked: settingsLocked },
+                { key: 'both',  label: displayMode === 'positions' ? 'Покупки + Продажи' : 'Покупатели + Продавцы', color: 'var(--oi-purple)', locked: settingsLocked },
                 { key: 'net',   label: 'Чистая позиция',                                                       color: 'var(--oi-cyan)', help: OI_VARIANT_HELP.net },
               ]}
               value={oiVariant}
               onChange={setOiVariant}
+              onLockedClick={settingsLocked ? () => promptSettingsUpgrade('другие показатели открытого интереса') : undefined}
             />
             </div>
           )}

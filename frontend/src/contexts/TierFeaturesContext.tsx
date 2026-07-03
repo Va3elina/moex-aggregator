@@ -44,6 +44,7 @@ export interface IndicatorLimits {
     filter_no_outliers?: boolean;
     filter_no_dividends?: boolean;
     category_filters_enabled?: boolean;
+    settings_customizable?: boolean;
     open?: boolean;
 }
 
