@@ -88,7 +88,7 @@ export default function EmbedOpenInterest() {
     params.get('instrument') || readLS('frame:embed:oi:instrument', 'SR'),
   );
   const [instrumentName, setInstrumentName] = useState<string>(params.get('name') || '');
-  const [clgroup, setClgroup] = useState<ClGroup>(() => readLS('frame:embed:oi:clgroup', 'YUR') as ClGroup);
+  const [clgroup, setClgroup] = useState<ClGroup>(() => readLS('frame:embed:oi:clgroup', 'FIZ') as ClGroup);
   const [interval, setIntervalValue] = useState<number>(() => Number(readLS('frame:embed:oi:interval', '24')) || 24);
   const [period, setPeriod] = useState<Period>(() => (params.get('period') || readLS('frame:embed:oi:period', '1y')) as Period);
   const [displayMode, setDisplayMode] = useState<DisplayMode>(() => readLS('frame:embed:oi:displayMode', 'positions') as DisplayMode);

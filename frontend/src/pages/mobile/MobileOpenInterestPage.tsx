@@ -115,9 +115,24 @@ export default function MobileOpenInterestPage() {
     'frame:oi:period', getDefaultPeriod('1y', isAuthenticated) as Period,
     parseOiDeepLink(searchParams).period);
   const [intervalValue, setIntervalValue] = usePersistedState('frame:oi:interval', 24);
-  const [clgroup, setClgroup] = usePersistedState<'FIZ' | 'YUR'>('frame:oi:clgroup', 'YUR');
-  const [oiVariant, setOiVariant] = usePersistedState<OIVariant>('frame:oi:oiVariant', 'net');
-  const [displayMode, setDisplayMode] = usePersistedState<DisplayMode>('frame:oi:mobileDisplayMode', 'positions');
+  // raw* — сохранённый выбор среза. Для Free переопределяется дефолтом ниже
+  // (settingsLocked), но в localStorage остаётся — вернётся после апгрейда на Basic.
+  const [rawClgroup, setClgroup] = usePersistedState<'FIZ' | 'YUR'>('frame:oi:clgroup', 'FIZ');
+  const [rawOiVariant, setOiVariant] = usePersistedState<OIVariant>('frame:oi:oiVariant', 'net');
+  const [rawDisplayMode, setDisplayMode] = usePersistedState<DisplayMode>('frame:oi:mobileDisplayMode', 'positions');
+
+  // Free-тариф: срез (категория / тип данных / показатель) залочен на дефолт
+  // (Физлица · Объём позиций · Чистая позиция), смена → апселл на Basic. Лок
+  // чисто UI-шный (backend отдаёт все срезы). Пока tier грузится — НЕ
+  // кастомизируем. Паритет с desktop OpenInterestPage.
+  const canCustomizeOi = !oiAccess.isLoading && oiAccess.canUseFlag('settings_customizable');
+  const settingsLocked = !oiAccess.isLoading && !oiAccess.canUseFlag('settings_customizable');
+  const settingsUpgradeTier = oiAccess.requiredTierFor({ flag: 'settings_customizable' }) ?? 'basic';
+  const clgroup: 'FIZ' | 'YUR' = canCustomizeOi ? rawClgroup : 'FIZ';
+  const displayMode: DisplayMode = canCustomizeOi ? rawDisplayMode : 'positions';
+  const oiVariant: OIVariant = canCustomizeOi ? rawOiVariant : 'net';
+  const promptSettingsUpgrade = (featureName: string) =>
+    showUpgrade({ tier: settingsUpgradeTier, featureName, indicator: 'open_interest' });
 
   // Актив пришёл из URL (?instrument=) → имя пустое, резолвим через API (как на
   // десктопе). Выбор из пикера ставит имя сам → guard `if (instrumentName)` не мешает.
@@ -667,19 +682,25 @@ export default function MobileOpenInterestPage() {
             Тип данных
           </div>
           <div style={{ display: 'flex', gap: 6, marginBottom: 20 }}>
-            {([['positions', 'Объём позиций'], ['participants', 'Число трейдеров']] as const).map(([m, label]) => (
+            {([['positions', 'Объём позиций'], ['participants', 'Число трейдеров']] as const).map(([m, label]) => {
+              const locked = settingsLocked && m !== 'positions';
+              return (
               <button
                 key={m}
                 className={`fm-chip ${displayMode === m ? 'active' : ''}`}
                 onClick={() => {
+                  if (locked) { promptSettingsUpgrade('режим числа трейдеров'); return; }
                   setDisplayMode(m);
                   setOptionsSheetOpen(false);
                 }}
-                style={{ flex: 1, justifyContent: 'center' }}
+                style={{ flex: 1, justifyContent: 'center', opacity: locked ? 0.5 : 1, cursor: locked ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                aria-disabled={locked}
               >
                 {label}
+                {locked && <Lock size={12} strokeWidth={2.2} />}
               </button>
-            ))}
+              );
+            })}
           </div>
 
           <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
@@ -689,15 +710,18 @@ export default function MobileOpenInterestPage() {
             {OI_VARIANTS.map((v) => {
               // «?» с пояснением только у вариантов, где есть копирайт (ОИ и чистая позиция)
               const help = v === 'oi' ? OI_VARIANT_HELP.oi : v === 'net' ? OI_VARIANT_HELP.net : null;
+              const locked = settingsLocked && v !== 'net';
               return (
               <button
                 key={v}
                 onClick={() => {
+                  if (locked) { promptSettingsUpgrade('другие показатели открытого интереса'); return; }
                   setOiVariant(v);
                   setOptionsSheetOpen(false);
                 }}
                 className={`fm-chip ${oiVariant === v ? 'active' : ''}`}
-                style={{ gap: 6 }}
+                style={{ gap: 6, opacity: locked ? 0.5 : 1, cursor: locked ? 'not-allowed' : 'pointer' }}
+                aria-disabled={locked}
               >
                 <span
                   style={{
@@ -709,7 +733,9 @@ export default function MobileOpenInterestPage() {
                   }}
                 />
                 {variantLabel(v, displayMode)}
-                {help && <OptionHelp title={help.title} content={help.content} />}
+                {locked
+                  ? <Lock size={11} strokeWidth={2.2} />
+                  : (help && <OptionHelp title={help.title} content={help.content} />)}
               </button>
               );
             })}
@@ -719,19 +745,25 @@ export default function MobileOpenInterestPage() {
             Категория участников
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
-            {(['YUR', 'FIZ'] as const).map((g) => (
+            {(['YUR', 'FIZ'] as const).map((g) => {
+              const locked = settingsLocked && g !== 'FIZ';
+              return (
               <button
                 key={g}
                 className={`fm-chip ${clgroup === g ? 'active' : ''}`}
                 onClick={() => {
+                  if (locked) { promptSettingsUpgrade('данные по юрлицам'); return; }
                   setClgroup(g);
                   setOptionsSheetOpen(false);
                 }}
-                style={{ flex: 1, justifyContent: 'center' }}
+                style={{ flex: 1, justifyContent: 'center', opacity: locked ? 0.5 : 1, cursor: locked ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                aria-disabled={locked}
               >
                 {g === 'YUR' ? 'Юрлица' : 'Физлица'}
+                {locked && <Lock size={12} strokeWidth={2.2} />}
               </button>
-            ))}
+              );
+            })}
           </div>
         </div>
       </MobileSheet>

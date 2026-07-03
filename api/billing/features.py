@@ -19,7 +19,9 @@ from typing import Optional
 # Whitelist'ы крупных активов для Free (хардкод по спецификации 2026-05-20)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# Открытый интерес — 12 крупных фьючерсов
+# Открытый интерес — 12 крупных фьючерсов.
+# NB: с 2026-07 Free-тариф открыт для ВСЕХ активов OI (assets_whitelist=None),
+# этот список больше не гейтит доступ. Оставлен для справки/возможного переиспользования.
 FREE_OI_ASSETS: list[str] = [
     "SR",        # Сбербанк
     "GZ",        # Газпром
@@ -82,11 +84,12 @@ INDICATOR_FEATURES: dict[str, dict[str, dict]] = {
     # ───────────────────────────────────────────────────────────────
     "open_interest": {
         "free": {
-            "assets_whitelist": FREE_OI_ASSETS,    # только эти 12
-            "allowed_intervals": [24, 60],          # daily + hourly, без 5min
-            "max_history_days": 180,                # 6 месяцев
+            "assets_whitelist": None,                # все активы открыты на Free (без whitelist'а)
+            "allowed_intervals": [24, 60],          # daily + hourly; 5min только на Pro
+            "max_history_days": 365 * 5,            # 5 лет
             "data_delay_hours": 24,                 # задержка 24 часа
-            "clgroups": ["FIZ", "YUR"],
+            "clgroups": ["FIZ", "YUR"],              # backend отдаёт оба (нужно embed-виджету)
+            "settings_customizable": False,          # но в UI срез залочен на дефолт (FIZ · Объём · Чистая); смена → Basic
         },
         "basic": {
             "assets_whitelist": None,                # все 65
@@ -94,6 +97,7 @@ INDICATOR_FEATURES: dict[str, dict[str, dict]] = {
             "max_history_days": 365 * 10,            # 10 лет
             "data_delay_hours": 0,
             "clgroups": ["FIZ", "YUR"],
+            "settings_customizable": True,           # можно свободно менять срез
         },
         "pro": {
             "assets_whitelist": None,
@@ -101,6 +105,7 @@ INDICATOR_FEATURES: dict[str, dict[str, dict]] = {
             "max_history_days": None,                # вся история
             "data_delay_hours": 0,
             "clgroups": ["FIZ", "YUR"],
+            "settings_customizable": True,
         },
     },
 
