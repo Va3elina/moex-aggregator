@@ -9,7 +9,7 @@
  */
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
 import {
-    Bell, ExternalLink, Send, Trash2, Pause, Play, AlertTriangle,
+    AlarmClock, ExternalLink, Send, Trash2, Pause, Play, AlertTriangle,
     ChevronDown, ChevronRight, Search, Zap, Clock, Wallet,
 } from 'lucide-react';
 import {
@@ -31,7 +31,7 @@ const BellGlyph = () => (
         border: '1.5px solid var(--text-primary)', background: 'var(--bg-secondary)',
         color: 'var(--text-primary)', verticalAlign: '-4px',
     }} aria-label="колокол алертов">
-        <Bell size={11} strokeWidth={2.2} />
+        <AlarmClock size={11} strokeWidth={2.2} />
     </span>
 );
 
@@ -52,7 +52,7 @@ const OP_LABEL: Record<string, string> = {
     gt: 'выше', lt: 'ниже', cross_up: '↑ пересечёт', cross_down: '↓ пересечёт',
 };
 const METRIC_LABEL: Record<string, string> = {
-    price: 'Цена', oi_zscore: 'OI z-score',
+    price: 'Цена', oi_zscore: 'OI z-score', oi_level: 'Открытый интерес',
     oi_move: 'Движение позиции', oi_participants: 'Число участников',
     funds_flow: 'Аномальный поток',
 };
@@ -263,7 +263,7 @@ export default function TelegramAlertsSection() {
     return (
         <div>
             <h2 className="text-lg font-bold mb-1" style={{ display: 'flex', alignItems: 'center', gap: 'var(--sp-2)' }}>
-                <Bell size={18} style={{ color: link }} /> Алерты в мессенджере
+                <AlarmClock size={18} style={{ color: link }} /> Алерты в мессенджере
             </h2>
             <p style={{ color: sub, fontSize: 'var(--fs-sm)', marginBottom: 16 }}>
                 Уведомления при достижении уровней (цена, аномалии OI). Создаются с индикаторов кнопкой<BellGlyph />.

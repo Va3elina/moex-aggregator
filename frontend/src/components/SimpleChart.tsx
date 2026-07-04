@@ -97,14 +97,14 @@ interface SimpleChartProps {
   forecastCount?: number; // reserved for future use
   horizontalLines?: { value: number; color: string; label?: string; axis?: 'primary' | 'secondary' }[];
   /** Клик по «+»-пилюле у оси — создать алерт на уровне под курсором. level —
-   *  значение в единицах оси alertAxis. Задан → на десктопе при наведении рисуется
-   *  горизонтальный кросхэйр + «+» пилюля в жёлобе оси. Не задан → поведение как
-   *  раньше (нулевой эффект на прочие графики). */
-  onCreateAlert?: (p: { metric: 'price' | 'oi'; axis: 'primary' | 'secondary'; level: number }) => void;
-  /** На какой оси рисовать «+» и в чьих единицах считать level: 'primary' (ЛЕВАЯ,
-   *  обычно цена) или 'secondary' (ПРАВАЯ, на графике ОИ — открытый интерес).
-   *  По умолчанию 'primary'. */
-  alertAxis?: 'primary' | 'secondary';
+   *  значение в единицах axis; currentValue — текущее (последнее) значение серии
+   *  этой оси (для «Сейчас: …» в модалке). Пилюли рисуются per-axis из alertAxes.
+   *  Не задан → поведение как раньше (нулевой эффект на прочие графики). */
+  onCreateAlert?: (p: { axis: 'primary' | 'secondary'; level: number; currentValue: number }) => void;
+  /** На каких осях показывать кликабельный «+»: 'primary' (ЛЕВАЯ, цена) и/или
+   *  'secondary' (ПРАВАЯ, на графике ОИ — открытый интерес). Пилюля рендерится
+   *  только если ось из списка И её серия показана. По умолчанию []. */
+  alertAxes?: Array<'primary' | 'secondary'>;
   /** Развернуть порядок легенды (secondary первым, primary вторым). Нужно когда
    *  primary линия рисуется как «вспомогательная» а secondary как «главная» —
    *  legend должен ставить главное значение первым. См. Buffett swap (cap → primary,
@@ -186,7 +186,7 @@ export default function SimpleChart({
   forecastCount: _forecastCount = 0,
   horizontalLines,
   onCreateAlert,
-  alertAxis = 'primary',
+  alertAxes,
 }: SimpleChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -894,14 +894,23 @@ export default function SimpleChart({
     const rect = svgElement.getBoundingClientRect();
     const mouseX = clientX - rect.left - padding.left;
 
-    if (mouseX < 0 || mouseX > chartWidth) {
+    // Прячем tooltip ТОЛЬКО за пределами SVG (включая жёлоба осей). Раньше прятали
+    // при уходе из plot ([0,chartWidth]) — тогда при попытке дотянуться курсором до
+    // «+» пилюли в жёлобе оси она пропадала (жалоба Вадима). Теперь в жёлобе tooltip
+    // жив, X снапаем к краю plot, а пилюля остаётся кликабельной. mouseleave прячет
+    // при выходе из SVG. Режим алертов (alertAxes) → держим шире; иначе как раньше.
+    const alertsOn = !!(onCreateAlert && alertAxes && alertAxes.length > 0 && !isMobile);
+    const loX = alertsOn ? -padding.left : 0;
+    const hiX = alertsOn ? chartWidth + padding.right : chartWidth;
+    if (mouseX < loX || mouseX > hiX) {
       setTooltip(prev => ({ ...prev, visible: false }));
       return;
     }
+    const snapX = Math.min(Math.max(mouseX, 0), chartWidth);
 
-    const primaryPoint = interpolatePointOnLine(targetCalc.points, mouseX);
-    const secondaryPoint = showSecondary ? interpolatePointOnLine(targetCalc.secondaryPoints, mouseX) : null;
-    const thirdPoint = showThird ? interpolatePointOnLine(targetCalc.thirdPoints, mouseX) : null;
+    const primaryPoint = interpolatePointOnLine(targetCalc.points, snapX);
+    const secondaryPoint = showSecondary ? interpolatePointOnLine(targetCalc.secondaryPoints, snapX) : null;
+    const thirdPoint = showThird ? interpolatePointOnLine(targetCalc.thirdPoints, snapX) : null;
 
     if (!primaryPoint) return;
 
@@ -922,7 +931,7 @@ export default function SimpleChart({
       time: primaryPoint.time,
       visible: true,
     });
-  }, [targetCalc, chartWidth, chartHeight, padding, showSecondary, showThird]);
+  }, [targetCalc, chartWidth, chartHeight, padding, showSecondary, showThird, onCreateAlert, alertAxes, isMobile]);
 
   // Mouse events
   const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
@@ -933,17 +942,19 @@ export default function SimpleChart({
     setTooltip((prev) => ({ ...prev, visible: false }));
   };
 
-  // Клик по графику при активном горизонтальном кросхэйре → создать алерт на
-  // уровне под курсором. «+» пилюля у оси — визуальная подсказка (в жёлобе, куда
-  // курсор увёл бы crosshair за край); реальный клик ловим по всей plot-области.
-  const handleChartClick = () => {
-    if (!onCreateAlert || isMobile || !tooltip.visible) return;
-    if (hoveredAnnotationIdx != null) return;  // не перехватываем клик по маркеру события
-    const min = alertAxis === 'secondary' ? targetCalc.secYMin : targetCalc.yMinVal;
-    const max = alertAxis === 'secondary' ? targetCalc.secYMax : targetCalc.yMaxVal;
+  // Алерт создаётся кликом по КОНКРЕТНОЙ «+» пилюле оси (как в TradingView), не по
+  // графику. Уровень = где курсор по этой оси; currentValue = последнее значение
+  // серии оси (для «Сейчас: …» в модалке). Гард по маркеру события не нужен —
+  // клик локализован на пилюле.
+  const fireAlertForAxis = (axis: 'primary' | 'secondary') => {
+    if (!onCreateAlert) return;
+    const min = axis === 'secondary' ? targetCalc.secYMin : targetCalc.yMinVal;
+    const max = axis === 'secondary' ? targetCalc.secYMax : targetCalc.yMaxVal;
     if (max === min) return;
     const level = min + ((padding.top + chartHeight - tooltip.cursorY) / chartHeight) * (max - min);
-    onCreateAlert({ metric: alertAxis === 'secondary' ? 'oi' : 'price', axis: alertAxis, level });
+    const pts = axis === 'secondary' ? targetCalc.secondaryPoints : targetCalc.points;
+    const currentValue = pts.length ? pts[pts.length - 1].value : level;
+    onCreateAlert({ axis, level, currentValue });
   };
 
   // Touch events — для мобильных.
@@ -1125,7 +1136,6 @@ export default function SimpleChart({
           style={{ touchAction: 'none', backgroundColor: 'var(--bg-primary)' }}
           onMouseMove={handleMouseMove}
           onMouseLeave={handleMouseLeave}
-          onClick={onCreateAlert ? handleChartClick : undefined}
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
@@ -1567,9 +1577,9 @@ export default function SimpleChart({
                   strokeDasharray="4,4"
                   opacity="0.55"
                 />
-                {/* Горизонтальный кросхэйр — только когда включён режим создания
-                    алертов (onCreateAlert) и на десктопе. Уровень = где курсор. */}
-                {onCreateAlert && !isMobile && (
+                {/* Горизонтальный кросхэйр — в режиме создания алертов (есть
+                    alertAxes) на десктопе. Уровень = где курсор. */}
+                {onCreateAlert && alertAxes && alertAxes.length > 0 && !isMobile && (
                   <line
                     x1={0}
                     y1={tooltip.cursorY - padding.top}
@@ -1864,40 +1874,57 @@ export default function SimpleChart({
             );
           })}
 
-        {/* «+» пилюля-подсказка уровня у оси alertAxis при наведении (десктоп).
-            primary → ЛЕВЫЙ жёлоб (цена); secondary → ПРАВЫЙ жёлоб (ОИ). Не кликается
-            сама (в жёлобе курсор ушёл бы за край и скрыл crosshair) — клик ловит
-            handleChartClick по всей plot-области на текущем уровне. */}
-        {onCreateAlert && !isMobile && tooltip.visible && targetCalc.points.length > 0 && (() => {
-          const isSec = alertAxis === 'secondary';
-          const min = isSec ? targetCalc.secYMin : targetCalc.yMinVal;
-          const max = isSec ? targetCalc.secYMax : targetCalc.yMaxVal;
-          if (max === min) return null;
-          const level = min + ((padding.top + chartHeight - tooltip.cursorY) / chartHeight) * (max - min);
-          const fmt = isSec
-            ? (formatSecondaryAxis || formatSecondaryValue || formatValue)
-            : (formatPrimaryAxis || formatValue);
-          const label = String(fmt(level));
+        {/* «+» пилюли создания алерта — по одной на КАЖДОЙ активной оси (primary=цена
+            слева, secondary=ОИ справа). Геометрия 1:1 с пилюлей последнего значения
+            (padX=8/padY=2/AIR=4/rx=4, в жёлобе оси), плюс глиф «+» учтён в ширине.
+            КЛИКАБЕЛЬНЫ сами (pointerEvents auto) — курсор доходит до них т.к. tooltip
+            жив в жёлобе (см. updateTooltipAtX). Клик → алерт на уровне под курсором. */}
+        {onCreateAlert && alertAxes && alertAxes.length > 0 && !isMobile
+          && tooltip.visible && targetCalc.points.length > 0 && (() => {
           const fontY = tokens.fontY;
-          const plusR = fontY * 0.62;
-          const textW = measureText(label, fontY, tokens.fontYWeight);
-          const pillW = Math.ceil(textW) + 10 + plusR * 2 + 6;
-          const pillH = fontY + 8;
+          const fontWeight = tokens.fontYWeight;
+          const padX = 8, padY = 2, AIR = 4, gap = 5;
+          const pillH = fontY + padY * 2;
+          const plotLeft = padding.left, plotRight = padding.left + chartWidth;
+          const plusW = measureText('+', fontY, 700);
+          const stripUnits = (s: string) => s.replace(/\s*(трлн ₽|млрд ₽|млн ₽|тыс ₽|₽)\s*$/g, '').trim();
           const y = tooltip.cursorY;
-          // Жёлоб: secondary — справа от plot; primary — слева.
-          const pillLeft = isSec
-            ? Math.min(width - pillW - 2, padding.left + chartWidth + 4)
-            : Math.max(2, padding.left - 4 - pillW);
-          const plusCx = pillLeft + pillW - plusR - 5;
+
+          const pill = (axis: 'primary' | 'secondary') => {
+            const isSec = axis === 'secondary';
+            if (isSec ? !showSecondary : !showPrimary) return null;
+            const min = isSec ? targetCalc.secYMin : targetCalc.yMinVal;
+            const max = isSec ? targetCalc.secYMax : targetCalc.yMaxVal;
+            if (max === min) return null;
+            const level = min + ((padding.top + chartHeight - y) / chartHeight) * (max - min);
+            const fmt = isSec
+              ? (formatSecondaryAxis || formatSecondaryValue || formatValue)
+              : (formatPrimaryAxis || formatValue);
+            const label = stripUnits(String(fmt(level)));
+            const valW = measureText(label, fontY, fontWeight);
+            const pillW = Math.ceil(valW + gap + plusW) + padX * 2;
+            const rawLeft = isSec ? (plotRight + AIR) : (plotLeft - AIR - pillW);
+            const pillLeft = Math.min(Math.max(rawLeft, 2), width - pillW - 2);
+            return (
+              <g key={`plus-${axis}`} style={{ cursor: 'pointer' }}
+                 onClick={(e) => { e.stopPropagation(); fireAlertForAxis(axis); }}>
+                {/* прозрачный хит-таргет чуть шире пилюли — легче попасть курсором */}
+                <rect x={pillLeft - 2} y={y - pillH / 2 - 3} width={pillW + 4} height={pillH + 6}
+                      fill="transparent" />
+                <rect x={pillLeft} y={y - pillH / 2} width={pillW} height={pillH} rx={4} ry={4}
+                      fill="var(--accent)" className="drop-shadow-lg" />
+                <text x={pillLeft + padX} y={y} textAnchor="start" dominantBaseline="central"
+                      fill="#FFFFFF" fontSize={fontY} fontWeight={fontWeight}>{label}</text>
+                <text x={pillLeft + pillW - padX} y={y} textAnchor="end" dominantBaseline="central"
+                      fill="#FFFFFF" fontSize={fontY} fontWeight={700}>+</text>
+              </g>
+            );
+          };
           return (
-            <g pointerEvents="none">
-              <rect x={pillLeft} y={y - pillH / 2} width={pillW} height={pillH} rx={4} fill="var(--accent)" />
-              <text x={pillLeft + 6} y={y} textAnchor="start" dominantBaseline="central"
-                fill="#FFFFFF" fontSize={fontY} fontWeight={tokens.fontYWeight}>{label}</text>
-              <circle cx={plusCx} cy={y} r={plusR} fill="#FFFFFF" opacity={0.28} />
-              <text x={plusCx} y={y} textAnchor="middle" dominantBaseline="central"
-                fill="#FFFFFF" fontSize={fontY} fontWeight={700}>+</text>
-            </g>
+            <>
+              {alertAxes.includes('primary') && pill('primary')}
+              {alertAxes.includes('secondary') && pill('secondary')}
+            </>
           );
         })()}
         </svg>

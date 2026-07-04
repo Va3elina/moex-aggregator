@@ -313,8 +313,9 @@ export default function OpenInterestPage() {
   // ── Алерты на графике (TradingView-стиль: «+» на оси) ──────────────────────
   const alertQuota = useCommonFeatures().telegram_alerts_quota;   // 0 / N / null(∞)
   const alertsLocked = alertQuota === 0;                          // Free/гость
-  // Префилл модалки при клике «+»: метрика (цена / уровень ОИ) + порог = уровень.
-  const [chartAlertPrefill, setChartAlertPrefill] = useState<{ metricKey: string; threshold: number } | null>(null);
+  // Префилл модалки при клике «+»: метрика (цена / уровень ОИ) + порог = уровень +
+  // текущее значение серии (для «Сейчас: …»).
+  const [chartAlertPrefill, setChartAlertPrefill] = useState<{ metricKey: string; threshold: number; currentLabel?: string } | null>(null);
   // Активные алерты юзера на ТЕКУЩЕМ инструменте → горизонтальные линии уровней.
   const [myAlerts, setMyAlerts] = useState<AlertInfo[]>([]);
   const reloadMyAlerts = () => {
@@ -356,13 +357,17 @@ export default function OpenInterestPage() {
     return lines.length ? lines : undefined;
   }, [myAlerts, selectedInstrument]);
 
-  // Клик «+» / по графику при активном кросхэйре → открыть модалку с префиллом.
-  const handleCreateAlertFromChart = (p: { metric: 'price' | 'oi'; level: number }) => {
+  // Клик по «+» пилюле оси → открыть модалку с префиллом уровня + текущим значением.
+  const handleCreateAlertFromChart = (p: { axis: 'primary' | 'secondary'; level: number; currentValue: number }) => {
     if (alertsLocked) {
       showUpgrade({ tier: 'basic', featureName: 'Алерты', indicator: 'alerts' });
       return;
     }
-    setChartAlertPrefill({ metricKey: p.metric === 'oi' ? 'oi_level' : 'price', threshold: p.level });
+    const isOi = p.axis === 'secondary';
+    const currentLabel = isOi
+      ? `${Math.round(p.currentValue).toLocaleString('ru-RU')} контрактов`
+      : `${formatPrice(p.currentValue)} ₽`;
+    setChartAlertPrefill({ metricKey: isOi ? 'oi_level' : 'price', threshold: p.level, currentLabel });
   };
 
   // Фильтрация нерабочих дней и пре-маркета.
@@ -566,12 +571,6 @@ export default function OpenInterestPage() {
       third: alignToCandles(third),
     };
   }, [filteredData, displayMode, oiVariant, chartData]);
-
-  // ОИ показан на правой оси? Тогда «+» живёт справа и ставит уровень ОИ (иначе —
-  // ценовой уровень на левой). Считаем здесь: oiData объявлена выше.
-  const oiOnRight = displayMode !== 'price' && !!oiData;
-  const chartAlertAxis: 'primary' | 'secondary' = oiOnRight ? 'secondary' : 'primary';
-  const chartAlertEnabled = ALERTS_ENABLED && (oiOnRight || displayMode === 'price' || showPrice);
 
   const getColors = () => {
     switch (oiVariant) {
@@ -944,9 +943,10 @@ export default function OpenInterestPage() {
         primaryLabel={instrumentName || selectedInstrument}
         secondaryLabel={labels.secondary}
         thirdLabel={labels.third}
-        // «+» на ОИ-оси (справа), когда ОИ показан; иначе на ценовой (слева).
-        onCreateAlert={chartAlertEnabled ? handleCreateAlertFromChart : undefined}
-        alertAxis={chartAlertAxis}
+        // «+» на ОБЕИХ осях: цена слева, ОИ справа. SimpleChart рисует пилюлю только
+        // для показанной серии (цена — если showPrimary, ОИ — если showSecondary).
+        onCreateAlert={ALERTS_ENABLED ? handleCreateAlertFromChart : undefined}
+        alertAxes={ALERTS_ENABLED ? ['primary', 'secondary'] : undefined}
         horizontalLines={alertLevels}
         showValueHeader={false}
         legendPosition="top"
@@ -993,7 +993,7 @@ export default function OpenInterestPage() {
           asset={selectedInstrument}
           assetName={instrumentName || selectedInstrument}
           metrics={oiAlertMetrics}
-          prefill={{ metricKey: chartAlertPrefill.metricKey, threshold: chartAlertPrefill.threshold }}
+          prefill={{ metricKey: chartAlertPrefill.metricKey, threshold: chartAlertPrefill.threshold, currentLabel: chartAlertPrefill.currentLabel }}
           onClose={() => { setChartAlertPrefill(null); reloadMyAlerts(); }}
         />
       )}
