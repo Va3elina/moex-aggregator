@@ -322,8 +322,11 @@ export default function MobileAssetSearch({
         </button>
       </div>
 
-      {/* Category chips — gap ужат, чтобы все 5 категорий помещались
-          в строку на 320px viewport без скролла. */}
+      {/* Category chips — gap ужат; 6 чипов на узких экранах не влезают →
+          ряд скроллится. Центрирование НЕ через justify-content:center
+          (с overflow он недоскролливаемо обрезает левый край «Все»), а
+          через margin:auto на крайних чипах (CSS .fm-sheet--asset-search):
+          центр при свободном месте, честный скролл при overflow. */}
       <div
         style={{
           display: 'flex',
@@ -332,7 +335,6 @@ export default function MobileAssetSearch({
           overflowX: 'auto',
           scrollbarWidth: 'none',
           flexShrink: 0,
-          justifyContent: 'center',
         }}
       >
         {(filterType === 'no-futures' ? CATEGORY_CHIPS_NO_FUTURES : CATEGORY_CHIPS_FUTURES_FIRST).map((c) => (
