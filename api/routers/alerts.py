@@ -392,6 +392,9 @@ def _validate_alert_body(b: AlertCreate) -> Optional[str]:
         return "некорректная группа участников"
     if b.timeframe not in ("5m", "1h", "1d"):
         return "некорректный таймфрейм"
+    # oi_level: «нога» величины ОИ (что показано на графике).
+    if b.indicator == "oi_level" and b.metric not in ("net", "long", "short", "oi", "npart"):
+        return "некорректная величина ОИ"
     return None
 
 

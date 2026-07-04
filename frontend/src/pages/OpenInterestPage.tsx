@@ -42,6 +42,12 @@ type DisplayMode = 'price' | 'positions' | 'participants';
 type OIVariant = 'oi' | 'long' | 'short' | 'both' | 'net';
 type Period = '1w' | '1m' | '1y' | '5y' | 'all';
 
+// Подписи «ног» величины ОИ (что показано на правой оси в текущем режиме).
+const OI_LEG_LABEL: Record<'net' | 'long' | 'short' | 'oi' | 'npart', string> = {
+  net: 'чистая позиция', long: 'длинные позиции', short: 'короткие позиции',
+  oi: 'открытый интерес', npart: 'число участников',
+};
+
 // Метрики алертов для «Открытого интереса»: цена (TradingView-стиль: пересечение/
 // больше/меньше) + наши аномалии по резкому движению (ATR ×N). Общий список для
 // кнопки-колокола и для «+» на графике. Цена — первой (дефолт при клике «+»).
@@ -326,22 +332,37 @@ export default function OpenInterestPage() {
   };
   useEffect(() => { reloadMyAlerts(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [alertsLocked]);
 
-  // Реестр метрик OI: цена + УРОВЕНЬ ОИ (clgroup = текущий) + аномалии. Общий для
-  // кнопки-колокола и «+». oi_level получает текущий clgroup (совпадает с графиком).
+  // Какая величина ОИ сейчас на правой оси (нога) — от режима и варианта. От этого
+  // зависит, что ставит «+» на правой оси и как подписана метрика в модалке.
+  const oiLeg: 'net' | 'long' | 'short' | 'oi' | 'npart' = useMemo(() => {
+    if (displayMode === 'participants') return 'npart';
+    switch (oiVariant) {
+      case 'long': return 'long';
+      case 'short': return 'short';
+      case 'oi': return 'oi';
+      case 'both': return 'net';   // две линии — по умолчанию чистая позиция
+      default: return 'net';
+    }
+  }, [displayMode, oiVariant]);
+  const oiLegLabel = OI_LEG_LABEL[oiLeg];
+  const oiLegUnit = oiLeg === 'npart' ? 'участников' : 'контрактов';
+
+  // Реестр метрик OI: цена + УРОВЕНЬ ОИ (нога+clgroup = как на графике) + аномалии.
+  // Общий для кнопки-колокола и «+». oi_level отражает текущий вид графика.
   const oiAlertMetrics = useMemo<AlertMetricOption[]>(() => {
     const oiLevel: AlertMetricOption = {
-      key: 'oi_level', label: 'Открытый интерес (уровень)',
-      indicator: 'oi_level', metric: 'net', clgroup, unit: '',
+      key: 'oi_level', label: `Открытый интерес — ${oiLegLabel}`,
+      indicator: 'oi_level', metric: oiLeg, clgroup, unit: '',
       ops: [
         { value: 'cross_up', label: '↑ пересечёт (снизу вверх)' },
         { value: 'cross_down', label: '↓ пересечёт (сверху вниз)' },
         { value: 'gt', label: 'станет выше' },
         { value: 'lt', label: 'станет ниже' },
       ],
-      hint: 'Сработает, когда чистая позиция (открытый интерес) выбранной группы пересечёт заданный уровень в контрактах или окажется выше/ниже него.',
+      hint: `Сработает, когда «${oiLegLabel}» (${clgroup === 'FIZ' ? 'физлица' : 'юрлица'}) пересечёт заданный уровень или окажется выше/ниже него. Величина — та, что показана на правой оси графика.`,
     };
     return [OI_ALERT_METRICS[0], oiLevel, ...OI_ALERT_METRICS.slice(1)];
-  }, [clgroup]);
+  }, [clgroup, oiLeg, oiLegLabel]);
 
   // Уровни алертов текущего актива → пунктир: price на ЛЕВОЙ оси, oi_level на ПРАВОЙ.
   const alertLevels = useMemo(() => {
@@ -365,7 +386,7 @@ export default function OpenInterestPage() {
     }
     const isOi = p.axis === 'secondary';
     const currentLabel = isOi
-      ? `${Math.round(p.currentValue).toLocaleString('ru-RU')} контрактов`
+      ? `${Math.round(p.currentValue).toLocaleString('ru-RU')} ${oiLegUnit}`
       : `${formatPrice(p.currentValue)} ₽`;
     setChartAlertPrefill({ metricKey: isOi ? 'oi_level' : 'price', threshold: p.level, currentLabel });
   };

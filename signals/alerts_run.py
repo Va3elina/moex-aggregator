@@ -186,10 +186,11 @@ def compute_value(a: Alert):
         return float(ratio), {"last_diff": last_diff, "current_npart": current_npart,
                               "direction": direction, "signal_date": sig_date}
     if a.indicator == "oi_level":
-        # Уровень открытого интереса — чистая позиция (контракты, знаковая) для
-        # алерта на пересечение/выше/ниже (TradingView-стиль на ПРАВОЙ оси графика
-        # ОИ). clgroup FIZ/YUR (ALL→FIZ, канонический источник net). interval по
-        # таймфрейму: 1d — дневная публикация, 5m/1h — «net сейчас» по последнему бару.
+        # Уровень величины ОИ — алерт на пересечение/выше/ниже (TradingView-стиль на
+        # ПРАВОЙ оси графика ОИ). Величина зависит от того, ЧТО показано на графике
+        # (metric-«нога»): net (чистая позиция), long/short (ноги), oi (всего =
+        # long+|short|), npart (число участников). clgroup FIZ/YUR (ALL→FIZ). interval
+        # по таймфрейму: 1d — дневная публикация, 5m/1h — «сейчас» по последнему бару.
         from signals.db import get_position_series
         clg = a.clgroup or "FIZ"
         if clg == "ALL":
@@ -198,8 +199,13 @@ def compute_value(a: Alert):
         series = get_position_series(a.asset, clg, days=7, interval=interval)
         if not series:
             return None, None
-        sig_date, net = series[-1][0], series[-1][1]
-        return float(net), {"current_net": net, "signal_date": sig_date}
+        d, net, npart, plong, pshort = series[-1]
+        leg = a.metric or "net"
+        val = {
+            "net": net, "npart": npart, "long": plong, "short": pshort,
+            "oi": (plong or 0) + abs(pshort or 0),
+        }.get(leg, net)
+        return float(val), {"leg": leg, "signal_date": d}
     if a.indicator == "funds_flow":
         # «Аномальный поток» — во сколько раз дневной net_flow набора фондов больше
         # обычного (ATR14). Таргет (контракт fund-алерта):
@@ -342,12 +348,18 @@ def format_msg(a: Alert, value: float, ctx: dict) -> str:
         return (f"{_head(_TYPE_PRICE, subj)}\n"
                 f"{_ce(*_EMO_PRICE)} Цена {word} отметку {thr:g} ₽ — сейчас {value:g} ₽{eod}\n{link}")
     if a.indicator == "oi_level":
-        # Уровень открытого интереса (чистая позиция) пересёк/выше/ниже отметки.
+        # Уровень величины ОИ (нога зависит от того, что было на графике).
         clg = "физлиц" if (a.clgroup or "FIZ") in ("FIZ", "ALL") else "юрлиц"
+        leg = (ctx or {}).get("leg", "net")
+        subj_word = {
+            "net": "Чистая позиция", "long": "Длинные позиции", "short": "Короткие позиции",
+            "oi": "Открытый интерес", "npart": "Число участников",
+        }.get(leg, "Чистая позиция")
+        unit = "" if leg == "npart" else " контрактов"
         word = _OP_PRICE.get(a.op, a.op)
         return (f"{_head(_TYPE_OI, subj, tf_note)}\n"
-                f"{_ce(*_EMO_OI)} Чистая позиция {clg} {word} отметку {thr:,.0f} — "
-                f"сейчас {value:,.0f} контрактов.{_date_note(ctx)}\n{link}")
+                f"{_ce(*_EMO_OI)} {subj_word} {clg} {word} отметку {thr:,.0f} — "
+                f"сейчас {value:,.0f}{unit}.{_date_note(ctx)}\n{link}")
     # Принцип текста (правка Вадима): ГЛАВНОЕ — насколько аномально (×N к обычному
     # дневному шагу) и в какую сторону. Тип сигнала («Открытый интерес») вынесен в
     # ЖИРНУЮ плашку шапки — раньше был значок 🔄 + «открытые позиции», но эмодзи
