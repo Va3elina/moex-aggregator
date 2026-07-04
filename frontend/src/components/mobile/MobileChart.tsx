@@ -445,7 +445,12 @@ export default function MobileChart({
   // всегда, даже когда pill скрыт (напр. Сезонность «Годовая» со скрытым
   // current-year — там все серии hidePill, но шкала % всё равно нужна справа).
   const hasRightAxis = rawSeries.some((s) => s.axis === 'right');
-  const PILL_GUTTER_R = hasRightAxis ? 52 : PAD_X;
+  // Правая ось ЛЕЖИТ ПОВЕРХ графика (как левая), а НЕ в отдельном жёлобе — плот
+  // занимает всю ширину (жалоба: правая ось «самостоятельная», график сжат, дата
+  // ужата). Подписи правой шкалы + pill рендерятся оверлеем у правого края
+  // (полупрозрачные лейблы, как слева). PAD_X с обеих сторон — симметрия.
+  void hasRightAxis;
+  const PILL_GUTTER_R = PAD_X;
   const innerW = width - PAD_X - PILL_GUTTER_R;
   const innerH = height - PAD_TOP - PAD_BOTTOM;
 

@@ -425,6 +425,7 @@ export default function MobileFundsMoneyPage() {
       <MobilePageHeader
         Icon={Wallet}
         title="Деньги в фондах"
+        subtitle={`${categoryLabel} · ${viewMode === 'aum' ? 'СЧА' : 'Притоки'} · ${periodLabel}`}
         helpLink="/methodology/funds-money"
         sourceNote="Индексы (IMOEX, RGBI, IMOEX2, GLDRUB): ПАО Московская Биржа"
       />

@@ -263,6 +263,7 @@ export default function MobileStrengthPage() {
       <MobilePageHeader
         Icon={Activity}
         title="Сила рынка"
+        subtitle={`${universeBase === 'all' ? '100 акций' : priceLabel} · EMA${emaPeriod} · ${PERIOD_LABELS[period]}`}
         helpLink="/methodology/strength"
         sourceNote="Индекс IMOEX/RTSI: ПАО Московская Биржа"
       />
