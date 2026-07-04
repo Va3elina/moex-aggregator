@@ -4,7 +4,7 @@
  * (44×44 pill, bg-secondary, 2px border, editorial-press).
  */
 import { useState } from 'react';
-import { Bell, Lock } from 'lucide-react';
+import { AlarmClockPlus, Lock } from 'lucide-react';
 import CreateAlertModal, { type AlertMetricOption } from './CreateAlertModal';
 import { useCommonFeatures } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../tier/UpgradeModal';
@@ -53,7 +53,7 @@ export default function AlertBellButton({ indicator, asset, assetName, metrics, 
                         ? 'Алерты в мессенджере — на тарифе Basic и Pro. Нажмите, чтобы улучшить.'
                         : 'Создать алерт в мессенджере'}
                 >
-                    <Bell size={22} />
+                    <AlarmClockPlus size={22} />
                 </button>
                 {locked && (
                     <span

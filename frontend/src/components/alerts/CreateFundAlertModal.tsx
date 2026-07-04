@@ -21,7 +21,7 @@
  */
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
-import { Bell, X, Check, ExternalLink } from 'lucide-react';
+import { AlarmClock, X, Check, ExternalLink } from 'lucide-react';
 import {
     getTelegramStatus, createTelegramLink, createAlert, createAlertsBatch, getFundsCatalog,
     type AlertCreatePayload, type CatalogFund,
@@ -321,7 +321,7 @@ export default function CreateFundAlertModal({ onClose }: Props) {
             <div style={card} onClick={(e) => e.stopPropagation()}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 'var(--fs-lg)' }}>
-                        <Bell size={20} style={{ color: 'var(--accent)' }} /> Сигнал по фондам
+                        <AlarmClock size={20} style={{ color: 'var(--accent)' }} /> Сигнал по фондам
                     </span>
                     <button onClick={onClose} aria-label="Закрыть" className="editorial-press" style={{ color: 'var(--text-secondary)', width: 36, height: 36, borderRadius: 8, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><X size={20} /></button>
                 </div>

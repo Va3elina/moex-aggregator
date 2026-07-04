@@ -8,7 +8,7 @@
  */
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
-import { Bell, X, Check, ExternalLink, Info, Search } from 'lucide-react';
+import { AlarmClock, X, Check, ExternalLink, Info, Search } from 'lucide-react';
 import {
     getTelegramStatus, createTelegramLink, createAlert, createAlertsBatch, getAlertContext,
     getIntradayAssets, getNotifySettings,
@@ -40,8 +40,9 @@ interface Props {
     assetName?: string;
     metrics: AlertMetricOption[];
     onClose: () => void;
-    /** Префилл при открытии из «+» на графике: какую метрику выбрать и порог. */
-    prefill?: { metricKey?: string; threshold?: number };
+    /** Префилл при открытии из «+» на графике: метрика, порог и текущее значение
+     *  серии (для «Сейчас: …»). */
+    prefill?: { metricKey?: string; threshold?: number; currentLabel?: string };
 }
 
 const overlay: CSSProperties = {
@@ -369,7 +370,7 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
             <div style={card} onClick={(e) => e.stopPropagation()}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700, fontSize: 'var(--fs-lg)' }}>
-                        <Bell size={20} style={{ color: 'var(--accent)' }} /> Новый алерт
+                        <AlarmClock size={20} style={{ color: 'var(--accent)' }} /> Новый алерт
                     </span>
                     <button onClick={onClose} aria-label="Закрыть" className="editorial-press" style={{ color: 'var(--text-secondary)', width: 36, height: 36, borderRadius: 8, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><X size={20} /></button>
                 </div>
@@ -425,7 +426,13 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
                         ) : (
                             <div style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)' }}>
                                 Актив: <b style={{ color: 'var(--text-primary)' }}>{assetName || asset}</b>
-                                {hasPrice && metric?.indicator === 'price' && (
+                                {/* «Сейчас»: из «+» приходит currentLabel (цена ₽ / ОИ контракты);
+                                    иначе для price-метрики — из контекста свежей цены. */}
+                                {prefill?.currentLabel ? (
+                                    <>
+                                        {' · '}Сейчас: <b style={{ color: 'var(--text-primary)' }}>{prefill.currentLabel}</b>
+                                    </>
+                                ) : hasPrice && metric?.indicator === 'price' && (
                                     <>
                                         {' · '}Сейчас: <b style={{ color: 'var(--text-primary)' }}>{fmtRub(price!.value!)} руб</b>
                                     </>
