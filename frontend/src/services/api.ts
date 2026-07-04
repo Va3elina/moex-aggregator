@@ -281,12 +281,12 @@ export interface OiScreenerRow {
 
 export interface OiScreenerResponse {
   signal_date: string | null;
-  clgroup: 'FIZ';
+  clgroup: 'FIZ' | 'YUR';
   rows: OiScreenerRow[];
 }
 
-export async function getOiScreener(): Promise<OiScreenerResponse> {
-  const response = await fetch(`${API_BASE}/api/oi/screener`);
+export async function getOiScreener(clgroup: 'FIZ' | 'YUR' = 'FIZ'): Promise<OiScreenerResponse> {
+  const response = await fetch(`${API_BASE}/api/oi/screener?clgroup=${clgroup}`);
   if (!response.ok) throw new Error('Failed to fetch OI screener');
   return response.json();
 }
