@@ -1875,18 +1875,19 @@ export default function SimpleChart({
           })}
 
         {/* «+» пилюли создания алерта — по одной на КАЖДОЙ активной оси (primary=цена
-            слева, secondary=ОИ справа). Геометрия 1:1 с пилюлей последнего значения
-            (padX=8/padY=2/AIR=4/rx=4, в жёлобе оси), плюс глиф «+» учтён в ширине.
-            КЛИКАБЕЛЬНЫ сами (pointerEvents auto) — курсор доходит до них т.к. tooltip
-            жив в жёлобе (см. updateTooltipAtX). Клик → алерт на уровне под курсором. */}
+            слева, secondary=ОИ справа). Значение-часть 1:1 с пилюлей последнего
+            значения (та же геометрия и позиция у оси) → числа выровнены; цвет = цвет
+            оси, но СВЕТЛЕЕ (не бросается в глаза). «+» — в КРУЖКЕ, вынесен в жёлоб с
+            ВНЕШНЕЙ стороны (от графика), чтобы не сдвигать число. Клик по пилюле →
+            алерт (курсор доходит: tooltip жив в жёлобе, см. updateTooltipAtX). */}
         {onCreateAlert && alertAxes && alertAxes.length > 0 && !isMobile
           && tooltip.visible && targetCalc.points.length > 0 && (() => {
           const fontY = tokens.fontY;
           const fontWeight = tokens.fontYWeight;
-          const padX = 8, padY = 2, AIR = 4, gap = 5;
+          const padX = 8, padY = 2, AIR = 4, gap = 4;
           const pillH = fontY + padY * 2;
+          const r = fontY * 0.62;                 // радиус кружка «+»
           const plotLeft = padding.left, plotRight = padding.left + chartWidth;
-          const plusW = measureText('+', fontY, 700);
           const stripUnits = (s: string) => s.replace(/\s*(трлн ₽|млрд ₽|млн ₽|тыс ₽|₽)\s*$/g, '').trim();
           const y = tooltip.cursorY;
 
@@ -1901,22 +1902,29 @@ export default function SimpleChart({
               ? (formatSecondaryAxis || formatSecondaryValue || formatValue)
               : (formatPrimaryAxis || formatValue);
             const label = stripUnits(String(fmt(level)));
+            const axisColor = isSec ? secondaryColor : primaryColor;
+            // Цвет оси, но светлее — подмешиваем фон (не бросается в глаза).
+            const fill = `color-mix(in srgb, ${axisColor} 45%, var(--bg-primary))`;
             const valW = measureText(label, fontY, fontWeight);
-            const pillW = Math.ceil(valW + gap + plusW) + padX * 2;
-            const rawLeft = isSec ? (plotRight + AIR) : (plotLeft - AIR - pillW);
-            const pillLeft = Math.min(Math.max(rawLeft, 2), width - pillW - 2);
+            const pillW = Math.ceil(valW) + padX * 2;   // как у value-пилюли
+            // Значение-часть — В ТОМ ЖЕ жёлобе, что value-пилюля (числа выровнены).
+            const valLeft = Math.min(Math.max(
+              isSec ? (plotRight + AIR) : (plotLeft - AIR - pillW), 2), width - pillW - 2);
+            // Кружок «+» с ВНЕШНЕЙ стороны (дальше от графика).
+            const cx = isSec ? (valLeft + pillW + gap + r) : (valLeft - gap - r);
             return (
               <g key={`plus-${axis}`} style={{ cursor: 'pointer' }}
                  onClick={(e) => { e.stopPropagation(); fireAlertForAxis(axis); }}>
-                {/* прозрачный хит-таргет чуть шире пилюли — легче попасть курсором */}
-                <rect x={pillLeft - 2} y={y - pillH / 2 - 3} width={pillW + 4} height={pillH + 6}
-                      fill="transparent" />
-                <rect x={pillLeft} y={y - pillH / 2} width={pillW} height={pillH} rx={4} ry={4}
-                      fill="var(--accent)" className="drop-shadow-lg" />
-                <text x={pillLeft + padX} y={y} textAnchor="start" dominantBaseline="central"
+                {/* прозрачный хит-таргет на всю пилюлю+кружок — легче попасть курсором */}
+                <rect x={Math.min(valLeft, cx - r) - 2} y={y - pillH / 2 - 4}
+                      width={Math.abs((isSec ? cx + r : valLeft + pillW) - (isSec ? valLeft : cx - r)) + 4}
+                      height={pillH + 8} fill="transparent" />
+                <rect x={valLeft} y={y - pillH / 2} width={pillW} height={pillH} rx={4} ry={4} fill={fill} />
+                <text x={valLeft + pillW / 2} y={y} textAnchor="middle" dominantBaseline="central"
                       fill="#FFFFFF" fontSize={fontY} fontWeight={fontWeight}>{label}</text>
-                <text x={pillLeft + pillW - padX} y={y} textAnchor="end" dominantBaseline="central"
-                      fill="#FFFFFF" fontSize={fontY} fontWeight={700}>+</text>
+                <circle cx={cx} cy={y} r={r} fill={fill} stroke="#FFFFFF" strokeWidth={1} strokeOpacity={0.6} />
+                <text x={cx} y={y} textAnchor="middle" dominantBaseline="central"
+                      fill="#FFFFFF" fontSize={Math.round(fontY * 1.05)} fontWeight={700}>+</text>
               </g>
             );
           };

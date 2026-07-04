@@ -326,7 +326,11 @@ def _alert_card_text(a) -> str:
         name = asset_name or asset
         head = "Открытый интерес"
         clg = "физлица" if (clgroup or "FIZ") in ("FIZ", "ALL") else "юрлица"
-        cond = f"чистая позиция ({clg}) {_OP_PRICE.get(op, op)} {_num(threshold)}"
+        leg_word = {
+            "net": "чистая позиция", "long": "длинные позиции", "short": "короткие позиции",
+            "oi": "открытый интерес", "npart": "число участников",
+        }.get(_metric, "чистая позиция")
+        cond = f"{leg_word} ({clg}) {_OP_PRICE.get(op, op)} {_num(threshold)}"
     elif indicator == "funds_flow":
         # Фонды: заголовок — метка выбора (без сырого asset 'all'/'custom').
         name = asset_name or _FUND_ASSET_NAME.get(asset, asset)
