@@ -812,7 +812,24 @@
 .fm-sheet--asset-search .fm-chip {
   font-size: clamp(9px, 2.5vw, 11px);
   line-height: 1;
-  padding: 0.82em 0.9em 0.1em;
+  /* Почти симметричный паддинг (лёгкий 1px-нудж вниз для оптики кириллицы
+     без нижних выносных). Старый «нудж 0.82em/0.10em» (#263) толкал текст
+     на дно чипа на iOS. Высота чипа сохранена (сумма та же). */
+  padding: 0.5em 0.9em 0.42em;
+  /* Чипы не сжимаются на узких экранах — ряд скроллится, а не давит
+     «Все» в кружок. */
+  flex-shrink: 0;
+}
+
+/* Центрирование ряда без клипа: justify-content:center + overflow-x
+   обрезает левый край НЕДОСКРОЛЛИВАЕМО, когда чипы не влезают (6 чипов
+   ≈ 394px > 390px iPhone → «Все» подрезана). margin:auto на краях
+   центрирует при свободном месте и честно скроллит при overflow. */
+.fm-sheet--asset-search .fm-chip:first-child {
+  margin-left: auto;
+}
+.fm-sheet--asset-search .fm-chip:last-child {
+  margin-right: auto;
 }
 
 .fm-chip-color {
