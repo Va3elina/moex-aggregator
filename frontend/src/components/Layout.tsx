@@ -249,11 +249,13 @@ export default function Layout() {
               {isAuthenticated && user?.role === 'admin' && (
                 <button
                   onClick={() => navigate('/admin/stats')}
-                  className="editorial-press grid place-items-center w-5 h-5 xl:w-8 xl:h-8 rounded-full"
+                  className="editorial-press grid place-items-center rounded-full"
                   style={{
                     color: 'var(--accent)',
                     border: '1.5px solid var(--text-primary)',
                     backgroundColor: 'transparent',
+                    width: 'clamp(22px, 1.6vw + 0.3rem, 32px)',
+                    height: 'clamp(22px, 1.6vw + 0.3rem, 32px)',
                   }}
                   title="Статистика сайта"
                   aria-label="Статистика сайта (admin)"
@@ -270,12 +272,14 @@ export default function Layout() {
               {isAuthenticated ? (
                 <button
                   onClick={() => navigate('/profile')}
-                  className="editorial-press grid place-items-center w-5 h-5 xl:w-8 xl:h-8 rounded-full font-bold"
+                  className="editorial-press grid place-items-center rounded-full font-bold"
                   style={{
                     backgroundColor: 'var(--accent)',
                     color: '#fff',
                     border: '1.5px solid var(--text-primary)',
                     fontSize: 'clamp(11px, 0.6vw + 0.5rem, 14px)',
+                    width: 'clamp(22px, 1.6vw + 0.3rem, 32px)',
+                    height: 'clamp(22px, 1.6vw + 0.3rem, 32px)',
                   }}
                   title="Личный кабинет"
                   aria-label="Личный кабинет"
