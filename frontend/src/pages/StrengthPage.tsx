@@ -132,7 +132,9 @@ export default function StrengthPage() {
                 parseFloat(cs.getPropertyValue(name)) || fb;
             const nextPad: ChartPadding = {
                 left: num('--strength-pad-left', DEFAULT_PADDING.left),
-                right: num('--strength-pad-right', DEFAULT_PADDING.right),
+                // +место в правом жёлобе под «+» алерт-пилюлю (значение+кружок) —
+                // иначе она не влезает и уезжает в график.
+                right: num('--strength-pad-right', DEFAULT_PADDING.right) + (ALERTS_ENABLED ? 28 : 0),
                 top: num('--strength-pad-top', DEFAULT_PADDING.top),
                 bottom: num('--strength-pad-bottom', DEFAULT_PADDING.bottom),
             };
@@ -288,6 +290,12 @@ export default function StrengthPage() {
             const x = clientX - rect.left - px4 - padding.left;
             const y = clientY - rect.top;
             const chartWidth = rect.width - 2 * px4 - padding.left - padding.right;
+            // В жёлобе оси (курсор вне plot по X) прячем вертикаль + карточку — как
+            // на ОИ. Горизонталь + «+» пилюлю рисует BreadthChart по своему cursorY.
+            if (x < 0 || x > chartWidth) {
+                setHoverIndex(null);
+                return;
+            }
             const idx = Math.round((x / chartWidth) * (displaySyncedData.length - 1));
             if (idx >= 0 && idx < displaySyncedData.length) {
                 setHoverIndex(idx);
