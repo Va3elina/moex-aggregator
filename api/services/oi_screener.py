@@ -165,6 +165,24 @@ def compute_screener(db) -> Dict[str, Any]:
             "signal_date": pts[-1][0].isoformat(),
         })
 
+    # Свежесть: глобальная дата = максимум по рядам. Активы, чьи данные
+    # отстали (умерший/эксп. контракт — напр. CH встал 18.06), не должны
+    # светиться «резким движением» в СЕГОДНЯШНЕЙ ленте:
+    #  - отстал больше чем на 5 дней → выкидываем строку целиком (мёртвый ряд);
+    #  - отстал в пределах 5 дней → оставляем, но sharp гасим до normal
+    #    (его «дневное движение» — не сегодняшнее).
+    if signal_date is not None:
+        fresh_cutoff = (signal_date - timedelta(days=5)).isoformat()
+        latest = signal_date.isoformat()
+        alive: List[Dict[str, Any]] = []
+        for r in rows:
+            if r["signal_date"] < fresh_cutoff:
+                continue
+            if r["signal_date"] != latest and r["status"] == "sharp":
+                r["status"] = "normal"
+            alive.append(r)
+        rows = alive
+
     return {
         "signal_date": signal_date.isoformat() if signal_date else None,
         "clgroup": "FIZ",

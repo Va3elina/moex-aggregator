@@ -32,7 +32,8 @@ def get_oi_screener(db: Session = Depends(get_db)):
     """
     from api.cache import get_or_compute
     from api.services.oi_screener import compute_screener
-    return get_or_compute("oi_screener:v1", lambda: compute_screener(db))
+    # v2: фильтр устаревших рядов (мёртвые контракты не светятся sharp'ом)
+    return get_or_compute("oi_screener:v2", lambda: compute_screener(db))
 
 
 @oi_router.get("/intraday-assets")
