@@ -9,7 +9,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Wallet, Lock, Bell } from 'lucide-react';
+import { Wallet, Lock, AlarmClock } from 'lucide-react';
 import { useTierAccess, useCommonFeatures } from '../../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
 import CreateFundAlertModal from '../../components/alerts/CreateFundAlertModal';
@@ -641,7 +641,7 @@ export default function MobileFundsMoneyPage() {
                   opacity: alertsLocked ? 0.78 : 1,
                 }}
               >
-                <Bell size={14} strokeWidth={2.2} />
+                <AlarmClock size={14} strokeWidth={2.2} />
                 Сигнал по фондам
                 {alertsLocked && <Lock size={11} strokeWidth={2.2} />}
               </button>
