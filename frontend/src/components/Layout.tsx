@@ -111,7 +111,7 @@ export default function Layout() {
               ) : (
                 <>
                   <Logo size={28} />
-                  <span className="hidden xl:inline text-lg md:text-xl font-bold" style={{ color: 'var(--accent)' }}>Фрейм</span>
+                  <span className="hidden xl:inline text-lg md:text-xl font-bold" style={{ color: 'var(--accent)' }}>FRAME</span>
                 </>
               )}
               <span
@@ -545,7 +545,7 @@ export default function Layout() {
             rel="noreferrer noopener"
             className="inline-flex items-center gap-1.5 transition-opacity hover:opacity-80"
             style={{ color: 'var(--text-secondary)' }}
-            aria-label="Telegram-канал Фрейм"
+            aria-label="Telegram-канал FRAME"
           >
             <svg
               viewBox="0 0 24 24"
