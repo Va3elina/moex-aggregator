@@ -68,6 +68,12 @@ interface BreadthChartProps {
     mode: ChartMode;
     padding: ChartPadding;
     isNavDragRef?: { current: boolean };
+    /** Клик по «+» на оси % → создать алерт на уровень силы рынка (levelPct) +
+     *  currentValuePct (текущее значение для «Сейчас: …»). Задан → на десктопе при
+     *  наведении рисуется горизонталь + «+» пилюля в жёлобе правой оси. */
+    onCreateAlert?: (levelPct: number, currentValuePct: number) => void;
+    /** Уровни активных алертов (%) → пунктир на графике. */
+    alertLevels?: number[];
 }
 
 export default function BreadthChart({
@@ -77,6 +83,8 @@ export default function BreadthChart({
     mode,
     padding,
     isNavDragRef,
+    onCreateAlert,
+    alertLevels,
 }: BreadthChartProps) {
     const svgRef = useRef<SVGSVGElement>(null);
     const chartWrapRef = useRef<HTMLDivElement>(null);
@@ -115,6 +123,19 @@ export default function BreadthChart({
 
     const chartWidth = width - padding.left - padding.right;
     const chartHeight = height - padding.top - padding.bottom;
+
+    // «+» алерт на ось % (TradingView-стиль). cursorY трекаем локально в этом SVG.
+    const alertsOn = !!onCreateAlert && !isMobile;
+    const [cursorY, setCursorY] = useState<number | null>(null);
+    const handleAlertMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+        if (!alertsOn) return;
+        const rect = e.currentTarget.getBoundingClientRect();
+        const y = e.clientY - rect.top;
+        setCursorY(Math.min(Math.max(y, padding.top), padding.top + chartHeight));
+    }, [alertsOn, padding.top, chartHeight]);
+    // Инверсия scaleY (домен фиксирован 0..100): уровень % под курсором.
+    const levelAt = (y: number) => 100 * (padding.top + chartHeight - y) / chartHeight;
+    const scaleYPct = (v: number) => padding.top + chartHeight - (Math.max(0, Math.min(v, 100)) / 100) * chartHeight;
 
     const getColor = useCallback((value: number) => {
         const t = Math.max(0, Math.min(value / 100, 1));
@@ -325,7 +346,10 @@ export default function BreadthChart({
         <div ref={containerRef}>
             <div ref={chartWrapRef} className={`relative ${revealed ? 'chart-reveal' : ''}`}>
                 {width > 0 && chartData && (
-                    <svg ref={svgRef} width={width} height={height} className="block" style={{ backgroundColor: 'var(--bg-primary)', contain: 'paint' }}>
+                    <svg ref={svgRef} width={width} height={height} className="block"
+                        style={{ backgroundColor: 'var(--bg-primary)', contain: 'paint' }}
+                        onMouseMove={alertsOn ? handleAlertMove : undefined}
+                        onMouseLeave={alertsOn ? () => setCursorY(null) : undefined}>
                         <defs>
                             <linearGradient id="breadthGradient" x1="0" y1="0" x2="0" y2="1">
                                 <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.3" />
@@ -445,6 +469,50 @@ export default function BreadthChart({
                                     >
                                         {value}
                                     </text>
+                                </g>
+                            );
+                        })()}
+
+                        {/* Уровни активных алертов силы рынка → пунктир. */}
+                        {onCreateAlert && alertLevels && alertLevels.map((lv, i) => (
+                            <line key={`al-${i}`} pointerEvents="none"
+                                x1={padding.left} y1={scaleYPct(lv)} x2={width - padding.right} y2={scaleYPct(lv)}
+                                stroke="var(--accent)" strokeWidth={1} strokeDasharray="5,4" opacity={0.75} />
+                        ))}
+
+                        {/* Горизонтальный кросхэйр + «+» пилюля на оси % (десктоп). */}
+                        {alertsOn && cursorY !== null && chartData && (() => {
+                            const level = levelAt(cursorY);
+                            const label = `${level.toFixed(1)}%`;
+                            const lastBreadth = syncedData[syncedData.length - 1]?.breadth ?? 0;
+                            const fontY = axisFs, fontWeight = 700;
+                            const padX = 8, padY = 2, AIR = 4, gap = 4;
+                            const pillH = fontY + padY * 2;
+                            const r = fontY * 0.62;
+                            const fill = 'color-mix(in srgb, var(--accent) 45%, var(--bg-primary))';
+                            const valW = measureText(label, fontY, fontWeight);
+                            const pillW = Math.ceil(valW) + padX * 2;
+                            const plotRight = width - padding.right;
+                            let valLeft = plotRight + AIR;
+                            let cx = valLeft + pillW + gap + r;
+                            const groupRight = cx + r;
+                            if (groupRight > width - 2) { const s = (width - 2) - groupRight; valLeft += s; cx += s; }
+                            return (
+                                <g>
+                                    <line pointerEvents="none" x1={padding.left} y1={cursorY} x2={plotRight} y2={cursorY}
+                                        stroke="var(--text-primary)" strokeWidth={CROSSHAIR.strokeWidth} strokeDasharray="4,4" opacity={0.4} />
+                                    <g style={{ cursor: 'pointer' }} onClick={() => onCreateAlert(level, lastBreadth)}>
+                                        <rect x={valLeft - 2} y={cursorY - pillH / 2 - 4}
+                                            width={(cx + r) - valLeft + 4} height={pillH + 8} fill="transparent" />
+                                        <rect x={valLeft} y={cursorY - pillH / 2} width={pillW} height={pillH} rx={4} ry={4} fill={fill} />
+                                        <text x={valLeft + pillW / 2} y={cursorY} textAnchor="middle" dominantBaseline="central"
+                                            fill="#FFFFFF" fontSize={fontY} fontWeight={fontWeight}>{label}</text>
+                                        <circle cx={cx} cy={cursorY} r={r} fill={fill} stroke="#FFFFFF" strokeWidth={1} strokeOpacity={0.6} />
+                                        <line x1={cx - r * 0.5} y1={cursorY} x2={cx + r * 0.5} y2={cursorY}
+                                            stroke="#FFFFFF" strokeWidth={Math.max(1.5, r * 0.24)} strokeLinecap="round" />
+                                        <line x1={cx} y1={cursorY - r * 0.5} x2={cx} y2={cursorY + r * 0.5}
+                                            stroke="#FFFFFF" strokeWidth={Math.max(1.5, r * 0.24)} strokeLinecap="round" />
+                                    </g>
                                 </g>
                             );
                         })()}

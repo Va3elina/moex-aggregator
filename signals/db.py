@@ -465,3 +465,19 @@ def get_buffett_current(mode: str = "cap_gdp") -> Optional[tuple]:
             return None
         ratio = 100.0 * cap / float(denom)
         return (ratio, cap)
+
+
+def get_breadth_current(ema_period: int = 200, universe: str = "imoex") -> Optional[float]:
+    """Текущая «сила рынка» — % акций выше EMA на последнюю дату из breadth_history.
+
+    ema_period ∈ {20,50,100,200}; universe ∈ {all,imoex,all_usd,imoex_usd}
+    (база + '_usd' для долларового режима). Берём предвычисленную дневную строку
+    (наполняется ~19:10 МСК) — дёшево и совпадает с графиком. None если нет.
+    """
+    with SessionLocal() as s:
+        v = s.execute(text(
+            "SELECT percent_above FROM breadth_history "
+            "WHERE ema_period = :e AND universe = :u "
+            "ORDER BY trade_date DESC LIMIT 1"
+        ), {"e": int(ema_period), "u": universe}).scalar()
+        return float(v) if v is not None else None
