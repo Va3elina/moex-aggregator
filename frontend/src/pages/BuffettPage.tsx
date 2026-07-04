@@ -29,9 +29,13 @@ import { useIsMobile } from '../hooks/useIsMobile';
 import { useOnboardingTour } from '../hooks/useFirstVisit';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { buffettTourSteps } from '../data/tours/buffett';
-import { useTierAccess } from '../contexts/TierFeaturesContext';
+import { useTierAccess, useCommonFeatures } from '../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 import { handleTierError } from '../utils/tierError';
+import AlertBellButton from '../components/alerts/AlertBellButton';
+import CreateAlertModal, { type AlertMetricOption } from '../components/alerts/CreateAlertModal';
+import { ALERTS_ENABLED } from '../config/alertsConfig';
+import { listAlerts, type AlertInfo } from '../services/api';
 
 type ViewMode = 'cap-gdp' | 'cap-m2';
 
@@ -173,6 +177,57 @@ export default function BuffettPage() {
             })),
         };
     }, [capM2Data]);
+
+    // ── Алерты на графике Баффета: level-алерт на КОЭФФИЦИЕНТ (правая ось) ──────
+    const alertQuota = useCommonFeatures().telegram_alerts_quota;
+    const alertsLocked = alertQuota === 0;
+    const [chartAlertPrefill, setChartAlertPrefill] = useState<{ metricKey: string; threshold: number; currentLabel?: string } | null>(null);
+    const [myAlerts, setMyAlerts] = useState<AlertInfo[]>([]);
+    const reloadMyAlerts = () => {
+        if (!ALERTS_ENABLED || alertsLocked) { setMyAlerts([]); return; }
+        listAlerts({ limit: 200 }).then((p) => setMyAlerts(p.items)).catch(() => setMyAlerts([]));
+    };
+    useEffect(() => { reloadMyAlerts(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [alertsLocked]);
+
+    // Режим коэффициента. cap-m2 хранит коэффициент как ДОЛЮ (график ×100 в %),
+    // cap-gdp — уже в %. Порог алерта нормализуем в % (бэк считает 100·Cap/знам).
+    const isM2 = viewMode === 'cap-m2';
+    const modeKey = isM2 ? 'cap_m2' : 'cap_gdp';
+    const modeLabel = isM2 ? 'Cap / M2' : 'Cap / ВВП';
+
+    const buffettMetrics = useMemo<AlertMetricOption[]>(() => [{
+        key: 'buffett_ratio', label: `Коэффициент Баффета (${modeLabel})`,
+        indicator: 'buffett_ratio', metric: modeKey, unit: '%',
+        ops: [
+            { value: 'cross_up', label: '↑ пересечёт (снизу вверх)' },
+            { value: 'cross_down', label: '↓ пересечёт (сверху вниз)' },
+            { value: 'gt', label: 'станет выше' },
+            { value: 'lt', label: 'станет ниже' },
+        ],
+        hint: `Сработает, когда индикатор Баффета (${modeLabel}) пересечёт заданный уровень в % или окажется выше/ниже него. Порог — в тех же %, что на правой оси графика.`,
+    }], [modeKey, modeLabel]);
+
+    // Уровни активных buffett-алертов текущего режима → пунктир на ПРАВОЙ оси.
+    // Порог в %; для cap-m2 домен оси = доля → делим на 100.
+    const alertLevels = useMemo(() => {
+        if (!ALERTS_ENABLED) return undefined;
+        const lines = myAlerts
+            .filter((a) => a.status === 'active' && a.indicator === 'buffett_ratio' && a.metric === modeKey)
+            .map((a) => ({ value: isM2 ? a.threshold / 100 : a.threshold, color: 'var(--accent)', axis: 'secondary' as const }));
+        return lines.length ? lines : undefined;
+    }, [myAlerts, modeKey, isM2]);
+
+    // Клик «+» на правой оси (коэффициент) → модалка. cap-m2: домен=доля → в %.
+    const handleCreateAlertFromChart = (p: { axis: 'primary' | 'secondary'; level: number; currentValue: number }) => {
+        if (p.axis !== 'secondary') return;   // «+» только на коэффициенте (правая ось)
+        if (alertsLocked) { showUpgrade({ tier: 'basic', featureName: 'Алерты', indicator: 'alerts' }); return; }
+        const toPct = (v: number) => (isM2 ? v * 100 : v);
+        setChartAlertPrefill({
+            metricKey: 'buffett_ratio',
+            threshold: toPct(p.level),
+            currentLabel: `${toPct(p.currentValue).toFixed(1)}%`,
+        });
+    };
 
     return (
         <div className="max-w-[1408px] mx-auto px-4 md:px-6 py-6 md:py-8 text-theme-primary min-h-screen">
@@ -371,6 +426,14 @@ export default function BuffettPage() {
                     }}
                 />
                 <ChartSettings scopeLabels={{ primary: 'Капитализация', secondary: 'Отношение' }} />
+                {ALERTS_ENABLED && (
+                    <AlertBellButton
+                        indicator="buffett"
+                        asset="buffett"
+                        assetName="Индикатор Баффета"
+                        metrics={buffettMetrics}
+                    />
+                )}
                 </ChartActionsMenu>
 
             </div>
@@ -412,6 +475,10 @@ export default function BuffettPage() {
                     gridAxis="secondary"
                     formatSecondaryValue={(v) => `${v.toFixed(2)}%`}
                     formatSecondaryAxis={(v) => `${v.toFixed(1)}%`}
+                    // «+» алерт на КОЭФФИЦИЕНТ (правая ось). Левая (капитализация) — без «+».
+                    onCreateAlert={ALERTS_ENABLED ? handleCreateAlertFromChart : undefined}
+                    alertAxes={ALERTS_ENABLED ? ['secondary'] : undefined}
+                    horizontalLines={alertLevels}
                     primaryLabel={isMobile ? 'Кап. (₽)' : 'Капитализация (трлн ₽)'}
                     secondaryLabel={isMobile ? 'Кап / ВВП' : 'Капитализация / ВВП'}
                     loading={loading}
@@ -446,6 +513,9 @@ export default function BuffettPage() {
                     gridAxis="secondary"
                     formatSecondaryValue={(v) => `${(v * 100).toFixed(2)}%`}
                     formatSecondaryAxis={(v) => `${(v * 100).toFixed(1)}%`}
+                    onCreateAlert={ALERTS_ENABLED ? handleCreateAlertFromChart : undefined}
+                    alertAxes={ALERTS_ENABLED ? ['secondary'] : undefined}
+                    horizontalLines={alertLevels}
                     primaryLabel={isMobile ? 'Кап. (₽)' : 'Капитализация (трлн ₽)'}
                     secondaryLabel={isMobile ? 'Кап / M2' : 'Капитализация / M2'}
                     loading={loading}
@@ -468,6 +538,18 @@ export default function BuffettPage() {
                 open={tour.open}
                 onClose={tour.close}
             />
+
+            {/* Модалка алерта из «+» на коэффициенте (префилл: уровень % + текущее). */}
+            {ALERTS_ENABLED && chartAlertPrefill && (
+                <CreateAlertModal
+                    indicator="buffett"
+                    asset="buffett"
+                    assetName="Индикатор Баффета"
+                    metrics={buffettMetrics}
+                    prefill={{ metricKey: chartAlertPrefill.metricKey, threshold: chartAlertPrefill.threshold, currentLabel: chartAlertPrefill.currentLabel }}
+                    onClose={() => { setChartAlertPrefill(null); reloadMyAlerts(); }}
+                />
+            )}
         </div>
     );
 }

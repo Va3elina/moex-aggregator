@@ -430,3 +430,38 @@ def insert_signal_log(
         row_id = result.scalar()
         session.commit()
     return row_id
+
+
+def get_buffett_current(mode: str = "cap_gdp") -> Optional[tuple]:
+    """Текущий индикатор Баффета: (ratio_%, cap_млрд) на последнюю доступную дату.
+
+    ratio = 100 * MARKET_CAP_TOTAL / знаменатель:
+      • mode='cap_gdp' → ВВП TTM (сумма 4 последних кварталов GDP_QUARTERLY);
+      • mode='cap_m2'  → последний M2_MONTHLY.
+    Считаем СЫРОЕ последнее значение (без EMA-сглаживания/интерполяции графика) —
+    для порога алерта этого достаточно; индикатор двигается медленно (мес. данные).
+    None если данных не хватает. Зеркалит формулу api/routers/buffett.py.
+    """
+    with SessionLocal() as s:
+        cap = s.execute(text(
+            "SELECT value FROM macro_data WHERE indicator='MARKET_CAP_TOTAL' "
+            "AND value > 0 ORDER BY period_date DESC LIMIT 1"
+        )).scalar()
+        if cap is None:
+            return None
+        cap = float(cap)
+        if mode == "cap_m2":
+            denom = s.execute(text(
+                "SELECT value FROM macro_data WHERE indicator='M2_MONTHLY' "
+                "AND value > 0 ORDER BY period_date DESC LIMIT 1"
+            )).scalar()
+        else:
+            rows = s.execute(text(
+                "SELECT value FROM macro_data WHERE indicator='GDP_QUARTERLY' "
+                "ORDER BY period_date DESC LIMIT 4"
+            )).fetchall()
+            denom = sum(float(r[0]) for r in rows) if rows and len(rows) >= 4 else None
+        if not denom or float(denom) <= 0:
+            return None
+        ratio = 100.0 * cap / float(denom)
+        return (ratio, cap)

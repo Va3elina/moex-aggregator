@@ -366,7 +366,8 @@ def _validate_alert_body(b: AlertCreate) -> Optional[str]:
         return "некорректное условие"
     if b.mode not in ("once", "repeat"):
         return "некорректный режим"
-    if b.indicator not in ("price", "oi_zscore", "oi_move", "oi_participants", "oi_level", "funds_flow"):
+    if b.indicator not in ("price", "oi_zscore", "oi_move", "oi_participants", "oi_level",
+                           "buffett_ratio", "buffett_cap", "funds_flow"):
         return "неизвестный индикатор"
     # funds_flow: asset — режим/категория фондов (не sectype); clgroup у фондов
     # нет; таймфрейм потоков всегда дневной. fund_ids задан → набор «custom».
@@ -395,6 +396,9 @@ def _validate_alert_body(b: AlertCreate) -> Optional[str]:
     # oi_level: «нога» величины ОИ (что показано на графике).
     if b.indicator == "oi_level" and b.metric not in ("net", "long", "short", "oi", "npart"):
         return "некорректная величина ОИ"
+    # buffett_ratio: режим коэффициента (Cap/ВВП или Cap/M2).
+    if b.indicator == "buffett_ratio" and b.metric not in ("cap_gdp", "cap_m2"):
+        return "некорректный режим индикатора Баффета"
     return None
 
 
