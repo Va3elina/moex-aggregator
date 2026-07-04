@@ -121,6 +121,11 @@ def _buffett_url(a) -> str:
     return f"{SITE}/buffett{q}"
 
 
+def _strength_url(a) -> str:
+    """Диплинк на /strength (Сила рынка)."""
+    return f"{SITE}/strength"
+
+
 def _parse_fund_ids(raw) -> list | None:
     """CSV из fund_id (колонка alerts.fund_ids) → list[int]; пусто/None → None.
     None = таргет задаётся через a.asset (категория или 'all'), а не явный набор.
@@ -213,6 +218,16 @@ def compute_value(a: Alert):
             "oi": (plong or 0) + abs(pshort or 0),
         }.get(leg, net)
         return float(val), {"leg": leg, "signal_date": d}
+    if a.indicator == "strength_level":
+        # Сила рынка: % акций выше EMA. metric = период EMA (20/50/100/200);
+        # asset = вселенная (imoex/all/imoex_usd/all_usd).
+        from signals.db import get_breadth_current
+        ema = int(a.metric) if (a.metric and str(a.metric).isdigit()) else 200
+        universe = a.asset or "imoex"
+        val = get_breadth_current(ema, universe)
+        if val is None:
+            return None, None
+        return float(val), {"ema": ema, "universe": universe}
     if a.indicator == "buffett_ratio":
         # Индикатор Баффета: коэффициент (Cap/ВВП или Cap/M2), %. metric = режим.
         from signals.db import get_buffett_current
@@ -305,6 +320,7 @@ _TYPE_OI    = "ОТКРЫТЫЙ ИНТЕРЕС"
 _TYPE_PRICE = "ЦЕНА ФЬЮЧЕРСА"
 _TYPE_FUNDS = "ДЕНЬГИ В ФОНДАХ"
 _TYPE_BUFFETT = "ИНДИКАТОР БАФФЕТА"
+_TYPE_STRENGTH = "СИЛА РЫНКА"
 
 
 def _head(type_label: str, subtitle: str, note: str = "") -> str:
@@ -433,6 +449,13 @@ def format_msg(a: Alert, value: float, ctx: dict) -> str:
         dir_emo = _ce(*_EMO_UP) if up else _ce(*_EMO_DOWN)
         return (f"{_head(_TYPE_FUNDS, label)}\n"
                 f"{dir_emo} Резкий {flow_word} — в {value:g}× больше обычного (порог {thr:g}×).{_date_note(ctx)}\n{funds_link}")
+    if a.indicator == "strength_level":
+        slink = f'<a href="{_strength_url(a)}">открыть график →</a>'
+        word = _OP_PRICE.get(a.op, a.op)
+        ema = (ctx or {}).get("ema") or a.metric or 200
+        return (f"{_head(_TYPE_STRENGTH, 'Сила рынка')}\n"
+                f"{_ce(*_EMO_SIGNAL)} Доля акций выше EMA{ema} {word} отметку "
+                f"{thr:g}% — сейчас {value:g}%.\n{slink}")
     if a.indicator in ("buffett_ratio", "buffett_cap"):
         blink = f'<a href="{_buffett_url(a)}">открыть график →</a>'
         word = _OP_PRICE.get(a.op, a.op)

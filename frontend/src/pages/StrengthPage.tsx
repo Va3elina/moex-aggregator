@@ -6,10 +6,16 @@ import { METHODOLOGY } from '../data/methodology';
 import {
     getBreadthCurrent,
     getBreadthHistory,
+    listAlerts,
     type BreadthCurrentResponse,
     type BreadthHistoryResponse,
     type BreadthUniverse,
+    type AlertInfo,
 } from '../services/api';
+import AlertBellButton from '../components/alerts/AlertBellButton';
+import CreateAlertModal, { type AlertMetricOption } from '../components/alerts/CreateAlertModal';
+import { ALERTS_ENABLED } from '../config/alertsConfig';
+import { useCommonFeatures } from '../contexts/TierFeaturesContext';
 import { useAuth } from '../contexts/AuthContext';
 import { getDefaultPeriod } from '../config/accessControl';
 import { useIndicatorData } from '../hooks/useIndicatorData';
@@ -225,6 +231,48 @@ export default function StrengthPage() {
         [syncedData]
     );
 
+    // ── Алерты на графике Силы рынка: level-алерт на % акций выше EMA ───────────
+    const alertQuota = useCommonFeatures().telegram_alerts_quota;
+    const alertsLocked = alertQuota === 0;
+    const [chartAlertPrefill, setChartAlertPrefill] = useState<{ metricKey: string; threshold: number; currentLabel?: string } | null>(null);
+    const [myAlerts, setMyAlerts] = useState<AlertInfo[]>([]);
+    const reloadMyAlerts = useCallback(() => {
+        if (!ALERTS_ENABLED || alertsLocked) { setMyAlerts([]); return; }
+        listAlerts({ limit: 200 }).then((p) => setMyAlerts(p.items)).catch(() => setMyAlerts([]));
+    }, [alertsLocked]);
+    useEffect(() => { reloadMyAlerts(); }, [reloadMyAlerts]);
+
+    // Метрика зависит от текущего вида (период EMA + вселенная). asset = вселенная,
+    // metric = период EMA. Общий реестр для кнопки-будильника и «+».
+    const strengthMetrics = useMemo<AlertMetricOption[]>(() => [{
+        key: 'strength_level',
+        label: `Сила рынка — % акций выше EMA${emaPeriod}`,
+        indicator: 'strength_level', metric: String(emaPeriod), unit: '%',
+        ops: [
+            { value: 'cross_up', label: '↑ пересечёт (снизу вверх)' },
+            { value: 'cross_down', label: '↓ пересечёт (сверху вниз)' },
+            { value: 'gt', label: 'станет выше' },
+            { value: 'lt', label: 'станет ниже' },
+        ],
+        hint: `Сработает, когда доля акций выше EMA${emaPeriod} пересечёт заданный уровень в % или окажется выше/ниже него.`,
+    }], [emaPeriod]);
+
+    // Уровни активных strength-алертов текущего вида (EMA + вселенная) → пунктир.
+    const alertLevels = useMemo(() => {
+        if (!ALERTS_ENABLED) return undefined;
+        const lines = myAlerts
+            .filter((a) => a.status === 'active' && a.indicator === 'strength_level'
+                && a.metric === String(emaPeriod) && a.asset === universe)
+            .map((a) => a.threshold);
+        return lines.length ? lines : undefined;
+    }, [myAlerts, emaPeriod, universe]);
+
+    // Клик «+» на оси % → модалка (уровень + текущее значение).
+    const handleCreateAlertFromChart = useCallback((levelPct: number, currentPct: number) => {
+        if (alertsLocked) { showUpgrade({ tier: 'basic', featureName: 'Алерты', indicator: 'alerts' }); return; }
+        setChartAlertPrefill({ metricKey: 'strength_level', threshold: Math.round(levelPct * 10) / 10, currentLabel: `${currentPct.toFixed(1)}%` });
+    }, [alertsLocked, showUpgrade]);
+
     // Extracted pointer handler — общая логика для mouse + touch.
     // Раньше вся логика была inline в handleMouseMove → touch не работал.
     // Теперь mouse и touch handlers вызывают этот общий путь с координатами.
@@ -388,6 +436,14 @@ export default function StrengthPage() {
                         }}
                     />
                     <ChartSettings showType={false} />
+                    {ALERTS_ENABLED && (
+                        <AlertBellButton
+                            indicator="strength"
+                            asset={universe}
+                            assetName="Сила рынка"
+                            metrics={strengthMetrics}
+                        />
+                    )}
                     </ChartActionsMenu>
                 }
             />
@@ -589,6 +645,8 @@ export default function StrengthPage() {
                                 mode={chartMode}
                                 padding={padding}
                                 isNavDragRef={isNavDragRef}
+                                onCreateAlert={ALERTS_ENABLED ? handleCreateAlertFromChart : undefined}
+                                alertLevels={alertLevels}
                             />
                         ) : (
                             <div className="h-48 flex items-center justify-center text-theme-muted">
@@ -624,6 +682,18 @@ export default function StrengthPage() {
                 open={tour.open}
                 onClose={tour.close}
             />
+
+            {/* Модалка алерта из «+» на оси % (префилл: уровень + текущее). */}
+            {ALERTS_ENABLED && chartAlertPrefill && (
+                <CreateAlertModal
+                    indicator="strength"
+                    asset={universe}
+                    assetName="Сила рынка"
+                    metrics={strengthMetrics}
+                    prefill={{ metricKey: chartAlertPrefill.metricKey, threshold: chartAlertPrefill.threshold, currentLabel: chartAlertPrefill.currentLabel }}
+                    onClose={() => { setChartAlertPrefill(null); reloadMyAlerts(); }}
+                />
+            )}
         </div>
     );
 }
