@@ -98,7 +98,9 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
   // Избранные из localStorage
   const [favorites, setFavorites] = useState<string[]>(() => {
     const saved = localStorage.getItem('favoriteInstruments');
-    return saved ? JSON.parse(saved) : ['SR', 'GZ', 'MX'];
+    // Дефолт: фьючерсы + спот-двойники (для no-futures списков типа
+    // Сезонности) — см. MobileAssetSearch, список должен совпадать.
+    return saved ? JSON.parse(saved) : ['SR', 'GZ', 'MX', 'SBER', 'GAZP', 'IMOEX'];
   });
 
   // Autofocus — только на desktop (mouse), чтобы на мобиле сразу не вылетала

@@ -71,7 +71,10 @@ export default function MobileAssetSearch({
   const [categoryFilter, setCategoryFilter] = usePersistedState(`frame:msearch:cat:${filterType ?? 'all'}`, 'all');
   const [favorites, setFavorites] = useState<string[]>(() => {
     const saved = localStorage.getItem(FAVORITES_KEY);
-    return saved ? JSON.parse(saved) : ['SR', 'GZ', 'MX'];
+    // Дефолт: фьючерсные тикеры (для ОИ) + их спот-двойники (для Сезонности
+    // и прочих no-futures списков) — секция «Избранные» есть из коробки в
+    // обоих контекстах; в чужом контексте лишние ключи просто не матчатся.
+    return saved ? JSON.parse(saved) : ['SR', 'GZ', 'MX', 'SBER', 'GAZP', 'IMOEX'];
   });
 
   // Tier-gating: проверяем доступ для каждого актива если задан indicator.
