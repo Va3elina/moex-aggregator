@@ -260,6 +260,37 @@ export async function getInstrument(secId: string): Promise<Instrument | null> {
   }
 }
 
+// ==================== СКРИНЕР СИГНАЛОВ ОИ ====================
+
+/** Строка скринера сигналов ОИ (дневные данные физлиц, T+1). */
+export interface OiScreenerRow {
+  sectype: string;
+  name: string;
+  group: string | null;           // Индексы / Валюта / Сырьё / Акции / Крипто
+  front_secid: string | null;     // датированный фронт-контракт ('BRQ6')
+  oi: number;                     // валовый ОИ, контракты
+  oi_delta_pct: number | null;    // Δ ОИ за день, %
+  net: number;                    // чистая позиция физлиц, контракты
+  net_pct: number | null;         // net / (лонги+шорты), −100…+100
+  delta_net: number | null;       // Δ чистой позиции за день, контракты
+  ratio: number | null;           // ATR14-кратность |Δnet| («в N× резче обычного»)
+  direction: 'up' | 'down' | null;
+  status: 'sharp' | 'normal' | 'illiquid' | 'nodata';
+  signal_date: string;            // дата последних данных (T+1)
+}
+
+export interface OiScreenerResponse {
+  signal_date: string | null;
+  clgroup: 'FIZ';
+  rows: OiScreenerRow[];
+}
+
+export async function getOiScreener(): Promise<OiScreenerResponse> {
+  const response = await fetch(`${API_BASE}/api/oi/screener`);
+  if (!response.ok) throw new Error('Failed to fetch OI screener');
+  return response.json();
+}
+
 export async function getGroups(): Promise<{ groups: string[] }> {
   const response = await fetch(`${API_BASE}/api/instruments/groups`);
   if (!response.ok) throw new Error('Failed to fetch groups');

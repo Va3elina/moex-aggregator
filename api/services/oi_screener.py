@@ -1,0 +1,172 @@
+"""
+Скринер сигналов ОИ — расчёт «резкости» дневного изменения чистой позиции
+физлиц по ВСЕМ фьючерсам разом (вкладка «Скринер сигналов» на /oi).
+
+Математика = signals/detectors/oi.py::compute_position_atr (алерты «резкое
+движение»): ratio = |Δnet за день| / ATR(14), ATR = среднее |дневных Δ| за 14
+дней ДО последнего. ⚠️ api-контейнер не видит signals/ (не копируется в образ,
+см. Dockerfile) — функция и константы продублированы; МЕНЯТЬ СИНХРОННО с
+источником истины signals/detectors/oi.py, иначе скринер и алерты разойдутся
+в показаниях на одних данных.
+
+Только clgroup='FIZ': на фьючерсах MOEX клиентских групп две, net(FIZ) ≡
+−net(YUR) тождественно → сигналы юриков зеркальны и задвоили бы список
+(та же причина, что в signals/anomaly_scan.py).
+"""
+from __future__ import annotations
+
+import statistics
+from datetime import date, timedelta
+from typing import Any, Dict, List
+
+from sqlalchemy import text
+
+from api.services import contract_calendar
+
+# --- Константы детектора: КОПИЯ signals/detectors/oi.py (менять синхронно) ---
+ATR_WINDOW = 14
+ATR_MIN_PART = 50        # ликвидность: «толпа», иначе шум
+ATR_MIN_REL = 0.02       # материальность: |Δ|/|net| ≥ 2%
+ATR_FLOOR_REL = 0.001    # ATR ≥ 0.1%·|net|, иначе позиция «заморожена»
+
+# Дней истории в выборке: окно + запас на выходные/праздники (как в детекторе).
+_HISTORY_DAYS = ATR_WINDOW + 30
+
+# Строк-точек минимум для расчёта (как в compute_position_atr).
+_MIN_POINTS = ATR_WINDOW + 3
+
+
+def _bulk_series(db) -> Dict[str, List[tuple]]:
+    """Дневные ряды позиций ФИЗЛИЦ по всем sectype одним запросом.
+
+    Возвращает {sectype: [(tradedate, net, npart, oi), ...] по возрастанию даты}.
+    Тот же смысл, что signals/db.get_position_series, но bulk: DISTINCT ON
+    (sectype, tradedate) → последний бар дня, только будни.
+    """
+    cutoff = date.today() - timedelta(days=_HISTORY_DAYS)
+    rows = db.execute(text(
+        """
+        SELECT sectype, tradedate,
+               (pos_long + pos_short)         AS net,
+               (pos_long_num + pos_short_num) AS npart,
+               pos                            AS oi,
+               pos_long, pos_short
+        FROM (
+            SELECT DISTINCT ON (sectype, tradedate)
+                sectype, tradedate, pos, pos_long, pos_short,
+                pos_long_num, pos_short_num
+            FROM open_interest
+            WHERE clgroup = 'FIZ'
+              AND interval = 24
+              AND tradedate >= :cutoff
+              AND EXTRACT(ISODOW FROM tradedate) BETWEEN 1 AND 5
+            ORDER BY sectype, tradedate, tradetime DESC
+        ) t
+        ORDER BY sectype, tradedate ASC
+        """
+    ), {"cutoff": cutoff}).fetchall()
+
+    series: Dict[str, List[tuple]] = {}
+    for r in rows:
+        series.setdefault(r[0], []).append((
+            r[1], (r[2] or 0), (r[3] or 0), (r[4] or 0),
+            (r[5] or 0), (r[6] or 0),
+        ))
+    return series
+
+
+def _row_signal(pts: List[tuple]) -> Dict[str, Any]:
+    """Сигнальные поля одной строки скринера по дневному ряду позиций.
+
+    Статусы:
+      sharp    — ratio ≥ 2 и ВСЕ гарды детектора прошли (материальность,
+                 ликвидность, ATR-floor) — ровно условия, при которых сработал
+                 бы алерт «резкое движение»;
+      normal   — движение в пределах обычного (ratio показываем, если база
+                 не заморожена);
+      illiquid — участников < 50, ×N не считаем (шум);
+      nodata   — мало истории.
+    """
+    if len(pts) < _MIN_POINTS:
+        return {"status": "nodata", "ratio": None, "direction": None}
+
+    nets = [p[1] for p in pts]
+    npart_now = pts[-1][2]
+    diffs = [abs(nets[i] - nets[i - 1]) for i in range(1, len(nets))]
+    if len(diffs) < ATR_WINDOW + 1:
+        return {"status": "nodata", "ratio": None, "direction": None}
+
+    last_signed = nets[-1] - nets[-2]
+    net = nets[-1]
+    direction = "up" if last_signed > 0 else "down"
+
+    if npart_now < ATR_MIN_PART:
+        return {"status": "illiquid", "ratio": None, "direction": None}
+
+    atr = statistics.fmean(diffs[-(ATR_WINDOW + 1):-1])
+    frozen = atr <= 0 or atr < ATR_FLOOR_REL * max(abs(net), 1)
+    ratio = None if frozen else round(abs(last_signed) / atr, 2)
+
+    # «Резко» — только при полном наборе гардов алерта (консистентность:
+    # скринер не должен кричать там, где алерт бы промолчал).
+    material = abs(last_signed) / max(abs(net), 1) >= ATR_MIN_REL
+    if ratio is not None and ratio >= 2 and material and not frozen:
+        return {"status": "sharp", "ratio": ratio, "direction": direction}
+    return {"status": "normal", "ratio": ratio, "direction": direction}
+
+
+def compute_screener(db) -> Dict[str, Any]:
+    """Полный ответ скринера: строки по всем фьючерсам с данными ОИ."""
+    series = _bulk_series(db)
+
+    # Метаданные инструментов: имя + группа (Индексы/Валюта/Товары/Акции).
+    meta = {
+        r[0]: {"name": r[1], "group": r[2]}
+        for r in db.execute(text(
+            'SELECT sectype, name, "group" FROM instruments'
+        )).fetchall()
+    }
+    fronts = contract_calendar.front_secids_all(db)
+
+    rows: List[Dict[str, Any]] = []
+    signal_date: date | None = None
+    for sectype, pts in series.items():
+        last = pts[-1]
+        d, net, _npart, oi, pos_long, pos_short = last
+        if signal_date is None or d > signal_date:
+            signal_date = d
+
+        # % перекоса: net / валовую (лонги + |шорты|); pos_short хранится < 0.
+        gross = pos_long - pos_short
+        net_pct = round(net / gross * 100, 1) if gross else None
+
+        prev = pts[-2] if len(pts) >= 2 else None
+        delta_net = (net - prev[1]) if prev else None
+        oi_delta_pct = (
+            round((oi - prev[3]) / prev[3] * 100, 1)
+            if prev and prev[3] else None
+        )
+
+        sig = _row_signal(pts)
+        m = meta.get(sectype, {})
+        rows.append({
+            "sectype": sectype,
+            "name": m.get("name") or sectype,
+            "group": m.get("group"),
+            "front_secid": fronts.get(sectype),
+            "oi": oi,
+            "oi_delta_pct": oi_delta_pct,
+            "net": net,
+            "net_pct": net_pct,
+            "delta_net": delta_net,
+            "ratio": sig["ratio"],
+            "direction": sig["direction"],
+            "status": sig["status"],
+            "signal_date": pts[-1][0].isoformat(),
+        })
+
+    return {
+        "signal_date": signal_date.isoformat() if signal_date else None,
+        "clgroup": "FIZ",
+        "rows": rows,
+    }
