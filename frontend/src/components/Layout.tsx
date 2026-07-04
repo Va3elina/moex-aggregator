@@ -23,17 +23,19 @@ const MOBILE_READY_PATHS = new Set([
   '/seasonality', '/cbr-flows', '/profile', '/pricing', '/fund-trades',
 ]);
 
+// Порядок задан Вадимом (04.07.2026): частые/продуктовые впереди,
+// Баффетт в конце. Мобильный rail (MobileBottomRail) — отдельный список.
 const NAV_ITEMS: { path: string; label: string; disabled?: boolean; badge?: string }[] = [
   { path: '/heatmap', label: 'Карта рынка' },
   { path: '/oi', label: 'Открытые позиции' },
   { path: '/funds-money', label: 'Деньги в фондах' },
-  { path: '/buffett', label: 'Индикатор Баффетта' },
   { path: '/strength', label: 'Сила рынка' },
-  { path: '/seasonality', label: 'Сезонность' },
-  { path: '/cbr-flows', label: 'Поток капитала' },
   // Smart-money tracking — что покупают/продают БПИФ. Pro-only фича.
   // Помечен Beta — данные накапливаются (помесячные снапшоты составов фондов).
   { path: '/fund-trades', label: 'Покупки фондов', badge: 'Beta' },
+  { path: '/seasonality', label: 'Сезонность' },
+  { path: '/cbr-flows', label: 'Поток капитала' },
+  { path: '/buffett', label: 'Индикатор Баффетта' },
 ];
 
 export default function Layout() {
