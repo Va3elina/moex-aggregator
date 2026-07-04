@@ -592,7 +592,7 @@
    яркая (85%) — обратная связь. */
 .fm-fullscreen-exit {
   position: fixed;
-  right: 14px;
+  right: calc(14px + env(safe-area-inset-right, 0));
   bottom: calc(14px + env(safe-area-inset-bottom, 0));
   z-index: 50;
   width: 44px;
@@ -622,9 +622,87 @@
   padding-bottom: 0;
 }
 
-/* В fullscreen — скрыть PageHeader (заголовок) если он есть */
-.fm-app.fullscreen .fm-page-header {
+/* В fullscreen — скрыть PageHeader (заголовок) если он есть.
+   ⚠️ Класс компонента — .fm-pageheader (MobilePageHeader); старый селектор
+   .fm-page-header был опечаткой и никогда не срабатывал (заголовок
+   оставался виден в fullscreen). Оставляем оба на случай legacy-разметки. */
+.fm-app.fullscreen .fm-page-header,
+.fm-app.fullscreen .fm-pageheader {
   display: none;
+}
+
+/* В fullscreen график не должен уезжать под чёлку/динамик в ландшафте —
+   боковые safe-area insets (в портрете обе = 0, правило безвредно). */
+.fm-app.fullscreen {
+  padding-left: env(safe-area-inset-left, 0);
+  padding-right: env(safe-area-inset-right, 0);
+}
+
+/* ── Fullscreen overlay-контролы (4c: поворотный режим) ──
+   Язык .fm-fullscreen-exit: bg-secondary + editorial border, radius 999,
+   полупрозрачные в idle. Всё на z-index 50 (< sheet 100) — sheets поверх. */
+
+/* Контекст-пилюля слева-сверху: «SRU6 · 6м · 1ч · Объём · Юр». Кнопка
+   (открывает asset-sheet) или просто div, если onAssetClick не передан. */
+.fm-fs-pill {
+  position: fixed;
+  top: calc(8px + env(safe-area-inset-top, 0));
+  left: calc(12px + env(safe-area-inset-left, 0));
+  z-index: 50;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(62vw, 420px);
+  padding: 6px 12px;
+  background: var(--bg-secondary);
+  border: 1.5px solid var(--text-primary);
+  border-radius: 999px;
+  color: var(--text-primary);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  opacity: 0.45;
+  transition: opacity 150ms ease, transform 100ms ease;
+}
+
+.fm-fs-pill:active {
+  opacity: 0.9;
+  transform: translate(1px, 1px);
+}
+
+.fm-fs-pill-text {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Кнопки Время/Опции справа-сверху — симметрично пилюле. */
+.fm-fs-controls {
+  position: fixed;
+  top: calc(8px + env(safe-area-inset-top, 0));
+  right: calc(12px + env(safe-area-inset-right, 0));
+  z-index: 50;
+  display: flex;
+  gap: 8px;
+}
+
+.fm-fs-btn {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  background: var(--bg-secondary);
+  border: 1.5px solid var(--text-primary);
+  border-radius: 999px;
+  color: var(--text-primary);
+  cursor: pointer;
+  opacity: 0.45;
+  transition: opacity 150ms ease, transform 100ms ease;
+}
+
+.fm-fs-btn:active {
+  opacity: 0.9;
+  transform: translate(1px, 1px);
 }
 
 /* ========== Bottom rail (горизонтальный навигатор) ========== */
@@ -997,5 +1075,20 @@
   .fm-pageheader-icon {
     width: 28px;
     height: 28px;
+  }
+
+  /* Fullscreen overlay-контролы: компактнее — высота экрана в дефиците
+     (iPhone SE landscape = 375px). */
+  .fm-fs-pill {
+    padding: 4px 10px;
+    font-size: 10px;
+  }
+  .fm-fs-btn {
+    width: 36px;
+    height: 36px;
+  }
+  .fm-fullscreen-exit {
+    width: 38px;
+    height: 38px;
   }
 }

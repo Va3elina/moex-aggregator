@@ -25,14 +25,24 @@
  * Полноэкранный режим: скрывает TopBar, PageHeader, page-actions
  * и BottomRail. Chart занимает весь viewport. Floating exit-кнопка
  * в углу выводит обратно.
+ *
+ * Поворотный режим (4c): на телефоне (coarse pointer) поворот в ландшафт
+ * АВТО-входит в fullscreen (TradingView-паттерн), поворот обратно — выходит.
+ * State machine: manualFs (кнопка ⛶) + autoFs (ориентация) + optOutRef
+ * (юзер вышел, оставаясь в ландшафте — не форсим обратно до следующей
+ * смены ориентации). В fullscreen рендерятся overlay-контролы: контекст-
+ * пилюля (актив · период · опции) слева-сверху и кнопки Время/Опции
+ * справа-сверху — юзер не «заперт» без управления.
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Clock, Settings, Star, Maximize2, Minimize2, RefreshCw } from 'lucide-react';
 import MobileTopBar from './MobileTopBar';
 import MobileBottomRail from './MobileBottomRail';
 import MobilePWABanner from './MobilePWABanner';
 import { usePullToRefresh } from '../../hooks/usePullToRefresh';
+import { useIsLandscape } from '../../hooks/useIsLandscape';
+import { isCoarsePointer } from '../../hooks/useIsPhone';
 import InstrumentIcon from '../InstrumentIcon';
 import '../../styles/mobile.css';
 
@@ -106,9 +116,56 @@ export default function MobileLayout({
   loading = false,
   onBack,
 }: MobileLayoutProps) {
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  // ── Fullscreen state machine ──
+  // manualFs — юзер нажал ⛶ (переживает поворот туда-обратно);
+  // autoFs   — авто-вход по повороту в ландшафт (только телефон);
+  // optOutRef — юзер вышел из fullscreen, ОСТАВАЯСЬ в ландшафте: не форсим
+  //             авто-вход обратно до следующей смены ориентации (ref, не
+  //             state — не должен вызывать re-render).
+  const [manualFs, setManualFs] = useState(false);
+  const [autoFs, setAutoFs] = useState(false);
+  const optOutRef = useRef(false);
+  const isLandscape = useIsLandscape();
+  const isFullscreen = manualFs || autoFs;
+
+  useEffect(() => {
+    if (isLandscape) {
+      // Авто-вход: только телефон (coarse pointer — иначе низкое окно на
+      // десктопе свалилось бы в fullscreen), только страницы с графиком
+      // (enableFullscreen), не во время онбординг-тура (fullscreen спрятал
+      // бы data-tour якоря) и не после явного выхода юзера (optOut).
+      if (
+        isCoarsePointer() &&
+        enableFullscreen &&
+        !optOutRef.current &&
+        !document.documentElement.hasAttribute('data-tour-active')
+      ) {
+        setAutoFs(true);
+      }
+    } else {
+      // Поворот обратно в портрет: авто-режим снимаем, opt-out сбрасываем.
+      // manualFs НЕ трогаем — ручной портретный fullscreen переживает
+      // поворот туда-обратно.
+      setAutoFs(false);
+      optOutRef.current = false;
+    }
+  }, [isLandscape, enableFullscreen]);
+
+  const exitFullscreen = () => {
+    setManualFs(false);
+    setAutoFs(false);
+    // Выход в ландшафте = осознанный отказ от авто-режима до след. поворота.
+    if (isLandscape) optOutRef.current = true;
+  };
+
   const hasActions =
     !!onAssetClick || !!onTimeClick || !!onSettingsClick || enableFullscreen;
+
+  // Контекст-пилюля в fullscreen: собираем из тех же props, что кормят
+  // кнопки action-bar'а — юзер видит ЧТО он смотрит без выхода из fullscreen.
+  const fsPillText = [assetTicker || assetLabel, timeSummary, settingsSummary]
+    .filter(Boolean)
+    .join(' · ');
 
   // Pull-to-refresh — активен только если передан onRefresh и не fullscreen
   const { pullDistance, isRefreshing, trigger } = usePullToRefresh(
@@ -223,7 +280,7 @@ export default function MobileLayout({
             <button
               type="button"
               className="fm-page-action"
-              onClick={() => setIsFullscreen(true)}
+              onClick={() => setManualFs(true)}
               data-tour={fullscreenTourId}
               aria-label="Полный экран"
             >
@@ -237,16 +294,64 @@ export default function MobileLayout({
 
       {!isFullscreen && <MobileBottomRail />}
 
-      {/* Floating exit-button когда в полноэкранном режиме */}
+      {/* Fullscreen overlay-контролы: контекст-пилюля слева-сверху,
+          Время/Опции справа-сверху, exit справа-снизу. Всё z-index 50
+          (< sheet 100) — sheets открываются поверх. Полупрозрачные в idle,
+          как exit-кнопка — не мешают чтению графика. */}
       {isFullscreen && (
-        <button
-          type="button"
-          className="fm-fullscreen-exit"
-          onClick={() => setIsFullscreen(false)}
-          aria-label="Выйти из полного экрана"
-        >
-          <Minimize2 size={18} strokeWidth={2.4} />
-        </button>
+        <>
+          {fsPillText &&
+            (onAssetClick ? (
+              <button
+                type="button"
+                className="fm-fs-pill"
+                onClick={onAssetClick}
+                aria-label={`Актив: ${fsPillText}`}
+              >
+                {assetSectype && <InstrumentIcon sectype={assetSectype} size={16} rounded="full" />}
+                <span className="fm-fs-pill-text">{fsPillText}</span>
+              </button>
+            ) : (
+              <div className="fm-fs-pill" role="status">
+                {assetSectype && <InstrumentIcon sectype={assetSectype} size={16} rounded="full" />}
+                <span className="fm-fs-pill-text">{fsPillText}</span>
+              </div>
+            ))}
+
+          {(onTimeClick || onSettingsClick) && (
+            <div className="fm-fs-controls">
+              {onTimeClick && (
+                <button
+                  type="button"
+                  className="fm-fs-btn"
+                  onClick={onTimeClick}
+                  aria-label={timeSummary ? `Время · ${timeSummary}` : 'Время / период'}
+                >
+                  <Clock size={18} strokeWidth={2.2} />
+                </button>
+              )}
+              {onSettingsClick && (
+                <button
+                  type="button"
+                  className="fm-fs-btn"
+                  onClick={onSettingsClick}
+                  aria-label={settingsSummary ? `Опции · ${settingsSummary}` : 'Опции'}
+                >
+                  <Settings size={18} strokeWidth={2.2} />
+                </button>
+              )}
+            </div>
+          )}
+
+          <button
+            type="button"
+            className="fm-fullscreen-exit"
+            onClick={exitFullscreen}
+            aria-label="Выйти из полного экрана"
+          >
+            <Minimize2 size={18} strokeWidth={2.4} />
+          </button>
+        </>
       )}
 
       {/* PWA install banner — показывается последним (после cookie-consent и

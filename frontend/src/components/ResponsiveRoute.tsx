@@ -11,7 +11,7 @@
  */
 import { Suspense } from 'react';
 import type { ReactNode } from 'react';
-import { useIsMobile } from '../hooks/useIsMobile';
+import { useIsPhone } from '../hooks/useIsPhone';
 
 interface ResponsiveRouteProps {
   mobile: ReactNode;
@@ -25,7 +25,9 @@ export default function ResponsiveRoute({
   desktop,
   fallback,
 }: ResponsiveRouteProps) {
-  const isMobile = useIsMobile();
+  // useIsPhone (не useIsMobile): min-сторона на touch-устройствах —
+  // поворот телефона в ландшафт НЕ размонтирует мобильную страницу.
+  const isMobile = useIsPhone();
 
   if (isMobile) {
     return (

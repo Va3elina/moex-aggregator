@@ -5,7 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useSSE } from '../hooks/useSSE';
 import { useYandexMetrica } from '../hooks/useYandexMetrica';
 import { useViewportWidth } from '../hooks/useViewportWidth';
-import { useIsMobile } from '../hooks/useIsMobile';
+import { useIsPhone } from '../hooks/useIsPhone';
 import { Menu, X, LogIn, BarChart3 } from 'lucide-react';
 import Logo from './Logo';
 import FrameLogo from './FrameLogo';
@@ -44,7 +44,10 @@ export default function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const isMobileViewport = useIsMobile();
+  // useIsPhone (не useIsMobile) — это routing-гейт (Outlet-only vs
+  // MobileFallbackChrome vs десктоп-chrome): телефон в ландшафте должен
+  // оставаться на мобильной вёрстке, а не получать десктопный Layout.
+  const isMobileViewport = useIsPhone();
   const vw = useViewportWidth();
   // SPA-tracking для Yandex.Metrica — фиксирует переходы /buffett → /oi → ...
   // Первый hit отправляется автоматически через init() в index.html.

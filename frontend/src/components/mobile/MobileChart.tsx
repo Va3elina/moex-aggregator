@@ -726,7 +726,7 @@ export default function MobileChart({
   // X-axis ticks: число подписей зависит от их ширины, чтобы не наезжали.
   // Широкие intraday-подписи ("DD.MM HH:MM" ~11 симв.) влезают реже, чем daily
   // ("DD.MM.YY" ~8) — для intraday это даёт 3 тика вместо 4 (раньше 4 наезжали).
-  // Cap = 4: только УМЕНЬШАЕМ для широких, не увеличиваем (daily/Buffett как были).
+  // Cap = 4 в портрете (как было); 6 в fullscreen-ландшафте (innerW ≥ 560).
   const xTicks = useMemo(() => {
     if (N < 2) return N > 0 ? [0] : [];
     const longest = downsampledSeries.reduce(
@@ -737,10 +737,12 @@ export default function MobileChart({
     const sampleLabel = sampleTime
       ? (formatXLabel ? formatXLabel(sampleTime) : formatTimeForDisplay(sampleTime))
       : '00.00.00';
+    // Cap: 4 в портрете; 6 на широком чарте (fullscreen-ландшафт, ≥560px
+    // innerW) — места хватает, а формула и так ограничена [3..7].
     const count = Math.min(
       xAxisTickCount(innerW, axisFs, Math.ceil(sampleLabel.length * 1.4)),
       N,
-      4,
+      innerW >= 560 ? 6 : 4,
     );
     return Array.from({ length: count }, (_, i) => Math.round((i / Math.max(count - 1, 1)) * (N - 1)));
   }, [N, innerW, axisFs, downsampledSeries, formatXLabel]);
