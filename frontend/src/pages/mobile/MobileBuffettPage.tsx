@@ -307,6 +307,7 @@ export default function MobileBuffettPage() {
       <MobilePageHeader
         Icon={Scale}
         title="Индикатор Баффетта"
+        subtitle={`${settingsSummary} · ${PERIOD_LABELS[period]}`}
         helpLink="/methodology/buffett"
       />
 

@@ -507,7 +507,7 @@ export default function MobileOpenInterestPage() {
       <MobilePageHeader
         Icon={BarChart3}
         title="Открытые позиции"
-        subtitle={`${instrumentName} · ${timeLabel}`}
+        subtitle={`${instrumentName} · ${optionsLabel} · ${timeLabel}`}
         helpLink="/methodology/oi"
       />
 

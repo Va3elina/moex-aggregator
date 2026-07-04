@@ -248,6 +248,7 @@ export default function MobileCbrFlowsPage() {
       <MobilePageHeader
         Icon={Banknote}
         title="Поток капитала"
+        subtitle={`${typeLabel} · ${periodLabel}`}
         helpLink="/methodology/cbr-flows"
         sourceNote="Источник: Банк России (ОРФР)"
       />
