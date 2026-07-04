@@ -391,6 +391,11 @@ export default function OpenInterestPage() {
     setChartAlertPrefill({ metricKey: isOi ? 'oi_level' : 'price', threshold: p.level, currentLabel });
   };
 
+  // Алерты-на-графике выключены в режиме «Покупки + Продажи» (3 линии на графике —
+  // цена + длинные + короткие; уровневый алерт двусмыслен). Кнопка-будильник для
+  // ручного создания остаётся.
+  const chartAlertsOn = ALERTS_ENABLED && !(displayMode !== 'price' && oiVariant === 'both');
+
   // Фильтрация нерабочих дней и пре-маркета.
   // Алгопак возвращает forward-fill данные за выходные, праздники и
   // пре-маркет (07:40-08:55) — значения идентичны предыдущему закрытию.
@@ -966,8 +971,11 @@ export default function OpenInterestPage() {
         thirdLabel={labels.third}
         // «+» на ОБЕИХ осях: цена слева, ОИ справа. SimpleChart рисует пилюлю только
         // для показанной серии (цена — если showPrimary, ОИ — если showSecondary).
-        onCreateAlert={ALERTS_ENABLED ? handleCreateAlertFromChart : undefined}
-        alertAxes={ALERTS_ENABLED ? ['primary', 'secondary'] : undefined}
+        // В режиме «Покупки + Продажи» (oiVariant='both') на графике 3 линии
+        // (цена + длинные + короткие) — уровневый алерт двусмыслен, убираем
+        // горизонтальный кросхэйр и «+» целиком.
+        onCreateAlert={chartAlertsOn ? handleCreateAlertFromChart : undefined}
+        alertAxes={chartAlertsOn ? ['primary', 'secondary'] : undefined}
         horizontalLines={alertLevels}
         showValueHeader={false}
         legendPosition="top"
