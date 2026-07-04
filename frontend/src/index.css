@@ -1325,6 +1325,14 @@
 }
 .tabbed-card { position: relative; }
 
+/* Строка «Скринера сигналов» (/oi, вкладка Beta) — hover как в таблицах */
+.oi-screener-row {
+  transition: background 150ms ease;
+}
+.oi-screener-row:hover {
+  background: color-mix(in srgb, var(--text-primary) 5%, transparent);
+}
+
 /* === OI variant palette ===
    Шесть вариантов в нижнем ряду OI-кнопок имели hardcoded неон (#FFB020,
    #2EE59D, ...). В editorial — приглушённая «статная» палитра без неона,

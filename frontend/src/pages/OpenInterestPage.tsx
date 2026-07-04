@@ -1,7 +1,9 @@
 import { useEffect, useState, useMemo, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
-import { ChevronDown, BarChart3 } from 'lucide-react';
+import { ChevronDown, BarChart3, ListFilter } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
+import ChartTabs from '../components/ChartTabs';
+import OiScreenerTable from '../components/oi/OiScreenerTable';
 import InstrumentIcon from '../components/InstrumentIcon';
 import { usePrefetchLogos } from '../hooks/usePrefetchLogos';
 import { METHODOLOGY } from '../data/methodology';
@@ -493,6 +495,24 @@ export default function OpenInterestPage() {
     setIsModalOpen(false);
   };
 
+  // ── Вкладки страницы: график ⇄ «Скринер сигналов» ──
+  // Состояние в URL (?tab=screener) — переживает перезагрузку и даёт диплинк.
+  const activeTab: 'chart' | 'screener' =
+    searchParams.get('tab') === 'screener' ? 'screener' : 'chart';
+  const setActiveTab = (tab: 'chart' | 'screener') => {
+    const next = new URLSearchParams(searchParams);
+    if (tab === 'screener') next.set('tab', 'screener');
+    else next.delete('tab');
+    setSearchParams(next);
+  };
+
+  // Клик по строке скринера → вкладка графика с этим активом. Диплинк-механизм
+  // (?instrument=) резолвит имя и подхватывает инструмент сам; tab при этом
+  // сбрасывается (setSearchParams перетирает параметры) — это и нужно.
+  const handleScreenerSelect = (sectype: string) => {
+    setSearchParams({ instrument: sectype });
+  };
+
   // Данные для графика (мемоизированы — иначе каждый рендер создаёт новый массив,
   // что приводит к ложным перезапускам анимации в SimpleChart)
   const chartData = useMemo(() =>
@@ -628,6 +648,25 @@ export default function OpenInterestPage() {
 
   const labels = getLabels();
 
+  // Аннотации экспираций для SimpleChart. Хук ОБЯЗАН жить на верхнем уровне
+  // компонента (раньше был инлайном в JSX — с появлением вкладки «Скринер»
+  // условный рендер графика менял число хуков между рендерами → крэш
+  // «Rendered fewer hooks than expected»).
+  const expirationAnnotations = useMemo(() => {
+    if (!showExpirations) return undefined;
+    const switches = filteredData?.contract_switches;
+    if (!switches || switches.length <= 1) return undefined;
+    return switches.slice(1).map((sw): ChartAnnotation => {
+      return {
+        time: sw.date,
+        label: sw.to,
+        description: `${sw.from} → ${sw.to}`,
+        color: '#3a3f4f',
+        textColor: '#9CA3B8',
+      };
+    });
+  }, [filteredData?.contract_switches, showExpirations]);
+
   return (
     <div className="max-w-[1408px] mx-auto px-4 md:px-6 py-6 md:py-8">
       <div ref={headerRef}>
@@ -640,11 +679,32 @@ export default function OpenInterestPage() {
         />
       </div>
 
+      {/* Карточка с вкладками: обёртка несёт единую editorial-тень на
+          [вкладки + панель] (как на «Деньгах в фондах»). */}
+      <div className="tabbed-card">
+
+      {/* Вкладки: график ⇄ Скринер сигналов. Активная сливается с панелью
+          ниже (has-tabs), без нижней линии. */}
+      <ChartTabs<'chart' | 'screener'>
+        value={activeTab}
+        onChange={setActiveTab}
+        items={[
+          { key: 'chart', label: 'Открытые позиции', Icon: BarChart3 },
+          { key: 'screener', label: 'Скринер сигналов', sublabel: 'Beta', Icon: ListFilter },
+        ]}
+      />
+
       {/* Editorial frame — обнимает controls + chart в один контейнер с
           1.5px outline + hard-shadow 5×5×0 (как в design handoff page.jsx).
           В non-editorial темах класс не имеет стилей — структура остаётся
           плоской, как раньше. */}
-      <div className="editorial-frame">
+      <div className="editorial-frame has-tabs">
+
+      {activeTab === 'screener' && (
+        <OiScreenerTable onSelect={handleScreenerSelect} />
+      )}
+
+      {activeTab === 'chart' && (<>
 
       {/* Контролы в одну строку (на узких экранах wraps), editorial pill-стиль.
           Asset + FIZ/YUR + Interval (плитки) + Period + DisplayMode + OI variant.
@@ -986,24 +1046,14 @@ export default function OpenInterestPage() {
         // padRight=100 не помещался — labels уходили за край. 120/120 даёт
         // ~116px labels area с обеих сторон, симметрия chart area сохранена.
         chartPadding={{ left: 120, right: 120 }}
-        annotations={useMemo(() => {
-          if (!showExpirations) return undefined;
-          const switches = filteredData?.contract_switches;
-          if (!switches || switches.length <= 1) return undefined;
-          return switches.slice(1).map((sw): ChartAnnotation => {
-            return {
-              time: sw.date,
-              label: sw.to,
-              description: `${sw.from} → ${sw.to}`,
-              color: '#3a3f4f',
-              textColor: '#9CA3B8',
-            };
-          });
-        }, [filteredData?.contract_switches, showExpirations])}
+        annotations={expirationAnnotations}
       />
       </div>{/* /chartAnchorRef */}
 
+      </>)}{/* /activeTab === 'chart' */}
+
       </div>{/* /editorial-frame */}
+      </div>{/* /tabbed-card */}
 
       {/* Модалка выбора инструмента */}
       {isModalOpen && (

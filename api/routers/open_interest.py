@@ -21,6 +21,20 @@ router = APIRouter(prefix="/api/openinterest", tags=["open_interest"])
 oi_router = APIRouter(prefix="/api/oi", tags=["open_interest"])
 
 
+@oi_router.get("/screener")
+def get_oi_screener(db: Session = Depends(get_db)):
+    """Скринер сигналов ОИ: чистая позиция физлиц + ATR14-кратность дневного
+    движения по всем фьючерсам разом (вкладка «Скринер сигналов» на /oi).
+
+    Данные дневные (T+1), меняются раз в сутки → single-flight кэш 30 мин.
+    Открытый доступ (как публичная лента аномалий): дневная агрегированная
+    статистика, не премиум-данные.
+    """
+    from api.cache import get_or_compute
+    from api.services.oi_screener import compute_screener
+    return get_or_compute("oi_screener:v1", lambda: compute_screener(db))
+
+
 @oi_router.get("/intraday-assets")
 def get_intraday_assets(db: Session = Depends(get_db)):
     """
