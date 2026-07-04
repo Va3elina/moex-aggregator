@@ -1,7 +1,7 @@
 import { useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import ResponsiveRoute from './components/ResponsiveRoute';
-import { useIsMobile } from './hooks/useIsMobile';
+import { useIsPhone } from './hooks/useIsPhone';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AnalyticsProvider, AnalyticsPageViewTracker } from './contexts/AnalyticsContext';
@@ -82,7 +82,9 @@ const SignalExportPage = lazy(() => import('./pages/SignalExportPage'));
     Loading state → Overview как fallback (быстрее, avoids flash). */
 function HomeRoute() {
   const { isAuthenticated, loading } = useAuth();
-  const isMobile = useIsMobile();
+  // useIsPhone (не useIsMobile): телефон в ландшафте остаётся «мобилой» —
+  // поворот не должен переключать юзера на десктопные страницы.
+  const isMobile = useIsPhone();
   if (loading) return null;
   // На мобиле главной/лендинга нет — все (гости и авторизованные) сразу
   // попадают на карту рынка. Heatmap доступен с free-уровня, так что

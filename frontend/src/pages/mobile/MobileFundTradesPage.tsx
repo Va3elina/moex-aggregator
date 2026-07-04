@@ -151,7 +151,9 @@ function LockedView() {
   const { isAuthenticated } = useAuth();
   const { showUpgrade } = useUpgradePrompt();
   return (
-    <MobileLayout>
+    // enableFullscreen=false: на lock-скрине нет графика — поворот телефона
+    // не должен уводить в пустой fullscreen (авто-вход гейтится этим пропом).
+    <MobileLayout enableFullscreen={false}>
       <div style={{ padding: 16 }}>
         <div
           style={{
