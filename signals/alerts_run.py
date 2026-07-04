@@ -114,6 +114,13 @@ def _funds_url(a) -> str:
     return f"{SITE}/funds-money"
 
 
+def _buffett_url(a) -> str:
+    """Диплинк на /buffett. Режим cap-m2 несём в ?mode= (фронт читает на маунте)."""
+    mode = (a.metric or "cap_gdp")
+    q = "?mode=cap-m2" if mode == "cap_m2" else ""
+    return f"{SITE}/buffett{q}"
+
+
 def _parse_fund_ids(raw) -> list | None:
     """CSV из fund_id (колонка alerts.fund_ids) → list[int]; пусто/None → None.
     None = таргет задаётся через a.asset (категория или 'all'), а не явный набор.
@@ -206,6 +213,23 @@ def compute_value(a: Alert):
             "oi": (plong or 0) + abs(pshort or 0),
         }.get(leg, net)
         return float(val), {"leg": leg, "signal_date": d}
+    if a.indicator == "buffett_ratio":
+        # Индикатор Баффета: коэффициент (Cap/ВВП или Cap/M2), %. metric = режим.
+        from signals.db import get_buffett_current
+        mode = a.metric or "cap_gdp"
+        r = get_buffett_current(mode)
+        if not r:
+            return None, None
+        ratio, cap = r
+        return float(ratio), {"mode": mode, "cap": cap}
+    if a.indicator == "buffett_cap":
+        # Капитализация рынка (млрд ₽) — левая ось графика Баффета.
+        from signals.db import get_buffett_current
+        r = get_buffett_current(a.metric or "cap_gdp")
+        if not r:
+            return None, None
+        ratio, cap = r
+        return float(cap), {}
     if a.indicator == "funds_flow":
         # «Аномальный поток» — во сколько раз дневной net_flow набора фондов больше
         # обычного (ATR14). Таргет (контракт fund-алерта):
@@ -280,6 +304,7 @@ _FUND_CAT_NAME = {
 _TYPE_OI    = "ОТКРЫТЫЙ ИНТЕРЕС"
 _TYPE_PRICE = "ЦЕНА ФЬЮЧЕРСА"
 _TYPE_FUNDS = "ДЕНЬГИ В ФОНДАХ"
+_TYPE_BUFFETT = "ИНДИКАТОР БАФФЕТА"
 
 
 def _head(type_label: str, subtitle: str, note: str = "") -> str:
@@ -408,6 +433,17 @@ def format_msg(a: Alert, value: float, ctx: dict) -> str:
         dir_emo = _ce(*_EMO_UP) if up else _ce(*_EMO_DOWN)
         return (f"{_head(_TYPE_FUNDS, label)}\n"
                 f"{dir_emo} Резкий {flow_word} — в {value:g}× больше обычного (порог {thr:g}×).{_date_note(ctx)}\n{funds_link}")
+    if a.indicator in ("buffett_ratio", "buffett_cap"):
+        blink = f'<a href="{_buffett_url(a)}">открыть график →</a>'
+        word = _OP_PRICE.get(a.op, a.op)
+        if a.indicator == "buffett_ratio":
+            mode_name = "Cap/ВВП" if (a.metric or "cap_gdp") == "cap_gdp" else "Cap/M2"
+            return (f"{_head(_TYPE_BUFFETT, mode_name)}\n"
+                    f"{_ce(*_EMO_SIGNAL)} Коэффициент Баффета ({mode_name}) {word} отметку "
+                    f"{thr:g}% — сейчас {value:g}%.\n{blink}")
+        return (f"{_head(_TYPE_BUFFETT, 'Капитализация рынка')}\n"
+                f"{_ce(*_EMO_SIGNAL)} Капитализация рынка {word} отметку {thr:,.0f} — "
+                f"сейчас {value:,.0f} млрд ₽.\n{blink}")
     return (f"{_ce(*_EMO_SIGNAL)} <b>{_MARK}</b>\n<b>{subj}</b>\n"
             f"Алерт сработал.\n{link}")
 

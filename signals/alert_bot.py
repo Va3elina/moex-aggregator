@@ -271,6 +271,10 @@ def _alert_unit(indicator: str) -> str:
         return "×"        # множитель ATR «во сколько раз больше обычного»
     if indicator == "oi_level":
         return ""         # уровень чистой позиции — контракты, без символа
+    if indicator == "buffett_ratio":
+        return "%"
+    if indicator == "buffett_cap":
+        return ""         # млрд ₽ — подписываем словами в cond
     return "₽"
 
 
@@ -331,6 +335,15 @@ def _alert_card_text(a) -> str:
             "oi": "открытый интерес", "npart": "число участников",
         }.get(_metric, "чистая позиция")
         cond = f"{leg_word} ({clg}) {_OP_PRICE.get(op, op)} {_num(threshold)}"
+    elif indicator == "buffett_ratio":
+        name = asset_name or "Индикатор Баффета"
+        head = "Индикатор Баффета"
+        mode_name = "Cap/ВВП" if _metric == "cap_gdp" else "Cap/M2"
+        cond = f"коэффициент ({mode_name}) {_OP_PRICE.get(op, op)} {_num(threshold)}%"
+    elif indicator == "buffett_cap":
+        name = asset_name or "Капитализация рынка"
+        head = "Индикатор Баффета"
+        cond = f"капитализация рынка {_OP_PRICE.get(op, op)} {_num(threshold)} млрд ₽"
     elif indicator == "funds_flow":
         # Фонды: заголовок — метка выбора (без сырого asset 'all'/'custom').
         name = asset_name or _FUND_ASSET_NAME.get(asset, asset)
@@ -342,7 +355,7 @@ def _alert_card_text(a) -> str:
         cond = f"цена {_OP_PRICE.get(op, op)} {_num(threshold)} {unit}"
 
     # Заголовок: для OI/цены — «имя · sectype»; для фондов sectype нет, только имя.
-    title = name if indicator == "funds_flow" else f"{name} · {asset}"
+    title = name if indicator in ("funds_flow", "buffett_ratio", "buffett_cap") else f"{name} · {asset}"
     mode_word = "однократно" if mode == "once" else "повторно"
     lines = [
         f"🔔 <b>{title}</b>",
