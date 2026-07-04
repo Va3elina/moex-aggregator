@@ -21,7 +21,6 @@ import { useUpgradePrompt } from '../tier/UpgradeModal';
 import type { Instrument } from '../../types';
 import { usePersistedState } from '../../hooks/usePersistedState';
 import { useInstrumentFilter } from '../../hooks/useInstrumentFilter';
-import { displayTicker } from '../../utils/displayTicker';
 
 interface MobileAssetSearchProps {
   open: boolean;
@@ -229,9 +228,8 @@ export default function MobileAssetSearch({
                 marginTop: 2,
               }}
             >
-              {/* Фьючерс → актуальный фронт-контракт ('BRN6'); спот →
-                  читабельный тикер (USD000UTSTOM → USD/RUB), а не сырой код. */}
-              {inst.front_secid || displayTicker(inst.sectype)}
+              {/* Фьючерс → актуальный фронт-контракт ('BRN6'); спот → sectype. */}
+              {inst.front_secid || inst.sectype}
             </div>
           </div>
         </div>

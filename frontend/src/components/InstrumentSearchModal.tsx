@@ -8,7 +8,6 @@ import { useTierAccess } from '../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from './tier/UpgradeModal';
 import { usePersistedState } from '../hooks/usePersistedState';
 import { useInstrumentFilter } from '../hooks/useInstrumentFilter';
-import { displayTicker } from '../utils/displayTicker';
 
 interface Instrument {
   sec_id: string;
@@ -383,9 +382,8 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
               конец дня; пояснение в тултипе на ховере. */}
           <span className="font-bold truncate" style={{ fontSize: 'var(--fs-sm)' }}>{inst.name}</span>
           {/* Тикер: для фьючерсов — актуальный фронт-контракт ('BRN6'), а не
-              обрезанный sectype 'BR' (такого тикера не существует). Спот →
-              читабельный тикер (USD000UTSTOM → USD/RUB), не сырой код. */}
-          <span className="flex-shrink-0" style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-xs)' }}>{inst.front_secid || displayTicker(inst.sectype)}</span>
+              обрезанный sectype 'BR' (такого тикера не существует). Спот → sectype. */}
+          <span className="flex-shrink-0" style={{ color: 'var(--text-secondary)', fontSize: 'var(--fs-xs)' }}>{inst.front_secid || inst.sectype}</span>
           {showIntradayBadge && intradaySet.size > 0 && !intradaySet.has(inst.sectype) && (
             <span
               className="flex-shrink-0 inline-flex items-center justify-center"
