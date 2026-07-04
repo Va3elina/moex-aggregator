@@ -19,12 +19,14 @@ export default function ThemeToggle() {
       onClick={toggle}
       aria-label={isDark ? 'Светлая тема' : 'Тёмная тема'}
       title={isDark ? 'Светлая тема' : 'Тёмная тема'}
-      className="editorial-press relative grid place-items-center w-5 h-5 xl:w-8 xl:h-8 overflow-hidden"
+      className="editorial-press relative grid place-items-center overflow-hidden"
       style={{
         color: 'var(--text-primary)',
         border: '1.5px solid var(--text-primary)',
         borderRadius: 999,
         backgroundColor: 'transparent',
+        width: 'clamp(22px, 1.6vw + 0.3rem, 32px)',
+        height: 'clamp(22px, 1.6vw + 0.3rem, 32px)',
       }}
     >
       {/* Sun — видна в light. Лучи разлетаются + центр пульсирует. */}

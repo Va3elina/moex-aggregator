@@ -31,9 +31,10 @@ export function AnomalyBell() {
   return (
     <div ref={ref} style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
       <button onClick={toggle} aria-label="Аномалии рынка"
-        className="editorial-press grid place-items-center w-5 h-5 xl:w-8 xl:h-8 rounded-full"
+        className="editorial-press grid place-items-center rounded-full"
         style={{ position: 'relative', color: 'var(--accent)', border: '1.5px solid var(--text-primary)',
-          backgroundColor: 'transparent', cursor: 'pointer' }}>
+          backgroundColor: 'transparent', cursor: 'pointer',
+          width: 'clamp(22px, 1.6vw + 0.3rem, 32px)', height: 'clamp(22px, 1.6vw + 0.3rem, 32px)' }}>
         <Bell strokeWidth={2}
           style={{ width: 'clamp(13px, 1vw + 0.3rem, 17px)', height: 'clamp(13px, 1vw + 0.3rem, 17px)' }} />
         {unseenCount > 0 && (

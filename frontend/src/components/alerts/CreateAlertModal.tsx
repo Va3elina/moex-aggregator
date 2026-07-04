@@ -6,7 +6,7 @@
  *   • для price — один текущий актив + условие + порог в ₽ → 1 алерт.
  * Inline-styles + CSS-vars (как UpgradeModal — переживает portal/тему).
  */
-import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
 import { AlarmClock, X, Check, ExternalLink, Info, Search } from 'lucide-react';
 import {
@@ -219,9 +219,12 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
     const price = context?.price;
     const hasPrice = price?.value != null;
 
-    // смена метрики → сброс условия + дефолтного порога
+    // смена метрики → сброс условия + дефолтного порога. НО на маунте НЕ трогаем:
+    // иначе стёрли бы префилл-уровень из «+» на графике (баг «значение не доехало»).
+    const metricInitDone = useRef(false);
     useEffect(() => {
         if (!metric) return;
+        if (!metricInitDone.current) { metricInitDone.current = true; return; }
         setOp(metric.ops[0]?.value ?? 'cross_up');
         setThreshold(metric.defaultThreshold != null ? String(metric.defaultThreshold) : '');
         // eslint-disable-next-line react-hooks/exhaustive-deps
