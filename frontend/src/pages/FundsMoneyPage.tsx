@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { TrendingUp, DollarSign, Banknote, Gem, Wallet, JapaneseYen, Bell, Lock } from 'lucide-react';
+import { TrendingUp, DollarSign, Banknote, Gem, Wallet, JapaneseYen, AlarmClock, Lock } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import SegmentedControl from '../components/SegmentedControl';
@@ -839,7 +839,7 @@ export default function FundsMoneyPage() {
                                 ? 'Сигналы в мессенджере — на тарифе Basic и Pro. Нажмите, чтобы улучшить.'
                                 : 'Создать сигнал по аномальному потоку фондов'}
                         >
-                            <Bell size={18} />
+                            <AlarmClock size={18} />
                         </button>
                         {alertsLocked && (
                             <span

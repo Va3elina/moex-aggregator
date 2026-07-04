@@ -18,7 +18,7 @@
  */
 import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { BarChart3, TrendingUp, TrendingDown, Activity, Users, Clock, MousePointerClick, Search, ChevronRight, Bell, BellOff, Pause, Play, Zap } from 'lucide-react';
+import { BarChart3, TrendingUp, TrendingDown, Activity, Users, Clock, MousePointerClick, Search, ChevronRight, AlarmClock, AlarmClockOff, Pause, Play, Zap } from 'lucide-react';
 import Card from '../components/Card';
 import Skeleton from '../components/Skeleton';
 import Dropdown from '../components/Dropdown';
@@ -804,8 +804,8 @@ function AlertsBlock({ days }: { days: number }) {
     <div className="space-y-3 md:space-y-4">
       {/* Lifecycle-события за период */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-        <SummaryCard icon={<Bell size={16} />} label="Поставили" value={stats.created} />
-        <SummaryCard icon={<BellOff size={16} />} label="Убрали" value={stats.deleted} />
+        <SummaryCard icon={<AlarmClock size={16} />} label="Поставили" value={stats.created} />
+        <SummaryCard icon={<AlarmClockOff size={16} />} label="Убрали" value={stats.deleted} />
         <SummaryCard icon={<Pause size={16} />} label="На паузу" value={stats.paused} />
         <SummaryCard icon={<Play size={16} />} label="Возобновили" value={stats.resumed} />
       </div>
