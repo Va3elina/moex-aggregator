@@ -17,6 +17,7 @@
  *   - sort             — компаратор финального списка (desktop=по колонке)
  */
 import { useMemo } from 'react';
+import { displayTicker } from '../utils/displayTicker';
 
 /** Минимальная форма элемента, по которой работают фильтр/группировка. */
 export interface FilterableInstrument {
@@ -117,6 +118,9 @@ export function useInstrumentFilter<T extends FilterableInstrument>(
       const matchesSearch =
         !searchQuery ||
         inst.sectype.toLowerCase().includes(q) ||
+        // Читабельный алиас (USD000UTSTOM → USD/RUB): юзер ищет то, что
+        // видит в списке, а не сырой MOEX-код.
+        displayTicker(inst.sectype).toLowerCase().includes(q) ||
         inst.name.toLowerCase().includes(q);
       return matchesSearch && matchesCategory(inst.group, inst.type, categoryFilter, matchType);
     });

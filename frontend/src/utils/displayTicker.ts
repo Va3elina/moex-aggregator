@@ -8,6 +8,10 @@
 const DISPLAY_TICKER_MAP: Record<string, string> = {
     USD000UTSTOM: 'USD/RUB',
     EUR_RUB__TOM: 'EUR/RUB',
+    CNYRUB_TOM: 'CNY/RUB',
+    GLDRUB_TOM: 'GLD/RUB',
+    NATGAS_HH: 'NATGAS',
+    TTF_GAS: 'TTF',
 };
 
 export function displayTicker(secId: string | null | undefined): string {

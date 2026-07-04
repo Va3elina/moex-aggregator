@@ -21,6 +21,7 @@ import { useUpgradePrompt } from '../tier/UpgradeModal';
 import type { Instrument } from '../../types';
 import { usePersistedState } from '../../hooks/usePersistedState';
 import { useInstrumentFilter } from '../../hooks/useInstrumentFilter';
+import { displayTicker } from '../../utils/displayTicker';
 
 interface MobileAssetSearchProps {
   open: boolean;
@@ -71,7 +72,10 @@ export default function MobileAssetSearch({
   const [categoryFilter, setCategoryFilter] = usePersistedState(`frame:msearch:cat:${filterType ?? 'all'}`, 'all');
   const [favorites, setFavorites] = useState<string[]>(() => {
     const saved = localStorage.getItem(FAVORITES_KEY);
-    return saved ? JSON.parse(saved) : ['SR', 'GZ', 'MX'];
+    // Дефолт: фьючерсные тикеры (для ОИ) + их спот-двойники (для Сезонности
+    // и прочих no-futures списков) — секция «Избранные» есть из коробки в
+    // обоих контекстах; в чужом контексте лишние ключи просто не матчатся.
+    return saved ? JSON.parse(saved) : ['SR', 'GZ', 'MX', 'SBER', 'GAZP', 'IMOEX'];
   });
 
   // Tier-gating: проверяем доступ для каждого актива если задан indicator.
@@ -225,8 +229,9 @@ export default function MobileAssetSearch({
                 marginTop: 2,
               }}
             >
-              {/* Фьючерс → актуальный фронт-контракт ('BRN6'); спот → sectype. */}
-              {inst.front_secid || inst.sectype}
+              {/* Фьючерс → актуальный фронт-контракт ('BRN6'); спот →
+                  читабельный тикер (USD000UTSTOM → USD/RUB), а не сырой код. */}
+              {inst.front_secid || displayTicker(inst.sectype)}
             </div>
           </div>
         </div>
