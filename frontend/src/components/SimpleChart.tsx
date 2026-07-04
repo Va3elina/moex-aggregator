@@ -1936,8 +1936,12 @@ export default function SimpleChart({
                 <text x={valLeft + pillW / 2} y={y} textAnchor="middle" dominantBaseline="central"
                       fill="#FFFFFF" fontSize={fontY} fontWeight={fontWeight}>{label}</text>
                 <circle cx={cx} cy={y} r={r} fill={fill} stroke="#FFFFFF" strokeWidth={1} strokeOpacity={0.6} />
-                <text x={cx} y={y} textAnchor="middle" dominantBaseline="central"
-                      fill="#FFFFFF" fontSize={Math.round(fontY * 1.05)} fontWeight={700}>+</text>
+                {/* «+» рисуем ДВУМЯ линиями (не глифом) — пересекаются ровно в центре
+                    круга, без сдвига от baseline/оптического центра шрифта. */}
+                <line x1={cx - r * 0.5} y1={y} x2={cx + r * 0.5} y2={y}
+                      stroke="#FFFFFF" strokeWidth={Math.max(1.5, r * 0.24)} strokeLinecap="round" />
+                <line x1={cx} y1={y - r * 0.5} x2={cx} y2={y + r * 0.5}
+                      stroke="#FFFFFF" strokeWidth={Math.max(1.5, r * 0.24)} strokeLinecap="round" />
               </g>
             );
           };
