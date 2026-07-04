@@ -18,6 +18,7 @@ import type { SyncedDataPoint, ChartPadding } from '../components/strength/chart
 import IndexChart from '../components/strength/IndexChart';
 import BreadthChart from '../components/strength/BreadthChart';
 import ChartLegend from '../components/chart/ChartLegend';
+import { TOOLTIP } from '../config/chartTheme';
 import ChartCaptureButton from '../components/export/ChartCaptureButton';
 import CsvExportButton from '../components/export/CsvExportButton';
 import LayersButton from '../components/LayersButton';
@@ -516,31 +517,24 @@ export default function StrengthPage() {
                                         top: clampedCardTop,
                                     }}
                                 >
-                                    <div
-                                        className="rounded-lg border border-theme shadow-md"
-                                        style={{
-                                            background: 'var(--bg-primary)',
-                                            padding: 'var(--sp-2) var(--sp-3)',
-                                            fontSize: 'var(--fs-xs)',
-                                        }}
-                                    >
+                                    <div className={TOOLTIP.containerClass} style={TOOLTIP.containerStyle}>
                                         {showPrice && (
                                             <div className="flex items-center justify-between gap-3 py-0.5">
                                                 <div className="flex items-center gap-1.5">
-                                                    <span className="legend-dot" style={{ backgroundColor: 'var(--accent)' }} />
-                                                    <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)' }}>{priceChartShort}</span>
+                                                    <span className={TOOLTIP.dotClass} style={{ ...TOOLTIP.dotStyle, backgroundColor: 'var(--accent)' }} />
+                                                    <span className={TOOLTIP.labelClass} style={TOOLTIP.labelStyle}>{priceChartShort}</span>
                                                 </div>
-                                                <span className="text-xs font-semibold text-theme-primary whitespace-nowrap">
+                                                <span className={`${TOOLTIP.valueClass} text-theme-primary`} style={TOOLTIP.valueStyle}>
                                                     {hoverData.imoex.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
                                                 </span>
                                             </div>
                                         )}
                                         <div className="flex items-center justify-between gap-3 py-0.5">
                                             <div className="flex items-center gap-1.5">
-                                                <span className="legend-dot" style={{ backgroundColor: breadthColor }} />
-                                                <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)' }}>% выше EMA</span>
+                                                <span className={TOOLTIP.dotClass} style={{ ...TOOLTIP.dotStyle, backgroundColor: breadthColor }} />
+                                                <span className={TOOLTIP.labelClass} style={TOOLTIP.labelStyle}>% выше EMA</span>
                                             </div>
-                                            <span className="text-xs font-semibold text-theme-primary whitespace-nowrap">
+                                            <span className={`${TOOLTIP.valueClass} text-theme-primary`} style={TOOLTIP.valueStyle}>
                                                 {hoverData.breadth.toFixed(1)}%
                                             </span>
                                         </div>
