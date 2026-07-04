@@ -307,12 +307,16 @@ export default function SimpleChart({
     // cursorY — АБСОЛЮТНАЯ svg-Y курсора (не снапнутая к линии). Для горизонтального
     // кросхэйра и «+»-пилюли уровня алерта (TradingView-стиль: уровень = где палец/мышь).
     cursorY: number;
+    // inGutter — курсор в зоне вертикальной оси (жёлобе), а не в plot-области. Там
+    // показываем ТОЛЬКО горизонтальную линию + «+» пилсы (без вертикальной линии и
+    // тултип-карточки), чтобы можно было спокойно дотянуться и нажать «+».
+    inGutter: boolean;
     value: number;
     secondaryValue?: number;
     thirdValue?: number;
     time: string;
     visible: boolean;
-  }>({ x: 0, primaryY: 0, secondaryY: null, thirdY: null, cursorY: 0, value: 0, time: '', visible: false });
+  }>({ x: 0, primaryY: 0, secondaryY: null, thirdY: null, cursorY: 0, inGutter: false, value: 0, time: '', visible: false });
 
   // Анимированные пути (area* — заливки под линиями для типа «Область»;
   // secondary/third area используются только при scope='all')
@@ -925,6 +929,8 @@ export default function SimpleChart({
       secondaryY: secondaryPoint ? secondaryPoint.y + padding.top : null,
       thirdY: thirdPoint ? thirdPoint.y + padding.top : null,
       cursorY,
+      // В жёлобе (курсор вне [0,chartWidth]) — только горизонталь + пилсы.
+      inGutter: mouseX < 0 || mouseX > chartWidth,
       value: primaryPoint.value,
       secondaryValue: secondaryPoint?.value,
       thirdValue: thirdPoint?.value,
@@ -1548,9 +1554,8 @@ export default function SimpleChart({
                 />
               )}
 
-              {/* Затемнение области после курсора — theme-aware,
-                  лёгкое (~10%) чтобы не делать тёмный прямоугольник на бумаге */}
-              {tooltip.visible && (
+              {/* Затемнение области после курсора — только в plot (не в жёлобе). */}
+              {tooltip.visible && !tooltip.inGutter && (
                 <rect
                   x={tooltip.x - padding.left}
                   y={0}
@@ -1563,22 +1568,11 @@ export default function SimpleChart({
               )}
             </g>
 
-            {/* Вертикальная линия и точки курсора — theme-aware
-                (text-primary хорошо виден на любом фоне, не сливается с линиями) */}
+            {/* Кросхэйр. Горизонтальная линия (режим алертов) видна ВЕЗДЕ, пока
+                курсор в SVG — и в plot, и в жёлобе оси (чтобы дотянуться до «+»).
+                Вертикальная линия + точки + тултип — ТОЛЬКО в plot (не в жёлобе). */}
             {tooltip.visible && (
               <g className="chart-hover-ui">
-                <line
-                  x1={tooltip.x - padding.left}
-                  y1={0}
-                  x2={tooltip.x - padding.left}
-                  y2={chartHeight}
-                  stroke="var(--text-primary)"
-                  strokeWidth={CROSSHAIR.strokeWidth}
-                  strokeDasharray="4,4"
-                  opacity="0.55"
-                />
-                {/* Горизонтальный кросхэйр — в режиме создания алертов (есть
-                    alertAxes) на десктопе. Уровень = где курсор. */}
                 {onCreateAlert && alertAxes && alertAxes.length > 0 && !isMobile && (
                   <line
                     x1={0}
@@ -1591,46 +1585,59 @@ export default function SimpleChart({
                     opacity="0.4"
                   />
                 )}
-                {/* Точка на основной линии — скрываем когда primary не показан */}
-                {showPrimary && (
-                  <circle
-                    cx={tooltip.x - padding.left}
-                    cy={tooltip.primaryY - padding.top}
-                    r={tokens.dotPrimaryR}
-                    fill={primaryColor}
-                    stroke="#0B0D12"
-                    strokeWidth="2"
-                    className="drop-shadow-lg"
-                  />
-                )}
-                {/* Точка на secondary линии */}
-                {showSecondary && tooltip.secondaryY !== null && (
-                  <circle
-                    cx={tooltip.x - padding.left}
-                    cy={tooltip.secondaryY - padding.top}
-                    r={tokens.dotSecondaryR}
-                    fill={secondaryColor}
-                    stroke="#0B0D12"
-                    strokeWidth="2"
-                  />
-                )}
-                {/* Точка на third линии */}
-                {showThird && tooltip.thirdY !== null && (
-                  <circle
-                    cx={tooltip.x - padding.left}
-                    cy={tooltip.thirdY - padding.top}
-                    r={tokens.dotSecondaryR}
-                    fill={thirdColor}
-                    stroke="#0B0D12"
-                    strokeWidth="2"
-                  />
+                {!tooltip.inGutter && (
+                  <>
+                    <line
+                      x1={tooltip.x - padding.left}
+                      y1={0}
+                      x2={tooltip.x - padding.left}
+                      y2={chartHeight}
+                      stroke="var(--text-primary)"
+                      strokeWidth={CROSSHAIR.strokeWidth}
+                      strokeDasharray="4,4"
+                      opacity="0.55"
+                    />
+                    {/* Точка на основной линии — скрываем когда primary не показан */}
+                    {showPrimary && (
+                      <circle
+                        cx={tooltip.x - padding.left}
+                        cy={tooltip.primaryY - padding.top}
+                        r={tokens.dotPrimaryR}
+                        fill={primaryColor}
+                        stroke="#0B0D12"
+                        strokeWidth="2"
+                        className="drop-shadow-lg"
+                      />
+                    )}
+                    {showSecondary && tooltip.secondaryY !== null && (
+                      <circle
+                        cx={tooltip.x - padding.left}
+                        cy={tooltip.secondaryY - padding.top}
+                        r={tokens.dotSecondaryR}
+                        fill={secondaryColor}
+                        stroke="#0B0D12"
+                        strokeWidth="2"
+                      />
+                    )}
+                    {showThird && tooltip.thirdY !== null && (
+                      <circle
+                        cx={tooltip.x - padding.left}
+                        cy={tooltip.thirdY - padding.top}
+                        r={tokens.dotSecondaryR}
+                        fill={thirdColor}
+                        stroke="#0B0D12"
+                        strokeWidth="2"
+                      />
+                    )}
+                  </>
                 )}
               </g>
             )}
           </g>
 
-          {/* Тултип: дата вверху вертикальной линии + карточка значений */}
-          {tooltip.visible && (() => {
+          {/* Тултип: дата вверху вертикальной линии + карточка значений. В жёлобе
+              оси НЕ показываем (там только горизонталь + «+» пилсы). */}
+          {tooltip.visible && !tooltip.inGutter && (() => {
             const cardWidth = tokens.tooltipCardWidth;
             const isRightHalf = tooltip.x > padding.left + chartWidth / 2;
             let cardX = isRightHalf
@@ -1907,11 +1914,17 @@ export default function SimpleChart({
             const fill = `color-mix(in srgb, ${axisColor} 45%, var(--bg-primary))`;
             const valW = measureText(label, fontY, fontWeight);
             const pillW = Math.ceil(valW) + padX * 2;   // как у value-пилюли
-            // Значение-часть — В ТОМ ЖЕ жёлобе, что value-пилюля (числа выровнены).
-            const valLeft = Math.min(Math.max(
-              isSec ? (plotRight + AIR) : (plotLeft - AIR - pillW), 2), width - pillW - 2);
-            // Кружок «+» с ВНЕШНЕЙ стороны (дальше от графика).
-            const cx = isSec ? (valLeft + pillW + gap + r) : (valLeft - gap - r);
+            // Значение-часть — В ТОМ ЖЕ жёлобе, что value-пилюля (числа выровнены),
+            // кружок «+» с ВНЕШНЕЙ стороны. Затем клампим ВСЮ группу (пилс+кружок) в
+            // видимую область, чтобы «+» не уходил за край (сдвигаем целиком).
+            let valLeft = isSec ? (plotRight + AIR) : (plotLeft - AIR - pillW);
+            let cx = isSec ? (valLeft + pillW + gap + r) : (valLeft - gap - r);
+            const groupLeft = Math.min(valLeft, cx - r);
+            const groupRight = Math.max(valLeft + pillW, cx + r);
+            let shift = 0;
+            if (groupLeft < 2) shift = 2 - groupLeft;
+            else if (groupRight > width - 2) shift = (width - 2) - groupRight;
+            valLeft += shift; cx += shift;
             return (
               <g key={`plus-${axis}`} style={{ cursor: 'pointer' }}
                  onClick={(e) => { e.stopPropagation(); fireAlertForAxis(axis); }}>
@@ -2054,7 +2067,7 @@ export default function SimpleChart({
       })()}
 
       {/* HTML тултип даты — единая логика */}
-      {tooltip.visible && (() => {
+      {tooltip.visible && !tooltip.inGutter && (() => {
         const wrap = chartWrapRef.current;
         if (!wrap) return null;
         const d = new Date(tooltip.time);
