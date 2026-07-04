@@ -409,7 +409,7 @@ export default function MobileFundsMoneyPage() {
 
   const categoryLabel = CATEGORIES.find((c) => c.key === category)?.label ?? '';
   const periodLabel = PERIODS.find((p) => p.key === period)?.label ?? '';
-  const optionsSummary = `${categoryLabel} · ${viewMode === 'aum' ? 'СЧА' : 'Притоки'}`;
+  const optionsSummary = `${categoryLabel} · ${viewMode === 'aum' ? 'СЧА' : 'Притоки-Оттоки'}`;
 
   return (
     <MobileLayout
@@ -425,7 +425,7 @@ export default function MobileFundsMoneyPage() {
       <MobilePageHeader
         Icon={Wallet}
         title="Деньги в фондах"
-        subtitle={`${categoryLabel} · ${viewMode === 'aum' ? 'СЧА' : 'Притоки'} · ${periodLabel}`}
+        subtitle={`${categoryLabel} · ${viewMode === 'aum' ? 'СЧА' : 'Притоки-Оттоки'} · ${periodLabel}`}
         helpLink="/methodology/funds-money"
         sourceNote="Индексы (IMOEX, RGBI, IMOEX2, GLDRUB): ПАО Московская Биржа"
       />
@@ -558,7 +558,7 @@ export default function MobileFundsMoneyPage() {
                   onClick={() => setViewMode(m)}
                   style={{ flex: 1, justifyContent: 'center' }}
                 >
-                  {m === 'aum' ? 'СЧА' : 'Притоки'}
+                  {m === 'aum' ? 'СЧА' : 'Притоки-Оттоки'}
                 </button>
               ))}
             </div>
