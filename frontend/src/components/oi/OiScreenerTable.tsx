@@ -70,8 +70,9 @@ const MONO: CSSProperties = {
 };
 
 interface Props {
-  /** Клик по строке — открыть график этого актива (вкладка «Открытые позиции»). */
-  onSelect: (sectype: string) => void;
+  /** Клик по строке — открыть график этого актива с настройками скринера
+   *  (та же группа физ/юр, дневной ТФ, период 1 год). */
+  onSelect: (sectype: string, clgroup: Clgroup) => void;
 }
 
 export default function OiScreenerTable({ onSelect }: Props) {
@@ -81,6 +82,7 @@ export default function OiScreenerTable({ onSelect }: Props) {
   const [clgroup, setClgroup] = usePersistedState<Clgroup>('frame:oi-screener:clgroup', 'FIZ');
   const [threshold, setThreshold] = useState<ThresholdKey>('2');
   const [group, setGroup] = useState<string>('all');
+  const [onlyFav, setOnlyFav] = useState(false);
   const [sortKey, setSortKey] = useState<'ratio' | 'pct'>('ratio');
   const [sortDir, setSortDir] = useState<1 | -1>(-1);
   const [favorites, setFavorites] = useState<string[]>(() => {
@@ -115,6 +117,7 @@ export default function OiScreenerTable({ onSelect }: Props) {
     const favSet = new Set(favorites);
     let out = rows.filter((r) =>
       (group === 'all' || r.group === group) &&
+      (!onlyFav || favSet.has(r.sectype)) &&
       (thr === 0 || (r.status === 'sharp' && (r.ratio ?? 0) >= thr)),
     );
     // sortDir = −1 → по убыванию (дефолт: сильные сверху), 1 → по возрастанию.
@@ -140,7 +143,7 @@ export default function OiScreenerTable({ onSelect }: Props) {
       });
     }
     return out;
-  }, [rows, favorites, group, threshold, sortKey, sortDir]);
+  }, [rows, favorites, group, threshold, sortKey, sortDir, onlyFav]);
 
   const clickSort = (key: 'ratio' | 'pct') => {
     if (sortKey === key) setSortDir((d) => (d === -1 ? 1 : -1));
@@ -188,7 +191,7 @@ export default function OiScreenerTable({ onSelect }: Props) {
       const legWord = netLong ? 'длинную позицию' : 'короткую позицию';
       const verb = grewExposure ? 'нарастили' : 'сократили';
       const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
-      const deltaStr = r.delta_net != null ? `${fmtSigned(r.delta_net)} за день` : null;
+      const deltaStr = r.delta_net != null ? `изменение за день: ${fmtSigned(r.delta_net)} контрактов` : null;
       const full = `${cap(groupWord)} резко ${verb} ${legWord} по «${r.name}»: дневное изменение чистой позиции в ${fmtRatio(r.ratio)} резче обычного (ATR-14; «резко» — от 2×). Обратная сторона (${mirrorWord}) держит зеркальную позицию.`;
       return (
         <div style={{ minWidth: 0 }} title={full}>
@@ -207,8 +210,14 @@ export default function OiScreenerTable({ onSelect }: Props) {
         : r.status === 'illiquid'
           ? 'низкая ликвидность'
           : 'недостаточно данных';
+    const noteTitle =
+      r.status === 'illiquid'
+        ? `На стороне ${groupWord} меньше 50 участников — движение по такому контракту считаем шумом, а не сигналом.`
+        : r.status === 'nodata'
+          ? 'Мало истории для расчёта ATR-14.'
+          : 'Дневной сдвиг чистой позиции в пределах обычного (ниже порога «резко» 2×).';
     return (
-      <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--text-secondary)' }}>{note}</span>
+      <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--text-secondary)' }} title={noteTitle}>{note}</span>
     );
   };
 
@@ -251,6 +260,26 @@ export default function OiScreenerTable({ onSelect }: Props) {
           value={group}
           onChange={setGroup}
         />
+        {/* Фильтр по избранным активам */}
+        <button
+          type="button"
+          onClick={() => setOnlyFav((v) => !v)}
+          aria-pressed={onlyFav}
+          title="Показать только избранные активы"
+          className="editorial-press rounded-full font-semibold inline-flex items-center"
+          style={{
+            gap: 6,
+            fontSize: 'var(--fs-sm)',
+            padding: 'var(--sp-2) var(--sp-3)',
+            border: '2px solid var(--text-primary)',
+            background: onlyFav ? 'var(--accent)' : 'var(--bg-secondary)',
+            color: onlyFav ? 'var(--text-inverse)' : 'var(--text-primary)',
+            cursor: 'pointer',
+          }}
+        >
+          <Star size={15} fill={onlyFav ? 'var(--text-inverse)' : 'none'} strokeWidth={2.2} />
+          Избранные
+        </button>
       </div>
 
       {/* Таблица */}
@@ -309,8 +338,8 @@ export default function OiScreenerTable({ onSelect }: Props) {
                 key={r.sectype}
                 role="button"
                 tabIndex={0}
-                onClick={() => onSelect(r.sectype)}
-                onKeyDown={(e) => { if (e.key === 'Enter') onSelect(r.sectype); }}
+                onClick={() => onSelect(r.sectype, clgroup)}
+                onKeyDown={(e) => { if (e.key === 'Enter') onSelect(r.sectype, clgroup); }}
                 className="oi-screener-row"
                 style={{
                   display: 'grid', gridTemplateColumns: gridCols, gap: 16,

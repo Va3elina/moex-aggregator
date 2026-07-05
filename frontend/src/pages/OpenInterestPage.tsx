@@ -506,11 +506,18 @@ export default function OpenInterestPage() {
     setSearchParams(next);
   };
 
-  // Клик по строке скринера → вкладка графика с этим активом. Диплинк-механизм
-  // (?instrument=) резолвит имя и подхватывает инструмент сам; tab при этом
-  // сбрасывается (setSearchParams перетирает параметры) — это и нужно.
-  const handleScreenerSelect = (sectype: string) => {
-    setSearchParams({ instrument: sectype });
+  // Клик по строке скринера → вкладка графика с ЭТИМ активом и НАСТРОЙКАМИ
+  // скринера: та же группа физ/юр, дневной ТФ (24), период 1 год — чтобы
+  // график открывался ровно в том срезе, что показал сигнал. Диплинк
+  // (parseOiDeepLink) применяет clgroup/interval/period; tab сбрасывается на
+  // график, т.к. setSearchParams перетирает параметры (в т.ч. ?tab=screener).
+  const handleScreenerSelect = (sectype: string, screenerClgroup: 'FIZ' | 'YUR') => {
+    setSearchParams({
+      instrument: sectype,
+      clgroup: screenerClgroup,
+      interval: '24',
+      period: '1y',
+    });
   };
 
   // Данные для графика (мемоизированы — иначе каждый рендер создаёт новый массив,
