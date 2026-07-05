@@ -61,8 +61,9 @@ const METRIC_LABEL: Record<string, string> = {
 // threshold = период (дни 30/90/0=всё).
 function condLabel(a: AlertInfo): string {
     if (a.indicator === 'oi_extreme') {
-        const clg = (a.clgroup || 'FIZ') === 'FIZ' ? 'физлица' : 'юрлица';
-        const kind = a.op === 'new_low' ? 'новый минимум' : 'новый максимум';
+        const clg = a.clgroup === 'YUR' ? 'юрлица' : a.clgroup === 'FIZ' ? 'физлица' : 'в целом';
+        const kind = a.op === 'new_low' ? 'новый минимум'
+            : a.op === 'new_extreme' ? 'новый максимум или минимум' : 'новый максимум';
         const per = { 180: 'за 6 месяцев', 365: 'за год' }[Number(a.threshold)] || 'за всё время';
         return `чистая позиция (${clg}) — ${kind} перекоса ${per}`;
     }

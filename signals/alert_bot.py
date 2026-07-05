@@ -289,6 +289,12 @@ def _alert_short_line(a) -> str:
     if indicator == "funds_flow":
         name = asset_name or _FUND_ASSET_NAME.get(asset, asset)
         return f"{dot} {name} · поток {opn}{_num(threshold)}×"
+    if indicator == "oi_extreme":
+        # Рекорд перекоса — op = направление, threshold = окно-дни (не число-порог).
+        g = {"FIZ": "физ", "YUR": "юр"}.get(clgroup or "ALL", "в целом")
+        kind = {"new_low": "мин", "new_extreme": "макс/мин"}.get(op, "макс")
+        per = {180: "6м", 365: "год"}.get(int(float(threshold or 0)), "всё")
+        return f"{dot} {asset} · рекорд {kind} · {g} · {per}"
     unit = _alert_unit(indicator)
     grp = ""
     if indicator == "oi_zscore":
@@ -351,8 +357,8 @@ def _alert_card_text(a) -> str:
     elif indicator == "oi_extreme":
         name = asset_name or asset
         head = "Открытые позиции"
-        clg = "физлица" if (clgroup or "FIZ") == "FIZ" else "юрлица"
-        kind = "минимум" if op == "new_low" else "максимум"
+        clg = {"FIZ": "физлица", "YUR": "юрлица"}.get(clgroup or "ALL", "в целом")
+        kind = {"new_low": "минимум", "new_extreme": "максимум или минимум"}.get(op, "максимум")
         per = {180: "за 6 месяцев", 365: "за год"}.get(
             int(float(threshold or 0)), "за всё время")
         cond = f"чистая позиция ({clg}) — новый {kind} перекоса {per}"
