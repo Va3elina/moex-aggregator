@@ -293,7 +293,8 @@ def _alert_short_line(a) -> str:
         # Рекорд перекоса — op = направление, threshold = окно-дни (не число-порог).
         g = {"FIZ": "физ", "YUR": "юр"}.get(clgroup or "ALL", "в целом")
         kind = {"new_low": "мин", "new_extreme": "макс/мин"}.get(op, "макс")
-        per = {180: "6м", 365: "год"}.get(int(float(threshold or 0)), "всё")
+        per = {365: "год", 730: "2г", 1095: "3г", 1460: "4г", 1825: "5л"}.get(
+            int(float(threshold or 0)), "всё")
         return f"{dot} {asset} · рекорд {kind} · {g} · {per}"
     unit = _alert_unit(indicator)
     grp = ""
@@ -359,7 +360,8 @@ def _alert_card_text(a) -> str:
         head = "Открытые позиции"
         clg = {"FIZ": "физлица", "YUR": "юрлица"}.get(clgroup or "ALL", "в целом")
         kind = {"new_low": "минимум", "new_extreme": "максимум или минимум"}.get(op, "максимум")
-        per = {180: "за 6 месяцев", 365: "за год"}.get(
+        per = {365: "за год", 730: "за 2 года", 1095: "за 3 года",
+               1460: "за 4 года", 1825: "за 5 лет"}.get(
             int(float(threshold or 0)), "за всё время")
         cond = f"чистая позиция ({clg}) — новый {kind} перекоса {per}"
     elif indicator == "funds_flow":

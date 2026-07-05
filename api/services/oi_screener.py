@@ -164,15 +164,27 @@ def _row_signal(pts: List[tuple]) -> Dict[str, Any]:
     return {"status": "normal", "ratio": ratio, "direction": direction}
 
 
+def _record_windows() -> Dict[str, str]:
+    """Окна рекордов → ISO-дата начала окна. Горизонты: 1..5 лет + всё время
+    (короткие мес/полугода намеренно убраны — охотимся за редкими рекордами).
+    Данные позиций у основных тикеров с 2019 → 5-летние окна реальны; у новых
+    перпетуалов истории меньше, но _record_for честно вернёт им «всё время»."""
+    return {
+        "d1y": (date.today() - timedelta(days=365)).isoformat(),
+        "d2y": (date.today() - timedelta(days=730)).isoformat(),
+        "d3y": (date.today() - timedelta(days=1095)).isoformat(),
+        "d4y": (date.today() - timedelta(days=1460)).isoformat(),
+        "d5y": (date.today() - timedelta(days=1825)).isoformat(),
+    }
+
+
 def _prior_extremes(db, clgroup: str) -> Dict[str, Dict[str, Any]]:
     """Per-sectype ПРЕДЫДУЩИЕ экстремумы перекоса net_pct по окнам (для бейджа
-    «новый рекорд»). Только редкие горизонты: 6 месяцев / год / всё время (месяц
-    и 3 мес — шум). Исключаем последний день каждого актива (tradedate < его
-    последней даты) — сравниваем сегодняшний перекос с рекордом ДО сегодня.
-    Один агрегатный проход; net_pct = last-bar-of-day (pos_long+pos_short)/
-    (pos_long−pos_short)×100."""
-    d180 = (date.today() - timedelta(days=180)).isoformat()
-    d365 = (date.today() - timedelta(days=365)).isoformat()
+    «новый рекорд»). Горизонты: 1 / 2 / 3 / 4 / 5 лет / всё время. Исключаем
+    последний день каждого актива (tradedate < его последней даты) — сравниваем
+    сегодняшний перекос с рекордом ДО сегодня. Один агрегатный проход; net_pct =
+    last-bar-of-day (pos_long+pos_short)/(pos_long−pos_short)×100."""
+    w = _record_windows()
     rows = db.execute(text(
         """
         WITH daily AS (
@@ -186,34 +198,47 @@ def _prior_extremes(db, clgroup: str) -> Dict[str, Dict[str, Any]]:
         ),
         last AS (SELECT sectype, MAX(tradedate) AS ld FROM daily GROUP BY sectype)
         SELECT d.sectype,
-          MAX(net_pct) FILTER (WHERE d.tradedate >= :d180 AND d.tradedate < l.ld) AS pmax_6m,
-          MIN(net_pct) FILTER (WHERE d.tradedate >= :d180 AND d.tradedate < l.ld) AS pmin_6m,
-          MAX(net_pct) FILTER (WHERE d.tradedate >= :d365 AND d.tradedate < l.ld) AS pmax_1y,
-          MIN(net_pct) FILTER (WHERE d.tradedate >= :d365 AND d.tradedate < l.ld) AS pmin_1y,
+          MAX(net_pct) FILTER (WHERE d.tradedate >= :d1y  AND d.tradedate < l.ld) AS pmax_1y,
+          MIN(net_pct) FILTER (WHERE d.tradedate >= :d1y  AND d.tradedate < l.ld) AS pmin_1y,
+          MAX(net_pct) FILTER (WHERE d.tradedate >= :d2y  AND d.tradedate < l.ld) AS pmax_2y,
+          MIN(net_pct) FILTER (WHERE d.tradedate >= :d2y  AND d.tradedate < l.ld) AS pmin_2y,
+          MAX(net_pct) FILTER (WHERE d.tradedate >= :d3y  AND d.tradedate < l.ld) AS pmax_3y,
+          MIN(net_pct) FILTER (WHERE d.tradedate >= :d3y  AND d.tradedate < l.ld) AS pmin_3y,
+          MAX(net_pct) FILTER (WHERE d.tradedate >= :d4y  AND d.tradedate < l.ld) AS pmax_4y,
+          MIN(net_pct) FILTER (WHERE d.tradedate >= :d4y  AND d.tradedate < l.ld) AS pmin_4y,
+          MAX(net_pct) FILTER (WHERE d.tradedate >= :d5y  AND d.tradedate < l.ld) AS pmax_5y,
+          MIN(net_pct) FILTER (WHERE d.tradedate >= :d5y  AND d.tradedate < l.ld) AS pmin_5y,
           MAX(net_pct) FILTER (WHERE d.tradedate < l.ld) AS pmax_all,
           MIN(net_pct) FILTER (WHERE d.tradedate < l.ld) AS pmin_all
         FROM daily d JOIN last l USING (sectype)
         WHERE d.net_pct IS NOT NULL
         GROUP BY d.sectype
         """
-    ), {"clg": clgroup, "d180": d180, "d365": d365}).fetchall()
+    ), {"clg": clgroup, **w}).fetchall()
     out: Dict[str, Dict[str, Any]] = {}
     for r in rows:
         out[r[0]] = {
-            "max_6m": r[1], "min_6m": r[2], "max_1y": r[3],
-            "min_1y": r[4], "max_all": r[5], "min_all": r[6],
+            "max_1y": r[1], "min_1y": r[2], "max_2y": r[3], "min_2y": r[4],
+            "max_3y": r[5], "min_3y": r[6], "max_4y": r[7], "min_4y": r[8],
+            "max_5y": r[9], "min_5y": r[10], "max_all": r[11], "min_all": r[12],
         }
     return out
 
 
+# Приоритет: сильнейший (самый длинный) горизонт первым. Рекорд «за 5 лет»
+# появится только если max_5y < max_all (есть данные СТАРШЕ 5 лет с бОльшим
+# экстремумом) — т.е. пробили 5-летний пик, но не исторический. Для активов с
+# короткой историей year-окна == all → всегда вернётся «всё время», не соврём.
+_RECORD_PERIODS = ("all", "5y", "4y", "3y", "2y", "1y")
+
+
 def _record_for(net_pct, ex: Dict[str, Any] | None) -> Dict[str, str] | None:
-    """Сильнейший пробитый рекорд перекоса сегодня (всё время > год > 6 мес),
+    """Сильнейший пробитый рекорд перекоса сегодня (всё время > 5 л > … > год),
     строго больше/меньше предыдущего экстремума. None если рекорда нет."""
     if net_pct is None or not ex:
         return None
-    for period, mx, mn in (("all", ex["max_all"], ex["min_all"]),
-                           ("1y", ex["max_1y"], ex["min_1y"]),
-                           ("6m", ex["max_6m"], ex["min_6m"])):
+    for period in _RECORD_PERIODS:
+        mx, mn = ex[f"max_{period}"], ex[f"min_{period}"]
         if mx is not None and net_pct > mx:
             return {"kind": "high", "period": period}
         if mn is not None and net_pct < mn:
@@ -293,13 +318,13 @@ def compute_screener(db, clgroup: str = "FIZ") -> Dict[str, Any]:
         # соперничать со всей дневной историей включая вчера.
         ex = extremes.get(sectype)
         if has_intraday and intra and intra[0] > dl[0] and ex is not None and daily_last_pct is not None:
+            # Вплетаем последний дневной close во ВСЕ окна экстремумов (бегущий
+            # интрадей-бар новее него → должен соперничать со всей дневной историей).
             ex = {
-                "max_6m": max(ex["max_6m"], daily_last_pct) if ex["max_6m"] is not None else daily_last_pct,
-                "min_6m": min(ex["min_6m"], daily_last_pct) if ex["min_6m"] is not None else daily_last_pct,
-                "max_1y": max(ex["max_1y"], daily_last_pct) if ex["max_1y"] is not None else daily_last_pct,
-                "min_1y": min(ex["min_1y"], daily_last_pct) if ex["min_1y"] is not None else daily_last_pct,
-                "max_all": max(ex["max_all"], daily_last_pct) if ex["max_all"] is not None else daily_last_pct,
-                "min_all": min(ex["min_all"], daily_last_pct) if ex["min_all"] is not None else daily_last_pct,
+                k: (daily_last_pct if v is None
+                    else max(v, daily_last_pct) if k.startswith("max_")
+                    else min(v, daily_last_pct))
+                for k, v in ex.items()
             }
         m = meta.get(sectype, {})
         rows.append({
