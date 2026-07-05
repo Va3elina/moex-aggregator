@@ -53,6 +53,31 @@ PERIODS = {
 }
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Реестр кросс-контрактных корпоративных событий (сплит / консолидация).
+#
+# Within-contract back-adjustment (шаг 7.5) сглаживает сплит только ВНУТРИ одного
+# контракта (скачок >2× между соседними свечами одного secid). Но если MOEX
+# пере-специфицирует фьючерс на СТЫКЕ контрактов + разрыв листинга (старый
+# контракт истёк в старом масштабе, новый залистился в новом) — детектор её НЕ
+# видит, и непрерывный график получает вертикальный обрыв.
+#
+# Это курируемый список таких событий. Auto-детект кросс-контрактных скачков
+# намеренно НЕ включаем: на неликвидных роллах он даёт ложные срабатывания (см.
+# комментарий к шагу 7.5). ratio = first_new_close / last_old_close на стыке —
+# домножает свечи СТАРЕЕ boundary_date, делая линию непрерывной. OI (в
+# контрактах) НЕ трогаем: рост числа контрактов после сплита — реальный.
+# Найдено сканом фронта на 2.5×-обрывы; span within-contract у этих серий
+# 1.1–1.9 (<2.0) → с детектором 7.5 не пересекается (задвоения нет).
+# Ключ — sectype (событие общее для всей серии контрактов), не sec_id.
+KNOWN_FUT_CORP_ACTIONS: dict[str, list[tuple[date, float]]] = {
+    # sectype: [(boundary_date, ratio), ...]
+    'TN': [(date(2024, 6, 17), 0.0110)],  # Транснефть, сплит 1:100 (TNH4 ~157k → TNZ4 ~1.7k)
+    'GK': [(date(2024, 4, 9),  0.1219)],  # Норникель, сплит 1:100 + рост множителя контракта (GKH4 ~15k → GKZ4 ~1.8k)
+    'VB': [(date(2024, 7, 16), 4.5130)],  # ВТБ, консолидация/реверс-сплит (VBH4 ~2.2k → VBZ4 ~10.1k)
+}
+
+
 @router.get("/intervals/{sectype}", response_model=AvailableIntervalsResponse)
 def get_available_intervals(
     sectype: str,
@@ -423,6 +448,25 @@ def _compute_chart_data(db, sec_id, sectype, inst_type, interval,
         price_mult[i - 1] = adj_factor
     if adj_factor != 1.0:
         log.info(f"[7.5] back-adjust {sec_id}: factor={adj_factor:.4g}")
+
+    # 7.6 Реестр кросс-контрактных корпоративных событий (сплит/консолидация на
+    # стыке контрактов + разрыв листинга — within-contract детектор 7.5 их не
+    # ловит). Домножаем свечи СТАРЕЕ boundary_date на ratio (first_new/last_old),
+    # чтобы непрерывный график стал непрерывным. Ключ — sectype (общее для серии).
+    corp_actions = KNOWN_FUT_CORP_ACTIONS.get(sectype)
+    if corp_actions:
+        applied = 0
+        for idx, c in enumerate(sorted_candles):
+            cdate = c[0].date()
+            m = 1.0
+            for boundary_date, ratio in corp_actions:
+                if cdate < boundary_date:
+                    m *= ratio
+            if m != 1.0:
+                price_mult[idx] *= m
+                applied += 1
+        if applied:
+            log.info(f"[7.6] corp-action adjust {sectype}: {len(corp_actions)} event(s), {applied} candles")
 
     # 8. Формируем ответ (прямые dict вместо Pydantic — в 5-10x быстрее)
     t0 = time.time()
