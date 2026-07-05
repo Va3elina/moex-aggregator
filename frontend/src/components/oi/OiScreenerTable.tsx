@@ -185,16 +185,26 @@ export default function OiScreenerTable({ onSelect }: Props) {
       </span>
     );
     if (r.status === 'sharp' && r.ratio != null && r.direction) {
-      const grew = r.direction === 'up';
-      const Arrow = grew ? ArrowUp : ArrowDown;
-      const full = `${groupWord[0].toUpperCase()}${groupWord.slice(1)} резко ${grew ? 'нарастили' : 'сократили'} позицию — в ${fmtRatio(r.ratio)} резче обычного (порог 2×). ${mirrorWord[0].toUpperCase()}${mirrorWord.slice(1)} — зеркально ${grew ? 'сократили' : 'нарастили'}.`;
+      // Глагол — по МОДУЛЮ чистой позиции: |net| вырос → «нарастили»,
+      // уменьшился → «сократили». Нельзя брать знак Δnet напрямую: у шортовой
+      // стороны рост net (−5,3М → −4,7М) — это СОКРАЩЕНИЕ шорта, а не рост.
+      // Нога — по знаку net (длинная/короткая). Так физики и юрики на CNYRUBF
+      // корректно оба «сократили» (свой лонг / свой шорт), а не «нарастили».
+      const netLong = r.net >= 0;
+      const grewExposure = netLong === (r.direction === 'up'); // |net| вырос
+      const legWord = netLong ? 'длинную позицию' : 'короткую позицию';
+      const verb = grewExposure ? 'нарастили' : 'сократили';
+      const Arrow = grewExposure ? ArrowUp : ArrowDown;
+      const legColor = netLong ? 'var(--oi-green)' : 'var(--oi-red)';
+      const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
+      const full = `${cap(groupWord)} резко ${verb} ${legWord} по «${r.name}»: дневное изменение чистой позиции в ${fmtRatio(r.ratio)} резче обычного (ATR-14; «резко» — от 2×). Обратная сторона (${mirrorWord}) держит зеркальную позицию.`;
       return (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }} title={full}>
           {numbers}
-          <Arrow size={18} strokeWidth={2.6} style={{ color: grew ? 'var(--oi-green)' : 'var(--oi-red)', flexShrink: 0 }} />
+          <Arrow size={18} strokeWidth={2.6} style={{ color: legColor, flexShrink: 0 }} />
           {ratioBadge(r)}
           <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-primary)', minWidth: 0 }}>
-            резко {grew ? 'нарастили' : 'сократили'} позицию — в {fmtRatio(r.ratio)} резче обычного
+            резко {verb} {legWord} — в {fmtRatio(r.ratio)} резче обычного
           </span>
         </div>
       );
