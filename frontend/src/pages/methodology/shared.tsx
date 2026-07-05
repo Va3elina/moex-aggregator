@@ -124,6 +124,34 @@ export function ModeBlock({ title, desc }: { title: string; desc: string }) {
 }
 
 /**
+ * ActionBlock — как ModeBlock, но с иконкой кнопки слева (для описания
+ * элементов управления: показываем логотип кнопки, чтобы юзер её узнал).
+ */
+export function ActionBlock({ icon: Icon, title, desc }: { icon: LucideIcon; title: string; desc: string }) {
+  return (
+    <div
+      className="flex items-start gap-3 p-4 rounded-xl border"
+      style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--border-color)' }}
+    >
+      <div
+        className="flex items-center justify-center flex-shrink-0"
+        style={{
+          width: 34, height: 34, borderRadius: 8,
+          background: 'color-mix(in srgb, var(--accent) 12%, transparent)',
+          color: 'var(--accent)',
+        }}
+      >
+        <Icon size={18} strokeWidth={1.9} />
+      </div>
+      <div>
+        <div className="font-bold mb-1" style={{ color: 'var(--text-primary)', fontSize: 15 }}>{title}</div>
+        <div style={{ color: 'var(--text-secondary)', fontSize: 14 }}>{desc}</div>
+      </div>
+    </div>
+  );
+}
+
+/**
  * ReplayTourButton — кнопка перезапуска onboarding-тура.
  *
  * Очищает `localStorage['frame_tour_seen:<key>']` и редиректит на страницу
