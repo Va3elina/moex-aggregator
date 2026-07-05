@@ -32,7 +32,7 @@ export interface AlertMetricOption {
     unit?: string;       // '₽' | '×'
     defaultThreshold?: number;
     /** Если задан — вместо числового порога показываем селект периода; выбранное
-     *  значение уходит в threshold (для oi_extreme это lookback-дни: 30/90/0). */
+     *  значение уходит в threshold (для oi_extreme это lookback-дни: 365/730/1095/1460/1825/0). */
     periodControl?: { value: string; label: string }[];
     hint?: string;
 }
@@ -147,7 +147,7 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
     // Period-метрика (oi_extreme): вместо числового порога — селект периода;
     // выбранное значение (дни) уходит в threshold.
     const isPeriodMetric = !!metric?.periodControl;
-    const [period, setPeriod] = useState<string>(metric?.periodControl?.[0]?.value ?? '30');
+    const [period, setPeriod] = useState<string>(metric?.periodControl?.[0]?.value ?? '365');
 
     const [op, setOp] = useState(metric?.ops[0]?.value ?? 'cross_up');
     // price → числовой порог в ₽; oi_move → не используется (порог = множитель ступени).
@@ -235,7 +235,7 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
         if (!metricInitDone.current) { metricInitDone.current = true; return; }
         setOp(metric.ops[0]?.value ?? 'cross_up');
         setThreshold(metric.defaultThreshold != null ? String(metric.defaultThreshold) : '');
-        setPeriod(metric.periodControl?.[0]?.value ?? '30');
+        setPeriod(metric.periodControl?.[0]?.value ?? '365');
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [metricKey]);
 
