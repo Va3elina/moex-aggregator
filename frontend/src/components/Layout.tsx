@@ -27,7 +27,8 @@ const MOBILE_READY_PATHS = new Set([
 // Баффетт в конце. Мобильный rail (MobileBottomRail) — отдельный список.
 const NAV_ITEMS: { path: string; label: string; disabled?: boolean; badge?: string }[] = [
   { path: '/heatmap', label: 'Карта рынка' },
-  { path: '/oi', label: 'Открытые позиции' },
+  // NEW — внутри появилась вкладка «Скринер сигналов» (04.07.2026).
+  { path: '/oi', label: 'Открытые позиции', badge: 'New' },
   { path: '/funds-money', label: 'Деньги в фондах' },
   { path: '/strength', label: 'Сила рынка' },
   // Smart-money tracking — что покупают/продают БПИФ. Pro-only фича.
