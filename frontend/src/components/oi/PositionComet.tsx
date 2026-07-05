@@ -21,6 +21,7 @@ interface Props {
   netPctPrev: number | null;     // перекос вчера (для хвоста)
   ratio: number | null;          // сила сигнала ×N (размер головы)
   status: 'sharp' | 'normal' | 'illiquid' | 'nodata';
+  hideLabel?: boolean;           // скрыть подпись «%+лонг/шорт» — вынесена в свой столбец «Перекос»
 }
 
 // ── геометрия (viewBox 250×48, ось y=24) — крупная, размер головы «говорит» ×N ──
@@ -41,7 +42,7 @@ function fmtPct(p: number): string {
   return Math.abs(p).toFixed(1).replace('.', ',') + '%';
 }
 
-export default function PositionComet({ netPct, netPctPrev, ratio, status }: Props) {
+export default function PositionComet({ netPct, netPctPrev, ratio, status, hideLabel }: Props) {
   if (netPct == null) {
     return <span style={{ color: 'var(--text-muted)' }}>—</span>;
   }
@@ -90,9 +91,11 @@ export default function PositionComet({ netPct, netPctPrev, ratio, status }: Pro
         {/* голова кометы */}
         <circle cx={todayX} cy={Y} r={headR} fill={legColor} opacity={headOp} />
       </svg>
-      <span style={{ ...MONO, fontSize: 'var(--fs-base)', fontWeight: 800, color: legColor, opacity: headOp, whiteSpace: 'nowrap', lineHeight: 1.1 }}>
-        {fmtPct(netPct)}<br /><span style={{ fontSize: 'var(--fs-2xs)', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{legWord}</span>
-      </span>
+      {!hideLabel && (
+        <span style={{ ...MONO, fontSize: 'var(--fs-base)', fontWeight: 800, color: legColor, opacity: headOp, whiteSpace: 'nowrap', lineHeight: 1.1 }}>
+          {fmtPct(netPct)}<br /><span style={{ fontSize: 'var(--fs-2xs)', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{legWord}</span>
+        </span>
+      )}
     </div>
   );
 }
