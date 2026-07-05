@@ -24,10 +24,10 @@ function MonthlyPatternFigure() {
   const unit = 7; // px на единицу
   return (
     <Figure caption={<>«Календарь» показывает <b>средний ход по периодам года</b>. Столбик вверх (зелёный) — период, в который актив в среднем рос; вниз (красный) — в среднем снижался. Здесь виден типичный рисунок: слабое лето и сильный конец года.</>}>
-      <svg viewBox="0 0 320 120" style={{ width: '100%', display: 'block' }} role="img" aria-label="Средний ход цены по месяцам года">
+      <svg viewBox="0 0 320 126" style={{ width: '100%', display: 'block' }} role="img" aria-label="Средний ход цены по месяцам года">
         {/* нулевая линия */}
-        <line x1="16" y1={zeroY} x2="308" y2={zeroY} stroke="currentColor" strokeWidth="1" opacity="0.45" />
-        <text x="312" y={zeroY + 3} fontSize="8" fill="currentColor" opacity="0.6" textAnchor="start">0</text>
+        <line x1="16" y1={zeroY} x2="306" y2={zeroY} stroke="currentColor" strokeWidth="1" opacity="0.45" />
+        <text x="310" y={zeroY + 3} fontSize="8" fill="currentColor" opacity="0.6" textAnchor="end">0</text>
         {bars.map((b, i) => {
           const x = 22 + i * 24;
           const h = Math.abs(b.v) * unit;
@@ -96,7 +96,7 @@ function YearlyTrackFigure() {
   const curPts = '20,72 55,70 95,74 135,68 175,72 210,66 245,62 275,58';
   return (
     <Figure caption={<>«Годовая» — <b>усреднённый путь цены внутри года</b> по всей истории (серая линия): типичная форма года. Оранжевая линия — <b>текущий год</b> поверх: видно, идёт он лучше или хуже обычного.</>}>
-      <svg viewBox="0 0 320 100" style={{ width: '100%', display: 'block' }} role="img" aria-label="Средняя траектория года и текущий год поверх">
+      <svg viewBox="0 0 320 108" style={{ width: '100%', display: 'block' }} role="img" aria-label="Средняя траектория года и текущий год поверх">
         {/* старт года — точка отсчёта 0% */}
         <line x1="20" y1="16" x2="20" y2="86" stroke="currentColor" strokeWidth="1" opacity="0.3" />
         <text x="20" y="96" fontSize="8.5" fill="currentColor" opacity="0.6" textAnchor="start">январь</text>
@@ -120,7 +120,7 @@ function YearlyTrackFigure() {
 function HistoryDepthFigure() {
   return (
     <Figure caption={<>Каждая серия «С YYYY г.» считает средний паттерн <b>только по годам от выбранного</b> до сегодня. Короткое окно (справа) — свежий режим рынка, но статистика слабее; длинное (слева) — устойчивее, но захватывает другие эпохи. Можно наложить обе.</>}>
-      <svg viewBox="0 0 320 104" style={{ width: '100%', display: 'block' }} role="img" aria-label="Короткая и длинная выборка истории">
+      <svg viewBox="0 0 320 112" style={{ width: '100%', display: 'block' }} role="img" aria-label="Короткая и длинная выборка истории">
         {/* временная ось */}
         <line x1="16" y1="86" x2="304" y2="86" stroke="currentColor" strokeWidth="1" opacity="0.4" />
         <text x="16" y="99" fontSize="8.5" fill="currentColor" opacity="0.6" textAnchor="start">давно</text>

@@ -82,19 +82,22 @@ export function NetPositionFigure() {
 export function PerekosAxisFigure() {
   return (
     <Figure caption={<>«Перекос» — <b>насколько скошена</b> чистая позиция группы: 0 = поровну, +100% = все в лонг, −100% = все в шорт. Это про <b>позицию</b>, не про число участников.</>}>
-      <svg viewBox="0 0 320 96" style={{ width: '100%', display: 'block' }} role="img" aria-label="Ось перекоса от минус ста до плюс ста процентов">
-        <rect x="20" y="40" width="130" height="16" rx="4" fill={RED} opacity="0.14" />
-        <rect x="150" y="40" width="150" height="16" rx="4" fill={GREEN} opacity="0.16" />
-        <line x1="20" y1="48" x2="300" y2="48" stroke="currentColor" strokeWidth="1.4" opacity="0.5" />
-        <line x1="150" y1="32" x2="150" y2="64" stroke="currentColor" strokeWidth="1.4" strokeDasharray="3 3" opacity="0.7" />
+      <svg viewBox="0 0 320 106" style={{ width: '100%', display: 'block' }} role="img" aria-label="Ось перекоса от минус ста до плюс ста процентов">
+        <rect x="20" y="44" width="130" height="16" rx="4" fill={RED} opacity="0.14" />
+        <rect x="150" y="44" width="150" height="16" rx="4" fill={GREEN} opacity="0.16" />
+        <line x1="20" y1="52" x2="300" y2="52" stroke="currentColor" strokeWidth="1.4" opacity="0.5" />
+        <line x1="150" y1="36" x2="150" y2="68" stroke="currentColor" strokeWidth="1.4" strokeDasharray="3 3" opacity="0.7" />
         {/* маркер «сейчас» на +60% */}
-        <circle cx="234" cy="48" r="7" fill={GREEN} />
-        <line x1="234" y1="24" x2="234" y2="41" stroke={GREEN} strokeWidth="1" opacity="0.8" />
-        <text x="234" y="18" textAnchor="middle" fontSize="10" fontWeight="700" fill={GREEN}>+60% лонг</text>
-        {/* подписи краёв */}
-        <text x="22" y="80" fontSize="10.5" fontWeight="700" fill={RED}>−100% · весь шорт</text>
-        <text x="150" y="80" textAnchor="middle" fontSize="10" fill="currentColor" opacity="0.75">0 · поровну</text>
-        <text x="298" y="80" textAnchor="end" fontSize="10.5" fontWeight="700" fill={GREEN}>весь лонг · +100%</text>
+        <circle cx="234" cy="52" r="7" fill={GREEN} />
+        <line x1="234" y1="28" x2="234" y2="45" stroke={GREEN} strokeWidth="1" opacity="0.8" />
+        <text x="234" y="22" textAnchor="middle" fontSize="10" fontWeight="700" fill={GREEN}>+60% лонг</text>
+        {/* ряд 1: слова под зонами (разнесены — центры зон, не сталкиваются) */}
+        <text x="85" y="82" textAnchor="middle" fontSize="10.5" fontWeight="700" fill={RED}>весь шорт</text>
+        <text x="225" y="82" textAnchor="middle" fontSize="10.5" fontWeight="700" fill={GREEN}>весь лонг</text>
+        {/* ряд 2: проценты по краям + ноль по центру */}
+        <text x="20" y="99" textAnchor="start" fontSize="9.5" fill={RED} opacity="0.9">−100%</text>
+        <text x="150" y="99" textAnchor="middle" fontSize="9.5" fill="currentColor" opacity="0.7">0 · поровну</text>
+        <text x="300" y="99" textAnchor="end" fontSize="9.5" fill={GREEN} opacity="0.9">+100%</text>
       </svg>
     </Figure>
   );
