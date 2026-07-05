@@ -7,6 +7,20 @@
  */
 import type { TourStep } from '../../components/onboarding/OnboardingTour';
 
+/** Мини-инфографика рекорда перекоса — линия пробивает прошлый пик. */
+function RecordLegend() {
+  const G = '#4a9959';
+  return (
+    <svg viewBox="0 0 300 96" style={{ width: '100%', maxWidth: 300, display: 'block', margin: '8px auto 4px' }} role="img" aria-label="Перекос ставит новый максимум">
+      <line x1="20" y1="38" x2="284" y2="38" stroke="currentColor" strokeWidth="1" strokeDasharray="4 3" opacity="0.4" />
+      <text x="24" y="33" fontSize="9.5" fill="currentColor" opacity="0.7">прошлый пик</text>
+      <polyline points="20,68 55,56 92,62 128,44 164,50 200,38 236,46 268,20" fill="none" stroke={G} strokeWidth="2" opacity="0.85" />
+      <circle cx="268" cy="20" r="6" fill={G} />
+      <text x="268" y="13" textAnchor="middle" fontSize="10" fontWeight="800" fill={G}>★ рекорд</text>
+    </svg>
+  );
+}
+
 /** Мини-легенда кометы прямо в шаге тура — как читать колонку «Позиция». */
 function CometLegend() {
   const G = '#4a9959', R = '#c0492a';
@@ -82,20 +96,44 @@ export const oiScreenerTourSteps: TourStep[] = [
   },
   {
     selector: null,
-    title: 'Как читать «Позицию»',
+    title: 'Позиция и перекос',
     body: (
       <>
         <p style={{ marginBottom: 4 }}>
-          Колонка «Позиция» — это ось перекоса: слева полный шорт, справа полный
+          Столбец «Позиция» — это ось перекоса: слева полный шорт, справа полный
           лонг, по центру ноль (поровну). Комета показывает всё сразу:
         </p>
         <CometLegend />
-        <ul style={{ margin: '4px 0 0', paddingLeft: 18, lineHeight: 1.5 }}>
+        <ul style={{ margin: '4px 0 8px', paddingLeft: 18, lineHeight: 1.5 }}>
           <li><strong>Где голова</strong> — где толпа стоит сейчас (у края = «полный
             лонг/шорт»).</li>
           <li><strong>Хвост</strong> — откуда пришли за день (его длина = размер сдвига).</li>
           <li><strong>Размер головы</strong> — сила сигнала ×N: 2× маленькая, 5× крупная.</li>
         </ul>
+        <p>
+          Рядом столбец <strong>«Перекос»</strong> — то же число словами: сколько
+          процентов и в какую сторону (напр. «72% лонг»). Это скос позиции, не доля
+          участников.
+        </p>
+      </>
+    ),
+  },
+  {
+    selector: null,
+    title: 'Новые рекорды перекоса',
+    body: (
+      <>
+        <p style={{ marginBottom: 4 }}>
+          Если позиция группы дошла до уровня, которого <strong>не было за период</strong>
+          {' '}(год, 2, 3, 5 лет или за всё время) — в строке загорается пометка{' '}
+          <strong>★ новый максимум / минимум</strong>.
+        </p>
+        <RecordLegend />
+        <p>
+          Это ловит <strong>медленный дрейф</strong> позиций, который «резкое движение»
+          пропускает: позиция может ползти неделями и поставить рекорд без единого
+          резкого дня.
+        </p>
       </>
     ),
   },
@@ -105,7 +143,7 @@ export const oiScreenerTourSteps: TourStep[] = [
     body: (
       <>
         <p style={{ marginBottom: 8 }}>
-          В каждой строке — <strong>×N</strong> (во сколько раз движение резче обычного,
+          В каждой строке — <strong>×N</strong> (во сколько раз движение сильнее обычного,
           оранжевым — самые сильные) и <strong>трактовка</strong>: «резко нарастили/
           сократили длинную/короткую позицию».
         </p>

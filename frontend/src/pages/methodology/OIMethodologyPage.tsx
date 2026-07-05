@@ -3,9 +3,11 @@
  *
  * Без англицизмов, без торговых идей, без раскрытия формул.
  * Упоминается Московская биржа как источник (публичная информация).
+ * Инфографика (infographics.tsx) — наглядно объясняет ключевые понятия.
  */
 import { BarChart3 } from 'lucide-react';
 import { MethodologyWrapper, Section, ModeBlock, LineBlock, Interpretation, ReplayTourButton } from './shared';
+import { NetPositionFigure, PerekosAxisFigure, SharpMoveFigure, RecordFigure } from './infographics';
 
 export default function OIMethodologyPage() {
   return (
@@ -80,6 +82,7 @@ export default function OIMethodologyPage() {
             desc="Разница между объёмом позиций на покупку и на продажу."
           />
         </div>
+        <NetPositionFigure />
       </Section>
 
       <Section title="Фильтры участников">
@@ -111,6 +114,51 @@ export default function OIMethodologyPage() {
           и объём торгов для сортировки. Избранные инструменты можно закрепить
           звёздочкой.
         </p>
+      </Section>
+
+      <Section title="Скринер сигналов">
+        <p className="mb-3">
+          Вторая вкладка страницы — <strong>«Скринер сигналов»</strong>. Это лента,
+          которая проходит по всем фьючерсам разом и показывает, где за день
+          произошло <strong>заметное движение позиций</strong>. График показывает один
+          инструмент, скринер — весь рынок сразу. Данные те же, дневные.
+        </p>
+
+        <p className="mb-1 mt-5" style={{ color: 'var(--text-primary)', fontWeight: 600 }}>Перекос</p>
+        <p>
+          Главная величина скринера — насколько чистая позиция группы скошена в одну
+          сторону. Слева полный шорт, справа полный лонг, в центре — поровну. В ленте
+          это показывает «комета»: где её голова — там толпа стоит сейчас.
+        </p>
+        <PerekosAxisFigure />
+
+        <p className="mb-1 mt-5" style={{ color: 'var(--text-primary)', fontWeight: 600 }}>Резкое движение</p>
+        <p>
+          Рядом — во сколько раз дневной сдвиг сильнее обычного (сравнивается со средним
+          шагом этого же инструмента за предыдущие две недели). Так редкие, крупные
+          сдвиги отделяются от повседневного шума.
+        </p>
+        <SharpMoveFigure />
+
+        <p className="mb-1 mt-5" style={{ color: 'var(--text-primary)', fontWeight: 600 }}>Новый максимум / минимум</p>
+        <p>
+          Отдельная пометка — когда перекос дошёл до уровня, которого не было за
+          выбранный период (год, 2, 3, 5 лет или за всё время). Это ловит медленный
+          дрейф позиций, который «резкое движение» пропускает.
+        </p>
+        <RecordFigure />
+
+        <p className="mb-1 mt-5" style={{ color: 'var(--text-primary)', fontWeight: 600 }}>Низкая ликвидность</p>
+        <p>
+          Если по инструменту у группы слишком мало участников, движение считается
+          шумом (пара игроков — не «толпа») и помечается как низкая ликвидность. Порог
+          у физлиц и юрлиц разный: институтов на рынке структурно меньше, чем частных
+          трейдеров.
+        </p>
+
+        <div className="mt-5">
+          <ReplayTourButton tourKey="oi-screener" indicatorPath="/oi?tab=screener" label="Показать тур по скринеру" />
+        </div>
       </Section>
 
       <Section title="Как интерпретировать значения">
@@ -162,10 +210,11 @@ export default function OIMethodologyPage() {
 
       <Section title="Вводный тур">
         <p className="mb-4">
-          Если хочешь повторить пятишаговый гайд по controls и графику, который
-          показывался при первом открытии страницы — нажми кнопку ниже.
+          Если хочешь повторить пошаговый гайд по графику открытых позиций,
+          который показывался при первом открытии страницы — нажми кнопку ниже.
+          Тур по скринеру — в разделе «Скринер сигналов» выше.
         </p>
-        <ReplayTourButton tourKey="oi" indicatorPath="/oi" />
+        <ReplayTourButton tourKey="oi" indicatorPath="/oi" label="Показать тур по графику" />
       </Section>
     </MethodologyWrapper>
   );
