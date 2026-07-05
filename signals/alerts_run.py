@@ -153,10 +153,10 @@ def eval_op(op: str, value: float, prev, threshold: float) -> bool:
         return prev is not None and prev < threshold <= value
     if op == "cross_down":
         return prev is not None and prev > threshold >= value
-    # new_high/new_low: сам факт «нового рекорда» вычисляется в compute_value
-    # (нужна история окна, недоступная здесь) и возвращается сентинелом value=1.0.
-    # threshold для этих op'ов = lookback-дни, используется в compute_value, НЕ тут.
-    if op in ("new_high", "new_low"):
+    # new_high/new_low/new_extreme: сам факт «нового рекорда» вычисляется в
+    # compute_value (нужна история окна, недоступная здесь) и возвращается сентинелом
+    # value=1.0. threshold для этих op'ов = lookback-дни, используется там, НЕ тут.
+    if op in ("new_high", "new_low", "new_extreme"):
         return value >= 0.5
     return False
 
@@ -298,16 +298,26 @@ def compute_value(a: Alert):
         prior = pcts[:-1]
         if len(prior) < 10:
             return None, None
+        prior_max, prior_min = max(prior), min(prior)
         if a.op == "new_low":
-            extreme = min(prior)
-            is_record = today_pct < extreme
+            is_record = today_pct < prior_min
+            direction, extreme = "low", prior_min
+        elif a.op == "new_extreme":
+            # Любая сторона: сработает и на новом максимуме, и на новом минимуме.
+            # Фактическую сторону определяем по тому, какой край пробит.
+            if today_pct > prior_max:
+                is_record, direction, extreme = True, "high", prior_max
+            elif today_pct < prior_min:
+                is_record, direction, extreme = True, "low", prior_min
+            else:
+                is_record, direction, extreme = False, "high", prior_max
         else:  # new_high (дефолт)
-            extreme = max(prior)
-            is_record = today_pct > extreme
+            is_record = today_pct > prior_max
+            direction, extreme = "high", prior_max
         return (1.0 if is_record else 0.0), {
             "signal_date": today_date, "net_pct": round(today_pct, 1),
             "extreme": round(extreme, 1), "period_days": lookback,
-            "direction": "high" if a.op != "new_low" else "low",
+            "direction": direction,
         }
     return None, None
 
@@ -483,7 +493,11 @@ def format_msg(a: Alert, value: float, ctx: dict) -> str:
         return (f"{_head(_TYPE_OI, subj, tf_note)}\n"
                 f"{dir_emo} {flow} {clg} — в {value:g}× резче обычного (порог {thr:g}×).{ctx_line}{_date_note(ctx)}\n{link}")
     if a.indicator == "oi_extreme":
-        clg = "Физлица" if (a.clgroup or "FIZ") == "FIZ" else "Юрлица"
+        # clgroup ALL («в целом») — нейтральный текст без субъекта-группы: перекос
+        # считаем со стороны физлиц, но физ и юр зеркальны, поэтому роль не называем.
+        grp = a.clgroup or "FIZ"
+        subj_prefix = ("Физлица: " if grp == "FIZ"
+                       else "Юрлица: " if grp == "YUR" else "")
         high = ctx.get("direction") != "low"
         kind = "максимум" if high else "минимум"
         dir_emo = _ce(*_EMO_UP) if high else _ce(*_EMO_DOWN)
@@ -493,7 +507,7 @@ def format_msg(a: Alert, value: float, ctx: dict) -> str:
         npct_s = (f" ({npct:+.1f}%)".replace("-", "−").replace(".", ",")
                   if npct is not None else "")
         return (f"{_head(_TYPE_OI, subj, tf_note)}\n"
-                f"{dir_emo} {clg}: чистая позиция — новый {kind} перекоса {per}{npct_s}."
+                f"{dir_emo} {subj_prefix}чистая позиция — новый {kind} перекоса {per}{npct_s}."
                 f"{_date_note(ctx)}\n{link}")
     if a.indicator == "funds_flow":
         # «Аномальный поток» по выбранному набору фондов. Метка выбора в шапку

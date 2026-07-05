@@ -268,6 +268,7 @@ export interface OiScreenerRow {
   name: string;
   group: string | null;           // Индексы / Валюта / Сырьё / Акции / Крипто
   front_secid: string | null;     // датированный фронт-контракт ('BRQ6')
+  has_intraday: boolean;          // есть свежие 5-мин данные → сигнал считается интрадей
   oi: number;                     // валовый ОИ, контракты
   oi_delta_pct: number | null;    // Δ ОИ за день, %
   net: number;                    // чистая позиция физлиц, контракты

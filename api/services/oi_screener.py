@@ -78,6 +78,44 @@ def _bulk_series(db, clgroup: str) -> Dict[str, List[tuple]]:
     return series
 
 
+def _intraday_assets(db) -> set:
+    """sectype с СВЕЖИМИ внутридневными данными позиций (interval=5 за 14 дней) —
+    те же, что бейджит пикер активов (/api/oi/intraday-assets)."""
+    rows = db.execute(text(
+        """
+        SELECT DISTINCT sectype FROM open_interest
+        WHERE interval = 5 AND tradedate >= CURRENT_DATE - INTERVAL '14 days'
+        """
+    )).fetchall()
+    return {r[0] for r in rows}
+
+
+def _bulk_intraday_now(db, clgroup: str, sectypes: set) -> Dict[str, tuple]:
+    """Последний ВНУТРИДНЕВНОЙ бар (interval=5) по каждому интрадей-активу —
+    «net сейчас» для раннего сигнала. Один tuple на актив в формате точки ряда
+    (tradedate, net, npart, oi, pos_long, pos_short)."""
+    if not sectypes:
+        return {}
+    rows = db.execute(text(
+        """
+        SELECT DISTINCT ON (sectype)
+            sectype, tradedate,
+            (pos_long + pos_short) AS net,
+            (pos_long_num + pos_short_num) AS npart,
+            pos AS oi, pos_long, pos_short
+        FROM open_interest
+        WHERE clgroup = :clg AND interval = 5
+          AND sectype = ANY(:secs)
+          AND tradedate >= CURRENT_DATE - INTERVAL '5 days'
+        ORDER BY sectype, tradedate DESC, tradetime DESC
+        """
+    ), {"clg": clgroup, "secs": list(sectypes)}).fetchall()
+    return {
+        r[0]: (r[1], (r[2] or 0), (r[3] or 0), (r[4] or 0), (r[5] or 0), (r[6] or 0))
+        for r in rows
+    }
+
+
 def _row_signal(pts: List[tuple]) -> Dict[str, Any]:
     """Сигнальные поля одной строки скринера по дневному ряду позиций.
 
@@ -184,6 +222,8 @@ def compute_screener(db, clgroup: str = "FIZ") -> Dict[str, Any]:
     """
     series = _bulk_series(db, clgroup)
     extremes = _prior_extremes(db, clgroup)   # для бейджа «новый рекорд перекоса»
+    intraday_set = _intraday_assets(db)
+    intraday_now = _bulk_intraday_now(db, clgroup, intraday_set)
 
     # Метаданные инструментов: имя + группа (Индексы/Валюта/Товары/Акции).
     meta = {
@@ -197,10 +237,28 @@ def compute_screener(db, clgroup: str = "FIZ") -> Dict[str, Any]:
     rows: List[Dict[str, Any]] = []
     signal_date: date | None = None
     for sectype, pts in series.items():
+        has_intraday = sectype in intraday_set
+        # Последний ДНЕВНОЙ перекос (до вплетения интрадея) — нужен для корректного
+        # рекорда интрадей-актива: бегущий бар новее последнего дневного close,
+        # значит его надо включить в «предыдущие» экстремумы (_prior_extremes их
+        # исключает как «сегодня»).
+        dl = pts[-1]
+        dl_gross = dl[4] - dl[5]
+        daily_last_pct = (dl[1] / dl_gross * 100) if dl_gross else None
+
+        # Интрадей: вплетаем бегущий 5-мин бар как САМУЮ СВЕЖУЮ точку, если он
+        # новее последнего дневного (в течение дня дневной ещё не опубликован).
+        intra = intraday_now.get(sectype) if has_intraday else None
+        if intra and intra[0] > dl[0]:
+            pts = pts + [intra]
+
         last = pts[-1]
-        d, net, _npart, oi, pos_long, pos_short = last
-        if signal_date is None or d > signal_date:
-            signal_date = d
+        _d, net, _npart, oi, pos_long, pos_short = last
+        # Свежесть/«мёртвость контракта» считаем по ДНЕВНОЙ дате (dl[0]), а не по
+        # интрадей-бару — иначе интрадей-строки задрали бы глобальную дату к
+        # «сегодня» и дневные ряды (T+1) ложно выглядели бы отставшими.
+        if signal_date is None or dl[0] > signal_date:
+            signal_date = dl[0]
 
         # % перекоса: net / валовую (лонги + |шорты|); pos_short хранится < 0.
         gross = pos_long - pos_short
@@ -222,12 +280,26 @@ def compute_screener(db, clgroup: str = "FIZ") -> Dict[str, Any]:
                 net_pct_prev = round(prev[1] / prev_gross * 100, 1)
 
         sig = _row_signal(pts)
+        # Рекорд: для интрадей-актива prior-экстремумы (они «до сегодня») надо
+        # дополнить ПОСЛЕДНИМ дневным close — бегущий бар новее него, и он должен
+        # соперничать со всей дневной историей включая вчера.
+        ex = extremes.get(sectype)
+        if has_intraday and intra and intra[0] > dl[0] and ex is not None and daily_last_pct is not None:
+            ex = {
+                "max_6m": max(ex["max_6m"], daily_last_pct) if ex["max_6m"] is not None else daily_last_pct,
+                "min_6m": min(ex["min_6m"], daily_last_pct) if ex["min_6m"] is not None else daily_last_pct,
+                "max_1y": max(ex["max_1y"], daily_last_pct) if ex["max_1y"] is not None else daily_last_pct,
+                "min_1y": min(ex["min_1y"], daily_last_pct) if ex["min_1y"] is not None else daily_last_pct,
+                "max_all": max(ex["max_all"], daily_last_pct) if ex["max_all"] is not None else daily_last_pct,
+                "min_all": min(ex["min_all"], daily_last_pct) if ex["min_all"] is not None else daily_last_pct,
+            }
         m = meta.get(sectype, {})
         rows.append({
             "sectype": sectype,
             "name": m.get("name") or sectype,
             "group": m.get("group"),
             "front_secid": fronts.get(sectype),
+            "has_intraday": has_intraday,
             "oi": oi,
             "oi_delta_pct": oi_delta_pct,
             "net": net,
@@ -237,8 +309,8 @@ def compute_screener(db, clgroup: str = "FIZ") -> Dict[str, Any]:
             "ratio": sig["ratio"],
             "direction": sig["direction"],
             "status": sig["status"],
-            "record": _record_for(net_pct, extremes.get(sectype)),
-            "signal_date": pts[-1][0].isoformat(),
+            "record": _record_for(net_pct, ex),
+            "signal_date": dl[0].isoformat(),   # дневная дата (для свежести/футера)
         })
 
     # Свежесть: глобальная дата = максимум по рядам. Активы, чьи данные

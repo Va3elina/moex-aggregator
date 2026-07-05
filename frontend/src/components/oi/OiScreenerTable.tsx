@@ -433,8 +433,25 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
                   <InstrumentIcon sectype={r.sectype} size={32} />
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 700, fontSize: 'var(--fs-base)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {r.name}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                      <span style={{ fontWeight: 700, fontSize: 'var(--fs-base)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {r.name}
+                      </span>
+                      {/* «!» на EOD-only активах (как в пикере): данные только на
+                          конец дня, внутридневных (5м/1ч) нет → сигнал T+1. */}
+                      {!r.has_intraday && (
+                        <span
+                          title="Данные позиций обновляются только на конец дня — внутридневных (5м/1ч) нет. Сигнал по этому активу — на следующий день (T+1)."
+                          style={{
+                            flexShrink: 0, width: 16, height: 16, borderRadius: 999,
+                            border: '1px solid var(--text-muted)', color: 'var(--text-secondary)',
+                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: 11, fontWeight: 700, lineHeight: 1, cursor: 'help',
+                          }}
+                        >
+                          !
+                        </span>
+                      )}
                     </div>
                     <div style={{ ...MONO, fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)', letterSpacing: '0.04em' }}>
                       {r.front_secid || r.sectype}

@@ -362,7 +362,7 @@ def _alert_source(indicator: str) -> str:
 # Валидация значений (op/mode/indicator/clgroup) — общая для одиночного и
 # пакетного создания. Возвращает текст ошибки или None если всё ок.
 def _validate_alert_body(b: AlertCreate) -> Optional[str]:
-    if b.op not in ("gt", "lt", "cross_up", "cross_down", "new_high", "new_low"):
+    if b.op not in ("gt", "lt", "cross_up", "cross_down", "new_high", "new_low", "new_extreme"):
         return "некорректное условие"
     if b.mode not in ("once", "repeat"):
         return "некорректный режим"
@@ -397,19 +397,20 @@ def _validate_alert_body(b: AlertCreate) -> Optional[str]:
     # oi_level: «нога» величины ОИ (что показано на графике).
     if b.indicator == "oi_level" and b.metric not in ("net", "long", "short", "oi", "npart"):
         return "некорректная величина ОИ"
-    # oi_extreme: новый максимум/минимум перекоса. op = new_high/new_low; threshold =
-    # окно-дни (30 месяц / 90 три месяца / 0 всё время). clgroup обязательна.
+    # oi_extreme: новый максимум/минимум перекоса. op = new_high/new_low/new_extreme
+    # (любой); threshold = окно-дни (180 полгода / 365 год / 0 всё время). clgroup:
+    # FIZ/YUR — отдельно по группе, ALL — «в целом» (физ и юр зеркальны, считаем от FIZ).
     if b.indicator == "oi_extreme":
-        if b.op not in ("new_high", "new_low"):
-            return "для нового экстремума op = new_high/new_low"
+        if b.op not in ("new_high", "new_low", "new_extreme"):
+            return "для нового экстремума op = new_high/new_low/new_extreme"
         # Только «редкие» горизонты: полгода / год / всё время (месяц и 3 мес —
         # шум, слишком частые рекорды). 180 / 365 / 0 (всё время).
         if int(b.threshold) not in (0, 180, 365):
             return "период экстремума: 180 / 365 / 0 (всё время)"
-        if b.clgroup not in ("FIZ", "YUR"):
-            return "укажите группу физлица/юрлица"
-    elif b.op in ("new_high", "new_low"):
-        return "new_high/new_low только для нового экстремума"
+        if b.clgroup not in ("FIZ", "YUR", "ALL"):
+            return "укажите группу физлица/юрлица/в целом"
+    elif b.op in ("new_high", "new_low", "new_extreme"):
+        return "new_high/new_low/new_extreme только для нового экстремума"
     # buffett_ratio: режим коэффициента (Cap/ВВП или Cap/M2).
     if b.indicator == "buffett_ratio" and b.metric not in ("cap_gdp", "cap_m2"):
         return "некорректный режим индикатора Баффета"
