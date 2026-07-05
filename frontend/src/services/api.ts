@@ -278,7 +278,7 @@ export interface OiScreenerRow {
   direction: 'up' | 'down' | null;
   status: 'sharp' | 'normal' | 'illiquid' | 'nodata';
   // Новый рекорд перекоса сегодня (сильнейший период), null если нет.
-  record: { kind: 'high' | 'low'; period: 'all' | '3m' | '1m' } | null;
+  record: { kind: 'high' | 'low'; period: 'all' | '1y' | '6m' } | null;
   signal_date: string;            // дата последних данных (T+1)
 }
 

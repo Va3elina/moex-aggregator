@@ -63,7 +63,7 @@ function condLabel(a: AlertInfo): string {
     if (a.indicator === 'oi_extreme') {
         const clg = (a.clgroup || 'FIZ') === 'FIZ' ? 'физлица' : 'юрлица';
         const kind = a.op === 'new_low' ? 'новый минимум' : 'новый максимум';
-        const per = { 30: 'за месяц', 90: 'за 3 месяца' }[Number(a.threshold)] || 'за всё время';
+        const per = { 180: 'за 6 месяцев', 365: 'за год' }[Number(a.threshold)] || 'за всё время';
         return `чистая позиция (${clg}) — ${kind} перекоса ${per}`;
     }
     return `${METRIC_LABEL[a.indicator] || a.indicator} ${OP_LABEL[a.op] || a.op} ${a.threshold}${unitFor(a)}`;
