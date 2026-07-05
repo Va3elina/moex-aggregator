@@ -93,7 +93,14 @@ def _intraday_assets(db) -> set:
 def _bulk_intraday_now(db, clgroup: str, sectypes: set) -> Dict[str, tuple]:
     """Последний ВНУТРИДНЕВНОЙ бар (interval=5) по каждому интрадей-активу —
     «net сейчас» для раннего сигнала. Один tuple на актив в формате точки ряда
-    (tradedate, net, npart, oi, pos_long, pos_short)."""
+    (tradedate, net, npart, oi, pos_long, pos_short).
+
+    ⚠️ ТОЛЬКО торговые дни (ISODOW 1–5), как в _bulk_series. Иначе на выходных
+    сюда попадает застоявшийся бар с датой сб/вс (≈ пятничный close), который
+    compute_screener вплетает поверх пятничного ДНЕВНОГО close как «сегодня» →
+    last_signed = intra − дневной ≈ 0 → РЕАЛЬНОЕ пятничное движение хоронится, и
+    все интрадей-активы гаснут до normal (баг «на выходных сигналы пропали»,
+    напр. Транснефть физ +51k за 3.07 показывался как −48/normal)."""
     if not sectypes:
         return {}
     rows = db.execute(text(
@@ -107,6 +114,7 @@ def _bulk_intraday_now(db, clgroup: str, sectypes: set) -> Dict[str, tuple]:
         WHERE clgroup = :clg AND interval = 5
           AND sectype = ANY(:secs)
           AND tradedate >= CURRENT_DATE - INTERVAL '5 days'
+          AND EXTRACT(ISODOW FROM tradedate) BETWEEN 1 AND 5
         ORDER BY sectype, tradedate DESC, tradetime DESC
         """
     ), {"clg": clgroup, "secs": list(sectypes)}).fetchall()

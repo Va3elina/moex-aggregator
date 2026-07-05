@@ -165,6 +165,24 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
     else { setSortKey(key); setSortDir(-1); }
   };
 
+  // «Ближайшие к порогу» — топ движений, не попавших в текущую выборку (для
+  // пустого состояния тихого дня: лента не голая, видно кто был ближе всех). Любой
+  // статус с посчитанной кратностью, КРОМЕ уже видимых (sharp ≥ порога), по
+  // убыванию; учитываем фильтры группы/избранного. Так при пороге ≥5× сюда
+  // попадают и sharp-2× активы, которые просто не дотянули до 5×.
+  const nearMisses = useMemo(() => {
+    if (!rows) return [];
+    const thr = Number(threshold);
+    const favSet = new Set(favorites);
+    return rows
+      .filter((r) => (group === 'all' || r.group === group)
+        && (!onlyFav || favSet.has(r.sectype))
+        && r.ratio != null
+        && !(r.status === 'sharp' && (r.ratio ?? 0) >= thr))
+      .sort((a, b) => (b.ratio ?? 0) - (a.ratio ?? 0))
+      .slice(0, 5);
+  }, [rows, group, onlyFav, favorites, threshold]);
+
   const dateLabel = signalDate
     ? new Date(signalDate + 'T00:00:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
     : null;
@@ -388,25 +406,79 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
             <div style={{ padding: 48, textAlign: 'center', color: 'var(--text-secondary)', fontSize: 'var(--fs-base)' }}>Загрузка…</div>
           )}
           {!error && rows !== null && visible.length === 0 && (
-            <div style={{ padding: 48, textAlign: 'center' }}>
-              <div style={{ marginBottom: 16, color: 'var(--text-primary)', fontSize: 'var(--fs-base)', fontWeight: 600 }}>
-                Сегодня резких движений нет
+            <div style={{ padding: '40px 18px', textAlign: 'center' }}>
+              <div style={{ color: 'var(--text-primary)', fontSize: 'var(--fs-lg)', fontWeight: 700 }}>
+                {onlyFav ? 'Среди избранных резких движений нет'
+                  : threshold !== '0' ? 'Тихий день — резких движений нет'
+                    : 'Нет активов по фильтру'}
               </div>
-              <button
-                type="button"
-                className="editorial-press rounded-full font-semibold"
-                style={{
-                  fontSize: 'var(--fs-sm)',
-                  padding: 'var(--sp-2) var(--sp-4)',
-                  background: 'var(--bg-secondary)',
-                  border: '2px solid var(--text-primary)',
-                  color: 'var(--text-primary)',
-                  cursor: 'pointer',
-                }}
-                onClick={() => setThreshold('0')}
-              >
-                Показать все активы
-              </button>
+              <div style={{ marginTop: 6, color: 'var(--text-secondary)', fontSize: 'var(--fs-sm)' }}>
+                {threshold !== '0'
+                  ? `Ни один актив не двинулся ≥ ${threshold}× от обычного дня`
+                  : 'Попробуйте снять фильтры'}
+                {dateLabel ? ` · по данным за ${dateLabel}` : ''}
+              </div>
+
+              {nearMisses.length > 0 && (
+                <div style={{ marginTop: 22, textAlign: 'left', maxWidth: 560, marginLeft: 'auto', marginRight: 'auto' }}>
+                  <div style={{
+                    ...MONO, fontSize: 'var(--fs-xs)', textTransform: 'uppercase',
+                    letterSpacing: '0.06em', color: 'var(--text-secondary)', marginBottom: 8,
+                  }}>
+                    Ближайшие к порогу — до «резко» не дотянули
+                  </div>
+                  {nearMisses.map((r) => (
+                    <div
+                      key={r.sectype}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => onSelect(r.sectype, clgroup)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') onSelect(r.sectype, clgroup); }}
+                      className="oi-screener-row"
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer',
+                        padding: '9px 12px', borderRadius: 12,
+                        borderBottom: '0.5px solid var(--border-color, rgba(128,128,128,0.25))',
+                      }}
+                    >
+                      <span style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: 'var(--fs-sm)',
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {r.name}
+                      </span>
+                      <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>
+                        {/* Глагол — как в signalText: по МОДУЛЮ позиции (grewExposure). */}
+                        {(r.net >= 0) === (r.direction === 'up') ? '↑ нарастили' : '↓ сократили'}
+                      </span>
+                      <span style={{
+                        ...MONO, padding: '2px 9px', borderRadius: 999, fontSize: 'var(--fs-sm)',
+                        fontWeight: 700, flexShrink: 0, border: '2px solid var(--text-secondary)',
+                        color: 'var(--text-secondary)',
+                      }}>
+                        {fmtRatio(r.ratio!)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {threshold !== '0' && (
+                <button
+                  type="button"
+                  className="editorial-press rounded-full font-semibold"
+                  style={{
+                    marginTop: 22,
+                    fontSize: 'var(--fs-sm)',
+                    padding: 'var(--sp-2) var(--sp-4)',
+                    background: 'var(--bg-secondary)',
+                    border: '2px solid var(--text-primary)',
+                    color: 'var(--text-primary)',
+                    cursor: 'pointer',
+                  }}
+                  onClick={() => setThreshold('0')}
+                >
+                  Показать все активы
+                </button>
+              )}
             </div>
           )}
 

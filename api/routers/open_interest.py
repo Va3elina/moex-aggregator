@@ -35,10 +35,11 @@ def get_oi_screener(
     """
     from api.cache import get_or_compute
     from api.services.oi_screener import compute_screener
-    # v6 = + интрадей (has_intraday + бегущий 5-мин бар как «net сейчас» для
-    # интрадей-активов). TTL уменьшен до 5 мин: интрадей-данные обновляются
-    # каждые 5 мин, 30-мин кэш держал бы устаревший бегущий бар. Ключ пер-группу.
-    return get_or_compute(f"oi_screener:v6:{clgroup}", lambda: compute_screener(db, clgroup), ttl=300)
+    # v7 = фикс: интрадей-бар берём только за торговые дни (ISODOW 1–5). До v7 на
+    # выходных застоявшийся сб/вс-бар вплетался поверх пятничного дневного close и
+    # ХОРОНИЛ реальные пятничные сигналы у всех интрадей-активов (см. _bulk_intraday_now).
+    # v6 = + интрадей (has_intraday + бегущий 5-мин бар как «net сейчас»). TTL 5 мин.
+    return get_or_compute(f"oi_screener:v7:{clgroup}", lambda: compute_screener(db, clgroup), ttl=300)
 
 
 @oi_router.get("/intraday-assets")
