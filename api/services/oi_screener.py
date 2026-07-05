@@ -154,6 +154,14 @@ def compute_screener(db, clgroup: str = "FIZ") -> Dict[str, Any]:
             round((oi - prev[3]) / prev[3] * 100, 1)
             if prev and prev[3] else None
         )
+        # Вчерашний перекос — для визуализации «след кометы» (было → стало):
+        # длина хвоста = |net_pct − net_pct_prev|. Считаем честно из вчерашнего
+        # дня (prev[4]=pos_long, prev[5]=pos_short), не приближённо.
+        net_pct_prev = None
+        if prev:
+            prev_gross = prev[4] - prev[5]
+            if prev_gross:
+                net_pct_prev = round(prev[1] / prev_gross * 100, 1)
 
         sig = _row_signal(pts)
         m = meta.get(sectype, {})
@@ -166,6 +174,7 @@ def compute_screener(db, clgroup: str = "FIZ") -> Dict[str, Any]:
             "oi_delta_pct": oi_delta_pct,
             "net": net,
             "net_pct": net_pct,
+            "net_pct_prev": net_pct_prev,
             "delta_net": delta_net,
             "ratio": sig["ratio"],
             "direction": sig["direction"],

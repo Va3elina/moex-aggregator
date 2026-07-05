@@ -14,9 +14,10 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties, MouseEvent } from 'react';
-import { ArrowDown, ArrowUp, Star } from 'lucide-react';
+import { Star } from 'lucide-react';
 import InstrumentIcon from '../InstrumentIcon';
 import SegmentedControl from '../SegmentedControl';
+import PositionComet from './PositionComet';
 import { getOiScreener, type OiScreenerRow } from '../../services/api';
 import { formatNumber } from '../../utils/formatNumber';
 import { usePersistedState } from '../../hooks/usePersistedState';
@@ -47,9 +48,6 @@ const FAVORITES_KEY = 'favoriteInstruments'; // общий ключ с пике�
 const MINUS = '−';
 function fmtSigned(n: number): string {
   return (n >= 0 ? '+' : MINUS) + formatNumber(Math.abs(n));
-}
-function fmtSignedPct(p: number): string {
-  return (p >= 0 ? '+' : MINUS) + Math.abs(p).toLocaleString('ru-RU', { maximumFractionDigits: 1 }) + '%';
 }
 function fmtRatio(r: number): string {
   return r.toLocaleString('ru-RU', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '×';
@@ -83,7 +81,7 @@ export default function OiScreenerTable({ onSelect }: Props) {
   const [clgroup, setClgroup] = usePersistedState<Clgroup>('frame:oi-screener:clgroup', 'FIZ');
   const [threshold, setThreshold] = useState<ThresholdKey>('2');
   const [group, setGroup] = useState<string>('all');
-  const [sortKey, setSortKey] = useState<'ratio' | 'delta'>('ratio');
+  const [sortKey, setSortKey] = useState<'ratio' | 'pct'>('ratio');
   const [sortDir, setSortDir] = useState<1 | -1>(-1);
   const [favorites, setFavorites] = useState<string[]>(() => {
     try {
@@ -120,10 +118,11 @@ export default function OiScreenerTable({ onSelect }: Props) {
       (thr === 0 || (r.status === 'sharp' && (r.ratio ?? 0) >= thr)),
     );
     // sortDir = −1 → по убыванию (дефолт: сильные сверху), 1 → по возрастанию.
-    if (sortKey === 'delta') {
-      // Плоская сортировка по дневному сдвигу (null — в конец).
+    if (sortKey === 'pct') {
+      // Плоская сортировка по перекосу (−100…+100): desc = самые длинные
+      // сверху, asc = самые короткие. Даёт «топ-лонг / топ-шорт». null — в конец.
       out = [...out].sort((a, b) => {
-        const av = a.delta_net, bv = b.delta_net;
+        const av = a.net_pct, bv = b.net_pct;
         if (av == null && bv == null) return 0;
         if (av == null) return 1;
         if (bv == null) return -1;
@@ -143,7 +142,7 @@ export default function OiScreenerTable({ onSelect }: Props) {
     return out;
   }, [rows, favorites, group, threshold, sortKey, sortDir]);
 
-  const clickSort = (key: 'ratio' | 'delta') => {
+  const clickSort = (key: 'ratio' | 'pct') => {
     if (sortKey === key) setSortDir((d) => (d === -1 ? 1 : -1));
     else { setSortKey(key); setSortDir(-1); }
   };
@@ -177,35 +176,28 @@ export default function OiScreenerTable({ onSelect }: Props) {
     );
   };
 
-  const signalCell = (r: OiScreenerRow) => {
-    const netColor = r.net >= 0 ? 'var(--oi-green)' : 'var(--oi-red)';
-    const numbers = (
-      <span style={{ ...MONO, color: netColor, fontWeight: 700, fontSize: 'var(--fs-base)', whiteSpace: 'nowrap' }}>
-        {r.net_pct != null ? fmtSignedPct(r.net_pct) : ''} ({fmtSigned(r.net)})
-      </span>
-    );
+  // Текст сигнала: число перекоса и направление показывает комета, ×N — своя
+  // колонка; здесь остаётся трактовка + дневной сдвиг в контрактах.
+  const signalText = (r: OiScreenerRow) => {
     if (r.status === 'sharp' && r.ratio != null && r.direction) {
-      // Глагол — по МОДУЛЮ чистой позиции: |net| вырос → «нарастили»,
-      // уменьшился → «сократили». Нельзя брать знак Δnet напрямую: у шортовой
-      // стороны рост net (−5,3М → −4,7М) — это СОКРАЩЕНИЕ шорта, а не рост.
-      // Нога — по знаку net (длинная/короткая). Так физики и юрики на CNYRUBF
-      // корректно оба «сократили» (свой лонг / свой шорт), а не «нарастили».
+      // Глагол — по МОДУЛЮ чистой позиции: |net| вырос → «нарастили», уменьшился
+      // → «сократили» (у шорт-стороны рост net = сокращение шорта). Нога — по
+      // знаку net. Так физики и юрики на CNYRUBF оба «сократили» свою ногу.
       const netLong = r.net >= 0;
-      const grewExposure = netLong === (r.direction === 'up'); // |net| вырос
+      const grewExposure = netLong === (r.direction === 'up');
       const legWord = netLong ? 'длинную позицию' : 'короткую позицию';
       const verb = grewExposure ? 'нарастили' : 'сократили';
-      const Arrow = grewExposure ? ArrowUp : ArrowDown;
-      const legColor = netLong ? 'var(--oi-green)' : 'var(--oi-red)';
       const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
+      const deltaStr = r.delta_net != null ? `${fmtSigned(r.delta_net)} за день` : null;
       const full = `${cap(groupWord)} резко ${verb} ${legWord} по «${r.name}»: дневное изменение чистой позиции в ${fmtRatio(r.ratio)} резче обычного (ATR-14; «резко» — от 2×). Обратная сторона (${mirrorWord}) держит зеркальную позицию.`;
       return (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }} title={full}>
-          {numbers}
-          <Arrow size={18} strokeWidth={2.6} style={{ color: legColor, flexShrink: 0 }} />
-          {ratioBadge(r)}
-          <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-primary)', minWidth: 0 }}>
+        <div style={{ minWidth: 0 }} title={full}>
+          <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>
             резко {verb} {legWord} — в {fmtRatio(r.ratio)} резче обычного
-          </span>
+          </div>
+          {deltaStr && (
+            <div style={{ ...MONO, fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)', marginTop: 2 }}>{deltaStr}</div>
+          )}
         </div>
       );
     }
@@ -216,14 +208,11 @@ export default function OiScreenerTable({ onSelect }: Props) {
           ? 'низкая ликвидность'
           : 'недостаточно данных';
     return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-        {numbers}
-        <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--text-secondary)' }}>{note}</span>
-      </div>
+      <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 500, color: 'var(--text-secondary)' }}>{note}</span>
     );
   };
 
-  const sortArrow = (key: 'ratio' | 'delta') =>
+  const sortArrow = (key: 'ratio' | 'pct') =>
     sortKey === key
       ? (sortDir === -1 ? ' ▼' : ' ▲')
       : ' ⇅';
@@ -237,7 +226,8 @@ export default function OiScreenerTable({ onSelect }: Props) {
     textAlign: 'left', whiteSpace: 'nowrap',
   };
 
-  const gridCols = 'minmax(200px, 270px) minmax(320px, 1fr) 150px 130px 48px';
+  // Актив · Позиция (комета) · ×N · Сигнал · ★. Столбцы «ОИ» и «Δ за день» убраны.
+  const gridCols = 'minmax(180px, 230px) minmax(220px, 300px) 72px minmax(240px, 1fr) 44px';
 
   return (
     <div>
@@ -269,13 +259,13 @@ export default function OiScreenerTable({ onSelect }: Props) {
           {/* Заголовки */}
           <div style={{ display: 'grid', gridTemplateColumns: gridCols, gap: 16, padding: '12px 18px', borderBottom: '2px solid var(--text-primary)' }}>
             <span style={headCell}>Актив</span>
-            <button type="button" style={{ ...headCell, cursor: 'pointer', background: 'none', border: 'none', padding: 0 }} onClick={() => clickSort('ratio')}>
-              Чистая поз. ({groupWord}) · Сигнал{sortArrow('ratio')}
+            <button type="button" style={{ ...headCell, cursor: 'pointer', background: 'none', border: 'none', padding: 0 }} onClick={() => clickSort('pct')} title={`Перекос (${groupWord}): шорт ← 0 → лонг. Сортировка — топ-лонг / топ-шорт`}>
+              Позиция {groupWord}{sortArrow('pct')}
             </button>
-            <span style={{ ...headCell, textAlign: 'right' }}>ОИ, контракты</span>
-            <button type="button" style={{ ...headCell, cursor: 'pointer', background: 'none', border: 'none', padding: 0, textAlign: 'right' }} onClick={() => clickSort('delta')} title="Изменение чистой позиции за торговый день">
-              Δ за день{sortArrow('delta')}
+            <button type="button" style={{ ...headCell, cursor: 'pointer', background: 'none', border: 'none', padding: 0, textAlign: 'center', justifySelf: 'center' }} onClick={() => clickSort('ratio')} title="Во сколько раз дневной сдвиг резче обычного (ATR-14)">
+              ×N{sortArrow('ratio')}
             </button>
+            <span style={headCell}>Сигнал</span>
             <span />
           </div>
 
@@ -343,35 +333,19 @@ export default function OiScreenerTable({ onSelect }: Props) {
                   </div>
                 </div>
 
+                {/* Позиция — «след кометы»: перекос + дневной сдвиг */}
+                <PositionComet
+                  netPct={r.net_pct}
+                  netPctPrev={r.net_pct_prev}
+                  ratio={r.ratio}
+                  status={r.status}
+                />
+
+                {/* ×N */}
+                <div style={{ justifySelf: 'center' }}>{ratioBadge(r)}</div>
+
                 {/* Сигнал */}
-                {signalCell(r)}
-
-                {/* ОИ */}
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ ...MONO, fontSize: 'var(--fs-base)', fontWeight: 600 }}>{formatNumber(r.oi)}</div>
-                  {r.oi_delta_pct != null && (
-                    <div style={{ ...MONO, fontSize: 'var(--fs-xs)', color: r.oi_delta_pct >= 0 ? 'var(--oi-green)' : 'var(--oi-red)' }}>
-                      {fmtSignedPct(r.oi_delta_pct)}
-                    </div>
-                  )}
-                </div>
-
-                {/* Δ за день */}
-                <div style={{ textAlign: 'right' }}>
-                  {r.delta_net != null ? (
-                    <span style={{
-                      ...MONO,
-                      display: 'inline-block', padding: '3px 12px', borderRadius: 999,
-                      fontSize: 'var(--fs-sm)', fontWeight: 700,
-                      border: `2px solid ${r.delta_net >= 0 ? 'var(--oi-green)' : 'var(--oi-red)'}`,
-                      color: r.delta_net >= 0 ? 'var(--oi-green)' : 'var(--oi-red)',
-                    }}>
-                      {fmtSigned(r.delta_net)}
-                    </span>
-                  ) : (
-                    <span style={{ color: 'var(--text-secondary)' }}>{MINUS}</span>
-                  )}
-                </div>
+                {signalText(r)}
 
                 {/* ⭐ */}
                 <button

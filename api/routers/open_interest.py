@@ -35,9 +35,10 @@ def get_oi_screener(
     """
     from api.cache import get_or_compute
     from api.services.oi_screener import compute_screener
-    # v2 = фильтр устаревших рядов; ключ пер-группу (FIZ/YUR считаются честно
-    # по своим рядам — npart/проценты у групп разные, зеркален только |Δnet|).
-    return get_or_compute(f"oi_screener:v2:{clgroup}", lambda: compute_screener(db, clgroup))
+    # v3 = + net_pct_prev (вчерашний перекос для «следа кометы»); ключ
+    # пер-группу (FIZ/YUR считаются честно по своим рядам — npart/проценты у
+    # групп разные, зеркален только |Δnet|).
+    return get_or_compute(f"oi_screener:v3:{clgroup}", lambda: compute_screener(db, clgroup))
 
 
 @oi_router.get("/intraday-assets")
