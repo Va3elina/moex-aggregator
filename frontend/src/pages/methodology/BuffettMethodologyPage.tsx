@@ -25,7 +25,7 @@ function ZonesFigure() {
                 </>
             }
         >
-            <svg viewBox="0 0 320 130" style={{ width: '100%', display: 'block' }} role="img" aria-label="Зоны оценки: дёшево, справедливо, дорого">
+            <svg viewBox="0 0 320 142" style={{ width: '100%', display: 'block' }} role="img" aria-label="Зоны оценки: дёшево, справедливо, дорого">
                 {/* три горизонтальные полосы-зоны */}
                 <rect x="20" y="18" width="280" height="30" rx="4" fill={RED} opacity="0.14" />
                 <rect x="20" y="52" width="280" height="30" rx="4" fill="currentColor" opacity="0.08" />
@@ -90,7 +90,7 @@ function ForecastFigure() {
                 </>
             }
         >
-            <svg viewBox="0 0 320 110" style={{ width: '100%', display: 'block' }} role="img" aria-label="Линия истории и пунктирный прогноз">
+            <svg viewBox="0 0 320 118" style={{ width: '100%', display: 'block' }} role="img" aria-label="Линия истории и пунктирный прогноз">
                 {/* ось */}
                 <line x1="20" y1="92" x2="300" y2="92" stroke="currentColor" strokeWidth="1" opacity="0.4" />
                 {/* граница «сегодня» */}

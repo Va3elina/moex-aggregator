@@ -14,7 +14,7 @@ import { Figure, GREEN, RED } from './infographics';
 function TileAnatomyFigure() {
   return (
     <Figure caption={<>Одна плитка = одна компания. <b>Размер</b> — вклад в рынок, <b>цвет</b> — изменение цены, внутри — тикер и процент.</>}>
-      <svg viewBox="0 0 320 150" style={{ width: '100%', display: 'block' }} role="img" aria-label="Устройство одной плитки карты рынка">
+      <svg viewBox="0 0 320 162" style={{ width: '100%', display: 'block' }} role="img" aria-label="Устройство одной плитки карты рынка">
         {/* большая зелёная плитка */}
         <rect x="20" y="20" width="150" height="110" rx="8" fill={GREEN} opacity="0.9" />
         <text x="95" y="72" textAnchor="middle" fontSize="22" fontWeight="800" fill="#fff">SBER</text>
@@ -95,8 +95,8 @@ function SizeWeightFigure() {
         <text x="180" y="72" textAnchor="middle" fontSize="10" fontWeight="700" fill="currentColor" opacity="0.85">средний</text>
         <rect x="224" y="20" width="40" height="46" rx="5" fill="currentColor" opacity="0.14" />
         <rect x="224" y="70" width="40" height="44" rx="5" fill="currentColor" opacity="0.14" />
-        <text x="288" y="46" fontSize="9.5" fill="currentColor" opacity="0.7">мелкие</text>
-        <text x="288" y="96" fontSize="9.5" fill="currentColor" opacity="0.7">эшелоны</text>
+        <text x="270" y="46" fontSize="9.5" fill="currentColor" opacity="0.7">мелкие</text>
+        <text x="270" y="96" fontSize="9.5" fill="currentColor" opacity="0.7">эшелоны</text>
       </svg>
     </Figure>
   );

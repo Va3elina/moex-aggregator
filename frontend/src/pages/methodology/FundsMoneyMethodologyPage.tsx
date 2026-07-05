@@ -30,7 +30,7 @@ function NavStackFigure() {
         </>
       }
     >
-      <svg viewBox="0 0 320 150" xmlns="http://www.w3.org/2000/svg" style={{ width: '100%', height: 'auto' }}>
+      <svg viewBox="0 0 340 162" xmlns="http://www.w3.org/2000/svg" style={{ width: '100%', height: 'auto' }}>
         {/* базовый уровень */}
         <line x1="20" y1="130" x2="300" y2="130" stroke="currentColor" strokeWidth="1" opacity="0.35" />
 
@@ -45,8 +45,8 @@ function NavStackFigure() {
         <text x="239" y="146" textAnchor="middle" fontSize="10.5" fontWeight="700" fill="currentColor">сегодня</text>
 
         {/* подписи прироста */}
-        <text x="288" y="37" fontSize="9.5" fontWeight="700" fill={GREEN}>+ цена</text>
-        <text x="288" y="61" fontSize="9.5" fontWeight="700" fill={ACCENT}>+ приток</text>
+        <text x="282" y="37" fontSize="9.5" fontWeight="700" fill={GREEN}>+ цена</text>
+        <text x="282" y="61" fontSize="9.5" fontWeight="700" fill={ACCENT}>+ приток</text>
 
         {/* стрелка роста */}
         <path d="M132 100 L188 100" stroke="currentColor" strokeWidth="1.4" opacity="0.5" markerEnd="url(#navArrow)" />

@@ -33,7 +33,7 @@ function BreadthShareFigure() {
         </>
       }
     >
-      <svg viewBox="0 0 320 118" style={{ width: '100%', display: 'block' }} role="img" aria-label="Доля акций выше своей средней линии">
+      <svg viewBox="0 0 320 126" style={{ width: '100%', display: 'block' }} role="img" aria-label="Доля акций выше своей средней линии">
         {cols.map((c, i) => {
           const cx = x0 + i * step;
           const dotY = c.above ? lineY - 18 : lineY + 18;
@@ -68,7 +68,7 @@ function BroadVsNarrowFigure() {
         </>
       }
     >
-      <svg viewBox="0 0 320 128" style={{ width: '100%', display: 'block' }} role="img" aria-label="Широкий рост против узкого роста">
+      <svg viewBox="0 0 320 136" style={{ width: '100%', display: 'block' }} role="img" aria-label="Широкий рост против узкого роста">
         {/* Левая панель — широкий рост */}
         <text x="70" y="16" textAnchor="middle" fontSize="10.5" fontWeight="700" fill={GREEN}>широкий рост</text>
         {[0, 1, 2, 3, 4, 5].map((i) => {
@@ -148,7 +148,7 @@ function DivergenceFigure() {
         </>
       }
     >
-      <svg viewBox="0 0 320 100" style={{ width: '100%', display: 'block' }} role="img" aria-label="Расхождение индекса и силы рынка">
+      <svg viewBox="0 0 344 100" style={{ width: '100%', display: 'block' }} role="img" aria-label="Расхождение индекса и силы рынка">
         <line x1="20" y1="88" x2="300" y2="88" stroke="currentColor" strokeWidth="1" opacity="0.3" />
         <polyline points={idx} fill="none" stroke={ACCENT} strokeWidth="2.2" />
         <polyline points={breadth} fill="none" stroke={RED} strokeWidth="2.2" strokeDasharray="5 3" opacity="0.9" />

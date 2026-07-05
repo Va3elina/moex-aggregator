@@ -55,7 +55,7 @@ function TwoSnapshotsFigure() {
 function ConsensusFigure() {
     return (
         <Figure caption={<>Вкладка «Покупки фондов» складывает движение по <b>всем фондам сразу</b>. Слева — сколько фондов бумагу докупили, справа — сколько сократили. Видно, куда движется рынок фондов в целом.</>}>
-            <svg viewBox="0 0 320 128" style={{ width: '100%', display: 'block' }} role="img" aria-label="Консенсус фондов по одной бумаге">
+            <svg viewBox="0 0 320 134" style={{ width: '100%', display: 'block' }} role="img" aria-label="Консенсус фондов по одной бумаге">
                 {/* центральная ось */}
                 <line x1="160" y1="14" x2="160" y2="104" stroke="currentColor" strokeWidth="1.2" strokeDasharray="3 3" opacity="0.5" />
                 <text x="160" y="122" textAnchor="middle" fontSize="9" fill="currentColor" opacity="0.6">одна бумага</text>
@@ -94,7 +94,7 @@ function CompanyFlowFigure() {
     const zero = 66;
     return (
         <Figure caption={<>«Потоки по компании» показывают <b>одну бумагу помесячно</b>: сколько денег фонды в неё вложили (вверх, зелёным) или вывели (вниз, красным). Тултип раскрывает, какой именно фонд дал главный вклад.</>}>
-            <svg viewBox="0 0 320 118" style={{ width: '100%', display: 'block' }} role="img" aria-label="Помесячные потоки денег в одну бумагу">
+            <svg viewBox="0 0 320 126" style={{ width: '100%', display: 'block' }} role="img" aria-label="Помесячные потоки денег в одну бумагу">
                 <line x1="14" y1={zero} x2="306" y2={zero} stroke="currentColor" strokeWidth="1" opacity="0.4" />
                 {bars.map((b, i) => (
                     <rect
@@ -109,8 +109,8 @@ function CompanyFlowFigure() {
                     />
                 ))}
                 <text x="20" y="20" fontSize="9" fontWeight="700" fill={GREEN}>приток денег ↑</text>
-                <text x="306" y="112" textAnchor="end" fontSize="9" fontWeight="700" fill={RED}>отток денег ↓</text>
-                <text x="14" y="112" fontSize="9" fill="currentColor" opacity="0.6">по месяцам →</text>
+                <text x="306" y="118" textAnchor="end" fontSize="9" fontWeight="700" fill={RED}>отток денег ↓</text>
+                <text x="14" y="118" fontSize="9" fill="currentColor" opacity="0.6">по месяцам →</text>
             </svg>
         </Figure>
     );

@@ -80,7 +80,7 @@ function ColumnFigure() {
         </>
       }
     >
-      <svg viewBox="0 0 320 200" style={{ width: '100%', display: 'block' }} role="img" aria-label="Устройство одного столбца гистограммы">
+      <svg viewBox="0 0 340 206" style={{ width: '100%', display: 'block' }} role="img" aria-label="Устройство одного столбца гистограммы">
         {/* сетка Y */}
         {[20, 57.5, 95, 132.5, 170].map((y, i) => (
           <line key={i} x1="44" y1={y} x2="290" y2={y} stroke="currentColor" strokeWidth={y === 95 ? 1.5 : 1} opacity={y === 95 ? 0.55 : 0.18} />
