@@ -227,7 +227,7 @@ export default function OiScreenerTable({ onSelect }: Props) {
   };
 
   // Актив · Позиция (комета) · ×N · Сигнал · ★. Столбцы «ОИ» и «Δ за день» убраны.
-  const gridCols = 'minmax(180px, 230px) minmax(220px, 300px) 72px minmax(240px, 1fr) 44px';
+  const gridCols = 'minmax(180px, 220px) minmax(250px, 340px) 72px minmax(240px, 1fr) 44px';
 
   return (
     <div>
