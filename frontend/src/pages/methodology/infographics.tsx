@@ -130,18 +130,22 @@ export function SharpMoveFigure() {
  * Новый рекорд перекоса: линия перекоса пробивает прошлый пик.
  */
 export function RecordFigure() {
-  // Ломаная перекоса, последняя точка — новый максимум.
-  const pts = '20,70 55,58 90,64 125,46 160,52 195,40 230,48 265,22';
+  // Ломаная перекоса: первый (старый) пик КАСАЕТСЯ прошлого уровня, второй —
+  // ВЫШЕ его = новый максимум.
+  const pts = '20,80 54,58 96,44 138,64 182,52 224,40 266,24';
   return (
     <Figure caption={<>«Новый максимум / минимум» — перекос группы дошёл до уровня, которого <b>не было за выбранный период</b> (год, 2, 3, 5 лет или за всё время). Ловит медленный дрейф, который резкое движение пропускает.</>}>
-      <svg viewBox="0 0 320 100" style={{ width: '100%', display: 'block' }} role="img" aria-label="Линия перекоса ставит новый максимум">
-        {/* прошлый пик */}
-        <line x1="20" y1="40" x2="300" y2="40" stroke="currentColor" strokeWidth="1" strokeDasharray="4 3" opacity="0.4" />
-        <text x="24" y="35" fontSize="9.5" fill="currentColor" opacity="0.7">прошлый пик</text>
+      <svg viewBox="0 0 320 100" style={{ width: '100%', display: 'block' }} role="img" aria-label="Линия перекоса ставит новый максимум выше прошлого пика">
+        {/* прошлый пик — на уровне первого (старого) пика */}
+        <line x1="20" y1="44" x2="300" y2="44" stroke="currentColor" strokeWidth="1" strokeDasharray="4 3" opacity="0.45" />
+        <text x="20" y="38" fontSize="9.5" fill="currentColor" opacity="0.7">прошлый пик</text>
         <polyline points={pts} fill="none" stroke={GREEN} strokeWidth="2" opacity="0.85" />
-        {/* новый максимум */}
-        <circle cx="265" cy="22" r="6" fill={GREEN} />
-        <text x="265" y="14" textAnchor="middle" fontSize="10" fontWeight="800" fill={GREEN}>★ новый максимум</text>
+        {/* старый пик — маркер на прошлом уровне */}
+        <circle cx="96" cy="44" r="4" fill="currentColor" opacity="0.45" />
+        {/* новый максимум — выше */}
+        <circle cx="266" cy="24" r="6" fill={GREEN} />
+        <line x1="266" y1="17" x2="222" y2="17" stroke={GREEN} strokeWidth="1" opacity="0.7" />
+        <text x="218" y="20" textAnchor="end" fontSize="10" fontWeight="800" fill={GREEN}>★ новый максимум</text>
       </svg>
     </Figure>
   );

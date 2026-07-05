@@ -8,8 +8,8 @@
  *   - Инфографики — встроенным SVG, в стиле OI-инфографик: currentColor для
  *     нейтральных элементов, GREEN/RED/ACCENT для смысла.
  */
-import { Wallet } from 'lucide-react';
-import { MethodologyWrapper, Section, ModeBlock, LineBlock, Interpretation, ReplayTourButton } from './shared';
+import { Wallet, Camera, SlidersHorizontal, Layers, Palette, Bell } from 'lucide-react';
+import { MethodologyWrapper, Section, ModeBlock, LineBlock, Interpretation, ReplayTourButton, ActionBlock } from './shared';
 import { Figure, GREEN, RED, ACCENT } from './infographics';
 
 /* ─────────────────────────── Инфографики ─────────────────────────── */
@@ -83,9 +83,9 @@ function FlowsHistogramFigure() {
       }
     >
       <svg viewBox="0 0 300 130" xmlns="http://www.w3.org/2000/svg" style={{ width: '100%', height: 'auto' }}>
-        {/* нулевая линия */}
-        <line x1="16" y1={zeroY} x2="284" y2={zeroY} stroke="currentColor" strokeWidth="1.2" opacity="0.5" />
-        <text x="288" y={zeroY + 3} fontSize="9" fill="currentColor" opacity="0.6">0</text>
+        {/* нулевая линия («0» слева от неё — чтобы не налезал на крайний столбик) */}
+        <line x1="20" y1={zeroY} x2="288" y2={zeroY} stroke="currentColor" strokeWidth="1.2" opacity="0.5" />
+        <text x="14" y={zeroY + 3} textAnchor="end" fontSize="9" fill="currentColor" opacity="0.6">0</text>
 
         {bars.map((v, i) => {
           const x = 24 + i * (bw + gap);
@@ -107,49 +107,6 @@ function FlowsHistogramFigure() {
 
         <text x="24" y="122" fontSize="9.5" fontWeight="700" fill={GREEN}>приток ↑</text>
         <text x="284" y="122" textAnchor="end" fontSize="9.5" fontWeight="700" fill={RED}>↓ отток</text>
-      </svg>
-    </Figure>
-  );
-}
-
-/**
- * Категории как сообщающиеся сосуды: деньги перетекают между риском и
- * защитой. Денежный рынок ↔ Акции — главный перелив «страх/аппетит».
- */
-function CategoriesFlowFigure() {
-  return (
-    <Figure
-      maxWidth={360}
-      caption={
-        <>
-          Деньги перетекают между категориями. Уходят из{' '}
-          <span style={{ color: ACCENT, fontWeight: 700 }}>денежного рынка</span> в{' '}
-          <span style={{ color: GREEN, fontWeight: 700 }}>акции</span> — вернулся аппетит к риску; обратно — включилась осторожность.
-        </>
-      }
-    >
-      <svg viewBox="0 0 340 130" xmlns="http://www.w3.org/2000/svg" style={{ width: '100%', height: 'auto' }}>
-        {/* левый сосуд — «тихая гавань» */}
-        <rect x="20" y="30" width="90" height="70" rx="8" fill={ACCENT} opacity="0.16" stroke={ACCENT} strokeWidth="1.4" />
-        <text x="65" y="20" textAnchor="middle" fontSize="10.5" fontWeight="700" fill="currentColor">Денежный рынок</text>
-        <text x="65" y="72" textAnchor="middle" fontSize="10" fill="currentColor" opacity="0.7">осторожность</text>
-
-        {/* правый сосуд — риск */}
-        <rect x="230" y="30" width="90" height="70" rx="8" fill={GREEN} opacity="0.16" stroke={GREEN} strokeWidth="1.4" />
-        <text x="275" y="20" textAnchor="middle" fontSize="10.5" fontWeight="700" fill="currentColor">Акции</text>
-        <text x="275" y="72" textAnchor="middle" fontSize="10" fill="currentColor" opacity="0.7">аппетит к риску</text>
-
-        {/* стрелки перелива */}
-        <path d="M116 50 L224 50" stroke={GREEN} strokeWidth="2" opacity="0.85" markerEnd="url(#toRisk)" />
-        <path d="M224 80 L116 80" stroke={ACCENT} strokeWidth="2" opacity="0.85" markerEnd="url(#toSafe)" />
-        <defs>
-          <marker id="toRisk" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto">
-            <path d="M0 0 L6 3 L0 6 Z" fill={GREEN} />
-          </marker>
-          <marker id="toSafe" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto">
-            <path d="M0 0 L6 3 L0 6 Z" fill={ACCENT} />
-          </marker>
-        </defs>
       </svg>
     </Figure>
   );
@@ -215,14 +172,12 @@ export default function FundsMoneyMethodologyPage() {
 
       <Section title="Источник данных">
         <p>
-          Данные по фондам публикуются Московской биржей и управляющими
-          компаниями. Индексы-эталоны (IMOEX, RGBI, RUSFAR, стоимость золота)
-          также публикует Московская биржа.
+          Данные основаны на публичной информации Московской биржи.
         </p>
         <p className="mt-3">
           Обновление — раз в торговый день, после закрытия торгов. У части фондов
-          управляющая компания публикует стоимость активов с задержкой в день-два —
-          такие фонды помечены отдельно (см. ниже).
+          данные появляются с задержкой в день-два — такие фонды помечены
+          отдельно (см. ниже).
         </p>
       </Section>
 
@@ -241,7 +196,6 @@ export default function FundsMoneyMethodologyPage() {
         <p className="mt-3">
           Переключение вкладки полностью меняет и график, и таблицу под ним.
         </p>
-        <CategoriesFlowFigure />
       </Section>
 
       <Section title="Два режима графика">
@@ -295,25 +249,30 @@ export default function FundsMoneyMethodologyPage() {
           В правом верхнем углу графика — меню действий (значок «⋮»). Что в нём:
         </p>
         <div className="space-y-5">
-          <ModeBlock
+          <ActionBlock
+            icon={Layers}
             title="Слои → «Индекс» (только в режиме СЧА)"
             desc="Тумблер, который скрывает или показывает линию индекса-эталона поверх линии СЧА. Выключите, если хотите смотреть только на денежный пул фондов без сравнения с рынком."
           />
-          <ModeBlock
-            title="Скачать CSV"
-            desc="Выгрузка исторических данных в таблицу: можно выбрать конкретные фонды, несколько категорий сразу и период. Несколько категорий выгружаются архивом с отдельным файлом на каждую."
-          />
-          <ModeBlock
+          <ActionBlock
+            icon={Bell}
             title="Сигнал (будильник, только в «Притоки-Оттоки»)"
             desc="Создать оповещение в мессенджере об аномально крупном притоке или оттоке. Фонды и категории выбираются внутри окна. Функция доступна на платных тарифах — иначе на значке замок."
           />
-          <ModeBlock
+          <ActionBlock
+            icon={Camera}
             title="Скриншот"
             desc="Сохранить текущий график картинкой с подписью категории, режима и периода — удобно для заметок и публикаций."
           />
-          <ModeBlock
+          <ActionBlock
+            icon={SlidersHorizontal}
             title="Настройки графика"
             desc="Внешний вид: в режиме СЧА можно выбрать тип линии (линия/область) и палитру; в режиме притоков-оттоков — палитру гистограммы."
+          />
+          <ActionBlock
+            icon={Palette}
+            title="Цветовая палитра"
+            desc="Выбор цветовой схемы графика, включая вариант для комфортного просмотра при нарушениях цветовосприятия."
           />
         </div>
       </Section>
@@ -400,27 +359,27 @@ export default function FundsMoneyMethodologyPage() {
             {
               label: 'СЧА растёт, индекс стоит или падает',
               meaning:
-                'Чистые притоки сильнее движения рынка — линия СЧА обгоняет индекс. Инвесторы видят перспективу и заносят деньги. Для денежного рынка это норма (рост за счёт капитализации), для акций — заметный позитивный сигнал.',
+                'Чистые притоки заметнее движения рынка — линия СЧА обгоняет индекс. Может говорить о том, что инвесторы заносят деньги. Для денежного рынка это обычная картина (рост за счёт капитализации).',
             },
             {
               label: 'СЧА падает, индекс растёт',
               meaning:
-                'Отток денег при растущем рынке — фиксация прибыли или перекладка. Может предшествовать локальной коррекции.',
+                'Отток денег при растущем рынке — возможна фиксация прибыли или перекладка средств.',
             },
             {
-              label: 'Резкий приток в фонды денежного рынка',
+              label: 'Заметный приток в фонды денежного рынка',
               meaning:
-                'Инвесторы прячут деньги в безрисковые инструменты. Часто сигнал осторожности или ожидания распродажи в акциях.',
+                'Инвесторы чаще перекладываются в менее рисковые инструменты. Может отражать осторожность на рынке.',
             },
             {
-              label: 'Резкий приток в фонды акций',
+              label: 'Заметный приток в фонды акций',
               meaning:
-                'Аппетит к риску возвращается. Особенно показательно, если параллельно оттоки из денежного рынка — деньги «переливаются» обратно в риск.',
+                'Может отражать возвращающийся аппетит к риску — особенно если параллельно идут оттоки из денежного рынка.',
             },
             {
               label: 'Оттоки из золотых фондов',
               meaning:
-                'Снижение спроса на защитный актив. Часто совпадает с уверенным трендом в акциях.',
+                'Может отражать снижение спроса на защитный актив. Иногда совпадает с ростом в акциях.',
             },
           ]}
         />
