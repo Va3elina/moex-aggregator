@@ -58,6 +58,7 @@ import FundDetailModal, {
 import FundPicker, { type FundPickerFund } from '../../components/fundtrades/FundPicker';
 import UkMultiSelect, { type UkOption } from '../../components/fundtrades/UkMultiSelect';
 import CompanyFlowsTab from '../../components/fundtrades/CompanyFlowsTab';
+import DelayedDataBadge from '../../components/fundtrades/DelayedDataBadge';
 import MobileLayout from '../../components/mobile/MobileLayout';
 import MobilePageHeader from '../../components/mobile/MobilePageHeader';
 import MobileSheet from '../../components/mobile/MobileSheet';
@@ -571,6 +572,7 @@ export default function MobileFundTradesPage() {
           фонда», обрезанный снапшот/потоки) и затекает в щель над нижним
           рейлом. */}
       <div className="fm-ft-scroll">
+      <DelayedDataBadge />
       {tab === 'funds' && (
         <FundsTab
           fundsByCategory={fundsByCategory}
