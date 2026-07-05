@@ -402,8 +402,10 @@ def _validate_alert_body(b: AlertCreate) -> Optional[str]:
     if b.indicator == "oi_extreme":
         if b.op not in ("new_high", "new_low"):
             return "для нового экстремума op = new_high/new_low"
-        if int(b.threshold) not in (0, 30, 90):
-            return "период экстремума: 30 / 90 / 0 (всё время)"
+        # Только «редкие» горизонты: полгода / год / всё время (месяц и 3 мес —
+        # шум, слишком частые рекорды). 180 / 365 / 0 (всё время).
+        if int(b.threshold) not in (0, 180, 365):
+            return "период экстремума: 180 / 365 / 0 (всё время)"
         if b.clgroup not in ("FIZ", "YUR"):
             return "укажите группу физлица/юрлица"
     elif b.op in ("new_high", "new_low"):

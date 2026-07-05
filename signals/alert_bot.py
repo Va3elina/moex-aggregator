@@ -353,7 +353,8 @@ def _alert_card_text(a) -> str:
         head = "Открытые позиции"
         clg = "физлица" if (clgroup or "FIZ") == "FIZ" else "юрлица"
         kind = "минимум" if op == "new_low" else "максимум"
-        per = {30: "за месяц", 90: "за 3 месяца"}.get(int(float(threshold or 0)), "за всё время")
+        per = {180: "за 6 месяцев", 365: "за год"}.get(
+            int(float(threshold or 0)), "за всё время")
         cond = f"чистая позиция ({clg}) — новый {kind} перекоса {per}"
     elif indicator == "funds_flow":
         # Фонды: заголовок — метка выбора (без сырого asset 'all'/'custom').

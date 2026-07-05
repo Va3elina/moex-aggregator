@@ -120,12 +120,13 @@ def _row_signal(pts: List[tuple]) -> Dict[str, Any]:
 
 def _prior_extremes(db, clgroup: str) -> Dict[str, Dict[str, Any]]:
     """Per-sectype ПРЕДЫДУЩИЕ экстремумы перекоса net_pct по окнам (для бейджа
-    «новый рекорд»). Исключаем последний день каждого актива (tradedate < его
-    последней даты) — чтобы сравнить сегодняшний перекос с рекордом ДО сегодня.
+    «новый рекорд»). Только редкие горизонты: 6 месяцев / год / всё время (месяц
+    и 3 мес — шум). Исключаем последний день каждого актива (tradedate < его
+    последней даты) — сравниваем сегодняшний перекос с рекордом ДО сегодня.
     Один агрегатный проход; net_pct = last-bar-of-day (pos_long+pos_short)/
     (pos_long−pos_short)×100."""
-    d30 = (date.today() - timedelta(days=30)).isoformat()
-    d90 = (date.today() - timedelta(days=90)).isoformat()
+    d180 = (date.today() - timedelta(days=180)).isoformat()
+    d365 = (date.today() - timedelta(days=365)).isoformat()
     rows = db.execute(text(
         """
         WITH daily AS (
@@ -139,34 +140,34 @@ def _prior_extremes(db, clgroup: str) -> Dict[str, Dict[str, Any]]:
         ),
         last AS (SELECT sectype, MAX(tradedate) AS ld FROM daily GROUP BY sectype)
         SELECT d.sectype,
-          MAX(net_pct) FILTER (WHERE d.tradedate >= :d30 AND d.tradedate < l.ld) AS pmax_1m,
-          MIN(net_pct) FILTER (WHERE d.tradedate >= :d30 AND d.tradedate < l.ld) AS pmin_1m,
-          MAX(net_pct) FILTER (WHERE d.tradedate >= :d90 AND d.tradedate < l.ld) AS pmax_3m,
-          MIN(net_pct) FILTER (WHERE d.tradedate >= :d90 AND d.tradedate < l.ld) AS pmin_3m,
+          MAX(net_pct) FILTER (WHERE d.tradedate >= :d180 AND d.tradedate < l.ld) AS pmax_6m,
+          MIN(net_pct) FILTER (WHERE d.tradedate >= :d180 AND d.tradedate < l.ld) AS pmin_6m,
+          MAX(net_pct) FILTER (WHERE d.tradedate >= :d365 AND d.tradedate < l.ld) AS pmax_1y,
+          MIN(net_pct) FILTER (WHERE d.tradedate >= :d365 AND d.tradedate < l.ld) AS pmin_1y,
           MAX(net_pct) FILTER (WHERE d.tradedate < l.ld) AS pmax_all,
           MIN(net_pct) FILTER (WHERE d.tradedate < l.ld) AS pmin_all
         FROM daily d JOIN last l USING (sectype)
         WHERE d.net_pct IS NOT NULL
         GROUP BY d.sectype
         """
-    ), {"clg": clgroup, "d30": d30, "d90": d90}).fetchall()
+    ), {"clg": clgroup, "d180": d180, "d365": d365}).fetchall()
     out: Dict[str, Dict[str, Any]] = {}
     for r in rows:
         out[r[0]] = {
-            "max_1m": r[1], "min_1m": r[2], "max_3m": r[3],
-            "min_3m": r[4], "max_all": r[5], "min_all": r[6],
+            "max_6m": r[1], "min_6m": r[2], "max_1y": r[3],
+            "min_1y": r[4], "max_all": r[5], "min_all": r[6],
         }
     return out
 
 
 def _record_for(net_pct, ex: Dict[str, Any] | None) -> Dict[str, str] | None:
-    """Сильнейший пробитый рекорд перекоса сегодня (всё время > 3мес > месяц),
+    """Сильнейший пробитый рекорд перекоса сегодня (всё время > год > 6 мес),
     строго больше/меньше предыдущего экстремума. None если рекорда нет."""
     if net_pct is None or not ex:
         return None
     for period, mx, mn in (("all", ex["max_all"], ex["min_all"]),
-                           ("3m", ex["max_3m"], ex["min_3m"]),
-                           ("1m", ex["max_1m"], ex["min_1m"])):
+                           ("1y", ex["max_1y"], ex["min_1y"]),
+                           ("6m", ex["max_6m"], ex["min_6m"])):
         if mx is not None and net_pct > mx:
             return {"kind": "high", "period": period}
         if mn is not None and net_pct < mn:

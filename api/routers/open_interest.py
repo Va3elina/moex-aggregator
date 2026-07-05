@@ -35,10 +35,10 @@ def get_oi_screener(
     """
     from api.cache import get_or_compute
     from api.services.oi_screener import compute_screener
-    # v4 = + record (бейдж «новый рекорд перекоса за период»); ключ пер-группу
-    # (FIZ/YUR считаются честно по своим рядам — npart/проценты у групп разные,
-    # зеркален только |Δnet|).
-    return get_or_compute(f"oi_screener:v4:{clgroup}", lambda: compute_screener(db, clgroup))
+    # v5 = record по горизонтам 6мес/год/всё (было 1мес/3мес/всё — частили);
+    # ключ пер-группу (FIZ/YUR считаются честно по своим рядам — npart/проценты
+    # у групп разные, зеркален только |Δnet|).
+    return get_or_compute(f"oi_screener:v5:{clgroup}", lambda: compute_screener(db, clgroup))
 
 
 @oi_router.get("/intraday-assets")
