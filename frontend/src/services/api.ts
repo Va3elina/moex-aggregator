@@ -275,6 +275,7 @@ export interface OiScreenerRow {
   net_pct: number | null;         // net / (лонги+шорты), −100…+100
   net_pct_prev: number | null;    // перекос вчера (для «следа кометы»)
   delta_net: number | null;       // Δ чистой позиции за день, контракты
+  npart: number;                  // число участников группы (для подсказки illiquid)
   ratio: number | null;           // ATR14-кратность |Δnet| («в N× резче обычного»)
   direction: 'up' | 'down' | null;
   status: 'sharp' | 'normal' | 'illiquid' | 'nodata';
@@ -286,6 +287,7 @@ export interface OiScreenerRow {
 export interface OiScreenerResponse {
   signal_date: string | null;
   clgroup: 'FIZ' | 'YUR';
+  min_part: number;               // порог ликвидности группы (физ 50 / юр 15)
   rows: OiScreenerRow[];
 }
 

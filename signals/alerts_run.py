@@ -30,7 +30,7 @@ from api.database import SessionLocal, engine       # noqa: E402
 from api.models import User, Alert, AlertFire        # noqa: E402
 from signals.db import get_latest_price              # noqa: E402
 from signals.detectors.oi import (  # noqa: E402
-    compute_oi_z, compute_position_atr, compute_participants_atr, ATR_MIN_PART,
+    compute_oi_z, compute_position_atr, compute_participants_atr, min_part,
 )
 from signals.detectors.funds import compute_fund_flow_atr  # noqa: E402
 from signals.alert_notify import send_message        # noqa: E402
@@ -292,7 +292,7 @@ def compute_value(a: Alert):
             pcts.append((net / gross * 100) if gross else 0.0)
         today_date = series[-1][0]
         npart_today = series[-1][2]
-        if npart_today < ATR_MIN_PART:
+        if npart_today < min_part(clg):     # ликвидность по группе (юр порог ниже)
             return None, None
         today_pct = pcts[-1]
         prior = pcts[:-1]
