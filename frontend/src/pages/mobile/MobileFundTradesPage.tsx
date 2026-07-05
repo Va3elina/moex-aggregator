@@ -10,7 +10,8 @@
  *                   метрика (вес%/объём₽) + сортировка фондов + выбор УК +
  *                   мультивыбор фондов movers. Всё, что не время и не актив.
  *
- * Pro-only (как десктоп: useCommonFeatures().fund_trades_access) → LockedView.
+ * Открыт для всех тиров (флаг useCommonFeatures().fund_trades_access; LockedView-
+ * ветка оставлена на случай ре-гейтинга).
  *
  * Переиспользует весь data-слой (services/api), FundDetailModal, Donut,
  * FundPicker, UkMultiSelect, CompanyFlowsTab, usePersistedState с ТЕМИ ЖЕ

@@ -282,7 +282,7 @@ export function useCommonFeatures(): CommonFeatures {
         watermark_on_export: true,
         csv_export: false,
         api_access: false,
-        fund_trades_access: false,
+        fund_trades_access: true,
         telegram_alerts_quota: 0,
     };
 }
