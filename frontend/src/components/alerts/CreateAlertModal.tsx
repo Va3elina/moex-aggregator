@@ -25,12 +25,15 @@ const EMAIL_CHANNEL_ENABLED = false;
 export interface AlertMetricOption {
     key: string;
     label: string;
-    indicator: string;   // 'price' | 'oi_move'
-    metric: string;      // 'close' | 'atr'
+    indicator: string;   // 'price' | 'oi_move' | 'oi_extreme'
+    metric: string;      // 'close' | 'atr' | 'net'
     clgroup?: string;    // OI: 'FIZ' | 'YUR'
     ops: { value: string; label: string }[];
     unit?: string;       // '₽' | '×'
     defaultThreshold?: number;
+    /** Если задан — вместо числового порога показываем селект периода; выбранное
+     *  значение уходит в threshold (для oi_extreme это lookback-дни: 30/90/0). */
+    periodControl?: { value: string; label: string }[];
     hint?: string;
 }
 
@@ -141,6 +144,11 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
         metric?.indicator === 'oi_move' ||
         metric?.indicator === 'oi_participants';
 
+    // Period-метрика (oi_extreme): вместо числового порога — селект периода;
+    // выбранное значение (дни) уходит в threshold.
+    const isPeriodMetric = !!metric?.periodControl;
+    const [period, setPeriod] = useState<string>(metric?.periodControl?.[0]?.value ?? '30');
+
     const [op, setOp] = useState(metric?.ops[0]?.value ?? 'cross_up');
     // price → числовой порог в ₽; oi_move → не используется (порог = множитель ступени).
     const [threshold, setThreshold] = useState<string>(
@@ -227,6 +235,7 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
         if (!metricInitDone.current) { metricInitDone.current = true; return; }
         setOp(metric.ops[0]?.value ?? 'cross_up');
         setThreshold(metric.defaultThreshold != null ? String(metric.defaultThreshold) : '');
+        setPeriod(metric.periodControl?.[0]?.value ?? '30');
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [metricKey]);
 
@@ -302,6 +311,25 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
         if (!metric) return;
         if (channelsArr.length === 0) { setMsg({ type: 'err', text: 'Выберите хотя бы один канал доставки' }); return; }
         if (needsTelegramLink) { setMsg({ type: 'err', text: 'Подключите Telegram или уберите этот канал' }); return; }
+
+        // ── oi_extreme: один актив, порог = период (дни) ─────────────────────
+        if (isPeriodMetric) {
+            setBusy(true); setMsg(null);
+            try {
+                const payload: AlertCreatePayload = {
+                    indicator: metric.indicator, asset, asset_name: assetName,
+                    metric: metric.metric, clgroup: metric.clgroup ?? null,
+                    op, threshold: Number(period), mode, channels: channelsArr,
+                    ...(mode === 'repeat' ? { cooldown_hours: 24 } : {}),
+                };
+                await createAlert(payload);
+                setCreatedCount(1);
+                setCreated(true);
+            } catch (e) {
+                setMsg({ type: 'err', text: (e as Error).message });
+            } finally { setBusy(false); }
+            return;
+        }
 
         // ── price: один актив, числовой порог в ₽ (старое поведение) ─────────
         if (!isTierMetric) {
@@ -498,6 +526,19 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
                                     </button>
                                 </div>
                             </div>
+                        ) : isPeriodMetric ? (
+                            <>
+                                <label style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>Условие
+                                    <select value={op} onChange={(e) => setOp(e.target.value)} style={{ ...field, marginTop: 4 }}>
+                                        {metric?.ops.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                    </select>
+                                </label>
+                                <label style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>Период
+                                    <select value={period} onChange={(e) => setPeriod(e.target.value)} style={{ ...field, marginTop: 4 }}>
+                                        {metric?.periodControl?.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+                                    </select>
+                                </label>
+                            </>
                         ) : (
                             <>
                                 <label style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>Условие

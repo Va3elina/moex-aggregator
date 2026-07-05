@@ -348,6 +348,13 @@ def _alert_card_text(a) -> str:
         name = asset_name or "Капитализация рынка"
         head = "Индикатор Баффета"
         cond = f"капитализация рынка {_OP_PRICE.get(op, op)} {_num(threshold)} млрд ₽"
+    elif indicator == "oi_extreme":
+        name = asset_name or asset
+        head = "Открытые позиции"
+        clg = "физлица" if (clgroup or "FIZ") == "FIZ" else "юрлица"
+        kind = "минимум" if op == "new_low" else "максимум"
+        per = {30: "за месяц", 90: "за 3 месяца"}.get(int(float(threshold or 0)), "за всё время")
+        cond = f"чистая позиция ({clg}) — новый {kind} перекоса {per}"
     elif indicator == "funds_flow":
         # Фонды: заголовок — метка выбора (без сырого asset 'all'/'custom').
         name = asset_name or _FUND_ASSET_NAME.get(asset, asset)
@@ -373,7 +380,8 @@ def _alert_card_text(a) -> str:
     # всегда: 'день' для дневной публикации, '5 мин'/'1 час' для раннего сигнала.
     if indicator in ("oi_move", "oi_participants"):
         lines.append(f"Таймфрейм: {_TF_LABEL.get(timeframe, timeframe)}")
-    if last_value is not None:
+    # oi_extreme: last_value — сентинел (1/0 = был/не был рекорд), не показываем.
+    if last_value is not None and indicator != "oi_extreme":
         lines.append(f"Последнее значение: {_num(last_value)}{unit}")
     if last_fired_at is not None:
         lines.append(f"Срабатывал: {last_fired_at:%d.%m.%Y %H:%M} UTC")

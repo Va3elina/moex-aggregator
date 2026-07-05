@@ -277,6 +277,8 @@ export interface OiScreenerRow {
   ratio: number | null;           // ATR14-кратность |Δnet| («в N× резче обычного»)
   direction: 'up' | 'down' | null;
   status: 'sharp' | 'normal' | 'illiquid' | 'nodata';
+  // Новый рекорд перекоса сегодня (сильнейший период), null если нет.
+  record: { kind: 'high' | 'low'; period: 'all' | '3m' | '1m' } | null;
   signal_date: string;            // дата последних данных (T+1)
 }
 

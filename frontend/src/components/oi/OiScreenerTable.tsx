@@ -167,6 +167,30 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
     ? new Date(signalDate + 'T00:00:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
     : null;
 
+  // Бейдж «новый рекорд перекоса»: сильнее период — ярче (всё время = accent).
+  const PERIOD_WORD: Record<string, string> = { all: 'за всё время', '3m': 'за 3 мес', '1m': 'за месяц' };
+  const recordBadge = (r: OiScreenerRow) => {
+    if (!r.record) return null;
+    const high = r.record.kind === 'high';
+    const strong = r.record.period === 'all';
+    return (
+      <span
+        title={`Чистая позиция ${high ? 'достигла нового максимума (рекордный лонг)' : 'достигла нового минимума (рекордный шорт)'} перекоса ${PERIOD_WORD[r.record.period]}.`}
+        style={{
+          ...MONO, display: 'inline-flex', alignItems: 'center', gap: 4,
+          padding: '1px 8px', borderRadius: 999, fontSize: 'var(--fs-2xs)', fontWeight: 800,
+          letterSpacing: '0.02em', whiteSpace: 'nowrap', marginBottom: 4,
+          border: `1.5px solid ${strong ? 'var(--accent)' : (high ? 'var(--oi-green)' : 'var(--oi-red)')}`,
+          background: strong ? 'var(--accent)' : 'transparent',
+          color: strong ? 'var(--text-inverse)' : (high ? 'var(--oi-green)' : 'var(--oi-red)'),
+        }}
+      >
+        <Star size={10} fill="currentColor" strokeWidth={0} />
+        {high ? 'новый макс' : 'новый мин'} {PERIOD_WORD[r.record.period]}
+      </span>
+    );
+  };
+
   const groupWord = clgroup === 'FIZ' ? 'физлица' : 'юрлица';
   const mirrorWord = clgroup === 'FIZ' ? 'юрлица' : 'физлица';
 
@@ -427,8 +451,11 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
                 {/* ×N */}
                 <div style={{ justifySelf: 'center' }}>{ratioBadge(r)}</div>
 
-                {/* Сигнал */}
-                {signalText(r)}
+                {/* Сигнал (+ бейдж рекорда перекоса, если есть) */}
+                <div style={{ minWidth: 0 }}>
+                  {r.record && <div>{recordBadge(r)}</div>}
+                  {signalText(r)}
+                </div>
 
                 {/* ⭐ */}
                 <button
