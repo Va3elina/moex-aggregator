@@ -28,9 +28,15 @@ from api.services import contract_calendar
 
 # --- Константы детектора: КОПИЯ signals/detectors/oi.py (менять синхронно) ---
 ATR_WINDOW = 14
-ATR_MIN_PART = 50        # ликвидность: «толпа», иначе шум
+ATR_MIN_PART = 50        # ликвидность ФИЗ (розница): «толпа», иначе шум
+ATR_MIN_PART_YUR = 15    # ЮР (институты): участников на 1-2 порядка меньше → свой порог
 ATR_MIN_REL = 0.02       # материальность: |Δ|/|net| ≥ 2%
 ATR_FLOOR_REL = 0.001    # ATR ≥ 0.1%·|net|, иначе позиция «заморожена»
+
+
+def _min_part(clgroup: str) -> int:
+    """Порог ликвидности по группе (у юрлиц институтов структурно меньше)."""
+    return ATR_MIN_PART_YUR if clgroup == "YUR" else ATR_MIN_PART
 
 # Дней истории в выборке: окно + запас на выходные/праздники (как в детекторе).
 _HISTORY_DAYS = ATR_WINDOW + 30
@@ -124,8 +130,10 @@ def _bulk_intraday_now(db, clgroup: str, sectypes: set) -> Dict[str, tuple]:
     }
 
 
-def _row_signal(pts: List[tuple]) -> Dict[str, Any]:
+def _row_signal(pts: List[tuple], min_part: int) -> Dict[str, Any]:
     """Сигнальные поля одной строки скринера по дневному ряду позиций.
+
+    min_part — порог ликвидности для ЭТОЙ группы (физ 50 / юр 15).
 
     Статусы:
       sharp    — ratio ≥ 2 и ВСЕ гарды детектора прошли (материальность,
@@ -133,7 +141,7 @@ def _row_signal(pts: List[tuple]) -> Dict[str, Any]:
                  бы алерт «резкое движение»;
       normal   — движение в пределах обычного (ratio показываем, если база
                  не заморожена);
-      illiquid — участников < 50, ×N не считаем (шум);
+      illiquid — участников < порога группы, ×N не считаем (шум);
       nodata   — мало истории.
     """
     if len(pts) < _MIN_POINTS:
@@ -149,7 +157,7 @@ def _row_signal(pts: List[tuple]) -> Dict[str, Any]:
     net = nets[-1]
     direction = "up" if last_signed > 0 else "down"
 
-    if npart_now < ATR_MIN_PART:
+    if npart_now < min_part:
         return {"status": "illiquid", "ratio": None, "direction": None}
 
     atr = statistics.fmean(diffs[-(ATR_WINDOW + 1):-1])
@@ -257,6 +265,7 @@ def compute_screener(db, clgroup: str = "FIZ") -> Dict[str, Any]:
     extremes = _prior_extremes(db, clgroup)   # для бейджа «новый рекорд перекоса»
     intraday_set = _intraday_assets(db)
     intraday_now = _bulk_intraday_now(db, clgroup, intraday_set)
+    min_part = _min_part(clgroup)             # порог ликвидности группы (физ 50 / юр 15)
 
     # Метаданные инструментов: имя + группа (Индексы/Валюта/Товары/Акции).
     meta = {
@@ -286,7 +295,7 @@ def compute_screener(db, clgroup: str = "FIZ") -> Dict[str, Any]:
             pts = pts + [intra]
 
         last = pts[-1]
-        _d, net, _npart, oi, pos_long, pos_short = last
+        _d, net, npart, oi, pos_long, pos_short = last
         # Свежесть/«мёртвость контракта» считаем по ДНЕВНОЙ дате (dl[0]), а не по
         # интрадей-бару — иначе интрадей-строки задрали бы глобальную дату к
         # «сегодня» и дневные ряды (T+1) ложно выглядели бы отставшими.
@@ -312,7 +321,7 @@ def compute_screener(db, clgroup: str = "FIZ") -> Dict[str, Any]:
             if prev_gross:
                 net_pct_prev = round(prev[1] / prev_gross * 100, 1)
 
-        sig = _row_signal(pts)
+        sig = _row_signal(pts, min_part)
         # Рекорд: для интрадей-актива prior-экстремумы (они «до сегодня») надо
         # дополнить ПОСЛЕДНИМ дневным close — бегущий бар новее него, и он должен
         # соперничать со всей дневной историей включая вчера.
@@ -339,6 +348,7 @@ def compute_screener(db, clgroup: str = "FIZ") -> Dict[str, Any]:
             "net_pct": net_pct,
             "net_pct_prev": net_pct_prev,
             "delta_net": delta_net,
+            "npart": npart,                     # число участников (для подсказки illiquid)
             "ratio": sig["ratio"],
             "direction": sig["direction"],
             "status": sig["status"],
@@ -367,5 +377,6 @@ def compute_screener(db, clgroup: str = "FIZ") -> Dict[str, Any]:
     return {
         "signal_date": signal_date.isoformat() if signal_date else None,
         "clgroup": clgroup,
+        "min_part": min_part,               # порог ликвидности группы (для подсказки)
         "rows": rows,
     }
