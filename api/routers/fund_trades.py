@@ -34,7 +34,7 @@ from sqlalchemy.orm import Session
 
 from api.database import get_db
 from api.models import User
-from api.routers.auth import require_pro
+from api.routers.auth import get_current_user_optional
 
 router = APIRouter(prefix="/api/fund-trades", tags=["fund-trades"])
 
@@ -282,7 +282,7 @@ def _fund_performance(db: Session, fund_id: int) -> dict:
 
 @router.get("/funds")
 def list_funds_with_history(
-    user: User = Depends(require_pro),
+    user: Optional[User] = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ):
     """
@@ -435,7 +435,7 @@ def list_funds_with_history(
 def fund_trades_detail(
     ticker: str = Path(..., min_length=1, max_length=20),
     period: str = Query("3m", description="1m | 3m | 6m | 1y"),
-    user: User = Depends(require_pro),
+    user: Optional[User] = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ):
     """
@@ -642,7 +642,7 @@ def top_movers(
     funds: str | None = Query(None, description="фильтр по конкретным фондам: comma-separated тикеры (напр. 'TMOS,SBMX'); приоритет над manager; пусто=все"),
     sort: str = Query("weight", description="weight | amount — метрика ранжирования и знака"),
     limit: int = Query(20, ge=1, le=100),
-    user: User = Depends(require_pro),
+    user: Optional[User] = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ):
     """
@@ -892,7 +892,7 @@ def top_movers(
 def asset_buyers(
     asset_name: str = Path(..., min_length=1, max_length=255),
     period: str = Query("3m", description="1m | 3m | 6m | 1y"),
-    user: User = Depends(require_pro),
+    user: Optional[User] = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ):
     """
@@ -1008,7 +1008,7 @@ def asset_buyers(
 @router.get("/snapshots/{ticker}")
 def list_snapshots(
     ticker: str,
-    user: User = Depends(require_pro),
+    user: Optional[User] = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ):
     """
@@ -1051,7 +1051,7 @@ def list_snapshots(
 def snapshot_review(
     ticker: str,
     date: Optional[str] = Query(None, description="ISO date; default = latest"),
-    user: User = Depends(require_pro),
+    user: Optional[User] = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ):
     """
@@ -1303,7 +1303,7 @@ def asset_position_history(
     ticker: str,
     asset_name: Optional[str] = Query(None, description="Asset name (asset_name in DB)"),
     isin: Optional[str] = Query(None, description="ISIN — alternative to asset_name"),
-    user: User = Depends(require_pro),
+    user: Optional[User] = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ):
     """
@@ -1419,7 +1419,7 @@ def _asset_category(sec_type: Optional[str]) -> str:
 
 @router.get("/assets")
 def list_fund_trade_assets(
-    user: User = Depends(require_pro),
+    user: Optional[User] = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ):
     """
@@ -1494,7 +1494,7 @@ def company_flows(
     isin: Optional[str] = Query(None, description="ISIN бумаги (предпочтительно)"),
     asset_name: Optional[str] = Query(None, description="Имя бумаги — если нет ISIN"),
     metric: str = Query("amount", description="amount | weight"),
-    user: User = Depends(require_pro),
+    user: Optional[User] = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ):
     """

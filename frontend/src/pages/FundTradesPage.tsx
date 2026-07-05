@@ -2,7 +2,8 @@
  * FundTradesPage — отслеживание покупок/продаж в БПИФах.
  *
  * Архитектура:
- *   - Pro-only фича (tier-gated через useCommonFeatures().fund_trades_access).
+ *   - Открыт для ВСЕХ тиров (флаг useCommonFeatures().fund_trades_access;
+ *     LockedView-ветка оставлена на случай будущего ре-гейтинга).
  *   - Три таба: «Состав фондов» (карточки) + «Покупки фондов» (консенсус-
  *     гистограмма across фондов) + «Обзор снапшота» (per-fund помесячно).
  *   - При клике на фонд → детальный diff с current_holdings и изменениями.

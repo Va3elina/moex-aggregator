@@ -271,7 +271,7 @@ export default function App() {
             <Route path="/security" element={<Navigate to="/" replace />} />
             {/* API docs — KILL-SWITCH: скрыто до официального запуска (config/features.ts) */}
             {API_CSV_ENABLED && <Route path="/api-docs" element={<ApiDocsPage />} />}
-            {/* Fund trades (Pro tier) — что покупают/продают БПИФы */}
+            {/* Fund trades — открыт для всех тиров; что покупают/продают БПИФы */}
             <Route path="/fund-trades" element={
               <ResponsiveRoute
                 mobile={<MobileFundTradesPage />}
