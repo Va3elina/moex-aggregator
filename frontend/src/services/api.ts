@@ -272,6 +272,7 @@ export interface OiScreenerRow {
   oi_delta_pct: number | null;    // Δ ОИ за день, %
   net: number;                    // чистая позиция физлиц, контракты
   net_pct: number | null;         // net / (лонги+шорты), −100…+100
+  net_pct_prev: number | null;    // перекос вчера (для «следа кометы»)
   delta_net: number | null;       // Δ чистой позиции за день, контракты
   ratio: number | null;           // ATR14-кратность |Δnet| («в N× резче обычного»)
   direction: 'up' | 'down' | null;
