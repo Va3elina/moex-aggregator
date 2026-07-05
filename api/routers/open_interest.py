@@ -35,10 +35,10 @@ def get_oi_screener(
     """
     from api.cache import get_or_compute
     from api.services.oi_screener import compute_screener
-    # v5 = record по горизонтам 6мес/год/всё (было 1мес/3мес/всё — частили);
-    # ключ пер-группу (FIZ/YUR считаются честно по своим рядам — npart/проценты
-    # у групп разные, зеркален только |Δnet|).
-    return get_or_compute(f"oi_screener:v5:{clgroup}", lambda: compute_screener(db, clgroup))
+    # v6 = + интрадей (has_intraday + бегущий 5-мин бар как «net сейчас» для
+    # интрадей-активов). TTL уменьшен до 5 мин: интрадей-данные обновляются
+    # каждые 5 мин, 30-мин кэш держал бы устаревший бегущий бар. Ключ пер-группу.
+    return get_or_compute(f"oi_screener:v6:{clgroup}", lambda: compute_screener(db, clgroup), ttl=300)
 
 
 @oi_router.get("/intraday-assets")
