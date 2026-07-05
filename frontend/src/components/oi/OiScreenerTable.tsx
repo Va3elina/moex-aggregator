@@ -73,9 +73,12 @@ interface Props {
   /** Клик по строке — открыть график этого актива с настройками скринера
    *  (та же группа физ/юр, дневной ТФ, период 1 год). */
   onSelect: (sectype: string, clgroup: Clgroup) => void;
+  /** Открыть модалку алерта по активу (из баннера после добавления в
+   *  избранное). Не передан → блок алертов выключен, баннер не предлагаем. */
+  onRequestAlert?: (sectype: string, name: string, clgroup: Clgroup) => void;
 }
 
-export default function OiScreenerTable({ onSelect }: Props) {
+export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
   const [rows, setRows] = useState<OiScreenerRow[] | null>(null);
   const [signalDate, setSignalDate] = useState<string | null>(null);
   const [error, setError] = useState(false);
@@ -83,6 +86,8 @@ export default function OiScreenerTable({ onSelect }: Props) {
   const [threshold, setThreshold] = useState<ThresholdKey>('2');
   const [group, setGroup] = useState<string>('all');
   const [onlyFav, setOnlyFav] = useState(false);
+  // Баннер «★ добавлено — поставить алерт?» после добавления в избранное.
+  const [alertPrompt, setAlertPrompt] = useState<{ sectype: string; name: string } | null>(null);
   const [sortKey, setSortKey] = useState<'ratio' | 'pct'>('ratio');
   const [sortDir, setSortDir] = useState<1 | -1>(-1);
   const [favorites, setFavorites] = useState<string[]>(() => {
@@ -104,11 +109,19 @@ export default function OiScreenerTable({ onSelect }: Props) {
 
   const toggleFavorite = (sectype: string, e: MouseEvent) => {
     e.stopPropagation();
+    const adding = !favorites.includes(sectype);
     setFavorites((prev) => {
       const next = prev.includes(sectype) ? prev.filter((s) => s !== sectype) : [...prev, sectype];
       localStorage.setItem(FAVORITES_KEY, JSON.stringify(next));
       return next;
     });
+    // При добавлении в избранное — предложить алерт (если блок алертов включён).
+    if (adding && onRequestAlert) {
+      const row = rows?.find((r) => r.sectype === sectype);
+      setAlertPrompt({ sectype, name: row?.name || sectype });
+    } else if (!adding) {
+      setAlertPrompt((p) => (p?.sectype === sectype ? null : p));
+    }
   };
 
   const visible = useMemo(() => {
@@ -240,8 +253,48 @@ export default function OiScreenerTable({ onSelect }: Props) {
 
   return (
     <div>
+      {/* Баннер-предложение алерта после добавления в избранное (п.3) */}
+      {alertPrompt && (
+        <div
+          style={{
+            display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+            padding: 'var(--sp-3) var(--sp-4)', marginBottom: 'var(--sp-4)',
+            background: 'var(--bg-secondary)', border: '2px solid var(--accent)',
+            borderRadius: 12,
+          }}
+        >
+          <Star size={18} fill="var(--accent)" strokeWidth={0} style={{ flexShrink: 0 }} />
+          <span style={{ fontSize: 'var(--fs-sm)', minWidth: 0 }}>
+            <strong>{alertPrompt.name}</strong> в избранном. Поставьте алерт, чтобы о
+            резком движении сообщили сами — не следить вручную.
+          </span>
+          <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+            <button
+              type="button"
+              className="editorial-press rounded-full font-semibold"
+              style={{
+                fontSize: 'var(--fs-sm)', padding: 'var(--sp-1) var(--sp-4)',
+                background: 'var(--accent)', border: '2px solid var(--text-primary)',
+                color: 'var(--text-inverse)', cursor: 'pointer', whiteSpace: 'nowrap',
+              }}
+              onClick={() => { onRequestAlert?.(alertPrompt.sectype, alertPrompt.name, clgroup); setAlertPrompt(null); }}
+            >
+              Создать алерт
+            </button>
+            <button
+              type="button"
+              aria-label="Закрыть"
+              onClick={() => setAlertPrompt(null)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: 'var(--fs-base)', lineHeight: 1, padding: 4 }}
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Тулбар — те же SegmentedControl, что контролы графика ОИ */}
-      <div className="flex flex-wrap items-center mb-4 md:mb-6 gap-2 md:gap-3">
+      <div data-tour="screener-toolbar" className="flex flex-wrap items-center mb-4 md:mb-6 gap-2 md:gap-3">
         <SegmentedControl<Clgroup>
           options={[
             { key: 'FIZ', label: 'Физлица' },
@@ -263,6 +316,7 @@ export default function OiScreenerTable({ onSelect }: Props) {
         {/* Фильтр по избранным активам */}
         <button
           type="button"
+          data-tour="screener-favorites"
           onClick={() => setOnlyFav((v) => !v)}
           aria-pressed={onlyFav}
           title="Показать только избранные активы"
@@ -283,7 +337,7 @@ export default function OiScreenerTable({ onSelect }: Props) {
       </div>
 
       {/* Таблица */}
-      <div style={{ overflowX: 'auto' }}>
+      <div data-tour="screener-table" style={{ overflowX: 'auto' }}>
         <div style={{ minWidth: 960 }}>
           {/* Заголовки */}
           <div style={{ display: 'grid', gridTemplateColumns: gridCols, gap: 16, padding: '12px 18px', borderBottom: '2px solid var(--text-primary)' }}>
