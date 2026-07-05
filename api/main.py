@@ -206,6 +206,9 @@ async def startup_event():
     _notify_task = asyncio.create_task(start_notify_listener())
     # Прогреваем кэш в фоне
     asyncio.create_task(_warmup_cache())
+    # Периодический прогрев горячих кэшей с коротким TTL (скринер ОИ), чтобы юзеры
+    # не ловили ленивый пересчёт (get_or_compute считает на потоке запроса).
+    asyncio.create_task(_periodic_warm())
     logger.info("🚀 MOEX Analytics API запущен (SSE enabled)", extra={
         "extra_data": {"type": "startup", "version": "1.0.0"}
     })
@@ -235,6 +238,8 @@ async def _warmup_cache():
         "/api/breadth/history?ema_period=200&days=365&universe=imoex",
         "/api/chart/SR?sectype=SR&inst_type=futures&interval=24&clgroup=FIZ&show_oi=true&period=6m",
         "/api/buffett/cap-gdp?period=10y&smooth=false",
+        "/api/oi/screener?clgroup=FIZ",
+        "/api/oi/screener?clgroup=YUR",
     ]
     try:
         async with httpx.AsyncClient(base_url="http://localhost:8000", timeout=30) as client:
@@ -246,6 +251,30 @@ async def _warmup_cache():
         logger.info(f"Cache warmup done ({len(urls)} endpoints)")
     except Exception as e:
         logger.warning(f"Cache warmup failed: {e}")
+
+
+async def _periodic_warm():
+    """Держит горячими кэши с коротким TTL, чтобы пользователи не платили за
+    ленивый пересчёт. Скринер ОИ: TTL 300с → перегреваем каждые 240с (оба clgroup);
+    тяжёлый скан истории (oi_extremes, TTL 30мин) при этом уезжает в фон, а не на
+    поток запроса. Компонент идемпотентен и per-container (лишний прогрев безвреден)."""
+    import httpx
+    await asyncio.sleep(45)  # после стартового прогрева
+    warm_urls = [
+        "/api/oi/screener?clgroup=FIZ",
+        "/api/oi/screener?clgroup=YUR",
+    ]
+    while True:
+        try:
+            async with httpx.AsyncClient(base_url="http://localhost:8000", timeout=45) as client:
+                for url in warm_urls:
+                    try:
+                        await client.get(url)
+                    except Exception:
+                        pass
+        except Exception as e:
+            logger.warning(f"Periodic warm failed: {e}")
+        await asyncio.sleep(240)
 
 @app.on_event("shutdown")
 async def shutdown_event():
