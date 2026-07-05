@@ -501,7 +501,8 @@ def format_msg(a: Alert, value: float, ctx: dict) -> str:
         high = ctx.get("direction") != "low"
         kind = "максимум" if high else "минимум"
         dir_emo = _ce(*_EMO_UP) if high else _ce(*_EMO_DOWN)
-        per = {180: "за 6 месяцев", 365: "за год"}.get(
+        per = {365: "за год", 730: "за 2 года", 1095: "за 3 года",
+               1460: "за 4 года", 1825: "за 5 лет"}.get(
             ctx.get("period_days"), "за всё время")
         npct = ctx.get("net_pct")
         npct_s = (f" ({npct:+.1f}%)".replace("-", "−").replace(".", ",")

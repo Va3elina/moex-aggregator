@@ -188,7 +188,10 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
     : null;
 
   // Бейдж «новый рекорд перекоса»: сильнее период — ярче (всё время = accent).
-  const PERIOD_WORD: Record<string, string> = { all: 'за всё время', '1y': 'за год', '6m': 'за 6 мес' };
+  const PERIOD_WORD: Record<string, string> = {
+    all: 'за всё время', '5y': 'за 5 лет', '4y': 'за 4 года',
+    '3y': 'за 3 года', '2y': 'за 2 года', '1y': 'за год',
+  };
   const recordBadge = (r: OiScreenerRow) => {
     if (!r.record) return null;
     const high = r.record.kind === 'high';
