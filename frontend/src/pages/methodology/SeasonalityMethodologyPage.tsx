@@ -46,48 +46,7 @@ function MonthlyPatternFigure() {
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
-   Инфографика 2 — среднее vs медиана: как один кризисный год тянет среднее,
-   а медиана держит типичную картину. Смысл кнопки «Без выбросов».
-   ───────────────────────────────────────────────────────────────────────── */
-function AvgVsMedianFigure() {
-  // Точки-годы по горизонтали: кучка около +3, один выброс на −16.
-  const years = [
-    { v: 4 }, { v: 2 }, { v: 3 }, { v: 5 }, { v: 1 }, { v: 3 }, { v: -16 }, { v: 2 },
-  ];
-  const zeroX = 150;     // ноль по горизонтали
-  const scale = 8;       // px на единицу
-  const avg = years.reduce((s, y) => s + y.v, 0) / years.length; // ≈ +0.5
-  const median = 2.5;    // визуальная медиана кучки
-  const yLine = 34;
-  return (
-    <Figure caption={<>«Без выбросов» переключает расчёт со <b>среднего</b> на <b>медиану</b> — типичный год. Один обвал (крайняя точка слева) сильно тянет среднее вниз, а медиана остаётся среди основной массы лет.</>}>
-      <svg viewBox="0 0 320 108" style={{ width: '100%', display: 'block' }} role="img" aria-label="Среднее против медианы при одном выбросе">
-        {/* ось лет */}
-        <line x1="14" y1={yLine} x2="306" y2={yLine} stroke="currentColor" strokeWidth="1" opacity="0.4" />
-        <line x1={zeroX} y1={yLine - 8} x2={zeroX} y2={yLine + 8} stroke="currentColor" strokeWidth="1" strokeDasharray="3 2" opacity="0.5" />
-        <text x={zeroX} y={yLine + 20} fontSize="8.5" fill="currentColor" opacity="0.6" textAnchor="middle">0%</text>
-        {/* точки-годы */}
-        {years.map((y, i) => {
-          const cx = zeroX + y.v * scale;
-          const outlier = y.v < -10;
-          return (
-            <circle key={i} cx={cx} cy={yLine} r={outlier ? 5.5 : 4.5}
-              fill={outlier ? RED : 'currentColor'} opacity={outlier ? 0.9 : 0.5} />
-          );
-        })}
-        {/* маркер среднего */}
-        <line x1={zeroX + avg * scale} y1={yLine - 20} x2={zeroX + avg * scale} y2={yLine + 4} stroke={RED} strokeWidth="2" />
-        <text x={zeroX + avg * scale} y={yLine - 24} fontSize="9" fontWeight="800" fill={RED} textAnchor="middle">среднее</text>
-        {/* маркер медианы */}
-        <line x1={zeroX + median * scale} y1={yLine + 4} x2={zeroX + median * scale} y2={yLine + 28} stroke={GREEN} strokeWidth="2" />
-        <text x={zeroX + median * scale} y={yLine + 44} fontSize="9" fontWeight="800" fill={GREEN} textAnchor="middle">медиана</text>
-      </svg>
-    </Figure>
-  );
-}
-
-/* ─────────────────────────────────────────────────────────────────────────
-   Инфографика 3 — годовая траектория: средний путь года + текущий год поверх.
+   Инфографика — годовая траектория: средний путь года + текущий год поверх.
    Смысл режима «Годовая» и линии текущего года.
    ───────────────────────────────────────────────────────────────────────── */
 function YearlyTrackFigure() {
@@ -120,19 +79,19 @@ function YearlyTrackFigure() {
 function HistoryDepthFigure() {
   return (
     <Figure caption={<>Каждая серия «С YYYY г.» считает средний паттерн <b>только по годам от выбранного</b> до сегодня. Короткое окно (справа) — свежий режим рынка, но статистика слабее; длинное (слева) — устойчивее, но захватывает другие эпохи. Можно наложить обе.</>}>
-      <svg viewBox="0 0 320 112" style={{ width: '100%', display: 'block' }} role="img" aria-label="Короткая и длинная выборка истории">
+      <svg viewBox="0 0 320 120" style={{ width: '100%', display: 'block' }} role="img" aria-label="Короткая и длинная выборка истории">
         {/* временная ось */}
-        <line x1="16" y1="86" x2="304" y2="86" stroke="currentColor" strokeWidth="1" opacity="0.4" />
-        <text x="16" y="99" fontSize="8.5" fill="currentColor" opacity="0.6" textAnchor="start">давно</text>
-        <text x="304" y="99" fontSize="8.5" fill="currentColor" opacity="0.6" textAnchor="end">сегодня</text>
-        {/* длинная серия — с 2008 */}
-        <rect x="40" y="30" width="252" height="14" rx="4" fill={GREEN} opacity="0.5" />
-        <circle cx="40" cy="37" r="5" fill={GREEN} />
-        <text x="52" y="26" fontSize="9.5" fontWeight="700" fill={GREEN}>С 2008 г. — длинная история</text>
-        {/* короткая серия — с 2020 */}
-        <rect x="200" y="54" width="92" height="14" rx="4" fill={ACCENT} opacity="0.55" />
-        <circle cx="200" cy="61" r="5" fill={ACCENT} />
-        <text x="292" y="50" fontSize="9.5" fontWeight="700" fill={ACCENT} textAnchor="end">С 2020 г. — короткая</text>
+        <line x1="16" y1="96" x2="304" y2="96" stroke="currentColor" strokeWidth="1" opacity="0.4" />
+        <text x="16" y="109" fontSize="8.5" fill="currentColor" opacity="0.6" textAnchor="start">давно</text>
+        <text x="304" y="109" fontSize="8.5" fill="currentColor" opacity="0.6" textAnchor="end">сегодня</text>
+        {/* длинная серия — с 2008 (подпись сверху) */}
+        <rect x="40" y="34" width="252" height="14" rx="4" fill={GREEN} opacity="0.5" />
+        <circle cx="40" cy="41" r="5" fill={GREEN} />
+        <text x="52" y="28" fontSize="9.5" fontWeight="700" fill={GREEN}>С 2008 г. — длинная история</text>
+        {/* короткая серия — с 2020 (сдвинута ниже, подпись в чистом промежутке) */}
+        <rect x="200" y="70" width="92" height="14" rx="4" fill={ACCENT} opacity="0.55" />
+        <circle cx="200" cy="77" r="5" fill={ACCENT} />
+        <text x="292" y="64" fontSize="9.5" fontWeight="700" fill={ACCENT} textAnchor="end">С 2020 г. — короткая</text>
       </svg>
     </Figure>
   );
@@ -250,7 +209,6 @@ export default function SeasonalityMethodologyPage() {
             desc="Цены пересчитываются с учётом дивидендов, и провалы в дни отсечки не считаются падением. Так сезонность не искажается техническими разрывами. Для индексов, валют и сырья переключатель не показывается — там дивидендов нет."
           />
         </div>
-        <AvgVsMedianFigure />
       </Section>
 
       <Section title="Линия текущего года (меню «Слои»)">

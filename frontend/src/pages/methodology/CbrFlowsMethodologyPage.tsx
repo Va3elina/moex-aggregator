@@ -44,7 +44,6 @@ function BalanceFigure() {
       <svg viewBox="0 0 320 190" style={{ width: '100%', display: 'block' }} role="img" aria-label="Баланс покупок и продаж за один период">
         {/* нулевая линия */}
         <line x1="20" y1="95" x2="300" y2="95" stroke="currentColor" strokeWidth="1.5" opacity="0.55" />
-        <text x="304" y="99" fontSize="9.5" fill="currentColor" opacity="0.6">0</text>
 
         {/* Верх — покупатели (зелёные сегменты стека) */}
         <rect x="130" y="60" width="60" height="34" rx="2" fill={GREEN} opacity="0.9" />
@@ -59,7 +58,8 @@ function BalanceFigure() {
         {/* стрелки равенства */}
         <text x="70" y="60" textAnchor="middle" fontSize="10" fontWeight="700" fill={GREEN}>+58</text>
         <text x="70" y="136" textAnchor="middle" fontSize="10" fontWeight="700" fill={RED}>−58</text>
-        <text x="250" y="98" textAnchor="middle" fontSize="11" fontWeight="800" fill="currentColor" opacity="0.75">итог 0</text>
+        {/* «итог 0» — по центру нулевой линии, в чистой правой части, чуть над штрихом */}
+        <text x="248" y="90" textAnchor="middle" fontSize="11" fontWeight="800" fill="currentColor" opacity="0.8">итог 0</text>
       </svg>
     </Figure>
   );
