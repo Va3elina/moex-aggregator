@@ -81,6 +81,7 @@ interface Props {
 export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
   const [rows, setRows] = useState<OiScreenerRow[] | null>(null);
   const [signalDate, setSignalDate] = useState<string | null>(null);
+  const [minPart, setMinPart] = useState<number>(50);   // порог ликвидности группы (из ответа)
   const [error, setError] = useState(false);
   // Все режимы тулбара запоминаются в localStorage — скринер открывается в том
   // же виде, что оставил юзер (группа, порог, тип актива, избранные, сортировка).
@@ -104,7 +105,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
     setRows(null);
     setError(false);
     getOiScreener(clgroup)
-      .then((r) => { if (!cancelled) { setRows(r.rows); setSignalDate(r.signal_date); } })
+      .then((r) => { if (!cancelled) { setRows(r.rows); setSignalDate(r.signal_date); setMinPart(r.min_part); } })
       .catch(() => { if (!cancelled) setError(true); });
     return () => { cancelled = true; };
   }, [clgroup]);
@@ -268,11 +269,11 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
       r.status === 'normal'
         ? `в пределах обычного${r.ratio != null ? ` (${fmtRatio(r.ratio)})` : ''}`
         : r.status === 'illiquid'
-          ? 'низкая ликвидность'
+          ? `низкая ликвидность (${r.npart})`
           : 'недостаточно данных';
     const noteTitle =
       r.status === 'illiquid'
-        ? `На стороне ${groupWord} меньше 50 участников — движение по такому контракту считаем шумом, а не сигналом.`
+        ? `На стороне ${groupWord}: ${r.npart} участников — ниже порога ликвидности ${minPart}. Движение по такому контракту считаем шумом, а не сигналом (у юрлиц участников структурно меньше, поэтому порог свой).`
         : r.status === 'nodata'
           ? 'Мало истории для расчёта ATR-14.'
           : 'Дневной сдвиг чистой позиции в пределах обычного (ниже порога «резко» 2×).';

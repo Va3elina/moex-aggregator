@@ -122,9 +122,19 @@ def compute_oi_z(
 # окно 14 (≈ z 30д, но устойчивее и узнаваемее «ATR14»); guard'ы против шума на
 # мёртвой базе / неликвиде. См. signals/research/oi_atr*.py.
 ATR_WINDOW = 14
-ATR_MIN_PART = 50            # ликвидность: «толпа», иначе шум
+ATR_MIN_PART = 50            # ликвидность ФИЗ (розница): «толпа», иначе шум
+# ЮР — институты: участников структурно на 1-2 порядка меньше, чем розницы. Порог
+# 50 глушил даже голубые фишки (Газпром/Сбер на юр ~60), а мид-кэпы с 15-40
+# институтами — зря. Свой порог 15. ⚠️ КОПИЯ в api/services/oi_screener.py — синхронно.
+ATR_MIN_PART_YUR = 15
 ATR_MIN_REL = 0.02          # материальность: |Δ|/|net| ≥ 2%
 ATR_FLOOR_REL = 0.001       # ATR ≥ 0.1%·|net|, иначе позиция «заморожена»
+
+
+def min_part(clgroup: str) -> int:
+    """Порог ликвидности (мин. участников) с учётом группы: у юрлиц институтов
+    структурно меньше, чем розницы у физлиц → свой, более низкий порог."""
+    return ATR_MIN_PART_YUR if clgroup == "YUR" else ATR_MIN_PART
 
 
 def compute_position_atr(
@@ -161,8 +171,8 @@ def compute_position_atr(
     last_signed = nets[-1] - nets[-2]
     last = abs(last_signed)
     net = nets[-1]
-    # guard'ы: ликвидность, материальность, ATR-floor (как в бэктесте)
-    if npart_now < ATR_MIN_PART:
+    # guard'ы: ликвидность (по группе), материальность, ATR-floor (как в бэктесте)
+    if npart_now < min_part(clgroup):
         return None
     if last / max(abs(net), 1) < ATR_MIN_REL:
         return None
@@ -194,7 +204,7 @@ def compute_participants_atr(
     ДО последнего. «Во сколько раз изменение числа участников больше обычного».
 
     Guard'ы те же по смыслу (база — само npart, а не net): ликвидность
-    (npart_now ≥ ATR_MIN_PART), материальность (|Δnpart|/max(npart,1) ≥ ATR_MIN_REL),
+    (npart_now ≥ min_part(clgroup)), материальность (|Δnpart|/max(npart,1) ≥ ATR_MIN_REL),
     ATR-floor (ATR ≥ ATR_FLOOR_REL·npart) — ловушка «мёртвой базы» сохранена.
 
     npart — НЕ зеркальное число (FIZ и YUR — независимые положительные счётчики),
@@ -217,8 +227,8 @@ def compute_participants_atr(
         return None
     last_signed = nparts[-1] - nparts[-2]
     last = abs(last_signed)
-    # guard'ы: ликвидность, материальность, ATR-floor — база = само npart
-    if npart_now < ATR_MIN_PART:
+    # guard'ы: ликвидность (по группе), материальность, ATR-floor — база = само npart
+    if npart_now < min_part(clgroup):
         return None
     if last / max(npart_now, 1) < ATR_MIN_REL:
         return None
