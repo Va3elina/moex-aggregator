@@ -54,8 +54,20 @@ const OP_LABEL: Record<string, string> = {
 const METRIC_LABEL: Record<string, string> = {
     price: 'Цена', oi_zscore: 'OI z-score', oi_level: 'Открытый интерес',
     oi_move: 'Движение позиции', oi_participants: 'Число участников',
-    funds_flow: 'Аномальный поток',
+    oi_extreme: 'Экстремум позиции', funds_flow: 'Аномальный поток',
 };
+
+// Человеческое условие алерта. oi_extreme особый: op = направление рекорда,
+// threshold = период (дни 30/90/0=всё).
+function condLabel(a: AlertInfo): string {
+    if (a.indicator === 'oi_extreme') {
+        const clg = (a.clgroup || 'FIZ') === 'FIZ' ? 'физлица' : 'юрлица';
+        const kind = a.op === 'new_low' ? 'новый минимум' : 'новый максимум';
+        const per = { 30: 'за месяц', 90: 'за 3 месяца' }[Number(a.threshold)] || 'за всё время';
+        return `чистая позиция (${clg}) — ${kind} перекоса ${per}`;
+    }
+    return `${METRIC_LABEL[a.indicator] || a.indicator} ${OP_LABEL[a.op] || a.op} ${a.threshold}${unitFor(a)}`;
+}
 const STATUS_LABEL: Record<string, string> = {
     active: 'Активен', paused: 'Пауза', fired: 'Сработал',
 };
@@ -404,7 +416,7 @@ export default function TelegramAlertsSection() {
                                                                     <div style={{ minWidth: 0 }}>
                                                                         <div style={{ fontWeight: 600, fontSize: 'var(--fs-sm)' }}>{a.asset_name || a.asset}</div>
                                                                         <div style={{ color: sub, fontSize: 'var(--fs-xs)' }}>
-                                                                            {METRIC_LABEL[a.indicator] || a.indicator} {OP_LABEL[a.op] || a.op} {a.threshold}{unitFor(a)}
+                                                                            {condLabel(a)}
                                                                             {' · '}<span style={{ color: a.status === 'active' ? link : sub }}>{STATUS_LABEL[a.status] || a.status}</span>
                                                                         </div>
                                                                         <button

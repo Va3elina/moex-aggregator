@@ -30,7 +30,7 @@ from api.database import SessionLocal, engine       # noqa: E402
 from api.models import User, Alert, AlertFire        # noqa: E402
 from signals.db import get_latest_price              # noqa: E402
 from signals.detectors.oi import (  # noqa: E402
-    compute_oi_z, compute_position_atr, compute_participants_atr,
+    compute_oi_z, compute_position_atr, compute_participants_atr, ATR_MIN_PART,
 )
 from signals.detectors.funds import compute_fund_flow_atr  # noqa: E402
 from signals.alert_notify import send_message        # noqa: E402
@@ -153,6 +153,11 @@ def eval_op(op: str, value: float, prev, threshold: float) -> bool:
         return prev is not None and prev < threshold <= value
     if op == "cross_down":
         return prev is not None and prev > threshold >= value
+    # new_high/new_low: сам факт «нового рекорда» вычисляется в compute_value
+    # (нужна история окна, недоступная здесь) и возвращается сентинелом value=1.0.
+    # threshold для этих op'ов = lookback-дни, используется в compute_value, НЕ тут.
+    if op in ("new_high", "new_low"):
+        return value >= 0.5
     return False
 
 
@@ -264,6 +269,46 @@ def compute_value(a: Alert):
         return float(ratio), {"direction": direction, "last_flow": last_flow,
                               "asset": a.asset, "fund_ids": fund_ids,
                               "signal_date": sig_date}
+    if a.indicator == "oi_extreme":
+        # «Новый максимум/минимум перекоса за период» — ловит ПЛАВНЫЙ дрейф
+        # позиционирования, который ATR-«резкое движение» пропускает. Рекорд
+        # считаем на перекосе net_pct = net/(лонги+|шорты|)×100 по дневному ряду.
+        # threshold = lookback-дни (30/90; 0 = всё время). op = new_high/new_low.
+        # Возвращаем СЕНТИНЕЛ 1.0/0.0 (факт рекорда); гейт last_fired_date даёт
+        # «1 раз в день на дату данных», новый более сильный рекорд назавтра
+        # сработает снова (sig_date новее).
+        from signals.db import get_position_series
+        clg = a.clgroup or "FIZ"
+        if clg == "ALL":
+            clg = "FIZ"
+        lookback = int(float(a.threshold or 0))
+        series = get_position_series(a.asset, clg, days=(lookback or 4000))
+        if len(series) < 11:
+            return None, None
+        # net_pct по каждому дню; ликвидность — по последнему дню.
+        pcts = []
+        for d, net, npart, plong, pshort in series:
+            gross = (plong or 0) - (pshort or 0)
+            pcts.append((net / gross * 100) if gross else 0.0)
+        today_date = series[-1][0]
+        npart_today = series[-1][2]
+        if npart_today < ATR_MIN_PART:
+            return None, None
+        today_pct = pcts[-1]
+        prior = pcts[:-1]
+        if len(prior) < 10:
+            return None, None
+        if a.op == "new_low":
+            extreme = min(prior)
+            is_record = today_pct < extreme
+        else:  # new_high (дефолт)
+            extreme = max(prior)
+            is_record = today_pct > extreme
+        return (1.0 if is_record else 0.0), {
+            "signal_date": today_date, "net_pct": round(today_pct, 1),
+            "extreme": round(extreme, 1), "period_days": lookback,
+            "direction": "high" if a.op != "new_low" else "low",
+        }
     return None, None
 
 
@@ -437,6 +482,18 @@ def format_msg(a: Alert, value: float, ctx: dict) -> str:
         ctx_line = f" Сейчас {npart:,} участников." if npart else ""
         return (f"{_head(_TYPE_OI, subj, tf_note)}\n"
                 f"{dir_emo} {flow} {clg} — в {value:g}× резче обычного (порог {thr:g}×).{ctx_line}{_date_note(ctx)}\n{link}")
+    if a.indicator == "oi_extreme":
+        clg = "Физлица" if (a.clgroup or "FIZ") == "FIZ" else "Юрлица"
+        high = ctx.get("direction") != "low"
+        kind = "максимум" if high else "минимум"
+        dir_emo = _ce(*_EMO_UP) if high else _ce(*_EMO_DOWN)
+        per = {30: "за месяц", 90: "за 3 месяца"}.get(ctx.get("period_days"), "за всё время")
+        npct = ctx.get("net_pct")
+        npct_s = (f" ({npct:+.1f}%)".replace("-", "−").replace(".", ",")
+                  if npct is not None else "")
+        return (f"{_head(_TYPE_OI, subj, tf_note)}\n"
+                f"{dir_emo} {clg}: чистая позиция — новый {kind} перекоса {per}{npct_s}."
+                f"{_date_note(ctx)}\n{link}")
     if a.indicator == "funds_flow":
         # «Аномальный поток» по выбранному набору фондов. Метка выбора в шапку
         # (a.asset_name: «Денежный рынок» / «Все фонды» / «N фондов»), с fallback
