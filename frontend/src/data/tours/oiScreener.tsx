@@ -22,14 +22,15 @@ function CometLegend() {
       {/* подписи ног */}
       <text x="70" y="108" textAnchor="middle" fontSize="10.5" fontWeight="700" fill={R}>← ШОРТ</text>
       <text x="215" y="108" textAnchor="middle" fontSize="10.5" fontWeight="700" fill={G}>ЛОНГ →</text>
-      {/* комета: хвост (вчера) → голова (сегодня), крупная = сильный ×N */}
-      <polygon points="205,52 175,58.6 175,61.4 205,68" fill={G} opacity="0.78" />
-      <circle cx="205" cy="60" r="8" fill={G} />
-      {/* аннотации */}
-      <text x="175" y="34" textAnchor="middle" fontSize="9.5" fill="currentColor" opacity="0.7">вчера</text>
-      <line x1="175" y1="37" x2="175" y2="55" stroke="currentColor" strokeWidth="0.8" strokeDasharray="2 2" opacity="0.5" />
-      <text x="205" y="30" textAnchor="middle" fontSize="10" fontWeight="700" fill={G}>сегодня</text>
-      <line x1="205" y1="33" x2="205" y2="50" stroke={G} strokeWidth="1" opacity="0.7" />
+      {/* комета: хвост (вчера, слева) → голова (сегодня, справа), крупная = сильный ×N.
+          Хвост удлинён, чтобы подписи «вчера»/«сегодня» не наслаивались. */}
+      <polygon points="214,52 148,58.6 148,61.4 214,68" fill={G} opacity="0.78" />
+      <circle cx="214" cy="60" r="8" fill={G} />
+      {/* аннотации — разнесены по горизонтали, чтобы не пересекались */}
+      <line x1="148" y1="38" x2="148" y2="55" stroke="currentColor" strokeWidth="0.8" strokeDasharray="2 2" opacity="0.5" />
+      <text x="148" y="32" textAnchor="middle" fontSize="9.5" fill="currentColor" opacity="0.7">вчера</text>
+      <line x1="214" y1="35" x2="214" y2="50" stroke={G} strokeWidth="1" opacity="0.7" />
+      <text x="214" y="29" textAnchor="middle" fontSize="10" fontWeight="700" fill={G}>сегодня</text>
       <text x="252" y="128" textAnchor="middle" fontSize="9.5" fill="currentColor" opacity="0.7">размер = сила ×N</text>
       <text x="80" y="128" textAnchor="middle" fontSize="9.5" fill="currentColor" opacity="0.7">длина хвоста = сдвиг за день</text>
     </svg>
