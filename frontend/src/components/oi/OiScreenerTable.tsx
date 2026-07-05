@@ -82,14 +82,16 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
   const [rows, setRows] = useState<OiScreenerRow[] | null>(null);
   const [signalDate, setSignalDate] = useState<string | null>(null);
   const [error, setError] = useState(false);
+  // Все режимы тулбара запоминаются в localStorage — скринер открывается в том
+  // же виде, что оставил юзер (группа, порог, тип актива, избранные, сортировка).
   const [clgroup, setClgroup] = usePersistedState<Clgroup>('frame:oi-screener:clgroup', 'FIZ');
-  const [threshold, setThreshold] = useState<ThresholdKey>('2');
-  const [group, setGroup] = useState<string>('all');
-  const [onlyFav, setOnlyFav] = useState(false);
+  const [threshold, setThreshold] = usePersistedState<ThresholdKey>('frame:oi-screener:threshold', '2');
+  const [group, setGroup] = usePersistedState<string>('frame:oi-screener:group', 'all');
+  const [onlyFav, setOnlyFav] = usePersistedState<boolean>('frame:oi-screener:onlyfav', false);
   // Баннер «★ добавлено — поставить алерт?» после добавления в избранное.
   const [alertPrompt, setAlertPrompt] = useState<{ sectype: string; name: string } | null>(null);
-  const [sortKey, setSortKey] = useState<'ratio' | 'pct'>('ratio');
-  const [sortDir, setSortDir] = useState<1 | -1>(-1);
+  const [sortKey, setSortKey] = usePersistedState<'ratio' | 'pct'>('frame:oi-screener:sortkey', 'ratio');
+  const [sortDir, setSortDir] = usePersistedState<1 | -1>('frame:oi-screener:sortdir', -1);
   const [favorites, setFavorites] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem(FAVORITES_KEY);
