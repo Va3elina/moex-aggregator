@@ -31,6 +31,7 @@ import { useFitToViewport } from '../hooks/useFitToViewport';
 import { useOnboardingTour } from '../hooks/useFirstVisit';
 import OnboardingTour from '../components/onboarding/OnboardingTour';
 import { oiTourSteps } from '../data/tours/oi';
+import { oiScreenerTourSteps } from '../data/tours/oiScreener';
 import { formatPrice } from '../utils/formatNumber';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 import { oiTierResolver } from '../utils/tierError';
@@ -225,9 +226,12 @@ export default function OpenInterestPage() {
   // Интервал, для которого загружены текущие данные — обновляется атомарно с data
   const [dataInterval, setDataInterval] = useState(24);
 
-  // Onboarding tour — единый хук обёртка. Auto-open ровно один раз
-  // на mount (autoOpenedRef guard внутри хука).
+  // Onboarding tour — ДВА независимых тура по вкладкам: график ('oi') и
+  // скринер ('oi-screener'), каждый со своим ключом первого визита. Рендерим
+  // тот, что соответствует активной вкладке — поэтому чартовый тур больше НЕ
+  // стартует на вкладке скринера (его якоря там скрыты) и наоборот.
   const tour = useOnboardingTour('oi');
+  const screenerTour = useOnboardingTour('oi-screener');
 
   // Настройки (персистятся в localStorage по индикатору — не сбрасываются на новой сессии)
   const [interval, setIntervalValue] = usePersistedState('frame:oi:interval', 24);
@@ -520,6 +524,20 @@ export default function OpenInterestPage() {
     });
   };
 
+  // Предложение поставить алерт из скринера (клик по «Создать алерт» в баннере
+  // после добавления в избранное). Открывает ту же CreateAlertModal, что и
+  // колокол, но для ВЫБРАННОГО в скринере актива и метрики «резкое движение
+  // позиции» его группы (move_fiz/move_yur). Тариф-гейт как у колокола.
+  const [screenerAlertAsset, setScreenerAlertAsset] =
+    useState<{ sectype: string; name: string; clgroup: 'FIZ' | 'YUR' } | null>(null);
+  const handleScreenerAlert = (sectype: string, name: string, clg: 'FIZ' | 'YUR') => {
+    if (alertsLocked) {
+      showUpgrade({ tier: 'basic', featureName: 'Алерты', indicator: 'alerts' });
+      return;
+    }
+    setScreenerAlertAsset({ sectype, name, clgroup: clg });
+  };
+
   // Данные для графика (мемоизированы — иначе каждый рендер создаёт новый массив,
   // что приводит к ложным перезапускам анимации в SimpleChart)
   const chartData = useMemo(() =>
@@ -695,6 +713,7 @@ export default function OpenInterestPage() {
       <ChartTabs<'chart' | 'screener'>
         value={activeTab}
         onChange={setActiveTab}
+        tourId="screener-tabs"
         items={[
           { key: 'chart', label: 'Открытые позиции', Icon: BarChart3 },
           { key: 'screener', label: 'Скринер сигналов', badge: 'Beta', Icon: ListFilter },
@@ -708,7 +727,10 @@ export default function OpenInterestPage() {
       <div className="editorial-frame has-tabs">
 
       {activeTab === 'screener' && (
-        <OiScreenerTable onSelect={handleScreenerSelect} />
+        <OiScreenerTable
+          onSelect={handleScreenerSelect}
+          onRequestAlert={ALERTS_ENABLED ? handleScreenerAlert : undefined}
+        />
       )}
 
       {activeTab === 'chart' && (<>
@@ -1084,13 +1106,26 @@ export default function OpenInterestPage() {
         />
       )}
 
-      {/* Onboarding tour — spotlight гайд для первого визита.
-          Авто-открывается через useFirstVisit, можно перезапустить
-          через методологию (см. /methodology/oi). */}
+      {/* Алерт из скринера — та же модалка, но для выбранного там актива и
+          метрики «резкое движение позиции» его группы. */}
+      {ALERTS_ENABLED && screenerAlertAsset && (
+        <CreateAlertModal
+          indicator="open_interest"
+          asset={screenerAlertAsset.sectype}
+          assetName={screenerAlertAsset.name}
+          metrics={oiAlertMetrics}
+          prefill={{ metricKey: screenerAlertAsset.clgroup === 'FIZ' ? 'move_fiz' : 'move_yur' }}
+          onClose={() => { setScreenerAlertAsset(null); reloadMyAlerts(); }}
+        />
+      )}
+
+      {/* Onboarding tour — по вкладкам: свой набор шагов и свой ключ первого
+          визита для графика и для скринера. Чартовый тур не стартует на
+          скринере (его якоря скрыты), и наоборот. */}
       <OnboardingTour
-        steps={oiTourSteps}
-        open={tour.open}
-        onClose={tour.close}
+        steps={activeTab === 'screener' ? oiScreenerTourSteps : oiTourSteps}
+        open={activeTab === 'screener' ? screenerTour.open : tour.open}
+        onClose={activeTab === 'screener' ? screenerTour.close : tour.close}
       />
     </div>
   );
