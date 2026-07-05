@@ -11,8 +11,11 @@
  */
 import type { ReactNode } from 'react';
 
-const GREEN = '#4a9959';
-const RED = '#c0492a';
+// Единая палитра инфографик (лонг/шорт/рост/падение — одинаково в свет/тёмной).
+// Нейтральные элементы рисуем currentColor (цвет задаёт Figure).
+export const GREEN = '#4a9959';
+export const RED = '#c0492a';
+export const ACCENT = '#FF5C2B';
 
 /** Обёртка: SVG в карточке + подпись снизу. currentColor берётся из этой карточки. */
 export function Figure({
