@@ -45,6 +45,7 @@ from sqlalchemy import text
 from api.database import get_engine
 from Funds.parsers.scha_parser import parse_scha
 from Funds.parsers.scha_xls_parser import parse_scha_xls
+from Funds.parsers.scha_docx_parser import parse_scha_docx
 
 SOURCE = "interfax_manual"
 SLEEP_BETWEEN_MOEX = 0.15  # сек между MOEX ISS запросами для резолва имён
@@ -273,12 +274,16 @@ def parse_any(pdf_path: Path) -> dict:
 
       .pdf        → парсер PDF (ВИМ, Первая, и др. публикующие PDF)
       .xls/.xlsx  → парсер XLS (Альфа, Атон, Сбер и др.)
+      .docx       → парсер DOCX (Герои/ih-capital и др., публикующие в Word)
       .zip        → распаковываем inner-файл (cp866-имя) и роутим по ЕГО расширению
                     (Т-Капитал, e-disclosure). Бросает исключение при ошибке чтения.
     """
     suffix = pdf_path.suffix.lower()
     if suffix in (".xls", ".xlsx"):
         return parse_scha_xls(str(pdf_path))
+    if suffix == ".docx":
+        with open(pdf_path, "rb") as f:
+            return parse_scha_docx(f.read())
     if suffix == ".zip":
         import zipfile, tempfile
         with zipfile.ZipFile(pdf_path) as zf:
@@ -295,6 +300,8 @@ def parse_any(pdf_path: Path) -> dict:
                 inner_ext = ".xlsx"
             elif low.endswith(".xls"):
                 inner_ext = ".xls"
+            elif low.endswith(".docx"):
+                inner_ext = ".docx"
             else:
                 inner_ext = ".pdf"
             inner_bytes = zf.read(info)
@@ -309,6 +316,8 @@ def parse_any(pdf_path: Path) -> dict:
                     Path(tmp_path).unlink()
                 except OSError:
                     pass
+        if inner_ext == ".docx":
+            return parse_scha_docx(inner_bytes)
         return parse_scha(inner_bytes)
     with open(pdf_path, "rb") as f:
         return parse_scha(f.read())
