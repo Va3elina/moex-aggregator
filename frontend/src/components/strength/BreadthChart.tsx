@@ -5,6 +5,7 @@ import { useIsMobile } from '../../hooks/useIsMobile';
 import { useViewportWidth } from '../../hooks/useViewportWidth';
 import { axisFontSize, xAxisTickCount } from '../chart/chartTypography';
 import { measureText } from '../chart/measureText';
+import ChartWatermark from '../ChartWatermark';
 
 type ChartMode = 'line' | 'histogram';
 
@@ -74,6 +75,10 @@ interface BreadthChartProps {
     onCreateAlert?: (levelPct: number, currentValuePct: number) => void;
     /** Уровни активных алертов (%) → пунктир на графике. */
     alertLevels?: number[];
+    /** Показать водяной знак «Фрейм». Задаётся `!showPrice` — когда индекс скрыт,
+     *  этот график становится соло, и марка переезжает сюда с IndexChart
+     *  (при двух графиках знак остаётся только на индексе → без дубля). */
+    showWatermark?: boolean;
 }
 
 export default function BreadthChart({
@@ -85,6 +90,7 @@ export default function BreadthChart({
     isNavDragRef,
     onCreateAlert,
     alertLevels,
+    showWatermark = false,
 }: BreadthChartProps) {
     const svgRef = useRef<SVGSVGElement>(null);
     const chartWrapRef = useRef<HTMLDivElement>(null);
@@ -517,6 +523,11 @@ export default function BreadthChart({
                             );
                         })()}
                     </svg>
+                )}
+                {/* Watermark — только в соло-режиме (индекс скрыт). Позиция 1:1 с
+                    IndexChart, чтобы марка стояла в той же точке, что раньше на индексе. */}
+                {showWatermark && (
+                    <ChartWatermark left={padding.left + 5} bottom={padding.bottom + 5} />
                 )}
             </div>
         </div>

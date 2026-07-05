@@ -655,6 +655,7 @@ export default function StrengthPage() {
                                 isNavDragRef={isNavDragRef}
                                 onCreateAlert={ALERTS_ENABLED ? handleCreateAlertFromChart : undefined}
                                 alertLevels={alertLevels}
+                                showWatermark={!showPrice}
                             />
                         ) : (
                             <div className="h-48 flex items-center justify-center text-theme-muted">
