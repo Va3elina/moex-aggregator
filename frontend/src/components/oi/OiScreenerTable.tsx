@@ -19,7 +19,6 @@ import InstrumentIcon from '../InstrumentIcon';
 import SegmentedControl from '../SegmentedControl';
 import PositionComet from './PositionComet';
 import { getOiScreener, type OiScreenerRow } from '../../services/api';
-import { formatNumber } from '../../utils/formatNumber';
 import { usePersistedState } from '../../hooks/usePersistedState';
 
 type Clgroup = 'FIZ' | 'YUR';
@@ -44,11 +43,6 @@ const GROUP_OPTIONS = [
 
 const FAVORITES_KEY = 'favoriteInstruments'; // общий ключ с пикером активов
 
-// U+2212 — типографский минус; знак всегда явный.
-const MINUS = '−';
-function fmtSigned(n: number): string {
-  return (n >= 0 ? '+' : MINUS) + formatNumber(Math.abs(n));
-}
 function fmtRatio(r: number): string {
   return r.toLocaleString('ru-RU', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '×';
 }
@@ -252,16 +246,12 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
       const legWord = netLong ? 'длинную позицию' : 'короткую позицию';
       const verb = grewExposure ? 'нарастили' : 'сократили';
       const cap = (s: string) => s[0].toUpperCase() + s.slice(1);
-      const deltaStr = r.delta_net != null ? `изменение за день: ${fmtSigned(r.delta_net)} контрактов` : null;
-      const full = `${cap(groupWord)} резко ${verb} ${legWord} по «${r.name}»: дневное изменение чистой позиции в ${fmtRatio(r.ratio)} резче обычного (ATR-14; «резко» — от 2×). Обратная сторона (${mirrorWord}) держит зеркальную позицию.`;
+      const full = `${cap(groupWord)} резко ${verb} ${legWord} по «${r.name}»: дневное изменение чистой позиции в ${fmtRatio(r.ratio)} сильнее обычного (ATR-14; «резко» — от 2×). Обратная сторона (${mirrorWord}) держит зеркальную позицию.`;
       return (
         <div style={{ minWidth: 0 }} title={full}>
           <div style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>
-            резко {verb} {legWord} — в {fmtRatio(r.ratio)} резче обычного
+            резко {verb} {legWord} — в {fmtRatio(r.ratio)} сильнее обычного
           </div>
-          {deltaStr && (
-            <div style={{ ...MONO, fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)', marginTop: 2 }}>{deltaStr}</div>
-          )}
         </div>
       );
     }
@@ -282,6 +272,27 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
     );
   };
 
+  // Перекос — свой столбец: |net_pct|% + ЛОНГ/ШОРТ, цвет по ноге. Это скос
+  // ПОЗИЦИИ (net ÷ вся экспозиция), не доля участников — поясняем в подсказке.
+  const perekosCell = (r: OiScreenerRow) => {
+    if (r.net_pct == null) return <span style={{ color: 'var(--text-muted)' }}>—</span>;
+    const long = r.net_pct >= 0;
+    const color = long ? 'var(--oi-green)' : 'var(--oi-red)';
+    const dim = r.status !== 'sharp';
+    return (
+      <div
+        style={{ ...MONO, fontWeight: 800, whiteSpace: 'nowrap', lineHeight: 1.1, color, opacity: dim ? 0.62 : 1 }}
+        title={`Перекос ${groupWord}: чистая позиция ÷ вся экспозиция группы. 0 = поровну, ±100% = вся в одну сторону. Это скос ПОЗИЦИИ, не доля участников.`}
+      >
+        {Math.abs(r.net_pct).toFixed(1).replace('.', ',')}%
+        <br />
+        <span style={{ fontSize: 'var(--fs-2xs)', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+          {long ? 'лонг' : 'шорт'}
+        </span>
+      </div>
+    );
+  };
+
   const sortArrow = (key: 'ratio' | 'pct') =>
     sortKey === key
       ? (sortDir === -1 ? ' ▼' : ' ▲')
@@ -296,8 +307,8 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
     textAlign: 'left', whiteSpace: 'nowrap',
   };
 
-  // Актив · Позиция (комета) · ×N · Сигнал · ★. Столбцы «ОИ» и «Δ за день» убраны.
-  const gridCols = 'minmax(180px, 220px) minmax(250px, 340px) 72px minmax(240px, 1fr) 44px';
+  // Актив · Позиция (комета) · Перекос (%) · ×N · Сигнал · ★.
+  const gridCols = 'minmax(170px, 210px) minmax(150px, 240px) 88px 64px minmax(200px, 1fr) 44px';
 
   return (
     <div>
@@ -390,10 +401,11 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
           {/* Заголовки */}
           <div style={{ display: 'grid', gridTemplateColumns: gridCols, gap: 16, padding: '12px 18px', borderBottom: '2px solid var(--text-primary)' }}>
             <span style={headCell}>Актив</span>
-            <button type="button" style={{ ...headCell, cursor: 'pointer', background: 'none', border: 'none', padding: 0 }} onClick={() => clickSort('pct')} title={`Перекос (${groupWord}): шорт ← 0 → лонг. Сортировка — топ-лонг / топ-шорт`}>
-              Позиция {groupWord}{sortArrow('pct')}
+            <span style={headCell} title={`Позиция ${groupWord}: комета на оси −100…+100 (шорт ← 0 → лонг). Голова = где стоят сейчас, хвост = сдвиг за день, размер = сила ×N.`}>Позиция {groupWord}</span>
+            <button type="button" style={{ ...headCell, cursor: 'pointer', background: 'none', border: 'none', padding: 0 }} onClick={() => clickSort('pct')} title={`Перекос ${groupWord}: чистая позиция ÷ вся экспозиция. 0 = поровну, ±100% = вся в одну сторону. Это скос ПОЗИЦИИ, не доля участников. Сортировка — топ-лонг / топ-шорт`}>
+              Перекос{sortArrow('pct')}
             </button>
-            <button type="button" style={{ ...headCell, cursor: 'pointer', background: 'none', border: 'none', padding: 0, textAlign: 'center', justifySelf: 'center' }} onClick={() => clickSort('ratio')} title="Во сколько раз дневной сдвиг резче обычного (ATR-14)">
+            <button type="button" style={{ ...headCell, cursor: 'pointer', background: 'none', border: 'none', padding: 0, textAlign: 'center', justifySelf: 'center' }} onClick={() => clickSort('ratio')} title="Во сколько раз дневной сдвиг сильнее обычного (ATR-14)">
               ×N{sortArrow('ratio')}
             </button>
             <span style={headCell}>Сигнал</span>
@@ -535,13 +547,17 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
                   </div>
                 </div>
 
-                {/* Позиция — «след кометы»: перекос + дневной сдвиг */}
+                {/* Позиция — «след кометы» (подпись % вынесена в столбец «Перекос») */}
                 <PositionComet
                   netPct={r.net_pct}
                   netPctPrev={r.net_pct_prev}
                   ratio={r.ratio}
                   status={r.status}
+                  hideLabel
                 />
+
+                {/* Перекос — % скоса позиции + лонг/шорт (свой столбец) */}
+                <div>{perekosCell(r)}</div>
 
                 {/* ×N */}
                 <div style={{ justifySelf: 'center' }}>{ratioBadge(r)}</div>

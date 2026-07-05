@@ -9,6 +9,7 @@
  */
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, PlayCircle, type LucideIcon } from 'lucide-react';
+import { clearTourSeen } from '../../hooks/useFirstVisit';
 
 interface MethodologyWrapperProps {
   icon: LucideIcon;
@@ -132,21 +133,20 @@ export function ModeBlock({ title, desc }: { title: string; desc: string }) {
 export function ReplayTourButton({
   tourKey,
   indicatorPath,
+  label = 'Показать вводный тур ещё раз',
 }: {
   /** Ключ тура — должен совпадать с тем что используется в useFirstVisit. */
   tourKey: string;
-  /** Путь к странице индикатора. */
+  /** Путь к странице индикатора (можно с ?query — напр. /oi?tab=screener). */
   indicatorPath: string;
+  /** Подпись кнопки (для страниц с несколькими турами). */
+  label?: string;
 }) {
   const navigate = useNavigate();
   return (
     <button
       onClick={() => {
-        try {
-          localStorage.removeItem(`frame_tour_seen:${tourKey}`);
-        } catch {
-          /* silent fail */
-        }
+        clearTourSeen(tourKey);   // сбрасываем актуальный v4-ключ → тур авто-откроется
         navigate(indicatorPath);
       }}
       className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold transition-colors hover:opacity-90"
@@ -158,7 +158,7 @@ export function ReplayTourButton({
       }}
     >
       <PlayCircle size={16} />
-      Показать вводный тур ещё раз
+      {label}
     </button>
   );
 }

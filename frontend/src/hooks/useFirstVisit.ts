@@ -33,6 +33,20 @@ import { useAnalytics } from '../contexts/AnalyticsContext';
 
 const STORAGE_PREFIX = 'frame_tour_seen_v4:';
 
+/**
+ * clearTourSeen — сбросить флаг «видел тур» для ключа, чтобы тур снова
+ * авто-открылся при заходе на страницу. Использует АКТУАЛЬНЫЙ префикс (v4);
+ * нужен для кнопки «Показать тур ещё раз» в методологии (раньше она чистила
+ * старый v1-ключ и не работала).
+ */
+export function clearTourSeen(indicatorKey: string) {
+  try {
+    localStorage.removeItem(`${STORAGE_PREFIX}${indicatorKey}`);
+  } catch {
+    /* localStorage недоступен — тихо игнорируем */
+  }
+}
+
 export function useFirstVisit(indicatorKey: string) {
   const storageKey = `${STORAGE_PREFIX}${indicatorKey}`;
 
