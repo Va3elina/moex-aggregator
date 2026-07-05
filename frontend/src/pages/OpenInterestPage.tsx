@@ -690,7 +690,7 @@ export default function OpenInterestPage() {
         onChange={setActiveTab}
         items={[
           { key: 'chart', label: 'Открытые позиции', Icon: BarChart3 },
-          { key: 'screener', label: 'Скринер сигналов', sublabel: 'Beta', Icon: ListFilter },
+          { key: 'screener', label: 'Скринер сигналов', badge: 'Beta', Icon: ListFilter },
         ]}
       />
 

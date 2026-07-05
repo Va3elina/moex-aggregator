@@ -17,6 +17,9 @@ export interface ChartTabItem<K extends string = string> {
     label: string;
     /** Вторая строка ячейки — например тикер индекса (RUSFAR3M). */
     sublabel?: string;
+    /** Бейдж-пилюля рядом с label («Beta») — тот же стиль, что бейдж
+     *  «BETA» у пунктов главной навигации (accent-рамка, uppercase). */
+    badge?: string;
     /** Иконка lucide. */
     Icon?: ElementType;
     disabled?: boolean;
@@ -55,6 +58,25 @@ export default function ChartTabs<K extends string>({
                     >
                         {Icon && <Icon className="ct-ico" aria-hidden="true" />}
                         <span className="ct-name">{it.label}</span>
+                        {it.badge && (
+                            /* Стиль 1:1 с BETA-бейджем в шапке (Layout NAV) */
+                            <span
+                                className="uppercase font-bold"
+                                style={{
+                                    fontSize: '0.62rem',
+                                    letterSpacing: '0.06em',
+                                    color: 'var(--accent)',
+                                    border: '1px solid var(--accent)',
+                                    borderRadius: '3px',
+                                    padding: '1px 5px',
+                                    lineHeight: 1.2,
+                                    whiteSpace: 'nowrap',
+                                    marginLeft: 6,
+                                }}
+                            >
+                                {it.badge}
+                            </span>
+                        )}
                         {it.sublabel && <span className="ct-sub">{it.sublabel}</span>}
                     </button>
                 );

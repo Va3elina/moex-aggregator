@@ -22,8 +22,11 @@ oi_router = APIRouter(prefix="/api/oi", tags=["open_interest"])
 
 
 @oi_router.get("/screener")
-def get_oi_screener(db: Session = Depends(get_db)):
-    """Скринер сигналов ОИ: чистая позиция физлиц + ATR14-кратность дневного
+def get_oi_screener(
+        clgroup: ClgroupType = Query("FIZ", description="Группа: FIZ (физлица) или YUR (юрлица)"),
+        db: Session = Depends(get_db),
+):
+    """Скринер сигналов ОИ: чистая позиция группы + ATR14-кратность дневного
     движения по всем фьючерсам разом (вкладка «Скринер сигналов» на /oi).
 
     Данные дневные (T+1), меняются раз в сутки → single-flight кэш 30 мин.
@@ -32,8 +35,9 @@ def get_oi_screener(db: Session = Depends(get_db)):
     """
     from api.cache import get_or_compute
     from api.services.oi_screener import compute_screener
-    # v2: фильтр устаревших рядов (мёртвые контракты не светятся sharp'ом)
-    return get_or_compute("oi_screener:v2", lambda: compute_screener(db))
+    # v2 = фильтр устаревших рядов; ключ пер-группу (FIZ/YUR считаются честно
+    # по своим рядам — npart/проценты у групп разные, зеркален только |Δnet|).
+    return get_or_compute(f"oi_screener:v2:{clgroup}", lambda: compute_screener(db, clgroup))
 
 
 @oi_router.get("/intraday-assets")

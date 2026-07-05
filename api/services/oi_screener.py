@@ -36,8 +36,8 @@ _HISTORY_DAYS = ATR_WINDOW + 30
 _MIN_POINTS = ATR_WINDOW + 3
 
 
-def _bulk_series(db) -> Dict[str, List[tuple]]:
-    """Дневные ряды позиций ФИЗЛИЦ по всем sectype одним запросом.
+def _bulk_series(db, clgroup: str) -> Dict[str, List[tuple]]:
+    """Дневные ряды позиций группы (FIZ/YUR) по всем sectype одним запросом.
 
     Возвращает {sectype: [(tradedate, net, npart, oi), ...] по возрастанию даты}.
     Тот же смысл, что signals/db.get_position_series, но bulk: DISTINCT ON
@@ -56,7 +56,7 @@ def _bulk_series(db) -> Dict[str, List[tuple]]:
                 sectype, tradedate, pos, pos_long, pos_short,
                 pos_long_num, pos_short_num
             FROM open_interest
-            WHERE clgroup = 'FIZ'
+            WHERE clgroup = :clgroup
               AND interval = 24
               AND tradedate >= :cutoff
               AND EXTRACT(ISODOW FROM tradedate) BETWEEN 1 AND 5
@@ -64,7 +64,7 @@ def _bulk_series(db) -> Dict[str, List[tuple]]:
         ) t
         ORDER BY sectype, tradedate ASC
         """
-    ), {"cutoff": cutoff}).fetchall()
+    ), {"cutoff": cutoff, "clgroup": clgroup}).fetchall()
 
     series: Dict[str, List[tuple]] = {}
     for r in rows:
@@ -115,9 +115,14 @@ def _row_signal(pts: List[tuple]) -> Dict[str, Any]:
     return {"status": "normal", "ratio": ratio, "direction": direction}
 
 
-def compute_screener(db) -> Dict[str, Any]:
-    """Полный ответ скринера: строки по всем фьючерсам с данными ОИ."""
-    series = _bulk_series(db)
+def compute_screener(db, clgroup: str = "FIZ") -> Dict[str, Any]:
+    """Полный ответ скринера: строки по всем фьючерсам с данными ОИ.
+
+    clgroup FIZ/YUR: кратность ×N у групп зеркально идентична (net(FIZ) ≡
+    −net(YUR)), но знаки/проценты/ликвидность (npart!) — свои, поэтому
+    считаем честно по выбранной группе, а не флипаем знак.
+    """
+    series = _bulk_series(db, clgroup)
 
     # Метаданные инструментов: имя + группа (Индексы/Валюта/Товары/Акции).
     meta = {
@@ -185,6 +190,6 @@ def compute_screener(db) -> Dict[str, Any]:
 
     return {
         "signal_date": signal_date.isoformat() if signal_date else None,
-        "clgroup": "FIZ",
+        "clgroup": clgroup,
         "rows": rows,
     }
