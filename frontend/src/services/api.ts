@@ -1415,6 +1415,7 @@ export async function getFundTradesMovers(
 export interface FundSnapshotItem {
     snapshot_date: string;
     asset_count: number;
+    locked?: boolean;   // Free/гость: свежий срез — под замком (по подписке)
 }
 
 export interface FundSnapshotsList {
@@ -1448,6 +1449,10 @@ export interface FundSnapshotReview {
     fund: { ticker: string; name: string; category: string | null };
     current_snapshot_date: string;
     previous_snapshot_date: string | null;
+    // Free/гость: свежий срез (> cutoff) заблокирован — бэк вернул маркер БЕЗ холдингов.
+    locked?: boolean;
+    latest_snapshot_date?: string | null;   // реальная свежая дата (для метки «по подписке»)
+    required_tier?: string;
     current_holdings: FundHoldingRow[];
     added: FundDiffRow[];
     reduced: FundDiffRow[];
@@ -1460,7 +1465,7 @@ export interface FundSnapshotReview {
         total_reduced_rub: number;
         total_new_rub: number;
         total_sold_out_rub: number;
-    };
+    } | null;
 }
 
 export async function getFundSnapshots(ticker: string): Promise<FundSnapshotsList> {
