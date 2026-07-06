@@ -209,6 +209,28 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
     );
   };
 
+  // Бейдж «исторический экстремум ЧИСТОЙ ПОЗИЦИИ» (сырые контракты, за всё время,
+  // включая интрадей). Это самый сильный сигнал — всегда accent (заливка).
+  const netRecordBadge = (r: OiScreenerRow) => {
+    if (!r.net_record) return null;
+    const high = r.net_record.kind === 'high';
+    return (
+      <span
+        title={`Чистая позиция (в контрактах) достигла ${high ? 'исторического МАКСИМУМА' : 'исторического МИНИМУМА'} за всё время наблюдений.`}
+        style={{
+          ...MONO, display: 'inline-flex', alignItems: 'center', gap: 4,
+          padding: '1px 8px', borderRadius: 999, fontSize: 'var(--fs-2xs)', fontWeight: 800,
+          letterSpacing: '0.02em', whiteSpace: 'nowrap', marginBottom: 4,
+          border: '1.5px solid var(--accent)', background: 'var(--accent)',
+          color: 'var(--text-inverse)',
+        }}
+      >
+        <Star size={10} fill="currentColor" strokeWidth={0} />
+        {high ? 'ист. максимум позиции' : 'ист. минимум позиции'}
+      </span>
+    );
+  };
+
   const groupWord = clgroup === 'FIZ' ? 'физлица' : 'юрлица';
   const mirrorWord = clgroup === 'FIZ' ? 'юрлица' : 'физлица';
 
@@ -564,6 +586,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
 
                 {/* Сигнал (+ бейдж рекорда перекоса, если есть) */}
                 <div style={{ minWidth: 0 }}>
+                  {r.net_record && <div>{netRecordBadge(r)}</div>}
                   {r.record && <div>{recordBadge(r)}</div>}
                   {signalText(r)}
                 </div>
@@ -591,7 +614,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
         <div className="flex items-center justify-between flex-wrap" style={{ ...MONO, gap: 8, padding: '14px 4px 0', fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>
           <span>{pluralAssets(visible.length)} · {groupWord}</span>
           <span>
-            Данные: Московская биржа{dateLabel && <> · <em>по данным за {dateLabel}</em></>}
+            {dateLabel && <em>по данным за {dateLabel}</em>}
           </span>
         </div>
       )}
