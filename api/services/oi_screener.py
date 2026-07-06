@@ -374,6 +374,7 @@ def compute_screener(db, clgroup: str = "FIZ") -> Dict[str, Any]:
 
     rows: List[Dict[str, Any]] = []
     signal_date: date | None = None
+    intraday_date: date | None = None   # свежайшая интрадей-дата среди вплетённых 5-мин баров
     for sectype, pts in series.items():
         # Малоактивный актив (мало физлиц-трейдеров) — прячем из ленты скринера
         # тем же принципом, что и из пикера: резкое движение в фьючерсе, где
@@ -394,6 +395,8 @@ def compute_screener(db, clgroup: str = "FIZ") -> Dict[str, Any]:
         intra = intraday_now.get(sectype) if has_intraday else None
         if intra and intra[0] > dl[0]:
             pts = pts + [intra]
+            if intraday_date is None or intra[0] > intraday_date:
+                intraday_date = intra[0]
 
         last = pts[-1]
         _d, net, npart, oi, pos_long, pos_short = last
@@ -487,6 +490,9 @@ def compute_screener(db, clgroup: str = "FIZ") -> Dict[str, Any]:
 
     return {
         "signal_date": signal_date.isoformat() if signal_date else None,
+        # Свежайшая ИНТРАДЕЙ-дата (5-мин бар новее дневной свечи). None если интрадея
+        # нет. Фронт покажет честно: «дневные за X · интрадей за Y».
+        "intraday_date": intraday_date.isoformat() if intraday_date else None,
         "clgroup": clgroup,
         "min_part": min_part,               # порог ликвидности группы (для подсказки)
         "rows": rows,

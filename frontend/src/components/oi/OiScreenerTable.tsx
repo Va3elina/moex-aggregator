@@ -75,6 +75,7 @@ interface Props {
 export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
   const [rows, setRows] = useState<OiScreenerRow[] | null>(null);
   const [signalDate, setSignalDate] = useState<string | null>(null);
+  const [intradayDate, setIntradayDate] = useState<string | null>(null);  // свежайший интрадей-бар
   const [minPart, setMinPart] = useState<number>(50);   // порог ликвидности группы (из ответа)
   const [error, setError] = useState(false);
   // Все режимы тулбара запоминаются в localStorage — скринер открывается в том
@@ -99,7 +100,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
     setRows(null);
     setError(false);
     getOiScreener(clgroup)
-      .then((r) => { if (!cancelled) { setRows(r.rows); setSignalDate(r.signal_date); setMinPart(r.min_part); } })
+      .then((r) => { if (!cancelled) { setRows(r.rows); setSignalDate(r.signal_date); setIntradayDate(r.intraday_date); setMinPart(r.min_part); } })
       .catch(() => { if (!cancelled) setError(true); });
     return () => { cancelled = true; };
   }, [clgroup]);
@@ -178,8 +179,14 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
       .slice(0, 5);
   }, [rows, group, onlyFav, favorites, threshold]);
 
+  const _fmtD = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+  // Честная свежесть: дневные данные T+1 (signal_date) + свежий интрадей-бар
+  // (intraday_date, если новее дневной свечи). Раньше метка = только дневная
+  // («3 июля»), а значения — интрадей (6-е) → это вводило в заблуждение.
   const dateLabel = signalDate
-    ? new Date(signalDate + 'T00:00:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
+    ? (intradayDate && intradayDate > signalDate
+        ? `дневные за ${_fmtD(signalDate)} · интрадей за ${_fmtD(intradayDate)}`
+        : `по данным за ${_fmtD(signalDate)}`)
     : null;
 
   // Бейдж «новый рекорд перекоса»: сильнее период — ярче (всё время = accent).
@@ -454,7 +461,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
                 {threshold !== '0'
                   ? `Ни один актив не двинулся ≥ ${threshold}× от обычного дня`
                   : 'Попробуйте снять фильтры'}
-                {dateLabel ? ` · по данным за ${dateLabel}` : ''}
+                {dateLabel ? ` · ${dateLabel}` : ''}
               </div>
 
               {nearMisses.length > 0 && (
@@ -614,7 +621,7 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
         <div className="flex items-center justify-between flex-wrap" style={{ ...MONO, gap: 8, padding: '14px 4px 0', fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>
           <span>{pluralAssets(visible.length)} · {groupWord}</span>
           <span>
-            {dateLabel && <em>по данным за {dateLabel}</em>}
+            {dateLabel && <em>{dateLabel}</em>}
           </span>
         </div>
       )}
