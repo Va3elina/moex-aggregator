@@ -351,7 +351,6 @@ export default function FundTradesPage() {
 
     return (
         <div className="max-w-[1408px] mx-auto px-4 md:px-6 py-4 md:py-6 min-h-screen">
-            <DelayedDataBadge />
             {/* Header — единый PageHeader как у всех индикаторов
                 (иконка стилизуется через .page-header-icon → выравнивание как везде) */}
             <PageHeader
@@ -398,6 +397,9 @@ export default function FundTradesPage() {
                     и может измениться.</strong>
                 </div>
             </div>
+
+            {/* Постоянный нудж «данные с задержкой» — под BETA-боксом, виден на всех табах (Free/гость) */}
+            <DelayedDataBadge />
 
             {/* Tabs */}
             <div
@@ -470,6 +472,8 @@ export default function FundTradesPage() {
                 // белый контейнер с рамкой, контролы сверху на белом, а сетка
                 // карточек — на бежевой paper-card внутри.
                 <div className="editorial-frame">
+                    {/* Контекстное напоминание «данные не самые свежие» у карточек (Free/гость) */}
+                    <DelayedDataBadge variant="compact" />
                     {/* Контролы карточек — единый формат индикаторов: сортировка и
                         период доходности отдельными SegmentedControl (как период/режим
                         на «Открытых позициях» и «Деньгах в фондах»), плюс мультиселект УК.
@@ -866,6 +870,8 @@ export default function FundTradesPage() {
                 // Editorial-frame — оборачиваем индикатор «Потоки по компании» в тот
                 // же контейнер (paper bg + outline + hard-shadow), что и OI/Сезонность.
                 <div className="editorial-frame">
+                    {/* Контекстное напоминание «данные не самые свежие» у потоков (Free/гость) */}
+                    <DelayedDataBadge variant="compact" />
                     <CompanyFlowsTab
                         presetAsset={companyPreset}
                         onPresetConsumed={() => setCompanyPreset(null)}
@@ -1091,13 +1097,17 @@ function SnapshotReviewTab() {
         let cancel = false;
         setLoading(true);
         setError(null);
+        setReview(null); // очистить прошлый фонд — не мигать чужими данными при смене тикера
         getFundSnapshots(ticker)
             .then((data) => {
                 if (cancel) return;
                 setSnapshotsList(data);
-                // Default = latest snapshot
+                // Дефолт = последний ДОСТУПНЫЙ тиру срез (не locked) → сразу реальные данные,
+                // а не замок. Free/гость: свежайший locked → берём первый не-locked. Платные:
+                // не-locked = снапшот[0] (свежайший). Так «по умолчанию выбран актуальный срез».
                 if (data.snapshots.length > 0) {
-                    setSelectedDate(data.snapshots[0].snapshot_date);
+                    const firstAvailable = data.snapshots.find((s) => !s.locked) ?? data.snapshots[0];
+                    setSelectedDate(firstAvailable.snapshot_date);
                 } else {
                     setSelectedDate(null);
                     setReview(null);

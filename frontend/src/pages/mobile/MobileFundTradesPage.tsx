@@ -1312,12 +1312,16 @@ function SnapshotReviewTab() {
     let cancel = false;
     setLoading(true);
     setError(null);
+    setReview(null); // очистить прошлый фонд при смене тикера
     getFundSnapshots(ticker)
       .then((data) => {
         if (cancel) return;
         setSnapshotsList(data);
-        if (data.snapshots.length > 0) setSelectedDate(data.snapshots[0].snapshot_date);
-        else { setSelectedDate(null); setReview(null); }
+        // Дефолт = последний ДОСТУПНЫЙ тиру срез (не locked) → сразу данные, не замок.
+        if (data.snapshots.length > 0) {
+          const firstAvailable = data.snapshots.find((s) => !s.locked) ?? data.snapshots[0];
+          setSelectedDate(firstAvailable.snapshot_date);
+        } else { setSelectedDate(null); setReview(null); }
       })
       .catch((e) => !cancel && setError(e.message))
       .finally(() => !cancel && setLoading(false));
