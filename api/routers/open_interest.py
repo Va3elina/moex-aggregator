@@ -35,11 +35,11 @@ def get_oi_screener(
     """
     from api.cache import get_or_compute
     from api.services.oi_screener import compute_screener
-    # v10 = скрытие малоактивных активов (мало физлиц-трейдеров) из ленты, как в
-    # пикере. v9 = групповой порог ликвидности (физ 50 / юр 15) + npart/min_part в
-    # ответе. v8 = окна рекордов 1/2/3/4/5 лет + всё время. v7 = фикс интрадей-бара
-    # только за торговые дни (ISODOW 1–5). v6 = + интрадей (5-мин бар). TTL 5 мин.
-    return get_or_compute(f"oi_screener:v10:{clgroup}", lambda: compute_screener(db, clgroup), ttl=300)
+    # v11 = + net_record (исторический экстремум СЫРОЙ чистой позиции: контракты,
+    # all-time + интрадей; сплит не учитываем). v10 = скрытие малоактивных активов
+    # из ленты. v9 = групповой порог ликвидности + npart/min_part. v8 = окна рекордов
+    # 1/2/3/4/5 лет + всё время. v7 = интрадей только за торговые дни. v6 = + интрадей.
+    return get_or_compute(f"oi_screener:v11:{clgroup}", lambda: compute_screener(db, clgroup), ttl=300)
 
 
 @oi_router.get("/intraday-assets")

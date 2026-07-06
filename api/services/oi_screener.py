@@ -265,7 +265,8 @@ def _prior_extremes(db, clgroup: str) -> Dict[str, Dict[str, Any]]:
         WITH daily AS (
             SELECT DISTINCT ON (sectype, tradedate) sectype, tradedate,
                    (pos_long + pos_short)::float
-                       / NULLIF(pos_long - pos_short, 0) * 100 AS net_pct
+                       / NULLIF(pos_long - pos_short, 0) * 100 AS net_pct,
+                   (pos_long + pos_short) AS net
             FROM open_interest
             WHERE clgroup = :clg AND interval = 24
               AND EXTRACT(ISODOW FROM tradedate) BETWEEN 1 AND 5
@@ -284,7 +285,9 @@ def _prior_extremes(db, clgroup: str) -> Dict[str, Dict[str, Any]]:
           MAX(net_pct) FILTER (WHERE d.tradedate >= :d5y  AND d.tradedate < l.ld) AS pmax_5y,
           MIN(net_pct) FILTER (WHERE d.tradedate >= :d5y  AND d.tradedate < l.ld) AS pmin_5y,
           MAX(net_pct) FILTER (WHERE d.tradedate < l.ld) AS pmax_all,
-          MIN(net_pct) FILTER (WHERE d.tradedate < l.ld) AS pmin_all
+          MIN(net_pct) FILTER (WHERE d.tradedate < l.ld) AS pmin_all,
+          MAX(net) FILTER (WHERE d.tradedate < l.ld) AS net_max_all,
+          MIN(net) FILTER (WHERE d.tradedate < l.ld) AS net_min_all
         FROM daily d JOIN last l USING (sectype)
         WHERE d.net_pct IS NOT NULL
         GROUP BY d.sectype
@@ -296,6 +299,7 @@ def _prior_extremes(db, clgroup: str) -> Dict[str, Dict[str, Any]]:
             "max_1y": r[1], "min_1y": r[2], "max_2y": r[3], "min_2y": r[4],
             "max_3y": r[5], "min_3y": r[6], "max_4y": r[7], "min_4y": r[8],
             "max_5y": r[9], "min_5y": r[10], "max_all": r[11], "min_all": r[12],
+            "net_max_all": r[13], "net_min_all": r[14],
         }
     return out
 
@@ -321,6 +325,22 @@ def _record_for(net_pct, ex: Dict[str, Any] | None) -> Dict[str, str] | None:
     return None
 
 
+def _net_record_for(net, ex: Dict[str, Any] | None) -> Dict[str, str] | None:
+    """Исторический (за ВСЁ время) экстремум СЫРОЙ чистой позиции (контракты).
+    В отличие от _record_for (net_pct, %) — считаем по абсолютным контрактам, и
+    сплиты НЕ учитываем (решение Вадима: все тикеры одинаково). Текущий net
+    (последняя точка ряда, включая интрадей-бар) против all-time экстремума ДО
+    сегодня. None если рекорда нет."""
+    if net is None or not ex:
+        return None
+    mx, mn = ex.get("net_max_all"), ex.get("net_min_all")
+    if mx is not None and net > mx:
+        return {"kind": "high"}
+    if mn is not None and net < mn:
+        return {"kind": "low"}
+    return None
+
+
 def compute_screener(db, clgroup: str = "FIZ") -> Dict[str, Any]:
     """Полный ответ скринера: строки по всем фьючерсам с данными ОИ.
 
@@ -336,7 +356,7 @@ def compute_screener(db, clgroup: str = "FIZ") -> Dict[str, Any]:
     # всё равно ловятся: compute_screener подмешивает свежий дневной close в ex ниже.
     from api.cache import get_or_compute
     extremes = get_or_compute(
-        f"oi_extremes:v1:{clgroup}", lambda: _prior_extremes(db, clgroup), ttl=1800
+        f"oi_extremes:v2:{clgroup}", lambda: _prior_extremes(db, clgroup), ttl=1800
     )
     intraday_set = _intraday_assets(db)
     intraday_now = _bulk_intraday_now(db, clgroup, intraday_set)
@@ -407,15 +427,24 @@ def compute_screener(db, clgroup: str = "FIZ") -> Dict[str, Any]:
         # дополнить ПОСЛЕДНИМ дневным close — бегущий бар новее него, и он должен
         # соперничать со всей дневной историей включая вчера.
         ex = extremes.get(sectype)
-        if has_intraday and intra and intra[0] > dl[0] and ex is not None and daily_last_pct is not None:
-            # Вплетаем последний дневной close во ВСЕ окна экстремумов (бегущий
-            # интрадей-бар новее него → должен соперничать со всей дневной историей).
-            ex = {
-                k: (daily_last_pct if v is None
-                    else max(v, daily_last_pct) if k.startswith("max_")
-                    else min(v, daily_last_pct))
-                for k, v in ex.items()
-            }
+        if has_intraday and intra and intra[0] > dl[0] and ex is not None:
+            # Интрадей-бар новее последнего ДНЕВНОГО → последний дневной должен войти
+            # в «предыдущие» экстремумы (_prior_extremes исключил его как «сегодня»).
+            # %-окна (max_/min_) вплетаем daily_last_pct; сырой net (net_*) — dl[1]
+            # (дневной net), иначе pct-значением испортили бы контрактную шкалу.
+            daily_last_net = dl[1]
+            ex = dict(ex)
+            for _k in list(ex.keys()):
+                _cur = daily_last_net if _k.startswith("net_") else daily_last_pct
+                if _cur is None:
+                    continue
+                _v = ex[_k]
+                if _v is None:
+                    ex[_k] = _cur
+                elif "max" in _k:
+                    ex[_k] = max(_v, _cur)
+                else:
+                    ex[_k] = min(_v, _cur)
         m = meta.get(sectype, {})
         rows.append({
             "sectype": sectype,
@@ -433,7 +462,8 @@ def compute_screener(db, clgroup: str = "FIZ") -> Dict[str, Any]:
             "ratio": sig["ratio"],
             "direction": sig["direction"],
             "status": sig["status"],
-            "record": _record_for(net_pct, ex),
+            "record": _record_for(net_pct, ex),       # рекорд ПЕРЕКОСА (net_pct, %)
+            "net_record": _net_record_for(net, ex),   # рекорд СЫРОЙ чистой позиции (контракты, all-time)
             "signal_date": dl[0].isoformat(),   # дневная дата (для свежести/футера)
         })
 
