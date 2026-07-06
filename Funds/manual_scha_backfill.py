@@ -393,7 +393,7 @@ def main(directory: str):
         log.error(f"Папка {directory} не найдена")
         sys.exit(1)
 
-    SCHA_EXTS = (".pdf", ".xls", ".xlsx", ".zip")
+    SCHA_EXTS = (".pdf", ".xls", ".xlsx", ".docx", ".zip")
     pdfs = sorted([p for p in path.iterdir() if p.suffix.lower() in SCHA_EXTS])
     if not pdfs:
         log.warning(f"В папке {directory} нет SCHA-файлов (PDF/XLS/XLSX)")
