@@ -50,9 +50,9 @@ HELP_TEXT = (
 )
 
 # ── ярлыки операторов/метрик/статусов для карточек (зеркало alerts_run.py) ──
-_OP_PRICE = {"cross_up": "↑ пересекла", "cross_down": "↓ пересекла",
-             "gt": "выше", "lt": "ниже"}
-_OP_SHORT = {"cross_up": "↑✕", "cross_down": "↓✕", "gt": ">", "lt": "<"}
+_OP_PRICE = {"cross": "пересекла", "cross_up": "↑ пересекла",
+             "cross_down": "↓ пересекла", "gt": "выше", "lt": "ниже"}
+_OP_SHORT = {"cross": "✕", "cross_up": "↑✕", "cross_down": "↓✕", "gt": ">", "lt": "<"}
 _STATUS_DOT = {"active": "🟢", "paused": "⏸", "fired": "✅"}
 _STATUS_WORD = {"active": "активен", "paused": "на паузе", "fired": "сработал (once)"}
 # Таймфрейм OI-алерта (раннее срабатывание дневного сигнала по интрадей-бару).

@@ -49,7 +49,8 @@ const iconBtn: CSSProperties = {
 };
 
 const OP_LABEL: Record<string, string> = {
-    gt: 'выше', lt: 'ниже', cross_up: '↑ пересечёт', cross_down: '↓ пересечёт',
+    gt: 'выше', lt: 'ниже', cross: 'пересечёт',
+    cross_up: '↑ пересечёт', cross_down: '↓ пересечёт',
 };
 const METRIC_LABEL: Record<string, string> = {
     price: 'Цена', oi_zscore: 'OI z-score', oi_level: 'Открытый интерес',

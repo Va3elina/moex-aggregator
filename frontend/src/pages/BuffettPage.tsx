@@ -199,12 +199,11 @@ export default function BuffettPage() {
         key: 'buffett_ratio', label: `Коэффициент Баффета (${modeLabel})`,
         indicator: 'buffett_ratio', metric: modeKey, unit: '%',
         ops: [
+            { value: 'cross', label: 'пересечёт (в любую сторону)' },
             { value: 'cross_up', label: '↑ пересечёт (снизу вверх)' },
             { value: 'cross_down', label: '↓ пересечёт (сверху вниз)' },
-            { value: 'gt', label: 'станет выше' },
-            { value: 'lt', label: 'станет ниже' },
         ],
-        hint: `Сработает, когда индикатор Баффета (${modeLabel}) пересечёт заданный уровень в % или окажется выше/ниже него. Порог — в тех же %, что на правой оси графика.`,
+        hint: `Сработает, когда индикатор Баффета (${modeLabel}) пересечёт заданный уровень в %. Порог — в тех же %, что на правой оси графика.`,
     }], [modeKey, modeLabel]);
 
     // Уровни активных buffett-алертов текущего режима → пунктир на ПРАВОЙ оси.

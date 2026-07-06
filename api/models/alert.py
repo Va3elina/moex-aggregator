@@ -33,7 +33,7 @@ class Alert(Base):
     # дневная публикация (дефолт, текущее поведение). Цена этим не пользуется.
     timeframe = Column(String(4), nullable=False, default="1d", server_default="1d")
 
-    op = Column(String(12), nullable=False)           # 'gt'|'lt'|'cross_up'|'cross_down'
+    op = Column(String(12), nullable=False)           # 'cross'|'cross_up'|'cross_down'|'gt'|'lt'
     threshold = Column(Numeric(20, 6), nullable=False)
 
     # Источник сигнала для разделения в кабинете: 'oi' (текущие OI/цена) |

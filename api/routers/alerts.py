@@ -208,7 +208,7 @@ class AlertCreate(BaseModel):
     # funds_flow: явный набор фондов (заморожённый). Задан → asset форсится в
     # 'custom', сериализуется в CSV в колонку alerts.fund_ids. None → таргет по asset.
     fund_ids: Optional[list[int]] = None
-    op: str = Field(max_length=16)               # 'gt'|'lt'|'cross_up'|'cross_down'
+    op: str = Field(max_length=16)               # 'cross'|'cross_up'|'cross_down' (+legacy 'gt'|'lt')
     threshold: float
     mode: str = "once"                   # 'once'|'repeat'
     cooldown_hours: int = Field(default=24, ge=1, le=720)
@@ -362,7 +362,8 @@ def _alert_source(indicator: str) -> str:
 # Валидация значений (op/mode/indicator/clgroup) — общая для одиночного и
 # пакетного создания. Возвращает текст ошибки или None если всё ок.
 def _validate_alert_body(b: AlertCreate) -> Optional[str]:
-    if b.op not in ("gt", "lt", "cross_up", "cross_down", "new_high", "new_low", "new_extreme"):
+    if b.op not in ("gt", "lt", "cross", "cross_up", "cross_down",
+                    "new_high", "new_low", "new_extreme"):
         return "некорректное условие"
     if b.mode not in ("once", "repeat"):
         return "некорректный режим"
