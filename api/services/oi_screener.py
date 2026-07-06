@@ -34,6 +34,73 @@ ATR_MIN_REL = 0.02       # материальность: |Δ|/|net| ≥ 2%
 ATR_FLOOR_REL = 0.001    # ATR ≥ 0.1%·|net|, иначе позиция «заморожена»
 
 
+# --- Порог релевантности активов ОИ (общий: пикер + скринер сигналов) --------
+# Сплит физ/юр по фьючерсу, которым торгует мало людей, статистически шумный:
+# значимость выборки зависит от АБСОЛЮТНОГО числа участников, а не от доли рынка.
+# Базовый порог фиксированный (floor), динамическая часть лишь приподнимает его,
+# если рынок в целом сильно раздуется. Сглаживание — медиана числа физлиц-
+# трейдеров за N торговых дней (анти-фликер). Малоактивные активы прячутся ОДНИМ
+# принципом и из пикера (ручка /low-activity-assets), и из ленты скринера.
+OI_RELEVANCE_FLOOR = 500        # мин. число физлиц-трейдеров (абсолютная релевантность)
+OI_RELEVANCE_DYN_SHARE = 0.002  # +динамика: 0.2% суммарной активности рынка
+OI_RELEVANCE_SMOOTH_DAYS = 5    # окно медианы (торговых дней)
+
+
+def _compute_low_activity(db) -> Dict[str, Any]:
+    """Малоактивные активы + порог. Активность актива = медиана числа физлиц-
+    трейдеров (pos_long_num+pos_short_num, FIZ) за OI_RELEVANCE_SMOOTH_DAYS
+    торговых дней. Порог = max(floor, dyn_share × сумма медиан по рынку)."""
+    rows = db.execute(text(
+        """
+        WITH daily AS (
+            SELECT DISTINCT ON (sectype, tradedate)
+                sectype, tradedate,
+                (pos_long_num + pos_short_num) AS fiz
+            FROM open_interest
+            WHERE clgroup = 'FIZ' AND interval = 24
+              AND EXTRACT(ISODOW FROM tradedate) BETWEEN 1 AND 5
+              AND tradedate >= CURRENT_DATE - INTERVAL '20 days'
+            ORDER BY sectype, tradedate, tradetime DESC
+        ),
+        ranked AS (
+            SELECT sectype, fiz,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY sectype ORDER BY tradedate DESC
+                   ) AS rn
+            FROM daily
+        )
+        SELECT sectype,
+               percentile_cont(0.5) WITHIN GROUP (ORDER BY fiz) AS median_fiz
+        FROM ranked
+        WHERE rn <= :win
+        GROUP BY sectype
+        """
+    ), {"win": OI_RELEVANCE_SMOOTH_DAYS}).fetchall()
+
+    medians = {r[0]: float(r[1] or 0) for r in rows}
+    total = sum(medians.values())
+    threshold = max(OI_RELEVANCE_FLOOR, round(OI_RELEVANCE_DYN_SHARE * total))
+    low = sorted(s for s, m in medians.items() if m < threshold)
+    return {
+        "threshold": threshold,
+        "floor": OI_RELEVANCE_FLOOR,
+        "smooth_days": OI_RELEVANCE_SMOOTH_DAYS,
+        "sectypes": low,
+    }
+
+
+def low_activity(db) -> Dict[str, Any]:
+    """Малоактивные активы, кэш 1 час (данные дневные T+1). Общий ключ для пикера
+    и скринера — оба читают один результат, лишней нагрузки нет."""
+    from api.cache import get_or_compute
+    return get_or_compute("oi_low_activity:v1", lambda: _compute_low_activity(db), ttl=3600)
+
+
+def low_activity_set(db) -> set:
+    """Множество малоактивных sectype (для фильтрации строк скринера/пикера)."""
+    return set(low_activity(db)["sectypes"])
+
+
 def _min_part(clgroup: str) -> int:
     """Порог ликвидности по группе (у юрлиц институтов структурно меньше)."""
     return ATR_MIN_PART_YUR if clgroup == "YUR" else ATR_MIN_PART
@@ -274,6 +341,7 @@ def compute_screener(db, clgroup: str = "FIZ") -> Dict[str, Any]:
     intraday_set = _intraday_assets(db)
     intraday_now = _bulk_intraday_now(db, clgroup, intraday_set)
     min_part = _min_part(clgroup)             # порог ликвидности группы (физ 50 / юр 15)
+    low_set = low_activity_set(db)            # малоактивные активы прячем из ленты (как в пикере)
 
     # Метаданные инструментов: имя + группа (Индексы/Валюта/Товары/Акции).
     meta = {
@@ -287,6 +355,11 @@ def compute_screener(db, clgroup: str = "FIZ") -> Dict[str, Any]:
     rows: List[Dict[str, Any]] = []
     signal_date: date | None = None
     for sectype, pts in series.items():
+        # Малоактивный актив (мало физлиц-трейдеров) — прячем из ленты скринера
+        # тем же принципом, что и из пикера: резкое движение в фьючерсе, где
+        # 2-3 физлица, это шум, а не сигнал. Общий кэш low_activity (1 час).
+        if sectype in low_set:
+            continue
         has_intraday = sectype in intraday_set
         # Последний ДНЕВНОЙ перекос (до вплетения интрадея) — нужен для корректного
         # рекорда интрадей-актива: бегущий бар новее последнего дневного close,

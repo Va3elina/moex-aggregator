@@ -35,10 +35,11 @@ def get_oi_screener(
     """
     from api.cache import get_or_compute
     from api.services.oi_screener import compute_screener
-    # v9 = групповой порог ликвидности (физ 50 / юр 15) + npart/min_part в ответе.
-    # v8 = окна рекордов 1/2/3/4/5 лет + всё время. v7 = фикс интрадей-бара только за
-    # торговые дни (ISODOW 1–5). v6 = + интрадей (бегущий 5-мин бар). TTL 5 мин.
-    return get_or_compute(f"oi_screener:v9:{clgroup}", lambda: compute_screener(db, clgroup), ttl=300)
+    # v10 = скрытие малоактивных активов (мало физлиц-трейдеров) из ленты, как в
+    # пикере. v9 = групповой порог ликвидности (физ 50 / юр 15) + npart/min_part в
+    # ответе. v8 = окна рекордов 1/2/3/4/5 лет + всё время. v7 = фикс интрадей-бара
+    # только за торговые дни (ISODOW 1–5). v6 = + интрадей (5-мин бар). TTL 5 мин.
+    return get_or_compute(f"oi_screener:v10:{clgroup}", lambda: compute_screener(db, clgroup), ttl=300)
 
 
 @oi_router.get("/intraday-assets")
@@ -66,75 +67,21 @@ def get_intraday_assets(db: Session = Depends(get_db)):
     return {"sectypes": [r[0] for r in rows]}
 
 
-# --- Порог релевантности актива для пикера ОИ -------------------------------
-# Сплит физ/юр по фьючерсу, которым торгует мало людей, статистически шумный:
-# значимость выборки зависит от АБСОЛЮТНОГО числа участников, а не от доли рынка.
-# Поэтому базовый порог фиксированный (floor), а динамическая часть лишь
-# приподнимает его, если рынок в целом сильно раздуется (доля общей активности).
-# Сглаживание — медиана числа физлиц-трейдеров за 5 торговых дней (анти-фликер:
-# актив не мигает в списке из-за одного тихого/шумного дня).
-OI_RELEVANCE_FLOOR = 500        # мин. число физлиц-трейдеров (абсолютная релевантность)
-OI_RELEVANCE_DYN_SHARE = 0.002  # +динамика: 0.2% суммарной активности рынка
-OI_RELEVANCE_SMOOTH_DAYS = 5    # окно медианы (торговых дней)
-
-
 @oi_router.get("/low-activity-assets")
 def get_low_activity_assets(db: Session = Depends(get_db)):
     """sectype фьючерсов с НИЗКОЙ активностью физлиц — прячутся в пикере ОИ.
 
     Активность актива = медиана числа физлиц-трейдеров (pos_long_num +
-    pos_short_num, clgroup=FIZ) за последние OI_RELEVANCE_SMOOTH_DAYS торговых
-    дней. Актив малоактивен, если эта медиана < порога. Порог =
-    max(floor, dyn_share × сумма медиан по рынку): фиксированный низ релевантности
-    плюс запас на общий рост рынка. Фронт прячет такие активы из дефолтного
-    списка, но раскрывает их поиском/избранным; при росте активности медиана
-    снова переходит порог и актив возвращается сам (пересчёт дневной).
+    pos_short_num, clgroup=FIZ) за последние дни. Актив малоактивен, если эта
+    медиана < порога = max(floor, dyn_share × сумма медиан по рынку). Фронт
+    прячет такие активы из дефолтного списка, но раскрывает их поиском/избранным;
+    при росте активности медиана снова переходит порог и актив возвращается сам.
 
-    Дневные данные (T+1), меняются раз в сутки → single-flight кэш 1 час.
-    Интрадей НЕ трогаем: пересчитывать чаще незачем, лишней нагрузки нет.
+    Тот же расчёт (общий кэш 1 час) прячет их и из ленты «Скринер сигналов» —
+    единый принцип релевантности. Логика в services/oi_screener.low_activity.
     """
-    from api.cache import get_or_compute
-
-    def _compute():
-        rows = db.execute(text(
-            """
-            WITH daily AS (
-                SELECT DISTINCT ON (sectype, tradedate)
-                    sectype, tradedate,
-                    (pos_long_num + pos_short_num) AS fiz
-                FROM open_interest
-                WHERE clgroup = 'FIZ' AND interval = 24
-                  AND EXTRACT(ISODOW FROM tradedate) BETWEEN 1 AND 5
-                  AND tradedate >= CURRENT_DATE - INTERVAL '20 days'
-                ORDER BY sectype, tradedate, tradetime DESC
-            ),
-            ranked AS (
-                SELECT sectype, fiz,
-                       ROW_NUMBER() OVER (
-                           PARTITION BY sectype ORDER BY tradedate DESC
-                       ) AS rn
-                FROM daily
-            )
-            SELECT sectype,
-                   percentile_cont(0.5) WITHIN GROUP (ORDER BY fiz) AS median_fiz
-            FROM ranked
-            WHERE rn <= :win
-            GROUP BY sectype
-            """
-        ), {"win": OI_RELEVANCE_SMOOTH_DAYS}).fetchall()
-
-        medians = {r[0]: float(r[1] or 0) for r in rows}
-        total = sum(medians.values())
-        threshold = max(OI_RELEVANCE_FLOOR, round(OI_RELEVANCE_DYN_SHARE * total))
-        low = sorted(s for s, m in medians.items() if m < threshold)
-        return {
-            "threshold": threshold,
-            "floor": OI_RELEVANCE_FLOOR,
-            "smooth_days": OI_RELEVANCE_SMOOTH_DAYS,
-            "sectypes": low,
-        }
-
-    return get_or_compute("oi_low_activity:v1", _compute, ttl=3600)
+    from api.services.oi_screener import low_activity
+    return low_activity(db)
 
 
 @router.get("/{sectype}", response_model=OpenInterestListResponse)
