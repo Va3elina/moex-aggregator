@@ -292,6 +292,7 @@ function LockedView() {
 // ════════════════════════════════════════════════════════════════════
 export default function MobileFundTradesPage() {
   const common = useCommonFeatures();
+  const { showUpgrade } = useUpgradePrompt(); // пейволл на locked-месяце movers (Free/гость)
 
   // ── State (ключи усиленно совпадают с десктопом для синхрона настроек) ──
   const [tab, setTab] = usePersistedState<Tab>('frame:fundtrades:tab', 'funds');
@@ -661,19 +662,35 @@ export default function MobileFundTradesPage() {
               <div style={SHEET_SECTION_LABEL}>Месяц снапшота</div>
               {movers && movers.available_months.length > 0 ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {movers.available_months.map((m) => {
-                    const active = (asOf ?? movers.resolved_month ?? movers.available_months[0]) === m;
-                    return (
-                      <button
-                        key={m}
-                        className={`fm-chip ${active ? 'active' : ''}`}
-                        onClick={() => { setAsOf(m); setTimeSheetOpen(false); }}
-                        style={{ justifyContent: 'flex-start', padding: '14px 16px' }}
-                      >
-                        {formatMonthYear(m)}
-                      </button>
-                    );
-                  })}
+                  {(() => {
+                    const cutoff = movers.snapshot_cutoff ?? null;
+                    const isLocked = (m: string) => cutoff != null && m > cutoff;
+                    // дефолт = последний ДОСТУПНЫЙ (не locked) месяц — сразу актуальный срез
+                    const def = movers.available_months.find((m) => !isLocked(m)) ?? movers.available_months[0];
+                    return movers.available_months.map((m) => {
+                      const locked = isLocked(m);
+                      const active = (asOf ?? def) === m;
+                      return (
+                        <button
+                          key={m}
+                          className={`fm-chip ${active ? 'active' : ''}`}
+                          onClick={() => {
+                            if (locked) {
+                              showUpgrade({ tier: 'basic', featureName: 'свежий срез фондов', indicator: 'fund_trades' });
+                              setTimeSheetOpen(false);
+                              return;
+                            }
+                            setAsOf(m);
+                            setTimeSheetOpen(false);
+                          }}
+                          style={{ justifyContent: 'flex-start', padding: '14px 16px', gap: 8, opacity: locked ? 0.6 : 1 }}
+                        >
+                          {formatMonthYear(m)}
+                          {locked && <Lock size={12} strokeWidth={2.4} style={{ marginLeft: 'auto' }} />}
+                        </button>
+                      );
+                    });
+                  })()}
                 </div>
               ) : (
                 <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-muted)', margin: 0 }}>

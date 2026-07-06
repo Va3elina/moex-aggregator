@@ -942,6 +942,9 @@ def top_movers(
         "funds": funds,
         "sort": sort,
         "available_months": [m.isoformat() for m in available_month_dates],
+        # Free/гость — дата-отсечка: месяцы с макс-датой > cutoff заблокированы (свежий срез
+        # «что купили» по подписке). null для платных (без задержки). Фронт помечает locked.
+        "snapshot_cutoff": (None if _cut == _FAR_FUTURE else _cut.isoformat()),
         "top_accumulated": top_accumulated,
         "top_reduced": top_reduced,
     }
