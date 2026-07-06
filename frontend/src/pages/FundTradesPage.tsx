@@ -51,6 +51,8 @@ import SegmentedControl from '../components/SegmentedControl';
 import { UK_LOGOS, DONUT_COLORS, fundAssetName, fundAssetColor, resolveFundLogo, stripUkName } from '../config/fundConfig';
 import Donut from '../components/funds/Donut';
 import CompanyFlowsTab from '../components/fundtrades/CompanyFlowsTab';
+import DelayedDataBadge from '../components/fundtrades/DelayedDataBadge';
+import LockedSnapshotTeaser from '../components/fundtrades/LockedSnapshotTeaser';
 import UkMultiSelect, { type UkOption } from '../components/fundtrades/UkMultiSelect';
 import FundPicker, { type FundPickerFund } from '../components/fundtrades/FundPicker';
 import { useViewportWidth } from '../hooks/useViewportWidth';
@@ -349,6 +351,7 @@ export default function FundTradesPage() {
 
     return (
         <div className="max-w-[1408px] mx-auto px-4 md:px-6 py-4 md:py-6 min-h-screen">
+            <DelayedDataBadge />
             {/* Header — единый PageHeader как у всех индикаторов
                 (иконка стилизуется через .page-header-icon → выравнивание как везде) */}
             <PageHeader
@@ -1173,13 +1176,19 @@ function SnapshotReviewTab() {
                             <button
                                 key={s.snapshot_date}
                                 onClick={() => setSelectedDate(s.snapshot_date)}
-                                title={`${s.snapshot_date} · ${s.asset_count} активов`}
+                                title={s.locked
+                                    ? `${s.snapshot_date} · свежий срез — по подписке`
+                                    : `${s.snapshot_date} · ${s.asset_count} активов`}
                                 className="editorial-press"
                                 style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 5,
                                     padding: '6px 14px',
                                     background: active ? 'var(--accent)' : 'var(--bg-secondary)',
-                                    color: active ? 'var(--text-inverse)' : 'var(--text-secondary)',
+                                    color: active ? 'var(--text-inverse)' : (s.locked ? 'var(--text-tertiary)' : 'var(--text-secondary)'),
                                     border: '2px solid var(--text-primary)',
+                                    borderStyle: s.locked && !active ? 'dashed' : 'solid',
                                     fontSize: 'var(--fs-xs)',
                                     fontWeight: active ? 700 : 600,
                                     fontVariantNumeric: 'tabular-nums',
@@ -1191,6 +1200,7 @@ function SnapshotReviewTab() {
                                 }}
                             >
                                 {formatMonthYear(s.snapshot_date)}
+                                {s.locked && <Lock size={11} strokeWidth={2.4} />}
                             </button>
                         );
                     })}
@@ -1208,13 +1218,15 @@ function SnapshotReviewTab() {
                 </div>
             )}
 
-            {/* Review sections */}
+            {/* Review sections (locked свежий срез → тизер с блюром + ваш upgrade-модал) */}
             {!loading && review && (
-                <SnapshotReviewBody
-                    review={review}
-                    maxAbsAmount={maxAbsAmount}
-                    onRowClick={(r) => setDrillDown({ asset_name: r.asset_name, isin: r.isin })}
-                />
+                review.locked
+                    ? <LockedSnapshotTeaser latestDate={review.latest_snapshot_date} requiredTier={review.required_tier} />
+                    : <SnapshotReviewBody
+                        review={review}
+                        maxAbsAmount={maxAbsAmount}
+                        onRowClick={(r) => setDrillDown({ asset_name: r.asset_name, isin: r.isin })}
+                    />
             )}
 
             {!loading && !error && snapshotsList && snapshotsList.snapshots.length === 0 && (
@@ -1300,7 +1312,7 @@ function SnapshotReviewBody({
                     {review.previous_snapshot_date && (
                         <> · сравниваем с {formatMonthYear(review.previous_snapshot_date)}</>
                     )}
-                    {' · '}{review.totals.current_assets} активов
+                    {' · '}{review.totals!.current_assets} активов
                 </div>
             </div>
 
@@ -1362,7 +1374,7 @@ function SnapshotReviewBody({
                 <SnapshotSection
                     title="ДОКУПИЛ"
                     count={addedItems.length}
-                    total={isW ? sumBy(addedItems, wDelta) : review.totals.total_added_rub}
+                    total={isW ? sumBy(addedItems, wDelta) : review.totals!.total_added_rub}
                     items={sortByAbs(addedItems, isW ? wDelta : aAdded)}
                     maxAbs={maxAbs}
                     isPositive={true}
@@ -1381,7 +1393,7 @@ function SnapshotReviewBody({
                 <SnapshotSection
                     title="ПРОДАЛ"
                     count={reducedItems.length}
-                    total={isW ? Math.abs(sumBy(reducedItems, wDelta)) : Math.abs(review.totals.total_reduced_rub)}
+                    total={isW ? Math.abs(sumBy(reducedItems, wDelta)) : Math.abs(review.totals!.total_reduced_rub)}
                     items={sortByAbs(reducedItems, isW ? wDelta : aAdded)}
                     maxAbs={maxAbs}
                     isPositive={false}
@@ -1400,7 +1412,7 @@ function SnapshotReviewBody({
                 <SnapshotSection
                     title="НОВЫЕ ПОЗИЦИИ"
                     count={review.new.length}
-                    total={isW ? sumBy(review.new, wNew) : review.totals.total_new_rub}
+                    total={isW ? sumBy(review.new, wNew) : review.totals!.total_new_rub}
                     items={sortByAbs(review.new, isW ? wNew : aNew)}
                     maxAbs={maxAbs}
                     isPositive={true}
@@ -1419,7 +1431,7 @@ function SnapshotReviewBody({
                 <SnapshotSection
                     title="ПОЛНОСТЬЮ ВЫШЕЛ"
                     count={review.sold_out.length}
-                    total={isW ? Math.abs(sumBy(review.sold_out, wSold)) : review.totals.total_sold_out_rub}
+                    total={isW ? Math.abs(sumBy(review.sold_out, wSold)) : review.totals!.total_sold_out_rub}
                     items={sortByAbs(review.sold_out, isW ? wSold : aSold)}
                     maxAbs={maxAbs}
                     isPositive={false}

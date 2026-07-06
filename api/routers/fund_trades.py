@@ -35,6 +35,8 @@ from sqlalchemy.orm import Session
 from api.database import get_db
 from api.models import User
 from api.routers.auth import get_current_user_optional
+from api.billing.tiers import user_tier
+from api.billing.features import get_indicator_limits
 
 router = APIRouter(prefix="/api/fund-trades", tags=["fund-trades"])
 
@@ -124,6 +126,51 @@ def _guard_returns(ticker, returns: dict) -> dict:
 # NAV×weight/price была подстраховкой, но для облигаций ненадёжна (эмитент↔выпуск),
 # а по акциям документы точнее. Строки остаются в БД — чтобы вернуть, добавь обратно сюда.
 MONTHLY_SOURCES = ("vim_sdr", "interfax_manual")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Задержка данных для Free/гостя (пилот delayed-data freemium).
+#
+# Free/гость видят fund-trades на 1 снапшот позади: свежая месячная выборка «что
+# фонды купили» открывается по подписке (любой платный тир = realtime). Правило
+# берётся из features.py INDICATOR_FEATURES["fund_trades"]["<tier>"]["snapshot_delay"].
+#
+# Реализация — ГЛОБАЛЬНЫЙ cutoff по дате свежести выборки: даты месячных выборок у
+# фондов whitelist в основном выровнены (все month-end), поэтому «<= (offset+1)-я
+# по свежести дата» ≈ per-fund «−1 снапшот». Edge: у уже-отстающих фондов (их
+# latest = глобальная 2-я дата) отсечка не срабатывает — но свежее данных всё
+# равно нет, так что скрывать нечего. При раскате на весь проект и добавлении
+# разно-периодичных фондов — пересмотреть на строгий per-fund.
+_FAR_FUTURE = date(9999, 12, 31)
+
+
+def _snapshot_offset(user) -> int:
+    """На сколько снапшотов свежести назад видит юзер (0 = свежий срез)."""
+    limits = get_indicator_limits(user_tier(user), "fund_trades")
+    return int(limits.get("snapshot_delay", 0) or 0)
+
+
+def _snapshot_cutoff(db, user) -> date:
+    """Дата-отсечка свежести для тира. offset 0 → _FAR_FUTURE (без задержки).
+    offset N → N-я по свежести дата месячной выборки среди whitelist-фондов
+    (Free видит снапшоты `<= cutoff`). Если истории меньше — без задержки."""
+    offset = _snapshot_offset(user)
+    if offset <= 0:
+        return _FAR_FUTURE
+    cutoff = db.execute(text("""
+        SELECT snapshot_date FROM (
+            SELECT DISTINCT h.snapshot_date
+            FROM fund_holdings_history h
+            JOIN funds f ON f.fund_id = h.fund_id
+            WHERE f.category = 'stocks'
+              AND f.ticker = ANY(:tickers)
+              AND h.source = ANY(:sources)
+            ORDER BY h.snapshot_date DESC
+            OFFSET :offset LIMIT 1
+        ) x
+    """), {"tickers": list(WHITELIST_TICKERS), "sources": list(MONTHLY_SOURCES),
+           "offset": offset}).scalar()
+    return cutoff or _FAR_FUTURE
 
 # Стандартные коэффициенты сплита акций. При коррекции сплита берём ближайший
 # (в лог-шкале) к наблюдаемому, а НЕ сырое отношение количеств — иначе реальная
@@ -297,6 +344,7 @@ def list_funds_with_history(
     по fund_data.pay, КАЛЕНДАРНЫЕ месяцы от последней даты — совпадает с investfunds),
     top_holdings (топ-10 позиций последнего snapshot, weight 0..1, короткое имя).
     """
+    cutoff = _snapshot_cutoff(db, user)  # Free/гость — задержка: свежий срез по подписке
     rows = db.execute(text("""
         SELECT
             f.fund_id,
@@ -307,14 +355,16 @@ def list_funds_with_history(
             f.category,
             f.subcategory,
             (SELECT MAX(snapshot_date) FROM fund_holdings_history h
-             WHERE h.fund_id = f.fund_id AND h.source = ANY(:sources)) AS last_snapshot_date,
+             WHERE h.fund_id = f.fund_id AND h.source = ANY(:sources)
+               AND h.snapshot_date <= :cutoff) AS last_snapshot_date,
             (SELECT COUNT(DISTINCT snapshot_date) FROM fund_holdings_history h
              WHERE h.fund_id = f.fund_id AND h.source = ANY(:sources)) AS snapshot_count,
             (SELECT COUNT(DISTINCT COALESCE(NULLIF(h.isin, ''), h.asset_name))
              FROM fund_holdings_history h
              WHERE h.fund_id = f.fund_id AND h.source = ANY(:sources)
                AND h.snapshot_date = (SELECT MAX(h2.snapshot_date) FROM fund_holdings_history h2
-                                      WHERE h2.fund_id = f.fund_id AND h2.source = ANY(:sources))
+                                      WHERE h2.fund_id = f.fund_id AND h2.source = ANY(:sources)
+                                        AND h2.snapshot_date <= :cutoff)
             ) AS holdings_count,
             fd_last.nav AS nav_rub,
             fd_last.pay AS last_pay,
@@ -356,7 +406,7 @@ def list_funds_with_history(
           AND EXISTS (SELECT 1 FROM fund_holdings_history h2
                       WHERE h2.fund_id = f.fund_id AND h2.source = ANY(:sources))
         ORDER BY f.uk NULLS LAST, f.category, f.ticker
-    """), {"tickers": list(WHITELIST_TICKERS), "sources": list(MONTHLY_SOURCES)}).mappings().all()
+    """), {"tickers": list(WHITELIST_TICKERS), "sources": list(MONTHLY_SOURCES), "cutoff": cutoff}).mappings().all()
 
     fund_ids = [r["fund_id"] for r in rows]
 
@@ -376,6 +426,7 @@ def list_funds_with_history(
                 SELECT fund_id, MAX(snapshot_date) AS d
                 FROM fund_holdings_history
                 WHERE fund_id = ANY(:fids) AND source = ANY(:sources)
+                  AND snapshot_date <= :cutoff
                 GROUP BY fund_id
             ),
             ranked AS (
@@ -391,7 +442,7 @@ def list_funds_with_history(
             )
             SELECT fund_id, name, isin, weight FROM ranked WHERE rn <= 10
             ORDER BY fund_id, rn
-        """), {"fids": fund_ids, "sources": list(MONTHLY_SOURCES)}).mappings().all()
+        """), {"fids": fund_ids, "sources": list(MONTHLY_SOURCES), "cutoff": cutoff}).mappings().all()
         for hr in h_rows:
             holdings_map.setdefault(hr["fund_id"], []).append({
                 "name": hr["name"],
@@ -468,11 +519,13 @@ def fund_trades_detail(
     # Доходность по nav_per_share — нужна для нового layout модалки (редизайн).
     performance = _fund_performance(db, fund_id)
 
-    # Latest snapshot date.
+    # Latest snapshot date. Free/гость — с задержкой (cutoff): свежий срез по подписке.
+    cutoff = _snapshot_cutoff(db, user)
     latest_row = db.execute(text("""
         SELECT MAX(snapshot_date) AS d FROM fund_holdings_history
         WHERE fund_id = :fid AND source = ANY(:sources)
-    """), {"fid": fund_id, "sources": list(MONTHLY_SOURCES)}).first()
+          AND snapshot_date <= :cutoff
+    """), {"fid": fund_id, "sources": list(MONTHLY_SOURCES), "cutoff": cutoff}).first()
 
     if not latest_row or not latest_row[0]:
         # Нет истории вообще
@@ -655,6 +708,12 @@ def top_movers(
     (TMOS +1.2, SBMX +0.9, ...)".
     """
     months = _parse_period_months(period)
+    # Free/гость — задержка: целевой месяц-снапшот ограничиваем до cutoff (свежий
+    # срез «что купили» — по подписке). ISO-даты сравниваются как строки = хронологически.
+    _cut = _snapshot_cutoff(db, user)
+    if _cut != _FAR_FUTURE:
+        _cs = _cut.isoformat()
+        as_of = _cs if not as_of else min(as_of, _cs)
     # Фича показывает ТОЛЬКО акции — облигации/деньги/золото скрыты целиком.
     # Параметр category игнорируется (всегда stocks).
     category_filter = "AND f.category = 'stocks'"
@@ -901,6 +960,7 @@ def asset_buyers(
     Use case: "Я держу Сбер — какие БПИФ его аккумулируют, какие распродают?"
     """
     months = _parse_period_months(period)
+    cutoff = _snapshot_cutoff(db, user)  # Free/гость — задержка (свежий срез по подписке)
 
     rows = db.execute(text("""
         WITH anchor AS (
@@ -912,6 +972,7 @@ def asset_buyers(
             JOIN fund_holdings_history h ON h.fund_id = f.fund_id AND h.source = ANY(:sources)
             WHERE h.asset_name = :asset
               AND f.ticker = ANY(:tickers)
+              AND h.snapshot_date <= :cutoff
         ),
         fund_pairs AS (
             -- curr = снапшот актива в target-месяце (нет → фонд выпадает);
@@ -971,6 +1032,7 @@ def asset_buyers(
     """), {
         "asset": asset_name,
         "months": months,
+        "cutoff": cutoff,
         "tickers": list(WHITELIST_TICKERS),
         "sources": list(MONTHLY_SOURCES),
     }).mappings().all()
@@ -1026,6 +1088,10 @@ def list_snapshots(
         raise HTTPException(status_code=404, detail=f"Fund {ticker} not found")
 
     fund_id = fund_row[0]
+    # Free/гость: свежие срезы (> cutoff) НЕ прячем из списка, а помечаем locked —
+    # дата видна (навигатор покажет «29 мая 🔒»), а холдинги/цифры — по подписке
+    # (snapshot_review на locked-дату вернёт маркер без данных). Цифры не уходят.
+    cutoff = _snapshot_cutoff(db, user)
     rows = db.execute(text("""
         SELECT snapshot_date, COUNT(*) AS asset_count
         FROM fund_holdings_history
@@ -1041,6 +1107,7 @@ def list_snapshots(
             {
                 "snapshot_date": r["snapshot_date"].isoformat(),
                 "asset_count": r["asset_count"],
+                "locked": r["snapshot_date"] > cutoff,
             }
             for r in rows
         ],
@@ -1080,22 +1147,47 @@ def snapshot_review(
         raise HTTPException(status_code=404, detail=f"Fund {ticker} not found")
 
     fund_id = fund_row[0]
+    from datetime import date as _date
 
-    # Резолвим current date.
+    # Free/гость — задержка: свежие срезы (> cutoff) ЗАБЛОКИРОВАНЫ (по подписке).
+    cutoff = _snapshot_cutoff(db, user)
+    # Реальная последняя дата — только МЕТАДАННЫЕ (для метки «свежий срез — по подписке»).
+    latest_all = db.execute(text("""
+        SELECT MAX(snapshot_date) FROM fund_holdings_history
+        WHERE fund_id = :fid AND source = ANY(:sources)
+    """), {"fid": fund_id, "sources": list(MONTHLY_SOURCES)}).scalar()
+    if latest_all is None:
+        raise HTTPException(status_code=404, detail="No snapshots for this fund")
+
+    # Резолвим current date. Default (без ?date) = последний ДОСТУПНЫЙ тиру срез:
+    # платный = latest_all; Free = последний <= cutoff (свежий показываем locked, не данными).
     if date:
         try:
-            from datetime import date as _date
             current_date = _date.fromisoformat(date)
         except (ValueError, TypeError):
             raise HTTPException(status_code=400, detail="date must be ISO format")
-    else:
-        latest = db.execute(text("""
+    elif latest_all > cutoff:
+        current_date = db.execute(text("""
             SELECT MAX(snapshot_date) FROM fund_holdings_history
-            WHERE fund_id = :fid AND source = ANY(:sources)
-        """), {"fid": fund_id, "sources": list(MONTHLY_SOURCES)}).first()
-        if not latest or not latest[0]:
-            raise HTTPException(status_code=404, detail="No snapshots for this fund")
-        current_date = latest[0]
+            WHERE fund_id = :fid AND source = ANY(:sources) AND snapshot_date <= :cutoff
+        """), {"fid": fund_id, "sources": list(MONTHLY_SOURCES), "cutoff": cutoff}).scalar()
+    else:
+        current_date = latest_all
+
+    # Запрошен свежий (locked) срез → маркер БЕЗ холдингов (пейволл: цифры НЕ уходят на фронт).
+    if current_date is not None and current_date > cutoff:
+        return {
+            "fund": {"ticker": fund_row[1], "name": fund_row[2], "category": fund_row[3]},
+            "current_snapshot_date": current_date.isoformat(),
+            "previous_snapshot_date": None,
+            "locked": True,
+            "required_tier": "basic",
+            "latest_snapshot_date": latest_all.isoformat(),
+            "current_holdings": [], "added": [], "reduced": [], "new": [], "sold_out": [],
+            "totals": None,
+        }
+    if current_date is None:
+        raise HTTPException(status_code=404, detail="No snapshots for this fund")
 
     # Резолвим previous date = ближайший snapshot до current_date.
     prev_row = db.execute(text("""
@@ -1334,12 +1426,14 @@ def asset_position_history(
         filter_sql = "AND asset_name = :name"
         filter_params = {"name": asset_name}
 
+    cutoff = _snapshot_cutoff(db, user)  # Free/гость — история до предыдущего среза
     rows = db.execute(text(f"""
         SELECT snapshot_date, asset_name, isin, positions, amount_rub, weight
         FROM fund_holdings_history
         WHERE fund_id = :fid AND source = ANY(:sources) {filter_sql}
+          AND snapshot_date <= :cutoff
         ORDER BY snapshot_date ASC
-    """), {"fid": fund_id, "sources": list(MONTHLY_SOURCES), **filter_params}).mappings().all()
+    """), {"fid": fund_id, "sources": list(MONTHLY_SOURCES), "cutoff": cutoff, **filter_params}).mappings().all()
 
     if not rows:
         raise HTTPException(
@@ -1530,6 +1624,7 @@ def company_flows(
         match_sql = "h.asset_name = :aname"
         match_params = {"aname": asset_name}
 
+    cutoff = _snapshot_cutoff(db, user)  # Free/гость — задержка (свежий срез по подписке)
     rows = db.execute(text(f"""
         WITH names AS (
             SELECT h.isin, COALESCE(MAX(sr.short_name),
@@ -1545,9 +1640,10 @@ def company_flows(
         LEFT JOIN names n ON n.isin = h.isin
         WHERE f.ticker = ANY(:tickers) AND f.category = 'stocks'
           AND h.source = ANY(:sources)
+          AND h.snapshot_date <= :cutoff
           AND {match_sql}
         ORDER BY f.fund_id, h.snapshot_date ASC
-    """), {"tickers": list(WHITELIST_TICKERS), "sources": list(MONTHLY_SOURCES), **match_params}).mappings().all()
+    """), {"tickers": list(WHITELIST_TICKERS), "sources": list(MONTHLY_SOURCES), "cutoff": cutoff, **match_params}).mappings().all()
 
     if not rows:
         raise HTTPException(status_code=404, detail="Asset not found in any whitelist fund")
