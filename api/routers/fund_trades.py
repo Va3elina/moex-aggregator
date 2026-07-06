@@ -1088,15 +1088,17 @@ def list_snapshots(
         raise HTTPException(status_code=404, detail=f"Fund {ticker} not found")
 
     fund_id = fund_row[0]
-    cutoff = _snapshot_cutoff(db, user)  # Free/гость — без свежего среза (по подписке)
+    # Free/гость: свежие срезы (> cutoff) НЕ прячем из списка, а помечаем locked —
+    # дата видна (навигатор покажет «29 мая 🔒»), а холдинги/цифры — по подписке
+    # (snapshot_review на locked-дату вернёт маркер без данных). Цифры не уходят.
+    cutoff = _snapshot_cutoff(db, user)
     rows = db.execute(text("""
         SELECT snapshot_date, COUNT(*) AS asset_count
         FROM fund_holdings_history
         WHERE fund_id = :fid AND source = ANY(:sources)
-          AND snapshot_date <= :cutoff
         GROUP BY snapshot_date
         ORDER BY snapshot_date DESC
-    """), {"fid": fund_id, "sources": list(MONTHLY_SOURCES), "cutoff": cutoff}).mappings().all()
+    """), {"fid": fund_id, "sources": list(MONTHLY_SOURCES)}).mappings().all()
 
     return {
         "ticker": fund_row[1],
@@ -1105,6 +1107,7 @@ def list_snapshots(
             {
                 "snapshot_date": r["snapshot_date"].isoformat(),
                 "asset_count": r["asset_count"],
+                "locked": r["snapshot_date"] > cutoff,
             }
             for r in rows
         ],
@@ -1144,29 +1147,47 @@ def snapshot_review(
         raise HTTPException(status_code=404, detail=f"Fund {ticker} not found")
 
     fund_id = fund_row[0]
+    from datetime import date as _date
 
-    # Free/гость — задержка: доступен максимум снапшот <= cutoff (свежий срез по подписке).
+    # Free/гость — задержка: свежие срезы (> cutoff) ЗАБЛОКИРОВАНЫ (по подписке).
     cutoff = _snapshot_cutoff(db, user)
-    capped = db.execute(text("""
+    # Реальная последняя дата — только МЕТАДАННЫЕ (для метки «свежий срез — по подписке»).
+    latest_all = db.execute(text("""
         SELECT MAX(snapshot_date) FROM fund_holdings_history
-        WHERE fund_id = :fid AND source = ANY(:sources) AND snapshot_date <= :cutoff
-    """), {"fid": fund_id, "sources": list(MONTHLY_SOURCES), "cutoff": cutoff}).first()
-    capped_latest = capped[0] if capped else None
+        WHERE fund_id = :fid AND source = ANY(:sources)
+    """), {"fid": fund_id, "sources": list(MONTHLY_SOURCES)}).scalar()
+    if latest_all is None:
+        raise HTTPException(status_code=404, detail="No snapshots for this fund")
 
-    # Резолвим current date.
+    # Резолвим current date. Default (без ?date) = последний ДОСТУПНЫЙ тиру срез:
+    # платный = latest_all; Free = последний <= cutoff (свежий показываем locked, не данными).
     if date:
         try:
-            from datetime import date as _date
             current_date = _date.fromisoformat(date)
         except (ValueError, TypeError):
             raise HTTPException(status_code=400, detail="date must be ISO format")
-        # Запрос свежее доступного тиру → отдаём последний доступный (<= cutoff).
-        if capped_latest and current_date > capped_latest:
-            current_date = capped_latest
+    elif latest_all > cutoff:
+        current_date = db.execute(text("""
+            SELECT MAX(snapshot_date) FROM fund_holdings_history
+            WHERE fund_id = :fid AND source = ANY(:sources) AND snapshot_date <= :cutoff
+        """), {"fid": fund_id, "sources": list(MONTHLY_SOURCES), "cutoff": cutoff}).scalar()
     else:
-        if not capped_latest:
-            raise HTTPException(status_code=404, detail="No snapshots for this fund")
-        current_date = capped_latest
+        current_date = latest_all
+
+    # Запрошен свежий (locked) срез → маркер БЕЗ холдингов (пейволл: цифры НЕ уходят на фронт).
+    if current_date is not None and current_date > cutoff:
+        return {
+            "fund": {"ticker": fund_row[1], "name": fund_row[2], "category": fund_row[3]},
+            "current_snapshot_date": current_date.isoformat(),
+            "previous_snapshot_date": None,
+            "locked": True,
+            "required_tier": "basic",
+            "latest_snapshot_date": latest_all.isoformat(),
+            "current_holdings": [], "added": [], "reduced": [], "new": [], "sold_out": [],
+            "totals": None,
+        }
+    if current_date is None:
+        raise HTTPException(status_code=404, detail="No snapshots for this fund")
 
     # Резолвим previous date = ближайший snapshot до current_date.
     prev_row = db.execute(text("""
