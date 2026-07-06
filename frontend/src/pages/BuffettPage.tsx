@@ -199,9 +199,9 @@ export default function BuffettPage() {
         key: 'buffett_ratio', label: `Коэффициент Баффета (${modeLabel})`,
         indicator: 'buffett_ratio', metric: modeKey, unit: '%',
         ops: [
-            { value: 'cross', label: 'пересечёт (в любую сторону)' },
-            { value: 'cross_up', label: '↑ пересечёт (снизу вверх)' },
-            { value: 'cross_down', label: '↓ пересечёт (сверху вниз)' },
+            { value: 'cross', label: 'Пересечение (в любую сторону)' },
+            { value: 'cross_up', label: '↑ Пересечение (снизу вверх)' },
+            { value: 'cross_down', label: '↓ Пересечение (сверху вниз)' },
         ],
         hint: `Сработает, когда индикатор Баффета (${modeLabel}) пересечёт заданный уровень в %. Порог — в тех же %, что на правой оси графика.`,
     }], [modeKey, modeLabel]);
