@@ -104,7 +104,8 @@ def _find_metadata(df: pd.DataFrame) -> dict:
         # но в архиве col 4 может содержать "Предыдущая отчётная дата" (берём её
         # только если в col 0 не нашли).
         if not meta["snapshot_date"]:
-            m_iso = re.search(r"\b(\d{4})\.(\d{2})\.(\d{2})\b", joined)
+            # Разделитель . или - (XBRL e-disclosure отдаёт ISO "2026-05-29").
+            m_iso = re.search(r"\b(\d{4})[.-](\d{2})[.-](\d{2})\b", joined)
             if m_iso:
                 meta["snapshot_date"] = f"{m_iso.group(1)}-{m_iso.group(2)}-{m_iso.group(3)}"
             else:
