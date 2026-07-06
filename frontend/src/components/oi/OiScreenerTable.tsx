@@ -586,8 +586,11 @@ export default function OiScreenerTable({ onSelect, onRequestAlert }: Props) {
 
                 {/* Сигнал (+ бейдж рекорда перекоса, если есть) */}
                 <div style={{ minWidth: 0 }}>
-                  {r.net_record && <div>{netRecordBadge(r)}</div>}
-                  {r.record && <div>{recordBadge(r)}</div>}
+                  {/* net_record (истор. экстремум позиции, all-time) сильнее и
+                      покрывает %-рекорд → при его наличии %-бейдж не дублируем. */}
+                  {r.net_record
+                    ? <div>{netRecordBadge(r)}</div>
+                    : r.record && <div>{recordBadge(r)}</div>}
                   {signalText(r)}
                 </div>
 
