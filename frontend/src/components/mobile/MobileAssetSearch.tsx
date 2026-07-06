@@ -21,6 +21,7 @@ import { useUpgradePrompt } from '../tier/UpgradeModal';
 import type { Instrument } from '../../types';
 import { usePersistedState } from '../../hooks/usePersistedState';
 import { useInstrumentFilter } from '../../hooks/useInstrumentFilter';
+import { getLowActivityAssets } from '../../services/api';
 
 interface MobileAssetSearchProps {
   open: boolean;
@@ -31,6 +32,9 @@ interface MobileAssetSearchProps {
   /** Если задан — для каждого инструмента проверяем доступность по tier'у.
    *  Заблокированные затемняются + lock icon + клик открывает UpgradeModal. */
   indicator?: string;
+  /** Прятать малоактивные активы (мало физлиц-трейдеров) из дефолтного списка —
+   *  только для ОИ. Раскрываются поиском / избранным. По умолчанию выкл. */
+  hideLowActivity?: boolean;
 }
 
 const FAVORITES_KEY = 'favoriteInstruments';
@@ -63,6 +67,7 @@ export default function MobileAssetSearch({
   filterType,
   excludeType,
   indicator,
+  hideLowActivity = false,
 }: MobileAssetSearchProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [instruments, setInstruments] = useState<Instrument[]>([]);
@@ -133,6 +138,19 @@ export default function MobileAssetSearch({
     localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites));
   }, [favorites]);
 
+  // Малоактивные активы (мало физлиц-трейдеров) — грузим только когда открыт
+  // sheet и включён hideLowActivity (ОИ). Прячем из дефолтного списка через хук;
+  // при ошибке/до загрузки набор пуст → ничего не прячем (безопасный фолбэк).
+  const [lowActivitySet, setLowActivitySet] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (!open || !hideLowActivity) return;
+    let cancelled = false;
+    getLowActivityAssets()
+      .then((list) => { if (!cancelled) setLowActivitySet(new Set(list)); })
+      .catch(() => { /* пустой набор — ничего не прячем */ });
+    return () => { cancelled = true; };
+  }, [open, hideLowActivity]);
+
   const toggleFavorite = (sectype: string, e: React.MouseEvent) => {
     e.stopPropagation();
     setFavorites((prev) =>
@@ -162,6 +180,7 @@ export default function MobileAssetSearch({
     excludeType,
     matchType: true,
     extraFilter,
+    hiddenSectypes: lowActivitySet,
   });
 
   // Render одного элемента списка

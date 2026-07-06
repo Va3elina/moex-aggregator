@@ -1120,6 +1120,7 @@ export default function OpenInterestPage() {
           onClose={() => setIsModalOpen(false)}
           filterType="futures"
           indicator="open_interest"
+          hideLowActivity
         />
       )}
 

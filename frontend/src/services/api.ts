@@ -1895,3 +1895,18 @@ export async function getIntradayAssets(): Promise<string[]> {
         return [];
     }
 }
+
+// Список sectype фьючерсов с низкой активностью физлиц (медиана числа
+// трейдеров за 5 торговых дней ниже порога релевантности). Пикер ОИ прячет их
+// из дефолтного списка, но раскрывает поиском/избранным; при росте активности
+// актив возвращается сам. При любой ошибке — пустой список (ничего не прячем).
+export async function getLowActivityAssets(): Promise<string[]> {
+    try {
+        const resp = await fetch(`${API_BASE}/api/oi/low-activity-assets`);
+        if (!resp.ok) return [];
+        const data = await resp.json();
+        return data.sectypes ?? [];
+    } catch {
+        return [];
+    }
+}

@@ -62,6 +62,18 @@ export interface UseInstrumentFilterOptions<T extends FilterableInstrument> {
    * выбранной колонке.
    */
   sort?: (a: T, b: T) => number;
+  /**
+   * Набор sectype, скрываемых из дефолтного просмотра (малоактивные активы ОИ:
+   * мало физлиц-трейдеров). Скрытие МЯГКОЕ — элемент всё равно показывается при
+   * активном поиске, если он в избранном или в keepVisibleSectypes. Не задан →
+   * ничего не скрывается (обычное поведение прочих пикеров).
+   */
+  hiddenSectypes?: Set<string>;
+  /**
+   * Исключения из hiddenSectypes, показываемые ВСЕГДА (напр. уже выбранные в
+   * multi-режиме) — чтобы их можно было увидеть и снять даже без поиска.
+   */
+  keepVisibleSectypes?: Set<string>;
 }
 
 export interface UseInstrumentFilterResult<T extends FilterableInstrument> {
@@ -105,15 +117,26 @@ export function useInstrumentFilter<T extends FilterableInstrument>(
     extraFilter,
     dedup,
     sort,
+    hiddenSectypes,
+    keepVisibleSectypes,
   } = opts;
 
   return useMemo(() => {
     const q = searchQuery.toLowerCase();
+    const favSet = new Set(favorites);
 
-    // 1) Фильтрация: excludeType → extraFilter → поиск → категория.
+    // 1) Фильтрация: excludeType → extraFilter → малоактивные → поиск → категория.
     const filtered = instruments.filter((inst) => {
       if (excludeType && inst.type === excludeType) return false;
       if (extraFilter && !extraFilter(inst)) return false;
+      // Малоактивные ОИ-активы прячем из дефолтного просмотра, но раскрываем при
+      // явном поиске, у избранных и у исключений (выбранные в multi) — чтобы
+      // список не стал чёрной дырой и актив вернулся сам при росте активности.
+      if (
+        hiddenSectypes && hiddenSectypes.has(inst.sectype) &&
+        !searchQuery && !favSet.has(inst.sectype) &&
+        !(keepVisibleSectypes && keepVisibleSectypes.has(inst.sectype))
+      ) return false;
       const matchesSearch =
         !searchQuery ||
         inst.sectype.toLowerCase().includes(q) ||
@@ -140,10 +163,9 @@ export function useInstrumentFilter<T extends FilterableInstrument>(
 
     // 4) Разбивка на favorites/regular. При активном поиске избранные НЕ
     //    отделяются (все в одном списке) — как в обоих модалках.
-    const favSet = new Set(favorites);
     const favoriteItems = searchQuery ? [] : unique.filter((i) => favSet.has(i.sectype));
     const regularItems = searchQuery ? unique : unique.filter((i) => !favSet.has(i.sectype));
 
     return { unique, favoriteItems, regularItems };
-  }, [instruments, searchQuery, categoryFilter, favorites, excludeType, matchType, extraFilter, dedup, sort]);
+  }, [instruments, searchQuery, categoryFilter, favorites, excludeType, matchType, extraFilter, dedup, sort, hiddenSectypes, keepVisibleSectypes]);
 }

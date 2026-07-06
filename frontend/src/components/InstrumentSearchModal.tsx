@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Search, X, Star, Lock, ChevronUp, ChevronDown, ChevronsUpDown, Check } from 'lucide-react';
 import InstrumentIcon from './InstrumentIcon';
 import { formatCompact } from '../utils/formatNumber';
-import { getIntradayAssets } from '../services/api';
+import { getIntradayAssets, getLowActivityAssets } from '../services/api';
 import { useAnalytics } from '../contexts/AnalyticsContext';
 import { useTierAccess } from '../contexts/TierFeaturesContext';
 import { useUpgradePrompt } from './tier/UpgradeModal';
@@ -62,15 +62,20 @@ interface InstrumentSearchModalProps {
    *  Внутридневные позиции — концепт открытого интереса; на индикаторах без
    *  позиций (напр. сезонность) неактуально → передаём false. По умолчанию true. */
   showIntradayBadge?: boolean;
+  /** Прятать малоактивные активы (мало физлиц-трейдеров) из дефолтного списка —
+   *  только для ОИ. Раскрываются поиском / избранным / выбором. По умолч. выкл. */
+  hideLowActivity?: boolean;
 }
 
 
 // InstrumentIcon + INSTRUMENT_ICONS + FUT_TO_STOCK перенесены в
 // отдельный модуль ./InstrumentIcon.tsx, общий для всех страниц.
 
-export default function InstrumentSearchModal({ onSelect, onClose, filterType, excludeType, onlyGroups, indicator, multiSelect = false, selectedSectypes, onToggleSelect, onDone, onClearAll, showIntradayBadge = true }: InstrumentSearchModalProps) {
+export default function InstrumentSearchModal({ onSelect, onClose, filterType, excludeType, onlyGroups, indicator, multiSelect = false, selectedSectypes, onToggleSelect, onDone, onClearAll, showIntradayBadge = true, hideLowActivity = false }: InstrumentSearchModalProps) {
   // Набор выбранных в multi-режиме — Set для O(1) проверки в renderItem.
-  const selectedSet = new Set(selectedSectypes || []);
+  // Мемоизируем: используется и в renderItem, и как keepVisibleSectypes хука
+  // (нестабильная ссылка каждый рендер ломала бы мемоизацию фильтра).
+  const selectedSet = useMemo(() => new Set(selectedSectypes || []), [selectedSectypes]);
   const [searchQuery, setSearchQuery] = useState('');
   const [instruments, setInstruments] = useState<Instrument[]>([]);
   const [loading, setLoading] = useState(true);
@@ -150,6 +155,19 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
     return () => { cancelled = true; };
   }, [showIntradayBadge]);
 
+  // Набор малоактивных активов (мало физлиц-трейдеров) — грузим только когда
+  // hideLowActivity (страница ОИ). Прячем их из дефолтного списка через хук;
+  // при ошибке/до загрузки набор пуст → ничего не прячем (безопасный фолбэк).
+  const [lowActivitySet, setLowActivitySet] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (!hideLowActivity) return;
+    let cancelled = false;
+    getLowActivityAssets()
+      .then((list) => { if (!cancelled) setLowActivitySet(new Set(list)); })
+      .catch(() => { /* пустой набор — ничего не прячем */ });
+    return () => { cancelled = true; };
+  }, [hideLowActivity]);
+
   // Фильтрация / дедуп / сортировка / группировка — общий хук
   // useInstrumentFilter (тот же, что в MobileAssetSearch). Поведенческие
   // особенности desktop вынесены в options ниже (мемоизированы для стабильных
@@ -199,6 +217,8 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
       extraFilter,
       dedup,
       sort,
+      hiddenSectypes: lowActivitySet,
+      keepVisibleSectypes: selectedSet,
     });
 
   const toggleFavorite = (sectype: string, e: React.MouseEvent) => {
