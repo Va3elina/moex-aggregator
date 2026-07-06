@@ -569,6 +569,7 @@ export default function MobileOpenInterestPage() {
         }}
         filterType="futures"
         indicator="open_interest"
+        hideLowActivity
       />
 
       {/* Sheet: период + интервал */}
