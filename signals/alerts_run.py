@@ -38,8 +38,8 @@ from signals.email_notify import send_email          # noqa: E402
 
 SITE = "https://xn--80aklbnczmv.xn--p1ai"  # punycode таймфрейм.рф (надёжно в TG)
 
-_OP_PRICE = {"cross_up": "↑ пересекла", "cross_down": "↓ пересекла",
-             "gt": "выше", "lt": "ниже"}
+_OP_PRICE = {"cross": "пересекла", "cross_up": "↑ пересекла",
+             "cross_down": "↓ пересекла", "gt": "выше", "lt": "ниже"}
 
 # Таймфрейм алерта → interval бара-источника «net/npart сейчас». 1d — текущее
 # поведение (дневная публикация); 5m/1h — раннее срабатывание ТОГО ЖЕ дневного
@@ -153,6 +153,8 @@ def eval_op(op: str, value: float, prev, threshold: float) -> bool:
         return prev is not None and prev < threshold <= value
     if op == "cross_down":
         return prev is not None and prev > threshold >= value
+    if op == "cross":
+        return prev is not None and (prev < threshold <= value or prev > threshold >= value)
     # new_high/new_low/new_extreme: сам факт «нового рекорда» вычисляется в
     # compute_value (нужна история окна, недоступная здесь) и возвращается сентинелом
     # value=1.0. threshold для этих op'ов = lookback-дни, используется там, НЕ тут.

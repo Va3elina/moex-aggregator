@@ -251,12 +251,11 @@ export default function StrengthPage() {
         label: `Сила рынка — % акций выше EMA${emaPeriod}`,
         indicator: 'strength_level', metric: String(emaPeriod), unit: '%',
         ops: [
+            { value: 'cross', label: 'пересечёт (в любую сторону)' },
             { value: 'cross_up', label: '↑ пересечёт (снизу вверх)' },
             { value: 'cross_down', label: '↓ пересечёт (сверху вниз)' },
-            { value: 'gt', label: 'станет выше' },
-            { value: 'lt', label: 'станет ниже' },
         ],
-        hint: `Сработает, когда доля акций выше EMA${emaPeriod} пересечёт заданный уровень в % или окажется выше/ниже него.`,
+        hint: `Сработает, когда доля акций выше EMA${emaPeriod} пересечёт заданный уровень в %.`,
     }], [emaPeriod]);
 
     // Уровни активных strength-алертов текущего вида (EMA + вселенная) → пунктир.

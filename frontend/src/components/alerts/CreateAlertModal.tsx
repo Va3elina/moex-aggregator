@@ -149,7 +149,7 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
     const isPeriodMetric = !!metric?.periodControl;
     const [period, setPeriod] = useState<string>(metric?.periodControl?.[0]?.value ?? '365');
 
-    const [op, setOp] = useState(metric?.ops[0]?.value ?? 'cross_up');
+    const [op, setOp] = useState(metric?.ops[0]?.value ?? 'cross');
     // price → числовой порог в ₽; oi_move → не используется (порог = множитель ступени).
     const [threshold, setThreshold] = useState<string>(
         prefill?.threshold != null
@@ -233,7 +233,7 @@ export default function CreateAlertModal({ indicator, asset, assetName, metrics,
     useEffect(() => {
         if (!metric) return;
         if (!metricInitDone.current) { metricInitDone.current = true; return; }
-        setOp(metric.ops[0]?.value ?? 'cross_up');
+        setOp(metric.ops[0]?.value ?? 'cross');
         setThreshold(metric.defaultThreshold != null ? String(metric.defaultThreshold) : '');
         setPeriod(metric.periodControl?.[0]?.value ?? '365');
         // eslint-disable-next-line react-hooks/exhaustive-deps

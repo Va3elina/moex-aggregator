@@ -78,12 +78,11 @@ const OI_ALERT_METRICS: AlertMetricOption[] = [
   {
     key: 'price', label: 'Цена', indicator: 'price', metric: 'close', unit: '₽',
     ops: [
+      { value: 'cross', label: 'пересечёт (в любую сторону)' },
       { value: 'cross_up', label: '↑ пересечёт (снизу вверх)' },
       { value: 'cross_down', label: '↓ пересечёт (сверху вниз)' },
-      { value: 'gt', label: 'станет выше' },
-      { value: 'lt', label: 'станет ниже' },
     ],
-    hint: 'Сработает, когда цена фьючерса пересечёт заданный уровень или окажется выше/ниже него. У ликвидных контрактов проверка каждые несколько минут, у остальных — раз в день после закрытия.',
+    hint: 'Сработает, когда цена фьючерса пересечёт заданный уровень. У ликвидных контрактов проверка каждые несколько минут, у остальных — раз в день после закрытия.',
   },
   {
     // «move_all» (clgroup ALL) — считается по тем же net-данным (источник net —
@@ -391,12 +390,11 @@ export default function OpenInterestPage() {
       key: 'oi_level', label: `Открытый интерес — ${oiLegLabel}`,
       indicator: 'oi_level', metric: oiLeg, clgroup, unit: '',
       ops: [
+        { value: 'cross', label: 'пересечёт (в любую сторону)' },
         { value: 'cross_up', label: '↑ пересечёт (снизу вверх)' },
         { value: 'cross_down', label: '↓ пересечёт (сверху вниз)' },
-        { value: 'gt', label: 'станет выше' },
-        { value: 'lt', label: 'станет ниже' },
       ],
-      hint: `Сработает, когда «${oiLegLabel}» (${clgroup === 'FIZ' ? 'физлица' : 'юрлица'}) пересечёт заданный уровень или окажется выше/ниже него. Величина — та, что показана на правой оси графика.`,
+      hint: `Сработает, когда «${oiLegLabel}» (${clgroup === 'FIZ' ? 'физлица' : 'юрлица'}) пересечёт заданный уровень. Величина — та, что показана на правой оси графика.`,
     };
     return [OI_ALERT_METRICS[0], oiLevel, ...OI_ALERT_METRICS.slice(1)];
   }, [clgroup, oiLeg, oiLegLabel]);
