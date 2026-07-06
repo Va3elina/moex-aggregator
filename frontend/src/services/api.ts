@@ -288,6 +288,7 @@ export interface OiScreenerRow {
 
 export interface OiScreenerResponse {
   signal_date: string | null;
+  intraday_date: string | null;   // свежайший интрадей-бар (5-мин), если новее дневной; для честной подписи
   clgroup: 'FIZ' | 'YUR';
   min_part: number;               // порог ликвидности группы (физ 50 / юр 15)
   rows: OiScreenerRow[];
