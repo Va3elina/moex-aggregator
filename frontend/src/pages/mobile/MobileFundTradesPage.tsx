@@ -59,6 +59,7 @@ import FundPicker, { type FundPickerFund } from '../../components/fundtrades/Fun
 import UkMultiSelect, { type UkOption } from '../../components/fundtrades/UkMultiSelect';
 import CompanyFlowsTab from '../../components/fundtrades/CompanyFlowsTab';
 import DelayedDataBadge from '../../components/fundtrades/DelayedDataBadge';
+import LockedSnapshotTeaser from '../../components/fundtrades/LockedSnapshotTeaser';
 import MobileLayout from '../../components/mobile/MobileLayout';
 import MobilePageHeader from '../../components/mobile/MobilePageHeader';
 import MobileSheet from '../../components/mobile/MobileSheet';
@@ -1385,10 +1386,12 @@ function SnapshotReviewTab() {
               <button
                 key={s.snapshot_date}
                 onClick={() => setSelectedDate(s.snapshot_date)}
+                title={s.locked ? 'свежий срез — по подписке' : undefined}
                 className={`fm-chip ${active ? 'active' : ''}`}
-                style={{ flexShrink: 0 }}
+                style={{ flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 4, opacity: s.locked && !active ? 0.7 : 1 }}
               >
                 {formatMonthYear(s.snapshot_date)}
+                {s.locked && <Lock size={11} strokeWidth={2.4} />}
               </button>
             );
           })}
@@ -1403,11 +1406,13 @@ function SnapshotReviewTab() {
       )}
 
       {!loading && review && (
-        <SnapshotReviewBody
-          review={review}
-          maxAbsAmount={maxAbsAmount}
-          onRowClick={(r) => setDrillDown({ asset_name: r.asset_name, isin: r.isin })}
-        />
+        review.locked
+          ? <LockedSnapshotTeaser latestDate={review.latest_snapshot_date} requiredTier={review.required_tier} />
+          : <SnapshotReviewBody
+              review={review}
+              maxAbsAmount={maxAbsAmount}
+              onRowClick={(r) => setDrillDown({ asset_name: r.asset_name, isin: r.isin })}
+            />
       )}
 
       {!loading && !error && snapshotsList && snapshotsList.snapshots.length === 0 && (
