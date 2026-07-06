@@ -1365,6 +1365,8 @@ export interface FundTradesMovers {
     manager: string | null;
     sort: 'weight' | 'amount';
     available_months: string[];
+    /** Дата-отсечка свежести (Free/гость): месяцы с датой > cutoff заблокированы. null = без задержки. */
+    snapshot_cutoff?: string | null;
     top_accumulated: FundTradesMover[];
     top_reduced: FundTradesMover[];
 }

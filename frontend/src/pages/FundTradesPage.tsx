@@ -224,6 +224,7 @@ function LockedView() {
 
 export default function FundTradesPage() {
     const common = useCommonFeatures();
+    const { showUpgrade } = useUpgradePrompt(); // пейволл на locked-месяце movers (Free/гость)
     const [tab, setTab] = usePersistedState<Tab>('frame:fundtrades:tab', 'funds');
     // Шаг данных — 1 снапшот/месяц. Период фиксирован '1m' (месяц vs предыдущий);
     // селектор месяца появится в Заходе 2 (нужен backend as_of/available_months).
@@ -270,6 +271,16 @@ export default function FundTradesPage() {
         () => Array.from(selectedMoverFunds).join(','),
         [selectedMoverFunds],
     );
+
+    // Задержка на вкладке «Покупки фондов» (Free/гость): месяцы с датой > snapshot_cutoff
+    // заблокированы (свежий консенсус по подписке). Дефолт-месяц = последний ДОСТУПНЫЙ
+    // (не locked) — чтобы дропдаун сразу показывал актуальный срез, а не пустой «Выбрать».
+    const isMoverMonthLocked = (m: string) => {
+        const c = movers?.snapshot_cutoff ?? null;
+        return c != null && m > c;
+    };
+    const defaultMoverMonth = movers?.available_months.find((m) => !isMoverMonthLocked(m))
+        ?? movers?.available_months[0];
     useEffect(() => {
         if (!common.fund_trades_access) return;
         if (tab !== 'movers') return;
@@ -472,8 +483,6 @@ export default function FundTradesPage() {
                 // белый контейнер с рамкой, контролы сверху на белом, а сетка
                 // карточек — на бежевой paper-card внутри.
                 <div className="editorial-frame">
-                    {/* Контекстное напоминание «данные не самые свежие» у карточек (Free/гость) */}
-                    <DelayedDataBadge variant="compact" />
                     {/* Контролы карточек — единый формат индикаторов: сортировка и
                         период доходности отдельными SegmentedControl (как период/режим
                         на «Открытых позициях» и «Деньгах в фондах»), плюс мультиселект УК.
@@ -799,9 +808,18 @@ export default function FundTradesPage() {
                     <div className="flex flex-wrap items-center gap-2 md:gap-3 mb-4 md:mb-6">
                         {movers && movers.available_months.length > 0 && (
                             <Dropdown<string>
-                                options={movers.available_months.map((m) => ({ key: m, label: formatMonthYear(m) }))}
-                                value={asOf ?? movers.resolved_month ?? movers.available_months[0]}
+                                options={movers.available_months.map((m) => ({
+                                    key: m,
+                                    label: formatMonthYear(m),
+                                    locked: isMoverMonthLocked(m), // свежий месяц → замок (Free/гость)
+                                }))}
+                                value={asOf ?? defaultMoverMonth ?? movers.available_months[0]}
                                 onChange={setAsOf}
+                                onLockedClick={() => showUpgrade({
+                                    tier: 'basic',
+                                    featureName: 'свежий срез фондов',
+                                    indicator: 'fund_trades',
+                                })}
                                 minWidth={150}
                             />
                         )}
@@ -870,8 +888,6 @@ export default function FundTradesPage() {
                 // Editorial-frame — оборачиваем индикатор «Потоки по компании» в тот
                 // же контейнер (paper bg + outline + hard-shadow), что и OI/Сезонность.
                 <div className="editorial-frame">
-                    {/* Контекстное напоминание «данные не самые свежие» у потоков (Free/гость) */}
-                    <DelayedDataBadge variant="compact" />
                     <CompanyFlowsTab
                         presetAsset={companyPreset}
                         onPresetConsumed={() => setCompanyPreset(null)}
