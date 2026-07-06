@@ -622,7 +622,7 @@ function SnapshotsTab({ funds }: { funds: FundWithHistory[] }) {
         {status === 'error' && <EmbedMsg text="Ошибка загрузки" />}
         {status === 'empty' && <EmbedMsg text={`У ${ticker} пока нет снапшотов`} />}
 
-        {status === 'ok' && review && (
+        {status === 'ok' && review && review.totals && (
           <div>
             {/* Заголовок */}
             <div style={{ marginBottom: 12 }}>
@@ -630,7 +630,7 @@ function SnapshotsTab({ funds }: { funds: FundWithHistory[] }) {
               <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
                 {formatMonthYear(review.current_snapshot_date)}
                 {review.previous_snapshot_date && <> · с {formatMonthYear(review.previous_snapshot_date)}</>}
-                {' · '}{review.totals.current_assets} активов
+                {' · '}{review.totals!.current_assets} активов
               </div>
             </div>
 
@@ -656,7 +656,7 @@ function SnapshotsTab({ funds }: { funds: FundWithHistory[] }) {
               <EmbedSection
                 title="ДОКУПИЛ"
                 count={addedItems.length}
-                total={isW ? sumBy(addedItems, wDelta) : review.totals.total_added_rub}
+                total={isW ? sumBy(addedItems, wDelta) : review.totals!.total_added_rub}
                 isPositive
                 formatValue={fmtVal}
               >
@@ -679,7 +679,7 @@ function SnapshotsTab({ funds }: { funds: FundWithHistory[] }) {
               <EmbedSection
                 title="ПРОДАЛ"
                 count={reducedItems.length}
-                total={isW ? Math.abs(sumBy(reducedItems, wDelta)) : Math.abs(review.totals.total_reduced_rub)}
+                total={isW ? Math.abs(sumBy(reducedItems, wDelta)) : Math.abs(review.totals!.total_reduced_rub)}
                 isPositive={false}
                 formatValue={fmtVal}
               >
@@ -702,7 +702,7 @@ function SnapshotsTab({ funds }: { funds: FundWithHistory[] }) {
               <EmbedSection
                 title="НОВЫЕ ПОЗИЦИИ"
                 count={review.new.length}
-                total={isW ? sumBy(review.new, wNew) : review.totals.total_new_rub}
+                total={isW ? sumBy(review.new, wNew) : review.totals!.total_new_rub}
                 isPositive
                 formatValue={fmtVal}
               >
@@ -725,7 +725,7 @@ function SnapshotsTab({ funds }: { funds: FundWithHistory[] }) {
               <EmbedSection
                 title="ПОЛНОСТЬЮ ВЫШЕЛ"
                 count={review.sold_out.length}
-                total={isW ? Math.abs(sumBy(review.sold_out, wSold)) : review.totals.total_sold_out_rub}
+                total={isW ? Math.abs(sumBy(review.sold_out, wSold)) : review.totals!.total_sold_out_rub}
                 isPositive={false}
                 formatValue={fmtVal}
               >
@@ -754,6 +754,9 @@ function SnapshotsTab({ funds }: { funds: FundWithHistory[] }) {
               </div>
             )}
           </div>
+        )}
+        {status === 'ok' && review && !review.totals && (
+          <EmbedMsg text="Свежий срез — по подписке · таймфрейм.рф" />
         )}
       </div>
     </div>

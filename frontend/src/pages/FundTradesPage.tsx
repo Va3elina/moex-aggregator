@@ -1312,7 +1312,7 @@ function SnapshotReviewBody({
                     {review.previous_snapshot_date && (
                         <> · сравниваем с {formatMonthYear(review.previous_snapshot_date)}</>
                     )}
-                    {' · '}{review.totals.current_assets} активов
+                    {' · '}{review.totals!.current_assets} активов
                 </div>
             </div>
 
@@ -1374,7 +1374,7 @@ function SnapshotReviewBody({
                 <SnapshotSection
                     title="ДОКУПИЛ"
                     count={addedItems.length}
-                    total={isW ? sumBy(addedItems, wDelta) : review.totals.total_added_rub}
+                    total={isW ? sumBy(addedItems, wDelta) : review.totals!.total_added_rub}
                     items={sortByAbs(addedItems, isW ? wDelta : aAdded)}
                     maxAbs={maxAbs}
                     isPositive={true}
@@ -1393,7 +1393,7 @@ function SnapshotReviewBody({
                 <SnapshotSection
                     title="ПРОДАЛ"
                     count={reducedItems.length}
-                    total={isW ? Math.abs(sumBy(reducedItems, wDelta)) : Math.abs(review.totals.total_reduced_rub)}
+                    total={isW ? Math.abs(sumBy(reducedItems, wDelta)) : Math.abs(review.totals!.total_reduced_rub)}
                     items={sortByAbs(reducedItems, isW ? wDelta : aAdded)}
                     maxAbs={maxAbs}
                     isPositive={false}
@@ -1412,7 +1412,7 @@ function SnapshotReviewBody({
                 <SnapshotSection
                     title="НОВЫЕ ПОЗИЦИИ"
                     count={review.new.length}
-                    total={isW ? sumBy(review.new, wNew) : review.totals.total_new_rub}
+                    total={isW ? sumBy(review.new, wNew) : review.totals!.total_new_rub}
                     items={sortByAbs(review.new, isW ? wNew : aNew)}
                     maxAbs={maxAbs}
                     isPositive={true}
@@ -1431,7 +1431,7 @@ function SnapshotReviewBody({
                 <SnapshotSection
                     title="ПОЛНОСТЬЮ ВЫШЕЛ"
                     count={review.sold_out.length}
-                    total={isW ? Math.abs(sumBy(review.sold_out, wSold)) : review.totals.total_sold_out_rub}
+                    total={isW ? Math.abs(sumBy(review.sold_out, wSold)) : review.totals!.total_sold_out_rub}
                     items={sortByAbs(review.sold_out, isW ? wSold : aSold)}
                     maxAbs={maxAbs}
                     isPositive={false}

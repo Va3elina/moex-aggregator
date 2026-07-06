@@ -9,7 +9,7 @@ import { useUpgradePrompt } from '../tier/UpgradeModal';
  * данные физически не покидают сервер.
  *
  * Клик → ваш стандартный upgrade-модал (`showUpgrade`), как на OI/сезонности/Баффете.
- * Визуал — токены приложения (--accent/--text-*/--bg-secondary/--fs-*), язык замка
+ * Визуал — токены приложения (--accent, --text-*, --bg-secondary, --fs-*), язык замка
  * как в TierLock (blur+grayscale под оверлеем).
  */
 export default function LockedSnapshotTeaser({
