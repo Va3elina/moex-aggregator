@@ -96,7 +96,7 @@ export const FUT_BASE_TO_LOGO: Record<string, string> = {
   W4: 'raw_174', // Пшеница (corrected — раньше был WHEAT generic icon)
   // Валюты
   Si: 'USD',   USDRUBF: 'USD', UC: 'USD',
-  Eu: 'EUR',   EURRUBF: 'EUR', ED: 'EUR', EG: 'EUR',
+  Eu: 'EUR',   EURRUBF: 'EUR', ED: 'EUR',
   CR: 'CNY',   CNYRUBF: 'CNY',
   JP: 'JPY',
   GU: 'GBP',
