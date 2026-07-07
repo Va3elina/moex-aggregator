@@ -56,6 +56,18 @@ export default function EmbedPage() {
     }
   }, [theme, setTheme]);
 
+  // Убираем полосу прокрутки iframe (при осевом зуме контент мог вылезать на
+  // пару пикселей → белая полоска справа). Embed всегда во весь iframe без скролла.
+  useEffect(() => {
+    const de = document.documentElement;
+    const b = document.body;
+    const prev = { de: de.style.overflow, bo: b.style.overflow, bm: b.style.margin };
+    de.style.overflow = 'hidden';
+    b.style.overflow = 'hidden';
+    b.style.margin = '0';
+    return () => { de.style.overflow = prev.de; b.style.overflow = prev.bo; b.style.margin = prev.bm; };
+  }, []);
+
   // Гейт: обмен ext-токена на JWT. Нет/невалиден → замок.
   useEffect(() => {
     let cancelled = false;
