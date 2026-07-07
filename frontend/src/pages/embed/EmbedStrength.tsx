@@ -12,7 +12,9 @@ import BreadthChart from '../../components/strength/BreadthChart';
 import type { ChartPadding } from '../../components/strength/chartUtils';
 import { getBreadthHistory, type BreadthUniverse } from '../../services/api';
 import { EmbedMsg } from './embedUi';
-import { useEmbedSettings, EmbedShell, DrawerSection, SegGroup, ToggleRow } from './EmbedSettings';
+import { DrawerSection, SegGroup, ToggleRow } from './EmbedSettings';
+import { EmbedFrame, PillGroup, Dropdown, PeriodReadout, WheelHint } from './EmbedToolbar';
+import { readLS, writeLS } from './embedPersist';
 
 type LoadStatus = 'idle' | 'loading' | 'ok' | 'empty' | 'error';
 type Synced = { time: string; breadth: number; imoex: number }[];
@@ -37,11 +39,6 @@ const CHART_MODES: { id: ChartMode; label: string }[] = [
   { id: 'line', label: 'Линия' },
   { id: 'histogram', label: 'Гистограмма' },
 ];
-const CURRENCIES: { id: Currency; label: string }[] = [
-  { id: 'rub', label: '₽ Рубль' },
-  { id: 'usd', label: '$ Доллар' },
-];
-
 // Общий padding для обоих графиков → их X-оси совпадают по пикселям.
 // Ссылка стабильна между рендерами — IndexChart/BreadthChart держат padding
 // в useMemo-deps, пересоздание объекта прервало бы морфинг-анимацию.
@@ -55,10 +52,6 @@ function daysForPeriod(period: Period): number {
     case 'all': return 7000;
     default: return 365;
   }
-}
-
-function readLS(key: string, fallback: string): string {
-  try { return localStorage.getItem(key) || fallback; } catch { return fallback; }
 }
 
 function MiniLegend({ text }: { text: string }) {
@@ -82,7 +75,6 @@ function MiniLegend({ text }: { text: string }) {
 
 export default function EmbedStrength() {
   const [params] = useSearchParams();
-  const settings = useEmbedSettings();
 
   const [ema, setEma] = useState<Ema>(() => (Number(readLS('frame:strength:ema', '200')) || 200) as Ema);
   const [period, setPeriod] = useState<Period>(() => (params.get('period') || readLS('frame:embed:strength:period', '1y')) as Period);
@@ -94,12 +86,12 @@ export default function EmbedStrength() {
   const [synced, setSynced] = useState<Synced>([]);
   const [status, setStatus] = useState<LoadStatus>('idle');
 
-  useEffect(() => { try { localStorage.setItem('frame:strength:ema', String(ema)); } catch { /* quota */ } }, [ema]);
-  useEffect(() => { try { localStorage.setItem('frame:embed:strength:period', period); } catch { /* quota */ } }, [period]);
-  useEffect(() => { try { localStorage.setItem('frame:embed:strength:chartMode', chartMode); } catch { /* quota */ } }, [chartMode]);
-  useEffect(() => { try { localStorage.setItem('frame:embed:strength:universeBase', universeBase); } catch { /* quota */ } }, [universeBase]);
-  useEffect(() => { try { localStorage.setItem('frame:embed:strength:currency', currency); } catch { /* quota */ } }, [currency]);
-  useEffect(() => { try { localStorage.setItem('frame:embed:strength:showPrice', String(showPrice)); } catch { /* quota */ } }, [showPrice]);
+  useEffect(() => { writeLS('frame:strength:ema', String(ema)); }, [ema]);
+  useEffect(() => { writeLS('frame:embed:strength:period', period); }, [period]);
+  useEffect(() => { writeLS('frame:embed:strength:chartMode', chartMode); }, [chartMode]);
+  useEffect(() => { writeLS('frame:embed:strength:universeBase', universeBase); }, [universeBase]);
+  useEffect(() => { writeLS('frame:embed:strength:currency', currency); }, [currency]);
+  useEffect(() => { writeLS('frame:embed:strength:showPrice', String(showPrice)); }, [showPrice]);
 
   // Итоговый universe — как на странице: добавляем _usd в долларовом режиме.
   const universe: BreadthUniverse = currency === 'usd'
@@ -157,46 +149,55 @@ export default function EmbedStrength() {
     return { indexH: 0, breadthH: avail };
   }, [showPrice, boxH]);
 
+  const periodLabel = PERIODS.find((p) => p.id === period)?.label ?? '';
+
+  // Shift+колесо: гориз. зум по PERIODS (1Г/5Л/Всё).
+  const zoomPeriod = (dir: 1 | -1) => {
+    const i = PERIODS.findIndex((p) => p.id === period);
+    if (i < 0) return;
+    const ni = Math.min(PERIODS.length - 1, Math.max(0, i - dir));
+    if (PERIODS[ni] && PERIODS[ni].id !== period) setPeriod(PERIODS[ni].id);
+  };
+
   return (
-    <EmbedShell
-      settings={settings}
-      title="Сила рынка"
-      subtitle={`% выше EMA ${ema}`}
-      drawer={
+    <EmbedFrame
+      onZoomTime={zoomPeriod}
+      toolbar={
         <>
-          <DrawerSection label="Тип графика">
-            <SegGroup<ChartMode> value={chartMode} options={CHART_MODES} onChange={setChartMode} />
-          </DrawerSection>
-          <DrawerSection label="Вселенная">
-            <SegGroup<UniverseBase>
-              value={universeBase}
-              options={[
-                { id: 'imoex', label: currency === 'usd' ? 'Индекс RTSI' : 'Индекс IMOEX' },
-                { id: 'all', label: '100 акций' },
-              ]}
-              onChange={setUniverseBase}
-            />
-          </DrawerSection>
-          <DrawerSection label="Валюта">
-            <SegGroup<Currency> value={currency} options={CURRENCIES} onChange={setCurrency} />
-          </DrawerSection>
+          <PillGroup<ChartMode> value={chartMode} options={CHART_MODES} onChange={setChartMode} />
+          <Dropdown<UniverseBase>
+            value={universeBase}
+            options={[
+              { id: 'imoex', label: currency === 'usd' ? 'Индекс RTSI' : 'Индекс IMOEX' },
+              { id: 'all', label: '100 акций' },
+            ]}
+            onChange={setUniverseBase}
+            title="Вселенная"
+          />
+          <PillGroup<Currency> value={currency} options={[{ id: 'rub', label: '₽' }, { id: 'usd', label: '$' }]} onChange={setCurrency} />
+          <PeriodReadout label={periodLabel} />
+        </>
+      }
+      more={
+        <>
           <DrawerSection label="Скользящая (EMA)">
             <SegGroup<Ema> value={ema} options={EMAS} onChange={setEma} />
           </DrawerSection>
-          <DrawerSection label="Период">
-            <SegGroup<Period> value={period} options={PERIODS} onChange={setPeriod} />
-          </DrawerSection>
-          <DrawerSection label="Индекс">
+          <DrawerSection label="Индекс сверху">
             <ToggleRow
-              label={currency === 'usd' ? 'RTS' : 'IMOEX'}
+              label={currency === 'usd' ? 'Показывать RTS' : 'Показывать IMOEX'}
               checked={showPrice}
               onChange={setShowPrice}
             />
           </DrawerSection>
+          <WheelHint>
+            Период: <b style={{ color: 'var(--text-primary)' }}>{periodLabel}</b> — <b>Shift + колесо</b> над графиком.
+            Обычное колесо — высота графика.
+          </WheelHint>
         </>
       }
     >
-      <div ref={boxRef} style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
+      <div ref={boxRef} style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {status === 'ok' && synced.length > 0 ? (
           <>
             {showPrice && (
@@ -222,6 +223,6 @@ export default function EmbedStrength() {
           </>
         )}
       </div>
-    </EmbedShell>
+    </EmbedFrame>
   );
 }

@@ -15,7 +15,9 @@ import { getCategoryInfo } from '../../components/cbr/cbrCategoryInfo';
 import { getCbrFlows } from '../../services/api';
 import { useTheme } from '../../contexts/ThemeContext';
 import { EmbedMsg } from './embedUi';
-import { useEmbedSettings, EmbedShell, DrawerSection, SegGroup, Checklist } from './EmbedSettings';
+import { DrawerSection, Checklist } from './EmbedSettings';
+import { EmbedFrame, PillGroup, PeriodReadout, WheelHint } from './EmbedToolbar';
+import { readLS, writeLS } from './embedPersist';
 
 type CbrType = 'stocks' | 'ofz' | 'fx';
 type PeriodFilter = '1y' | '3y' | 'all';
@@ -34,13 +36,8 @@ const PERIODS: { id: PeriodFilter; label: string; months: number | null }[] = [
   { id: 'all', label: 'Всё', months: null },
 ];
 
-function readLS(key: string, fallback: string): string {
-  try { return localStorage.getItem(key) || fallback; } catch { return fallback; }
-}
-
 export default function EmbedCbrFlows() {
   const [params] = useSearchParams();
-  const settings = useEmbedSettings();
   const { theme } = useTheme();
 
   const [type, setType] = useState<CbrType>((params.get('type') as CbrType) || 'stocks');
@@ -52,7 +49,7 @@ export default function EmbedCbrFlows() {
   const [data, setData] = useState<CbrResp | null>(null);
   const [status, setStatus] = useState<LoadStatus>('idle');
 
-  useEffect(() => { try { localStorage.setItem('frame:embed:cbr:period', period); } catch { /* quota */ } }, [period]);
+  useEffect(() => { writeLS('frame:embed:cbr:period', period); }, [period]);
 
   useEffect(() => {
     let cancelled = false;
@@ -114,21 +111,27 @@ export default function EmbedCbrFlows() {
     return () => ro.disconnect();
   }, []);
 
-  const typeLabel = TYPES.find((t) => t.id === type)?.label || '';
+  const periodLabel = PERIODS.find((p) => p.id === period)?.label ?? '';
+
+  // Shift+колесо: гориз. зум по PERIODS (1Г/3Г/Всё).
+  const zoomPeriod = (dir: 1 | -1) => {
+    const i = PERIODS.findIndex((p) => p.id === period);
+    if (i < 0) return;
+    const ni = Math.min(PERIODS.length - 1, Math.max(0, i - dir));
+    if (PERIODS[ni] && PERIODS[ni].id !== period) setPeriod(PERIODS[ni].id);
+  };
 
   return (
-    <EmbedShell
-      settings={settings}
-      title="Потоки ЦБ"
-      subtitle={typeLabel}
-      drawer={
+    <EmbedFrame
+      onZoomTime={zoomPeriod}
+      toolbar={
         <>
-          <DrawerSection label="Тип инструмента">
-            <SegGroup value={type} options={TYPES} onChange={(v) => setType(v)} />
-          </DrawerSection>
-          <DrawerSection label="Период">
-            <SegGroup value={period} options={PERIODS} onChange={(v) => setPeriod(v)} />
-          </DrawerSection>
+          <PillGroup value={type} options={TYPES} onChange={(v) => setType(v)} />
+          <PeriodReadout label={periodLabel} />
+        </>
+      }
+      more={
+        <>
           {data && data.categories.length > 0 && (
             <DrawerSection label="Участники биржи">
               <Checklist
@@ -149,10 +152,14 @@ export default function EmbedCbrFlows() {
               />
             </DrawerSection>
           )}
+          <WheelHint>
+            Период: <b style={{ color: 'var(--text-primary)' }}>{periodLabel}</b> — <b>Shift + колесо</b> над графиком.
+            Обычное колесо — высота графика.
+          </WheelHint>
         </>
       }
     >
-      <div ref={boxRef} style={{ flex: 1, position: 'relative', minHeight: 0 }}>
+      <div ref={boxRef} style={{ position: 'absolute', inset: 0 }}>
         {status === 'ok' && data && (
           <StackedBidirectionalHistogram
             periods={visiblePeriods}
@@ -167,6 +174,6 @@ export default function EmbedCbrFlows() {
         {status === 'empty' && <EmbedMsg text="Нет данных" />}
         {status === 'error' && <EmbedMsg text="Ошибка загрузки" />}
       </div>
-    </EmbedShell>
+    </EmbedFrame>
   );
 }

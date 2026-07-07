@@ -27,14 +27,9 @@ import {
 } from '../../services/api';
 import { displayTicker } from '../../utils/displayTicker';
 import { EmbedMsg } from './embedUi';
-import {
-  useEmbedSettings,
-  EmbedShell,
-  DrawerSection,
-  SegGroup,
-  ToggleRow,
-  AssetPickerInline,
-} from './EmbedSettings';
+import { DrawerSection, ToggleRow } from './EmbedSettings';
+import { EmbedFrame, AssetButton, PillGroup, Dropdown } from './EmbedToolbar';
+import { readLS, writeLS, readBoolLS as readLSBool } from './embedPersist';
 
 type ChartType = 'histogram' | 'yearly';
 type LoadStatus = 'idle' | 'loading' | 'ok' | 'empty' | 'error';
@@ -88,19 +83,8 @@ const TWO_SERIES_META: SeriesMeta[] = [
   { key: 'no_outliers', label: 'Без выбросов', color: 'var(--funds-flow-positive)' },
 ];
 
-function readLS(key: string, fallback: string): string {
-  try { return localStorage.getItem(key) || fallback; } catch { return fallback; }
-}
-function readLSBool(key: string, fallback: boolean): boolean {
-  try {
-    const v = localStorage.getItem(key);
-    return v === null ? fallback : v === 'true';
-  } catch { return fallback; }
-}
-
 export default function EmbedSeasonality() {
   const [params] = useSearchParams();
-  const settings = useEmbedSettings();
 
   const [stock, setStock] = useState<string>(() => params.get('instrument') || readLS('frame:embed:seasonality:stock', 'SBER'));
   const [stockName, setStockName] = useState<string>(params.get('name') || '');
@@ -123,12 +107,12 @@ export default function EmbedSeasonality() {
   // Стале-гард для отбрасывания устаревших ответов при быстром переключении.
   const reqIdRef = useRef(0);
 
-  useEffect(() => { try { localStorage.setItem('frame:embed:seasonality:stock', stock); } catch { /* quota */ } }, [stock]);
-  useEffect(() => { try { localStorage.setItem('frame:embed:seasonality:chartType', chartType); } catch { /* quota */ } }, [chartType]);
-  useEffect(() => { try { localStorage.setItem('frame:embed:seasonality:mode', mode); } catch { /* quota */ } }, [mode]);
-  useEffect(() => { try { localStorage.setItem('frame:embed:seasonality:excludeDividends', String(excludeDividends)); } catch { /* quota */ } }, [excludeDividends]);
-  useEffect(() => { try { localStorage.setItem('frame:embed:seasonality:showNoOutliers', String(showNoOutliers)); } catch { /* quota */ } }, [showNoOutliers]);
-  useEffect(() => { try { localStorage.setItem('frame:embed:seasonality:showCurrentYear', String(showCurrentYear)); } catch { /* quota */ } }, [showCurrentYear]);
+  useEffect(() => { writeLS('frame:embed:seasonality:stock', stock); }, [stock]);
+  useEffect(() => { writeLS('frame:embed:seasonality:chartType', chartType); }, [chartType]);
+  useEffect(() => { writeLS('frame:embed:seasonality:mode', mode); }, [mode]);
+  useEffect(() => { writeLS('frame:embed:seasonality:excludeDividends', String(excludeDividends)); }, [excludeDividends]);
+  useEffect(() => { writeLS('frame:embed:seasonality:showNoOutliers', String(showNoOutliers)); }, [showNoOutliers]);
+  useEffect(() => { writeLS('frame:embed:seasonality:showCurrentYear', String(showCurrentYear)); }, [showCurrentYear]);
 
   useEffect(() => {
     if (stockName) return;
@@ -219,62 +203,43 @@ export default function EmbedSeasonality() {
     return () => ro.disconnect();
   }, []);
 
-  const displayName = stockName || displayTicker(stock);
-
   const isHist = chartType === 'histogram';
 
   return (
-    <EmbedShell
-      settings={settings}
-      title={displayName}
-      subtitle="Сезонность"
-      drawer={
+    <EmbedFrame
+      lead={
+        <AssetButton
+          ticker={displayTicker(stock)}
+          filterType="stock"
+          current={stock}
+          onSelect={(secid, name) => { setStock(secid); setStockName(name); }}
+        />
+      }
+      toolbar={
         <>
-          <DrawerSection label="Актив">
-            <AssetPickerInline
-              filterType="stock"
-              current={stock}
-              active={settings.open}
-              onSelect={(secid, name) => { setStock(secid); setStockName(name); }}
-            />
-          </DrawerSection>
-          <DrawerSection label="Тип графика">
-            <SegGroup<ChartType> value={chartType} options={CHART_TYPES} onChange={setChartType} />
-          </DrawerSection>
-          {isHist && (
-            <DrawerSection label="Разрез">
-              <SegGroup<SeasonalityMode> value={mode} options={MODES} onChange={setMode} />
-            </DrawerSection>
-          )}
+          <PillGroup<ChartType> value={chartType} options={CHART_TYPES} onChange={setChartType} />
+          {isHist && <Dropdown<SeasonalityMode> value={mode} options={MODES} onChange={setMode} title="Разрез" />}
+        </>
+      }
+      more={
+        <>
           {hasDividends && (
             <DrawerSection label="Дивиденды">
-              <ToggleRow
-                label="Без дивидендных гэпов"
-                checked={excludeDividends}
-                onChange={setExcludeDividends}
-              />
+              <ToggleRow label="Без дивидендных гэпов" checked={excludeDividends} onChange={setExcludeDividends} />
             </DrawerSection>
           )}
           <DrawerSection label="Серии">
-            <ToggleRow
-              label="Без выбросов"
-              checked={showNoOutliers}
-              onChange={setShowNoOutliers}
-            />
+            <ToggleRow label="Без выбросов" checked={showNoOutliers} onChange={setShowNoOutliers} hint="Вторая серия — медиана" />
           </DrawerSection>
           {!isHist && (
             <DrawerSection label="Текущий год">
-              <ToggleRow
-                label="Текущий год"
-                checked={showCurrentYear}
-                onChange={setShowCurrentYear}
-              />
+              <ToggleRow label="Линия текущего года" checked={showCurrentYear} onChange={setShowCurrentYear} />
             </DrawerSection>
           )}
         </>
       }
     >
-      <div ref={boxRef} style={{ flex: 1, position: 'relative', minHeight: 0, overflow: 'hidden' }}>
+      <div ref={boxRef} style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
         {status === 'ok' && isHist && bars.length > 0 && (
           <SeasonalityHistogram
             bars={bars}
@@ -301,6 +266,6 @@ export default function EmbedSeasonality() {
         {status === 'empty' && <EmbedMsg text={stock ? 'Нет данных' : 'Акция не выбрана'} />}
         {status === 'error' && <EmbedMsg text="Ошибка загрузки" />}
       </div>
-    </EmbedShell>
+    </EmbedFrame>
   );
 }
