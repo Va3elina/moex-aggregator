@@ -16,7 +16,8 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import SimpleChart, { type ChartAnnotation } from '../../components/SimpleChart';
+import LwChart, { type LwSeries, type LwMarker } from '../../components/LwChart';
+import { useTheme } from '../../contexts/ThemeContext';
 import { getChartData, getInstrument } from '../../services/api';
 import { displayTicker } from '../../utils/displayTicker';
 import { formatNumber, formatPrice } from '../../utils/formatNumber';
@@ -46,9 +47,15 @@ type Series = { time: string; value: number }[];
 // Единый монолитный график: грузим МАКС историю (дневной — всю; интрадей — месяц),
 // а по времени юзер зумит колесом (осевой зум SimpleChart). Дискретных периодов нет.
 const loadPeriodFor = (interval: number): string => (interval === 24 ? 'all' : '1m');
-// Дефолтное окно навигатора: дневной — последний ~год; интрадей — весь загруженный срез.
-const defaultWindowFor = (interval: number, len: number): number =>
-  interval === 24 ? Math.max(0, len - 252) : 0;
+// Время → UNIX-секунды для LwChart. Дневной ТФ: UTC-полночь по дате (чтобы не было
+// сдвига даты из-за таймзоны); интрадей — полный timestamp.
+const toSec = (t: string, intraday: boolean): number => {
+  if (!intraday) {
+    const [y, m, d] = t.slice(0, 10).split('-').map(Number);
+    return Math.floor(Date.UTC(y, m - 1, d) / 1000);
+  }
+  return Math.floor(new Date(t).getTime() / 1000);
+};
 
 // Цвета ОИ — все через CSS-var (адаптируются к теме внутри iframe).
 const OI_COLORS = {
@@ -63,6 +70,8 @@ const num = (v: number | null): number => v ?? 0;
 
 export default function EmbedOpenInterest() {
   const [params] = useSearchParams();
+  const { theme } = useTheme();
+  const dark = theme !== 'editorial-light';
 
   const [instrument, setInstrument] = useState<string>(() =>
     params.get('instrument') || readLS('frame:embed:oi:instrument', 'SR'),
@@ -137,8 +146,6 @@ export default function EmbedOpenInterest() {
     () => (data?.candles ?? []).map((c) => ({ time: c.time, value: c.close })),
     [data],
   );
-  // Дефолтное окно навигатора (последний ~год для дневного) — SimpleChart стартует с него.
-  const initialStart = defaultWindowFor(interval, chartData.length);
 
   // Выравнивание OI данных по временным меткам свечей (порт alignToCandles из
   // OpenInterestPage). OI имеет меньше точек, чем свечи → index-based X-mapping
@@ -260,21 +267,54 @@ export default function EmbedOpenInterest() {
     ];
   }, [displayMode]);
 
-  // Аннотации экспираций (порт со страницы): из contract_switches.slice(1).
-  const annotations = useMemo<ChartAnnotation[] | undefined>(() => {
-    if (!showExpirations) return undefined;
+  // Метки экспираций (смена контракта) — маркеры LwChart на серии.
+  const lwMarkers = useMemo<LwMarker[]>(() => {
+    if (!showExpirations) return [];
     const switches = data?.contract_switches;
-    if (!switches || switches.length <= 1) return undefined;
-    return switches.slice(1).map((sw): ChartAnnotation => ({
-      time: sw.date,
-      label: sw.to,
-      description: `${sw.from} → ${sw.to}`,
-      color: '#3a3f4f',
-      textColor: '#9CA3B8',
-    }));
-  }, [data, showExpirations]);
+    if (!switches || switches.length <= 1) return [];
+    const intraday = interval !== 24;
+    return switches.slice(1).map((sw) => ({ time: toSec(sw.date, intraday), text: sw.to, color: '#9CA3B8', position: 'aboveBar' as const }));
+  }, [data, showExpirations, interval]);
 
   const displayName = instrumentName || displayTicker(instrument);
+
+  // Серии для LwChart: цена (линия, левая ось) + показатель ОИ (area/линии, правая ось).
+  const lwSeries = useMemo<LwSeries[]>(() => {
+    const intraday = interval !== 24;
+    const out: LwSeries[] = [];
+    if (showPrice && chartData.length > 0) {
+      out.push({
+        id: 'price', type: 'line', scale: 'left', color: OI_COLORS.primary, lineWidth: 2, label: displayName,
+        data: chartData.map((p) => ({ time: toSec(p.time, intraday), value: p.value })),
+        tipFmt: (v) => formatPrice(v), axisFmt: (v) => formatPrice(v),
+      });
+    }
+    if (oiSeries.secondary && oiSeries.secondary.length > 0) {
+      if (oiVariant === 'both') {
+        out.push({
+          id: 'oi-long', type: 'line', scale: 'right', color: colors.secondary, lineWidth: 2, label: labels.secondary,
+          data: oiSeries.secondary.map((p) => ({ time: toSec(p.time, intraday), value: p.value })),
+          tipFmt: (v) => formatNumber(v, 0), axisFmt: (v) => formatNumber(v, 0),
+        });
+        if (oiSeries.third) {
+          out.push({
+            id: 'oi-short', type: 'line', scale: 'right', color: colors.third, lineWidth: 2, label: labels.third,
+            data: oiSeries.third.map((p) => ({ time: toSec(p.time, intraday), value: p.value })),
+            tipFmt: (v) => formatNumber(v, 0),
+          });
+        }
+      } else {
+        out.push({
+          id: 'oi', type: 'area', scale: 'right', color: colors.secondary, lineWidth: 2, label: labels.secondary,
+          areaTop: `color-mix(in srgb, ${colors.secondary} 22%, transparent)`, areaBottom: 'rgba(0,0,0,0)',
+          zeroLine: oiVariant === 'net',
+          data: oiSeries.secondary.map((p) => ({ time: toSec(p.time, intraday), value: p.value })),
+          tipFmt: (v) => formatNumber(v, 0), axisFmt: (v) => formatNumber(v, 0),
+        });
+      }
+    }
+    return out;
+  }, [chartData, oiSeries, oiVariant, colors, labels, showPrice, displayName, interval]);
 
   return (
     <EmbedFrame
@@ -315,40 +355,21 @@ export default function EmbedOpenInterest() {
             </div>
           </DrawerSection>
           <WheelHint>
-            Единый график по всей истории. Колесо над графиком — <b>зум времени</b> (плавно, вокруг курсора);
-            колесо по <b>ценовой оси</b> — вертикальный масштаб. Как в TradingView.
+            Колесо над графиком — <b>зум времени</b>; зажать и тащить — панорама;
+            <b> Shift+колесо</b> или колесо над осью цифр — вертикальный масштаб. Наведи — тултип со значениями.
           </WheelHint>
         </>
       }
     >
       <div ref={chartBoxRef} style={{ position: 'absolute', inset: 0 }}>
-        {status === 'ok' && data && (
-          <SimpleChart
-            data={chartData}
-            secondaryData={oiSeries.secondary}
-            thirdData={oiSeries.third}
-            showPrimary={showPrice}
-            showSecondary={!!oiSeries.secondary}
-            showThird={oiVariant === 'both' && !!oiSeries.third}
-            primaryLabel={displayName}
-            secondaryLabel={labels.secondary}
-            thirdLabel={labels.third}
-            primaryColor={OI_COLORS.primary}
-            secondaryColor={colors.secondary}
-            thirdColor={colors.third}
-            annotations={annotations}
+        {status === 'ok' && data && lwSeries.length > 0 && (
+          <LwChart
+            series={lwSeries}
+            markers={lwMarkers}
             height={chartH}
-            showDownloadButton={false}
-            showNavigator={false}
-            showValueHeader={false}
-            legendPosition="top"
-            formatValue={formatPrice}
-            formatSecondaryValue={(v) => formatNumber(v, 0)}
-            niceTicks={true}
-            niceTicksSecondary={true}
-            bare
-            axisZoom
-            initialStartIndex={initialStart}
+            dark={dark}
+            fitKey={`${instrument}|${interval}`}
+            initialBars={interval === 24 ? 252 : 220}
           />
         )}
         {status === 'loading' && <EmbedMsg text="Загрузка…" />}
