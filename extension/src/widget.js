@@ -90,11 +90,14 @@
     '.fw-item:hover{background:var(--w-accent);color:#fff}',
     '.fw-item .fw-d{width:7px;height:7px;border-radius:50%;background:var(--w-accent);flex:0 0 auto}',
     '.fw-item:hover .fw-d{background:#fff}',
-    // panel
-    '.fw-panel{position:fixed;display:flex;flex-direction:column;background:var(--w-bg);color:var(--w-text);border:2px solid var(--w-border);box-shadow:6px 6px 0 var(--w-shadow);border-radius:3px;overflow:hidden}',
-    // Тонкая полоса-хват: только зона перетаскивания + кнопки окна. Функциональный
-    // тулбар (актив/контролы/⚙) живёт ВНУТРИ iframe, прямо над графиком.
-    '.fw-head{display:flex;align-items:center;gap:6px;padding:4px 6px 4px 9px;background:var(--w-panel);border-bottom:1px solid var(--w-soft);cursor:move;user-select:none;flex:0 0 auto}',
+    // panel — ПЛОСКИЙ, без «браузерного окна»: тонкий край + мягкая тень (не жёсткая
+    // офсетная карточка). Фон = фон графика, чтобы шапка+тулбар+график читались одной
+    // поверхностью (фидбэк Вадима «убрать окно вокруг графика, кнопки — продолжение графика»).
+    '.fw-panel{position:fixed;display:flex;flex-direction:column;background:var(--w-bg);color:var(--w-text);border:1px solid var(--w-soft);box-shadow:0 12px 34px rgba(0,0,0,0.5);border-radius:8px;overflow:hidden}',
+    // Полоса-хват сливается с поверхностью графика (тот же фон, без разделителя) —
+    // это НЕ «титлбар окна», а верхняя кромка того же контейнера. Тулбар (актив/
+    // контролы/⚙) живёт ВНУТРИ iframe прямо под ней, на том же фоне.
+    '.fw-head{display:flex;align-items:center;gap:6px;padding:4px 6px 4px 9px;background:var(--w-bg);cursor:move;user-select:none;flex:0 0 auto}',
     '.fw-dot{width:7px;height:7px;border-radius:50%;background:var(--w-accent);flex:0 0 auto}',
     '.fw-title{font-weight:700;font-size:11.5px;letter-spacing:-0.01em;color:var(--w-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
     '.fw-beta{font-size:8px;font-weight:800;letter-spacing:0.06em;line-height:1;color:var(--w-dim);border:1px solid var(--w-soft);border-radius:3px;padding:2px 3px;flex:0 0 auto}',
@@ -147,8 +150,6 @@
     var zTop = 2147483600;
 
     function persist() { lsSet(KEY_PANELS, panels.map(function (p) { return p.state; })); }
-    var persistT = null;
-    function persistDebounced() { if (persistT) clearTimeout(persistT); persistT = setTimeout(function () { persistT = null; persist(); }, 300); }
     function embedUrl(id, theme, pid) {
       // Токен — во fragment (#token=), НЕ в query: fragment не уходит на сервер
       // (нет в access-логах таймфрейм.рф) и не попадает в Referer. embed читает
@@ -339,31 +340,6 @@
     }, true);
 
     function reloadAll() { panels.forEach(function (p) { p.reload(); }); }
-
-    // Вертикальный ресайз из iframe: обычное колесо над графиком → embed шлёт
-    // {source:'frame-embed', type:'resize-v', dh}. Находим панель по contentWindow
-    // (e.source подделать нельзя — защита от чужих постов) и растим ВВЕРХ: низ на
-    // месте, верхний край едет (фидбэк Вадима «график удлинялся вверх»).
-    window.addEventListener('message', function (e) {
-      var d = e.data;
-      if (!d || d.source !== 'frame-embed' || d.type !== 'resize-v') return;
-      var p = null;
-      for (var i = 0; i < panels.length; i++) {
-        if (panels[i].iframe && panels[i].iframe.contentWindow === e.source) { p = panels[i]; break; }
-      }
-      if (!p) return;
-      var dh = Number(d.dh) || 0;
-      if (!dh) return;
-      var st = p.state;
-      var bottom = st.y + st.h;
-      var maxH = Math.min(window.innerHeight - 12, bottom - 6);
-      var newH = Math.max(200, Math.min(st.h + dh, maxH));
-      st.h = newH;
-      st.y = bottom - newH;
-      if (st.y < 6) { st.y = 6; st.h = bottom - 6; } // упёрлись в верх — дальше не растём
-      p.applyLayout();
-      persistDebounced();
-    });
 
     // Resize окна (свернул терминал / поворот) → вернуть уехавшие за вьюпорт
     // панели обратно. Дебаунс, чтобы не дёргать на каждый промежуточный пиксель.
