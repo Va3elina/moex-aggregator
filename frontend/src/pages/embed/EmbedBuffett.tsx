@@ -56,7 +56,7 @@ export default function EmbedBuffett() {
     (params.get('mode') === 'cap-m2' || readLS('frame:embed:buffett:mode', 'cap-gdp') === 'cap-m2') ? 'cap-m2' : 'cap-gdp',
   );
   const [period, setPeriod] = useState<BuffettPeriod>(() =>
-    (params.get('period') || readLS('frame:embed:buffett:period', '10y')) as BuffettPeriod,
+    (params.get('period') || readLS('frame:embed:buffett:period', '1y')) as BuffettPeriod,
   );
   const [timeframe, setTimeframe] = useState<Timeframe>(() => {
     const v = params.get('timeframe') || readLS('frame:embed:buffett:timeframe', '1m');
@@ -189,7 +189,6 @@ export default function EmbedBuffett() {
 
   return (
     <EmbedFrame
-      onZoomTime={zoomPeriod}
       toolbar={
         <>
           <Dropdown
@@ -217,8 +216,8 @@ export default function EmbedBuffett() {
             <ToggleRow label="Показывать капитализацию" checked={showCap} onChange={setShowCap} />
           </DrawerSection>
           <WheelHint>
-            Период: <b style={{ color: 'var(--text-primary)' }}>{periodLabel}</b> — <b>Shift + колесо</b> над графиком.
-            Обычное колесо — высота графика.
+            Период: <b style={{ color: 'var(--text-primary)' }}>{periodLabel}</b>. Колесо по нижней <b>оси дат</b> — сменить период;
+            по <b>ценовой оси</b> — вертикальный масштаб (как в TradingView).
           </WheelHint>
         </>
       }
@@ -251,6 +250,8 @@ export default function EmbedBuffett() {
             showNavigator={false}
             hideTime
             chartPadding={{ left: 70, right: 70 }}
+            axisZoom
+            onTimeZoom={zoomPeriod}
           />
         )}
         {status === 'loading' && <EmbedMsg text="Загрузка…" />}

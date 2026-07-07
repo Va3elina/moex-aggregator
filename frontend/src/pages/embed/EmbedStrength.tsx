@@ -13,7 +13,7 @@ import type { ChartPadding } from '../../components/strength/chartUtils';
 import { getBreadthHistory, type BreadthUniverse } from '../../services/api';
 import { EmbedMsg } from './embedUi';
 import { DrawerSection, SegGroup, ToggleRow } from './EmbedSettings';
-import { EmbedFrame, PillGroup, Dropdown, PeriodReadout, WheelHint } from './EmbedToolbar';
+import { EmbedFrame, PillGroup, Dropdown } from './EmbedToolbar';
 import { readLS, writeLS } from './embedPersist';
 
 type LoadStatus = 'idle' | 'loading' | 'ok' | 'empty' | 'error';
@@ -149,19 +149,8 @@ export default function EmbedStrength() {
     return { indexH: 0, breadthH: avail };
   }, [showPrice, boxH]);
 
-  const periodLabel = PERIODS.find((p) => p.id === period)?.label ?? '';
-
-  // Shift+колесо: гориз. зум по PERIODS (1Г/5Л/Всё).
-  const zoomPeriod = (dir: 1 | -1) => {
-    const i = PERIODS.findIndex((p) => p.id === period);
-    if (i < 0) return;
-    const ni = Math.min(PERIODS.length - 1, Math.max(0, i - dir));
-    if (PERIODS[ni] && PERIODS[ni].id !== period) setPeriod(PERIODS[ni].id);
-  };
-
   return (
     <EmbedFrame
-      onZoomTime={zoomPeriod}
       toolbar={
         <>
           <PillGroup<ChartMode> value={chartMode} options={CHART_MODES} onChange={setChartMode} />
@@ -175,7 +164,7 @@ export default function EmbedStrength() {
             title="Вселенная"
           />
           <PillGroup<Currency> value={currency} options={[{ id: 'rub', label: '₽' }, { id: 'usd', label: '$' }]} onChange={setCurrency} />
-          <PeriodReadout label={periodLabel} />
+          <Dropdown<Period> value={period} options={PERIODS} onChange={setPeriod} title="Период" />
         </>
       }
       more={
@@ -190,10 +179,6 @@ export default function EmbedStrength() {
               onChange={setShowPrice}
             />
           </DrawerSection>
-          <WheelHint>
-            Период: <b style={{ color: 'var(--text-primary)' }}>{periodLabel}</b> — <b>Shift + колесо</b> над графиком.
-            Обычное колесо — высота графика.
-          </WheelHint>
         </>
       }
     >

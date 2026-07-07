@@ -21,7 +21,7 @@ import {
 } from '../../services/api';
 import { EmbedMsg } from './embedUi';
 import { DrawerSection, ToggleRow } from './EmbedSettings';
-import { EmbedFrame, PillGroup, Dropdown, PeriodReadout, WheelHint } from './EmbedToolbar';
+import { EmbedFrame, PillGroup, Dropdown } from './EmbedToolbar';
 import { readLS, writeLS } from './embedPersist';
 
 type Category = FundCategory;
@@ -201,15 +201,6 @@ export default function EmbedFundsMoney() {
 
   const fmtNav = (v: number) => (category === 'gold' || category === 'stocks' ? v.toFixed(2) : v.toFixed(0));
   const genitive = CAT_GENITIVE[category] ?? '';
-  const periodLabel = PERIODS.find((p) => p.id === period)?.label ?? '';
-
-  // Shift+колесо: гориз. зум по PERIODS (1Г/3Г/Всё).
-  const zoomPeriod = (dir: 1 | -1) => {
-    const i = PERIODS.findIndex((p) => p.id === period);
-    if (i < 0) return;
-    const ni = Math.min(PERIODS.length - 1, Math.max(0, i - dir));
-    if (PERIODS[ni] && PERIODS[ni].id !== period) setPeriod(PERIODS[ni].id);
-  };
 
   // FlowsHistogram занимает доступную высоту панели. Компонент сам добавляет
   // legend (~36) + navigator (~64) к --chart-height, поэтому под сам график
@@ -218,7 +209,6 @@ export default function EmbedFundsMoney() {
 
   return (
     <EmbedFrame
-      onZoomTime={zoomPeriod}
       toolbar={
         <>
           <PillGroup<ViewMode>
@@ -230,22 +220,14 @@ export default function EmbedFundsMoney() {
           {viewMode === 'flows' && (
             <PillGroup value={flowTimeframe} options={FLOW_TFS} onChange={(v) => setFlowTimeframe(v)} />
           )}
-          <PeriodReadout label={periodLabel} />
+          <Dropdown value={period} options={PERIODS} onChange={(v) => setPeriod(v)} title="Период" />
         </>
       }
-      more={
-        <>
-          {viewMode === 'aum' && (
-            <DrawerSection label="Отображение">
-              <ToggleRow label="Индекс" checked={showIndex} onChange={setShowIndex} hint="Индекс на второй оси" />
-            </DrawerSection>
-          )}
-          <WheelHint>
-            Период: <b style={{ color: 'var(--text-primary)' }}>{periodLabel}</b> — <b>Shift + колесо</b> над графиком.
-            Обычное колесо — высота графика.
-          </WheelHint>
-        </>
-      }
+      more={viewMode === 'aum' ? (
+        <DrawerSection label="Отображение">
+          <ToggleRow label="Индекс" checked={showIndex} onChange={setShowIndex} hint="Индекс на второй оси" />
+        </DrawerSection>
+      ) : undefined}
     >
       <div ref={boxRef} style={{ position: 'absolute', inset: 0 }}>
         {viewMode === 'aum' ? (

@@ -124,6 +124,12 @@ interface SimpleChartProps {
    *  должна совпадать с круглыми значениями OI, а не цены. Подписи ЛЕВОЙ оси
    *  при этом остаются на своих позициях (visual reference, без линии). */
   gridAxis?: 'primary' | 'secondary';
+  /** Осевой зум в стиле TradingView (opt-in, для embed-панелей). Колесо над
+   *  ОСЬЮ ДАТ (нижняя полоса) → onTimeZoom(dir) — смена периода; над ЦЕНОВОЙ
+   *  осью (левая/правая полоса) → вертикальный масштаб (сжать/растянуть Y).
+   *  Над телом графика — без действия. Дефолт false → на остальном сайте 0 влияния. */
+  axisZoom?: boolean;
+  onTimeZoom?: (dir: 1 | -1) => void;
 }
 
 // Алиасы для обратной совместимости с внутренним кодом
@@ -187,11 +193,19 @@ export default function SimpleChart({
   horizontalLines,
   onCreateAlert,
   alertAxes,
+  axisZoom = false,
+  onTimeZoom,
 }: SimpleChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const chartWrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(800);
+  // Осевой зум (axisZoom): вертикальный масштаб цены. 1 = авто-подгон под данные.
+  // Сбрасывается при смене данных (новый период/инструмент → снова авто).
+  const [yZoom, setYZoom] = useState(1);
+  const onTimeZoomRef = useRef(onTimeZoom);
+  onTimeZoomRef.current = onTimeZoom;
+  useEffect(() => { setYZoom(1); }, [data]);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [vw, setVw] = useState(typeof window !== 'undefined' ? window.innerWidth : 1920);
   const [hoveredAnnotationIdx, setHoveredAnnotationIdx] = useState<number | null>(null);
@@ -440,6 +454,37 @@ export default function SimpleChart({
   const chartWidth = Math.max(width - padding.left - padding.right, 100);
   const chartHeight = effectiveHeight - padding.top - padding.bottom;
 
+  // Осевой зум (TradingView-style): колесо над ОСЬЮ ДАТ (нижняя полоса padding.bottom)
+  // → период; над ЦЕНОВОЙ осью (левая/правая полосы) → верт. масштаб (yZoom); над
+  // телом — нет. Нативный non-passive wheel (React onWheel пассивен, preventDefault
+  // не сработал бы). Регионы считаем по offset относительно обёртки SVG.
+  useEffect(() => {
+    if (!axisZoom) return;
+    const el = chartWrapRef.current;
+    if (!el) return;
+    let accTime = 0;
+    const onWheel = (e: WheelEvent) => {
+      const rect = el.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const overPriceAxis = x >= width - padding.right || x <= padding.left;
+      const overDateAxis = y >= padding.top + chartHeight;
+      if (overPriceAxis && !overDateAxis) {
+        e.preventDefault();
+        const f = e.deltaY < 0 ? 1.1 : 1 / 1.1; // вверх = приблизить (растянуть)
+        setYZoom((z) => Math.min(8, Math.max(0.2, z * f)));
+      } else if (overDateAxis) {
+        const cb = onTimeZoomRef.current;
+        if (!cb) return;
+        e.preventDefault();
+        accTime += e.deltaY;
+        if (Math.abs(accTime) >= 100) { cb(accTime < 0 ? 1 : -1); accTime = 0; }
+      }
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [axisZoom, width, padding.right, padding.left, padding.top, chartHeight]);
+
   // Вычисление целевых точек (использует displayData — срез по навигатору)
   const targetCalc = useMemo(() => {
     if (displayData.length === 0) {
@@ -520,6 +565,20 @@ export default function SimpleChart({
     if (niceTicksSecondary && allSecondaryValues.length > 0) {
       const ns = niceScale(Math.min(...allSecondaryValues), Math.max(...allSecondaryValues), 4);
       secYMin = ns.min; secYMax = ns.max; secNiceTicks = ns.ticks;
+    }
+
+    // Осевой зум по вертикали (yZoom): сжимаем/растягиваем диапазон вокруг центра.
+    // yZoom>1 → уже диапазон → данные «выше» (приближено). Ticks → линейные внутри
+    // нового диапазона (nice-деления могли бы уехать за границы). Обе оси синхронно.
+    if (axisZoom && yZoom !== 1) {
+      const cP = (yMinVal + yMaxVal) / 2;
+      const hP = ((yMaxVal - yMinVal) / 2) / yZoom;
+      yMinVal = cP - hP; yMaxVal = cP + hP; yNiceTicks = null;
+      if (allSecondaryValues.length > 0) {
+        const cS = (secYMin + secYMax) / 2;
+        const hS = ((secYMax - secYMin) / 2) / yZoom;
+        secYMin = cS - hS; secYMax = cS + hS; secNiceTicks = null;
+      }
     }
 
     const scaleX = (index: number, total: number) => (index / Math.max(total - 1, 1)) * chartWidth;
@@ -616,7 +675,7 @@ export default function SimpleChart({
 
     return { points, secondaryPoints, thirdPoints, ohlcPoints, yTicks, secYTicks, xTicks,
              yMinVal, yMaxVal, secYMin, secYMax };
-  }, [displayData, displaySecondaryData, displayThirdData, chartWidth, chartHeight, showSecondary, showThird, niceTicks, niceTicksSecondary, resolvedType]);
+  }, [displayData, displaySecondaryData, displayThirdData, chartWidth, chartHeight, showSecondary, showThird, niceTicks, niceTicksSecondary, resolvedType, axisZoom, yZoom]);
 
   // Анимация морфинга
   const animateMorph = useCallback(() => {

@@ -16,7 +16,7 @@ import { getCbrFlows } from '../../services/api';
 import { useTheme } from '../../contexts/ThemeContext';
 import { EmbedMsg } from './embedUi';
 import { DrawerSection, Checklist } from './EmbedSettings';
-import { EmbedFrame, PillGroup, PeriodReadout, WheelHint } from './EmbedToolbar';
+import { EmbedFrame, PillGroup, Dropdown } from './EmbedToolbar';
 import { readLS, writeLS } from './embedPersist';
 
 type CbrType = 'stocks' | 'ofz' | 'fx';
@@ -111,23 +111,12 @@ export default function EmbedCbrFlows() {
     return () => ro.disconnect();
   }, []);
 
-  const periodLabel = PERIODS.find((p) => p.id === period)?.label ?? '';
-
-  // Shift+колесо: гориз. зум по PERIODS (1Г/3Г/Всё).
-  const zoomPeriod = (dir: 1 | -1) => {
-    const i = PERIODS.findIndex((p) => p.id === period);
-    if (i < 0) return;
-    const ni = Math.min(PERIODS.length - 1, Math.max(0, i - dir));
-    if (PERIODS[ni] && PERIODS[ni].id !== period) setPeriod(PERIODS[ni].id);
-  };
-
   return (
     <EmbedFrame
-      onZoomTime={zoomPeriod}
       toolbar={
         <>
           <PillGroup value={type} options={TYPES} onChange={(v) => setType(v)} />
-          <PeriodReadout label={periodLabel} />
+          <Dropdown value={period} options={PERIODS} onChange={(v) => setPeriod(v)} title="Период" />
         </>
       }
       more={
@@ -152,10 +141,6 @@ export default function EmbedCbrFlows() {
               />
             </DrawerSection>
           )}
-          <WheelHint>
-            Период: <b style={{ color: 'var(--text-primary)' }}>{periodLabel}</b> — <b>Shift + колесо</b> над графиком.
-            Обычное колесо — высота графика.
-          </WheelHint>
         </>
       }
     >
