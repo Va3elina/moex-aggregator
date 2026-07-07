@@ -124,12 +124,15 @@ interface SimpleChartProps {
    *  должна совпадать с круглыми значениями OI, а не цены. Подписи ЛЕВОЙ оси
    *  при этом остаются на своих позициях (visual reference, без линии). */
   gridAxis?: 'primary' | 'secondary';
-  /** Осевой зум в стиле TradingView (opt-in, для embed-панелей). Колесо над
-   *  ОСЬЮ ДАТ (нижняя полоса) → onTimeZoom(dir) — смена периода; над ЦЕНОВОЙ
-   *  осью (левая/правая полоса) → вертикальный масштаб (сжать/растянуть Y).
-   *  Над телом графика — без действия. Дефолт false → на остальном сайте 0 влияния. */
+  /** Непрерывный зум-вьюпорт в стиле TradingView (opt-in, для embed-панелей).
+   *  Колесо над ТЕЛОМ/ОСЬЮ ДАТ → плавно зумит окно навигатора (navRange) вокруг
+   *  курсора — единый монолитный график по всей истории, без дискретных периодов.
+   *  Колесо над ЦЕНОВОЙ осью → вертикальный масштаб (yZoom). Требует, чтобы в
+   *  data была загружена полная история. Дефолт false → на остальном сайте 0 влияния. */
   axisZoom?: boolean;
-  onTimeZoom?: (dir: 1 | -1) => void;
+  /** «Голый» режим для встраивания: без карточки-рамки (border/скругление/паддинг) —
+   *  график занимает контейнер edge-to-edge, ось дат не обрезается. Дефолт false. */
+  bare?: boolean;
 }
 
 // Алиасы для обратной совместимости с внутренним кодом
@@ -194,17 +197,15 @@ export default function SimpleChart({
   onCreateAlert,
   alertAxes,
   axisZoom = false,
-  onTimeZoom,
+  bare = false,
 }: SimpleChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const chartWrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(800);
-  // Осевой зум (axisZoom): вертикальный масштаб цены. 1 = авто-подгон под данные.
-  // Сбрасывается при смене данных (новый период/инструмент → снова авто).
+  // Вертикальный масштаб цены (yZoom, для axisZoom). 1 = авто-подгон под данные;
+  // сбрасывается при смене данных.
   const [yZoom, setYZoom] = useState(1);
-  const onTimeZoomRef = useRef(onTimeZoom);
-  onTimeZoomRef.current = onTimeZoom;
   useEffect(() => { setYZoom(1); }, [data]);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [vw, setVw] = useState(typeof window !== 'undefined' ? window.innerWidth : 1920);
@@ -247,6 +248,12 @@ export default function SimpleChart({
   const [navRange, setNavRange] = useState<[number, number]>(
     [clampNavStart(initialStartIndex, data.length), Math.max(0, data.length - 1)]
   );
+  // Свежий navRange для нативного wheel-хендлера (без stale-замыкания).
+  const navRangeRef = useRef(navRange);
+  navRangeRef.current = navRange;
+
+  // Оконный просмотр включён либо явным навигатором, либо непрерывным зумом (axisZoom).
+  const windowed = showNavigator || axisZoom;
 
   // Отслеживаем ссылку на текущий data — если сменилась, navRange устарел
   const prevDataRef = useRef(data);
@@ -262,28 +269,28 @@ export default function SimpleChart({
 
   // Срез данных по выбранному диапазону навигатора
   const displayData = useMemo(() => {
-    if (!showNavigator || !data.length) return data;
+    if (!windowed || !data.length) return data;
     const isStale = data !== prevDataRef.current;
     const isFullRange = navRange[0] === 0 && navRange[1] >= data.length - 1;
     if (isStale) return data;
     if (isFullRange) return data;
     return data.slice(navRange[0], navRange[1] + 1);
-  }, [showNavigator, data, navRange]);
+  }, [windowed, data, navRange]);
 
   const displaySecondaryData = useMemo(() => {
-    if (!showNavigator || !secondaryData || !displayData.length) return secondaryData;
+    if (!windowed || !secondaryData || !displayData.length) return secondaryData;
     // Сравниваем только даты (YYYY-MM-DD) — свечи 00:00, OI 23:50
     const d0 = displayData[0].time.slice(0, 10);
     const d1 = displayData[displayData.length - 1].time.slice(0, 10);
     return secondaryData.filter(d => d.time.slice(0, 10) >= d0 && d.time.slice(0, 10) <= d1);
-  }, [showNavigator, secondaryData, displayData]);
+  }, [windowed, secondaryData, displayData]);
 
   const displayThirdData = useMemo(() => {
-    if (!showNavigator || !thirdData || !displayData.length) return thirdData;
+    if (!windowed || !thirdData || !displayData.length) return thirdData;
     const d0 = displayData[0].time.slice(0, 10);
     const d1 = displayData[displayData.length - 1].time.slice(0, 10);
     return thirdData.filter(d => d.time.slice(0, 10) >= d0 && d.time.slice(0, 10) <= d1);
-  }, [showNavigator, thirdData, displayData]);
+  }, [windowed, thirdData, displayData]);
   const [chartMode, setChartMode] = useState<'line' | 'histogram'>(defaultHistogram ? 'histogram' : 'line');
 
   useEffect(() => {
@@ -417,6 +424,20 @@ export default function SimpleChart({
     }
   }, [data.length > 0]);
 
+  // ResizeObserver — ПЛАВНЫЙ ресайз при перетаскивании панели. window.resize даёт
+  // ступеньки и не всегда стреляет на контейнер. Пере-подписываемся при смене
+  // ветки (loading→график), т.к. containerRef переключается на другой узел.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => {
+      const w = el.clientWidth;
+      if (w > 0) setWidth(w);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [loading, data.length === 0]);
+
   // Адаптивные отступы. Padding-left/right считается под МАКСИМАЛЬНУЮ ширину
   // Y-axis label, чтобы 6-знач числа (тысячи/миллионы) влезали без клиппинга.
   // На desktop падаем в CSS vars (там точные значения для конкретных breakpoints).
@@ -454,15 +475,15 @@ export default function SimpleChart({
   const chartWidth = Math.max(width - padding.left - padding.right, 100);
   const chartHeight = effectiveHeight - padding.top - padding.bottom;
 
-  // Осевой зум (TradingView-style): колесо над ОСЬЮ ДАТ (нижняя полоса padding.bottom)
-  // → период; над ЦЕНОВОЙ осью (левая/правая полосы) → верт. масштаб (yZoom); над
-  // телом — нет. Нативный non-passive wheel (React onWheel пассивен, preventDefault
-  // не сработал бы). Регионы считаем по offset относительно обёртки SVG.
+  // Непрерывный зум-вьюпорт (TradingView-style): колесо над ЦЕНОВОЙ осью (лев/прав
+  // полосы) → верт. масштаб (yZoom); над ТЕЛОМ/ОСЬЮ ДАТ → плавно зумит окно navRange
+  // вокруг курсора — единый монолитный график по всей истории, без дискретных
+  // периодов. navDragRef=true → пропускаем morph-анимацию (иначе лаг на каждый тик).
+  // Нативный non-passive wheel (React onWheel пассивен → preventDefault игнорился бы).
   useEffect(() => {
     if (!axisZoom) return;
     const el = chartWrapRef.current;
     if (!el) return;
-    let accTime = 0;
     const onWheel = (e: WheelEvent) => {
       const rect = el.getBoundingClientRect();
       const x = e.clientX - rect.left;
@@ -471,19 +492,30 @@ export default function SimpleChart({
       const overDateAxis = y >= padding.top + chartHeight;
       if (overPriceAxis && !overDateAxis) {
         e.preventDefault();
-        const f = e.deltaY < 0 ? 1.1 : 1 / 1.1; // вверх = приблизить (растянуть)
+        const f = e.deltaY < 0 ? 1.1 : 1 / 1.1; // вверх = приблизить
         setYZoom((z) => Math.min(8, Math.max(0.2, z * f)));
-      } else if (overDateAxis) {
-        const cb = onTimeZoomRef.current;
-        if (!cb) return;
-        e.preventDefault();
-        accTime += e.deltaY;
-        if (Math.abs(accTime) >= 100) { cb(accTime < 0 ? 1 : -1); accTime = 0; }
+        return;
       }
+      // Тело или ось дат → непрерывный зум времени вокруг курсора.
+      const total = data.length;
+      if (total < 6) return;
+      e.preventDefault();
+      const [s, en] = navRangeRef.current;
+      const span = Math.max(1, en - s);
+      const frac = Math.min(1, Math.max(0, (x - padding.left) / Math.max(1, chartWidth)));
+      const anchor = s + frac * span;
+      const factor = e.deltaY < 0 ? 0.85 : 1 / 0.85; // вверх = приблизить (уже окно)
+      let newSpan = Math.round(span * factor);
+      newSpan = Math.min(total - 1, Math.max(8, newSpan));
+      let ns = Math.round(anchor - frac * newSpan);
+      let ne = ns + newSpan;
+      if (ns < 0) { ns = 0; ne = newSpan; }
+      if (ne > total - 1) { ne = total - 1; ns = Math.max(0, ne - newSpan); }
+      if (ns !== s || ne !== en) { navDragRef.current = true; setNavRange([ns, ne]); }
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
-  }, [axisZoom, width, padding.right, padding.left, padding.top, chartHeight]);
+  }, [axisZoom, width, padding.right, padding.left, padding.top, chartHeight, chartWidth, data]);
 
   // Вычисление целевых точек (использует displayData — срез по навигатору)
   const targetCalc = useMemo(() => {
@@ -1059,7 +1091,7 @@ export default function SimpleChart({
   // Показываем полный лоадер только если нет данных вообще
   if (data.length === 0 && loading) {
     return (
-      <div ref={containerRef} className="rounded-2xl flex items-center justify-center bg-theme-primary border border-theme" style={{ height: placeholderHeight }}>
+      <div ref={containerRef} className={bare ? 'flex items-center justify-center' : 'rounded-2xl flex items-center justify-center bg-theme-primary border border-theme'} style={{ height: placeholderHeight }}>
         <div className="flex items-center text-theme-secondary" style={{ gap: 'var(--sp-3)' }}>
           <div className="w-6 h-6 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
           <span style={{ fontSize: 'var(--fs-base)' }}>Загрузка...</span>
@@ -1070,7 +1102,7 @@ export default function SimpleChart({
 
   if (data.length === 0 && !loading) {
     return (
-      <div ref={containerRef} className="rounded-2xl flex items-center justify-center bg-theme-primary border border-theme" style={{ height: placeholderHeight }}>
+      <div ref={containerRef} className={bare ? 'flex items-center justify-center' : 'rounded-2xl flex items-center justify-center bg-theme-primary border border-theme'} style={{ height: placeholderHeight }}>
         <p className="text-theme-secondary text-lg">Нет данных для отображения</p>
       </div>
     );
@@ -1113,7 +1145,7 @@ export default function SimpleChart({
   );
 
   return (
-    <div className="rounded-2xl p-5 bg-theme-primary border border-theme relative">
+    <div className={bare ? 'relative' : 'rounded-2xl p-5 bg-theme-primary border border-theme relative'}>
       {/* Кнопка переключения линия/гистограмма — editorial-style */}
       {allowHistogram && (
         <button

@@ -22,7 +22,7 @@ import { displayTicker } from '../../utils/displayTicker';
 import { formatNumber, formatPrice } from '../../utils/formatNumber';
 import { EmbedMsg } from './embedUi';
 import { DrawerSection, SegGroup, ToggleRow } from './EmbedSettings';
-import { EmbedFrame, AssetButton, PillGroup, Dropdown, PeriodReadout, WheelHint } from './EmbedToolbar';
+import { EmbedFrame, AssetButton, PillGroup, Dropdown, WheelHint } from './EmbedToolbar';
 import { readLS, writeLS } from './embedPersist';
 
 // Компактные лейблы таймфрейма для инлайн-пилюль тулбара.
@@ -36,7 +36,6 @@ type ChartData = Awaited<ReturnType<typeof getChartData>>;
 type OiPoint = ChartData['open_interest'][number];
 type LoadStatus = 'idle' | 'loading' | 'ok' | 'empty' | 'error';
 type ClGroup = 'FIZ' | 'YUR';
-type Period = '1d' | '1w' | '1m' | '1y' | '5y' | 'all';
 // Режим/вариант ОИ — зеркалит OpenInterestPage, но без 'price' (embed всегда
 // показывает серию ОИ; price-only режим заменён тумблером «Цена»).
 type DisplayMode = 'positions' | 'participants';
@@ -44,18 +43,12 @@ type OIVariant = 'oi' | 'long' | 'short' | 'both' | 'net';
 
 type Series = { time: string; value: number }[];
 
-const P_LABEL: Record<Period, string> = {
-  '1d': '1Д', '1w': '1Н', '1m': '1М',
-  '1y': '1Г', '5y': '5Л', 'all': 'Всё',
-};
-
-// Допустимые периоды для интервала (зеркалит OpenInterestPage
-// MAX_PERIODS_BY_INTERVAL: 5мин/1час→макс 1М, 1день→всё включая 1Д).
-const ALLOWED: Record<number, Period[]> = {
-  5: ['1d', '1w', '1m'],
-  60: ['1d', '1w', '1m'],
-  24: ['1d', '1w', '1m', '1y', '5y', 'all'],
-};
+// Единый монолитный график: грузим МАКС историю (дневной — всю; интрадей — месяц),
+// а по времени юзер зумит колесом (осевой зум SimpleChart). Дискретных периодов нет.
+const loadPeriodFor = (interval: number): string => (interval === 24 ? 'all' : '1m');
+// Дефолтное окно навигатора: дневной — последний ~год; интрадей — весь загруженный срез.
+const defaultWindowFor = (interval: number, len: number): number =>
+  interval === 24 ? Math.max(0, len - 252) : 0;
 
 // Цвета ОИ — все через CSS-var (адаптируются к теме внутри iframe).
 const OI_COLORS = {
@@ -77,7 +70,6 @@ export default function EmbedOpenInterest() {
   const [instrumentName, setInstrumentName] = useState<string>(params.get('name') || '');
   const [clgroup, setClgroup] = useState<ClGroup>(() => readLS('frame:embed:oi:clgroup', 'FIZ') as ClGroup);
   const [interval, setIntervalValue] = useState<number>(() => Number(readLS('frame:embed:oi:interval', '24')) || 24);
-  const [period, setPeriod] = useState<Period>(() => (params.get('period') || readLS('frame:embed:oi:period', '1y')) as Period);
   const [displayMode, setDisplayMode] = useState<DisplayMode>(() => readLS('frame:embed:oi:displayMode', 'positions') as DisplayMode);
   const [oiVariant, setOiVariant] = useState<OIVariant>(() => readLS('frame:embed:oi:oiVariant', 'net') as OIVariant);
   const [showPrice, setShowPrice] = useState<boolean>(() => readLS('frame:embed:oi:showPrice', 'true') === 'true');
@@ -90,35 +82,12 @@ export default function EmbedOpenInterest() {
   useEffect(() => { writeLS('frame:embed:oi:instrument', instrument); }, [instrument]);
   useEffect(() => { writeLS('frame:embed:oi:clgroup', clgroup); }, [clgroup]);
   useEffect(() => { writeLS('frame:embed:oi:interval', String(interval)); }, [interval]);
-  useEffect(() => { writeLS('frame:embed:oi:period', period); }, [period]);
   useEffect(() => { writeLS('frame:embed:oi:displayMode', displayMode); }, [displayMode]);
   useEffect(() => { writeLS('frame:embed:oi:oiVariant', oiVariant); }, [oiVariant]);
   useEffect(() => { writeLS('frame:embed:oi:showPrice', String(showPrice)); }, [showPrice]);
   useEffect(() => { writeLS('frame:embed:oi:showExpirations', String(showExpirations)); }, [showExpirations]);
 
-  // При смене таймфрейма скорректировать период, если он стал недоступен.
-  const changeInterval = (next: number) => {
-    setIntervalValue(next);
-    const allowed = ALLOWED[next] || ALLOWED[24];
-    if (!allowed.includes(period)) setPeriod(allowed[allowed.length - 1]);
-  };
-
-  // Смена периода: 1Д на дневном ТФ не имеет смысла → бампим интервал до 60
-  // (зеркалит OpenInterestPage onChange периода).
-  const changePeriod = (next: Period) => {
-    if (next === '1d' && interval === 24) setIntervalValue(60);
-    setPeriod(next);
-  };
-
-  // Shift+колесо над графиком: гориз. зум времени. dir=+1 «внутрь» (короче период /
-  // меньше истории), -1 «наружу» (длиннее). Ходим по ALLOWED (отсортирован короткий→длинный).
-  const zoomPeriod = (dir: 1 | -1) => {
-    const allowed = ALLOWED[interval] || ALLOWED[24];
-    const i = allowed.indexOf(period);
-    if (i < 0) return;
-    const ni = Math.min(allowed.length - 1, Math.max(0, i - dir));
-    if (allowed[ni] !== period) changePeriod(allowed[ni]);
-  };
+  const changeInterval = (next: number) => setIntervalValue(next);
 
   // Резолв имени, если пришёл только sec_id.
   useEffect(() => {
@@ -135,7 +104,7 @@ export default function EmbedOpenInterest() {
     if (!instrument) { setStatus('empty'); return; }
     let cancelled = false;
     setStatus('loading');
-    getChartData(instrument, instrument, 'futures', interval, clgroup, true, period)
+    getChartData(instrument, instrument, 'futures', interval, clgroup, true, loadPeriodFor(interval))
       .then((res) => {
         if (cancelled) return;
         const hasData = (res?.candles?.length ?? 0) > 0;
@@ -148,7 +117,7 @@ export default function EmbedOpenInterest() {
         setStatus('error');
       });
     return () => { cancelled = true; };
-  }, [instrument, clgroup, interval, period]);
+  }, [instrument, clgroup, interval]);
 
   // Резиновая высота графика.
   const chartBoxRef = useRef<HTMLDivElement>(null);
@@ -168,6 +137,8 @@ export default function EmbedOpenInterest() {
     () => (data?.candles ?? []).map((c) => ({ time: c.time, value: c.close })),
     [data],
   );
+  // Дефолтное окно навигатора (последний ~год для дневного) — SimpleChart стартует с него.
+  const initialStart = defaultWindowFor(interval, chartData.length);
 
   // Выравнивание OI данных по временным меткам свечей (порт alignToCandles из
   // OpenInterestPage). OI имеет меньше точек, чем свечи → index-based X-mapping
@@ -319,7 +290,6 @@ export default function EmbedOpenInterest() {
         <>
           <PillGroup value={interval} options={TF_COMPACT} onChange={changeInterval} />
           <Dropdown value={oiVariant} options={variantOpts} onChange={setOiVariant} title="Показатель ОИ" />
-          <PeriodReadout label={P_LABEL[period]} />
         </>
       }
       more={
@@ -345,8 +315,8 @@ export default function EmbedOpenInterest() {
             </div>
           </DrawerSection>
           <WheelHint>
-            Период: <b style={{ color: 'var(--text-primary)' }}>{P_LABEL[period]}</b>. Колесо по нижней <b>оси дат</b> — сменить период;
-            по <b>ценовой оси</b> — вертикальный масштаб (как в TradingView).
+            Единый график по всей истории. Колесо над графиком — <b>зум времени</b> (плавно, вокруг курсора);
+            колесо по <b>ценовой оси</b> — вертикальный масштаб. Как в TradingView.
           </WheelHint>
         </>
       }
@@ -376,8 +346,9 @@ export default function EmbedOpenInterest() {
             formatSecondaryValue={(v) => formatNumber(v, 0)}
             niceTicks={true}
             niceTicksSecondary={true}
+            bare
             axisZoom
-            onTimeZoom={zoomPeriod}
+            initialStartIndex={initialStart}
           />
         )}
         {status === 'loading' && <EmbedMsg text="Загрузка…" />}
