@@ -20,7 +20,9 @@ import {
   type FundsFlowsResponse,
 } from '../../services/api';
 import { EmbedMsg } from './embedUi';
-import { useEmbedSettings, EmbedShell, DrawerSection, SegGroup, ToggleRow } from './EmbedSettings';
+import { DrawerSection, ToggleRow } from './EmbedSettings';
+import { EmbedFrame, PillGroup, Dropdown, PeriodReadout, WheelHint } from './EmbedToolbar';
+import { readLS, writeLS } from './embedPersist';
 
 type Category = FundCategory;
 type ViewMode = 'aum' | 'flows';
@@ -47,10 +49,6 @@ const PERIODS: { id: FundPeriod; label: string }[] = [
   { id: '3y', label: '3Г' },
   { id: 'all', label: 'Всё' },
 ];
-const VIEW_MODES: { id: ViewMode; label: string }[] = [
-  { id: 'flows', label: 'Притоки-Оттоки' },
-  { id: 'aum', label: 'СЧА' },
-];
 const FLOW_TFS: { id: FlowTimeframe; label: string }[] = [
   { id: '1d', label: 'День' },
   { id: '1w', label: 'Неделя' },
@@ -59,20 +57,13 @@ const FLOW_TFS: { id: FlowTimeframe; label: string }[] = [
 
 function initCat(p: string | null): Category {
   if (p && CATS.some((c) => c.id === p)) return p as Category;
-  try {
-    const s = localStorage.getItem('frame:embed:funds:category');
-    if (s && CATS.some((c) => c.id === s)) return s as Category;
-  } catch { /* ignore */ }
+  const s = readLS('frame:embed:funds:category', '');
+  if (s && CATS.some((c) => c.id === s)) return s as Category;
   return 'money_market';
-}
-
-function readLS(key: string, fallback: string): string {
-  try { return localStorage.getItem(key) || fallback; } catch { return fallback; }
 }
 
 export default function EmbedFundsMoney() {
   const [params] = useSearchParams();
-  const settings = useEmbedSettings();
 
   const [category, setCategory] = useState<Category>(() => initCat(params.get('category')));
   const [period, setPeriod] = useState<FundPeriod>(() => (params.get('period') || readLS('frame:embed:funds:period', '1y')) as FundPeriod);
@@ -96,11 +87,11 @@ export default function EmbedFundsMoney() {
   const flowContainerRef = useRef<HTMLDivElement>(null);
 
   // Persist
-  useEffect(() => { try { localStorage.setItem('frame:embed:funds:category', category); } catch { /* quota */ } }, [category]);
-  useEffect(() => { try { localStorage.setItem('frame:embed:funds:period', period); } catch { /* quota */ } }, [period]);
-  useEffect(() => { try { localStorage.setItem('frame:embed:funds:viewMode', viewMode); } catch { /* quota */ } }, [viewMode]);
-  useEffect(() => { try { localStorage.setItem('frame:embed:funds:flowTimeframe', flowTimeframe); } catch { /* quota */ } }, [flowTimeframe]);
-  useEffect(() => { try { localStorage.setItem('frame:embed:funds:showIndex', showIndex ? '1' : '0'); } catch { /* quota */ } }, [showIndex]);
+  useEffect(() => { writeLS('frame:embed:funds:category', category); }, [category]);
+  useEffect(() => { writeLS('frame:embed:funds:period', period); }, [period]);
+  useEffect(() => { writeLS('frame:embed:funds:viewMode', viewMode); }, [viewMode]);
+  useEffect(() => { writeLS('frame:embed:funds:flowTimeframe', flowTimeframe); }, [flowTimeframe]);
+  useEffect(() => { writeLS('frame:embed:funds:showIndex', showIndex ? '1' : '0'); }, [showIndex]);
 
   // ── AUM load ──
   useEffect(() => {
@@ -209,8 +200,16 @@ export default function EmbedFundsMoney() {
   );
 
   const fmtNav = (v: number) => (category === 'gold' || category === 'stocks' ? v.toFixed(2) : v.toFixed(0));
-  const catLabel = CATS.find((c) => c.id === category)?.label || '';
   const genitive = CAT_GENITIVE[category] ?? '';
+  const periodLabel = PERIODS.find((p) => p.id === period)?.label ?? '';
+
+  // Shift+колесо: гориз. зум по PERIODS (1Г/3Г/Всё).
+  const zoomPeriod = (dir: 1 | -1) => {
+    const i = PERIODS.findIndex((p) => p.id === period);
+    if (i < 0) return;
+    const ni = Math.min(PERIODS.length - 1, Math.max(0, i - dir));
+    if (PERIODS[ni] && PERIODS[ni].id !== period) setPeriod(PERIODS[ni].id);
+  };
 
   // FlowsHistogram занимает доступную высоту панели. Компонент сам добавляет
   // legend (~36) + navigator (~64) к --chart-height, поэтому под сам график
@@ -218,35 +217,37 @@ export default function EmbedFundsMoney() {
   const flowsChartH = Math.max(140, chartH - 110);
 
   return (
-    <EmbedShell
-      settings={settings}
-      title="Фонды"
-      subtitle={catLabel}
-      drawer={
+    <EmbedFrame
+      onZoomTime={zoomPeriod}
+      toolbar={
         <>
-          <DrawerSection label="Режим">
-            <SegGroup value={viewMode} options={VIEW_MODES} onChange={(v) => setViewMode(v)} />
-          </DrawerSection>
-          <DrawerSection label="Категория">
-            <SegGroup value={category} options={CATS} onChange={(v) => setCategory(v)} />
-          </DrawerSection>
-          <DrawerSection label="Период">
-            <SegGroup value={period} options={PERIODS} onChange={(v) => setPeriod(v)} />
-          </DrawerSection>
+          <PillGroup<ViewMode>
+            value={viewMode}
+            options={[{ id: 'flows', label: 'Потоки' }, { id: 'aum', label: 'СЧА' }]}
+            onChange={(v) => setViewMode(v)}
+          />
+          <Dropdown value={category} options={CATS} onChange={(v) => setCategory(v)} title="Категория фондов" />
           {viewMode === 'flows' && (
-            <DrawerSection label="Таймфрейм">
-              <SegGroup value={flowTimeframe} options={FLOW_TFS} onChange={(v) => setFlowTimeframe(v)} />
-            </DrawerSection>
+            <PillGroup value={flowTimeframe} options={FLOW_TFS} onChange={(v) => setFlowTimeframe(v)} />
           )}
+          <PeriodReadout label={periodLabel} />
+        </>
+      }
+      more={
+        <>
           {viewMode === 'aum' && (
             <DrawerSection label="Отображение">
-              <ToggleRow label="Индекс" checked={showIndex} onChange={setShowIndex} />
+              <ToggleRow label="Индекс" checked={showIndex} onChange={setShowIndex} hint="Индекс на второй оси" />
             </DrawerSection>
           )}
+          <WheelHint>
+            Период: <b style={{ color: 'var(--text-primary)' }}>{periodLabel}</b> — <b>Shift + колесо</b> над графиком.
+            Обычное колесо — высота графика.
+          </WheelHint>
         </>
       }
     >
-      <div ref={boxRef} style={{ flex: 1, position: 'relative', minHeight: 0 }}>
+      <div ref={boxRef} style={{ position: 'absolute', inset: 0 }}>
         {viewMode === 'aum' ? (
           <>
             {/* Оси свопнуты как на странице: СЧА — на ПРАВОЙ оси (secondaryData),
@@ -316,6 +317,6 @@ export default function EmbedFundsMoney() {
           </>
         )}
       </div>
-    </EmbedShell>
+    </EmbedFrame>
   );
 }

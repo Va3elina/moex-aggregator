@@ -18,11 +18,13 @@
   var INDICATORS = [
     { id: 'oi', label: 'Открытые позиции', group: 'instrument' },
     { id: 'seasonality', label: 'Сезонность', group: 'instrument' },
+    { id: 'screener', label: 'Скринер сигналов', group: 'instrument' },
     { id: 'buffett', label: 'Индикатор Баффетта', group: 'market' },
     { id: 'strength', label: 'Сила рынка', group: 'market' },
     { id: 'funds-money', label: 'Фонды', group: 'market' },
-    { id: 'cbr-flows', label: 'Потоки ЦБ', group: 'market' },
-    { id: 'fund-trades', label: 'Сделки фондов', group: 'market' }
+    { id: 'fund-trades', label: 'Сделки фондов', group: 'market' },
+    { id: 'fund-movers', label: 'Покупки фондов', group: 'market' },
+    { id: 'cbr-flows', label: 'Потоки ЦБ', group: 'market' }
   ];
 
   var DEFAULT_THEME = 'editorial-dark';
@@ -33,11 +35,13 @@
   var SIZES = {
     'oi':          { w: 640, h: 580 },
     'seasonality': { w: 600, h: 520 },
+    'screener':    { w: 560, h: 620 }, // таблица-лента — узкая и высокая
     'buffett':     { w: 660, h: 560 },
     'strength':    { w: 600, h: 620 }, // два графика (IMOEX + breadth) — выше
     'funds-money': { w: 660, h: 560 },
     'cbr-flows':   { w: 660, h: 580 },
-    'fund-trades': { w: 560, h: 560 }
+    'fund-trades': { w: 560, h: 560 },
+    'fund-movers': { w: 600, h: 560 }  // две колонки Покупают/Продают
   };
   var DEFAULT_SIZE = { w: 620, h: 560 };
 
@@ -88,10 +92,12 @@
     '.fw-item:hover .fw-d{background:#fff}',
     // panel
     '.fw-panel{position:fixed;display:flex;flex-direction:column;background:var(--w-bg);color:var(--w-text);border:2px solid var(--w-border);box-shadow:6px 6px 0 var(--w-shadow);border-radius:3px;overflow:hidden}',
-    '.fw-head{display:flex;align-items:center;gap:8px;padding:7px 9px;background:var(--w-panel);border-bottom:1.5px solid var(--w-border);cursor:move;user-select:none;flex:0 0 auto}',
-    '.fw-dot{width:9px;height:9px;border-radius:50%;background:var(--w-accent);flex:0 0 auto}',
-    '.fw-title{font-weight:800;font-size:13px;letter-spacing:-0.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
-    '.fw-beta{font-size:8px;font-weight:800;letter-spacing:0.08em;line-height:1;color:var(--w-accent);border:1px solid var(--w-accent);border-radius:3px;padding:2px 4px;flex:0 0 auto}',
+    // Тонкая полоса-хват: только зона перетаскивания + кнопки окна. Функциональный
+    // тулбар (актив/контролы/⚙) живёт ВНУТРИ iframe, прямо над графиком.
+    '.fw-head{display:flex;align-items:center;gap:6px;padding:4px 6px 4px 9px;background:var(--w-panel);border-bottom:1px solid var(--w-soft);cursor:move;user-select:none;flex:0 0 auto}',
+    '.fw-dot{width:7px;height:7px;border-radius:50%;background:var(--w-accent);flex:0 0 auto}',
+    '.fw-title{font-weight:700;font-size:11.5px;letter-spacing:-0.01em;color:var(--w-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+    '.fw-beta{font-size:8px;font-weight:800;letter-spacing:0.06em;line-height:1;color:var(--w-dim);border:1px solid var(--w-soft);border-radius:3px;padding:2px 3px;flex:0 0 auto}',
     '.fw-ctrls{margin-left:auto;display:flex;gap:4px;flex:0 0 auto}',
     '.fw-btn{width:22px;height:22px;display:flex;align-items:center;justify-content:center;border:1px solid var(--w-soft);background:transparent;color:var(--w-text);border-radius:3px;cursor:pointer;font-size:14px;line-height:1;padding:0}',
     '.fw-btn:hover{border-color:var(--w-border)}',
@@ -141,11 +147,17 @@
     var zTop = 2147483600;
 
     function persist() { lsSet(KEY_PANELS, panels.map(function (p) { return p.state; })); }
-    function embedUrl(id, theme) {
+    var persistT = null;
+    function persistDebounced() { if (persistT) clearTimeout(persistT); persistT = setTimeout(function () { persistT = null; persist(); }, 300); }
+    function embedUrl(id, theme, pid) {
       // Токен — во fragment (#token=), НЕ в query: fragment не уходит на сервер
       // (нет в access-логах таймфрейм.рф) и не попадает в Referer. embed читает
       // его из location.hash (EmbedPage.tsx).
-      return EMBED_BASE + '/embed/' + id + '?theme=' + theme + (extToken ? '#token=' + encodeURIComponent(extToken) : '');
+      // pid — стабильный id панели: embed неймспейсит по нему настройки, чтобы
+      // каждое окно (в т.ч. два одного индикатора) держало свою конфигурацию.
+      return EMBED_BASE + '/embed/' + id + '?theme=' + theme +
+        (pid ? '&pid=' + encodeURIComponent(pid) : '') +
+        (extToken ? '#token=' + encodeURIComponent(extToken) : '');
     }
     function clampPanel(st) {
       var vw = window.innerWidth, vh = window.innerHeight;
@@ -235,16 +247,20 @@
       var sz = SIZES[id] || DEFAULT_SIZE;
       var st = saved || { id: id, x: null, y: null, w: sz.w, h: sz.h, theme: DEFAULT_THEME };
       st.id = id;
+      // Стабильный id панели: у новых — генерим, у восстановленных без pid (старые
+      // сохранения) — тоже, тогда окно засидится глобальными настройками индикатора
+      // (наследует «последнее использованное»). Часть st → persist'ится сам.
+      if (!st.pid) st.pid = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
       clampPanel(st);
 
       var dot = h('span', { class: 'fw-dot' });
-      var title = h('span', { class: 'fw-title', text: 'Фрейм · ' + ind.label });
+      var title = h('span', { class: 'fw-title', text: ind.label });
       var beta = h('span', { class: 'fw-beta', title: 'Расширение в бете', text: 'BETA' });
-      var bGear = h('button', { class: 'fw-btn', 'data-a': 'settings', title: 'Настройки', text: '⚙︎' });
+      // Настройки (⚙) переехали в тулбар ВНУТРИ iframe — в шапке только кнопки окна.
       var bPop = h('button', { class: 'fw-btn', 'data-a': 'pop', title: 'Открыть в новом окне', text: '⤢' });
       var bTheme = h('button', { class: 'fw-btn', 'data-a': 'theme', title: 'Тема', text: '◐' });
       var bClose = h('button', { class: 'fw-btn', 'data-a': 'close', title: 'Закрыть', text: '×' });
-      var ctrls = h('span', { class: 'fw-ctrls' }, [bGear, bPop, bTheme, bClose]);
+      var ctrls = h('span', { class: 'fw-ctrls' }, [bPop, bTheme, bClose]);
       var head = h('div', { class: 'fw-head' }, [dot, title, beta, ctrls]);
       var iframe = h('iframe', { class: 'fw-iframe', title: 'Фрейм · ' + ind.label });
       var body = h('div', { class: 'fw-body' }, [iframe]);
@@ -252,7 +268,7 @@
       var el = h('div', { class: 'fw panel fw-panel', 'data-theme': st.theme }, [head, body, resize]);
 
       function applyLayout() { el.style.left = st.x + 'px'; el.style.top = st.y + 'px'; el.style.width = st.w + 'px'; el.style.height = st.h + 'px'; }
-      function reload() { iframe.src = embedUrl(st.id, st.theme); }
+      function reload() { iframe.src = embedUrl(st.id, st.theme, st.pid); }
       function toFront() { zTop += 1; el.style.zIndex = zTop; }
 
       applyLayout(); el.style.zIndex = ++zTop; reload();
@@ -262,12 +278,8 @@
         var b = e.target.closest('.fw-btn'); if (!b) return;
         var a = b.getAttribute('data-a');
         if (a === 'close') { removePanel(panel); }
-        else if (a === 'settings') {
-          // Тоггл drawer'а настроек ВНУТРИ iframe (embed слушает postMessage).
-          try { iframe.contentWindow.postMessage({ source: 'frame-ext', type: 'toggle-settings' }, EMBED_BASE); } catch (er) { /* iframe ещё грузится */ }
-        }
         else if (a === 'theme') { st.theme = st.theme === 'editorial-dark' ? 'editorial-light' : 'editorial-dark'; el.setAttribute('data-theme', st.theme); reload(); persist(); }
-        else if (a === 'pop') { window.open(embedUrl(st.id, st.theme), '_blank', 'width=560,height=460'); }
+        else if (a === 'pop') { window.open(embedUrl(st.id, st.theme, st.pid), '_blank', 'width=560,height=460'); }
       });
 
       head.addEventListener('pointerdown', function (e) {
@@ -290,7 +302,7 @@
       });
 
       shadow.appendChild(el);
-      var panel = { id: id, el: el, state: st, reload: reload, applyLayout: applyLayout };
+      var panel = { id: id, el: el, state: st, reload: reload, applyLayout: applyLayout, iframe: iframe };
       panels.push(panel);
       return panel;
     }
@@ -327,6 +339,31 @@
     }, true);
 
     function reloadAll() { panels.forEach(function (p) { p.reload(); }); }
+
+    // Вертикальный ресайз из iframe: обычное колесо над графиком → embed шлёт
+    // {source:'frame-embed', type:'resize-v', dh}. Находим панель по contentWindow
+    // (e.source подделать нельзя — защита от чужих постов) и растим ВВЕРХ: низ на
+    // месте, верхний край едет (фидбэк Вадима «график удлинялся вверх»).
+    window.addEventListener('message', function (e) {
+      var d = e.data;
+      if (!d || d.source !== 'frame-embed' || d.type !== 'resize-v') return;
+      var p = null;
+      for (var i = 0; i < panels.length; i++) {
+        if (panels[i].iframe && panels[i].iframe.contentWindow === e.source) { p = panels[i]; break; }
+      }
+      if (!p) return;
+      var dh = Number(d.dh) || 0;
+      if (!dh) return;
+      var st = p.state;
+      var bottom = st.y + st.h;
+      var maxH = Math.min(window.innerHeight - 12, bottom - 6);
+      var newH = Math.max(200, Math.min(st.h + dh, maxH));
+      st.h = newH;
+      st.y = bottom - newH;
+      if (st.y < 6) { st.y = 6; st.h = bottom - 6; } // упёрлись в верх — дальше не растём
+      p.applyLayout();
+      persistDebounced();
+    });
 
     // Resize окна (свернул терминал / поворот) → вернуть уехавшие за вьюпорт
     // панели обратно. Дебаунс, чтобы не дёргать на каждый промежуточный пиксель.

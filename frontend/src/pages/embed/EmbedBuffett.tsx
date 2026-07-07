@@ -15,7 +15,9 @@ import {
   type BuffettPeriod,
 } from '../../services/api';
 import { EmbedMsg } from './embedUi';
-import { useEmbedSettings, EmbedShell, DrawerSection, SegGroup, ToggleRow } from './EmbedSettings';
+import { DrawerSection, SegGroup, ToggleRow } from './EmbedSettings';
+import { EmbedFrame, PillGroup, Dropdown, PeriodReadout, WheelHint } from './EmbedToolbar';
+import { readLS, writeLS, readBoolLS } from './embedPersist';
 
 type ViewMode = 'cap-gdp' | 'cap-m2';
 type Timeframe = '1d' | '1w' | '1m';
@@ -47,20 +49,8 @@ const FORECASTS: { id: string; label: string }[] = [
   })),
 ];
 
-function readLS(key: string, fallback: string): string {
-  try { return localStorage.getItem(key) || fallback; } catch { return fallback; }
-}
-
-function readBoolLS(key: string, fallback: boolean): boolean {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw === null ? fallback : raw === 'true';
-  } catch { return fallback; }
-}
-
 export default function EmbedBuffett() {
   const [params] = useSearchParams();
-  const settings = useEmbedSettings();
 
   const [viewMode, setViewMode] = useState<ViewMode>(() =>
     (params.get('mode') === 'cap-m2' || readLS('frame:embed:buffett:mode', 'cap-gdp') === 'cap-m2') ? 'cap-m2' : 'cap-gdp',
@@ -89,11 +79,11 @@ export default function EmbedBuffett() {
   const [ratio, setRatio] = useState<Series>([]);
   const [status, setStatus] = useState<LoadStatus>('idle');
 
-  useEffect(() => { try { localStorage.setItem('frame:embed:buffett:mode', viewMode); } catch { /* quota */ } }, [viewMode]);
-  useEffect(() => { try { localStorage.setItem('frame:embed:buffett:period', period); } catch { /* quota */ } }, [period]);
-  useEffect(() => { try { localStorage.setItem('frame:embed:buffett:timeframe', timeframe); } catch { /* quota */ } }, [timeframe]);
-  useEffect(() => { try { localStorage.setItem('frame:embed:buffett:forecast', forecastTarget !== null ? String(forecastTarget) : ''); } catch { /* quota */ } }, [forecastTarget]);
-  useEffect(() => { try { localStorage.setItem('frame:embed:buffett:showCap', String(showCap)); } catch { /* quota */ } }, [showCap]);
+  useEffect(() => { writeLS('frame:embed:buffett:mode', viewMode); }, [viewMode]);
+  useEffect(() => { writeLS('frame:embed:buffett:period', period); }, [period]);
+  useEffect(() => { writeLS('frame:embed:buffett:timeframe', timeframe); }, [timeframe]);
+  useEffect(() => { writeLS('frame:embed:buffett:forecast', forecastTarget !== null ? String(forecastTarget) : ''); }, [forecastTarget]);
+  useEffect(() => { writeLS('frame:embed:buffett:showCap', String(showCap)); }, [showCap]);
 
   useEffect(() => {
     let cancelled = false;
@@ -187,27 +177,33 @@ export default function EmbedBuffett() {
   }, [viewMode, forecastTarget, capGdpRaw, cap, ratio]);
 
   const showForecast = viewMode === 'cap-gdp' && forecastTarget !== null;
+  const periodLabel = PERIODS.find((p) => p.id === period)?.label ?? '';
+
+  // Shift+колесо: гориз. зум по PERIODS (1Г…Всё). dir=+1 короче, -1 длиннее.
+  const zoomPeriod = (dir: 1 | -1) => {
+    const i = PERIODS.findIndex((p) => p.id === period);
+    if (i < 0) return;
+    const ni = Math.min(PERIODS.length - 1, Math.max(0, i - dir));
+    if (PERIODS[ni] && PERIODS[ni].id !== period) setPeriod(PERIODS[ni].id);
+  };
 
   return (
-    <EmbedShell
-      settings={settings}
-      title="Индикатор Баффетта"
-      subtitle={viewMode === 'cap-gdp' ? 'Кап / ВВП' : 'Кап / M2'}
-      drawer={
+    <EmbedFrame
+      onZoomTime={zoomPeriod}
+      toolbar={
         <>
-          <DrawerSection label="База сравнения">
-            <SegGroup
-              value={viewMode}
-              options={[{ id: 'cap-gdp', label: 'Кап / ВВП' }, { id: 'cap-m2', label: 'Кап / M2' }]}
-              onChange={(v) => setViewMode(v)}
-            />
-          </DrawerSection>
-          <DrawerSection label="Период">
-            <SegGroup value={period} options={PERIODS} onChange={(v) => setPeriod(v)} />
-          </DrawerSection>
-          <DrawerSection label="Таймфрейм">
-            <SegGroup value={timeframe} options={TIMEFRAMES} onChange={(v) => setTimeframe(v)} />
-          </DrawerSection>
+          <Dropdown
+            value={viewMode}
+            options={[{ id: 'cap-gdp', label: 'Кап / ВВП' }, { id: 'cap-m2', label: 'Кап / M2' }]}
+            onChange={(v) => setViewMode(v)}
+            title="База сравнения"
+          />
+          <PillGroup value={timeframe} options={TIMEFRAMES} onChange={(v) => setTimeframe(v)} />
+          <PeriodReadout label={periodLabel} />
+        </>
+      }
+      more={
+        <>
           {viewMode === 'cap-gdp' && (
             <DrawerSection label="Прогноз">
               <SegGroup
@@ -217,17 +213,17 @@ export default function EmbedBuffett() {
               />
             </DrawerSection>
           )}
-          <DrawerSection label="Капитализация">
-            <ToggleRow
-              label="Показывать капитализацию"
-              checked={showCap}
-              onChange={setShowCap}
-            />
+          <DrawerSection label="Слои">
+            <ToggleRow label="Показывать капитализацию" checked={showCap} onChange={setShowCap} />
           </DrawerSection>
+          <WheelHint>
+            Период: <b style={{ color: 'var(--text-primary)' }}>{periodLabel}</b> — <b>Shift + колесо</b> над графиком.
+            Обычное колесо — высота графика.
+          </WheelHint>
         </>
       }
     >
-      <div ref={chartBoxRef} style={{ flex: 1, position: 'relative', minHeight: 0 }}>
+      <div ref={chartBoxRef} style={{ position: 'absolute', inset: 0 }}>
         {status === 'ok' && (
           <SimpleChart
             data={projected.cap}
@@ -261,6 +257,6 @@ export default function EmbedBuffett() {
         {status === 'empty' && <EmbedMsg text="Нет данных" />}
         {status === 'error' && <EmbedMsg text="Ошибка загрузки" />}
       </div>
-    </EmbedShell>
+    </EmbedFrame>
   );
 }

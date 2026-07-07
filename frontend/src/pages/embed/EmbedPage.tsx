@@ -25,6 +25,7 @@ import EmbedSeasonality from './EmbedSeasonality';
 import EmbedFundsMoney from './EmbedFundsMoney';
 import EmbedStrength from './EmbedStrength';
 import EmbedFundTrades from './EmbedFundTrades';
+import EmbedScreener from './EmbedScreener';
 
 const DEFAULT_THEME = 'editorial-dark';
 const SITE = 'https://xn--80aklbnczmv.xn--p1ai'; // таймфрейм.рф
@@ -131,6 +132,10 @@ function renderIndicator(indicator: string | undefined) {
       return <EmbedStrength />;
     case 'fund-trades':
       return <EmbedFundTrades />;
+    case 'fund-movers':
+      return <EmbedFundTrades lockTab="movers" />;
+    case 'screener':
+      return <EmbedScreener />;
     default:
       return <EmbedPlaceholder name={indicator} />;
   }

@@ -21,14 +21,16 @@ import { getChartData, getInstrument } from '../../services/api';
 import { displayTicker } from '../../utils/displayTicker';
 import { formatNumber, formatPrice } from '../../utils/formatNumber';
 import { EmbedMsg } from './embedUi';
-import {
-  useEmbedSettings,
-  EmbedShell,
-  DrawerSection,
-  SegGroup,
-  ToggleRow,
-  AssetPickerInline,
-} from './EmbedSettings';
+import { DrawerSection, SegGroup, ToggleRow } from './EmbedSettings';
+import { EmbedFrame, AssetButton, PillGroup, Dropdown, PeriodReadout, WheelHint } from './EmbedToolbar';
+import { readLS, writeLS } from './embedPersist';
+
+// Компактные лейблы таймфрейма для инлайн-пилюль тулбара.
+const TF_COMPACT: { id: number; label: string }[] = [
+  { id: 5, label: '5м' },
+  { id: 60, label: '1ч' },
+  { id: 24, label: '1д' },
+];
 
 type ChartData = Awaited<ReturnType<typeof getChartData>>;
 type OiPoint = ChartData['open_interest'][number];
@@ -41,12 +43,6 @@ type DisplayMode = 'positions' | 'participants';
 type OIVariant = 'oi' | 'long' | 'short' | 'both' | 'net';
 
 type Series = { time: string; value: number }[];
-
-const TF_OPTS: { id: number; label: string }[] = [
-  { id: 5, label: '5 мин' },
-  { id: 60, label: '1 час' },
-  { id: 24, label: '1 день' },
-];
 
 const P_LABEL: Record<Period, string> = {
   '1d': '1Д', '1w': '1Н', '1m': '1М',
@@ -70,19 +66,10 @@ const OI_COLORS = {
   cyan: 'var(--oi-cyan)',
 };
 
-function periodOpts(interval: number) {
-  return (ALLOWED[interval] || ALLOWED[24]).map((id) => ({ id, label: P_LABEL[id] }));
-}
-
-function readLS(key: string, fallback: string): string {
-  try { return localStorage.getItem(key) || fallback; } catch { return fallback; }
-}
-
 const num = (v: number | null): number => v ?? 0;
 
 export default function EmbedOpenInterest() {
   const [params] = useSearchParams();
-  const settings = useEmbedSettings();
 
   const [instrument, setInstrument] = useState<string>(() =>
     params.get('instrument') || readLS('frame:embed:oi:instrument', 'SR'),
@@ -100,14 +87,14 @@ export default function EmbedOpenInterest() {
   const [status, setStatus] = useState<LoadStatus>('idle');
 
   // Persist выбор.
-  useEffect(() => { try { localStorage.setItem('frame:embed:oi:instrument', instrument); } catch { /* quota */ } }, [instrument]);
-  useEffect(() => { try { localStorage.setItem('frame:embed:oi:clgroup', clgroup); } catch { /* quota */ } }, [clgroup]);
-  useEffect(() => { try { localStorage.setItem('frame:embed:oi:interval', String(interval)); } catch { /* quota */ } }, [interval]);
-  useEffect(() => { try { localStorage.setItem('frame:embed:oi:period', period); } catch { /* quota */ } }, [period]);
-  useEffect(() => { try { localStorage.setItem('frame:embed:oi:displayMode', displayMode); } catch { /* quota */ } }, [displayMode]);
-  useEffect(() => { try { localStorage.setItem('frame:embed:oi:oiVariant', oiVariant); } catch { /* quota */ } }, [oiVariant]);
-  useEffect(() => { try { localStorage.setItem('frame:embed:oi:showPrice', String(showPrice)); } catch { /* quota */ } }, [showPrice]);
-  useEffect(() => { try { localStorage.setItem('frame:embed:oi:showExpirations', String(showExpirations)); } catch { /* quota */ } }, [showExpirations]);
+  useEffect(() => { writeLS('frame:embed:oi:instrument', instrument); }, [instrument]);
+  useEffect(() => { writeLS('frame:embed:oi:clgroup', clgroup); }, [clgroup]);
+  useEffect(() => { writeLS('frame:embed:oi:interval', String(interval)); }, [interval]);
+  useEffect(() => { writeLS('frame:embed:oi:period', period); }, [period]);
+  useEffect(() => { writeLS('frame:embed:oi:displayMode', displayMode); }, [displayMode]);
+  useEffect(() => { writeLS('frame:embed:oi:oiVariant', oiVariant); }, [oiVariant]);
+  useEffect(() => { writeLS('frame:embed:oi:showPrice', String(showPrice)); }, [showPrice]);
+  useEffect(() => { writeLS('frame:embed:oi:showExpirations', String(showExpirations)); }, [showExpirations]);
 
   // При смене таймфрейма скорректировать период, если он стал недоступен.
   const changeInterval = (next: number) => {
@@ -121,6 +108,16 @@ export default function EmbedOpenInterest() {
   const changePeriod = (next: Period) => {
     if (next === '1d' && interval === 24) setIntervalValue(60);
     setPeriod(next);
+  };
+
+  // Shift+колесо над графиком: гориз. зум времени. dir=+1 «внутрь» (короче период /
+  // меньше истории), -1 «наружу» (длиннее). Ходим по ALLOWED (отсортирован короткий→длинный).
+  const zoomPeriod = (dir: 1 | -1) => {
+    const allowed = ALLOWED[interval] || ALLOWED[24];
+    const i = allowed.indexOf(period);
+    if (i < 0) return;
+    const ni = Math.min(allowed.length - 1, Math.max(0, i - dir));
+    if (allowed[ni] !== period) changePeriod(allowed[ni]);
   };
 
   // Резолв имени, если пришёл только sec_id.
@@ -309,26 +306,25 @@ export default function EmbedOpenInterest() {
   const displayName = instrumentName || displayTicker(instrument);
 
   return (
-    <EmbedShell
-      settings={settings}
-      title={displayName}
-      subtitle="Открытые позиции"
-      drawer={
+    <EmbedFrame
+      onZoomTime={zoomPeriod}
+      lead={
+        <AssetButton
+          ticker={displayTicker(instrument)}
+          filterType="futures"
+          current={instrument}
+          onSelect={(secid, name) => { setInstrument(secid); setInstrumentName(name); }}
+        />
+      }
+      toolbar={
         <>
-          <DrawerSection label="Актив (фьючерс)">
-            <AssetPickerInline
-              filterType="futures"
-              current={instrument}
-              active={settings.open}
-              onSelect={(secid, name) => { setInstrument(secid); setInstrumentName(name); }}
-            />
-          </DrawerSection>
-          <DrawerSection label="Таймфрейм">
-            <SegGroup value={interval} options={TF_OPTS} onChange={changeInterval} />
-          </DrawerSection>
-          <DrawerSection label="Период">
-            <SegGroup value={period} options={periodOpts(interval)} onChange={changePeriod} />
-          </DrawerSection>
+          <PillGroup value={interval} options={TF_COMPACT} onChange={changeInterval} />
+          <Dropdown value={oiVariant} options={variantOpts} onChange={setOiVariant} title="Показатель ОИ" />
+          <PeriodReadout label={P_LABEL[period]} />
+        </>
+      }
+      more={
+        <>
           <DrawerSection label="Группа участников">
             <SegGroup
               value={clgroup}
@@ -343,19 +339,20 @@ export default function EmbedOpenInterest() {
               onChange={setDisplayMode}
             />
           </DrawerSection>
-          <DrawerSection label="Показатель">
-            <SegGroup<OIVariant> value={oiVariant} options={variantOpts} onChange={setOiVariant} />
-          </DrawerSection>
           <DrawerSection label="Слои">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <ToggleRow label="Цена" checked={showPrice} onChange={setShowPrice} hint="Линия цены фьючерса" />
               <ToggleRow label="Экспирации" checked={showExpirations} onChange={setShowExpirations} hint="Метки смены контракта" />
             </div>
           </DrawerSection>
+          <WheelHint>
+            Период: <b style={{ color: 'var(--text-primary)' }}>{P_LABEL[period]}</b> — <b>Shift + колесо</b> над графиком.
+            Обычное колесо — высота графика.
+          </WheelHint>
         </>
       }
     >
-      <div ref={chartBoxRef} style={{ flex: 1, position: 'relative', minHeight: 0 }}>
+      <div ref={chartBoxRef} style={{ position: 'absolute', inset: 0 }}>
         {status === 'ok' && data && (
           <SimpleChart
             data={chartData}
@@ -388,6 +385,6 @@ export default function EmbedOpenInterest() {
         )}
         {status === 'error' && <EmbedMsg text="Ошибка загрузки" />}
       </div>
-    </EmbedShell>
+    </EmbedFrame>
   );
 }

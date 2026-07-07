@@ -26,7 +26,9 @@ import {
   type FundDiffRow,
 } from '../../services/api';
 import { EmbedMsg } from './embedUi';
-import { useEmbedSettings, EmbedShell, DrawerSection, SegGroup } from './EmbedSettings';
+import { DrawerSection, SegGroup } from './EmbedSettings';
+import { EmbedFrame, PillGroup } from './EmbedToolbar';
+import { readLS, writeLS } from './embedPersist';
 import FundPicker, { type FundPickerFund } from '../../components/fundtrades/FundPicker';
 import UkMultiSelect, { type UkOption } from '../../components/fundtrades/UkMultiSelect';
 import CompanyFlowsTab from '../../components/fundtrades/CompanyFlowsTab';
@@ -52,8 +54,6 @@ const PERIODS: { id: FundTradesPeriod; label: string }[] = [
   { id: '1m', label: 'Месяц' },
   { id: '1y', label: 'Год' },
 ];
-const P_SHORT: Record<FundTradesPeriod, string> = { '1m': 'за месяц', '1y': 'за год' };
-
 const TABS: { id: EmbedTab; label: string }[] = [
   { id: 'movers', label: 'Покупки' },
   { id: 'snapshots', label: 'Снапшот' },
@@ -61,21 +61,7 @@ const TABS: { id: EmbedTab; label: string }[] = [
   { id: 'company', label: 'Потоки' },
 ];
 
-const SUBTITLE: Record<EmbedTab, string> = {
-  movers: 'консенсус движений · Δвеса',
-  snapshots: 'обзор снапшота по фонду',
-  funds: 'состав портфелей фондов',
-  company: 'потоки по компании',
-};
-
 // ─────────────────────────────── helpers ───────────────────────────────
-
-function readLS(key: string, fallback: string): string {
-  try { return localStorage.getItem(key) || fallback; } catch { return fallback; }
-}
-function writeLS(key: string, value: string): void {
-  try { localStorage.setItem(key, value); } catch { /* quota */ }
-}
 
 // "2026-04-30" → "Апрель 2026" — для month-picker день не показываем.
 const MONTHS_RU = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
@@ -241,13 +227,15 @@ function EmbedSection({
 
 // ─────────────────────────────── root ───────────────────────────────
 
-export default function EmbedFundTrades() {
-  const settings = useEmbedSettings();
+export default function EmbedFundTrades({ lockTab }: { lockTab?: EmbedTab } = {}) {
+  // lockTab — отдельный индикатор «Покупки фондов»: фиксируем вкладку movers,
+  // таб-бар прячем, а название и первичные контролы (период/метрика) — в тулбар.
   const [tab, setTab] = useState<EmbedTab>(() => {
+    if (lockTab) return lockTab;
     const v = readLS('frame:embed:fundtrades:tab', 'movers');
     return (['movers', 'snapshots', 'funds', 'company'] as const).includes(v as EmbedTab) ? (v as EmbedTab) : 'movers';
   });
-  useEffect(() => { writeLS('frame:embed:fundtrades:tab', tab); }, [tab]);
+  useEffect(() => { if (!lockTab) writeLS('frame:embed:fundtrades:tab', tab); }, [tab, lockTab]);
 
   // Список фондов — загружается один раз, шарится между movers/snapshots/funds.
   const [funds, setFunds] = useState<FundWithHistory[]>([]);
@@ -272,6 +260,14 @@ export default function EmbedFundTrades() {
 
   useEffect(() => { writeLS('frame:embed:fundtrades:period', period); }, [period]);
   useEffect(() => { writeLS('frame:embed:fundtrades:metric', moverMetric); }, [moverMetric]);
+
+  // Shift+колесо над movers: цикл по окну периода (месяц ↔ год).
+  const zoomPeriod = (dir: 1 | -1) => {
+    const i = PERIODS.findIndex((p) => p.id === period);
+    if (i < 0) return;
+    const ni = Math.min(PERIODS.length - 1, Math.max(0, i - dir));
+    if (PERIODS[ni] && PERIODS[ni].id !== period) setPeriod(PERIODS[ni].id);
+  };
 
   const fundsParam = useMemo(() => Array.from(selectedMoverFunds).join(','), [selectedMoverFunds]);
 
@@ -332,13 +328,16 @@ export default function EmbedFundTrades() {
     return [...filtered].sort(cmp);
   }, [funds, fundSort, selectedUks]);
 
-  // ── drawer per tab ──
-  const drawer: ReactNode =
-    tab === 'movers' ? (
-      <>
+  // ── «ещё» (⚙) per tab. Для movers период/метрика уходят инлайн в тулбар,
+  // когда виджет заперт на «Покупки фондов» (lockTab) — в ⚙ остаётся месяц + фонды. ──
+  const moversMore: ReactNode = (
+    <>
+      {!lockTab && (
         <DrawerSection label="Окно периода">
           <SegGroup value={period} options={PERIODS} onChange={setPeriod} />
         </DrawerSection>
+      )}
+      {!lockTab && (
         <DrawerSection label="Метрика">
           <SegGroup<'weight' | 'amount'>
             value={moverMetric}
@@ -346,55 +345,75 @@ export default function EmbedFundTrades() {
             onChange={setMoverMetric}
           />
         </DrawerSection>
-        {availableMonths.length > 0 && (
-          <DrawerSection label="Месяц снапшота">
-            <SegGroup<string>
-              value={asOf ?? resolvedMonth ?? availableMonths[0]}
-              options={availableMonths.map((m) => ({ id: m, label: formatMonthYear(m) }))}
-              onChange={setAsOf}
-            />
-          </DrawerSection>
-        )}
-        {moverPickerFunds.length > 1 && (
-          <DrawerSection label="Фонды">
-            <FundPicker funds={moverPickerFunds} mode="multi" selected={selectedMoverFunds} onChange={setSelectedMoverFunds} />
-          </DrawerSection>
-        )}
-      </>
-    ) : tab === 'funds' ? (
-      <>
-        <DrawerSection label="Сортировка">
-          <SegGroup<'return' | 'volume' | 'name'>
-            value={fundSort}
-            options={[{ id: 'return', label: 'Доходность' }, { id: 'volume', label: 'Объём' }, { id: 'name', label: 'Имя' }]}
-            onChange={setFundSort}
+      )}
+      {availableMonths.length > 0 && (
+        <DrawerSection label="Месяц снапшота">
+          <SegGroup<string>
+            value={asOf ?? resolvedMonth ?? availableMonths[0]}
+            options={availableMonths.map((m) => ({ id: m, label: formatMonthYear(m) }))}
+            onChange={setAsOf}
           />
         </DrawerSection>
-        {ukOptions.length > 1 && (
-          <DrawerSection label="Управляющая компания">
-            <UkMultiSelect options={ukOptions} selected={selectedUks} onChange={setSelectedUks} size="md" />
-          </DrawerSection>
-        )}
-      </>
-    ) : tab === 'snapshots' ? (
-      <DrawerSection label="Снапшот">
-        <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-          Выбор фонда, месяца и метрики — кнопками в самом виджете.
-        </div>
+      )}
+      {moverPickerFunds.length > 1 && (
+        <DrawerSection label="Фонды">
+          <FundPicker funds={moverPickerFunds} mode="multi" selected={selectedMoverFunds} onChange={setSelectedMoverFunds} />
+        </DrawerSection>
+      )}
+    </>
+  );
+  const fundsMore: ReactNode = (
+    <>
+      <DrawerSection label="Сортировка">
+        <SegGroup<'return' | 'volume' | 'name'>
+          value={fundSort}
+          options={[{ id: 'return', label: 'Доходность' }, { id: 'volume', label: 'Объём' }, { id: 'name', label: 'Имя' }]}
+          onChange={setFundSort}
+        />
       </DrawerSection>
-    ) : (
-      <DrawerSection label="Потоки по компании">
+      {ukOptions.length > 1 && (
+        <DrawerSection label="Управляющая компания">
+          <UkMultiSelect options={ukOptions} selected={selectedUks} onChange={setSelectedUks} size="md" />
+        </DrawerSection>
+      )}
+    </>
+  );
+  const more: ReactNode =
+    tab === 'movers' ? moversMore
+    : tab === 'funds' ? fundsMore
+    : (
         <div style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-          Выбор бумаги и фондов — кнопками в самом виджете.
+          {tab === 'snapshots'
+            ? 'Выбор фонда, месяца и метрики — кнопками в самом виджете.'
+            : 'Выбор бумаги и фондов — кнопками в самом виджете.'}
         </div>
-      </DrawerSection>
-    );
+      );
+
+  // Тулбар: заперт на movers → название + период/метрика инлайн; иначе — таб-бар.
+  const toolbar: ReactNode = lockTab === 'movers' ? (
+    <>
+      <PillGroup value={period} options={PERIODS} onChange={setPeriod} />
+      <PillGroup<'weight' | 'amount'>
+        value={moverMetric}
+        options={[{ id: 'weight', label: '% веса' }, { id: 'amount', label: 'Объём' }]}
+        onChange={setMoverMetric}
+      />
+    </>
+  ) : (
+    <TabBar tab={tab} onChange={setTab} />
+  );
 
   return (
-    <EmbedShell settings={settings} title="Сделки фондов" subtitle={tab === 'movers' ? `консенсус ${P_SHORT[period]} · Δвеса` : SUBTITLE[tab]} drawer={drawer}>
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-        <TabBar tab={tab} onChange={setTab} />
-        <div style={{ flex: 1, minHeight: 0, overflow: 'auto', position: 'relative', display: 'flex', flexDirection: 'column' }}>
+    <EmbedFrame
+      lead={lockTab === 'movers'
+        ? <span style={{ fontWeight: 800, fontSize: 13, letterSpacing: '-0.01em', paddingLeft: 2, flexShrink: 0 }}>Покупки фондов</span>
+        : undefined}
+      toolbar={toolbar}
+      more={more}
+      onZoomTime={tab === 'movers' ? zoomPeriod : undefined}
+    >
+      <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column' }}>
+        <div style={{ flex: 1, minHeight: 0, overflow: 'auto', position: 'relative', display: 'flex', flexDirection: 'column', padding: 10 }}>
           {tab === 'movers' && (
             <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: 12, position: 'relative' }}>
               {moversStatus === 'ok' ? (
@@ -424,7 +443,7 @@ export default function EmbedFundTrades() {
           )}
         </div>
       </div>
-    </EmbedShell>
+    </EmbedFrame>
   );
 }
 
