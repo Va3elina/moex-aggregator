@@ -213,9 +213,14 @@ export default function LoginPage() {
                     </p>
                 </div>
 
-                {/* OAuth buttons */}
+                {/* OAuth buttons.
+                    Telegram скрыт в режиме регистрации: новых юзеров через Telegram
+                    больше не заводим (бэкенд отвечает 403 на новый oauth_id). В режиме
+                    входа кнопка остаётся — уже привязанные Telegram-аккаунты логинятся. */}
                 <div className="space-y-2.5 mb-5">
-                    {providers.map(p => (
+                    {providers
+                        .filter(p => !(p.id === 'telegram' && mode === 'register'))
+                        .map(p => (
                         <button
                             key={p.id}
                             onClick={() => handleOAuth(p.id)}
