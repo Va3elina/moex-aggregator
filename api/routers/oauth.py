@@ -116,10 +116,12 @@ def _find_or_create_oauth_user(
     email: Optional[str],
     avatar_url: Optional[str],
     display_name: Optional[str] = None,
+    allow_registration: bool = True,
 ) -> tuple[User, bool]:
     """
     Ищет пользователя по OAuth провайдеру+ID.
-    Если не найден — создаёт нового.
+    Если не найден и allow_registration=True — создаёт нового.
+    Если не найден и allow_registration=False — 403 (провайдер не создаёт новых юзеров).
 
     Returns:
         (user, is_new) — пользователь и флаг "новый ли"
@@ -167,6 +169,12 @@ def _find_or_create_oauth_user(
                 return existing, False
 
     # 3. Создаём нового пользователя.
+    if not allow_registration:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Регистрация через {provider.capitalize()} отключена. Зарегистрируйтесь через email или другой способ входа.",
+        )
+
     # is_verified=True ТОЛЬКО если провайдер дал реальный email (Google/Yandex/
     # VK-с-email) — он уже подтверждён провайдером, код слать не нужно.
     # Нет email (Telegram всегда, VK часто) → synthetic @oauth.local →
@@ -556,6 +564,7 @@ async def telegram_oauth_callback(
             email=None,  # Telegram не даёт email
             avatar_url=data.photo_url,
             display_name=tg_display,
+            allow_registration=False,  # новую регистрацию через Telegram отключили — только вход уже привязанным
         )
 
         return _make_token_response(user, is_new, db)
