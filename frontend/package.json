@@ -19,6 +19,7 @@
     "fabric": "^6.9.1",
     "hls.js": "^1.6.16",
     "html2canvas": "^1.4.1",
+    "lightweight-charts": "^4.2.3",
     "lucide-react": "^0.562.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
