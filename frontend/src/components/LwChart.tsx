@@ -58,6 +58,36 @@ function themeColors(dark: boolean) {
   };
 }
 
+// Canvas НЕ понимает var(--x)/color-mix() — резолвим в конкретный rgb через probe-элемент
+// в контексте темы iframe. Иначе линии рисуются невидимым цветом → пустой график.
+function resolveColor(box: HTMLElement, color: string | undefined): string {
+  if (!color) return '#888888';
+  if (!color.includes('var(') && !color.includes('color-mix')) return color;
+  try {
+    const probe = document.createElement('span');
+    probe.style.color = color;
+    probe.style.position = 'absolute';
+    probe.style.pointerEvents = 'none';
+    box.appendChild(probe);
+    const rgb = getComputedStyle(probe).color;
+    box.removeChild(probe);
+    return rgb || color;
+  } catch {
+    return color;
+  }
+}
+
+// Логотип TradingView скрываем; атрибуция (по лицензии Lightweight Charts) — строкой
+// в футере/«О проекте». Стиль инжектим один раз (id-селектор ловит все инстансы).
+let tvLogoHidden = false;
+function hideTvLogo() {
+  if (tvLogoHidden || typeof document === 'undefined') return;
+  tvLogoHidden = true;
+  const st = document.createElement('style');
+  st.textContent = 'a#tv-attr-logo{display:none!important}';
+  document.head.appendChild(st);
+}
+
 export default function LwChart({ series, height, dark = true, markers, fitKey, initialBars }: LwChartProps) {
   const boxRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -88,6 +118,9 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: { time: false, price: false } },
     });
     chartRef.current = chart;
+    hideTvLogo();
+    const logoEl = box.querySelector('#tv-attr-logo') as HTMLElement | null;
+    if (logoEl) logoEl.style.display = 'none';
 
     // Тултип — строим безопасно через DOM (textContent), без innerHTML. Цвета —
     // CSS-var темы, чтобы адаптировался к светлой/тёмной внутри iframe.
@@ -187,23 +220,31 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
     chart.priceScale('left').applyOptions({ visible: usesLeft });
     chart.priceScale('right').applyOptions({ visible: usesRight });
 
+    const box = boxRef.current;
+    const rc = (col: string | undefined): string => (box ? resolveColor(box, col) : (col ?? '#888888'));
+
     for (const def of series) {
       const scaleId = def.scale ?? 'right';
       const priceFormat = def.axisFmt
         ? { type: 'custom' as const, minMove: 1, formatter: def.axisFmt }
         : undefined;
       const lw = (def.lineWidth ?? 2) as 1 | 2 | 3 | 4;
+      const col = rc(def.color);
       let s: ISeriesApi<'Line' | 'Area' | 'Histogram'>;
       if (def.type === 'line') {
-        s = chart.addLineSeries({ color: def.color, lineWidth: lw, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: def.lastValueVisible ?? true, priceFormat });
+        s = chart.addLineSeries({ color: col, lineWidth: lw, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: def.lastValueVisible ?? true, priceFormat });
       } else if (def.type === 'area') {
-        s = chart.addAreaSeries({ lineColor: def.color, topColor: def.areaTop ?? def.color, bottomColor: def.areaBottom ?? 'rgba(0,0,0,0)', lineWidth: lw, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: def.lastValueVisible ?? true, priceFormat });
+        s = chart.addAreaSeries({ lineColor: col, topColor: rc(def.areaTop ?? def.color), bottomColor: def.areaBottom ? rc(def.areaBottom) : 'rgba(0,0,0,0)', lineWidth: lw, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: def.lastValueVisible ?? true, priceFormat });
       } else {
-        s = chart.addHistogramSeries({ color: def.color, base: def.base ?? 0, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: def.lastValueVisible ?? false, priceFormat });
+        s = chart.addHistogramSeries({ color: col, base: def.base ?? 0, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: def.lastValueVisible ?? false, priceFormat });
       }
-      s.setData(def.data.map((p) => ({ time: p.time as UTCTimestamp, value: p.value, ...(p.color ? { color: p.color } : {}) })));
+      try {
+        s.setData(def.data.map((p) => ({ time: p.time as UTCTimestamp, value: p.value, ...(p.color ? { color: rc(p.color) } : {}) })));
+      } catch (err) {
+        console.error('LwChart setData failed:', def.id, err);
+      }
       if (def.zeroLine) {
-        s.createPriceLine({ price: 0, color: def.color, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: '' });
+        s.createPriceLine({ price: 0, color: col, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: '' });
       }
       seriesApiRef.current.push(s);
     }
@@ -212,7 +253,7 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       const ms: SeriesMarker<Time>[] = markers.map((m) => ({
         time: m.time as UTCTimestamp,
         position: m.position ?? 'aboveBar',
-        color: m.color ?? '#9A958C',
+        color: rc(m.color ?? '#9A958C'),
         shape: 'circle',
         text: m.text,
       }));
