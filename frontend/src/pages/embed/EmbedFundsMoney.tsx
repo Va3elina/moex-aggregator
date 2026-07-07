@@ -259,6 +259,7 @@ export default function EmbedFundsMoney() {
                 showNavigator={false}
                 hideTime
                 chartPadding={{ left: 60, right: 100 }}
+                bare
               />
             )}
             {status === 'loading' && <EmbedMsg text="Загрузка…" />}

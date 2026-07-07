@@ -16,7 +16,7 @@ import {
 } from '../../services/api';
 import { EmbedMsg } from './embedUi';
 import { DrawerSection, SegGroup, ToggleRow } from './EmbedSettings';
-import { EmbedFrame, PillGroup, Dropdown, PeriodReadout, WheelHint } from './EmbedToolbar';
+import { EmbedFrame, PillGroup, Dropdown } from './EmbedToolbar';
 import { readLS, writeLS, readBoolLS } from './embedPersist';
 
 type ViewMode = 'cap-gdp' | 'cap-m2';
@@ -177,15 +177,6 @@ export default function EmbedBuffett() {
   }, [viewMode, forecastTarget, capGdpRaw, cap, ratio]);
 
   const showForecast = viewMode === 'cap-gdp' && forecastTarget !== null;
-  const periodLabel = PERIODS.find((p) => p.id === period)?.label ?? '';
-
-  // Shift+колесо: гориз. зум по PERIODS (1Г…Всё). dir=+1 короче, -1 длиннее.
-  const zoomPeriod = (dir: 1 | -1) => {
-    const i = PERIODS.findIndex((p) => p.id === period);
-    if (i < 0) return;
-    const ni = Math.min(PERIODS.length - 1, Math.max(0, i - dir));
-    if (PERIODS[ni] && PERIODS[ni].id !== period) setPeriod(PERIODS[ni].id);
-  };
 
   return (
     <EmbedFrame
@@ -198,7 +189,7 @@ export default function EmbedBuffett() {
             title="База сравнения"
           />
           <PillGroup value={timeframe} options={TIMEFRAMES} onChange={(v) => setTimeframe(v)} />
-          <PeriodReadout label={periodLabel} />
+          <Dropdown value={period} options={PERIODS} onChange={(v) => setPeriod(v)} title="Период" />
         </>
       }
       more={
@@ -215,10 +206,6 @@ export default function EmbedBuffett() {
           <DrawerSection label="Слои">
             <ToggleRow label="Показывать капитализацию" checked={showCap} onChange={setShowCap} />
           </DrawerSection>
-          <WheelHint>
-            Период: <b style={{ color: 'var(--text-primary)' }}>{periodLabel}</b>. Колесо по нижней <b>оси дат</b> — сменить период;
-            по <b>ценовой оси</b> — вертикальный масштаб (как в TradingView).
-          </WheelHint>
         </>
       }
     >
@@ -250,8 +237,7 @@ export default function EmbedBuffett() {
             showNavigator={false}
             hideTime
             chartPadding={{ left: 70, right: 70 }}
-            axisZoom
-            onTimeZoom={zoomPeriod}
+            bare
           />
         )}
         {status === 'loading' && <EmbedMsg text="Загрузка…" />}
