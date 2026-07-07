@@ -27,25 +27,11 @@ import { formatCompact } from '../../utils/formatNumber';
 
 const TOOLBAR_H = 40;
 
-/* ───────────────────── vertical resize (обычное колесо) ───────────────────── */
-
-/**
- * Высоту панели держит расширение (снаружи iframe). Обычное колесо над графиком
- * шлёт запрос наверх; widget.js растит st.h и панель (а с ней и график) тянется.
- * В pop-out (нет родителя-панели) пробуем ресайзнуть само окно.
- */
-function requestVerticalResize(dh: number) {
-  try {
-    if (window.parent && window.parent !== window) {
-      window.parent.postMessage({ source: 'frame-embed', type: 'resize-v', dh }, '*');
-      return;
-    }
-  } catch { /* cross-origin — postMessage всё равно уходит */ }
-  try { window.resizeBy(0, dh); } catch { /* окно не скриптовое — no-op */ }
-}
-
 /* ───────────────────────────── shell ───────────────────────────── */
 
+// Фон = фон графика: тулбар и график читаются ОДНОЙ поверхностью (без карточки-
+// рамки). Зум/масштаб живёт внутри самого графика (SimpleChart axisZoom:
+// колесо по оси дат = период, по ценовой оси = масштаб), поэтому здесь wheel нет.
 const frameStyle: CSSProperties = {
   width: '100%',
   height: '100%',
@@ -58,6 +44,7 @@ const frameStyle: CSSProperties = {
   overflow: 'hidden',
 };
 
+// Тулбар — продолжение поверхности графика: без нижнего разделителя, на том же фоне.
 const toolbarRow: CSSProperties = {
   flexShrink: 0,
   display: 'flex',
@@ -65,59 +52,28 @@ const toolbarRow: CSSProperties = {
   gap: 8,
   minHeight: TOOLBAR_H,
   padding: '5px 8px',
-  borderBottom: '1px solid var(--border-color, rgba(128,128,128,0.18))',
   position: 'relative',
   zIndex: 3,
 };
 
 /**
- * EmbedFrame — обёртка виджета: тулбар (lead + inline + ⚙more) + область графика.
- * onZoomTime(dir): dir=+1 «зум внутрь» (меньше истории), -1 «зум наружу» (больше).
+ * EmbedFrame — обёртка виджета: тулбар (lead + inline + ⚙more) + область графика
+ * edge-to-edge. Никакого «окна вокруг графика»: одна поверхность, кнопки сверху.
  */
 export function EmbedFrame({
   lead,
   toolbar,
   more,
   moreLabel = 'Ещё',
-  onZoomTime,
   children,
 }: {
   lead?: ReactNode;
   toolbar?: ReactNode;
   more?: ReactNode;
   moreLabel?: string;
-  onZoomTime?: (dir: 1 | -1) => void;
   children: ReactNode;
 }) {
   const [moreOpen, setMoreOpen] = useState(false);
-  const chartRef = useRef<HTMLDivElement>(null);
-  const zoomRef = useRef(onZoomTime);
-  zoomRef.current = onZoomTime;
-
-  // Нативный не-пассивный wheel: React onWheel пассивен → preventDefault игнорился бы.
-  useEffect(() => {
-    const el = chartRef.current;
-    if (!el) return;
-    let accZoom = 0;
-    let accH = 0;
-    let raf = 0;
-    const flush = () => { raf = 0; if (accH) { requestVerticalResize(accH); accH = 0; } };
-    const onWheel = (e: WheelEvent) => {
-      if (e.shiftKey) {
-        const z = zoomRef.current;
-        if (!z) return;
-        e.preventDefault();
-        accZoom += e.deltaY;
-        if (Math.abs(accZoom) >= 120) { z(accZoom < 0 ? 1 : -1); accZoom = 0; }
-        return;
-      }
-      e.preventDefault();
-      accH += e.deltaY < 0 ? 36 : -36;
-      if (!raf) raf = requestAnimationFrame(flush);
-    };
-    el.addEventListener('wheel', onWheel, { passive: false });
-    return () => el.removeEventListener('wheel', onWheel);
-  }, []);
 
   return (
     <div style={frameStyle}>
@@ -145,7 +101,7 @@ export function EmbedFrame({
           </div>
         )}
       </div>
-      <div ref={chartRef} style={{ flex: 1, position: 'relative', minHeight: 0 }}>
+      <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
         {children}
       </div>
     </div>

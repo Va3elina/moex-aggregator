@@ -261,14 +261,6 @@ export default function EmbedFundTrades({ lockTab }: { lockTab?: EmbedTab } = {}
   useEffect(() => { writeLS('frame:embed:fundtrades:period', period); }, [period]);
   useEffect(() => { writeLS('frame:embed:fundtrades:metric', moverMetric); }, [moverMetric]);
 
-  // Shift+колесо над movers: цикл по окну периода (месяц ↔ год).
-  const zoomPeriod = (dir: 1 | -1) => {
-    const i = PERIODS.findIndex((p) => p.id === period);
-    if (i < 0) return;
-    const ni = Math.min(PERIODS.length - 1, Math.max(0, i - dir));
-    if (PERIODS[ni] && PERIODS[ni].id !== period) setPeriod(PERIODS[ni].id);
-  };
-
   const fundsParam = useMemo(() => Array.from(selectedMoverFunds).join(','), [selectedMoverFunds]);
 
   useEffect(() => {
@@ -410,7 +402,6 @@ export default function EmbedFundTrades({ lockTab }: { lockTab?: EmbedTab } = {}
         : undefined}
       toolbar={toolbar}
       more={more}
-      onZoomTime={tab === 'movers' ? zoomPeriod : undefined}
     >
       <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column' }}>
         <div style={{ flex: 1, minHeight: 0, overflow: 'auto', position: 'relative', display: 'flex', flexDirection: 'column', padding: 10 }}>

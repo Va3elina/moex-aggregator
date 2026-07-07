@@ -307,7 +307,6 @@ export default function EmbedOpenInterest() {
 
   return (
     <EmbedFrame
-      onZoomTime={zoomPeriod}
       lead={
         <AssetButton
           ticker={displayTicker(instrument)}
@@ -346,8 +345,8 @@ export default function EmbedOpenInterest() {
             </div>
           </DrawerSection>
           <WheelHint>
-            Период: <b style={{ color: 'var(--text-primary)' }}>{P_LABEL[period]}</b> — <b>Shift + колесо</b> над графиком.
-            Обычное колесо — высота графика.
+            Период: <b style={{ color: 'var(--text-primary)' }}>{P_LABEL[period]}</b>. Колесо по нижней <b>оси дат</b> — сменить период;
+            по <b>ценовой оси</b> — вертикальный масштаб (как в TradingView).
           </WheelHint>
         </>
       }
@@ -377,6 +376,8 @@ export default function EmbedOpenInterest() {
             formatSecondaryValue={(v) => formatNumber(v, 0)}
             niceTicks={true}
             niceTicksSecondary={true}
+            axisZoom
+            onTimeZoom={zoomPeriod}
           />
         )}
         {status === 'loading' && <EmbedMsg text="Загрузка…" />}
