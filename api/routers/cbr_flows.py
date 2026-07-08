@@ -68,8 +68,8 @@ CATEGORY_ORDER = {
         "Физические лица",
         "Клиенты российских кредитных организаций",
         "НФО",
-        "Российские кредитные организации",
         "Банк России",
+        "Российские кредитные организации",
     ],
 }
 
@@ -97,11 +97,18 @@ def get_cbr_flows(
     limits = get_indicator_limits(tier, "cbr_flows")
     delay_hours: int = int(limits.get("data_delay_hours") or 0)
     max_history_days = limits.get("max_history_days")
-    # Whitelist категорий: None → все. Иначе видимы только перечисленные,
-    # остальные вырезаются из значений и отдаются как locked_categories (апселл).
-    categories_whitelist = limits.get("categories_whitelist")
+    # Whitelist категорий per-type: набор участников у акций/ОФЗ и валюты разный,
+    # поэтому лимит хранится как {type: [...]} (или плоский список — legacy, или
+    # None → все категории). None для типа → ничего не режем. Иначе видимы только
+    # перечисленные, остальные вырезаются из значений и отдаются как
+    # locked_categories (апселл на basic).
+    raw_whitelist = limits.get("categories_whitelist")
+    if isinstance(raw_whitelist, dict):
+        type_whitelist = raw_whitelist.get(type)
+    else:
+        type_whitelist = raw_whitelist  # плоский список или None
 
-    wl_sig = "all" if categories_whitelist is None else ",".join(sorted(categories_whitelist))
+    wl_sig = "all" if type_whitelist is None else ",".join(sorted(type_whitelist))
     cache_key = f"cbr_flows:{type}:delay={delay_hours}:hist={max_history_days}:cats={wl_sig}"
     cached = get_or_set(cache_key)
     if cached is not None:
@@ -179,8 +186,8 @@ def get_cbr_flows(
     # апселлом), но их значения вырезаются из данных — free-тариф видит только
     # whitelist. basic/pro → whitelist=None → ничего не режется.
     locked_categories: list[str] = []
-    if categories_whitelist is not None:
-        allowed = set(categories_whitelist)
+    if type_whitelist is not None:
+        allowed = set(type_whitelist)
         locked_categories = [c for c in categories if c not in allowed]
         if locked_categories:
             locked_set = set(locked_categories)

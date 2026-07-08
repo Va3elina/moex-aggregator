@@ -216,14 +216,19 @@ export default function MobileCbrFlowsPage() {
     return data.periods.slice(-opt.months);
   }, [data, period]);
 
-  // Hidden categories filtering. Исключаем и скрытые вручную, и залоченные
-  // тарифом (их значения бэкенд не отдаёт на free). Локнутые остаются в
-  // data.categories — в шите показываем их с замком (апселл на Базовый).
+  // Категории под замком тарифа — источник истины бэкенд (locked_categories,
+  // per-type). Их значения на free не отдаются; в списке показываем с замком.
+  const lockedCategories = useMemo(
+    () => new Set(data?.locked_categories ?? []),
+    [data],
+  );
+
+  // Hidden categories filtering. Исключаем и скрытые вручную, и залоченные тарифом.
   const visibleCategories = useMemo(
     () => (data?.categories ?? []).filter(
-      (c) => !hiddenCategories.has(c) && (cbrAccess.isLoading || cbrAccess.canUseCategory(c)),
+      (c) => !hiddenCategories.has(c) && !lockedCategories.has(c),
     ),
-    [data, hiddenCategories, cbrAccess],
+    [data, hiddenCategories, lockedCategories],
   );
 
   const toggleCategory = (cat: string) => {
@@ -372,7 +377,7 @@ export default function MobileCbrFlowsPage() {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {data.categories.map((cat) => {
-                  const locked = !(cbrAccess.isLoading || cbrAccess.canUseCategory(cat));
+                  const locked = lockedCategories.has(cat);
                   const visible = !hiddenCategories.has(cat);
                   return (
                     <CategoryToggleRow
@@ -382,10 +387,7 @@ export default function MobileCbrFlowsPage() {
                       locked={locked}
                       onToggle={() => toggleCategory(cat)}
                       onUpgrade={() => {
-                        const reqTier = cbrAccess.requiredTierFor({ category: cat });
-                        if (reqTier) {
-                          showUpgrade({ tier: reqTier, featureName: `категория «${cat}»`, indicator: 'cbr_flows' });
-                        }
+                        showUpgrade({ tier: 'basic', featureName: `категория «${cat}»`, indicator: 'cbr_flows' });
                         setOptionsSheetOpen(false);
                       }}
                     />
