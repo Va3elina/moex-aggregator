@@ -304,9 +304,10 @@ export default function EmbedOpenInterest() {
           });
         }
       } else {
+        // Линия, а не area: Вадим — «должны быть просто две линии». Для net (пересекает
+        // ноль) area заливалась от базы и выглядела сломанной → линия + пунктир zeroLine.
         out.push({
-          id: 'oi', type: 'area', scale: 'right', color: colors.secondary, lineWidth: 2, label: labels.secondary,
-          areaTop: `color-mix(in srgb, ${colors.secondary} 22%, transparent)`, areaBottom: 'rgba(0,0,0,0)',
+          id: 'oi', type: 'line', scale: 'right', color: colors.secondary, lineWidth: 2, label: labels.secondary,
           zeroLine: oiVariant === 'net',
           data: oiSeries.secondary.map((p) => ({ time: toSec(p.time, intraday), value: p.value })),
           tipFmt: (v) => formatNumber(v, 0), axisFmt: (v) => formatNumber(v, 0),

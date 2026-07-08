@@ -13,7 +13,6 @@ import {
   getBuffettCapGdp,
   getBuffettCapM2,
   type BuffettCapGdpPoint,
-  type BuffettPeriod,
 } from '../../services/api';
 import { EmbedMsg } from './embedUi';
 import { DrawerSection, SegGroup, ToggleRow } from './EmbedSettings';
@@ -25,15 +24,6 @@ type Timeframe = '1d' | '1w' | '1m';
 type LoadStatus = 'idle' | 'loading' | 'ok' | 'empty' | 'error';
 type Point = { time: string; value: number };
 type Series = Point[];
-
-const PERIODS: { id: BuffettPeriod; label: string }[] = [
-  { id: '1y', label: '1Г' },
-  { id: '3y', label: '3Г' },
-  { id: '5y', label: '5Л' },
-  { id: '10y', label: '10Л' },
-  { id: '20y', label: '20Л' },
-  { id: 'all', label: 'Всё' },
-];
 
 const TIMEFRAMES: { id: Timeframe; label: string }[] = [
   { id: '1d', label: '1Д' },
@@ -65,9 +55,6 @@ export default function EmbedBuffett() {
   const [viewMode, setViewMode] = useState<ViewMode>(() =>
     (params.get('mode') === 'cap-m2' || readLS('frame:embed:buffett:mode', 'cap-gdp') === 'cap-m2') ? 'cap-m2' : 'cap-gdp',
   );
-  const [period, setPeriod] = useState<BuffettPeriod>(() =>
-    (params.get('period') || readLS('frame:embed:buffett:period', '1y')) as BuffettPeriod,
-  );
   const [timeframe, setTimeframe] = useState<Timeframe>(() => {
     const v = params.get('timeframe') || readLS('frame:embed:buffett:timeframe', '1m');
     return v === '1d' || v === '1w' ? v : '1m';
@@ -90,7 +77,6 @@ export default function EmbedBuffett() {
   const [status, setStatus] = useState<LoadStatus>('idle');
 
   useEffect(() => { writeLS('frame:embed:buffett:mode', viewMode); }, [viewMode]);
-  useEffect(() => { writeLS('frame:embed:buffett:period', period); }, [period]);
   useEffect(() => { writeLS('frame:embed:buffett:timeframe', timeframe); }, [timeframe]);
   useEffect(() => { writeLS('frame:embed:buffett:forecast', forecastTarget !== null ? String(forecastTarget) : ''); }, [forecastTarget]);
   useEffect(() => { writeLS('frame:embed:buffett:showCap', String(showCap)); }, [showCap]);
@@ -98,9 +84,11 @@ export default function EmbedBuffett() {
   useEffect(() => {
     let cancelled = false;
     setStatus('loading');
+    // Грузим ВСЮ историю: время меняется перетаскиванием/зумом оси дат (LwChart),
+    // дискретного периода больше нет (фидбэк Вадима — как в TradingView).
     const load =
       viewMode === 'cap-gdp'
-        ? getBuffettCapGdp(period, false, timeframe).then((r) => {
+        ? getBuffettCapGdp('all', false, timeframe).then((r) => {
             const rows = r?.data ?? [];
             return {
               raw: rows,
@@ -108,7 +96,7 @@ export default function EmbedBuffett() {
               ratio: rows.map((d) => ({ time: d.date, value: d.buffett ?? 0 })),
             };
           })
-        : getBuffettCapM2(period, false, timeframe).then((r) => ({
+        : getBuffettCapM2('all', false, timeframe).then((r) => ({
             raw: [] as BuffettCapGdpPoint[],
             cap: (r?.data ?? []).map((d) => ({ time: d.date, value: d.cap ?? 0 })),
             ratio: (r?.data ?? []).map((d) => ({ time: d.date, value: d.ratio ?? 0 })),
@@ -127,7 +115,7 @@ export default function EmbedBuffett() {
         setStatus('error');
       });
     return () => { cancelled = true; };
-  }, [viewMode, period, timeframe]);
+  }, [viewMode, timeframe]);
 
   // Резиновая высота графика.
   const chartBoxRef = useRef<HTMLDivElement>(null);
@@ -228,7 +216,6 @@ export default function EmbedBuffett() {
             title="База сравнения"
           />
           <PillGroup value={timeframe} options={TIMEFRAMES} onChange={(v) => setTimeframe(v)} />
-          <Dropdown value={period} options={PERIODS} onChange={(v) => setPeriod(v)} title="Период" />
         </>
       }
       more={
@@ -254,7 +241,7 @@ export default function EmbedBuffett() {
             series={lwSeries}
             height={chartH}
             dark={dark}
-            fitKey={`${viewMode}|${period}|${timeframe}|${forecastTarget ?? 'off'}`}
+            fitKey={`${viewMode}|${timeframe}|${forecastTarget ?? 'off'}`}
           />
         )}
         {status === 'loading' && <EmbedMsg text="Загрузка…" />}
