@@ -1371,6 +1371,63 @@ export interface FundTradesMovers {
     top_reduced: FundTradesMover[];
 }
 
+// ─── Общий портфель (агрегированный состав всех выбранных фондов акций) ───
+
+export interface FundPortfolioHolding {
+    akey: string;
+    asset_name: string;
+    isin: string | null;
+    /** Суммарная рублёвая стоимость позиции по всем выбранным фондам. */
+    value_rub: number;
+    /** Доля в общем портфеле по деньгам (value-weighted, суммируется к 100). */
+    weight_rub: number;
+    /** Средняя доля по выбранным фондам (equal-weight, отсутствие = 0%). */
+    weight_avg: number;
+    /** Сколько выбранных фондов держат бумагу. */
+    funds_holding: number;
+}
+
+export interface FundPortfolioFund {
+    ticker: string;
+    name: string;
+    uk: string | null;
+    uk_id: number | string | null;
+    nav_rub: number | null;
+    snapshot_date: string | null;
+}
+
+export interface FundPortfolio {
+    num_funds: number;
+    num_assets: number;
+    /** Суммарная стоимость акций в портфеле (Σ рублёвых позиций). */
+    total_value_rub: number;
+    /** Суммарная полная СЧА выбранных фондов (включая кэш/прочее). */
+    total_nav_rub: number;
+    /** nav-взвешенная доходность набора по периодам. */
+    returns: FundReturns;
+    /** Дата-отсечка свежести (Free/гость): null = без задержки. */
+    snapshot_cutoff?: string | null;
+    funds: FundPortfolioFund[];
+    holdings: FundPortfolioHolding[];
+}
+
+export async function getFundPortfolio(
+    // `funds` — comma-separated ТИКЕРЫ фондов (фронт резолвит выбранные УК в тикеры).
+    //   Приоритет над manager. Пусто = все фонды акций из whitelist.
+    // `manager` — comma-separated uk_id (на случай API-клиента; фронт шлёт funds).
+    opts: { funds?: string; manager?: string } = {},
+): Promise<FundPortfolio> {
+    const { funds, manager } = opts;
+    const params = new URLSearchParams();
+    if (funds) params.set('funds', funds);
+    if (manager) params.set('manager', manager);
+    const qs = params.toString();
+    const resp = await apiFetch(`${API_BASE}/api/fund-trades/portfolio${qs ? `?${qs}` : ''}`);
+    if (resp.status === 403) throw new Error('Доступно на тарифе Pro');
+    if (!resp.ok) throw new Error('Не удалось загрузить общий портфель');
+    return resp.json();
+}
+
 export async function listFundsWithHistory(): Promise<{ funds: FundWithHistory[]; count: number }> {
     const resp = await apiFetch(`${API_BASE}/api/fund-trades/funds`);
     if (resp.status === 403) throw new Error('Доступно на тарифе Pro');

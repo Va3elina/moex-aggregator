@@ -28,6 +28,7 @@ import {
     TrendingDown,
     Activity,
     ArrowLeftRight,
+    Briefcase,
 } from 'lucide-react';
 import {
     listFundsWithHistory,
@@ -35,7 +36,9 @@ import {
     getFundTradesMovers,
     getFundSnapshots,
     getFundSnapshotReview,
+    getFundPortfolio,
     type FundTradesPeriod,
+    type FundPortfolio,
     type FundWithHistory,
     type FundTradesMovers,
     type FundSnapshotsList,
@@ -55,9 +58,10 @@ import DelayedDataBadge from '../components/fundtrades/DelayedDataBadge';
 import LockedSnapshotTeaser from '../components/fundtrades/LockedSnapshotTeaser';
 import UkMultiSelect, { type UkOption } from '../components/fundtrades/UkMultiSelect';
 import FundPicker, { type FundPickerFund } from '../components/fundtrades/FundPicker';
+import CombinedPortfolioView from '../components/fundtrades/CombinedPortfolioView';
 import { useViewportWidth } from '../hooks/useViewportWidth';
 import { useGrowReveal } from '../hooks/useGrowReveal';
-import { usePersistedState } from '../hooks/usePersistedState';
+import { usePersistedState, usePersistedSet } from '../hooks/usePersistedState';
 import FundDetailModal, {
     AssetHistoryModal,
     formatRubShort,
@@ -66,7 +70,7 @@ import FundDetailModal, {
     formatShares,
 } from '../components/funds/FundDetailModal';
 
-type Tab = 'funds' | 'movers' | 'snapshots' | 'company';
+type Tab = 'funds' | 'portfolio' | 'movers' | 'snapshots' | 'company';
 
 const CATEGORY_LABEL: Record<string, string> = {
     stocks: 'Акции',
@@ -255,6 +259,14 @@ export default function FundTradesPage() {
     // ITEM 2 — предвыбранная бумага для перехода movers → «Потоки по компании».
     const [companyPreset, setCompanyPreset] = useState<{ asset_name: string; isin: string | null } | null>(null);
 
+    // Общий портфель — агрегированный состав выбранных фондов акций как один портфель.
+    // Выбор УК персистится (usePersistedSet, пусто = все); режим веса и период — тоже.
+    const [portfolioUks, setPortfolioUks] = usePersistedSet<string>('frame:fundtrades:portfolioUks');
+    const [portfolioMode, setPortfolioMode] = usePersistedState<'rub' | 'share'>('frame:fundtrades:portfolioMode', 'rub');
+    const [portfolioPeriod, setPortfolioPeriod] = usePersistedState<ReturnPeriodKey>('frame:fundtrades:portfolioPeriod', 'y1');
+    const [portfolio, setPortfolio] = useState<FundPortfolio | null>(null);
+    const [portfolioLoading, setPortfolioLoading] = useState(false);
+
     // Load funds list (один раз).
     useEffect(() => {
         if (!common.fund_trades_access) return;
@@ -291,6 +303,19 @@ export default function FundTradesPage() {
             .finally(() => setLoading(false));
     }, [tab, period, asOf, fundsParam, metric, common.fund_trades_access]);
 
+    // Load общий портфель (tab=portfolio; смена набора УК). Ждём загрузки списка
+    // фондов — без него не резолвить УК→тикеры (иначе пустой набор ошибочно = «все»).
+    useEffect(() => {
+        if (!common.fund_trades_access) return;
+        if (tab !== 'portfolio') return;
+        if (funds.length === 0) return;
+        setPortfolioLoading(true);
+        getFundPortfolio({ funds: portfolioFundsParam || undefined })
+            .then(setPortfolio)
+            .catch((e: Error) => setError(e.message))
+            .finally(() => setPortfolioLoading(false));
+    }, [tab, portfolioFundsParam, funds.length, common.fund_trades_access]);
+
     // Уникальные УК из загруженных фондов — список для UkMultiSelect на вкладке
     // «Состав фондов». Ключ — uk_id (стабильнее имени), name — uk-имя из
     // UK_LOGOS/данных, uk_id — для аватара. Сортируем по имени.
@@ -307,6 +332,12 @@ export default function FundTradesPage() {
         }
         return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
     }, [funds]);
+
+    // Общий портфель: выбранные УК → тикеры фондов (пусто = все whitelist-акции).
+    const portfolioFundsParam = useMemo(() => {
+        if (portfolioUks.size === 0) return '';
+        return funds.filter((f) => portfolioUks.has(ukKey(f))).map((f) => f.ticker).join(',');
+    }, [funds, portfolioUks]);
 
     // Все whitelist-фонды для FundPicker (multi) на вкладке «Покупки фондов».
     // FundPicker сам группирует по УК; передаём минимум полей ({ticker, name, uk, uk_id}).
@@ -427,6 +458,7 @@ export default function FundTradesPage() {
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                     {([
                         { id: 'funds' as const, label: 'Состав фондов', icon: Wallet },
+                        { id: 'portfolio' as const, label: 'Общий портфель', icon: Briefcase },
                         { id: 'movers' as const, label: 'Покупки фондов', icon: TrendingUp },
                         { id: 'company' as const, label: 'Потоки по компании', icon: ArrowLeftRight },
                         { id: 'snapshots' as const, label: 'Обзор снапшота', icon: Activity },
@@ -797,6 +829,53 @@ export default function FundTradesPage() {
                         </div>
                     ))}
                     </div>{/* /paper-card */}
+                </div>
+            )}
+
+            {tab === 'portfolio' && (
+                // Editorial-frame как у OI и «Деньги в фондах»; контролы сверху, состав на
+                // бежевой paper-card. Список УК и формат пончика — из «Покупок фондов».
+                <div className="editorial-frame">
+                    <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)', margin: '0 0 12px', lineHeight: 1.5, maxWidth: 760 }}>
+                        Все выбранные фонды акций собраны в один портфель, как будто ими управляет
+                        один управляющий. По рублям взвешивает бумаги по деньгам (крупные фонды
+                        весомее), средняя доля даёт равный вес каждому фонду.
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2 md:gap-3 mb-3 md:mb-4">
+                        <SegmentedControl<'rub' | 'share'>
+                            options={[
+                                { key: 'rub', label: 'По рублям' },
+                                { key: 'share', label: 'Средняя доля' },
+                            ]}
+                            value={portfolioMode}
+                            onChange={setPortfolioMode}
+                        />
+                        <SegmentedControl<ReturnPeriodKey>
+                            options={(['m1', 'm3', 'm6', 'y1'] as ReturnPeriodKey[]).map((k) => ({
+                                key: k,
+                                label: RETURN_PERIOD_LABEL[k],
+                            }))}
+                            value={portfolioPeriod}
+                            onChange={setPortfolioPeriod}
+                        />
+                        {ukOptions.length > 1 && (
+                            <UkMultiSelect
+                                options={ukOptions}
+                                selected={portfolioUks}
+                                onChange={setPortfolioUks}
+                                size="md"
+                            />
+                        )}
+                    </div>
+                    <div className="rounded-2xl bg-theme-primary p-3 md:p-5" style={{ border: '2px solid var(--text-primary)' }}>
+                        <CombinedPortfolioView
+                            portfolio={portfolio}
+                            loading={portfolioLoading}
+                            mode={portfolioMode}
+                            period={portfolioPeriod}
+                            variant="desktop"
+                        />
+                    </div>
                 </div>
             )}
 
