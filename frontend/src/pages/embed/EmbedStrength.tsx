@@ -5,7 +5,7 @@
  * режим графика / вселенная / валюта / показ индекса) — в drawer'е настроек.
  * Виджет целиком под PRO-токеном, поэтому тир-гейтинга нет.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import IndexChart from '../../components/strength/IndexChart';
 import BreadthChart from '../../components/strength/BreadthChart';
@@ -149,6 +149,33 @@ export default function EmbedStrength() {
     return { indexH: 0, breadthH: avail };
   }, [showPrice, boxH]);
 
+  // ── Hover (перекрестие + значения) — порт со StrengthPage, но px4=0: в embed нет
+  // px-4 обёрток графиков, только PAD. Двигаем hoverIndex от мыши → оба графика
+  // (IndexChart/BreadthChart) сами рисуют своё перекрестие+точку по общему X.
+  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const updateHover = useCallback((clientX: number) => {
+    if (!boxRef.current || !synced.length) return;
+    if (rafRef.current !== null) return; // throttle до одного RAF
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = null;
+      if (!boxRef.current) return;
+      const rect = boxRef.current.getBoundingClientRect();
+      const x = clientX - rect.left - PAD.left;
+      const chartW = rect.width - PAD.left - PAD.right;
+      if (x < 0 || x > chartW) { setHoverIndex(null); return; } // в жёлобе оси — прячем
+      const idx = Math.round((x / chartW) * (synced.length - 1));
+      setHoverIndex(idx >= 0 && idx < synced.length ? idx : null);
+    });
+  }, [synced.length]);
+  const handleLeave = useCallback(() => {
+    if (rafRef.current !== null) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
+    setHoverIndex(null);
+  }, []);
+  const hover = hoverIndex !== null ? synced[hoverIndex] : null;
+  const indexShort = currency === 'usd' ? 'RTSI' : 'IMOEX';
+  const fmtIdx = (v: number) => v.toLocaleString('ru-RU', { maximumFractionDigits: 0 });
+
   return (
     <EmbedFrame
       toolbar={
@@ -182,19 +209,27 @@ export default function EmbedStrength() {
         </>
       }
     >
-      <div ref={boxRef} style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div
+        ref={boxRef}
+        style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+        onMouseMove={(e) => updateHover(e.clientX)}
+        onMouseLeave={handleLeave}
+        onTouchStart={(e) => { if (e.touches[0]) updateHover(e.touches[0].clientX); }}
+        onTouchMove={(e) => { if (e.touches[0]) updateHover(e.touches[0].clientX); }}
+        onTouchEnd={handleLeave}
+      >
         {status === 'ok' && synced.length > 0 ? (
           <>
             {showPrice && (
               <>
-                <MiniLegend text={indexLegend} />
-                <IndexChart syncedData={synced} hoverIndex={null} height={indexH} padding={PAD} />
+                <MiniLegend text={hover ? `${indexShort} ${fmtIdx(hover.imoex)}` : indexLegend} />
+                <IndexChart syncedData={synced} hoverIndex={hoverIndex} height={indexH} padding={PAD} />
               </>
             )}
-            <MiniLegend text={`% акций выше EMA${ema}`} />
+            <MiniLegend text={hover ? `${hover.breadth.toFixed(1)}% выше EMA${ema}` : `% акций выше EMA${ema}`} />
             <BreadthChart
               syncedData={synced}
-              hoverIndex={null}
+              hoverIndex={hoverIndex}
               height={breadthH}
               mode={chartMode}
               padding={PAD}
