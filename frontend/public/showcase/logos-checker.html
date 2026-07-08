@@ -152,17 +152,21 @@
 
 <div class="toolbar">
   <input type="text" id="search" placeholder="Поиск по тикеру или названию…" />
+  <button class="btn-secondary" id="filter-missing">Только без лого</button>
   <button class="btn-secondary" id="filter-changed">Только изменённые</button>
   <button class="btn-secondary" id="reset-btn">Сбросить</button>
   <button class="btn-primary" id="download-btn">⬇ Скачать JSON</button>
   <span class="stats" id="stats"></span>
 </div>
 
-<h1>Проверка логотипов активов</h1>
+<h1>Проверка и назначение логотипов активов</h1>
 <p class="sub">
-  Кликни по логотипу слева — откроется список всех доступных лого.
-  Выбери правильный или нажми «Без логотипа» если этому тикеру лого не нужно.
-  Затем нажми «Скачать JSON» — файл с правками отправь Вадиму.
+  Кликни по иконке слева — откроется список всех лого из стикерпака.
+  Выбери нужный или нажми «Без логотипа», если лого не нужно.
+  Чтобы увидеть только активы без картинки — кнопка «Только без лого».
+  Затем «Скачать JSON» — файл с правками отправь Вадиму.
+  Для новой компании, которой нет в паке, добавь PNG-файл
+  <code>&lt;ТИКЕР&gt;.png</code> в <code>frontend/public/logos/</code>.
 </p>
 
 <div class="legend">
@@ -207,6 +211,19 @@ const NO_LOGO_BASES = new Set([
   'VI','RVI','RUSFAR3M','IB','BT',
 ]);
 
+// Бумаги, которые есть ТОЛЬКО в «Покупках фондов» (нет в каталоге ОИ/Сезонности,
+// поэтому не приходят из /api/instruments) и пока БЕЗ логотипа в стикерпаке.
+// Тикер = MOEX sec_id (как в fundConfig). Курируется вручную.
+const FUND_EXTRA = [
+  { ticker: 'ZAYM', name: 'Займер' },
+  { ticker: 'DELI', name: 'Делимобиль' },
+  { ticker: 'DIAS', name: 'Диасофт' },
+  { ticker: 'ETLN', name: 'Эталон' },
+  { ticker: 'EUTR', name: 'ЕвроТранс' },
+  { ticker: 'AQUA', name: 'Инарктика' },
+  { ticker: 'HNFG', name: 'Хэндерсон' },
+];
+
 function extractBase(sectype) {
   if (sectype.length > 4 && sectype.endsWith('F')) return sectype;
   if (sectype.length === 3) return sectype.slice(0, 2);
@@ -241,11 +258,26 @@ function esc(str) {
 // ============================================================================
 
 let availableLogos = [];
+let availableSet = new Set();
 let futuresBases = [];
 let stocks = [];
+let fundAssets = [];
 let overrides = {};
 let activeKey = null;
 let filterChangedOnly = false;
+let filterMissingOnly = false;
+
+// «Без нормального лого» = помечено null ИЛИ ссылается на несуществующий файл.
+function isMissing(logo) {
+  return logo === null || !availableSet.has(logo);
+}
+
+// Найти запись актива по типу ключа (futures/stock/fund) и идентификатору.
+function findItem(type, id) {
+  if (type === 'futures') return futuresBases.find(x => x.base === id);
+  if (type === 'fund') return fundAssets.find(x => x.sectype === id);
+  return stocks.find(x => x.sectype === id);
+}
 
 // ============================================================================
 //  Boot
@@ -256,6 +288,7 @@ async function boot() {
     const manifestResp = await fetch('/logos/sprite-manifest.json');
     const manifest = await manifestResp.json();
     availableLogos = Object.keys(manifest.logos).sort();
+    availableSet = new Set(availableLogos);
 
     const [allResp, futResp] = await Promise.all([
       fetch('/api/instruments'),
@@ -295,6 +328,11 @@ async function boot() {
         return acc;
       }, [])
       .sort((a, b) => a.sectype.localeCompare(b.sectype));
+
+    // Бумаги «Покупок фондов», которых нет в каталоге /api/instruments.
+    fundAssets = FUND_EXTRA
+      .map(f => ({ sectype: f.ticker, name: f.name, group: 'Покупки фондов', currentLogo: currentLogoFor(f.ticker) }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'ru'));
 
     const saved = localStorage.getItem('logos-checker-overrides');
     if (saved) {
@@ -427,6 +465,7 @@ function render() {
     const effective = getEffective(key, item.currentLogo);
     const dirty = isDirty(key, item.currentLogo);
     if (filterChangedOnly && !dirty) continue;
+    if (filterMissingOnly && !isMissing(effective)) continue;
     futGrid.appendChild(buildCard(key, item.base, item.name, item.group, item.currentLogo, effective, dirty));
     futShown++;
   }
@@ -454,6 +493,7 @@ function render() {
     const effective = getEffective(key, item.currentLogo);
     const dirty = isDirty(key, item.currentLogo);
     if (filterChangedOnly && !dirty) continue;
+    if (filterMissingOnly && !isMissing(effective)) continue;
     if (!groupsByCategory.has(item.group)) groupsByCategory.set(item.group, []);
     groupsByCategory.get(item.group).push({ key, item, effective, dirty });
   }
@@ -479,6 +519,35 @@ function render() {
   }
   content.appendChild(stockGroup);
 
+  // Фонды — бумаги только из «Покупок фондов» (нет в /api/instruments).
+  const fundGroup = document.createElement('div');
+  fundGroup.className = 'group';
+  const fundH2 = document.createElement('h2');
+  fundH2.textContent = 'Покупки фондов — бумаги без каталога (' + fundAssets.length + ')';
+  fundGroup.appendChild(fundH2);
+  const fundGrid = document.createElement('div');
+  fundGrid.className = 'grid';
+  let fundShown = 0;
+  for (const item of fundAssets) {
+    if (!matchesSearch(item)) continue;
+    const key = 'fund:' + item.sectype;
+    const effective = getEffective(key, item.currentLogo);
+    const dirty = isDirty(key, item.currentLogo);
+    if (filterChangedOnly && !dirty) continue;
+    if (filterMissingOnly && !isMissing(effective)) continue;
+    fundGrid.appendChild(buildCard(key, item.sectype, item.name, item.group, item.currentLogo, effective, dirty));
+    fundShown++;
+  }
+  if (fundShown === 0) {
+    const empty = document.createElement('p');
+    empty.style.color = '#7A8194';
+    empty.textContent = 'Нет совпадений';
+    fundGroup.appendChild(empty);
+  } else {
+    fundGroup.appendChild(fundGrid);
+  }
+  content.appendChild(fundGroup);
+
   updateStats();
 }
 
@@ -486,14 +555,12 @@ function updateStats() {
   let dirty = 0;
   for (const k of Object.keys(overrides)) {
     const [type, id] = k.split(':');
-    const item = type === 'futures'
-      ? futuresBases.find(x => x.base === id)
-      : stocks.find(x => x.sectype === id);
+    const item = findItem(type, id);
     if (item && overrides[k].logo !== item.currentLogo) dirty++;
   }
   const stats = document.getElementById('stats');
   stats.textContent = '';
-  stats.appendChild(document.createTextNode('Всего: ' + (futuresBases.length + stocks.length) + ' · Изменено: '));
+  stats.appendChild(document.createTextNode('Всего: ' + (futuresBases.length + stocks.length + fundAssets.length) + ' · Изменено: '));
   const b = document.createElement('b');
   b.textContent = String(dirty);
   stats.appendChild(b);
@@ -506,9 +573,7 @@ function updateStats() {
 function openPicker(key, original) {
   activeKey = key;
   const [type, id] = key.split(':');
-  const item = type === 'futures'
-    ? futuresBases.find(x => x.base === id)
-    : stocks.find(x => x.sectype === id);
+  const item = findItem(type, id);
   document.getElementById('modal-title').textContent = 'Выбор лого: ' + id;
   document.getElementById('modal-sub').textContent = item.name + ' · текущее: ' + (original || '«нет лого»');
   document.getElementById('modal-search').value = '';
@@ -548,9 +613,7 @@ function renderPickerGrid(filter, original) {
 function pickLogo(logo) {
   if (!activeKey) return;
   const [type, id] = activeKey.split(':');
-  const item = type === 'futures'
-    ? futuresBases.find(x => x.base === id)
-    : stocks.find(x => x.sectype === id);
+  const item = findItem(type, id);
   if (logo === item.currentLogo) {
     delete overrides[activeKey];
   } else {
@@ -577,12 +640,13 @@ function saveAndRender() {
 function buildOutput() {
   const futChanges = {};
   const stockChanges = {};
+  const fundChanges = {};
 
   for (const [key, val] of Object.entries(overrides)) {
     const [type, id] = key.split(':');
+    const item = findItem(type, id);
+    if (!item || val.logo === item.currentLogo) continue;
     if (type === 'futures') {
-      const item = futuresBases.find(x => x.base === id);
-      if (!item || val.logo === item.currentLogo) continue;
       futChanges[id] = {
         sectype_example: item.sectype,
         name: item.name,
@@ -590,9 +654,13 @@ function buildOutput() {
         current_logo: item.currentLogo,
         correct_logo: val.logo,
       };
+    } else if (type === 'fund') {
+      fundChanges[id] = {
+        name: item.name,
+        current_logo: item.currentLogo,
+        correct_logo: val.logo,
+      };
     } else {
-      const item = stocks.find(x => x.sectype === id);
-      if (!item || val.logo === item.currentLogo) continue;
       stockChanges[id] = {
         name: item.name,
         group: item.group,
@@ -604,21 +672,24 @@ function buildOutput() {
 
   return {
     generated_at: new Date().toISOString(),
-    reviewer_note: 'Правки логотипов от коллеги. Применить к FUT_BASE_TO_LOGO в InstrumentIcon.tsx и проверить акции.',
+    reviewer_note: 'Правки логотипов. futures → FUT_BASE_TO_LOGO, stock → STOCK_LOGO_OVERRIDE, fund → STOCK_LOGO_OVERRIDE (тикер акции). correct_logo = имя файла в /public/logos без .png. Применить в InstrumentIcon.tsx.',
     futures_corrections: futChanges,
     stock_corrections: stockChanges,
+    fund_corrections: fundChanges,
     summary: {
       total_futures_bases: futuresBases.length,
       total_stocks: stocks.length,
+      total_fund_extra: fundAssets.length,
       changed_futures: Object.keys(futChanges).length,
       changed_stocks: Object.keys(stockChanges).length,
+      changed_fund: Object.keys(fundChanges).length,
     },
   };
 }
 
 function downloadJSON() {
   const out = buildOutput();
-  if (out.summary.changed_futures + out.summary.changed_stocks === 0) {
+  if (out.summary.changed_futures + out.summary.changed_stocks + out.summary.changed_fund === 0) {
     if (!confirm('Ты не пометил ни одного изменения. Всё равно скачать пустой файл?')) return;
   }
   const blob = new Blob([JSON.stringify(out, null, 2)], { type: 'application/json' });
@@ -637,6 +708,13 @@ function downloadJSON() {
 
 function setupHandlers() {
   document.getElementById('search').addEventListener('input', () => render());
+
+  document.getElementById('filter-missing').addEventListener('click', e => {
+    filterMissingOnly = !filterMissingOnly;
+    e.target.classList.toggle('btn-primary', filterMissingOnly);
+    e.target.classList.toggle('btn-secondary', !filterMissingOnly);
+    render();
+  });
 
   document.getElementById('filter-changed').addEventListener('click', e => {
     filterChangedOnly = !filterChangedOnly;
@@ -671,9 +749,7 @@ function setupHandlers() {
     let original = null;
     if (activeKey) {
       const [type, id] = activeKey.split(':');
-      const item = type === 'futures'
-        ? futuresBases.find(x => x.base === id)
-        : stocks.find(x => x.sectype === id);
+      const item = findItem(type, id);
       original = item?.currentLogo;
     }
     renderPickerGrid(e.target.value, original);
