@@ -286,9 +286,11 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
         onClick={onClose}
       />
 
-      {/* Окно — bg-secondary + 2px border text-primary + hard shadow. */}
+      {/* Окно — bg-secondary + 2px border text-primary + hard shadow. Flex-колонка
+          + max-h-[90vh] (как в InstrumentSearchModal): список тянется на всю
+          доступную высоту, а не упирается в фикс. calc → окно не «укороченное». */}
       <div
-        className="instrument-modal relative w-full max-w-xl rounded-2xl max-h-[80vh] overflow-hidden"
+        className="instrument-modal relative w-full max-w-xl rounded-2xl max-h-[90vh] overflow-hidden flex flex-col"
         style={{
           backgroundColor: 'var(--bg-secondary)',
           border: '2px solid var(--text-primary)',
@@ -298,7 +300,7 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
       >
         {/* Header — заголовок «Выбор бумаги» убран (поиск самоочевиден). Поиск
             (flex-1) + «×» в одном ряду — как в Сезонности (InstrumentSearchModal). */}
-        <div className="px-6 pt-6 pb-3">
+        <div className="px-6 pt-6 pb-3 flex-shrink-0">
           <div className="flex items-center gap-3">
             {/* Search — outline 2px text-primary, компактный (py-2.5) как в Сезонности */}
             <div className="relative flex-1 min-w-0">
@@ -368,7 +370,7 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
             скроллбар (scrollbar-gutter stable) + одинаковые с строками отступы/
             gap/ширины → заголовки и значения гарантированно в одной сетке. */}
         <div
-          className="overflow-y-auto max-h-[calc(80vh-240px)] px-6 pb-6 styled-scrollbar"
+          className="flex-1 min-h-0 overflow-y-auto px-6 pb-6 styled-scrollbar"
           style={{ scrollbarGutter: 'stable' }}
         >
           {/* Sticky-шапка колонок — кликабельная сортировка, зеркалит строку списка
