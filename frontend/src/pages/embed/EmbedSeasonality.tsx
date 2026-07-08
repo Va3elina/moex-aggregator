@@ -210,7 +210,8 @@ export default function EmbedSeasonality() {
       lead={
         <AssetButton
           ticker={displayTicker(stock)}
-          filterType="stock"
+          excludeType="futures"
+          showIntradayBadge={false}
           current={stock}
           onSelect={(secid, name) => { setStock(secid); setStockName(name); }}
         />

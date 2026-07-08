@@ -323,6 +323,7 @@ export default function EmbedOpenInterest() {
         <AssetButton
           ticker={displayTicker(instrument)}
           filterType="futures"
+          hideLowActivity
           current={instrument}
           onSelect={(secid, name) => { setInstrument(secid); setInstrumentName(name); }}
         />
