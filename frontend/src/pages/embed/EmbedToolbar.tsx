@@ -21,9 +21,9 @@
  * Всё инлайн-стилями с CSS-var, чтобы работать в любой теме внутри iframe.
  */
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { PlusCircle, Settings, ChevronDown, Search } from 'lucide-react';
+import { PlusCircle, Settings, ChevronDown } from 'lucide-react';
 import InstrumentIcon from '../../components/InstrumentIcon';
-import { formatCompact } from '../../utils/formatNumber';
+import InstrumentSearchModal from '../../components/InstrumentSearchModal';
 
 const TOOLBAR_H = 40;
 
@@ -166,37 +166,43 @@ export function Popover({
 
 /* ───────────────────────────── asset button ───────────────────────────── */
 
-interface PickInstrument {
-  sec_id: string;
-  sectype: string;
-  name: string;
-  type: string;
-  group?: string;
-  daily_volume?: number;
-  day_change_pct?: number | null;
-}
-
 /**
- * AssetButton — «кружок-плюс» + текущий тикер; клик → поповер с поиском актива.
- * Отдельная самостоятельная кнопка (не спрятана в шестерёнке).
+ * AssetButton — «кружок-плюс» + текущий тикер; клик → ДЕСКТОПНАЯ модалка выбора
+ * актива (InstrumentSearchModal — та же, что на сайте: категории, поиск, избранное,
+ * сортировка по объёму/изменению). Замена компактного inline-пикера
+ * (фидбэк Вадима: «модалка именно с сайта пк версии»).
+ *
+ * `indicator` НЕ передаём: доступ в embed уже гейтится PRO-токеном на уровне
+ * страницы, а user-объект в iframe не догружен → повторный tier-lock ложно
+ * заблокировал бы Pro-активы.
+ *
+ * ⚠️ ИЗБРАННОЕ: модалка держит favoriteInstruments в localStorage, а embed —
+ * партиционированный сторонний iframe → это НЕ те же избранные, что на first-party
+ * сайте (для полной синхронизации нужен серверный стор — отдельная задача).
  */
 export function AssetButton({
   ticker,
-  filterType,
   current,
   onSelect,
+  filterType,
+  excludeType,
+  showIntradayBadge,
+  hideLowActivity,
 }: {
   ticker: string;
-  filterType: 'stock' | 'futures';
   current: string;
   onSelect: (secid: string, name: string) => void;
+  filterType?: 'stock' | 'futures';
+  excludeType?: string;
+  showIntradayBadge?: boolean;
+  hideLowActivity?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   return (
     <div style={{ position: 'relative', flexShrink: 0 }}>
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setOpen(true)}
         title="Выбрать актив"
         style={{
           display: 'inline-flex',
@@ -215,143 +221,15 @@ export function AssetButton({
         <span style={{ fontWeight: 800, fontSize: 12.5, letterSpacing: '-0.01em' }}>{ticker}</span>
       </button>
       {open && (
-        <Popover align="left" onClose={() => setOpen(false)}>
-          <AssetSearch
-            filterType={filterType}
-            current={current}
-            active={open}
-            onSelect={(s, n) => { onSelect(s, n); setOpen(false); }}
-          />
-        </Popover>
-      )}
-    </div>
-  );
-}
-
-/**
- * AssetSearch — поиск + плотный список инструментов (тот же, что в старом
- * AssetPickerInline, но живёт в поповере тулбара). /api/instruments — публичный.
- */
-function AssetSearch({
-  filterType,
-  current,
-  active,
-  onSelect,
-}: {
-  filterType: 'stock' | 'futures';
-  current: string;
-  active: boolean;
-  onSelect: (secid: string, name: string) => void;
-}) {
-  const [q, setQ] = useState('');
-  const [items, setItems] = useState<PickInstrument[]>([]);
-  const [loading, setLoading] = useState(true);
-  const loadedFor = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (!active || loadedFor.current === filterType) return;
-    let cancelled = false;
-    setLoading(true);
-    fetch(`/api/instruments?type=${filterType}`)
-      .then((r) => r.json())
-      .then((d) => {
-        if (cancelled) return;
-        setItems(d.instruments || []);
-        loadedFor.current = filterType;
-      })
-      .catch(() => { /* список не критичен */ })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [active, filterType]);
-
-  const ql = q.trim().toLowerCase();
-  const seen = new Map<string, PickInstrument>();
-  for (const it of items) {
-    const prev = seen.get(it.sectype);
-    if (!prev || (it.daily_volume || 0) > (prev.daily_volume || 0)) seen.set(it.sectype, it);
-  }
-  const list = Array.from(seen.values())
-    .filter((it) => !ql || it.sectype.toLowerCase().includes(ql) || it.name.toLowerCase().includes(ql))
-    .sort((a, b) => {
-      if (a.sectype === current) return -1;
-      if (b.sectype === current) return 1;
-      return (b.daily_volume || 0) - (a.daily_volume || 0);
-    })
-    .slice(0, 60);
-
-  return (
-    <div>
-      <div style={{ position: 'relative', marginBottom: 8 }}>
-        <Search size={14} style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Поиск актива"
-          autoFocus
-          style={{
-            width: '100%',
-            boxSizing: 'border-box',
-            padding: '7px 10px 7px 30px',
-            fontSize: 13,
-            borderRadius: 7,
-            border: '1.5px solid var(--border-color, rgba(128,128,128,0.4))',
-            background: 'var(--bg-secondary, transparent)',
-            color: 'var(--text-primary)',
-            outline: 'none',
-          }}
+        <InstrumentSearchModal
+          onSelect={(s, n) => { onSelect(s, n); setOpen(false); }}
+          onClose={() => setOpen(false)}
+          filterType={filterType}
+          excludeType={excludeType}
+          showIntradayBadge={showIntradayBadge}
+          hideLowActivity={hideLowActivity}
         />
-      </div>
-      <div
-        className="styled-scrollbar"
-        style={{
-          maxHeight: 240,
-          overflowY: 'auto',
-          border: '1px solid var(--border-color, rgba(128,128,128,0.25))',
-          borderRadius: 8,
-        }}
-      >
-        {loading ? (
-          <div style={{ padding: 16, textAlign: 'center', color: 'var(--text-secondary)', fontSize: 12 }}>Загрузка…</div>
-        ) : list.length === 0 ? (
-          <div style={{ padding: 16, textAlign: 'center', color: 'var(--text-secondary)', fontSize: 12 }}>Ничего не найдено</div>
-        ) : (
-          list.map((it) => {
-            const isCur = it.sectype === current;
-            return (
-              <button
-                key={it.sectype}
-                onClick={() => onSelect(it.sectype, it.name)}
-                style={{
-                  width: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 9,
-                  padding: '7px 10px',
-                  border: 'none',
-                  borderBottom: '1px solid var(--border-color, rgba(128,128,128,0.12))',
-                  background: isCur ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'transparent',
-                  color: 'var(--text-primary)',
-                  cursor: 'pointer',
-                  textAlign: 'left',
-                }}
-              >
-                <span style={{ flexShrink: 0, lineHeight: 0 }}>
-                  <InstrumentIcon sectype={it.sectype} size={22} />
-                </span>
-                <span style={{ fontWeight: 700, fontSize: 12.5, flexShrink: 0 }}>{it.sectype}</span>
-                <span style={{ fontSize: 11.5, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>
-                  {it.name}
-                </span>
-                {it.daily_volume ? (
-                  <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0, fontVariantNumeric: 'tabular-nums', minWidth: 44, textAlign: 'right' }}>
-                    {formatCompact(it.daily_volume)}
-                  </span>
-                ) : null}
-              </button>
-            );
-          })
-        )}
-      </div>
+      )}
     </div>
   );
 }
