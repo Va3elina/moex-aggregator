@@ -194,54 +194,17 @@
 
 // ============================================================================
 //  Текущие маппинги — копия из frontend/src/components/InstrumentIcon.tsx
-//  Если эти таблицы меняются на проде, надо обновить и здесь.
+//  (синхронизировано 2026-07-08). Если таблицы меняются — обновить и здесь.
 // ============================================================================
 
-const FUT_BASE_TO_LOGO = {
-  AF: 'AFLT', AK: 'AFKS', AL: 'ALRS', AS: 'ASTR',
-  BN: 'BANE', BS: 'BSPB',
-  CH: 'CHMF', CM: 'CBOM', FE: 'FESH', FL: 'FLOT',
-  GK: 'GMKN', GZ: 'GAZP', HD: 'HEAD', HY: 'HYDR',
-  IR: 'IRAO', KM: 'KMAZ', LE: 'LEAS', LK: 'LKOH',
-  MC: 'MTLR', ME: 'MOEX', MG: 'MAGN', MN: 'MGNT', MT: 'MTSS',
-  MV: 'MVID', NB: 'BELU', NM: 'NLMK', NV: 'NVTK', PH: 'PHOR',
-  PI: 'PIKK', PS: 'POSI', PX: 'PLZL',
-  RA: 'RASP', RD: 'RENI', RL: 'RUAL', RN: 'ROSN',
-  RT: 'RTKM', S0: 'SOFL', SC: 'SVCB', SE: 'SPBE',
-  SG: 'SNGSP', SH: 'SFIN', SN: 'SNGS', SO: 'SIBN', SP: 'SBERP',
-  SR: 'SBER', SS: 'SMLT', SZ: 'SGZH',
-  TB: 'T', TN: 'TRNFP', TP: 'TATNP', TT: 'TATN',
-  UN: 'UPRO', VB: 'VTBR', VK: 'VKCO', WU: 'WUSH',
-  X5: 'X5', YD: 'YDEX',
-  SBERF: 'SBER', GAZPF: 'GAZP',
-  BR: 'BRENT', BM: 'BRENT',
-  GD: 'GOLD', GL: 'GOLD', GLDRUBF: 'GOLD',
-  SV: 'SILVER', PT: 'PLATINUM', PD: 'PALLADIUM',
-  NG: 'GAS', NR: 'GAS', FF: 'GAS',
-  W4: 'WHEAT',
-  Si: 'USD', USDRUBF: 'USD', UC: 'USD',
-  Eu: 'EUR', EURRUBF: 'EUR', ED: 'EUR', EG: 'EUR',
-  CR: 'CNY', CNYRUBF: 'CNY',
-  JP: 'JPY', GU: 'GBP',
-  MX: 'MOEX_IDX', MM: 'MOEX_IDX', MY: 'MOEX_IDX',
-  IP: 'MOEX_IDX', IMOEXF: 'MOEX_IDX',
-  RI: 'RTS_IDX', RM: 'RTS_IDX',
-  USD000UTSTOM: 'USD',
-  EUR_RUB__TOM: 'EUR',
-  CNYRUB_TOM: 'CNY',
-  GLDRUB_TOM: 'GOLD',
-  IMOEX: 'MOEX_IDX',
-  RTSI: 'RTS_IDX',
-  MCFTR: 'MOEX_IDX',
-  RGBI: 'BONDS', RGBITR: 'BONDS', RB: 'BONDS',
-  AE: 'AED', AU: 'AUD', CA: 'CAD', CF: 'CHF',
-  HK: 'HKD', KZ: 'KZT', TR: 'TRY', EC: 'EUR_CAD',
-  AN: 'ALUMINUM', CE: 'COPPER', NC: 'NICKEL', ZC: 'ZINC',
-  KC: 'COFFEE', CC: 'COCOA', OJ: 'ORANGE', SA: 'SUGAR',
-};
+const FUT_BASE_TO_LOGO = { AF: 'AFLT', AK: 'raw_069', AL: 'raw_063', AS: 'raw_012', BN: 'raw_009', BS: 'raw_028', CH: 'raw_059', CM: 'CBOM', FE: 'FESH', FL: 'FLOT', FS: 'raw_123', GK: 'raw_062', GZ: 'GAZP', HD: 'HEAD', HY: 'raw_117', IR: 'IRAO', IS: 'raw_087', KM: 'KMAZ', LE: 'raw_094', LK: 'LKOH', MC: 'raw_071', ME: 'MOEX', MG: 'MAGN', MN: 'raw_042', MT: 'MTSS', MV: 'raw_093', NB: 'raw_082', NM: 'NLMK', NV: 'NVTK', PH: 'raw_076', PI: 'PIKK', PS: 'POSI', PX: 'PLZL', RA: 'raw_072', RD: 'raw_037', RL: 'raw_064', RN: 'ROSN', RT: 'raw_034', RU: 'raw_066', S0: 'raw_070', SC: 'SVCB', SE: 'raw_035', SG: 'SNGSP', SH: 'SFIN', SN: 'SNGS', SO: 'SIBN', SP: 'SBERP', SR: 'SBER', SS: 'SMLT', SZ: 'raw_068', TB: 'T', TN: 'raw_010', TP: 'TATNP', TT: 'TATN', UN: 'UPRO', VB: 'raw_027', VK: 'VKCO', WU: 'raw_067', X5: 'X5', YD: 'YDEX', SBERF: 'SBER', GAZPF: 'GAZP', BR: 'BRENT', BM: 'BRENT', GD: 'GOLD', GL: 'GOLD', GLDRUBF: 'GOLD', SV: 'SILVER', PT: 'PLATINUM', PD: 'PALLADIUM', NG: 'GAS', NR: 'GAS', FF: 'GAS', W4: 'raw_174', Si: 'USD', USDRUBF: 'USD', UC: 'USD', Eu: 'EUR', EURRUBF: 'EUR', ED: 'EUR', CR: 'CNY', CNYRUBF: 'CNY', JP: 'JPY', GU: 'GBP', MX: 'MOEX_IDX', MM: 'MOEX_IDX', MY: 'MOEX_IDX', IP: 'MOEX_IDX', IMOEXF: 'MOEX_IDX', RI: 'RTS_IDX', RM: 'RTS_IDX', SF: 'SP500_IDX', USD000UTSTOM: 'USD', EUR_RUB__TOM: 'EUR', CNYRUB_TOM: 'CNY', GLDRUB_TOM: 'GOLD', NATGAS_HH: 'GAS', TTF_GAS: 'GAS', IMOEX: 'MOEX_IDX', RTSI: 'RTS_IDX', MCFTR: 'MOEX_IDX', RGBI: 'BONDS', RGBITR: 'BONDS', RB: 'BONDS', AE: 'AED', AU: 'AUD', CA: 'CAD', CF: 'CHF', HK: 'HKD', KZ: 'KZT', TR: 'TRY', EC: 'EUR_CAD', AN: 'ALUMINUM', CE: 'COPPER', NC: 'NICKEL', ZC: 'ZINC', KC: 'COFFEE', CC: 'COCOA', OJ: 'ORANGE', SA: 'SUGAR' };
 
+// Приоритет full-ticker над fut-base (акции с raw_NNN-логами и переиспользованием).
+const STOCK_LOGO_OVERRIDE = { AFKS: 'HYDR', ALRS: 'raw_063', ASTR: 'raw_012', BANE: 'raw_009', BSPB: 'raw_028', CHMF: 'raw_059', BELU: 'raw_082', ELMT: 'raw_020', FEES: 'raw_123', GEMC: 'raw_090', JNOS: 'raw_149', KAZT: 'raw_078', KZOS: 'raw_080', LEAS: 'raw_094', LSNG: 'raw_123', MGNT: 'raw_042', MFGS: 'raw_149', MRKK: 'raw_123', MRKP: 'raw_123', MRKU: 'raw_123', MRKS: 'raw_123', MSNG: 'raw_005', MSRS: 'raw_123', NKNC: 'raw_079', OGKB: 'raw_005', OZPH: 'raw_086', PHOR: 'raw_076', PLZL: 'PLZL', RAGR: 'raw_073', RENI: 'raw_037', RASP: 'raw_072', RTKM: 'raw_034', RUAL: 'raw_064', TNSE: 'raw_130', UGLD: 'raw_058', USBN: 'raw_143', UWGN: 'raw_103', VTBR: 'raw_027', VSMO: 'raw_108', VJGZ: 'raw_004', TRNFP: 'raw_010', ABIO: 'raw_087', BANEP: 'raw_009', LSNGP: 'raw_123', MRKC: 'raw_123', MRKV: 'raw_123', MRKZ: 'raw_123', MTLRP: 'MTLR', RNFT: 'raw_066', RTKMP: 'raw_034' };
+
+// Инструменты с текстовым бейджем (нет лого в стикерпаке) — в пикере «нет лого».
 const NO_LOGO_BASES = new Set([
-  'CS','FN','HO','MA','OG','VI','FS','RVI','RUSFAR3M',
+  'CS','FN','HO','MA','OG','VI','RVI','RUSFAR3M','IB','BT',
 ]);
 
 function extractBase(sectype) {
@@ -251,6 +214,7 @@ function extractBase(sectype) {
 }
 
 function currentLogoFor(sectype) {
+  if (STOCK_LOGO_OVERRIDE[sectype]) return STOCK_LOGO_OVERRIDE[sectype];
   const base = extractBase(sectype);
   if (FUT_BASE_TO_LOGO[base]) return FUT_BASE_TO_LOGO[base];
   if (FUT_BASE_TO_LOGO[sectype]) return FUT_BASE_TO_LOGO[sectype];
