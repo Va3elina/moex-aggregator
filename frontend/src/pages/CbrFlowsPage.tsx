@@ -128,15 +128,20 @@ export default function CbrFlowsPage() {
     bottomBuffer: 96,
   });
 
+  // Категории под замком тарифа — источник истины бэкенд (locked_categories):
+  // набор per-type, значения таких категорий на free не отдаются. Они остаются
+  // в data.categories, чтобы показать их в пикере с замком (апселл на Базовый).
+  const lockedCategories = useMemo(
+    () => new Set(data?.locked_categories ?? []),
+    [data],
+  );
+
   // Видимые категории (для передачи в график): исключаем и скрытые вручную,
-  // и залоченные тарифом (их значения бэкенд не отдаёт на free). Локнутые
-  // остаются в data.categories — показываем их в пикере с замком (апселл).
+  // и залоченные тарифом.
   const visibleCategories = useMemo(() => {
     if (!data) return [];
-    return data.categories.filter(
-      (c) => !hiddenCategories.has(c) && (cbrAccess.isLoading || cbrAccess.canUseCategory(c)),
-    );
-  }, [data, hiddenCategories, cbrAccess]);
+    return data.categories.filter((c) => !hiddenCategories.has(c) && !lockedCategories.has(c));
+  }, [data, hiddenCategories, lockedCategories]);
 
   // Фильтрованные periods по выбранному period filter (последние N месяцев / всё)
   const visiblePeriods = useMemo(() => {
@@ -297,7 +302,7 @@ export default function CbrFlowsPage() {
                 <div style={{ padding: 'var(--sp-2)' }}>
                   {data.categories.map((cat) => {
                     // Локнутая тарифом категория — клик ведёт на апгрейд, а не toggle.
-                    const locked = !(cbrAccess.isLoading || cbrAccess.canUseCategory(cat));
+                    const locked = lockedCategories.has(cat);
                     const isHidden = hiddenCategories.has(cat);
                     const isLastVisible = !isHidden && !locked && visibleCategories.length === 1;
                     const color = getCategoryColor(cat, theme);
@@ -309,10 +314,7 @@ export default function CbrFlowsPage() {
                         key={cat}
                         onClick={() => {
                           if (locked) {
-                            const reqTier = cbrAccess.requiredTierFor({ category: cat });
-                            if (reqTier) {
-                              showUpgrade({ tier: reqTier, featureName: `категория «${cat}»`, indicator: 'cbr_flows' });
-                            }
+                            showUpgrade({ tier: 'basic', featureName: `категория «${cat}»`, indicator: 'cbr_flows' });
                             return;
                           }
                           if (!isLastVisible) toggleCategory(cat);
