@@ -15,12 +15,9 @@ export const INSTRUMENT_ICONS: Record<string, { icon: string; bg: string; color:
   // Крипто (нет лого в стикерпаке) — биткоин-фьючерсы IBIT (IB) и индекс МосБиржи (BT)
   IB: { icon: '₿', bg: '#F7931A', color: '#fff' },
   BT: { icon: '₿', bg: '#F7931A', color: '#fff' },
-  // Узкие индексы (нет лого в стикерпаке)
-  CS: { icon: 'ИП', bg: '#9333EA', color: '#fff' },
-  FN: { icon: 'ИФ', bg: '#1E40AF', color: '#fff' },
-  HO: { icon: 'НМ', bg: '#0F766E', color: '#fff' },
-  MA: { icon: 'ИМ', bg: '#7C2D12', color: '#fff' },
-  OG: { icon: 'ИНГ', bg: '#92400E', color: '#fff' },
+  // Секторные индексы МосБиржи (CS/FN/HO/MA/OG) — теперь через FUT_BASE_TO_LOGO
+  // (секторные иконки-плитки TradingView, файлы SECT_*). Здесь остаётся только
+  // RVI — индекс волатильности без лого в стикерпаке.
   VI: { icon: 'σ', bg: '#EF4444', color: '#fff' },
   // Spot инструменты валюты — теперь через FUT_BASE_TO_LOGO (USD/EUR/CNY/GOLD).
   // RGBI/RGBITR — через FUT_BASE_TO_LOGO (BONDS-герб).
@@ -105,6 +102,13 @@ export const FUT_BASE_TO_LOGO: Record<string, string> = {
   IP: 'MOEX_IDX', IMOEXF: 'MOEX_IDX',
   RI: 'RTS_IDX',  RM: 'RTS_IDX',
   SF: 'SP500_IDX',  // фьючерс на индекс S&P 500 (SPYF) — лого из стикерпака
+  // Секторные индексы МосБиржи — секторные иконки-плитки TradingView
+  // (s3-symbol-logo.tradingview.com/sector/*), растеризованы в SECT_*.png.
+  CS: 'SECT_CONSUMER',  // Потребительский сектор
+  FN: 'SECT_FINANCE',   // Финансы
+  OG: 'SECT_OILGAS',    // Нефть и газ
+  MA: 'SECT_METALS',    // Металлы и добыча
+  HO: 'SECT_REALTY',    // Недвижимость ДомКлик
   // Spot валюта (с биржи MOEX) → лого валюты из стикерпака
   USD000UTSTOM: 'USD',
   EUR_RUB__TOM: 'EUR',
