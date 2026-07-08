@@ -99,6 +99,13 @@ export const SEO_META: Record<string, SeoMeta> = {
         description: '',
         noindex: true,
     },
+    // Приватная песочница/конструктор — не в навигации, noindex. Нужна в SEO_META,
+    // чтобы бэкенд отдавал HTML по /sandbox (иначе неизвестный роут → 404).
+    '/sandbox': {
+        title: 'Песочница — конструктор индикаторов | FRAME',
+        description: '',
+        noindex: true,
+    },
     '/strength': {
         title: 'Сила рынка — market breadth MOEX | FRAME',
         description:
