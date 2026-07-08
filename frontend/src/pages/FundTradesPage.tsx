@@ -517,10 +517,9 @@ export default function FundTradesPage() {
                             )}
                         </div>
                     )}
-                    {/* Бежевая paper-card вокруг сетки карточек — как график в
-                        Сезонности/OI: bg-theme-primary + rounded-2xl + 2px inkstroke.
-                        Белые карточки сохраняют контраст на бежевом фоне. */}
-                    <div className="rounded-2xl bg-theme-primary p-3 md:p-5" style={{ border: '2px solid var(--text-primary)' }}>
+                    {/* Сетка карточек лежит прямо на editorial-frame — без
+                        дополнительной бежевой подложки и внутренней рамки. */}
+                    <div>
                     {loading && funds.length === 0 && (
                         <div style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>Загружаем фонды…</div>
                     )}
