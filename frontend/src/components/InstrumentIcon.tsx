@@ -110,6 +110,9 @@ export const FUT_BASE_TO_LOGO: Record<string, string> = {
   EUR_RUB__TOM: 'EUR',
   CNYRUB_TOM: 'CNY',
   GLDRUB_TOM: 'GOLD',
+  // Spot сырьё (continuous-ряды) → те же лого, что у фьючерсов-аналогов
+  NATGAS_HH: 'GAS',
+  TTF_GAS: 'GAS',
   // Spot индексы → лого MOEX/RTS из стикерпака
   IMOEX: 'MOEX_IDX',
   RTSI: 'RTS_IDX',
