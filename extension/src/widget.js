@@ -16,6 +16,7 @@
   var EMBED_BASE = window.FRAME_WIDGET_EMBED_BASE || 'https://xn--80aklbnczmv.xn--p1ai';
 
   var INDICATORS = [
+    { id: 'signals', label: '🔔 Сигналы', group: 'signals' },
     { id: 'oi', label: 'Открытые позиции', group: 'instrument' },
     { id: 'seasonality', label: 'Сезонность', group: 'instrument' },
     { id: 'screener', label: 'Скринер сигналов', group: 'instrument' },
@@ -27,12 +28,21 @@
     { id: 'cbr-flows', label: 'Потоки ЦБ', group: 'market' }
   ];
 
+  // deep_link.route (из AnomalyItem) → id embed-индикатора. Клик по сигналу в
+  // ленте /embed/signals шлёт postMessage наверх → открываем нужную панель.
+  var ROUTE_TO_ID = {
+    '/oi': 'oi', '/funds-money': 'funds-money', '/seasonality': 'seasonality',
+    '/strength': 'strength', '/buffett': 'buffett', '/cbr-flows': 'cbr-flows',
+    '/fund-trades': 'fund-trades'
+  };
+
   var DEFAULT_THEME = 'editorial-dark';
   var KEY_PANELS = 'framePanels'; // [{id,x,y,w,h,theme}]
 
   // Стартовый размер панели по индикатору — чтобы график+оси влезали сразу,
   // без ручного ресайза (фидбек Вадима «нужно развернуть чтобы было видно всё»).
   var SIZES = {
+    'signals':     { w: 560, h: 620 }, // лента сигналов — узкая и высокая
     'oi':          { w: 640, h: 580 },
     'seasonality': { w: 600, h: 520 },
     'screener':    { w: 560, h: 620 }, // таблица-лента — узкая и высокая
@@ -110,7 +120,7 @@
     '.fw-resize::after{content:"";position:absolute;right:3px;bottom:3px;width:7px;height:7px;border-right:2px solid var(--w-dim);border-bottom:2px solid var(--w-dim)}'
   ].join('');
 
-  function groupLabel(g) { return g === 'instrument' ? 'По инструменту' : 'По рынку'; }
+  function groupLabel(g) { return g === 'signals' ? 'Центр сигналов' : g === 'instrument' ? 'По инструменту' : 'По рынку'; }
 
   function h(tag, attrs, kids) {
     var e = document.createElement(tag);
@@ -150,14 +160,21 @@
     var zTop = 2147483600;
 
     function persist() { lsSet(KEY_PANELS, panels.map(function (p) { return p.state; })); }
-    function embedUrl(id, theme, pid) {
+    function embedUrl(id, theme, pid, extra) {
       // Токен — во fragment (#token=), НЕ в query: fragment не уходит на сервер
       // (нет в access-логах таймфрейм.рф) и не попадает в Referer. embed читает
       // его из location.hash (EmbedPage.tsx).
       // pid — стабильный id панели: embed неймспейсит по нему настройки, чтобы
       // каждое окно (в т.ч. два одного индикатора) держало свою конфигурацию.
-      return EMBED_BASE + '/embed/' + id + '?theme=' + theme +
-        (pid ? '&pid=' + encodeURIComponent(pid) : '') +
+      // extra — доп. query-параметры (напр. instrument из сигнала); передаём ТОЛЬКО
+      // на первый рендер панели, дальше embed сам персистит выбор в pid-LS (см.
+      // reload() — на смену темы/токена extra не шлём, чтобы не перебивать выбор юзера).
+      var q = '?theme=' + theme + (pid ? '&pid=' + encodeURIComponent(pid) : '');
+      if (extra) Object.keys(extra).forEach(function (k) {
+        var v = extra[k];
+        if (v != null && v !== '') q += '&' + encodeURIComponent(k) + '=' + encodeURIComponent(v);
+      });
+      return EMBED_BASE + '/embed/' + id + q +
         (extToken ? '#token=' + encodeURIComponent(extToken) : '');
     }
     function clampPanel(st) {
@@ -242,7 +259,7 @@
       if (bb !== null) st.h = bb - st.y;
     }
 
-    function spawnPanel(id, saved) {
+    function spawnPanel(id, saved, opts) {
       var ind = INDICATORS.find(function (x) { return x.id === id; });
       if (!ind) return;
       var sz = SIZES[id] || DEFAULT_SIZE;
@@ -269,10 +286,12 @@
       var el = h('div', { class: 'fw panel fw-panel', 'data-theme': st.theme }, [head, body, resize]);
 
       function applyLayout() { el.style.left = st.x + 'px'; el.style.top = st.y + 'px'; el.style.width = st.w + 'px'; el.style.height = st.h + 'px'; }
-      function reload() { iframe.src = embedUrl(st.id, st.theme, st.pid); }
+      // extra шлём только на ПЕРВЫЙ рендер (opts из сигнала); reload() на смене
+      // темы/токена — без extra, чтобы не перебивать последующий выбор актива юзером.
+      function reload(extra) { iframe.src = embedUrl(st.id, st.theme, st.pid, extra); }
       function toFront() { zTop += 1; el.style.zIndex = zTop; }
 
-      applyLayout(); el.style.zIndex = ++zTop; reload();
+      applyLayout(); el.style.zIndex = ++zTop; reload(opts);
       el.addEventListener('pointerdown', toFront, true);
 
       ctrls.addEventListener('click', function (e) {
@@ -350,6 +369,31 @@
         resizeTimer = null;
         panels.forEach(function (p) { clampPanel(p.state); p.applyLayout(); });
       }, 150);
+    });
+
+    // ── Приём сигнала из ленты /embed/signals → открыть панель индикатора ──
+    // Клик по сигналу в панели «Сигналы» шлёт postMessage наверх. Источник сверяем
+    // по origin И по contentWindow (identity — подделать нельзя), чтобы посторонняя
+    // страница терминала не могла спавнить наши панели. deep_link.secid → первый
+    // рендер панели на этом активе (дальше embed персистит сам).
+    window.addEventListener('message', function (e) {
+      var d = e.data;
+      if (!d || d.source !== 'frame-embed' || d.type !== 'open-signal') return;
+      if (e.origin !== EMBED_BASE) return;
+      var fromOurs = panels.some(function (p) { return p.iframe && p.iframe.contentWindow === e.source; });
+      if (!fromOurs) return;
+      var dl = d.deepLink || {};
+      var id = ROUTE_TO_ID[dl.route];
+      if (!id) return;
+      var extra = {};
+      if (dl.secid) extra.instrument = dl.secid;
+      if (dl.category) extra.category = dl.category;
+      if (dl.clgroup) extra.clgroup = dl.clgroup;
+      if (dl.interval != null) extra.interval = dl.interval;
+      if (dl.mode) extra.mode = dl.mode;
+      if (dl.variant) extra.variant = dl.variant;
+      if (dl.period) extra.period = dl.period;
+      if (spawnPanel(id, null, extra)) persist();
     });
 
     // Загрузка токена + восстановление панелей.
