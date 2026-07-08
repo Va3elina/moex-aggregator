@@ -51,8 +51,9 @@ import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 import PageHeader from '../components/PageHeader';
 import Dropdown from '../components/Dropdown';
 import SegmentedControl from '../components/SegmentedControl';
-import { UK_LOGOS, DONUT_COLORS, fundAssetName, fundAssetColor, resolveFundLogo, stripUkName } from '../config/fundConfig';
+import { UK_LOGOS, DONUT_COLORS, fundAssetName, fundAssetColor, resolveFundLogo, resolveFundTicker, stripUkName } from '../config/fundConfig';
 import Donut from '../components/funds/Donut';
+import InstrumentIcon from '../components/InstrumentIcon';
 import CompanyFlowsTab from '../components/fundtrades/CompanyFlowsTab';
 import DelayedDataBadge from '../components/fundtrades/DelayedDataBadge';
 import LockedSnapshotTeaser from '../components/fundtrades/LockedSnapshotTeaser';
@@ -1671,6 +1672,27 @@ function SnapshotSection({
 }
 
 
+// Лого бумаги в строке movers: ISIN → каноничный тикер → InstrumentIcon
+// (STOCK_LOGO_OVERRIDE → стикерпак → /logos/<тикер>.png). Как в CompanyFlowsTab.
+// Нет тикера (облигация/ОФЗ) → цветная точка.
+function MoverAssetMark({ name, isin, size = 22 }: { name: string; isin?: string | null; size?: number }) {
+    const ticker = resolveFundTicker(name, isin);
+    if (ticker) return <InstrumentIcon sectype={ticker} size={size} rounded="full" />;
+    const dot = fundAssetColor(name, isin) ?? 'var(--text-muted)';
+    return (
+        <span
+            style={{
+                width: size,
+                height: size,
+                borderRadius: '50%',
+                background: dot,
+                flexShrink: 0,
+                display: 'inline-block',
+            }}
+        />
+    );
+}
+
 function MoversColumn({
     title,
     icon: Icon,
@@ -1721,15 +1743,15 @@ function MoversColumn({
                     gap: 8,
                     marginBottom: 12,
                     paddingBottom: 10,
-                    borderBottom: `1px solid ${color}`,
+                    borderBottom: '1px solid var(--border-color)',
                 }}
             >
-                <Icon size={18} color={color} strokeWidth={2.2} />
+                <Icon size={18} color="var(--text-primary)" strokeWidth={2.2} />
                 <h3
                     style={{
                         fontSize: 'var(--fs-md)',
                         fontWeight: 700,
-                        color,
+                        color: 'var(--text-primary)',
                         margin: 0,
                     }}
                 >
@@ -1770,8 +1792,8 @@ function MoversColumn({
                                     : '1px dashed color-mix(in srgb, var(--text-primary) 12%, transparent)',
                             }}
                         >
-                            {/* Верх: ранг + имя + значение (% веса или ₽) */}
-                            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                            {/* Верх: ранг + лого + имя + значение (% веса или ₽) */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                 <span
                                     style={{
                                         fontSize: 'var(--fs-xs)',
@@ -1782,6 +1804,7 @@ function MoversColumn({
                                 >
                                     {i + 1}.
                                 </span>
+                                <MoverAssetMark name={m.asset_name} isin={mIsin} size={22} />
                                 <span
                                     style={{
                                         flex: 1,
@@ -1820,7 +1843,7 @@ function MoversColumn({
                                         overflow: 'hidden',
                                     }}
                                 >
-                                    <div style={{ width: `${pct * (reveal[i] ?? 1)}%`, height: '100%', background: color, borderRadius: 3 }} />
+                                    <div style={{ width: `${pct * (reveal[i] ?? 1)}%`, height: '100%', background: 'color-mix(in srgb, var(--text-primary) 30%, transparent)', borderRadius: 3 }} />
                                 </div>
                                 <span
                                     style={{

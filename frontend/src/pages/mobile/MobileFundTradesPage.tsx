@@ -49,7 +49,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
 import { usePersistedState, usePersistedSet } from '../../hooks/usePersistedState';
 import { useGrowReveal } from '../../hooks/useGrowReveal';
-import { UK_LOGOS, DONUT_COLORS, fundAssetName, fundAssetColor, resolveFundLogo, stripUkName } from '../../config/fundConfig';
+import { UK_LOGOS, DONUT_COLORS, fundAssetName, fundAssetColor, resolveFundLogo, resolveFundTicker, stripUkName } from '../../config/fundConfig';
+import InstrumentIcon from '../../components/InstrumentIcon';
 import Donut from '../../components/funds/Donut';
 import FundDetailModal, {
   AssetHistoryModal,
@@ -1297,6 +1298,16 @@ function MoversTab({
   );
 }
 
+// Лого бумаги в строке movers: ISIN → тикер → InstrumentIcon, иначе цветная точка.
+function MoverAssetMark({ name, isin, size = 20 }: { name: string; isin?: string | null; size?: number }) {
+  const ticker = resolveFundTicker(name, isin);
+  if (ticker) return <InstrumentIcon sectype={ticker} size={size} rounded="full" />;
+  const dot = fundAssetColor(name, isin) ?? 'var(--text-muted)';
+  return (
+    <span style={{ width: size, height: size, borderRadius: '50%', background: dot, flexShrink: 0, display: 'inline-block' }} />
+  );
+}
+
 function MoversColumn({
   title,
   icon: Icon,
@@ -1342,11 +1353,11 @@ function MoversColumn({
           gap: 8,
           marginBottom: 10,
           paddingBottom: 8,
-          borderBottom: `1px solid ${color}`,
+          borderBottom: '1px solid var(--border-color)',
         }}
       >
-        <Icon size={16} color={color} strokeWidth={2.2} />
-        <h3 style={{ fontSize: 'var(--fs-sm)', fontWeight: 800, color, margin: 0 }}>{title}</h3>
+        <Icon size={16} color="var(--text-primary)" strokeWidth={2.2} />
+        <h3 style={{ fontSize: 'var(--fs-sm)', fontWeight: 800, color: 'var(--text-primary)', margin: 0 }}>{title}</h3>
       </div>
       {items.length === 0 ? (
         <p style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>{empty}</p>
@@ -1374,10 +1385,11 @@ function MoversColumn({
                     : '1px dashed color-mix(in srgb, var(--text-primary) 12%, transparent)',
                 }}
               >
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-muted)', fontFamily: 'ui-monospace, monospace', flexShrink: 0 }}>
                     {i + 1}.
                   </span>
+                  <MoverAssetMark name={m.asset_name} isin={isIsin(m.akey) ? m.akey : null} size={20} />
                   <span
                     style={{
                       flex: 1,
@@ -1399,7 +1411,7 @@ function MoversColumn({
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5 }}>
                   <div style={{ flex: 1, height: 6, background: 'color-mix(in srgb, var(--text-primary) 8%, transparent)', borderRadius: 3, overflow: 'hidden' }}>
-                    <div style={{ width: `${pct * (reveal[i] ?? 1)}%`, height: '100%', background: color, borderRadius: 3 }} />
+                    <div style={{ width: `${pct * (reveal[i] ?? 1)}%`, height: '100%', background: 'color-mix(in srgb, var(--text-primary) 30%, transparent)', borderRadius: 3 }} />
                   </div>
                   <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', flexShrink: 0, minWidth: 76, textAlign: 'right' }}>
                     {negative ? `${m.funds_selling} продают` : `${m.funds_buying} покупают`}
