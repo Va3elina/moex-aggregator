@@ -20,7 +20,7 @@
  *
  * Всё инлайн-стилями с CSS-var, чтобы работать в любой теме внутри iframe.
  */
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { PlusCircle, Settings, ChevronDown } from 'lucide-react';
 import InstrumentIcon from '../../components/InstrumentIcon';
 import InstrumentSearchModal from '../../components/InstrumentSearchModal';
@@ -74,6 +74,7 @@ export function EmbedFrame({
   children: ReactNode;
 }) {
   const [moreOpen, setMoreOpen] = useState(false);
+  const moreBtnRef = useRef<HTMLButtonElement>(null);
 
   return (
     <div style={frameStyle}>
@@ -85,6 +86,7 @@ export function EmbedFrame({
         {more && (
           <div style={{ position: 'relative', flexShrink: 0 }}>
             <button
+              ref={moreBtnRef}
               type="button"
               onClick={() => setMoreOpen((v) => !v)}
               title="Ещё настройки"
@@ -94,7 +96,7 @@ export function EmbedFrame({
               <Settings size={15} />
             </button>
             {moreOpen && (
-              <Popover align="right" onClose={() => setMoreOpen(false)} title={moreLabel}>
+              <Popover anchorEl={moreBtnRef.current} align="right" onClose={() => setMoreOpen(false)} title={moreLabel}>
                 {more}
               </Popover>
             )}
@@ -110,22 +112,56 @@ export function EmbedFrame({
 
 /* ───────────────────────────── popover ───────────────────────────── */
 
-/** Выпадающий поповер под кнопкой тулбара. Клампится к области панели, скроллится. */
+/**
+ * Выпадающий поповер, заякоренный к кнопке-триггеру через `position: fixed`.
+ *
+ * ⚠️ Почему fixed, а не absolute: инлайн-контролы тулбара живут в контейнере с
+ * `overflow: hidden` (горизонтальный клип). Absolute-поповер, падающий ВНИЗ,
+ * обрезался бы этим overflow — выпадашка открывалась, но была невидима («не
+ * работает»). Fixed выходит из-под overflow предков (в iframe fixed = вьюпорт
+ * iframe, containing-block-трансформов внутри embed нет). Позицию считаем из
+ * getBoundingClientRect кнопки, пересчитываем на scroll/resize.
+ */
 export function Popover({
   children,
   onClose,
+  anchorEl,
   align = 'left',
   title,
 }: {
   children: ReactNode;
   onClose: () => void;
+  anchorEl: HTMLElement | null;
   align?: 'left' | 'right';
   title?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top: number; left?: number; right?: number }>({ top: -9999, left: 6 });
+
+  useLayoutEffect(() => {
+    if (!anchorEl) return;
+    const place = () => {
+      const r = anchorEl.getBoundingClientRect();
+      const top = r.bottom + 6;
+      setPos(align === 'right'
+        ? { top, right: Math.max(6, window.innerWidth - r.right) }
+        : { top, left: Math.max(6, r.left) });
+    };
+    place();
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+    };
+  }, [anchorEl, align]);
+
   useEffect(() => {
     const onDown = (e: Event) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+      const t = e.target as Node;
+      // Клик по самой кнопке-триггеру не закрываем — её onClick сам тогглит.
+      if (anchorEl && anchorEl.contains(t)) return;
+      if (ref.current && !ref.current.contains(t)) onClose();
     };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     // defer — чтобы клик, открывший поповер, не закрыл его сразу
@@ -136,14 +172,15 @@ export function Popover({
       document.removeEventListener('pointerdown', onDown, true);
       document.removeEventListener('keydown', onKey);
     };
-  }, [onClose]);
+  }, [onClose, anchorEl]);
 
   const style: CSSProperties = {
-    position: 'absolute',
-    top: 'calc(100% + 6px)',
-    zIndex: 60,
+    position: 'fixed',
+    top: pos.top,
+    ...(pos.right !== undefined ? { right: pos.right } : { left: pos.left ?? 6 }),
+    zIndex: 2147483000,
     width: 'min(300px, calc(100vw - 20px))',
-    maxHeight: 'calc(100vh - 64px)',
+    maxHeight: 'calc(100vh - 80px)',
     overflowY: 'auto',
     background: 'var(--bg-base, var(--bg-primary))',
     color: 'var(--text-primary)',
@@ -154,7 +191,6 @@ export function Popover({
     display: 'flex',
     flexDirection: 'column',
     gap: 14,
-    ...(align === 'right' ? { right: 0 } : { left: 0 }),
   };
 
   return (
@@ -304,15 +340,16 @@ export function Dropdown<T extends string | number>({
   title?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
   const cur = options.find((o) => o.id === value);
   return (
     <div style={{ position: 'relative', flexShrink: 0 }}>
-      <button type="button" title={title} style={ddBtnStyle(open)} onClick={() => setOpen((v) => !v)}>
+      <button ref={btnRef} type="button" title={title} style={ddBtnStyle(open)} onClick={() => setOpen((v) => !v)}>
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 150 }}>{cur?.label ?? '—'}</span>
         <ChevronDown size={13} style={{ flexShrink: 0, opacity: 0.7 }} />
       </button>
       {open && (
-        <Popover align="left" onClose={() => setOpen(false)}>
+        <Popover anchorEl={btnRef.current} align="left" onClose={() => setOpen(false)}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             {options.map((o) => {
               const on = o.id === value;
