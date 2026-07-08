@@ -180,7 +180,10 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
         className="flex items-center justify-end uppercase font-bold whitespace-nowrap transition-colors"
         style={{
           gap: 3,
-          width: COL[col],
+          // Правый край шапки = правый край чисел ниже (значения — width COL[col]).
+          // minWidth, а не width: длинная подпись «Суммарный объём в фондах»
+          // расширяет кнопку ВЛЕВО (за счёт «Бумага» flex-1), не ломая выравнивание.
+          minWidth: COL[col],
           flexShrink: 0,
           padding: '5px 0',
           borderRadius: 6,
@@ -385,7 +388,7 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
             >
               Бумага
             </span>
-            {renderSortHeader('volume', 'Объём', 'Суммарный объём бумаги в портфелях фондов, ₽')}
+            {renderSortHeader('volume', 'Суммарный объём в фондах', 'Суммарный объём бумаги в портфелях фондов, ₽')}
             <span style={{ width: 28, flexShrink: 0 }} aria-hidden="true" />
           </div>
 
