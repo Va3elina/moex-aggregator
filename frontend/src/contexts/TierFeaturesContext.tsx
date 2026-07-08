@@ -27,6 +27,7 @@ export type Tier = 'guest' | 'free' | 'basic' | 'pro' | 'admin';
 export interface IndicatorLimits {
     assets_whitelist?: string[] | null;
     tickers_whitelist?: string[] | null;
+    categories_whitelist?: string[] | null;
     allowed_intervals?: number[] | null;
     allowed_timeframes?: string[] | null;
     allowed_modes?: string[] | null;
@@ -171,6 +172,7 @@ export interface UseTierAccessResult {
     limits: IndicatorLimits;
     isLoading: boolean;
     canAccessAsset: (asset: string) => boolean;
+    canUseCategory: (category: string) => boolean;
     canUseInterval: (interval: number) => boolean;
     canUseTimeframe: (tf: string) => boolean;
     canUseMode: (mode: string) => boolean;
@@ -179,6 +181,7 @@ export interface UseTierAccessResult {
     canUseFlag: (flagName: keyof IndicatorLimits) => boolean;
     requiredTierFor: (check: {
         asset?: string;
+        category?: string;
         interval?: number;
         timeframe?: string;
         mode?: string;
@@ -218,6 +221,10 @@ export function useTierAccess(indicator: string): UseTierAccessResult {
             const wl = l.assets_whitelist ?? l.tickers_whitelist;
             if (wl != null && !wl.includes(check.asset)) return false;
         }
+        if (check.category != null) {
+            const wl = l.categories_whitelist;
+            if (wl != null && !wl.includes(check.category)) return false;
+        }
         if (check.interval != null) {
             const allowed = l.allowed_intervals;
             if (allowed != null && !allowed.includes(check.interval)) return false;
@@ -250,6 +257,7 @@ export function useTierAccess(indicator: string): UseTierAccessResult {
         limits,
         isLoading: tierLoading,
         canAccessAsset: (asset) => checkOnTier(effectiveTierForLimits(tier), { asset }),
+        canUseCategory: (category) => checkOnTier(effectiveTierForLimits(tier), { category }),
         canUseInterval: (interval) => checkOnTier(effectiveTierForLimits(tier), { interval }),
         canUseTimeframe: (tf) => checkOnTier(effectiveTierForLimits(tier), { timeframe: tf }),
         canUseMode: (mode) => checkOnTier(effectiveTierForLimits(tier), { mode }),

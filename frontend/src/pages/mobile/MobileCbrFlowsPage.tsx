@@ -38,9 +38,9 @@ const TYPE_TABS: Array<{ key: CbrInstrumentType; label: string; Icon: typeof Ban
 ];
 
 const PERIOD_OPTIONS: Array<{ key: PeriodFilter; label: string; months: number | null }> = [
-  // Данные помесячные (история с 2021 г., ~5 лет). Ключи совпадают с PERIOD_DAYS
-  // в TierFeaturesContext: '1y'→365, '3y'→1095, 'all'→∞ — поэтому «3Г» и «Всё»
-  // (>365 дней) запираются для free (matrix free=365).
+  // Данные помесячные (история с 2021 г., ~5 лет). Периоды открыты на всех
+  // тарифах, включая free (matrix cbr_flows free max_history_days=None) — замки
+  // с периодов сняты, гейтинг теперь на «институциональных» категориях.
   { key: '1y', label: '1Г', months: 12 },
   { key: '3y', label: '3Г', months: 36 },
   { key: 'all', label: 'Всё', months: null },
@@ -216,10 +216,14 @@ export default function MobileCbrFlowsPage() {
     return data.periods.slice(-opt.months);
   }, [data, period]);
 
-  // Hidden categories filtering
+  // Hidden categories filtering. Исключаем и скрытые вручную, и залоченные
+  // тарифом (их значения бэкенд не отдаёт на free). Локнутые остаются в
+  // data.categories — в шите показываем их с замком (апселл на Базовый).
   const visibleCategories = useMemo(
-    () => (data?.categories ?? []).filter((c) => !hiddenCategories.has(c)),
-    [data, hiddenCategories],
+    () => (data?.categories ?? []).filter(
+      (c) => !hiddenCategories.has(c) && (cbrAccess.isLoading || cbrAccess.canUseCategory(c)),
+    ),
+    [data, hiddenCategories, cbrAccess],
   );
 
   const toggleCategory = (cat: string) => {
@@ -368,13 +372,22 @@ export default function MobileCbrFlowsPage() {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {data.categories.map((cat) => {
+                  const locked = !(cbrAccess.isLoading || cbrAccess.canUseCategory(cat));
                   const visible = !hiddenCategories.has(cat);
                   return (
                     <CategoryToggleRow
                       key={cat}
                       label={cat}
                       visible={visible}
+                      locked={locked}
                       onToggle={() => toggleCategory(cat)}
+                      onUpgrade={() => {
+                        const reqTier = cbrAccess.requiredTierFor({ category: cat });
+                        if (reqTier) {
+                          showUpgrade({ tier: reqTier, featureName: `категория «${cat}»`, indicator: 'cbr_flows' });
+                        }
+                        setOptionsSheetOpen(false);
+                      }}
                     />
                   );
                 })}
@@ -400,32 +413,38 @@ export default function MobileCbrFlowsPage() {
 function CategoryToggleRow({
   label,
   visible,
+  locked = false,
   onToggle,
+  onUpgrade,
 }: {
   label: string;
   visible: boolean;
+  locked?: boolean;
   onToggle: () => void;
+  onUpgrade?: () => void;
 }) {
   const { theme } = useTheme();
   const color = getCategoryColor(label, theme);
+  // Локнутая тарифом категория: клик ведёт на апгрейд, а не toggle; вид — dimmed.
+  const dimmed = locked || !visible;
   return (
     <button
       type="button"
-      onClick={onToggle}
+      onClick={locked ? onUpgrade : onToggle}
       style={{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
         gap: 10,
         padding: '10px 12px',
-        background: visible ? 'var(--bg-secondary)' : 'transparent',
+        background: dimmed ? 'transparent' : 'var(--bg-secondary)',
         border: '1.5px solid var(--text-primary)',
         borderRadius: 8,
         font: 'inherit',
         color: 'var(--text-primary)',
         textAlign: 'left',
         cursor: 'pointer',
-        opacity: visible ? 1 : 0.5,
+        opacity: dimmed ? 0.5 : 1,
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
@@ -434,7 +453,7 @@ function CategoryToggleRow({
             width: 12,
             height: 12,
             borderRadius: 3,
-            background: color,
+            background: locked ? 'transparent' : color,
             border: '1px solid var(--text-primary)',
             flexShrink: 0,
           }}
@@ -442,10 +461,31 @@ function CategoryToggleRow({
         <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {label}
         </span>
+        {locked && (
+          <span
+            style={{
+              fontSize: '0.6rem',
+              fontWeight: 800,
+              textTransform: 'uppercase',
+              letterSpacing: '0.04em',
+              padding: '1px 6px',
+              borderRadius: 99,
+              color: 'var(--accent)',
+              border: '1px solid var(--accent)',
+              flexShrink: 0,
+            }}
+          >
+            Базовый
+          </span>
+        )}
       </div>
-      <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 700, color: visible ? 'var(--accent)' : 'var(--text-muted)' }}>
-        {visible ? '●' : '○'}
-      </span>
+      {locked ? (
+        <Lock size={13} strokeWidth={2.2} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+      ) : (
+        <span style={{ fontSize: 'var(--fs-xs)', fontWeight: 700, color: visible ? 'var(--accent)' : 'var(--text-muted)' }}>
+          {visible ? '●' : '○'}
+        </span>
+      )}
     </button>
   );
 }
