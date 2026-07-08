@@ -300,7 +300,7 @@ export default function EmbedOpenInterest() {
           out.push({
             id: 'oi-short', type: 'line', scale: 'right', color: colors.third, lineWidth: 2, label: labels.third,
             data: oiSeries.third.map((p) => ({ time: toSec(p.time, intraday), value: p.value })),
-            tipFmt: (v) => formatNumber(v, 0),
+            tipFmt: (v) => formatNumber(v, 0), axisFmt: (v) => formatNumber(v, 0),
           });
         }
       } else {
@@ -373,6 +373,11 @@ export default function EmbedOpenInterest() {
             fitKey={`${instrument}|${interval}`}
             initialBars={interval === 24 ? 252 : 220}
           />
+        )}
+        {/* Цена выключена + у контракта нет OI-данных → серий нет. Без этого был
+            пустой холст без объяснения (аудит). */}
+        {status === 'ok' && data && lwSeries.length === 0 && (
+          <EmbedMsg text="Нет данных для отображения" />
         )}
         {status === 'loading' && <EmbedMsg text="Загрузка…" />}
         {status === 'empty' && (

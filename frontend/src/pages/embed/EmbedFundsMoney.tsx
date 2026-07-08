@@ -277,7 +277,7 @@ export default function EmbedFundsMoney() {
                 ['--chart-pad-right-single' as string]: '55px',
               }}
             >
-              {flowsStatus !== 'error' && (
+              {flowsStatus !== 'error' && flowsStatus !== 'empty' && (
                 <FlowsHistogram
                   flowsData={flowsData}
                   noFundsSelected={false}
@@ -296,6 +296,8 @@ export default function EmbedFundsMoney() {
                 />
               )}
             </div>
+            {/* Пустые потоки показывали пустую рамку без сообщения (аудит). */}
+            {flowsStatus === 'empty' && <EmbedMsg text="Нет данных" />}
             {flowsStatus === 'error' && <EmbedMsg text="Ошибка загрузки" />}
           </>
         )}
