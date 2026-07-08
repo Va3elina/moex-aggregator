@@ -91,6 +91,17 @@ function hideTvLogo() {
   document.head.appendChild(st);
 }
 
+// Ось времени по-русски (как в макете дизайнера песочницы): год / месяц / день / время.
+const MONTHS_RU = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+function ruTickMark(time: unknown, type: number): string {
+  const t = typeof time === 'number' ? time : 0;
+  const d = new Date(t * 1000);
+  if (type === 0) return String(d.getUTCFullYear());
+  if (type === 1) return MONTHS_RU[d.getUTCMonth()];
+  if (type === 2) return String(d.getUTCDate());
+  return String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0');
+}
+
 export default function LwChart({ series, height, dark = true, markers, fitKey, initialBars }: LwChartProps) {
   const boxRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -99,6 +110,7 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
   defsRef.current = series;
   const lastFitRef = useRef<string | undefined>(undefined);
   const marginRef = useRef(0.12);
+  const legendRef = useRef<HTMLDivElement | null>(null);
 
   // ── создание чарта один раз ──
   useEffect(() => {
@@ -108,10 +120,11 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
     const chart = createChart(box, {
       autoSize: true,
       layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: c.text, fontFamily: 'Inter, -apple-system, sans-serif', fontSize: 11 },
+      localization: { locale: 'ru-RU' },
       grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
-      leftPriceScale: { visible: true, borderVisible: false, scaleMargins: { top: 0.12, bottom: 0.12 } },
-      rightPriceScale: { visible: true, borderVisible: false, scaleMargins: { top: 0.12, bottom: 0.12 } },
-      timeScale: { borderVisible: false, rightOffset: 6, secondsVisible: false },
+      leftPriceScale: { visible: true, borderVisible: false, scaleMargins: { top: 0.12, bottom: 0.06 } },
+      rightPriceScale: { visible: true, borderVisible: false, scaleMargins: { top: 0.12, bottom: 0.06 } },
+      timeScale: { borderVisible: false, rightOffset: 6, secondsVisible: false, tickMarkFormatter: (time: Time, type: number) => ruTickMark(time, type) },
       crosshair: {
         mode: CrosshairMode.Normal,
         vertLine: { color: c.cross, width: 1, style: LineStyle.Dotted, labelBackgroundColor: c.lab },
@@ -135,6 +148,18 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       'white-space:nowrap', 'box-shadow:0 8px 22px rgba(0,0,0,0.45)', 'font-family:Inter,-apple-system,sans-serif',
     ].join(';');
     box.appendChild(tip);
+
+    // Постоянная центрированная легенда (как в макете дизайнера): серия = цветной
+    // сегмент + подпись, всегда видна. Оверлей над графиком, событий не перехватывает.
+    // Наполняется в эффекте серий.
+    const legend = document.createElement('div');
+    legend.style.cssText = [
+      'position:absolute', 'top:7px', 'left:50%', 'transform:translateX(-50%)', 'z-index:5',
+      'display:flex', 'flex-wrap:wrap', 'justify-content:center', 'gap:14px', 'pointer-events:none',
+      'max-width:calc(100% - 130px)',
+    ].join(';');
+    box.appendChild(legend);
+    legendRef.current = legend;
 
     chart.subscribeCrosshairMove((param) => {
       const defs = defsRef.current;
@@ -190,6 +215,7 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       chartRef.current = null;
       seriesApiRef.current = [];
       if (tip.parentNode) tip.parentNode.removeChild(tip);
+      if (legend.parentNode) legend.parentNode.removeChild(legend);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -251,6 +277,24 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
         s.createPriceLine({ price: 0, color: col, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: '' });
       }
       seriesApiRef.current.push(s);
+    }
+
+    // Наполняем постоянную легенду: цветной сегмент + подпись на серию (как в макете).
+    const legend = legendRef.current;
+    if (legend) {
+      while (legend.firstChild) legend.removeChild(legend.firstChild);
+      for (const def of series) {
+        const item = document.createElement('div');
+        item.style.cssText = 'display:flex;align-items:center;gap:5px';
+        const seg = document.createElement('span');
+        seg.style.cssText = 'width:12px;height:2.5px;border-radius:2px;flex:0 0 auto;background:' + rc(def.color);
+        const lbl = document.createElement('span');
+        lbl.style.cssText = 'font-size:11px;font-weight:600;color:var(--text-primary,#F5F1E8);white-space:nowrap';
+        lbl.textContent = def.label || '';
+        item.appendChild(seg);
+        item.appendChild(lbl);
+        legend.appendChild(item);
+      }
     }
 
     if (markers && seriesApiRef.current[0]) {
