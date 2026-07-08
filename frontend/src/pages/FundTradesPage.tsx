@@ -303,6 +303,12 @@ export default function FundTradesPage() {
             .finally(() => setLoading(false));
     }, [tab, period, asOf, fundsParam, metric, common.fund_trades_access]);
 
+    // Общий портфель: выбранные УК → тикеры фондов (пусто = все whitelist-акции).
+    const portfolioFundsParam = useMemo(() => {
+        if (portfolioUks.size === 0) return '';
+        return funds.filter((f) => portfolioUks.has(ukKey(f))).map((f) => f.ticker).join(',');
+    }, [funds, portfolioUks]);
+
     // Load общий портфель (tab=portfolio; смена набора УК). Ждём загрузки списка
     // фондов — без него не резолвить УК→тикеры (иначе пустой набор ошибочно = «все»).
     useEffect(() => {
@@ -332,12 +338,6 @@ export default function FundTradesPage() {
         }
         return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
     }, [funds]);
-
-    // Общий портфель: выбранные УК → тикеры фондов (пусто = все whitelist-акции).
-    const portfolioFundsParam = useMemo(() => {
-        if (portfolioUks.size === 0) return '';
-        return funds.filter((f) => portfolioUks.has(ukKey(f))).map((f) => f.ticker).join(',');
-    }, [funds, portfolioUks]);
 
     // Все whitelist-фонды для FundPicker (multi) на вкладке «Покупки фондов».
     // FundPicker сам группирует по УК; передаём минимум полей ({ticker, name, uk, uk_id}).
