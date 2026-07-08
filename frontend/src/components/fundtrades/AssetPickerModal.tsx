@@ -171,11 +171,11 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
         }}
         onMouseEnter={(e) => {
           e.currentTarget.style.background = 'color-mix(in srgb, var(--text-primary) 8%, transparent)';
-          if (!active) e.currentTarget.style.color = 'var(--text-primary)';
+          e.currentTarget.style.color = 'var(--text-primary)';
         }}
         onMouseLeave={(e) => {
           e.currentTarget.style.background = 'transparent';
-          e.currentTarget.style.color = active ? 'var(--accent)' : 'var(--text-secondary)';
+          e.currentTarget.style.color = 'var(--text-secondary)';
         }}
         className="flex items-center justify-end uppercase font-bold whitespace-nowrap transition-colors"
         style={{
@@ -189,7 +189,10 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
           borderRadius: 6,
           fontSize: 'var(--fs-xs)',
           letterSpacing: '0.04em',
-          color: active ? 'var(--accent)' : 'var(--text-secondary)',
+          // Сортировка тут единственная (по объёму) → колонка всегда «активна».
+          // Не подсвечиваем её акцентом (оранжевым): нейтральный text-secondary,
+          // иначе большая подпись постоянно горит ярким цветом без смысла.
+          color: 'var(--text-secondary)',
           cursor: 'pointer',
         }}
       >
