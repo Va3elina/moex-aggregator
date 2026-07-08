@@ -961,9 +961,12 @@ def combined_portfolio(
     Общий портфель — все выбранные фонды акций слиты в ОДИН портфель, «как будто
     ими управляет один управляющий».
 
-    Для каждой бумаги суммируем рублёвую стоимость позиции (amount_rub из SCHA;
-    fallback nav×доля, где точной суммы нет) across выбранных фондов на их последних
-    снапшотах (Free/гость — с задержкой в 1 снапшот, как остальные разделы).
+    Для каждой бумаги оцениваем ТЕКУЩУЮ рублёвую стоимость позиции как СЧА фонда ×
+    доля из последнего снапшота (fallback amount_rub из SCHA, если свежей СЧА нет) и
+    суммируем across выбранных фондов. Берём nav×долю, а НЕ amount_rub напрямую: доля
+    и СЧА согласованы по дате (стоимость акций ≤ СЧА, разница = кэш/прочее), тогда как
+    amount_rub снят на дату снапшота и при упавшем рынке даёт стоимость > текущей СЧА.
+    Free/гость — с задержкой в 1 снапшот, как остальные разделы.
 
     Отдаём ДВА веса per бумага:
       weight_rub — доля в общем портфеле ПО ДЕНЬГАМ (value-weighted; крупные фонды
@@ -1116,7 +1119,7 @@ def combined_portfolio(
             SELECT h.fund_id,
                    COALESCE(NULLIF(h.isin, ''), h.asset_name) AS akey,
                    h.asset_name, h.isin, h.weight,
-                   COALESCE(h.amount_rub, fn.nav * h.weight / 100.0) AS value_rub
+                   COALESCE(fn.nav * h.weight / 100.0, h.amount_rub) AS value_rub
             FROM last_snap ls
             JOIN fund_holdings_history h
                  ON h.fund_id = ls.fund_id AND h.snapshot_date = ls.d AND h.source = ANY(:sources)
