@@ -962,11 +962,12 @@ def combined_portfolio(
     ими управляет один управляющий».
 
     Для каждой бумаги берём ОТЧЁТНУЮ рублёвую стоимость позиции amount_rub из
-    последней Справки о СЧА (fallback nav_на_дату_снапшота × доля, если суммы нет) и
-    суммируем across выбранных фондов. Это те же цифры, что в пикере «Потоки по
-    компании» и во вкладке «Покупки фондов» — портфель НЕ переоценивается на
-    сегодняшнюю СЧА. Чтобы стоимость акций не превысила СЧА, «Суммарную СЧА» тоже
-    берём на дату отчёта (nav на snap_date), а не текущую: стоимость ≤ СЧА, разница = кэш.
+    последней Справки о СЧА (fallback nav × доля, если суммы нет) и суммируем across
+    выбранных фондов. Это те же цифры, что в пикере «Потоки по компании» и во вкладке
+    «Покупки фондов» — портфель НЕ переоценивается на сегодняшнюю СЧА. Размер портфеля
+    = total_value_rub (Σ amount_rub, «Объём в фондах»). Отдельную «Суммарную СЧА» НЕ
+    показываем: nav (Cbonds) и amount_rub (SCHA) из разных источников и не всегда
+    сходятся, из-за чего СЧА могла бы оказаться < стоимости акций (ложный «баг»).
     Free/гость — с задержкой в 1 снапшот, как остальные разделы.
 
     Отдаём ДВА веса per бумага:
@@ -1021,14 +1022,7 @@ def combined_portfolio(
             (SELECT MAX(h.snapshot_date) FROM fund_holdings_history h
              WHERE h.fund_id = f.fund_id AND h.source = ANY(:sources)
                AND h.snapshot_date <= :cutoff) AS snap_date,
-            -- СЧА на дату отчёта (не текущую): согласовано с amount_rub позиций,
-            -- поэтому стоимость акций ≤ этой СЧА.
-            (SELECT fd.nav FROM fund_data fd
-             WHERE fd.fund_id = f.fund_id AND fd.nav IS NOT NULL
-               AND fd.trade_date <= (SELECT MAX(h.snapshot_date) FROM fund_holdings_history h
-                                     WHERE h.fund_id = f.fund_id AND h.source = ANY(:sources)
-                                       AND h.snapshot_date <= :cutoff)
-             ORDER BY fd.trade_date DESC LIMIT 1) AS nav_rub,
+            fd_last.nav AS nav_rub,
             fd_last.pay AS last_pay,
             fd_1m.pay AS pay_1m, fd_3m.pay AS pay_3m, fd_6m.pay AS pay_6m, fd_1y.pay AS pay_1y,
             (SELECT COALESCE(SUM(amount_per_unit), 0) FROM fund_distributions d
@@ -1116,13 +1110,10 @@ def combined_portfolio(
             GROUP BY h.fund_id
         ),
         fund_nav AS (
-            -- СЧА на дату снапшота (report-date) — только для fallback value_rub,
-            -- где нет amount_rub. Дата согласована со стоимостью позиций.
-            SELECT ls.fund_id, fd.nav
-            FROM last_snap ls
+            SELECT sel.fund_id, fd.nav
+            FROM sel
             LEFT JOIN LATERAL (
-                SELECT nav FROM fund_data WHERE fund_id = ls.fund_id AND nav IS NOT NULL
-                  AND trade_date <= ls.d
+                SELECT nav FROM fund_data WHERE fund_id = sel.fund_id AND nav IS NOT NULL
                 ORDER BY trade_date DESC LIMIT 1
             ) fd ON true
         ),

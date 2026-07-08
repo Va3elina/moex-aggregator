@@ -134,8 +134,7 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, period
         <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 16 : 20 }}>
             {/* KPI-плашка */}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-                <StatTile label="Суммарная СЧА" value={formatRubShort(portfolio.total_nav_rub)} />
-                <StatTile label="Стоимость акций" value={formatRubShort(portfolio.total_value_rub)} />
+                <StatTile label="Объём в фондах" value={formatRubShort(portfolio.total_value_rub)} />
                 <StatTile
                     label={`Доходность · ${PERIOD_LABEL[period]}`}
                     value={formatReturnPct(ret ?? undefined)}
