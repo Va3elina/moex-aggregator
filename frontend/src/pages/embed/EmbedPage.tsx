@@ -26,6 +26,7 @@ import EmbedFundsMoney from './EmbedFundsMoney';
 import EmbedStrength from './EmbedStrength';
 import EmbedFundTrades from './EmbedFundTrades';
 import EmbedScreener from './EmbedScreener';
+import EmbedSignals from './EmbedSignals';
 
 const DEFAULT_THEME = 'editorial-dark';
 const SITE = 'https://xn--80aklbnczmv.xn--p1ai'; // таймфрейм.рф
@@ -148,6 +149,8 @@ function renderIndicator(indicator: string | undefined) {
       return <EmbedFundTrades lockTab="movers" />;
     case 'screener':
       return <EmbedScreener />;
+    case 'signals':
+      return <EmbedSignals />;
     default:
       return <EmbedPlaceholder name={indicator} />;
   }
