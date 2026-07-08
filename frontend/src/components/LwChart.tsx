@@ -25,6 +25,9 @@ export interface LwSeries {
   color: string;
   scale?: 'left' | 'right';
   lineWidth?: number;
+  /** Пунктирная линия — для прогнозного «хвоста» (Баффетт): проекцию не выдаём
+   *  за реальные данные. Действует на line и area. */
+  dashed?: boolean;
   areaTop?: string;
   areaBottom?: string;
   base?: number;
@@ -231,10 +234,11 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       const lw = (def.lineWidth ?? 2) as 1 | 2 | 3 | 4;
       const col = rc(def.color);
       let s: ISeriesApi<'Line' | 'Area' | 'Histogram'>;
+      const lineStyle = def.dashed ? LineStyle.Dashed : LineStyle.Solid;
       if (def.type === 'line') {
-        s = chart.addLineSeries({ color: col, lineWidth: lw, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: def.lastValueVisible ?? true, priceFormat });
+        s = chart.addLineSeries({ color: col, lineWidth: lw, lineStyle, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: def.lastValueVisible ?? true, priceFormat });
       } else if (def.type === 'area') {
-        s = chart.addAreaSeries({ lineColor: col, topColor: rc(def.areaTop ?? def.color), bottomColor: def.areaBottom ? rc(def.areaBottom) : 'rgba(0,0,0,0)', lineWidth: lw, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: def.lastValueVisible ?? true, priceFormat });
+        s = chart.addAreaSeries({ lineColor: col, topColor: rc(def.areaTop ?? def.color), bottomColor: def.areaBottom ? rc(def.areaBottom) : 'rgba(0,0,0,0)', lineWidth: lw, lineStyle, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: def.lastValueVisible ?? true, priceFormat });
       } else {
         s = chart.addHistogramSeries({ color: col, base: def.base ?? 0, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: def.lastValueVisible ?? false, priceFormat });
       }

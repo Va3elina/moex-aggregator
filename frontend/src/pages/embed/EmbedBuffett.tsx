@@ -7,7 +7,8 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import SimpleChart from '../../components/SimpleChart';
+import LwChart, { type LwSeries } from '../../components/LwChart';
+import { useTheme } from '../../contexts/ThemeContext';
 import {
   getBuffettCapGdp,
   getBuffettCapM2,
@@ -49,8 +50,17 @@ const FORECASTS: { id: string; label: string }[] = [
   })),
 ];
 
+// Дата 'YYYY-MM-DD' → UNIX-секунды (UTC-полночь) для LwChart. Баффетт всегда на
+// дневных/агрегированных датах (не интрадей) → разбор без таймзонного сдвига.
+const toSec = (t: string): number => {
+  const [y, m, d] = t.slice(0, 10).split('-').map(Number);
+  return Math.floor(Date.UTC(y, m - 1, d) / 1000);
+};
+
 export default function EmbedBuffett() {
   const [params] = useSearchParams();
+  const { theme } = useTheme();
+  const dark = theme !== 'editorial-light';
 
   const [viewMode, setViewMode] = useState<ViewMode>(() =>
     (params.get('mode') === 'cap-m2' || readLS('frame:embed:buffett:mode', 'cap-gdp') === 'cap-m2') ? 'cap-m2' : 'cap-gdp',
@@ -133,10 +143,6 @@ export default function EmbedBuffett() {
     return () => ro.disconnect();
   }, []);
 
-  // Кап/ВВП: buffett уже в %. Кап/M2: ratio — доля, ×100.
-  const ratioVal = (v: number) => (viewMode === 'cap-gdp' ? `${v.toFixed(2)}%` : `${(v * 100).toFixed(2)}%`);
-  const ratioAxis = (v: number) => (viewMode === 'cap-gdp' ? `${v.toFixed(1)}%` : `${(v * 100).toFixed(1)}%`);
-
   // Клиентский прогноз (только cap-gdp): к cap (primary в графике) и ratio
   // (secondary) дописываем 12 синтетических месячных точек, тянущих серию к
   // целевому Кап/ВВП = forecastTarget% от последнего gdp_ttm. Формула —
@@ -178,6 +184,39 @@ export default function EmbedBuffett() {
 
   const showForecast = viewMode === 'cap-gdp' && forecastTarget !== null;
 
+  // Серии для LwChart: капитализация (левая ось, под toggle showCap) + коэффициент
+  // (правая ось, всегда). Прогнозный хвост (последние 12 точек) выносим в отдельную
+  // ПУНКТИРНУЮ серию, стыкующуюся с реальной на граничной точке (slice(cut-1)) —
+  // проекцию не выдаём за факт. Оси как на странице: cap слева, ratio справа.
+  const lwSeries = useMemo<LwSeries[]>(() => {
+    const out: LwSeries[] = [];
+    const FC = 12;
+    const ratioLabel = viewMode === 'cap-gdp' ? 'Кап / ВВП' : 'Кап / M2';
+    const capTip = (v: number) => `${v.toFixed(2)} трлн ₽`;
+    const capAxis = (v: number) => String(Math.round(v));
+    const rTip = (v: number) => (viewMode === 'cap-gdp' ? `${v.toFixed(2)}%` : `${(v * 100).toFixed(2)}%`);
+    const rAxis = (v: number) => (viewMode === 'cap-gdp' ? `${v.toFixed(1)}%` : `${(v * 100).toFixed(1)}%`);
+    const map = (arr: Series) => arr.map((p) => ({ time: toSec(p.time), value: p.value }));
+
+    const pushSplit = (
+      pts: Series, id: string, scale: 'left' | 'right', color: string,
+      label: string, tipFmt: (v: number) => string, axisFmt: (v: number) => string,
+    ) => {
+      if (pts.length === 0) return;
+      if (showForecast && pts.length > FC) {
+        const cut = pts.length - FC;
+        out.push({ id, type: 'line', scale, color, lineWidth: 2, label, data: map(pts.slice(0, cut)), tipFmt, axisFmt });
+        out.push({ id: `${id}-fore`, type: 'line', scale, color, lineWidth: 2, dashed: true, lastValueVisible: false, label: `${label} · прогноз`, data: map(pts.slice(cut - 1)), tipFmt, axisFmt });
+      } else {
+        out.push({ id, type: 'line', scale, color, lineWidth: 2, label, data: map(pts), tipFmt, axisFmt });
+      }
+    };
+
+    if (showCap) pushSplit(projected.cap, 'cap', 'left', 'var(--accent-secondary)', 'Капитализация (трлн ₽)', capTip, capAxis);
+    pushSplit(projected.ratio, 'ratio', 'right', 'var(--accent)', ratioLabel, rTip, rAxis);
+    return out;
+  }, [projected, showCap, showForecast, viewMode]);
+
   return (
     <EmbedFrame
       toolbar={
@@ -210,34 +249,12 @@ export default function EmbedBuffett() {
       }
     >
       <div ref={chartBoxRef} style={{ position: 'absolute', inset: 0 }}>
-        {status === 'ok' && (
-          <SimpleChart
-            data={projected.cap}
-            secondaryData={projected.ratio}
+        {status === 'ok' && lwSeries.length > 0 && (
+          <LwChart
+            series={lwSeries}
             height={chartH}
-            primaryColor="var(--accent-secondary)"
-            secondaryColor="var(--accent)"
-            showPrimary={showCap}
-            showSecondary
-            reverseLegend
-            formatValue={(v) => `${v.toFixed(2)} трлн ₽`}
-            formatPrimaryAxis={(v) => String(Math.round(v))}
-            niceTicks={true}
-            // Сетка по ПРАВОЙ оси (ratio), как на странице индикатора.
-            niceTicksSecondary={true}
-            gridAxis="secondary"
-            formatSecondaryValue={ratioVal}
-            formatSecondaryAxis={ratioAxis}
-            primaryLabel="Капитализация (трлн ₽)"
-            secondaryLabel={viewMode === 'cap-gdp' ? 'Кап / ВВП' : 'Кап / M2'}
-            forecastCount={showForecast ? 12 : 0}
-            showValueHeader={false}
-            legendPosition="top"
-            showDownloadButton={false}
-            showNavigator={false}
-            hideTime
-            chartPadding={{ left: 70, right: 70 }}
-            bare
+            dark={dark}
+            fitKey={`${viewMode}|${period}|${timeframe}|${forecastTarget ?? 'off'}`}
           />
         )}
         {status === 'loading' && <EmbedMsg text="Загрузка…" />}
