@@ -524,6 +524,22 @@ export default function Layout() {
               © ПАО Московская Биржа
             </a>
           </span>
+          {/* Attribution к TradingView Lightweight Charts™ (Apache-2.0). Движок
+              графиков в embed-панелях расширения; их NOTICE требует видимую
+              ссылку на tradingview.com, если встроенный логотип скрыт
+              (LwChart.hideTvLogo). Здесь — компенсация этого скрытия. */}
+          <span style={{ color: 'var(--text-muted)' }}>
+            Графики:{' '}
+            <a
+              href="https://www.tradingview.com"
+              target="_blank"
+              rel="noreferrer noopener"
+              className="transition-opacity hover:opacity-80"
+              style={{ color: 'var(--text-secondary)' }}
+            >
+              TradingView Lightweight Charts™
+            </a>
+          </span>
           <Link to="/faq" className="transition-opacity hover:opacity-80" style={{ color: 'var(--text-secondary)' }}>
             FAQ
           </Link>
