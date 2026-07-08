@@ -76,7 +76,7 @@ function MiniLegend({ text }: { text: string }) {
 export default function EmbedStrength() {
   const [params] = useSearchParams();
 
-  const [ema, setEma] = useState<Ema>(() => (Number(readLS('frame:strength:ema', '200')) || 200) as Ema);
+  const [ema, setEma] = useState<Ema>(() => (Number(readLS('frame:embed:strength:ema', '200')) || 200) as Ema);
   const [period, setPeriod] = useState<Period>(() => (params.get('period') || readLS('frame:embed:strength:period', '1y')) as Period);
   const [chartMode, setChartMode] = useState<ChartMode>(() => readLS('frame:embed:strength:chartMode', 'histogram') as ChartMode);
   const [universeBase, setUniverseBase] = useState<UniverseBase>(() => readLS('frame:embed:strength:universeBase', 'imoex') as UniverseBase);
@@ -86,7 +86,7 @@ export default function EmbedStrength() {
   const [synced, setSynced] = useState<Synced>([]);
   const [status, setStatus] = useState<LoadStatus>('idle');
 
-  useEffect(() => { writeLS('frame:strength:ema', String(ema)); }, [ema]);
+  useEffect(() => { writeLS('frame:embed:strength:ema', String(ema)); }, [ema]);
   useEffect(() => { writeLS('frame:embed:strength:period', period); }, [period]);
   useEffect(() => { writeLS('frame:embed:strength:chartMode', chartMode); }, [chartMode]);
   useEffect(() => { writeLS('frame:embed:strength:universeBase', universeBase); }, [universeBase]);
@@ -233,6 +233,7 @@ export default function EmbedStrength() {
               height={breadthH}
               mode={chartMode}
               padding={PAD}
+              showWatermark={!showPrice}
             />
           </>
         ) : (

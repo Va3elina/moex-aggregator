@@ -20,7 +20,6 @@ import YearlySeasonalityChart from '../../components/seasonality/YearlySeasonali
 import {
   getSeasonality,
   getSeasonalityYearly,
-  getInstrument,
   type SeasonalityResponse,
   type SeasonalityMode,
   type YearlySeasonalityResponse,
@@ -87,7 +86,6 @@ export default function EmbedSeasonality() {
   const [params] = useSearchParams();
 
   const [stock, setStock] = useState<string>(() => params.get('instrument') || readLS('frame:embed:seasonality:stock', 'SBER'));
-  const [stockName, setStockName] = useState<string>(params.get('name') || '');
   const [chartType, setChartType] = useState<ChartType>(() => readLS('frame:embed:seasonality:chartType', 'histogram') as ChartType);
   const [mode, setMode] = useState<SeasonalityMode>(() => readLS('frame:embed:seasonality:mode', 'weekday') as SeasonalityMode);
   const [excludeDividends, setExcludeDividends] = useState<boolean>(() => readLSBool('frame:embed:seasonality:excludeDividends', false));
@@ -113,15 +111,6 @@ export default function EmbedSeasonality() {
   useEffect(() => { writeLS('frame:embed:seasonality:excludeDividends', String(excludeDividends)); }, [excludeDividends]);
   useEffect(() => { writeLS('frame:embed:seasonality:showNoOutliers', String(showNoOutliers)); }, [showNoOutliers]);
   useEffect(() => { writeLS('frame:embed:seasonality:showCurrentYear', String(showCurrentYear)); }, [showCurrentYear]);
-
-  useEffect(() => {
-    if (stockName) return;
-    let cancelled = false;
-    getInstrument(stock)
-      .then((i) => { if (!cancelled && i?.name) setStockName(i.name); })
-      .catch(() => { /* имя не критично */ });
-    return () => { cancelled = true; };
-  }, [stock, stockName]);
 
   // Инструменты без дивидендов: тоггл прячем И всегда шлём excludeDividends=false.
   const hasDividends = !NON_DIVIDEND_TICKERS.has(stock);
@@ -213,7 +202,7 @@ export default function EmbedSeasonality() {
           excludeType="futures"
           showIntradayBadge={false}
           current={stock}
-          onSelect={(secid, name) => { setStock(secid); setStockName(name); }}
+          onSelect={(secid) => { setStock(secid); }}
         />
       }
       toolbar={
