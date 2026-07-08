@@ -17,9 +17,7 @@
  * TODO v2: листы, «Выстроить», центр сигналов как док, алерты с графика.
  */
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { MemoryRouter } from 'react-router-dom';
 import { PlusCircle, LayoutGrid, X as XIcon } from 'lucide-react';
-import { useTheme } from '../../contexts/ThemeContext';
 import EmbedOpenInterest from '../embed/EmbedOpenInterest';
 import EmbedSeasonality from '../embed/EmbedSeasonality';
 import EmbedScreener from '../embed/EmbedScreener';
@@ -98,7 +96,6 @@ function loadPanels(): PanelState[] {
 }
 
 export default function SandboxPage() {
-  const { theme } = useTheme();
   const [panels, setPanels] = useState<PanelState[]>(loadPanels);
   const [menuOpen, setMenuOpen] = useState(false);
   const zTop = useRef(10);
@@ -285,11 +282,12 @@ export default function SandboxPage() {
                 </button>
               </div>
               <div style={panelBodyStyle}>
-                {/* Свой MemoryRouter на панель: embed читает ?pid= (per-window настройки)
-                    и ?theme= из общей темы. Полностью переиспользуем реальный индикатор. */}
-                <MemoryRouter initialEntries={[`/${p.id}?pid=sb-${p.key}&theme=${theme}`]}>
-                  {renderIndicator(p.id)}
-                </MemoryRouter>
+                {/* Реальный embed-компонент напрямую (юзер залогинен → apiFetch
+                    авторизован; тема — из общего ThemeContext). Вложенный <Router>
+                    (для per-panel ?pid=) РАБотать НЕ может — React Router запрещает
+                    Router-в-Router. Настройки пока общие по индикатору; per-panel
+                    изоляция — v2 через проп pid в embed. */}
+                {renderIndicator(p.id)}
               </div>
               <div onPointerDown={(e) => onResizeStart(e, p.key)} style={resizeHandleStyle} />
             </div>
