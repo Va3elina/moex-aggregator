@@ -22,10 +22,14 @@ scp ORFR_YYYY-M.xlsx root@103.88.243.232:/tmp/
 ssh -o IdentitiesOnly=yes -o IdentityAgent=none -o ConnectTimeout=30 -i ~/.ssh/id_ed25519 root@103.88.243.232 '
   docker cp /tmp/ORFR_YYYY-M.xlsx frame-orchestrator-1:/tmp/X.xlsx &&
   docker exec frame-orchestrator-1 python3 -m CBR.fetch_orfr_flows --xlsx /tmp/X.xlsx 2>&1 | tail -20 &&
-  # 2. ОБЯЗАТЕЛЬНО почистить кэш (иначе API отдаёт старое до 1ч):
-  docker exec frame-redis-1 sh -c "redis-cli --scan --pattern '"'"'cbr_flows:*'"'"' | xargs -r redis-cli del"
+  # 2. ОБЯЗАТЕЛЬНО почистить кэш (иначе API отдаёт старое до 1ч).
+  #    ⚠️ Redis ПОД ПАРОЛЕМ — голый redis-cli падает NOAUTH. Пароль берём из
+  #    REDIS_URL api-контейнера (имя динамическое → резолвим по label):
+  PW=$(docker exec $(docker ps -q -f label=com.docker.compose.service=api | head -1) printenv REDIS_URL | sed -E "s#.*://:([^@]+)@.*#\1#") &&
+  docker exec -e REDISCLI_AUTH="$PW" frame-redis-1 redis-cli --scan --pattern "cbr_flows:*" |
+    xargs -r docker exec -e REDISCLI_AUTH="$PW" frame-redis-1 redis-cli del
 '
-# 3. Verify
+# 3. Verify — в periods[-1] нужный месяц, updated_at ≈ время ингеста
 curl -s "https://xn--80aklbnczmv.xn--p1ai/api/cbr-flows?type=stocks" | head -c 300
 ```
 
