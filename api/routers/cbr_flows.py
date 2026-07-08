@@ -39,34 +39,37 @@ router = APIRouter(prefix="/api/cbr-flows", tags=["cbr_flows"])
 
 InstrumentType = Literal["stocks", "ofz", "fx"]
 
-# Порядок категорий для stacking (от тёмных к светлым визуально).
-# Сохраняет логику ЦБ: «крупные институционалы внизу, физлица сверху».
-# Если категория не из списка — добавляется в конец (для forward-compat).
+# Порядок категорий для legend/stack/пикера.
+# Первыми идут три «розничные» категории (Физлица, Доверительное управление,
+# Нерезиденты) — они открыты на free-тарифе и стоят в самом верху списка.
+# Остальные институционалы — ниже (доступны с basic). Если категория не из
+# списка — добавляется в конец (для forward-compat).
+# Для FX из трёх открытых реально существует только «Физические лица».
 CATEGORY_ORDER = {
     "stocks": [
+        "Физические лица",
+        "Доверительное управление",
         "Нерезиденты",
         "НФО",
         "Прочие Банки",
         "СЗКО",
-        "Физические лица",
-        "Доверительное управление",
         "Нефинансовые организации",
     ],
     "ofz": [
+        "Физические лица",
+        "Доверительное управление",
         "Нерезиденты",
         "НФО",
         "Прочие Банки",
         "СЗКО",
-        "Физические лица",
-        "Доверительное управление",
         "Нефинансовые организации",
     ],
     "fx": [
+        "Физические лица",
         "Клиенты российских кредитных организаций",
         "НФО",
         "Российские кредитные организации",
         "Банк России",
-        "Физические лица",
     ],
 }
 
@@ -94,8 +97,12 @@ def get_cbr_flows(
     limits = get_indicator_limits(tier, "cbr_flows")
     delay_hours: int = int(limits.get("data_delay_hours") or 0)
     max_history_days = limits.get("max_history_days")
+    # Whitelist категорий: None → все. Иначе видимы только перечисленные,
+    # остальные вырезаются из значений и отдаются как locked_categories (апселл).
+    categories_whitelist = limits.get("categories_whitelist")
 
-    cache_key = f"cbr_flows:{type}:delay={delay_hours}:hist={max_history_days}"
+    wl_sig = "all" if categories_whitelist is None else ",".join(sorted(categories_whitelist))
+    cache_key = f"cbr_flows:{type}:delay={delay_hours}:hist={max_history_days}:cats={wl_sig}"
     cached = get_or_set(cache_key)
     if cached is not None:
         return cached
@@ -168,12 +175,26 @@ def get_cbr_flows(
     unknown_in_data = sorted(categories_seen - set(order_template))
     categories = known_in_data + unknown_in_data
 
+    # Tier-gating категорий: locked-категории остаются в списке (для пикера с
+    # апселлом), но их значения вырезаются из данных — free-тариф видит только
+    # whitelist. basic/pro → whitelist=None → ничего не режется.
+    locked_categories: list[str] = []
+    if categories_whitelist is not None:
+        allowed = set(categories_whitelist)
+        locked_categories = [c for c in categories if c not in allowed]
+        if locked_categories:
+            locked_set = set(locked_categories)
+            for p in periods_dict.values():
+                for cat in locked_set:
+                    p["values"].pop(cat, None)
+
     periods_list = sorted(periods_dict.values(), key=lambda p: p["end_date"])
 
     response = {
         "instrument_type": type,
         "instrument_label": INSTRUMENT_LABELS.get(type, type),
         "categories": categories,
+        "locked_categories": locked_categories,
         "periods": periods_list,
         "source": latest_source,
         "updated_at": latest_updated.isoformat() if latest_updated else None,

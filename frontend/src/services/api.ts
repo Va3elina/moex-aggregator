@@ -1101,7 +1101,8 @@ export interface CbrFlowsPeriod {
 export interface CbrFlowsResponse {
   instrument_type: CbrInstrumentType;
   instrument_label: string;
-  categories: string[];   // в порядке для legend/stack
+  categories: string[];   // в порядке для legend/stack (locked входят — для пикера)
+  locked_categories?: string[];  // категории под замком на текущем тарифе (значения вырезаны)
   periods: CbrFlowsPeriod[];
   source: string | null;  // 'ORFR_2026-4'
   updated_at: string | null;

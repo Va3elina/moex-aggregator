@@ -15,7 +15,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { LineChart, Landmark, DollarSign, Building2, ChevronDown, Users } from 'lucide-react';
+import { LineChart, Landmark, DollarSign, Building2, ChevronDown, Users, Lock } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { METHODOLOGY } from '../data/methodology';
 import {
@@ -55,9 +55,9 @@ const INSTRUMENT_TABS: Array<{
 ];
 
 type PeriodFilter = '1y' | '3y' | 'all';
-// Данные ОРФР помесячные (история с 2021 г., ~5 лет). Ключи совпадают с
-// PERIOD_DAYS в TierFeaturesContext ('1y'→365, '3y'→1095, 'all'→∞), поэтому
-// «3Г» и «Всё» (>365 дней) запираются для free (matrix cbr_flows free=365).
+// Данные ОРФР помесячные (история с 2021 г., ~5 лет). Периоды открыты на всех
+// тарифах, включая free (matrix cbr_flows free max_history_days=None) — замок с
+// периодов снят, гейтинг теперь только на «институциональных» категориях.
 const PERIOD_OPTIONS: { key: PeriodFilter; label: string; months: number | null }[] = [
   { key: '1y', label: '1Г', months: 12 },
   { key: '3y', label: '3Г', months: 36 },
@@ -128,11 +128,15 @@ export default function CbrFlowsPage() {
     bottomBuffer: 96,
   });
 
-  // Видимые категории (для передачи в график)
+  // Видимые категории (для передачи в график): исключаем и скрытые вручную,
+  // и залоченные тарифом (их значения бэкенд не отдаёт на free). Локнутые
+  // остаются в data.categories — показываем их в пикере с замком (апселл).
   const visibleCategories = useMemo(() => {
     if (!data) return [];
-    return data.categories.filter((c) => !hiddenCategories.has(c));
-  }, [data, hiddenCategories]);
+    return data.categories.filter(
+      (c) => !hiddenCategories.has(c) && (cbrAccess.isLoading || cbrAccess.canUseCategory(c)),
+    );
+  }, [data, hiddenCategories, cbrAccess]);
 
   // Фильтрованные periods по выбранному period filter (последние N месяцев / всё)
   const visiblePeriods = useMemo(() => {
@@ -292,14 +296,25 @@ export default function CbrFlowsPage() {
                 {/* Items list */}
                 <div style={{ padding: 'var(--sp-2)' }}>
                   {data.categories.map((cat) => {
+                    // Локнутая тарифом категория — клик ведёт на апгрейд, а не toggle.
+                    const locked = !(cbrAccess.isLoading || cbrAccess.canUseCategory(cat));
                     const isHidden = hiddenCategories.has(cat);
-                    const isLastVisible = !isHidden && visibleCategories.length === 1;
+                    const isLastVisible = !isHidden && !locked && visibleCategories.length === 1;
                     const color = getCategoryColor(cat, theme);
                     const info = getCategoryInfo(cat);
+                    // Визуально «выключенной» считаем и скрытую вручную, и локнутую.
+                    const dimmed = isHidden || locked;
                     return (
                       <button
                         key={cat}
                         onClick={() => {
+                          if (locked) {
+                            const reqTier = cbrAccess.requiredTierFor({ category: cat });
+                            if (reqTier) {
+                              showUpgrade({ tier: reqTier, featureName: `категория «${cat}»`, indicator: 'cbr_flows' });
+                            }
+                            return;
+                          }
                           if (!isLastVisible) toggleCategory(cat);
                         }}
                         disabled={isLastVisible}
@@ -307,29 +322,33 @@ export default function CbrFlowsPage() {
                         style={{
                           padding: 'var(--sp-3)',
                           marginBottom: 'var(--sp-1)',
-                          background: isHidden ? 'transparent' : 'color-mix(in srgb, var(--text-primary) 4%, transparent)',
-                          opacity: isHidden ? 0.4 : 1,
+                          background: dimmed ? 'transparent' : 'color-mix(in srgb, var(--text-primary) 4%, transparent)',
+                          opacity: dimmed ? 0.4 : 1,
                           cursor: isLastVisible ? 'not-allowed' : 'pointer',
                           border: '1.5px solid transparent',
-                          borderColor: isHidden ? 'transparent' : 'color-mix(in srgb, var(--text-primary) 12%, transparent)',
+                          borderColor: dimmed ? 'transparent' : 'color-mix(in srgb, var(--text-primary) 12%, transparent)',
                         }}
-                        title={isLastVisible
+                        title={locked
+                          ? 'Доступно на тарифе Базовый'
+                          : isLastVisible
                           ? 'Нельзя скрыть последнюю видимую категорию'
                           : isHidden ? 'Показать на графике' : 'Скрыть с графика'}
                       >
                         <div className="flex items-start" style={{ gap: 'var(--sp-3)' }}>
-                          {/* Checkbox-style indicator */}
+                          {/* Checkbox-style indicator (локнутая → замок) */}
                           <div
                             className="flex items-center justify-center flex-shrink-0 rounded-md"
                             style={{
                               width: 22, height: 22,
                               marginTop: 2,
-                              background: isHidden ? 'transparent' : color,
-                              border: `2px solid ${isHidden ? 'var(--text-muted)' : color}`,
+                              background: dimmed ? 'transparent' : color,
+                              border: `2px solid ${dimmed ? 'var(--text-muted)' : color}`,
                               transition: 'all 150ms',
                             }}
                           >
-                            {!isHidden && (
+                            {locked ? (
+                              <Lock size={12} strokeWidth={2.4} style={{ color: 'var(--text-muted)' }} />
+                            ) : !isHidden && (
                               <svg viewBox="0 0 14 14" width="12" height="12" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                                 <polyline points="2 7 6 11 12 3" />
                               </svg>
@@ -337,14 +356,29 @@ export default function CbrFlowsPage() {
                           </div>
                           <div className="flex-1 min-w-0">
                             <div
-                              className="font-bold"
+                              className="font-bold flex items-center"
                               style={{
+                                gap: 'var(--sp-2)',
                                 fontSize: 'var(--fs-sm)',
                                 color: 'var(--text-primary)',
                                 marginBottom: 'var(--sp-1)',
                               }}
                             >
                               {cat}
+                              {locked && (
+                                <span
+                                  className="font-bold uppercase rounded-full"
+                                  style={{
+                                    fontSize: '0.6rem',
+                                    letterSpacing: '0.04em',
+                                    padding: '1px 6px',
+                                    color: 'var(--accent)',
+                                    border: '1px solid var(--accent)',
+                                  }}
+                                >
+                                  Базовый
+                                </span>
+                              )}
                             </div>
                             {info && (
                               <div

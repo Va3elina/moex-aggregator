@@ -214,18 +214,29 @@ INDICATOR_FEATURES: dict[str, dict[str, dict]] = {
     "cbr_flows": {
         "free": {
             "data_delay_hours": 24,
-            "max_history_days": 365,
-            "category_filters_enabled": False,   # все категории всегда вкл, нельзя фильтровать
+            "max_history_days": None,            # период открыт полностью — все ТФ на free
+            "category_filters_enabled": False,   # категории нельзя скрывать вручную
+            # Free видит только 3 категории «розничного» среза. Остальных
+            # участников (СЗКО, НФО, банки, нерезиденты по валюте и т.д.) бэкенд
+            # вырезает из данных и помечает locked → апселл на basic. Для FX из
+            # трёх реально существует только «Физические лица».
+            "categories_whitelist": [
+                "Физические лица",
+                "Доверительное управление",
+                "Нерезиденты",
+            ],
         },
         "basic": {
             "data_delay_hours": 0,
             "max_history_days": None,
             "category_filters_enabled": True,
+            "categories_whitelist": None,        # все категории
         },
         "pro": {
             "data_delay_hours": 0,
             "max_history_days": None,
             "category_filters_enabled": True,
+            "categories_whitelist": None,        # все категории
         },
     },
 
