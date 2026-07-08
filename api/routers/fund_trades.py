@@ -950,6 +950,230 @@ def top_movers(
     }
 
 
+@router.get("/portfolio")
+def combined_portfolio(
+    manager: str | None = Query(None, description="фильтр по УК: comma-separated uk_id; пусто=все"),
+    funds: str | None = Query(None, description="фильтр по конкретным фондам: comma-separated тикеры; приоритет над manager; пусто=все"),
+    user: Optional[User] = Depends(get_current_user_optional),
+    db: Session = Depends(get_db),
+):
+    """
+    Общий портфель — все выбранные фонды акций слиты в ОДИН портфель, «как будто
+    ими управляет один управляющий».
+
+    Для каждой бумаги оцениваем ТЕКУЩУЮ рублёвую стоимость позиции как СЧА фонда ×
+    доля из последнего снапшота (fallback amount_rub из SCHA, если свежей СЧА нет) и
+    суммируем across выбранных фондов. Берём nav×долю, а НЕ amount_rub напрямую: доля
+    и СЧА согласованы по дате (стоимость акций ≤ СЧА, разница = кэш/прочее), тогда как
+    amount_rub снят на дату снапшота и при упавшем рынке даёт стоимость > текущей СЧА.
+    Free/гость — с задержкой в 1 снапшот, как остальные разделы.
+
+    Отдаём ДВА веса per бумага:
+      weight_rub — доля в общем портфеле ПО ДЕНЬГАМ (value-weighted; крупные фонды
+                   весомее — это буквально один общий портфель);
+      weight_avg — средняя доля по выбранным фондам (equal-weight; фонд не держит
+                   бумагу → 0%, поэтому суммируется к ~100 по всем фондам набора).
+
+    Плюс суммарная СЧА, суммарная стоимость акций и nav-взвешенная доходность набора.
+    Фильтр фондов: funds (тикеры) приоритетнее manager (uk_id) — как в /movers; фронт
+    резолвит выбранные УК в тикеры и шлёт их в `funds`.
+    """
+    cutoff = _snapshot_cutoff(db, user)  # Free/гость — задержка (свежий срез по подписке)
+
+    # funds (тикеры фондов) приоритетнее manager (uk_id). Пусто = все whitelist-акции.
+    fund_tickers = [p.strip() for p in funds.split(",")] if funds else []
+    fund_tickers = [p for p in fund_tickers if p]
+    manager_ids: list[int] = []
+    if manager:
+        for part in manager.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            try:
+                manager_ids.append(int(part))
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"manager must be comma-separated integer uk_id, got '{part}'",
+                )
+    if fund_tickers:
+        manager_filter = "AND f.ticker = ANY(:fund_tickers)"
+    elif manager_ids:
+        manager_filter = "AND f.uk_id = ANY(:managers)"
+    else:
+        manager_filter = ""
+
+    params = {
+        "tickers": list(WHITELIST_TICKERS),
+        "sources": list(MONTHLY_SOURCES),
+        "cutoff": cutoff,
+    }
+    if fund_tickers:
+        params["fund_tickers"] = fund_tickers
+    elif manager_ids:
+        params["managers"] = manager_ids
+
+    # ── Выбранные фонды: nav (полная СЧА) + доходность пая + дата снапшота ──
+    fund_rows = db.execute(text(f"""
+        SELECT
+            f.fund_id, f.ticker, f.name, f.uk, f.uk_id,
+            (SELECT MAX(h.snapshot_date) FROM fund_holdings_history h
+             WHERE h.fund_id = f.fund_id AND h.source = ANY(:sources)
+               AND h.snapshot_date <= :cutoff) AS snap_date,
+            fd_last.nav AS nav_rub,
+            fd_last.pay AS last_pay,
+            fd_1m.pay AS pay_1m, fd_3m.pay AS pay_3m, fd_6m.pay AS pay_6m, fd_1y.pay AS pay_1y,
+            (SELECT COALESCE(SUM(amount_per_unit), 0) FROM fund_distributions d
+             WHERE d.fund_id = f.fund_id AND d.record_date > fd_last.td - INTERVAL '1 month'   AND d.record_date <= fd_last.td) AS dist_1m,
+            (SELECT COALESCE(SUM(amount_per_unit), 0) FROM fund_distributions d
+             WHERE d.fund_id = f.fund_id AND d.record_date > fd_last.td - INTERVAL '3 months'  AND d.record_date <= fd_last.td) AS dist_3m,
+            (SELECT COALESCE(SUM(amount_per_unit), 0) FROM fund_distributions d
+             WHERE d.fund_id = f.fund_id AND d.record_date > fd_last.td - INTERVAL '6 months'  AND d.record_date <= fd_last.td) AS dist_6m,
+            (SELECT COALESCE(SUM(amount_per_unit), 0) FROM fund_distributions d
+             WHERE d.fund_id = f.fund_id AND d.record_date > fd_last.td - INTERVAL '12 months' AND d.record_date <= fd_last.td) AS dist_1y
+        FROM funds f
+        LEFT JOIN LATERAL (
+            SELECT nav, pay, trade_date AS td FROM fund_data WHERE fund_id = f.fund_id AND nav IS NOT NULL
+            ORDER BY trade_date DESC LIMIT 1
+        ) fd_last ON true
+        LEFT JOIN LATERAL (
+            SELECT pay FROM fund_data WHERE fund_id = f.fund_id AND pay IS NOT NULL
+            AND trade_date <= fd_last.td - INTERVAL '1 month' ORDER BY trade_date DESC LIMIT 1
+        ) fd_1m ON true
+        LEFT JOIN LATERAL (
+            SELECT pay FROM fund_data WHERE fund_id = f.fund_id AND pay IS NOT NULL
+            AND trade_date <= fd_last.td - INTERVAL '3 months' ORDER BY trade_date DESC LIMIT 1
+        ) fd_3m ON true
+        LEFT JOIN LATERAL (
+            SELECT pay FROM fund_data WHERE fund_id = f.fund_id AND pay IS NOT NULL
+            AND trade_date <= fd_last.td - INTERVAL '6 months' ORDER BY trade_date DESC LIMIT 1
+        ) fd_6m ON true
+        LEFT JOIN LATERAL (
+            SELECT pay FROM fund_data WHERE fund_id = f.fund_id AND pay IS NOT NULL
+            AND trade_date <= fd_last.td - INTERVAL '12 months' ORDER BY trade_date DESC LIMIT 1
+        ) fd_1y ON true
+        WHERE f.ticker = ANY(:tickers) AND f.category = 'stocks' {manager_filter}
+          AND EXISTS (SELECT 1 FROM fund_holdings_history h2
+                      WHERE h2.fund_id = f.fund_id AND h2.source = ANY(:sources)
+                        AND h2.snapshot_date <= :cutoff)
+        ORDER BY fd_last.nav DESC NULLS LAST
+    """), params).mappings().all()
+
+    included_funds = []
+    total_nav = 0.0
+    for r in fund_rows:
+        nav = float(r["nav_rub"]) if r["nav_rub"] is not None else None
+        if nav:
+            total_nav += nav
+        last_pay = r["last_pay"]
+        rets = _guard_returns(r["ticker"], {
+            "m1": _calc_total_return(last_pay, r["pay_1m"], r["dist_1m"]),
+            "m3": _calc_total_return(last_pay, r["pay_3m"], r["dist_3m"]),
+            "m6": _calc_total_return(last_pay, r["pay_6m"], r["dist_6m"]),
+            "y1": _calc_total_return(last_pay, r["pay_1y"], r["dist_1y"]),
+        })
+        included_funds.append({
+            "ticker": r["ticker"], "name": r["name"], "uk": r["uk"], "uk_id": r["uk_id"],
+            "nav_rub": nav,
+            "snapshot_date": r["snap_date"].isoformat() if r["snap_date"] else None,
+            "_returns": rets,
+        })
+
+    num_funds = len(included_funds)
+
+    # nav-взвешенная доходность портфеля per период (фонды без данных за период не
+    # тянут вес — исключаются из числителя И знаменателя).
+    def _wavg(key: str):
+        num = den = 0.0
+        for fnd in included_funds:
+            v = fnd["_returns"].get(key)
+            nav = fnd["nav_rub"]
+            if v is not None and nav:
+                num += nav * v
+                den += nav
+        return round(num / den, 2) if den > 0 else None
+
+    portfolio_returns = {k: _wavg(k) for k in ("m1", "m3", "m6", "y1")}
+
+    # ── Агрегированные холдинги: суммируем рублёвую стоимость per бумага (ISIN-ключ) ──
+    hold_rows = db.execute(text(f"""
+        WITH sel AS (
+            SELECT f.fund_id FROM funds f
+            WHERE f.ticker = ANY(:tickers) AND f.category = 'stocks' {manager_filter}
+        ),
+        last_snap AS (
+            SELECT h.fund_id, MAX(h.snapshot_date) AS d
+            FROM fund_holdings_history h JOIN sel ON sel.fund_id = h.fund_id
+            WHERE h.source = ANY(:sources) AND h.snapshot_date <= :cutoff
+            GROUP BY h.fund_id
+        ),
+        fund_nav AS (
+            SELECT sel.fund_id, fd.nav
+            FROM sel
+            LEFT JOIN LATERAL (
+                SELECT nav FROM fund_data WHERE fund_id = sel.fund_id AND nav IS NOT NULL
+                ORDER BY trade_date DESC LIMIT 1
+            ) fd ON true
+        ),
+        holdings AS (
+            SELECT h.fund_id,
+                   COALESCE(NULLIF(h.isin, ''), h.asset_name) AS akey,
+                   h.asset_name, h.isin, h.weight,
+                   COALESCE(fn.nav * h.weight / 100.0, h.amount_rub) AS value_rub
+            FROM last_snap ls
+            JOIN fund_holdings_history h
+                 ON h.fund_id = ls.fund_id AND h.snapshot_date = ls.d AND h.source = ANY(:sources)
+            JOIN fund_nav fn ON fn.fund_id = h.fund_id
+        ),
+        names AS (
+            SELECT h.isin, COALESCE(MAX(sr.short_name),
+                   (array_agg(h.asset_name ORDER BY length(h.asset_name), h.asset_name))[1]) AS short_name
+            FROM fund_holdings_history h LEFT JOIN securities_ref sr ON sr.isin = h.isin
+            WHERE COALESCE(h.isin, '') <> '' GROUP BY h.isin
+        )
+        SELECT hd.akey,
+               COALESCE(MAX(n.short_name),
+                        (array_agg(hd.asset_name ORDER BY length(hd.asset_name), hd.asset_name))[1]) AS asset_name,
+               MAX(NULLIF(hd.isin, '')) AS isin,
+               SUM(hd.value_rub) AS value_rub,
+               SUM(hd.weight) AS sum_weight,
+               COUNT(DISTINCT hd.fund_id) AS funds_holding
+        FROM holdings hd
+        LEFT JOIN names n ON n.isin = hd.akey
+        GROUP BY hd.akey
+        ORDER BY value_rub DESC NULLS LAST
+    """), params).mappings().all()
+
+    total_value = sum(float(r["value_rub"]) for r in hold_rows if r["value_rub"] is not None)
+    holdings = []
+    for r in hold_rows:
+        value_rub = float(r["value_rub"]) if r["value_rub"] is not None else 0.0
+        sum_weight = float(r["sum_weight"]) if r["sum_weight"] is not None else 0.0
+        holdings.append({
+            "akey": r["akey"],
+            "asset_name": r["asset_name"],
+            "isin": r["isin"],
+            "value_rub": value_rub,
+            "weight_rub": round(value_rub / total_value * 100, 4) if total_value > 0 else 0.0,
+            "weight_avg": round(sum_weight / num_funds, 4) if num_funds > 0 else 0.0,
+            "funds_holding": int(r["funds_holding"]),
+        })
+
+    for fnd in included_funds:
+        fnd.pop("_returns", None)
+
+    return {
+        "num_funds": num_funds,
+        "num_assets": len(holdings),
+        "total_value_rub": total_value,
+        "total_nav_rub": total_nav,
+        "returns": portfolio_returns,
+        "snapshot_cutoff": (None if cutoff == _FAR_FUTURE else cutoff.isoformat()),
+        "funds": included_funds,
+        "holdings": holdings,
+    }
+
+
 @router.get("/asset/{asset_name}")
 def asset_buyers(
     asset_name: str = Path(..., min_length=1, max_length=255),

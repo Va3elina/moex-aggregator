@@ -27,6 +27,7 @@ import {
   TrendingDown,
   Activity,
   ArrowLeftRight,
+  Briefcase,
 } from 'lucide-react';
 import {
   listFundsWithHistory,
@@ -34,7 +35,9 @@ import {
   getFundTradesMovers,
   getFundSnapshots,
   getFundSnapshotReview,
+  getFundPortfolio,
   type FundTradesPeriod,
+  type FundPortfolio,
   type FundWithHistory,
   type FundTradesMovers,
   type FundSnapshotsList,
@@ -44,7 +47,7 @@ import {
 import { useCommonFeatures } from '../../contexts/TierFeaturesContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useUpgradePrompt } from '../../components/tier/UpgradeModal';
-import { usePersistedState } from '../../hooks/usePersistedState';
+import { usePersistedState, usePersistedSet } from '../../hooks/usePersistedState';
 import { useGrowReveal } from '../../hooks/useGrowReveal';
 import { UK_LOGOS, DONUT_COLORS, fundAssetName, fundAssetColor, resolveFundLogo, stripUkName } from '../../config/fundConfig';
 import Donut from '../../components/funds/Donut';
@@ -57,6 +60,7 @@ import FundDetailModal, {
 } from '../../components/funds/FundDetailModal';
 import FundPicker, { type FundPickerFund } from '../../components/fundtrades/FundPicker';
 import UkMultiSelect, { type UkOption } from '../../components/fundtrades/UkMultiSelect';
+import CombinedPortfolioView from '../../components/fundtrades/CombinedPortfolioView';
 import CompanyFlowsTab from '../../components/fundtrades/CompanyFlowsTab';
 import DelayedDataBadge from '../../components/fundtrades/DelayedDataBadge';
 import LockedSnapshotTeaser from '../../components/fundtrades/LockedSnapshotTeaser';
@@ -66,10 +70,11 @@ import MobileSheet from '../../components/mobile/MobileSheet';
 import { useOnboardingTour } from '../../hooks/useFirstVisit';
 import OnboardingTour, { type TourStep } from '../../components/onboarding/OnboardingTour';
 
-type Tab = 'funds' | 'movers' | 'snapshots' | 'company';
+type Tab = 'funds' | 'portfolio' | 'movers' | 'snapshots' | 'company';
 
 const TAB_LABEL: Record<Tab, string> = {
   funds: 'Состав фондов',
+  portfolio: 'Общий портфель',
   movers: 'Движения',
   snapshots: 'Снапшот',
   company: 'Потоки по компании',
@@ -323,6 +328,14 @@ export default function MobileFundTradesPage() {
   // cross-tab: предвыбор бумаги для перехода movers → Потоки по компании.
   const [companyPreset, setCompanyPreset] = useState<{ asset_name: string; isin: string | null } | null>(null);
 
+  // Общий портфель — агрегированный состав выбранных фондов акций как один портфель.
+  const [portfolioUks, setPortfolioUks] = usePersistedSet<string>('frame:fundtrades:portfolioUks');
+  const [portfolioMode, setPortfolioMode] = usePersistedState<'rub' | 'share'>('frame:fundtrades:portfolioMode', 'rub');
+  const [portfolioPeriod, setPortfolioPeriod] = usePersistedState<ReturnPeriodKey>('frame:fundtrades:portfolioPeriod', 'y1');
+  const [portfolio, setPortfolio] = useState<FundPortfolio | null>(null);
+  const [loadingPortfolio, setLoadingPortfolio] = useState(false);
+  const portfolioReqRef = useRef(0);
+
   // ── Sheets ──
   const [assetSheetOpen, setAssetSheetOpen] = useState(false);
   const [timeSheetOpen, setTimeSheetOpen] = useState(false);
@@ -356,6 +369,26 @@ export default function MobileFundTradesPage() {
       .catch((e: Error) => { if (isStale()) return; setError(e.message); })
       .finally(() => { if (!isStale()) setLoadingMovers(false); });
   }, [tab, period, asOf, fundsParam, metric, common.fund_trades_access]);
+
+  // Общий портфель: выбранные УК → тикеры фондов (пусто = все whitelist-акции).
+  const portfolioFundsParam = useMemo(
+    () => (portfolioUks.size === 0
+      ? ''
+      : funds.filter((f) => portfolioUks.has(ukKey(f))).map((f) => f.ticker).join(',')),
+    [funds, portfolioUks],
+  );
+  useEffect(() => {
+    if (!common.fund_trades_access) return;
+    if (tab !== 'portfolio') return;
+    if (funds.length === 0) return;
+    const reqId = ++portfolioReqRef.current;
+    const isStale = () => reqId !== portfolioReqRef.current;
+    setLoadingPortfolio(true);
+    getFundPortfolio({ funds: portfolioFundsParam || undefined })
+      .then((p) => { if (isStale()) return; setPortfolio(p); })
+      .catch((e: Error) => { if (isStale()) return; setError(e.message); })
+      .finally(() => { if (!isStale()) setLoadingPortfolio(false); });
+  }, [tab, portfolioFundsParam, funds.length, common.fund_trades_access]);
 
   // Уникальные УК для UkMultiSelect (Состав фондов).
   const ukOptions = useMemo<UkOption[]>(() => {
@@ -508,12 +541,14 @@ export default function MobileFundTradesPage() {
   // - company:   ⚙️(режим); бумага/фонды — в теле CompanyFlowsTab
   const timeSummary = (() => {
     if (tab === 'funds') return `Доходность · ${RETURN_PERIOD_LABEL[returnPeriod]}`;
+    if (tab === 'portfolio') return `Доходность · ${RETURN_PERIOD_LABEL[portfolioPeriod]}`;
     if (tab === 'movers') return asOf ? formatMonthYear(asOf) : (movers?.resolved_month ? formatMonthYear(movers.resolved_month) : (movers?.available_months[0] ? formatMonthYear(movers.available_months[0]) : 'Месяц'));
     return undefined;
   })();
   const optionsSummary = (() => {
     const base = TAB_LABEL[tab];
     if (tab === 'movers') return `${base} · ${metric === 'weight' ? '% веса' : '₽'}`;
+    if (tab === 'portfolio') return `Портфель · ${portfolioMode === 'rub' ? '₽' : 'ср. доля'}`;
     if (tab === 'funds') {
       const s = fundSort === 'return' ? 'доходность' : fundSort === 'volume' ? 'объём' : 'имя';
       return `${base} · ${s}`;
@@ -530,7 +565,12 @@ export default function MobileFundTradesPage() {
       settingsTourId="ft-options"
       enableFullscreen={false}
       onRefresh={async () => {
-        if (tab === 'movers') {
+        if (tab === 'portfolio') {
+          const reqId = ++portfolioReqRef.current;
+          const p = await getFundPortfolio({ funds: portfolioFundsParam || undefined }).catch(() => null);
+          if (reqId !== portfolioReqRef.current) return;
+          if (p) setPortfolio(p);
+        } else if (tab === 'movers') {
           const reqId = ++moversReqRef.current;
           const m = await getFundTradesMovers(period, { asOf, funds: fundsParam || undefined, sort: metric }).catch(() => null);
           if (reqId !== moversReqRef.current) return;
@@ -542,7 +582,7 @@ export default function MobileFundTradesPage() {
           if (r) setFunds(r.funds);
         }
       }}
-      loading={loadingFunds || loadingMovers}
+      loading={loadingFunds || loadingMovers || loadingPortfolio}
     >
       <MobilePageHeader
         Icon={Wallet}
@@ -605,6 +645,22 @@ export default function MobileFundTradesPage() {
         </div>
       )}
 
+      {tab === 'portfolio' && (
+        <div style={{ paddingBottom: 12 }}>
+          <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)', margin: '4px 2px 12px', lineHeight: 1.5 }}>
+            Все выбранные фонды акций собраны в один портфель, как будто ими управляет
+            один управляющий. Режим веса и выбор УК находятся в кнопке Опции.
+          </p>
+          <CombinedPortfolioView
+            portfolio={portfolio}
+            loading={loadingPortfolio}
+            mode={portfolioMode}
+            period={portfolioPeriod}
+            variant="mobile"
+          />
+        </div>
+      )}
+
       {tab === 'snapshots' && <SnapshotReviewTab />}
       </div>
 
@@ -637,6 +693,26 @@ export default function MobileFundTradesPage() {
       {/* ── 🕐 Время sheet ── */}
       <MobileSheet open={timeSheetOpen} onClose={() => setTimeSheetOpen(false)} title="Время">
         <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 20 }}>
+          {tab === 'portfolio' && (
+            <div>
+              <div style={SHEET_SECTION_LABEL}>Период доходности</div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {(['m1', 'm3', 'm6', 'y1'] as ReturnPeriodKey[]).map((k) => (
+                  <button
+                    key={k}
+                    className={`fm-chip ${portfolioPeriod === k ? 'active' : ''}`}
+                    onClick={() => { setPortfolioPeriod(k); setTimeSheetOpen(false); }}
+                    style={{ flex: 1, justifyContent: 'center', minWidth: 'calc(50% - 4px)' }}
+                  >
+                    {RETURN_PERIOD_LABEL[k]}
+                  </button>
+                ))}
+              </div>
+              <p style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.5 }}>
+                Доходность всего портфеля, взвешенная по СЧА фондов.
+              </p>
+            </div>
+          )}
           {tab === 'funds' && (
             <div>
               <div style={SHEET_SECTION_LABEL}>Период доходности</div>
@@ -714,6 +790,7 @@ export default function MobileFundTradesPage() {
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {([
                 { id: 'funds' as const, label: 'Состав фондов', icon: Wallet },
+                { id: 'portfolio' as const, label: 'Портфель', icon: Briefcase },
                 { id: 'movers' as const, label: 'Движения', icon: TrendingUp },
                 { id: 'snapshots' as const, label: 'Снапшот', icon: Activity },
                 { id: 'company' as const, label: 'Потоки', icon: ArrowLeftRight },
@@ -801,6 +878,38 @@ export default function MobileFundTradesPage() {
                     mode="multi"
                     selected={selectedMoverFunds}
                     onChange={setSelectedMoverFunds}
+                  />
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Общий портфель: режим веса + выбор УК */}
+          {tab === 'portfolio' && (
+            <>
+              <div>
+                <div style={SHEET_SECTION_LABEL}>Режим веса</div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {([['rub', 'По рублям'], ['share', 'Средняя доля']] as const).map(([key, lbl]) => (
+                    <button
+                      key={key}
+                      className={`fm-chip ${portfolioMode === key ? 'active' : ''}`}
+                      onClick={() => setPortfolioMode(key)}
+                      style={{ flex: 1, justifyContent: 'center' }}
+                    >
+                      {lbl}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {ukOptions.length > 1 && (
+                <div>
+                  <div style={SHEET_SECTION_LABEL}>Управляющая компания</div>
+                  <UkMultiSelect
+                    options={ukOptions}
+                    selected={portfolioUks}
+                    onChange={setPortfolioUks}
+                    size="md"
                   />
                 </div>
               )}
