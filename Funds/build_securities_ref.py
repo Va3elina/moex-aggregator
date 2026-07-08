@@ -16,6 +16,7 @@
 (нужен DB_URL + egress к ISS): docker exec -i frame-orchestrator-1 python3 - < этот файл
 """
 import os
+import re
 import sys
 import json
 import time
@@ -41,6 +42,42 @@ ISIN_ALIASES = {
 ISS_URL = ("https://iss.moex.com/iss/securities.json?iss.meta=off&q={q}"
            "&securities.columns=secid,shortname,isin,regnumber,type,is_traded")
 _UA = {"User-Agent": "frame-securities-ref/1.0"}
+
+# ISS-типы акций/расписок — на такие может нарваться облигация, если УК проставила
+# на облигационной строке ISIN базовой акции эмитента (в ISS этот ISIN — акция).
+SHARE_TYPES = {"common_share", "preferred_share", "depositary_receipt"}
+
+# Курируемые ISIN'ы облигаций, которые ISS securities.json отдаёт как common_share
+# (УК записали ISIN базовой акции эмитента на облигационную строку). Без override
+# попадают в таб «Акции» пикера «Потоки по компании». Дополняется эвристикой
+# _looks_like_bond по имени бумаги (см. ниже) для новых облигаций.
+BOND_ISIN_OVERRIDES = {
+    "RU0008959580",  # КАМАЗ, БО-11
+    "RU0009100895",  # Славнефть, 001P-01
+    "RU0009028674",  # Акрон, БО-001P-05
+    "RU0009100507",  # НКНХ, 001P-03
+    "RU000A0H1ES3",  # ТГК-14, 001Р-01
+    "RU000A0ETZF2",  # Томск, 34009
+    "RU0007796819",  # ЯТЭК, 001Р-06
+    "RU000A0HL7A2",  # Авто Финанс Банк, БO-001P-11
+    "RU000A0JR6A6",  # ГК Азот, 001Р-01
+}
+
+# Имя облигации у УК почти всегда несёт серию: «БО-11», «001P-01» / «001Р-06»
+# (лат. и кир. P/Р), «БO-001P-11» (лат. O), региональные «34009». Строгие маркеры,
+# чтобы НЕ задеть настоящие акции (напр. «Сбербанк», «Сургнфгз-п»).
+_BOND_NAME_RE = re.compile(
+    r"(?:^|[\s,])(?:БО|BO)[\s-]?\d"   # БО-11, БО-001P-05, BO-...
+    r"|\d{3}[PРp]-\d"                 # 001P-01, 001Р-06 (лат./кир. P/Р)
+    r"|(?:^|[\s,])3\d{4}(?:$|\D)"     # 34009 (муниципальные/старые серии)
+    r"|обл(?:игаци)?\b|\bбонд\b|\bbond\b",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_bond(names):
+    """True, если хоть одно имя бумаги у УК несёт облигационную серию."""
+    return any(n and _BOND_NAME_RE.search(n) for n in names)
 
 
 def iss(q):
@@ -86,10 +123,14 @@ def main():
         """))
 
     with engine.connect() as conn:
-        isins = [r[0] for r in conn.execute(text("""
-            SELECT DISTINCT isin FROM fund_holdings_history
-            WHERE isin IS NOT NULL AND isin <> '' ORDER BY isin
-        """)).fetchall()]
+        rows = conn.execute(text("""
+            SELECT isin, array_agg(DISTINCT asset_name) AS names
+            FROM fund_holdings_history
+            WHERE isin IS NOT NULL AND isin <> ''
+            GROUP BY isin ORDER BY isin
+        """)).fetchall()
+    isins = [r[0] for r in rows]
+    names_by_isin = {r[0]: (r[1] or []) for r in rows}
     print(f"distinct ISIN в fund_holdings_history: {len(isins)}")
 
     upsert = text("""
@@ -106,6 +147,13 @@ def main():
         canonical = ISIN_ALIASES.get(isin, isin)
         if row:
             secid, short, _isin, reg, typ, traded = row
+            # Облигация под ISIN акции эмитента: ISS вернул share-тип, но имя у УК —
+            # облигационная серия (или ISIN в курируемом списке). Метим как облигацию,
+            # иначе бумага попадёт в таб «Акции» пикера «Потоки по компании».
+            if typ in SHARE_TYPES and (
+                    isin in BOND_ISIN_OVERRIDES
+                    or _looks_like_bond(names_by_isin.get(isin, []))):
+                typ = "exchange_bond"
             rec = {"isin": isin, "secid": secid, "short_name": short, "sec_type": typ,
                    "is_traded": bool(traded == 1), "canonical_isin": canonical}
             found += 1
