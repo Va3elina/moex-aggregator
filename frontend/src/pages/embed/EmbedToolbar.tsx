@@ -222,7 +222,7 @@ export function Popover({
     overflowY: 'auto',
     background: 'var(--bg-base, var(--bg-primary))',
     color: 'var(--text-primary)',
-    border: '1.5px solid var(--border-color, rgba(128,128,128,0.4))',
+    border: 'var(--emb-pop-bw, 1.5px) solid var(--border-color, rgba(128,128,128,0.4))',
     borderRadius: 10,
     boxShadow: '0 12px 34px rgba(0,0,0,0.4)',
     padding: 12,
@@ -272,6 +272,9 @@ export function AssetButton({
   hideLowActivity?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  // В песочнице раскладка по макету §6.1: [лого][тикер][⊕ приглушённый в конце],
+  // компактнее и с мягким бордером. На сайте/в расширении — прежний вид.
+  const sb = useContext(SandboxWindowCtx) !== null;
   return (
     <div style={{ position: 'relative', flexShrink: 0 }}>
       <button
@@ -281,18 +284,19 @@ export function AssetButton({
         style={{
           display: 'inline-flex',
           alignItems: 'center',
-          gap: 6,
-          padding: '4px 10px 4px 6px',
-          borderRadius: 8,
-          border: '1.5px solid var(--border-color, rgba(128,128,128,0.4))',
+          gap: sb ? 5 : 6,
+          padding: sb ? '2px 6px 2px 4px' : '4px 10px 4px 6px',
+          borderRadius: sb ? 6 : 8,
+          border: '1.5px solid var(--border-strong, var(--border-color, rgba(128,128,128,0.4)))',
           background: open ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'transparent',
           color: 'var(--text-primary)',
           cursor: 'pointer',
         }}
       >
-        <PlusCircle size={16} style={{ color: 'var(--accent)' }} />
-        <InstrumentIcon sectype={current} size={18} />
-        <span style={{ fontWeight: 800, fontSize: 12.5, letterSpacing: '-0.01em' }}>{ticker}</span>
+        {!sb && <PlusCircle size={16} style={{ color: 'var(--accent)' }} />}
+        <InstrumentIcon sectype={current} size={sb ? 16 : 18} />
+        <span style={{ fontWeight: sb ? 700 : 800, fontSize: sb ? 11 : 12.5, letterSpacing: '-0.01em' }}>{ticker}</span>
+        {sb && <PlusCircle size={11} style={{ color: 'var(--muted)', flexShrink: 0 }} />}
       </button>
       {open && (
         <InstrumentSearchModal
@@ -310,16 +314,25 @@ export function AssetButton({
 
 /* ───────────────────────── inline controls ───────────────────────── */
 
+/**
+ * Размеры контролов параметризованы CSS-переменными, дефолты = ТЕКУЩИЙ вид.
+ * Сайт и расширение переменных не задают → рендерятся как раньше. Песочница
+ * переопределяет их в scope `.sb-panel` (sandbox.css) под значения макета —
+ * тот же приём, что G-1 для палитры. Blueprint G-4.
+ */
+const CTL_FS = 'var(--emb-ctl-fs, 11.5px)';
+const CTL_FW = 'var(--emb-ctl-fw, 700)' as unknown as CSSProperties['fontWeight'];
+
 function pillStyle(active: boolean): CSSProperties {
   return {
-    fontSize: 11.5,
-    fontWeight: 700,
-    padding: '4px 9px',
+    fontSize: CTL_FS,
+    fontWeight: CTL_FW,
+    padding: 'var(--emb-pill-pad, 4px 9px)',
     borderRadius: 6,
     cursor: 'pointer',
     border: active ? '1.5px solid var(--accent)' : '1.5px solid var(--border-color, rgba(128,128,128,0.3))',
     background: active ? 'var(--accent)' : 'transparent',
-    color: active ? '#fff' : 'var(--text-primary)',
+    color: active ? '#fff' : 'var(--emb-pill-off, var(--text-primary))',
     lineHeight: 1.2,
     whiteSpace: 'nowrap',
     transition: 'background 0.12s, border-color 0.12s',
@@ -352,14 +365,14 @@ function ddBtnStyle(open: boolean): CSSProperties {
     display: 'inline-flex',
     alignItems: 'center',
     gap: 5,
-    padding: '4px 8px 4px 10px',
-    borderRadius: 7,
+    padding: 'var(--emb-dd-pad, 4px 8px 4px 10px)',
+    borderRadius: 'var(--emb-dd-radius, 7px)',
     cursor: 'pointer',
     border: '1.5px solid var(--border-color, rgba(128,128,128,0.35))',
     background: open ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'transparent',
     color: 'var(--text-primary)',
-    fontSize: 11.5,
-    fontWeight: 700,
+    fontSize: CTL_FS,
+    fontWeight: CTL_FW,
     whiteSpace: 'nowrap',
     lineHeight: 1.2,
   };
