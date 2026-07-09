@@ -33,6 +33,7 @@ if "@db:" in _db:
     os.environ["DB_URL"] = _db.replace("@db:", "@127.0.0.1:")
 
 from api.database import SessionLocal                      # noqa: E402
+from api.services.oi_screener import low_activity_set       # noqa: E402
 from signals import config                                 # noqa: E402
 from signals.db import get_asset_name, FUND_CATEGORIES     # noqa: E402
 from signals.detectors.oi import compute_position_atr      # noqa: E402
@@ -111,8 +112,22 @@ def run_once() -> dict:
     summary = {"scanned": 0, "found": 0, "inserted": 0, "errors": 0}
     candidates: list[dict] = []
 
-    # OI — только FIZ (net зеркален, YUR задвоил бы), все активы.
+    # Малоактивные активы (мало физлиц-трейдеров) прячем из ленты ТЕМ ЖЕ принципом,
+    # что пикер и скринер сигналов (services/oi_screener.low_activity): резкое
+    # движение в фьючерсе, которым торгует 2-3 физлица (напр. индекс RVI), — шум,
+    # а не сигнал. Единый источник порога, иначе тост покажет то, что скрыто в /oi.
+    try:
+        with SessionLocal() as _s:
+            low_set = low_activity_set(_s)
+    except Exception as e:
+        low_set = set()
+        print(f"[anomaly_scan] low_activity_set failed, no relevance filter: "
+              f"{type(e).__name__}: {e}")
+
+    # OI — только FIZ (net зеркален, YUR задвоил бы), все РЕЛЕВАНТНЫЕ активы.
     for sectype in config.OI_ASSETS:
+        if sectype in low_set:
+            continue
         summary["scanned"] += 1
         try:
             c = _oi_candidate(sectype)
