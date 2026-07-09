@@ -201,7 +201,15 @@ export default function YearlySeasonalityChart({
   const PL = cssVar('--seasonality-chart-pad-left', PADDING.left);
   const PR = cssVar('--seasonality-chart-pad-right', PADDING.rightSingle);
   const PT = cssVar('--chart-pad-top', PADDING.top);
-  const PB = cssVar('--chart-pad-bottom', PADDING.bottom);
+  // Линейный (годовой) режим — единственная строка подписей месяцев и НЕТ
+  // навигатора под графиком (в отличие от SimpleChart / потоков). Штатные
+  // ~50px нижнего паддинга оставляли большой пустой коридор между подписями
+  // и нижней границей карточки. На десктопе ужимаем PB, чтобы график тянулся
+  // ниже, а подписи прижимались к низу (см. монтаж месячных меток — их bottom
+  // уменьшается синхронно, зазор подпись↔нижняя грид-линия сохраняется ~3px).
+  // На мобиле не трогаем: там PB уже компактный (clamp 28-40) и высота меньше.
+  const rawPB = cssVar('--chart-pad-bottom', PADDING.bottom);
+  const PB = isMobile ? rawPB : Math.max(28, rawPB - 20);
 
   // Unified pointer handler — вызывается и от mouse, и от touch.
   // Извлекает clientX/Y → тот же код для обоих событий. Без этого на mobile
@@ -510,7 +518,10 @@ export default function YearlySeasonalityChart({
               className="absolute font-bold pointer-events-none"
               style={{
                 left: `calc(${PL}px + ${xPct / 100} * (100% - ${PL}px - ${PR}px))`,
-                bottom: 22,
+                // Синхронно с ужатым PB (см. выше): на десктопе подписи месяцев
+                // опускаются ближе к низу карточки, сохраняя ~3px зазор до
+                // нижней грид-линии. На мобиле остаётся штатные 22px.
+                bottom: isMobile ? 22 : 2,
                 transform: 'translateX(-50%)',
                 fontSize: 'var(--chart-font-x, 13px)',
                 color: 'var(--axis-color, #9CA3B8)',
