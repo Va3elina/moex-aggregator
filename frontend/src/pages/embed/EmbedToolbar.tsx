@@ -20,8 +20,17 @@
  *
  * Всё инлайн-стилями с CSS-var, чтобы работать в любой теме внутри iframe.
  */
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { PlusCircle, Settings, ChevronDown } from 'lucide-react';
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { PlusCircle, Settings, ChevronDown, Maximize2, X as XIcon } from 'lucide-react';
+
+/**
+ * Контекст оконных кнопок панели ПЕСОЧНИЦЫ. Когда embed рендерится внутри окна
+ * песочницы (SandboxPage оборачивает панель этим провайдером), EmbedFrame дорисовывает
+ * кнопки окна (⤢ развернуть / × закрыть) СПРАВА в ту же строку тулбара — единая шапка
+ * по §4.1 спеки. В расширении/на сайте контекст пуст → ничего лишнего.
+ */
+export interface SandboxWindowControls { onExpand?: () => void; onClose?: () => void }
+export const SandboxWindowCtx = createContext<SandboxWindowControls | null>(null);
 import InstrumentIcon from '../../components/InstrumentIcon';
 import InstrumentSearchModal from '../../components/InstrumentSearchModal';
 
@@ -75,6 +84,7 @@ export function EmbedFrame({
 }) {
   const [moreOpen, setMoreOpen] = useState(false);
   const moreBtnRef = useRef<HTMLButtonElement>(null);
+  const win = useContext(SandboxWindowCtx);
 
   return (
     <div style={frameStyle}>
@@ -99,6 +109,21 @@ export function EmbedFrame({
               <Popover anchorEl={moreBtnRef.current} align="right" onClose={() => setMoreOpen(false)} title={moreLabel}>
                 {more}
               </Popover>
+            )}
+          </div>
+        )}
+        {/* Кнопки окна песочницы — в ту же строку (единая шапка §4.1). */}
+        {win && (
+          <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+            {win.onExpand && (
+              <button type="button" onClick={win.onExpand} title="Развернуть" aria-label="Развернуть" style={iconBtnStyle(false)}>
+                <Maximize2 size={14} />
+              </button>
+            )}
+            {win.onClose && (
+              <button type="button" onClick={win.onClose} title="Закрыть" aria-label="Закрыть" style={iconBtnStyle(false)}>
+                <XIcon size={15} />
+              </button>
             )}
           </div>
         )}

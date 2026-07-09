@@ -7,17 +7,19 @@
  * наши реальные embed-компоненты (реальные данные через сессию юзера) — ничего не
  * мокаем, переиспользуем отточенное.
  *
- * Каждая панель оборачивается в MemoryRouter со своим `?pid=` → embed неймспейсит
- * настройки по окну (два окна одного индикатора держат свою конфигурацию), плюс
- * прокидываем `?theme=` из общей темы приложения. Раскладка (какие панели + x/y/w/h)
+ * Контент панели = embed напрямую (НЕ через MemoryRouter — Router-в-Router крашит).
+ * «Единая шапка» §4.1: у панели НЕТ своего заголовка — шапкой-хватом служит сам
+ * тулбар embed'а (тянем за верхние ~44px, кроме контролов), а кнопки окна
+ * (⤢ развернуть / × закрыть) EmbedFrame дорисовывает в ту же строку через
+ * SandboxWindowCtx. Раскладка (x/y/w/h) в координатах ХОЛСТА (y=0 под топбаром)
  * персистится в localStorage.
  *
- * Приватно: роут вне Layout, без ссылок в меню. Полная адаптация макета дизайнера
- * (см. .claude/SANDBOX_DESIGN_BRIEF.md). v1: топбар + панели + снап + персист.
- * TODO v2: листы, «Выстроить», центр сигналов как док, алерты с графика.
+ * Приватно: роут вне Layout, без ссылок в меню. Адаптация макета дизайнера по спеке
+ * (~/Downloads/Песочница-Фрейм-спецификация.md).
+ * TODO: листы, направляющие при снапе, ресайз 8 зон, тема панели ◐, центр сигналов док.
  */
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { PlusCircle, LayoutGrid, X as XIcon } from 'lucide-react';
+import { PlusCircle, LayoutGrid } from 'lucide-react';
 import EmbedOpenInterest from '../embed/EmbedOpenInterest';
 import EmbedSeasonality from '../embed/EmbedSeasonality';
 import EmbedScreener from '../embed/EmbedScreener';
@@ -27,6 +29,7 @@ import EmbedFundsMoney from '../embed/EmbedFundsMoney';
 import EmbedFundTrades from '../embed/EmbedFundTrades';
 import EmbedCbrFlows from '../embed/EmbedCbrFlows';
 import EmbedSignals from '../embed/EmbedSignals';
+import { SandboxWindowCtx } from '../embed/EmbedToolbar';
 
 type Group = 'signals' | 'instrument' | 'market';
 interface IndicatorDef { id: string; label: string; group: Group }
@@ -81,6 +84,7 @@ interface PanelState { key: string; id: string; x: number; y: number; w: number;
 const LS_KEY = 'frame:sandbox:panels:v1';
 const SNAP = 12; // порог магнита, px
 const TOPBAR_H = 48;
+const DRAG_STRIP_H = 44; // «шапка-хват» §4.1: верхняя полоса панели (= тулбар embed'а), за неё тянем
 
 function groupLabel(g: Group): string {
   return g === 'signals' ? 'Центр сигналов' : g === 'instrument' ? 'По инструменту' : 'По рынку';
@@ -123,10 +127,11 @@ export default function SandboxPage() {
 
   const spawn = useCallback((id: string) => {
     const sz = SIZES[id] || DEFAULT_SIZE;
-    const vw = window.innerWidth, vh = window.innerHeight;
+    // Координаты — ОТНОСИТЕЛЬНО холста (canvasStyle уже top:TOPBAR_H): y=0 — под топбаром.
+    const vw = window.innerWidth, canvasH = window.innerHeight - TOPBAR_H;
     const n = panels.length;
     const x = Math.max(8, Math.min(vw - sz.w - 8, 40 + ((n * 28) % 220)));
-    const y = Math.max(TOPBAR_H + 8, Math.min(vh - sz.h - 8, TOPBAR_H + 12 + ((n * 28) % 200)));
+    const y = Math.max(8, Math.min(canvasH - sz.h - 8, 12 + ((n * 28) % 200)));
     zTop.current += 1;
     const key = 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     update([...panels, { key, id, x, y, w: sz.w, h: sz.h, z: zTop.current }]);
@@ -135,11 +140,31 @@ export default function SandboxPage() {
 
   const close = useCallback((key: string) => { update(panels.filter((p) => p.key !== key)); }, [panels, update]);
 
+  // ⤢ Развернуть / восстановить панель (§4.3). Прежние габариты держим в ref
+  // (транзиентно, не персистим) — второй клик по ⤢ возвращает как было.
+  const restoreRef = useRef<Record<string, { x: number; y: number; w: number; h: number }>>({});
+  const expand = useCallback((key: string) => {
+    const vw = window.innerWidth, canvasH = window.innerHeight - TOPBAR_H;
+    zTop.current += 1;
+    setPanels((ps) => {
+      const next = ps.map((p) => {
+        if (p.key !== key) return p;
+        const saved = restoreRef.current[key];
+        if (saved) { delete restoreRef.current[key]; return { ...p, ...saved, z: zTop.current }; }
+        restoreRef.current[key] = { x: p.x, y: p.y, w: p.w, h: p.h };
+        const w = Math.min(880, vw - 24), h = Math.min(600, canvasH - 24);
+        return { ...p, x: Math.max(12, Math.round((vw - w) / 2)), y: 12, w, h, z: zTop.current };
+      });
+      persist(next);
+      return next;
+    });
+  }, [persist]);
+
   // ── Магнитный снап к краям холста и соседним панелям (порт из widget.js) ──
   const snapMove = useCallback((self: PanelState, nx: number, ny: number): { x: number; y: number } => {
     const vw = window.innerWidth, vh = window.innerHeight;
     const xs: number[] = [0, vw - self.w];
-    const ys: number[] = [TOPBAR_H, vh - self.h];
+    const ys: number[] = [0, (vh - TOPBAR_H) - self.h];
     for (const p of panels) {
       if (p.key === self.key) continue;
       xs.push(p.x, p.x + p.w - self.w, p.x + p.w, p.x - self.w);
@@ -153,13 +178,15 @@ export default function SandboxPage() {
   }, [panels]);
 
   const onDragStart = useCallback((e: React.PointerEvent, key: string) => {
-    if ((e.target as HTMLElement).closest('button')) return;
+    bringToFront(key); // любой pointerdown по панели поднимает её на верх стопки
+    const el = e.currentTarget as HTMLElement;
+    // Тянем ТОЛЬКО за верхнюю полосу («шапка-хват» = тулбар embed'а, §4.1) и не по контролам.
+    if (e.clientY - el.getBoundingClientRect().top > DRAG_STRIP_H) return;
+    if ((e.target as HTMLElement).closest('button, input, a, select, textarea, [role="dialog"]')) return;
     e.preventDefault();
-    bringToFront(key);
     const start = panels.find((p) => p.key === key);
     if (!start) return;
     const sx = e.clientX, sy = e.clientY, ox = start.x, oy = start.y;
-    const el = e.currentTarget as HTMLElement;
     try { el.setPointerCapture(e.pointerId); } catch { /* noop */ }
     let latest = { x: ox, y: oy };
     const move = (ev: PointerEvent) => {
@@ -185,7 +212,7 @@ export default function SandboxPage() {
     let latest = { w: ow, h: oh };
     const move = (ev: PointerEvent) => {
       const w = Math.max(300, Math.min(window.innerWidth - start.x - 8, ow + (ev.clientX - sx)));
-      const h = Math.max(220, Math.min(window.innerHeight - start.y - 8, oh + (ev.clientY - sy)));
+      const h = Math.max(220, Math.min(window.innerHeight - TOPBAR_H - start.y - 8, oh + (ev.clientY - sy)));
       latest = { w, h };
       setPanels((ps) => ps.map((p) => (p.key === key ? { ...p, w, h } : p)));
     };
@@ -207,7 +234,7 @@ export default function SandboxPage() {
     const next = panels.map((p, i) => ({
       ...p,
       x: gap + (i % cols) * (w + gap),
-      y: TOPBAR_H + gap + Math.floor(i / cols) * (h + gap),
+      y: gap + Math.floor(i / cols) * (h + gap),
       w, h,
     }));
     update(next);
@@ -264,35 +291,25 @@ export default function SandboxPage() {
             </div>
           </div>
         )}
-        {panels.map((p) => {
-          const ind = INDICATORS.find((i) => i.id === p.id);
-          return (
-            <div
-              key={p.key}
-              style={{ position: 'absolute', left: p.x, top: p.y, width: p.w, height: p.h, zIndex: p.z, ...panelStyle }}
-              onPointerDown={() => bringToFront(p.key)}
-            >
-              <div style={panelHeadStyle} onPointerDown={(e) => onDragStart(e, p.key)}>
-                <span style={{ width: 6, height: 6, borderRadius: 3, background: 'var(--accent, #FF5C2B)', flex: '0 0 auto' }} />
-                <span style={{ fontWeight: 700, fontSize: 11.5, color: 'var(--text-secondary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {ind?.label || p.id}
-                </span>
-                <button type="button" onClick={() => close(p.key)} title="Закрыть" style={{ ...panelBtnStyle, marginLeft: 'auto' }}>
-                  <XIcon size={13} />
-                </button>
-              </div>
-              <div style={panelBodyStyle}>
-                {/* Реальный embed-компонент напрямую (юзер залогинен → apiFetch
-                    авторизован; тема — из общего ThemeContext). Вложенный <Router>
-                    (для per-panel ?pid=) РАБотать НЕ может — React Router запрещает
-                    Router-в-Router. Настройки пока общие по индикатору; per-panel
-                    изоляция — v2 через проп pid в embed. */}
+        {panels.map((p) => (
+          <div
+            key={p.key}
+            style={{ position: 'absolute', left: p.x, top: p.y, width: p.w, height: p.h, zIndex: p.z, ...panelStyle }}
+            onPointerDown={(e) => onDragStart(e, p.key)}
+          >
+            {/* Единая шапка §4.1: отдельного заголовка панели НЕТ — «шапкой-хватом»
+                служит верхняя полоса самого тулбара embed'а. Кнопки окна (⤢ развернуть /
+                × закрыть) EmbedFrame дорисовывает справа в ту же строку через контекст.
+                Реальный embed напрямую (юзер залогинен → apiFetch авторизован; тема — из
+                общего ThemeContext). Вложенный <Router> НЕЛЬЗЯ (Router-в-Router крашит). */}
+            <div style={panelBodyStyle}>
+              <SandboxWindowCtx.Provider value={{ onExpand: () => expand(p.key), onClose: () => close(p.key) }}>
                 {renderIndicator(p.id)}
-              </div>
-              <div onPointerDown={(e) => onResizeStart(e, p.key)} style={resizeHandleStyle} />
+              </SandboxWindowCtx.Provider>
             </div>
-          );
-        })}
+            <div onPointerDown={(e) => onResizeStart(e, p.key)} style={resizeHandleStyle} />
+          </div>
+        ))}
       </div>
 
       {/* Тонкая подпись: приватная превью-версия */}
@@ -320,15 +337,8 @@ const panelStyle: CSSProperties = {
   display: 'flex', flexDirection: 'column', background: 'var(--bg-base, #0E0E10)',
   border: '1px solid var(--border-color, rgba(245,241,232,0.14))', borderRadius: 8, boxShadow: '0 12px 34px rgba(0,0,0,0.5)', overflow: 'hidden',
 };
-const panelHeadStyle: CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 6, padding: '5px 8px', cursor: 'move', userSelect: 'none', flex: '0 0 auto', background: 'var(--bg-base, #0E0E10)',
-};
 const panelBodyStyle: CSSProperties = { flex: '1 1 auto', position: 'relative', minHeight: 0, background: 'var(--bg-base, #0E0E10)' };
 const resizeHandleStyle: CSSProperties = { position: 'absolute', right: 0, bottom: 0, width: 16, height: 16, cursor: 'nwse-resize', zIndex: 3 };
-const panelBtnStyle: CSSProperties = {
-  width: 22, height: 22, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--border-color, rgba(245,241,232,0.14))',
-  borderRadius: 4, background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', padding: 0, flex: '0 0 auto',
-};
 function addBtnStyle(open: boolean): CSSProperties {
   return {
     display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 7, fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
