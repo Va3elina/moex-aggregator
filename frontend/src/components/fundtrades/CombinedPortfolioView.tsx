@@ -153,8 +153,6 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, period
         <>
             <StatTile label="Объём в фондах" value={`${fmtVolShort(portfolio.total_value_rub)} ₽`} />
             <StatTile label={`Доходность · ${PERIOD_LABEL[retK]}`} value={formatReturnPct(ret ?? undefined)} color={returnColor(ret ?? undefined)} />
-            <StatTile label="Фондов" value={String(portfolio.num_funds)} />
-            <StatTile label="Бумаг" value={String(portfolio.num_assets)} />
         </>
     );
 
@@ -254,7 +252,7 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, period
     if (isMobile) {
         return (
             <div style={blockStyle(true)}>
-                <BlockHead title="Обзор портфеля" meta={`${portfolio.num_funds} · ${portfolio.num_assets} бум.`} />
+                <BlockHead title="Обзор портфеля" meta={`${portfolio.num_funds} ф. · ${portfolio.num_assets} бум.`} />
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>{kpis}</div>
                 <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 6 }}>
                     <Donut holdings={donutHoldings} colors={donutColors} size={200} outerRadius={90} innerRadius={60} maxSlices={donutHoldings.length} centerCount={portfolio.num_assets} showCenterText highlightIndex={hoverIdx} onHoverChange={setHoverIdx} />
@@ -276,7 +274,7 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, period
                     <div style={{ display: 'flex', justifyContent: 'center' }}>
                         <Donut holdings={donutHoldings} colors={donutColors} size={210} outerRadius={90} innerRadius={60} maxSlices={donutHoldings.length} centerCount={portfolio.num_assets} showCenterText highlightIndex={hoverIdx} onHoverChange={setHoverIdx} />
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 12 }}>{kpis}</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8, marginTop: 12 }}>{kpis}</div>
                 </div>
                 <div style={{ borderLeft: '1.5px solid var(--border-color)', paddingLeft: 18, minWidth: 0 }}>
                     {listHeader}

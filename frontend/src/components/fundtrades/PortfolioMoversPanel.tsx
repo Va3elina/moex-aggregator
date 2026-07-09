@@ -98,7 +98,7 @@ export default function PortfolioMoversPanel({ movers, loading, period, variant 
                 <MoverLogo m={m} color={col} />
                 <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column', lineHeight: 1.12 }}>
                     <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{fundAssetName(m.asset_name, isin)}</span>
-                    <span style={{ fontFamily: 'var(--font-mono, ui-monospace, monospace)', fontSize: 'var(--fs-3xs, 10px)', letterSpacing: '0.05em', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{ticker ? `${ticker} · ` : ''}{cnt} ф.</span>
+                    <span style={{ fontFamily: 'var(--font-mono, ui-monospace, monospace)', fontSize: 'var(--fs-3xs, 10px)', letterSpacing: '0.05em', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{[ticker, cnt > 0 ? `${cnt} ф.` : null].filter(Boolean).join(' · ')}</span>
                 </span>
                 <div style={{ height: 8, background: 'color-mix(in srgb, var(--text-primary) 8%, transparent)', borderRadius: 4, overflow: 'hidden', minWidth: 0 }}>
                     <div style={{ width: `${pct}%`, height: '100%', background: col, borderRadius: 4 }} />
