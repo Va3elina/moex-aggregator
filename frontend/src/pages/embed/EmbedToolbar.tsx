@@ -65,6 +65,14 @@ const toolbarRow: CSSProperties = {
   zIndex: 3,
 };
 
+// Кнопки окна панели ПЕСОЧНИЦЫ (⤢ ◐ ×) — §4.3: 24×24, без бордера, radius 5,
+// приглушённый глиф. Ховер — через класс .sb-winbtn (в sandbox.css; на сайте/
+// расширении класс без стилей, а сами кнопки гейтятся наличием SandboxWindowCtx).
+const sbWinBtn: CSSProperties = {
+  width: 24, height: 24, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+  border: 'none', borderRadius: 5, background: 'transparent', color: 'var(--muted)', cursor: 'pointer', flexShrink: 0, padding: 0,
+};
+
 /**
  * EmbedFrame — обёртка виджета: тулбар (lead + inline + ⚙more) + область графика
  * edge-to-edge. Никакого «окна вокруг графика»: одна поверхность, кнопки сверху.
@@ -112,17 +120,17 @@ export function EmbedFrame({
             )}
           </div>
         )}
-        {/* Кнопки окна песочницы — в ту же строку (единая шапка §4.1). */}
+        {/* Кнопки окна песочницы — в ту же строку (единая шапка §4.1, §4.3). */}
         {win && (
-          <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+          <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
             {win.onExpand && (
-              <button type="button" onClick={win.onExpand} title="Развернуть" aria-label="Развернуть" style={iconBtnStyle(false)}>
-                <Maximize2 size={14} />
+              <button type="button" onClick={win.onExpand} title="Развернуть" aria-label="Развернуть" className="sb-winbtn" style={sbWinBtn}>
+                <Maximize2 size={13} />
               </button>
             )}
             {win.onClose && (
-              <button type="button" onClick={win.onClose} title="Закрыть" aria-label="Закрыть" style={iconBtnStyle(false)}>
-                <XIcon size={15} />
+              <button type="button" onClick={win.onClose} title="Закрыть" aria-label="Закрыть" className="sb-winbtn sb-winbtn-close" style={sbWinBtn}>
+                <XIcon size={16} />
               </button>
             )}
           </div>
