@@ -34,6 +34,7 @@ import {
 import './sandbox.css';
 import { SandboxWindowCtx } from '../embed/EmbedToolbar';
 import { ThemeContext, useTheme } from '../../contexts/ThemeContext';
+import { getAnomalyFeed, type AnomalyDeepLink } from '../../services/api';
 import EmbedOpenInterest from '../embed/EmbedOpenInterest';
 import EmbedSeasonality from '../embed/EmbedSeasonality';
 import EmbedScreener from '../embed/EmbedScreener';
@@ -92,16 +93,32 @@ const SIZES: Partial<Record<IndKind, { w: number; h: number }>> = {
 };
 const DEFAULT_SIZE = { w: 520, h: 360 };
 
+/** Стартовые настройки панели (из deep_link сигнала). Дальше панель живёт сама. */
+interface PanelCfg { instrument?: string; category?: string }
+
+// Маршрут сигнала → тип индикатора (§6.10: клик открывает панель на активе).
+const ROUTE_TO_KIND: Record<string, IndKind> = {
+  '/oi': 'oi',
+  '/seasonality': 'seasonality',
+  '/screener': 'screener',
+  '/buffett': 'buffett',
+  '/strength': 'strength',
+  '/funds-money': 'funds-money',
+  '/fund-trades': 'fund-trades',
+  '/cbr-flows': 'cbr-flows',
+  '/heatmap': 'heatmap',
+};
+
 // type → embed-компонент (наш реальный индикатор).
-function renderIndicator(type: IndKind): ReactNode {
+function renderIndicator(type: IndKind, cfg: PanelCfg | undefined, onSignal: (dl: AnomalyDeepLink) => void): ReactNode {
   switch (type) {
-    case 'signals': return <EmbedSignals />;
-    case 'oi': return <EmbedOpenInterest />;
-    case 'seasonality': return <EmbedSeasonality />;
+    case 'signals': return <EmbedSignals onPick={onSignal} />;
+    case 'oi': return <EmbedOpenInterest initialInstrument={cfg?.instrument} />;
+    case 'seasonality': return <EmbedSeasonality initialInstrument={cfg?.instrument} />;
     case 'screener': return <EmbedScreener />;
     case 'buffett': return <EmbedBuffett />;
     case 'strength': return <EmbedStrength />;
-    case 'funds-money': return <EmbedFundsMoney />;
+    case 'funds-money': return <EmbedFundsMoney initialCategory={cfg?.category} />;
     case 'fund-trades': return <EmbedFundTrades />;
     case 'fund-movers': return <EmbedFundTrades lockTab="movers" />;
     case 'cbr-flows': return <EmbedCbrFlows />;
@@ -113,7 +130,7 @@ function renderIndicator(type: IndKind): ReactNode {
 /* ───────────────────────── модель состояния (§2) ───────────────────────── */
 type SbTheme = 'dark' | 'light';
 interface Sheet { id: string; name: string }
-interface Panel { id: string; type: IndKind; x: number; y: number; w: number; h: number; z: number; themeOverride: SbTheme | null }
+interface Panel { id: string; type: IndKind; x: number; y: number; w: number; h: number; z: number; themeOverride: SbTheme | null; cfg?: PanelCfg }
 interface Persisted { sbTheme: SbTheme; sheets: Sheet[]; activeSheet: string; bySheet: Record<string, Panel[]> }
 interface Guide { axis: 'v' | 'h'; pos: number }
 
@@ -181,6 +198,7 @@ export default function SandboxPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [signalsOpen, setSignalsOpen] = useState(false);
   const [guides, setGuides] = useState<Guide[]>([]);
+  const [signalCount, setSignalCount] = useState(0);
   const zTop = useRef(10);
   const restoreRef = useRef<Record<string, { x: number; y: number; w: number; h: number }>>({});
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -194,6 +212,19 @@ export default function SandboxPage() {
     for (const arr of Object.values(st.bySheet)) for (const p of arr) m = Math.max(m, p.z);
     zTop.current = m;
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Счётчик свежих сигналов для бейджа колокола (§3.1). Дровер держит свою ленту.
+  useEffect(() => {
+    let alive = true;
+    const load = () => {
+      getAnomalyFeed({ limit: 60, maxAgeHours: 24 })
+        .then((f) => { if (alive) setSignalCount(f.items.length); })
+        .catch(() => { /* бейдж не критичен */ });
+    };
+    load();
+    const t = window.setInterval(load, 90_000);
+    return () => { alive = false; window.clearInterval(t); };
   }, []);
 
   // полноэкранно, без скролла страницы
@@ -223,7 +254,7 @@ export default function SandboxPage() {
     setActivePanels((ps) => ps.map((p) => (p.id === id ? { ...p, z } : p)));
   }, [setActivePanels]);
 
-  const spawn = useCallback((type: IndKind) => {
+  const spawn = useCallback((type: IndKind, cfg?: PanelCfg) => {
     const sz = SIZES[type] || DEFAULT_SIZE;
     const rc = canvasRef.current?.getBoundingClientRect();
     const cw = rc?.width ?? window.innerWidth, ch = rc?.height ?? (window.innerHeight - TOPBAR_H);
@@ -232,10 +263,18 @@ export default function SandboxPage() {
       const n = ps.length;
       const x = Math.max(8, Math.min(cw - sz.w - 8, 40 + ((n * 28) % 220)));
       const y = Math.max(8, Math.min(ch - sz.h - 8, 24 + ((n * 28) % 180)));
-      return [...ps, { id: uid('p'), type, x, y, w: sz.w, h: sz.h, z, themeOverride: null }];
+      return [...ps, { id: uid('p'), type, x, y, w: sz.w, h: sz.h, z, themeOverride: null, ...(cfg ? { cfg } : {}) }];
     });
     setMenuOpen(false);
   }, [setActivePanels]);
+
+  // §6.10: клик по сигналу → спавн панели нужного индикатора на активе сигнала.
+  const onSignal = useCallback((dl: AnomalyDeepLink) => {
+    const kind = ROUTE_TO_KIND[dl?.route ?? ''];
+    if (!kind) return;
+    spawn(kind, { instrument: dl.secid, category: dl.category });
+    setSignalsOpen(false);
+  }, [spawn]);
 
   const close = useCallback((id: string) => setActivePanels((ps) => ps.filter((p) => p.id !== id)), [setActivePanels]);
 
@@ -397,9 +436,14 @@ export default function SandboxPage() {
 
         {/* Правая группа */}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-          <button type="button" className="sb-hoverable" onClick={() => setSignalsOpen(true)} title="Центр сигналов" style={chromeBtn}>
-            <Bell size={16} strokeWidth={1.8} />
-          </button>
+          <div style={{ position: 'relative', flexShrink: 0 }}>
+            <button type="button" className="sb-hoverable" onClick={() => setSignalsOpen(true)} title="Центр сигналов" style={chromeBtn}>
+              <Bell size={16} strokeWidth={1.8} />
+            </button>
+            {signalCount > 0 && (
+              <span className="sb-mono" style={badgeStyle}>{signalCount > 99 ? '99+' : signalCount}</span>
+            )}
+          </div>
           <button type="button" className="sb-hoverable" onClick={toggleTheme} title="Тема оболочки" style={chromeBtn}>
             <Contrast size={16} />
           </button>
@@ -441,7 +485,7 @@ export default function SandboxPage() {
             <div style={panelBodyStyle}>
               <SandboxWindowCtx.Provider value={{ onExpand: () => expand(p.id), onClose: () => close(p.id), onToggleTheme: () => setPanelTheme(p.id) }}>
                 <SandboxThemeScope eff={eff}>
-                  {renderIndicator(p.type)}
+                  {renderIndicator(p.type, p.cfg, onSignal)}
                 </SandboxThemeScope>
               </SandboxWindowCtx.Provider>
             </div>
@@ -497,7 +541,7 @@ export default function SandboxPage() {
               </button>
             </div>
             <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
-              <EmbedSignals />
+              <EmbedSignals onPick={onSignal} />
             </div>
           </div>
         </>
@@ -566,6 +610,11 @@ const arrangeBtnStyle: CSSProperties = {
 const chromeBtn: CSSProperties = {
   width: 34, height: 34, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 8,
   border: '1.5px solid var(--border)', background: 'transparent', color: 'var(--text)', cursor: 'pointer', flex: '0 0 auto', padding: 0,
+};
+const badgeStyle: CSSProperties = {
+  position: 'absolute', top: -5, right: -5, minWidth: 16, height: 16, padding: '0 4px', borderRadius: 9,
+  background: 'var(--accent)', color: '#fff', fontSize: 10, fontWeight: 700, lineHeight: '16px',
+  textAlign: 'center', pointerEvents: 'none',
 };
 const proChip: CSSProperties = {
   fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', color: 'var(--accent)', border: '1px solid var(--accent)',

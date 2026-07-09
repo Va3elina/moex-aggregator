@@ -68,13 +68,16 @@ const OI_COLORS = {
 
 const num = (v: number | null): number => v ?? 0;
 
-export default function EmbedOpenInterest() {
+/** `initialInstrument` — стартовый актив от песочницы (спавн панели по клику на
+ *  сигнале). Приоритет: проп → ?instrument= → localStorage. Дальше юзер меняет
+ *  его сам, и панель живёт своей жизнью. */
+export default function EmbedOpenInterest({ initialInstrument }: { initialInstrument?: string } = {}) {
   const [params] = useSearchParams();
   const { theme } = useTheme();
   const dark = theme !== 'editorial-light';
 
   const [instrument, setInstrument] = useState<string>(() =>
-    params.get('instrument') || readLS('frame:embed:oi:instrument', 'SR'),
+    initialInstrument || params.get('instrument') || readLS('frame:embed:oi:instrument', 'SR'),
   );
   const [instrumentName, setInstrumentName] = useState<string>(params.get('name') || '');
   const [clgroup, setClgroup] = useState<ClGroup>(() => readLS('frame:embed:oi:clgroup', 'FIZ') as ClGroup);

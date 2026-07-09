@@ -74,12 +74,13 @@ function fmtPct(v: number, digits: number, signed = true): string {
   return (v < 0 ? '−' : signed && v > 0 ? '+' : '') + s + '%';
 }
 
-export default function EmbedSeasonality() {
+/** `initialInstrument` — стартовый актив от песочницы (см. EmbedOpenInterest). */
+export default function EmbedSeasonality({ initialInstrument }: { initialInstrument?: string } = {}) {
   const [params] = useSearchParams();
   const { theme } = useTheme();
   const dark = theme !== 'editorial-light';
 
-  const [stock, setStock] = useState<string>(() => params.get('instrument') || readLS('frame:embed:seasonality:stock', 'SBER'));
+  const [stock, setStock] = useState<string>(() => initialInstrument || params.get('instrument') || readLS('frame:embed:seasonality:stock', 'SBER'));
   const [chartType, setChartType] = useState<ChartType>(() => readLS('frame:embed:seasonality:chartType', 'histogram') as ChartType);
   const [mode, setMode] = useState<SeasonalityMode>(() => readLS('frame:embed:seasonality:mode', 'weekday') as SeasonalityMode);
   const [excludeDividends, setExcludeDividends] = useState<boolean>(() => readLSBool('frame:embed:seasonality:excludeDividends', false));
