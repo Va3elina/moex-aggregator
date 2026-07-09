@@ -16,7 +16,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import LwChart, { monthsYearsTickFmt, type LwSeries, type LwMarker } from '../../components/LwChart';
+import LwChart, { monthsYearsTickFmt, type LwSeries } from '../../components/LwChart';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getChartData, getInstrument } from '../../services/api';
 import { displayTicker } from '../../utils/displayTicker';
@@ -270,13 +270,14 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
     ];
   }, [displayMode]);
 
-  // Метки экспираций (смена контракта) — маркеры LwChart на серии.
-  const lwMarkers = useMemo<LwMarker[]>(() => {
+  // Метки экспираций (смена контракта) — DOM-слой у оси дат (§5.6 макета), а не
+  // маркеры на линии: серые кружки не заслоняют серию и не прыгают по цене.
+  const expTimes = useMemo<number[]>(() => {
     if (!showExpirations) return [];
     const switches = data?.contract_switches;
     if (!switches || switches.length <= 1) return [];
     const intraday = interval !== 24;
-    return switches.slice(1).map((sw) => ({ time: toSec(sw.date, intraday), text: sw.to, color: '#9CA3B8', position: 'aboveBar' as const }));
+    return switches.slice(1).map((sw) => toSec(sw.date, intraday));
   }, [data, showExpirations, interval]);
 
   const displayName = instrumentName || displayTicker(instrument);
@@ -370,7 +371,7 @@ export default function EmbedOpenInterest({ initialInstrument }: { initialInstru
         {status === 'ok' && data && lwSeries.length > 0 && (
           <LwChart
             series={lwSeries}
-            markers={lwMarkers}
+            expTimes={expTimes}
             height={chartH}
             dark={dark}
             fitKey={`${instrument}|${interval}`}
