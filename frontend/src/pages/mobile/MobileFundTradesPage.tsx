@@ -62,6 +62,7 @@ import FundDetailModal, {
 import FundPicker, { type FundPickerFund } from '../../components/fundtrades/FundPicker';
 import UkMultiSelect, { type UkOption } from '../../components/fundtrades/UkMultiSelect';
 import CombinedPortfolioView from '../../components/fundtrades/CombinedPortfolioView';
+import PortfolioMoversPanel, { type MoversPeriod } from '../../components/fundtrades/PortfolioMoversPanel';
 import CompanyFlowsTab from '../../components/fundtrades/CompanyFlowsTab';
 import DelayedDataBadge from '../../components/fundtrades/DelayedDataBadge';
 import LockedSnapshotTeaser from '../../components/fundtrades/LockedSnapshotTeaser';
@@ -332,10 +333,14 @@ export default function MobileFundTradesPage() {
   // Общий портфель — агрегированный состав выбранных фондов акций как один портфель.
   const [portfolioUks, setPortfolioUks] = usePersistedSet<string>('frame:fundtrades:portfolioUks');
   const [portfolioMode, setPortfolioMode] = usePersistedState<'rub' | 'share'>('frame:fundtrades:portfolioMode', 'rub');
-  const [portfolioPeriod, setPortfolioPeriod] = usePersistedState<ReturnPeriodKey>('frame:fundtrades:portfolioPeriod', 'y1');
+  const [portfolioPeriod] = usePersistedState<ReturnPeriodKey>('frame:fundtrades:portfolioPeriod', 'y1');
+  const [portfolioMoversPeriod, setPortfolioMoversPeriod] = usePersistedState<MoversPeriod>('frame:fundtrades:portfolioMoversPeriod', '1m');
   const [portfolio, setPortfolio] = useState<FundPortfolio | null>(null);
   const [loadingPortfolio, setLoadingPortfolio] = useState(false);
   const portfolioReqRef = useRef(0);
+  const [portfolioMovers, setPortfolioMovers] = useState<FundTradesMovers | null>(null);
+  const [loadingPortfolioMovers, setLoadingPortfolioMovers] = useState(false);
+  const portfolioMoversReqRef = useRef(0);
 
   // ── Sheets ──
   const [assetSheetOpen, setAssetSheetOpen] = useState(false);
@@ -390,6 +395,20 @@ export default function MobileFundTradesPage() {
       .catch((e: Error) => { if (isStale()) return; setError(e.message); })
       .finally(() => { if (!isStale()) setLoadingPortfolio(false); });
   }, [tab, portfolioFundsParam, funds.length, common.fund_trades_access]);
+
+  // Покупки фондов для блока рядом с составом (чистая покупка за период).
+  useEffect(() => {
+    if (!common.fund_trades_access) return;
+    if (tab !== 'portfolio') return;
+    if (funds.length === 0) return;
+    const reqId = ++portfolioMoversReqRef.current;
+    const isStale = () => reqId !== portfolioMoversReqRef.current;
+    setLoadingPortfolioMovers(true);
+    getFundTradesMovers(portfolioMoversPeriod, { funds: portfolioFundsParam || undefined, sort: 'amount' })
+      .then((m) => { if (isStale()) return; setPortfolioMovers(m); })
+      .catch((e: Error) => { if (isStale()) return; setError(e.message); })
+      .finally(() => { if (!isStale()) setLoadingPortfolioMovers(false); });
+  }, [tab, portfolioFundsParam, portfolioMoversPeriod, funds.length, common.fund_trades_access]);
 
   // Уникальные УК для UkMultiSelect (Состав фондов).
   const ukOptions = useMemo<UkOption[]>(() => {
@@ -542,7 +561,7 @@ export default function MobileFundTradesPage() {
   // - company:   ⚙️(режим); бумага/фонды — в теле CompanyFlowsTab
   const timeSummary = (() => {
     if (tab === 'funds') return `Доходность · ${RETURN_PERIOD_LABEL[returnPeriod]}`;
-    if (tab === 'portfolio') return `Доходность · ${RETURN_PERIOD_LABEL[portfolioPeriod]}`;
+    if (tab === 'portfolio') return `Покупки · ${({ '1m': '1 мес', '6m': 'полгода', '1y': 'год', '3y': '3 года' } as Record<MoversPeriod, string>)[portfolioMoversPeriod]}`;
     if (tab === 'movers') return asOf ? formatMonthYear(asOf) : (movers?.resolved_month ? formatMonthYear(movers.resolved_month) : (movers?.available_months[0] ? formatMonthYear(movers.available_months[0]) : 'Месяц'));
     return undefined;
   })();
@@ -568,9 +587,13 @@ export default function MobileFundTradesPage() {
       onRefresh={async () => {
         if (tab === 'portfolio') {
           const reqId = ++portfolioReqRef.current;
-          const p = await getFundPortfolio({ funds: portfolioFundsParam || undefined }).catch(() => null);
+          const [p, m] = await Promise.all([
+            getFundPortfolio({ funds: portfolioFundsParam || undefined }).catch(() => null),
+            getFundTradesMovers(portfolioMoversPeriod, { funds: portfolioFundsParam || undefined, sort: 'amount' }).catch(() => null),
+          ]);
           if (reqId !== portfolioReqRef.current) return;
           if (p) setPortfolio(p);
+          if (m) setPortfolioMovers(m);
         } else if (tab === 'movers') {
           const reqId = ++moversReqRef.current;
           const m = await getFundTradesMovers(period, { asOf, funds: fundsParam || undefined, sort: metric }).catch(() => null);
@@ -583,7 +606,7 @@ export default function MobileFundTradesPage() {
           if (r) setFunds(r.funds);
         }
       }}
-      loading={loadingFunds || loadingMovers || loadingPortfolio}
+      loading={loadingFunds || loadingMovers || loadingPortfolio || loadingPortfolioMovers}
     >
       <MobilePageHeader
         Icon={Wallet}
@@ -647,10 +670,10 @@ export default function MobileFundTradesPage() {
       )}
 
       {tab === 'portfolio' && (
-        <div style={{ paddingBottom: 12 }}>
-          <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)', margin: '4px 2px 12px', lineHeight: 1.5 }}>
-            Все выбранные фонды акций собраны в один портфель, как будто ими управляет
-            один управляющий. Режим веса и выбор УК находятся в кнопке Опции.
+        <div style={{ paddingBottom: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)', margin: '4px 2px 0', lineHeight: 1.5 }}>
+            Все выбранные фонды акций собраны в один портфель. Ниже что фонды докупили
+            и распродали за период. Режим, период и УК — в кнопках Время и Опции.
           </p>
           <CombinedPortfolioView
             portfolio={portfolio}
@@ -658,6 +681,13 @@ export default function MobileFundTradesPage() {
             mode={portfolioMode}
             period={portfolioPeriod}
             variant="mobile"
+          />
+          <PortfolioMoversPanel
+            movers={portfolioMovers}
+            loading={loadingPortfolioMovers}
+            period={portfolioMoversPeriod}
+            variant="mobile"
+            onAssetClick={openCompanyFlows}
           />
         </div>
       )}
@@ -696,21 +726,21 @@ export default function MobileFundTradesPage() {
         <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 20 }}>
           {tab === 'portfolio' && (
             <div>
-              <div style={SHEET_SECTION_LABEL}>Период доходности</div>
+              <div style={SHEET_SECTION_LABEL}>Покупки за период</div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {(['m1', 'm3', 'm6', 'y1'] as ReturnPeriodKey[]).map((k) => (
+                {([['1m', '1 мес'], ['6m', 'Полгода'], ['1y', 'Год'], ['3y', '3 года']] as [MoversPeriod, string][]).map(([k, lbl]) => (
                   <button
                     key={k}
-                    className={`fm-chip ${portfolioPeriod === k ? 'active' : ''}`}
-                    onClick={() => { setPortfolioPeriod(k); setTimeSheetOpen(false); }}
+                    className={`fm-chip ${portfolioMoversPeriod === k ? 'active' : ''}`}
+                    onClick={() => { setPortfolioMoversPeriod(k); setTimeSheetOpen(false); }}
                     style={{ flex: 1, justifyContent: 'center', minWidth: 'calc(50% - 4px)' }}
                   >
-                    {RETURN_PERIOD_LABEL[k]}
+                    {lbl}
                   </button>
                 ))}
               </div>
               <p style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', marginTop: 8, lineHeight: 1.5 }}>
-                Доходность всего портфеля, взвешенная по СЧА фондов.
+                Чистая покупка/продажа бумаг за период. На состав портфеля не влияет.
               </p>
             </div>
           )}
