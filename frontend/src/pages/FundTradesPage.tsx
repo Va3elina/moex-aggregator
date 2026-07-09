@@ -60,6 +60,7 @@ import LockedSnapshotTeaser from '../components/fundtrades/LockedSnapshotTeaser'
 import UkMultiSelect, { type UkOption } from '../components/fundtrades/UkMultiSelect';
 import FundPicker, { type FundPickerFund } from '../components/fundtrades/FundPicker';
 import CombinedPortfolioView from '../components/fundtrades/CombinedPortfolioView';
+import PortfolioMoversPanel, { type MoversPeriod } from '../components/fundtrades/PortfolioMoversPanel';
 import { useViewportWidth } from '../hooks/useViewportWidth';
 import { useGrowReveal } from '../hooks/useGrowReveal';
 import { usePersistedState, usePersistedSet } from '../hooks/usePersistedState';
@@ -264,9 +265,14 @@ export default function FundTradesPage() {
     // Выбор УК персистится (usePersistedSet, пусто = все); режим веса и период — тоже.
     const [portfolioUks, setPortfolioUks] = usePersistedSet<string>('frame:fundtrades:portfolioUks');
     const [portfolioMode, setPortfolioMode] = usePersistedState<'rub' | 'share'>('frame:fundtrades:portfolioMode', 'rub');
-    const [portfolioPeriod, setPortfolioPeriod] = usePersistedState<ReturnPeriodKey>('frame:fundtrades:portfolioPeriod', 'y1');
+    // Доходность в плашке — на 1 год (с фолбэком на длиннейший доступный внутри вью).
+    const [portfolioPeriod] = usePersistedState<ReturnPeriodKey>('frame:fundtrades:portfolioPeriod', 'y1');
     const [portfolio, setPortfolio] = useState<FundPortfolio | null>(null);
     const [portfolioLoading, setPortfolioLoading] = useState(false);
+    // Блок «Покупки фондов» рядом с составом: чистая покупка за период (1м/6м/1г/3г).
+    const [portfolioMoversPeriod, setPortfolioMoversPeriod] = usePersistedState<MoversPeriod>('frame:fundtrades:portfolioMoversPeriod', '1m');
+    const [portfolioMovers, setPortfolioMovers] = useState<FundTradesMovers | null>(null);
+    const [portfolioMoversLoading, setPortfolioMoversLoading] = useState(false);
 
     // Load funds list (один раз).
     useEffect(() => {
@@ -322,6 +328,19 @@ export default function FundTradesPage() {
             .catch((e: Error) => setError(e.message))
             .finally(() => setPortfolioLoading(false));
     }, [tab, portfolioFundsParam, funds.length, common.fund_trades_access]);
+
+    // Покупки фондов для блока рядом с составом: чистая покупка за выбранный период,
+    // тот же набор УК (→ тикеры), ранжирование по рублям.
+    useEffect(() => {
+        if (!common.fund_trades_access) return;
+        if (tab !== 'portfolio') return;
+        if (funds.length === 0) return;
+        setPortfolioMoversLoading(true);
+        getFundTradesMovers(portfolioMoversPeriod, { funds: portfolioFundsParam || undefined, sort: 'amount' })
+            .then(setPortfolioMovers)
+            .catch((e: Error) => setError(e.message))
+            .finally(() => setPortfolioMoversLoading(false));
+    }, [tab, portfolioFundsParam, portfolioMoversPeriod, funds.length, common.fund_trades_access]);
 
     // Уникальные УК из загруженных фондов — список для UkMultiSelect на вкладке
     // «Состав фондов». Ключ — uk_id (стабильнее имени), name — uk-имя из
@@ -833,13 +852,12 @@ export default function FundTradesPage() {
             )}
 
             {tab === 'portfolio' && (
-                // Editorial-frame как у OI и «Деньги в фондах»; контролы сверху, состав на
-                // бежевой paper-card. Список УК и формат пончика — из «Покупок фондов».
-                <div className="editorial-frame">
-                    <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)', margin: '0 0 12px', lineHeight: 1.5, maxWidth: 760 }}>
+                <>
+                    <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)', margin: '0 0 12px', lineHeight: 1.5, maxWidth: 820 }}>
                         Все выбранные фонды акций собраны в один портфель, как будто ими управляет
-                        один управляющий. По рублям взвешивает бумаги по деньгам (крупные фонды
-                        весомее), средняя доля даёт равный вес каждому фонду.
+                        один управляющий. Слева его состав, справа что фонды докупили и распродали
+                        за выбранный период. По рублям взвешивает по деньгам, средняя доля даёт
+                        равный вес каждому фонду.
                     </p>
                     <div className="flex flex-wrap items-center gap-2 md:gap-3 mb-3 md:mb-4">
                         <SegmentedControl<'rub' | 'share'>
@@ -850,14 +868,19 @@ export default function FundTradesPage() {
                             value={portfolioMode}
                             onChange={setPortfolioMode}
                         />
-                        <SegmentedControl<ReturnPeriodKey>
-                            options={(['m1', 'm3', 'm6', 'y1'] as ReturnPeriodKey[]).map((k) => ({
-                                key: k,
-                                label: RETURN_PERIOD_LABEL[k],
-                            }))}
-                            value={portfolioPeriod}
-                            onChange={setPortfolioPeriod}
-                        />
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ fontSize: 'var(--fs-2xs)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>Покупки за</span>
+                            <SegmentedControl<MoversPeriod>
+                                options={[
+                                    { key: '1m', label: '1 мес' },
+                                    { key: '6m', label: 'Полгода' },
+                                    { key: '1y', label: 'Год' },
+                                    { key: '3y', label: '3 года' },
+                                ]}
+                                value={portfolioMoversPeriod}
+                                onChange={setPortfolioMoversPeriod}
+                            />
+                        </div>
                         {ukOptions.length > 1 && (
                             <UkMultiSelect
                                 options={ukOptions}
@@ -867,7 +890,7 @@ export default function FundTradesPage() {
                             />
                         )}
                     </div>
-                    <div className="rounded-2xl bg-theme-primary p-3 md:p-5" style={{ border: '2px solid var(--text-primary)' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: vw >= 1120 ? 'minmax(0, 2fr) minmax(320px, 1fr)' : '1fr', gap: 14, alignItems: 'start' }}>
                         <CombinedPortfolioView
                             portfolio={portfolio}
                             loading={portfolioLoading}
@@ -875,8 +898,15 @@ export default function FundTradesPage() {
                             period={portfolioPeriod}
                             variant="desktop"
                         />
+                        <PortfolioMoversPanel
+                            movers={portfolioMovers}
+                            loading={portfolioMoversLoading}
+                            period={portfolioMoversPeriod}
+                            variant="desktop"
+                            onAssetClick={openCompanyFlows}
+                        />
                     </div>
-                </div>
+                </>
             )}
 
             {tab === 'movers' && (

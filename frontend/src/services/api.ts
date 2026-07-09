@@ -1255,7 +1255,7 @@ export async function getApiKeyUsage(days = 30): Promise<ApiKeyUsageStats> {
 // Fund Trades — отслеживание покупок/продаж в БПИФах (Pro tier)
 // ════════════════════════════════════════════════════════════════════════════
 
-export type FundTradesPeriod = '1m' | '1y';
+export type FundTradesPeriod = '1m' | '3m' | '6m' | '1y' | '3y';
 
 export interface FundReturns {
     m1: number | null;
