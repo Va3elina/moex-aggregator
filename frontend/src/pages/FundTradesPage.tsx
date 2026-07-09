@@ -239,8 +239,15 @@ export default function FundTradesPage() {
     // Фильтры «Состав фондов» — combinable (AND): период доходности + сортировка + УК.
     // Период доходности: показывается на плитках И используется для сортировки по доходности.
     const [returnPeriod, setReturnPeriod] = usePersistedState<ReturnPeriodKey>('frame:fundtrades:returnPeriod', 'y1');
-    // Сортировка карточек: по доходности (за returnPeriod) / объёму руб / имени.
+    // Сортировка карточек: по доходности (за returnPeriod) / объёму СЧА.
     const [fundSort, setFundSort] = usePersistedState<FundSortKey>('frame:fundtrades:fundSort', 'return');
+    // Персист мог сохранить убранные значения (период m3/m6, сортировка «Имя») —
+    // нормализуем к валидным, иначе у SegmentedControl не будет активной пилюли.
+    useEffect(() => {
+        if (returnPeriod !== 'm1' && returnPeriod !== 'y1' && returnPeriod !== 'y5') setReturnPeriod('y1');
+        if ((fundSort as string) === 'name') setFundSort('return');
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
     // Мультиселект УК (пусто = все). Ключ — uk_id (стабильнее имени), fallback на uk.
     const [selectedUks, setSelectedUks] = useState<Set<string>>(new Set());
     // Hover-связь пончик↔список на плитке. Ключуем по fund_id (карточки в map, своего
@@ -347,16 +354,23 @@ export default function FundTradesPage() {
     // UK_LOGOS/данных, uk_id — для аватара. Сортируем по имени.
     const ukOptions = useMemo<UkOption[]>(() => {
         const map = new Map<string, UkOption>();
+        const count = new Map<string, number>();
         for (const f of funds) {
             const key = ukKey(f);
-            if (!key || map.has(key)) continue;
+            if (!key) continue;
+            count.set(key, (count.get(key) ?? 0) + 1);
+            if (map.has(key)) continue;
             map.set(key, {
                 key,
                 name: UK_LOGOS[key]?.name || f.uk || key,
                 uk_id: f.uk_id ?? key,
             });
         }
-        return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+        // Порядок: УК с наибольшим числом фондов сверху, при равенстве — по имени.
+        return Array.from(map.values()).sort((a, b) => {
+            const d = (count.get(b.key) ?? 0) - (count.get(a.key) ?? 0);
+            return d !== 0 ? d : a.name.localeCompare(b.name);
+        });
     }, [funds]);
 
     // Все whitelist-фонды для FundPicker (multi) на вкладке «Покупки фондов».
@@ -382,7 +396,6 @@ export default function FundTradesPage() {
         // Сортировка внутри группы. null'ы (нет данных) всегда в хвост.
         // Доходность — за выбранный returnPeriod; объём — nav_rub; имя — ticker A→Z.
         const cmp = (a: FundWithHistory, b: FundWithHistory): number => {
-            if (fundSort === 'name') return a.ticker.localeCompare(b.ticker);
             const av = fundSort === 'return' ? returnForPeriod(a.returns, returnPeriod) : a.nav_rub;
             const bv = fundSort === 'return' ? returnForPeriod(b.returns, returnPeriod) : b.nav_rub;
             if (av === null && bv === null) return a.ticker.localeCompare(b.ticker);
@@ -545,14 +558,13 @@ export default function FundTradesPage() {
                             <SegmentedControl<FundSortKey>
                                 options={[
                                     { key: 'return', label: 'Доходность' },
-                                    { key: 'volume', label: 'Объём' },
-                                    { key: 'name', label: 'Имя' },
+                                    { key: 'volume', label: 'Объём СЧА' },
                                 ]}
                                 value={fundSort}
                                 onChange={setFundSort}
                             />
                             <SegmentedControl<ReturnPeriodKey>
-                                options={(['m1', 'm3', 'm6', 'y1'] as ReturnPeriodKey[]).map((k) => ({
+                                options={(['m1', 'y1', 'y5'] as ReturnPeriodKey[]).map((k) => ({
                                     key: k,
                                     label: RETURN_PERIOD_LABEL[k],
                                 }))}
@@ -1039,9 +1051,10 @@ export default function FundTradesPage() {
 // Новые фонды (<1 года) не имеют y1 → показываем 6м/3м/1м, чтобы метрика была видна,
 // а не «—». На карточке подписываем периодом, чтобы было понятно, за какой срок.
 function bestReturn(
-    r?: { m1: number | null; m3: number | null; m6: number | null; y1: number | null } | null,
+    r?: { m1: number | null; m3: number | null; m6: number | null; y1: number | null; y5?: number | null } | null,
 ): { v: number; period: string } | null {
     if (!r) return null;
+    if (r.y5 != null) return { v: r.y5, period: '5 лет' };
     if (r.y1 != null) return { v: r.y1, period: '1 год' };
     if (r.m6 != null) return { v: r.m6, period: '6 мес' };
     if (r.m3 != null) return { v: r.m3, period: '3 мес' };
@@ -1050,20 +1063,23 @@ function bestReturn(
 }
 
 // Ключ сортировки карточек «Состав фондов».
-type FundSortKey = 'return' | 'volume' | 'name';
+type FundSortKey = 'return' | 'volume';
 
 // Период доходности для фильтра/плиток. Маппится на поля FundReturns.
-type ReturnPeriodKey = 'm1' | 'm3' | 'm6' | 'y1';
+// m3/m6 остаются в типе (детальная модалка/fallback), но в пикере периода
+// показываем только 1м / 1г / 5л.
+type ReturnPeriodKey = 'm1' | 'm3' | 'm6' | 'y1' | 'y5';
 const RETURN_PERIOD_LABEL: Record<ReturnPeriodKey, string> = {
     m1: '1 мес',
     m3: '3 мес',
     m6: '6 мес',
     y1: '1 год',
+    y5: '5 лет',
 };
 
 // Сырое значение доходности за выбранный период (или null, если нет данных).
 function returnForPeriod(
-    r: { m1: number | null; m3: number | null; m6: number | null; y1: number | null } | null | undefined,
+    r: { m1: number | null; m3: number | null; m6: number | null; y1: number | null; y5?: number | null } | null | undefined,
     period: ReturnPeriodKey,
 ): number | null {
     if (!r) return null;
@@ -1073,7 +1089,7 @@ function returnForPeriod(
 // Доходность для отображения на плитке: выбранный период, а если за него нет
 // данных (новый фонд) — fallback на лучший доступный (bestReturn).
 function displayReturn(
-    r: { m1: number | null; m3: number | null; m6: number | null; y1: number | null } | null | undefined,
+    r: { m1: number | null; m3: number | null; m6: number | null; y1: number | null; y5?: number | null } | null | undefined,
     period: ReturnPeriodKey,
 ): { v: number; period: string } | null {
     const v = returnForPeriod(r, period);

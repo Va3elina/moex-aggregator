@@ -91,17 +91,19 @@ const CATEGORY_LABEL: Record<string, string> = {
 };
 
 // ── helpers (зеркало десктопа) ───────────────────────────────────────────────
-type FundSortKey = 'return' | 'volume' | 'name';
-type ReturnPeriodKey = 'm1' | 'm3' | 'm6' | 'y1';
+type FundSortKey = 'return' | 'volume';
+// m3/m6 остаются в типе (fallback/детали), но в пикере периода показываем 1м/1г/5л.
+type ReturnPeriodKey = 'm1' | 'm3' | 'm6' | 'y1' | 'y5';
 const RETURN_PERIOD_LABEL: Record<ReturnPeriodKey, string> = {
   m1: '1 мес',
   m3: '3 мес',
   m6: '6 мес',
   y1: '1 год',
+  y5: '5 лет',
 };
 
 function returnForPeriod(
-  r: { m1: number | null; m3: number | null; m6: number | null; y1: number | null } | null | undefined,
+  r: { m1: number | null; m3: number | null; m6: number | null; y1: number | null; y5?: number | null } | null | undefined,
   period: ReturnPeriodKey,
 ): number | null {
   if (!r) return null;
@@ -109,9 +111,10 @@ function returnForPeriod(
 }
 
 function bestReturn(
-  r?: { m1: number | null; m3: number | null; m6: number | null; y1: number | null } | null,
+  r?: { m1: number | null; m3: number | null; m6: number | null; y1: number | null; y5?: number | null } | null,
 ): { v: number; period: string } | null {
   if (!r) return null;
+  if (r.y5 != null) return { v: r.y5, period: '5 лет' };
   if (r.y1 != null) return { v: r.y1, period: '1 год' };
   if (r.m6 != null) return { v: r.m6, period: '6 мес' };
   if (r.m3 != null) return { v: r.m3, period: '3 мес' };
@@ -120,7 +123,7 @@ function bestReturn(
 }
 
 function displayReturn(
-  r: { m1: number | null; m3: number | null; m6: number | null; y1: number | null } | null | undefined,
+  r: { m1: number | null; m3: number | null; m6: number | null; y1: number | null; y5?: number | null } | null | undefined,
   period: ReturnPeriodKey,
 ): { v: number; period: string } | null {
   const v = returnForPeriod(r, period);
@@ -308,6 +311,12 @@ export default function MobileFundTradesPage() {
   // Состав фондов: период доходности + сортировка + мультиселект УК.
   const [returnPeriod, setReturnPeriod] = usePersistedState<ReturnPeriodKey>('frame:fundtrades:returnPeriod', 'y1');
   const [fundSort, setFundSort] = usePersistedState<FundSortKey>('frame:fundtrades:fundSort', 'return');
+  // Персист мог сохранить убранные значения (период m3/m6, сортировка «Имя») — нормализуем.
+  useEffect(() => {
+    if (returnPeriod !== 'm1' && returnPeriod !== 'y1' && returnPeriod !== 'y5') setReturnPeriod('y1');
+    if ((fundSort as string) === 'name') setFundSort('return');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [selectedUks, setSelectedUks] = useState<Set<string>>(new Set());
   // Hover-связь пончик↔список на плитке (по fund_id + индекс слайса).
   const [tileHover, setTileHover] = useState<{ fund: number; idx: number } | null>(null);
@@ -413,16 +422,23 @@ export default function MobileFundTradesPage() {
   // Уникальные УК для UkMultiSelect (Состав фондов).
   const ukOptions = useMemo<UkOption[]>(() => {
     const map = new Map<string, UkOption>();
+    const count = new Map<string, number>();
     for (const f of funds) {
       const key = ukKey(f);
-      if (!key || map.has(key)) continue;
+      if (!key) continue;
+      count.set(key, (count.get(key) ?? 0) + 1);
+      if (map.has(key)) continue;
       map.set(key, {
         key,
         name: UK_LOGOS[key]?.name || f.uk || key,
         uk_id: f.uk_id ?? key,
       });
     }
-    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+    // Порядок: УК с наибольшим числом фондов сверху, при равенстве — по имени.
+    return Array.from(map.values()).sort((a, b) => {
+      const d = (count.get(b.key) ?? 0) - (count.get(a.key) ?? 0);
+      return d !== 0 ? d : a.name.localeCompare(b.name);
+    });
   }, [funds]);
 
   // Все фонды для FundPicker (movers multi + актив-sheet single).
@@ -448,7 +464,6 @@ export default function MobileFundTradesPage() {
       groups[key].push(f);
     }
     const cmp = (a: FundWithHistory, b: FundWithHistory): number => {
-      if (fundSort === 'name') return a.ticker.localeCompare(b.ticker);
       const av = fundSort === 'return' ? returnForPeriod(a.returns, returnPeriod) : a.nav_rub;
       const bv = fundSort === 'return' ? returnForPeriod(b.returns, returnPeriod) : b.nav_rub;
       if (av === null && bv === null) return a.ticker.localeCompare(b.ticker);
@@ -570,7 +585,7 @@ export default function MobileFundTradesPage() {
     if (tab === 'movers') return `${base} · ${metric === 'weight' ? '% веса' : '₽'}`;
     if (tab === 'portfolio') return `Портфель · ${portfolioMode === 'rub' ? '₽' : 'ср. доля'}`;
     if (tab === 'funds') {
-      const s = fundSort === 'return' ? 'доходность' : fundSort === 'volume' ? 'объём' : 'имя';
+      const s = fundSort === 'return' ? 'доходность' : 'объём СЧА';
       return `${base} · ${s}`;
     }
     return base;
@@ -748,7 +763,7 @@ export default function MobileFundTradesPage() {
             <div>
               <div style={SHEET_SECTION_LABEL}>Период доходности</div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {(['m1', 'm3', 'm6', 'y1'] as ReturnPeriodKey[]).map((k) => (
+                {(['m1', 'y1', 'y5'] as ReturnPeriodKey[]).map((k) => (
                   <button
                     key={k}
                     className={`fm-chip ${returnPeriod === k ? 'active' : ''}`}
@@ -850,8 +865,7 @@ export default function MobileFundTradesPage() {
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {([
                     { id: 'return' as const, label: 'Доходность' },
-                    { id: 'volume' as const, label: 'Объём, руб' },
-                    { id: 'name' as const, label: 'Имя' },
+                    { id: 'volume' as const, label: 'Объём СЧА' },
                   ]).map((s) => (
                     <button
                       key={s.id}
