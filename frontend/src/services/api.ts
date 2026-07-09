@@ -471,7 +471,7 @@ export interface FundInfo {
   /** Доходность фонда (total-return по pay = СЧА на пай + выплаты). Все периоды,
    *  чтобы молодые фонды (<1 года) показывали лучший доступный (m6/m3/m1) вместо «—».
    *  null-период = истории не хватает; весь returns null = битые данные источника. */
-  returns?: { m1: number | null; m3: number | null; m6: number | null; y1: number | null } | null;
+  returns?: { m1: number | null; m3: number | null; m6: number | null; y1: number | null; y5?: number | null } | null;
 }
 
 export interface FundHolding {

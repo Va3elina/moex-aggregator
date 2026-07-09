@@ -127,8 +127,11 @@ export default function UkMultiSelect({
                     alignItems: 'center',
                     gap: 4,
                     padding: size === 'md' ? '8px 18px' : '6px 14px',
-                    background: allActive ? 'var(--bg-secondary)' : 'var(--accent)',
-                    color: allActive ? 'var(--text-primary)' : 'var(--text-inverse)',
+                    // Кнопка НЕ оранжевая при выборе: нейтральный paper-фон в любом
+                    // состоянии. Активный выбор показываем жирным шрифтом + hard-shadow
+                    // (чёрная, не accent), чтобы не пропал сигнал «фильтр включён».
+                    background: 'var(--bg-secondary)',
+                    color: 'var(--text-primary)',
                     border: '2px solid var(--text-primary)',
                     borderRadius: 999,
                     fontSize: size === 'md' ? 'var(--fs-sm)' : 'var(--fs-xs)',
@@ -161,7 +164,7 @@ export default function UkMultiSelect({
                                       // Фикс-панель снизу, поверх ⚙️-sheet'а (.fm-sheet z-index 101).
                                       position: 'fixed', left: 12, right: 12, bottom: 16, zIndex: 111,
                                       maxHeight: '70vh', overflowY: 'auto',
-                                      background: 'var(--bg-primary)', border: '2px solid var(--text-primary)',
+                                      background: 'var(--bg-secondary)', border: '2px solid var(--text-primary)',
                                       borderRadius: 16,
                                       boxShadow: 'var(--shadow-hard-card, 6px 6px 0 var(--text-primary))',
                                   }
@@ -169,7 +172,7 @@ export default function UkMultiSelect({
                                       position: 'absolute', top: 'calc(100% + var(--sp-2))', left: 0, zIndex: 20,
                                       minWidth, width: 'max-content', maxWidth: 'min(360px, calc(100vw - 32px))',
                                       maxHeight: '70vh', overflowY: 'auto',
-                                      background: 'var(--bg-primary)', border: '2px solid var(--text-primary)',
+                                      background: 'var(--bg-secondary)', border: '2px solid var(--text-primary)',
                                       borderRadius: 16,
                                       boxShadow: 'var(--shadow-hard-card, 6px 6px 0 var(--text-primary))',
                                   }
@@ -184,7 +187,7 @@ export default function UkMultiSelect({
                                 padding: 'var(--sp-3) var(--sp-4)',
                                 position: isMobile ? 'sticky' : undefined,
                                 top: isMobile ? 0 : undefined,
-                                background: 'var(--bg-primary)',
+                                background: 'var(--bg-secondary)',
                             }}
                         >
                             <span

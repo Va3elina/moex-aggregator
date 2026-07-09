@@ -374,6 +374,7 @@ def list_funds_with_history(
             fd_3m.pay AS pay_3m,
             fd_6m.pay AS pay_6m,
             fd_1y.pay AS pay_1y,
+            fd_5y.pay AS pay_5y,
             (SELECT COALESCE(SUM(amount_per_unit), 0) FROM fund_distributions d
              WHERE d.fund_id = f.fund_id AND d.record_date > fd_last.td - INTERVAL '1 month'   AND d.record_date <= fd_last.td) AS dist_1m,
             (SELECT COALESCE(SUM(amount_per_unit), 0) FROM fund_distributions d
@@ -382,6 +383,8 @@ def list_funds_with_history(
              WHERE d.fund_id = f.fund_id AND d.record_date > fd_last.td - INTERVAL '6 months'  AND d.record_date <= fd_last.td) AS dist_6m,
             (SELECT COALESCE(SUM(amount_per_unit), 0) FROM fund_distributions d
              WHERE d.fund_id = f.fund_id AND d.record_date > fd_last.td - INTERVAL '12 months' AND d.record_date <= fd_last.td) AS dist_1y,
+            (SELECT COALESCE(SUM(amount_per_unit), 0) FROM fund_distributions d
+             WHERE d.fund_id = f.fund_id AND d.record_date > fd_last.td - INTERVAL '60 months' AND d.record_date <= fd_last.td) AS dist_5y,
             EXISTS (SELECT 1 FROM fund_distributions d WHERE d.fund_id = f.fund_id) AS has_distributions
         FROM funds f
         LEFT JOIN LATERAL (
@@ -404,6 +407,10 @@ def list_funds_with_history(
             SELECT pay FROM fund_data WHERE fund_id = f.fund_id AND pay IS NOT NULL
             AND trade_date <= fd_last.td - INTERVAL '12 months' ORDER BY trade_date DESC LIMIT 1
         ) fd_1y ON true
+        LEFT JOIN LATERAL (
+            SELECT pay FROM fund_data WHERE fund_id = f.fund_id AND pay IS NOT NULL
+            AND trade_date <= fd_last.td - INTERVAL '60 months' ORDER BY trade_date DESC LIMIT 1
+        ) fd_5y ON true
         WHERE f.ticker = ANY(:tickers) AND f.category = 'stocks'
           AND EXISTS (SELECT 1 FROM fund_holdings_history h2
                       WHERE h2.fund_id = f.fund_id AND h2.source = ANY(:sources))
@@ -473,6 +480,7 @@ def list_funds_with_history(
                 "m3": _calc_total_return(last_pay, r["pay_3m"], r["dist_3m"]),
                 "m6": _calc_total_return(last_pay, r["pay_6m"], r["dist_6m"]),
                 "y1": _calc_total_return(last_pay, r["pay_1y"], r["dist_1y"]),
+                "y5": _calc_total_return(last_pay, r["pay_5y"], r["dist_5y"]),
             }),
             "top_holdings": holdings_map.get(r["fund_id"], []),
             "has_distributions": bool(r["has_distributions"]),
