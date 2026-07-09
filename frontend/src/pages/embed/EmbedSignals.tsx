@@ -14,7 +14,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import InstrumentIcon from '../../components/InstrumentIcon';
-import { getAnomalyFeed, type AnomalyItem } from '../../services/api';
+import { getAnomalyFeed, type AnomalyDeepLink, type AnomalyItem } from '../../services/api';
 import { displayTicker } from '../../utils/displayTicker';
 import { EmbedMsg } from './embedUi';
 import { EmbedFrame, PillGroup } from './EmbedToolbar';
@@ -49,7 +49,12 @@ function ago(iso: string | null): string {
   return `${Math.round(h / 24)} дн`;
 }
 
-export default function EmbedSignals() {
+/**
+ * `onPick` — режим ПЕСОЧНИЦЫ: клик по сигналу отдаём наверх (SandboxPage спавнит
+ * панель нужного индикатора на активе сигнала), а не шлём postMessage. Не задан →
+ * прежнее поведение (расширение / standalone pop-out).
+ */
+export default function EmbedSignals({ onPick }: { onPick?: (dl: AnomalyDeepLink) => void }) {
   const [source, setSource] = useState<SourceKey>(() => readLS('frame:embed:signals:source', 'all') as SourceKey);
   const [items, setItems] = useState<AnomalyItem[] | null>(null);
   const [status, setStatus] = useState<LoadStatus>('loading');
@@ -86,6 +91,7 @@ export default function EmbedSignals() {
 
   const openSignal = (it: AnomalyItem) => {
     const dl = it.deep_link;
+    if (onPick) { onPick(dl); return; }
     if (window.parent !== window) {
       // В терминале: widget.js расширения откроет панель индикатора на этом активе.
       window.parent.postMessage({ source: 'frame-embed', type: 'open-signal', deepLink: dl }, '*');

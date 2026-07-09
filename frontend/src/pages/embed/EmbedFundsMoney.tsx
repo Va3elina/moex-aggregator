@@ -69,12 +69,13 @@ function initCat(p: string | null): Category {
   return 'money_market';
 }
 
-export default function EmbedFundsMoney() {
+/** `initialCategory` — стартовая категория от песочницы (спавн по клику на сигнале). */
+export default function EmbedFundsMoney({ initialCategory }: { initialCategory?: string } = {}) {
   const [params] = useSearchParams();
   const { theme } = useTheme();
   const dark = theme !== 'editorial-light';
 
-  const [category, setCategory] = useState<Category>(() => initCat(params.get('category')));
+  const [category, setCategory] = useState<Category>(() => initCat(initialCategory || params.get('category')));
   const [period, setPeriod] = useState<FundPeriod>(() => (params.get('period') || readLS('frame:embed:funds:period', '1y')) as FundPeriod);
   // Default режим — Притоки-Оттоки (как дефолт страницы).
   const [viewMode, setViewMode] = useState<ViewMode>(() => (params.get('view') || readLS('frame:embed:funds:viewMode', 'flows')) as ViewMode);
