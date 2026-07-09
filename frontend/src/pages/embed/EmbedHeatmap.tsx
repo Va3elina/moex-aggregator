@@ -79,14 +79,16 @@ export default function EmbedHeatmap() {
     return () => { cancelled = true; };
   }, [universe]);
 
-  // Секторы по убыванию оборота; внутри — акции по убыванию веса.
+  // Секторы по убыванию оборота; внутри — акции по убыванию веса. Сумму считаем
+  // сами из value_1d (totalValue из API — в других единицах → вес клампился к 1
+  // и каждая плитка растягивалась на всю строку).
   const sectors = useMemo(() => {
-    const list = (data?.sectors ?? []).slice().sort((a, b) => b.totalValue - a.totalValue);
-    return list.map((s) => ({
-      name: s.name,
-      total: Math.max(1, s.totalValue),
-      stocks: s.stocks.slice().sort((a, b) => (b.value_1d ?? 0) - (a.value_1d ?? 0)),
-    }));
+    const list = (data?.sectors ?? []).map((s) => {
+      const stocks = s.stocks.slice().sort((a, b) => (b.value_1d ?? 0) - (a.value_1d ?? 0));
+      const total = Math.max(1, stocks.reduce((acc, x) => acc + (x.value_1d ?? 0), 0));
+      return { name: s.name, total, stocks };
+    });
+    return list.sort((a, b) => b.total - a.total);
   }, [data]);
 
   return (
@@ -114,7 +116,7 @@ export default function EmbedHeatmap() {
                     key={st.secId}
                     title={`${st.name} · ${fmtPct(ch)} · оборот ${fmtVol(st.value_1d ?? 0)} ₽`}
                     style={{
-                      flex: `${Math.round(w * 100)} 1 ${Math.max(56, Math.round(w * 340))}px`,
+                      flex: `${Math.max(1, Math.round(w * 100))} 1 ${Math.max(56, Math.min(220, Math.round(w * 340)))}px`,
                       height: big ? 62 : 46,
                       borderRadius: 6,
                       background: heatColor(ch, dark),
