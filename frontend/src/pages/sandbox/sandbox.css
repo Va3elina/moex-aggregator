@@ -86,6 +86,19 @@
   --chart-line-3: var(--c-up);
 }
 
+/* G-4/G-7 — размеры контролов embed-тулбара под макет. Действуют ТОЛЬКО в панелях
+   песочницы: на сайте и в расширении переменные не заданы → EmbedToolbar рендерит
+   свои дефолты (прежний вид). Значения — из исходника дизайнера. */
+.sb-panel {
+  --emb-ctl-fs: 10.5px;
+  --emb-ctl-fw: 600;
+  --emb-pill-pad: 3px 8px;
+  --emb-pill-off: var(--muted);
+  --emb-dd-pad: 3px 8px;
+  --emb-dd-radius: 6px;
+  --emb-pop-bw: 1px;
+}
+
 .sb-root {
   font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
   font-variant-numeric: tabular-nums;

@@ -26,7 +26,11 @@
  * настройки §9, листы (переименование/дубль/удаление/reorder).
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { Bell, Contrast, LayoutGrid, Plus, PlusCircle, X as XIcon } from 'lucide-react';
+import {
+  Activity, ArrowLeftRight, Bell, CalendarDays, Contrast, Grid3x3, Layers, LayoutGrid,
+  ListFilter, Plus, PlusCircle, Scale, TrendingUp, Wallet, Waves, X as XIcon,
+  type LucideIcon,
+} from 'lucide-react';
 import './sandbox.css';
 import { SandboxWindowCtx } from '../embed/EmbedToolbar';
 import { ThemeContext, useTheme } from '../../contexts/ThemeContext';
@@ -49,7 +53,7 @@ type Group = 'signals' | 'instrument' | 'market';
 interface IndicatorDef { type: IndKind; label: string; group: Group; desc: string }
 
 const INDICATORS: IndicatorDef[] = [
-  { type: 'signals', label: '🔔 Сигналы', group: 'signals', desc: 'Лента резких движений рынка' },
+  { type: 'signals', label: 'Сигналы', group: 'signals', desc: 'Лента резких движений рынка' },
   { type: 'oi', label: 'Открытые позиции', group: 'instrument', desc: 'Открытый интерес по фьючерсам' },
   { type: 'seasonality', label: 'Сезонность', group: 'instrument', desc: 'Средняя доходность по сезонам' },
   { type: 'screener', label: 'Скринер сигналов', group: 'instrument', desc: 'Резкие сдвиги позиций по всем активам' },
@@ -61,6 +65,21 @@ const INDICATORS: IndicatorDef[] = [
   { type: 'cbr-flows', label: 'Поток капитала', group: 'market', desc: 'Потоки по участникам биржи (ЦБ)' },
   { type: 'heatmap', label: 'Карта рынка', group: 'market', desc: 'Тепловая карта: размер = оборот, цвет = изменение' },
 ];
+
+// Иконка-плитка пункта меню (§7.1 макета): глиф + подложка в цвет серии.
+const ICONS: Record<IndKind, { Icon: LucideIcon; color: string }> = {
+  signals: { Icon: Bell, color: 'var(--accent)' },
+  oi: { Icon: Layers, color: 'var(--c-cyan)' },
+  seasonality: { Icon: CalendarDays, color: 'var(--c-up)' },
+  screener: { Icon: ListFilter, color: 'var(--c-amber)' },
+  buffett: { Icon: Scale, color: 'var(--c-price)' },
+  strength: { Icon: Activity, color: 'var(--c-sec)' },
+  'funds-money': { Icon: Wallet, color: 'var(--c-up)' },
+  'fund-trades': { Icon: ArrowLeftRight, color: 'var(--c-price)' },
+  'fund-movers': { Icon: TrendingUp, color: 'var(--c-amber)' },
+  'cbr-flows': { Icon: Waves, color: 'var(--c-sec)' },
+  heatmap: { Icon: Grid3x3, color: 'var(--c-down)' },
+};
 
 // Стартовый размер панели по индикатору (спека: screener 440×470, strength 560×420, прочие 520×360).
 const SIZES: Partial<Record<IndKind, { w: number; h: number }>> = {
@@ -342,7 +361,7 @@ export default function SandboxPage() {
     <div className="sb-root" data-sbtheme={st.sbTheme} style={rootStyle}>
       {/* ── Топбар 56px (§3.1) ── */}
       <div style={topbarStyle}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           <div style={logoSquare}>Ф</div>
           <span style={{ fontWeight: 700, fontSize: 15, letterSpacing: '-0.01em', color: 'var(--text)' }}>Фрейм</span>
         </div>
@@ -350,7 +369,7 @@ export default function SandboxPage() {
         <div style={dividerV} />
 
         {/* Вкладки листов + новый лист */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
           {st.sheets.map((sh) => {
             const on = sh.id === st.activeSheet;
             return (
@@ -368,7 +387,7 @@ export default function SandboxPage() {
         {/* ＋ Индикатор */}
         <div style={{ position: 'relative', flexShrink: 0 }}>
           <button type="button" onClick={() => setMenuOpen((v) => !v)} style={addBtnStyle}>
-            <PlusCircle size={15} /> Индикатор
+            <Plus size={15} strokeWidth={2.4} /> Индикатор
           </button>
         </div>
 
@@ -377,9 +396,9 @@ export default function SandboxPage() {
         </button>
 
         {/* Правая группа */}
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           <button type="button" className="sb-hoverable" onClick={() => setSignalsOpen(true)} title="Центр сигналов" style={chromeBtn}>
-            <Bell size={17} strokeWidth={1.8} />
+            <Bell size={16} strokeWidth={1.8} />
           </button>
           <button type="button" className="sb-hoverable" onClick={toggleTheme} title="Тема оболочки" style={chromeBtn}>
             <Contrast size={16} />
@@ -395,12 +414,14 @@ export default function SandboxPage() {
 
         {panels.length === 0 && (
           <div style={emptyStyle}>
-            <LayoutGrid size={30} style={{ opacity: 0.35 }} />
-            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)' }}>Пустой лист</div>
-            <div style={{ fontSize: 12.5, color: 'var(--muted)', maxWidth: 320, textAlign: 'center', lineHeight: 1.5 }}>
+            <div style={{ width: 64, height: 64, borderRadius: 14, border: '1.5px solid var(--border-strong)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--muted)' }}>
+              <LayoutGrid size={26} />
+            </div>
+            <div style={{ fontSize: 19, fontWeight: 700, color: 'var(--text)' }}>Пустой лист</div>
+            <div style={{ fontSize: 13.5, color: 'var(--muted)', maxWidth: 340, textAlign: 'center', lineHeight: 1.5 }}>
               Добавьте индикатор — он появится как окно-панель. Панели можно двигать, тянуть за края и прилеплять друг к другу.
             </div>
-            <button type="button" onClick={() => setMenuOpen(true)} style={{ ...addBtnStyle, marginTop: 4 }}>
+            <button type="button" onClick={() => setMenuOpen(true)} style={{ ...addBtnStyle, padding: '11px 18px', fontSize: 13.5 }}>
               <PlusCircle size={15} /> Добавить индикатор
             </button>
           </div>
@@ -444,22 +465,22 @@ export default function SandboxPage() {
         <>
           <div style={{ position: 'fixed', inset: 0, zIndex: OVERLAY_Z }} onClick={() => setMenuOpen(false)} />
           <div className="sb-scroll" style={addMenuStyle}>
-            {(['signals', 'instrument', 'market'] as Group[]).map((g) => (
+            {(['instrument', 'market'] as Group[]).map((g) => (
               <div key={g}>
                 <div className="sb-uc" style={{ padding: '8px 10px 4px' }}>
-                  {g === 'signals' ? 'Центр сигналов' : g === 'instrument' ? 'По инструменту' : 'По рынку'}
+                  {g === 'instrument' ? 'По инструменту' : 'По рынку'}
                 </div>
                 {INDICATORS.filter((i) => i.group === g).map((ind) => (
-                  <button key={ind.type} type="button" onClick={() => spawn(ind.type)} style={menuItemStyle}>
-                    <span style={{ width: 7, height: 7, borderRadius: 4, background: 'var(--accent)', flex: '0 0 auto', marginTop: 5 }} />
-                    <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-                      <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--text)' }}>{ind.label}</span>
-                      <span style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.3 }}>{ind.desc}</span>
-                    </span>
-                  </button>
+                  <MenuItem key={ind.type} ind={ind} onPick={spawn} />
                 ))}
               </div>
             ))}
+            {/* «Сигналы» — отдельной строкой внизу за разделителем (§7.1). */}
+            <div style={{ borderTop: '1px solid var(--border)', marginTop: 6, paddingTop: 4 }}>
+              {INDICATORS.filter((i) => i.group === 'signals').map((ind) => (
+                <MenuItem key={ind.type} ind={ind} onPick={spawn} />
+              ))}
+            </div>
           </div>
         </>
       )}
@@ -487,6 +508,29 @@ export default function SandboxPage() {
   );
 }
 
+/** Пункт меню «＋ Индикатор»: иконка-плитка 30×30 + название + описание (§7.1). */
+function MenuItem({ ind, onPick }: { ind: IndicatorDef; onPick: (t: IndKind) => void }) {
+  const { Icon, color } = ICONS[ind.type];
+  return (
+    <button type="button" onClick={() => onPick(ind.type)} style={menuItemStyle}>
+      <span
+        style={{
+          width: 30, height: 30, borderRadius: 7, flex: '0 0 auto', color,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: `color-mix(in srgb, ${color} 14%, transparent)`,
+          border: `1px solid color-mix(in srgb, ${color} 34%, transparent)`,
+        }}
+      >
+        <Icon size={15} />
+      </span>
+      <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+        <span style={{ fontWeight: 600, fontSize: 12.5, color: 'var(--text)' }}>{ind.label}</span>
+        <span style={{ fontSize: 11, color: 'var(--muted)', lineHeight: 1.3 }}>{ind.desc}</span>
+      </span>
+    </button>
+  );
+}
+
 /* ───────────────────────────── styles ───────────────────────────── */
 const rootStyle: CSSProperties = {
   position: 'fixed', inset: 0, background: 'var(--bg)', color: 'var(--text)', overflow: 'hidden',
@@ -506,7 +550,7 @@ function sheetTabStyle(on: boolean): CSSProperties {
     fontSize: 12.5, fontWeight: on ? 700 : 500, color: on ? 'var(--text)' : 'var(--muted)', whiteSpace: 'nowrap',
   };
 }
-const sheetUnderline: CSSProperties = { position: 'absolute', bottom: -6, left: 12, right: 12, height: 2, background: 'var(--accent)', borderRadius: 1 };
+const sheetUnderline: CSSProperties = { position: 'absolute', bottom: -6, left: 12, right: 12, height: 2, background: 'var(--accent)', borderRadius: 2 };
 const newSheetBtn: CSSProperties = {
   width: 26, height: 26, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 7,
   border: '1px dashed var(--border-strong)', background: 'transparent', color: 'var(--muted)', cursor: 'pointer', flex: '0 0 auto', padding: 0,
@@ -521,7 +565,7 @@ const arrangeBtnStyle: CSSProperties = {
 };
 const chromeBtn: CSSProperties = {
   width: 34, height: 34, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 8,
-  border: '1.5px solid var(--border)', background: 'transparent', color: 'var(--muted)', cursor: 'pointer', flex: '0 0 auto', padding: 0,
+  border: '1.5px solid var(--border)', background: 'transparent', color: 'var(--text)', cursor: 'pointer', flex: '0 0 auto', padding: 0,
 };
 const proChip: CSSProperties = {
   fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', color: 'var(--accent)', border: '1px solid var(--accent)',
@@ -537,7 +581,7 @@ const dotGridStyle: CSSProperties = {
   backgroundImage: 'radial-gradient(var(--dot) 1.1px, transparent 1.1px)', backgroundSize: '22px 22px',
 };
 const emptyStyle: CSSProperties = {
-  position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10,
+  position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14,
 };
 const panelStyle: CSSProperties = {
   display: 'flex', flexDirection: 'column', background: 'var(--panel)', border: '1px solid var(--border)',
@@ -546,11 +590,11 @@ const panelStyle: CSSProperties = {
 const panelBodyStyle: CSSProperties = { flex: '1 1 auto', position: 'relative', minHeight: 0, background: 'var(--bg)' };
 const addMenuStyle: CSSProperties = {
   position: 'absolute', top: TOPBAR_H + 4, left: 220, zIndex: OVERLAY_Z + 1, width: 300, maxHeight: 'calc(100vh - 80px)', overflowY: 'auto',
-  background: 'var(--panel)', border: '1.5px solid var(--border-strong)', borderRadius: 12, boxShadow: 'var(--shadow)', padding: 6,
+  background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: 'var(--shadow)', padding: 6,
   animation: 'sb-pop .15s ease',
 };
 const menuItemStyle: CSSProperties = {
-  display: 'flex', alignItems: 'flex-start', gap: 9, width: '100%', padding: '8px 10px', border: 'none', borderRadius: 8,
+  display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 10px', border: 'none', borderRadius: 8,
   background: 'transparent', color: 'var(--text)', textAlign: 'left', cursor: 'pointer',
 };
 const signalsDrawerStyle: CSSProperties = {
