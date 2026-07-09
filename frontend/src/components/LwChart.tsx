@@ -36,6 +36,8 @@ export interface LwSeries {
   tipFmt?: (v: number) => string;
   lastValueVisible?: boolean;
   zeroLine?: boolean;
+  /** Мин. шаг цены оси/пилюли. Дефолт 1 (целые — ОИ/Баффетт); проценты/breadth → 0.01/0.1. */
+  minMove?: number;
 }
 
 export interface LwMarker { time: number; text?: string; color?: string; position?: 'aboveBar' | 'belowBar' | 'inBar' }
@@ -50,6 +52,13 @@ interface LwChartProps {
   /** Дефолтное окно при перецентровке: показать последние N баров (напр. год ≈ 252).
    *  Не задано / данных меньше → показать всю историю (fitContent). */
   initialBars?: number;
+  /** Оверрайд формата меток оси времени (§5.2 / категориальная ось Сезонности).
+   *  Не задан → русские год/месяц/день/время (ruTickMark). */
+  tickFmt?: (time: number, type: number) => string;
+  /** Оверрайд авто-легенды (напр. одна серия «Чистый поток» → 2 пункта «Приток/Отток»). */
+  legendItems?: { label: string; color: string }[];
+  /** Не строить легенду (когда рисуем свою статичную поверх — Сезонность-Календарь). */
+  hideLegend?: boolean;
 }
 
 function themeColors(dark: boolean) {
@@ -102,12 +111,16 @@ function ruTickMark(time: unknown, type: number): string {
   return String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0');
 }
 
-export default function LwChart({ series, height, dark = true, markers, fitKey, initialBars }: LwChartProps) {
+export default function LwChart({ series, height, dark = true, markers, fitKey, initialBars, tickFmt, legendItems, hideLegend }: LwChartProps) {
   const boxRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesApiRef = useRef<ISeriesApi<'Line' | 'Area' | 'Histogram'>[]>([]);
   const defsRef = useRef<LwSeries[]>(series);
   defsRef.current = series;
+  // Читаем через ref, чтобы смена пропа-функции/массива не пересоздавала чарт/серии.
+  const tickFmtRef = useRef(tickFmt); tickFmtRef.current = tickFmt;
+  const legendItemsRef = useRef(legendItems); legendItemsRef.current = legendItems;
+  const hideLegendRef = useRef(hideLegend); hideLegendRef.current = hideLegend;
   const lastFitRef = useRef<string | undefined>(undefined);
   const marginRef = useRef(0.12);
   const legendRef = useRef<HTMLDivElement | null>(null);
@@ -124,7 +137,7 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
       leftPriceScale: { visible: true, borderVisible: false, scaleMargins: { top: 0.12, bottom: 0.06 } },
       rightPriceScale: { visible: true, borderVisible: false, scaleMargins: { top: 0.12, bottom: 0.06 } },
-      timeScale: { borderVisible: false, rightOffset: 6, secondsVisible: false, tickMarkFormatter: (time: Time, type: number) => ruTickMark(time, type) },
+      timeScale: { borderVisible: false, rightOffset: 6, secondsVisible: false, tickMarkFormatter: (time: Time, type: number) => (tickFmtRef.current ? tickFmtRef.current(time as unknown as number, type) : ruTickMark(time, type)) },
       crosshair: {
         mode: CrosshairMode.Normal,
         vertLine: { color: c.cross, width: 1, style: LineStyle.Dotted, labelBackgroundColor: c.lab },
@@ -144,7 +157,7 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
     tip.style.cssText = [
       'position:absolute', 'pointer-events:none', 'z-index:6', 'display:none',
       'background:var(--bg-secondary,#17161A)', 'border:1px solid var(--border-color,rgba(245,241,232,0.18))',
-      'border-radius:8px', 'padding:7px 10px', 'font-size:11.5px', 'color:var(--text-primary,#F5F1E8)',
+      'border-radius:7px', 'padding:5px 8px', 'font-size:10.5px', 'color:var(--text-primary,#F5F1E8)',
       'white-space:nowrap', 'box-shadow:0 8px 22px rgba(0,0,0,0.45)', 'font-family:Inter,-apple-system,sans-serif',
     ].join(';');
     box.appendChild(tip);
@@ -175,11 +188,11 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
         const row = document.createElement('div');
         row.style.cssText = 'display:flex;align-items:center;gap:7px;' + (i > 0 ? 'margin-top:4px;' : '');
         const dot = document.createElement('span');
-        dot.style.cssText = 'width:8px;height:8px;border-radius:2px;display:inline-block;flex:0 0 auto;background:' + (def?.color || '#888');
+        dot.style.cssText = 'width:7px;height:7px;border-radius:2px;display:inline-block;flex:0 0 auto;background:' + (def?.color || '#888');
         const lbl = document.createElement('span');
         lbl.textContent = def?.label || '';
         const val = document.createElement('span');
-        val.style.cssText = 'margin-left:auto;font-weight:700;font-variant-numeric:tabular-nums;padding-left:14px;color:' + (def?.color || 'inherit');
+        val.style.cssText = "margin-left:auto;font-weight:700;font-family:'JetBrains Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums;padding-left:14px;color:" + (def?.color || 'inherit');
         val.textContent = def?.tipFmt ? def.tipFmt(dp.value) : String(Math.round(dp.value));
         row.appendChild(dot); row.appendChild(lbl); row.appendChild(val);
         tip.appendChild(row);
@@ -187,7 +200,9 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       if (!any) { tip.style.display = 'none'; return; }
       tip.style.display = 'block';
       const w = box.clientWidth, tw = tip.offsetWidth;
-      tip.style.left = Math.max(6, Math.min(w - tw - 6, param.point.x + 16)) + 'px';
+      // §5.4: после середины графика разворачиваем влево, чтобы не упираться в правый край.
+      const rawLeft = param.point.x > w / 2 ? param.point.x - tw - 16 : param.point.x + 16;
+      tip.style.left = Math.max(6, Math.min(w - tw - 6, rawLeft)) + 'px';
       tip.style.top = Math.max(6, param.point.y - 8) + 'px';
     });
 
@@ -255,7 +270,7 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
     for (const def of series) {
       const scaleId = def.scale ?? 'right';
       const priceFormat = def.axisFmt
-        ? { type: 'custom' as const, minMove: 1, formatter: def.axisFmt }
+        ? { type: 'custom' as const, minMove: def.minMove ?? 1, formatter: def.axisFmt }
         : undefined;
       const lw = (def.lineWidth ?? 2) as 1 | 2 | 3 | 4;
       const col = rc(def.color);
@@ -279,18 +294,19 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
       seriesApiRef.current.push(s);
     }
 
-    // Наполняем постоянную легенду: цветной сегмент + подпись на серию (как в макете).
+    // Легенда: legendItems (оверрайд) либо по сериям; hideLegend → пусто (рисуем свою поверх).
     const legend = legendRef.current;
     if (legend) {
       while (legend.firstChild) legend.removeChild(legend.firstChild);
-      for (const def of series) {
+      const legItems = hideLegendRef.current ? [] : (legendItemsRef.current ?? series.map((d) => ({ label: d.label, color: d.color })));
+      for (const it of legItems) {
         const item = document.createElement('div');
         item.style.cssText = 'display:flex;align-items:center;gap:5px';
         const seg = document.createElement('span');
-        seg.style.cssText = 'width:12px;height:2.5px;border-radius:2px;flex:0 0 auto;background:' + rc(def.color);
+        seg.style.cssText = 'width:12px;height:2.5px;border-radius:2px;flex:0 0 auto;background:' + rc(it.color);
         const lbl = document.createElement('span');
         lbl.style.cssText = 'font-size:11px;font-weight:600;color:var(--text-primary,#F5F1E8);white-space:nowrap';
-        lbl.textContent = def.label || '';
+        lbl.textContent = it.label || '';
         item.appendChild(seg);
         item.appendChild(lbl);
         legend.appendChild(item);
