@@ -794,9 +794,13 @@ export default function SeasonalityPage() {
           + 2px inkstroke. Editorial-стандарт: chart cards = 2px (тяжёлая рамка),
           chips/buttons = 1.5px. Иерархия по толщине обводки.
           md:pt-2 (8px) — верхний паддинг ужат: легенда графика на том же
-          зазоре от верхней границы карточки, что и в OI (--chart-legend-top-gap). */}
+          зазоре от верхней границы карточки, что и в OI (--chart-legend-top-gap).
+          md:pb-3 (12px) — нижний паддинг ужат до стандарта чарт-карточек с
+          навигатором (как в Потоке капитала ~8-12px): p-5 давал ~25px и в
+          годовом режиме (без навигатора) оставлял большой пустой коридор между
+          подписями месяцев и нижней границей карточки. */}
       {chartType !== 'test' && (
-      <div ref={chartCardRef} data-tour="seasonality-chart" className="relative rounded-2xl bg-theme-primary p-2 md:p-5 md:pt-2" style={{ border: '2px solid var(--text-primary)' }}>
+      <div ref={chartCardRef} data-tour="seasonality-chart" className="relative rounded-2xl bg-theme-primary p-2 md:p-5 md:pt-2 md:pb-3" style={{ border: '2px solid var(--text-primary)' }}>
         {/* Спиннер обновления — paper-style без glass */}
         {loading && (bars.length > 0 || priceData || yearlyData) && (
           <div
