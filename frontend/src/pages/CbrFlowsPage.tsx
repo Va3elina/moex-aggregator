@@ -124,7 +124,7 @@ export default function CbrFlowsPage() {
   const chartAnchorRef = useRef<HTMLDivElement>(null);
   const chartHeight = useFitToViewport(chartAnchorRef, {
     min: 360,
-    max: 640,
+    max: 720,
     bottomBuffer: 96,
   });
 
