@@ -1,15 +1,18 @@
 /**
- * EmbedStrength — виджет «Сила рынка». Полный паритет со страницей:
- * опционально сверху линия индекса (IndexChart: IMOEX в ₽ / RTSI в $), снизу —
- * breadth (% акций выше EMA) линией или гистограммой. Все контролы (EMA / период /
- * режим графика / вселенная / валюта / показ индекса) — в drawer'е настроек.
+ * EmbedStrength — виджет «Сила рынка». Движок — LwChartPanes (§5.7 макета):
+ * ДВА связанных Lightweight-графика как один индикатор — сверху индекс
+ * (IMOEX ₽ / RTSI $), снизу breadth (% акций выше EMA) линией-областью или
+ * бинарной гистограммой (зел ≥50% / крас <50%). Между панелями: общая ось
+ * времени (пан/зум синхронны), общий кроссхэйр, ЕДИНЫЙ тултип с обоими
+ * значениями; ось дат только на нижней.
+ *
+ * Вся история грузится сразу; период меняется перетаскиванием/зумом оси
+ * (кнопок периода нет — как в TradingView/макете). EMA и показ индекса — в ⚙.
  * Виджет целиком под PRO-токеном, поэтому тир-гейтинга нет.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import IndexChart from '../../components/strength/IndexChart';
-import BreadthChart from '../../components/strength/BreadthChart';
-import type { ChartPadding } from '../../components/strength/chartUtils';
+import { useEffect, useMemo, useState } from 'react';
+import LwChartPanes, { type LwPane } from '../../components/LwChartPanes';
+import { useTheme } from '../../contexts/ThemeContext';
 import { getBreadthHistory, type BreadthUniverse } from '../../services/api';
 import { EmbedMsg } from './embedUi';
 import { DrawerSection, SegGroup, ToggleRow } from './EmbedSettings';
@@ -17,8 +20,7 @@ import { EmbedFrame, PillGroup, Dropdown } from './EmbedToolbar';
 import { readLS, writeLS } from './embedPersist';
 
 type LoadStatus = 'idle' | 'loading' | 'ok' | 'empty' | 'error';
-type Synced = { time: string; breadth: number; imoex: number }[];
-type Period = '1y' | '5y' | 'all';
+type Synced = { time: number; breadth: number; imoex: number }[];
 type ChartMode = 'line' | 'histogram';
 type Ema = 20 | 50 | 100 | 200;
 type UniverseBase = 'imoex' | 'all';
@@ -30,54 +32,26 @@ const EMAS: { id: Ema; label: string }[] = [
   { id: 100, label: 'EMA 100' },
   { id: 200, label: 'EMA 200' },
 ];
-const PERIODS: { id: Period; label: string }[] = [
-  { id: '1y', label: '1Г' },
-  { id: '5y', label: '5Л' },
-  { id: 'all', label: 'Всё' },
-];
 const CHART_MODES: { id: ChartMode; label: string }[] = [
   { id: 'line', label: 'Линия' },
   { id: 'histogram', label: 'Гистограмма' },
 ];
-// Общий padding для обоих графиков → их X-оси совпадают по пикселям.
-// Ссылка стабильна между рендерами — IndexChart/BreadthChart держат padding
-// в useMemo-deps, пересоздание объекта прервало бы морфинг-анимацию.
-const PAD: ChartPadding = { left: 54, right: 54, top: 6, bottom: 20 };
-const LEGEND_H = 18;
 
-// Значения дней зеркалят PERIOD_DAYS на StrengthPage — паритет диапазонов.
-function daysForPeriod(period: Period): number {
-  switch (period) {
-    case '5y': return 1825;
-    case 'all': return 7000;
-    default: return 365;
-  }
-}
+// Вся история сразу (время — перетаскиванием оси, как в макете); дефолт-окно ≈ год.
+const ALL_DAYS = 7000;
+const INITIAL_BARS = 252;
 
-function MiniLegend({ text }: { text: string }) {
-  return (
-    <div
-      style={{
-        flexShrink: 0,
-        height: LEGEND_H,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: 11,
-        fontWeight: 700,
-        color: 'var(--text-secondary)',
-      }}
-    >
-      {text}
-    </div>
-  );
-}
+// 'YYYY-MM-DD' → UNIX-секунды (UTC-полночь) для LwChart.
+const toSec = (t: string): number => {
+  const [y, m, d] = t.slice(0, 10).split('-').map(Number);
+  return Math.floor(Date.UTC(y, m - 1, d) / 1000);
+};
 
 export default function EmbedStrength() {
-  const [params] = useSearchParams();
+  const { theme } = useTheme();
+  const dark = theme !== 'editorial-light';
 
   const [ema, setEma] = useState<Ema>(() => (Number(readLS('frame:embed:strength:ema', '200')) || 200) as Ema);
-  const [period, setPeriod] = useState<Period>(() => (params.get('period') || readLS('frame:embed:strength:period', '1y')) as Period);
   const [chartMode, setChartMode] = useState<ChartMode>(() => readLS('frame:embed:strength:chartMode', 'histogram') as ChartMode);
   const [universeBase, setUniverseBase] = useState<UniverseBase>(() => readLS('frame:embed:strength:universeBase', 'imoex') as UniverseBase);
   const [currency, setCurrency] = useState<Currency>(() => readLS('frame:embed:strength:currency', 'rub') as Currency);
@@ -87,7 +61,6 @@ export default function EmbedStrength() {
   const [status, setStatus] = useState<LoadStatus>('idle');
 
   useEffect(() => { writeLS('frame:embed:strength:ema', String(ema)); }, [ema]);
-  useEffect(() => { writeLS('frame:embed:strength:period', period); }, [period]);
   useEffect(() => { writeLS('frame:embed:strength:chartMode', chartMode); }, [chartMode]);
   useEffect(() => { writeLS('frame:embed:strength:universeBase', universeBase); }, [universeBase]);
   useEffect(() => { writeLS('frame:embed:strength:currency', currency); }, [currency]);
@@ -98,20 +71,22 @@ export default function EmbedStrength() {
     ? `${universeBase}_usd` as BreadthUniverse
     : universeBase;
 
-  // Лейбл верхнего графика всегда отражает реально нарисованный индекс
+  // Лейбл верхней панели всегда отражает реально нарисованный индекс
   // (IMOEX в ₽ / RTSI в $) и НЕ зависит от вселенной breadth-метрики.
   const indexLegend = currency === 'usd' ? 'Индекс РТС (RTSI)' : 'Индекс МосБиржи (IMOEX)';
 
   useEffect(() => {
     let cancelled = false;
     setStatus('loading');
-    getBreadthHistory(ema, daysForPeriod(period), universe)
+    getBreadthHistory(ema, ALL_DAYS, universe)
       .then((res) => {
         if (cancelled) return;
+        // Симметричный мёрж: точка попадает в ряд только если есть ОБА значения
+        // (USD-ряд может отставать → иначе окна панелей разъезжаются).
         const imoexMap = new Map((res?.imoex ?? []).map((d) => [d.date, d.close]));
         const s: Synced = (res?.data ?? [])
           .filter((d) => imoexMap.has(d.date))
-          .map((d) => ({ time: d.date, breadth: d.percent_above, imoex: imoexMap.get(d.date)! }));
+          .map((d) => ({ time: toSec(d.date), breadth: d.percent_above, imoex: imoexMap.get(d.date)! }));
         setSynced(s);
         setStatus(s.length ? 'ok' : 'empty');
       })
@@ -121,60 +96,49 @@ export default function EmbedStrength() {
         setStatus('error');
       });
     return () => { cancelled = true; };
-  }, [ema, period, universe]);
+  }, [ema, universe]);
 
-  // Измеряем контейнер. Когда индекс показан — делим высоту 55/45 (минус две
-  // легенды). Когда скрыт — breadth занимает всю доступную высоту.
-  const boxRef = useRef<HTMLDivElement>(null);
-  const [boxH, setBoxH] = useState(420);
-  useEffect(() => {
-    const el = boxRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver((entries) => {
-      const h = entries[0]?.contentRect.height;
-      if (h && h > 0) setBoxH(Math.round(h));
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
-  const { indexH, breadthH } = useMemo(() => {
+  // Панели §5.7: [индекс?] + breadth. Индекс — синяя линия; breadth — по режиму:
+  // area (циан, градиент 22%→0) или бинарная гистограмма (зел ≥50 / крас <50).
+  const panes = useMemo<LwPane[]>(() => {
+    if (!synced.length) return [];
+    const fmtIdx = (v: number) => v.toLocaleString('ru-RU', { maximumFractionDigits: 0 });
+    const fmtPct = (v: number) => v.toFixed(1).replace('.', ',') + '%';
+    const out: LwPane[] = [];
     if (showPrice) {
-      const avail = Math.max(160, boxH - LEGEND_H * 2);
-      const idx = Math.round(avail * 0.55);
-      return { indexH: idx, breadthH: avail - idx };
+      out.push({
+        flex: 1.1,
+        series: [{
+          id: 'idx', type: 'line', color: 'var(--chart-line-1)', lineWidth: 2,
+          label: indexLegend,
+          data: synced.map((d) => ({ time: d.time, value: d.imoex })),
+          tipFmt: fmtIdx, axisFmt: fmtIdx,
+        }],
+      });
     }
-    // Соло-режим: одна легенда сверху, остаток — breadth.
-    const avail = Math.max(120, boxH - LEGEND_H);
-    return { indexH: 0, breadthH: avail };
-  }, [showPrice, boxH]);
-
-  // ── Hover (перекрестие + значения) — порт со StrengthPage, но px4=0: в embed нет
-  // px-4 обёрток графиков, только PAD. Двигаем hoverIndex от мыши → оба графика
-  // (IndexChart/BreadthChart) сами рисуют своё перекрестие+точку по общему X.
-  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
-  const rafRef = useRef<number | null>(null);
-  const updateHover = useCallback((clientX: number) => {
-    if (!boxRef.current || !synced.length) return;
-    if (rafRef.current !== null) return; // throttle до одного RAF
-    rafRef.current = requestAnimationFrame(() => {
-      rafRef.current = null;
-      if (!boxRef.current) return;
-      const rect = boxRef.current.getBoundingClientRect();
-      const x = clientX - rect.left - PAD.left;
-      const chartW = rect.width - PAD.left - PAD.right;
-      if (x < 0 || x > chartW) { setHoverIndex(null); return; } // в жёлобе оси — прячем
-      const idx = Math.round((x / chartW) * (synced.length - 1));
-      setHoverIndex(idx >= 0 && idx < synced.length ? idx : null);
+    const breadthLabel = `% акций выше EMA${ema}`;
+    out.push({
+      flex: showPrice ? 0.9 : 1,
+      series: [chartMode === 'line'
+        ? {
+            id: 'breadth', type: 'area', color: 'var(--oi-cyan)',
+            areaTop: 'color-mix(in srgb, var(--oi-cyan) 22%, transparent)', lineWidth: 2,
+            label: breadthLabel,
+            data: synced.map((d) => ({ time: d.time, value: d.breadth })),
+            tipFmt: fmtPct, axisFmt: (v) => Math.round(v) + '%', minMove: 0.1,
+          }
+        : {
+            id: 'breadth', type: 'histogram', color: 'var(--oi-green)', base: 0,
+            label: breadthLabel,
+            data: synced.map((d) => ({
+              time: d.time, value: d.breadth,
+              color: d.breadth >= 50 ? 'var(--oi-green)' : 'var(--oi-red)',
+            })),
+            tipFmt: fmtPct, axisFmt: (v) => Math.round(v) + '%', minMove: 0.1,
+          }],
     });
-  }, [synced.length]);
-  const handleLeave = useCallback(() => {
-    if (rafRef.current !== null) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
-    setHoverIndex(null);
-  }, []);
-  const hover = hoverIndex !== null ? synced[hoverIndex] : null;
-  const indexShort = currency === 'usd' ? 'RTSI' : 'IMOEX';
-  const fmtIdx = (v: number) => v.toLocaleString('ru-RU', { maximumFractionDigits: 0 });
+    return out;
+  }, [synced, showPrice, chartMode, ema, indexLegend]);
 
   return (
     <EmbedFrame
@@ -191,7 +155,6 @@ export default function EmbedStrength() {
             title="Вселенная"
           />
           <PillGroup<Currency> value={currency} options={[{ id: 'rub', label: '₽' }, { id: 'usd', label: '$' }]} onChange={setCurrency} />
-          <Dropdown<Period> value={period} options={PERIODS} onChange={setPeriod} title="Период" />
         </>
       }
       more={
@@ -209,40 +172,18 @@ export default function EmbedStrength() {
         </>
       }
     >
-      <div
-        ref={boxRef}
-        style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
-        onMouseMove={(e) => updateHover(e.clientX)}
-        onMouseLeave={handleLeave}
-        onTouchStart={(e) => { if (e.touches[0]) updateHover(e.touches[0].clientX); }}
-        onTouchMove={(e) => { if (e.touches[0]) updateHover(e.touches[0].clientX); }}
-        onTouchEnd={handleLeave}
-      >
-        {status === 'ok' && synced.length > 0 ? (
-          <>
-            {showPrice && (
-              <>
-                <MiniLegend text={hover ? `${indexShort} ${fmtIdx(hover.imoex)}` : indexLegend} />
-                <IndexChart syncedData={synced} hoverIndex={hoverIndex} height={indexH} padding={PAD} />
-              </>
-            )}
-            <MiniLegend text={hover ? `${hover.breadth.toFixed(1)}% выше EMA${ema}` : `% акций выше EMA${ema}`} />
-            <BreadthChart
-              syncedData={synced}
-              hoverIndex={hoverIndex}
-              height={breadthH}
-              mode={chartMode}
-              padding={PAD}
-              showWatermark={!showPrice}
-            />
-          </>
-        ) : (
-          <>
-            {status === 'loading' && <EmbedMsg text="Загрузка…" />}
-            {status === 'empty' && <EmbedMsg text="Нет данных" />}
-            {status === 'error' && <EmbedMsg text="Ошибка загрузки" />}
-          </>
+      <div style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
+        {status === 'ok' && panes.length > 0 && (
+          <LwChartPanes
+            panes={panes}
+            dark={dark}
+            fitKey={`${universe}|${ema}|${showPrice}`}
+            initialBars={INITIAL_BARS}
+          />
         )}
+        {status === 'loading' && <EmbedMsg text="Загрузка…" />}
+        {status === 'empty' && <EmbedMsg text="Нет данных" />}
+        {status === 'error' && <EmbedMsg text="Ошибка загрузки" />}
       </div>
     </EmbedFrame>
   );
