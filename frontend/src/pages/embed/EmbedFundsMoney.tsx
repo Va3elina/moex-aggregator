@@ -1,16 +1,15 @@
 /**
- * EmbedFundsMoney — виджет «Фонды» (рыночный). Два режима (master switch
- * `viewMode` в drawer'е):
- *   • aum   → суммарная СЧА (AUM) через SimpleChart + индекс на вторичной оси.
- *   • flows → гистограмма притоков/оттоков через FlowsHistogram (порт со
- *             страницы FundsMoneyPage: rAF-волна баров + tooltip + navigator).
- * Категория / период / таймфрейм / тоглы — в выезжающей панели настроек.
- * Виджет целиком под PRO-токеном, тир-гейтинг/онбординг/таблица/экспорт — нет.
+ * EmbedFundsMoney — виджет «Фонды» (рыночный). Движок — общий LwChart (как ОИ/
+ * Баффетт), без SVG. Два режима (`viewMode`):
+ *   • flows → чистые притоки/оттоки: одна histogram-серия, per-bar цвет по знаку
+ *             (зел приток / крас отток), нулевая линия. Легенда «Приток/Отток».
+ *   • aum   → суммарная СЧА (area, правая ось) + индекс (line, левая ось).
+ * Категория / период / таймфрейм / тоглы — в тулбаре и ⚙.
  */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import SimpleChart from '../../components/SimpleChart';
-import FlowsHistogram from '../../components/funds/FlowsHistogram';
+import LwChart, { type LwSeries } from '../../components/LwChart';
+import { useTheme } from '../../contexts/ThemeContext';
 import {
   getFundsChartData,
   getFundsFlows,
@@ -36,14 +35,6 @@ const CATS: { id: Category; label: string }[] = [
   { id: 'gold', label: 'Золото' },
   { id: 'yuan', label: 'Юань' },
 ];
-// Родительный падеж — для legend'ов гистограммы («Приток в фонды {genitive}»).
-const CAT_GENITIVE: Record<Category, string> = {
-  money_market: 'денежного рынка',
-  stocks: 'акций',
-  bonds: 'облигаций',
-  gold: 'золота',
-  yuan: 'юаня',
-};
 const PERIODS: { id: FundPeriod; label: string }[] = [
   { id: '1y', label: '1Г' },
   { id: '3y', label: '3Г' },
@@ -55,6 +46,22 @@ const FLOW_TFS: { id: FlowTimeframe; label: string }[] = [
   { id: '1m', label: 'Месяц' },
 ];
 
+// 'YYYY-MM-DD' → UNIX-секунды (UTC-полночь) для LwChart (даты дневные/агрегированные).
+const toSec = (t: string): number => {
+  const [y, m, d] = t.slice(0, 10).split('-').map(Number);
+  return Math.floor(Date.UTC(y, m - 1, d) / 1000);
+};
+// Компактный рублёвый формат (без знака): «2,1 млрд» / «5 млн» / «320 тыс».
+function fmtAbs(a: number): string {
+  a = Math.abs(a);
+  if (a >= 1e9) return (a / 1e9).toFixed(a >= 1e10 ? 0 : 1).replace('.', ',') + ' млрд';
+  if (a >= 1e6) return (a / 1e6).toFixed(a >= 1e7 ? 0 : 1).replace('.', ',') + ' млн';
+  if (a >= 1e3) return Math.round(a / 1e3).toLocaleString('ru-RU') + ' тыс';
+  return Math.round(a).toString();
+}
+const fmtSigned = (v: number): string => (v < 0 ? '−' : '') + fmtAbs(v);
+const fmtInt = (v: number): string => Math.round(v).toLocaleString('ru-RU');
+
 function initCat(p: string | null): Category {
   if (p && CATS.some((c) => c.id === p)) return p as Category;
   const s = readLS('frame:embed:funds:category', '');
@@ -64,6 +71,8 @@ function initCat(p: string | null): Category {
 
 export default function EmbedFundsMoney() {
   const [params] = useSearchParams();
+  const { theme } = useTheme();
+  const dark = theme !== 'editorial-light';
 
   const [category, setCategory] = useState<Category>(() => initCat(params.get('category')));
   const [period, setPeriod] = useState<FundPeriod>(() => (params.get('period') || readLS('frame:embed:funds:period', '1y')) as FundPeriod);
@@ -74,17 +83,8 @@ export default function EmbedFundsMoney() {
 
   const [data, setData] = useState<FundsResp | null>(null);
   const [status, setStatus] = useState<LoadStatus>('idle');
-
-  // ── Flows state (порт со страницы) ──
   const [flowsData, setFlowsData] = useState<FundsFlowsResponse | null>(null);
   const [flowsStatus, setFlowsStatus] = useState<LoadStatus>('idle');
-  const [animatedBarsIn, setAnimatedBarsIn] = useState<number[]>([]);
-  const [animatedBarsOut, setAnimatedBarsOut] = useState<number[]>([]);
-  const [flowNavRange, setFlowNavRange] = useState<[number, number]>([0, 0]);
-  const [hoveredFlowIndex, setHoveredFlowIndex] = useState<number | null>(null);
-  const [flowTooltipPos, setFlowTooltipPos] = useState<{ x: number; y: number } | null>(null);
-  const flowChartRef = useRef<SVGSVGElement>(null);
-  const flowContainerRef = useRef<HTMLDivElement>(null);
 
   // Persist
   useEffect(() => { writeLS('frame:embed:funds:category', category); }, [category]);
@@ -130,57 +130,11 @@ export default function EmbedFundsMoney() {
     return () => { cancelled = true; };
   }, [viewMode, category, flowTimeframe, period]);
 
-  // Сброс навигатора при смене данных — useLayoutEffect (как на странице), чтобы
-  // обновление сработало ДО первого paint'a после прихода данных.
-  useLayoutEffect(() => {
-    if (flowsData?.flows?.length) {
-      setFlowNavRange([0, flowsData.flows.length - 1]);
-    }
-  }, [flowsData]);
-
-  // Бары гистограммы: ставим ФИНАЛЬНЫЕ значения сразу (без rAF-волны).
-  // Проверено в браузере: в iframe-контексте flowsData приходил несколько раз
-  // (повторные fetch'и), rAF-эффект перезапускался и анимация зависала на 1-м
-  // кадре → большинство баров оставались на нуле и схлопывались к левому краю.
-  // Статичные бары надёжнее: данные важнее косметической волны.
-  useEffect(() => {
-    if (viewMode !== 'flows' || !flowsData?.flows?.length) {
-      setAnimatedBarsIn([]);
-      setAnimatedBarsOut([]);
-      return;
-    }
-    const target = flowsData.flows.map((f) => f.flow);
-    setAnimatedBarsIn(target.map((v) => Math.max(0, v)));
-    setAnimatedBarsOut(target.map((v) => Math.min(0, v)));
-  }, [flowsData, viewMode]);
-
-  // handleFlowMouseMove — порт: измеряем РЕАЛЬНУЮ геометрию SVG (не CSS-vars).
-  const handleFlowMouseMove = (e: MouseEvent<HTMLDivElement>) => {
-    if (!flowsData?.flows?.length || !flowContainerRef.current || !flowChartRef.current) return;
-    const containerRect = flowContainerRef.current.getBoundingClientRect();
-    const svgRect = flowChartRef.current.getBoundingClientRect();
-    const xInChart = e.clientX - svgRect.left;
-    if (xInChart < 0 || xInChart > svgRect.width) return;
-    const visibleCount = flowNavRange[1] - flowNavRange[0] + 1;
-    const barWidth = svgRect.width / visibleCount;
-    const idx = Math.floor(xInChart / barWidth);
-    if (idx >= 0 && idx < visibleCount) {
-      setHoveredFlowIndex(idx);
-      const slotCenterInContainer = (svgRect.left - containerRect.left) + idx * barWidth + barWidth / 2;
-      const y = e.clientY - containerRect.top;
-      setFlowTooltipPos({ x: slotCenterInContainer, y });
-    }
-  };
-
-  const handleFlowMouseLeave = () => {
-    setHoveredFlowIndex(null);
-    setFlowTooltipPos(null);
-  };
-
-  const boxRef = useRef<HTMLDivElement>(null);
+  // Резиновая высота графика (как в Баффетте).
+  const chartBoxRef = useRef<HTMLDivElement>(null);
   const [chartH, setChartH] = useState(280);
   useEffect(() => {
-    const el = boxRef.current;
+    const el = chartBoxRef.current;
     if (!el) return;
     const ro = new ResizeObserver((entries) => {
       const h = entries[0]?.contentRect.height;
@@ -190,22 +144,45 @@ export default function EmbedFundsMoney() {
     return () => ro.disconnect();
   }, []);
 
-  const chartData = useMemo(
-    () => (data?.total_nav ?? []).map((p) => ({ time: p.date, value: (p.nav ?? 0) / 1e9 })),
-    [data],
-  );
-  const indexData = useMemo(
-    () => (data?.index?.data ? data.index.data.map((d) => ({ time: d.date, value: d.close || 0 })) : undefined),
-    [data],
-  );
+  // Серии LwChart.
+  const lwSeries = useMemo<LwSeries[]>(() => {
+    if (viewMode === 'flows') {
+      const flows = flowsData?.flows ?? [];
+      if (!flows.length) return [];
+      // flow приходит в МЛРД ₽ → в рубли (×1e9), чтобы компактный формат дал «млрд».
+      return [{
+        id: 'flow', type: 'histogram', scale: 'right', base: 0, zeroLine: true,
+        color: 'var(--oi-green)', label: 'Чистый поток',
+        data: flows.map((f) => {
+          const val = (f.flow ?? 0) * 1e9;
+          return { time: toSec(f.period_end), value: val, color: val >= 0 ? 'var(--oi-green)' : 'var(--oi-red)' };
+        }),
+        axisFmt: fmtSigned,
+        tipFmt: (v) => (v >= 0 ? '+' : '−') + fmtAbs(v) + ' ₽',
+      }];
+    }
+    // aum: индекс (линия, левая, синий) + СЧА (область, правая, зелёная).
+    const nav = data?.total_nav ?? [];
+    if (!nav.length) return [];
+    const out: LwSeries[] = [];
+    const idx = data?.index?.data;
+    if (showIndex && idx?.length) {
+      out.push({
+        id: 'idx', type: 'line', scale: 'left', color: 'var(--chart-line-1)', lineWidth: 2, label: 'Индекс',
+        data: idx.flatMap((d) => (d.close != null ? [{ time: toSec(d.date), value: d.close }] : [])),
+        axisFmt: fmtInt, tipFmt: (v) => Math.round(v).toLocaleString('ru-RU'),
+      });
+    }
+    out.push({
+      id: 'scha', type: 'area', scale: 'right', color: 'var(--chart-line-3)',
+      areaTop: 'color-mix(in srgb, var(--chart-line-3) 22%, transparent)', lineWidth: 2, label: 'СЧА',
+      data: nav.flatMap((p) => (p.nav != null ? [{ time: toSec(p.date), value: p.nav }] : [])),
+      axisFmt: fmtAbs, tipFmt: (v) => fmtAbs(v) + ' ₽',
+    });
+    return out;
+  }, [viewMode, flowsData, data, showIndex]);
 
-  const fmtNav = (v: number) => (category === 'gold' || category === 'stocks' ? v.toFixed(2) : v.toFixed(0));
-  const genitive = CAT_GENITIVE[category] ?? '';
-
-  // FlowsHistogram занимает доступную высоту панели. Компонент сам добавляет
-  // legend (~36) + navigator (~64) к --chart-height, поэтому под сам график
-  // оставляем chartH минус этот overhead (но не меньше разумного минимума).
-  const flowsChartH = Math.max(140, chartH - 110);
+  const st = viewMode === 'flows' ? flowsStatus : status;
 
   return (
     <EmbedFrame
@@ -229,78 +206,21 @@ export default function EmbedFundsMoney() {
         </DrawerSection>
       ) : undefined}
     >
-      <div ref={boxRef} style={{ position: 'absolute', inset: 0 }}>
-        {viewMode === 'aum' ? (
-          <>
-            {/* Оси свопнуты как на странице: СЧА — на ПРАВОЙ оси (secondaryData),
-                индекс — на ЛЕВОЙ (data), reverseLegend держит СЧА первой. */}
-            {status === 'ok' && chartData.length > 0 && (
-              <SimpleChart
-                data={indexData ?? []}
-                secondaryData={chartData}
-                height={chartH}
-                primaryColor="var(--funds-flow-positive)"
-                secondaryColor="var(--accent)"
-                showPrimary={showIndex && !!indexData}
-                showSecondary={true}
-                reverseLegend
-                formatValue={(v) => v.toFixed(2)}
-                formatPrimaryAxis={(v) => v.toLocaleString('ru-RU', { maximumFractionDigits: 0 })}
-                niceTicks={true}
-                niceTicksSecondary={true}
-                gridAxis="secondary"
-                formatSecondaryValue={fmtNav}
-                formatSecondaryAxis={fmtNav}
-                primaryLabel="Индекс"
-                secondaryLabel="СЧА (млрд ₽)"
-                showValueHeader={false}
-                legendPosition="top"
-                showDownloadButton={false}
-                showNavigator={false}
-                hideTime
-                chartPadding={{ left: 60, right: 100 }}
-                bare
-              />
-            )}
-            {status === 'loading' && <EmbedMsg text="Загрузка…" />}
-            {status === 'empty' && <EmbedMsg text="Нет данных" />}
-            {status === 'error' && <EmbedMsg text="Ошибка загрузки" />}
-          </>
-        ) : (
-          <>
-            {/* Компактные pad-override: страница рассчитана на ~100px паддинги,
-                в узкой панели Y-подписи/даты клипают — ужимаем left/right. */}
-            <div
-              style={{
-                ['--chart-height' as string]: `${flowsChartH}px`,
-                ['--chart-pad-left' as string]: '70px',
-                ['--chart-pad-right-single' as string]: '55px',
-              }}
-            >
-              {flowsStatus !== 'error' && flowsStatus !== 'empty' && (
-                <FlowsHistogram
-                  flowsData={flowsData}
-                  noFundsSelected={false}
-                  animatedBarsIn={animatedBarsIn}
-                  animatedBarsOut={animatedBarsOut}
-                  flowNavRange={flowNavRange}
-                  hoveredFlowIndex={hoveredFlowIndex}
-                  flowTitle={`Чистые притоки и оттоки из фондов ${genitive} (млрд ₽)`}
-                  loading={flowsStatus === 'loading'}
-                  flowContainerRef={flowContainerRef}
-                  flowChartRef={flowChartRef}
-                  flowTooltipPos={flowTooltipPos}
-                  onMouseMove={handleFlowMouseMove}
-                  onMouseLeave={handleFlowMouseLeave}
-                  onSetFlowNavRange={setFlowNavRange}
-                />
-              )}
-            </div>
-            {/* Пустые потоки показывали пустую рамку без сообщения (аудит). */}
-            {flowsStatus === 'empty' && <EmbedMsg text="Нет данных" />}
-            {flowsStatus === 'error' && <EmbedMsg text="Ошибка загрузки" />}
-          </>
+      <div ref={chartBoxRef} style={{ position: 'absolute', inset: 0 }}>
+        {st === 'ok' && lwSeries.length > 0 && (
+          <LwChart
+            series={lwSeries}
+            height={chartH}
+            dark={dark}
+            fitKey={`${viewMode}|${category}|${flowTimeframe}|${period}`}
+            legendItems={viewMode === 'flows'
+              ? [{ label: 'Приток', color: 'var(--oi-green)' }, { label: 'Отток', color: 'var(--oi-red)' }]
+              : undefined}
+          />
         )}
+        {st === 'loading' && <EmbedMsg text="Загрузка…" />}
+        {st === 'empty' && <EmbedMsg text="Нет данных" />}
+        {st === 'error' && <EmbedMsg text="Ошибка загрузки" />}
       </div>
     </EmbedFrame>
   );
