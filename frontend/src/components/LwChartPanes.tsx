@@ -18,7 +18,7 @@ import {
   createChart, ColorType, LineStyle, CrosshairMode,
   type IChartApi, type ISeriesApi, type UTCTimestamp, type Time, type LogicalRange,
 } from 'lightweight-charts';
-import { monthsYearsTickFmt, type LwSeries } from './LwChart';
+import { hideTvLogo, monthsYearsTickFmt, type LwSeries } from './LwChart';
 
 export interface LwPane {
   series: LwSeries[];
@@ -114,6 +114,9 @@ export default function LwChartPanes({ panes, dark = true, fitKey, initialBars, 
         handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: { time: false, price: false } },
       });
       charts.push(chart);
+      hideTvLogo();
+      const logoEl = box.querySelector('#tv-attr-logo') as HTMLElement | null;
+      if (logoEl) logoEl.style.display = 'none';
 
       // Единый тултип этой панели (строки всех панелей дописываются в кроссхэйре).
       const tip = document.createElement('div');

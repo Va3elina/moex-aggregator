@@ -92,7 +92,7 @@ function resolveColor(box: HTMLElement, color: string | undefined): string {
 // Логотип TradingView скрываем; атрибуция (по лицензии Lightweight Charts) — строкой
 // в футере/«О проекте». Стиль инжектим один раз (id-селектор ловит все инстансы).
 let tvLogoHidden = false;
-function hideTvLogo() {
+export function hideTvLogo() {
   if (tvLogoHidden || typeof document === 'undefined') return;
   tvLogoHidden = true;
   const st = document.createElement('style');
