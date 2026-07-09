@@ -199,6 +199,9 @@ export default function SandboxPage() {
   const [signalsOpen, setSignalsOpen] = useState(false);
   const [guides, setGuides] = useState<Guide[]>([]);
   const [signalCount, setSignalCount] = useState(0);
+  // Операции с листом: контекст-меню и инлайн-переименование (§3.3).
+  const [sheetMenu, setSheetMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [renaming, setRenaming] = useState<{ id: string; value: string } | null>(null);
   const zTop = useRef(10);
   const restoreRef = useRef<Record<string, { x: number; y: number; w: number; h: number }>>({});
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -396,6 +399,40 @@ export default function SandboxPage() {
   }), []);
   const pickSheet = useCallback((id: string) => { setGuides([]); setMenuOpen(false); setSt((s) => ({ ...s, activeSheet: id })); }, []);
 
+  // ── Операции с листами (§3.3) ──
+  const renameSheet = useCallback((id: string, name: string) => {
+    const clean = name.trim();
+    if (!clean) return;
+    setSt((s) => ({ ...s, sheets: s.sheets.map((sh) => (sh.id === id ? { ...sh, name: clean } : sh)) }));
+  }, []);
+
+  const duplicateSheet = useCallback((id: string) => {
+    setSt((s) => {
+      const src = s.sheets.find((sh) => sh.id === id);
+      if (!src) return s;
+      const nid = uid('s');
+      // Клон панелей с НОВЫМИ id — иначе React смешает состояние двух листов.
+      const clones = (s.bySheet[id] || []).map((p) => ({ ...p, id: uid('p') }));
+      const at = s.sheets.findIndex((sh) => sh.id === id) + 1;
+      const sheets = [...s.sheets];
+      sheets.splice(at, 0, { id: nid, name: `${src.name} (копия)` });
+      return { ...s, sheets, bySheet: { ...s.bySheet, [nid]: clones }, activeSheet: nid };
+    });
+  }, []);
+
+  const deleteSheet = useCallback((id: string) => {
+    setGuides([]);
+    setSt((s) => {
+      if (s.sheets.length <= 1) return s; // последний лист не удаляем
+      const idx = s.sheets.findIndex((sh) => sh.id === id);
+      const sheets = s.sheets.filter((sh) => sh.id !== id);
+      const bySheet = { ...s.bySheet };
+      delete bySheet[id];
+      const active = s.activeSheet === id ? sheets[Math.max(0, idx - 1)].id : s.activeSheet;
+      return { ...s, sheets, bySheet, activeSheet: active };
+    });
+  }, []);
+
   return (
     <div className="sb-root" data-sbtheme={st.sbTheme} style={rootStyle}>
       {/* ── Топбар 56px (§3.1) ── */}
@@ -411,8 +448,32 @@ export default function SandboxPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
           {st.sheets.map((sh) => {
             const on = sh.id === st.activeSheet;
+            if (renaming?.id === sh.id) {
+              return (
+                <input
+                  key={sh.id}
+                  autoFocus
+                  value={renaming.value}
+                  onChange={(e) => setRenaming({ id: sh.id, value: e.target.value })}
+                  onBlur={() => { renameSheet(sh.id, renaming.value); setRenaming(null); }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') { renameSheet(sh.id, renaming.value); setRenaming(null); }
+                    if (e.key === 'Escape') setRenaming(null);
+                  }}
+                  style={sheetInputStyle}
+                />
+              );
+            }
             return (
-              <button key={sh.id} type="button" onClick={() => pickSheet(sh.id)} style={sheetTabStyle(on)}>
+              <button
+                key={sh.id}
+                type="button"
+                onClick={() => pickSheet(sh.id)}
+                onDoubleClick={() => setRenaming({ id: sh.id, value: sh.name })}
+                onContextMenu={(e) => { e.preventDefault(); pickSheet(sh.id); setSheetMenu({ id: sh.id, x: e.clientX, y: e.clientY }); }}
+                title="Двойной клик — переименовать · правый клик — меню"
+                style={sheetTabStyle(on)}
+              >
                 {sh.name}
                 {on && <span style={sheetUnderline} />}
               </button>
@@ -503,6 +564,29 @@ export default function SandboxPage() {
             : { position: 'absolute', top: g.pos, left: 0, right: 0, height: 1, background: 'var(--accent)', opacity: 0.7, pointerEvents: 'none', zIndex: GUIDE_Z }} />
         ))}
       </div>
+
+      {/* ── Контекст-меню листа (§3.3) ── */}
+      {sheetMenu && (
+        <>
+          <div style={{ position: 'fixed', inset: 0, zIndex: OVERLAY_Z }} onClick={() => setSheetMenu(null)} onContextMenu={(e) => { e.preventDefault(); setSheetMenu(null); }} />
+          <div style={{ ...sheetMenuStyle, left: sheetMenu.x, top: sheetMenu.y }}>
+            <button type="button" style={sheetMenuItem} onClick={() => { const sh = st.sheets.find((x) => x.id === sheetMenu.id); if (sh) setRenaming({ id: sh.id, value: sh.name }); setSheetMenu(null); }}>
+              Переименовать
+            </button>
+            <button type="button" style={sheetMenuItem} onClick={() => { duplicateSheet(sheetMenu.id); setSheetMenu(null); }}>
+              Дублировать
+            </button>
+            <button
+              type="button"
+              disabled={st.sheets.length <= 1}
+              style={{ ...sheetMenuItem, color: st.sheets.length <= 1 ? 'var(--muted)' : 'var(--c-down)', cursor: st.sheets.length <= 1 ? 'default' : 'pointer' }}
+              onClick={() => { deleteSheet(sheetMenu.id); setSheetMenu(null); }}
+            >
+              Удалить
+            </button>
+          </div>
+        </>
+      )}
 
       {/* ── Меню «＋ Индикатор» (§7.1) ── */}
       {menuOpen && (
@@ -595,6 +679,19 @@ function sheetTabStyle(on: boolean): CSSProperties {
   };
 }
 const sheetUnderline: CSSProperties = { position: 'absolute', bottom: -6, left: 12, right: 12, height: 2, background: 'var(--accent)', borderRadius: 2 };
+const sheetInputStyle: CSSProperties = {
+  padding: '5px 8px', borderRadius: 7, border: '1.5px solid var(--accent)', background: 'var(--bg2)',
+  color: 'var(--text)', fontSize: 12.5, fontWeight: 700, width: 130, outline: 'none', flex: '0 0 auto',
+};
+const sheetMenuStyle: CSSProperties = {
+  position: 'fixed', zIndex: OVERLAY_Z + 1, minWidth: 170, padding: 5, display: 'flex', flexDirection: 'column', gap: 1,
+  background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 10, boxShadow: 'var(--shadow)',
+  animation: 'sb-pop .14s ease',
+};
+const sheetMenuItem: CSSProperties = {
+  textAlign: 'left', padding: '7px 9px', border: 'none', borderRadius: 6, background: 'transparent',
+  color: 'var(--text)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
+};
 const newSheetBtn: CSSProperties = {
   width: 26, height: 26, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: 7,
   border: '1px dashed var(--border-strong)', background: 'transparent', color: 'var(--muted)', cursor: 'pointer', flex: '0 0 auto', padding: 0,
