@@ -37,12 +37,13 @@ import EmbedStrength from '../embed/EmbedStrength';
 import EmbedFundsMoney from '../embed/EmbedFundsMoney';
 import EmbedFundTrades from '../embed/EmbedFundTrades';
 import EmbedCbrFlows from '../embed/EmbedCbrFlows';
+import EmbedHeatmap from '../embed/EmbedHeatmap';
 import EmbedSignals from '../embed/EmbedSignals';
 
 /* ───────────────────────── реестр индикаторов ───────────────────────── */
 type IndKind =
   | 'signals' | 'oi' | 'seasonality' | 'screener'
-  | 'buffett' | 'strength' | 'funds-money' | 'fund-trades' | 'fund-movers' | 'cbr-flows';
+  | 'buffett' | 'strength' | 'funds-money' | 'fund-trades' | 'fund-movers' | 'cbr-flows' | 'heatmap';
 type Group = 'signals' | 'instrument' | 'market';
 interface IndicatorDef { type: IndKind; label: string; group: Group; desc: string }
 
@@ -57,6 +58,7 @@ const INDICATORS: IndicatorDef[] = [
   { type: 'fund-trades', label: 'Сделки фондов', group: 'market', desc: 'Что покупают и продают фонды' },
   { type: 'fund-movers', label: 'Покупки фондов', group: 'market', desc: 'Кто набирает и сокращает позиции' },
   { type: 'cbr-flows', label: 'Поток капитала', group: 'market', desc: 'Потоки по участникам биржи (ЦБ)' },
+  { type: 'heatmap', label: 'Карта рынка', group: 'market', desc: 'Тепловая карта: размер = оборот, цвет = изменение' },
 ];
 
 // Стартовый размер панели по индикатору (спека: screener 440×470, strength 560×420, прочие 520×360).
@@ -66,6 +68,7 @@ const SIZES: Partial<Record<IndKind, { w: number; h: number }>> = {
   strength: { w: 560, h: 420 },
   oi: { w: 640, h: 440 },
   seasonality: { w: 600, h: 440 },
+  heatmap: { w: 470, h: 420 },
 };
 const DEFAULT_SIZE = { w: 520, h: 360 };
 
@@ -82,6 +85,7 @@ function renderIndicator(type: IndKind): ReactNode {
     case 'fund-trades': return <EmbedFundTrades />;
     case 'fund-movers': return <EmbedFundTrades lockTab="movers" />;
     case 'cbr-flows': return <EmbedCbrFlows />;
+    case 'heatmap': return <EmbedHeatmap />;
     default: return null;
   }
 }

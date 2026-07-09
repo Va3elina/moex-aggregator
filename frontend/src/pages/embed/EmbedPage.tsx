@@ -27,6 +27,7 @@ import EmbedStrength from './EmbedStrength';
 import EmbedFundTrades from './EmbedFundTrades';
 import EmbedScreener from './EmbedScreener';
 import EmbedSignals from './EmbedSignals';
+import EmbedHeatmap from './EmbedHeatmap';
 
 const DEFAULT_THEME = 'editorial-dark';
 const SITE = 'https://xn--80aklbnczmv.xn--p1ai'; // таймфрейм.рф
@@ -151,6 +152,8 @@ function renderIndicator(indicator: string | undefined) {
       return <EmbedScreener />;
     case 'signals':
       return <EmbedSignals />;
+    case 'heatmap':
+      return <EmbedHeatmap />;
     default:
       return <EmbedPlaceholder name={indicator} />;
   }
