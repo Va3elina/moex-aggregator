@@ -16,7 +16,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import LwChart, { type LwSeries, type LwMarker } from '../../components/LwChart';
+import LwChart, { monthsYearsTickFmt, type LwSeries, type LwMarker } from '../../components/LwChart';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getChartData, getInstrument } from '../../services/api';
 import { displayTicker } from '../../utils/displayTicker';
@@ -372,6 +372,7 @@ export default function EmbedOpenInterest() {
             dark={dark}
             fitKey={`${instrument}|${interval}`}
             initialBars={interval === 24 ? 252 : 220}
+            tickFmt={interval === 24 ? monthsYearsTickFmt : undefined}
           />
         )}
         {/* Цена выключена + у контракта нет OI-данных → серий нет. Без этого был

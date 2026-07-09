@@ -8,7 +8,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import LwChart, { type LwSeries } from '../../components/LwChart';
+import LwChart, { monthsYearsTickFmt, type LwSeries } from '../../components/LwChart';
 import { useTheme } from '../../contexts/ThemeContext';
 import {
   getFundsChartData,
@@ -213,6 +213,7 @@ export default function EmbedFundsMoney() {
             height={chartH}
             dark={dark}
             fitKey={`${viewMode}|${category}|${flowTimeframe}|${period}`}
+            tickFmt={monthsYearsTickFmt}
             legendItems={viewMode === 'flows'
               ? [{ label: 'Приток', color: 'var(--oi-green)' }, { label: 'Отток', color: 'var(--oi-red)' }]
               : undefined}

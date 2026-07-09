@@ -7,7 +7,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import LwChart, { type LwSeries } from '../../components/LwChart';
+import LwChart, { monthsYearsTickFmt, type LwSeries } from '../../components/LwChart';
 import { useTheme } from '../../contexts/ThemeContext';
 import {
   getBuffettCapGdp,
@@ -242,6 +242,7 @@ export default function EmbedBuffett() {
             height={chartH}
             dark={dark}
             fitKey={`${viewMode}|${timeframe}|${forecastTarget ?? 'off'}`}
+            tickFmt={monthsYearsTickFmt}
           />
         )}
         {status === 'loading' && <EmbedMsg text="Загрузка…" />}

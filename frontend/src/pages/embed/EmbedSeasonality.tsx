@@ -1,22 +1,25 @@
 /**
- * EmbedSeasonality — виджет сезонности (per-ticker), паритет с полной страницей в
- * рамках компактного формата. Контролы живут в drawer'е настроек:
- *   - Тип графика: «Календарь» (гистограмма по срезу) / «Годовая» (кумулятивная
- *     траектория года);
- *   - Разрез (только для гистограммы): Внутри дня / По дням недели / Внутри месяца /
- *     По месяцам;
- *   - Без дивидендных гэпов (скрыт для индексов/валют/сырья);
- *   - Без выбросов (добавляет вторую серию — медиану);
- *   - Текущий год (только для годовой) — линия текущего года.
+ * EmbedSeasonality — виджет сезонности (per-ticker). Движок — общий LwChart
+ * (как ОИ/Баффетт/Фонды), без SVG. Два режима:
+ *   - «Календарь» — категориальная гистограмма ср. % изменения по срезу
+ *     (Внутри дня / По дням недели / Внутри месяца / По месяцам). Ось X —
+ *     КАТЕГОРИИ, не время: бары кладутся на синтетические timestamps с шагом
+ *     сутки, а tickFmt мапит время назад в индекс бара → label среза.
+ *   - «Годовая» — кумулятивная траектория среднего года (линия) + текущий год +
+ *     опц. медиана. td (0..max_trading_days) растягивается на ПОЛНЫЙ
+ *     синтетический год, чтобы ось показывала янв..дек (252 торговых дня иначе
+ *     сожмутся в ~8 месяцев).
  *
+ * ⚠️ Категориальная ось = приём дизайнера: кроссхэйр-пилюля на оси дат покажет
+ * синтетическую дату — приемлемо (паритет с макетом), тултип значений верный.
+ *
+ * Контролы: тип графика + разрез в тулбаре; дивиденды/медиана/текущий год — в ⚙.
  * Виджет целиком под PRO-токеном → тир-гейтинга/онбординга/экспорта нет.
- * Множественные «Период с {год}» и «Показать год» намеренно НЕ перенесены —
- * для компактного виджета берём всю историю (база) + опциональную медиану.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import SeasonalityHistogram from '../../components/seasonality/SeasonalityHistogram';
-import YearlySeasonalityChart from '../../components/seasonality/YearlySeasonalityChart';
+import LwChart, { type LwSeries } from '../../components/LwChart';
+import { useTheme } from '../../contexts/ThemeContext';
 import {
   getSeasonality,
   getSeasonalityYearly,
@@ -32,24 +35,6 @@ import { readLS, writeLS, readBoolLS as readLSBool } from './embedPersist';
 
 type ChartType = 'histogram' | 'yearly';
 type LoadStatus = 'idle' | 'loading' | 'ok' | 'empty' | 'error';
-
-// Тултипы у гистограммы и годовой имеют разную форму — держим раздельно.
-type HistTip = { x: number; y: number; bar?: SeasonalityResponse['bars'][0] } | null;
-type YearTip = {
-  x: number;
-  y: number;
-  yearlyAvgPct?: number;
-  yearlyCurPct?: number;
-  yearlyCurDate?: string;
-  yearlyTd?: number;
-  yearlySigma?: number;
-} | null;
-
-interface SeriesMeta {
-  key: string;
-  label: string;
-  color: string;
-}
 
 const CHART_TYPES: { id: ChartType; label: string }[] = [
   { id: 'histogram', label: 'Календарь' },
@@ -75,15 +60,24 @@ const NON_DIVIDEND_TICKERS = new Set([
 // Полная история — как FULL_HISTORY_ITERS на странице.
 const FULL_HISTORY_ITERS = 9999;
 
-// Meta двух серий «Среднее» + «Без выбросов» (медиана). Цвета зафиксированы
-// заданием: база = accent, медиана = positive (forest green).
-const TWO_SERIES_META: SeriesMeta[] = [
-  { key: 'base', label: 'Среднее', color: 'var(--accent)' },
-  { key: 'no_outliers', label: 'Без выбросов', color: 'var(--funds-flow-positive)' },
-];
+// Синтетическая временная база категориальной оси и годовой траектории.
+const DAY = 86400;
+const T0 = Math.floor(Date.UTC(2001, 0, 1) / 1000); // база вне реальных дат
+const MONTHS_RU = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+
+// Формат процентов: точность по величине ряда (<2 → 2 знака, <10 → 1, иначе 0).
+function pctDigits(maxAbs: number): number {
+  return maxAbs < 2 ? 2 : maxAbs < 10 ? 1 : 0;
+}
+function fmtPct(v: number, digits: number, signed = true): string {
+  const s = Math.abs(v).toFixed(digits).replace('.', ',');
+  return (v < 0 ? '−' : signed && v > 0 ? '+' : '') + s + '%';
+}
 
 export default function EmbedSeasonality() {
   const [params] = useSearchParams();
+  const { theme } = useTheme();
+  const dark = theme !== 'editorial-light';
 
   const [stock, setStock] = useState<string>(() => params.get('instrument') || readLS('frame:embed:seasonality:stock', 'SBER'));
   const [chartType, setChartType] = useState<ChartType>(() => readLS('frame:embed:seasonality:chartType', 'histogram') as ChartType);
@@ -98,9 +92,6 @@ export default function EmbedSeasonality() {
   const [yearBase, setYearBase] = useState<YearlySeasonalityResponse | null>(null);
   const [yearMedian, setYearMedian] = useState<YearlySeasonalityResponse | null>(null);
   const [status, setStatus] = useState<LoadStatus>('idle');
-
-  const [histTip, setHistTip] = useState<HistTip>(null);
-  const [yearTip, setYearTip] = useState<YearTip>(null);
 
   // Стале-гард для отбрасывания устаревших ответов при быстром переключении.
   const reqIdRef = useRef(0);
@@ -162,23 +153,7 @@ export default function EmbedSeasonality() {
     return () => { cancelled = true; };
   }, [stock, chartType, mode, effExcludeDividends, showNoOutliers]);
 
-  // Две серии есть только когда медиана включена И реально загрузилась.
-  const histTwoSeries: SeasonalityResponse[] | null = useMemo(
-    () => (showNoOutliers && histBase && histMedian ? [histBase, histMedian] : null),
-    [showNoOutliers, histBase, histMedian],
-  );
-  const yearTwoSeries: YearlySeasonalityResponse[] | null = useMemo(
-    () => (showNoOutliers && yearBase && yearMedian ? [yearBase, yearMedian] : null),
-    [showNoOutliers, yearBase, yearMedian],
-  );
-
-  const bars = histBase?.bars ?? [];
-  const maxAbs = useMemo(
-    () => Math.max(...bars.map((b) => Math.abs(b.avg_change)), 0.01),
-    [bars],
-  );
-
-  // Измеряем контейнер — YearlySeasonalityChart требует числовой chartHeight.
+  // Резиновая высота графика.
   const boxRef = useRef<HTMLDivElement>(null);
   const [boxH, setBoxH] = useState(360);
   useEffect(() => {
@@ -193,6 +168,93 @@ export default function EmbedSeasonality() {
   }, []);
 
   const isHist = chartType === 'histogram';
+  const bars = histBase?.bars ?? [];
+
+  // ── Календарь: категориальная гистограмма ──
+  const histSeries = useMemo<LwSeries[]>(() => {
+    if (!isHist || bars.length === 0) return [];
+    const maxAbs = Math.max(...bars.map((b) => Math.abs(b.avg_change)), 0.01);
+    const digits = pctDigits(maxAbs);
+    const out: LwSeries[] = [{
+      id: 'season', type: 'histogram', scale: 'right', base: 0, zeroLine: true,
+      color: 'var(--oi-green)', label: 'Ср. изменение',
+      data: bars.map((b, i) => ({
+        time: T0 + i * DAY,
+        value: b.avg_change,
+        color: b.avg_change >= 0 ? 'var(--oi-green)' : 'var(--oi-red)',
+      })),
+      axisFmt: (v) => fmtPct(v, digits, false),
+      tipFmt: (v) => fmtPct(v, Math.max(digits, 1)),
+      minMove: 0.01,
+    }];
+    const med = histMedian?.bars;
+    if (showNoOutliers && med?.length === bars.length) {
+      out.push({
+        id: 'median', type: 'line', scale: 'right', color: 'var(--chart-line-1)', lineWidth: 2,
+        label: 'Без выбросов', lastValueVisible: false,
+        data: med.map((b, i) => ({ time: T0 + i * DAY, value: b.avg_change })),
+        axisFmt: (v) => fmtPct(v, digits, false),
+        tipFmt: (v) => fmtPct(v, Math.max(digits, 1)),
+        minMove: 0.01,
+      });
+    }
+    return out;
+  }, [isHist, bars, histMedian, showNoOutliers]);
+
+  // tickFmt категориальной оси: синтетическое время → индекс бара → label среза.
+  const histTickFmt = useMemo(() => {
+    if (!isHist) return undefined;
+    const labels = bars.map((b) => b.label);
+    return (time: number) => {
+      const idx = Math.round((time - T0) / DAY);
+      return labels[idx] ?? '';
+    };
+  }, [isHist, bars]);
+
+  // ── Годовая: кумулятивные линии на синтетическом годе ──
+  const yearlySeries = useMemo<LwSeries[]>(() => {
+    if (isHist || !yearBase?.average?.length) return [];
+    const maxTD = Math.max(1, yearBase.max_trading_days - 1);
+    // td → день синтетического года (растяжка на 364 дня, чтобы ось = янв..дек).
+    const tOf = (td: number) => T0 + Math.round((td / maxTD) * 364) * DAY;
+    const tip = (v: number) => fmtPct(v, 1);
+    const axis = (v: number) => fmtPct(v, 0, false);
+    const out: LwSeries[] = [{
+      id: 'avg', type: 'line', scale: 'right', color: 'var(--chart-line-1)', lineWidth: 2,
+      label: 'Средний год', zeroLine: true,
+      data: yearBase.average.map((p) => ({ time: tOf(p.td), value: p.avg_pct })),
+      tipFmt: tip, axisFmt: axis, minMove: 0.01,
+    }];
+    if (showCurrentYear && yearBase.current?.length) {
+      out.push({
+        id: 'cur', type: 'line', scale: 'right', color: 'var(--accent)', lineWidth: 2,
+        label: String(yearBase.current_year),
+        data: yearBase.current.map((p) => ({ time: tOf(p.td), value: p.pct })),
+        tipFmt: tip, axisFmt: axis, minMove: 0.01,
+      });
+    }
+    if (showNoOutliers && yearMedian?.average?.length) {
+      out.push({
+        id: 'median', type: 'line', scale: 'right', color: 'var(--chart-line-3)', lineWidth: 2,
+        label: 'Без выбросов', lastValueVisible: false,
+        data: yearMedian.average.map((p) => ({ time: tOf(p.td), value: p.avg_pct })),
+        tipFmt: tip, axisFmt: axis, minMove: 0.01,
+      });
+    }
+    return out;
+  }, [isHist, yearBase, yearMedian, showNoOutliers, showCurrentYear]);
+
+  // Ось годовой: только месяцы (год синтетический — прячем «2001»).
+  const yearlyTickFmt = useMemo(() => {
+    if (isHist) return undefined;
+    return (time: number, type: number) => {
+      if (type > 1) return '';
+      const d = new Date(time * 1000);
+      return type === 0 ? '' : MONTHS_RU[d.getUTCMonth()];
+    };
+  }, [isHist]);
+
+  const lwSeries = isHist ? histSeries : yearlySeries;
 
   return (
     <EmbedFrame
@@ -230,26 +292,20 @@ export default function EmbedSeasonality() {
       }
     >
       <div ref={boxRef} style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
-        {status === 'ok' && isHist && bars.length > 0 && (
-          <SeasonalityHistogram
-            bars={bars}
-            maxAbs={maxAbs}
-            tooltip={histTip}
-            setTooltip={setHistTip}
-            monthlySeries={histTwoSeries}
-            seriesMeta={histTwoSeries ? TWO_SERIES_META : undefined}
-            niceXLabels={mode === 'monthday'}
-          />
-        )}
-        {status === 'ok' && !isHist && yearBase && (
-          <YearlySeasonalityChart
-            yearlyData={yearBase}
-            seriesData={yearTwoSeries}
-            seriesMeta={yearTwoSeries ? TWO_SERIES_META : undefined}
-            tooltip={yearTip}
-            setTooltip={setYearTip}
-            chartHeight={boxH}
-            showCurrentYear={showCurrentYear}
+        {status === 'ok' && lwSeries.length > 0 && (
+          <LwChart
+            series={lwSeries}
+            height={boxH}
+            dark={dark}
+            fitKey={`${chartType}|${stock}|${mode}|${showNoOutliers}|${effExcludeDividends}|${showCurrentYear}`}
+            tickFmt={isHist ? histTickFmt : yearlyTickFmt}
+            legendItems={isHist
+              ? [
+                  { label: 'Рост', color: 'var(--oi-green)' },
+                  { label: 'Падение', color: 'var(--oi-red)' },
+                  ...(showNoOutliers && histMedian ? [{ label: 'Без выбросов', color: 'var(--chart-line-1)' }] : []),
+                ]
+              : undefined}
           />
         )}
         {status === 'loading' && <EmbedMsg text="Загрузка…" />}

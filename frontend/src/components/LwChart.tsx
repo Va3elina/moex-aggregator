@@ -111,6 +111,16 @@ function ruTickMark(time: unknown, type: number): string {
   return String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0');
 }
 
+/** §5.2 макета: на дневных графиках ось показывает ТОЛЬКО месяцы и годы —
+ *  внутримесячные дневные подписи скрыты (мельтешат и встают неровно при
+ *  ресайзе). Для интрадея НЕ подходит (там нужно время) — не передавайте. */
+export function monthsYearsTickFmt(time: number, type: number): string {
+  const d = new Date(time * 1000);
+  if (type === 0) return String(d.getUTCFullYear());
+  if (type === 1) return MONTHS_RU[d.getUTCMonth()];
+  return '';
+}
+
 export default function LwChart({ series, height, dark = true, markers, fitKey, initialBars, tickFmt, legendItems, hideLegend }: LwChartProps) {
   const boxRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
