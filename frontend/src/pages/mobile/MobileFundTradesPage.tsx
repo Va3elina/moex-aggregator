@@ -342,7 +342,8 @@ export default function MobileFundTradesPage() {
   // Общий портфель — агрегированный состав выбранных фондов акций как один портфель.
   const [portfolioUks, setPortfolioUks] = usePersistedSet<string>('frame:fundtrades:portfolioUks');
   const [portfolioMode, setPortfolioMode] = usePersistedState<'rub' | 'share'>('frame:fundtrades:portfolioMode', 'rub');
-  const [portfolioPeriod] = usePersistedState<ReturnPeriodKey>('frame:fundtrades:portfolioPeriod', 'y1');
+  // Период плашки «Общего портфеля» — штатные периоды (без 5л). Всегда 'y1'.
+  const [portfolioPeriod] = usePersistedState<'m1' | 'm3' | 'm6' | 'y1'>('frame:fundtrades:portfolioPeriod', 'y1');
   const [portfolioMoversPeriod, setPortfolioMoversPeriod] = usePersistedState<MoversPeriod>('frame:fundtrades:portfolioMoversPeriod', '1m');
   const [portfolio, setPortfolio] = useState<FundPortfolio | null>(null);
   const [loadingPortfolio, setLoadingPortfolio] = useState(false);

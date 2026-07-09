@@ -273,7 +273,9 @@ export default function FundTradesPage() {
     const [portfolioUks, setPortfolioUks] = usePersistedSet<string>('frame:fundtrades:portfolioUks');
     const [portfolioMode, setPortfolioMode] = usePersistedState<'rub' | 'share'>('frame:fundtrades:portfolioMode', 'rub');
     // Доходность в плашке — на 1 год (с фолбэком на длиннейший доступный внутри вью).
-    const [portfolioPeriod] = usePersistedState<ReturnPeriodKey>('frame:fundtrades:portfolioPeriod', 'y1');
+    // Период плашки доходности «Общего портфеля» — только штатные периоды
+    // (без 5л, у CombinedPortfolioView свой PeriodKey). Всегда 'y1'.
+    const [portfolioPeriod] = usePersistedState<'m1' | 'm3' | 'm6' | 'y1'>('frame:fundtrades:portfolioPeriod', 'y1');
     const [portfolio, setPortfolio] = useState<FundPortfolio | null>(null);
     const [portfolioLoading, setPortfolioLoading] = useState(false);
     // Блок «Покупки фондов» рядом с составом: чистая покупка за период (1м/6м/1г/3г).
