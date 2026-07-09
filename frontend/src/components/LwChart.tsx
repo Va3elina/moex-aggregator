@@ -59,6 +59,9 @@ interface LwChartProps {
   legendItems?: { label: string; color: string }[];
   /** Не строить легенду (когда рисуем свою статичную поверх — Сезонность-Календарь). */
   hideLegend?: boolean;
+  /** Метки экспираций (§5.6): серые кружки ОТДЕЛЬНЫМ DOM-слоем у оси дат, а не
+   *  нативные маркеры на линии. Перерисовываются на зум/пан/ресайз. */
+  expTimes?: number[];
 }
 
 function themeColors(dark: boolean) {
@@ -121,7 +124,7 @@ export function monthsYearsTickFmt(time: number, type: number): string {
   return '';
 }
 
-export default function LwChart({ series, height, dark = true, markers, fitKey, initialBars, tickFmt, legendItems, hideLegend }: LwChartProps) {
+export default function LwChart({ series, height, dark = true, markers, fitKey, initialBars, tickFmt, legendItems, hideLegend, expTimes }: LwChartProps) {
   const boxRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesApiRef = useRef<ISeriesApi<'Line' | 'Area' | 'Histogram'>[]>([]);
@@ -131,6 +134,8 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
   const tickFmtRef = useRef(tickFmt); tickFmtRef.current = tickFmt;
   const legendItemsRef = useRef(legendItems); legendItemsRef.current = legendItems;
   const hideLegendRef = useRef(hideLegend); hideLegendRef.current = hideLegend;
+  const expTimesRef = useRef(expTimes); expTimesRef.current = expTimes;
+  const drawExpRef = useRef<(() => void) | null>(null);
   const lastFitRef = useRef<string | undefined>(undefined);
   const marginRef = useRef(0.12);
   const legendRef = useRef<HTMLDivElement | null>(null);
@@ -184,6 +189,36 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
     box.appendChild(legend);
     legendRef.current = legend;
 
+    // Слой экспираций (§5.6): серые кружки над осью дат. Позиция — timeToCoordinate,
+    // перерисовка на зум/пан (subscribeVisibleLogicalRangeChange) и ресайз.
+    // Цвет — CSS-var (DOM, не canvas) → сам следует за темой панели.
+    const expLayer = document.createElement('div');
+    expLayer.style.cssText = 'position:absolute;left:0;right:0;height:0;pointer-events:none;z-index:4';
+    box.appendChild(expLayer);
+    const drawExp = () => {
+      const ch = chartRef.current;
+      if (!ch) return;
+      while (expLayer.firstChild) expLayer.removeChild(expLayer.firstChild);
+      const times = expTimesRef.current;
+      if (!times || times.length === 0) return;
+      const ts = ch.timeScale();
+      const axisH = ts.height() || 26;
+      expLayer.style.bottom = axisH + 3 + 'px';
+      for (const t of times) {
+        const x = ts.timeToCoordinate(t as UTCTimestamp);
+        if (x == null) continue;
+        const dot = document.createElement('span');
+        dot.style.cssText = 'position:absolute;top:0;width:7px;height:7px;border-radius:50%;'
+          + 'transform:translate(-50%,-50%);opacity:0.8;background:var(--text-secondary,#9A958C);left:' + x + 'px';
+        expLayer.appendChild(dot);
+      }
+    };
+    drawExpRef.current = drawExp;
+    const onRange = () => drawExp();
+    chart.timeScale().subscribeVisibleLogicalRangeChange(onRange);
+    const expRo = new ResizeObserver(() => drawExp());
+    expRo.observe(box);
+
     chart.subscribeCrosshairMove((param) => {
       const defs = defsRef.current;
       const apis = seriesApiRef.current;
@@ -236,11 +271,15 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
 
     return () => {
       box.removeEventListener('wheel', onWheel, true);
+      expRo.disconnect();
+      try { chart.timeScale().unsubscribeVisibleLogicalRangeChange(onRange); } catch { /* уже снят */ }
+      drawExpRef.current = null;
       chart.remove();
       chartRef.current = null;
       seriesApiRef.current = [];
       if (tip.parentNode) tip.parentNode.removeChild(tip);
       if (legend.parentNode) legend.parentNode.removeChild(legend);
+      if (expLayer.parentNode) expLayer.parentNode.removeChild(expLayer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -345,7 +384,9 @@ export default function LwChart({ series, height, dark = true, markers, fitKey, 
     } else if (savedRange) {
       chart.timeScale().setVisibleLogicalRange(savedRange);
     }
-  }, [series, markers, fitKey]);
+
+    drawExpRef.current?.(); // метки экспираций — после заливки данных и установки окна
+  }, [series, markers, fitKey, expTimes]);
 
   return <div ref={boxRef} style={{ position: 'relative', width: '100%', height }} />;
 }
