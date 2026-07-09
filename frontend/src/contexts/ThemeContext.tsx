@@ -22,7 +22,7 @@ export const ACCENTS = [
 
 export type AccentId = typeof ACCENTS[number]['id'];
 
-interface ThemeContextType {
+export interface ThemeContextType {
     theme: ThemeId;
     themeName: string;
     themeIcon: string;
@@ -33,7 +33,10 @@ interface ThemeContextType {
     setAccent: (id: AccentId) => void;
 }
 
-const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
+// Экспорт нужен песочнице: SandboxThemeScope оборачивает панель вложенным
+// Provider'ом с темой ПАНЕЛИ (◐ per-panel override) — embed внутри читает её
+// через useTheme() и перекрашивает график (LwChart проп dark).
+export const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
     const [theme, setThemeState] = useState<ThemeId>(() => {

@@ -25,10 +25,11 @@
  * ⚙ общий Формат, per-panel cfg, клик по сигналу → spawn индикатора, общие
  * настройки §9, листы (переименование/дубль/удаление/reorder).
  */
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Bell, Contrast, LayoutGrid, Plus, PlusCircle, X as XIcon } from 'lucide-react';
 import './sandbox.css';
 import { SandboxWindowCtx } from '../embed/EmbedToolbar';
+import { ThemeContext, useTheme } from '../../contexts/ThemeContext';
 import EmbedOpenInterest from '../embed/EmbedOpenInterest';
 import EmbedSeasonality from '../embed/EmbedSeasonality';
 import EmbedScreener from '../embed/EmbedScreener';
@@ -107,6 +108,21 @@ const GUIDE_Z = 99990;       // направляющие — над панеля
 const OVERLAY_Z = 100000;    // меню/поповеры/дровер (§7: панели при захвате уходят на высокий z)
 
 const uid = (p: string): string => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+
+/**
+ * SandboxThemeScope — вложенный ThemeContext.Provider с ЭФФЕКТИВНОЙ темой панели
+ * (◐ per-panel override или тема оболочки). Embed внутри читает её через
+ * useTheme() → LwChart получает верный `dark`, series-цвета резолвятся probe'ом
+ * в поддереве панели (CSS-vars от data-theme на .sb-panel). §4.3 спеки.
+ */
+function SandboxThemeScope({ eff, children }: { eff: SbTheme; children: ReactNode }) {
+  const parent = useTheme();
+  const value = useMemo(() => ({
+    ...parent,
+    theme: (eff === 'light' ? 'editorial-light' : 'editorial-dark') as typeof parent.theme,
+  }), [parent, eff]);
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
+}
 
 function defaultState(): Persisted {
   return {
@@ -302,6 +318,20 @@ export default function SandboxPage() {
   }, [st, bringFront, setActivePanels]);
 
   const toggleTheme = useCallback(() => setSt((s) => ({ ...s, sbTheme: s.sbTheme === 'dark' ? 'light' : 'dark' })), []);
+  // ◐ панели (§4.3): флип themeOverride относительно эффективной темы.
+  const setPanelTheme = useCallback((id: string) => {
+    setSt((s) => ({
+      ...s,
+      bySheet: {
+        ...s.bySheet,
+        [s.activeSheet]: (s.bySheet[s.activeSheet] || []).map((p) => {
+          if (p.id !== id) return p;
+          const cur = p.themeOverride || s.sbTheme;
+          return { ...p, themeOverride: cur === 'dark' ? 'light' : 'dark' };
+        }),
+      },
+    }));
+  }, []);
   const addSheet = useCallback(() => setSt((s) => {
     const id = uid('s');
     return { ...s, sheets: [...s.sheets, { id, name: 'Лист ' + (s.sheets.length + 1) }], bySheet: { ...s.bySheet, [id]: [] }, activeSheet: id };
@@ -376,24 +406,30 @@ export default function SandboxPage() {
           </div>
         )}
 
-        {panels.map((p) => (
+        {panels.map((p) => {
+          const eff = p.themeOverride || st.sbTheme;
+          return (
           <div
             key={p.id}
             className="sb-panel"
-            data-sbtheme={p.themeOverride || st.sbTheme}
+            data-sbtheme={eff}
+            data-theme={eff === 'light' ? 'editorial-light' : 'editorial-dark'}
             style={{ position: 'absolute', left: p.x, top: p.y, width: p.w, height: p.h, zIndex: p.z, ...panelStyle }}
             onPointerDown={(e) => onDragStart(e, p.id)}
           >
             <div style={panelBodyStyle}>
-              <SandboxWindowCtx.Provider value={{ onExpand: () => expand(p.id), onClose: () => close(p.id) }}>
-                {renderIndicator(p.type)}
+              <SandboxWindowCtx.Provider value={{ onExpand: () => expand(p.id), onClose: () => close(p.id), onToggleTheme: () => setPanelTheme(p.id) }}>
+                <SandboxThemeScope eff={eff}>
+                  {renderIndicator(p.type)}
+                </SandboxThemeScope>
               </SandboxWindowCtx.Provider>
             </div>
             {HANDLES.map((hd) => (
               <div key={hd.dir} onPointerDown={(e) => onResizeStart(e, p.id, hd.dir)} style={{ position: 'absolute', zIndex: 2, ...hd.style }} />
             ))}
           </div>
-        ))}
+          );
+        })}
 
         {/* Направляющие магнита (§4.1) */}
         {guides.map((g, i) => (

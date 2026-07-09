@@ -21,7 +21,7 @@
  * Всё инлайн-стилями с CSS-var, чтобы работать в любой теме внутри iframe.
  */
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { PlusCircle, Settings, ChevronDown, Maximize2, X as XIcon } from 'lucide-react';
+import { PlusCircle, Settings, ChevronDown, Contrast, Maximize2, X as XIcon } from 'lucide-react';
 
 /**
  * Контекст оконных кнопок панели ПЕСОЧНИЦЫ. Когда embed рендерится внутри окна
@@ -29,7 +29,7 @@ import { PlusCircle, Settings, ChevronDown, Maximize2, X as XIcon } from 'lucide
  * кнопки окна (⤢ развернуть / × закрыть) СПРАВА в ту же строку тулбара — единая шапка
  * по §4.1 спеки. В расширении/на сайте контекст пуст → ничего лишнего.
  */
-export interface SandboxWindowControls { onExpand?: () => void; onClose?: () => void }
+export interface SandboxWindowControls { onExpand?: () => void; onClose?: () => void; onToggleTheme?: () => void }
 export const SandboxWindowCtx = createContext<SandboxWindowControls | null>(null);
 import InstrumentIcon from '../../components/InstrumentIcon';
 import InstrumentSearchModal from '../../components/InstrumentSearchModal';
@@ -126,6 +126,11 @@ export function EmbedFrame({
             {win.onExpand && (
               <button type="button" onClick={win.onExpand} title="Развернуть" aria-label="Развернуть" className="sb-winbtn" style={sbWinBtn}>
                 <Maximize2 size={13} />
+              </button>
+            )}
+            {win.onToggleTheme && (
+              <button type="button" onClick={win.onToggleTheme} title="Тема панели" aria-label="Тема панели" className="sb-winbtn" style={sbWinBtn}>
+                <Contrast size={13} />
               </button>
             )}
             {win.onClose && (
