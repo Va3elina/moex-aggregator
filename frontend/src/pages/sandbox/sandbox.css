@@ -31,6 +31,23 @@
   --c-sec: #9B8BF0;
   --c-amber: #E0A34E;
   --c-cyan: #57C7C7;
+
+  /* G-1 — алиасы сайтовых токенов, что читают EmbedToolbar/embed'ы, → на токены
+     песочницы + форс цветов серий графика в designer-палитру. Scoped на .sb-panel:
+     сайт/расширение НЕ трогаем (там остаётся землистая дальтоник-гамма).
+     Чинит бордеры/текст/фон контролов И цвета всех графиков РАЗОМ. */
+  --border-color: var(--border);
+  --text-primary: var(--text);
+  --text-secondary: var(--muted);
+  --bg-base: var(--panel);
+  --bg-secondary: var(--panel);
+  --oi-green: var(--c-up);
+  --oi-red: var(--c-down);
+  --oi-amber: var(--c-amber);
+  --oi-cyan: var(--c-cyan);
+  --chart-line-1: var(--c-price);
+  --chart-line-2: var(--c-amber);
+  --chart-line-3: var(--c-up);
 }
 .sb-root[data-sbtheme="light"],
 .sb-panel[data-sbtheme="light"] {
@@ -53,6 +70,20 @@
   --c-sec: #9B8BF0;
   --c-amber: #E0A34E;
   --c-cyan: #57C7C7;
+
+  /* G-1 — алиасы (см. dark-блок выше) */
+  --border-color: var(--border);
+  --text-primary: var(--text);
+  --text-secondary: var(--muted);
+  --bg-base: var(--panel);
+  --bg-secondary: var(--panel);
+  --oi-green: var(--c-up);
+  --oi-red: var(--c-down);
+  --oi-amber: var(--c-amber);
+  --oi-cyan: var(--c-cyan);
+  --chart-line-1: var(--c-price);
+  --chart-line-2: var(--c-amber);
+  --chart-line-3: var(--c-up);
 }
 
 .sb-root {
@@ -80,6 +111,10 @@
 
 /* лёгкий hover для кнопок-хрома топбара/панели */
 .sb-hoverable:hover { background: var(--hover) !important; color: var(--text) !important; }
+
+/* Кнопки окна панели (⤢ ◐ ×) — ховер по §4.3 */
+.sb-winbtn:hover { background: var(--hover); color: var(--text); }
+.sb-winbtn-close:hover { background: var(--c-down); color: #fff; }
 
 @keyframes sb-pop { from { opacity: 0; transform: translateY(-6px) scale(0.98); } to { opacity: 1; transform: none; } }
 @keyframes sb-fade { from { opacity: 0; } to { opacity: 1; } }
