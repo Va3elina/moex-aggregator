@@ -14,7 +14,7 @@
  * типы FundTradeAsset, CompanyFlowsResponse. Их добавляет бэкенд-агент по
  * общему контракту — здесь импортируем строго по контрактным именам.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, TrendingUp } from 'lucide-react';
 import { UK_LOGOS, DONUT_COLORS, resolveFundTicker, fundAssetName, fundAssetColor } from '../../config/fundConfig';
 import {
@@ -29,7 +29,7 @@ import { useFitToViewport } from '../../hooks/useFitToViewport';
 import AssetPickerModal from './AssetPickerModal';
 import FundPicker, { type FundPickerFund } from './FundPicker';
 import SegmentedControl from '../SegmentedControl';
-import { usePersistedState } from '../../hooks/usePersistedState';
+import { usePersistedState, usePersistedSet } from '../../hooks/usePersistedState';
 
 type Metric = 'amount' | 'weight';
 
@@ -118,8 +118,23 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed }: Compa
     const [pickerOpen, setPickerOpen] = useState(false);
 
     // ITEM 2 — выбранные КОНКРЕТНЫЕ фонды (ключ = ticker). Пусто = все фонды.
-    // Дефолт пересчитывается на смену бумаги (см. эффект ниже): top-3 по |потоку|.
-    const [selectedFunds, setSelectedFunds] = useState<Set<string>>(() => new Set());
+    // Персистится и переживает смену бумаги/перезагрузку. До первого ручного
+    // выбора действует авто-дефолт (top-3 по |потоку|, пере-выбор на каждую
+    // бумагу — см. эффект ниже); как только пользователь сам трогает пикер, его
+    // выбор замораживается за ним (включая явное «Все фонды» = пустой Set).
+    const [selectedFunds, setSelectedFunds] = usePersistedSet<string>('frame:companyflows:funds');
+    const [fundsTouched, setFundsTouched] = usePersistedState<boolean>('frame:companyflows:funds-touched', false);
+    // «Трогал ли пикер» читаем из эффекта загрузки через ref, не делая его
+    // зависимостью эффекта — иначе первый ручной выбор ре-дёрнул бы загрузку.
+    const fundsTouchedRef = useRef(fundsTouched);
+    useEffect(() => { fundsTouchedRef.current = fundsTouched; }, [fundsTouched]);
+    // Ручной выбор в пикере: помечаем «тронуто» и сохраняем набор (персист-сеттер
+    // сам пишет в localStorage). Авто-дефолт в эффекте зовёт setSelectedFunds
+    // напрямую и «тронуто» НЕ ставит.
+    const handleFundsChange = useCallback((next: Set<string>) => {
+        setFundsTouched(true);
+        setSelectedFunds(next);
+    }, [setFundsTouched, setSelectedFunds]);
 
     // metric toggle — default ₽ (amount).
     const [metric] = useState<Metric>('amount');
@@ -194,9 +209,12 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed }: Compa
             .then(resp => {
                 if (cancelled) return;
                 setFlows(resp);
-                // ITEM 2 — на смену бумаги пере-выбираем дефолт: top-3 фонда по
-                // суммарному |потоку|. ≤3 фондов → пусто (= все, см. computeTopFunds).
-                setSelectedFunds(computeTopFunds(resp.funds, DEFAULT_FUND_COUNT));
+                // ITEM 2 — авто-дефолт top-3 по |потоку| ТОЛЬКО пока пользователь
+                // сам не выбирал фонды. Тронул пикер → его выбор переживает смену
+                // бумаги, дефолт больше не навязываем. (≤3 фондов → пусто = все.)
+                if (!fundsTouchedRef.current) {
+                    setSelectedFunds(computeTopFunds(resp.funds, DEFAULT_FUND_COUNT));
+                }
                 setFlowsError(null);
             })
             .catch(err => {
@@ -386,7 +404,7 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed }: Compa
                     funds={fundPickerFunds}
                     mode="multi"
                     selected={selectedFunds}
-                    onChange={setSelectedFunds}
+                    onChange={handleFundsChange}
                 />
 
                 {/* Период — окно последних N месяцев (1 год / 3 года / Всё). */}
