@@ -869,56 +869,48 @@ export default function FundTradesPage() {
                 <>
                     <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)', margin: '0 0 12px', lineHeight: 1.5, maxWidth: 820 }}>
                         Все выбранные фонды акций собраны в один портфель, как будто ими управляет
-                        один управляющий. Слева его состав, справа что фонды докупили и распродали
-                        за выбранный период. По рублям взвешивает по деньгам, средняя доля даёт
-                        равный вес каждому фонду.
+                        один управляющий. Слева что фонды докупили и распродали за выбранный
+                        период, справа состав общего портфеля. По капиталу взвешивает по деньгам,
+                        по доле даёт равный вес каждому фонду.
                     </p>
-                    <div className="flex flex-wrap items-center gap-2 md:gap-3 mb-3 md:mb-4">
-                        <SegmentedControl<'rub' | 'share'>
-                            options={[
-                                { key: 'rub', label: 'По рублям' },
-                                { key: 'share', label: 'Средняя доля' },
-                            ]}
-                            value={portfolioMode}
-                            onChange={setPortfolioMode}
-                        />
-                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                            <span style={{ fontSize: 'var(--fs-2xs)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>Покупки за</span>
-                            <SegmentedControl<MoversPeriod>
-                                options={[
-                                    { key: '1m', label: '1 мес' },
-                                    { key: '6m', label: 'Полгода' },
-                                    { key: '1y', label: 'Год' },
-                                    { key: '3y', label: '3 года' },
-                                ]}
-                                value={portfolioMoversPeriod}
-                                onChange={setPortfolioMoversPeriod}
-                            />
-                        </div>
+                    {/* Единая карточка (макет Claude Design): тулбар с фильтром фондов
+                        сверху влияет на оба блока; внутри «Покупки фондов» (уже, слева)
+                        и «Обзор портфеля» (шире, справа) за вертикальным разделителем.
+                        Тумблеры режима и периода живут в шапках самих блоков. */}
+                    <div style={{ background: 'var(--bg-secondary)', border: '2px solid var(--text-primary)', borderRadius: 16, boxShadow: '4px 4px 0 var(--text-primary)', overflow: 'hidden' }}>
                         {ukOptions.length > 1 && (
-                            <UkMultiSelect
-                                options={ukOptions}
-                                selected={portfolioUks}
-                                onChange={setPortfolioUks}
-                                size="md"
-                            />
+                            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: '1.5px solid var(--border-color)' }}>
+                                <UkMultiSelect
+                                    options={ukOptions}
+                                    selected={portfolioUks}
+                                    onChange={setPortfolioUks}
+                                    allLabel="Все фонды акций"
+                                    size="md"
+                                />
+                            </div>
                         )}
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: vw >= 1120 ? 'minmax(0, 2fr) minmax(320px, 1fr)' : '1fr', gap: 14, alignItems: 'start' }}>
-                        <CombinedPortfolioView
-                            portfolio={portfolio}
-                            loading={portfolioLoading}
-                            mode={portfolioMode}
-                            period={portfolioPeriod}
-                            variant="desktop"
-                        />
-                        <PortfolioMoversPanel
-                            movers={portfolioMovers}
-                            loading={portfolioMoversLoading}
-                            period={portfolioMoversPeriod}
-                            variant="desktop"
-                            onAssetClick={openCompanyFlows}
-                        />
+                        <div style={{ display: 'grid', gridTemplateColumns: vw >= 1120 ? 'minmax(0, 1fr) minmax(0, 1.85fr)' : '1fr', alignItems: 'stretch' }}>
+                            <div style={{ padding: '14px 16px 16px', minWidth: 0 }}>
+                                <PortfolioMoversPanel
+                                    movers={portfolioMovers}
+                                    loading={portfolioMoversLoading}
+                                    period={portfolioMoversPeriod}
+                                    onPeriodChange={setPortfolioMoversPeriod}
+                                    variant="embedded"
+                                    onAssetClick={openCompanyFlows}
+                                />
+                            </div>
+                            <div style={{ padding: '14px 16px 16px', minWidth: 0, borderLeft: vw >= 1120 ? '1.5px solid var(--border-color)' : 'none', borderTop: vw >= 1120 ? 'none' : '1.5px solid var(--border-color)' }}>
+                                <CombinedPortfolioView
+                                    portfolio={portfolio}
+                                    loading={portfolioLoading}
+                                    mode={portfolioMode}
+                                    onModeChange={setPortfolioMode}
+                                    period={portfolioPeriod}
+                                    variant="embedded"
+                                />
+                            </div>
+                        </div>
                     </div>
                 </>
             )}

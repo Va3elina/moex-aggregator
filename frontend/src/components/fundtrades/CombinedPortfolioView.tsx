@@ -1,20 +1,26 @@
 // CombinedPortfolioView — блок «Обзор портфеля» на вкладке «Общий портфель».
 //
-// Утверждённый дизайн (июль 2026): единый белый блок с заголовком. Внутри слева
-// пончик и метрики 2×2, справа (за разделителем) список бумаг строками
-// «логотип · имя+тикер · полоса · вес % · объём · фондов». Полоса стоит сразу за
-// именем фиксированной ширины (длинные имена усекаются), у всех строк на одной
-// вертикали. По умолчанию показываем топ-11 (= числу секторов пончика), кнопка
-// «Все N» открывает полный список МОДАЛКОЙ поверх, не растягивая страницу.
+// Редизайн (июль 2026, макет Claude Design): на десктопе слева таблица бумаг
+// «логотип · имя+тикер · полоса · вес · объём · фондов» (полосы нейтральные,
+// цвет несёт только карта), справа колонка «Структура» — карта-блоки топ-10
+// бумаг брендовыми цветами + «Прочие», под ней плитка доходности. Режим
+// взвешивания (По капиталу / По доле) переключается в шапке блока, рядом
+// пилюля актуальности данных (месяц свежайшего снапшота выбранных фондов).
+// Наведение на блок карты подсвечивает строку таблицы и наоборот.
+//
+// variant='embedded' — без собственной карточки: блок живёт внутри общей
+// карточки вкладки (единая рамка на «Покупки фондов» + «Обзор портфеля»).
+// Мобилка — прежний стек: метрики → пончик → список, строки двухэтажные.
 //
 // Веса приходят с бэкенда в двух режимах (weight_rub — по деньгам, weight_avg —
-// средняя доля по фондам); режим выбирается снаружи (`mode`). Компонент общий для
-// десктопа и мобилки (мобилка: метрики → пончик → список стеком, строки двухэтажные).
+// средняя доля по фондам); выбранный режим персистится снаружи (`mode`).
 
 import { useMemo, useState, type CSSProperties } from 'react';
 import { DONUT_COLORS, fundAssetName, fundAssetColor, resolveFundTicker } from '../../config/fundConfig';
 import Donut from '../funds/Donut';
 import InstrumentIcon from '../InstrumentIcon';
+import SegmentedControl from '../SegmentedControl';
+import HelpTooltip from '../HelpTooltip';
 import { formatReturnPct, returnColor } from '../funds/FundDetailModal';
 import type { FundPortfolio, FundPortfolioHolding } from '../../services/api';
 
@@ -24,20 +30,29 @@ const PERIOD_LABEL: Record<PeriodKey, string> = { m1: '1 мес', m3: '3 мес'
 // самый длинный доступный (год → 6м → 3м → 1м), чтобы не было «—».
 const RET_ORDER: PeriodKey[] = ['y1', 'm6', 'm3', 'm1'];
 
-// Слайсы пончика и превью списка держим равными: наведение на любой сектор
-// подсвечивает строку и наоборот, без «слепых» секторов.
+// Карта «Структура»: топ-10 бумаг раскладываются рядами 2·3·3·2, «Прочие»
+// добавляются последним блоком нижнего ряда. Высота ряда пропорциональна
+// крупнейшему весу в нём — верхние ряды визуально тяжелее.
+const TREEMAP_TOP = 10;
+const TM_CHUNKS = [2, 3, 3, 2];
+
+// Мобилка (пончик): слайсы и превью списка держим равными, наведение на любой
+// сектор подсвечивает строку и наоборот, без «слепых» секторов.
 const DONUT_TOP = 11;
 const LIST_PREVIEW = 11;
 
 // Сетка строки списка (десктоп): логотип · имя (фикс) · полоса · вес · объём · фнд.
-const D_GRID = '26px 104px minmax(48px, 1fr) 52px 72px 34px';
+const D_GRID = '30px 136px minmax(48px, 1fr) 60px 76px 38px';
 
 interface Props {
     portfolio: FundPortfolio | null;
     loading: boolean;
     mode: 'rub' | 'share';        // rub = вес по деньгам, share = средняя доля по фондам
     period: PeriodKey;            // предпочтительный период для строки доходности
-    variant?: 'desktop' | 'mobile';
+    variant?: 'desktop' | 'mobile' | 'embedded';
+    // Задан — тумблер «По капиталу / По доле» рендерится в шапке блока
+    // (десктоп-макет). Мобилка управляет режимом своими чипами в ⚙️-sheet.
+    onModeChange?: (mode: 'rub' | 'share') => void;
 }
 
 const blockStyle = (isMobile: boolean): CSSProperties => ({
@@ -57,13 +72,13 @@ function plural(n: number, one: string, few: string, many: string): string {
     return many;
 }
 
-function BlockHead({ title, meta }: { title: string; meta?: string }) {
-    return (
-        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, paddingBottom: 9, marginBottom: 13, borderBottom: '1.5px solid var(--text-primary)' }}>
-            <span style={{ fontSize: 'var(--fs-md)', fontWeight: 800, letterSpacing: '-0.01em', color: 'var(--text-primary)' }}>{title}</span>
-            {meta && <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>{meta}</span>}
-        </div>
-    );
+const MONTHS_LOWER = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь',
+    'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
+
+// "2026-07-31" → "июль 2026" — для пилюли актуальности данных.
+function monthYearLower(iso: string): string {
+    const d = new Date(iso);
+    return `${MONTHS_LOWER[d.getMonth()]} ${d.getFullYear()}`;
 }
 
 function StatTile({ label, value, color }: { label: string; value: string; color?: string }) {
@@ -86,6 +101,19 @@ function fmtVolShort(v: number): string {
     return `${Math.round(v / 1e3)} тыс`;
 }
 
+// Итог структуры: «196,0 млрд ₽» — запятая как в остальных рублёвых шапках.
+function fmtTotalRub(v: number): string {
+    if (v >= 1e9) return `${(v / 1e9).toFixed(1).replace('.', ',')} млрд ₽`;
+    return `${(v / 1e6).toFixed(0)} млн ₽`;
+}
+
+// Тёмный текст на светлых брендовых заливках (золото Полюса и т.п.).
+function isLightHex(color: string): boolean {
+    if (!/^#[0-9a-fA-F]{6}$/.test(color)) return false;
+    const r = parseInt(color.slice(1, 3), 16), g = parseInt(color.slice(3, 5), 16), b = parseInt(color.slice(5, 7), 16);
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b > 160;
+}
+
 // Логотип бумаги: InstrumentIcon по резолвнутому тикеру (внутри свой фолбэк-круг),
 // иначе цветной круг с первой буквой.
 function AssetLogo({ h, size, color }: { h: FundPortfolioHolding; size: number; color: string }) {
@@ -98,10 +126,13 @@ function AssetLogo({ h, size, color }: { h: FundPortfolioHolding; size: number; 
     );
 }
 
-export default function CombinedPortfolioView({ portfolio, loading, mode, period, variant = 'desktop' }: Props) {
+export default function CombinedPortfolioView({ portfolio, loading, mode, period, variant = 'desktop', onModeChange }: Props) {
     const [modalOpen, setModalOpen] = useState(false);
     const [hoverIdx, setHoverIdx] = useState<number | null>(null);
     const isMobile = variant === 'mobile';
+    const embedded = variant === 'embedded';
+    // embedded — без собственной карточки: рамку несёт общая карточка вкладки.
+    const wrapStyle: CSSProperties = embedded ? { position: 'relative', minWidth: 0 } : blockStyle(isMobile);
 
     const wOf = (h: FundPortfolioHolding) => (mode === 'rub' ? h.weight_rub : h.weight_avg);
 
@@ -126,11 +157,11 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, period
     }, [sorted, mode]);
 
     if (loading && !portfolio) {
-        return <div style={{ ...blockStyle(isMobile), color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>Собираем общий портфель…</div>;
+        return <div style={{ ...wrapStyle, color: 'var(--text-muted)', fontSize: 'var(--fs-sm)' }}>Собираем общий портфель…</div>;
     }
     if (!portfolio || portfolio.num_funds === 0 || sorted.length === 0) {
         return (
-            <div style={{ ...blockStyle(isMobile), textAlign: 'center' }}>
+            <div style={{ ...wrapStyle, textAlign: 'center' }}>
                 <p style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-secondary)', maxWidth: 420, margin: '12px auto', lineHeight: 1.5 }}>
                     Нет данных по выбранным управляющим компаниям. Выберите другие УК или дождитесь публикации составов.
                 </p>
@@ -146,8 +177,10 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, period
 
     const maxW = Math.max(...sorted.map(wOf), 0.0001);
     const rest = sorted.slice(LIST_PREVIEW);
-    const restW = rest.reduce((s, h) => s + wOf(h), 0);
-    const restV = rest.reduce((s, h) => s + h.value_rub, 0);
+
+    // Свежесть данных: месяц самого свежего снапшота среди выбранных фондов.
+    const freshISO = portfolio.funds.reduce<string | null>(
+        (acc, f) => (f.snapshot_date && (!acc || f.snapshot_date > acc) ? f.snapshot_date : acc), null);
 
     const kpis = (
         <>
@@ -162,21 +195,22 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, period
         const pct = Math.max(2, (w / maxW) * 100);
         const ticker = resolveFundTicker(h.asset_name, h.isin);
         const hov = interactive && hoverIdx === idx;
-        const link = interactive && idx < DONUT_TOP;
+        const link = interactive && idx < TREEMAP_TOP;
         return (
             <div
                 key={h.akey}
                 onMouseEnter={link ? () => setHoverIdx(idx) : undefined}
                 onMouseLeave={link ? () => setHoverIdx(null) : undefined}
-                style={{ display: 'grid', gridTemplateColumns: D_GRID, gap: 10, alignItems: 'center', padding: '6px 8px', margin: '0 -8px', borderRadius: 8, background: hov ? 'color-mix(in srgb, var(--text-primary) 5%, transparent)' : 'transparent', borderBottom: last ? 'none' : '1px dashed color-mix(in srgb, var(--text-primary) 12%, transparent)', transition: 'background 0.12s ease' }}
+                style={{ display: 'grid', gridTemplateColumns: D_GRID, gap: 10, alignItems: 'center', padding: '7px 8px', margin: '0 -8px', borderRadius: 8, background: hov ? 'color-mix(in srgb, var(--text-primary) 5%, transparent)' : 'transparent', borderBottom: last ? 'none' : '1px dashed color-mix(in srgb, var(--text-primary) 12%, transparent)', transition: 'background 0.12s ease' }}
             >
-                <AssetLogo h={h} size={26} color={color} />
+                <AssetLogo h={h} size={30} color={color} />
                 <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column', lineHeight: 1.12 }}>
                     <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{fundAssetName(h.asset_name, h.isin)}</span>
                     {ticker && <span style={{ fontFamily: 'var(--font-mono, ui-monospace, monospace)', fontSize: 'var(--fs-3xs, 10px)', letterSpacing: '0.05em', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{ticker}</span>}
                 </span>
-                <div style={{ height: 8, background: 'color-mix(in srgb, var(--text-primary) 8%, transparent)', borderRadius: 4, overflow: 'hidden', minWidth: 0 }}>
-                    <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 4 }} />
+                {/* Полосы нейтральные — цвет несёт карта «Структура» справа. */}
+                <div style={{ height: 9, background: 'color-mix(in srgb, var(--text-primary) 8%, transparent)', borderRadius: 5, overflow: 'hidden', minWidth: 0 }}>
+                    <div style={{ width: `${pct}%`, height: '100%', background: 'color-mix(in srgb, var(--text-primary) 32%, transparent)', borderRadius: 5 }} />
                 </div>
                 <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-sm)', fontWeight: 800, color: 'var(--text-primary)' }}>{w.toFixed(2)}%</span>
                 <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>{fmtVolShort(h.value_rub)}</span>
@@ -213,23 +247,16 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, period
     };
 
     const listHeader = (
-        <div style={{ display: 'grid', gridTemplateColumns: D_GRID, gap: 10, padding: '4px 0 7px', borderBottom: '1.5px solid var(--text-primary)', fontSize: 'var(--fs-3xs, 10px)', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: D_GRID, gap: 10, padding: '4px 0 8px', borderBottom: '1.5px solid var(--text-primary)', fontSize: 'var(--fs-3xs, 10px)', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
             <span /><span>Бумага</span><span /><span style={{ textAlign: 'right' }}>Вес</span><span style={{ textAlign: 'right' }}>Объём</span><span style={{ textAlign: 'right' }}>Фнд</span>
         </div>
     );
 
-    const footer = (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, paddingTop: 9, marginTop: 4, flexWrap: 'wrap' }}>
-            {rest.length > 0 ? (
-                <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums' }}>
-                    Прочее · {rest.length} {plural(rest.length, 'бумага', 'бумаги', 'бумаг')} · {restW.toFixed(1)}% · {fmtVolShort(restV)} ₽
-                </span>
-            ) : <span />}
-            {sorted.length > LIST_PREVIEW && (
-                <button onClick={() => setModalOpen(true)} className="editorial-press" style={{ padding: '5px 14px', background: 'var(--bg-primary)', border: '1.5px solid var(--border-color)', borderRadius: 999, fontSize: 'var(--fs-xs)', fontWeight: 700, color: 'var(--text-secondary)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                    Все {sorted.length} ↓
-                </button>
-            )}
+    const restBtn = sorted.length > LIST_PREVIEW && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', paddingTop: 9, marginTop: 4 }}>
+            <button onClick={() => setModalOpen(true)} className="editorial-press" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 14px', background: 'var(--bg-primary)', border: '1.5px solid var(--border-color)', borderRadius: 999, fontSize: 'var(--fs-xs)', fontWeight: 700, color: 'var(--text-secondary)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                Прочие бумаги · ещё {rest.length} ↓
+            </button>
         </div>
     );
 
@@ -251,35 +278,132 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, period
 
     if (isMobile) {
         return (
-            <div style={blockStyle(true)}>
-                <BlockHead title="Обзор портфеля" meta={`${portfolio.num_funds} ф. · ${portfolio.num_assets} бум.`} />
+            <div style={wrapStyle}>
+                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, paddingBottom: 9, marginBottom: 13, borderBottom: '1.5px solid var(--text-primary)' }}>
+                    <span style={{ fontSize: 'var(--fs-md)', fontWeight: 800, letterSpacing: '-0.01em', color: 'var(--text-primary)' }}>Обзор портфеля</span>
+                    <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>{portfolio.num_funds} ф. · {portfolio.num_assets} бум.</span>
+                </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>{kpis}</div>
                 <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 6 }}>
                     <Donut holdings={donutHoldings} colors={donutColors} size={200} outerRadius={90} innerRadius={60} maxSlices={donutHoldings.length} centerCount={portfolio.num_assets} showCenterText highlightIndex={hoverIdx} onHoverChange={setHoverIdx} />
                 </div>
                 <div>
                     {sorted.slice(0, LIST_PREVIEW).map((h, i) => mobRow(h, i, i === Math.min(LIST_PREVIEW, sorted.length) - 1))}
-                    {footer}
+                    {restBtn}
                 </div>
                 {modal}
             </div>
         );
     }
 
-    return (
-        <div style={blockStyle(false)}>
-            <BlockHead title="Обзор портфеля" meta={`${portfolio.num_funds} ${plural(portfolio.num_funds, 'фонд', 'фонда', 'фондов')} · ${portfolio.num_assets} ${plural(portfolio.num_assets, 'бумага', 'бумаги', 'бумаг')}`} />
-            <div style={{ display: 'grid', gridTemplateColumns: '240px minmax(0, 1fr)', gap: 20, alignItems: 'start' }}>
-                <div style={{ minWidth: 0 }}>
-                    <div style={{ display: 'flex', justifyContent: 'center' }}>
-                        <Donut holdings={donutHoldings} colors={donutColors} size={210} outerRadius={90} innerRadius={60} maxSlices={donutHoldings.length} centerCount={portfolio.num_assets} showCenterText highlightIndex={hoverIdx} onHoverChange={setHoverIdx} />
+    // ── Десктоп: карта «Структура» (ряды 2·3·3·2 из топ-10 + «Прочие») ──
+    const tmTop = sorted.slice(0, TREEMAP_TOP);
+    const tmRestW = sorted.slice(TREEMAP_TOP).reduce((s, h) => s + wOf(h), 0);
+    const tmRows: { items: { h: FundPortfolioHolding; idx: number }[]; other?: number }[] = [];
+    let cursor = 0;
+    for (const size of TM_CHUNKS) {
+        if (cursor >= tmTop.length) break;
+        tmRows.push({ items: tmTop.slice(cursor, cursor + size).map((h, j) => ({ h, idx: cursor + j })) });
+        cursor += size;
+    }
+    if (tmRows.length > 0 && tmRestW > 0.5) tmRows[tmRows.length - 1].other = tmRestW;
+
+    const treemap = (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {tmRows.map((row, ri) => {
+                const rowMax = Math.max(...row.items.map(({ h }) => wOf(h)), 0.0001);
+                // Высота ряда следует крупнейшему весу: топ-ряды визуально тяжелее.
+                const rowH = Math.round(Math.min(104, Math.max(62, 56 + 4.2 * rowMax)));
+                return (
+                    <div key={ri} style={{ display: 'flex', gap: 6, height: rowH }}>
+                        {row.items.map(({ h, idx }) => {
+                            const w = wOf(h);
+                            const color = fundAssetColor(h.asset_name, h.isin) ?? DONUT_COLORS[idx % DONUT_COLORS.length];
+                            const dark = isLightHex(color);
+                            const label = resolveFundTicker(h.asset_name, h.isin) ?? fundAssetName(h.asset_name, h.isin).split(' ')[0];
+                            return (
+                                <div
+                                    key={h.akey}
+                                    onMouseEnter={() => setHoverIdx(idx)}
+                                    onMouseLeave={() => setHoverIdx(null)}
+                                    title={`${fundAssetName(h.asset_name, h.isin)} · ${w.toFixed(2)}%`}
+                                    style={{ flex: Math.max(w, 0.1), borderRadius: 10, background: color, color: dark ? '#1a1712' : '#fff', padding: '9px 11px', display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0, outline: hoverIdx === idx ? '2px solid var(--text-primary)' : 'none', outlineOffset: -2, transition: 'outline-color 0.12s ease', cursor: 'default' }}
+                                >
+                                    <div style={{ fontWeight: 800, fontSize: 'var(--fs-sm)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
+                                    <div style={{ fontSize: 'var(--fs-2xs)', fontWeight: 600, opacity: 0.92, fontVariantNumeric: 'tabular-nums' }}>{w.toFixed(1).replace('.', ',')}%</div>
+                                </div>
+                            );
+                        })}
+                        {row.other != null && (
+                            <div style={{ flex: Math.max(row.other, 0.1), borderRadius: 10, background: 'color-mix(in srgb, var(--text-primary) 16%, var(--bg-primary))', color: 'var(--text-primary)', padding: '9px 11px', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', overflow: 'hidden', minWidth: 0 }}>
+                                <div style={{ fontWeight: 700, fontSize: 'var(--fs-xs)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>Прочие {Math.round(row.other)}%</div>
+                            </div>
+                        )}
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8, marginTop: 12 }}>{kpis}</div>
+                );
+            })}
+        </div>
+    );
+
+    return (
+        <div style={wrapStyle}>
+            {/* Шапка: заголовок+счётчики слева; пилюля актуальности + режим справа. */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginBottom: 16 }}>
+                <div>
+                    <div style={{ fontSize: 'var(--fs-lg)', fontWeight: 800, letterSpacing: '-0.01em', color: 'var(--text-primary)' }}>Обзор портфеля</div>
+                    <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--text-muted)', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>
+                        {portfolio.num_funds} {plural(portfolio.num_funds, 'фонд', 'фонда', 'фондов')} · {portfolio.num_assets} {plural(portfolio.num_assets, 'бумага', 'бумаги', 'бумаг')}
+                    </div>
                 </div>
-                <div style={{ borderLeft: '1.5px solid var(--border-color)', paddingLeft: 18, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    {freshISO && (
+                        <div title="Месяц самого свежего снапшота выбранных фондов" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, border: '1.5px solid var(--text-primary)', borderRadius: 999, padding: '7px 14px', fontSize: 'var(--fs-xs)', fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>
+                            <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--mood-green, #4a9959)', flexShrink: 0 }} />
+                            Актуальные данные <span style={{ color: 'var(--text-muted)', fontWeight: 600 }}>· {monthYearLower(freshISO)}</span>
+                        </div>
+                    )}
+                    {onModeChange && (
+                        <SegmentedControl<'rub' | 'share'>
+                            options={[
+                                { key: 'rub', label: 'По капиталу' },
+                                { key: 'share', label: 'По доле' },
+                            ]}
+                            value={mode}
+                            onChange={onModeChange}
+                            trailing={
+                                <HelpTooltip
+                                    title="Как считается вес"
+                                    sections={[
+                                        { heading: 'По капиталу', body: 'Доля бумаги от суммарной стоимости всех позиций выбранных фондов: крупные фонды влияют сильнее.' },
+                                        { heading: 'По доле', body: 'Средняя доля бумаги по фондам, каждый фонд с равным весом — виден консенсус управляющих без перекоса на гигантов.' },
+                                    ]}
+                                />
+                            }
+                        />
+                    )}
+                </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 264px', gap: 26, alignItems: 'start' }}>
+                {/* Таблица бумаг */}
+                <div style={{ minWidth: 0 }}>
                     {listHeader}
                     {sorted.slice(0, LIST_PREVIEW).map((h, i) => deskRow(h, i, i === Math.min(LIST_PREVIEW, sorted.length) - 1, true))}
-                    {footer}
+                    {restBtn}
+                </div>
+
+                {/* Структура + доходность */}
+                <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 'var(--fs-3xs, 10px)', fontWeight: 800, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-muted)', margin: '2px 0 10px' }}>
+                        Структура · <span style={{ color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}>{fmtTotalRub(portfolio.total_value_rub)}</span>
+                    </div>
+                    {treemap}
+                    <div style={{ marginTop: 16 }}>
+                        <div style={{ background: 'var(--bg-secondary)', border: '1.5px solid var(--text-primary)', borderRadius: 14, padding: '12px 16px', boxShadow: '3px 3px 0 color-mix(in srgb, var(--text-primary) 12%, transparent)' }}>
+                            <div style={{ fontSize: 'var(--fs-3xs, 10px)', fontWeight: 800, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>Доходность · {PERIOD_LABEL[retK]}</div>
+                            <div style={{ fontSize: 'var(--fs-xl, 22px)', fontWeight: 800, marginTop: 4, fontVariantNumeric: 'tabular-nums', color: returnColor(ret ?? undefined) }}>{formatReturnPct(ret ?? undefined)}</div>
+                        </div>
+                    </div>
                 </div>
             </div>
             {modal}

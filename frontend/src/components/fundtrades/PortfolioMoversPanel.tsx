@@ -2,46 +2,66 @@
 // «Общий портфель». Показывает ЧИСТУЮ покупку/продажу бумаг за выбранный период
 // (месяц / полгода / год / 3 года) across выбранных фондов, консенсусом из /movers.
 //
-// Строки в том же формате, что список состава: логотип · имя+тикер (и сколько
-// фондов двигали бумагу) · полоса · величина ₽ справа. Полоса и величина зелёные
-// для докупок, красные для распродаж. Клик по строке — «Потоки по компании».
+// Редизайн (июль 2026, макет Claude Design): переключатель периода 1М/6М/1Г/3Г
+// живёт в шапке блока (prop onPeriodChange), под заголовком — фактический
+// диапазон месяцев консенсуса («чистая покупка · январь – июль 2026»). Полосы
+// нейтральные, величины тёмные: направление читается секциями «Докупили ↗» /
+// «Распродали ↘», единица (млрд/млн ₽) приглушена отдельным спаном.
+//
+// variant='embedded' — без собственной карточки (блок внутри общей карточки
+// вкладки). Клик по строке — «Потоки по компании».
 
 import { type CSSProperties } from 'react';
 import { fundAssetName, resolveFundTicker } from '../../config/fundConfig';
 import InstrumentIcon from '../InstrumentIcon';
+import SegmentedControl from '../SegmentedControl';
 import type { FundTradesMovers, FundTradesMover } from '../../services/api';
 
 export type MoversPeriod = '1m' | '6m' | '1y' | '3y';
 const PERIOD_SUB: Record<MoversPeriod, string> = { '1m': 'за 1 месяц', '6m': 'за полгода', '1y': 'за год', '3y': 'за 3 года' };
-
-const GREEN = 'var(--mood-green, #4a9959)';
-const RED = 'var(--mood-red, #b85645)';
+const PERIOD_MONTHS: Record<MoversPeriod, number> = { '1m': 1, '6m': 6, '1y': 12, '3y': 36 };
 
 interface Props {
     movers: FundTradesMovers | null;
     loading: boolean;
     period: MoversPeriod;
-    variant?: 'desktop' | 'mobile';
+    variant?: 'desktop' | 'mobile' | 'embedded';
     onAssetClick?: (m: FundTradesMover) => void;
+    // Задан — сегменты 1М/6М/1Г/3Г рендерятся в шапке блока (десктоп-макет).
+    // Мобилка управляет периодом своими чипами в ⚙️-sheet.
+    onPeriodChange?: (p: MoversPeriod) => void;
 }
 
 const isIsin = (s?: string | null): s is string => !!s && /^[A-Z]{2}[A-Z0-9]{10}$/.test(s);
 
-// Величина со знаком: «+1.41 млрд ₽», «−540 млн ₽».
-function fmtSigned(v: number): string {
+// Величина со знаком, единица отдельно: «+1.96» + «млрд ₽» (единица приглушена).
+function fmtSignedParts(v: number): { num: string; unit: string } {
     const a = Math.abs(v);
     const s = v > 0 ? '+' : '−';
-    if (a >= 1e9) return `${s}${(a / 1e9).toFixed(2)} млрд ₽`;
-    if (a >= 1e6) return `${s}${(a / 1e6).toFixed(1)} млн ₽`;
-    return `${s}${Math.round(a / 1e3)} тыс ₽`;
+    if (a >= 1e9) return { num: `${s}${(a / 1e9).toFixed(2)}`, unit: 'млрд ₽' };
+    if (a >= 1e6) return { num: `${s}${(a / 1e6).toFixed(1)}`, unit: 'млн ₽' };
+    return { num: `${s}${Math.round(a / 1e3)}`, unit: 'тыс ₽' };
 }
 
-function MoverLogo({ m, color }: { m: FundTradesMover; color: string }) {
+const MONTHS_LOWER = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь',
+    'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
+
+// Диапазон консенсуса: конец = resolved_month, начало = минус длина периода.
+// «январь – июль 2026», через границу года — «октябрь 2025 – июль 2026».
+function monthRangeLabel(endISO: string, period: MoversPeriod): string {
+    const end = new Date(endISO);
+    const start = new Date(end.getFullYear(), end.getMonth() - PERIOD_MONTHS[period], 1);
+    const sM = MONTHS_LOWER[start.getMonth()], eM = MONTHS_LOWER[end.getMonth()];
+    if (start.getFullYear() === end.getFullYear()) return `${sM} – ${eM} ${end.getFullYear()}`;
+    return `${sM} ${start.getFullYear()} – ${eM} ${end.getFullYear()}`;
+}
+
+function MoverLogo({ m, size }: { m: FundTradesMover; size: number }) {
     const isin = isIsin(m.akey) ? m.akey : null;
     const ticker = resolveFundTicker(m.asset_name, isin);
-    if (ticker) return <InstrumentIcon sectype={ticker} size={22} rounded="full" />;
+    if (ticker) return <InstrumentIcon sectype={ticker} size={size} rounded="full" />;
     return (
-        <span style={{ width: 22, height: 22, borderRadius: '50%', background: color, color: '#fff', fontSize: 10, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, lineHeight: 1 }}>
+        <span style={{ width: size, height: size, borderRadius: '50%', background: 'var(--text-muted)', color: '#fff', fontSize: Math.round(size * 0.42), fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, lineHeight: 1 }}>
             {(fundAssetName(m.asset_name, isin).trim().charAt(0) || '?').toUpperCase()}
         </span>
     );
@@ -58,16 +78,43 @@ const blockStyle: CSSProperties = {
     minWidth: 0,
 };
 
-export default function PortfolioMoversPanel({ movers, loading, period, variant = 'desktop', onAssetClick }: Props) {
+export default function PortfolioMoversPanel({ movers, loading, period, variant = 'desktop', onAssetClick, onPeriodChange }: Props) {
+    const isMobile = variant === 'mobile';
+    const embedded = variant === 'embedded';
+    // embedded — без собственной карточки: рамку несёт общая карточка вкладки.
+    const wrapStyle: CSSProperties = embedded
+        ? { display: 'flex', flexDirection: 'column', minWidth: 0 }
+        : { ...blockStyle, ...(isMobile ? { padding: '12px 14px 14px' } : null) };
+
+    // Подзаголовок: фактический диапазон месяцев консенсуса, пока он не
+    // приехал — словесный период («за полгода»).
+    const sub = movers?.resolved_month
+        ? `чистая покупка · ${monthRangeLabel(movers.resolved_month, period)}`
+        : `чистая покупка ${PERIOD_SUB[period]}`;
+
     const head = (
-        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, paddingBottom: 9, marginBottom: 11, borderBottom: '1.5px solid var(--text-primary)' }}>
-            <span style={{ fontSize: 'var(--fs-md)', fontWeight: 800, letterSpacing: '-0.01em', color: 'var(--text-primary)' }}>Покупки фондов</span>
-            <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>чистая покупка {PERIOD_SUB[period]}</span>
+        <div style={{ marginBottom: 12 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 'var(--fs-lg)', fontWeight: 800, letterSpacing: '-0.01em', color: 'var(--text-primary)' }}>Покупки фондов</span>
+                {onPeriodChange && (
+                    <SegmentedControl<MoversPeriod>
+                        options={[
+                            { key: '1m', label: '1М' },
+                            { key: '6m', label: '6М' },
+                            { key: '1y', label: '1Г' },
+                            { key: '3y', label: '3Г' },
+                        ]}
+                        value={period}
+                        onChange={onPeriodChange}
+                    />
+                )}
+            </div>
+            <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--text-muted)', marginTop: 4 }}>{sub}</div>
         </div>
     );
 
     if (loading && !movers) {
-        return <div style={{ ...blockStyle, ...(variant === 'mobile' ? { padding: '12px 14px 14px' } : null) }}>{head}<div style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)', padding: '10px 0' }}>Собираем движения…</div></div>;
+        return <div style={wrapStyle}>{head}<div style={{ color: 'var(--text-muted)', fontSize: 'var(--fs-sm)', padding: '10px 0' }}>Собираем движения…</div></div>;
     }
 
     const buys = movers?.top_accumulated ?? [];
@@ -77,11 +124,11 @@ export default function PortfolioMoversPanel({ movers, loading, period, variant 
     const maxAbs = Math.max(0.0001, ...[...buys, ...sells].map((m) => Math.abs(m.total_delta_amount)));
 
     const row = (m: FundTradesMover, positive: boolean, last: boolean) => {
-        const col = positive ? GREEN : RED;
         const pct = Math.max(2, (Math.abs(m.total_delta_amount) / maxAbs) * 100);
         const isin = isIsin(m.akey) ? m.akey : null;
         const ticker = resolveFundTicker(m.asset_name, isin);
         const cnt = positive ? m.funds_buying : m.funds_selling;
+        const { num, unit } = fmtSignedParts(m.total_delta_amount);
         const click = onAssetClick ? () => onAssetClick(m) : undefined;
         return (
             <div
@@ -93,29 +140,33 @@ export default function PortfolioMoversPanel({ movers, loading, period, variant 
                 title={click ? `Потоки по компании: ${fundAssetName(m.asset_name, isin)}` : undefined}
                 onMouseEnter={click ? (e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--text-primary) 5%, transparent)'; } : undefined}
                 onMouseLeave={click ? (e) => { e.currentTarget.style.background = 'transparent'; } : undefined}
-                style={{ display: 'grid', gridTemplateColumns: '22px minmax(0, 1fr) minmax(30px, 0.8fr) 88px', gap: 8, alignItems: 'center', padding: '6px 6px', margin: '0 -6px', borderRadius: 8, cursor: click ? 'pointer' : 'default', borderBottom: last ? 'none' : '1px dashed color-mix(in srgb, var(--text-primary) 12%, transparent)', transition: 'background 0.12s ease' }}
+                style={{ display: 'grid', gridTemplateColumns: '30px minmax(0, 1fr) minmax(30px, 0.8fr) 96px', gap: 10, alignItems: 'center', padding: '7px 6px', margin: '0 -6px', borderRadius: 8, cursor: click ? 'pointer' : 'default', borderBottom: last ? 'none' : '1px dashed color-mix(in srgb, var(--text-primary) 12%, transparent)', transition: 'background 0.12s ease' }}
             >
-                <MoverLogo m={m} color={col} />
+                <MoverLogo m={m} size={30} />
                 <span style={{ minWidth: 0, display: 'flex', flexDirection: 'column', lineHeight: 1.12 }}>
                     <span style={{ fontSize: 'var(--fs-sm)', fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{fundAssetName(m.asset_name, isin)}</span>
                     <span style={{ fontFamily: 'var(--font-mono, ui-monospace, monospace)', fontSize: 'var(--fs-3xs, 10px)', letterSpacing: '0.05em', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{[ticker, cnt > 0 ? `${cnt} ф.` : null].filter(Boolean).join(' · ')}</span>
                 </span>
-                <div style={{ height: 8, background: 'color-mix(in srgb, var(--text-primary) 8%, transparent)', borderRadius: 4, overflow: 'hidden', minWidth: 0 }}>
-                    <div style={{ width: `${pct}%`, height: '100%', background: col, borderRadius: 4 }} />
+                {/* Полосы нейтральные — направление задают секции «Докупили/Распродали». */}
+                <div style={{ height: 9, background: 'color-mix(in srgb, var(--text-primary) 8%, transparent)', borderRadius: 5, overflow: 'hidden', minWidth: 0 }}>
+                    <div style={{ width: `${pct}%`, height: '100%', background: 'color-mix(in srgb, var(--text-primary) 32%, transparent)', borderRadius: 5 }} />
                 </div>
-                <span style={{ textAlign: 'right', fontFamily: 'var(--font-mono, ui-monospace, monospace)', fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-xs)', fontWeight: 800, color: col, whiteSpace: 'nowrap' }}>{fmtSigned(m.total_delta_amount)}</span>
+                <span style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    <span style={{ fontVariantNumeric: 'tabular-nums', fontSize: 'var(--fs-sm)', fontWeight: 800, color: 'var(--text-primary)' }}>{num}</span>
+                    <span style={{ fontSize: 'var(--fs-2xs)', color: 'var(--text-muted)', marginLeft: 4 }}>{unit}</span>
+                </span>
             </div>
         );
     };
 
-    const sectionLabel = (text: string, color: string, arrow: string, mt = 0) => (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 'var(--fs-xs)', fontWeight: 800, letterSpacing: '0.02em', color, margin: `${mt}px 0 3px` }}>
-            <span>{arrow}</span>{text}
+    const sectionLabel = (text: string, arrow: string, mt = 0) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 'var(--fs-sm)', fontWeight: 800, letterSpacing: '0.02em', color: 'var(--text-primary)', margin: `${mt}px 0 4px` }}>
+            {text}<span style={{ fontSize: '0.92em' }}>{arrow}</span>
         </div>
     );
 
     return (
-        <div style={{ ...blockStyle, ...(variant === 'mobile' ? { padding: '12px 14px 14px' } : null) }}>
+        <div style={wrapStyle}>
             {head}
             {empty ? (
                 <div style={{ padding: '14px 2px', color: 'var(--text-muted)', fontSize: 'var(--fs-sm)', lineHeight: 1.5 }}>
@@ -125,9 +176,9 @@ export default function PortfolioMoversPanel({ movers, loading, period, variant 
                 </div>
             ) : (
                 <>
-                    {buys.length > 0 && sectionLabel('Докупили', GREEN, '↗')}
+                    {buys.length > 0 && sectionLabel('Докупили', '↗')}
                     {buys.slice(0, 5).map((m, i) => row(m, true, i === Math.min(5, buys.length) - 1))}
-                    {sells.length > 0 && sectionLabel('Распродали', RED, '↘', 13)}
+                    {sells.length > 0 && sectionLabel('Распродали', '↘', 16)}
                     {sells.slice(0, 5).map((m, i) => row(m, false, i === Math.min(5, sells.length) - 1))}
                 </>
             )}
