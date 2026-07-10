@@ -134,11 +134,11 @@ export default function FundsTable({
                         прижаты к правому краю компактным блоком. */}
                     {bare && (
                         <colgroup>
-                            <col style={{ width: 40 }} />
+                            <col style={{ width: 38 }} />
                             <col />
-                            <col style={{ width: 76 }} />
+                            <col style={{ width: 86 }} />
                             <col style={{ width: 104 }} />
-                            <col style={{ width: 94 }} />
+                            <col style={{ width: 92 }} />
                         </colgroup>
                     )}
                     <thead>
@@ -381,7 +381,8 @@ export default function FundsTable({
                                                         </div>
                                                     </td>
                                                     <td
-                                                        className={`${bare ? 'px-2 text-right' : 'px-4'} py-1 text-theme-secondary font-mono cursor-pointer`}
+                                                        className={`${bare ? 'px-2 text-right whitespace-nowrap' : 'px-4'} py-1 text-theme-secondary font-mono cursor-pointer`}
+                                                        style={bare ? { fontSize: 'var(--fs-xs)' } : undefined}
                                                         onClick={isLocked ? handleLockedClick : () => onOpenFundCard(fund)}
                                                     >
                                                         {fund.ticker}
