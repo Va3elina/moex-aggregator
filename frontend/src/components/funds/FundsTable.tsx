@@ -165,7 +165,7 @@ export default function FundsTable({
                                             checked={allSelected}
                                             ref={el => { if (el) el.indeterminate = anySelected && !allSelected; }}
                                             onChange={() => {}}
-                                            className="w-4 h-4 rounded border-theme cursor-pointer"
+                                            className="w-2.5 h-2.5 rounded border-theme cursor-pointer"
                                             style={{ accentColor: 'var(--accent)' }}
                                         />
                                     </div>
@@ -247,7 +247,7 @@ export default function FundsTable({
                                                             checked={!allHidden}
                                                             ref={el => { if (el) el.indeterminate = someHidden && !allHidden; }}
                                                             onChange={() => {}}
-                                                            className="w-4 h-4 rounded border-theme cursor-pointer"
+                                                            className="w-2.5 h-2.5 rounded border-theme cursor-pointer"
                                                             style={{ accentColor: 'var(--accent)' }}
                                                         />
                                                     </div>
@@ -319,7 +319,7 @@ export default function FundsTable({
                                                                     type="checkbox"
                                                                     checked={!isHidden}
                                                                     onChange={() => {}}
-                                                                    className="w-4 h-4 rounded border-theme cursor-pointer"
+                                                                    className="w-2.5 h-2.5 rounded border-theme cursor-pointer"
                                                                     style={{ accentColor: 'var(--accent)' }}
                                                                 />
                                                             </div>
