@@ -1016,7 +1016,9 @@ export default function FundsMoneyPage() {
                         }}
                     >
                         <div className="flex items-center justify-between flex-shrink-0" style={{ padding: 'var(--sp-4) var(--sp-5) var(--sp-2)' }}>
-                            <span className="font-semibold" style={{ fontSize: 'var(--fs-base)' }}>Выбор фондов</span>
+                            <span className="font-semibold" style={{ fontSize: 'var(--fs-base)' }}>
+                                Фонды {currentCategory?.genitive ?? ''}
+                            </span>
                             <button
                                 onClick={() => setFundPickerOpen(false)}
                                 className="p-2 -mr-2 rounded-lg transition-colors flex-shrink-0"
