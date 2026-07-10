@@ -630,11 +630,14 @@ export default function FundTradesPage() {
                                     // ПАРАЛЛЕЛЬНЫЙ массив: фирменный цвет бумаги или DONUT_COLORS по индексу,
                                     // «Прочее» — серый. maxSlices велик → Donut не агрегирует сам.
                                     const top = f.top_holdings ?? [];
-                                    const sum = top.reduce((s, h) => s + (h.weight || 0), 0);
+                                    // Донат подсвечивает только те 5 бумаг, что показаны в списке;
+                                    // всё остальное сворачивается в один серый сектор «Прочее».
+                                    const listed = top.slice(0, 5);
+                                    const sum = listed.reduce((s, h) => s + (h.weight || 0), 0);
                                     const other = 100 - sum;
                                     const donutHoldings = other > 1
-                                        ? [...top, { name: 'Прочее', isin: null, weight: other }]
-                                        : top;
+                                        ? [...listed, { name: 'Прочее', isin: null, weight: other }]
+                                        : listed;
                                     const donutColors = donutHoldings.map((h, i) =>
                                         h.name === 'Прочее'
                                             ? 'var(--text-muted)'

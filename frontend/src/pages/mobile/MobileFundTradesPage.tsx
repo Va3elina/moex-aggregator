@@ -1073,9 +1073,11 @@ function FundTile({
 }) {
   const uk = resolveFundLogo(f.ticker, f.uk_id);
   const top = f.top_holdings ?? [];
-  const sum = top.reduce((s, h) => s + (h.weight || 0), 0);
+  // Донат подсвечивает только те 5 бумаг, что показаны в списке; остальное — серый сектор «Прочее».
+  const listed = top.slice(0, 5);
+  const sum = listed.reduce((s, h) => s + (h.weight || 0), 0);
   const other = 100 - sum;
-  const donutHoldings = other > 1 ? [...top, { name: 'Прочее', isin: null, weight: other }] : top;
+  const donutHoldings = other > 1 ? [...listed, { name: 'Прочее', isin: null, weight: other }] : listed;
   const donutColors = donutHoldings.map((h, i) =>
     h.name === 'Прочее'
       ? 'var(--text-muted)'
