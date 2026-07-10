@@ -121,20 +121,32 @@ export default function FundsTable({
                     )}
                 </div>
                 <div className="flex items-center" style={{ gap: 'var(--sp-2)' }}>
-                    <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-sm)' }}>Суммарная СЧА выбранных:</span>
+                    <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-sm)' }}>{bare ? 'СЧА:' : 'Суммарная СЧА выбранных:'}</span>
                     <span className="font-mono font-bold" style={{ color: 'var(--funds-flow-positive)', fontSize: 'var(--fs-sm)' }}>
                         {aggregatedData.totalCurrentNav.toFixed(2)} млрд ₽
                     </span>
                 </div>
             </div>
             <div className="overflow-x-auto">
-                <table className="w-full" style={{ fontSize: 'var(--fs-sm)' }}>
+                <table className="w-full" style={{ fontSize: 'var(--fs-sm)', ...(bare ? { tableLayout: 'fixed' as const } : {}) }}>
+                    {/* Bare (модалка): фиксированная раскладка колонок — Название
+                        тянется и обрезается многоточием, а Тикер/СЧА/Доходность
+                        прижаты к правому краю компактным блоком. */}
+                    {bare && (
+                        <colgroup>
+                            <col style={{ width: 40 }} />
+                            <col />
+                            <col style={{ width: 76 }} />
+                            <col style={{ width: 104 }} />
+                            <col style={{ width: 94 }} />
+                        </colgroup>
+                    )}
                     <thead>
                         <tr className="text-theme-secondary text-left">
                             <th className="pl-4 pr-0 py-2 font-medium w-10"></th>
                             <th className="pl-1 pr-4 py-2 font-medium">Название</th>
-                            <th className="px-4 py-2 font-medium">Тикер</th>
-                            <th className="px-4 py-2 font-medium text-right whitespace-nowrap">
+                            <th className={`${bare ? 'px-2 text-right' : 'px-4'} py-2 font-medium`}>Тикер</th>
+                            <th className={`${bare ? 'px-2' : 'px-4'} py-2 font-medium text-right whitespace-nowrap`}>
                                 <button
                                     onClick={() => toggleSort('nav')}
                                     className="inline-flex items-center gap-1 hover:text-theme-primary transition-colors"
@@ -145,7 +157,7 @@ export default function FundsTable({
                                         : <ArrowUp size={15} strokeWidth={2.4} />)}
                                 </button>
                             </th>
-                            <th className="px-4 py-2 font-medium text-right whitespace-nowrap">
+                            <th className={`${bare ? 'px-2' : 'px-4'} py-2 font-medium text-right whitespace-nowrap`}>
                                 <button
                                     onClick={() => toggleSort('y1')}
                                     className="inline-flex items-center gap-1 hover:text-theme-primary transition-colors"
@@ -333,15 +345,15 @@ export default function FundsTable({
                                                         )}
                                                     </td>
                                                     <td
-                                                        className="pl-1 pr-4 py-1 cursor-pointer"
+                                                        className={`${bare ? 'pl-1 pr-2 overflow-hidden' : 'pl-1 pr-4'} py-1 cursor-pointer`}
                                                         onClick={isLocked ? handleLockedClick : () => onOpenFundCard(fund)}
                                                     >
-                                                        <div className="flex items-center gap-2">
+                                                        <div className="flex items-center gap-2 min-w-0">
                                                             {(() => {
                                                                 const uk = resolveFundLogo(fund.ticker, fund.uk_id);
                                                                 if (uk) {
                                                                     return (
-                                                                        <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 font-black text-sm overflow-hidden"
+                                                                        <div className={`${bare ? 'w-7 h-7' : 'w-5 h-5'} rounded-full flex items-center justify-center flex-shrink-0 font-black text-sm overflow-hidden`}
                                                                             style={{ backgroundColor: uk.img ? undefined : uk.bg, color: uk.color }}>
                                                                             {uk.img
                                                                                 ? <img src={uk.img} alt={uk.name} className="w-full h-full object-cover" />
@@ -354,8 +366,8 @@ export default function FundsTable({
                                                                         style={{ backgroundColor: FUND_COLORS[colorIdx % FUND_COLORS.length] }} />
                                                                 );
                                                             })()}
-                                                            <span className="font-medium inline-flex items-center" style={{ gap: 'var(--sp-1)' }}>
-                                                                <span title={fund.name}>{stripUkName(fund.name, fund.uk_id)}</span>
+                                                            <span className="font-medium inline-flex items-center min-w-0" style={{ gap: 'var(--sp-1)' }}>
+                                                                <span title={fund.name} className={bare ? 'truncate' : undefined} style={bare ? { minWidth: 0 } : undefined}>{stripUkName(fund.name, fund.uk_id)}</span>
                                                                 {!isLocked && lastData?.date && maxDate && lastData.date < maxDate && (
                                                                     <span
                                                                         className="text-theme-secondary cursor-help inline-flex flex-shrink-0"
@@ -369,18 +381,18 @@ export default function FundsTable({
                                                         </div>
                                                     </td>
                                                     <td
-                                                        className="px-4 py-1 text-theme-secondary font-mono cursor-pointer"
+                                                        className={`${bare ? 'px-2 text-right' : 'px-4'} py-1 text-theme-secondary font-mono cursor-pointer`}
                                                         onClick={isLocked ? handleLockedClick : () => onOpenFundCard(fund)}
                                                     >
                                                         {fund.ticker}
                                                     </td>
-                                                    <td className="px-4 py-1 text-right font-mono">
+                                                    <td className={`${bare ? 'px-2' : 'px-4'} py-1 text-right font-mono`}>
                                                         {isLocked ? '—' : (lastData?.nav ? (lastData.nav / 1e9).toFixed(2) : '—')}
                                                     </td>
                                                     {(() => {
                                                         const br = isLocked ? null : bestReturn(fund.returns);
                                                         return (
-                                                            <td className="px-4 py-1 text-right font-mono whitespace-nowrap" style={{
+                                                            <td className={`${bare ? 'px-2' : 'px-4'} py-1 text-right font-mono whitespace-nowrap`} style={{
                                                                 color: br ? (br.v >= 0 ? 'var(--funds-flow-positive)' : 'var(--funds-flow-negative)') : undefined,
                                                             }}>
                                                                 {isLocked || !br ? '—' : (
