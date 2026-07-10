@@ -17,6 +17,16 @@ const FUND_COLORS = [
 // чёрная полоса — в списке фондов она выглядит грубо.
 const SOFT_BORDER = '1px solid color-mix(in srgb, var(--text-primary) 12%, transparent)';
 
+// Типографика заголовков колонок в bare-режиме — как в шапке поиска ОИ
+// (renderSortHeader в InstrumentSearchModal, замер: 12.5px / 800 / uppercase /
+// letter-spacing 0.04em). fontSize наследуется от tr (fs-xs).
+const OI_HEAD_STYLE: React.CSSProperties = {
+    fontWeight: 800,
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
+    color: 'var(--text-secondary)',
+};
+
 // Чекбокс bare-режима — акцентный скруглённый квадрат с белой галочкой, как в
 // макете модалки и в мультивыборе поиска ОИ (Check/Minus вместо нативного input).
 function CheckBox({ checked, indeterminate }: { checked: boolean; indeterminate?: boolean }) {
@@ -125,7 +135,7 @@ export default function FundsTable({
                 type="button"
                 onClick={() => toggleSort(col)}
                 title={title}
-                className="inline-flex items-center justify-end whitespace-nowrap transition-colors"
+                className="inline-flex items-center justify-end uppercase whitespace-nowrap transition-colors"
                 onMouseEnter={(e) => {
                     e.currentTarget.style.background = 'color-mix(in srgb, var(--text-primary) 8%, transparent)';
                     if (!active) e.currentTarget.style.color = 'var(--text-primary)';
@@ -141,6 +151,7 @@ export default function FundsTable({
                     borderRadius: 6,
                     fontSize: 'var(--fs-xs)',
                     fontWeight: 800,
+                    letterSpacing: '0.04em',
                     color: active ? 'var(--accent)' : 'var(--text-secondary)',
                     cursor: 'pointer',
                 }}
@@ -250,19 +261,25 @@ export default function FundsTable({
                             <col style={{ width: 40 }} />
                             <col />
                             <col style={{ width: 88 }} />
-                            <col style={{ width: 104 }} />
-                            <col style={{ width: 104 }} />
+                            <col style={{ width: 106 }} />
+                            {/* Доходность: uppercase-заголовок с шевроном занимает
+                                ~97px (замер) → 120px, чтобы кнопка не вылезала за
+                                правую кромку виджета. */}
+                            <col style={{ width: 120 }} />
                         </colgroup>
                     )}
                     <thead>
                         <tr className="text-theme-secondary text-left" style={bare ? { fontSize: 'var(--fs-xs)' } : undefined}>
                             <th className={`${bare ? 'pl-2' : 'pl-4'} pr-0 py-2 font-medium w-10`}></th>
-                            <th className="pl-1 pr-4 py-2 font-medium">Название</th>
-                            <th className={`${bare ? 'px-2 text-right' : 'px-4'} py-2 font-medium`}>Тикер</th>
-                            <th className={`${bare ? 'px-2 font-bold' : 'px-4 font-medium'} py-2 text-right whitespace-nowrap`}>
+                            {/* bare: все заголовки — типографика шапки поиска ОИ
+                                (uppercase, 800, fs-xs, letter-spacing). Название и
+                                Тикер не сортируются — просто текст text-secondary. */}
+                            <th className={`pl-1 ${bare ? 'pr-2' : 'pr-4 font-medium'} py-2`} style={bare ? OI_HEAD_STYLE : undefined}>Название</th>
+                            <th className={`${bare ? 'px-2 text-right' : 'px-4 font-medium'} py-2`} style={bare ? OI_HEAD_STYLE : undefined}>Тикер</th>
+                            <th className={`${bare ? 'px-2' : 'px-4 font-medium'} py-2 text-right whitespace-nowrap`}>
                                 {renderSortButton('nav', 'СЧА, млрд ₽')}
                             </th>
-                            <th className={`${bare ? 'px-2 font-bold' : 'px-4 font-medium'} py-2 text-right whitespace-nowrap`}>
+                            <th className={`${bare ? 'px-2' : 'px-4 font-medium'} py-2 text-right whitespace-nowrap`}>
                                 {renderSortButton('y1', 'Доходность', 'Доходность по СЧА на пай (с учётом выплат дохода). За 1 год; для молодых фондов — за лучший доступный период (6м/3м/1м, период подписан).')}
                             </th>
                         </tr>
