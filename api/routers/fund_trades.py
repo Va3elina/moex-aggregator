@@ -129,6 +129,25 @@ MONTHLY_SOURCES = ("vim_sdr", "interfax_manual")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Фильтр релевантности активов в пикере «Потоки по компании».
+#
+# Прячем бумаги, которые фонды почти не торгуют: суммарный ОБОРОТ покупок и
+# продаж за последние 3 года по всем WHITELIST-фондам не превышает порога. Оборот
+# считаем как Σ|Δпозиций × цена| (та же величина, что рисует график, но по модулю)
+# — это отсекает пассивный крупный холд и переоценку по цене, меряя именно
+# торговую активность. Основную «грязь» в списке дают облигации из смешанных и
+# авторских фондов — у них оборот ≈ 0, и они уходят первыми.
+#
+# Порог ДИНАМИЧЕСКИЙ по построению: окно скользящее («последние 3 года»), а сам
+# расчёт живёт в SQL эндпоинта /assets и выполняется на КАЖДЫЙ запрос. Значит
+# ревизия происходит сама собой — после каждого месячного снапшота набор
+# пересчитывается: бумага перешагнула порог → вернулась в пикер, просела → ушла.
+# Отдельного крона/материализованной таблицы не нужно. Сам /company-flows НЕ
+# фильтруем: прямая ссылка или эмбед на уже скрытую бумагу продолжает работать.
+CF_MIN_GROSS_FLOW_3Y_RUB = 30_000_000  # 30 млн ₽ оборота за 3 года
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Задержка данных для Free/гостя (пилот delayed-data freemium).
 #
 # Free/гость видят fund-trades на 1 снапшот позади: свежая месячная выборка «что
@@ -1798,13 +1817,19 @@ def list_fund_trade_assets(
       - funds_count = в скольких разных фондах встречается.
       - last_amount_rub = суммарная последняя стоимость позиции (для сортировки) —
         сумма по фондам amount_rub из последнего snapshot каждого фонда, где бумага есть.
+      - gross_flow_3y = оборот покупок/продаж за 3 года (для фильтра релевантности).
     Сортировка: funds_count DESC, last_amount_rub DESC. Имя — короткое.
+
+    Фильтр релевантности (CF_MIN_GROSS_FLOW_3Y_RUB): прячем бумаги с оборотом
+    покупок/продаж ≤ порога за последние 3 года. Окно скользящее, расчёт на каждый
+    запрос ⇒ набор авто-ревизуется после каждого месячного снапшота (см. константу).
     """
     rows = db.execute(text("""
         WITH scoped AS (
             -- mkey по КАНОНИЧЕСКОМУ isin: редомициль-пары (старый ГДР + новая
             -- локальная акция) сливаются в одну строку пикера (canonical_isin).
             SELECT h.fund_id, h.snapshot_date, h.asset_name, h.amount_rub, h.weight,
+                   h.positions, NULLIF(h.isin, '') AS isin,
                    COALESCE(sr.canonical_isin, NULLIF(h.isin, ''), h.asset_name) AS mkey
             FROM fund_holdings_history h
             JOIN funds f ON f.fund_id = h.fund_id
@@ -1833,12 +1858,46 @@ def list_fund_trade_assets(
                    SUM(amount_rub) AS last_amount_rub,
                    AVG(weight) AS avg_weight_pct
             FROM last_per_fund GROUP BY mkey
+        ),
+        flow_seq AS (
+            -- Оборот покупок/продаж за последние 3 года: Δпозиций×цена по модулю
+            -- (как в /company-flows). Дельты считаем ОТДЕЛЬНО по каждому фонду и
+            -- raw-ISIN (редомициль-пары не вычитаем друг из друга), окно скользящее
+            -- ⇒ фильтр пересчитывается на каждый запрос (авто-ревизия по снапшотам).
+            SELECT s.mkey, s.positions, s.amount_rub,
+                   LAG(s.positions)  OVER w AS pp,
+                   LAG(s.amount_rub) OVER w AS pa
+            FROM scoped s
+            WHERE s.snapshot_date >= (CURRENT_DATE - INTERVAL '3 years')
+            WINDOW w AS (
+                PARTITION BY s.fund_id, COALESCE(s.isin, s.asset_name)
+                ORDER BY s.snapshot_date
+            )
+        ),
+        flow_agg AS (
+            SELECT mkey, SUM(
+                CASE
+                    WHEN pp IS NULL AND pa IS NULL THEN 0  -- первый снапшот линии → нет базы
+                    WHEN positions IS NOT NULL AND pp IS NOT NULL AND positions > 0 AND amount_rub IS NOT NULL
+                        THEN ABS((positions - pp) * (amount_rub / positions))
+                    WHEN amount_rub IS NOT NULL AND pa IS NOT NULL
+                        THEN ABS(amount_rub - pa)
+                    ELSE 0
+                END
+            ) AS gross3y
+            FROM flow_seq GROUP BY mkey
         )
         SELECT a.mkey AS key, n.short_name AS asset_name, n.isin, n.sec_type,
-               a.funds_count, a.last_amount_rub, a.avg_weight_pct
-        FROM agg a JOIN names n ON n.mkey = a.mkey
+               a.funds_count, a.last_amount_rub, a.avg_weight_pct,
+               COALESCE(fa.gross3y, 0) AS gross_flow_3y
+        FROM agg a
+        JOIN names n ON n.mkey = a.mkey
+        LEFT JOIN flow_agg fa ON fa.mkey = a.mkey
+        -- Фильтр релевантности: прячем бумаги с оборотом ≤ порога за последние 3 года.
+        WHERE COALESCE(fa.gross3y, 0) > :min_flow
         ORDER BY a.funds_count DESC, a.last_amount_rub DESC NULLS LAST, n.short_name
-    """), {"tickers": list(WHITELIST_TICKERS), "sources": list(MONTHLY_SOURCES)}).mappings().all()
+    """), {"tickers": list(WHITELIST_TICKERS), "sources": list(MONTHLY_SOURCES),
+           "min_flow": CF_MIN_GROSS_FLOW_3Y_RUB}).mappings().all()
 
     return {
         "assets": [
@@ -1851,6 +1910,7 @@ def list_fund_trade_assets(
                 "funds_count": int(r["funds_count"]),
                 "last_amount_rub": float(r["last_amount_rub"]) if r["last_amount_rub"] is not None else None,
                 "avg_weight_pct": float(r["avg_weight_pct"]) if r["avg_weight_pct"] is not None else None,
+                "gross_flow_3y": float(r["gross_flow_3y"]) if r["gross_flow_3y"] is not None else None,
             }
             for r in rows
         ],
