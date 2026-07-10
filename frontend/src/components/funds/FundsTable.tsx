@@ -11,6 +11,12 @@ const FUND_COLORS = [
     '#00D9FF', '#FF6B9D', '#FCD34D', '#14B8A6', '#F97316'
 ];
 
+// Разделитель строк в bare-режиме (модалка) — тонкая линия, как между активами
+// в поиске ОИ (.instrument-list .instrument-item + .instrument-item в index.css).
+// Дефолтный editorial `border-theme` = 2px solid var(--text-primary), т.е. жирная
+// чёрная полоса — в списке фондов она выглядит грубо.
+const SOFT_BORDER = '1px solid color-mix(in srgb, var(--text-primary) 12%, transparent)';
+
 // Подкатегории, у которых данные (NAV) ещё наливаются — показываем бейдж
 // «Скоро» на заголовке группы. Убрать имя отсюда, когда NAV появится.
 const COMING_SOON_SUBCATS = new Set<string>([]);
@@ -100,9 +106,14 @@ export default function FundsTable({
             className={bare ? '' : 'mt-6 rounded-2xl overflow-hidden editorial-frame'}
             style={bare ? undefined : { background: 'var(--bg-secondary)', padding: 0 }}
         >
-            <div className="border-b border-theme flex items-center justify-between flex-wrap" style={{ padding: 'var(--sp-3) var(--sp-4)', gap: 'var(--sp-1) var(--sp-3)' }}>
+            <div
+                className={`${bare ? '' : 'border-b border-theme'} flex items-center justify-between flex-wrap`}
+                style={{ padding: 'var(--sp-3) var(--sp-4)', gap: 'var(--sp-1) var(--sp-3)', ...(bare ? { borderBottom: SOFT_BORDER } : {}) }}
+            >
                 <div className="flex items-baseline" style={{ gap: 'var(--sp-2)' }}>
-                    <h3 className="font-semibold" style={{ fontSize: 'var(--fs-base)' }}>Фонды категории</h3>
+                    {/* В модалке заголовок «Фонды категории» не нужен — название
+                        категории («Фонды акций») стоит в шапке самой модалки. */}
+                    {!bare && <h3 className="font-semibold" style={{ fontSize: 'var(--fs-base)' }}>Фонды категории</h3>}
                     {maxDate && (
                         <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-xs)' }}>
                             данные на {fmtDate(maxDate)}
@@ -178,7 +189,7 @@ export default function FundsTable({
                     </thead>
                     <tbody>
                         {allFundIds.length > 0 && (
-                            <tr className="border-b border-theme" style={bare ? undefined : { background: 'color-mix(in srgb, var(--text-primary) 6%, transparent)' }}>
+                            <tr className={bare ? '' : 'border-b border-theme'} style={bare ? { borderBottom: SOFT_BORDER } : { background: 'color-mix(in srgb, var(--text-primary) 6%, transparent)' }}>
                                 <td className={`${bare ? 'pl-2' : 'pl-4'} pr-0 py-1`}>
                                     <div
                                         className="flex items-center justify-center w-5 h-5 rounded-lg hover:bg-white/5 cursor-pointer transition-colors"
@@ -259,8 +270,8 @@ export default function FundsTable({
                                 return (
                                     <React.Fragment key={subcat || '__none__'}>
                                         {subcat && (
-                                            <tr className="border-t-2 border-theme"
-                                                style={bare ? undefined : { background: 'color-mix(in srgb, var(--text-primary) 4%, transparent)' }}>
+                                            <tr className={bare ? '' : 'border-t-2 border-theme'}
+                                                style={bare ? { borderTop: SOFT_BORDER } : { background: 'color-mix(in srgb, var(--text-primary) 4%, transparent)' }}>
                                                 <td className={`${bare ? 'pl-2' : 'pl-4'} pr-0 py-1`}>
                                                     <div
                                                         className="flex items-center justify-center w-5 h-5 rounded-lg hover:bg-white/5 cursor-pointer transition-colors"
@@ -319,14 +330,14 @@ export default function FundsTable({
                                             return (
                                                 <tr
                                                     key={fund.fund_id}
-                                                    className={`border-t border-theme transition-colors ${
+                                                    className={`${bare ? '' : 'border-t border-theme'} transition-colors ${
                                                         isLocked ? 'cursor-not-allowed' :
                                                         isHidden ? 'opacity-50 grayscale' : 'hover:bg-white/5'
                                                     }`}
                                                     // bare: высота строки 42px — как у строки списка активов
                                                     // в поиске ОИ (.instrument-item, замер 41.9px).
                                                     style={{
-                                                        ...(bare ? { height: 42 } : {}),
+                                                        ...(bare ? { height: 42, borderTop: SOFT_BORDER } : {}),
                                                         ...(isLocked ? { opacity: 0.45, filter: 'grayscale(0.5)' } : {}),
                                                     }}
                                                     title={isLocked ? 'Доступно на повышенном тарифе' : undefined}
