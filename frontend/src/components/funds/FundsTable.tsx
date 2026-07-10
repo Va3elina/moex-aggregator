@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowDown, ArrowUp, Lock, AlertCircle, Check, Minus } from 'lucide-react';
+import { ArrowDown, ArrowUp, Lock, AlertCircle, Check, Minus, ChevronDown, ChevronUp, ChevronsUpDown } from 'lucide-react';
 import { resolveFundLogo, stripUkName, SUBCATEGORY_HELP } from '../../config/fundConfig';
 import HelpTooltip from '../HelpTooltip';
 import type { FundInfo, FundsChartResponse } from '../../services/api';
@@ -97,6 +97,63 @@ export default function FundsTable({
     const toggleSort = (key: 'nav' | 'y1') => {
         if (sortKey === key) onSetNavSortDir(d => d === 'desc' ? 'asc' : 'desc');
         else { setSortKey(key); onSetNavSortDir('desc'); }
+    };
+
+    // Заголовок сортируемой колонки. В bare-режиме (модалка) — стиль заимствован
+    // у поиска ОИ (renderSortHeader в InstrumentSearchModal): uppercase, 800,
+    // fs-xs, letter-spacing, активная колонка = accent, неактивная = secondary,
+    // трейлинг-шеврон (двойной ChevronsUpDown = «можно сортировать»). Иконка слева
+    // от текста — текст прижат к правому краю колонки, как в ОИ.
+    const renderSortButton = (col: 'nav' | 'y1', label: string, title?: string) => {
+        const active = sortKey === col;
+        if (!bare) {
+            return (
+                <button
+                    onClick={() => toggleSort(col)}
+                    title={title}
+                    className="inline-flex items-center gap-1 hover:text-theme-primary transition-colors"
+                >
+                    {label}
+                    {active && (navSortDir === 'desc'
+                        ? <ArrowDown size={15} strokeWidth={2.4} />
+                        : <ArrowUp size={15} strokeWidth={2.4} />)}
+                </button>
+            );
+        }
+        return (
+            <button
+                type="button"
+                onClick={() => toggleSort(col)}
+                title={title}
+                className="inline-flex items-center justify-end uppercase whitespace-nowrap transition-colors"
+                onMouseEnter={(e) => {
+                    e.currentTarget.style.background = 'color-mix(in srgb, var(--text-primary) 8%, transparent)';
+                    if (!active) e.currentTarget.style.color = 'var(--text-primary)';
+                }}
+                onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'transparent';
+                    e.currentTarget.style.color = active ? 'var(--accent)' : 'var(--text-secondary)';
+                }}
+                style={{
+                    gap: 3,
+                    marginLeft: 'auto',
+                    padding: '5px 0',
+                    borderRadius: 6,
+                    fontSize: 'var(--fs-xs)',
+                    fontWeight: 800,
+                    letterSpacing: '0.04em',
+                    color: active ? 'var(--accent)' : 'var(--text-secondary)',
+                    cursor: 'pointer',
+                }}
+            >
+                {active
+                    ? (navSortDir === 'desc'
+                        ? <ChevronDown size={13} strokeWidth={2.5} />
+                        : <ChevronUp size={13} strokeWidth={2.5} />)
+                    : <ChevronsUpDown size={13} style={{ opacity: 0.5 }} />}
+                {label}
+            </button>
+        );
     };
     // Общая дата данных (максимальный trade_date NAV среди фондов) — выводится в шапке;
     // в строках дата остаётся только у фондов, чья СЧА отстаёт от неё (stale NAV).
@@ -221,28 +278,11 @@ export default function FundsTable({
                             <th className={`${bare ? 'pl-2' : 'pl-4'} pr-0 py-2 font-medium w-10`}></th>
                             <th className="pl-1 pr-4 py-2 font-medium">Название</th>
                             <th className={`${bare ? 'px-2 text-right' : 'px-4'} py-2 font-medium`}>Тикер</th>
-                            <th className={`${bare ? 'px-2' : 'px-4'} py-2 font-medium text-right whitespace-nowrap`}>
-                                <button
-                                    onClick={() => toggleSort('nav')}
-                                    className="inline-flex items-center gap-1 hover:text-theme-primary transition-colors"
-                                >
-                                    СЧА, млрд ₽
-                                    {sortKey === 'nav' && (navSortDir === 'desc'
-                                        ? <ArrowDown size={15} strokeWidth={2.4} />
-                                        : <ArrowUp size={15} strokeWidth={2.4} />)}
-                                </button>
+                            <th className={`${bare ? 'px-2 font-bold' : 'px-4 font-medium'} py-2 text-right whitespace-nowrap`}>
+                                {renderSortButton('nav', 'СЧА, млрд ₽')}
                             </th>
-                            <th className={`${bare ? 'px-2' : 'px-4'} py-2 font-medium text-right whitespace-nowrap`}>
-                                <button
-                                    onClick={() => toggleSort('y1')}
-                                    className="inline-flex items-center gap-1 hover:text-theme-primary transition-colors"
-                                    title="Доходность по СЧА на пай (с учётом выплат дохода). За 1 год; для молодых фондов — за лучший доступный период (6м/3м/1м, период подписан)."
-                                >
-                                    Доходность
-                                    {sortKey === 'y1' && (navSortDir === 'desc'
-                                        ? <ArrowDown size={15} strokeWidth={2.4} />
-                                        : <ArrowUp size={15} strokeWidth={2.4} />)}
-                                </button>
+                            <th className={`${bare ? 'px-2 font-bold' : 'px-4 font-medium'} py-2 text-right whitespace-nowrap`}>
+                                {renderSortButton('y1', 'Доходность', 'Доходность по СЧА на пай (с учётом выплат дохода). За 1 год; для молодых фондов — за лучший доступный период (6м/3м/1м, период подписан).')}
                             </th>
                         </tr>
                     </thead>
