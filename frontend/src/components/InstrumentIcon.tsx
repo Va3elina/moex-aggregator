@@ -42,6 +42,7 @@ export const FUT_BASE_TO_LOGO: Record<string, string> = {
   BN: 'raw_009', // Башнефть (corrected)
   BS: 'raw_028', // Банк СПб (corrected)
   CH: 'raw_059', // Северсталь (corrected)
+  CK: 'raw_059', // Северсталь (мини) — тот же знак, что у стандартного фьючерса CH
   CM: 'CBOM', FE: 'FESH', FL: 'FLOT',
   FS: 'raw_123', // ФСК Россети (corrected — раньше был text-badge)
   GK: 'raw_062', // Норильский никель (corrected)
