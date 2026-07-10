@@ -619,68 +619,42 @@ export default function FundsMoneyPage() {
             <div className="editorial-frame has-tabs">
 
             {/* Контролы. items-center — иначе сегмент-контролы (40px) прилипают к
-                верху рядом с высокой (66px) кнопкой выбора фондов. */}
+                верху рядом с более высокой (~57px) кнопкой выбора фондов. */}
             <div className="flex flex-wrap items-center mb-4 md:mb-6" style={{ gap: 'var(--sp-2)' }}>
-                {/* Селектор фондов — крупный двухстрочный триггер с иконкой категории
-                    в тёмном круге (макет из Claude Design). Счётчик «N / M» становится
-                    акцентным, когда выбраны не все фонды — сигнал активного фильтра. */}
+                {/* Селектор фондов — светлая таблетка того же формата, что селектор
+                    актива на ОИ (widget-flat, иконка 24px без круга, две строки +
+                    трейлинг-шеврон). Счётчик подсвечивается акцентом, когда выбраны
+                    не все фонды — сигнал активного фильтра. */}
                 <div data-tour="funds-table" style={{ order: 0 }}>
                 <button
                     onClick={() => setFundPickerOpen(true)}
                     title="Выбрать фонды для графика"
-                    className="transition-opacity hover:opacity-90"
+                    className="widget-flat font-medium transition-colors flex items-center hover:opacity-90"
                     style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: 13,
-                        height: 66,
-                        padding: '0 20px 0 10px',
-                        background: 'var(--bg-secondary)',
-                        border: '1.5px solid var(--text-primary)',
-                        borderRadius: 33,
-                        cursor: 'pointer',
-                        fontFamily: 'inherit',
+                        color: 'var(--text-primary)',
+                        fontSize: 'var(--fs-sm)',
+                        padding: 'var(--sp-2) var(--sp-4)',
+                        gap: 'var(--sp-3)',
+                        minWidth: 'clamp(150px, 22vw, 190px)',
+                        maxWidth: 240,
                     }}
                 >
-                    <span
-                        style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            width: 46,
-                            height: 46,
-                            flexShrink: 0,
-                            background: 'var(--text-primary)',
-                            borderRadius: '50%',
-                            color: 'var(--text-inverse)',
-                        }}
-                    >
-                        {CatIcon && <CatIcon size={24} strokeWidth={2.4} />}
-                    </span>
-                    <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 3 }}>
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                            <span style={{ fontSize: 19, fontWeight: 800, color: 'var(--text-primary)', lineHeight: 1 }}>Фонды</span>
-                            <ChevronDown size={18} strokeWidth={2.6} style={{ color: 'var(--text-primary)', flexShrink: 0 }} />
-                        </span>
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)', lineHeight: 1 }}>выбрано</span>
-                            <span
-                                style={{
-                                    fontSize: 12.5,
-                                    fontWeight: 800,
-                                    lineHeight: 1,
-                                    borderRadius: 7,
-                                    padding: '3px 7px',
-                                    whiteSpace: 'nowrap',
-                                    ...(fundsPartiallySelected
-                                        ? { color: 'var(--text-inverse)', background: 'var(--accent)' }
-                                        : { color: 'var(--text-secondary)', background: 'color-mix(in srgb, var(--text-primary) 8%, transparent)' }),
-                                }}
-                            >
-                                {visibleAccessibleFunds.length} / {accessibleFunds.length}
-                            </span>
-                        </span>
-                    </span>
+                    {CatIcon && <CatIcon size={24} strokeWidth={2.2} style={{ flexShrink: 0, color: 'var(--text-secondary)' }} />}
+                    <div className="flex-1 text-left" style={{ minWidth: 0 }}>
+                        <div className="font-medium" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            Фонды: {currentCategory?.name ?? ''}
+                        </div>
+                        <div
+                            style={{
+                                fontSize: 'var(--fs-2xs)',
+                                color: fundsPartiallySelected ? 'var(--accent)' : 'var(--text-secondary)',
+                                fontWeight: fundsPartiallySelected ? 700 : undefined,
+                            }}
+                        >
+                            выбрано {visibleAccessibleFunds.length} из {accessibleFunds.length}
+                        </div>
+                    </div>
+                    <ChevronDown size={14} className="text-theme-secondary" style={{ flexShrink: 0 }} />
                 </button>
                 </div>
 
