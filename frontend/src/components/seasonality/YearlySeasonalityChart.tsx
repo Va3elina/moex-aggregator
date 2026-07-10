@@ -421,6 +421,21 @@ export default function YearlySeasonalityChart({
               hover-пилюля ниже (иначе две accent-таблетки на разной высоте).
               Render только когда ResizeObserver измерил data-area
               (dataAreaSize.h > 0) — иначе на первом тике координаты 0. */}
+          {/* Базовые серии («Период с YYYY») — таблетка на последнем значении
+              каждой линии, в её цвете. Как и accent-pill, видна только пока не
+              наводим курсор. */}
+          {dataAreaSize.h > 0 && tooltip?.yearlyTd === undefined && visAllSeries.map((s, i) => {
+            const pts = s.average;
+            if (pts.length === 0) return null;
+            const last = pts[pts.length - 1];
+            const color = allMeta[i]?.color ?? CHART_COLORS.muted;
+            return (
+              <g key={allMeta[i]?.key ?? i}>
+                {renderAxisPill(fmtPillPct(last.avg_pct), color, scY(last.avg_pct) * dataAreaSize.h)}
+              </g>
+            );
+          })}
+
           {visCur.length > 0 && dataAreaSize.h > 0 && tooltip?.yearlyTd === undefined && (() => {
             const last = visCur[visCur.length - 1];
             return renderAxisPill(fmtPillPct(last.pct), CHART_COLORS.accent, scY(last.pct) * dataAreaSize.h);
