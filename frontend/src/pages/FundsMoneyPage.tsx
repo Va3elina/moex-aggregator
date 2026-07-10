@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useState, useMemo, useRef, useCallback } from 'react';
-import { TrendingUp, DollarSign, Banknote, Gem, Wallet, JapaneseYen, AlarmClock, Lock, ChevronDown, X } from 'lucide-react';
+import { TrendingUp, DollarSign, Banknote, Gem, Wallet, JapaneseYen, AlarmClock, Lock, ChevronDown, X, AlertCircle } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import SegmentedControl from '../components/SegmentedControl';
@@ -573,6 +573,20 @@ export default function FundsMoneyPage() {
     const currentCategory = CATEGORIES.find(c => c.key === category);
     const CatIcon = currentCategory?.icon;
 
+    // Дата данных + флаг «часть фондов запаздывает» — для шапки модалки выбора
+    // фондов (та же логика, что в FundsTable для меток строк). maxDate = самый
+    // свежий trade_date; laggardDate = самый ранний среди не-locked фондов.
+    let fundsMaxDate = '';
+    let fundsLaggardDate = '';
+    for (const f of data?.funds ?? []) {
+        const d = f.data[f.data.length - 1]?.date;
+        if (!d) continue;
+        if (d > fundsMaxDate) fundsMaxDate = d;
+        if (f.tier_locked !== true && (!fundsLaggardDate || d < fundsLaggardDate)) fundsLaggardDate = d;
+    }
+    const fundsHasStale = !!(fundsLaggardDate && fundsMaxDate && fundsLaggardDate < fundsMaxDate);
+    const fmtFundsDate = (iso: string) => iso.split('-').reverse().join('.');
+
     // Обобщающий заголовок гистограммы притоков/оттоков. Единица — в скобках
     // «(млрд ₽)». На узких viewport'ах убираем подробности категории, чтобы
     // строка влезала в одну линию (540px — порог, на котором длинный заголовок
@@ -1040,13 +1054,33 @@ export default function FundsMoneyPage() {
                             color: 'var(--text-primary)',
                         }}
                     >
-                        <div className="flex items-center justify-between flex-shrink-0" style={{ padding: 'var(--sp-4) var(--sp-5) var(--sp-2)' }}>
+                        {/* Заголовок + дата данных в ОДНОМ ряду (заголовок, затем
+                            «На DD.MM.YYYY • [!] часть фондов запаздывает», справа —
+                            крестик). Список фонды начинается сразу под этим рядом. */}
+                        <div
+                            className="flex items-center flex-shrink-0 flex-wrap"
+                            style={{ padding: 'var(--sp-4) var(--sp-5) var(--sp-3)', gap: '4px 12px', borderBottom: '1px solid color-mix(in srgb, var(--text-primary) 12%, transparent)' }}
+                        >
                             <span className="font-semibold" style={{ fontSize: 'var(--fs-base)' }}>
                                 Фонды {currentCategory?.genitive ?? ''}
                             </span>
+                            {fundsMaxDate && (
+                                <span className="inline-flex items-center" style={{ gap: 8, fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}>
+                                    <span>На {fmtFundsDate(fundsMaxDate)}</span>
+                                    {fundsHasStale && (
+                                        <>
+                                            <span style={{ opacity: 0.45 }}>•</span>
+                                            <span className="inline-flex items-center" style={{ gap: 5 }}>
+                                                <AlertCircle size={13} strokeWidth={2.2} style={{ opacity: 0.6, flexShrink: 0 }} />
+                                                часть фондов запаздывает
+                                            </span>
+                                        </>
+                                    )}
+                                </span>
+                            )}
                             <button
                                 onClick={() => setFundPickerOpen(false)}
-                                className="p-2 -mr-2 rounded-lg transition-colors flex-shrink-0"
+                                className="p-2 -mr-2 rounded-lg transition-colors flex-shrink-0 ml-auto"
                                 style={{ color: 'var(--text-secondary)' }}
                                 aria-label="Закрыть"
                             >

@@ -125,7 +125,7 @@ export default function FundsTable({
                 type="button"
                 onClick={() => toggleSort(col)}
                 title={title}
-                className="inline-flex items-center justify-end uppercase whitespace-nowrap transition-colors"
+                className="inline-flex items-center justify-end whitespace-nowrap transition-colors"
                 onMouseEnter={(e) => {
                     e.currentTarget.style.background = 'color-mix(in srgb, var(--text-primary) 8%, transparent)';
                     if (!active) e.currentTarget.style.color = 'var(--text-primary)';
@@ -141,7 +141,6 @@ export default function FundsTable({
                     borderRadius: 6,
                     fontSize: 'var(--fs-xs)',
                     fontWeight: 800,
-                    letterSpacing: '0.04em',
                     color: active ? 'var(--accent)' : 'var(--text-secondary)',
                     cursor: 'pointer',
                 }}
@@ -201,28 +200,10 @@ export default function FundsTable({
             className={bare ? '' : 'mt-6 rounded-2xl overflow-hidden editorial-frame'}
             style={bare ? undefined : { background: 'var(--bg-secondary)', padding: 0 }}
         >
-            {bare ? (
-                /* Модалка: легенда как в макете — «На DD.MM.YYYY • [!] часть
-                   фондов запаздывает». Суммарной СЧА тут нет — она вынесена в
-                   строки групп («Выбрать все» и заголовки подкатегорий). */
-                maxDate && (
-                    <div
-                        className="flex items-center flex-wrap"
-                        style={{ padding: 'var(--sp-3) var(--sp-4)', gap: 10, borderBottom: SOFT_BORDER, fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}
-                    >
-                        <span>На {fmtDate(maxDate)}</span>
-                        {hasStaleFunds && (
-                            <>
-                                <span style={{ opacity: 0.45 }}>•</span>
-                                <span className="inline-flex items-center" style={{ gap: 5 }}>
-                                    <AlertCircle size={13} strokeWidth={2.2} style={{ opacity: 0.6, flexShrink: 0 }} />
-                                    часть фондов запаздывает
-                                </span>
-                            </>
-                        )}
-                    </div>
-                )
-            ) : (
+            {/* Шапка только для карточного (не-bare) режима. В модалке заголовок и
+                дата данных живут в шапке самой модалки (FundsMoneyPage), одной
+                строкой — здесь ничего не рендерим, список начинается сразу. */}
+            {!bare && (
                 <div
                     className="border-b border-theme flex items-center justify-between flex-wrap"
                     style={{ padding: 'var(--sp-3) var(--sp-4)', gap: 'var(--sp-1) var(--sp-3)' }}
@@ -268,9 +249,9 @@ export default function FundsTable({
                         <colgroup>
                             <col style={{ width: 40 }} />
                             <col />
+                            <col style={{ width: 88 }} />
                             <col style={{ width: 104 }} />
-                            <col style={{ width: 120 }} />
-                            <col style={{ width: 120 }} />
+                            <col style={{ width: 104 }} />
                         </colgroup>
                     )}
                     <thead>
@@ -315,7 +296,6 @@ export default function FundsTable({
                                     <>
                                         <td
                                             className="px-2 py-1 text-right font-mono cursor-pointer select-none"
-                                            style={{ color: 'var(--funds-flow-positive)', fontWeight: 700 }}
                                             onClick={toggleAllFunds}
                                         >
                                             {navSumBln(data?.funds ?? []).toFixed(2)}
@@ -429,7 +409,6 @@ export default function FundsTable({
                                                     <>
                                                         <td
                                                             className="px-2 py-1 text-right font-mono cursor-pointer select-none"
-                                                            style={{ color: 'var(--funds-flow-positive)', fontWeight: 700 }}
                                                             onClick={toggleCollapse}
                                                         >
                                                             {navSumBln(groupFunds).toFixed(2)}
@@ -527,7 +506,7 @@ export default function FundsTable({
                                                                         style={{ backgroundColor: FUND_COLORS[colorIdx % FUND_COLORS.length] }} />
                                                                 );
                                                             })()}
-                                                            <span className={`${bare ? 'font-bold' : 'font-medium'} inline-flex items-center min-w-0`} style={{ gap: 'var(--sp-1)' }}>
+                                                            <span className={`${bare ? 'font-normal' : 'font-medium'} inline-flex items-center min-w-0`} style={{ gap: 'var(--sp-1)' }}>
                                                                 <span title={fund.name} className={bare ? 'truncate' : undefined} style={bare ? { minWidth: 0, maxWidth: 168 } : undefined}>{stripUkName(fund.name, fund.uk_id)}</span>
                                                                 {!isLocked && lastData?.date && maxDate && lastData.date < maxDate && (
                                                                     <span
