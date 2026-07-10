@@ -31,6 +31,11 @@ import { computeChartTopLineY } from '../chart/datePillLayout';
 
 const easeOutCubic = ANIMATION.easing;
 
+// Порог «заметного» месяца для обрезки пустого левого хвоста истории: первая
+// покупка или продажа крупнее 1 млн ₽ (netMln уже в млн). Всё, что левее —
+// копеечные/нулевые потоки (фонды ещё не держали бумагу) — прячем.
+const MIN_VISIBLE_FLOW_MLN = 1;
+
 export interface CompanyFlowsSeries {
     label: string;
     color: string;
@@ -80,8 +85,8 @@ function monthToDate(m: string): Date {
 }
 
 export default function CompanyFlowsHistogram({
-    months,
-    series,
+    months: monthsAll,
+    series: seriesAll,
     title = 'Чистые покупки и продажи (млн ₽)',
     height = 420,
     loading = false,
@@ -91,6 +96,34 @@ export default function CompanyFlowsHistogram({
     const isMobile = useIsMobile();
     const containerRef = useRef<HTMLDivElement>(null);
     const svgRef = useRef<SVGSVGElement>(null);
+
+    // ── Обрезка пустого левого хвоста истории ──────────────────────────────
+    // Слева гистограмма часто зияет: месяцами тянутся копеечные/нулевые потоки
+    // (фонды ещё не держали бумагу). Ищем первый месяц, где ЧИСТЫЙ поток (сумма
+    // по выбранным фондам) даёт заметный бар — первую покупку/продажу крупнее
+    // 1 млн ₽ — и режем всё до него. Заметного месяца нет вовсе → не режем.
+    // Считаем по seriesAll напрямую (netMln ниже строится уже от обрезки).
+    const trimStart = useMemo(() => {
+        const n = monthsAll.length;
+        for (let i = 0; i < n; i++) {
+            let net = 0;
+            for (const s of seriesAll) {
+                const v = s.values[i];
+                if (v == null || Number.isNaN(v)) continue;
+                net += v / 1e6;
+            }
+            if (Math.abs(net) >= MIN_VISIBLE_FLOW_MLN) return i;
+        }
+        return 0;
+    }, [monthsAll, seriesAll]);
+
+    // Видимые данные — с обрезанным левым хвостом. Всё ниже (netMln, навигатор,
+    // анимация, сетка, подписи осей) строится уже от этих обрезанных массивов.
+    const months = useMemo(() => monthsAll.slice(trimStart), [monthsAll, trimStart]);
+    const series = useMemo<CompanyFlowsSeries[]>(
+        () => seriesAll.map(s => ({ ...s, values: s.values.slice(trimStart) })),
+        [seriesAll, trimStart],
+    );
 
     // ── Чистый поток по месяцам (млн ₽): сумма по всем переданным сериям. ──
     const netMln = useMemo(() => {
