@@ -28,6 +28,7 @@ if "@db:" in _db:
 
 from api.database import SessionLocal, engine       # noqa: E402
 from api.models import User, Alert, AlertFire        # noqa: E402
+from api.services.oi_screener import low_activity_set  # noqa: E402
 from signals.db import get_latest_price              # noqa: E402
 from signals.detectors.oi import (  # noqa: E402
     compute_oi_z, compute_position_atr, compute_participants_atr, min_part,
@@ -660,6 +661,13 @@ def _notify_alert_fire(a) -> None:
 
 _RUN_LOCK_KEY = 0x616C7274  # 'alrt' — id сессионного advisory-lock прогона alerts_run
 
+# OI-индикаторы, чей asset — sectype фьючерса: к ним применяем порог релевантности
+# (тот же, что прячет малоактивные активы из пикера/скринера/публичной ленты). Актив
+# с < OI_RELEVANCE_FLOOR физлиц-трейдеров — статистический шум, не шлём по нему пуш,
+# даже если на него остался ЛЕГАСИ-алерт (создать новый через пикер уже нельзя, но
+# старый продолжал выстреливать). Фонды/Баффет/сила рынка сюда НЕ входят.
+_OI_ASSET_INDICATORS = {"oi_move", "oi_zscore", "oi_participants", "oi_level", "oi_extreme"}
+
 
 def run_once() -> dict:
     summary = {"checked": 0, "fired": 0, "skipped": 0, "unlinked": 0, "errors": 0}
@@ -688,6 +696,18 @@ def run_once() -> dict:
     try:
         alerts = db.query(Alert).filter(Alert.status == "active").all()
         now = datetime.now(timezone.utc)
+        # Порог релевантности OI: малоактивные активы (< OI_RELEVANCE_FLOOR физлиц-
+        # трейдеров) скрыты из пикера/скринера/публичной ленты — по ним не выстреливаем
+        # и личные OI-алерты (см. _OI_ASSET_INDICATORS). low_activity_set устойчив к
+        # отсутствию redis в host-venv (oi_screener.low_activity ловит ImportError).
+        # fail-open: сбой расчёта → пустой set → текущее поведение (лучше лишний пуш,
+        # чем молчание всех алертов).
+        try:
+            oi_low = low_activity_set(db)
+        except Exception as e:
+            oi_low = set()
+            print(f"[alerts_run] low_activity_set failed, no relevance filter: "
+                  f"{type(e).__name__}: {e}")
         # Префетч юзеров одним запросом (а не по одному на алерт).
         uids = {a.user_id for a in alerts}
         users = {u.id: u for u in db.query(User).filter(User.id.in_(uids)).all()} if uids else {}
@@ -702,6 +722,12 @@ def run_once() -> dict:
         for a in alerts:
             summary["checked"] += 1
             try:
+                # Малоактивный OI-актив → не выстреливаем (тот же порог, что прячет
+                # актив из пикера/скринера/публичной ленты). Легаси-алерт на ныне
+                # скрытом активе больше не шумит ни в Telegram, ни в личной ленте.
+                if a.indicator in _OI_ASSET_INDICATORS and a.asset in oi_low:
+                    summary["skipped"] += 1
+                    continue
                 user = users.get(a.user_id)
                 if not user:
                     summary["skipped"] += 1
