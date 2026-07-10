@@ -113,6 +113,17 @@ export default function FundsTable({
     const hasStaleFunds = !!(laggardDate && maxDate && laggardDate < maxDate);
     const fmtDate = (iso: string) => iso.split('-').reverse().join('.');
 
+    // Суммарная СЧА (млрд ₽) выбранных фондов из набора — для строки «Выбрать все»
+    // и заголовков подкатегорий. Считаем только видимые (не скрытые) и не-locked,
+    // чтобы сумма по группам сходилась с общей «СЧА выбранных».
+    const navSumBln = (funds: FundInfo[]) =>
+        funds.reduce(
+            (s, f) => (hiddenFunds.has(f.fund_id) || f.tier_locked === true)
+                ? s
+                : s + (f.data[f.data.length - 1]?.nav ?? 0),
+            0,
+        ) / 1e9;
+
     // Мастер-переключатель «Выбрать все» над всеми подкатегориями. Семантика
     // select-all: если выбраны все — клик снимает все; иначе (частично/никого) —
     // выбирает все. Идёт по тем же fund_id, что и чекбоксы подкатегорий.
@@ -133,38 +144,59 @@ export default function FundsTable({
             className={bare ? '' : 'mt-6 rounded-2xl overflow-hidden editorial-frame'}
             style={bare ? undefined : { background: 'var(--bg-secondary)', padding: 0 }}
         >
-            <div
-                className={`${bare ? '' : 'border-b border-theme'} flex items-center justify-between flex-wrap`}
-                style={{ padding: 'var(--sp-3) var(--sp-4)', gap: 'var(--sp-1) var(--sp-3)', ...(bare ? { borderBottom: SOFT_BORDER } : {}) }}
-            >
-                <div className="flex items-baseline" style={{ gap: 'var(--sp-2)' }}>
-                    {/* В модалке заголовок «Фонды категории» не нужен — название
-                        категории («Фонды акций») стоит в шапке самой модалки. */}
-                    {!bare && <h3 className="font-semibold" style={{ fontSize: 'var(--fs-base)' }}>Фонды категории</h3>}
-                    {maxDate && (
-                        <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-xs)' }}>
-                            данные на {fmtDate(maxDate)}
-                            {hasStaleFunds && (
-                                <>
-                                    , часть фондов запаздывает (отмечены{' '}
-                                    <AlertCircle
-                                        size={13}
-                                        strokeWidth={2.2}
-                                        style={{ display: 'inline', verticalAlign: '-0.15em', opacity: 0.6 }}
-                                    />
-                                    )
-                                </>
-                            )}
+            {bare ? (
+                /* Модалка: легенда как в макете — «На DD.MM.YYYY • [!] часть
+                   фондов запаздывает». Суммарной СЧА тут нет — она вынесена в
+                   строки групп («Выбрать все» и заголовки подкатегорий). */
+                maxDate && (
+                    <div
+                        className="flex items-center flex-wrap"
+                        style={{ padding: 'var(--sp-3) var(--sp-4)', gap: 10, borderBottom: SOFT_BORDER, fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)' }}
+                    >
+                        <span>На {fmtDate(maxDate)}</span>
+                        {hasStaleFunds && (
+                            <>
+                                <span style={{ opacity: 0.45 }}>•</span>
+                                <span className="inline-flex items-center" style={{ gap: 5 }}>
+                                    <AlertCircle size={13} strokeWidth={2.2} style={{ opacity: 0.6, flexShrink: 0 }} />
+                                    часть фондов запаздывает
+                                </span>
+                            </>
+                        )}
+                    </div>
+                )
+            ) : (
+                <div
+                    className="border-b border-theme flex items-center justify-between flex-wrap"
+                    style={{ padding: 'var(--sp-3) var(--sp-4)', gap: 'var(--sp-1) var(--sp-3)' }}
+                >
+                    <div className="flex items-baseline" style={{ gap: 'var(--sp-2)' }}>
+                        <h3 className="font-semibold" style={{ fontSize: 'var(--fs-base)' }}>Фонды категории</h3>
+                        {maxDate && (
+                            <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-xs)' }}>
+                                данные на {fmtDate(maxDate)}
+                                {hasStaleFunds && (
+                                    <>
+                                        , часть фондов запаздывает (отмечены{' '}
+                                        <AlertCircle
+                                            size={13}
+                                            strokeWidth={2.2}
+                                            style={{ display: 'inline', verticalAlign: '-0.15em', opacity: 0.6 }}
+                                        />
+                                        )
+                                    </>
+                                )}
+                            </span>
+                        )}
+                    </div>
+                    <div className="flex items-center" style={{ gap: 'var(--sp-2)' }}>
+                        <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-sm)' }}>Суммарная СЧА выбранных:</span>
+                        <span className="font-mono font-bold" style={{ color: 'var(--funds-flow-positive)', fontSize: 'var(--fs-sm)' }}>
+                            {aggregatedData.totalCurrentNav.toFixed(2)} млрд ₽
                         </span>
-                    )}
+                    </div>
                 </div>
-                <div className="flex items-center" style={{ gap: 'var(--sp-2)' }}>
-                    <span className="text-theme-secondary" style={{ fontSize: 'var(--fs-sm)' }}>{bare ? 'СЧА:' : 'Суммарная СЧА выбранных:'}</span>
-                    <span className="font-mono font-bold" style={{ color: 'var(--funds-flow-positive)', fontSize: 'var(--fs-sm)' }}>
-                        {aggregatedData.totalCurrentNav.toFixed(2)} млрд ₽
-                    </span>
-                </div>
-            </div>
+            )}
             <div className="overflow-x-auto">
                 <table className="w-full" style={{ fontSize: 'var(--fs-sm)', ...(bare ? { tableLayout: 'fixed' as const } : {}) }}>
                     {/* Bare (модалка): фиксированная раскладка колонок — Название
@@ -236,9 +268,21 @@ export default function FundsTable({
                                         )}
                                     </div>
                                 </td>
-                                <td colSpan={4} className="pl-1 pr-4 py-1 cursor-pointer select-none" onClick={toggleAllFunds}>
+                                <td colSpan={bare ? 2 : 4} className="pl-1 pr-2 py-1 cursor-pointer select-none" onClick={toggleAllFunds}>
                                     <span className="text-sm font-bold text-theme-primary">Выбрать все</span>
                                 </td>
+                                {bare && (
+                                    <>
+                                        <td
+                                            className="px-2 py-1 text-right font-mono cursor-pointer select-none"
+                                            style={{ color: 'var(--funds-flow-positive)', fontWeight: 700 }}
+                                            onClick={toggleAllFunds}
+                                        >
+                                            {navSumBln(data?.funds ?? []).toFixed(2)}
+                                        </td>
+                                        <td className="cursor-pointer select-none" onClick={toggleAllFunds} />
+                                    </>
+                                )}
                             </tr>
                         )}
                         {(() => {
@@ -322,7 +366,7 @@ export default function FundsTable({
                                                         )}
                                                     </div>
                                                 </td>
-                                                <td colSpan={4} className="pl-1 pr-4 py-1 cursor-pointer select-none" onClick={toggleCollapse}>
+                                                <td colSpan={bare ? 2 : 4} className="pl-1 pr-2 py-1 cursor-pointer select-none" onClick={toggleCollapse}>
                                                     <div className="flex items-center gap-2">
                                                         <span className="text-[10px] text-theme-secondary transition-transform duration-200" style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>▼</span>
                                                         <span className="text-sm font-bold text-theme-primary">
@@ -341,6 +385,18 @@ export default function FundsTable({
                                                         )}
                                                     </div>
                                                 </td>
+                                                {bare && (
+                                                    <>
+                                                        <td
+                                                            className="px-2 py-1 text-right font-mono cursor-pointer select-none"
+                                                            style={{ color: 'var(--funds-flow-positive)', fontWeight: 700 }}
+                                                            onClick={toggleCollapse}
+                                                        >
+                                                            {navSumBln(groupFunds).toFixed(2)}
+                                                        </td>
+                                                        <td className="cursor-pointer select-none" onClick={toggleCollapse} />
+                                                    </>
+                                                )}
                                             </tr>
                                         )}
                                         {isCollapsed && (() => { globalIdx += groupFunds.length; return null; })()}
