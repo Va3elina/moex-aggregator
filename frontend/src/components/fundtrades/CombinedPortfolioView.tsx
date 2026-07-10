@@ -282,10 +282,20 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, period
         </div>
     );
 
+    // Неяркая мелкая надпись-ссылка (как в макете): по умолчанию приглушённая,
+    // на hover темнеет и подчёркивается — «становится кликабельной». Без рамки и
+    // фона, чтобы не выглядела полноценной кнопкой.
     const restBtn = sorted.length > LIST_PREVIEW && (
         <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', paddingTop: 9, marginTop: 4 }}>
-            <button onClick={() => setModalOpen(true)} className="editorial-press" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '5px 14px', background: 'var(--bg-primary)', border: '1.5px solid var(--border-color)', borderRadius: 999, fontSize: 'var(--fs-xs)', fontWeight: 700, color: 'var(--text-secondary)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                Прочие бумаги · ещё {rest.length} ↓
+            <button
+                onClick={() => setModalOpen(true)}
+                onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-primary)'; e.currentTarget.style.textDecoration = 'underline'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.textDecoration = 'none'; }}
+                onFocus={(e) => { e.currentTarget.style.color = 'var(--text-primary)'; e.currentTarget.style.textDecoration = 'underline'; }}
+                onBlur={(e) => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.textDecoration = 'none'; }}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: 0, background: 'transparent', border: 'none', fontSize: 'var(--fs-xs)', fontWeight: 600, color: 'var(--text-muted)', cursor: 'pointer', whiteSpace: 'nowrap', transition: 'color 0.12s ease' }}
+            >
+                Прочие бумаги · ещё {rest.length} <span style={{ fontSize: '0.85em' }}>↓</span>
             </button>
         </div>
     );
