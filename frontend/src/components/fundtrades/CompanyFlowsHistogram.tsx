@@ -386,14 +386,17 @@ export default function CompanyFlowsHistogram({
                             const extra = hoverBreakdown.rows.length - shown.length;
                             return (
                                 <ChartTooltip x={tooltipPos.x} y={tooltipPos.y} clampTop={cssVar('--chart-pad-top', 14)} clampBottom={cssVar('--chart-pad-bottom', 50)}>
-                                    <TooltipRow color={netColor} label={net >= 0 ? 'Чистая покупка' : 'Чистая продажа'} value={fmtFlow(net)} />
+                                    {/* Без точек: единственное цветное число — чистый поток
+                                        (зелёный приток / красный отток). Разбивка по фондам
+                                        идёт нейтральным цветом, чтобы не спорить с ним. */}
+                                    <TooltipRow hideDot color={netColor} label={net >= 0 ? 'Чистая покупка' : 'Чистая продажа'} value={fmtFlow(net)} />
                                     {shown.length > 0 && (
                                         <div style={{ marginTop: 'var(--sp-1)', paddingTop: 'var(--sp-1)', borderTop: '1px solid var(--border-color)' }}>
                                             {shown.map((r, i) => (
-                                                <TooltipRow key={i} color={r.color} label={r.label} value={fmtFlow(r.mln)} />
+                                                <TooltipRow key={i} hideDot color={r.color} valueColor="var(--text-primary)" label={r.label} value={fmtFlow(r.mln)} />
                                             ))}
                                             {extra > 0 && (
-                                                <div className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)', marginTop: 'var(--sp-1)', paddingLeft: 'calc(var(--sp-2) + 8px)' }}>
+                                                <div className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)', marginTop: 'var(--sp-1)' }}>
                                                     и ещё {extra} {extra === 1 ? 'фонд' : extra >= 2 && extra <= 4 ? 'фонда' : 'фондов'}
                                                 </div>
                                             )}
