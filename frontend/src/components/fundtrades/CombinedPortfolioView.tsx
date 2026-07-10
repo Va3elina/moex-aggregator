@@ -2,8 +2,9 @@
 //
 // Редизайн (июль 2026, макет Claude Design): на десктопе слева таблица бумаг
 // «логотип · имя+тикер · полоса · вес · объём · фондов» (полосы нейтральные,
-// цвет несёт только карта), справа колонка «Структура» — карта-блоки топ-10
-// бумаг брендовыми цветами + «Прочие», под ней плитка доходности. Режим
+// цвет несёт только карта), справа колонка «Структура» — карта-блоки топ-11
+// бумаг брендовыми цветами (площадь ∝ весу) + «Прочие», под ней плитка
+// доходности. Режим
 // взвешивания (По капиталу / По доле) переключается в шапке блока, рядом
 // пилюля актуальности данных (месяц свежайшего снапшота выбранных фондов).
 // Наведение на блок карты подсвечивает строку таблицы и наоборот.
@@ -31,11 +32,16 @@ const PERIOD_LABEL: Record<PeriodKey, string> = { m1: '1 мес', m3: '3 мес'
 // самый длинный доступный (год → 6м → 3м → 1м), чтобы не было «—».
 const RET_ORDER: PeriodKey[] = ['y1', 'm6', 'm3', 'm1'];
 
-// Карта «Структура»: топ-10 бумаг раскладываются рядами 2·3·3·2, «Прочие»
-// добавляются последним блоком нижнего ряда. Высота ряда пропорциональна
-// крупнейшему весу в нём — верхние ряды визуально тяжелее.
-const TREEMAP_TOP = 10;
-const TM_CHUNKS = [2, 3, 3, 2];
+// Карта «Структура» (slice-and-dice треемап): топ-11 бумаг раскладываются рядами
+// 2·3·3·3, «Прочие» — отдельной полосой снизу. ПЛОЩАДЬ плитки пропорциональна её
+// весу: высота ряда ∝ сумме весов ряда, ширина плитки внутри ряда ∝ её весу →
+// area = rowH × width ∝ вес. Строки отсортированы по убыванию, поэтому верхние
+// ряды крупнее. TM_H_BUDGET — суммарная высота рядов (px), TM_ROW_MIN — минимум
+// на ряд для читаемости мелких строк.
+const TREEMAP_TOP = 11;
+const TM_CHUNKS = [2, 3, 3, 3];
+const TM_H_BUDGET = 300;
+const TM_ROW_MIN = 46;
 
 // Мобилка (пончик): слайсы и превью списка держим равными, наведение на любой
 // сектор подсвечивает строку и наоборот, без «слепых» секторов.
@@ -320,14 +326,13 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, period
         );
     }
 
-    // ── Десктоп: карта «Структура» (ряды 2·3·3·2 из топ-10) ──
-    // «Прочие» вынесены в отдельную полосу снизу: раньше они шли последней
-    // ПЛИТКОЙ в ряду и при узкой концентрации портфеля (напр. 1 фонд, где топ ~4%
-    // против «Прочие 39%») сплющивали соседние плитки до нечитаемого «Н. 4%».
-    // Теперь у плиток holding-ов есть минимальная ширина, а «Прочие» не борются
-    // с ними за место в ряду.
+    // ── Десктоп: карта «Структура» (slice-and-dice, площадь ∝ весу) ──
+    // Ряды 2·3·3·3 из топ-11; «Прочие» — отдельной полосой снизу. Высота ряда ∝
+    // сумме весов ряда, ширина плитки ∝ её весу → площадь ∝ вес (мелкие бумаги
+    // видимо меньше крупных, а не наравне, как было при равных рядах).
     const tmTop = sorted.slice(0, TREEMAP_TOP);
     const tmRestW = sorted.slice(TREEMAP_TOP).reduce((s, h) => s + wOf(h), 0);
+    const tmTopSum = Math.max(tmTop.reduce((s, h) => s + wOf(h), 0), 0.0001);
     const tmRows: { h: FundPortfolioHolding; idx: number }[][] = [];
     let cursor = 0;
     for (const size of TM_CHUNKS) {
@@ -339,9 +344,10 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, period
     const treemap = (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {tmRows.map((row, ri) => {
-                const rowMax = Math.max(...row.map(({ h }) => wOf(h)), 0.0001);
-                // Высота ряда следует крупнейшему весу: топ-ряды визуально тяжелее.
-                const rowH = Math.round(Math.min(104, Math.max(62, 56 + 4.2 * rowMax)));
+                const rowSum = row.reduce((s, { h }) => s + wOf(h), 0);
+                // Высота ряда ∝ его суммарному весу (доля от бюджета высоты), но не
+                // ниже минимума — иначе нижние лёгкие ряды становятся нечитаемыми.
+                const rowH = Math.max(TM_ROW_MIN, Math.round(TM_H_BUDGET * rowSum / tmTopSum));
                 return (
                     <div key={ri} style={{ display: 'flex', gap: 6, height: rowH }}>
                         {row.map(({ h, idx }) => {
@@ -360,9 +366,10 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, period
                                     tabIndex={click ? 0 : undefined}
                                     onKeyDown={click ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); click(); } } : undefined}
                                     title={`${fundAssetName(h.asset_name, h.isin)} · ${w.toFixed(2)}%${click ? ' — потоки по компании' : ''}`}
-                                    // minWidth не даёт мелкой плитке (2-4%) схлопнуться в нечитаемый
-                                    // столбик рядом с крупной; flex по весу распределяет остаток.
-                                    style={{ flex: Math.max(w, 0.1), minWidth: 58, borderRadius: 10, background: color, color: dark ? '#1a1712' : '#fff', padding: '9px 11px', display: 'flex', flexDirection: 'column', overflow: 'hidden', outline: hoverIdx === idx ? '2px solid var(--text-primary)' : 'none', outlineOffset: -2, transition: 'outline-color 0.12s ease', cursor: click ? 'pointer' : 'default' }}
+                                    // Ширина ∝ весу (flex). minWidth — мягкий пол, чтобы очень
+                                    // мелкая плитка сохранила подпись; ряды отсортированы, поэтому
+                                    // соседи близки по весу и пол почти не искажает пропорции.
+                                    style={{ flex: Math.max(w, 0.1), minWidth: 44, borderRadius: 10, background: color, color: dark ? '#1a1712' : '#fff', padding: '8px 10px', display: 'flex', flexDirection: 'column', overflow: 'hidden', outline: hoverIdx === idx ? '2px solid var(--text-primary)' : 'none', outlineOffset: -2, transition: 'outline-color 0.12s ease', cursor: click ? 'pointer' : 'default' }}
                                 >
                                     <div style={{ fontWeight: 800, fontSize: 'var(--fs-sm)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
                                     <div style={{ fontSize: 'var(--fs-2xs)', fontWeight: 600, opacity: 0.92, fontVariantNumeric: 'tabular-nums' }}>{w.toFixed(1).replace('.', ',')}%</div>
@@ -381,6 +388,13 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, period
         </div>
     );
 
+    // Свежесть среза: freshestMonth — самый свежий ДОСТУПНЫЙ месяц (не locked),
+    // он же дефолт month-picker'а. Зелёный кружок «актуальные данные» показываем
+    // ТОЛЬКО когда выбран он; на историческом месяце кружка нет.
+    const freshestMonth = availableMonths?.find((m) => !(monthLocked?.(m))) ?? availableMonths?.[0];
+    const currentMonth = asOf ?? freshestMonth;
+    const isFreshest = !!freshestMonth && currentMonth === freshestMonth;
+
     return (
         <div style={wrapStyle}>
             {/* Шапка: заголовок+счётчики слева; пилюля актуальности + режим справа. */}
@@ -393,12 +407,19 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, period
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                     {availableMonths && availableMonths.length > 0 && onAsOfChange ? (
-                        // Кликабельный month-picker: зелёная точка = свежесть, Dropdown = месяц среза.
+                        // Кликабельный month-picker. Зелёный кружок «актуальные данные»
+                        // рендерим ТОЛЬКО когда выбран самый свежий срез; hover по нему
+                        // поясняет, что это последний доступный снапшот.
                         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                            <span title="Месяц среза данных портфеля" style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--mood-green, #4a9959)', flexShrink: 0 }} />
+                            {isFreshest && (
+                                <span
+                                    title="Актуальные данные — показан самый свежий доступный срез портфеля"
+                                    style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--mood-green, #4a9959)', flexShrink: 0, cursor: 'help' }}
+                                />
+                            )}
                             <Dropdown<string>
                                 options={availableMonths.map((m) => ({ key: m, label: monthYearCap(m), locked: monthLocked?.(m) }))}
-                                value={asOf ?? availableMonths.find((m) => !(monthLocked?.(m))) ?? availableMonths[0]}
+                                value={currentMonth ?? availableMonths[0]}
                                 onChange={onAsOfChange}
                                 onLockedClick={onMonthLockedClick ? () => onMonthLockedClick() : undefined}
                                 minWidth={132}
