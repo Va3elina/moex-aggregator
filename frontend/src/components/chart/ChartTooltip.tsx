@@ -95,15 +95,27 @@ interface TooltipRowProps {
   /** Цвет значения. По умолчанию = color (точка и число одного цвета).
    *  Нейтральный токен → число не красится. */
   valueColor?: string;
+  /** Дополнительный CSS-класс для label (напр. `font-bold` для итоговой строки). */
+  labelClass?: string;
+  /** Цвет label. По умолчанию — вторичный текст (из TOOLTIP.labelClass). */
+  labelColor?: string;
 }
 
-export function TooltipRow({ color, label, value, valueClass, hideDot, valueColor }: TooltipRowProps) {
+export function TooltipRow({
+  color, label, value, valueClass, hideDot, valueColor, labelClass, labelColor,
+}: TooltipRowProps) {
   return (
     <div className="flex items-center" style={{ gap: 'var(--sp-2)' }}>
       {!hideDot && (
         <span className={TOOLTIP.dotClass} style={{ ...TOOLTIP.dotStyle, backgroundColor: color }} />
       )}
-      <span className={TOOLTIP.labelClass} style={TOOLTIP.labelStyle}>{label}</span>
+      <span
+        className={`${TOOLTIP.labelClass} ${labelClass ?? ''}`}
+        // inline color перебивает text-theme-secondary из labelClass
+        style={{ ...TOOLTIP.labelStyle, ...(labelColor ? { color: labelColor } : {}) }}
+      >
+        {label}
+      </span>
       <span
         className={`${TOOLTIP.valueClass} ml-auto pl-2 ${valueClass ?? ''}`}
         style={{ ...TOOLTIP.valueStyle, color: valueColor ?? color }}
