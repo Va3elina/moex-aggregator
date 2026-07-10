@@ -996,6 +996,23 @@ export default function FundsMoneyPage() {
 
             </div>{/* /tabbed-card */}
 
+            {/* Список фондов под графиком — оставлен вместе с таблеткой-виджетом:
+                выбирать можно и через кнопку сверху (модалка), и прямо здесь.
+                Обе поверхности делят одно состояние (hiddenFunds), поэтому
+                синхронизированы. data-tour="funds-table" живёт на таблетке. */}
+            <FundsTable
+                data={data}
+                hiddenFunds={hiddenFunds}
+                collapsedSubcats={collapsedSubcats}
+                navSortDir={navSortDir}
+                aggregatedData={aggregatedData}
+                onToggleFundVisibility={toggleFundVisibility}
+                onSetHiddenFunds={setHiddenFunds}
+                onSetCollapsedSubcats={setCollapsedSubcats}
+                onSetNavSortDir={setNavSortDir}
+                onOpenFundCard={openFundCard}
+            />
+
             {/* Модалка-виджет выбора фондов — открывается таблеткой в контролах.
                 Масштаб/шелл как у InstrumentSearchModal на ОИ: top-anchored,
                 max-w-xl, max-h-90vh, 2px border + hard shadow, скролл внутри. */}
