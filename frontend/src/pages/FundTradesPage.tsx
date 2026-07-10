@@ -1027,6 +1027,7 @@ export default function FundTradesPage() {
                     <CompanyFlowsTab
                         presetAsset={companyPreset}
                         onPresetConsumed={() => setCompanyPreset(null)}
+                        showChartActions
                     />
                 </div>
             )}

@@ -29,6 +29,9 @@ import { useFitToViewport } from '../../hooks/useFitToViewport';
 import AssetPickerModal from './AssetPickerModal';
 import FundPicker, { type FundPickerFund } from './FundPicker';
 import SegmentedControl from '../SegmentedControl';
+import ChartActionsMenu from '../ChartActionsMenu';
+import ChartCaptureButton from '../export/ChartCaptureButton';
+import ChartSettings from '../chart/ChartSettings';
 import { usePersistedState, usePersistedSet } from '../../hooks/usePersistedState';
 
 type Metric = 'amount' | 'weight';
@@ -99,9 +102,13 @@ export interface CompanyFlowsTabProps {
     presetAsset?: { asset_name: string; isin: string | null } | null;
     /** Дёрнуть после применения presetAsset (родитель сбросит state). */
     onPresetConsumed?: () => void;
+    /** Kebab «⋮» в углу графика (Скриншот + Настройки), как в «Деньги в фондах».
+     *  Только для десктопа: у мобилки свой тулбар-шит, у эмбеда — EmbedToolbar,
+     *  и ChartCaptureButton тянет AnalyticsContext, которого в эмбеде может не быть. */
+    showChartActions?: boolean;
 }
 
-export default function CompanyFlowsTab({ presetAsset, onPresetConsumed }: CompanyFlowsTabProps = {}) {
+export default function CompanyFlowsTab({ presetAsset, onPresetConsumed, showChartActions = false }: CompanyFlowsTabProps = {}) {
     // Высота графика «под экран» — anchor на обёртке чарта (как в «Деньги в фондах»).
     const chartAnchorRef = useRef<HTMLDivElement>(null);
     const chartHeight = useFitToViewport(chartAnchorRef, { min: 360, max: 720, bottomBuffer: 64 });
@@ -413,6 +420,37 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed }: Compa
                     value={period}
                     onChange={setPeriod}
                 />
+
+                {/* Скриншот + Настройки — kebab «⋮» в углу графика (как в «Деньги в
+                    фондах»). JSX живёт тут, рядом со state, а DOM через portal уезжает
+                    в chartAnchorRef (position:relative). */}
+                {showChartActions && (
+                    <ChartActionsMenu containerRef={chartAnchorRef}>
+                        <ChartCaptureButton
+                            getTargetElement={() => chartAnchorRef.current}
+                            filename={`frame-company-flows-${selectedTicker ?? selectedAsset?.key ?? 'asset'}-${period}`}
+                            metadata={{
+                                title: 'Потоки по компании',
+                                asset: selectedAsset ? fundAssetName(selectedAsset.asset_name, selectedAsset.isin) : undefined,
+                                ticker: selectedTicker,
+                                details: [
+                                    PERIOD_LABELS[period],
+                                    selectedFunds.size > 0
+                                        ? `${selectedFunds.size} ${pluralFunds(selectedFunds.size)}`
+                                        : 'Все фонды',
+                                ],
+                            }}
+                            getExportStyles={(): Record<string, string> => ({
+                                // Ось Y только справа: в PNG зеркалим правый strip слева,
+                                // иначе график прижат к левому краю (как в FlowsHistogram).
+                                '--chart-pad-left': 'calc(var(--chart-pad-right-single) - 12px)',
+                            })}
+                        />
+                        {/* Гистограмма, а не SimpleChart → тип графика неприменим,
+                            в модалке остаётся палитра. */}
+                        <ChartSettings showType={false} />
+                    </ChartActionsMenu>
+                )}
             </div>
 
             {flowsError && (
@@ -427,7 +465,9 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed }: Compa
             {/* Чистый поток по бумаге — гистограмма 1-в-1 как «Деньги в фондах».
                 Бары = сумма по выбранным фондам (приток зелёный / отток красный),
                 тултип раскрывает вклад каждого фонда. */}
-            <div ref={chartAnchorRef}>
+            {/* position:relative — host для portal'а kebab-меню (ChartActionsMenu
+                позиционируется absolute относительно этой обёртки). */}
+            <div ref={chartAnchorRef} style={{ position: 'relative' }}>
                 <CompanyFlowsHistogram
                     months={visibleMonths}
                     series={visibleSeries}
