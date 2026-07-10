@@ -131,14 +131,19 @@ export default function FundsTable({
                 <table className="w-full" style={{ fontSize: 'var(--fs-sm)', ...(bare ? { tableLayout: 'fixed' as const } : {}) }}>
                     {/* Bare (модалка): фиксированная раскладка колонок — Название
                         тянется и обрезается многоточием, а Тикер/СЧА/Доходность
-                        прижаты к правому краю компактным блоком. */}
+                        прижаты к правому краю компактным блоком.
+                        Ширины подобраны по замерам: активный заголовок сортировки
+                        (текст + стрелка) занимает ~100px, самый длинный тикер —
+                        ISIN облигационных фондов (RU000A109SR1, ~80px текста).
+                        Колонка чекбокса 40px даёт симметричные отступы слева и
+                        до логотипа (по 15px). */}
                     {bare && (
                         <colgroup>
-                            <col style={{ width: 30 }} />
+                            <col style={{ width: 40 }} />
                             <col />
-                            <col style={{ width: 88 }} />
-                            <col style={{ width: 108 }} />
-                            <col style={{ width: 100 }} />
+                            <col style={{ width: 104 }} />
+                            <col style={{ width: 120 }} />
+                            <col style={{ width: 120 }} />
                         </colgroup>
                     )}
                     <thead>
@@ -173,7 +178,7 @@ export default function FundsTable({
                     </thead>
                     <tbody>
                         {allFundIds.length > 0 && (
-                            <tr className="border-b border-theme" style={{ background: 'color-mix(in srgb, var(--text-primary) 6%, transparent)' }}>
+                            <tr className="border-b border-theme" style={bare ? undefined : { background: 'color-mix(in srgb, var(--text-primary) 6%, transparent)' }}>
                                 <td className={`${bare ? 'pl-2' : 'pl-4'} pr-0 py-1`}>
                                     <div
                                         className="flex items-center justify-center w-5 h-5 rounded-lg hover:bg-white/5 cursor-pointer transition-colors"
@@ -255,7 +260,7 @@ export default function FundsTable({
                                     <React.Fragment key={subcat || '__none__'}>
                                         {subcat && (
                                             <tr className="border-t-2 border-theme"
-                                                style={{ background: 'color-mix(in srgb, var(--text-primary) 4%, transparent)' }}>
+                                                style={bare ? undefined : { background: 'color-mix(in srgb, var(--text-primary) 4%, transparent)' }}>
                                                 <td className={`${bare ? 'pl-2' : 'pl-4'} pr-0 py-1`}>
                                                     <div
                                                         className="flex items-center justify-center w-5 h-5 rounded-lg hover:bg-white/5 cursor-pointer transition-colors"
@@ -318,7 +323,12 @@ export default function FundsTable({
                                                         isLocked ? 'cursor-not-allowed' :
                                                         isHidden ? 'opacity-50 grayscale' : 'hover:bg-white/5'
                                                     }`}
-                                                    style={isLocked ? { opacity: 0.45, filter: 'grayscale(0.5)' } : undefined}
+                                                    // bare: высота строки 42px — как у строки списка активов
+                                                    // в поиске ОИ (.instrument-item, замер 41.9px).
+                                                    style={{
+                                                        ...(bare ? { height: 42 } : {}),
+                                                        ...(isLocked ? { opacity: 0.45, filter: 'grayscale(0.5)' } : {}),
+                                                    }}
                                                     title={isLocked ? 'Доступно на повышенном тарифе' : undefined}
                                                 >
                                                     <td className={`${bare ? 'pl-2' : 'pl-4'} pr-0 py-1`}>
@@ -353,8 +363,13 @@ export default function FundsTable({
                                                                 const uk = resolveFundLogo(fund.ticker, fund.uk_id);
                                                                 if (uk) {
                                                                     return (
-                                                                        <div className={`${bare ? 'w-7 h-7' : 'w-5 h-5'} rounded-full flex items-center justify-center flex-shrink-0 font-black text-sm overflow-hidden`}
-                                                                            style={{ backgroundColor: uk.img ? undefined : uk.bg, color: uk.color }}>
+                                                                        <div className={`${bare ? '' : 'w-5 h-5'} rounded-full flex items-center justify-center flex-shrink-0 font-black text-sm overflow-hidden`}
+                                                                            style={{
+                                                                                backgroundColor: uk.img ? undefined : uk.bg,
+                                                                                color: uk.color,
+                                                                                // 28px в пикселях, а не w-7: root font-size 20px → w-7 = 35px.
+                                                                                ...(bare ? { width: 28, height: 28 } : {}),
+                                                                            }}>
                                                                             {uk.img
                                                                                 ? <img src={uk.img} alt={uk.name} className="w-full h-full object-cover" />
                                                                                 : uk.letter}
