@@ -91,8 +91,19 @@ def _compute_low_activity(db) -> Dict[str, Any]:
 
 def low_activity(db) -> Dict[str, Any]:
     """Малоактивные активы, кэш 1 час (данные дневные T+1). Общий ключ для пикера
-    и скринера — оба читают один результат, лишней нагрузки нет."""
-    from api.cache import get_or_compute
+    и скринера — оба читают один результат, лишней нагрузки нет.
+
+    ⚠️ api.cache импортирует redis НА УРОВНЕ МОДУЛЯ, а host-venv движка сигналов
+    (cron anomaly_scan / alerts_run) redis НЕ ставит → `from api.cache import ...`
+    кидает ModuleNotFoundError ЕЩЁ на импорте, ДО fail-open внутри get_or_compute.
+    Ловим и считаем напрямую (кэш здесь лишь оптимизация: hourly-скан дёшев). Без
+    этого фильтр релевантности молча выключался в публичной ленте аномалий — низко-
+    активные активы (RVI, MOEX-в-юанях) продолжали слать тосты (лог «no relevance
+    filter»). В api-контейнере redis есть → путь с кэшем, поведение не меняется."""
+    try:
+        from api.cache import get_or_compute
+    except ImportError:
+        return _compute_low_activity(db)
     return get_or_compute("oi_low_activity:v1", lambda: _compute_low_activity(db), ttl=3600)
 
 
