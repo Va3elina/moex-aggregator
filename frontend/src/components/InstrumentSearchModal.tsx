@@ -551,7 +551,7 @@ export default function InstrumentSearchModal({ onSelect, onClose, filterType, e
                   style={{
                     backgroundColor: active ? 'var(--accent)' : 'var(--bg-secondary)',
                     color: active ? 'var(--text-inverse)' : 'var(--text-primary)',
-                    border: `2px solid ${active ? 'var(--accent)' : 'var(--text-primary)'}`,
+                    border: '2px solid var(--text-primary)',
                     boxShadow: active ? 'var(--shadow-hard-chip, 3px 3px 0 var(--text-primary))' : undefined,
                   }}
                 >
