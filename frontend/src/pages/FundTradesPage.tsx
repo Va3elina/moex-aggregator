@@ -232,6 +232,11 @@ export default function FundTradesPage() {
     const common = useCommonFeatures();
     const { showUpgrade } = useUpgradePrompt(); // пейволл на locked-месяце movers (Free/гость)
     const [tab, setTab] = usePersistedState<Tab>('frame:fundtrades:tab', 'funds');
+    // Вкладки movers/snapshots скрыты — если в localStorage лежит одна из них
+    // (пользователь выбирал раньше), откатываем на «Состав фондов».
+    useEffect(() => {
+        if (tab === 'movers' || tab === 'snapshots') setTab('funds');
+    }, [tab]);
     // Шаг данных — 1 снапшот/месяц. Период фиксирован '1m' (месяц vs предыдущий);
     // селектор месяца появится в Заходе 2 (нужен backend as_of/available_months).
     const [period] = useState<FundTradesPeriod>('1m');
@@ -463,11 +468,12 @@ export default function FundTradesPage() {
             >
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                     {([
+                        // Вкладки «Покупки фондов» (movers) и «Обзор снапшота» скрыты
+                        // с сайта по просьбе Вадима. Код рендера/загрузки ниже оставлен —
+                        // вернуть = дописать сюда строки обратно.
                         { id: 'funds' as const, label: 'Состав фондов', icon: Wallet },
                         { id: 'portfolio' as const, label: 'Общий портфель', icon: Briefcase },
-                        { id: 'movers' as const, label: 'Покупки фондов', icon: TrendingUp },
                         { id: 'company' as const, label: 'Потоки по компании', icon: ArrowLeftRight },
-                        { id: 'snapshots' as const, label: 'Обзор снапшота', icon: Activity },
                     ]).map((t) => {
                         const Icon = t.icon;
                         const active = tab === t.id;
@@ -841,12 +847,6 @@ export default function FundTradesPage() {
 
             {tab === 'portfolio' && (
                 <>
-                    <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)', margin: '0 0 12px', lineHeight: 1.5, maxWidth: 820 }}>
-                        Все выбранные фонды акций собраны в один портфель, как будто ими управляет
-                        один управляющий. Слева что фонды докупили и распродали за выбранный
-                        период, справа состав общего портфеля. По капиталу взвешивает по деньгам,
-                        по доле даёт равный вес каждому фонду.
-                    </p>
                     {/* Единая карточка (макет Claude Design): тулбар с фильтром фондов
                         сверху влияет на оба блока; внутри «Покупки фондов» (уже, слева)
                         и «Обзор портфеля» (шире, справа) за вертикальным разделителем.

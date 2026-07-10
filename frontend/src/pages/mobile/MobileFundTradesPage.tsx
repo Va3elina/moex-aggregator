@@ -306,6 +306,10 @@ export default function MobileFundTradesPage() {
 
   // ── State (ключи усиленно совпадают с десктопом для синхрона настроек) ──
   const [tab, setTab] = usePersistedState<Tab>('frame:fundtrades:tab', 'funds');
+  // movers/snapshots скрыты — протухший persist-таб откатываем на «Состав фондов».
+  useEffect(() => {
+    if (tab === 'movers' || tab === 'snapshots') setTab('funds');
+  }, [tab]);
   const [period] = useState<FundTradesPeriod>('1m'); // шаг данных — месяц vs предыдущий
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
   // Состав фондов: период доходности + сортировка + мультиселект УК.
@@ -687,10 +691,6 @@ export default function MobileFundTradesPage() {
 
       {tab === 'portfolio' && (
         <div style={{ paddingBottom: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <p style={{ fontSize: 'var(--fs-xs)', color: 'var(--text-secondary)', margin: '4px 2px 0', lineHeight: 1.5 }}>
-            Все выбранные фонды акций собраны в один портфель. Ниже что фонды докупили
-            и распродали за период. Режим, период и УК — в кнопках Время и Опции.
-          </p>
           <CombinedPortfolioView
             portfolio={portfolio}
             loading={loadingPortfolio}
@@ -836,10 +836,10 @@ export default function MobileFundTradesPage() {
             <div style={SHEET_SECTION_LABEL}>Режим</div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {([
+                // movers/snapshots скрыты с сайта (как на десктопе). Код рендера ниже
+                // оставлен — вернуть = дописать строки обратно.
                 { id: 'funds' as const, label: 'Состав фондов', icon: Wallet },
                 { id: 'portfolio' as const, label: 'Портфель', icon: Briefcase },
-                { id: 'movers' as const, label: 'Движения', icon: TrendingUp },
-                { id: 'snapshots' as const, label: 'Снапшот', icon: Activity },
                 { id: 'company' as const, label: 'Потоки', icon: ArrowLeftRight },
               ]).map((t) => {
                 const Icon = t.icon;
