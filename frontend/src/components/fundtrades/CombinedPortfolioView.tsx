@@ -155,7 +155,11 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, period
     const isMobile = variant === 'mobile';
     const embedded = variant === 'embedded';
     // embedded — без собственной карточки: рамку несёт общая карточка вкладки.
-    const wrapStyle: CSSProperties = embedded ? { position: 'relative', minWidth: 0 } : blockStyle(isMobile);
+    // embedded — тянемся на всю высоту ячейки (outer grid stretch), чтобы футер
+    // «Прочие бумаги» можно было прижать к нижнему краю блока (marginTop:auto).
+    const wrapStyle: CSSProperties = embedded
+        ? { position: 'relative', minWidth: 0, display: 'flex', flexDirection: 'column', height: '100%' }
+        : blockStyle(isMobile);
 
     const wOf = (h: FundPortfolioHolding) => (mode === 'rub' ? h.weight_rub : h.weight_avg);
 
@@ -285,8 +289,10 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, period
     // Неяркая мелкая надпись-ссылка (как в макете): по умолчанию приглушённая,
     // на hover темнеет и подчёркивается — «становится кликабельной». Без рамки и
     // фона, чтобы не выглядела полноценной кнопкой.
+    // marginTop:auto — прижимает футер к низу колонки-таблицы (десктоп, flex-col).
+    // На мобилке (обычный поток) auto схлопывается в 0 и просто идёт под списком.
     const restBtn = sorted.length > LIST_PREVIEW && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', paddingTop: 9, marginTop: 4 }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', paddingTop: 9, marginTop: 'auto' }}>
             <button
                 onClick={() => setModalOpen(true)}
                 onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--text-primary)'; e.currentTarget.style.textDecoration = 'underline'; }}
@@ -464,9 +470,12 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, period
                 </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 264px', gap: 26, alignItems: 'start' }}>
+            {/* flex:1 — сетка забирает высоту под шапкой; stretch тянет колонку-
+                таблицу на полную высоту блока, чтобы футер (marginTop:auto) сел
+                у нижнего края, а не висел сразу под последней строкой. */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 264px', gap: 26, alignItems: 'stretch', flex: 1, minHeight: 0 }}>
                 {/* Таблица бумаг */}
-                <div style={{ minWidth: 0 }}>
+                <div style={{ minWidth: 0, display: 'flex', flexDirection: 'column' }}>
                     {listHeader}
                     {sorted.slice(0, LIST_PREVIEW).map((h, i) => deskRow(h, i, i === Math.min(LIST_PREVIEW, sorted.length) - 1, true))}
                     {restBtn}
