@@ -134,16 +134,16 @@ export default function FundsTable({
                         прижаты к правому краю компактным блоком. */}
                     {bare && (
                         <colgroup>
-                            <col style={{ width: 38 }} />
+                            <col style={{ width: 30 }} />
                             <col />
-                            <col style={{ width: 86 }} />
-                            <col style={{ width: 104 }} />
-                            <col style={{ width: 92 }} />
+                            <col style={{ width: 88 }} />
+                            <col style={{ width: 108 }} />
+                            <col style={{ width: 100 }} />
                         </colgroup>
                     )}
                     <thead>
-                        <tr className="text-theme-secondary text-left">
-                            <th className="pl-4 pr-0 py-2 font-medium w-10"></th>
+                        <tr className="text-theme-secondary text-left" style={bare ? { fontSize: 'var(--fs-xs)' } : undefined}>
+                            <th className={`${bare ? 'pl-2' : 'pl-4'} pr-0 py-2 font-medium w-10`}></th>
                             <th className="pl-1 pr-4 py-2 font-medium">Название</th>
                             <th className={`${bare ? 'px-2 text-right' : 'px-4'} py-2 font-medium`}>Тикер</th>
                             <th className={`${bare ? 'px-2' : 'px-4'} py-2 font-medium text-right whitespace-nowrap`}>
@@ -174,7 +174,7 @@ export default function FundsTable({
                     <tbody>
                         {allFundIds.length > 0 && (
                             <tr className="border-b border-theme" style={{ background: 'color-mix(in srgb, var(--text-primary) 6%, transparent)' }}>
-                                <td className="pl-4 pr-0 py-1">
+                                <td className={`${bare ? 'pl-2' : 'pl-4'} pr-0 py-1`}>
                                     <div
                                         className="flex items-center justify-center w-5 h-5 rounded-lg hover:bg-white/5 cursor-pointer transition-colors"
                                         onClick={toggleAllFunds}
@@ -256,7 +256,7 @@ export default function FundsTable({
                                         {subcat && (
                                             <tr className="border-t-2 border-theme"
                                                 style={{ background: 'color-mix(in srgb, var(--text-primary) 4%, transparent)' }}>
-                                                <td className="pl-4 pr-0 py-1">
+                                                <td className={`${bare ? 'pl-2' : 'pl-4'} pr-0 py-1`}>
                                                     <div
                                                         className="flex items-center justify-center w-5 h-5 rounded-lg hover:bg-white/5 cursor-pointer transition-colors"
                                                         onClick={toggleSubcat}
@@ -321,7 +321,7 @@ export default function FundsTable({
                                                     style={isLocked ? { opacity: 0.45, filter: 'grayscale(0.5)' } : undefined}
                                                     title={isLocked ? 'Доступно на повышенном тарифе' : undefined}
                                                 >
-                                                    <td className="pl-4 pr-0 py-1">
+                                                    <td className={`${bare ? 'pl-2' : 'pl-4'} pr-0 py-1`}>
                                                         {isLocked ? (
                                                             <div
                                                                 className="flex items-center justify-center w-5 h-5 rounded-lg cursor-pointer"
@@ -367,7 +367,7 @@ export default function FundsTable({
                                                                 );
                                                             })()}
                                                             <span className="font-medium inline-flex items-center min-w-0" style={{ gap: 'var(--sp-1)' }}>
-                                                                <span title={fund.name} className={bare ? 'truncate' : undefined} style={bare ? { minWidth: 0 } : undefined}>{stripUkName(fund.name, fund.uk_id)}</span>
+                                                                <span title={fund.name} className={bare ? 'truncate' : undefined} style={bare ? { minWidth: 0, maxWidth: 168 } : undefined}>{stripUkName(fund.name, fund.uk_id)}</span>
                                                                 {!isLocked && lastData?.date && maxDate && lastData.date < maxDate && (
                                                                     <span
                                                                         className="text-theme-secondary cursor-help inline-flex flex-shrink-0"
