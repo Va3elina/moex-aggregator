@@ -539,18 +539,14 @@ export default function OpenInterestPage() {
     setSearchParams(next);
   };
 
-  // Клик по строке скринера → вкладка графика с ЭТИМ активом и НАСТРОЙКАМИ
-  // скринера: та же группа физ/юр, дневной ТФ (24), период 1 год — чтобы
-  // график открывался ровно в том срезе, что показал сигнал. Диплинк
-  // (parseOiDeepLink) применяет clgroup/interval/period; tab сбрасывается на
-  // график, т.к. setSearchParams перетирает параметры (в т.ч. ?tab=screener).
-  const handleScreenerSelect = (sectype: string, screenerClgroup: 'FIZ' | 'YUR') => {
-    setSearchParams({
-      instrument: sectype,
-      clgroup: screenerClgroup,
-      interval: '24',
-      period: '1y',
-    });
+  // Клик по строке скринера → вкладка графика с ЭТИМ активом, но БЕЗ сброса
+  // текущих настроек графика: интервал/период/группа физ-юр остаются такими,
+  // какими их выставил пользователь (все они в usePersistedState). В URL кладём
+  // только instrument — parseOiDeepLink вернёт лишь тикер, поэтому эффект-диплинк
+  // не тронет clgroup/interval/period. tab сбрасывается на график, т.к.
+  // setSearchParams перетирает параметры (в т.ч. ?tab=screener).
+  const handleScreenerSelect = (sectype: string) => {
+    setSearchParams({ instrument: sectype });
   };
 
   // Предложение поставить алерт из скринера (клик по «Создать алерт» в баннере
