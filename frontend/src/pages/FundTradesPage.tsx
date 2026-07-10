@@ -49,6 +49,7 @@ import { useCommonFeatures } from '../contexts/TierFeaturesContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useUpgradePrompt } from '../components/tier/UpgradeModal';
 import PageHeader from '../components/PageHeader';
+import ChartTabs from '../components/ChartTabs';
 import Dropdown from '../components/Dropdown';
 import SegmentedControl from '../components/SegmentedControl';
 import { UK_LOGOS, DONUT_COLORS, fundAssetName, fundAssetColor, resolveFundLogo, resolveFundTicker, stripUkName } from '../config/fundConfig';
@@ -454,57 +455,8 @@ export default function FundTradesPage() {
             {/* Постоянный нудж «данные с задержкой» — виден на всех табах (Free/гость) */}
             <DelayedDataBadge />
 
-            {/* Tabs */}
-            <div
-                style={{
-                    display: 'flex',
-                    flexWrap: 'wrap',
-                    gap: 12,
-                    alignItems: 'center',
-                    marginBottom: 16,
-                    paddingBottom: 12,
-                    borderBottom: '1px solid var(--border-color)',
-                }}
-            >
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    {([
-                        // Вкладки «Покупки фондов» (movers) и «Обзор снапшота» скрыты
-                        // с сайта по просьбе Вадима. Код рендера/загрузки ниже оставлен —
-                        // вернуть = дописать сюда строки обратно.
-                        { id: 'funds' as const, label: 'Состав фондов', icon: Wallet },
-                        { id: 'portfolio' as const, label: 'Общий портфель', icon: Briefcase },
-                        { id: 'company' as const, label: 'Потоки по компании', icon: ArrowLeftRight },
-                    ]).map((t) => {
-                        const Icon = t.icon;
-                        const active = tab === t.id;
-                        return (
-                            <button
-                                key={t.id}
-                                onClick={() => setTab(t.id)}
-                                className="editorial-press"
-                                style={{
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: 6,
-                                    padding: '8px 16px',
-                                    background: active ? 'var(--accent)' : 'var(--bg-secondary)',
-                                    color: active ? 'var(--text-inverse)' : 'var(--text-primary)',
-                                    border: '2px solid var(--text-primary)',
-                                    borderRadius: 999,
-                                    fontSize: 'var(--fs-sm)',
-                                    fontWeight: active ? 700 : 600,
-                                    cursor: 'pointer',
-                                    boxShadow: active ? '3px 3px 0 var(--text-primary)' : 'none',
-                                }}
-                            >
-                                <Icon size={14} />
-                                {t.label}
-                            </button>
-                        );
-                    })}
-                </div>
-            </div>
-
+            {/* Ошибка загрузки — НАД карточкой: между вкладками и панелью не должно
+                быть ничего, иначе язычок папки оторвётся от панели (см. .has-tabs). */}
             {error && (
                 <div
                     style={{
@@ -521,12 +473,27 @@ export default function FundTradesPage() {
                 </div>
             )}
 
-            {/* Tab content */}
+            {/* Карточка с вкладками: обёртка несёт единую editorial-тень на
+                [вкладки + панель]. Папка-вкладки 1:1 с «Деньгами в фондах». */}
+            <div className="tabbed-card">
+
+            {/* Вкладки — editorial folder-tabs (ChartTabs). Movers/snapshots скрыты
+                с сайта по просьбе Вадима: вернуть = дописать сюда строки обратно. */}
+            <ChartTabs<Tab>
+                value={tab}
+                onChange={setTab}
+                items={[
+                    { key: 'funds', label: 'Состав фондов', Icon: Wallet },
+                    { key: 'portfolio', label: 'Общий портфель', Icon: Briefcase },
+                    { key: 'company', label: 'Потоки по компании', Icon: ArrowLeftRight },
+                ]}
+            />
+
+            {/* Tab content — активная вкладка сливается с панелью (.has-tabs) */}
             {tab === 'funds' && (
-                // Editorial-frame — как у остальных индикаторов (Сезонность/OI):
-                // белый контейнер с рамкой, контролы сверху на белом, а сетка
-                // карточек — на бежевой paper-card внутри.
-                <div className="editorial-frame">
+                // Editorial-frame has-tabs — панель папки: контролы сверху на белом,
+                // а сетка карточек — на бежевой paper-card внутри.
+                <div className="editorial-frame has-tabs">
                     {/* Контролы карточек — единый формат индикаторов: сортировка и
                         период доходности отдельными SegmentedControl (как период/режим
                         на «Открытых позициях» и «Деньгах в фондах»), плюс мультиселект УК.
@@ -853,7 +820,9 @@ export default function FundTradesPage() {
                         Тумблеры режима и периода живут в шапках самих блоков. */}
                     {/* overflow НЕ hidden: поповер подсказки «?» и Dropdown месяца
                         должны свободно выходить за пределы карточки, не обрезаясь. */}
-                    <div style={{ background: 'var(--bg-secondary)', border: '2px solid var(--text-primary)', borderRadius: 16, boxShadow: '4px 4px 0 var(--text-primary)' }}>
+                    {/* Панель папки: padding:0 — тулбар и сетка идут от края до края
+                        со своими отступами (как было у прежней карточки портфеля). */}
+                    <div className="editorial-frame has-tabs" style={{ padding: 0 }}>
                         {ukOptions.length > 1 && (
                             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: '1.5px solid var(--border-color)' }}>
                                 <UkMultiSelect
@@ -982,9 +951,8 @@ export default function FundTradesPage() {
             )}
 
             {tab === 'company' && (
-                // Editorial-frame — оборачиваем индикатор «Потоки по компании» в тот
-                // же контейнер (paper bg + outline + hard-shadow), что и OI/Сезонность.
-                <div className="editorial-frame">
+                // Editorial-frame has-tabs — панель папки для «Потоков по компании».
+                <div className="editorial-frame has-tabs">
                     <CompanyFlowsTab
                         presetAsset={companyPreset}
                         onPresetConsumed={() => setCompanyPreset(null)}
@@ -994,6 +962,8 @@ export default function FundTradesPage() {
             )}
 
             {tab === 'snapshots' && <SnapshotReviewTab />}
+
+            </div>{/* /tabbed-card */}
 
             {selectedTicker && (() => {
                 const listFund = funds.find((f) => f.ticker === selectedTicker) ?? null;
