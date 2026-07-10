@@ -1,5 +1,5 @@
 /**
- * MobileFundTradesPage — мобильная версия «Что покупают фонды» (desktop
+ * MobileFundTradesPage — мобильная версия «Сделки фондов» (desktop
  * FundTradesPage). Реплицирует ВСЕ 4 режима десктопа 1:1, но контролы вынесены
  * не в табы наверху, а в action-rail ПОД контентом (MobileLayout):
  *
@@ -75,11 +75,11 @@ import OnboardingTour, { type TourStep } from '../../components/onboarding/Onboa
 type Tab = 'funds' | 'portfolio' | 'movers' | 'snapshots' | 'company';
 
 const TAB_LABEL: Record<Tab, string> = {
-  funds: 'Состав фондов',
+  funds: 'Витрина',
   portfolio: 'Общий портфель',
   movers: 'Движения',
   snapshots: 'Снапшот',
-  company: 'Потоки по компании',
+  company: 'По бумаге',
 };
 
 const CATEGORY_LABEL: Record<string, string> = {
@@ -201,7 +201,7 @@ function LockedView() {
               letterSpacing: '-0.01em',
             }}
           >
-            Что покупают фонды
+            Сделки фондов
           </h1>
           <p
             style={{
@@ -248,7 +248,7 @@ function LockedView() {
               onClick={() =>
                 showUpgrade({
                   tier: 'pro',
-                  featureName: 'Что покупают фонды',
+                  featureName: 'Сделки фондов',
                   indicator: 'fund_trades',
                 })
               }
@@ -495,7 +495,7 @@ export default function MobileFundTradesPage() {
   const tourSteps: TourStep[] = [
     {
       selector: null,
-      title: 'Что покупают фонды',
+      title: 'Сделки фондов',
       body: (
         <>
           <p style={{ marginBottom: 8 }}>
@@ -537,16 +537,13 @@ export default function MobileFundTradesPage() {
             Открыл кнопку <strong>«Опции»</strong>. Вверху — переключатель режимов:
           </p>
           <p style={{ marginBottom: 4 }}>
-            <strong>Состав фондов</strong> — пончик портфеля каждого БПИФ
+            <strong>Витрина</strong> — пончик портфеля каждого БПИФ
           </p>
           <p style={{ marginBottom: 4 }}>
-            <strong>Движения</strong> — что докупили/продали across фондов
-          </p>
-          <p style={{ marginBottom: 4 }}>
-            <strong>Снапшот</strong> — детальный обзор изменений одного фонда
+            <strong>Общий портфель</strong> — все фонды слиты в один портфель
           </p>
           <p>
-            <strong>Потоки по компании</strong> — притоки/оттоки по одной бумаге
+            <strong>По бумаге</strong> — притоки/оттоки по одной бумаге
           </p>
         </>
       ),
@@ -630,7 +627,7 @@ export default function MobileFundTradesPage() {
     >
       <MobilePageHeader
         Icon={Wallet}
-        title="Что покупают фонды"
+        title="Сделки фондов"
         helpLink="/methodology/funds-catalog"
         sourceNote="Справки о СЧА (форма ЦБ № 0420502) · УК Первая, Т-Капитал, ВИМ, Альфа"
       />
@@ -838,9 +835,9 @@ export default function MobileFundTradesPage() {
               {([
                 // movers/snapshots скрыты с сайта (как на десктопе). Код рендера ниже
                 // оставлен — вернуть = дописать строки обратно.
-                { id: 'funds' as const, label: 'Состав фондов', icon: Wallet },
+                { id: 'funds' as const, label: 'Витрина', icon: Wallet },
                 { id: 'portfolio' as const, label: 'Портфель', icon: Briefcase },
-                { id: 'company' as const, label: 'Потоки', icon: ArrowLeftRight },
+                { id: 'company' as const, label: 'По бумаге', icon: ArrowLeftRight },
               ]).map((t) => {
                 const Icon = t.icon;
                 return (
@@ -1421,7 +1418,7 @@ function MoversColumn({
                 role="button"
                 tabIndex={0}
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onAssetClick(m); } }}
-                title={`Потоки по компании: ${mName}`}
+                title={`По бумаге: ${mName}`}
                 style={{
                   padding: '9px 8px',
                   margin: '0 -8px',

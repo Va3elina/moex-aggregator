@@ -122,7 +122,7 @@ function CompanyFlowFigure() {
 
 export default function FundsCatalogMethodologyPage() {
     return (
-        <MethodologyWrapper icon={LayoutGrid} title="Покупки фондов" backTo="/fund-trades">
+        <MethodologyWrapper icon={LayoutGrid} title="Сделки фондов" backTo="/fund-trades">
             <Section title="Что это">
                 <p>
                     Раздел показывает, во что вложены крупные биржевые фонды акций и как их

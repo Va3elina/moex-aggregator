@@ -234,7 +234,7 @@ export default function CombinedPortfolioView({ portfolio, loading, mode, period
                 role={click ? 'button' : undefined}
                 tabIndex={click ? 0 : undefined}
                 onKeyDown={click ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); click(); } } : undefined}
-                title={click ? `Потоки по компании: ${fundAssetName(h.asset_name, h.isin)}` : undefined}
+                title={click ? `По бумаге: ${fundAssetName(h.asset_name, h.isin)}` : undefined}
                 style={{ display: 'grid', gridTemplateColumns: D_GRID, gap: 10, alignItems: 'center', padding: '7px 8px', margin: '0 -8px', borderRadius: 8, cursor: click ? 'pointer' : 'default', background: hov ? 'color-mix(in srgb, var(--text-primary) 5%, transparent)' : 'transparent', borderBottom: last ? 'none' : '1px dashed color-mix(in srgb, var(--text-primary) 12%, transparent)', transition: 'background 0.12s ease' }}
             >
                 <AssetLogo h={h} size={30} color={color} />

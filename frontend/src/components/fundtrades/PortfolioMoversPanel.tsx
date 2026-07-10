@@ -137,7 +137,7 @@ export default function PortfolioMoversPanel({ movers, loading, period, variant 
                 role={click ? 'button' : undefined}
                 tabIndex={click ? 0 : undefined}
                 onKeyDown={click ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); click(); } } : undefined}
-                title={click ? `Потоки по компании: ${fundAssetName(m.asset_name, isin)}` : undefined}
+                title={click ? `По бумаге: ${fundAssetName(m.asset_name, isin)}` : undefined}
                 onMouseEnter={click ? (e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--text-primary) 5%, transparent)'; } : undefined}
                 onMouseLeave={click ? (e) => { e.currentTarget.style.background = 'transparent'; } : undefined}
                 style={{ display: 'grid', gridTemplateColumns: '30px minmax(0, 1fr) minmax(30px, 0.8fr) 96px', gap: 10, alignItems: 'center', padding: '7px 6px', margin: '0 -6px', borderRadius: 8, cursor: click ? 'pointer' : 'default', borderBottom: last ? 'none' : '1px dashed color-mix(in srgb, var(--text-primary) 12%, transparent)', transition: 'background 0.12s ease' }}
