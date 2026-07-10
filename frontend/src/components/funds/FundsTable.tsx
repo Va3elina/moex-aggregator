@@ -124,8 +124,8 @@ export default function FundsTable({
                 <table className="w-full" style={{ fontSize: 'var(--fs-sm)' }}>
                     <thead>
                         <tr className="text-theme-secondary text-left">
-                            <th className="px-4 py-2 font-medium w-10"></th>
-                            <th className="px-4 py-2 font-medium">Название</th>
+                            <th className="pl-4 pr-0 py-2 font-medium w-10"></th>
+                            <th className="pl-1 pr-4 py-2 font-medium">Название</th>
                             <th className="px-4 py-2 font-medium">Тикер</th>
                             <th className="px-4 py-2 font-medium text-right whitespace-nowrap">
                                 <button
@@ -155,7 +155,7 @@ export default function FundsTable({
                     <tbody>
                         {allFundIds.length > 0 && (
                             <tr className="border-b border-theme" style={{ background: 'color-mix(in srgb, var(--text-primary) 6%, transparent)' }}>
-                                <td className="px-4 py-1">
+                                <td className="pl-4 pr-0 py-1">
                                     <div
                                         className="flex items-center justify-center w-5 h-5 rounded-lg hover:bg-white/5 cursor-pointer transition-colors"
                                         onClick={toggleAllFunds}
@@ -165,12 +165,12 @@ export default function FundsTable({
                                             checked={allSelected}
                                             ref={el => { if (el) el.indeterminate = anySelected && !allSelected; }}
                                             onChange={() => {}}
-                                            className="w-2.5 h-2.5 rounded border-theme cursor-pointer"
+                                            className="w-3 h-3 rounded border-theme cursor-pointer"
                                             style={{ accentColor: 'var(--accent)' }}
                                         />
                                     </div>
                                 </td>
-                                <td colSpan={4} className="px-4 py-1 cursor-pointer select-none" onClick={toggleAllFunds}>
+                                <td colSpan={4} className="pl-1 pr-4 py-1 cursor-pointer select-none" onClick={toggleAllFunds}>
                                     <span className="text-sm font-bold text-theme-primary">Выбрать все</span>
                                 </td>
                             </tr>
@@ -237,7 +237,7 @@ export default function FundsTable({
                                         {subcat && (
                                             <tr className="border-t-2 border-theme"
                                                 style={{ background: 'color-mix(in srgb, var(--text-primary) 4%, transparent)' }}>
-                                                <td className="px-4 py-1">
+                                                <td className="pl-4 pr-0 py-1">
                                                     <div
                                                         className="flex items-center justify-center w-5 h-5 rounded-lg hover:bg-white/5 cursor-pointer transition-colors"
                                                         onClick={toggleSubcat}
@@ -247,12 +247,12 @@ export default function FundsTable({
                                                             checked={!allHidden}
                                                             ref={el => { if (el) el.indeterminate = someHidden && !allHidden; }}
                                                             onChange={() => {}}
-                                                            className="w-2.5 h-2.5 rounded border-theme cursor-pointer"
+                                                            className="w-3 h-3 rounded border-theme cursor-pointer"
                                                             style={{ accentColor: 'var(--accent)' }}
                                                         />
                                                     </div>
                                                 </td>
-                                                <td colSpan={4} className="px-4 py-1 cursor-pointer select-none" onClick={toggleCollapse}>
+                                                <td colSpan={4} className="pl-1 pr-4 py-1 cursor-pointer select-none" onClick={toggleCollapse}>
                                                     <div className="flex items-center gap-2">
                                                         <span className="text-[10px] text-theme-secondary transition-transform duration-200" style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>▼</span>
                                                         <span className="text-sm font-bold text-theme-primary">
@@ -302,7 +302,7 @@ export default function FundsTable({
                                                     style={isLocked ? { opacity: 0.45, filter: 'grayscale(0.5)' } : undefined}
                                                     title={isLocked ? 'Доступно на повышенном тарифе' : undefined}
                                                 >
-                                                    <td className="px-4 py-1">
+                                                    <td className="pl-4 pr-0 py-1">
                                                         {isLocked ? (
                                                             <div
                                                                 className="flex items-center justify-center w-5 h-5 rounded-lg cursor-pointer"
@@ -319,14 +319,14 @@ export default function FundsTable({
                                                                     type="checkbox"
                                                                     checked={!isHidden}
                                                                     onChange={() => {}}
-                                                                    className="w-2.5 h-2.5 rounded border-theme cursor-pointer"
+                                                                    className="w-3 h-3 rounded border-theme cursor-pointer"
                                                                     style={{ accentColor: 'var(--accent)' }}
                                                                 />
                                                             </div>
                                                         )}
                                                     </td>
                                                     <td
-                                                        className="px-4 py-1 cursor-pointer"
+                                                        className="pl-1 pr-4 py-1 cursor-pointer"
                                                         onClick={isLocked ? handleLockedClick : () => onOpenFundCard(fund)}
                                                     >
                                                         <div className="flex items-center gap-2">
