@@ -360,7 +360,7 @@ export default function AssetPickerModal({ assets, onSelect, onClose }: AssetPic
                     style={{
                       backgroundColor: isActive ? 'var(--accent)' : 'var(--bg-secondary)',
                       color: isActive ? 'var(--text-inverse)' : 'var(--text-primary)',
-                      border: `2px solid ${isActive ? 'var(--accent)' : 'var(--text-primary)'}`,
+                      border: '2px solid var(--text-primary)',
                       boxShadow: isActive ? 'var(--shadow-hard-chip, 3px 3px 0 var(--text-primary))' : undefined,
                     }}
                   >
