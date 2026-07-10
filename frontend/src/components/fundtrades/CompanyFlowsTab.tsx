@@ -28,8 +28,17 @@ import CompanyFlowsHistogram, { type CompanyFlowsSeries } from './CompanyFlowsHi
 import { useFitToViewport } from '../../hooks/useFitToViewport';
 import AssetPickerModal from './AssetPickerModal';
 import FundPicker, { type FundPickerFund } from './FundPicker';
+import SegmentedControl from '../SegmentedControl';
+import { usePersistedState } from '../../hooks/usePersistedState';
 
 type Metric = 'amount' | 'weight';
+
+// Период графика — окно последних N месяцев. «Всё» = вся доступная история
+// (левый пустой хвост всё равно обрезает сам CompanyFlowsHistogram).
+type Period = '1y' | '3y' | 'all';
+const PERIOD_LABELS: Record<Period, string> = { '1y': '1 год', '3y': '3 года', 'all': 'Всё' };
+const CF_PERIODS: Period[] = ['1y', '3y', 'all'];
+const PERIOD_MONTHS: Record<Period, number | null> = { '1y': 12, '3y': 36, 'all': null };
 
 // ITEM 2 — сколько фондов выбрать по умолчанию для свежей бумаги:
 // top-N по суммарному |потоку| (см. computeTopFunds). Пусто-выбор = все фонды.
@@ -114,6 +123,10 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed }: Compa
 
     // metric toggle — default ₽ (amount).
     const [metric] = useState<Metric>('amount');
+
+    // Период графика (окно последних N месяцев). Персист между сессиями,
+    // дефолт «Всё» — сохраняем прежнее поведение (показывали всю историю).
+    const [period, setPeriod] = usePersistedState<Period>('frame:companyflows:period', 'all');
 
     // Загрузка списка бумаг → выбрать первую (топ по funds_count), если нет
     // pending-preset (presetAsset выбирается отдельным эффектом и имеет приоритет).
@@ -234,8 +247,27 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed }: Compa
     // Все фонды сняты пользователем (но у бумаги фонды есть) — empty-state.
     const noFundsSelected = !!flows && flows.funds.length > 0 && fundSeries.length === 0;
 
-    // Триггер entrance-волны баров: перезапуск при смене бумаги ИЛИ набора фондов.
-    const animTrigger = `${selectedAsset?.key ?? ''}|${[...selectedFunds].sort().join(',')}`;
+    // Окно периода: индекс первого видимого месяца (последние N месяцев).
+    // «Всё» или истории меньше окна → 0 (не режем). Значения серий выровнены с
+    // flows.months по индексу, поэтому режем их тем же срезом.
+    const periodStart = useMemo(() => {
+        const total = flows?.months.length ?? 0;
+        const n = PERIOD_MONTHS[period];
+        return n == null || total <= n ? 0 : total - n;
+    }, [flows, period]);
+
+    const visibleMonths = useMemo(
+        () => (flows?.months ?? []).slice(periodStart),
+        [flows, periodStart],
+    );
+    const visibleSeries = useMemo<CompanyFlowsSeries[]>(
+        () => fundSeries.map(s => ({ ...s, values: s.values.slice(periodStart) })),
+        [fundSeries, periodStart],
+    );
+
+    // Триггер entrance-волны баров: перезапуск при смене бумаги, набора фондов
+    // ИЛИ периода — новое окно должно проиграть каскад заново.
+    const animTrigger = `${selectedAsset?.key ?? ''}|${[...selectedFunds].sort().join(',')}|${period}`;
 
     // ── Рендер ──
     if (assetsLoading) {
@@ -356,6 +388,13 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed }: Compa
                     selected={selectedFunds}
                     onChange={setSelectedFunds}
                 />
+
+                {/* Период — окно последних N месяцев (1 год / 3 года / Всё). */}
+                <SegmentedControl<Period>
+                    options={CF_PERIODS.map(p => ({ key: p, label: PERIOD_LABELS[p] }))}
+                    value={period}
+                    onChange={setPeriod}
+                />
             </div>
 
             {flowsError && (
@@ -372,8 +411,8 @@ export default function CompanyFlowsTab({ presetAsset, onPresetConsumed }: Compa
                 тултип раскрывает вклад каждого фонда. */}
             <div ref={chartAnchorRef}>
                 <CompanyFlowsHistogram
-                    months={flows?.months ?? []}
-                    series={fundSeries}
+                    months={visibleMonths}
+                    series={visibleSeries}
                     height={chartHeight}
                     loading={flowsLoading}
                     noFundsSelected={noFundsSelected}
