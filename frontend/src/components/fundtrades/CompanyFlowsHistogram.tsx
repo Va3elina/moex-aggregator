@@ -387,13 +387,21 @@ export default function CompanyFlowsHistogram({
                             return (
                                 <ChartTooltip x={tooltipPos.x} y={tooltipPos.y} clampTop={cssVar('--chart-pad-top', 14)} clampBottom={cssVar('--chart-pad-bottom', 50)}>
                                     {/* Без точек: единственное цветное число — чистый поток
-                                        (зелёный приток / красный отток). Разбивка по фондам
-                                        идёт нейтральным цветом, чтобы не спорить с ним. */}
-                                    <TooltipRow hideDot color={netColor} label={net >= 0 ? 'Чистая покупка' : 'Чистая продажа'} value={fmtFlow(net)} />
+                                        (зелёный приток / красный отток). Итог — жирный тёмный
+                                        лейбл; разбивка по фондам идёт тем же серым, что цифры
+                                        оси Y справа от графика, чтобы не спорить с итогом. */}
+                                    <TooltipRow
+                                        hideDot
+                                        color={netColor}
+                                        label={net >= 0 ? 'Чистая покупка' : 'Чистая продажа'}
+                                        value={fmtFlow(net)}
+                                        labelClass="font-bold"
+                                        labelColor="var(--text-primary)"
+                                    />
                                     {shown.length > 0 && (
                                         <div style={{ marginTop: 'var(--sp-1)', paddingTop: 'var(--sp-1)', borderTop: '1px solid var(--border-color)' }}>
                                             {shown.map((r, i) => (
-                                                <TooltipRow key={i} hideDot color={r.color} valueColor="var(--text-primary)" label={r.label} value={fmtFlow(r.mln)} />
+                                                <TooltipRow key={i} hideDot color={r.color} valueColor="var(--axis-color, #9CA3B8)" label={r.label} value={fmtFlow(r.mln)} />
                                             ))}
                                             {extra > 0 && (
                                                 <div className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)', marginTop: 'var(--sp-1)' }}>
