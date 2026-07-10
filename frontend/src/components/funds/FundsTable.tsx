@@ -124,10 +124,10 @@ export default function FundsTable({
                 <table className="w-full" style={{ fontSize: 'var(--fs-sm)' }}>
                     <thead>
                         <tr className="text-theme-secondary text-left">
-                            <th className="px-4 py-3 font-medium w-10"></th>
-                            <th className="px-4 py-3 font-medium">Название</th>
-                            <th className="px-4 py-3 font-medium">Тикер</th>
-                            <th className="px-4 py-3 font-medium text-right whitespace-nowrap">
+                            <th className="px-4 py-2 font-medium w-10"></th>
+                            <th className="px-4 py-2 font-medium">Название</th>
+                            <th className="px-4 py-2 font-medium">Тикер</th>
+                            <th className="px-4 py-2 font-medium text-right whitespace-nowrap">
                                 <button
                                     onClick={() => toggleSort('nav')}
                                     className="inline-flex items-center gap-1 hover:text-theme-primary transition-colors"
@@ -138,7 +138,7 @@ export default function FundsTable({
                                         : <ArrowUp size={15} strokeWidth={2.4} />)}
                                 </button>
                             </th>
-                            <th className="px-4 py-3 font-medium text-right whitespace-nowrap">
+                            <th className="px-4 py-2 font-medium text-right whitespace-nowrap">
                                 <button
                                     onClick={() => toggleSort('y1')}
                                     className="inline-flex items-center gap-1 hover:text-theme-primary transition-colors"
@@ -155,9 +155,9 @@ export default function FundsTable({
                     <tbody>
                         {allFundIds.length > 0 && (
                             <tr className="border-b border-theme" style={{ background: 'color-mix(in srgb, var(--text-primary) 6%, transparent)' }}>
-                                <td className="px-4 py-3">
+                                <td className="px-4 py-1">
                                     <div
-                                        className="flex items-center justify-center w-8 h-8 rounded-lg hover:bg-white/5 cursor-pointer transition-colors"
+                                        className="flex items-center justify-center w-5 h-5 rounded-lg hover:bg-white/5 cursor-pointer transition-colors"
                                         onClick={toggleAllFunds}
                                     >
                                         <input
@@ -170,7 +170,7 @@ export default function FundsTable({
                                         />
                                     </div>
                                 </td>
-                                <td colSpan={4} className="px-4 py-3 cursor-pointer select-none" onClick={toggleAllFunds}>
+                                <td colSpan={4} className="px-4 py-1 cursor-pointer select-none" onClick={toggleAllFunds}>
                                     <span className="text-sm font-bold text-theme-primary">Выбрать все</span>
                                 </td>
                             </tr>
@@ -237,9 +237,9 @@ export default function FundsTable({
                                         {subcat && (
                                             <tr className="border-t-2 border-theme"
                                                 style={{ background: 'color-mix(in srgb, var(--text-primary) 4%, transparent)' }}>
-                                                <td className="px-4 py-3">
+                                                <td className="px-4 py-1">
                                                     <div
-                                                        className="flex items-center justify-center w-8 h-8 rounded-lg hover:bg-white/5 cursor-pointer transition-colors"
+                                                        className="flex items-center justify-center w-5 h-5 rounded-lg hover:bg-white/5 cursor-pointer transition-colors"
                                                         onClick={toggleSubcat}
                                                     >
                                                         <input
@@ -252,7 +252,7 @@ export default function FundsTable({
                                                         />
                                                     </div>
                                                 </td>
-                                                <td colSpan={4} className="px-4 py-3 cursor-pointer select-none" onClick={toggleCollapse}>
+                                                <td colSpan={4} className="px-4 py-1 cursor-pointer select-none" onClick={toggleCollapse}>
                                                     <div className="flex items-center gap-2">
                                                         <span className="text-[10px] text-theme-secondary transition-transform duration-200" style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>▼</span>
                                                         <span className="text-sm font-bold text-theme-primary">
@@ -302,17 +302,17 @@ export default function FundsTable({
                                                     style={isLocked ? { opacity: 0.45, filter: 'grayscale(0.5)' } : undefined}
                                                     title={isLocked ? 'Доступно на повышенном тарифе' : undefined}
                                                 >
-                                                    <td className="px-4 py-3">
+                                                    <td className="px-4 py-1">
                                                         {isLocked ? (
                                                             <div
-                                                                className="flex items-center justify-center w-8 h-8 rounded-lg cursor-pointer"
+                                                                className="flex items-center justify-center w-5 h-5 rounded-lg cursor-pointer"
                                                                 onClick={handleLockedClick}
                                                             >
                                                                 <Lock size={14} strokeWidth={2.2} style={{ color: 'var(--text-muted)' }} />
                                                             </div>
                                                         ) : (
                                                             <div
-                                                                className="flex items-center justify-center w-8 h-8 rounded-lg hover:bg-white/5 cursor-pointer transition-colors"
+                                                                className="flex items-center justify-center w-5 h-5 rounded-lg hover:bg-white/5 cursor-pointer transition-colors"
                                                                 onClick={() => onToggleFundVisibility(fund.fund_id)}
                                                             >
                                                                 <input
@@ -326,7 +326,7 @@ export default function FundsTable({
                                                         )}
                                                     </td>
                                                     <td
-                                                        className="px-4 py-3 cursor-pointer"
+                                                        className="px-4 py-1 cursor-pointer"
                                                         onClick={isLocked ? handleLockedClick : () => onOpenFundCard(fund)}
                                                     >
                                                         <div className="flex items-center gap-2">
@@ -334,7 +334,7 @@ export default function FundsTable({
                                                                 const uk = resolveFundLogo(fund.ticker, fund.uk_id);
                                                                 if (uk) {
                                                                     return (
-                                                                        <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 font-black text-sm overflow-hidden"
+                                                                        <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 font-black text-sm overflow-hidden"
                                                                             style={{ backgroundColor: uk.img ? undefined : uk.bg, color: uk.color }}>
                                                                             {uk.img
                                                                                 ? <img src={uk.img} alt={uk.name} className="w-full h-full object-cover" />
@@ -362,18 +362,18 @@ export default function FundsTable({
                                                         </div>
                                                     </td>
                                                     <td
-                                                        className="px-4 py-3 text-theme-secondary font-mono cursor-pointer"
+                                                        className="px-4 py-1 text-theme-secondary font-mono cursor-pointer"
                                                         onClick={isLocked ? handleLockedClick : () => onOpenFundCard(fund)}
                                                     >
                                                         {fund.ticker}
                                                     </td>
-                                                    <td className="px-4 py-3 text-right font-mono">
+                                                    <td className="px-4 py-1 text-right font-mono">
                                                         {isLocked ? '—' : (lastData?.nav ? (lastData.nav / 1e9).toFixed(2) : '—')}
                                                     </td>
                                                     {(() => {
                                                         const br = isLocked ? null : bestReturn(fund.returns);
                                                         return (
-                                                            <td className="px-4 py-3 text-right font-mono whitespace-nowrap" style={{
+                                                            <td className="px-4 py-1 text-right font-mono whitespace-nowrap" style={{
                                                                 color: br ? (br.v >= 0 ? 'var(--funds-flow-positive)' : 'var(--funds-flow-negative)') : undefined,
                                                             }}>
                                                                 {isLocked || !br ? '—' : (
