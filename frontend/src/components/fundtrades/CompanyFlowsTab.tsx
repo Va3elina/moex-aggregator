@@ -95,7 +95,7 @@ export interface CompanyFlowsTabProps {
 export default function CompanyFlowsTab({ presetAsset, onPresetConsumed }: CompanyFlowsTabProps = {}) {
     // Высота графика «под экран» — anchor на обёртке чарта (как в «Деньги в фондах»).
     const chartAnchorRef = useRef<HTMLDivElement>(null);
-    const chartHeight = useFitToViewport(chartAnchorRef, { min: 360, max: 720, bottomBuffer: 96 });
+    const chartHeight = useFitToViewport(chartAnchorRef, { min: 360, max: 720, bottomBuffer: 64 });
     const [assets, setAssets] = useState<FundTradeAsset[]>([]);
     const [assetsLoading, setAssetsLoading] = useState(true);
     const [assetsError, setAssetsError] = useState<string | null>(null);

@@ -125,7 +125,7 @@ export default function CbrFlowsPage() {
   const chartHeight = useFitToViewport(chartAnchorRef, {
     min: 360,
     max: 720,
-    bottomBuffer: 96,
+    bottomBuffer: 64,
   });
 
   // Категории под замком тарифа — источник истины бэкенд (locked_categories):

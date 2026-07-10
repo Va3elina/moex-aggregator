@@ -181,7 +181,7 @@ export default function OpenInterestPage() {
   const chartHeight = useFitToViewport(chartAnchorRef, {
     min: 360,
     max: 720,
-    bottomBuffer: 96, // range slider в SimpleChart (~48) + page py-bottom (~32) + safety margin
+    bottomBuffer: 64, // range slider в SimpleChart (~48) + минимальный нижний отступ страницы
     watchRefs: [headerRef, controlsRef],
   });
 

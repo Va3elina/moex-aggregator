@@ -129,7 +129,7 @@ export default function FundsMoneyPage() {
     const chartHeight = useFitToViewport(chartAnchorRef, {
         min: 360,
         max: 720,
-        bottomBuffer: 96,
+        bottomBuffer: 64,
     });
 
     // Ограничения периодов для flow таймфреймов (как на ОИ)

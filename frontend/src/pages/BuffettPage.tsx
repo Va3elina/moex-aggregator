@@ -74,7 +74,7 @@ export default function BuffettPage() {
     const chartHeight = useFitToViewport(chartAnchorRef, {
         min: 360,
         max: 720,
-        bottomBuffer: 96,
+        bottomBuffer: 64,
     });
 
     // Stale-guard: при быстром переключении period/mode медленный ранний ответ
