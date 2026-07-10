@@ -90,14 +90,24 @@ interface TooltipRowProps {
   value: string;
   /** Дополнительный CSS-класс для value */
   valueClass?: string;
+  /** Не рисовать точку слева — текст уезжает влево на её ширину + gap. */
+  hideDot?: boolean;
+  /** Цвет значения. По умолчанию = color (точка и число одного цвета).
+   *  Нейтральный токен → число не красится. */
+  valueColor?: string;
 }
 
-export function TooltipRow({ color, label, value, valueClass }: TooltipRowProps) {
+export function TooltipRow({ color, label, value, valueClass, hideDot, valueColor }: TooltipRowProps) {
   return (
     <div className="flex items-center" style={{ gap: 'var(--sp-2)' }}>
-      <span className={TOOLTIP.dotClass} style={{ ...TOOLTIP.dotStyle, backgroundColor: color }} />
+      {!hideDot && (
+        <span className={TOOLTIP.dotClass} style={{ ...TOOLTIP.dotStyle, backgroundColor: color }} />
+      )}
       <span className={TOOLTIP.labelClass} style={TOOLTIP.labelStyle}>{label}</span>
-      <span className={`${TOOLTIP.valueClass} ml-auto pl-2 ${valueClass ?? ''}`} style={{ ...TOOLTIP.valueStyle, color }}>
+      <span
+        className={`${TOOLTIP.valueClass} ml-auto pl-2 ${valueClass ?? ''}`}
+        style={{ ...TOOLTIP.valueStyle, color: valueColor ?? color }}
+      >
         {value}
       </span>
     </div>
