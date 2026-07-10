@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowDown, ArrowUp, Lock, AlertCircle } from 'lucide-react';
+import { ArrowDown, ArrowUp, Lock, AlertCircle, Check, Minus } from 'lucide-react';
 import { resolveFundLogo, stripUkName, SUBCATEGORY_HELP } from '../../config/fundConfig';
 import HelpTooltip from '../HelpTooltip';
 import type { FundInfo, FundsChartResponse } from '../../services/api';
@@ -16,6 +16,33 @@ const FUND_COLORS = [
 // Дефолтный editorial `border-theme` = 2px solid var(--text-primary), т.е. жирная
 // чёрная полоса — в списке фондов она выглядит грубо.
 const SOFT_BORDER = '1px solid color-mix(in srgb, var(--text-primary) 12%, transparent)';
+
+// Чекбокс bare-режима — акцентный скруглённый квадрат с белой галочкой, как в
+// макете модалки и в мультивыборе поиска ОИ (Check/Minus вместо нативного input).
+function CheckBox({ checked, indeterminate }: { checked: boolean; indeterminate?: boolean }) {
+    const on = checked || indeterminate;
+    return (
+        <span
+            style={{
+                width: 18,
+                height: 18,
+                flexShrink: 0,
+                borderRadius: 5,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: on ? 'var(--accent)' : 'transparent',
+                border: on
+                    ? '1.5px solid var(--accent)'
+                    : '1.5px solid color-mix(in srgb, var(--text-primary) 32%, transparent)',
+                color: 'var(--text-inverse)',
+            }}
+            aria-hidden="true"
+        >
+            {indeterminate ? <Minus size={12} strokeWidth={3.5} /> : checked ? <Check size={12} strokeWidth={3.5} /> : null}
+        </span>
+    );
+}
 
 // Подкатегории, у которых данные (NAV) ещё наливаются — показываем бейдж
 // «Скоро» на заголовке группы. Убрать имя отсюда, когда NAV появится.
@@ -195,6 +222,9 @@ export default function FundsTable({
                                         className="flex items-center justify-center w-5 h-5 rounded-lg hover:bg-white/5 cursor-pointer transition-colors"
                                         onClick={toggleAllFunds}
                                     >
+                                        {bare ? (
+                                            <CheckBox checked={allSelected} indeterminate={anySelected && !allSelected} />
+                                        ) : (
                                         <input
                                             type="checkbox"
                                             checked={allSelected}
@@ -203,6 +233,7 @@ export default function FundsTable({
                                             className="w-3 h-3 rounded border-theme cursor-pointer"
                                             style={{ accentColor: 'var(--accent)' }}
                                         />
+                                        )}
                                     </div>
                                 </td>
                                 <td colSpan={4} className="pl-1 pr-4 py-1 cursor-pointer select-none" onClick={toggleAllFunds}>
@@ -277,6 +308,9 @@ export default function FundsTable({
                                                         className="flex items-center justify-center w-5 h-5 rounded-lg hover:bg-white/5 cursor-pointer transition-colors"
                                                         onClick={toggleSubcat}
                                                     >
+                                                        {bare ? (
+                                                            <CheckBox checked={!allHidden} indeterminate={someHidden && !allHidden} />
+                                                        ) : (
                                                         <input
                                                             type="checkbox"
                                                             checked={!allHidden}
@@ -285,6 +319,7 @@ export default function FundsTable({
                                                             className="w-3 h-3 rounded border-theme cursor-pointer"
                                                             style={{ accentColor: 'var(--accent)' }}
                                                         />
+                                                        )}
                                                     </div>
                                                 </td>
                                                 <td colSpan={4} className="pl-1 pr-4 py-1 cursor-pointer select-none" onClick={toggleCollapse}>
@@ -334,10 +369,10 @@ export default function FundsTable({
                                                         isLocked ? 'cursor-not-allowed' :
                                                         isHidden ? 'opacity-50 grayscale' : 'hover:bg-white/5'
                                                     }`}
-                                                    // bare: высота строки 42px — как у строки списка активов
-                                                    // в поиске ОИ (.instrument-item, замер 41.9px).
+                                                    // bare: высота строки 41px — точно как строка списка
+                                                    // активов в поиске ОИ (.instrument-item, замер 41px).
                                                     style={{
-                                                        ...(bare ? { height: 42, borderTop: SOFT_BORDER } : {}),
+                                                        ...(bare ? { height: 41, borderTop: SOFT_BORDER } : {}),
                                                         ...(isLocked ? { opacity: 0.45, filter: 'grayscale(0.5)' } : {}),
                                                     }}
                                                     title={isLocked ? 'Доступно на повышенном тарифе' : undefined}
@@ -355,6 +390,9 @@ export default function FundsTable({
                                                                 className="flex items-center justify-center w-5 h-5 rounded-lg hover:bg-white/5 cursor-pointer transition-colors"
                                                                 onClick={() => onToggleFundVisibility(fund.fund_id)}
                                                             >
+                                                                {bare ? (
+                                                                    <CheckBox checked={!isHidden} />
+                                                                ) : (
                                                                 <input
                                                                     type="checkbox"
                                                                     checked={!isHidden}
@@ -362,6 +400,7 @@ export default function FundsTable({
                                                                     className="w-3 h-3 rounded border-theme cursor-pointer"
                                                                     style={{ accentColor: 'var(--accent)' }}
                                                                 />
+                                                                )}
                                                             </div>
                                                         )}
                                                     </td>
@@ -392,7 +431,7 @@ export default function FundsTable({
                                                                         style={{ backgroundColor: FUND_COLORS[colorIdx % FUND_COLORS.length] }} />
                                                                 );
                                                             })()}
-                                                            <span className="font-medium inline-flex items-center min-w-0" style={{ gap: 'var(--sp-1)' }}>
+                                                            <span className={`${bare ? 'font-bold' : 'font-medium'} inline-flex items-center min-w-0`} style={{ gap: 'var(--sp-1)' }}>
                                                                 <span title={fund.name} className={bare ? 'truncate' : undefined} style={bare ? { minWidth: 0, maxWidth: 168 } : undefined}>{stripUkName(fund.name, fund.uk_id)}</span>
                                                                 {!isLocked && lastData?.date && maxDate && lastData.date < maxDate && (
                                                                     <span
