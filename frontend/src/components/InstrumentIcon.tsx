@@ -68,7 +68,7 @@ export const FUT_BASE_TO_LOGO: Record<string, string> = {
   RN: 'ROSN',
   RT: 'raw_034', // Ростелеком (corrected)
   RU: 'raw_066', // РуссНефть (corrected)
-  S0: 'raw_070', // Софтлайн (corrected)
+  S0: 'raw_018', // Софтлайн (raw_070 оказался логотипом SFI — ошибка старых правок)
   SC: 'SVCB',
   SE: 'raw_035', // СПБ Биржа (corrected)
   SG: 'SNGSP',
@@ -122,10 +122,10 @@ export const FUT_BASE_TO_LOGO: Record<string, string> = {
   IMOEX: 'MOEX_IDX',
   RTSI: 'RTS_IDX',
   MCFTR: 'MOEX_IDX',  // Индекс полной доходности MOEX
-  // Облигации (ОФЗ) → герб Минфина
-  RGBI: 'BONDS',
-  RGBITR: 'BONDS',
-  RB: 'BONDS',  // Фьючерс на индекс RGBI
+  // Облигации (ОФЗ) → герб Минфина из стикерпака (raw_152)
+  RGBI: 'raw_152',
+  RGBITR: 'raw_152',
+  RB: 'raw_152',  // Фьючерс на индекс RGBI
   // Дополнительные валюты (сгенерированные иконки в том же стиле)
   AE: 'AED',
   AU: 'AUD',
@@ -211,9 +211,28 @@ export const STOCK_LOGO_OVERRIDE: Record<string, string> = {
   MRKC: 'raw_123',  // РоссетиЦентр — герб Россетей
   MRKV: 'raw_123',  // РоссетиВолга — герб Россетей
   MRKZ: 'raw_123',  // РоссетиСЗ — герб Россетей
-  MTLRP: 'MTLR',    // Мечел (прив) — лого обычки
+  MTLRP: 'raw_071', // Мечел (прив) — лого Мечела (раньше указывал на заглушку MTLR.png)
   RNFT: 'raw_066',  // РуссНефть — лого фьючерса RU
   RTKMP: 'raw_034', // Ростелеком (прив) — лого обычки
+  // Правки владельца через logos-checker (frame-logo-corrections-2026-07-10):
+  // выбор из полного стикерпака для бумаг, стоявших на generic-заглушках
+  // «кружок + буква» или без лого. GMKN — важно: файл AFKS.png на самом деле
+  // логотип Норникеля (== raw_062), а GMKN.png — Северстали; берём каноничные raw_NNN.
+  GMKN: 'raw_062',  // Норильский никель (не путать: AFKS.png/GMKN.png перепутаны местами)
+  SELG: 'raw_055',  // Селигдар
+  SGZH: 'raw_068',  // Сегежа Групп
+  WUSH: 'raw_067',  // Whoosh
+  ETLN: 'raw_050',  // Эталон
+  HNFG: 'raw_041',  // Хэндерсон
+  SPBE: 'raw_035',  // СПБ биржа
+  SOFL: 'raw_018',  // Софтлайн
+  MTLR: 'raw_071',  // Мечел
+  MVID: 'raw_093',  // М.Видео
+  AQUA: 'raw_074',  // Инарктика
+  ZAYM: 'raw_040',  // Займер
+  EUTR: 'raw_104',  // ЕвроТранс
+  DIAS: 'raw_017',  // Диасофт
+  DELI: 'raw_023',  // Делимобиль
 };
 
 /**
