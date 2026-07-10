@@ -257,6 +257,52 @@ export default function YearlySeasonalityChart({
     });
   };
 
+  // Value-pill на правой оси — SVG-based (rect + text dominantBaseline="central")
+  // для pixel-perfect alignment в браузере И в html2canvas snapshot'е (transform
+  // терялся). Общий рендер для статичной пилюли (последнее значение текущего года)
+  // и для hover-пилюли (значение под курсором, «тултип-таблетка» на оси).
+  const renderAxisPill = (value: string, color: string, yPx: number) => {
+    const padX = 6;
+    const padY = 2;
+    const pillH = pillFontPx + padY * 2;
+    const textW = measureText(value, pillFontPx, 700);
+    const pillW = Math.ceil(textW) + padX * 2;
+    // X-позиция pill: справа от data-area, +1px gap. SVG шире data-area на
+    // pillW+8, иначе html2canvas обрезает pill по SVG-bounds (overflow:visible
+    // в snapshot'е не спасает).
+    const pillX = dataAreaSize.w + 1;
+    const svgW = dataAreaSize.w + pillW + 8;
+    const svgH = dataAreaSize.h;
+    return (
+      <svg
+        width={svgW}
+        height={svgH}
+        viewBox={`0 0 ${svgW} ${svgH}`}
+        style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none', overflow: 'visible', zIndex: 2 }}
+      >
+        <rect x={pillX} y={yPx - pillH / 2} width={pillW} height={pillH} rx={4} ry={4} fill={color} />
+        <text
+          x={pillX + padX}
+          y={yPx}
+          textAnchor="start"
+          dominantBaseline="central"
+          fontSize={pillFontPx}
+          fontWeight={700}
+          fill="#fff"
+          style={{ fontVariantNumeric: 'tabular-nums', fontFamily: 'inherit' }}
+        >
+          {value}
+        </text>
+      </svg>
+    );
+  };
+
+  const fmtPillPct = (pct: number) => {
+    const sign = pct > 0 ? '+' : '';
+    const digits = Math.abs(pct) >= 10 ? 0 : 1;
+    return `${sign}${pct.toFixed(digits)}%`;
+  };
+
   return (
     <div className={revealed ? 'chart-reveal' : ''}>
       {/* Легенда — серии-периоды (среднее + сравниваемые года + текущий год),
@@ -370,75 +416,31 @@ export default function YearlySeasonalityChart({
             )}
           </svg>
 
-          {/* Current value pill — SVG-based для pixel-perfect alignment в
-              html2canvas snapshot. Раньше был HTML <div> с
-              `transform: translateY(-50%)` — html2canvas терял transform и
-              текст съезжал относительно заливки. Calc-fix без transform
-              тоже неточен (Inter font-box ≈ 1.29em ≠ CSS line-height 1.2).
-              SVG <text dominantBaseline="central"> — spec-compliant
-              geometry, рендерится одинаково в браузере и snapshot'е.
-
-              Render только когда ResizeObserver уже измерил data-area
-              (dataAreaSize.h > 0) — иначе на первом тике координаты 0,
-              pill рисуется в углу. */}
-          {visCur.length > 0 && dataAreaSize.h > 0 && (() => {
+          {/* Статичная value-pill — последнее значение линии текущего года.
+              Видна пока НЕ наводим курсор; на hover её замещает подвижная
+              hover-пилюля ниже (иначе две accent-таблетки на разной высоте).
+              Render только когда ResizeObserver измерил data-area
+              (dataAreaSize.h > 0) — иначе на первом тике координаты 0. */}
+          {visCur.length > 0 && dataAreaSize.h > 0 && tooltip?.yearlyTd === undefined && (() => {
             const last = visCur[visCur.length - 1];
-            const yPx = scY(last.pct) * dataAreaSize.h;
-            const sign = last.pct > 0 ? '+' : '';
-            const digits = Math.abs(last.pct) >= 10 ? 0 : 1;
-            const value = `${sign}${last.pct.toFixed(digits)}%`;
-            const padX = 6;
-            const padY = 2;
-            const pillH = pillFontPx + padY * 2;
-            const textW = measureText(value, pillFontPx, 700);
-            const pillW = Math.ceil(textW) + padX * 2;
-            // X-позиция pill: справа от data-area, +1px gap
-            const pillX = dataAreaSize.w + 1;
-            // SVG должен быть ШИРЕ чем data-area, иначе html2canvas
-            // обрезает content по SVG-bounds даже при overflow:visible.
-            // Делаем SVG width = data + pillW + 8px buffer чтобы pill
-            // (расположенный за правым краем data-area) полностью попал
-            // внутрь viewport SVG.
-            const svgW = dataAreaSize.w + pillW + 8;
-            const svgH = dataAreaSize.h;
+            return renderAxisPill(fmtPillPct(last.pct), CHART_COLORS.accent, scY(last.pct) * dataAreaSize.h);
+          })()}
 
-            return (
-              <svg
-                width={svgW}
-                height={svgH}
-                viewBox={`0 0 ${svgW} ${svgH}`}
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  pointerEvents: 'none',
-                  overflow: 'visible',
-                  zIndex: 2,
-                }}
-              >
-                <rect
-                  x={pillX}
-                  y={yPx - pillH / 2}
-                  width={pillW}
-                  height={pillH}
-                  rx={4}
-                  ry={4}
-                  fill={CHART_COLORS.accent}
-                />
-                <text
-                  x={pillX + padX}
-                  y={yPx}
-                  textAnchor="start"
-                  dominantBaseline="central"
-                  fontSize={pillFontPx}
-                  fontWeight={700}
-                  fill="#fff"
-                  style={{ fontVariantNumeric: 'tabular-nums', fontFamily: 'inherit' }}
-                >
-                  {value}
-                </text>
-              </svg>
-            );
+          {/* Hover value-pill — «тултип-таблетка» на правой оси, следует за
+              crosshair'ом (TradingView-style). Показывает значение линии
+              текущего года под курсором; если текущий год ещё не дотянулся до
+              наведённого дня (2026 обрывается в середине года) — показываем
+              значение базовой серии в её цвете. */}
+          {tooltip?.yearlyTd !== undefined && dataAreaSize.h > 0 && (() => {
+            const td = tooltip.yearlyTd;
+            const curPt = visCur.find(p => p.td === td);
+            if (curPt) {
+              return renderAxisPill(fmtPillPct(curPt.pct), CHART_COLORS.accent, scY(curPt.pct) * dataAreaSize.h);
+            }
+            const basePt = visAllSeries[0]?.average.find(p => p.td === td);
+            if (!basePt) return null;
+            const color = allMeta[0]?.color ?? CHART_COLORS.muted;
+            return renderAxisPill(fmtPillPct(basePt.avg_pct), color, scY(basePt.avg_pct) * dataAreaSize.h);
           })()}
 
           {/* Hover-точки на линиях (как на остальных графиках). Рисуем в
