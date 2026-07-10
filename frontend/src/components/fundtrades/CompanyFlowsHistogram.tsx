@@ -400,8 +400,20 @@ export default function CompanyFlowsHistogram({
                                     />
                                     {shown.length > 0 && (
                                         <div style={{ marginTop: 'var(--sp-1)', paddingTop: 'var(--sp-1)', borderTop: '1px solid var(--border-color)' }}>
+                                            {/* Имя фонда — тем же начертанием и цветом, что и
+                                                число справа (font-semibold + серый оси Y):
+                                                строка читается как одно целое. */}
                                             {shown.map((r, i) => (
-                                                <TooltipRow key={i} hideDot color={r.color} valueColor="var(--axis-color, #9CA3B8)" label={r.label} value={fmtFlow(r.mln)} />
+                                                <TooltipRow
+                                                    key={i}
+                                                    hideDot
+                                                    color={r.color}
+                                                    label={r.label}
+                                                    value={fmtFlow(r.mln)}
+                                                    labelClass="font-semibold"
+                                                    labelColor="var(--axis-color, #9CA3B8)"
+                                                    valueColor="var(--axis-color, #9CA3B8)"
+                                                />
                                             ))}
                                             {extra > 0 && (
                                                 <div className="text-theme-secondary" style={{ fontSize: 'var(--fs-2xs)', marginTop: 'var(--sp-1)' }}>
