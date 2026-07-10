@@ -278,6 +278,8 @@ export default function FundTradesPage() {
     const [portfolioPeriod] = usePersistedState<'m1' | 'm3' | 'm6' | 'y1'>('frame:fundtrades:portfolioPeriod', 'y1');
     const [portfolio, setPortfolio] = useState<FundPortfolio | null>(null);
     const [portfolioLoading, setPortfolioLoading] = useState(false);
+    // Месяц-срез портфеля (month-picker в шапке «Обзор портфеля»); undefined = последний.
+    const [portfolioAsOf, setPortfolioAsOf] = useState<string | undefined>(undefined);
     // Блок «Покупки фондов» рядом с составом: чистая покупка за период (1м/6м/1г/3г).
     const [portfolioMoversPeriod, setPortfolioMoversPeriod] = usePersistedState<MoversPeriod>('frame:fundtrades:portfolioMoversPeriod', '1m');
     const [portfolioMovers, setPortfolioMovers] = useState<FundTradesMovers | null>(null);
@@ -325,18 +327,26 @@ export default function FundTradesPage() {
         return funds.filter((f) => portfolioUks.has(ukKey(f))).map((f) => f.ticker).join(',');
     }, [funds, portfolioUks]);
 
-    // Load общий портфель (tab=portfolio; смена набора УК). Ждём загрузки списка
-    // фондов — без него не резолвить УК→тикеры (иначе пустой набор ошибочно = «все»).
+    // Месяц-срез портфеля: месяцы > snapshot_cutoff заблокированы (Free/гость —
+    // свежий срез по подписке), дефолт = последний ДОСТУПНЫЙ, как в «Покупках фондов».
+    const isPortfolioMonthLocked = (m: string) => {
+        const c = portfolio?.snapshot_cutoff ?? null;
+        return c != null && m > c;
+    };
+
+    // Load общий портфель (tab=portfolio; смена набора УК или выбранного месяца).
+    // Ждём загрузки списка фондов — без него не резолвить УК→тикеры (иначе пустой
+    // набор ошибочно = «все»).
     useEffect(() => {
         if (!common.fund_trades_access) return;
         if (tab !== 'portfolio') return;
         if (funds.length === 0) return;
         setPortfolioLoading(true);
-        getFundPortfolio({ funds: portfolioFundsParam || undefined })
+        getFundPortfolio({ funds: portfolioFundsParam || undefined, as_of: portfolioAsOf })
             .then(setPortfolio)
             .catch((e: Error) => setError(e.message))
             .finally(() => setPortfolioLoading(false));
-    }, [tab, portfolioFundsParam, funds.length, common.fund_trades_access]);
+    }, [tab, portfolioFundsParam, portfolioAsOf, funds.length, common.fund_trades_access]);
 
     // Покупки фондов для блока рядом с составом: чистая покупка за выбранный период,
     // тот же набор УК (→ тикеры), ранжирование по рублям.
@@ -877,7 +887,9 @@ export default function FundTradesPage() {
                         сверху влияет на оба блока; внутри «Покупки фондов» (уже, слева)
                         и «Обзор портфеля» (шире, справа) за вертикальным разделителем.
                         Тумблеры режима и периода живут в шапках самих блоков. */}
-                    <div style={{ background: 'var(--bg-secondary)', border: '2px solid var(--text-primary)', borderRadius: 16, boxShadow: '4px 4px 0 var(--text-primary)', overflow: 'hidden' }}>
+                    {/* overflow НЕ hidden: поповер подсказки «?» и Dropdown месяца
+                        должны свободно выходить за пределы карточки, не обрезаясь. */}
+                    <div style={{ background: 'var(--bg-secondary)', border: '2px solid var(--text-primary)', borderRadius: 16, boxShadow: '4px 4px 0 var(--text-primary)' }}>
                         {ukOptions.length > 1 && (
                             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: '1.5px solid var(--border-color)' }}>
                                 <UkMultiSelect
@@ -908,6 +920,12 @@ export default function FundTradesPage() {
                                     onModeChange={setPortfolioMode}
                                     period={portfolioPeriod}
                                     variant="embedded"
+                                    onAssetClick={(h) => { setCompanyPreset({ asset_name: h.asset_name, isin: h.isin }); setTab('company'); }}
+                                    availableMonths={portfolio?.available_months}
+                                    asOf={portfolioAsOf}
+                                    onAsOfChange={setPortfolioAsOf}
+                                    monthLocked={isPortfolioMonthLocked}
+                                    onMonthLockedClick={() => showUpgrade({ tier: 'basic', featureName: 'свежий срез фондов', indicator: 'fund_trades' })}
                                 />
                             </div>
                         </div>

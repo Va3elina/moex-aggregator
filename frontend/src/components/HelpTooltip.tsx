@@ -32,9 +32,13 @@ interface HelpTooltipProps {
   /** Ссылка на страницу методологии. Если указана — иконка становится
    *  ссылкой, а hover показывает preview с кнопкой «Подробнее». */
   linkTo?: string;
+  /** Сторона раскрытия поповера относительно иконки. 'left' (default) —
+   *  левый край поповера у иконки, растёт вправо. 'right' — правый край у
+   *  иконки, растёт ВЛЕВО (для «?» у правой границы блока, чтобы не вылезал). */
+  align?: 'left' | 'right';
 }
 
-export default function HelpTooltip({ entry, title, content, sections, size = 16, linkTo }: HelpTooltipProps) {
+export default function HelpTooltip({ entry, title, content, sections, size = 16, linkTo, align = 'left' }: HelpTooltipProps) {
   const [open, setOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -96,7 +100,7 @@ export default function HelpTooltip({ entry, title, content, sections, size = 16
       style={{
         position: 'absolute',
         top: 'calc(100% + 6px)',
-        left: 0,
+        ...(align === 'right' ? { right: 0 } : { left: 0 }),
         zIndex: 60,
         width: 'min(360px, calc(100vw - 32px))',
         padding: 'var(--sp-4) var(--sp-5)',
