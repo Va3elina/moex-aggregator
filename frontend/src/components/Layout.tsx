@@ -32,8 +32,7 @@ const NAV_ITEMS: { path: string; label: string; disabled?: boolean; badge?: stri
   { path: '/funds-money', label: 'Деньги в фондах' },
   { path: '/strength', label: 'Сила рынка' },
   // Smart-money tracking — что покупают/продают БПИФ. Pro-only фича.
-  // Помечен Beta — данные накапливаются (помесячные снапшоты составов фондов).
-  { path: '/fund-trades', label: 'Покупки фондов', badge: 'Beta' },
+  { path: '/fund-trades', label: 'Покупки фондов' },
   { path: '/seasonality', label: 'Сезонность' },
   { path: '/cbr-flows', label: 'Поток капитала' },
   { path: '/buffett', label: 'Индикатор Баффетта' },

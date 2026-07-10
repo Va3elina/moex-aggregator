@@ -446,46 +446,7 @@ export default function FundTradesPage() {
                 subtitle="Состав портфелей крупных фондов акций — что управляющие компании накапливают и распродают"
             />
 
-            {/* Beta banner — пока показываем только 6 ВИМ-фондов */}
-            <div
-                style={{
-                    padding: '12px 16px',
-                    marginBottom: 14,
-                    background: 'color-mix(in srgb, var(--warning, #f59e0b) 8%, var(--bg-secondary))',
-                    border: '1.5px solid color-mix(in srgb, var(--warning, #f59e0b) 30%, transparent)',
-                    borderRadius: 10,
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    gap: 10,
-                }}
-            >
-                <span
-                    style={{
-                        padding: '2px 8px',
-                        background: 'var(--warning, #f59e0b)',
-                        color: 'var(--text-inverse)',
-                        borderRadius: 4,
-                        fontSize: 'var(--fs-2xs)',
-                        fontWeight: 700,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.04em',
-                        flexShrink: 0,
-                    }}
-                >
-                    Beta
-                </span>
-                <div style={{ flex: 1, fontSize: 'var(--fs-sm)', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                    Отслеживаем <strong style={{ color: 'var(--text-primary)' }}>фонды акций</strong> УК
-                    Первая, Т-Капитал, ВИМ и Альфа — как индексные (повторяют индекс МосБиржи), так и
-                    {' '}<strong style={{ color: 'var(--text-primary)' }}>авторские</strong> (управляющие
-                    сами отбирают бумаги). Состав — строго из официальных Справок о стоимости чистых
-                    активов (форма ЦБ № 0420502, точные позиции от самих УК).
-                    {' '}<strong style={{ color: 'var(--text-primary)' }}>Методология в тестировании
-                    и может измениться.</strong>
-                </div>
-            </div>
-
-            {/* Постоянный нудж «данные с задержкой» — под BETA-боксом, виден на всех табах (Free/гость) */}
+            {/* Постоянный нудж «данные с задержкой» — виден на всех табах (Free/гость) */}
             <DelayedDataBadge />
 
             {/* Tabs */}

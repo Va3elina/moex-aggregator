@@ -260,9 +260,9 @@ export const SEO_META: Record<string, SeoMeta> = {
     '/signal-export': { title: 'Signal Export | FRAME', description: '', noindex: true },
     '/style-preview': { title: 'Style Preview | FRAME', description: '', noindex: true },
     '/api-docs': { title: 'API Документация | FRAME', description: '', noindex: true },
-    // Beta-фича с whitelist 6 ВИМ-фондов — не пускаем в индекс пока контент
-    // неполный (накапливаем данные помесячными снапшотами составов фондов).
-    '/fund-trades': { title: 'Покупки фондов (beta) | FRAME', description: '', noindex: true },
+    // Пока не индексируем: SEO-описание/intro не заполнены. Когда будет готова
+    // копия — снять noindex и дописать description/keywords/intro как у соседей.
+    '/fund-trades': { title: 'Покупки фондов | FRAME', description: '', noindex: true },
 }
 
 /**
