@@ -644,14 +644,26 @@ export default function FundsMoneyPage() {
                         <div className="font-medium" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             Фонды: {currentCategory?.name ?? ''}
                         </div>
-                        <div
-                            style={{
-                                fontSize: 'var(--fs-2xs)',
-                                color: fundsPartiallySelected ? 'var(--accent)' : 'var(--text-secondary)',
-                                fontWeight: fundsPartiallySelected ? 700 : undefined,
-                            }}
-                        >
-                            выбрано {visibleAccessibleFunds.length} из {accessibleFunds.length}
+                        {/* Счётчик выбранных — цифры в небольшом сером бейдже (как в
+                            прошлой версии кнопки). При частичном выборе бейдж
+                            заливается акцентом — сигнал активного фильтра. */}
+                        <div style={{ marginTop: 2 }}>
+                            <span
+                                style={{
+                                    display: 'inline-block',
+                                    fontSize: 'var(--fs-2xs)',
+                                    fontWeight: 800,
+                                    lineHeight: 1,
+                                    borderRadius: 6,
+                                    padding: '3px 6px',
+                                    whiteSpace: 'nowrap',
+                                    ...(fundsPartiallySelected
+                                        ? { color: 'var(--text-inverse)', background: 'var(--accent)' }
+                                        : { color: 'var(--text-secondary)', background: 'color-mix(in srgb, var(--text-primary) 8%, transparent)' }),
+                                }}
+                            >
+                                {visibleAccessibleFunds.length} / {accessibleFunds.length}
+                            </span>
                         </div>
                     </div>
                     <ChevronDown size={14} className="text-theme-secondary" style={{ flexShrink: 0 }} />
