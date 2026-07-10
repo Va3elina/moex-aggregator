@@ -38,6 +38,9 @@ interface FundsTableProps {
     onSetCollapsedSubcats: React.Dispatch<React.SetStateAction<Set<string>>>;
     onSetNavSortDir: React.Dispatch<React.SetStateAction<'desc' | 'asc'>>;
     onOpenFundCard: (fund: FundInfo) => void;
+    /** Bare-режим для рендера внутри модалки-виджета: без внешней editorial-рамки
+     *  (border/тень/скругление/mt-6) — её даёт родитель-модалка. */
+    bare?: boolean;
 }
 
 export default function FundsTable({
@@ -51,6 +54,7 @@ export default function FundsTable({
     onSetCollapsedSubcats,
     onSetNavSortDir,
     onOpenFundCard,
+    bare = false,
 }: FundsTableProps) {
     const { showUpgrade } = useUpgradePrompt();
     const fundsAccess = useTierAccess('funds_money');
@@ -92,7 +96,10 @@ export default function FundsTable({
     };
 
     return (
-        <div className="mt-6 rounded-2xl overflow-hidden editorial-frame" style={{ background: 'var(--bg-secondary)', padding: 0 }}>
+        <div
+            className={bare ? '' : 'mt-6 rounded-2xl overflow-hidden editorial-frame'}
+            style={bare ? undefined : { background: 'var(--bg-secondary)', padding: 0 }}
+        >
             <div className="border-b border-theme flex items-center justify-between flex-wrap" style={{ padding: 'var(--sp-3) var(--sp-4)', gap: 'var(--sp-1) var(--sp-3)' }}>
                 <div className="flex items-baseline" style={{ gap: 'var(--sp-2)' }}>
                     <h3 className="font-semibold" style={{ fontSize: 'var(--fs-base)' }}>Фонды категории</h3>
