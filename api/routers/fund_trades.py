@@ -197,6 +197,24 @@ def _snapshot_cutoff(db, user) -> date:
 _SPLIT_RATIOS = (2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20, 25, 30, 40, 50, 100, 150, 200, 500, 1000)
 
 
+def _month_range(start: str, end: str) -> list[str]:
+    """Непрерывный список месяцев «YYYY-MM» от start до end включительно.
+
+    Ось «Потоков по компании» должна быть настоящим таймлайном, а не списком
+    месяцев, где бумага случайно оказалась в фондах: пропуски внутри и хвост
+    после полной распродажи рисуются пустыми (нулевыми) барами.
+    """
+    y, m = int(start[:4]), int(start[5:7])
+    ey, em = int(end[:4]), int(end[5:7])
+    out: list[str] = []
+    while (y, m) <= (ey, em):
+        out.append("%04d-%02d" % (y, m))
+        m += 1
+        if m > 12:
+            m, y = 1, y + 1
+    return out
+
+
 def _nearest_split_ratio(observed: float) -> float:
     cands = _SPLIT_RATIOS if observed >= 1 else [1.0 / r for r in _SPLIT_RATIOS]
     return min(cands, key=lambda c: abs(math.log(observed) - math.log(c)))
@@ -1936,7 +1954,11 @@ def company_flows(
     metric='amount' приводим prev-positions к пост-сплит масштабу; amount_rub/weight
     непрерывны через сплит, поэтому коррекция для них фактически нейтральна).
 
-    Месячная ось = union всех snapshot-месяцев («YYYY-MM») всех фондов бумаги, ASC.
+    Месячная ось = НЕПРЕРЫВНЫЙ ряд «YYYY-MM» от первого месяца бумаги до горизонта
+    данных (последний снапшот по whitelist-фондам, с учётом тирной задержки), ASC.
+    Не обрезаем справа по последнему месяцу владения: полностью проданная бумага
+    иначе обрывала бы график на дате распродажи. Пропуски внутри и хвост после
+    распродажи → values=None → нулевые (пустые) бары.
     values выровнено по months (null где нет снапшота в месяце). total = сумма по фондам.
     """
     if metric not in ("amount", "weight"):
@@ -2075,7 +2097,27 @@ def company_flows(
                     prev_weight = curr_weight
         fund_month_val[fid] = month_val
 
-    months = sorted(all_months)
+    # Ось месяцев — НЕПРЕРЫВНЫЙ ряд от первого месяца бумаги до горизонта данных
+    # (последний снапшот, который у нас вообще есть по whitelist-фондам, с учётом
+    # тирной задержки). Раньше брали sorted(all_months) = только месяцы, где бумага
+    # присутствовала хоть в одном фонде: полностью проданная бумага обрывала график
+    # на дате распродажи (будто истории дальше нет), а внутри оси зияли дыры.
+    # Месяцы без строк по бумаге → values=None → нулевые (пустые) бары. Так честнее.
+    last_global = db.execute(text("""
+        SELECT MAX(h.snapshot_date)
+        FROM fund_holdings_history h
+        JOIN funds f ON f.fund_id = h.fund_id
+        WHERE f.ticker = ANY(:tickers) AND f.category = 'stocks'
+          AND h.source = ANY(:sources)
+          AND h.snapshot_date <= :cutoff
+    """), {"tickers": list(WHITELIST_TICKERS), "sources": list(MONTHLY_SOURCES),
+           "cutoff": cutoff}).scalar()
+
+    first_month = min(all_months)
+    last_month = max(all_months)
+    if last_global:
+        last_month = max(last_month, last_global.strftime("%Y-%m"))
+    months = _month_range(first_month, last_month)
 
     funds_out = []
     # Стабильный порядок фондов: по тикеру.
